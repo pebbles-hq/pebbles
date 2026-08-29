@@ -1,0 +1,16 @@
+[package]
+name = "pebbles"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Pebbles — a Flutter-style, desktop-first GUI framework built on Vello. Umbrella crate + prelude."
+
+[dependencies]
+pebbles-foundation.workspace = true
+pebbles-render.workspace = true
+pebbles-core.workspace = true
+pebbles-widgets.workspace = true
+pebbles-shell.workspace = true

@@ -1,0 +1,47 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "examples/*"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.90"
+license = "Apache-2.0"
+authors = ["Reyco Seguma"]
+repository = "https://github.com/pebbles-hq/pebbles"
+description = "Pebbles — a Flutter-style, desktop-first GUI framework built on Vello."
+
+[workspace.dependencies]
+# --- internal crates (bottom-up: foundation → render → core → widgets → shell → umbrella) ---
+pebbles-foundation = { path = "crates/pebbles-foundation", version = "0.0.1" }
+pebbles-render = { path = "crates/pebbles-render", version = "0.0.1" }
+pebbles-core = { path = "crates/pebbles-core", version = "0.0.1" }
+pebbles-widgets = { path = "crates/pebbles-widgets", version = "0.0.1" }
+pebbles-shell = { path = "crates/pebbles-shell", version = "0.0.1" }
+pebbles = { path = "crates/pebbles", version = "0.0.1" }
+
+# --- Linebender 2D stack ---
+# vello without default features gives the CPU-side `Scene` encoder with NO wgpu/gpu deps.
+# The shell crate re-enables the `wgpu` feature to get the GPU `Renderer`.
+vello = { version = "0.10", default-features = false }
+peniko = "0.6"
+kurbo = "0.13"
+parley = "0.11"
+
+# --- windowing / gpu (shell only) ---
+wgpu = "29"
+winit = "0.30"
+raw-window-handle = "0.6"
+pollster = "1"
+
+# --- data structures / util ---
+slotmap = "1"
+smallvec = "1"
+
+[profile.dev]
+# The GPU/shader crates are painfully slow unoptimized; opt them (and only them) at -O1
+# while keeping our own crates at -O0 for fast incremental builds.
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 2

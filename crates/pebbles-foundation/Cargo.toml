@@ -1,0 +1,13 @@
+[package]
+name = "pebbles-foundation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Foundation layer for Pebbles: geometry, layout enums, and color primitives."
+
+[dependencies]
+kurbo.workspace = true
+peniko.workspace = true

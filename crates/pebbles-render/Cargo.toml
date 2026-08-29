@@ -1,0 +1,19 @@
+[package]
+name = "pebbles-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "The render layer for Pebbles: box constraints, the render tree, layout, painting and text."
+
+[dependencies]
+pebbles-foundation.workspace = true
+# vello WITHOUT default features → the CPU-side `Scene` encoder, no wgpu/GPU pulled in.
+vello.workspace = true
+peniko.workspace = true
+kurbo.workspace = true
+parley.workspace = true
+slotmap.workspace = true
+smallvec = { workspace = true, features = ["union"] }

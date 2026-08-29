@@ -1,0 +1,439 @@
+//! App-shell chrome: [`Scaffold`] (composes the shell) plus the independent,
+//! individually-optional [`TopPanel`], [`SideNav`] and [`BottomNav`].
+//!
+//! Each is standalone — an app can use a `SideNav` with no `TopPanel`, a `TopPanel`
+//! with no `SideNav`, and so on. `Scaffold` just arranges whichever you provide:
+//! top bar on top, side nav on the left, body filling the rest, bottom nav below.
+
+use pebbles_foundation::{
+    Color, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, palette,
+};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconKind};
+
+use pebbles_core::children;
+use pebbles_core::context::{BuildContext, Callback};
+use pebbles_core::state::State;
+use crate::theme::{mix, theme};
+use pebbles_core::widget::{AnyWidget, IntoWidget, StatefulWidget, StatelessWidget, Widget};
+use crate::widgets::{
+    Container, Expanded, GestureDetector, Padding, SingleChildScrollView, SizedBox, center, column,
+    row, spacer, text,
+};
+
+use crate::components::icon;
+
+// ===========================================================================
+// Scaffold
+// ===========================================================================
+
+/// The app shell. Arranges the optional chrome around a body that fills the rest.
+#[derive(Clone)]
+pub struct Scaffold {
+    body: Option<AnyWidget>,
+    top: Option<AnyWidget>,
+    side: Option<AnyWidget>,
+    bottom: Option<AnyWidget>,
+    background: Option<Color>,
+}
+
+/// Create a [`Scaffold`] with a `body`. Attach chrome with `.top()/.side()/.bottom()`.
+pub fn scaffold(body: impl IntoWidget) -> Scaffold {
+    Scaffold { body: Some(body.into_widget()), top: None, side: None, bottom: None, background: None }
+}
+
+impl Scaffold {
+    pub fn top(mut self, top: impl IntoWidget) -> Self {
+        self.top = Some(top.into_widget());
+        self
+    }
+    pub fn side(mut self, side: impl IntoWidget) -> Self {
+        self.side = Some(side.into_widget());
+        self
+    }
+    pub fn bottom(mut self, bottom: impl IntoWidget) -> Self {
+        self.bottom = Some(bottom.into_widget());
+        self
+    }
+    pub fn background(mut self, color: Color) -> Self {
+        self.background = Some(color);
+        self
+    }
+}
+
+pebbles_core::stateless_widget!(Scaffold);
+
+impl StatelessWidget for Scaffold {
+    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+        let bg = self.background.unwrap_or(theme().colors.background);
+        let body = self.body.take().unwrap_or_else(|| SizedBox::spacer(0.0, 0.0).into_widget());
+
+        // side (fixed) + body (fills)
+        let middle: AnyWidget = match self.side.take() {
+            Some(side) => row(children![side, Expanded::new(Container::new().color(bg).child(body))])
+                .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .into_widget(),
+            None => Container::new().color(bg).child(body).into_widget(),
+        };
+
+        let mut col: Vec<AnyWidget> = Vec::new();
+        if let Some(top) = self.top.take() {
+            col.push(top);
+        }
+        col.push(Expanded::new(middle).into_widget());
+        if let Some(bottom) = self.bottom.take() {
+            col.push(bottom);
+        }
+
+        column(col).cross_axis_alignment(CrossAxisAlignment::Stretch).into_widget()
+    }
+}
+
+// ===========================================================================
+// TopPanel
+// ===========================================================================
+
+/// A top app bar: optional leading widget, a title, and trailing actions.
+#[derive(Clone)]
+pub struct TopPanel {
+    title: String,
+    leading: Option<AnyWidget>,
+    actions: Vec<AnyWidget>,
+    height: f64,
+}
+
+/// Create a [`TopPanel`] with a title.
+pub fn top_panel(title: impl Into<String>) -> TopPanel {
+    TopPanel { title: title.into(), leading: None, actions: Vec::new(), height: 56.0 }
+}
+
+impl TopPanel {
+    pub fn leading(mut self, leading: impl IntoWidget) -> Self {
+        self.leading = Some(leading.into_widget());
+        self
+    }
+    pub fn action(mut self, action: impl IntoWidget) -> Self {
+        self.actions.push(action.into_widget());
+        self
+    }
+    pub fn height(mut self, height: f64) -> Self {
+        self.height = height;
+        self
+    }
+}
+
+pebbles_core::stateless_widget!(TopPanel);
+
+impl StatelessWidget for TopPanel {
+    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+        let c = theme().colors;
+        let mut items: Vec<AnyWidget> = Vec::new();
+        if let Some(leading) = self.leading.take() {
+            items.push(leading);
+            items.push(SizedBox::spacer(12.0, 0.0).into_widget());
+        }
+        items.push(text(std::mem::take(&mut self.title)).size(16.0).semibold().color(c.foreground).into_widget());
+        items.push(spacer().into_widget());
+        for action in std::mem::take(&mut self.actions) {
+            items.push(action);
+            items.push(SizedBox::spacer(6.0, 0.0).into_widget());
+        }
+
+        Container::new()
+            .decoration(BoxDecoration::new().color(c.background).border(Border::new(c.border, 1.0)))
+            .height(self.height)
+            .padding(EdgeInsets::symmetric(16.0, 0.0))
+            .child(row(items).cross_axis_alignment(CrossAxisAlignment::Center))
+            .into_widget()
+    }
+}
+
+// ===========================================================================
+// NavItem (shared by SideNav)
+// ===========================================================================
+
+/// A single side-nav row: optional icon + label, a selected flag, and a callback.
+#[derive(Clone)]
+pub struct NavItem {
+    icon: Option<IconKind>,
+    label: String,
+    selected: bool,
+    on_select: Option<Callback>,
+}
+
+/// Create a [`NavItem`] with a label.
+pub fn nav_item(label: impl Into<String>) -> NavItem {
+    NavItem { icon: None, label: label.into(), selected: false, on_select: None }
+}
+
+impl NavItem {
+    pub fn icon(mut self, kind: IconKind) -> Self {
+        self.icon = Some(kind);
+        self
+    }
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+    pub fn on_select(mut self, cb: Callback) -> Self {
+        self.on_select = Some(cb);
+        self
+    }
+}
+
+pebbles_core::stateful_widget!(NavItem);
+
+impl StatefulWidget for NavItem {
+    fn create_state(&self) -> Box<dyn State> {
+        Box::new(HoverState::default())
+    }
+}
+
+#[derive(Clone, Default)]
+struct HoverState {
+    hovered: bool,
+}
+
+impl State for HoverState {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn build(&mut self, widget: &dyn Widget, cx: &mut BuildContext) -> AnyWidget {
+        let w = widget.downcast_ref::<NavItem>().expect("HoverState on a NavItem");
+        let c = theme().colors;
+        let bg = if w.selected {
+            c.accent
+        } else if self.hovered {
+            mix(c.background, c.accent, 0.6)
+        } else {
+            palette::TRANSPARENT
+        };
+        let fg = if w.selected { c.accent_foreground } else { c.foreground };
+        let weight = if w.selected { 600.0 } else { 500.0 };
+
+        let mut cells: Vec<AnyWidget> = Vec::new();
+        if let Some(kind) = w.icon {
+            cells.push(icon(kind).size(18.0).color(fg).into_widget());
+            cells.push(SizedBox::spacer(10.0, 0.0).into_widget());
+        }
+        cells.push(text(w.label.clone()).size(14.0).weight(weight).color(fg).into_widget());
+
+        let container = Container::new()
+            .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius)))
+            .padding(EdgeInsets::symmetric(10.0, 9.0))
+            .child(row(cells));
+
+        let mut gesture = GestureDetector::new(container)
+            .cursor(Cursor::Pointer)
+            .on_hover_enter(cx.callback(|s: &mut HoverState| s.hovered = true))
+            .on_hover_exit(cx.callback(|s: &mut HoverState| s.hovered = false));
+        if let Some(cb) = w.on_select.clone() {
+            gesture = gesture.on_tap(cb);
+        }
+        gesture.into_widget()
+    }
+}
+
+// ===========================================================================
+// SideNav
+// ===========================================================================
+
+/// A vertical side navigation panel with an optional header/footer and a list of
+/// items (usually [`NavItem`]s, but any widget works).
+#[derive(Clone)]
+pub struct SideNav {
+    width: f64,
+    header: Option<AnyWidget>,
+    footer: Option<AnyWidget>,
+    items: Vec<AnyWidget>,
+}
+
+/// Create an empty [`SideNav`]; add rows with `.item(..)`.
+pub fn side_nav() -> SideNav {
+    SideNav { width: 240.0, header: None, footer: None, items: Vec::new() }
+}
+
+impl SideNav {
+    pub fn width(mut self, width: f64) -> Self {
+        self.width = width;
+        self
+    }
+    pub fn header(mut self, header: impl IntoWidget) -> Self {
+        self.header = Some(header.into_widget());
+        self
+    }
+    pub fn footer(mut self, footer: impl IntoWidget) -> Self {
+        self.footer = Some(footer.into_widget());
+        self
+    }
+    pub fn item(mut self, item: impl IntoWidget) -> Self {
+        self.items.push(item.into_widget());
+        self
+    }
+}
+
+pebbles_core::stateless_widget!(SideNav);
+
+impl StatelessWidget for SideNav {
+    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+        let c = theme().colors;
+
+        // Items live in a scroll view that fills the space between a fixed header
+        // and footer, so they scroll (never clip) when the window is short.
+        let mut items: Vec<AnyWidget> = Vec::new();
+        for (i, item) in std::mem::take(&mut self.items).into_iter().enumerate() {
+            if i > 0 {
+                items.push(SizedBox::spacer(0.0, 2.0).into_widget());
+            }
+            items.push(item);
+        }
+        // The viewport spans the full width so the scrollbar sits flush on the
+        // sidenav's right edge; the items are inset via their own padding.
+        let scroller = SingleChildScrollView::vertical(Padding::new(
+            EdgeInsets::symmetric(10.0, 0.0),
+            column(items).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_min(),
+        ))
+        .scrollbar_thickness(6.0);
+
+        let mut col: Vec<AnyWidget> = Vec::new();
+        if let Some(header) = self.header.take() {
+            col.push(Padding::new(EdgeInsets::only(10.0, 10.0, 10.0, 6.0), header).into_widget());
+        }
+        col.push(Expanded::new(scroller).into_widget());
+        if let Some(footer) = self.footer.take() {
+            col.push(Padding::new(EdgeInsets::only(10.0, 6.0, 10.0, 10.0), footer).into_widget());
+        }
+
+        let content = Container::new()
+            .color(c.card)
+            .width(self.width - 1.0)
+            .child(column(col).cross_axis_alignment(CrossAxisAlignment::Stretch));
+
+        // Panel + a 1px right divider (we have no per-side borders yet).
+        row(children![content, Container::new().color(c.border).width(1.0)])
+            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .into_widget()
+    }
+}
+
+// ===========================================================================
+// BottomNav
+// ===========================================================================
+
+/// A bottom navigation bar item: an icon over a label.
+#[derive(Clone)]
+pub struct BottomNavItem {
+    icon: IconKind,
+    label: String,
+    selected: bool,
+    on_select: Option<Callback>,
+}
+
+/// Create a [`BottomNavItem`].
+pub fn bottom_nav_item(icon: IconKind, label: impl Into<String>) -> BottomNavItem {
+    BottomNavItem { icon, label: label.into(), selected: false, on_select: None }
+}
+
+impl BottomNavItem {
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+    pub fn on_select(mut self, cb: Callback) -> Self {
+        self.on_select = Some(cb);
+        self
+    }
+}
+
+pebbles_core::stateful_widget!(BottomNavItem);
+
+impl StatefulWidget for BottomNavItem {
+    fn create_state(&self) -> Box<dyn State> {
+        Box::new(BottomNavItemState::default())
+    }
+}
+
+#[derive(Clone, Default)]
+struct BottomNavItemState {
+    hovered: bool,
+}
+
+impl State for BottomNavItemState {
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
+    fn build(&mut self, widget: &dyn Widget, cx: &mut BuildContext) -> AnyWidget {
+        let w = widget.downcast_ref::<BottomNavItem>().expect("BottomNavItemState on a BottomNavItem");
+        let c = theme().colors;
+        let fg = if w.selected {
+            c.primary
+        } else if self.hovered {
+            c.foreground
+        } else {
+            c.muted_foreground
+        };
+        let content = column(children![
+            icon(w.icon).size(20.0).color(fg),
+            SizedBox::spacer(0.0, 4.0),
+            text(w.label.clone()).size(11.0).weight(if w.selected { 600.0 } else { 500.0 }).color(fg),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Center)
+        .main_axis_min();
+
+        let container =
+            Container::new().padding(EdgeInsets::symmetric(16.0, 8.0)).child(center(content));
+        let mut gesture = GestureDetector::new(container)
+            .cursor(Cursor::Pointer)
+            .on_hover_enter(cx.callback(|s: &mut BottomNavItemState| s.hovered = true))
+            .on_hover_exit(cx.callback(|s: &mut BottomNavItemState| s.hovered = false));
+        if let Some(cb) = w.on_select.clone() {
+            gesture = gesture.on_tap(cb);
+        }
+        gesture.into_widget()
+    }
+}
+
+/// A bottom navigation bar.
+#[derive(Clone)]
+pub struct BottomNav {
+    items: Vec<AnyWidget>,
+    height: f64,
+}
+
+/// Create an empty [`BottomNav`]; add items with `.item(..)`.
+pub fn bottom_nav() -> BottomNav {
+    BottomNav { items: Vec::new(), height: 62.0 }
+}
+
+impl BottomNav {
+    pub fn item(mut self, item: impl IntoWidget) -> Self {
+        self.items.push(item.into_widget());
+        self
+    }
+    pub fn height(mut self, height: f64) -> Self {
+        self.height = height;
+        self
+    }
+}
+
+pebbles_core::stateless_widget!(BottomNav);
+
+impl StatelessWidget for BottomNav {
+    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+        let c = theme().colors;
+        let items: Vec<AnyWidget> = std::mem::take(&mut self.items)
+            .into_iter()
+            .map(|it| Expanded::new(it).into_widget())
+            .collect();
+        Container::new()
+            .decoration(BoxDecoration::new().color(c.background).border(Border::new(c.border, 1.0)))
+            .height(self.height)
+            .child(
+                row(items)
+                    .main_axis_alignment(MainAxisAlignment::SpaceEvenly)
+                    .cross_axis_alignment(CrossAxisAlignment::Center),
+            )
+            .into_widget()
+    }
+}

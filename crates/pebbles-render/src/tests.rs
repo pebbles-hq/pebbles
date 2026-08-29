@@ -1,0 +1,101 @@
+//! Unit tests for the pure layout logic — no GPU, no window.
+
+use pebbles_foundation::{
+    Alignment, Axis, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, Size,
+};
+
+use crate::constraints::BoxConstraints;
+use crate::objects::{RenderColoredBox, RenderConstrainedBox, RenderFlex, RenderPadding};
+use crate::text::TextEnv;
+use crate::tree::RenderTree;
+
+fn tight(w: f64, h: f64) -> BoxConstraints {
+    BoxConstraints::tight(Size::new(w, h))
+}
+
+#[test]
+fn constraints_constrain_and_deflate() {
+    let c = BoxConstraints { min_width: 0.0, max_width: 100.0, min_height: 0.0, max_height: 50.0 };
+    assert_eq!(c.constrain(Size::new(200.0, 10.0)), Size::new(100.0, 10.0));
+
+    let d = c.deflate(EdgeInsets::all(10.0));
+    assert_eq!(d.max_width, 80.0);
+    assert_eq!(d.max_height, 30.0);
+}
+
+#[test]
+fn tight_constraints_are_tight() {
+    assert!(tight(10.0, 20.0).is_tight());
+    assert!(!BoxConstraints::UNBOUNDED.is_tight());
+}
+
+#[test]
+fn alignment_inscribes_child() {
+    let parent = Size::new(100.0, 100.0);
+    let child = Size::new(20.0, 20.0);
+    assert_eq!(Alignment::TOP_LEFT.inscribe(child, parent).to_point().x, 0.0);
+    assert_eq!(Alignment::CENTER.inscribe(child, parent).to_point().x, 40.0);
+    assert_eq!(Alignment::BOTTOM_RIGHT.inscribe(child, parent).to_point().y, 80.0);
+}
+
+/// A childless colored box fills the space it is given.
+#[test]
+fn colored_box_fills_when_childless() {
+    let mut tree = RenderTree::new();
+    let mut text = TextEnv::new();
+    let root = tree.insert(Box::new(RenderColoredBox::new(pebbles_foundation::palette::RED)));
+    tree.root = Some(root);
+    tree.layout(&mut text, tight(120.0, 80.0));
+    assert_eq!(tree.size_of(root), Size::new(120.0, 80.0));
+}
+
+/// Padding grows its child by the inset amounts and positions it inset.
+#[test]
+fn padding_grows_and_offsets_child() {
+    let mut tree = RenderTree::new();
+    let mut text = TextEnv::new();
+    let pad = tree.insert(Box::new(RenderPadding::new(EdgeInsets::all(10.0))));
+    let child = tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(
+        30.0, 30.0,
+    )))));
+    tree.insert_child(pad, child, 0);
+    tree.root = Some(pad);
+    tree.layout(&mut text, BoxConstraints::UNBOUNDED);
+    assert_eq!(tree.size_of(pad), Size::new(50.0, 50.0));
+    assert_eq!(tree.offset_of(child).to_point().x, 10.0);
+    assert_eq!(tree.offset_of(child).to_point().y, 10.0);
+}
+
+/// A row with one fixed child and one flex child splits the remaining main-axis
+/// space to the flex child.
+#[test]
+fn flex_distributes_remaining_space() {
+    use crate::objects::FlexParentData;
+    use pebbles_foundation::FlexFit;
+
+    let mut tree = RenderTree::new();
+    let mut text = TextEnv::new();
+    let flex = tree.insert(Box::new(RenderFlex::new(
+        Axis::Horizontal,
+        MainAxisAlignment::Start,
+        CrossAxisAlignment::Start,
+        MainAxisSize::Max,
+    )));
+    // Fixed 40px-wide child.
+    let fixed = tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(
+        40.0, 20.0,
+    )))));
+    // Flexible child (fills the rest).
+    let flexible = tree.insert(Box::new(RenderColoredBox::new(pebbles_foundation::palette::BLUE)));
+    tree.insert_child(flex, fixed, 0);
+    tree.insert_child(flex, flexible, 1);
+    tree.set_parent_data(flexible, Box::new(FlexParentData { flex: 1, fit: FlexFit::Tight }));
+    tree.root = Some(flex);
+
+    tree.layout(&mut text, tight(200.0, 50.0));
+    assert_eq!(tree.size_of(fixed).width, 40.0);
+    // 200 total - 40 fixed = 160 for the single flex child.
+    assert_eq!(tree.size_of(flexible).width, 160.0);
+    // Positioned after the fixed child.
+    assert_eq!(tree.offset_of(flexible).to_point().x, 40.0);
+}

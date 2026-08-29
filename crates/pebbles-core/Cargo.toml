@@ -1,0 +1,14 @@
+[package]
+name = "pebbles-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "The Pebbles runtime: Widget/Element traits, the reconciling engine, and SolidJS-style reactivity."
+
+[dependencies]
+pebbles-foundation.workspace = true
+pebbles-render.workspace = true
+slotmap.workspace = true

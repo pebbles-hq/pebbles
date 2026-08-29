@@ -1,0 +1,25 @@
+[package]
+name = "pebbles-shell"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "The desktop shell for Pebbles: winit windowing, the wgpu surface and the Vello GPU renderer."
+
+[dependencies]
+pebbles-foundation.workspace = true
+pebbles-render.workspace = true
+pebbles-core.workspace = true
+pebbles-widgets.workspace = true
+# vello WITH default features here → pulls in the wgpu-backed GPU `Renderer`.
+vello = { workspace = true, default-features = true }
+wgpu.workspace = true
+winit.workspace = true
+raw-window-handle.workspace = true
+pollster.workspace = true
+peniko.workspace = true
+kurbo.workspace = true
+# System clipboard (text only — drop the heavy image feature).
+arboard = { version = "3", default-features = false }
