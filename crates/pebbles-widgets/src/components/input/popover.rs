@@ -1,13 +1,15 @@
 //! Shared building blocks for overlay menus (Select, DropdownMenu, Combobox,
 //! MultiSelect): the popover **surface** (bg + border + shadow) and the anchoring
-//! math that flips a menu above its trigger when there isn't room below.
+//! math that flips a menu above its trigger when there isn't room below — plus the
+//! public [`Popover`] component (arbitrary content under any trigger).
 
 use pebbles_foundation::{Color, EdgeInsets, Offset};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, PointerEvent};
 
 use crate::theme::theme;
-use crate::widgets::Container;
-use crate::overlay::window_size;
+use crate::widgets::{Container, GestureDetector};
+use crate::overlay::{show_overlay, window_size};
+use pebbles_core::context::action_event;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// The standard popover container — popover background, hairline border, themed
@@ -49,4 +51,77 @@ pub(crate) fn anchor_below(
     let top = if wh > 0.0 && below + content_h > wh - 8.0 && above >= 8.0 { above } else { below };
     let left = if ww > 0.0 { trigger_left.min(ww - width - 8.0).max(8.0) } else { trigger_left };
     (left, top)
+}
+
+// ---------------------------------------------------------------------------
+// Popover — public component (arbitrary content under a trigger)
+// ---------------------------------------------------------------------------
+
+/// A click-triggered floating panel with arbitrary content, rendered in the overlay
+/// layer (so it flips near edges, follows page scroll, and hosts real inputs). Build
+/// with [`popover`]; dismisses on outside-click / Escape via the overlay scrim.
+pub struct Popover {
+    trigger: Option<AnyWidget>,
+    content: Option<AnyWidget>,
+    width: f64,
+    /// Content-height hint used to flip above/below and drive scroll-follow.
+    height: f64,
+    /// Trigger height used for anchoring (the panel opens just below it).
+    trigger_height: f64,
+    pad: f64,
+}
+
+/// Create a [`Popover`]: clicking `trigger` opens `content` in a floating surface.
+pub fn popover(trigger: impl IntoWidget, content: impl IntoWidget) -> Popover {
+    Popover {
+        trigger: Some(trigger.into_widget()),
+        content: Some(content.into_widget()),
+        width: 280.0,
+        height: 220.0,
+        trigger_height: 40.0,
+        pad: 8.0,
+    }
+}
+
+impl Popover {
+    /// The panel width (default 280).
+    pub fn width(mut self, width: f64) -> Self {
+        self.width = width;
+        self
+    }
+    /// Content-height hint for edge-flipping + scroll-follow (default 220).
+    pub fn height(mut self, height: f64) -> Self {
+        self.height = height;
+        self
+    }
+    /// The trigger's height, used to anchor the panel just below it (default 40).
+    pub fn trigger_height(mut self, h: f64) -> Self {
+        self.trigger_height = h;
+        self
+    }
+    /// Inner padding of the surface (default 8).
+    pub fn pad(mut self, pad: f64) -> Self {
+        self.pad = pad;
+        self
+    }
+}
+
+impl IntoWidget for Popover {
+    fn into_widget(mut self) -> AnyWidget {
+        let content = self.content.take().unwrap_or_else(|| Container::new().into_widget());
+        let trigger = self.trigger.take().unwrap_or_else(|| Container::new().into_widget());
+        let (width, height, trigger_height, pad) =
+            (self.width, self.height, self.trigger_height, self.pad);
+        GestureDetector::new(trigger)
+            .cursor(Cursor::Pointer)
+            .on_tap(action_event(move |e: PointerEvent| {
+                // The trigger's window-space top-left = click global − click local.
+                let trigger_left = e.global.x - e.position.x;
+                let trigger_top = e.global.y - e.position.y;
+                let (left, top) = anchor_below(trigger_left, trigger_top, trigger_height, width, height);
+                let surface = popover_surface(width, pad, content.clone());
+                show_overlay(surface, left, top, width, height);
+            }))
+            .into_widget()
+    }
 }

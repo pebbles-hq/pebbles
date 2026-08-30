@@ -25,6 +25,7 @@ pub use menu::{
     DropdownMenu, MenuEntry, MenuItem, dropdown_menu, menu_check, menu_item, menu_label,
     menu_separator,
 };
+pub use popover::{Popover, popover};
 pub use select::{Select, SelectItem, select, select_item};
 pub use slider::{Slider, slider};
 pub use text_field::{InputKind, TextField, text_area, text_field};
