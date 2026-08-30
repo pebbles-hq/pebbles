@@ -2,6 +2,8 @@
 //! surface, the Vello GPU renderer, and the [`Ui`] engine, and drives the
 //! reconcile → layout → paint → present loop.
 
+use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -154,6 +156,23 @@ struct ActiveWindow {
     surface: RenderSurface<'static>,
 }
 
+/// A secondary OS window opened via [`window`](pebbles_widgets::window). It has its
+/// own [`Ui`] + surface but shares the GPU context, renderers and — crucially — the
+/// reactive runtime with the main window, so cross-window state is just a shared
+/// signal. Each `Ui` carries a distinct `window_id`, so components never alias.
+struct WindowRuntime {
+    id: u64,
+    window: Arc<Window>,
+    surface: RenderSurface<'static>,
+    ui: Ui,
+    background: Color,
+    cursor: Offset,
+    armed_tap: Option<u64>,
+    pan_target: Option<u64>,
+    current_cursor: Cursor,
+    on_close: Option<Rc<dyn Fn()>>,
+}
+
 /// The winit application handler. Holds all persistent runtime state.
 struct Runner {
     // configuration
@@ -197,6 +216,10 @@ struct Runner {
     clock: Instant,
     /// Elapsed seconds at the previous frame, for the per-frame scroll-spring `dt`.
     last_frame_t: f64,
+
+    // secondary windows (keyed by winit WindowId; app-facing ids map through)
+    windows: HashMap<WindowId, WindowRuntime>,
+    window_by_id: HashMap<u64, WindowId>,
 }
 
 impl Runner {
@@ -227,6 +250,8 @@ impl Runner {
             pan_target: None,
             clock: Instant::now(),
             last_frame_t: 0.0,
+            windows: HashMap::new(),
+            window_by_id: HashMap::new(),
         }
     }
 
@@ -263,6 +288,8 @@ impl Runner {
         pebbles_core::animation::tick(now);
         // Advance scroll-spring physics (smooth wheel / keyboard momentum).
         let scrolling = self.ui.tick_scrolls(dt);
+        // Publish any finished network-image loads (writes their result signals).
+        let loading_images = pebbles_widgets::image_view::pump();
 
         let Some(active) = self.active.as_mut() else { return };
 
@@ -330,11 +357,241 @@ impl Runner {
         surface_texture.present();
 
         // Keep the frames coming while any animation or scroll spring is running.
-        if scrolling || pebbles_core::animation::active() {
+        if scrolling || loading_images || pebbles_core::animation::active() {
             active.window.request_redraw();
         }
     }
+
+    // ------------------------------------------------------- secondary windows
+
+    /// Create/close secondary windows requested by app code this turn.
+    fn pump_windows(&mut self, event_loop: &ActiveEventLoop) {
+        for spec in pebbles_widgets::window::take_open_requests() {
+            self.open_window(event_loop, spec);
+        }
+        for id in pebbles_widgets::window::take_close_requests() {
+            if let Some(wid) = self.window_by_id.remove(&id)
+                && let Some(w) = self.windows.remove(&wid)
+                && let Some(f) = &w.on_close
+            {
+                f();
+            }
+        }
+    }
+
+    fn open_window(&mut self, event_loop: &ActiveEventLoop, spec: pebbles_widgets::window::WindowSpec) {
+        let attrs = WindowAttributes::default()
+            .with_title(spec.title.clone())
+            .with_inner_size(LogicalSize::new(spec.width, spec.height));
+        let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
+        let physical = window.inner_size();
+        let surface = pollster::block_on(self.context.create_surface(
+            window.clone(),
+            physical.width.max(1),
+            physical.height.max(1),
+            wgpu::PresentMode::AutoVsync,
+        ))
+        .expect("create surface");
+        self.renderers.resize_with(self.context.devices.len(), || None);
+        self.renderers[surface.dev_id].get_or_insert_with(|| {
+            Renderer::new(
+                &self.context.devices[surface.dev_id].device,
+                RendererOptions {
+                    use_cpu: false,
+                    antialiasing_support: AaSupport::all(),
+                    num_init_threads: None,
+                    pipeline_cache: None,
+                },
+            )
+            .expect("create vello renderer")
+        });
+        // A fresh Ui → a fresh window_id in the shared runtime. No OverlayHost:
+        // popovers/modals target the main window for now.
+        let mut ui = Ui::new();
+        ui.mount_root(View::new(spec.background, spec.root).boxed());
+        let wid = window.id();
+        window.request_redraw();
+        self.window_by_id.insert(spec.id, wid);
+        self.windows.insert(
+            wid,
+            WindowRuntime {
+                id: spec.id,
+                window,
+                surface,
+                ui,
+                background: spec.background,
+                cursor: Offset::ZERO,
+                armed_tap: None,
+                pan_target: None,
+                current_cursor: Cursor::Default,
+                on_close: spec.on_close,
+            },
+        );
+    }
+
+    /// Handle a window event addressed to a secondary window.
+    fn secondary_event(&mut self, window_id: WindowId, event: WindowEvent) {
+        let Some(mut w) = self.windows.remove(&window_id) else { return };
+        let mut keep = true;
+        match event {
+            WindowEvent::CloseRequested => {
+                self.window_by_id.remove(&w.id);
+                if let Some(f) = &w.on_close {
+                    f();
+                }
+                keep = false;
+            }
+            WindowEvent::Resized(size) => {
+                if size.width > 0 && size.height > 0 {
+                    self.context.resize_surface(&mut w.surface, size.width, size.height);
+                    w.window.request_redraw();
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let scale = w.window.scale_factor();
+                w.cursor = Offset::new(position.x / scale, position.y / scale);
+                if w.ui.dispatch_hover(w.cursor) {
+                    w.window.request_redraw();
+                }
+                if let Some(t) = w.pan_target
+                    && w.ui.dispatch_pan_update(t, w.cursor)
+                {
+                    w.window.request_redraw();
+                }
+                let want = w.ui.cursor_at(w.cursor).unwrap_or(Cursor::Default);
+                if want != w.current_cursor {
+                    w.current_cursor = want;
+                    w.window.set_cursor(to_winit_cursor(want));
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let dy = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => -(y as f64) * LINE_SCROLL,
+                    MouseScrollDelta::PixelDelta(p) => -p.y / w.window.scale_factor(),
+                };
+                if w.ui.dispatch_scroll(w.cursor, dy) {
+                    w.window.request_redraw();
+                }
+            }
+            WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
+                let cursor = w.cursor;
+                let handled = match state {
+                    ElementState::Pressed => {
+                        pebbles_core::focus::set_focus(None);
+                        w.armed_tap = w.ui.tap_target_at(cursor);
+                        w.pan_target = w.ui.pan_target_at(cursor);
+                        let panned = w.pan_target.is_some_and(|t| w.ui.dispatch_pan_start(t, cursor));
+                        w.ui.dispatch_pointer_down(cursor) || panned
+                    }
+                    ElementState::Released => {
+                        if let Some(t) = w.pan_target.take() {
+                            w.ui.dispatch_pan_end(t, cursor);
+                        }
+                        let up = w.ui.dispatch_pointer_up(cursor);
+                        let up_target = w.ui.tap_target_at(cursor);
+                        let armed = w.armed_tap.take();
+                        let tapped = if up_target.is_some() && up_target == armed {
+                            w.ui.dispatch_tap(cursor)
+                        } else if let Some(a) = armed {
+                            w.ui.dispatch_tap_cancel(a)
+                        } else {
+                            false
+                        };
+                        up || tapped
+                    }
+                };
+                if handled {
+                    w.window.request_redraw();
+                }
+            }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.shift_down = modifiers.state().shift_key();
+                self.ctrl_down = modifiers.state().control_key();
+                pebbles_core::keyboard::set_modifiers(self.shift_down, self.ctrl_down);
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state == ElementState::Pressed {
+                    let handled = if event.logical_key == Key::Named(NamedKey::Tab) {
+                        w.ui.focus_move(!self.shift_down)
+                    } else {
+                        let intent = to_command(&event, self.ctrl_down, self.shift_down);
+                        intent.is_some_and(|ki| w.ui.dispatch_key(ki))
+                            || matches!(
+                                event.logical_key.as_ref(),
+                                Key::Named(NamedKey::Enter | NamedKey::Space) | Key::Character(" ")
+                            ) && w.ui.dispatch_activate()
+                    };
+                    if handled {
+                        w.window.request_redraw();
+                    }
+                }
+            }
+            WindowEvent::RedrawRequested => self.render_window(&mut w),
+            _ => {}
+        }
+        if keep {
+            self.windows.insert(window_id, w);
+        }
+    }
+
+    /// Render one secondary window (mirrors [`render`], reusing the shared scene,
+    /// renderers and GPU context).
+    fn render_window(&mut self, w: &mut WindowRuntime) {
+        let now = self.clock.elapsed().as_secs_f64();
+        pebbles_core::animation::tick(now);
+        let loading_images = pebbles_widgets::image_view::pump();
+
+        w.ui.rebuild_if_dirty();
+        let scale = w.window.scale_factor();
+        let phys = w.window.inner_size();
+        if phys.width == 0 || phys.height == 0 {
+            return;
+        }
+        let logical = Size::new(phys.width as f64 / scale, phys.height as f64 / scale);
+        w.ui.layout(&mut self.text, logical);
+
+        self.scene.reset();
+        w.ui.paint(&mut self.scene);
+        self.frame.reset();
+        self.frame.append(&self.scene, Some(Affine::scale(scale)));
+
+        let surface = &w.surface;
+        let device_handle = &self.context.devices[surface.dev_id];
+        let renderer = self.renderers[surface.dev_id].as_mut().expect("renderer");
+        renderer
+            .render_to_texture(
+                &device_handle.device,
+                &device_handle.queue,
+                &self.frame,
+                &surface.target_view,
+                &RenderParams {
+                    base_color: w.background,
+                    width: phys.width,
+                    height: phys.height,
+                    antialiasing_method: AaConfig::Area,
+                },
+            )
+            .expect("vello render");
+        let surface_texture = match surface.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+            _ => return,
+        };
+        let mut encoder = device_handle
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.window.blit") });
+        let target_view =
+            surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        surface.blitter.copy(&device_handle.device, &mut encoder, &surface.target_view, &target_view);
+        device_handle.queue.submit([encoder.finish()]);
+        w.window.pre_present_notify();
+        surface_texture.present();
+
+        if loading_images || pebbles_core::animation::active() {
+            w.window.request_redraw();
+        }
+    }
 }
+
 
 impl ApplicationHandler for Runner {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -374,6 +631,7 @@ impl ApplicationHandler for Runner {
         if !self.mounted {
             pebbles_core::focus::init(); // create the global focus signal (before any component)
             pebbles_widgets::overlay::init(); // create the global overlay signal too
+            pebbles_widgets::dialog::init(); // and the global modal-dialog signal
             install_clipboard(); // wire the system clipboard for Ctrl+C/X/V
             let root = self.pending_root.take().expect("root widget");
             self.ui.mount_root(View::new(self.background, root).boxed());
@@ -387,9 +645,15 @@ impl ApplicationHandler for Runner {
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
+        window_id: WindowId,
         event: WindowEvent,
     ) {
+        // Route events for a secondary window to its own handler.
+        if self.windows.contains_key(&window_id) {
+            self.secondary_event(window_id, event);
+            self.pump_windows(event_loop);
+            return;
+        }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
 
@@ -453,14 +717,25 @@ impl ApplicationHandler for Runner {
                         -p.y / scale
                     }
                 };
-                // Scrolling dismisses any open popover (standard dropdown behavior),
-                // so it never gets "left behind" the trigger.
-                if pebbles_widgets::overlay::is_open() {
-                    pebbles_widgets::overlay::hide_overlay();
-                    self.request_redraw();
-                }
                 let cursor = self.cursor;
-                if self.ui.dispatch_scroll(cursor, dy) {
+                use pebbles_widgets::overlay;
+                if overlay::is_open() {
+                    if overlay::over_panel(cursor.x, cursor.y) {
+                        // Wheel over the popover itself → scroll its own content only.
+                        if self.ui.dispatch_scroll(cursor, dy) {
+                            self.request_redraw();
+                        }
+                    } else if self.ui.dispatch_scroll(cursor, dy) {
+                        // Wheel over the page behind the popover → the page scrolls, so
+                        // slide the popover with it (stays glued to its trigger).
+                        overlay::shift(0.0, -dy);
+                        self.request_redraw();
+                    } else {
+                        // Nowhere to scroll → dismiss so it never floats detached.
+                        overlay::hide_overlay();
+                        self.request_redraw();
+                    }
+                } else if self.ui.dispatch_scroll(cursor, dy) {
                     self.request_redraw();
                 }
             }
@@ -567,6 +842,14 @@ impl ApplicationHandler for Runner {
 
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == ElementState::Pressed {
+                    // Escape closes an open (dismissible) modal dialog first.
+                    if event.logical_key == Key::Named(NamedKey::Escape)
+                        && pebbles_widgets::dialog::is_open()
+                    {
+                        pebbles_widgets::dialog::dismiss_top();
+                        self.request_redraw();
+                        return;
+                    }
                     // Tab always moves focus. Otherwise, translate to an edit intent
                     // and route to the focused text editor; if none consumes it,
                     // fall back to Enter/Space activation.
@@ -599,9 +882,16 @@ impl ApplicationHandler for Runner {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // A reactive write (from an effect, timer, etc.) requests a new frame.
+        // Open/close any secondary windows requested since the last turn.
+        self.pump_windows(event_loop);
+        // A reactive write (from an effect, timer, etc.) requests a new frame — on the
+        // main window and every secondary window (they share the reactive runtime, so
+        // a signal written in one repaints the others).
         if pebbles_core::reactive::frame_requested() {
             self.request_redraw();
+            for w in self.windows.values() {
+                w.window.request_redraw();
+            }
         }
         // Recognize a long press once held past the deadline: fires on_long_press +
         // on_long_press_start, then the gesture becomes "active" (moves/end follow).

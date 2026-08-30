@@ -1,0 +1,11 @@
+[package]
+name = "pebbles-icons"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Icon data model for Pebbles + the bundled Lucide icon set."
+
+[dependencies]

@@ -14,6 +14,7 @@ description = "Pebbles — a Flutter-style, desktop-first GUI framework built on
 [workspace.dependencies]
 # --- internal crates (bottom-up: foundation → render → core → widgets → shell → umbrella) ---
 pebbles-foundation = { path = "crates/pebbles-foundation", version = "0.0.1" }
+pebbles-icons = { path = "crates/pebbles-icons", version = "0.0.1" }
 pebbles-render = { path = "crates/pebbles-render", version = "0.0.1" }
 pebbles-core = { path = "crates/pebbles-core", version = "0.0.1" }
 pebbles-widgets = { path = "crates/pebbles-widgets", version = "0.0.1" }

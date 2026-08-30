@@ -31,16 +31,22 @@ new_key_type! {
     struct EffectId;
 }
 
-/// Whatever is currently "reading" signals: a component element, or an effect.
+/// A component instance's identity across the runtime: which **window** (`Ui`) it
+/// lives in, plus its element id. Each window has an independent element arena, so
+/// element ids collide between windows — the window number disambiguates them. The
+/// single-window case is simply window `0`.
+pub(crate) type CompKey = (u32, ElementId);
+
+/// Whatever is currently "reading" signals: a component instance, or an effect.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Observer {
-    Component(ElementId),
+    Component(CompKey),
     Effect(EffectId),
 }
 
 struct SignalSlot {
     value: Box<dyn Any>,
-    component_subs: HashSet<ElementId>,
+    component_subs: HashSet<CompKey>,
     effect_subs: HashSet<EffectId>,
 }
 
@@ -55,16 +61,24 @@ struct Runtime {
     /// The observer currently running (for auto-subscription).
     observer: Option<Observer>,
     /// The component currently rendering (owns the local signals it creates).
-    owner: Option<ElementId>,
+    owner: Option<CompKey>,
+    /// The window (`Ui`) currently rendering — folded into each `CompKey` so two
+    /// windows' components never alias. Set by the `Ui` before it builds/reconciles.
+    current_window: u32,
     /// Per-component ordered signal ids, for persisting local signals across
     /// re-renders (create signals at the top level of a component — the React rule).
-    hooks: std::collections::HashMap<ElementId, Vec<SignalId>>,
+    hooks: std::collections::HashMap<CompKey, Vec<SignalId>>,
     hook_cursor: usize,
     /// Per-component unmount callbacks (registry cleanup, etc). Re-registered each
     /// render (cleared in `begin_component`); run in `dispose_component`.
-    cleanups: std::collections::HashMap<ElementId, Vec<Box<dyn FnOnce()>>>,
+    cleanups: std::collections::HashMap<CompKey, Vec<Box<dyn FnOnce()>>>,
+    /// A globally-unique u64 per component instance — the id the render-side
+    /// registries (text-edit layout, scroll) key by, so they never collide across
+    /// windows even though raw element ids do.
+    instances: std::collections::HashMap<CompKey, u64>,
+    next_instance: u64,
     /// Components scheduled to re-render.
-    pending_components: Vec<ElementId>,
+    pending_components: Vec<CompKey>,
     /// Effects scheduled to re-run.
     pending_effects: Vec<EffectId>,
     /// Set when a write happened; the shell polls this to request a frame.
@@ -181,8 +195,13 @@ impl<T: 'static + Clone> Signal<T> {
     }
 
     /// Mutate the value in place and schedule dependents. The closure must not touch
-    /// the runtime (don't read/write other signals inside it).
+    /// the runtime (don't read/write other signals inside it). A no-op if the signal
+    /// was already disposed (mirrors [`set`](Self::set)), so a lingering handler on an
+    /// unmounted component can never use-after-free.
     pub fn update(&self, f: impl FnOnce(&mut T)) {
+        if !self.alive() {
+            return;
+        }
         // Clone out → run f outside the borrow → set back (avoids re-entrancy).
         let mut value = self.peek();
         f(&mut value);
@@ -197,7 +216,7 @@ impl<T: 'static + Clone> Signal<T> {
 }
 
 fn schedule_subscribers(rt: &mut Runtime, id: SignalId) {
-    let components: Vec<ElementId> = rt.signals[id].component_subs.drain().collect();
+    let components: Vec<CompKey> = rt.signals[id].component_subs.drain().collect();
     let effects: Vec<EffectId> = rt.signals[id].effect_subs.drain().collect();
     for c in components {
         if !rt.pending_components.contains(&c) {
@@ -286,24 +305,32 @@ impl<S: 'static + Clone> Store<S> {
 
 /// Opaque save-state returned by [`begin_component`].
 pub(crate) struct ComponentGuard {
-    owner: Option<ElementId>,
+    owner: Option<CompKey>,
     observer: Option<Observer>,
     cursor: usize,
 }
 
-/// Begin rendering component `id`: it becomes the signal owner + read observer, and
-/// its local-signal cursor resets. Returns a guard to restore afterwards.
+/// Begin rendering component `id` (in the current window): it becomes the signal
+/// owner + read observer, and its local-signal cursor resets. Returns a guard to
+/// restore afterwards.
 pub(crate) fn begin_component(id: ElementId) -> ComponentGuard {
     with_rt(|rt| {
+        let key = (rt.current_window, id);
         let guard = ComponentGuard { owner: rt.owner, observer: rt.observer, cursor: rt.hook_cursor };
-        rt.owner = Some(id);
-        rt.observer = Some(Observer::Component(id));
+        rt.owner = Some(key);
+        rt.observer = Some(Observer::Component(key));
         rt.hook_cursor = 0;
+        // Assign a stable, globally-unique instance id on first render.
+        if !rt.instances.contains_key(&key) {
+            rt.next_instance += 1;
+            let iid = rt.next_instance;
+            rt.instances.insert(key, iid);
+        }
         // Cleanups are re-registered fresh each render (they only run on unmount).
-        rt.cleanups.remove(&id);
+        rt.cleanups.remove(&key);
         // Clear this component's old subscriptions so tracking is fresh each run.
         for slot in rt.signals.values_mut() {
-            slot.component_subs.remove(&id);
+            slot.component_subs.remove(&key);
         }
         guard
     })
@@ -320,20 +347,22 @@ pub(crate) fn end_component(guard: ComponentGuard) {
 
 /// Free a component's local signals when it unmounts, after running its cleanups.
 pub(crate) fn dispose_component(id: ElementId) {
+    let key = with_rt(|rt| (rt.current_window, id));
     // Run unmount callbacks first (outside the borrow, so they may touch signals).
-    let cleanups = with_rt(|rt| rt.cleanups.remove(&id).unwrap_or_default());
+    let cleanups = with_rt(|rt| rt.cleanups.remove(&key).unwrap_or_default());
     for f in cleanups {
         f();
     }
     with_rt(|rt| {
-        if let Some(ids) = rt.hooks.remove(&id) {
+        if let Some(ids) = rt.hooks.remove(&key) {
             for sid in ids {
                 rt.signals.remove(sid);
             }
         }
         for slot in rt.signals.values_mut() {
-            slot.component_subs.remove(&id);
+            slot.component_subs.remove(&key);
         }
+        rt.instances.remove(&key);
     });
 }
 
@@ -348,9 +377,21 @@ pub fn create_cleanup(f: impl FnOnce() + 'static) {
     });
 }
 
-/// Drain the components scheduled to re-render (called by the engine each frame).
-pub(crate) fn take_pending_components() -> Vec<ElementId> {
-    with_rt(|rt| std::mem::take(&mut rt.pending_components))
+/// Drain the components of `window` scheduled to re-render (each `Ui` drains only
+/// its own, leaving other windows' pending work untouched).
+pub(crate) fn take_pending_components(window: u32) -> Vec<ElementId> {
+    with_rt(|rt| {
+        let mut mine = Vec::new();
+        rt.pending_components.retain(|&(w, e)| {
+            if w == window {
+                mine.push(e);
+                false
+            } else {
+                true
+            }
+        });
+        mine
+    })
 }
 
 /// Run any scheduled effects (called before re-rendering components).
@@ -374,12 +415,38 @@ pub fn frame_requested() -> bool {
 /// The component element currently rendering, if any. Used to give a focus node a
 /// stable identity (the component's element id).
 pub fn current_owner() -> Option<ElementId> {
-    with_rt(|rt| rt.owner)
+    with_rt(|rt| rt.owner.map(|(_, e)| e))
 }
 
-/// The current component's stable id as a `u64` (matches render-tree source ids),
-/// for keying per-component registries (scroll, text-edit, …).
+/// The window (`Ui`) currently rendering — `0` is the main window.
+pub fn current_window() -> u32 {
+    with_rt(|rt| rt.current_window)
+}
+
+/// Set the window whose `Ui` is about to build/reconcile. Called by each `Ui`.
+pub(crate) fn set_current_window(window: u32) {
+    with_rt(|rt| rt.current_window = window);
+}
+
+/// The current component's globally-unique instance id (matches render-tree source
+/// ids), for keying per-component registries (scroll, text-edit, …). Unique across
+/// windows, unlike the raw element id.
 pub fn owner_id() -> Option<u64> {
-    use slotmap::Key;
-    current_owner().map(|id| id.data().as_ffi())
+    with_rt(|rt| rt.owner.and_then(|key| rt.instances.get(&key).copied()))
+}
+
+/// The globally-unique instance id for `(window, element)`, assigning one if the
+/// component hasn't rendered yet. Lets a focus node recover its render-registry key.
+pub fn instance_id(window: u32, element: ElementId) -> u64 {
+    with_rt(|rt| {
+        let key = (window, element);
+        if let Some(id) = rt.instances.get(&key) {
+            *id
+        } else {
+            rt.next_instance += 1;
+            let id = rt.next_instance;
+            rt.instances.insert(key, id);
+            id
+        }
+    })
 }

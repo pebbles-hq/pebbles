@@ -141,6 +141,28 @@ impl SizedBox {
     pub fn spacer(width: f64, height: f64) -> Self {
         SizedBox::new(Some(width), Some(height), None)
     }
+    /// A square box of side `dim` (Flutter's `SizedBox.square`).
+    pub fn square(dim: f64, child: impl pebbles_core::IntoWidget) -> Self {
+        SizedBox::new(Some(dim), Some(dim), Some(child.into_widget()))
+    }
+    /// Expands to fill the parent on both axes (Flutter's `SizedBox.expand`).
+    pub fn expand(child: impl pebbles_core::IntoWidget) -> Self {
+        SizedBox::new(Some(f64::INFINITY), Some(f64::INFINITY), Some(child.into_widget()))
+    }
+    /// A zero-size box (Flutter's `SizedBox.shrink`).
+    pub fn shrink() -> Self {
+        SizedBox::new(Some(0.0), Some(0.0), None)
+    }
+    /// Force a width on the child (unset height passes through).
+    pub fn width(mut self, width: f64) -> Self {
+        self.width = Some(width);
+        self
+    }
+    /// Force a height on the child (unset width passes through).
+    pub fn height(mut self, height: f64) -> Self {
+        self.height = Some(height);
+        self
+    }
 
     fn constraints(&self) -> BoxConstraints {
         let (min_w, max_w) = match self.width {
@@ -153,6 +175,12 @@ impl SizedBox {
         };
         BoxConstraints { min_width: min_w, max_width: max_w, min_height: min_h, max_height: max_h }
     }
+}
+
+/// Wrap a child in a [`SizedBox`], then chain `.width()` / `.height()` to force a
+/// size — Flutter's `SizedBox(width:, height:, child:)`. Unset axes pass through.
+pub fn sized_box(child: impl pebbles_core::IntoWidget) -> SizedBox {
+    SizedBox::new(None, None, Some(child.into_widget()))
 }
 
 pebbles_core::render_widget!(SizedBox);

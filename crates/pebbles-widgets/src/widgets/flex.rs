@@ -13,6 +13,7 @@ struct FlexConfig {
     main_axis_alignment: MainAxisAlignment,
     cross_axis_alignment: CrossAxisAlignment,
     main_axis_size: MainAxisSize,
+    spacing: f64,
 }
 
 impl Default for FlexConfig {
@@ -21,6 +22,7 @@ impl Default for FlexConfig {
             main_axis_alignment: MainAxisAlignment::Start,
             cross_axis_alignment: CrossAxisAlignment::Center,
             main_axis_size: MainAxisSize::Max,
+            spacing: 0.0,
         }
     }
 }
@@ -40,6 +42,11 @@ macro_rules! flex_builders {
         /// Shrink-wrap the main axis instead of filling it.
         pub fn main_axis_min(mut self) -> Self {
             self.config.main_axis_size = MainAxisSize::Min;
+            self
+        }
+        /// A fixed gap between adjacent children (Flutter's `spacing:`).
+        pub fn spacing(mut self, value: f64) -> Self {
+            self.config.spacing = value;
             self
         }
     };
@@ -78,6 +85,7 @@ impl RenderWidget for Row {
             self.config.main_axis_alignment,
             self.config.cross_axis_alignment,
             self.config.main_axis_size,
+            self.config.spacing,
         ))
     }
     fn update_render_object(&self, object: &mut dyn RenderObject) {
@@ -85,6 +93,7 @@ impl RenderWidget for Row {
             f.main_axis_alignment = self.config.main_axis_alignment;
             f.cross_axis_alignment = self.config.cross_axis_alignment;
             f.main_axis_size = self.config.main_axis_size;
+            f.spacing = self.config.spacing;
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {
@@ -125,6 +134,7 @@ impl RenderWidget for Column {
             self.config.main_axis_alignment,
             self.config.cross_axis_alignment,
             self.config.main_axis_size,
+            self.config.spacing,
         ))
     }
     fn update_render_object(&self, object: &mut dyn RenderObject) {
@@ -132,6 +142,7 @@ impl RenderWidget for Column {
             f.main_axis_alignment = self.config.main_axis_alignment;
             f.cross_axis_alignment = self.config.cross_axis_alignment;
             f.main_axis_size = self.config.main_axis_size;
+            f.spacing = self.config.spacing;
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {

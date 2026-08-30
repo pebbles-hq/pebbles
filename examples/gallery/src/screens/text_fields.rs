@@ -1,6 +1,6 @@
 use pebbles::prelude::*;
 
-use crate::ui::{doc, gap_h, screen, vstack};
+use crate::ui::{doc, gap_h, screen};
 
 const W: f64 = 360.0;
 
@@ -14,64 +14,59 @@ pub fn text_fields() -> impl IntoWidget {
 
     screen(
         "Text Fields",
-        "Every single-line input type — text, password, email, number, search, date, url, phone — plus multiline. All built on one TextField with full editing, filtering, and icons.",
+        "There is ONE text widget. Like Flutter's single TextField, the input type is a config — text_field().kind(InputKind::Email) — not a widget per type. The kind drives the character filter, leading icon, placeholder, formatting and any affordance (password eye, search clear).",
         children![
             doc(
-                "Text",
-                "The plain input. Click to focus, then type — arrows/Home/End, Ctrl+A/C/X/V, undo, drag-select and double-click-word all work. .on_changed() reports every edit.",
-                vstack(
+                "Text — the base",
+                "text_field() with no kind. Click to focus, then type — arrows/Home/End, Ctrl+A/C/X/V, undo, drag-select and double-click-word all work. .on_changed() reports every edit.",
+                column(
                     children![
                         text_field().placeholder("Your name").width(W).on_changed(move |s| name.set(s.to_string())),
                         muted(format!("value: {}", name.get())),
-                    ],
-                    10.0,
-                ),
+                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(10.0),
             ),
             doc(
                 "Password",
-                "Obscured entry with a built-in show/hide (eye) toggle and a lock icon. password_field() manages the visibility itself.",
-                password_field().width(W),
+                "text_field().kind(InputKind::Password) — a lock icon and a built-in show/hide (eye) toggle, obscuring managed for you.",
+                text_field().kind(InputKind::Password).width(W),
             ),
             doc(
                 "Email",
-                "An envelope icon and a no-spaces filter. email_field() is text_field().leading(Mail).filter(…).",
-                email_field().width(W),
+                "kind(InputKind::Email) — an envelope icon and a no-spaces filter.",
+                text_field().kind(InputKind::Email).width(W),
             ),
             doc(
-                "Number",
-                "Accepts only digits, a decimal point and a minus sign via .filter(). Letters simply don't register.",
-                number_field().placeholder("Amount").width(W),
+                "Number & currency",
+                "kind(InputKind::Number) accepts digits, a decimal point and a minus sign. kind(InputKind::Currency) also groups thousands and prefixes $ as you type.",
+                column(
+                    children![
+                        text_field().kind(InputKind::Number).placeholder("Amount").width(W),
+                        gap_h(12.0),
+                        text_field().kind(InputKind::Currency).width(W),
+                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
             ),
             doc(
                 "Search",
-                "A leading magnifier and a clear (×) button that appears once there's text. search_field() owns the value so the button can reset it.",
-                vstack(
+                "kind(InputKind::Search) — a leading magnifier and a clear (×) button that appears once there's text.",
+                column(
                     children![
-                        search_field().width(W).on_changed(move |s| query.set(s.to_string())),
+                        text_field().kind(InputKind::Search).width(W).on_changed(move |s| query.set(s.to_string())),
                         muted(format!("query: {}", query.get())),
-                    ],
-                    10.0,
-                ),
-            ),
-            doc(
-                "Date",
-                "Type digits and they auto-format to MM/DD/YYYY, or click the calendar button to pick from a month grid (navigate months with the arrows).",
-                date_field().width(W),
+                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(10.0),
             ),
             doc(
                 "Label, helper & validation",
-                "The shadcn form-field shape: a label above, helper text below, and an error state that swaps the helper for a destructive message and border. Type letters without an @ to see the error.",
-                vstack(
+                "The kind composes with everything else — here Email plus the shadcn form-field shape: a label above, helper below, and an error state. Type letters without an @ to see the error.",
+                column(
                     children![
-                        email_field()
+                        text_field()
+                            .kind(InputKind::Email)
                             .label("Email")
                             .helper("We'll never share your email.")
                             .width(W)
                             .on_changed(move |s| mail.set(s.to_string()))
                             .error_opt(mail_err),
-                    ],
-                    0.0,
-                ),
+                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
             ),
             doc(
                 "Disabled",
@@ -80,11 +75,13 @@ pub fn text_fields() -> impl IntoWidget {
             ),
             doc(
                 "URL & phone",
-                "url_field() blocks spaces; phone_field() allows digits and phone punctuation with a phone icon.",
-                vstack(
-                    children![url_field().width(W), gap_h(12.0), phone_field().width(W)],
-                    0.0,
-                ),
+                "kind(InputKind::Url) blocks spaces; kind(InputKind::Phone) allows digits and phone punctuation with a phone icon.",
+                column(
+                    children![
+                        text_field().kind(InputKind::Url).width(W),
+                        gap_h(12.0),
+                        text_field().kind(InputKind::Phone).width(W),
+                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
             ),
             doc(
                 "Character limit",

@@ -4,6 +4,7 @@
 mod chrome;
 mod disclosure;
 mod panel;
+mod resizable;
 mod split;
 
 pub use chrome::{
@@ -12,4 +13,5 @@ pub use chrome::{
 };
 pub use disclosure::{Accordion, Collapsible, accordion, collapsible};
 pub use panel::{Panel, panel};
+pub use resizable::{Resizable, resizable};
 pub use split::{SplitView, split_view};

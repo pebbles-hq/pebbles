@@ -1,12 +1,12 @@
 //! [`RenderDecoratedBox`] — paints a [`BoxDecoration`] (shadows, background,
 //! border, rounded corners) behind and around its child.
 
-use pebbles_foundation::{Offset, Rect, Size};
-use vello::kurbo::{Affine, Shape, Stroke};
+use pebbles_foundation::{Alignment, Offset, Rect, Size};
+use vello::kurbo::{Affine, BezPath, Circle, Point, Shape, Stroke};
 use vello::peniko::Fill;
 
 use crate::constraints::BoxConstraints;
-use crate::decoration::BoxDecoration;
+use crate::decoration::{BlendMode, BorderSide, BoxDecoration, BoxShape, Gradient, ImageFit};
 use crate::object::RenderObject;
 use crate::tree::{LayoutCx, PaintCx};
 
@@ -34,27 +34,79 @@ impl RenderObject for RenderDecoratedBox {
     }
 
     fn paint(&self, cx: &mut PaintCx, offset: Offset) {
-        let rect = Rect::from_origin_size(offset.to_point(), cx.size());
-        let radii = self.decoration.radius.to_radii();
-        let rounded = rect.to_rounded_rect(radii);
+        let size = cx.size();
+        let rect = Rect::from_origin_size(offset.to_point(), size);
+        let d = &self.decoration;
+
+        // The outline path, plus an equivalent corner radius for the shadow.
+        let (path, shadow_radius): (BezPath, f64) = match d.shape {
+            BoxShape::Circle => {
+                let r = size.width.min(size.height) / 2.0;
+                let center = Point::new(rect.x0 + size.width / 2.0, rect.y0 + size.height / 2.0);
+                (Circle::new(center, r).to_path(0.1), r)
+            }
+            BoxShape::Rectangle => {
+                (rect.to_rounded_rect(d.radius.to_radii()).to_path(0.1), d.radius.max())
+            }
+        };
 
         // 1. Shadows (behind everything).
-        for shadow in &self.decoration.shadows {
-            let shadow_rect =
-                Rect::from_origin_size((offset + shadow.offset).to_point(), cx.size())
-                    .inflate(shadow.spread, shadow.spread);
+        for shadow in &d.shadows {
+            let shadow_rect = Rect::from_origin_size((offset + shadow.offset).to_point(), size)
+                .inflate(shadow.spread, shadow.spread);
             cx.scene.draw_blurred_rounded_rect(
                 Affine::IDENTITY,
                 shadow_rect,
                 shadow.color,
-                self.decoration.radius.max(),
+                shadow_radius,
                 shadow.blur.max(0.01),
             );
         }
 
-        // 2. Background fill.
-        if let Some(color) = self.decoration.color {
-            cx.scene.fill(Fill::NonZero, Affine::IDENTITY, color, None, &rounded);
+        // 2. Background fill — a gradient if set, otherwise a solid color. When a
+        // blend mode is set, the fill composites with the backdrop through a layer.
+        let has_fill = d.gradient.is_some() || d.color.is_some();
+        if has_fill {
+            let layered = d.blend.is_some();
+            if let Some(blend) = d.blend {
+                cx.scene.push_layer(Fill::NonZero, blend, 1.0, Affine::IDENTITY, &path);
+            }
+            if let Some(gradient) = &d.gradient {
+                let brush = gradient_brush(gradient, rect);
+                cx.scene.fill(Fill::NonZero, Affine::IDENTITY, &brush, None, &path);
+            } else if let Some(color) = d.color {
+                cx.scene.fill(Fill::NonZero, Affine::IDENTITY, color, None, &path);
+            }
+            if layered {
+                cx.scene.pop_layer();
+            }
+        }
+
+        // 2b. Background image — clipped to the box, scaled per its fit.
+        if let Some(image) = &d.image {
+            let iw = image.image.width as f64;
+            let ih = image.image.height as f64;
+            if iw > 0.0 && ih > 0.0 {
+                let (sx, sy) = match d.image_fit {
+                    ImageFit::Cover => {
+                        let s = (size.width / iw).max(size.height / ih);
+                        (s, s)
+                    }
+                    ImageFit::Contain => {
+                        let s = (size.width / iw).min(size.height / ih);
+                        (s, s)
+                    }
+                    ImageFit::Fill => (size.width / iw, size.height / ih),
+                    ImageFit::None => (1.0, 1.0),
+                };
+                let (dw, dh) = (iw * sx, ih * sy);
+                let tx = rect.x0 + (size.width - dw) / 2.0;
+                let ty = rect.y0 + (size.height - dh) / 2.0;
+                let placement = Affine::translate((tx, ty)) * Affine::scale_non_uniform(sx, sy);
+                cx.scene.push_layer(Fill::NonZero, BlendMode::Normal, 1.0, Affine::IDENTITY, &path);
+                cx.scene.draw_image(image, placement);
+                cx.scene.pop_layer();
+            }
         }
 
         // 3. Child, painted on top of the background.
@@ -62,14 +114,57 @@ impl RenderObject for RenderDecoratedBox {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
 
-        // 4. Border, stroked on top (centered on the rounded-rect path).
-        if let Some(border) = self.decoration.border {
-            let stroke = Stroke::new(border.width);
-            cx.scene.stroke(&stroke, Affine::IDENTITY, border.color, None, &rounded.to_path(0.1));
+        // 4. Border. A uniform border strokes the outline crisply; a per-side border
+        // strokes each edge as a straight inset line.
+        if let Some(border) = d.border {
+            if border.is_uniform() {
+                let side = border.top;
+                if side.width > 0.0 {
+                    cx.scene.stroke(&Stroke::new(side.width), Affine::IDENTITY, side.color, None, &path);
+                }
+            } else {
+                paint_side(cx, border.top, (rect.x0, rect.y0 + border.top.width / 2.0), (rect.x1, rect.y0 + border.top.width / 2.0));
+                paint_side(cx, border.bottom, (rect.x0, rect.y1 - border.bottom.width / 2.0), (rect.x1, rect.y1 - border.bottom.width / 2.0));
+                paint_side(cx, border.left, (rect.x0 + border.left.width / 2.0, rect.y0), (rect.x0 + border.left.width / 2.0, rect.y1));
+                paint_side(cx, border.right, (rect.x1 - border.right.width / 2.0, rect.y0), (rect.x1 - border.right.width / 2.0, rect.y1));
+            }
         }
     }
 
     fn debug_name(&self) -> &'static str {
         "RenderDecoratedBox"
     }
+}
+
+/// Map an alignment (`-1..1` in each axis) to an absolute point within `rect`.
+fn point_in(rect: Rect, a: Alignment) -> Point {
+    Point::new(
+        rect.x0 + (a.x + 1.0) / 2.0 * rect.width(),
+        rect.y0 + (a.y + 1.0) / 2.0 * rect.height(),
+    )
+}
+
+/// Build a peniko gradient positioned within `rect` from a [`Gradient`] spec.
+fn gradient_brush(g: &Gradient, rect: Rect) -> vello::peniko::Gradient {
+    use vello::peniko::Gradient as PGrad;
+    match g {
+        Gradient::Linear { begin, end, colors } => {
+            PGrad::new_linear(point_in(rect, *begin), point_in(rect, *end)).with_stops(&colors[..])
+        }
+        Gradient::Radial { center, radius, colors } => {
+            let r = (rect.width().min(rect.height()) * radius) as f32;
+            PGrad::new_radial(point_in(rect, *center), r).with_stops(&colors[..])
+        }
+    }
+}
+
+/// Stroke a single border edge as a straight line from `p0` to `p1`.
+fn paint_side(cx: &mut PaintCx, side: BorderSide, p0: (f64, f64), p1: (f64, f64)) {
+    if side.width <= 0.0 {
+        return;
+    }
+    let mut line = BezPath::new();
+    line.move_to(p0);
+    line.line_to(p1);
+    cx.scene.stroke(&Stroke::new(side.width), Affine::IDENTITY, side.color, None, &line);
 }

@@ -5,12 +5,11 @@ use crate::ui::{screen, section};
 pub fn navigation() -> impl IntoWidget {
     let tab = create_signal(0usize);
     let acc = create_signal([true, false, false]);
-    let open = create_signal(false);
     let pg = create_signal(2usize);
 
     screen(
         "Navigation",
-        "Tabs, accordion, collapsible, breadcrumb, pagination.",
+        "Tabs, accordion, breadcrumb, pagination.",
         children![
             section(
                 "TABS",
@@ -25,10 +24,6 @@ pub fn navigation() -> impl IntoWidget {
                     .item("Is it accessible?", muted("Yes. It follows the box protocol."), acc.get()[0], action(move || acc.update(|a| a[0] = !a[0])))
                     .item("Is it styled?", muted("Yes, from theme tokens."), acc.get()[1], action(move || acc.update(|a| a[1] = !a[1])))
                     .item("Is it animated?", muted("Not yet — on the roadmap."), acc.get()[2], action(move || acc.update(|a| a[2] = !a[2]))),
-            ),
-            section(
-                "COLLAPSIBLE",
-                collapsible("Toggle details", body("Collapsed details here."), open.get(), action(move || open.update(|v| *v = !*v))),
             ),
             section("BREADCRUMB", breadcrumb(vec!["Home".into(), "Projects".into(), "Pebbles".into()])),
             section(

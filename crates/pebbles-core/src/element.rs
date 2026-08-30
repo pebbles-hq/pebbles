@@ -88,9 +88,26 @@ fn category(widget: &dyn Widget) -> Category {
     }
 }
 
-/// The UI engine: element arena + render tree + dirty set.
+thread_local! {
+    /// Hands out a distinct id to each `Ui` (window). The first — the main window —
+    /// is `0`, matching the single-window runtime exactly.
+    static NEXT_UI_ID: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+fn next_ui_id() -> u32 {
+    NEXT_UI_ID.with(|c| {
+        let v = c.get();
+        c.set(v + 1);
+        v
+    })
+}
+
+/// The UI engine: element arena + render tree + dirty set. Each `Ui` is one window;
+/// its `ui_id` namespaces its components in the shared reactive runtime so multiple
+/// windows never alias each other's element ids.
 #[derive(Default)]
 pub struct Ui {
+    ui_id: u32,
     elements: SlotMap<ElementId, ElementNode>,
     render: RenderTree,
     root: Option<ElementId>,
@@ -120,7 +137,12 @@ struct HoverTarget {
 
 impl Ui {
     pub fn new() -> Self {
-        Self::default()
+        Ui { ui_id: next_ui_id(), ..Self::default() }
+    }
+
+    /// This window's id in the shared runtime (`0` = main window).
+    pub fn window_id(&self) -> u32 {
+        self.ui_id
     }
 
     /// Read-only access to the render tree (the shell lays out / paints it).
@@ -133,6 +155,7 @@ impl Ui {
     /// Inflate `widget` as the root of the tree. The root widget must ultimately
     /// own a render object (the shell wraps user content in a `View`).
     pub fn mount_root(&mut self, widget: AnyWidget) {
+        crate::reactive::set_current_window(self.ui_id);
         let root = self.inflate(None, widget);
         self.root = Some(root);
         self.render.root = self.elements[root].render_id;
@@ -143,9 +166,11 @@ impl Ui {
     /// Reconcile every dirty subtree. Returns `true` if anything was rebuilt (the
     /// shell then re-runs layout + paint).
     pub fn rebuild_if_dirty(&mut self) -> bool {
-        // Run scheduled effects, then fold reactive re-renders into the dirty set.
+        crate::reactive::set_current_window(self.ui_id);
+        // Run scheduled effects, then fold THIS window's reactive re-renders into the
+        // dirty set (other windows drain their own).
         crate::reactive::flush_effects();
-        for id in crate::reactive::take_pending_components() {
+        for id in crate::reactive::take_pending_components(self.ui_id) {
             self.mark_dirty(id);
         }
         if self.dirty.is_empty() {
@@ -407,9 +432,16 @@ impl Ui {
             PointerEvent { position: point, global: point, button: PointerButton::Primary };
         let mut fired = false;
         if let Some(old) = self.hovered.take() {
-            for invoke in old.exits {
-                self.run_invoke(invoke, hover_event);
-                fired = true;
+            // Only fire the previously-hovered widget's exit handlers if it still
+            // exists. If it unmounted while hovered (e.g. a click swapped the panel
+            // out from under the cursor), its handler closures capture now-freed
+            // signals — invoking them would use-after-free. The widget is already
+            // gone, so there is nothing to "exit".
+            if self.render.contains(old.key) {
+                for invoke in old.exits {
+                    self.run_invoke(invoke, hover_event);
+                    fired = true;
+                }
             }
         }
         if let Some((key, enters, exits)) = found {
@@ -448,7 +480,7 @@ impl Ui {
 
     /// Move keyboard focus to the next (`forward`) or previous focusable (Tab).
     pub fn focus_move(&mut self, forward: bool) -> bool {
-        crate::focus::focus_move(forward)
+        crate::focus::focus_move(self.ui_id, forward)
     }
 
     /// Scroll the topmost scrollable under `point` by `delta` (logical px). Returns
@@ -579,6 +611,12 @@ impl Ui {
     /// Update the active scrollbar drag to `point`. Returns whether it scrolled.
     pub fn update_scrollbar_drag(&mut self, point: Offset) -> bool {
         let Some(rid) = self.scrollbar_drag else { return false };
+        // The scroll view may have unmounted mid-drag (e.g. its overlay closed on a
+        // wheel/resize). Drop the stale drag instead of indexing a freed node.
+        if !self.render.contains(rid) {
+            self.scrollbar_drag = None;
+            return false;
+        }
         let local = point - self.render.absolute_offset(rid);
         let size = self.render.size_of(rid);
         // Imperative scroll view.

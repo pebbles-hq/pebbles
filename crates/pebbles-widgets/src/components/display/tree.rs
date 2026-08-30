@@ -3,7 +3,7 @@
 //! rebuilds the tree from their own state.
 
 use pebbles_foundation::palette;
-use pebbles_render::IconKind;
+use pebbles_render::{IconData, IconKind};
 
 use pebbles_core::context::{BuildContext, Callback};
 use crate::theme::theme;
@@ -16,7 +16,7 @@ use crate::components::icon;
 #[derive(Clone, Default)]
 pub struct TreeNode {
     label: String,
-    icon: Option<IconKind>,
+    icon: Option<IconData>,
     children: Vec<TreeNode>,
     expanded: bool,
     selected: bool,
@@ -30,8 +30,8 @@ pub fn tree_node(label: impl Into<String>) -> TreeNode {
 }
 
 impl TreeNode {
-    pub fn icon(mut self, kind: IconKind) -> Self {
-        self.icon = Some(kind);
+    pub fn icon(mut self, kind: impl Into<IconData>) -> Self {
+        self.icon = Some(kind.into());
         self
     }
     pub fn children(mut self, children: Vec<TreeNode>) -> Self {

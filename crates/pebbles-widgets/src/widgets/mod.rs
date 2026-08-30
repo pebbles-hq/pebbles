@@ -20,7 +20,9 @@ mod stack;
 mod text;
 mod view;
 
-pub use boxes::{Align, ColoredBox, ConstrainedBox, Padding, SizedBox, center};
+mod transform;
+pub use transform::{Transform, transform};
+pub use boxes::{Align, ColoredBox, ConstrainedBox, Padding, SizedBox, center, sized_box};
 pub use container::Container;
 pub use decorated::DecoratedBox;
 pub use editable::{EditableText, editable};

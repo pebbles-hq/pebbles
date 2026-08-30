@@ -33,6 +33,8 @@ pub struct RenderFlex {
     pub main_axis_alignment: MainAxisAlignment,
     pub cross_axis_alignment: CrossAxisAlignment,
     pub main_axis_size: MainAxisSize,
+    /// Fixed gap inserted between adjacent children (Flutter's `Flex.spacing`).
+    pub spacing: f64,
 }
 
 impl RenderFlex {
@@ -41,8 +43,9 @@ impl RenderFlex {
         main_axis_alignment: MainAxisAlignment,
         cross_axis_alignment: CrossAxisAlignment,
         main_axis_size: MainAxisSize,
+        spacing: f64,
     ) -> Self {
-        RenderFlex { axis, main_axis_alignment, cross_axis_alignment, main_axis_size }
+        RenderFlex { axis, main_axis_alignment, cross_axis_alignment, main_axis_size, spacing }
     }
 
     fn main_of(&self, size: Size) -> f64 {
@@ -112,6 +115,11 @@ impl RenderObject for RenderFlex {
             .map(|c| (c, cx.child_parent_data::<FlexParentData>(c).copied().unwrap_or_default()))
             .collect();
 
+        // Fixed inter-child spacing (Flutter's Flex.spacing): reserved before flex
+        // distribution and inserted between adjacent children when positioning.
+        let n = children.len();
+        let total_gap = if n > 1 { self.spacing * (n - 1) as f64 } else { 0.0 };
+
         let (cross_min_child, cross_max_child) = if stretch && cross_bounded {
             (cross_max, cross_max)
         } else {
@@ -133,9 +141,10 @@ impl RenderObject for RenderFlex {
             max_cross = max_cross.max(self.cross_of(size));
         }
 
-        // Pass 2: flexible children share the remaining main-axis space.
+        // Pass 2: flexible children share the remaining main-axis space (after the
+        // fixed gaps are reserved).
         if total_flex > 0 && main_max.is_finite() {
-            let free = (main_max - allocated_main).max(0.0);
+            let free = (main_max - allocated_main - total_gap).max(0.0);
             let space_per_flex = free / total_flex as f64;
             for &(child, data) in &children {
                 if data.flex == 0 {
@@ -154,10 +163,11 @@ impl RenderObject for RenderFlex {
             }
         }
 
-        // Resolve our own size.
+        // Resolve our own size — the content is the children plus the fixed gaps.
+        let content_main = allocated_main + total_gap;
         let main_size = match self.main_axis_size {
             MainAxisSize::Max if main_max.is_finite() => main_max,
-            _ => allocated_main,
+            _ => content_main,
         };
         let cross_size = if stretch && cross_bounded { cross_max } else { max_cross };
         let size = constraints.constrain(self.make_size(main_size, cross_size));
@@ -165,8 +175,7 @@ impl RenderObject for RenderFlex {
         let final_cross = self.cross_of(size);
 
         // Position children along the main axis per the alignment.
-        let n = children.len();
-        let free = (final_main - allocated_main).max(0.0);
+        let free = (final_main - content_main).max(0.0);
         let (leading, between) = match self.main_axis_alignment {
             MainAxisAlignment::Start => (0.0, 0.0),
             MainAxisAlignment::End => (free, 0.0),
@@ -197,7 +206,7 @@ impl RenderObject for RenderFlex {
                 }
             };
             cx.set_child_offset(child, self.make_offset(pos, cross_pos));
-            pos += child_main + between;
+            pos += child_main + between + self.spacing;
         }
 
         size

@@ -11,8 +11,8 @@ pub use data::{ListTile, Table, list_tile, table};
 pub use icon::{Icon, icon};
 pub use progress::{Progress, progress};
 pub use surfaces::{
-    Alert, AlertVariant, Avatar, Badge, BadgeVariant, Card, Separator, Skeleton, alert, avatar,
-    badge, separator, skeleton,
+    Alert, AlertVariant, Avatar, AvatarGroup, AvatarShape, Badge, BadgeVariant, Card, Separator,
+    Skeleton, alert, avatar, avatar_group, badge, card, separator, skeleton,
 };
 pub use tree::{TreeNode, TreeView, tree_node, tree_view};
 pub use typography::{body, heading, label, muted, subtitle, title};

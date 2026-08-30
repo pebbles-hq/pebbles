@@ -29,7 +29,7 @@ pub fn app() -> impl IntoWidget {
     let brand = Padding::new(
         EdgeInsets::symmetric(6.0, 10.0),
         row(children![
-            icon(IconKind::Circle).size(20.0).color(c.primary),
+            icon(lucide::GEM).size(20.0).color(c.primary),
             SizedBox::spacer(8.0, 0.0),
             text("Pebbles").size(17.0).bold().color(c.foreground),
         ])
@@ -58,17 +58,30 @@ pub fn app() -> impl IntoWidget {
         .route("overview", || component(screens::overview::overview))
         .route("buttons", || component(screens::buttons::buttons))
         .route("text-fields", || component(screens::text_fields::text_fields))
+        .route("date-picker", || component(screens::date_picker::date_picker))
         .route("select", || component(screens::selects::selects))
+        .route("combobox", || component(screens::combobox::combobox_screen))
         .route("toggles", || component(screens::toggles::toggles))
+        .route("radio-group", || component(screens::radiogroup::radio_groups))
         .route("slider", || component(screens::sliders::sliders))
+        .route("progress", || component(screens::progress::progress_screen))
+        .route("button-group", || component(screens::button_group::button_groups))
+        .route("dialog", || component(screens::dialog::dialogs_screen))
+        .route("windows", || component(screens::windows::windows))
         .route("layout", || component(screens::layout::layout))
+        .route("resizable", || component(screens::resizable::resizables))
         .route("surfaces", || component(screens::surfaces::surfaces))
+        .route("separator", || component(screens::separator::separators))
+        .route("avatar", || component(screens::avatar::avatars))
+        .route("card", || component(screens::card::cards))
+        .route("collapsible", || component(screens::collapsible::collapsibles))
         .route("styling", || component(screens::styling::styling))
         .route("colors", || component(screens::colors::colors))
         .route("navigation", || component(screens::navigation::navigation))
         .route("data", || component(screens::data::data))
         .route("typography", || component(screens::typography::typography))
         .route("icons", || component(screens::icons::icons))
+        .route("images", || component(screens::images::images))
         .fallback(|| component(screens::overview::overview));
 
     let top = top_panel(label_for(&current))

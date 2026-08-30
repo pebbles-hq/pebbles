@@ -8,7 +8,7 @@
 use pebbles_foundation::{
     Color, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, palette,
 };
-use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconKind};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconData};
 
 use pebbles_core::children;
 use pebbles_core::context::{BuildContext, Callback};
@@ -154,7 +154,7 @@ impl StatelessWidget for TopPanel {
 /// A single side-nav row: optional icon + label, a selected flag, and a callback.
 #[derive(Clone)]
 pub struct NavItem {
-    icon: Option<IconKind>,
+    icon: Option<IconData>,
     label: String,
     selected: bool,
     on_select: Option<Callback>,
@@ -166,8 +166,8 @@ pub fn nav_item(label: impl Into<String>) -> NavItem {
 }
 
 impl NavItem {
-    pub fn icon(mut self, kind: IconKind) -> Self {
-        self.icon = Some(kind);
+    pub fn icon(mut self, kind: impl Into<IconData>) -> Self {
+        self.icon = Some(kind.into());
         self
     }
     pub fn selected(mut self, selected: bool) -> Self {
@@ -323,15 +323,15 @@ impl StatelessWidget for SideNav {
 /// A bottom navigation bar item: an icon over a label.
 #[derive(Clone)]
 pub struct BottomNavItem {
-    icon: IconKind,
+    icon: IconData,
     label: String,
     selected: bool,
     on_select: Option<Callback>,
 }
 
 /// Create a [`BottomNavItem`].
-pub fn bottom_nav_item(icon: IconKind, label: impl Into<String>) -> BottomNavItem {
-    BottomNavItem { icon, label: label.into(), selected: false, on_select: None }
+pub fn bottom_nav_item(icon: impl Into<IconData>, label: impl Into<String>) -> BottomNavItem {
+    BottomNavItem { icon: icon.into(), label: label.into(), selected: false, on_select: None }
 }
 
 impl BottomNavItem {

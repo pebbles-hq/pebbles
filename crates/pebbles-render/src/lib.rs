@@ -26,18 +26,22 @@ pub mod tree;
 mod tests;
 
 pub use constraints::BoxConstraints;
-pub use decoration::{Border, BorderRadius, BoxDecoration, BoxShadow};
+pub use decoration::{BlendMode, Border, BorderRadius, BorderSide, BoxDecoration, BoxShadow, BoxShape, Gradient, Image, ImageFit, image_from_rgba8};
+// (Image = peniko ImageBrush)
 pub use object::RenderObject;
 pub use objects::{
-    Cursor, FlexParentData, IconKind, ParagraphStyle, PointerButton, PointerEvent, RenderAlign,
+    Cursor, FlexParentData, IconData, IconKind, IconPrim, ParagraphStyle, PointerButton,
+    PointerEvent, RenderAlign,
     RenderAspectRatio,
     RenderClipRRect, RenderColoredBox, RenderConstrainedBox, RenderDecoratedBox, RenderFlex,
     RenderIcon, RenderOpacity, RenderPadding, RenderParagraph, RenderPointerListener, RenderScroll,
-    RenderList, RenderSpinner, RenderStack, RenderTextField, RenderView, RenderWrap,
-    ScrollbarPolicy, ScrollbarStyle, StackFit, StackParentData, TapCallback, TextFieldStyle,
+    RenderList, RenderSpinner, RenderTransform, RenderStack, RenderTextField, RenderView, RenderWrap,
+    ScrollbarPolicy, ScrollbarStyle, StackFit, StackParentData, TapCallback, TextFieldStyle, lucide,
 };
 pub use text::TextEnv;
 pub use tree::{LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};
 
 /// Re-export the vello scene type the paint layer targets.
 pub use vello::Scene;
+/// Re-export the 2D affine transform used by [`RenderTransform`].
+pub use vello::kurbo::Affine;

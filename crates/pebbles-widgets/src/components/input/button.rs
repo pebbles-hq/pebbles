@@ -6,7 +6,7 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{Color, EdgeInsets};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, IconKind};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, IconData};
 
 use pebbles_core::component::{Element, component_props};
 use pebbles_core::context::{Callback, action};
@@ -43,8 +43,8 @@ pub enum ButtonSize {
 /// A clickable action button.
 pub struct Button {
     label: String,
-    leading: Option<IconKind>,
-    trailing: Option<IconKind>,
+    leading: Option<IconData>,
+    trailing: Option<IconData>,
     content: Option<AnyWidget>,
     variant: ButtonVariant,
     size: ButtonSize,
@@ -133,13 +133,13 @@ impl Button {
         self
     }
     /// An icon before the label.
-    pub fn leading(mut self, icon: IconKind) -> Self {
-        self.leading = Some(icon);
+    pub fn leading(mut self, icon: impl Into<IconData>) -> Self {
+        self.leading = Some(icon.into());
         self
     }
     /// An icon after the label.
-    pub fn trailing(mut self, icon: IconKind) -> Self {
-        self.trailing = Some(icon);
+    pub fn trailing(mut self, icon: impl Into<IconData>) -> Self {
+        self.trailing = Some(icon.into());
         self
     }
     pub fn variant(mut self, variant: ButtonVariant) -> Self {
@@ -546,7 +546,7 @@ fn render_button(b: &Button) -> Element {
 
 /// A square icon-only button with hover + pressed feedback.
 pub struct IconButton {
-    kind: IconKind,
+    kind: IconData,
     icon_size: f64,
     variant: ButtonVariant,
     on_pressed: Option<Callback>,
@@ -554,9 +554,9 @@ pub struct IconButton {
 }
 
 /// Create an [`IconButton`] for the given icon.
-pub fn icon_button(kind: IconKind) -> IconButton {
+pub fn icon_button(kind: impl Into<IconData>) -> IconButton {
     IconButton {
-        kind,
+        kind: kind.into(),
         icon_size: 18.0,
         variant: ButtonVariant::Ghost,
         on_pressed: None,

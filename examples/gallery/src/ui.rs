@@ -63,42 +63,6 @@ pub fn doc(title: &str, desc: &str, body: impl IntoWidget) -> impl IntoWidget {
     .main_axis_min()
 }
 
-/// A horizontal group with even gaps.
-pub fn hstack<I, W>(items: I, gap: f64) -> impl IntoWidget
-where
-    I: IntoIterator<Item = W>,
-    W: IntoWidget,
-{
-    let items: Vec<AnyWidget> = items.into_iter().map(IntoWidget::into_widget).collect();
-    let mut spaced: Vec<AnyWidget> = Vec::new();
-    let last = items.len().saturating_sub(1);
-    for (i, item) in items.into_iter().enumerate() {
-        spaced.push(item);
-        if i != last {
-            spaced.push(gap_w(gap).into_widget());
-        }
-    }
-    row(spaced).cross_axis_alignment(CrossAxisAlignment::Center).main_axis_min()
-}
-
-/// A vertical group with even gaps.
-pub fn vstack<I, W>(items: I, gap: f64) -> impl IntoWidget
-where
-    I: IntoIterator<Item = W>,
-    W: IntoWidget,
-{
-    let items: Vec<AnyWidget> = items.into_iter().map(IntoWidget::into_widget).collect();
-    let mut spaced: Vec<AnyWidget> = Vec::new();
-    let last = items.len().saturating_sub(1);
-    for (i, item) in items.into_iter().enumerate() {
-        spaced.push(item);
-        if i != last {
-            spaced.push(gap_h(gap).into_widget());
-        }
-    }
-    column(spaced).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min()
-}
-
 // ---------------------------------------------------------------------------
 // Props demo: a reusable stat card via `component_props`.
 // ---------------------------------------------------------------------------

@@ -12,8 +12,11 @@ use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets};
 use pebbles_render::text_edit as edit;
-use pebbles_render::{BorderRadius, BoxDecoration, Cursor, IconKind, PointerEvent, TextFieldStyle};
+use pebbles_render::{
+    BorderRadius, BoxDecoration, Cursor, IconData, IconKind, PointerEvent, TextFieldStyle, lucide,
+};
 
+use super::{ButtonVariant, icon_button};
 use crate::components::icon;
 use crate::theme::{mix, theme};
 use crate::widgets::{
@@ -21,22 +24,138 @@ use crate::widgets::{
 };
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{
-    KeyInput, Motion, Signal, action_event, animated, clipboard, component_props, create_focus,
-    create_signal, keyboard,
+    KeyInput, Motion, Signal, action, action_event, animated, clipboard, component_props,
+    create_focus, create_signal, keyboard,
 };
 
 /// One undo/redo snapshot: text + selection.
 type Snap = (String, usize, usize);
 
+/// The kind of a text-based input. This is the **single knob** for every
+/// text-based field — number, email, URL, currency, password, search, … — the way
+/// Flutter's one `TextField` takes a `keyboardType`. It drives the character
+/// filter, leading icon, placeholder and formatting, plus any built-in affordance
+/// (a password show/hide toggle, a search clear button). Set with
+/// [`TextField::kind`]; explicit `.filter()` / `.leading()` / `.placeholder()` /
+/// `.format()` still override it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum InputKind {
+    /// Free text (the default).
+    #[default]
+    Text,
+    /// A signed decimal number (digits, `.`, `-`).
+    Number,
+    /// A signed whole number (digits, `-`).
+    Integer,
+    /// An unsigned decimal (digits, `.`).
+    Decimal,
+    /// An email address — envelope icon, no spaces.
+    Email,
+    /// A URL — no spaces.
+    Url,
+    /// A phone number — phone icon, digits and phone punctuation.
+    Phone,
+    /// A currency amount — `$` icon, digits/`.`, grouped as `$1,234.56`.
+    Currency,
+    /// Obscured entry — lock icon and a built-in show/hide (eye) toggle.
+    Password,
+    /// A search box — magnifier icon and a clear (×) button when non-empty.
+    Search,
+}
+
+/// The character filter a kind imposes (before any explicit `.filter()`).
+fn kind_filter(kind: InputKind) -> Option<Rc<dyn Fn(char) -> bool>> {
+    let f: fn(char) -> bool = match kind {
+        InputKind::Number => |c| c.is_ascii_digit() || c == '.' || c == '-',
+        InputKind::Integer => |c| c.is_ascii_digit() || c == '-',
+        InputKind::Decimal | InputKind::Currency => |c| c.is_ascii_digit() || c == '.',
+        InputKind::Email | InputKind::Url => |c| !c.is_whitespace(),
+        InputKind::Phone => |c| c.is_ascii_digit() || "()+- ".contains(c),
+        _ => return None,
+    };
+    Some(Rc::new(f))
+}
+
+/// The leading icon a kind adds (before any explicit `.leading()`).
+fn kind_leading(kind: InputKind) -> Option<IconData> {
+    Some(match kind {
+        InputKind::Email => IconKind::Mail.into(),
+        InputKind::Phone => IconKind::Phone.into(),
+        InputKind::Password => IconKind::Lock.into(),
+        InputKind::Search => IconKind::Search.into(),
+        InputKind::Currency => lucide::DOLLAR_SIGN,
+        _ => return None,
+    })
+}
+
+/// The default placeholder a kind suggests (used only when none is set).
+fn kind_placeholder(kind: InputKind) -> &'static str {
+    match kind {
+        InputKind::Number | InputKind::Integer => "0",
+        InputKind::Decimal => "0.00",
+        InputKind::Currency => "$0.00",
+        InputKind::Email => "you@example.com",
+        InputKind::Url => "https://example.com",
+        InputKind::Phone => "(555) 123-4567",
+        InputKind::Password => "Password",
+        InputKind::Search => "Search…",
+        InputKind::Text => "",
+    }
+}
+
+/// The input mask a kind applies (before any explicit `.format()`).
+fn kind_format(kind: InputKind) -> Option<Rc<dyn Fn(&str) -> String>> {
+    match kind {
+        InputKind::Currency => Some(Rc::new(format_currency)),
+        _ => None,
+    }
+}
+
+/// Group a run of digits into thousands: `"1234567" → "1,234,567"`.
+fn group_thousands(digits: &str) -> String {
+    let d: String = digits.chars().filter(char::is_ascii_digit).collect();
+    let n = d.len();
+    let mut out = String::with_capacity(n + n / 3);
+    for (i, ch) in d.chars().enumerate() {
+        if i > 0 && (n - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+/// Format a currency amount: strip to digits/`.`, group the integer part and
+/// prefix `$` (`"1234.5" → "$1,234.5"`).
+fn format_currency(s: &str) -> String {
+    let cleaned: String = s.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
+    if cleaned.is_empty() {
+        return String::new();
+    }
+    let mut it = cleaned.splitn(2, '.');
+    let int_part = it.next().unwrap_or("");
+    let frac_part = it.next();
+    let grouped = group_thousands(int_part);
+    let int_str = if grouped.is_empty() { "0".to_string() } else { grouped };
+    match frac_part {
+        Some(f) => {
+            let f: String = f.chars().filter(char::is_ascii_digit).take(2).collect();
+            format!("${int_str}.{f}")
+        }
+        None => format!("${int_str}"),
+    }
+}
+
 /// A themed text input. Build with [`text_field`] / [`text_area`].
 pub struct TextField {
+    kind: InputKind,
     placeholder: String,
     initial: String,
     width: Option<f64>,
     multiline: bool,
     lines: u32,
     obscure: Option<char>,
-    leading: Option<IconKind>,
+    leading: Option<IconData>,
     trailing: Option<AnyWidget>,
     char_filter: Option<Rc<dyn Fn(char) -> bool>>,
     max_length: Option<usize>,
@@ -57,6 +176,7 @@ pub struct TextField {
 /// A single-line text input.
 pub fn text_field() -> TextField {
     TextField {
+        kind: InputKind::Text,
         placeholder: String::new(),
         initial: String::new(),
         width: None,
@@ -88,6 +208,15 @@ pub fn text_area(lines: u32) -> TextField {
 }
 
 impl TextField {
+    /// Set the input **type** — the one control for number/email/url/currency/
+    /// password/search/… It applies that type's character filter, leading icon,
+    /// placeholder, formatting and any built-in affordance (password eye toggle,
+    /// search clear button). Explicit `.filter()`, `.leading()`, `.placeholder()`
+    /// and `.format()` still take precedence.
+    pub fn kind(mut self, kind: InputKind) -> Self {
+        self.kind = kind;
+        self
+    }
     /// Placeholder shown while empty.
     pub fn placeholder(mut self, s: impl Into<String>) -> Self {
         self.placeholder = s.into();
@@ -114,8 +243,8 @@ impl TextField {
         self
     }
     /// An icon inside the field on the left.
-    pub fn leading(mut self, icon: IconKind) -> Self {
-        self.leading = Some(icon);
+    pub fn leading(mut self, icon: impl Into<IconData>) -> Self {
+        self.leading = Some(icon.into());
         self
     }
     /// A widget inside the field on the right (a clear button, a toggle, …).
@@ -205,13 +334,14 @@ impl TextField {
 }
 
 struct Props {
+    kind: InputKind,
     placeholder: String,
     initial: String,
     width: Option<f64>,
     multiline: bool,
     lines: u32,
     obscure: Option<char>,
-    leading: Option<IconKind>,
+    leading: Option<IconData>,
     trailing: Option<AnyWidget>,
     char_filter: Option<Rc<dyn Fn(char) -> bool>>,
     max_length: Option<usize>,
@@ -234,6 +364,7 @@ impl IntoWidget for TextField {
         component_props(
             render_field,
             Props {
+                kind: self.kind,
                 placeholder: self.placeholder,
                 initial: self.initial,
                 width: self.width,
@@ -573,15 +704,30 @@ fn render_field(p: &Props) -> AnyWidget {
     };
     let focused = !disabled && focus.is_focused();
 
+    // Type-driven defaults — the kind's filter, icon, placeholder, format and
+    // built-in affordances. Each is overridden by an explicit builder call.
+    let kind = p.kind;
+    let visible = create_signal(false); // password show/hide
+    let eff_filter = p.char_filter.clone().or_else(|| kind_filter(kind));
+    let eff_format = p.format.clone().or_else(|| kind_format(kind));
+    let eff_leading = p.leading.or_else(|| kind_leading(kind));
+    let eff_placeholder = if p.placeholder.is_empty() {
+        kind_placeholder(kind).to_string()
+    } else {
+        p.placeholder.clone()
+    };
+    let eff_obscure =
+        if kind == InputKind::Password { (!visible.get()).then_some('•') } else { p.obscure };
+
     // Only a live (enabled) field is focusable + edits.
     if !disabled {
         focus.register(Rc::new(|| {}), p.on_focus_change.clone(), p.autofocus);
         let on_changed = p.on_changed.clone();
         let on_submit = p.on_submit.clone();
         let on_editing = p.on_editing_complete.clone();
-        let filter = p.char_filter.clone();
+        let filter = eff_filter.clone();
         let max_length = p.max_length;
-        let format = p.format.clone();
+        let format = eff_format.clone();
         focus.register_editor(Rc::new(move |k: KeyInput| {
             let (changed, submit) =
                 ed.apply(k, filter.as_deref(), max_length, format.as_deref());
@@ -616,23 +762,58 @@ fn render_field(p: &Props) -> AnyWidget {
     let val = ed.value.get();
     let vlen = val.len();
     let inner = editable(val)
-        .placeholder(p.placeholder.clone())
+        .placeholder(eff_placeholder.clone())
         .selection(ed.anchor.get().min(vlen), ed.focus.get().min(vlen))
         .focused(focused)
-        .obscure(p.obscure)
+        .obscure(eff_obscure)
         .multiline(p.multiline)
         .field_id(ed.id)
         .style(style);
 
+    // Built-in trailing affordance for password/search (unless one was set).
+    let eff_trailing: Option<AnyWidget> = if let Some(t) = p.trailing.clone() {
+        Some(t)
+    } else if disabled {
+        None
+    } else {
+        match kind {
+            InputKind::Password => Some(
+                icon_button(if visible.get() { IconKind::EyeOff } else { IconKind::Eye })
+                    .variant(ButtonVariant::Ghost)
+                    .size(16.0)
+                    .on_pressed(action(move || visible.update(|v| *v = !*v)))
+                    .into_widget(),
+            ),
+            InputKind::Search if !ed.value.get().is_empty() => {
+                let oc = p.on_changed.clone();
+                Some(
+                    icon_button(IconKind::Close)
+                        .variant(ButtonVariant::Ghost)
+                        .size(15.0)
+                        .on_pressed(action(move || {
+                            ed.value.set(String::new());
+                            ed.anchor.set(0);
+                            ed.focus.set(0);
+                            if let Some(cb) = &oc {
+                                cb("");
+                            }
+                        }))
+                        .into_widget(),
+                )
+            }
+            _ => None,
+        }
+    };
+
     // Compose with an optional leading icon and/or trailing widget.
-    let content: AnyWidget = if (p.leading.is_some() || p.trailing.is_some()) && !p.multiline {
+    let content: AnyWidget = if (eff_leading.is_some() || eff_trailing.is_some()) && !p.multiline {
         let mut kids: Vec<AnyWidget> = Vec::new();
-        if let Some(lead) = p.leading {
+        if let Some(lead) = eff_leading {
             kids.push(icon(lead).size(16.0).color(c.muted_foreground).into_widget());
             kids.push(SizedBox::spacer(8.0, 0.0).into_widget());
         }
         kids.push(Expanded::new(inner).into_widget());
-        if let Some(trail) = p.trailing.clone() {
+        if let Some(trail) = eff_trailing {
             kids.push(SizedBox::spacer(6.0, 0.0).into_widget());
             kids.push(trail);
         }
@@ -652,7 +833,7 @@ fn render_field(p: &Props) -> AnyWidget {
     } else {
         (38.0, EdgeInsets::symmetric(12.0, 0.0), Alignment::CENTER_LEFT)
     };
-    let lead_off = if p.leading.is_some() { 24.0 } else { 0.0 };
+    let lead_off = if eff_leading.is_some() { 24.0 } else { 0.0 };
     let (cl, ct) = if p.multiline { (11.0, 11.0) } else { (13.0 + lead_off, 10.0) };
 
     let mut field = Container::new()

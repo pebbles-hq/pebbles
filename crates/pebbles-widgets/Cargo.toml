@@ -9,6 +9,9 @@ repository.workspace = true
 description = "The Pebbles catalog: Flutter-style widgets, shadcn-style components, theme and styling."
 
 [dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+ureq = "2"
+base64 = "0.22"
 pebbles-core.workspace = true
 pebbles-foundation.workspace = true
 pebbles-render.workspace = true

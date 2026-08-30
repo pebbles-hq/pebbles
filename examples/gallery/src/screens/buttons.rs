@@ -1,6 +1,6 @@
 use pebbles::prelude::*;
 
-use crate::ui::{doc, gap_h, gap_w, hstack, screen, vstack};
+use crate::ui::{doc, gap_h, gap_w, screen};
 
 /// A medium drop shadow (shadcn `shadow-md`).
 fn shadow_md() -> BoxShadow {
@@ -54,7 +54,7 @@ pub fn buttons() -> impl IntoWidget {
             doc(
                 "With an icon",
                 "A leading icon with .leading(), a trailing icon with .trailing(), any widget with .child(), or IconButton for a compact icon-only control.",
-                vstack(
+                column(
                     children![
                         wrap(children![
                             button("Search").leading(IconKind::Search),
@@ -71,9 +71,7 @@ pub fn buttons() -> impl IntoWidget {
                             icon_button(IconKind::Plus).variant(ButtonVariant::Primary),
                         ])
                         .spacing(8.0),
-                    ],
-                    0.0,
-                ),
+                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
             ),
             // -------------------------------------------------------------- colored
             doc(
@@ -123,15 +121,13 @@ pub fn buttons() -> impl IntoWidget {
             doc(
                 "Loading",
                 "Show a spinner and block interaction while an async action runs with .loading(true). The label stays so the button never jumps. Toggle the switch to try it.",
-                vstack(
+                column(
                     children![
-                        hstack(
+                        row(
                             children![
                                 switch(busy.get()).on_changed(action(move || busy.update(|v| *v = !*v))),
                                 label("Simulate busy"),
-                            ],
-                            10.0,
-                        ),
+                            ]).main_axis_min().spacing(10.0),
                         gap_h(14.0),
                         wrap(children![
                             button("Save").leading(IconKind::Check).loading(busy.get()),
@@ -139,15 +135,13 @@ pub fn buttons() -> impl IntoWidget {
                             button("").variant(ButtonVariant::Outline).loading(true),
                         ])
                         .spacing(12.0),
-                    ],
-                    0.0,
-                ),
+                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
             ),
             // ------------------------------------------------------------ click events
             doc(
                 "Click events",
                 "onPressed fires on a normal click; double-click, right-click (secondary) and long-press each have their own handler.",
-                vstack(
+                column(
                     children![
                         Card::new(title(format!("Last event: {}", last.get()))),
                         gap_h(12.0),
@@ -158,15 +152,13 @@ pub fn buttons() -> impl IntoWidget {
                             button("on_long_press").variant(ButtonVariant::Ghost).on_long_press(ev("on_long_press")),
                         ])
                         .spacing(10.0),
-                    ],
-                    0.0,
-                ),
+                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
             ),
             // ---------------------------------------------------------- press feedback
             doc(
                 "Press feedback",
                 "Follow a press precisely: the down position (on_tap_down), a cancel when you release off the button (on_tap_cancel), and highlight changes (on_highlight_changed).",
-                vstack(
+                column(
                     children![
                         Card::new(title(format!("Detail: {}", detail.get()))),
                         gap_h(12.0),
@@ -176,15 +168,13 @@ pub fn buttons() -> impl IntoWidget {
                             .on_tap_cancel(action(move || detail.set("tap CANCELLED (released off)".into())))
                             .on_highlight_changed(move |h| { if h { detail.set("highlighted (pressed)".into()); } })
                             .on_pressed(action(move || detail.set("tapped (released inside)".into()))),
-                    ],
-                    0.0,
-                ),
+                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
             ),
             // -------------------------------------------------- long-press & middle-click
             doc(
                 "Long-press & middle-click",
                 "The full long-press lifecycle — down → start → move → end/cancel — plus middle-click (tertiary). Every payload carries the pointer position.",
-                vstack(
+                column(
                     children![
                         Card::new(title(format!("Long-press / tertiary: {}", lp.get()))),
                         gap_h(12.0),
@@ -197,15 +187,13 @@ pub fn buttons() -> impl IntoWidget {
                             .on_long_press_end(action(move || lp.set("END (released)".into())))
                             .on_long_press_cancel(action(move || lp.set("cancelled (released too soon)".into())))
                             .on_tertiary_tap_up(action(move || lp.set("MIDDLE-click (tertiary)".into()))),
-                    ],
-                    0.0,
-                ),
+                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
             ),
             // ----------------------------------------------------------- focus & keyboard
             doc(
                 "Focus & keyboard",
                 "Tab moves focus, Enter/Space activates, .autofocus() grabs focus on mount, and .on_focus_change() reports gain/loss — a focus ring animates in.",
-                vstack(
+                column(
                     children![
                         Card::new(title(format!("Focus change: {}", focus_note.get()))),
                         gap_h(12.0),
@@ -222,9 +210,7 @@ pub fn buttons() -> impl IntoWidget {
                                 .on_pressed(action(move || focus_note.set("Third activated".into()))),
                         ])
                         .spacing(10.0),
-                    ],
-                    0.0,
-                ),
+                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
             ),
             // ------------------------------------------------------------ custom content
             doc(

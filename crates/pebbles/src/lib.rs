@@ -57,15 +57,16 @@ pub mod prelude {
 
     // render-level styling primitives (for advanced/custom decoration) + events
     pub use pebbles_render::{
-        Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, IconKind, PointerButton,
-        PointerEvent, TextFieldStyle,
+        Affine, BlendMode, Border, BorderRadius, BorderSide, BoxDecoration, BoxShadow, BoxShape,
+        Cursor, Gradient, IconData, IconKind, IconPrim, Image, ImageFit, PointerButton, PointerEvent, TextFieldStyle,
+        lucide,
     };
 
     // runtime (pebbles-core): reactivity (SolidJS-style) + function components + focus
     pub use pebbles_core::{
-        Component, Element, FocusNode, KeyInput, Motion, Signal, Store, action, action_event,
-        animate_to, animated, component, component_props, create_effect, create_focus, create_memo,
-        create_signal, create_store,
+        Channel, Component, Element, FocusNode, KeyInput, Motion, Signal, Store, action,
+        action_event, animate_to, animated, channel, component, component_props, create_effect,
+        create_focus, create_memo, create_signal, create_store,
     };
 
     // runtime (pebbles-core): the widget contract + reconciler handles
@@ -78,19 +79,25 @@ pub mod prelude {
     pub use pebbles_core::{BuildContext, State, StatefulWidget, StatelessWidget};
 
     // theming + the general style system (RN/CSS-like, apply anywhere)
-    pub use pebbles_widgets::{Colors, Style, StyleExt, Theme, style, styled, theme};
+    pub use pebbles_widgets::{Colors, Style, StyleExt, Theme, image_from_bytes, image_from_path, style, styled, theme};
 
     // the global overlay layer (dropdowns / menus / popovers)
     pub use pebbles_widgets::{OverlayHost, hide_overlay, show_overlay};
+
+    // modal dialogs (main-window overlay)
+    pub use pebbles_widgets::{Dialog, DialogId, close_dialog, dialog};
+
+    // secondary OS windows (share the runtime; talk via signals / Channel)
+    pub use pebbles_widgets::{Window, WindowId, close_window, window};
 
     // widgets: layout primitives + constructors
     pub use pebbles_widgets::{
         Align, AspectRatio, ClipRRect, ColoredBox, Column, ConstrainedBox, Container, DecoratedBox,
         EditableText, Expanded, Flexible, GestureDetector, GridView, ListView, Opacity, Padding,
         Positioned, Row, ScrollController, ScrollExt, ScrollbarPolicy, ScrollbarStyle,
-        SingleChildScrollView, SizedBox, Spinner, Stack, Text, View, Wrap, aspect_ratio, center,
-        column, editable, list_view, row, spacer, spinner, stack, text, use_scroll_controller,
-        wrap,
+        ImageView, SingleChildScrollView, SizedBox, Spinner, Stack, Text, Transform, View, Wrap, aspect_ratio,
+        center, column, editable, list_view, row, sized_box, spacer, spinner, stack, text, transform,
+        use_scroll_controller, wrap,
     };
 
     // the shadcn-style component catalog

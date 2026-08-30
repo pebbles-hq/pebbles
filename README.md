@@ -104,7 +104,11 @@ Everything below is built and shown in `cargo run -p gallery`, styled to **shadc
 - **Layout & primitives** — `Text`, `Container`, `Row`/`Column`, `Expanded`/`Flexible`/
   `spacer`, `Stack`/`Positioned`, `Padding`, `Align`/`center`, `SizedBox`,
   `ConstrainedBox`, `DecoratedBox` (color · border · radius · shadow), `Opacity`,
-  `ClipRRect`, `Wrap`, `AspectRatio`, `Icon` (Lucide-style vectors), `Spinner`.
+  `ClipRRect`, `Wrap`, `AspectRatio`, `Icon`, `Spinner`.
+- **Icons** — the full **Lucide** set (~1800 glyphs) ships as the default, addressable
+  by const (`lucide::CAMERA`), by name (`lucide::by_name("circle-check")`), or via the
+  named `IconKind` handles. An icon is plain data (`IconData`), so your own icons drop
+  in anywhere an icon is accepted — the set is fully pluggable.
 - **Gestures** — `GestureDetector` with the full pointer set: tap, double-tap,
   secondary/tertiary click, the long-press lifecycle, hover enter/exit, and drag/pan.
 - **Buttons** — `Button` (Primary/Secondary/Outline/Ghost/Destructive/Link · Sm/Md/Lg ·

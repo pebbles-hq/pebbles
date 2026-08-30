@@ -22,24 +22,33 @@
 //! Styles compose with [`Style::merge`] (later wins), like layering CSS classes.
 
 use pebbles_foundation::{Alignment, Color, EdgeInsets};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow};
+use pebbles_render::{
+    BlendMode, Border, BorderRadius, BoxDecoration, BoxShadow, BoxShape, Gradient, Image, ImageFit,
+    image_from_rgba8,
+};
 
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Align, DecoratedBox, Opacity, Padding, SizedBox};
 
-/// A general style value. Every field is optional; unset fields are inherited from
-/// a merged base or simply not applied.
-#[derive(Clone, Copy, Debug, Default)]
+/// A general style value (CSS-like). Every field is optional; unset fields are
+/// inherited from a merged base or simply not applied. Not `Copy` — it can own a
+/// gradient and a list of shadows — but cheap to `clone`.
+#[derive(Clone, Debug, Default)]
 pub struct Style {
     // ---- box (apply to any widget) ----
     pub background: Option<Color>,
+    pub gradient: Option<Gradient>,
     pub padding: Option<EdgeInsets>,
     pub margin: Option<EdgeInsets>,
     pub width: Option<f64>,
     pub height: Option<f64>,
     pub border: Option<Border>,
     pub radius: Option<BorderRadius>,
-    pub shadow: Option<BoxShadow>,
+    pub shape: Option<BoxShape>,
+    pub shadows: Vec<BoxShadow>,
+    pub blend: Option<BlendMode>,
+    pub image: Option<Image>,
+    pub image_fit: Option<ImageFit>,
     pub opacity: Option<f32>,
     pub align: Option<Alignment>,
     // ---- text (apply only to `Text`) ----
@@ -62,6 +71,11 @@ impl Style {
     // ---- box setters ----
     pub fn background(mut self, color: Color) -> Self {
         self.background = Some(color);
+        self
+    }
+    /// A gradient background (overrides `background` when painted).
+    pub fn gradient(mut self, gradient: Gradient) -> Self {
+        self.gradient = Some(gradient);
         self
     }
     pub fn padding(mut self, insets: EdgeInsets) -> Self {
@@ -103,8 +117,33 @@ impl Style {
     pub fn radius_all(self, value: f64) -> Self {
         self.radius(BorderRadius::all(value))
     }
+    /// The box outline shape (rectangle or circle).
+    pub fn shape(mut self, shape: BoxShape) -> Self {
+        self.shape = Some(shape);
+        self
+    }
+    /// Shorthand for a circular box.
+    pub fn circle(self) -> Self {
+        self.shape(BoxShape::Circle)
+    }
+    /// Append a drop shadow. Call repeatedly to stack several (CSS `box-shadow`).
     pub fn shadow(mut self, shadow: BoxShadow) -> Self {
-        self.shadow = Some(shadow);
+        self.shadows.push(shadow);
+        self
+    }
+    /// How the background blends with what's painted behind it (CSS `mix-blend-mode`).
+    pub fn blend(mut self, blend: BlendMode) -> Self {
+        self.blend = Some(blend);
+        self
+    }
+    /// A background image (decode with [`image_from_path`] / [`image_from_bytes`]).
+    pub fn image(mut self, image: Image) -> Self {
+        self.image = Some(image);
+        self
+    }
+    /// How the background image scales to the box (default: `Cover`).
+    pub fn image_fit(mut self, fit: ImageFit) -> Self {
+        self.image_fit = Some(fit);
         self
     }
     pub fn opacity(mut self, opacity: f32) -> Self {
@@ -145,13 +184,19 @@ impl Style {
     pub fn merge(self, other: Style) -> Style {
         Style {
             background: other.background.or(self.background),
+            gradient: other.gradient.or(self.gradient),
             padding: other.padding.or(self.padding),
             margin: other.margin.or(self.margin),
             width: other.width.or(self.width),
             height: other.height.or(self.height),
             border: other.border.or(self.border),
             radius: other.radius.or(self.radius),
-            shadow: other.shadow.or(self.shadow),
+            shape: other.shape.or(self.shape),
+            // A non-empty shadow list wins wholesale (like a CSS `box-shadow` override).
+            shadows: if other.shadows.is_empty() { self.shadows } else { other.shadows },
+            blend: other.blend.or(self.blend),
+            image: other.image.or(self.image),
+            image_fit: other.image_fit.or(self.image_fit),
             opacity: other.opacity.or(self.opacity),
             align: other.align.or(self.align),
             color: other.color.or(self.color),
@@ -165,9 +210,13 @@ impl Style {
     /// or `None` if none are set.
     pub(crate) fn decoration(&self) -> Option<BoxDecoration> {
         if self.background.is_none()
+            && self.gradient.is_none()
             && self.border.is_none()
             && self.radius.is_none()
-            && self.shadow.is_none()
+            && self.shape.is_none()
+            && self.shadows.is_empty()
+            && self.blend.is_none()
+            && self.image.is_none()
         {
             return None;
         }
@@ -175,14 +224,29 @@ impl Style {
         if let Some(c) = self.background {
             d = d.color(c);
         }
+        if let Some(g) = &self.gradient {
+            d = d.gradient(g.clone());
+        }
         if let Some(b) = self.border {
             d = d.border(b);
         }
         if let Some(r) = self.radius {
             d = d.radius(r);
         }
-        if let Some(s) = self.shadow {
-            d = d.shadow(s);
+        if let Some(s) = self.shape {
+            d = d.shape(s);
+        }
+        for shadow in &self.shadows {
+            d = d.shadow(*shadow);
+        }
+        if let Some(b) = self.blend {
+            d = d.blend(b);
+        }
+        if let Some(img) = &self.image {
+            d = d.image(img.clone());
+            if let Some(fit) = self.image_fit {
+                d = d.image_fit(fit);
+            }
         }
         Some(d)
     }
@@ -221,3 +285,20 @@ pub trait StyleExt: IntoWidget + Sized {
     }
 }
 impl<W: IntoWidget> StyleExt for W {}
+
+// ---------------------------------------------------------------------------
+// Image decoding — PNG / JPEG bytes → a paintable `Image`.
+// ---------------------------------------------------------------------------
+
+/// Decode PNG/JPEG bytes into a paintable [`Image`] for `style().image(..)`.
+/// Returns `None` if the data can't be decoded.
+pub fn image_from_bytes(bytes: &[u8]) -> Option<Image> {
+    let rgba = ::image::load_from_memory(bytes).ok()?.to_rgba8();
+    let (w, h) = rgba.dimensions();
+    Some(image_from_rgba8(w, h, rgba.into_raw()))
+}
+
+/// Read and decode an image file into a paintable [`Image`].
+pub fn image_from_path(path: impl AsRef<std::path::Path>) -> Option<Image> {
+    image_from_bytes(&std::fs::read(path).ok()?)
+}

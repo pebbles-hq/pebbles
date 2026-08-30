@@ -23,6 +23,7 @@ pub mod component;
 pub mod context;
 pub mod element;
 pub mod focus;
+pub mod ipc;
 pub mod key;
 pub mod keyboard;
 pub mod reactive;
@@ -35,6 +36,7 @@ pub use component::{Component, Element, component, component_props};
 pub use context::{BuildContext, Callback, action, action_event};
 pub use element::{ElementId, Ui};
 pub use focus::{FocusNode, create_focus};
+pub use ipc::{Channel, channel};
 pub use key::Key;
 pub use keyboard::{KeyInput, Motion};
 pub use reactive::{

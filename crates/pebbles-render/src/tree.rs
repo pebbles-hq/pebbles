@@ -16,6 +16,7 @@ use std::any::Any;
 use pebbles_foundation::{Offset, Rect, Size};
 use slotmap::{SlotMap, new_key_type};
 use smallvec::SmallVec;
+use vello::kurbo::Affine;
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;
@@ -277,21 +278,32 @@ impl RenderTree {
     pub fn hit_test(&self, point: Offset) -> Vec<RenderId> {
         let mut hits = Vec::new();
         if let Some(root) = self.root {
-            self.hit_test_node(root, point, Offset::ZERO, &mut hits);
+            self.hit_test_node(root, point, Affine::IDENTITY, &mut hits);
         }
         hits
     }
 
-    fn hit_test_node(&self, id: RenderId, point: Offset, origin: Offset, out: &mut Vec<RenderId>) {
+    /// `to_window` maps this node's parent's local space to window space. We carry a
+    /// full affine (not just an offset) so a transformed ancestor inverts correctly:
+    /// the window `point` is mapped into each node's own local space before the
+    /// rectangle test. For untransformed trees this is exactly the old offset walk.
+    fn hit_test_node(&self, id: RenderId, point: Offset, to_window: Affine, out: &mut Vec<RenderId>) {
         let node = &self.nodes[id];
-        let abs = origin + node.offset;
-        let rect = Rect::from_origin_size(abs.to_point(), node.size);
-        if !rect.contains(point.to_point()) {
+        // This node's local frame, then its own paint transform (rotate/scale).
+        let mut frame = to_window * Affine::translate((node.offset.x, node.offset.y));
+        if let Some(t) = node.object.as_deref().and_then(|o| o.transform(node.size)) {
+            frame *= t;
+        }
+        if frame.determinant().abs() < 1e-9 {
+            return; // degenerate transform — nothing is hittable
+        }
+        let local = frame.inverse() * point.to_point();
+        if !Rect::from_origin_size((0.0, 0.0), node.size).contains(local) {
             return;
         }
         out.push(id);
         for &child in &node.children {
-            self.hit_test_node(child, point, abs, out);
+            self.hit_test_node(child, point, frame, out);
         }
     }
 }
@@ -369,12 +381,26 @@ impl PaintCx<'_> {
         self.tree.nodes[self.current].children.clone()
     }
 
-    /// Paint `child` at the given **absolute** window offset.
+    /// Paint `child` at the given **absolute** window offset. If the child object
+    /// declares a `transform`, its subtree is painted into a fresh scene at the
+    /// local origin and appended transformed, so rotation/scale affect the whole
+    /// subtree (matching the inverse mapping in hit-testing).
     pub fn paint_child(&mut self, child: RenderId, absolute_offset: Offset) {
         let node = &self.tree.nodes[child];
-        if let Some(object) = node.object.as_deref() {
-            let mut sub = PaintCx { scene: &mut *self.scene, tree: self.tree, current: child };
-            object.paint(&mut sub, absolute_offset);
+        let Some(object) = node.object.as_deref() else { return };
+        match object.transform(node.size) {
+            Some(local_t) => {
+                let mut sub_scene = vello::Scene::new();
+                let mut sub = PaintCx { scene: &mut sub_scene, tree: self.tree, current: child };
+                object.paint(&mut sub, Offset::ZERO);
+                let placement =
+                    Affine::translate((absolute_offset.x, absolute_offset.y)) * local_t;
+                self.scene.append(&sub_scene, Some(placement));
+            }
+            None => {
+                let mut sub = PaintCx { scene: &mut *self.scene, tree: self.tree, current: child };
+                object.paint(&mut sub, absolute_offset);
+            }
         }
     }
 

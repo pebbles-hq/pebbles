@@ -35,12 +35,15 @@ pub fn is_open() -> bool {
     overlay_signal().peek().is_some()
 }
 
-/// A live overlay: its content and window-space top-left.
+/// A live overlay: its content, window-space top-left, and approximate panel size
+/// (used to tell a wheel over the panel from a wheel over the page behind it).
 #[derive(Clone)]
 pub struct OverlayEntry {
     pub content: AnyWidget,
     pub left: f64,
     pub top: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 thread_local! {
@@ -65,13 +68,35 @@ pub fn overlay_signal() -> Signal<Option<OverlayEntry>> {
 }
 
 /// Show `content` at window position `(left, top)`, replacing any current overlay.
-pub fn show_overlay(content: AnyWidget, left: f64, top: f64) {
-    overlay_signal().set(Some(OverlayEntry { content, left, top }));
+/// `width`/`height` are the panel's approximate size — the shell uses them to keep
+/// the popover anchored to its trigger while the page scrolls (see [`shift`]).
+pub fn show_overlay(content: AnyWidget, left: f64, top: f64, width: f64, height: f64) {
+    overlay_signal().set(Some(OverlayEntry { content, left, top, width, height }));
 }
 
 /// Dismiss the current overlay, if any.
 pub fn hide_overlay() {
     overlay_signal().set(None);
+}
+
+/// Nudge the open overlay by `(dx, dy)` — used to keep it glued to its trigger as
+/// the page scrolls underneath. A no-op if nothing is open.
+pub fn shift(dx: f64, dy: f64) {
+    overlay_signal().update(|e| {
+        if let Some(entry) = e {
+            entry.left += dx;
+            entry.top += dy;
+        }
+    });
+}
+
+/// Whether `(x, y)` (window space) falls within the open overlay's panel rect — so
+/// the shell scrolls the popover's own content instead of following the page.
+pub fn over_panel(x: f64, y: f64) -> bool {
+    match overlay_signal().peek() {
+        Some(e) => x >= e.left && x <= e.left + e.width && y >= e.top && y <= e.top + e.height,
+        None => false,
+    }
 }
 
 /// Wraps the app root and renders the active overlay above it. The shell installs
@@ -109,5 +134,7 @@ fn render_host(p: &Props) -> crate::widgets::Stack {
         kids.push(scrim);
         kids.push(panel);
     }
+    // Modal dialogs paint above the popover layer (dim scrim + centered surface).
+    kids.extend(crate::dialog::overlay_children());
     stack(kids).alignment(Alignment::TOP_LEFT).expand()
 }

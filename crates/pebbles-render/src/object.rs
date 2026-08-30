@@ -9,6 +9,7 @@
 use std::any::Any;
 
 use pebbles_foundation::{Offset, Size};
+use vello::kurbo::Affine;
 
 use crate::constraints::BoxConstraints;
 use crate::tree::{LayoutCx, PaintCx};
@@ -29,6 +30,15 @@ pub trait RenderObject: Any {
     /// top-left position in the window's coordinate space. Children are painted
     /// with [`PaintCx::paint_child`].
     fn paint(&self, cx: &mut PaintCx, offset: Offset);
+
+    /// An optional paint/hit-test transform applied to this object's whole subtree,
+    /// expressed in the object's **local** space (already resolved around its
+    /// transform origin). `None` (the default) means an ordinary translated box.
+    /// The tree applies it during painting (as a transformed sub-scene) and inverts
+    /// it during hit-testing, so pointer events still land on transformed widgets.
+    fn transform(&self, _size: Size) -> Option<Affine> {
+        None
+    }
 
     /// A human-readable name for diagnostics and tree dumps.
     fn debug_name(&self) -> &'static str {

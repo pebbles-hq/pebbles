@@ -11,12 +11,38 @@ use pebbles::prelude::*;
 
 thread_local! {
     static ROUTE: RefCell<Option<Signal<String>>> = const { RefCell::new(None) };
+    static COUNTER: RefCell<Option<Signal<i32>>> = const { RefCell::new(None) };
+    static PING: RefCell<Option<Channel<String>>> = const { RefCell::new(None) };
 }
 
-/// Create the global route signal (call once, before any component renders, so it
-/// is owned globally rather than by a component).
+/// Create the global app-scope state (call once, before any component renders, so
+/// it's owned globally — and thus shared across windows — rather than by a component).
 pub fn init() {
     let _ = route();
+    let _ = counter();
+    let _ = ping();
+}
+
+/// A counter shared across every window (the same signal, read by capture).
+pub fn counter() -> Signal<i32> {
+    COUNTER.with(|cell| {
+        let mut cell = cell.borrow_mut();
+        if cell.is_none() {
+            *cell = Some(create_signal(0));
+        }
+        cell.unwrap()
+    })
+}
+
+/// A typed cross-window message channel.
+pub fn ping() -> Channel<String> {
+    PING.with(|cell| {
+        let mut cell = cell.borrow_mut();
+        if cell.is_none() {
+            *cell = Some(channel());
+        }
+        cell.unwrap()
+    })
 }
 
 /// The global current-route signal.
@@ -36,7 +62,7 @@ pub fn navigate(to: &str) {
 }
 
 /// A single sidebar entry: (route id, icon, label).
-pub type Route = (&'static str, IconKind, &'static str);
+pub type Route = (&'static str, IconData, &'static str);
 
 /// A labelled group of routes — the sidebar renders one section per group so
 /// components of different categories are never jumbled together.
@@ -48,36 +74,54 @@ pub struct NavGroup {
 /// The categorized sidebar. Groups mirror the component taxonomy
 /// (input / display / layout / navigation) plus foundations.
 pub const NAV: &[NavGroup] = &[
-    NavGroup { label: "GET STARTED", routes: &[("overview", IconKind::Circle, "Overview")] },
+    NavGroup { label: "GET STARTED", routes: &[("overview", lucide::LAYOUT_DASHBOARD, "Overview")] },
     NavGroup {
         label: "INPUT",
         routes: &[
-            ("buttons", IconKind::Star, "Buttons"),
-            ("text-fields", IconKind::Menu, "Text Fields"),
-            ("select", IconKind::ChevronDown, "Select"),
-            ("toggles", IconKind::Check, "Toggles"),
-            ("slider", IconKind::Minus, "Slider"),
+            ("buttons", lucide::MOUSE_POINTER_CLICK, "Buttons"),
+            ("button-group", lucide::COLUMNS_2, "Button Group"),
+            ("text-fields", lucide::TEXT_CURSOR_INPUT, "Text Fields"),
+            ("date-picker", lucide::CALENDAR_DAYS, "Date Picker"),
+            ("select", lucide::CHEVRON_DOWN, "Select & Menus"),
+            ("combobox", lucide::SEARCH, "Combobox"),
+            ("toggles", lucide::TOGGLE_RIGHT, "Toggles"),
+            ("radio-group", lucide::CIRCLE_DOT, "Radio Group"),
+            ("slider", lucide::SLIDERS_HORIZONTAL, "Slider"),
+            ("dialog", lucide::MESSAGE_SQUARE, "Dialog"),
+            ("windows", lucide::APP_WINDOW, "Windows & IPC"),
         ],
     },
     NavGroup {
         label: "DISPLAY",
         routes: &[
-            ("surfaces", IconKind::Info, "Surfaces"),
-            ("data", IconKind::ArrowRight, "Data & Desktop"),
-            ("typography", IconKind::Minus, "Typography"),
-            ("icons", IconKind::Search, "Icons"),
+            ("surfaces", lucide::LAYERS, "Surfaces"),
+            ("card", lucide::CREDIT_CARD, "Card"),
+            ("avatar", lucide::USER, "Avatar"),
+            ("separator", lucide::SEPARATOR_HORIZONTAL, "Separator"),
+            ("progress", lucide::GAUGE, "Progress"),
+            ("data", lucide::TABLE, "Data & Desktop"),
+            ("typography", lucide::TYPE, "Typography"),
+            ("icons", lucide::SHAPES, "Icons"),
+            ("images", lucide::IMAGE, "Images"),
         ],
     },
-    NavGroup { label: "LAYOUT", routes: &[("layout", IconKind::Menu, "Layout")] },
+    NavGroup {
+        label: "LAYOUT",
+        routes: &[
+            ("layout", lucide::LAYOUT_TEMPLATE, "Layout"),
+            ("resizable", lucide::PANEL_LEFT, "Resizable"),
+            ("collapsible", lucide::CHEVRONS_DOWN_UP, "Collapsible"),
+        ],
+    },
     NavGroup {
         label: "NAVIGATION",
-        routes: &[("navigation", IconKind::ChevronRight, "Navigation")],
+        routes: &[("navigation", lucide::NAVIGATION, "Navigation")],
     },
     NavGroup {
         label: "FOUNDATIONS",
         routes: &[
-            ("colors", IconKind::Circle, "Colors"),
-            ("styling", IconKind::Dot, "Styling"),
+            ("colors", lucide::PALETTE, "Colors"),
+            ("styling", lucide::PAINTBRUSH, "Styling"),
         ],
     },
 ];

@@ -21,5 +21,6 @@ pub use input::*;
 pub use layout::*;
 pub use navigation::*;
 
-/// The built-in icon set.
-pub use pebbles_render::IconKind;
+/// The icon model (`IconData`/`IconPrim`), the named [`IconKind`] handles, and
+/// the bundled [`lucide`] icon set.
+pub use pebbles_render::{IconData, IconKind, IconPrim, lucide};
