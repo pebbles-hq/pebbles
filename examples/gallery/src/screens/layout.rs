@@ -26,12 +26,15 @@ pub fn layout() -> impl IntoWidget {
             ),
             section(
                 "WRAP (reflows to width)",
-                wrap([
-                    "design", "rust", "vello", "gpu", "widgets", "flutter", "desktop", "shadcn",
-                    "layout", "reactive", "pebbles", "gravel",
-                ]
-                .into_iter()
-                .map(|t| badge(t).variant(BadgeVariant::Secondary)))
+                wrap(
+                    [
+                        "design", "rust", "vello", "gpu", "widgets", "flutter", "desktop", "shadcn",
+                        "layout", "reactive", "pebbles", "gravel",
+                    ]
+                    .into_iter()
+                    .map(|t| badge(t).variant(BadgeVariant::Secondary))
+                    .collect::<Vec<_>>(),
+                )
                 .spacing(8.0)
                 .run_spacing(8.0),
             ),

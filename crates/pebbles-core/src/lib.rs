@@ -47,6 +47,7 @@ pub use reactive::{
 };
 pub use state::State;
 pub use widget::{
+    IntoChildren,
     AnyWidget, IntoWidget, ParentDataWidget, RenderWidget, StatefulWidget, StatelessWidget, Widget,
     WidgetExt,
 };

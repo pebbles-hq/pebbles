@@ -63,13 +63,10 @@ pub struct Row {
     config: FlexConfig,
 }
 
-/// Create a horizontal [`Row`]. Accepts `children![…]` or any iterator of widgets.
-pub fn row<I, W>(children: I) -> Row
-where
-    I: IntoIterator<Item = W>,
-    W: pebbles_core::widget::IntoWidget,
-{
-    Row { children: pebbles_core::widget::collect_widgets(children), config: FlexConfig::default() }
+/// Create a horizontal [`Row`]. Accepts a tuple `(a, b, c)`, `children![…]`, a `Vec`,
+/// an array, or an `Option`.
+pub fn row(children: impl pebbles_core::widget::IntoChildren) -> Row {
+    Row { children: children.into_children(), config: FlexConfig::default() }
 }
 
 impl Row {
@@ -112,13 +109,10 @@ pub struct Column {
     config: FlexConfig,
 }
 
-/// Create a vertical [`Column`]. Accepts `children![…]` or any iterator of widgets.
-pub fn column<I, W>(children: I) -> Column
-where
-    I: IntoIterator<Item = W>,
-    W: pebbles_core::widget::IntoWidget,
-{
-    Column { children: pebbles_core::widget::collect_widgets(children), config: FlexConfig::default() }
+/// Create a vertical [`Column`]. Accepts a tuple `(a, b, c)`, `children![…]`, a `Vec`,
+/// an array, or an `Option`.
+pub fn column(children: impl pebbles_core::widget::IntoChildren) -> Column {
+    Column { children: children.into_children(), config: FlexConfig::default() }
 }
 
 impl Column {

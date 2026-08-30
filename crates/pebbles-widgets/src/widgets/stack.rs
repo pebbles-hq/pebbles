@@ -17,14 +17,11 @@ pub struct Stack {
     fit: StackFit,
 }
 
-/// Create a [`Stack`] overlaying `children`. Accepts `children![…]` or any iterator.
-pub fn stack<I, W>(children: I) -> Stack
-where
-    I: IntoIterator<Item = W>,
-    W: pebbles_core::widget::IntoWidget,
-{
+/// Create a [`Stack`] overlaying `children`. Accepts a tuple `(a, b)`, `children![…]`,
+/// a `Vec`, an array, or an `Option`.
+pub fn stack(children: impl pebbles_core::widget::IntoChildren) -> Stack {
     Stack {
-        children: pebbles_core::widget::collect_widgets(children),
+        children: children.into_children(),
         alignment: Alignment::TOP_LEFT,
         fit: StackFit::Loose,
     }

@@ -12,13 +12,10 @@ pub struct Wrap {
     run_spacing: f64,
 }
 
-/// Create a [`Wrap`] flowing `children`. Accepts `children![…]` or any iterator.
-pub fn wrap<I, W>(children: I) -> Wrap
-where
-    I: IntoIterator<Item = W>,
-    W: pebbles_core::widget::IntoWidget,
-{
-    Wrap { children: pebbles_core::widget::collect_widgets(children), spacing: 8.0, run_spacing: 8.0 }
+/// Create a [`Wrap`] flowing `children`. Accepts a tuple `(a, b)`, `children![…]`, a
+/// `Vec`, an array, or an `Option`.
+pub fn wrap(children: impl pebbles_core::widget::IntoChildren) -> Wrap {
+    Wrap { children: children.into_children(), spacing: 8.0, run_spacing: 8.0 }
 }
 
 impl Wrap {

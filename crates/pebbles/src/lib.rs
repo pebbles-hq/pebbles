@@ -16,10 +16,10 @@
 //!
 //! fn counter() -> Element {
 //!     let count = create_signal(0);
-//!     center(column(children![
+//!     center(column((
 //!         text(format!("{}", count.get())).size(48.0),
 //!         button("+").on_pressed(move || count.update(|c| *c += 1)),
-//!     ]))
+//!     )))
 //!     .into_widget()
 //! }
 //!
@@ -63,7 +63,7 @@ pub mod prelude {
 
     // runtime (pebbles-core): the widget contract + reconciler handles
     pub use pebbles_core::{
-        AnyWidget, Callback, ElementId, IntoWidget, ParentDataWidget, RenderWidget, Ui, Widget,
+        AnyWidget, Callback, ElementId, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget, Ui, Widget,
         WidgetExt,
     };
 

@@ -125,6 +125,70 @@ where
     items.into_iter().map(IntoWidget::into_widget).collect()
 }
 
+/// A list of child widgets for `row`/`column`/`wrap`/`stack`. The ergonomic form is a
+/// **tuple** of heterogeneous widgets — `column((text("a"), button("b"), card()))` —
+/// but a `Vec<W>` (what `children![..]` produces), an array `[a, b]`, an `Option<W>`,
+/// or `()` for none all work too.
+///
+/// Impls are explicit per shape (tuples up to 16, `Vec`, arrays, `Option`, `()`) — a
+/// blanket `impl<I: IntoIterator>` would collide with the tuple impls under coherence,
+/// so a dynamic list must be `.collect::<Vec<_>>()`ed (or use `children![..]`).
+pub trait IntoChildren {
+    fn into_children(self) -> Vec<AnyWidget>;
+}
+
+impl IntoChildren for () {
+    fn into_children(self) -> Vec<AnyWidget> {
+        Vec::new()
+    }
+}
+
+impl<W: IntoWidget> IntoChildren for Vec<W> {
+    fn into_children(self) -> Vec<AnyWidget> {
+        self.into_iter().map(IntoWidget::into_widget).collect()
+    }
+}
+
+impl<W: IntoWidget, const N: usize> IntoChildren for [W; N] {
+    fn into_children(self) -> Vec<AnyWidget> {
+        self.into_iter().map(IntoWidget::into_widget).collect()
+    }
+}
+
+impl<W: IntoWidget> IntoChildren for Option<W> {
+    fn into_children(self) -> Vec<AnyWidget> {
+        self.into_iter().map(IntoWidget::into_widget).collect()
+    }
+}
+
+macro_rules! impl_into_children_tuple {
+    ($($T:ident),+) => {
+        impl<$($T: IntoWidget),+> IntoChildren for ($($T,)+) {
+            #[allow(non_snake_case)]
+            fn into_children(self) -> Vec<AnyWidget> {
+                let ($($T,)+) = self;
+                vec![$($T.into_widget()),+]
+            }
+        }
+    };
+}
+impl_into_children_tuple!(A);
+impl_into_children_tuple!(A, B);
+impl_into_children_tuple!(A, B, C);
+impl_into_children_tuple!(A, B, C, D);
+impl_into_children_tuple!(A, B, C, D, E);
+impl_into_children_tuple!(A, B, C, D, E, F);
+impl_into_children_tuple!(A, B, C, D, E, F, G);
+impl_into_children_tuple!(A, B, C, D, E, F, G, H);
+impl_into_children_tuple!(A, B, C, D, E, F, G, H, I);
+impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J);
+impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K);
+impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
+impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M);
+impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
+impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
+impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
+
 /// A widget that builds a subtree from immutable configuration and holds no state.
 ///
 /// `build` takes `&mut self` so a composite can move its child widget out into the

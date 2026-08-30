@@ -179,6 +179,21 @@ fn window_open_and_close_enqueue() {
 }
 
 #[test]
+fn into_children_accepts_tuples_vecs_arrays_options() {
+    use pebbles_core::widget::IntoChildren;
+    let t = || text("x");
+    assert_eq!((t(), t(), t()).into_children().len(), 3, "3-tuple");
+    assert_eq!((t(),).into_children().len(), 1, "1-tuple");
+    assert_eq!(vec![t(), t()].into_children().len(), 2, "Vec");
+    assert_eq!([t(), t(), t(), t()].into_children().len(), 4, "array");
+    assert_eq!(Some(t()).into_children().len(), 1, "Some");
+    assert_eq!(None::<pebbles_widgets::Text>.into_children().len(), 0, "None");
+    assert_eq!(().into_children().len(), 0, "unit = no children");
+    // heterogeneous tuple (different widget types) compiles + collects:
+    assert_eq!((text("a"), Container::new(), text("b")).into_children().len(), 3, "heterogeneous");
+}
+
+#[test]
 fn channel_carries_typed_messages() {
     use pebbles_core::channel;
     let ch = channel::<i32>();
