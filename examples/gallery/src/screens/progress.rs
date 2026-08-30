@@ -19,8 +19,8 @@ fn values() -> impl IntoWidget {
             progress(0.5, 340.0),
             progress(0.8, 340.0),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min()
+        .start()
+        .min()
         .spacing(16.0),
     )
 }
@@ -37,8 +37,8 @@ fn live() -> impl IntoWidget {
             gap_h(10.0),
             muted(format!("{:.0}%", p.get() * 100.0)),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }
 
@@ -53,8 +53,8 @@ fn sizing() -> impl IntoWidget {
             gap_h(18.0),
             progress(0.6, 340.0).thickness(14.0),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }
 
@@ -69,8 +69,8 @@ fn colors() -> impl IntoWidget {
             gap_h(16.0),
             progress(0.3, 340.0).color(palette::rose::S600),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }
 
@@ -83,7 +83,7 @@ fn indeterminate_bar() -> impl IntoWidget {
             gap_h(16.0),
             progress(0.0, 340.0).indeterminate().color(palette::violet::S600),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }

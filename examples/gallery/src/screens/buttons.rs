@@ -71,7 +71,7 @@ pub fn buttons() -> Element {
                             icon_button(IconKind::Plus).variant(ButtonVariant::Primary),
                         ])
                         .spacing(8.0),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
+                    ]).start().min().spacing(0.0),
             ),
             // -------------------------------------------------------------- colored
             doc(
@@ -127,7 +127,7 @@ pub fn buttons() -> Element {
                             children![
                                 switch(busy.get()).on_changed(move || busy.update(|v| *v = !*v)),
                                 label("Simulate busy"),
-                            ]).main_axis_min().spacing(10.0),
+                            ]).min().spacing(10.0),
                         gap_h(14.0),
                         wrap(children![
                             button("Save").leading(IconKind::Check).loading(busy.get()),
@@ -135,7 +135,7 @@ pub fn buttons() -> Element {
                             button("").variant(ButtonVariant::Outline).loading(true),
                         ])
                         .spacing(12.0),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
+                    ]).start().min().spacing(0.0),
             ),
             // ------------------------------------------------------------ click events
             doc(
@@ -152,7 +152,7 @@ pub fn buttons() -> Element {
                             button("on_long_press").variant(ButtonVariant::Ghost).on_long_press(ev("on_long_press")),
                         ])
                         .spacing(10.0),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
+                    ]).start().min().spacing(0.0),
             ),
             // ---------------------------------------------------------- press feedback
             doc(
@@ -168,7 +168,7 @@ pub fn buttons() -> Element {
                             .on_tap_cancel(move || detail.set("tap CANCELLED (released off)".into()))
                             .on_highlight_changed(move |h| { if h { detail.set("highlighted (pressed)".into()); } })
                             .on_pressed(move || detail.set("tapped (released inside)".into())),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
+                    ]).start().min().spacing(0.0),
             ),
             // -------------------------------------------------- long-press & middle-click
             doc(
@@ -187,7 +187,7 @@ pub fn buttons() -> Element {
                             .on_long_press_end(move || lp.set("END (released)".into()))
                             .on_long_press_cancel(move || lp.set("cancelled (released too soon)".into()))
                             .on_tertiary_tap_up(move || lp.set("MIDDLE-click (tertiary)".into())),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
+                    ]).start().min().spacing(0.0),
             ),
             // ----------------------------------------------------------- focus & keyboard
             doc(
@@ -210,7 +210,7 @@ pub fn buttons() -> Element {
                                 .on_pressed(move || focus_note.set("Third activated".into())),
                         ])
                         .spacing(10.0),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
+                    ]).start().min().spacing(0.0),
             ),
             // ------------------------------------------------------------ custom content
             doc(
@@ -223,15 +223,15 @@ pub fn buttons() -> Element {
                             gap_w(8.0),
                             text("Icon + Text").weight(600.0).color(c.primary_foreground),
                         ])
-                        .main_axis_min(),
+                        .min(),
                     ),
                     button("").variant(ButtonVariant::Outline).child(
                         column(children![
                             text("Upgrade").weight(600.0).color(c.foreground),
                             text("Pro plan").size(11.0).color(c.muted_foreground),
                         ])
-                        .cross_axis_alignment(CrossAxisAlignment::Center)
-                        .main_axis_min(),
+                        .center_cross()
+                        .min(),
                     ),
                 ])
                 .spacing(12.0),

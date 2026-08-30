@@ -5,21 +5,21 @@ use crate::ui::{doc, gap_h, screen};
 /// A labelled date field demonstrating one caption layout.
 fn caption_demo(label: &str, layout: CaptionLayout) -> impl IntoWidget {
     column(
-        children![muted(label), gap_h(6.0), date_field().caption(layout).width(210.0)]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0)
+        children![muted(label), gap_h(6.0), date_field().caption(layout).width(210.0)]).start().min().spacing(0.0)
 }
 
 /// A labelled date field demonstrating one date format.
 fn caption_fmt(label: &str, fmt: DateFormat) -> impl IntoWidget {
     column(children![muted(label), gap_h(6.0), date_field().format(fmt).width(200.0)])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min()
+        .start()
+        .min()
 }
 
 /// A labelled time field.
 fn caption_time(label: &str, field: TimeField) -> impl IntoWidget {
     column(children![muted(label), gap_h(6.0), field.width(200.0)])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min()
+        .start()
+        .min()
 }
 
 pub fn date_picker() -> Element {
@@ -92,7 +92,7 @@ pub fn date_picker() -> Element {
                         } else {
                             format!("Selected: {}", picked.get())
                         }),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
+                    ]).start().min().spacing(0.0),
             ),
         ],
     )

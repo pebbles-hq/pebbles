@@ -26,7 +26,7 @@ pub fn selects() -> Element {
                             .placeholder("Choose a plan")
                             .on_changed(move |_i, label| picked.set(label.to_string())),
                         muted(format!("selected: {}", picked.get())),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(10.0),
+                    ]).start().min().spacing(10.0),
             ),
             doc(
                 "Select with icons",
@@ -44,8 +44,8 @@ pub fn selects() -> Element {
                         .leading(lucide::USER)
                         .placeholder("Set status"),
                     ])
-                .cross_axis_alignment(CrossAxisAlignment::Start)
-                .main_axis_min(),
+                .start()
+                .min(),
             ),
             doc(
                 "Dropdown menu — run an action",
@@ -61,7 +61,7 @@ pub fn selects() -> Element {
                             .separator()
                             .item(menu_item("Log out").icon(lucide::LOG_OUT).destructive().on_select(move || action_note.set("Logged out".into()))),
                         muted(format!("last action: {}", if action_note.get().is_empty() { "—".to_string() } else { action_note.get() })),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(10.0),
+                    ]).start().min().spacing(10.0),
             ),
             doc(
                 "Checkbox menu",
@@ -79,7 +79,7 @@ pub fn selects() -> Element {
                             show_activity.get(),
                             show_panel.get()
                         )),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(10.0),
+                    ]).start().min().spacing(10.0),
             ),
         ],
     )

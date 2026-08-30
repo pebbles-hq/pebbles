@@ -23,7 +23,7 @@ pub fn text_fields() -> Element {
                     children![
                         text_field().placeholder("Your name").width(W).on_changed(move |s| name.set(s.to_string())),
                         muted(format!("value: {}", name.get())),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(10.0),
+                    ]).start().min().spacing(10.0),
             ),
             doc(
                 "Password",
@@ -43,7 +43,7 @@ pub fn text_fields() -> Element {
                         text_field().kind(InputKind::Number).placeholder("Amount").width(W),
                         gap_h(12.0),
                         text_field().kind(InputKind::Currency).width(W),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
+                    ]).start().min().spacing(0.0),
             ),
             doc(
                 "Search",
@@ -52,7 +52,7 @@ pub fn text_fields() -> Element {
                     children![
                         text_field().kind(InputKind::Search).width(W).on_changed(move |s| query.set(s.to_string())),
                         muted(format!("query: {}", query.get())),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(10.0),
+                    ]).start().min().spacing(10.0),
             ),
             doc(
                 "Label, helper & validation",
@@ -66,7 +66,7 @@ pub fn text_fields() -> Element {
                             .width(W)
                             .on_changed(move |s| mail.set(s.to_string()))
                             .error_opt(mail_err),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
+                    ]).start().min().spacing(0.0),
             ),
             doc(
                 "Disabled",
@@ -81,7 +81,7 @@ pub fn text_fields() -> Element {
                         text_field().kind(InputKind::Url).width(W),
                         gap_h(12.0),
                         text_field().kind(InputKind::Phone).width(W),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
+                    ]).start().min().spacing(0.0),
             ),
             doc(
                 "Character limit",

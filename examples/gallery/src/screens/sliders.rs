@@ -20,8 +20,8 @@ fn basic() -> impl IntoWidget {
             gap_h(12.0),
             muted(format!("Value: {:.0}", vol.get())),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }
 
@@ -35,8 +35,8 @@ fn range() -> impl IntoWidget {
             gap_h(12.0),
             muted(format!("{:.0} – {:.0}", band.get().0, band.get().1)),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }
 
@@ -49,8 +49,8 @@ fn steps() -> impl IntoWidget {
             gap_h(20.0),
             slider(320.0).min(0.0).max(1.0).step(0.0).value(0.5),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }
 
@@ -63,7 +63,7 @@ fn vertical() -> impl IntoWidget {
             slider(150.0).orientation(Axis::Vertical).range(25.0, 70.0),
             slider(150.0).orientation(Axis::Vertical).value(85.0),
         ])
-        .main_axis_min()
+        .min()
         .spacing(32.0),
     )
 }

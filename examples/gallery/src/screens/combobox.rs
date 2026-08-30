@@ -30,8 +30,8 @@ fn basic() -> impl IntoWidget {
                 if combo.get().is_empty() { "—".to_string() } else { combo.get() }
             )),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min()
+        .start()
+        .min()
         .spacing(10.0),
     )
 }
@@ -61,8 +61,8 @@ fn multi() -> impl IntoWidget {
                 })),
             muted(format!("count: {}", multi.get())),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min()
+        .start()
+        .min()
         .spacing(10.0),
     )
 }
@@ -74,7 +74,7 @@ fn narrow() -> impl IntoWidget {
         column(children![
             combobox(["Low", "Medium", "High", "Critical"]).width(160.0).placeholder("Priority…"),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }

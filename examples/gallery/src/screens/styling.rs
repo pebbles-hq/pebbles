@@ -16,15 +16,15 @@ pub fn styling() -> Element {
                         text("styled Text").styled(styles::pill()),
                         gap_h(10.0),
                         // ...the same pill on a Row of icons...
-                        row(children![icon(IconKind::Star).size(18.0), icon(IconKind::Check).size(18.0)]).main_axis_min().spacing(8.0)
+                        row(children![icon(IconKind::Star).size(18.0), icon(IconKind::Check).size(18.0)]).min().spacing(8.0)
                             .styled(styles::pill()),
                         gap_h(10.0),
                         // ...and a card style on a Column.
                         column(children![title("Card via style()"), muted("background + border + radius + shadow")])
-                            .cross_axis_alignment(CrossAxisAlignment::Start)
-                            .main_axis_min()
+                            .start()
+                            .min()
                             .styled(styles::card()),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
+                    ]).start().min().spacing(0.0),
             ),
             section(
                 "GRADIENT · CIRCLE · STACKED SHADOWS — all via Style, on any widget",
@@ -46,7 +46,7 @@ pub fn styling() -> Element {
                             .shadow(BoxShadow::new(theme().colors.primary, Offset::new(0.0, 12.0), 24.0, -8.0)),
                     ),
                 ])
-                .main_axis_min()
+                .min()
                 .spacing(16.0),
             ),
             section(
@@ -82,7 +82,7 @@ pub fn styling() -> Element {
                             .blend(BlendMode::Multiply),
                     ),
                 ])
-                .main_axis_min()
+                .min()
                 .spacing(16.0),
             ),
             section(
@@ -101,8 +101,8 @@ pub fn styling() -> Element {
                     gap_h(8.0),
                     muted("styles::muted_panel()"),
                 ])
-                .cross_axis_alignment(CrossAxisAlignment::Start)
-                .main_axis_min()
+                .start()
+                .min()
                 .styled(styles::muted_panel()),
             ),
         ],

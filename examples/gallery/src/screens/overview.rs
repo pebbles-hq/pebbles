@@ -16,7 +16,7 @@ pub fn overview() -> Element {
                     gap_w(14.0),
                     stat_card("Tests", "green", IconKind::Check, palette::GREEN),
                 ])
-                .main_axis_min(),
+                .min(),
             ),
             Card::new(column(
                 children![
@@ -29,8 +29,8 @@ pub fn overview() -> Element {
                             badge("SideNav").variant(BadgeVariant::Secondary),
                             badge("RouteView").variant(BadgeVariant::Secondary),
                             badge("Signals").variant(BadgeVariant::Success),
-                        ]).main_axis_min().spacing(8.0),
-                ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(10.0)),
+                        ]).min().spacing(8.0),
+                ]).start().min().spacing(10.0)),
             gap_h(16.0),
             section(
                 "STATE MODEL (SolidJS-style)",
@@ -39,7 +39,7 @@ pub fn overview() -> Element {
                         body("create_signal — local AND global state, one primitive."),
                         body("Function components — fn() -> impl IntoWidget; no structs, no traits."),
                         body("Plain-closure events — on_pressed(move || sig.set(x))."),
-                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(6.0),
+                    ]).start().min().spacing(6.0),
             ),
         ],
     )

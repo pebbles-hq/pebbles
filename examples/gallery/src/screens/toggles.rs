@@ -33,8 +33,8 @@ fn checkbox_section() -> impl IntoWidget {
                     .description("Get notified about product updates and account activity.")
                     .on_changed(move || notify.update(|v| *v = !*v)),
             ])
-            .cross_axis_alignment(CrossAxisAlignment::Start)
-            .main_axis_min(),
+            .start()
+            .min(),
             gap_h(20.0),
             // sizes
             wrap(children![
@@ -67,8 +67,8 @@ fn checkbox_section() -> impl IntoWidget {
             ])
             .spacing(24.0),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }
 
@@ -94,8 +94,8 @@ fn switch_section() -> impl IntoWidget {
                     .description("Connect automatically to known networks.")
                     .on_changed(move || wifi.update(|v| *v = !*v)),
             ])
-            .cross_axis_alignment(CrossAxisAlignment::Start)
-            .main_axis_min(),
+            .start()
+            .min(),
             gap_h(20.0),
             // sizes
             wrap(children![
@@ -120,8 +120,8 @@ fn switch_section() -> impl IntoWidget {
             ])
             .spacing(24.0),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }
 
@@ -145,7 +145,7 @@ fn radio_section() -> impl IntoWidget {
         "A single choice from a set — one selected at a time. Give each option the same on_selected that stores its index; the selected index drives which is filled.",
         column(children![
             // interactive group
-            column(plans).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(12.0),
+            column(plans).start().min().spacing(12.0),
             gap_h(20.0),
             // sizes
             wrap(children![
@@ -170,8 +170,8 @@ fn radio_section() -> impl IntoWidget {
             ])
             .spacing(24.0),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }
 
@@ -197,7 +197,7 @@ fn toggle_section() -> impl IntoWidget {
                 toggle(locked.get(), icon(IconKind::Lock).size(16.0))
                     .on_changed(move || locked.update(|v| *v = !*v)),
             ])
-            .main_axis_min()
+            .min()
             .spacing(8.0),
             gap_h(20.0),
             // variants
@@ -224,7 +224,7 @@ fn toggle_section() -> impl IntoWidget {
             ])
             .spacing(10.0),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }

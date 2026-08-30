@@ -47,7 +47,7 @@ fn with_footer() -> impl IntoWidget {
                         gap_w(10.0),
                         button("Delete").variant(ButtonVariant::Destructive),
                     ])
-                    .main_axis_min(),
+                    .min(),
                 ),
         ),
     )
@@ -83,15 +83,15 @@ fn composed() -> impl IntoWidget {
                                 text("Reyco Seguma").size(14.0).semibold(),
                                 muted("Pushed 3 commits to main"),
                             ])
-                            .cross_axis_alignment(CrossAxisAlignment::Start)
-                            .main_axis_min(),
+                            .start()
+                            .min(),
                         ])
-                        .main_axis_min(),
+                        .min(),
                         SizedBox::spacer(0.0, 12.0),
                         body("“Slider now supports range + keyboard; progress got its own screen.”"),
                     ])
-                    .cross_axis_alignment(CrossAxisAlignment::Start)
-                    .main_axis_min(),
+                    .start()
+                    .min(),
                 )
                 .footer(
                     row(children![
@@ -99,7 +99,7 @@ fn composed() -> impl IntoWidget {
                         gap_w(8.0),
                         button("Dismiss").size(ButtonSize::Sm).variant(ButtonVariant::Ghost),
                     ])
-                    .main_axis_min(),
+                    .min(),
                 ),
         ),
     )

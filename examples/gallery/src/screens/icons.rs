@@ -36,8 +36,8 @@ pub fn icons() -> Element {
                             gap_h(7.0),
                             text(name).size(10.0).color(cc.muted_foreground),
                         ])
-                        .cross_axis_alignment(CrossAxisAlignment::Center)
-                        .main_axis_min(),
+                        .center_cross()
+                        .min(),
                     ),
             )
         }));
@@ -77,8 +77,8 @@ pub fn icons() -> Element {
                         grid,
                     ],
                 )
-                .cross_axis_alignment(CrossAxisAlignment::Start)
-                .main_axis_min(),
+                .start()
+                .min(),
             ),
             doc(
                 "Bring your own",

@@ -22,8 +22,8 @@ fn basic() -> impl IntoWidget {
             SizedBox::spacer(0.0, 10.0),
             muted(format!("selected index: {}", choice.get())),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }
 
@@ -55,7 +55,7 @@ fn sizes() -> impl IntoWidget {
             radio_group(["One", "Two"]).size(ToggleSize::Md),
             radio_group(["One", "Two"]).size(ToggleSize::Lg),
         ])
-        .main_axis_min()
+        .min()
         .spacing(40.0),
     )
 }
@@ -69,7 +69,7 @@ fn colors() -> impl IntoWidget {
             radio_group(["A", "B"]).color(palette::blue::S600),
             radio_group(["A", "B"]).color(palette::rose::S600),
         ])
-        .main_axis_min()
+        .min()
         .spacing(40.0),
     )
 }

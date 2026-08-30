@@ -23,8 +23,8 @@ fn horizontal() -> impl IntoWidget {
                 SizedBox::spacer(0.0, 12.0),
                 muted("Everything below the line."),
             ])
-            .cross_axis_alignment(CrossAxisAlignment::Start)
-            .main_axis_min(),
+            .start()
+            .min(),
         ),
     )
 }
@@ -40,7 +40,7 @@ fn vertical_sep() -> impl IntoWidget {
             Separator::vertical().length(16.0),
             text("Source").size(14.0),
         ])
-        .main_axis_min()
+        .min()
         .spacing(14.0),
     )
 }
@@ -57,8 +57,8 @@ fn thickness() -> impl IntoWidget {
                 SizedBox::spacer(0.0, 16.0),
                 separator().thickness(4.0),
             ])
-            .cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .main_axis_min(),
+            .stretch()
+            .min(),
         ),
     )
 }
@@ -75,8 +75,8 @@ fn colors() -> impl IntoWidget {
                 SizedBox::spacer(0.0, 16.0),
                 separator().thickness(2.0).color(palette::rose::S500),
             ])
-            .cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .main_axis_min(),
+            .stretch()
+            .min(),
         ),
     )
 }
@@ -93,7 +93,7 @@ fn labeled() -> impl IntoWidget {
                 gap_w(12.0),
                 Expanded::new(separator()),
             ])
-            .cross_axis_alignment(CrossAxisAlignment::Center),
+            .center_cross(),
         ),
     )
 }

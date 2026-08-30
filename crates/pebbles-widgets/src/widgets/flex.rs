@@ -49,6 +49,59 @@ macro_rules! flex_builders {
             self.config.spacing = value;
             self
         }
+
+        // --- ergonomic shorthands (the common cases, chainable) --------------
+
+        /// Shrink-wrap the main axis. Shorthand for [`main_axis_min`](Self::main_axis_min).
+        pub fn min(self) -> Self {
+            self.main_axis_min()
+        }
+        /// Align children to the cross-axis start. Shorthand for
+        /// `.cross_axis_alignment(CrossAxisAlignment::Start)`.
+        pub fn start(mut self) -> Self {
+            self.config.cross_axis_alignment = CrossAxisAlignment::Start;
+            self
+        }
+        /// Center children on the cross axis.
+        pub fn center_cross(mut self) -> Self {
+            self.config.cross_axis_alignment = CrossAxisAlignment::Center;
+            self
+        }
+        /// Align children to the cross-axis end.
+        pub fn end(mut self) -> Self {
+            self.config.cross_axis_alignment = CrossAxisAlignment::End;
+            self
+        }
+        /// Stretch children to fill the cross axis.
+        pub fn stretch(mut self) -> Self {
+            self.config.cross_axis_alignment = CrossAxisAlignment::Stretch;
+            self
+        }
+        /// Center children along the main axis.
+        pub fn main_center(mut self) -> Self {
+            self.config.main_axis_alignment = MainAxisAlignment::Center;
+            self
+        }
+        /// Push children to the main-axis end.
+        pub fn main_end(mut self) -> Self {
+            self.config.main_axis_alignment = MainAxisAlignment::End;
+            self
+        }
+        /// Even space between children (none at the edges).
+        pub fn space_between(mut self) -> Self {
+            self.config.main_axis_alignment = MainAxisAlignment::SpaceBetween;
+            self
+        }
+        /// Even space around each child (half-gaps at the edges).
+        pub fn space_around(mut self) -> Self {
+            self.config.main_axis_alignment = MainAxisAlignment::SpaceAround;
+            self
+        }
+        /// Equal space between and around every child.
+        pub fn space_evenly(mut self) -> Self {
+            self.config.main_axis_alignment = MainAxisAlignment::SpaceEvenly;
+            self
+        }
     };
 }
 

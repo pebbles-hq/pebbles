@@ -112,7 +112,7 @@ fn group() -> impl IntoWidget {
             ])
             .max(3),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min(),
+        .start()
+        .min(),
     )
 }
