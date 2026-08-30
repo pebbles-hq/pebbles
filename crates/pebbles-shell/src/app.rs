@@ -239,6 +239,8 @@ struct Runner {
     context: RenderContext,
     renderers: Vec<Option<Renderer>>,
     active: Option<ActiveWindow>,
+    /// AccessKit platform bridge for the main window (accessibility tree + focus).
+    a11y: Option<crate::a11y::Bridge>,
 
     // ui
     ui: Ui,
@@ -292,6 +294,7 @@ impl Runner {
             context: RenderContext::new(),
             renderers: Vec::new(),
             active: None,
+            a11y: None,
             ui: Ui::new(),
             text: TextEnv::new(),
             scene: Scene::new(),
@@ -420,6 +423,14 @@ impl Runner {
         // Keep the frames coming while any animation or scroll spring is running.
         if scrolling || pending_tasks || pebbles_core::animation::active() {
             active.window.request_redraw();
+        }
+
+        // 5. Publish the accessibility tree + focus for this frame (post-layout, so
+        // bounds are current). The `active` borrow has ended above.
+        let nodes = self.ui.render_tree().semantics_tree();
+        let focus = pebbles_core::focus::focused_element_ffi(self.ui.window_id());
+        if let Some(a11y) = self.a11y.as_mut() {
+            a11y.update(&nodes, focus);
         }
     }
 
@@ -764,8 +775,13 @@ impl ApplicationHandler for Runner {
         if let Some((x, y)) = self.position {
             attrs = attrs.with_position(winit::dpi::LogicalPosition::new(x, y));
         }
+        // Create hidden so the AccessKit adapter can attach before the window is shown
+        // (the adapter panics if the window is already visible).
+        attrs = attrs.with_visible(false);
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
         window.set_ime_allowed(true); // enable IME composition (CJK, dead keys, etc.)
+        self.a11y = Some(crate::a11y::Bridge::new(event_loop, &window));
+        window.set_visible(true);
 
         let physical = window.inner_size();
         let surface = pollster::block_on(self.context.create_surface(
@@ -822,6 +838,12 @@ impl ApplicationHandler for Runner {
         // Route window-scoped globals (overlay/dialog signals) to the main window while
         // we handle its input (event handlers don't otherwise set the current window).
         self.ui.make_current();
+        // Feed the event to the accessibility adapter before the app handles it.
+        if let Some(win) = self.active.as_ref().map(|a| a.window.clone())
+            && let Some(a11y) = self.a11y.as_mut()
+        {
+            a11y.process_event(&win, &event);
+        }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
 

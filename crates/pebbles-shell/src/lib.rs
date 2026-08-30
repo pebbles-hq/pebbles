@@ -12,6 +12,7 @@
 //! App::new(my_root()).title("Hello").size(480, 320).run()?;
 //! ```
 
+mod a11y;
 mod app;
 
 pub use app::App;

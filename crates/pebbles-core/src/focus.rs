@@ -66,6 +66,14 @@ pub fn focus_signal() -> Signal<Option<FocusKey>> {
     with_mgr(|m| m.focus)
 }
 
+/// The FFI id of the element that currently holds focus **in `window`**, or `None`.
+/// This matches the render node `source` (and thus a `SemanticsNode`'s id), so the
+/// shell can tell the accessibility layer which node has keyboard focus.
+pub fn focused_element_ffi(window: u32) -> Option<u64> {
+    use slotmap::Key;
+    focus_signal().peek().and_then(|(w, e)| (w == window).then(|| e.data().as_ffi()))
+}
+
 /// Move primary focus, firing `onFocusChange(false)` on the old node and
 /// `onFocusChange(true)` on the new one. `None` clears focus (the common call from
 /// the shell / a tap on empty space).
