@@ -68,6 +68,9 @@ struct Runtime {
     /// Per-component ordered signal ids, for persisting local signals across
     /// re-renders (create signals at the top level of a component — the React rule).
     hooks: std::collections::HashMap<CompKey, Vec<SignalId>>,
+    /// Parallel to `hooks`: the `TypeId` created at each position, for the debug-only
+    /// hooks-order guardrail (empty in release).
+    hook_types: std::collections::HashMap<CompKey, Vec<std::any::TypeId>>,
     hook_cursor: usize,
     /// Per-component unmount callbacks (registry cleanup, etc). Re-registered each
     /// render (cleared in `begin_component`); run in `dispose_component`.
@@ -130,6 +133,23 @@ pub fn create_signal<T: 'static + Clone>(value: T) -> Signal<T> {
             let index = rt.hook_cursor;
             rt.hook_cursor += 1;
             if let Some(existing) = rt.hooks.get(&owner).and_then(|v| v.get(index)).copied() {
+                // Hooks-rule guardrail (debug only): the signal reused at this position
+                // must have the SAME type as last render. A different type here means
+                // create_signal was called conditionally / in a different order, which
+                // silently aliases the wrong slot. (Same-type positional reuse — incl.
+                // a conditionally-created *trailing* signal — is safe and never trips.)
+                #[cfg(debug_assertions)]
+                {
+                    let stored = rt.hook_types.get(&owner).and_then(|v| v.get(index)).copied();
+                    debug_assert_eq!(
+                        stored,
+                        Some(std::any::TypeId::of::<T>()),
+                        "Pebbles hooks rule: create_signal at position {index} of component \
+                         {owner:?} changed type between renders. Never create signals \
+                         conditionally or in a variable order — create them unconditionally at \
+                         the top of the component."
+                    );
+                }
                 return Signal { id: existing, _marker: PhantomData };
             }
             let id = rt.signals.insert(SignalSlot {
@@ -138,6 +158,8 @@ pub fn create_signal<T: 'static + Clone>(value: T) -> Signal<T> {
                 effect_subs: HashSet::new(),
             });
             rt.hooks.entry(owner).or_default().push(id);
+            #[cfg(debug_assertions)]
+            rt.hook_types.entry(owner).or_default().push(std::any::TypeId::of::<T>());
             Signal { id, _marker: PhantomData }
         } else {
             let id = rt.signals.insert(SignalSlot {
@@ -377,6 +399,7 @@ pub(crate) fn dispose_component(id: ElementId) {
                 rt.signals.remove(sid);
             }
         }
+        rt.hook_types.remove(&key);
         // Drop this component's subscriptions via the reverse index (O(its own subs)).
         if let Some(sids) = rt.subs_of.remove(&key) {
             for sid in sids {

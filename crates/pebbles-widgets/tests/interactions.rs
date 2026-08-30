@@ -1,10 +1,10 @@
 //! Coverage for the new interactive pieces: RadioGroup selection, Resizable
 //! drag-to-resize, the Dialog request queue, and the overlay scroll-follow helpers.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use pebbles_core::{IntoWidget, Ui, WidgetExt, component, create_signal};
+use pebbles_core::{IntoWidget, Signal, Ui, WidgetExt, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{Container, OverlayHost, View, column, radio_group, resizable, text};
@@ -176,6 +176,49 @@ fn window_open_and_close_enqueue() {
 
     window::close_window(id);
     assert_eq!(window::take_close_requests(), vec![id]);
+}
+
+// ---------------------------------------------------------------------------
+// Hooks-order guardrail (debug-only)
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    static REV: RefCell<Option<Signal<i32>>> = const { RefCell::new(None) };
+}
+fn rev() -> Signal<i32> {
+    REV.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.is_none() {
+            *c = Some(create_signal(0));
+        }
+        c.unwrap()
+    })
+}
+
+/// Violates the hooks rule on purpose: the local signal at position 0 is `i32` on the
+/// first render and `&str` on the second — the guardrail must catch the type change.
+fn hooks_violator() -> impl IntoWidget {
+    let r = rev().get(); // subscribe to a global signal so a write re-renders us
+    if r == 0 {
+        let _ = create_signal(0i32);
+    } else {
+        let _ = create_signal("x");
+    }
+    text("x")
+}
+
+#[test]
+#[should_panic(expected = "hooks rule")]
+fn hooks_rule_violation_is_caught() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let _ = rev(); // create the global signal BEFORE mount (app scope, not owned)
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(View::new(palette::WHITE, component(hooks_violator)).boxed());
+    ui.layout(&mut env, Size::new(100.0, 100.0)); // render 1: position 0 = i32
+    rev().set(1); // mark the component dirty
+    ui.rebuild_if_dirty(); // render 2: position 0 = &str → guardrail panics
 }
 
 #[test]
