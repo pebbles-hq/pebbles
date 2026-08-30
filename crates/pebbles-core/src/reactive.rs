@@ -262,6 +262,26 @@ impl<T: 'static + Clone> Signal<T> {
     }
 }
 
+impl<T: 'static + Clone + PartialEq> Signal<T> {
+    /// Replace the value, but only wake dependents if it actually changed. Returns
+    /// whether it changed. This is how [`create_memo`] avoids re-rendering downstream
+    /// on a recompute that lands on the same value; use it directly to swallow no-op
+    /// writes (e.g. a slider snapping to a value it already held).
+    pub fn set_if_changed(&self, value: T) -> bool {
+        with_rt(|rt| {
+            if !rt.signals.contains_key(self.id) {
+                return false;
+            }
+            if rt.signals[self.id].value.downcast_ref::<T>().unwrap() == &value {
+                return false; // unchanged — no write, no reschedule
+            }
+            rt.signals[self.id].value = Box::new(value);
+            schedule_subscribers(rt, self.id);
+            true
+        })
+    }
+}
+
 fn schedule_subscribers(rt: &mut Runtime, id: SignalId) {
     let components: Vec<CompKey> = rt.signals[id].component_subs.drain().collect();
     let effects: Vec<EffectId> = rt.signals[id].effect_subs.drain().collect();
@@ -300,12 +320,17 @@ fn run_effect(id: EffectId) {
     with_rt(|rt| rt.observer = prev);
 }
 
-/// A cached derived value: recomputes only when its inputs change.
-pub fn create_memo<T: 'static + Clone>(f: impl Fn() -> T + 'static) -> Signal<T> {
+/// A cached derived value: recomputes when its inputs change, and — because `T:
+/// PartialEq` — only wakes *its own* dependents when the recomputed value actually
+/// differs (Solid's memo dedup). A memo over a coarse projection (say `count % 2`)
+/// therefore re-renders downstream only when the projection flips, not on every input
+/// change. Create it once, at a stable position (app scope or the top of a component),
+/// like any signal.
+pub fn create_memo<T: 'static + Clone + PartialEq>(f: impl Fn() -> T + 'static) -> Signal<T> {
     let signal = create_signal(f());
     create_effect(move || {
         let value = f();
-        signal.set(value);
+        signal.set_if_changed(value);
     });
     signal
 }
@@ -317,6 +342,23 @@ pub fn create_memo<T: 'static + Clone>(f: impl Fn() -> T + 'static) -> Signal<T>
 /// A global store: a single signal holding a `Clone` state value, read reactively
 /// and updated with `set`/`update`. For a Redux flavor, pair it with your own
 /// action enum + reducer inside `update`.
+///
+/// **Granularity — read this.** A `Store` is deliberately *coarse*: it is one signal,
+/// so **any** `update` wakes **every** component that read the store, even ones that
+/// only used an untouched field. That's the simple, predictable model. When you want a
+/// field to re-render its readers *independently*, reach for one of the two blessed
+/// finer-grained patterns instead of a big store:
+///
+/// 1. **Many small signals** (the default) — hold each independent piece of state in
+///    its own `create_signal`. Writing one wakes only its readers. This is the Solid
+///    way and what most app state should be.
+/// 2. **A deduped memo slice** — derive a field with [`create_memo`], which only wakes
+///    downstream when that slice's value actually changes:
+///    ```ignore
+///    let name = create_memo(move || store.select(|s| s.user.name.clone()));
+///    // reading `name` re-renders only when `user.name` changes, not on any store write
+///    ```
+///    Create the memo once (app scope or a stable position), like any signal.
 #[derive(Clone, Copy)]
 pub struct Store<S: 'static + Clone> {
     signal: Signal<S>,
