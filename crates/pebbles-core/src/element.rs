@@ -133,6 +133,14 @@ impl Ui {
         self.ui_id
     }
 
+    /// Make this window the "current" one in the shared runtime, so window-scoped
+    /// globals (per-window overlay + dialog signals) resolve to *this* window. The
+    /// shell calls this before dispatching input to a window, since event handlers —
+    /// unlike render — don't otherwise set the current window.
+    pub fn make_current(&self) {
+        crate::reactive::set_current_window(self.ui_id);
+    }
+
     /// Read-only access to the render tree (the shell lays out / paints it).
     pub fn render_tree(&self) -> &RenderTree {
         &self.render

@@ -1,36 +1,42 @@
-//! A global **overlay layer** — the substrate for dropdowns, menus, popovers and
-//! tooltips. One transient overlay (a widget + a window-space position) lives in a
-//! global [`Signal`]; [`OverlayHost`] wraps the app root and paints it on top of
-//! everything, with a full-window scrim that dismisses on an outside click.
+//! A per-window **overlay layer** — the substrate for dropdowns, menus, popovers and
+//! tooltips. Each window has one transient overlay (a widget + a window-space
+//! position) in its own [`Signal`]; [`OverlayHost`] wraps a window's root and paints
+//! that window's overlay on top of everything, with a full-window scrim that dismisses
+//! on an outside click.
 //!
 //! Anything can pop content: [`show_overlay`] from a click handler, [`hide_overlay`]
-//! to dismiss. Because the entry is a signal, showing/hiding re-renders the host.
+//! to dismiss. Because the entry is a signal, showing/hiding re-renders the host. All
+//! of these resolve to the **current window** (the one rendering, or the one the shell
+//! is dispatching input to), so an overlay opened in a secondary window stays there.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use pebbles_foundation::Alignment;
 
 use crate::widgets::{Container, GestureDetector, Positioned, stack};
+use pebbles_core::reactive::current_window;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, action, component_props, create_root_signal};
 
 thread_local! {
-    /// The current window's logical size, published by the shell each frame so
-    /// popovers can flip/shift to stay on-screen.
-    static WINDOW: Cell<(f64, f64)> = const { Cell::new((0.0, 0.0)) };
+    /// Each window's logical size, published by the shell each frame so popovers can
+    /// flip/shift to stay on-screen. Keyed by window id.
+    static WINDOW: RefCell<HashMap<u32, (f64, f64)>> = RefCell::new(HashMap::new());
 }
 
-/// Record the window's logical size (called by the shell).
+/// Record the current window's logical size (called by the shell).
 pub fn set_window_size(width: f64, height: f64) {
-    WINDOW.with(|w| w.set((width, height)));
+    WINDOW.with(|w| w.borrow_mut().insert(current_window(), (width, height)));
 }
 
-/// The window's logical size `(width, height)`, or `(0, 0)` before the first frame.
+/// The current window's logical size `(width, height)`, or `(0, 0)` before its first
+/// frame.
 pub fn window_size() -> (f64, f64) {
-    WINDOW.with(Cell::get)
+    WINDOW.with(|w| w.borrow().get(&current_window()).copied().unwrap_or((0.0, 0.0)))
 }
 
-/// Whether an overlay is currently open.
+/// Whether an overlay is currently open in the current window.
 pub fn is_open() -> bool {
     overlay_signal().peek().is_some()
 }
@@ -47,23 +53,23 @@ pub struct OverlayEntry {
 }
 
 thread_local! {
-    static OVERLAY: RefCell<Option<Signal<Option<OverlayEntry>>>> = const { RefCell::new(None) };
+    /// One overlay signal per window id (main = 0). Created lazily on first access.
+    static OVERLAY: RefCell<HashMap<u32, Signal<Option<OverlayEntry>>>> =
+        RefCell::new(HashMap::new());
 }
 
-/// Create the global overlay signal. Call once at startup (before the tree runs)
-/// so the signal is global, not owned by whatever component renders first.
+/// Create the main window's overlay signal. Call once at startup (before the tree
+/// runs) so the signal is global, not owned by whatever component renders first.
+/// Secondary windows create theirs lazily when their [`OverlayHost`] first renders.
 pub fn init() {
     let _ = overlay_signal();
 }
 
-/// The global overlay signal (reactive).
+/// The current window's overlay signal (reactive), created on first access.
 pub fn overlay_signal() -> Signal<Option<OverlayEntry>> {
+    let window = current_window();
     OVERLAY.with(|cell| {
-        let mut cell = cell.borrow_mut();
-        if cell.is_none() {
-            *cell = Some(create_root_signal(None));
-        }
-        cell.unwrap()
+        *cell.borrow_mut().entry(window).or_insert_with(|| create_root_signal(None))
     })
 }
 

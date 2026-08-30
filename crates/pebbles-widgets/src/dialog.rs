@@ -10,6 +10,7 @@
 //! (the default) — with the Escape key or an outside click.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use pebbles_foundation::{Color, Offset};
@@ -18,6 +19,7 @@ use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow};
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, Positioned, center};
 use pebbles_core::context::action;
+use pebbles_core::reactive::current_window;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, create_root_signal};
 
@@ -37,26 +39,27 @@ struct DialogEntry {
 
 thread_local! {
     static NEXT_ID: Cell<DialogId> = const { Cell::new(1) };
-    static MODAL: RefCell<Option<Signal<Option<DialogEntry>>>> = const { RefCell::new(None) };
+    /// One modal signal per window id (main = 0), created lazily on first access. Ids
+    /// stay globally unique (a single counter), so `close_dialog(id)` is unambiguous.
+    static MODAL: RefCell<HashMap<u32, Signal<Option<DialogEntry>>>> =
+        RefCell::new(HashMap::new());
 }
 
-/// Create the global modal signal. Call once at startup (before the tree runs), like
-/// the overlay/focus signals.
+/// Create the main window's modal signal. Call once at startup (before the tree runs),
+/// like the overlay/focus signals. Secondary windows create theirs lazily.
 pub fn init() {
     let _ = modal_signal();
 }
 
+/// The current window's modal signal (reactive), created on first access.
 fn modal_signal() -> Signal<Option<DialogEntry>> {
+    let window = current_window();
     MODAL.with(|cell| {
-        let mut cell = cell.borrow_mut();
-        if cell.is_none() {
-            *cell = Some(create_root_signal(None));
-        }
-        cell.unwrap()
+        *cell.borrow_mut().entry(window).or_insert_with(|| create_root_signal(None))
     })
 }
 
-/// Whether a dialog is currently open.
+/// Whether a dialog is currently open in the current window.
 pub fn is_open() -> bool {
     modal_signal().peek().is_some()
 }

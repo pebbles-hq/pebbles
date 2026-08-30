@@ -407,10 +407,13 @@ impl Runner {
             )
             .expect("create vello renderer")
         });
-        // A fresh Ui → a fresh window_id in the shared runtime. No OverlayHost:
-        // popovers/modals target the main window for now.
+        // A fresh Ui → a fresh window_id in the shared runtime. Wrap the root in an
+        // OverlayHost so this window has its own popover/menu/dialog layer (the overlay
+        // + dialog signals are namespaced per window id).
         let mut ui = Ui::new();
-        ui.mount_root(View::new(spec.background, spec.root).boxed());
+        ui.make_current(); // so lazily-created per-window overlay signals key to this window
+        let root = pebbles_widgets::OverlayHost::wrap(spec.root).into_widget();
+        ui.mount_root(View::new(spec.background, root).boxed());
         let wid = window.id();
         window.request_redraw();
         self.window_by_id.insert(spec.id, wid);
@@ -434,6 +437,9 @@ impl Runner {
     /// Handle a window event addressed to a secondary window.
     fn secondary_event(&mut self, window_id: WindowId, event: WindowEvent) {
         let Some(mut w) = self.windows.remove(&window_id) else { return };
+        // Route window-scoped globals (overlay/dialog signals) to THIS window while we
+        // handle its input — event handlers don't otherwise set the current window.
+        w.ui.make_current();
         let mut keep = true;
         match event {
             WindowEvent::CloseRequested => {
@@ -513,6 +519,17 @@ impl Runner {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == ElementState::Pressed {
+                    // Escape closes this window's open (dismissible) modal dialog first.
+                    if event.logical_key == Key::Named(NamedKey::Escape)
+                        && pebbles_widgets::dialog::is_open()
+                    {
+                        pebbles_widgets::dialog::dismiss_top();
+                        w.window.request_redraw();
+                        if keep {
+                            self.windows.insert(window_id, w);
+                        }
+                        return;
+                    }
                     let handled = if event.logical_key == Key::Named(NamedKey::Tab) {
                         w.ui.focus_move(!self.shift_down)
                     } else {
@@ -560,6 +577,9 @@ impl Runner {
             return;
         }
         let logical = Size::new(phys.width as f64 / scale, phys.height as f64 / scale);
+        // Publish this window's size so its popovers can flip/shift on-screen.
+        w.ui.make_current();
+        pebbles_widgets::overlay::set_window_size(logical.width, logical.height);
         w.ui.layout(&mut self.text, logical);
 
         self.scene.reset();
@@ -668,6 +688,9 @@ impl ApplicationHandler for Runner {
             self.pump_windows(event_loop);
             return;
         }
+        // Route window-scoped globals (overlay/dialog signals) to the main window while
+        // we handle its input (event handlers don't otherwise set the current window).
+        self.ui.make_current();
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
 
@@ -928,6 +951,7 @@ impl ApplicationHandler for Runner {
                 let cursor = self.cursor;
                 if let Some(t) = self.lp_target {
                     self.lp_active = true;
+                    self.ui.make_current(); // long-press handlers may open a popover
                     if self.ui.dispatch_long_press_begin(t, cursor) {
                         self.request_redraw();
                     }
