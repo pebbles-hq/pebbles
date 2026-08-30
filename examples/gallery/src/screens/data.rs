@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{screen, section};
 
-pub fn data() -> impl IntoWidget {
+pub fn data() -> Element {
     let open = create_signal([true, false]);
     let sel = create_signal(1usize);
     let list_ctrl = use_scroll_controller();

@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{doc, screen};
 
-pub fn button_groups() -> impl IntoWidget {
+pub fn button_groups() -> Element {
     screen(
         "Button Group",
         "Join buttons into a single segmented control (shadcn's Button Group): the outer corners round, inner ones flatten, and a hairline divides each button. Horizontal or vertical, or spaced into a plain toolbar.",

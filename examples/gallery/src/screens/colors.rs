@@ -61,7 +61,7 @@ macro_rules! fam {
     };
 }
 
-pub fn colors() -> impl IntoWidget {
+pub fn colors() -> Element {
     screen(
         "Colors",
         "The built-in palette is the full Tailwind/shadcn scale — 22 families × shades 50–950. Reference any as palette::<family>::S<shade>.",

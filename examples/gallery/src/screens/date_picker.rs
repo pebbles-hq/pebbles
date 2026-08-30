@@ -22,7 +22,7 @@ fn caption_time(label: &str, field: TimeField) -> impl IntoWidget {
         .main_axis_min()
 }
 
-pub fn date_picker() -> impl IntoWidget {
+pub fn date_picker() -> Element {
     let picked = create_signal(String::new());
     let inline = calendar(move |y, m, d| picked.set(format!("{m:02}/{d:02}/{y:04}")))
         .caption(CaptionLayout::Dropdown);

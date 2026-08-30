@@ -4,7 +4,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{doc, gap_h, screen};
 
-pub fn icons() -> impl IntoWidget {
+pub fn icons() -> Element {
     let c = theme().colors;
 
     // A live filter over the whole bundled Lucide set.

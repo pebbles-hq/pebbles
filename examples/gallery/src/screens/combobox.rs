@@ -5,7 +5,7 @@ use crate::ui::{doc, screen};
 const FRAMEWORKS: [&str; 10] =
     ["Next.js", "SvelteKit", "Nuxt", "Remix", "Astro", "Angular", "Vue", "Solid", "Qwik", "Ember"];
 
-pub fn combobox_screen() -> impl IntoWidget {
+pub fn combobox_screen() -> Element {
     screen(
         "Combobox",
         "A searchable select built on the overlay + a filtered command list — shadcn's Combobox (single choice) and MultiSelect (many). Type to filter, with a check on the current value and a “no results” state.",

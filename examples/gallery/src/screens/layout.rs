@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{gap_w, screen, section};
 
-pub fn layout() -> impl IntoWidget {
+pub fn layout() -> Element {
     let swatch = |color: Color, w: f64| {
         Container::new()
             .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)))

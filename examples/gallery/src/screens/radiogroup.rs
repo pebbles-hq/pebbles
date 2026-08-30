@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{doc, screen};
 
-pub fn radio_groups() -> impl IntoWidget {
+pub fn radio_groups() -> Element {
     screen(
         "Radio Group",
         "A set of mutually-exclusive options (shadcn's RadioGroup). Self-managing — seed the choice, and picking one reports its index.",

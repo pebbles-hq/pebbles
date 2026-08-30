@@ -16,27 +16,24 @@ pub fn gap_h(n: f64) -> impl IntoWidget {
 }
 
 /// A scrollable, padded screen with a heading + subtitle.
-pub fn screen<I, W>(title: &str, sub: &str, body: I) -> impl IntoWidget
-where
-    I: IntoIterator<Item = W>,
-    W: IntoWidget,
-{
+pub fn screen(title: &str, sub: &str, body: impl IntoChildren) -> Element {
     let mut items: Vec<AnyWidget> = vec![
         heading(title).into_widget(),
         gap_h(4.0).into_widget(),
         subtitle(sub).into_widget(),
         gap_h(24.0).into_widget(),
     ];
-    items.extend(body.into_iter().map(IntoWidget::into_widget));
+    items.extend(body.into_children());
     SingleChildScrollView::vertical(
         Container::new()
             .padding(EdgeInsets::all(30.0))
             .child(column(items).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_min()),
     )
+    .into_widget()
 }
 
 /// A labeled sub-section within a screen.
-pub fn section(title: &str, body: impl IntoWidget) -> impl IntoWidget {
+pub fn section(title: &str, body: impl IntoWidget) -> Element {
     column(children![
         text(title.to_string()).size(12.0).semibold().color(theme().colors.muted_foreground),
         gap_h(12.0),
@@ -45,11 +42,12 @@ pub fn section(title: &str, body: impl IntoWidget) -> impl IntoWidget {
     ])
     .cross_axis_alignment(CrossAxisAlignment::Stretch)
     .main_axis_min()
+    .into_widget()
 }
 
 /// A documentation-style section: a title, a descriptive sentence, then examples.
 /// The house style for the showcase screens.
-pub fn doc(title: &str, desc: &str, body: impl IntoWidget) -> impl IntoWidget {
+pub fn doc(title: &str, desc: &str, body: impl IntoWidget) -> Element {
     let c = theme().colors;
     column(children![
         text(title.to_string()).size(16.0).semibold().color(c.foreground),
@@ -61,6 +59,7 @@ pub fn doc(title: &str, desc: &str, body: impl IntoWidget) -> impl IntoWidget {
     ])
     .cross_axis_alignment(CrossAxisAlignment::Start)
     .main_axis_min()
+    .into_widget()
 }
 
 // ---------------------------------------------------------------------------

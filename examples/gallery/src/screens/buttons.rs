@@ -11,7 +11,7 @@ fn shadow_lg() -> BoxShadow {
     BoxShadow::new(Color::from_rgba8(0, 0, 0, 74), Offset::new(0.0, 9.0), 13.0, -3.0)
 }
 
-pub fn buttons() -> impl IntoWidget {
+pub fn buttons() -> Element {
     let c = theme().colors;
     // Live state for the interaction sections.
     let last = create_signal(String::from("— click one —"));

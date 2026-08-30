@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{doc, gap_h, screen};
 
-pub fn progress_screen() -> impl IntoWidget {
+pub fn progress_screen() -> Element {
     screen(
         "Progress",
         "A linear progress bar (shadcn style) — a determinate fraction, a custom domain and thickness, colored indicators, or an animated indeterminate sweep.",

@@ -28,7 +28,7 @@ fn counter_window() -> impl IntoWidget {
     )
 }
 
-pub fn windows() -> impl IntoWidget {
+pub fn windows() -> Element {
     let win = create_signal::<Option<WindowId>>(None);
     let draft = create_signal(String::from("Hello, window!"));
 

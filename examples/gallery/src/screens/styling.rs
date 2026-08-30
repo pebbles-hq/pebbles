@@ -3,7 +3,7 @@ use pebbles::prelude::*;
 use crate::styles;
 use crate::ui::{gap_h, screen, section};
 
-pub fn styling() -> impl IntoWidget {
+pub fn styling() -> Element {
     screen(
         "Styling",
         "One general Style value, applied to any widget — React-Native / CSS-like.",

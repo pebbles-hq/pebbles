@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{doc, gap_w, screen};
 
-pub fn cards() -> impl IntoWidget {
+pub fn cards() -> Element {
     screen(
         "Card",
         "An elevated content surface (shadcn's Card): an optional header with title, description and a trailing action, a content body, and a footer.",

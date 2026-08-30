@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{gap_h, screen, section};
 
-pub fn surfaces() -> impl IntoWidget {
+pub fn surfaces() -> Element {
     screen(
         "Surfaces",
         "Cards, badges, alerts, avatars, separators, skeletons.",

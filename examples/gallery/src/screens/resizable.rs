@@ -23,7 +23,7 @@ fn region(height: f64, child: impl IntoWidget) -> impl IntoWidget {
         .child(child)
 }
 
-pub fn resizables() -> impl IntoWidget {
+pub fn resizables() -> Element {
     screen(
         "Resizable",
         "Panels split by draggable handles (shadcn's Resizable). Drag a handle to grow one panel and shrink its neighbor; horizontal or vertical, and nestable.",

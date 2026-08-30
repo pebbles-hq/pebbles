@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{gap_h, gap_w, screen, section, stat_card};
 
-pub fn overview() -> impl IntoWidget {
+pub fn overview() -> Element {
     screen(
         "Welcome to Pebbles",
         "A Flutter-style, desktop-first GUI framework built on Vello.",

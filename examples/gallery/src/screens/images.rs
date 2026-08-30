@@ -8,7 +8,7 @@ const PHOTO_B64: &str = "/9j/4QDeRXhpZgAASUkqAAgAAAAGABIBAwABAAAAAQAAABoBBQABAAA
 /// The same photo, embedded at compile time (also on disk for the asset demo).
 const SAMPLE: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/sample.jpg"));
 
-pub fn images() -> impl IntoWidget {
+pub fn images() -> Element {
     screen(
         "Images",
         "One ImageView, four sources — all showing the SAME photo: URL (fetched + decoded on a background thread), asset (file on disk), base64/data-URI, and raw memory bytes — with object-fit modes, rounded corners, a loading placeholder and an error fallback.",

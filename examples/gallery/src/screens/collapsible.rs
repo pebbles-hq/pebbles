@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{doc, gap_w, screen};
 
-pub fn collapsibles() -> impl IntoWidget {
+pub fn collapsibles() -> Element {
     screen(
         "Collapsible",
         "A single open/closed section (shadcn's Collapsible). It manages its own state — tap the header to toggle — and takes a custom trigger for anything fancier.",

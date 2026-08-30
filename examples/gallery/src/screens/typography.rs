@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{gap_h, screen};
 
-pub fn typography() -> impl IntoWidget {
+pub fn typography() -> Element {
     screen(
         "Typography",
         "Themed text presets with real font weights.",

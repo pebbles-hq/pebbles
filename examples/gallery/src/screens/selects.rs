@@ -4,7 +4,7 @@ use crate::ui::{doc, screen};
 
 const PLANS: [&str; 7] = ["Free", "Pro", "Enterprise", "Team", "Startup", "Growth", "Custom"];
 
-pub fn selects() -> impl IntoWidget {
+pub fn selects() -> Element {
     let picked = create_signal(String::from("Pro"));
     let action_note = create_signal(String::new());
     let show_status = create_signal(true);

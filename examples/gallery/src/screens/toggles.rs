@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{doc, gap_h, screen};
 
-pub fn toggles() -> impl IntoWidget {
+pub fn toggles() -> Element {
     screen(
         "Toggles",
         "Selection controls — checkbox, switch, radio and toggle — each with sizes, colors, labels, disabled and focus states, animated on change.",

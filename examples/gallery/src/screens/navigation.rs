@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{screen, section};
 
-pub fn navigation() -> impl IntoWidget {
+pub fn navigation() -> Element {
     let tab = create_signal(0usize);
     let acc = create_signal([true, false, false]);
     let pg = create_signal(2usize);

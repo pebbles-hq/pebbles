@@ -25,7 +25,7 @@ fn panel(title: &str, desc: &str, body_w: impl IntoWidget, footer: impl IntoWidg
         .into_widget()
 }
 
-pub fn dialogs_screen() -> impl IntoWidget {
+pub fn dialogs_screen() -> Element {
     let status = create_signal(String::from("—"));
     screen(
         "Dialog",

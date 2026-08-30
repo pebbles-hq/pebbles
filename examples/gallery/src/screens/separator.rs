@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{doc, gap_w, screen};
 
-pub fn separators() -> impl IntoWidget {
+pub fn separators() -> Element {
     screen(
         "Separator",
         "A hairline divider (shadcn's Separator) — horizontal or vertical, with adjustable thickness and color.",

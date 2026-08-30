@@ -4,7 +4,7 @@ use crate::ui::{doc, gap_h, screen};
 
 const W: f64 = 360.0;
 
-pub fn text_fields() -> impl IntoWidget {
+pub fn text_fields() -> Element {
     let name = create_signal(String::new());
     let query = create_signal(String::new());
     let mail = create_signal(String::new());

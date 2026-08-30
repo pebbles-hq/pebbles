@@ -2,7 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{doc, gap_h, screen};
 
-pub fn sliders() -> impl IntoWidget {
+pub fn sliders() -> Element {
     screen(
         "Slider",
         "A draggable value slider (shadcn style) — a real min/max/step domain, one or two thumbs, horizontal or vertical, and fully keyboard-operable.",

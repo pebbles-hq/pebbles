@@ -4,7 +4,7 @@ use crate::ui::{doc, screen};
 
 const IMG: &str = "https://github.com/shadcn.png";
 
-pub fn avatars() -> impl IntoWidget {
+pub fn avatars() -> Element {
     screen(
         "Avatar",
         "An image with an initials fallback (shadcn's Avatar), plus sizes, shapes, a status dot, and an overlapping group.",
