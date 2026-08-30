@@ -172,6 +172,25 @@ pub fn create_signal<T: 'static + Clone>(value: T) -> Signal<T> {
     })
 }
 
+/// Create an **app-owned** signal even when called from inside a component render.
+///
+/// Unlike [`create_signal`] — which, inside a component, creates a *local* signal
+/// that counts against the hooks order and is disposed when that component unmounts —
+/// this always creates a global signal owned by the app root. Use it to lazily
+/// initialize global state (theme, overlay host, focus) on first touch, so a stray
+/// early `theme()`/`show_overlay()` call from within a render can't accidentally bind
+/// the global to a component (the hooks-order footgun). Never counts against hooks.
+pub fn create_root_signal<T: 'static + Clone>(value: T) -> Signal<T> {
+    with_rt(|rt| {
+        let id = rt.signals.insert(SignalSlot {
+            value: Box::new(value),
+            component_subs: HashSet::new(),
+            effect_subs: HashSet::new(),
+        });
+        Signal { id, _marker: PhantomData }
+    })
+}
+
 impl<T: 'static + Clone> Signal<T> {
     /// Read the value, subscribing the current component/effect to changes.
     pub fn get(&self) -> T {

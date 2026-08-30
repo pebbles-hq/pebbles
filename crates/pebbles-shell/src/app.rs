@@ -632,6 +632,7 @@ impl ApplicationHandler for Runner {
             pebbles_core::focus::init(); // create the global focus signal (before any component)
             pebbles_widgets::overlay::init(); // create the global overlay signal too
             pebbles_widgets::dialog::init(); // and the global modal-dialog signal
+            pebbles_widgets::theme::init(); // and the global reactive theme signal
             install_clipboard(); // wire the system clipboard for Ctrl+C/X/V
             let root = self.pending_root.take().expect("root widget");
             self.ui.mount_root(View::new(self.background, root).boxed());

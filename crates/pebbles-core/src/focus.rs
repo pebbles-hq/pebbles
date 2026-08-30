@@ -15,7 +15,7 @@ use std::rc::Rc;
 
 use crate::element::ElementId;
 use crate::keyboard::KeyInput;
-use crate::reactive::{Signal, create_signal, current_owner, current_window, instance_id};
+use crate::reactive::{Signal, create_root_signal, current_owner, current_window, instance_id};
 
 /// A focus node's identity: `(window, element id)`.
 type FocusKey = (u32, ElementId);
@@ -41,10 +41,10 @@ fn with_mgr<R>(f: impl FnOnce(&mut FocusManager) -> R) -> R {
     MGR.with(|cell| {
         let mut cell = cell.borrow_mut();
         if cell.is_none() {
-            // NOTE: must be created outside any component (see `init`) so the focus
-            // signal is global, not owned by whatever component ran first.
+            // App-owned regardless of the current render context (`create_root_signal`),
+            // so the global focus signal is never captured by whatever component ran first.
             *cell = Some(FocusManager {
-                focus: create_signal(None),
+                focus: create_root_signal(None),
                 order: Vec::new(),
                 activation: HashMap::new(),
                 on_change: HashMap::new(),

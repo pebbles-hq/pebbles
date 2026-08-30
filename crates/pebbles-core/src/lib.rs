@@ -40,8 +40,8 @@ pub use ipc::{Channel, channel};
 pub use key::Key;
 pub use keyboard::{KeyInput, Motion};
 pub use reactive::{
-    Signal, Store, create_cleanup, create_effect, create_memo, create_signal, create_store,
-    owner_id,
+    Signal, Store, create_cleanup, create_effect, create_memo, create_root_signal, create_signal,
+    create_store, owner_id,
 };
 pub use widget::{
     AnyWidget, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget, Widget, WidgetExt,

@@ -84,8 +84,15 @@ pub fn app() -> impl IntoWidget {
         .route("images", || component(screens::images::images))
         .fallback(|| component(screens::overview::overview));
 
+    // A live light/dark toggle — flips the global theme signal; every component that
+    // read `theme()` (i.e. the whole tree) re-renders. Icon shows the target mode.
+    let dark = theme().dark;
+    let theme_toggle =
+        icon_button(if dark { lucide::SUN } else { lucide::MOON }).on_pressed(|| toggle_theme());
+
     let top = top_panel(label_for(&current))
         .leading(icon(IconKind::Menu).size(18.0).color(c.muted_foreground))
+        .action(theme_toggle)
         .action(badge("v0.0.1").variant(BadgeVariant::Secondary));
 
     scaffold(body).top(top).side(side)

@@ -251,6 +251,60 @@ fn into_children_accepts_tuples_vecs_arrays_options() {
     assert_eq!((text("a"), Container::new(), text("b")).into_children().len(), 3, "heterogeneous");
 }
 
+// ---------------------------------------------------------------------------
+// Reactive theming (live light/dark toggle)
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    static PAINTED_DARK: Cell<Option<bool>> = const { Cell::new(None) };
+}
+
+/// A component that reads `theme()` — which subscribes it to the global theme signal,
+/// so flipping the theme must re-render it. It records the theme it painted with.
+fn themed_probe() -> impl IntoWidget {
+    let dark = pebbles_widgets::theme().dark;
+    PAINTED_DARK.with(|c| c.set(Some(dark)));
+    Container::new()
+        .color(pebbles_widgets::theme().colors.background)
+        .into_widget()
+}
+
+#[test]
+fn toggle_theme_rerenders_subscribers() {
+    use pebbles_widgets::{set_theme, theme, toggle_theme};
+    use pebbles_widgets::Theme;
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    pebbles_widgets::theme::init(); // create the global theme signal at app scope
+
+    set_theme(Theme::light()); // known starting point
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let window = Size::new(200.0, 200.0);
+    ui.mount_root(View::new(palette::WHITE, component(themed_probe)).boxed());
+    ui.layout(&mut env, window);
+    let mut frame = |ui: &mut Ui| {
+        let dirtied = ui.rebuild_if_dirty();
+        ui.layout(&mut env, window);
+        let mut scene = pebbles_render::Scene::new();
+        ui.paint(&mut scene);
+        dirtied
+    };
+    frame(&mut ui);
+    assert_eq!(PAINTED_DARK.with(Cell::get), Some(false), "painted with the light theme first");
+
+    // Flip the global theme — the probe read `theme()`, so it must be marked dirty.
+    toggle_theme();
+    assert!(frame(&mut ui), "toggling the theme re-renders every component that read theme()");
+    assert_eq!(PAINTED_DARK.with(Cell::get), Some(true), "re-rendered with the dark theme");
+    assert!(theme().dark, "toggle flipped the global theme to dark");
+
+    // And back.
+    toggle_theme();
+    assert!(frame(&mut ui), "toggling again re-renders");
+    assert_eq!(PAINTED_DARK.with(Cell::get), Some(false), "back to light");
+}
+
 #[test]
 fn channel_carries_typed_messages() {
     use pebbles_core::channel;

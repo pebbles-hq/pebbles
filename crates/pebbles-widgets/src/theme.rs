@@ -1,10 +1,12 @@
 //! [`Theme`] — design tokens shared across the component catalog, in the spirit of
-//! shadcn/ui's CSS variables. A global "current" theme is read by components at
-//! build time (until an inherited-widget `ThemeProvider` lands, this is a simple
-//! thread-local you set once at startup with [`Theme::make_current`]).
+//! shadcn/ui's CSS variables. The "current" theme is a **global reactive signal**:
+//! [`theme`] reads it (subscribing the calling component), and [`set_theme`]/
+//! [`toggle_theme`] swap it and re-render every component that read it — so a live
+//! light/dark toggle just works, no restart, no provider plumbing.
 
 use std::cell::RefCell;
 
+use pebbles_core::{Signal, create_root_signal};
 use pebbles_foundation::Color;
 
 /// The semantic color roles a component can reference.
@@ -117,19 +119,51 @@ impl Theme {
         }
     }
 
-    /// Install this theme as the process-wide current theme.
+    /// Install this theme as the current theme. Reactive: every component that read
+    /// [`theme`] re-renders. Equivalent to [`set_theme`].
     pub fn make_current(self) {
-        CURRENT.with(|c| *c.borrow_mut() = self);
+        set_theme(self);
     }
 }
 
 thread_local! {
-    static CURRENT: RefCell<Theme> = RefCell::new(Theme::light());
+    /// The global theme signal, created lazily at app scope by [`theme_signal`].
+    static CURRENT: RefCell<Option<Signal<Theme>>> = const { RefCell::new(None) };
 }
 
-/// The current theme (cheap `Copy`). Components call this in `build`.
+/// Create the global theme signal. Call once at startup (before the tree runs) so the
+/// signal is app-owned, not owned by whatever component renders first — mirrors
+/// `overlay::init`/`focus::init`. The shell calls this automatically.
+pub fn init() {
+    let _ = theme_signal();
+}
+
+/// The global theme signal (reactive).
+fn theme_signal() -> Signal<Theme> {
+    CURRENT.with(|cell| {
+        let mut cell = cell.borrow_mut();
+        if cell.is_none() {
+            *cell = Some(create_root_signal(Theme::light()));
+        }
+        cell.unwrap()
+    })
+}
+
+/// The current theme (cheap `Copy`). Reading it inside a component subscribes that
+/// component, so it re-renders when the theme changes.
 pub fn theme() -> Theme {
-    CURRENT.with(|c| *c.borrow())
+    theme_signal().get()
+}
+
+/// Swap the current theme. Every component that read [`theme`] re-renders.
+pub fn set_theme(theme: Theme) {
+    theme_signal().set(theme);
+}
+
+/// Flip between the default light and dark themes (a one-line dark-mode toggle).
+pub fn toggle_theme() {
+    let next = if theme().dark { Theme::light() } else { Theme::dark() };
+    set_theme(next);
 }
 
 /// Scale a color's RGB channels by `factor` (`<1.0` darkens, `>1.0` lightens),

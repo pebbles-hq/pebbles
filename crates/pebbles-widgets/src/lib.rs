@@ -26,7 +26,7 @@ pub use image_view::ImageView;
 pub use modifiers::ModifierExt;
 pub use overlay::{OverlayHost, hide_overlay, show_overlay};
 pub use style::{Style, StyleExt, image_from_bytes, image_from_path, style, styled};
-pub use theme::{Colors, Theme, theme};
+pub use theme::{Colors, Theme, set_theme, theme, toggle_theme};
 pub use widgets::{
     Align, AspectRatio, ClipRRect, ColoredBox, Column, ConstrainedBox, Container, DecoratedBox,
     EditableText, Expanded, Flexible, GestureDetector, GridView, ListView, Opacity, Padding,

@@ -19,7 +19,7 @@ use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, Positioned, center};
 use pebbles_core::context::action;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Signal, create_signal};
+use pebbles_core::{Signal, create_root_signal};
 
 /// Identifies an open dialog.
 pub type DialogId = u64;
@@ -50,7 +50,7 @@ fn modal_signal() -> Signal<Option<DialogEntry>> {
     MODAL.with(|cell| {
         let mut cell = cell.borrow_mut();
         if cell.is_none() {
-            *cell = Some(create_signal(None));
+            *cell = Some(create_root_signal(None));
         }
         cell.unwrap()
     })

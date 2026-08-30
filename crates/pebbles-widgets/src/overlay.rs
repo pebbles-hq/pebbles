@@ -12,7 +12,7 @@ use pebbles_foundation::Alignment;
 
 use crate::widgets::{Container, GestureDetector, Positioned, stack};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Signal, action, component_props, create_signal};
+use pebbles_core::{Signal, action, component_props, create_root_signal};
 
 thread_local! {
     /// The current window's logical size, published by the shell each frame so
@@ -61,7 +61,7 @@ pub fn overlay_signal() -> Signal<Option<OverlayEntry>> {
     OVERLAY.with(|cell| {
         let mut cell = cell.borrow_mut();
         if cell.is_none() {
-            *cell = Some(create_signal(None));
+            *cell = Some(create_root_signal(None));
         }
         cell.unwrap()
     })
