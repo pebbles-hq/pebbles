@@ -29,13 +29,36 @@ pub enum Callback {
     Targeted { target: ElementId, action: Rc<dyn Fn(&mut dyn Any)> },
 }
 
-/// Wrap a plain closure as a [`Callback`] — the idiomatic reactive handler.
+/// Wrap a plain closure as a [`Callback`] — the explicit form.
 ///
-/// ```ignore
-/// button("+").on_pressed(action(move || count.update(|c| *c += 1)))
-/// ```
+/// You rarely need this at a call site: event setters accept a bare closure via
+/// [`IntoCallback`], e.g. `button("+").on_pressed(move || count.update(|c| *c += 1))`.
 pub fn action(f: impl Fn() + 'static) -> Callback {
     Callback::Plain(Rc::new(f))
+}
+
+/// Anything that can become a [`Callback`]: a **bare closure** (the ergonomic path —
+/// no `action(..)` wrapper) or an already-built [`Callback`] (so existing
+/// `action(..)`/`action_event(..)` call sites keep compiling — the migration is
+/// non-breaking). Every `on_*` setter takes `impl IntoCallback`.
+///
+/// An event handler is passed as `action_event(|e| ..)`, which is a `Callback` and
+/// flows through the identity impl unchanged; a bare `|e| ..` closure is not accepted
+/// here (use `action_event`), since a single trait can't accept both closure shapes.
+pub trait IntoCallback {
+    fn into_callback(self) -> Callback;
+}
+
+impl IntoCallback for Callback {
+    fn into_callback(self) -> Callback {
+        self
+    }
+}
+
+impl<F: Fn() + 'static> IntoCallback for F {
+    fn into_callback(self) -> Callback {
+        action(self)
+    }
 }
 
 /// Wrap a closure that receives the [`PointerEvent`] (position + button).

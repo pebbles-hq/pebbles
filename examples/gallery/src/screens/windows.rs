@@ -17,7 +17,7 @@ fn counter_window() -> impl IntoWidget {
             row(children![
                 text(format!("Shared counter: {}", count.get())).size(15.0),
                 gap_w(14.0),
-                button("+1").size(ButtonSize::Sm).on_pressed(action(move || count.update(|c| *c += 1))),
+                button("+1").size(ButtonSize::Sm).on_pressed(move || count.update(|c| *c += 1)),
             ])
             .main_axis_min(),
             SizedBox::spacer(0.0, 16.0),
@@ -44,7 +44,7 @@ fn open_section(win: Signal<Option<WindowId>>) -> impl IntoWidget {
         "Open a window",
         "window(content).title(..).size(..).open() spawns a real OS window and returns an id; close_window(id) closes it (so does its own control).",
         row(children![
-            button("Open counter window").leading(IconKind::Plus).on_pressed(action(move || {
+            button("Open counter window").leading(IconKind::Plus).on_pressed(move || {
                 if win.get().is_none() {
                     let id = window(component(counter_window))
                         .title("Counter")
@@ -53,17 +53,17 @@ fn open_section(win: Signal<Option<WindowId>>) -> impl IntoWidget {
                         .open();
                     win.set(Some(id));
                 }
-            })),
+            }),
             gap_w(10.0),
             button("Close window")
                 .variant(ButtonVariant::Outline)
                 .disabled(win.get().is_none())
-                .on_pressed(action(move || {
+                .on_pressed(move || {
                     if let Some(id) = win.get() {
                         close_window(id);
                         win.set(None);
                     }
-                })),
+                }),
         ])
         .main_axis_min(),
     )
@@ -77,9 +77,9 @@ fn shared_section() -> impl IntoWidget {
         row(children![
             text(format!("Counter: {}", count.get())).size(16.0).semibold(),
             gap_w(14.0),
-            button("+1").on_pressed(action(move || count.update(|c| *c += 1))),
+            button("+1").on_pressed(move || count.update(|c| *c += 1)),
             gap_w(8.0),
-            button("Reset").variant(ButtonVariant::Ghost).on_pressed(action(move || count.set(0))),
+            button("Reset").variant(ButtonVariant::Ghost).on_pressed(move || count.set(0)),
         ])
         .main_axis_min(),
     )
@@ -93,9 +93,9 @@ fn message_section(draft: Signal<String>) -> impl IntoWidget {
             row(children![
                 text_field().bind(draft).width(260.0),
                 gap_w(10.0),
-                button("Send").leading(IconKind::ArrowRight).on_pressed(action(move || {
+                button("Send").leading(IconKind::ArrowRight).on_pressed(move || {
                     state::ping().send(draft.get());
-                })),
+                }),
             ])
             .main_axis_min(),
             SizedBox::spacer(0.0, 10.0),

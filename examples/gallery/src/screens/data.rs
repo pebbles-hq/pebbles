@@ -10,17 +10,17 @@ pub fn data() -> impl IntoWidget {
     let tree = tree_view(vec![
         tree_node("src")
             .expanded(open.get()[0])
-            .on_toggle(action(move || open.update(|o| o[0] = !o[0])))
+            .on_toggle(move || open.update(|o| o[0] = !o[0]))
             .children(vec![
-                tree_node("main.rs").icon(IconKind::Dot).selected(sel.get() == 0).on_select(action(move || sel.set(0))),
+                tree_node("main.rs").icon(IconKind::Dot).selected(sel.get() == 0).on_select(move || sel.set(0)),
                 tree_node("components")
                     .expanded(open.get()[1])
-                    .on_toggle(action(move || open.update(|o| o[1] = !o[1])))
+                    .on_toggle(move || open.update(|o| o[1] = !o[1]))
                     .children(vec![
-                        tree_node("button.rs").icon(IconKind::Dot).selected(sel.get() == 2).on_select(action(move || sel.set(2))),
+                        tree_node("button.rs").icon(IconKind::Dot).selected(sel.get() == 2).on_select(move || sel.set(2)),
                     ]),
             ]),
-        tree_node("Cargo.toml").icon(IconKind::Dot).selected(sel.get() == 1).on_select(action(move || sel.set(1))),
+        tree_node("Cargo.toml").icon(IconKind::Dot).selected(sel.get() == 1).on_select(move || sel.set(1)),
     ]);
 
     screen(
@@ -32,13 +32,13 @@ pub fn data() -> impl IntoWidget {
                 column(children![
                     row(children![
                         button("Top").variant(ButtonVariant::Secondary).size(ButtonSize::Sm)
-                            .on_pressed(action(move || list_ctrl.animate_to(0.0))),
+                            .on_pressed(move || list_ctrl.animate_to(0.0)),
                         SizedBox::spacer(8.0, 0.0),
                         button("Jump to #2500").variant(ButtonVariant::Secondary).size(ButtonSize::Sm)
-                            .on_pressed(action(move || list_ctrl.scroll_to_index(2500, 44.0))),
+                            .on_pressed(move || list_ctrl.scroll_to_index(2500, 44.0)),
                         SizedBox::spacer(8.0, 0.0),
                         button("Bottom").variant(ButtonVariant::Secondary).size(ButtonSize::Sm)
-                            .on_pressed(action(move || list_ctrl.animate_to(5000.0 * 44.0))),
+                            .on_pressed(move || list_ctrl.animate_to(5000.0 * 44.0)),
                     ])
                     .main_axis_min(),
                     SizedBox::spacer(0.0, 10.0),

@@ -11,6 +11,7 @@
 //! part of the tap target, hover feedback, an animated focus ring, and keyboard
 //! activation (Tab to focus, Space/Enter to toggle).
 
+use pebbles_core::IntoCallback;
 use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, Axis, Color, CrossAxisAlignment, EdgeInsets};
@@ -213,8 +214,8 @@ impl Checkbox {
         self.description = Some(s.into());
         self
     }
-    pub fn on_changed(mut self, cb: Callback) -> Self {
-        self.on_changed = Some(cb);
+    pub fn on_changed(mut self, cb: impl IntoCallback) -> Self {
+        self.on_changed = Some(cb.into_callback());
         self
     }
 }
@@ -317,8 +318,8 @@ impl Switch {
         self.description = Some(s.into());
         self
     }
-    pub fn on_changed(mut self, cb: Callback) -> Self {
-        self.on_changed = Some(cb);
+    pub fn on_changed(mut self, cb: impl IntoCallback) -> Self {
+        self.on_changed = Some(cb.into_callback());
         self
     }
 }
@@ -414,8 +415,8 @@ impl Radio {
         self.description = Some(s.into());
         self
     }
-    pub fn on_selected(mut self, cb: Callback) -> Self {
-        self.on_selected = Some(cb);
+    pub fn on_selected(mut self, cb: impl IntoCallback) -> Self {
+        self.on_selected = Some(cb.into_callback());
         self
     }
 }
@@ -524,8 +525,8 @@ impl Toggle {
         self.autofocus = true;
         self
     }
-    pub fn on_changed(mut self, cb: Callback) -> Self {
-        self.on_changed = Some(cb);
+    pub fn on_changed(mut self, cb: impl IntoCallback) -> Self {
+        self.on_changed = Some(cb.into_callback());
         self
     }
 }

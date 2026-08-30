@@ -3,6 +3,7 @@
 //! overrides. The fluent builder *is* the component's props; `into_widget` wraps it
 //! with [`component_props`](pebbles_core::component::component_props).
 
+use pebbles_core::IntoCallback;
 use std::rc::Rc;
 
 use pebbles_foundation::{Color, EdgeInsets};
@@ -157,49 +158,49 @@ impl Button {
         self
     }
     /// Primary tap (Flutter's `onPressed`).
-    pub fn on_pressed(mut self, cb: Callback) -> Self {
-        self.on_pressed = Some(cb);
+    pub fn on_pressed(mut self, cb: impl IntoCallback) -> Self {
+        self.on_pressed = Some(cb.into_callback());
         self
     }
     /// Alias for [`Button::on_pressed`].
-    pub fn on_click(self, cb: Callback) -> Self {
+    pub fn on_click(self, cb: impl IntoCallback) -> Self {
         self.on_pressed(cb)
     }
-    pub fn on_long_press(mut self, cb: Callback) -> Self {
-        self.on_long_press = Some(cb);
+    pub fn on_long_press(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press = Some(cb.into_callback());
         self
     }
-    pub fn on_double_tap(mut self, cb: Callback) -> Self {
-        self.on_double_tap = Some(cb);
+    pub fn on_double_tap(mut self, cb: impl IntoCallback) -> Self {
+        self.on_double_tap = Some(cb.into_callback());
         self
     }
-    pub fn on_secondary_tap(mut self, cb: Callback) -> Self {
-        self.on_secondary_tap = Some(cb);
+    pub fn on_secondary_tap(mut self, cb: impl IntoCallback) -> Self {
+        self.on_secondary_tap = Some(cb.into_callback());
         self
     }
-    pub fn on_tap_down(mut self, cb: Callback) -> Self {
-        self.on_tap_down = Some(cb);
+    pub fn on_tap_down(mut self, cb: impl IntoCallback) -> Self {
+        self.on_tap_down = Some(cb.into_callback());
         self
     }
-    pub fn on_tap_up(mut self, cb: Callback) -> Self {
-        self.on_tap_up = Some(cb);
+    pub fn on_tap_up(mut self, cb: impl IntoCallback) -> Self {
+        self.on_tap_up = Some(cb.into_callback());
         self
     }
     /// Press began but ended without a tap (released off / dragged away).
-    pub fn on_tap_cancel(mut self, cb: Callback) -> Self {
-        self.on_tap_cancel = Some(cb);
+    pub fn on_tap_cancel(mut self, cb: impl IntoCallback) -> Self {
+        self.on_tap_cancel = Some(cb.into_callback());
         self
     }
-    pub fn on_secondary_tap_down(mut self, cb: Callback) -> Self {
-        self.on_secondary_tap_down = Some(cb);
+    pub fn on_secondary_tap_down(mut self, cb: impl IntoCallback) -> Self {
+        self.on_secondary_tap_down = Some(cb.into_callback());
         self
     }
-    pub fn on_secondary_tap_up(mut self, cb: Callback) -> Self {
-        self.on_secondary_tap_up = Some(cb);
+    pub fn on_secondary_tap_up(mut self, cb: impl IntoCallback) -> Self {
+        self.on_secondary_tap_up = Some(cb.into_callback());
         self
     }
-    pub fn on_secondary_tap_cancel(mut self, cb: Callback) -> Self {
-        self.on_secondary_tap_cancel = Some(cb);
+    pub fn on_secondary_tap_cancel(mut self, cb: impl IntoCallback) -> Self {
+        self.on_secondary_tap_cancel = Some(cb.into_callback());
         self
     }
     /// Called with the pressed (highlight) state as it changes.
@@ -208,49 +209,49 @@ impl Button {
         self
     }
     // ----- long-press lifecycle -----
-    pub fn on_long_press_down(mut self, cb: Callback) -> Self {
-        self.on_long_press_down = Some(cb);
+    pub fn on_long_press_down(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press_down = Some(cb.into_callback());
         self
     }
-    pub fn on_long_press_start(mut self, cb: Callback) -> Self {
-        self.on_long_press_start = Some(cb);
+    pub fn on_long_press_start(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press_start = Some(cb.into_callback());
         self
     }
-    pub fn on_long_press_move(mut self, cb: Callback) -> Self {
-        self.on_long_press_move = Some(cb);
+    pub fn on_long_press_move(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press_move = Some(cb.into_callback());
         self
     }
-    pub fn on_long_press_up(mut self, cb: Callback) -> Self {
-        self.on_long_press_up = Some(cb);
+    pub fn on_long_press_up(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press_up = Some(cb.into_callback());
         self
     }
-    pub fn on_long_press_end(mut self, cb: Callback) -> Self {
-        self.on_long_press_end = Some(cb);
+    pub fn on_long_press_end(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press_end = Some(cb.into_callback());
         self
     }
-    pub fn on_long_press_cancel(mut self, cb: Callback) -> Self {
-        self.on_long_press_cancel = Some(cb);
+    pub fn on_long_press_cancel(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press_cancel = Some(cb.into_callback());
         self
     }
     // ----- tertiary (middle) button -----
-    pub fn on_tertiary_tap_down(mut self, cb: Callback) -> Self {
-        self.on_tertiary_tap_down = Some(cb);
+    pub fn on_tertiary_tap_down(mut self, cb: impl IntoCallback) -> Self {
+        self.on_tertiary_tap_down = Some(cb.into_callback());
         self
     }
-    pub fn on_tertiary_tap_up(mut self, cb: Callback) -> Self {
-        self.on_tertiary_tap_up = Some(cb);
+    pub fn on_tertiary_tap_up(mut self, cb: impl IntoCallback) -> Self {
+        self.on_tertiary_tap_up = Some(cb.into_callback());
         self
     }
-    pub fn on_tertiary_tap_cancel(mut self, cb: Callback) -> Self {
-        self.on_tertiary_tap_cancel = Some(cb);
+    pub fn on_tertiary_tap_cancel(mut self, cb: impl IntoCallback) -> Self {
+        self.on_tertiary_tap_cancel = Some(cb.into_callback());
         self
     }
-    pub fn on_hover_enter(mut self, cb: Callback) -> Self {
-        self.on_hover_enter = Some(cb);
+    pub fn on_hover_enter(mut self, cb: impl IntoCallback) -> Self {
+        self.on_hover_enter = Some(cb.into_callback());
         self
     }
-    pub fn on_hover_exit(mut self, cb: Callback) -> Self {
-        self.on_hover_exit = Some(cb);
+    pub fn on_hover_exit(mut self, cb: impl IntoCallback) -> Self {
+        self.on_hover_exit = Some(cb.into_callback());
         self
     }
 
@@ -535,11 +536,11 @@ impl IconButton {
         self.icon_size = size;
         self
     }
-    pub fn on_pressed(mut self, cb: Callback) -> Self {
-        self.on_pressed = Some(cb);
+    pub fn on_pressed(mut self, cb: impl IntoCallback) -> Self {
+        self.on_pressed = Some(cb.into_callback());
         self
     }
-    pub fn on_click(self, cb: Callback) -> Self {
+    pub fn on_click(self, cb: impl IntoCallback) -> Self {
         self.on_pressed(cb)
     }
     pub fn disabled(mut self, disabled: bool) -> Self {

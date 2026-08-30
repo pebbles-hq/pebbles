@@ -2,6 +2,7 @@
 //! each carries its own `expanded`/`selected` flags and callbacks, so the developer
 //! rebuilds the tree from their own state.
 
+use pebbles_core::IntoCallback;
 use pebbles_foundation::palette;
 use pebbles_render::{IconData, IconKind};
 
@@ -47,13 +48,13 @@ impl TreeNode {
         self
     }
     /// Fired when a node with children is toggled.
-    pub fn on_toggle(mut self, cb: Callback) -> Self {
-        self.on_toggle = Some(cb);
+    pub fn on_toggle(mut self, cb: impl IntoCallback) -> Self {
+        self.on_toggle = Some(cb.into_callback());
         self
     }
     /// Fired when a node is selected.
-    pub fn on_select(mut self, cb: Callback) -> Self {
-        self.on_select = Some(cb);
+    pub fn on_select(mut self, cb: impl IntoCallback) -> Self {
+        self.on_select = Some(cb.into_callback());
         self
     }
 }

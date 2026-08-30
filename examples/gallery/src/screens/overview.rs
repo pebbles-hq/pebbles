@@ -38,7 +38,7 @@ pub fn overview() -> impl IntoWidget {
                     children![
                         body("create_signal — local AND global state, one primitive."),
                         body("Function components — fn() -> impl IntoWidget; no structs, no traits."),
-                        body("Plain-closure events — on_pressed(action(move || sig.set(x)))."),
+                        body("Plain-closure events — on_pressed(move || sig.set(x))."),
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(6.0),
             ),
         ],

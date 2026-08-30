@@ -26,12 +26,12 @@ fn checkbox_section() -> impl IntoWidget {
             column(children![
                 checkbox(terms.get())
                     .label("Accept terms and conditions")
-                    .on_changed(action(move || terms.update(|v| *v = !*v))),
+                    .on_changed(move || terms.update(|v| *v = !*v)),
                 gap_h(12.0),
                 checkbox(notify.get())
                     .label("Email notifications")
                     .description("Get notified about product updates and account activity.")
-                    .on_changed(action(move || notify.update(|v| *v = !*v))),
+                    .on_changed(move || notify.update(|v| *v = !*v)),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Start)
             .main_axis_min(),
@@ -80,12 +80,12 @@ fn switch_section() -> impl IntoWidget {
             column(children![
                 switch(airplane.get())
                     .label("Airplane mode")
-                    .on_changed(action(move || airplane.update(|v| *v = !*v))),
+                    .on_changed(move || airplane.update(|v| *v = !*v)),
                 gap_h(12.0),
                 switch(wifi.get())
                     .label("Wi-Fi")
                     .description("Connect automatically to known networks.")
-                    .on_changed(action(move || wifi.update(|v| *v = !*v))),
+                    .on_changed(move || wifi.update(|v| *v = !*v)),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Start)
             .main_axis_min(),
@@ -129,7 +129,7 @@ fn radio_section() -> impl IntoWidget {
         .into_iter()
         .enumerate()
         .map(|(i, name)| {
-            radio(plan.get() == i).label(name).on_selected(action(move || plan.set(i))).into_widget()
+            radio(plan.get() == i).label(name).on_selected(move || plan.set(i)).into_widget()
         })
         .collect();
 
@@ -184,11 +184,11 @@ fn toggle_section() -> impl IntoWidget {
             // a small icon toolbar of independent toggles
             row(children![
                 toggle(favorite.get(), icon(IconKind::Star).size(16.0))
-                    .on_changed(action(move || favorite.update(|v| *v = !*v))),
+                    .on_changed(move || favorite.update(|v| *v = !*v)),
                 toggle(visible.get(), icon(IconKind::Eye).size(16.0))
-                    .on_changed(action(move || visible.update(|v| *v = !*v))),
+                    .on_changed(move || visible.update(|v| *v = !*v)),
                 toggle(locked.get(), icon(IconKind::Lock).size(16.0))
-                    .on_changed(action(move || locked.update(|v| *v = !*v))),
+                    .on_changed(move || locked.update(|v| *v = !*v)),
             ])
             .main_axis_min()
             .spacing(8.0),

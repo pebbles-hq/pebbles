@@ -5,6 +5,7 @@
 //! with no `SideNav`, and so on. `Scaffold` just arranges whichever you provide:
 //! top bar on top, side nav on the left, body filling the rest, bottom nav below.
 
+use pebbles_core::IntoCallback;
 use pebbles_foundation::{
     Color, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, palette,
 };
@@ -174,8 +175,8 @@ impl NavItem {
         self.selected = selected;
         self
     }
-    pub fn on_select(mut self, cb: Callback) -> Self {
-        self.on_select = Some(cb);
+    pub fn on_select(mut self, cb: impl IntoCallback) -> Self {
+        self.on_select = Some(cb.into_callback());
         self
     }
 }
@@ -339,8 +340,8 @@ impl BottomNavItem {
         self.selected = selected;
         self
     }
-    pub fn on_select(mut self, cb: Callback) -> Self {
-        self.on_select = Some(cb);
+    pub fn on_select(mut self, cb: impl IntoCallback) -> Self {
+        self.on_select = Some(cb.into_callback());
         self
     }
 }

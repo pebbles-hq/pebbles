@@ -5,6 +5,7 @@ use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, palette};
 use pebbles_render::BoxDecoration;
 
 use pebbles_core::children;
+use pebbles_core::IntoCallback;
 use pebbles_core::context::{BuildContext, Callback};
 use crate::theme::theme;
 use pebbles_core::widget::{AnyWidget, IntoWidget, StatelessWidget};
@@ -31,11 +32,11 @@ pub fn tabs(selected: usize) -> Tabs {
 
 impl Tabs {
     /// Add a tab with a label, content and a selection callback.
-    pub fn tab(mut self, label: impl Into<String>, content: impl IntoWidget, on_select: Callback) -> Self {
+    pub fn tab(mut self, label: impl Into<String>, content: impl IntoWidget, on_select: impl IntoCallback) -> Self {
         self.tabs.push(TabDef {
             label: label.into(),
             content: content.into_widget(),
-            on_select: Some(on_select),
+            on_select: Some(on_select.into_callback()),
         });
         self
     }

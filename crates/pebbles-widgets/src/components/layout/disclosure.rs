@@ -1,6 +1,7 @@
 //! Disclosure components: [`Accordion`] (multiple sections) and [`Collapsible`]
 //! (a single open/closed section). Controlled via `expanded` props + callbacks.
 
+use pebbles_core::IntoCallback;
 use std::rc::Rc;
 
 use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment};
@@ -41,13 +42,13 @@ impl Accordion {
         title: impl Into<String>,
         content: impl IntoWidget,
         expanded: bool,
-        on_toggle: Callback,
+        on_toggle: impl IntoCallback,
     ) -> Self {
         self.sections.push(Section {
             title: title.into(),
             content: content.into_widget(),
             expanded,
-            on_toggle: Some(on_toggle),
+            on_toggle: Some(on_toggle.into_callback()),
         });
         self
     }

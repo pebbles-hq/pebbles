@@ -1,6 +1,7 @@
 //! Navigation & chrome components: [`Breadcrumb`], [`Toolbar`], [`StatusBar`] and
 //! [`Pagination`].
 
+use pebbles_core::IntoCallback;
 use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment};
 use pebbles_render::{Border, BoxDecoration, IconKind};
 
@@ -115,12 +116,12 @@ pub fn pagination(page: usize, total: usize) -> Pagination {
 }
 
 impl Pagination {
-    pub fn on_prev(mut self, cb: Callback) -> Self {
-        self.on_prev = Some(cb);
+    pub fn on_prev(mut self, cb: impl IntoCallback) -> Self {
+        self.on_prev = Some(cb.into_callback());
         self
     }
-    pub fn on_next(mut self, cb: Callback) -> Self {
-        self.on_next = Some(cb);
+    pub fn on_next(mut self, cb: impl IntoCallback) -> Self {
+        self.on_next = Some(cb.into_callback());
         self
     }
 }

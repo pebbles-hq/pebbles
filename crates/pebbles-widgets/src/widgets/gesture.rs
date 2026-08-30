@@ -6,6 +6,7 @@
 //! higher-level widget attach its own internal handler *and* the developer's handler
 //! to the same event.
 
+use pebbles_core::IntoCallback;
 use pebbles_render::{Cursor, RenderObject, RenderPointerListener, TapCallback};
 
 use pebbles_core::context::Callback;
@@ -59,105 +60,105 @@ impl GestureDetector {
         GestureDetector { child: Some(child.into_widget()), ..Default::default() }
     }
 
-    pub fn on_tap(mut self, cb: Callback) -> Self {
-        self.on_tap.push(cb);
+    pub fn on_tap(mut self, cb: impl IntoCallback) -> Self {
+        self.on_tap.push(cb.into_callback());
         self
     }
-    pub fn on_double_tap(mut self, cb: Callback) -> Self {
-        self.on_double_tap.push(cb);
+    pub fn on_double_tap(mut self, cb: impl IntoCallback) -> Self {
+        self.on_double_tap.push(cb.into_callback());
         self
     }
-    pub fn on_tap_cancel(mut self, cb: Callback) -> Self {
-        self.on_tap_cancel.push(cb);
+    pub fn on_tap_cancel(mut self, cb: impl IntoCallback) -> Self {
+        self.on_tap_cancel.push(cb.into_callback());
         self
     }
-    pub fn on_secondary_tap(mut self, cb: Callback) -> Self {
-        self.on_secondary_tap.push(cb);
+    pub fn on_secondary_tap(mut self, cb: impl IntoCallback) -> Self {
+        self.on_secondary_tap.push(cb.into_callback());
         self
     }
-    pub fn on_secondary_tap_down(mut self, cb: Callback) -> Self {
-        self.on_secondary_tap_down.push(cb);
+    pub fn on_secondary_tap_down(mut self, cb: impl IntoCallback) -> Self {
+        self.on_secondary_tap_down.push(cb.into_callback());
         self
     }
-    pub fn on_secondary_tap_up(mut self, cb: Callback) -> Self {
-        self.on_secondary_tap_up.push(cb);
+    pub fn on_secondary_tap_up(mut self, cb: impl IntoCallback) -> Self {
+        self.on_secondary_tap_up.push(cb.into_callback());
         self
     }
-    pub fn on_secondary_tap_cancel(mut self, cb: Callback) -> Self {
-        self.on_secondary_tap_cancel.push(cb);
+    pub fn on_secondary_tap_cancel(mut self, cb: impl IntoCallback) -> Self {
+        self.on_secondary_tap_cancel.push(cb.into_callback());
         self
     }
-    pub fn on_long_press(mut self, cb: Callback) -> Self {
-        self.on_long_press.push(cb);
+    pub fn on_long_press(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press.push(cb.into_callback());
         self
     }
-    pub fn on_long_press_down(mut self, cb: Callback) -> Self {
-        self.on_long_press_down.push(cb);
+    pub fn on_long_press_down(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press_down.push(cb.into_callback());
         self
     }
-    pub fn on_long_press_start(mut self, cb: Callback) -> Self {
-        self.on_long_press_start.push(cb);
+    pub fn on_long_press_start(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press_start.push(cb.into_callback());
         self
     }
-    pub fn on_long_press_move(mut self, cb: Callback) -> Self {
-        self.on_long_press_move.push(cb);
+    pub fn on_long_press_move(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press_move.push(cb.into_callback());
         self
     }
-    pub fn on_long_press_up(mut self, cb: Callback) -> Self {
-        self.on_long_press_up.push(cb);
+    pub fn on_long_press_up(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press_up.push(cb.into_callback());
         self
     }
-    pub fn on_long_press_end(mut self, cb: Callback) -> Self {
-        self.on_long_press_end.push(cb);
+    pub fn on_long_press_end(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press_end.push(cb.into_callback());
         self
     }
-    pub fn on_long_press_cancel(mut self, cb: Callback) -> Self {
-        self.on_long_press_cancel.push(cb);
+    pub fn on_long_press_cancel(mut self, cb: impl IntoCallback) -> Self {
+        self.on_long_press_cancel.push(cb.into_callback());
         self
     }
-    pub fn on_tertiary_tap_down(mut self, cb: Callback) -> Self {
-        self.on_tertiary_tap_down.push(cb);
+    pub fn on_tertiary_tap_down(mut self, cb: impl IntoCallback) -> Self {
+        self.on_tertiary_tap_down.push(cb.into_callback());
         self
     }
-    pub fn on_tertiary_tap_up(mut self, cb: Callback) -> Self {
-        self.on_tertiary_tap_up.push(cb);
+    pub fn on_tertiary_tap_up(mut self, cb: impl IntoCallback) -> Self {
+        self.on_tertiary_tap_up.push(cb.into_callback());
         self
     }
-    pub fn on_tertiary_tap_cancel(mut self, cb: Callback) -> Self {
-        self.on_tertiary_tap_cancel.push(cb);
+    pub fn on_tertiary_tap_cancel(mut self, cb: impl IntoCallback) -> Self {
+        self.on_tertiary_tap_cancel.push(cb.into_callback());
         self
     }
-    pub fn on_pointer_down(mut self, cb: Callback) -> Self {
-        self.on_pointer_down.push(cb);
+    pub fn on_pointer_down(mut self, cb: impl IntoCallback) -> Self {
+        self.on_pointer_down.push(cb.into_callback());
         self
     }
-    pub fn on_pointer_up(mut self, cb: Callback) -> Self {
-        self.on_pointer_up.push(cb);
+    pub fn on_pointer_up(mut self, cb: impl IntoCallback) -> Self {
+        self.on_pointer_up.push(cb.into_callback());
         self
     }
-    pub fn on_hover_enter(mut self, cb: Callback) -> Self {
-        self.on_enter.push(cb);
+    pub fn on_hover_enter(mut self, cb: impl IntoCallback) -> Self {
+        self.on_enter.push(cb.into_callback());
         self
     }
-    pub fn on_hover_exit(mut self, cb: Callback) -> Self {
-        self.on_exit.push(cb);
+    pub fn on_hover_exit(mut self, cb: impl IntoCallback) -> Self {
+        self.on_exit.push(cb.into_callback());
         self
     }
     /// A drag began on this widget (primary press). Use `action_event` to read the
     /// start position.
-    pub fn on_pan_start(mut self, cb: Callback) -> Self {
-        self.on_pan_start.push(cb);
+    pub fn on_pan_start(mut self, cb: impl IntoCallback) -> Self {
+        self.on_pan_start.push(cb.into_callback());
         self
     }
     /// The pointer moved during an active drag. `action_event`'s `position` is in
     /// this widget's local space — the basis for sliders, resizers and scrollbars.
-    pub fn on_pan_update(mut self, cb: Callback) -> Self {
-        self.on_pan_update.push(cb);
+    pub fn on_pan_update(mut self, cb: impl IntoCallback) -> Self {
+        self.on_pan_update.push(cb.into_callback());
         self
     }
     /// The drag ended (primary released).
-    pub fn on_pan_end(mut self, cb: Callback) -> Self {
-        self.on_pan_end.push(cb);
+    pub fn on_pan_end(mut self, cb: impl IntoCallback) -> Self {
+        self.on_pan_end.push(cb.into_callback());
         self
     }
     /// The cursor to show while hovering this widget.

@@ -42,7 +42,7 @@ fn basic(status: Signal<String>) -> impl IntoWidget {
     doc(
         "Basic",
         "Opens a real window. It shares the reactive runtime, so its widgets are fully live.",
-        button("Open dialog").on_pressed(action(move || {
+        button("Open dialog").on_pressed(move || {
             let idc = Rc::new(Cell::new(0u64));
             let idc2 = idc.clone();
             let content = panel(
@@ -51,7 +51,7 @@ fn basic(status: Signal<String>) -> impl IntoWidget {
                 body("Anything you build works here — text, buttons, inputs, the lot."),
                 button("Close")
                     .variant(ButtonVariant::Secondary)
-                    .on_pressed(action(move || close_dialog(idc2.get()))),
+                    .on_pressed(move || close_dialog(idc2.get())),
             );
             let id = dialog(content)
                 .title("Welcome")
@@ -60,7 +60,7 @@ fn basic(status: Signal<String>) -> impl IntoWidget {
                 .open();
             idc.set(id);
             status.set("basic dialog opened".into());
-        })),
+        }),
     )
 }
 
@@ -68,7 +68,7 @@ fn form(status: Signal<String>) -> impl IntoWidget {
     doc(
         "With a form",
         "Inputs work inside a dialog — type, focus with Tab, and submit.",
-        button("Edit profile").variant(ButtonVariant::Outline).on_pressed(action(move || {
+        button("Edit profile").variant(ButtonVariant::Outline).on_pressed(move || {
             let name = create_signal(String::from("Reyco"));
             let idc = Rc::new(Cell::new(0u64));
             let close_a = idc.clone();
@@ -86,18 +86,18 @@ fn form(status: Signal<String>) -> impl IntoWidget {
                 row(children![
                     button("Cancel")
                         .variant(ButtonVariant::Ghost)
-                        .on_pressed(action(move || close_dialog(close_a.get()))),
+                        .on_pressed(move || close_dialog(close_a.get())),
                     gap_w(8.0),
-                    button("Save changes").on_pressed(action(move || {
+                    button("Save changes").on_pressed(move || {
                         status.set(format!("saved: {}", name.get()));
                         close_dialog(close_b.get());
-                    })),
+                    }),
                 ])
                 .main_axis_min(),
             );
             let id = dialog(content).title("Edit profile").size(420, 320).open();
             idc.set(id);
-        })),
+        }),
     )
 }
 
@@ -105,7 +105,7 @@ fn confirm(status: Signal<String>) -> impl IntoWidget {
     doc(
         "Confirmation",
         "A destructive confirm — Cancel or Delete, either closes the window.",
-        button("Delete account").variant(ButtonVariant::Destructive).on_pressed(action(move || {
+        button("Delete account").variant(ButtonVariant::Destructive).on_pressed(move || {
             let idc = Rc::new(Cell::new(0u64));
             let cancel = idc.clone();
             let del = idc.clone();
@@ -116,18 +116,18 @@ fn confirm(status: Signal<String>) -> impl IntoWidget {
                 row(children![
                     button("Cancel")
                         .variant(ButtonVariant::Outline)
-                        .on_pressed(action(move || close_dialog(cancel.get()))),
+                        .on_pressed(move || close_dialog(cancel.get())),
                     gap_w(8.0),
-                    button("Delete").variant(ButtonVariant::Destructive).on_pressed(action(move || {
+                    button("Delete").variant(ButtonVariant::Destructive).on_pressed(move || {
                         status.set("account deleted".into());
                         close_dialog(del.get());
-                    })),
+                    }),
                 ])
                 .main_axis_min(),
             );
             let id = dialog(content).title("Confirm deletion").size(440, 260).open();
             idc.set(id);
-        })),
+        }),
     )
 }
 
@@ -135,7 +135,7 @@ fn sized(status: Signal<String>) -> impl IntoWidget {
     doc(
         "Custom size",
         "Size the window with .size(w, h) and set its title.",
-        button("Open large").variant(ButtonVariant::Secondary).on_pressed(action(move || {
+        button("Open large").variant(ButtonVariant::Secondary).on_pressed(move || {
             let idc = Rc::new(Cell::new(0u64));
             let idc2 = idc.clone();
             let content = panel(
@@ -143,7 +143,7 @@ fn sized(status: Signal<String>) -> impl IntoWidget {
                 "Dialogs are ordinary windows — make them as big as you need.",
                 body("Great for editors, inspectors and detachable panels (hello, Gravel)."),
                 button("Done")
-                    .on_pressed(action(move || close_dialog(idc2.get()))),
+                    .on_pressed(move || close_dialog(idc2.get())),
             );
             let id = dialog(content)
                 .title("Large dialog")
@@ -151,6 +151,6 @@ fn sized(status: Signal<String>) -> impl IntoWidget {
                 .on_close(move || status.set("large dialog closed".into()))
                 .open();
             idc.set(id);
-        })),
+        }),
     )
 }

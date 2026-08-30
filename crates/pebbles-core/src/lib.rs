@@ -35,7 +35,7 @@ pub mod widget;
 
 pub use animation::{animate_to, animated, create_loop};
 pub use component::{Component, Element, component, component_props};
-pub use context::{BuildContext, Callback, action, action_event};
+pub use context::{BuildContext, Callback, IntoCallback, action, action_event};
 pub use element::{ElementId, Ui};
 pub use focus::{FocusNode, create_focus};
 pub use ipc::{Channel, channel};

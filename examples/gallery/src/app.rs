@@ -48,7 +48,7 @@ pub fn app() -> impl IntoWidget {
                 nav_item(*label)
                     .icon(*ic)
                     .selected(selected)
-                    .on_select(action(move || navigate(route_id))),
+                    .on_select(move || navigate(route_id)),
             );
         }
     }

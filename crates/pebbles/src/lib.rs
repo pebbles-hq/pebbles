@@ -18,7 +18,7 @@
 //!     let count = create_signal(0);
 //!     center(column(children![
 //!         text(format!("{}", count.get())).size(48.0),
-//!         button("+").on_pressed(action(move || count.update(|c| *c += 1))),
+//!         button("+").on_pressed(move || count.update(|c| *c += 1)),
 //!     ]))
 //!     .into_widget()
 //! }

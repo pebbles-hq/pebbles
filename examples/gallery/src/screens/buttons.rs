@@ -19,7 +19,7 @@ pub fn buttons() -> impl IntoWidget {
     let lp = create_signal(String::from("hold ~0.5s, drag, or middle-click"));
     let focus_note = create_signal(String::from("(none focused)"));
     let busy = create_signal(false);
-    let ev = move |name: &'static str| action(move || last.set(name.to_string()));
+    let ev = move |name: &'static str| move || last.set(name.to_string());
 
     screen(
         "Buttons",
@@ -125,7 +125,7 @@ pub fn buttons() -> impl IntoWidget {
                     children![
                         row(
                             children![
-                                switch(busy.get()).on_changed(action(move || busy.update(|v| *v = !*v))),
+                                switch(busy.get()).on_changed(move || busy.update(|v| *v = !*v)),
                                 label("Simulate busy"),
                             ]).main_axis_min().spacing(10.0),
                         gap_h(14.0),
@@ -165,9 +165,9 @@ pub fn buttons() -> impl IntoWidget {
                         button("Press · drag off · release")
                             .size(ButtonSize::Lg)
                             .on_tap_down(action_event(move |e| detail.set(format!("tap-down at ({:.0}, {:.0})", e.position.x, e.position.y))))
-                            .on_tap_cancel(action(move || detail.set("tap CANCELLED (released off)".into())))
+                            .on_tap_cancel(move || detail.set("tap CANCELLED (released off)".into()))
                             .on_highlight_changed(move |h| { if h { detail.set("highlighted (pressed)".into()); } })
-                            .on_pressed(action(move || detail.set("tapped (released inside)".into()))),
+                            .on_pressed(move || detail.set("tapped (released inside)".into())),
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
             ),
             // -------------------------------------------------- long-press & middle-click
@@ -181,12 +181,12 @@ pub fn buttons() -> impl IntoWidget {
                         button("Hold me · or middle-click")
                             .size(ButtonSize::Lg)
                             .variant(ButtonVariant::Secondary)
-                            .on_long_press_down(action(move || lp.set("down (may become long-press)".into())))
+                            .on_long_press_down(move || lp.set("down (may become long-press)".into()))
                             .on_long_press_start(action_event(move |e| lp.set(format!("START at ({:.0}, {:.0})", e.position.x, e.position.y))))
                             .on_long_press_move(action_event(move |e| lp.set(format!("move ({:.0}, {:.0})", e.position.x, e.position.y))))
-                            .on_long_press_end(action(move || lp.set("END (released)".into())))
-                            .on_long_press_cancel(action(move || lp.set("cancelled (released too soon)".into())))
-                            .on_tertiary_tap_up(action(move || lp.set("MIDDLE-click (tertiary)".into()))),
+                            .on_long_press_end(move || lp.set("END (released)".into()))
+                            .on_long_press_cancel(move || lp.set("cancelled (released too soon)".into()))
+                            .on_tertiary_tap_up(move || lp.set("MIDDLE-click (tertiary)".into())),
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
             ),
             // ----------------------------------------------------------- focus & keyboard
@@ -201,13 +201,13 @@ pub fn buttons() -> impl IntoWidget {
                             button("First (autofocus)")
                                 .autofocus()
                                 .on_focus_change(move |f| { if f { focus_note.set("First focused".into()); } })
-                                .on_pressed(action(move || focus_note.set("First activated".into()))),
+                                .on_pressed(move || focus_note.set("First activated".into())),
                             button("Second").variant(ButtonVariant::Secondary)
                                 .on_focus_change(move |f| { if f { focus_note.set("Second focused".into()); } })
-                                .on_pressed(action(move || focus_note.set("Second activated".into()))),
+                                .on_pressed(move || focus_note.set("Second activated".into())),
                             button("Third").variant(ButtonVariant::Outline)
                                 .on_focus_change(move |f| { if f { focus_note.set("Third focused".into()); } })
-                                .on_pressed(action(move || focus_note.set("Third activated".into()))),
+                                .on_pressed(move || focus_note.set("Third activated".into())),
                         ])
                         .spacing(10.0),
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(0.0),
