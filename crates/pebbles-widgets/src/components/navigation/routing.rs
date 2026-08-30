@@ -1,29 +1,27 @@
-//! Built-in routing: [`NavStack`] (a navigation history you keep in your state) and
+//! Built-in routing: [`NavStack`] (a navigation history you keep in a signal) and
 //! [`RouteView`] (renders the page for the current route).
 //!
 //! The model is declarative and Flutter-like: a route maps to a **page builder**,
-//! and only the active page is built. Each page is its own widget with its own
-//! state, so a page's interactions target that page — not the shell.
+//! and only the active page is built. Each page is its own component with its own
+//! signals, so a page's interactions target that page — not the shell.
 //!
 //! ```ignore
-//! // in your State:
-//! struct App { nav: NavStack }           // NavStack::new("home")
+//! let nav = create_signal(NavStack::new("home"));
 //! // nav item:
-//! nav_item("Settings").on_select(cx.callback(|s: &mut App| s.nav.replace("settings")))
+//! nav_item("Settings").on_select(move || nav.update(|n| n.replace("settings")))
 //! // content:
-//! route_view(s.nav.current())
-//!     .route("home", || HomePage.into_widget())
-//!     .route("settings", || SettingsPage.into_widget())
+//! route_view(nav.get().current())
+//!     .route("home", || component(home_page))
+//!     .route("settings", || component(settings_page))
 //! ```
 
 use std::rc::Rc;
 
-use pebbles_core::context::BuildContext;
-use pebbles_core::widget::{AnyWidget, IntoWidget, StatelessWidget};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::SizedBox;
 
-/// A navigation history — a stack of route names. Keep one in your app state; it is
-/// `Clone` + `Default` and mutated through `cx.callback`.
+/// A navigation history — a stack of route names. Keep one in a signal; it is
+/// `Clone` + `Default` and mutated through `signal.update(..)`.
 #[derive(Clone, Default, Debug)]
 pub struct NavStack {
     stack: Vec<String>,
@@ -114,10 +112,9 @@ impl RouteView {
     }
 }
 
-pebbles_core::stateless_widget!(RouteView);
 
-impl StatelessWidget for RouteView {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for RouteView {
+    fn into_widget(self) -> AnyWidget {
         for (name, builder) in &self.routes {
             if *name == self.current {
                 return builder();

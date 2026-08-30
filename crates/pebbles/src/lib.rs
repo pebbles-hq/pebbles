@@ -67,9 +67,6 @@ pub mod prelude {
         WidgetExt,
     };
 
-    // runtime (pebbles-core): legacy class-widget API (being migrated to signals)
-    pub use pebbles_core::{BuildContext, State, StatefulWidget, StatelessWidget};
-
     // theming + the general style system (RN/CSS-like, apply anywhere)
     pub use pebbles_widgets::{Colors, ModifierExt, Style, StyleExt, Theme, image_from_bytes, image_from_path, style, styled, theme};
 
@@ -96,9 +93,7 @@ pub mod prelude {
     pub use pebbles_widgets::components::*;
 
     // widget-impl macros (pebbles-core)
-    pub use pebbles_core::{
-        children, parent_data_widget, render_widget, stateful_widget, stateless_widget,
-    };
+    pub use pebbles_core::{children, parent_data_widget, render_widget};
 
     // the app runner
     pub use pebbles_shell::App;

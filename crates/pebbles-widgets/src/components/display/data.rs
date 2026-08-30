@@ -4,9 +4,8 @@
 use pebbles_foundation::{CrossAxisAlignment, EdgeInsets};
 use pebbles_render::BoxDecoration;
 
-use pebbles_core::context::BuildContext;
 use crate::theme::theme;
-use pebbles_core::widget::{AnyWidget, IntoWidget, StatelessWidget};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Container, Expanded, Padding, SizedBox, column, row, spacer, text};
 
 /// A list row: optional leading widget, a title + optional subtitle, optional
@@ -39,10 +38,9 @@ impl ListTile {
     }
 }
 
-pebbles_core::stateless_widget!(ListTile);
 
-impl StatelessWidget for ListTile {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for ListTile {
+    fn into_widget(mut self) -> AnyWidget {
         let th = theme();
         let mut title_col = vec![
             text(std::mem::take(&mut self.title)).size(14.0).weight(500.0).color(th.colors.foreground).into_widget(),
@@ -97,10 +95,9 @@ impl Table {
     }
 }
 
-pebbles_core::stateless_widget!(Table);
 
-impl StatelessWidget for Table {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for Table {
+    fn into_widget(mut self) -> AnyWidget {
         let th = theme();
 
         let make_row = |cells: Vec<AnyWidget>| -> AnyWidget {

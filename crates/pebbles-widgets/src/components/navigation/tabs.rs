@@ -6,9 +6,9 @@ use pebbles_render::BoxDecoration;
 
 use pebbles_core::children;
 use pebbles_core::IntoCallback;
-use pebbles_core::context::{BuildContext, Callback};
+use pebbles_core::context::Callback;
 use crate::theme::theme;
-use pebbles_core::widget::{AnyWidget, IntoWidget, StatelessWidget};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Container, GestureDetector, Padding, SizedBox, column, row, text};
 
 #[derive(Clone)]
@@ -42,10 +42,9 @@ impl Tabs {
     }
 }
 
-pebbles_core::stateless_widget!(Tabs);
 
-impl StatelessWidget for Tabs {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for Tabs {
+    fn into_widget(mut self) -> AnyWidget {
         let th = theme();
         let selected = self.selected;
         let mut bar = Vec::new();

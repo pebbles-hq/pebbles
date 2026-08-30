@@ -21,8 +21,7 @@ use pebbles_render::{
 use crate::scroll::ScrollTo;
 use slotmap::{Key, SlotMap, new_key_type};
 
-use crate::context::{BuildContext, Callback};
-use crate::state::State;
+use crate::context::Callback;
 use crate::widget::{AnyWidget, Widget};
 
 new_key_type! {
@@ -35,10 +34,6 @@ enum ElementKind {
     /// A SolidJS-style function component: re-runs its `fn` to build a child; its
     /// local signals are owned by this element.
     Function,
-    /// A stateless component: builds a single child from immutable config. (legacy)
-    Component,
-    /// A stateful component: owns mutable [`State`] and builds a single child. (legacy)
-    Stateful { state: Box<dyn State> },
     /// A render-object element: owns a node in the render tree (its `render_id`).
     Render,
     /// A parent-data element: owns no render object; attaches parent data to its
@@ -66,8 +61,6 @@ struct ElementNode {
 /// Discriminates a widget's category without moving it.
 enum Category {
     Function,
-    Stateless,
-    Stateful,
     Render,
     ParentData,
 }
@@ -75,10 +68,6 @@ enum Category {
 fn category(widget: &dyn Widget) -> Category {
     if widget.as_component().is_some() {
         Category::Function
-    } else if widget.as_stateless().is_some() {
-        Category::Stateless
-    } else if widget.as_stateful().is_some() {
-        Category::Stateful
     } else if widget.as_parent_data().is_some() {
         Category::ParentData
     } else {
@@ -122,12 +111,11 @@ pub struct Ui {
     scroll_anim: std::collections::HashSet<RenderId>,
 }
 
-/// A resolved event handler ready to run: a plain closure, an event-carrying
-/// closure, or (legacy) a mutation targeted at an element's `State`.
+/// A resolved event handler ready to run: a plain closure or an event-carrying
+/// closure.
 enum Invoke {
     Plain(Rc<dyn Fn()>),
     Event(Rc<dyn Fn(PointerEvent)>),
-    Targeted(ElementId, Rc<dyn Fn(&mut dyn Any)>),
 }
 
 struct HoverTarget {
@@ -205,7 +193,6 @@ impl Ui {
             .map(|cb| match cb {
                 Callback::Plain(f) => Invoke::Plain(f.clone()),
                 Callback::Event(f) => Invoke::Event(f.clone()),
-                Callback::Targeted { target, action } => Invoke::Targeted(*target, action.clone()),
             })
             .collect()
     }
@@ -214,7 +201,6 @@ impl Ui {
         match invoke {
             Invoke::Plain(f) => f(),
             Invoke::Event(f) => f(event),
-            Invoke::Targeted(target, action) => self.run_action(target, action),
         }
     }
 
@@ -645,15 +631,6 @@ impl Ui {
         self.scrollbar_drag.is_some()
     }
 
-    fn run_action(&mut self, target: ElementId, action: Rc<dyn Fn(&mut dyn Any)>) {
-        if let Some(node) = self.elements.get_mut(target)
-            && let ElementKind::Stateful { state } = &mut node.kind
-        {
-            action(state.as_any_mut());
-        }
-        self.mark_dirty(target);
-    }
-
     fn mark_dirty(&mut self, id: ElementId) {
         if !self.dirty.contains(&id) {
             self.dirty.push(id);
@@ -693,45 +670,6 @@ impl Ui {
                     let out = render();
                     crate::reactive::end_component(guard);
                     out
-                };
-                let child = self.inflate(Some(id), child_widget);
-                self.elements[id].children.push(child);
-                id
-            }
-            Category::Stateless => {
-                let id = self.elements.insert(ElementNode {
-                    parent,
-                    widget,
-                    kind: ElementKind::Component,
-                    children: Vec::new(),
-                    render_id: None,
-                    depth,
-                });
-                let child_widget = self.elements[id]
-                    .widget
-                    .as_stateless_mut()
-                    .unwrap()
-                    .build(&mut BuildContext::new(id));
-                let child = self.inflate(Some(id), child_widget);
-                self.elements[id].children.push(child);
-                id
-            }
-            Category::Stateful => {
-                let state = widget.as_stateful().unwrap().create_state();
-                let id = self.elements.insert(ElementNode {
-                    parent,
-                    widget,
-                    kind: ElementKind::Stateful { state },
-                    children: Vec::new(),
-                    render_id: None,
-                    depth,
-                });
-                let child_widget = {
-                    let ElementNode { widget, kind, .. } = &mut self.elements[id];
-                    let ElementKind::Stateful { state } = kind else { unreachable!() };
-                    let mut cx = BuildContext::new(id);
-                    state.init_state(&**widget, &mut cx);
-                    state.build(&**widget, &mut cx)
                 };
                 let child = self.inflate(Some(id), child_widget);
                 self.elements[id].children.push(child);
@@ -836,30 +774,6 @@ impl Ui {
                 let new_child = self.update_child(id, old_child, Some(child_widget));
                 self.elements[id].children = new_child.into_iter().collect();
             }
-            Category::Stateless => {
-                self.elements[id].widget = new_widget;
-                let child_widget = self.elements[id]
-                    .widget
-                    .as_stateless_mut()
-                    .unwrap()
-                    .build(&mut BuildContext::new(id));
-                let old_child = self.elements[id].children.first().copied();
-                let new_child = self.update_child(id, old_child, Some(child_widget));
-                self.elements[id].children = new_child.into_iter().collect();
-            }
-            Category::Stateful => {
-                self.elements[id].widget = new_widget;
-                let child_widget = {
-                    let ElementNode { widget, kind, .. } = &mut self.elements[id];
-                    let ElementKind::Stateful { state } = kind else { unreachable!() };
-                    let mut cx = BuildContext::new(id);
-                    state.did_update_widget(&**widget, &mut cx);
-                    state.build(&**widget, &mut cx)
-                };
-                let old_child = self.elements[id].children.first().copied();
-                let new_child = self.update_child(id, old_child, Some(child_widget));
-                self.elements[id].children = new_child.into_iter().collect();
-            }
             Category::Render => {
                 let child_widgets = new_widget.as_render_mut().unwrap().take_children();
                 if let Some(rid) = self.elements[id].render_id {
@@ -896,24 +810,21 @@ impl Ui {
     }
 
     fn rebuild_element(&mut self, id: ElementId) {
-        let child_widget = match &self.elements[id].kind {
-            ElementKind::Function => {
-                let (_, render) = self.elements[id].widget.as_component().unwrap();
-                let guard = crate::reactive::begin_component(id);
-                let out = render();
-                crate::reactive::end_component(guard);
-                out
-            }
-            ElementKind::Stateful { .. } => {
-                let ElementNode { widget, kind, .. } = &mut self.elements[id];
-                let ElementKind::Stateful { state } = kind else { unreachable!() };
-                state.build(&**widget, &mut BuildContext::new(id))
-            }
-            _ => self.elements[id]
-                .widget
-                .as_stateless_mut()
-                .expect("a dirty element must be buildable")
-                .build(&mut BuildContext::new(id)),
+        // Only function components are ever marked dirty (via their reactive signals);
+        // render/parent-data elements are reconciled top-down by their parent's rebuild.
+        debug_assert!(
+            matches!(self.elements[id].kind, ElementKind::Function),
+            "a dirty element must be a function component"
+        );
+        let (_, render) = self.elements[id]
+            .widget
+            .as_component()
+            .expect("a dirty element must be a function component");
+        let child_widget = {
+            let guard = crate::reactive::begin_component(id);
+            let out = render();
+            crate::reactive::end_component(guard);
+            out
         };
         let old_child = self.elements[id].children.first().copied();
         let new_child = self.update_child(id, old_child, Some(child_widget));
@@ -925,13 +836,9 @@ impl Ui {
         for child in children {
             self.unmount(child);
         }
-        match &mut self.elements[id].kind {
-            ElementKind::Stateful { state } => state.dispose(),
-            ElementKind::Function => {
-                crate::reactive::dispose_component(id);
-                crate::focus::unregister(id);
-            }
-            _ => {}
+        if let ElementKind::Function = &self.elements[id].kind {
+            crate::reactive::dispose_component(id);
+            crate::focus::unregister(id);
         }
         if let Some(rid) = self.elements[id].render_id {
             self.render.remove_node(rid);

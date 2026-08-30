@@ -6,9 +6,9 @@ use pebbles_core::IntoCallback;
 use pebbles_foundation::palette;
 use pebbles_render::{IconData, IconKind};
 
-use pebbles_core::context::{BuildContext, Callback};
+use pebbles_core::context::Callback;
 use crate::theme::theme;
-use pebbles_core::widget::{AnyWidget, IntoWidget, StatelessWidget};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Container, GestureDetector, Padding, SizedBox, column, row, text};
 
 use crate::components::icon;
@@ -124,10 +124,9 @@ fn emit(node: TreeNode, depth: f64, indent: f64, out: &mut Vec<AnyWidget>) {
     }
 }
 
-pebbles_core::stateless_widget!(TreeView);
 
-impl StatelessWidget for TreeView {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for TreeView {
+    fn into_widget(mut self) -> AnyWidget {
         let indent = self.indent;
         let mut rows = Vec::new();
         for node in std::mem::take(&mut self.roots) {

@@ -9,8 +9,7 @@
 //! * **The widget contract** — [`Widget`], the [`component`]/[`component_props`]
 //!   function-component adapter (the primary way to author UI), the [`RenderWidget`]/
 //!   [`ParentDataWidget`] render layer, and the [`IntoWidget`]/[`AnyWidget`] boxing
-//!   layer. (The class-style [`StatelessWidget`]/[`StatefulWidget`]/[`State`] traits
-//!   are legacy, being migrated to function components and removed.)
+//!   layer.
 //! * **The reconciling engine** — [`Ui`], the element arena keyed by [`ElementId`]
 //!   that turns a widget tree into a [`pebbles_render`] tree each frame, plus the
 //!   [`focus`] system and the [`Callback`] handle.
@@ -30,12 +29,11 @@ pub mod key;
 pub mod keyboard;
 pub mod reactive;
 pub mod scroll;
-pub mod state;
 pub mod widget;
 
 pub use animation::{animate_to, animated, create_loop};
 pub use component::{Component, Element, component, component_props};
-pub use context::{BuildContext, Callback, IntoCallback, action, action_event};
+pub use context::{Callback, IntoCallback, action, action_event};
 pub use element::{ElementId, Ui};
 pub use focus::{FocusNode, create_focus};
 pub use ipc::{Channel, channel};
@@ -45,9 +43,6 @@ pub use reactive::{
     Signal, Store, create_cleanup, create_effect, create_memo, create_signal, create_store,
     owner_id,
 };
-pub use state::State;
 pub use widget::{
-    IntoChildren,
-    AnyWidget, IntoWidget, ParentDataWidget, RenderWidget, StatefulWidget, StatelessWidget, Widget,
-    WidgetExt,
+    AnyWidget, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget, Widget, WidgetExt,
 };

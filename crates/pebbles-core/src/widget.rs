@@ -1,16 +1,15 @@
-//! The [`Widget`] trait and its three categories: **stateless**, **stateful** and
-//! **render-object** widgets — mirroring Flutter.
+//! The [`Widget`] trait and its categories: **function components**, **render-object**
+//! and **parent-data** widgets.
 //!
 //! A widget is an *immutable configuration*. It is cheap to construct and throw
 //! away; the retained state lives in the element and render trees. The framework
-//! discovers a widget's category by asking it (`as_stateless` / `as_stateful` /
-//! `as_render`), which keeps everything object-safe without a big enum.
+//! discovers a widget's category by asking it (`as_component` / `as_render` /
+//! `as_parent_data`), which keeps everything object-safe without a big enum.
 
 use std::any::Any;
 
 use pebbles_render::RenderObject;
 
-use crate::context::BuildContext;
 use crate::key::Key;
 
 /// A type-erased, owned widget. The currency of the build methods and child lists.
@@ -26,8 +25,8 @@ impl Clone for Box<dyn Widget> {
 }
 
 /// The base trait every widget implements. Concrete widgets normally get this via
-/// the [`stateless_widget!`], [`stateful_widget!`] or [`render_widget!`] macros
-/// rather than by hand.
+/// the [`render_widget!`] or [`parent_data_widget!`] macro rather than by hand;
+/// composite UI is authored as [`component`](crate::component) function components.
 pub trait Widget: 'static {
     /// A name for diagnostics and tree dumps.
     fn debug_name(&self) -> &'static str;
@@ -42,20 +41,12 @@ pub trait Widget: 'static {
 
     /// Clone this widget into a fresh boxed copy. Widgets are immutable, cheap
     /// configuration objects (like Flutter's), so cloning a subtree is a normal,
-    /// inexpensive operation — it's what lets a `StatefulWidget` hold and re-render
-    /// an arbitrary child across state changes. The `*_widget!` macros implement
-    /// this for you (the widget just needs to `#[derive(Clone)]`).
+    /// inexpensive operation — it's what lets a component hold and re-render an
+    /// arbitrary child across reactive updates. The `render_widget!`/
+    /// `parent_data_widget!` macros implement this for you (the widget just needs
+    /// to `#[derive(Clone)]`).
     fn clone_box(&self) -> AnyWidget;
 
-    fn as_stateless(&self) -> Option<&dyn StatelessWidget> {
-        None
-    }
-    fn as_stateless_mut(&mut self) -> Option<&mut dyn StatelessWidget> {
-        None
-    }
-    fn as_stateful(&self) -> Option<&dyn StatefulWidget> {
-        None
-    }
     fn as_render(&self) -> Option<&dyn RenderWidget> {
         None
     }
@@ -74,8 +65,8 @@ pub trait Widget: 'static {
     }
 }
 
-/// Downcast helpers for `dyn Widget` (used by `State` to recover its concrete
-/// widget config). Uses trait upcasting to `dyn Any`.
+/// Downcast helpers for `dyn Widget` — recover a concrete widget type from a boxed
+/// one. Uses trait upcasting to `dyn Any`.
 impl dyn Widget {
     pub fn downcast_ref<T: Widget>(&self) -> Option<&T> {
         self.as_any().downcast_ref::<T>()
@@ -189,24 +180,6 @@ impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
 impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
 impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 
-/// A widget that builds a subtree from immutable configuration and holds no state.
-///
-/// `build` takes `&mut self` so a composite can move its child widget out into the
-/// tree it returns. This is sound because a stateless element rebuilds only when
-/// its parent installs a *fresh* widget instance — `build` runs exactly once per
-/// instance.
-pub trait StatelessWidget: 'static {
-    /// Describe the UI in terms of other widgets.
-    fn build(&mut self, cx: &mut BuildContext) -> AnyWidget;
-}
-
-/// A widget that creates a mutable [`State`](crate::State) object. The state
-/// persists across rebuilds; the widget itself does not.
-pub trait StatefulWidget: 'static {
-    /// Create the state for a freshly mounted instance of this widget.
-    fn create_state(&self) -> Box<dyn crate::State>;
-}
-
 /// A widget that owns a [`RenderObject`] — the leaves of composition where actual
 /// layout and painting happen. `take_children` yields the child *widgets* (none
 /// for a leaf, one for a single-child box, many for a flex), consumed once by the
@@ -256,51 +229,6 @@ macro_rules! parent_data_widget {
                 Some(self)
             }
             fn as_parent_data_mut(&mut self) -> Option<&mut dyn $crate::ParentDataWidget> {
-                Some(self)
-            }
-        }
-    };
-}
-
-/// Implement [`Widget`] for a stateless widget type.
-#[macro_export]
-macro_rules! stateless_widget {
-    ($ty:ty) => {
-        impl $crate::Widget for $ty {
-            fn debug_name(&self) -> &'static str {
-                stringify!($ty)
-            }
-            fn as_any(&self) -> &dyn ::core::any::Any {
-                self
-            }
-            fn clone_box(&self) -> $crate::AnyWidget {
-                ::std::boxed::Box::new(::core::clone::Clone::clone(self))
-            }
-            fn as_stateless(&self) -> Option<&dyn $crate::StatelessWidget> {
-                Some(self)
-            }
-            fn as_stateless_mut(&mut self) -> Option<&mut dyn $crate::StatelessWidget> {
-                Some(self)
-            }
-        }
-    };
-}
-
-/// Implement [`Widget`] for a stateful widget type.
-#[macro_export]
-macro_rules! stateful_widget {
-    ($ty:ty) => {
-        impl $crate::Widget for $ty {
-            fn debug_name(&self) -> &'static str {
-                stringify!($ty)
-            }
-            fn as_any(&self) -> &dyn ::core::any::Any {
-                self
-            }
-            fn clone_box(&self) -> $crate::AnyWidget {
-                ::std::boxed::Box::new(::core::clone::Clone::clone(self))
-            }
-            fn as_stateful(&self) -> Option<&dyn $crate::StatefulWidget> {
                 Some(self)
             }
         }

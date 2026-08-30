@@ -12,10 +12,10 @@ use pebbles_foundation::{
 use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconData};
 
 use pebbles_core::children;
-use pebbles_core::context::{BuildContext, Callback};
-use pebbles_core::state::State;
+use pebbles_core::context::Callback;
+use pebbles_core::{component_props, create_signal};
 use crate::theme::{mix, theme};
-use pebbles_core::widget::{AnyWidget, IntoWidget, StatefulWidget, StatelessWidget, Widget};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{
     Container, Expanded, GestureDetector, Padding, SingleChildScrollView, SizedBox, center, column,
     row, spacer, text,
@@ -61,10 +61,9 @@ impl Scaffold {
     }
 }
 
-pebbles_core::stateless_widget!(Scaffold);
 
-impl StatelessWidget for Scaffold {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for Scaffold {
+    fn into_widget(mut self) -> AnyWidget {
         let bg = self.background.unwrap_or(theme().colors.background);
         let body = self.body.take().unwrap_or_else(|| SizedBox::spacer(0.0, 0.0).into_widget());
 
@@ -122,10 +121,9 @@ impl TopPanel {
     }
 }
 
-pebbles_core::stateless_widget!(TopPanel);
 
-impl StatelessWidget for TopPanel {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for TopPanel {
+    fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
         let mut items: Vec<AnyWidget> = Vec::new();
         if let Some(leading) = self.leading.take() {
@@ -181,58 +179,45 @@ impl NavItem {
     }
 }
 
-pebbles_core::stateful_widget!(NavItem);
-
-impl StatefulWidget for NavItem {
-    fn create_state(&self) -> Box<dyn State> {
-        Box::new(HoverState::default())
+impl IntoWidget for NavItem {
+    fn into_widget(self) -> AnyWidget {
+        component_props(render_nav_item, self).into_widget()
     }
 }
 
-#[derive(Clone, Default)]
-struct HoverState {
-    hovered: bool,
-}
+fn render_nav_item(w: &NavItem) -> AnyWidget {
+    let c = theme().colors;
+    let hovered = create_signal(false);
+    let bg = if w.selected {
+        c.accent
+    } else if hovered.get() {
+        mix(c.background, c.accent, 0.6)
+    } else {
+        palette::TRANSPARENT
+    };
+    let fg = if w.selected { c.accent_foreground } else { c.foreground };
+    let weight = if w.selected { 600.0 } else { 500.0 };
 
-impl State for HoverState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+    let mut cells: Vec<AnyWidget> = Vec::new();
+    if let Some(kind) = w.icon {
+        cells.push(icon(kind).size(18.0).color(fg).into_widget());
+        cells.push(SizedBox::spacer(10.0, 0.0).into_widget());
     }
+    cells.push(text(w.label.clone()).size(14.0).weight(weight).color(fg).into_widget());
 
-    fn build(&mut self, widget: &dyn Widget, cx: &mut BuildContext) -> AnyWidget {
-        let w = widget.downcast_ref::<NavItem>().expect("HoverState on a NavItem");
-        let c = theme().colors;
-        let bg = if w.selected {
-            c.accent
-        } else if self.hovered {
-            mix(c.background, c.accent, 0.6)
-        } else {
-            palette::TRANSPARENT
-        };
-        let fg = if w.selected { c.accent_foreground } else { c.foreground };
-        let weight = if w.selected { 600.0 } else { 500.0 };
+    let container = Container::new()
+        .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius)))
+        .padding(EdgeInsets::symmetric(10.0, 9.0))
+        .child(row(cells));
 
-        let mut cells: Vec<AnyWidget> = Vec::new();
-        if let Some(kind) = w.icon {
-            cells.push(icon(kind).size(18.0).color(fg).into_widget());
-            cells.push(SizedBox::spacer(10.0, 0.0).into_widget());
-        }
-        cells.push(text(w.label.clone()).size(14.0).weight(weight).color(fg).into_widget());
-
-        let container = Container::new()
-            .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius)))
-            .padding(EdgeInsets::symmetric(10.0, 9.0))
-            .child(row(cells));
-
-        let mut gesture = GestureDetector::new(container)
-            .cursor(Cursor::Pointer)
-            .on_hover_enter(cx.callback(|s: &mut HoverState| s.hovered = true))
-            .on_hover_exit(cx.callback(|s: &mut HoverState| s.hovered = false));
-        if let Some(cb) = w.on_select.clone() {
-            gesture = gesture.on_tap(cb);
-        }
-        gesture.into_widget()
+    let mut gesture = GestureDetector::new(container)
+        .cursor(Cursor::Pointer)
+        .on_hover_enter(move || hovered.set(true))
+        .on_hover_exit(move || hovered.set(false));
+    if let Some(cb) = w.on_select.clone() {
+        gesture = gesture.on_tap(cb);
     }
+    gesture.into_widget()
 }
 
 // ===========================================================================
@@ -273,10 +258,9 @@ impl SideNav {
     }
 }
 
-pebbles_core::stateless_widget!(SideNav);
 
-impl StatelessWidget for SideNav {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for SideNav {
+    fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
 
         // Items live in a scroll view that fills the space between a fixed header
@@ -346,53 +330,40 @@ impl BottomNavItem {
     }
 }
 
-pebbles_core::stateful_widget!(BottomNavItem);
-
-impl StatefulWidget for BottomNavItem {
-    fn create_state(&self) -> Box<dyn State> {
-        Box::new(BottomNavItemState::default())
+impl IntoWidget for BottomNavItem {
+    fn into_widget(self) -> AnyWidget {
+        component_props(render_bottom_nav_item, self).into_widget()
     }
 }
 
-#[derive(Clone, Default)]
-struct BottomNavItemState {
-    hovered: bool,
-}
+fn render_bottom_nav_item(w: &BottomNavItem) -> AnyWidget {
+    let c = theme().colors;
+    let hovered = create_signal(false);
+    let fg = if w.selected {
+        c.primary
+    } else if hovered.get() {
+        c.foreground
+    } else {
+        c.muted_foreground
+    };
+    let content = column(children![
+        icon(w.icon).size(20.0).color(fg),
+        SizedBox::spacer(0.0, 4.0),
+        text(w.label.clone()).size(11.0).weight(if w.selected { 600.0 } else { 500.0 }).color(fg),
+    ])
+    .cross_axis_alignment(CrossAxisAlignment::Center)
+    .main_axis_min();
 
-impl State for BottomNavItemState {
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+    let container =
+        Container::new().padding(EdgeInsets::symmetric(16.0, 8.0)).child(center(content));
+    let mut gesture = GestureDetector::new(container)
+        .cursor(Cursor::Pointer)
+        .on_hover_enter(move || hovered.set(true))
+        .on_hover_exit(move || hovered.set(false));
+    if let Some(cb) = w.on_select.clone() {
+        gesture = gesture.on_tap(cb);
     }
-
-    fn build(&mut self, widget: &dyn Widget, cx: &mut BuildContext) -> AnyWidget {
-        let w = widget.downcast_ref::<BottomNavItem>().expect("BottomNavItemState on a BottomNavItem");
-        let c = theme().colors;
-        let fg = if w.selected {
-            c.primary
-        } else if self.hovered {
-            c.foreground
-        } else {
-            c.muted_foreground
-        };
-        let content = column(children![
-            icon(w.icon).size(20.0).color(fg),
-            SizedBox::spacer(0.0, 4.0),
-            text(w.label.clone()).size(11.0).weight(if w.selected { 600.0 } else { 500.0 }).color(fg),
-        ])
-        .cross_axis_alignment(CrossAxisAlignment::Center)
-        .main_axis_min();
-
-        let container =
-            Container::new().padding(EdgeInsets::symmetric(16.0, 8.0)).child(center(content));
-        let mut gesture = GestureDetector::new(container)
-            .cursor(Cursor::Pointer)
-            .on_hover_enter(cx.callback(|s: &mut BottomNavItemState| s.hovered = true))
-            .on_hover_exit(cx.callback(|s: &mut BottomNavItemState| s.hovered = false));
-        if let Some(cb) = w.on_select.clone() {
-            gesture = gesture.on_tap(cb);
-        }
-        gesture.into_widget()
-    }
+    gesture.into_widget()
 }
 
 /// A bottom navigation bar.
@@ -418,10 +389,9 @@ impl BottomNav {
     }
 }
 
-pebbles_core::stateless_widget!(BottomNav);
 
-impl StatelessWidget for BottomNav {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for BottomNav {
+    fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
         let items: Vec<AnyWidget> = std::mem::take(&mut self.items)
             .into_iter()

@@ -5,9 +5,8 @@
 use pebbles_foundation::{Axis, CrossAxisAlignment};
 
 use pebbles_core::children;
-use pebbles_core::context::BuildContext;
 use crate::theme::theme;
-use pebbles_core::widget::{AnyWidget, IntoWidget, StatelessWidget};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Container, Expanded, column, row};
 
 /// A two-pane split.
@@ -46,10 +45,9 @@ impl SplitView {
     }
 }
 
-pebbles_core::stateless_widget!(SplitView);
 
-impl StatelessWidget for SplitView {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for SplitView {
+    fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
         // Proportional split via integer flex factors.
         let a = ((self.ratio * 1000.0) as u32).max(1);

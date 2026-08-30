@@ -8,9 +8,9 @@ use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment};
 use pebbles_render::IconKind;
 
 use pebbles_core::children;
-use pebbles_core::context::{BuildContext, Callback, action};
+use pebbles_core::context::{Callback, action};
 use crate::theme::theme;
-use pebbles_core::widget::{AnyWidget, IntoWidget, StatelessWidget};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Container, GestureDetector, Padding, SizedBox, column, row, spacer, text};
 use pebbles_core::{component_props, create_signal};
 
@@ -82,10 +82,9 @@ fn section_widget(section: Section, th: crate::Theme) -> AnyWidget {
     column(items).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().into_widget()
 }
 
-pebbles_core::stateless_widget!(Accordion);
 
-impl StatelessWidget for Accordion {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for Accordion {
+    fn into_widget(mut self) -> AnyWidget {
         let th = theme();
         let mut children_vec = Vec::new();
         let last = self.sections.len().saturating_sub(1);

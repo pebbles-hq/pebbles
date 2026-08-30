@@ -5,10 +5,9 @@ use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, Offse
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, ImageFit, IconKind};
 
 use pebbles_core::children;
-use pebbles_core::context::BuildContext;
 use pebbles_core::{component_props, create_loop};
 use crate::theme::{mix, theme};
-use pebbles_core::widget::{AnyWidget, IntoWidget, StatelessWidget};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{ClipRRect, Container, Positioned, SizedBox, center, column, row, spacer, stack, text};
 use crate::ImageView;
 
@@ -79,10 +78,9 @@ impl Card {
     }
 }
 
-pebbles_core::stateless_widget!(Card);
 
-impl StatelessWidget for Card {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for Card {
+    fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
         let has_header = self.title.is_some() || self.description.is_some() || self.action.is_some();
 
@@ -177,10 +175,9 @@ impl Badge {
     }
 }
 
-pebbles_core::stateless_widget!(Badge);
 
-impl StatelessWidget for Badge {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for Badge {
+    fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
         let (bg, fg, border) = match self.variant {
             BadgeVariant::Default => (Some(c.primary), c.primary_foreground, false),
@@ -237,10 +234,9 @@ impl Alert {
     }
 }
 
-pebbles_core::stateless_widget!(Alert);
 
-impl StatelessWidget for Alert {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for Alert {
+    fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
         let (accent, kind) = match self.variant {
             AlertVariant::Info => (c.foreground, IconKind::Info),
@@ -354,10 +350,9 @@ fn initials_face(initials: String, bg: Color, fg: Color, size: f64, radius: f64)
     .into_widget()
 }
 
-pebbles_core::stateless_widget!(Avatar);
 
-impl StatelessWidget for Avatar {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for Avatar {
+    fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
         let bg = self.color.unwrap_or(c.secondary);
         let size = self.size;
@@ -432,10 +427,9 @@ impl AvatarGroup {
     }
 }
 
-pebbles_core::stateless_widget!(AvatarGroup);
 
-impl StatelessWidget for AvatarGroup {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for AvatarGroup {
+    fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
         let size = self.size;
         let ring = 2.0;
@@ -521,10 +515,9 @@ impl Separator {
     }
 }
 
-pebbles_core::stateless_widget!(Separator);
 
-impl StatelessWidget for Separator {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for Separator {
+    fn into_widget(self) -> AnyWidget {
         let color = self.color.unwrap_or(theme().colors.border);
         let mut container = Container::new().color(color);
         container = if self.vertical {

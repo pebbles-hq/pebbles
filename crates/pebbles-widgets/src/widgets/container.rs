@@ -1,7 +1,7 @@
 //! [`Container`] — the Flutter convenience composite. A single widget that, via a
 //! stack of simpler render widgets, applies a decoration (color, border, radius,
-//! shadow), padding, sizing and alignment. A [`StatelessWidget`](pebbles_core::StatelessWidget):
-//! it owns no render object of its own, it just composes.
+//! shadow), padding, sizing and alignment. A composite: it owns no render object of
+//! its own, it just composes simpler render widgets.
 
 use pebbles_foundation::{Alignment, Color, EdgeInsets};
 use pebbles_render::{Affine, Border, BorderRadius, BoxConstraints, BoxDecoration, BoxShadow};

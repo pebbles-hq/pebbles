@@ -5,9 +5,8 @@ use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment};
 use pebbles_render::{Border, BorderRadius, BoxDecoration};
 
 use pebbles_core::children;
-use pebbles_core::context::BuildContext;
 use crate::theme::theme;
-use pebbles_core::widget::{AnyWidget, IntoWidget, StatelessWidget};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Container, Expanded, column, row, text};
 
 /// A titled panel: a header bar over a bordered content area.
@@ -31,10 +30,9 @@ impl Panel {
     }
 }
 
-pebbles_core::stateless_widget!(Panel);
 
-impl StatelessWidget for Panel {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for Panel {
+    fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
 
         let mut header_row: Vec<AnyWidget> = vec![

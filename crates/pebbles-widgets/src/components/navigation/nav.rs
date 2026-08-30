@@ -6,9 +6,9 @@ use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment};
 use pebbles_render::{Border, BoxDecoration, IconKind};
 
 use pebbles_core::children;
-use pebbles_core::context::{BuildContext, Callback};
+use pebbles_core::context::Callback;
 use crate::theme::theme;
-use pebbles_core::widget::{AnyWidget, IntoWidget, StatelessWidget};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Container, SizedBox, row, text};
 
 use crate::components::icon;
@@ -25,10 +25,9 @@ pub fn breadcrumb(segments: Vec<String>) -> Breadcrumb {
     Breadcrumb { segments }
 }
 
-pebbles_core::stateless_widget!(Breadcrumb);
 
-impl StatelessWidget for Breadcrumb {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for Breadcrumb {
+    fn into_widget(mut self) -> AnyWidget {
         let th = theme();
         let mut items: Vec<AnyWidget> = Vec::new();
         let last = self.segments.len().saturating_sub(1);
@@ -59,10 +58,9 @@ pub fn toolbar(children: Vec<AnyWidget>) -> Toolbar {
     Toolbar { children }
 }
 
-pebbles_core::stateless_widget!(Toolbar);
 
-impl StatelessWidget for Toolbar {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for Toolbar {
+    fn into_widget(mut self) -> AnyWidget {
         let th = theme();
         Container::new()
             .decoration(
@@ -85,10 +83,9 @@ pub fn status_bar(text: impl Into<String>) -> StatusBar {
     StatusBar { text: text.into() }
 }
 
-pebbles_core::stateless_widget!(StatusBar);
 
-impl StatelessWidget for StatusBar {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for StatusBar {
+    fn into_widget(mut self) -> AnyWidget {
         let th = theme();
         Container::new()
             .decoration(BoxDecoration::new().color(th.colors.muted))
@@ -126,10 +123,9 @@ impl Pagination {
     }
 }
 
-pebbles_core::stateless_widget!(Pagination);
 
-impl StatelessWidget for Pagination {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
+impl IntoWidget for Pagination {
+    fn into_widget(mut self) -> AnyWidget {
         let th = theme();
         let mut prev = button("Previous").variant(ButtonVariant::Outline).size(ButtonSize::Sm);
         if let Some(cb) = self.on_prev.take() {

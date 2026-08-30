@@ -19,10 +19,12 @@ fn erase(cbs: &[Callback]) -> Vec<TapCallback> {
 /// Wraps a child and reports pointer interactions. Configure fluently:
 ///
 /// ```ignore
+/// let count = create_signal(0);
+/// let hovered = create_signal(false);
 /// GestureDetector::new(my_child)
-///     .on_tap(cx.callback(|s: &mut S| s.count += 1))
-///     .on_long_press(cx.callback(|s: &mut S| s.menu = true))
-///     .on_hover_enter(cx.callback(|s: &mut S| s.hovered = true))
+///     .on_tap(move || count.update(|c| *c += 1))
+///     .on_hover_enter(move || hovered.set(true))
+///     .on_hover_exit(move || hovered.set(false))
 /// ```
 #[derive(Clone, Default)]
 pub struct GestureDetector {
