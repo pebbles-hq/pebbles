@@ -13,6 +13,7 @@
 pub mod components;
 pub mod dialog;
 pub mod image_view;
+pub mod modifiers;
 pub mod overlay;
 pub mod style;
 pub mod theme;
@@ -22,6 +23,7 @@ pub mod window;
 pub use dialog::{Dialog, DialogId, close_dialog, dialog};
 pub use window::{Window, WindowId, close_window, window};
 pub use image_view::ImageView;
+pub use modifiers::ModifierExt;
 pub use overlay::{OverlayHost, hide_overlay, show_overlay};
 pub use style::{Style, StyleExt, image_from_bytes, image_from_path, style, styled};
 pub use theme::{Colors, Theme, theme};

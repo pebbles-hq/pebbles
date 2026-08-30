@@ -71,7 +71,7 @@ pub mod prelude {
     pub use pebbles_core::{BuildContext, State, StatefulWidget, StatelessWidget};
 
     // theming + the general style system (RN/CSS-like, apply anywhere)
-    pub use pebbles_widgets::{Colors, Style, StyleExt, Theme, image_from_bytes, image_from_path, style, styled, theme};
+    pub use pebbles_widgets::{Colors, ModifierExt, Style, StyleExt, Theme, image_from_bytes, image_from_path, style, styled, theme};
 
     // the global overlay layer (dropdowns / menus / popovers)
     pub use pebbles_widgets::{OverlayHost, hide_overlay, show_overlay};

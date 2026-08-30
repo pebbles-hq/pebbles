@@ -179,6 +179,21 @@ fn window_open_and_close_enqueue() {
 }
 
 #[test]
+fn modifier_ext_chains_and_renders() {
+    use pebbles_widgets::ModifierExt;
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    // SwiftUI-style child-first chain — compiles (trait on any widget) and paints.
+    let root = text("hi").clipped(8.0).padded(12.0).sized(120.0, 40.0).opacity(0.9).centered();
+    ui.mount_root(View::new(palette::WHITE, root).boxed());
+    ui.layout(&mut env, Size::new(240.0, 160.0));
+    let mut scene = pebbles_render::Scene::new();
+    ui.paint(&mut scene); // must not panic
+}
+
+#[test]
 fn into_children_accepts_tuples_vecs_arrays_options() {
     use pebbles_core::widget::IntoChildren;
     let t = || text("x");
