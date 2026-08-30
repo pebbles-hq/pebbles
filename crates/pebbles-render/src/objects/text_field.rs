@@ -60,6 +60,9 @@ pub struct RenderTextField {
     pub anchor: usize,
     /// Selection focus / caret (byte offset into `text`).
     pub focus: usize,
+    /// IME preedit (composition) text, shown underlined at the caret; empty when not
+    /// composing. It is not part of `text` until the IME commits it.
+    pub preedit: String,
     /// Whether the field is focused (controls the caret + hit-test publishing).
     pub focused: bool,
     /// If set, every character renders as this glyph (password fields).
@@ -81,6 +84,7 @@ impl RenderTextField {
             placeholder: String::new(),
             anchor: 0,
             focus: 0,
+            preedit: String::new(),
             focused: false,
             obscure: None,
             multiline: false,
@@ -88,17 +92,6 @@ impl RenderTextField {
             style,
             cached: None,
             line_px: 0.0,
-        }
-    }
-
-    /// The string actually painted (obscured for passwords, placeholder if empty).
-    fn display_text(&self) -> (String, Color, bool) {
-        if self.text.is_empty() {
-            (self.placeholder.clone(), self.style.placeholder_color, true)
-        } else if let Some(ch) = self.obscure {
-            (std::iter::repeat_n(ch, self.text.chars().count()).collect(), self.style.color, false)
-        } else {
-            (self.text.clone(), self.style.color, false)
         }
     }
 
@@ -110,6 +103,63 @@ impl RenderTextField {
             None => byte,
         }
     }
+
+    /// The final string to lay out (with any IME preedit spliced in at the caret), its
+    /// color, the preedit's byte range within the display string (for the composition
+    /// underline), and the caret's display-byte position.
+    fn composed(&self) -> Composed {
+        // Empty and not composing → placeholder.
+        if self.text.is_empty() && self.preedit.is_empty() {
+            return Composed {
+                text: self.placeholder.clone(),
+                color: self.style.placeholder_color,
+                preedit: None,
+                caret: 0,
+            };
+        }
+        // Password: never visualize composition; render obscured text.
+        if let Some(ch) = self.obscure {
+            let s = std::iter::repeat_n(ch, self.text.chars().count()).collect();
+            return Composed {
+                text: s,
+                color: self.style.color,
+                preedit: None,
+                caret: self.to_display(self.focus),
+            };
+        }
+        let f = self.focus.min(self.text.len());
+        if self.preedit.is_empty() {
+            return Composed {
+                text: self.text.clone(),
+                color: self.style.color,
+                preedit: None,
+                caret: f,
+            };
+        }
+        // Composing: splice the preedit in at the caret; caret sits at its end.
+        let mut s = String::with_capacity(self.text.len() + self.preedit.len());
+        s.push_str(&self.text[..f]);
+        s.push_str(&self.preedit);
+        s.push_str(&self.text[f..]);
+        let end = f + self.preedit.len();
+        Composed {
+            text: s,
+            color: self.style.color,
+            preedit: Some((f, end)),
+            caret: end,
+        }
+    }
+}
+
+/// The result of [`RenderTextField::composed`]: the display string plus the geometry
+/// hints paint needs (caret position, preedit underline range).
+struct Composed {
+    text: String,
+    color: Color,
+    /// Byte range of the preedit within `text`, if composing.
+    preedit: Option<(usize, usize)>,
+    /// Caret position as a byte offset into `text`.
+    caret: usize,
 }
 
 impl RenderObject for RenderTextField {
@@ -119,16 +169,17 @@ impl RenderObject for RenderTextField {
         } else {
             None
         };
-        let (display, color, _placeholder) = self.display_text();
+        let composed = self.composed();
+        let display = &composed.text;
 
-        let mut builder = cx.text.layout.ranged_builder(&mut cx.text.fonts, &display, 1.0, true);
+        let mut builder = cx.text.layout.ranged_builder(&mut cx.text.fonts, display, 1.0, true);
         builder.push_default(StyleProperty::FontSize(self.style.font_size));
         builder.push_default(StyleProperty::FontWeight(FontWeight::new(self.style.weight)));
         builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
             self.style.line_height,
         )));
-        builder.push_default(StyleProperty::Brush(Brush::Solid(color)));
-        let mut layout: Layout<Brush> = builder.build(&display);
+        builder.push_default(StyleProperty::Brush(Brush::Solid(composed.color)));
+        let mut layout: Layout<Brush> = builder.build(display);
         layout.break_all_lines(max_advance);
         layout.align(Alignment::Start, AlignmentOptions::default());
 
@@ -138,8 +189,9 @@ impl RenderObject for RenderTextField {
             if constraints.has_bounded_width() { constraints.max_width } else { layout.width() as f64 };
 
         let layout = Rc::new(layout);
-        // Publish for hit-testing / motion — but only real (unobscured) text.
-        if self.obscure.is_none() && !self.text.is_empty() {
+        // Publish for hit-testing / motion — but only real (unobscured) text, and not
+        // while composing (the published layout would include the transient preedit).
+        if self.obscure.is_none() && self.preedit.is_empty() && !self.text.is_empty() {
             crate::text_edit::store(self.field_id, layout.clone());
         } else {
             crate::text_edit::clear(self.field_id);
@@ -151,10 +203,13 @@ impl RenderObject for RenderTextField {
     fn paint(&self, cx: &mut PaintCx, offset: Offset) {
         let Some(layout) = &self.cached else { return };
         let transform = Affine::translate((offset.x, offset.y));
+        let composed = self.composed();
+        let composing = composed.preedit.is_some();
 
-        // 1. Selection highlight (skip for password / placeholder).
+        // 1. Selection highlight (skip for password / placeholder / while composing —
+        // during composition the caret is collapsed at the preedit).
         let has_text = !self.text.is_empty();
-        if has_text && self.obscure.is_none() && self.anchor != self.focus {
+        if has_text && !composing && self.obscure.is_none() && self.anchor != self.focus {
             let a = self.to_display(self.anchor);
             let f = self.to_display(self.focus);
             let sel = Selection::new(
@@ -197,9 +252,27 @@ impl RenderObject for RenderTextField {
             }
         }
 
-        // 3. Caret at the focus (when focused).
+        // 3. Composition underline: a 1px rule beneath the preedit range.
+        if let Some((p0, p1)) = composed.preedit {
+            let sel = Selection::new(
+                Cursor::from_byte_index(layout, p0, Affinity::Downstream),
+                Cursor::from_byte_index(layout, p1, Affinity::Downstream),
+            );
+            for (bb, _) in sel.geometry(layout) {
+                let rect = Rect::new(
+                    offset.x + bb.x0,
+                    offset.y + bb.y1 - 1.5,
+                    offset.x + bb.x1,
+                    offset.y + bb.y1 - 0.5,
+                );
+                cx.scene.fill(Fill::NonZero, Affine::IDENTITY, self.style.caret_color, None, &rect);
+            }
+        }
+
+        // 4. Caret at the focus (when focused). While composing it sits at the end of
+        // the preedit; the placeholder shows it at the very start.
         if self.focused {
-            let f = if has_text { self.to_display(self.focus) } else { 0 };
+            let f = if has_text || composing { composed.caret } else { 0 };
             let bb = Cursor::from_byte_index(layout, f, Affinity::Downstream).geometry(layout, 1.5);
             let rect = Rect::new(
                 offset.x + bb.x0,

@@ -16,7 +16,7 @@ use vello::wgpu;
 use vello::{AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
-use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{CursorIcon, Window, WindowAttributes, WindowId};
@@ -384,6 +384,7 @@ impl Runner {
             .with_title(spec.title.clone())
             .with_inner_size(LogicalSize::new(spec.width, spec.height));
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
+        window.set_ime_allowed(true); // enable IME composition on secondary windows too
         let physical = window.inner_size();
         let surface = pollster::block_on(self.context.create_surface(
             window.clone(),
@@ -526,6 +527,16 @@ impl Runner {
                     }
                 }
             }
+            WindowEvent::Ime(ime) => {
+                let handled = match ime {
+                    Ime::Preedit(text, _cursor) => w.ui.dispatch_key(KeyInput::Preedit(text)),
+                    Ime::Commit(text) => w.ui.dispatch_key(KeyInput::Insert(text)),
+                    Ime::Enabled | Ime::Disabled => false,
+                };
+                if handled {
+                    w.window.request_redraw();
+                }
+            }
             WindowEvent::RedrawRequested => self.render_window(&mut w),
             _ => {}
         }
@@ -602,6 +613,7 @@ impl ApplicationHandler for Runner {
             .with_title(self.title.clone())
             .with_inner_size(LogicalSize::new(self.size.0, self.size.1));
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
+        window.set_ime_allowed(true); // enable IME composition (CJK, dead keys, etc.)
 
         let physical = window.inner_size();
         let surface = pollster::block_on(self.context.create_surface(
@@ -873,6 +885,19 @@ impl ApplicationHandler for Runner {
                     if handled {
                         self.request_redraw();
                     }
+                }
+            }
+
+            // IME composition (CJK, dead keys). Preedit = the in-progress underline;
+            // Commit = the finished text, inserted like a normal keystroke.
+            WindowEvent::Ime(ime) => {
+                let handled = match ime {
+                    Ime::Preedit(text, _cursor) => self.ui.dispatch_key(KeyInput::Preedit(text)),
+                    Ime::Commit(text) => self.ui.dispatch_key(KeyInput::Insert(text)),
+                    Ime::Enabled | Ime::Disabled => false,
+                };
+                if handled {
+                    self.request_redraw();
                 }
             }
 

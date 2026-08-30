@@ -470,6 +470,9 @@ struct Editor {
     value: Signal<String>,
     anchor: Signal<usize>,
     focus: Signal<usize>,
+    /// IME composition text (empty when not composing). Rendered underlined at the
+    /// caret; committed via an `Insert` when the IME finishes.
+    preedit: Signal<String>,
     undo: Signal<Vec<Snap>>,
     redo: Signal<Vec<Snap>>,
     id: u64,
@@ -496,6 +499,17 @@ impl Editor {
         max_length: Option<usize>,
         format: Option<&dyn Fn(&str) -> String>,
     ) -> (bool, bool) {
+        // IME composition update: stash the preedit and stop — it isn't committed yet,
+        // and nothing else in `value`/selection changes. The render reads `preedit`.
+        if let KeyInput::Preedit(t) = cmd {
+            self.preedit.set(t);
+            return (false, false);
+        }
+        // Any real edit ends composition — drop a stale preedit before applying it.
+        if !self.preedit.peek().is_empty() {
+            self.preedit.set(String::new());
+        }
+
         let mut v = self.value.peek();
         let mut a = self.anchor.peek().min(v.len());
         let mut f = self.focus.peek().min(v.len());
@@ -661,6 +675,7 @@ impl Editor {
                 pebbles_core::focus::set_focus(None);
                 return (false, false);
             }
+            KeyInput::Preedit(_) => unreachable!("handled before the match"),
         }
 
         // Input masking: reformat after an edit and drop the caret at the end.
@@ -697,6 +712,7 @@ fn render_field(p: &Props) -> AnyWidget {
         value,
         anchor: create_signal(start),
         focus: create_signal(start),
+        preedit: create_signal(String::new()),
         undo: create_signal(Vec::new()),
         redo: create_signal(Vec::new()),
         id: focus.raw_id(),
@@ -764,6 +780,7 @@ fn render_field(p: &Props) -> AnyWidget {
     let inner = editable(val)
         .placeholder(eff_placeholder.clone())
         .selection(ed.anchor.get().min(vlen), ed.focus.get().min(vlen))
+        .preedit(ed.preedit.get())
         .focused(focused)
         .obscure(eff_obscure)
         .multiline(p.multiline)

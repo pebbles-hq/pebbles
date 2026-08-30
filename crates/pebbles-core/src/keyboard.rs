@@ -32,6 +32,10 @@ pub enum Motion {
 pub enum KeyInput {
     /// Insert literal text at the caret, replacing any selection.
     Insert(String),
+    /// IME composition update: the in-progress (preedit) text shown underlined at the
+    /// caret. Replaces any previous preedit; an empty string clears composition. The
+    /// text is *not* committed until an [`Insert`](KeyInput::Insert) (from `Ime::Commit`).
+    Preedit(String),
     /// Delete the selection, or the grapheme before the caret.
     Backspace,
     /// Delete the selection, or the grapheme after the caret.

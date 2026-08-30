@@ -15,6 +15,7 @@ pub struct EditableText {
     pub placeholder: String,
     pub anchor: usize,
     pub focus: usize,
+    pub preedit: String,
     pub focused: bool,
     pub obscure: Option<char>,
     pub multiline: bool,
@@ -29,6 +30,7 @@ pub fn editable(text: impl Into<String>) -> EditableText {
         placeholder: String::new(),
         anchor: 0,
         focus: 0,
+        preedit: String::new(),
         focused: false,
         obscure: None,
         multiline: false,
@@ -47,6 +49,12 @@ impl EditableText {
     pub fn selection(mut self, anchor: usize, focus: usize) -> Self {
         self.anchor = anchor;
         self.focus = focus;
+        self
+    }
+    /// The IME preedit (composition) text, shown underlined at the caret. Empty means
+    /// not composing.
+    pub fn preedit(mut self, preedit: impl Into<String>) -> Self {
+        self.preedit = preedit.into();
         self
     }
     pub fn focused(mut self, focused: bool) -> Self {
@@ -75,6 +83,7 @@ impl EditableText {
         r.placeholder = self.placeholder.clone();
         r.anchor = self.anchor;
         r.focus = self.focus;
+        r.preedit = self.preedit.clone();
         r.focused = self.focused;
         r.obscure = self.obscure;
         r.multiline = self.multiline;
