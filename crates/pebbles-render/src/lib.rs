@@ -36,7 +36,8 @@ pub use objects::{
     RenderClipRRect, RenderColoredBox, RenderConstrainedBox, RenderDecoratedBox, RenderFlex,
     RenderIcon, RenderOpacity, RenderPadding, RenderParagraph, RenderPointerListener, RenderScroll,
     RenderList, RenderSpinner, RenderTransform, RenderStack, RenderTextField, RenderView, RenderWrap,
-    ScrollbarPolicy, ScrollbarStyle, StackFit, StackParentData, TapCallback, TextFieldStyle, lucide,
+    ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps, SemanticsRole, StackFit,
+    StackParentData, TapCallback, TextFieldStyle, lucide,
 };
 pub use text::TextEnv;
 pub use tree::{LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};

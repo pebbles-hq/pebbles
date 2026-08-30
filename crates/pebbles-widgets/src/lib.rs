@@ -36,9 +36,10 @@ pub use theme::{Colors, Theme, set_theme, theme, toggle_theme};
 pub use widgets::{
     Align, AspectRatio, ClipRRect, ColoredBox, Column, ConstrainedBox, Container, DecoratedBox,
     EditableText, Expanded, Flexible, GestureDetector, GridView, ListView, Opacity, Padding,
-    Positioned, Row, ScrollController, ScrollExt, ScrollbarPolicy, ScrollbarStyle,
-    SingleChildScrollView, SizedBox, Transform, Spinner, Stack, Text, View, Wrap, aspect_ratio, center,
-    column, editable, list_view, row, sized_box, spacer, spinner, stack, text, transform,
+    Positioned, Row, ScrollController, ScrollExt, ScrollbarPolicy, ScrollbarStyle, Semantics,
+    SemanticsExt, SemanticsProps, SemanticsRole, SingleChildScrollView, SizedBox, Transform, Spinner,
+    Stack, Text, View, Wrap, aspect_ratio, center,
+    column, editable, list_view, row, semantics, sized_box, spacer, spinner, stack, text, transform,
     use_scroll_controller, wrap,
 };
 

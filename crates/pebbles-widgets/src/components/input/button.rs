@@ -395,13 +395,23 @@ fn render_button(b: &Button) -> Element {
     let container =
         Container::new().decoration(decoration).padding(b.resolved_padding()).child(inner);
 
+    // Accessibility wrapper — applied at every exit so disabled/loading buttons are
+    // announced too (with their disabled state).
+    let a11y = |w: AnyWidget, disabled: bool| {
+        crate::widgets::semantics(crate::widgets::SemanticsRole::Button, b.label.clone(), w)
+            .disabled(disabled)
+            .into_widget()
+    };
     if b.disabled {
-        return GestureDetector::new(Opacity::new(0.55, container))
-            .cursor(Cursor::NotAllowed)
-            .into_widget();
+        return a11y(
+            GestureDetector::new(Opacity::new(0.55, container))
+                .cursor(Cursor::NotAllowed)
+                .into_widget(),
+            true,
+        );
     }
     if b.loading {
-        return GestureDetector::new(container).cursor(Cursor::Default).into_widget();
+        return a11y(GestureDetector::new(container).cursor(Cursor::Default).into_widget(), true);
     }
 
     // Register keyboard activation (Enter/Space), focus-change, and autofocus.
@@ -504,7 +514,8 @@ fn render_button(b: &Button) -> Element {
     if let Some(cb) = b.on_tertiary_tap_cancel.clone() {
         gesture = gesture.on_tertiary_tap_cancel(cb);
     }
-    gesture.into_widget()
+    // Accessibility: expose the button (its label + disabled state) to screen readers.
+    a11y(gesture.into_widget(), inert)
 }
 
 /// A square icon-only button with hover + pressed feedback.

@@ -890,7 +890,12 @@ impl Ui {
         if let Some(pd) = self.elements[el].widget.as_parent_data() {
             let data = pd.parent_data();
             if let Some(rid) = self.render_children_of(el).first().copied() {
-                self.render.set_parent_data(rid, data);
+                // A `Semantics` widget rides the same parent-data channel but routes to
+                // the node's accessibility slot instead of its layout parent-data.
+                match data.downcast::<pebbles_render::SemanticsProps>() {
+                    Ok(props) => self.render.set_semantics(rid, *props),
+                    Err(data) => self.render.set_parent_data(rid, data),
+                }
             }
         }
         for child in self.elements[el].children.clone() {

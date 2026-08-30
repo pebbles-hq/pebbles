@@ -46,6 +46,8 @@ pub struct RenderNode {
     /// Opaque id of the widget-layer element that created this node (for stable
     /// identity across rebuilds, e.g. gesture arming). Set by the widget layer.
     pub source: Option<u64>,
+    /// Accessibility annotation attached by a `Semantics` widget, if any.
+    pub semantics: Option<crate::SemanticsProps>,
     pub needs_layout: bool,
     pub needs_paint: bool,
 }
@@ -60,6 +62,7 @@ impl RenderNode {
             size: Size::ZERO,
             parent_data: None,
             source: None,
+            semantics: None,
             needs_layout: true,
             needs_paint: true,
         }
@@ -202,6 +205,54 @@ impl RenderTree {
     pub fn set_source(&mut self, id: RenderId, source: u64) {
         if let Some(node) = self.nodes.get_mut(id) {
             node.source = Some(source);
+        }
+    }
+
+    /// Attach an accessibility annotation to a node (set by a `Semantics` widget).
+    pub fn set_semantics(&mut self, id: RenderId, props: crate::SemanticsProps) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.semantics = Some(props);
+        }
+    }
+
+    /// Walk the laid-out tree and collect every semantics-annotated node into a flat
+    /// list (each with window-space bounds + the owning element id), in paint order.
+    /// The shell maps this onto the platform accessibility tree each frame.
+    pub fn semantics_tree(&self) -> Vec<crate::SemanticsNode> {
+        let mut out = Vec::new();
+        if let Some(root) = self.root {
+            let mut synth = 0u64;
+            self.collect_semantics(root, &mut out, &mut synth);
+        }
+        out
+    }
+
+    fn collect_semantics(
+        &self,
+        id: RenderId,
+        out: &mut Vec<crate::SemanticsNode>,
+        synth: &mut u64,
+    ) {
+        let node = &self.nodes[id];
+        if let Some(props) = &node.semantics {
+            let origin = self.absolute_offset(id);
+            let nid = node.source.unwrap_or_else(|| {
+                *synth += 1;
+                // Synthesized ids live above any real element id space (fits usize::MAX
+                // element ids in the low bits); fine for untagged decorative nodes.
+                u64::MAX - *synth
+            });
+            out.push(crate::SemanticsNode {
+                id: nid,
+                props: props.clone(),
+                bounds: pebbles_foundation::Rect::from_origin_size(
+                    (origin.x, origin.y),
+                    (node.size.width, node.size.height),
+                ),
+            });
+        }
+        for &child in &node.children {
+            self.collect_semantics(child, out, synth);
         }
     }
 

@@ -901,6 +901,18 @@ fn render_field(p: &Props) -> AnyWidget {
             .into_widget()
     };
 
+    // Accessibility: a text input announcing its name (label, else placeholder), its
+    // current value and disabled state.
+    let a11y_name = p.label.clone().unwrap_or_else(|| eff_placeholder.clone());
+    let field_box = crate::widgets::semantics(
+        crate::widgets::SemanticsRole::TextInput,
+        a11y_name,
+        field_box,
+    )
+    .value(ed.value.peek())
+    .disabled(disabled)
+    .into_widget();
+
     // Wrap with an optional label above and helper/error below (shadcn form field).
     if p.label.is_none() && p.helper.is_none() && p.error.is_none() {
         return field_box;

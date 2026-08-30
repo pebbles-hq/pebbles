@@ -270,7 +270,11 @@ fn render_checkbox(p: &Checkbox) -> AnyWidget {
         )));
 
     let body = labeled(box_.into_widget(), p.size, p.label.clone(), p.description.clone(), p.disabled);
-    wire(body, p.disabled, &p.on_changed, hovered, node, p.autofocus)
+    let out = wire(body, p.disabled, &p.on_changed, hovered, node, p.autofocus);
+    crate::widgets::semantics(crate::widgets::SemanticsRole::Checkbox, p.label.clone().unwrap_or_default(), out)
+        .checked(p.value)
+        .disabled(p.disabled)
+        .into_widget()
 }
 
 // ---------------------------------------------------------------------------
@@ -367,7 +371,11 @@ fn render_switch(p: &Switch) -> AnyWidget {
         .child(stack(children![Positioned::new(thumb_w).left(left).top(inset)]));
 
     let body = labeled(track.into_widget(), p.size, p.label.clone(), p.description.clone(), p.disabled);
-    wire(body, p.disabled, &p.on_changed, hovered, node, p.autofocus)
+    let out = wire(body, p.disabled, &p.on_changed, hovered, node, p.autofocus);
+    crate::widgets::semantics(crate::widgets::SemanticsRole::Switch, p.label.clone().unwrap_or_default(), out)
+        .checked(p.value)
+        .disabled(p.disabled)
+        .into_widget()
 }
 
 // ---------------------------------------------------------------------------
@@ -471,7 +479,11 @@ fn render_radio(p: &Radio) -> AnyWidget {
         .child(center(dot));
 
     let body = labeled(ring.into_widget(), p.size, p.label.clone(), p.description.clone(), p.disabled);
-    wire(body, p.disabled, &p.on_selected, hovered, node, p.autofocus)
+    let out = wire(body, p.disabled, &p.on_selected, hovered, node, p.autofocus);
+    crate::widgets::semantics(crate::widgets::SemanticsRole::RadioButton, p.label.clone().unwrap_or_default(), out)
+        .checked(p.selected)
+        .disabled(p.disabled)
+        .into_widget()
 }
 
 // ---------------------------------------------------------------------------
