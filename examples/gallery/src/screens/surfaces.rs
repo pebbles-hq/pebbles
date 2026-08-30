@@ -47,7 +47,7 @@ pub fn surfaces() -> Element {
                         avatar("MK").size(56.0).color(palette::PURPLE),
                     ]).main_axis_min().spacing(12.0),
             ),
-            section("SKELETON", column(children![skeleton(320.0, 16.0), skeleton(260.0, 16.0), skeleton(190.0, 16.0)]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(8.0)),
+            section("SKELETON (shimmer)", column(children![skeleton(320.0, 16.0).shimmer(), skeleton(260.0, 16.0).shimmer(), skeleton(190.0, 16.0)]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(8.0)),
             section("KBD", row((kbd("⌘K"), kbd("Ctrl+C"), kbd("⇧⌘P"), kbd("Esc"))).main_axis_min().spacing(8.0)),
             section(
                 "EMPTY STATE",

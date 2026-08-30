@@ -9,8 +9,8 @@ use pebbles_core::{IntoWidget, Ui, WidgetExt, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{
-    Avatar, ButtonVariant, View, avatar, avatar_group, body, button, button_group, card,
-    collapsible, column, empty, kbd, scroll_area, text,
+    Avatar, ButtonVariant, View, avatar, avatar_group, body, button, button_group, card, checkbox,
+    collapsible, column, empty, kbd, scroll_area, skeleton, text,
 };
 
 thread_local! {
@@ -47,6 +47,8 @@ fn gallery() -> impl IntoWidget {
             .width(120.0)
             .height(60.0)
             .into_widget(),
+        checkbox(false).indeterminate(true).label("Mixed").into_widget(),
+        skeleton(120.0, 12.0).shimmer().into_widget(),
     ])
     .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
 }

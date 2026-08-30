@@ -163,6 +163,7 @@ fn wire(
 /// A checkbox. `value` is the current state; `on_changed` fires on tap.
 pub struct Checkbox {
     value: bool,
+    indeterminate: bool,
     size: ToggleSize,
     color: Option<Color>,
     disabled: bool,
@@ -176,6 +177,7 @@ pub struct Checkbox {
 pub fn checkbox(value: bool) -> Checkbox {
     Checkbox {
         value,
+        indeterminate: false,
         size: ToggleSize::default(),
         color: None,
         disabled: false,
@@ -189,6 +191,12 @@ pub fn checkbox(value: bool) -> Checkbox {
 impl Checkbox {
     pub fn size(mut self, size: ToggleSize) -> Self {
         self.size = size;
+        self
+    }
+    /// Show the indeterminate ("mixed") state — a filled box with a dash instead of a
+    /// check. Tapping it fires `on_changed` (the caller typically resolves to checked).
+    pub fn indeterminate(mut self, indeterminate: bool) -> Self {
+        self.indeterminate = indeterminate;
         self
     }
     /// Custom accent color for the checked fill (defaults to the theme primary).
@@ -231,10 +239,13 @@ fn render_checkbox(p: &Checkbox) -> AnyWidget {
     let hovered = create_signal(false);
     let node = create_focus();
     let accent = p.color.unwrap_or(c.primary);
-    let t = animated(if p.value { 1.0 } else { 0.0 }, DUR);
+    // Both checked and indeterminate read as a filled box.
+    let filled = p.value || p.indeterminate;
+    let t = animated(if filled { 1.0 } else { 0.0 }, DUR);
     let hv = if p.disabled { 0.0 } else { animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12) };
     let focused = !p.disabled && node.is_focused();
     let dim = p.size.box_dim();
+    let glyph = if p.indeterminate { IconKind::Minus } else { IconKind::Check };
 
     let bg = mix(c.background, accent, t as f32);
     // Fill/border track the accent as it checks; hover darkens the border only while
@@ -255,7 +266,7 @@ fn render_checkbox(p: &Checkbox) -> AnyWidget {
         .alignment(Alignment::CENTER)
         .child(center(Opacity::new(
             t as f32,
-            icon(IconKind::Check).size(dim * 0.72).color(c.primary_foreground),
+            icon(glyph).size(dim * 0.72).color(c.primary_foreground),
         )));
 
     let body = labeled(box_.into_widget(), p.size, p.label.clone(), p.description.clone(), p.disabled);

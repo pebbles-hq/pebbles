@@ -59,6 +59,13 @@ fn checkbox_section() -> impl IntoWidget {
                 checkbox(false).disabled(true).label("Unchecked · disabled"),
             ])
             .spacing(24.0),
+            gap_h(18.0),
+            // indeterminate (mixed) — a filled box with a dash
+            wrap(children![
+                checkbox(false).indeterminate(true).label("Indeterminate"),
+                checkbox(true).indeterminate(true).color(palette::emerald::S600).label("Indeterminate · colored"),
+            ])
+            .spacing(24.0),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Start)
         .main_axis_min(),

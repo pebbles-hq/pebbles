@@ -6,7 +6,8 @@ use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, ImageFit, I
 
 use pebbles_core::children;
 use pebbles_core::context::BuildContext;
-use crate::theme::theme;
+use pebbles_core::{component_props, create_loop};
+use crate::theme::{mix, theme};
 use pebbles_core::widget::{AnyWidget, IntoWidget, StatelessWidget};
 use crate::widgets::{ClipRRect, Container, Positioned, SizedBox, center, column, row, spacer, stack, text};
 use crate::ImageView;
@@ -542,27 +543,51 @@ impl StatelessWidget for Separator {
 // Skeleton
 // ---------------------------------------------------------------------------
 
-/// A loading placeholder block.
-#[derive(Clone)]
+/// A loading placeholder block. Static by default; call [`shimmer`](Skeleton::shimmer)
+/// for an animated sweep.
 pub struct Skeleton {
     width: f64,
     height: f64,
+    shimmer: bool,
 }
 
 /// Create a [`Skeleton`] of the given size.
 pub fn skeleton(width: f64, height: f64) -> Skeleton {
-    Skeleton { width, height }
+    Skeleton { width, height, shimmer: false }
 }
 
-pebbles_core::stateless_widget!(Skeleton);
-
-impl StatelessWidget for Skeleton {
-    fn build(&mut self, _cx: &mut BuildContext) -> AnyWidget {
-        let c = theme().colors;
-        Container::new()
-            .decoration(BoxDecoration::new().color(c.muted).radius(BorderRadius::all(6.0)))
-            .width(self.width)
-            .height(self.height)
-            .into_widget()
+impl Skeleton {
+    /// Animate a light band sweeping across the block (shadcn's shimmer).
+    pub fn shimmer(mut self) -> Self {
+        self.shimmer = true;
+        self
     }
+}
+
+impl IntoWidget for Skeleton {
+    fn into_widget(self) -> AnyWidget {
+        component_props(render_skeleton, self).into_widget()
+    }
+}
+
+fn render_skeleton(s: &Skeleton) -> AnyWidget {
+    let c = theme().colors;
+    let radius = BorderRadius::all(6.0);
+    let base = Container::new()
+        .decoration(BoxDecoration::new().color(c.muted).radius(radius))
+        .width(s.width)
+        .height(s.height);
+    if !s.shimmer {
+        return base.into_widget();
+    }
+    // A ~40%-wide lighter band sweeps left→right, clipped to the block.
+    let phase = create_loop(1.2).get();
+    let band_w = s.width * 0.4;
+    let x = -band_w + (s.width + band_w) * phase;
+    let band = Container::new()
+        .decoration(BoxDecoration::new().color(mix(c.muted, c.background, 0.6)).radius(radius))
+        .width(band_w)
+        .height(s.height);
+    base.child(ClipRRect::new(radius, stack(children![Positioned::new(band).left(x).top(0.0)])))
+        .into_widget()
 }
