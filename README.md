@@ -10,9 +10,11 @@ the box layout protocol, a rich themed widget catalog — but swaps Flutter's
 memos, effects, and plain **function components**. The result is Flutter's
 familiarity with a fraction of the ceremony, in idiomatic Rust.
 
-> Status: early but broad. The catalog, reactivity, layout, text editing, scrolling
-> and theming are real and demonstrated in the gallery. It's a personal project and
-> the foundation for **Gravel**, an IDE built on top of it — but it stands on its own.
+> Status: early but broad. Catalog, reactivity, layout, text editing (incl. **IME/CJK**),
+> scrolling, theming (**live light/dark**), **multi-window + IPC**, **async data**, and an
+> **AccessKit accessibility** layer are all real and demonstrated in the gallery. It's a
+> personal project and the foundation for **Gravel**, an IDE built on top of it — but it
+> stands on its own.
 
 ```rust
 use pebbles::prelude::*;
@@ -20,16 +22,16 @@ use pebbles::prelude::*;
 fn counter() -> impl IntoWidget {
     let count = create_signal(0); // local state, SolidJS-style
 
-    center(column(children![
+    center(column((
         text(format!("{}", count.get())).size(72.0),
-        row(children![
+        row((
             button("−").variant(ButtonVariant::Outline)
-                .on_pressed(action(move || count.update(|c| *c -= 1))),
+                .on_pressed(move || count.update(|c| *c -= 1)), // handler = bare closure
             SizedBox::spacer(16.0, 0.0),
-            button("+").on_pressed(action(move || count.update(|c| *c += 1))),
-        ])
-        .main_axis_min(),
-    ]))
+            button("+").on_pressed(move || count.update(|c| *c += 1)),
+        ))
+        .min(), // shrink-wrap the row's main axis
+    )))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,17 +46,32 @@ cargo run -p gallery     # the full widget showcase / documentation
 
 ## Programming model
 
-- **UI syntax is Flutter.** `column(children![...])`, `Container::new().color(..).padding(..)`,
+- **UI syntax is Flutter.** `column((a, b, c))`, `Container::new().color(..).padding(..)`,
   `Row`/`Expanded`/`Stack`, the constraints-down / sizes-up box layout — a Flutter
-  developer is immediately at home.
-- **State is SolidJS.** No `StatefulWidget`, no `setState`. Local *and* global state
-  use the same `create_signal` primitive; reads auto-subscribe, writes re-render only
-  the components that depend on them. Plus `create_memo`, `create_effect`,
+  developer is immediately at home. Children are a **tuple** (heterogeneous, no boxing)
+  or a `Vec`/`children![…]`.
+- **State is SolidJS.** No `StatefulWidget`, no `setState`. Local *and* global state use
+  the same `create_signal` primitive; reads auto-subscribe, writes re-render only the
+  components that read them. Plus `create_memo` (equality-deduped), `create_effect`,
   `create_store`, `create_cleanup`.
 - **Components are functions.** `fn my_widget() -> impl IntoWidget`, mounted with
   `component(..)` (or `component_props(..)` for parameterized, reusable widgets).
-- **Handlers are plain closures.** `action(move || count.update(..))` /
-  `action_event(move |e| ..)` — no macros, no interior-mutability dance in user code.
+- **Handlers are plain closures.** `.on_pressed(move || count.update(..))`. An
+  event-carrying handler is `action_event(move |e| ..)`; the explicit `action(..)`
+  wrapper still exists but is rarely needed.
+
+### View-function rules (the top-3 FAQ)
+
+1. **A view is a plain `fn` returning its root widget — there is no `widget()`/`view()`
+   wrapper and there never should be.** Helpers like the gallery's `screen()` are optional
+   app vocabulary, not required chrome.
+2. **No local state → plain fn, call it directly. Local state
+   (`create_signal`/`animated`/`create_focus`) → it's a component: mount it via
+   `component(..)`/`component_props(..)`** so its signals get an owner and it re-renders
+   independently. Calling a signal-creating fn directly charges its hooks to the *parent*
+   (a debug assertion catches this).
+3. **Return-type convention:** public view/component boundaries return `Element`; private
+   helpers may return concrete types (`Container`, `Row`, …) for zero boxing.
 
 ## Architecture
 
@@ -72,13 +89,26 @@ GPU surface  (winit window)
 
 - **Box layout, verbatim:** constraints go down, sizes come up, the parent sets the
   position.
-- **Arenas, not `Rc<RefCell>`:** a parent lays out its children (mutating siblings
-  while being mutated). Each node lives in a generational [`slotmap`] arena; to recurse
-  the framework lifts the child's boxed object out, recurses with a hole-free `&mut`
-  tree, and puts it back — no aliasing, no borrow panics.
-- **Reactivity engine:** a thread-local runtime tracks which components read each
-  signal; a write schedules exactly those components, which re-render and reconcile.
-  Dioxus-like internals, Solid-like API.
+- **Arenas, not `Rc<RefCell>`:** a parent lays out its children (mutating siblings while
+  being mutated). Each node lives in a generational [`slotmap`] arena; to recurse, the
+  framework lifts the child's boxed object out, recurses with a hole-free `&mut` tree, and
+  puts it back — no aliasing, no borrow panics.
+- **Reactivity engine:** a thread-local runtime tracks which components read each signal; a
+  write schedules exactly those components, which re-render and reconcile. Dioxus-like
+  internals, Solid-like API.
+
+### Threading & update model
+
+- **Single UI thread.** Signals, the runtime and every widget are **not `Send`** — all UI
+  work happens on the thread that runs the event loop. Background work uses `spawn` /
+  `create_resource`, which run a `std::thread` and hand the result **back to the UI thread**
+  (drained each frame) before it touches any signal.
+- **Update granularity is per-component, then reconcile.** A signal write marks the
+  components that read it dirty; each re-runs its function and the result is *reconciled*
+  against the retained element tree (only changed render objects are updated). This is
+  Solid's **API**, not Solid's per-node DOM granularity — the unit of re-render is the
+  function component, and `create_memo` dedupes by value so an unchanged derived value
+  doesn't wake its readers.
 
 ### Crates
 
@@ -87,10 +117,10 @@ Layered so the GPU stack is quarantined and the core compiles in seconds:
 | Crate | Responsibility |
 |-------|----------------|
 | [`pebbles-foundation`](crates/pebbles-foundation) | geometry (kurbo), layout enums, color + the full Tailwind/shadcn palette |
-| [`pebbles-render`](crates/pebbles-render) | `BoxConstraints`, render tree, layout/paint, text (parley), icons |
-| [`pebbles-core`](crates/pebbles-core) | the runtime: `Widget`/`Element` traits, reconciler, reactivity, focus, keyboard, animation, clipboard |
-| [`pebbles-widgets`](crates/pebbles-widgets) | the catalog: primitives + shadcn-style components, theme, styling |
-| [`pebbles-shell`](crates/pebbles-shell) | winit window + wgpu surface + Vello GPU renderer + event loop |
+| [`pebbles-render`](crates/pebbles-render) | `BoxConstraints`, render tree, layout/paint, text (parley), icons, accessibility nodes |
+| [`pebbles-core`](crates/pebbles-core) | the runtime: `Widget`/`Element`, reconciler, reactivity, focus, keyboard, animation, async tasks, IPC, clipboard |
+| [`pebbles-widgets`](crates/pebbles-widgets) | the catalog: primitives + shadcn-style components, theme, styling, overlays, dialogs, windows |
+| [`pebbles-shell`](crates/pebbles-shell) | winit window + wgpu surface + Vello GPU renderer + event loop + AccessKit bridge |
 | [`pebbles`](crates/pebbles) | umbrella crate + `prelude` |
 
 `vello`'s GPU deps are optional, so `pebbles-render` uses the CPU-side `vello::Scene`
@@ -101,61 +131,88 @@ encoder with **no** wgpu — keeping layout/paint logic unit-testable headlessly
 
 Everything below is built and shown in `cargo run -p gallery`, styled to **shadcn**.
 
-- **Layout & primitives** — `Text`, `Container`, `Row`/`Column`, `Expanded`/`Flexible`/
-  `spacer`, `Stack`/`Positioned`, `Padding`, `Align`/`center`, `SizedBox`,
-  `ConstrainedBox`, `DecoratedBox` (color · border · radius · shadow), `Opacity`,
-  `ClipRRect`, `Wrap`, `AspectRatio`, `Icon`, `Spinner`.
-- **Icons** — the full **Lucide** set (~1800 glyphs) ships as the default, addressable
-  by const (`lucide::CAMERA`), by name (`lucide::by_name("circle-check")`), or via the
-  named `IconKind` handles. An icon is plain data (`IconData`), so your own icons drop
-  in anywhere an icon is accepted — the set is fully pluggable.
+- **Layout & primitives** — `Text`, `Container`, `Row`/`Column` (with `.start()/.center_cross()/
+  .end()/.stretch()/.min()/.space_between()` shorthands), `Expanded`/`Flexible`/`spacer`,
+  `Stack`/`Positioned`, `Padding`, `Align`/`center`, `SizedBox`, `ConstrainedBox`,
+  `DecoratedBox`, `Opacity`, `ClipRRect`, `Wrap`, `AspectRatio`, `Icon`, `Spinner`,
+  `ScrollArea`, `Resizable`, `Separator`; child-first modifiers (`.padded()/.centered()/
+  .expanded()/.sized()/.clipped()/.opacity()`).
+- **Icons** — the full **Lucide** set (~1800 glyphs), addressable by const (`lucide::CAMERA`),
+  by name, or via `IconKind`. Icons are plain data, so your own drop in anywhere.
 - **Gestures** — `GestureDetector` with the full pointer set: tap, double-tap,
   secondary/tertiary click, the long-press lifecycle, hover enter/exit, and drag/pan.
 - **Buttons** — `Button` (Primary/Secondary/Outline/Ghost/Destructive/Link · Sm/Md/Lg ·
   custom colors · leading/trailing icons · `.shadow()` · `.loading()` · full event set ·
-  focus ring + keyboard activation) and `IconButton`.
-- **Text inputs** — a full editor: selection, clipboard (Ctrl+A/C/X/V via the system
-  clipboard), undo/redo, word navigation, and mouse (click-to-caret, drag-select,
-  double-click word, shift-click). Plus the input types: `text_field`, `text_area`,
-  `password_field` (show/hide), `search_field` (clear), `email`/`number`/`url`/`phone`,
-  and `date_field` (auto-formats to MM/DD/YYYY + a **calendar popover** picker).
-  Form-field states: label, helper, error, disabled, input filtering, masking.
-- **Selection controls** — `Select` (dropdown in an overlay layer, flips near edges),
-  `Slider` (draggable), animated `Checkbox`/`Switch`/`Radio`/`Toggle`, `Progress`.
-- **Scrolling** — `SingleChildScrollView` with **spring physics** (smooth wheel) and a
-  customizable scrollbar; **virtualized** `ListView::builder` and `GridView::builder`
-  (only visible items built); a `ScrollController` for programmatic scrolling; keyboard
-  scrolling; nested-scroll bubbling; `ScrollExt::scrollable()`.
-- **Surfaces & data** — `Card`, `Badge`, `Alert`, `Avatar`, `Separator`, `Skeleton`,
-  `ListTile`, `Table`, `TreeView`, typography helpers.
+  focus ring + keyboard activation), `IconButton`, `ButtonGroup`, `ToggleGroup`.
+- **Text inputs** — a full editor with **IME / CJK composition** (underlined preedit), selection,
+  system clipboard (Ctrl+A/C/X/V), undo/redo, word navigation, and mouse (click-to-caret,
+  drag-select, double-click word, shift-click). Input types: `text_field`, `text_area`,
+  `password_field`, `search_field`, `email`/`number`/`url`/`phone`, `date_field` (calendar
+  popover), plus `Field` (label/description/error wrapper), `Combobox`/`MultiSelect`.
+- **Selection controls** — `Select`, `Slider`, animated `Checkbox`/`Switch`/`Radio`/`Toggle`,
+  `RadioGroup`, `Progress`.
+- **Scrolling** — `SingleChildScrollView` with **spring physics** and a customizable
+  scrollbar; **virtualized** `ListView::builder`/`GridView::builder`; a `ScrollController`;
+  keyboard scrolling; nested-scroll bubbling.
+- **Surfaces & data** — `Card`, `Badge`, `Alert`, `Avatar`(+group), `Separator`, `Skeleton`
+  (+shimmer), `Kbd`, `Empty`, `ListTile`, `Table`, `TreeView`, typography helpers.
 - **App chrome** — `Scaffold`, `SideNav`, `TopPanel`, `BottomNav`, `Tabs`, `SplitView`,
   `Panel`, `Accordion`/`Collapsible`, `Breadcrumb`/`Pagination`/`Toolbar`/`StatusBar`.
-- **Overlays** — a global overlay layer (`show_overlay`/`hide_overlay`, `OverlayHost`)
-  powering dropdowns, popovers and the date picker.
-- **Theming & styling** — a global `Theme` (shadcn light/dark tokens), the complete
-  Tailwind/shadcn color palette, and a general CSS-like `Style` system applicable to
-  any widget.
-- **Animation** — a spring + tween driver (`animated`/`animate_to`) and a looping
-  ticker (`create_loop`) behind hover fades, sliding switches, focus rings and spinners.
+- **Overlays, dialogs & windows** — a **per-window** overlay layer (dropdowns/popovers), modal
+  `Dialog` + `AlertDialog`, and real **secondary OS windows** (`window()`) that share the one
+  reactive runtime — cross-window communication is a shared signal or a typed `Channel<T>`, no
+  serialization (unlike Electron IPC). Window knobs: min/max size, position, resizable,
+  maximized, decorations, icon, and runtime `set_title`/maximize/minimize/move/focus.
+- **Async** — `spawn(work, on_done)` and `create_resource(fetcher) -> Signal<Resource<T>>`
+  (SolidJS-style `Loading → Ready`) run background work off-thread and deliver results on the
+  UI thread.
+- **Accessibility** — an AccessKit bridge (AT-SPI / UIA / VoiceOver): interactive widgets
+  publish role/label/value/toggled/disabled + bounds, and keyboard focus is announced.
+- **Theming & styling** — a **reactive** global `Theme` (shadcn light/dark; `toggle_theme()`
+  flips the whole tree live), the complete Tailwind/shadcn palette, and a CSS-like `Style`
+  system applicable to any widget.
+- **Animation** — a spring + tween driver (`animated`/`animate_to`), a looping ticker
+  (`create_loop`) and a one-shot `create_timeout`, behind hover fades, sliding switches,
+  focus rings and spinners.
 
 ## Testing
 
-Layout and the whole reconcile loop are proven **without a GPU or window**:
+Layout, the whole reconcile loop, reactivity, IME, async, accessibility and per-window
+isolation are all proven **without a GPU or window**:
 
 ```bash
-cargo test
+cargo test          # headless: mount a real tree, dispatch taps/keys/IME, assert
 ```
 
 The headless engine tests mount a real widget tree, dispatch taps and keystrokes, and
-assert the render tree changes — driving `input → signal write → reconcile → relayout`
-end to end in-process.
+assert the render (and accessibility) trees change — driving `input → signal write →
+reconcile → relayout` end to end in-process.
+
+## Status
+
+| Area | State |
+|------|-------|
+| Reactivity (signals/memos/effects/stores, memo dedup) | ✅ |
+| Layout + box protocol, flex, stack, scroll (spring + virtualized) | ✅ |
+| Widget catalog (shadcn-style; most of the useful subset) | ✅ broad |
+| Text editing + IME/CJK composition | ✅ |
+| Theming (reactive light/dark) + styling | ✅ |
+| Multi-window + cross-window IPC (`Channel`) | ✅ |
+| Async (`spawn` / `create_resource`) | ✅ |
+| Accessibility (AccessKit: read + focus) | ✅ (AT-driven *actions* are next) |
+| Per-window overlays + dialogs | ✅ |
+| Catalog long-tail (Tooltip, Toast, Command, Sheet, Menubar, …) | 🔶 in progress |
+| Charts, carousel | ⏭ post-competition |
+
+*(A screenshot strip and the multi-window IPC demo GIF are captured from the running
+gallery — see `cargo run -p gallery`.)*
 
 ## Roadmap
 
-Natural next steps: a tooltip overlay + accessibility/semantics layer; per-widget error
-validation helpers and a time picker; variable-height list virtualization and slivers
-(sticky/collapsing headers); scale/spring transforms; and an `InheritedWidget`-style
-theme provider (theme is a thread-local today).
+Natural next steps: the overlay long-tail (Tooltip → Toast → Popover → ContextMenu →
+Sheet/Command palette); AT-driven accessibility actions; data-table sort/selection and
+calendar range; variable-height list virtualization and slivers (sticky/collapsing
+headers); scale/spring transforms.
 
 ## License
 

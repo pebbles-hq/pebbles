@@ -7,20 +7,20 @@ use pebbles::prelude::*;
 fn counter() -> impl IntoWidget {
     let count = create_signal(0);
 
-    center(column(children![
+    center(column((
         text("Pebbles counter").size(20.0).color(palette::GREY_600),
         SizedBox::spacer(0.0, 16.0),
         text(format!("{}", count.get())).size(72.0).color(palette::GREY_900),
         SizedBox::spacer(0.0, 24.0),
-        row(children![
+        row((
             button("−")
                 .variant(ButtonVariant::Outline)
-                .on_pressed(action(move || count.update(|c| *c -= 1))),
+                .on_pressed(move || count.update(|c| *c -= 1)),
             SizedBox::spacer(16.0, 0.0),
-            button("+").on_pressed(action(move || count.update(|c| *c += 1))),
-        ])
-        .main_axis_min(),
-    ]))
+            button("+").on_pressed(move || count.update(|c| *c += 1)),
+        ))
+        .min(),
+    )))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
