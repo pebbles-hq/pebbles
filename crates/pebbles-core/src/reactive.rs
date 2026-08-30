@@ -477,6 +477,13 @@ pub fn frame_requested() -> bool {
     with_rt(|rt| std::mem::replace(&mut rt.frame_requested, false))
 }
 
+/// Request that the shell draw another frame. Called on the UI thread by machinery
+/// that changes what should be on screen without writing a signal (e.g. registering a
+/// background [`task`](crate::task) whose result will land on a later frame).
+pub fn request_frame() {
+    with_rt(|rt| rt.frame_requested = true);
+}
+
 /// The component element currently rendering, if any. Used to give a focus node a
 /// stable identity (the component's element id).
 pub fn current_owner() -> Option<ElementId> {

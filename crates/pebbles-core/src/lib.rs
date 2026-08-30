@@ -29,6 +29,7 @@ pub mod key;
 pub mod keyboard;
 pub mod reactive;
 pub mod scroll;
+pub mod task;
 pub mod widget;
 
 pub use animation::{animate_to, animated, create_loop};
@@ -43,6 +44,7 @@ pub use reactive::{
     Signal, Store, create_cleanup, create_effect, create_memo, create_root_signal, create_signal,
     create_store, owner_id,
 };
+pub use task::{Resource, create_resource, spawn};
 pub use widget::{
     AnyWidget, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget, Widget, WidgetExt,
 };

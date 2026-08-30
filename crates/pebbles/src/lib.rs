@@ -56,9 +56,9 @@ pub mod prelude {
 
     // runtime (pebbles-core): reactivity (SolidJS-style) + function components + focus
     pub use pebbles_core::{
-        Channel, Component, Element, FocusNode, KeyInput, Motion, Signal, Store, action,
+        Channel, Component, Element, FocusNode, KeyInput, Motion, Resource, Signal, Store, action,
         action_event, animate_to, animated, channel, component, component_props, create_effect,
-        create_focus, create_memo, create_signal, create_store,
+        create_focus, create_memo, create_resource, create_signal, create_store, spawn,
     };
 
     // runtime (pebbles-core): the widget contract + reconciler handles

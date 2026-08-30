@@ -288,8 +288,9 @@ impl Runner {
         pebbles_core::animation::tick(now);
         // Advance scroll-spring physics (smooth wheel / keyboard momentum).
         let scrolling = self.ui.tick_scrolls(dt);
-        // Publish any finished network-image loads (writes their result signals).
-        let loading_images = pebbles_widgets::image_view::pump();
+        // Deliver any finished background tasks (network image loads, create_resource
+        // fetches, spawn callbacks) — writes their result signals on the UI thread.
+        let pending_tasks = pebbles_core::task::pump();
 
         let Some(active) = self.active.as_mut() else { return };
 
@@ -357,7 +358,7 @@ impl Runner {
         surface_texture.present();
 
         // Keep the frames coming while any animation or scroll spring is running.
-        if scrolling || loading_images || pebbles_core::animation::active() {
+        if scrolling || pending_tasks || pebbles_core::animation::active() {
             active.window.request_redraw();
         }
     }
@@ -550,7 +551,7 @@ impl Runner {
     fn render_window(&mut self, w: &mut WindowRuntime) {
         let now = self.clock.elapsed().as_secs_f64();
         pebbles_core::animation::tick(now);
-        let loading_images = pebbles_widgets::image_view::pump();
+        let pending_tasks = pebbles_core::task::pump();
 
         w.ui.rebuild_if_dirty();
         let scale = w.window.scale_factor();
@@ -597,7 +598,7 @@ impl Runner {
         w.window.pre_present_notify();
         surface_texture.present();
 
-        if loading_images || pebbles_core::animation::active() {
+        if pending_tasks || pebbles_core::animation::active() {
             w.window.request_redraw();
         }
     }

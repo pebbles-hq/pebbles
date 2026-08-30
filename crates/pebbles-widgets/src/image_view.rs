@@ -3,13 +3,11 @@
 //! **memory** bytes. Network loads show a `placeholder` while in flight and an
 //! `error` widget on failure. Fit modes mirror CSS `object-fit` ([`ImageFit`]).
 //!
-//! Async model: a network load runs on a `std::thread`; the decoded result lands
-//! in a shared slot that [`pump`] (called once per frame by the shell) drains on
-//! the UI thread, writing the result signal so the view re-renders.
+//! Async model: a network load runs in the background via [`pebbles_core::spawn`];
+//! the decoded result is delivered back on the UI thread (drained by the shared task
+//! pump once per frame) into the result signal, so the view re-renders.
 
-use std::cell::RefCell;
 use std::io::Read;
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use base64::Engine;
@@ -21,7 +19,7 @@ use pebbles_render::{
 use crate::theme::theme;
 use crate::widgets::{Container, spinner, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Signal, component_props, create_effect, create_signal};
+use pebbles_core::{Signal, component_props, create_effect, create_signal, spawn};
 
 // ---------------------------------------------------------------------------
 // Async network loader
@@ -33,16 +31,6 @@ pub enum ImageState {
     Loading,
     Loaded(Image),
     Failed(String),
-}
-
-struct InFlight {
-    signal: Signal<ImageState>,
-    slot: Arc<Mutex<Option<ImageState>>>,
-}
-
-thread_local! {
-    // UI-thread only: network threads write to each `slot`, never this list.
-    static PENDING: RefCell<Vec<InFlight>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Decode PNG/JPEG/GIF/WebP bytes into a paintable [`Image`].
@@ -75,44 +63,22 @@ fn fetch(url: &str) -> Result<Image, String> {
     decode(&bytes)
 }
 
-/// Kick off a background fetch for `url`, updating `signal` once it resolves.
-fn start_network_load(url: String, signal: Signal<ImageState>) {
-    let slot: Arc<Mutex<Option<ImageState>>> = Arc::new(Mutex::new(None));
-    let write = slot.clone();
-    std::thread::spawn(move || {
-        let result = match fetch(&url) {
-            Ok(img) => ImageState::Loaded(img),
-            Err(e) => ImageState::Failed(e),
-        };
-        if let Ok(mut s) = write.lock() {
-            *s = Some(result);
-        }
-    });
-    PENDING.with(|p| p.borrow_mut().push(InFlight { signal, slot }));
-}
-
-/// Drain completed network loads and publish their results. Called once per frame
-/// by the shell (on the UI thread). Returns whether any loads are still pending
-/// (so the shell keeps requesting frames).
-pub fn pump() -> bool {
-    PENDING.with(|p| {
-        let mut pending = p.borrow_mut();
-        pending.retain(|f| match f.slot.lock().ok().and_then(|mut s| s.take()) {
-            Some(state) => {
-                f.signal.set(state); // UI thread; a no-op if the view unmounted
-                false
-            }
-            None => true,
-        });
-        !pending.is_empty()
-    })
-}
-
-/// A component hook: start (once) a network load for `url` and return its state.
+/// A component hook: start (once) a network load for `url` and return its state. The
+/// fetch runs in the background via [`pebbles_core::spawn`]; its result is delivered
+/// back on the UI thread into `state`.
 fn use_network(url: &str) -> Signal<ImageState> {
     let state = create_signal(ImageState::Loading);
     let url = url.to_string();
-    create_effect(move || start_network_load(url.clone(), state));
+    create_effect(move || {
+        let url = url.clone();
+        spawn(
+            move || match fetch(&url) {
+                Ok(img) => ImageState::Loaded(img),
+                Err(e) => ImageState::Failed(e),
+            },
+            move |result| state.set(result), // UI thread; a no-op if the view unmounted
+        );
+    });
     state
 }
 
