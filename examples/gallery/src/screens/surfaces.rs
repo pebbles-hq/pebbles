@@ -48,6 +48,17 @@ pub fn surfaces() -> Element {
                     ]).main_axis_min().spacing(12.0),
             ),
             section("SKELETON", column(children![skeleton(320.0, 16.0), skeleton(260.0, 16.0), skeleton(190.0, 16.0)]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().spacing(8.0)),
+            section("KBD", row((kbd("⌘K"), kbd("Ctrl+C"), kbd("⇧⌘P"), kbd("Esc"))).main_axis_min().spacing(8.0)),
+            section(
+                "EMPTY STATE",
+                Container::new().height(220.0).child(
+                    empty()
+                        .icon(lucide::SEARCH)
+                        .title("No results found")
+                        .description("Try a different search term.")
+                        .action(button("Clear filters").variant(ButtonVariant::Outline)),
+                ),
+            ),
         ],
     )
 }

@@ -10,7 +10,7 @@ use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{
     Avatar, ButtonVariant, View, avatar, avatar_group, body, button, button_group, card,
-    collapsible, column,
+    collapsible, column, empty, kbd, scroll_area, text,
 };
 
 thread_local! {
@@ -41,6 +41,12 @@ fn gallery() -> impl IntoWidget {
             button("Right").variant(ButtonVariant::Secondary),
         ])
         .into_widget(),
+        kbd("⌘K").into_widget(),
+        empty().icon(pebbles_render::lucide::SEARCH).title("Nothing here").into_widget(),
+        scroll_area(column((text("a"), text("b"), text("c"))))
+            .width(120.0)
+            .height(60.0)
+            .into_widget(),
     ])
     .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
 }

@@ -62,6 +62,17 @@ pub fn layout() -> Element {
                     ),
                 ),
             ),
+            section(
+                "SCROLL AREA (bounded, always-on scrollbar)",
+                scroll_area(
+                    column((1..=25).map(|i| text(format!("Line {i}"))).collect::<Vec<_>>())
+                        .cross_axis_alignment(CrossAxisAlignment::Start)
+                        .main_axis_min()
+                        .spacing(6.0),
+                )
+                .width(260.0)
+                .height(160.0),
+            ),
         ],
     )
 }
