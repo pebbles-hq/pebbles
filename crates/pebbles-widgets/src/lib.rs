@@ -21,7 +21,13 @@ pub mod widgets;
 pub mod window;
 
 pub use dialog::{Dialog, DialogId, close_dialog, dialog};
-pub use window::{Window, WindowId, close_window, window};
+pub use window::{
+    Window, WindowId, close_window, focus_window, minimize_window, set_window_maximized,
+    set_window_position, set_window_resizable, set_window_title, window,
+};
+// `window::set_window_size` (OS resize) is intentionally NOT re-exported at the crate
+// root to avoid colliding with `overlay::set_window_size` (popover sizing); reach it as
+// `window::set_window_size`.
 pub use image_view::ImageView;
 pub use modifiers::ModifierExt;
 pub use overlay::{OverlayHost, hide_overlay, show_overlay};

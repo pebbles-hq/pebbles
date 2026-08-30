@@ -77,7 +77,10 @@ pub mod prelude {
     pub use pebbles_widgets::{Dialog, DialogId, close_dialog, dialog};
 
     // secondary OS windows (share the runtime; talk via signals / Channel)
-    pub use pebbles_widgets::{Window, WindowId, close_window, window};
+    pub use pebbles_widgets::{
+        Window, WindowId, close_window, focus_window, minimize_window, set_window_maximized,
+        set_window_position, set_window_resizable, set_window_title, window,
+    };
 
     // widgets: layout primitives + constructors
     pub use pebbles_widgets::{

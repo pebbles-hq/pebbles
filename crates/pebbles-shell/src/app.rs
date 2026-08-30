@@ -109,6 +109,12 @@ pub struct App {
     title: String,
     background: Color,
     size: (u32, u32),
+    min_size: Option<(u32, u32)>,
+    max_size: Option<(u32, u32)>,
+    position: Option<(i32, i32)>,
+    resizable: bool,
+    maximized: bool,
+    decorations: bool,
     root: Option<pebbles_core::AnyWidget>,
 }
 
@@ -121,6 +127,12 @@ impl App {
             title: "Pebbles".to_owned(),
             background: palette::WHITE,
             size: (800, 600),
+            min_size: None,
+            max_size: None,
+            position: None,
+            resizable: true,
+            maximized: false,
+            decorations: true,
             root: Some(pebbles_widgets::OverlayHost::wrap(root).into_widget()),
         }
     }
@@ -138,6 +150,42 @@ impl App {
 
     pub fn size(mut self, width: u32, height: u32) -> Self {
         self.size = (width, height);
+        self
+    }
+
+    /// The smallest the user can resize the window to (logical px).
+    pub fn min_size(mut self, width: u32, height: u32) -> Self {
+        self.min_size = Some((width, height));
+        self
+    }
+
+    /// The largest the user can resize the window to (logical px).
+    pub fn max_size(mut self, width: u32, height: u32) -> Self {
+        self.max_size = Some((width, height));
+        self
+    }
+
+    /// The window's initial top-left position (logical px).
+    pub fn position(mut self, x: i32, y: i32) -> Self {
+        self.position = Some((x, y));
+        self
+    }
+
+    /// Whether the user can resize the window (default `true`).
+    pub fn resizable(mut self, resizable: bool) -> Self {
+        self.resizable = resizable;
+        self
+    }
+
+    /// Open the window maximized.
+    pub fn maximized(mut self, maximized: bool) -> Self {
+        self.maximized = maximized;
+        self
+    }
+
+    /// Whether the OS draws the title bar / borders (default `true`).
+    pub fn decorations(mut self, decorations: bool) -> Self {
+        self.decorations = decorations;
         self
     }
 
@@ -179,6 +227,12 @@ struct Runner {
     title: String,
     background: Color,
     size: (u32, u32),
+    min_size: Option<(u32, u32)>,
+    max_size: Option<(u32, u32)>,
+    position: Option<(i32, i32)>,
+    resizable: bool,
+    maximized: bool,
+    decorations: bool,
     pending_root: Option<pebbles_core::AnyWidget>,
 
     // gpu
@@ -228,6 +282,12 @@ impl Runner {
             title: app.title,
             background: app.background,
             size: app.size,
+            min_size: app.min_size,
+            max_size: app.max_size,
+            position: app.position,
+            resizable: app.resizable,
+            maximized: app.maximized,
+            decorations: app.decorations,
             pending_root: app.root,
             context: RenderContext::new(),
             renderers: Vec::new(),
@@ -378,12 +438,71 @@ impl Runner {
                 f();
             }
         }
+        // Runtime window changes (set_title / maximize / minimize / move / …).
+        for cmd in pebbles_widgets::window::take_window_commands() {
+            use pebbles_widgets::window::WindowCommand::*;
+            let target = |id| self.window_by_id.get(&id).and_then(|wid| self.windows.get(wid));
+            match cmd {
+                SetTitle(id, t) => {
+                    if let Some(w) = target(id) {
+                        w.window.set_title(&t);
+                    }
+                }
+                SetResizable(id, r) => {
+                    if let Some(w) = target(id) {
+                        w.window.set_resizable(r);
+                    }
+                }
+                SetMaximized(id, m) => {
+                    if let Some(w) = target(id) {
+                        w.window.set_maximized(m);
+                    }
+                }
+                Minimize(id) => {
+                    if let Some(w) = target(id) {
+                        w.window.set_minimized(true);
+                    }
+                }
+                SetPosition(id, x, y) => {
+                    if let Some(w) = target(id) {
+                        w.window.set_outer_position(winit::dpi::LogicalPosition::new(x, y));
+                    }
+                }
+                SetSize(id, width, height) => {
+                    if let Some(w) = target(id) {
+                        let _ = w.window.request_inner_size(LogicalSize::new(width, height));
+                    }
+                }
+                Focus(id) => {
+                    if let Some(w) = target(id) {
+                        w.window.focus_window();
+                    }
+                }
+            }
+        }
     }
 
     fn open_window(&mut self, event_loop: &ActiveEventLoop, spec: pebbles_widgets::window::WindowSpec) {
-        let attrs = WindowAttributes::default()
+        let mut attrs = WindowAttributes::default()
             .with_title(spec.title.clone())
-            .with_inner_size(LogicalSize::new(spec.width, spec.height));
+            .with_inner_size(LogicalSize::new(spec.width, spec.height))
+            .with_resizable(spec.resizable)
+            .with_maximized(spec.maximized)
+            .with_decorations(spec.decorations);
+        if let Some((w, h)) = spec.min_size {
+            attrs = attrs.with_min_inner_size(LogicalSize::new(w, h));
+        }
+        if let Some((w, h)) = spec.max_size {
+            attrs = attrs.with_max_inner_size(LogicalSize::new(w, h));
+        }
+        if let Some((x, y)) = spec.position {
+            attrs = attrs.with_position(winit::dpi::LogicalPosition::new(x, y));
+        }
+        if let Some(icon) = &spec.icon
+            && let Ok(i) = winit::window::Icon::from_rgba(icon.rgba.clone(), icon.width, icon.height)
+        {
+            attrs = attrs.with_window_icon(Some(i));
+        }
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
         window.set_ime_allowed(true); // enable IME composition on secondary windows too
         let physical = window.inner_size();
@@ -630,9 +749,21 @@ impl ApplicationHandler for Runner {
         if self.active.is_some() {
             return;
         }
-        let attrs = WindowAttributes::default()
+        let mut attrs = WindowAttributes::default()
             .with_title(self.title.clone())
-            .with_inner_size(LogicalSize::new(self.size.0, self.size.1));
+            .with_inner_size(LogicalSize::new(self.size.0, self.size.1))
+            .with_resizable(self.resizable)
+            .with_maximized(self.maximized)
+            .with_decorations(self.decorations);
+        if let Some((w, h)) = self.min_size {
+            attrs = attrs.with_min_inner_size(LogicalSize::new(w, h));
+        }
+        if let Some((w, h)) = self.max_size {
+            attrs = attrs.with_max_inner_size(LogicalSize::new(w, h));
+        }
+        if let Some((x, y)) = self.position {
+            attrs = attrs.with_position(winit::dpi::LogicalPosition::new(x, y));
+        }
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
         window.set_ime_allowed(true); // enable IME composition (CJK, dead keys, etc.)
 
