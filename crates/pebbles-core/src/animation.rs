@@ -16,6 +16,7 @@
 //! ```
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::reactive::{Signal, create_signal};
 
@@ -36,9 +37,23 @@ struct Loop {
     period: f64,
 }
 
+/// A one-shot delay: fires `action` once, `delay` seconds after it is registered.
+struct Timeout {
+    /// Absolute fire time; filled on the first tick that sees it (so timing starts at
+    /// paint, like a track's `start`).
+    at: Option<f64>,
+    delay: f64,
+    action: Rc<dyn Fn()>,
+    /// Liveness handle — a hook-owned signal; when its component unmounts the signal
+    /// dies and the timeout is dropped (backstop to `create_cleanup`).
+    guard: Signal<()>,
+}
+
 thread_local! {
     static TRACKS: RefCell<Vec<Track>> = const { RefCell::new(Vec::new()) };
     static LOOPS: RefCell<std::collections::HashMap<u64, Loop>> =
+        RefCell::new(std::collections::HashMap::new());
+    static TIMEOUTS: RefCell<std::collections::HashMap<u64, Timeout>> =
         RefCell::new(std::collections::HashMap::new());
 }
 
@@ -64,10 +79,33 @@ pub fn animate_to(value: Signal<f64>, to: f64, duration: f64) {
     });
 }
 
-/// Whether any animation (tween or loop) is currently running (the shell polls
-/// this to decide whether to schedule another frame).
+/// Whether any animation (tween, loop, or pending timeout) is currently running (the
+/// shell polls this to decide whether to schedule another frame).
 pub fn active() -> bool {
-    TRACKS.with(|t| !t.borrow().is_empty()) || LOOPS.with(|l| !l.borrow().is_empty())
+    TRACKS.with(|t| !t.borrow().is_empty())
+        || LOOPS.with(|l| !l.borrow().is_empty())
+        || TIMEOUTS.with(|t| !t.borrow().is_empty())
+}
+
+/// A component hook: run `f` **once**, `secs` seconds from now. The delay is anchored
+/// at the next frame (paint), ticked by the driver, and fires exactly once — then it
+/// is removed. If the owning component unmounts first, it never fires. The basis for
+/// tooltip show-delays and toast auto-dismiss. Call it at the top level of a component.
+pub fn create_timeout(secs: f64, f: impl Fn() + 'static) {
+    let guard = create_signal(()); // hook-owned: stable id + liveness across renders
+    let id = guard.raw_id();
+    TIMEOUTS.with(|t| {
+        // `or_insert_with` so a re-render doesn't restart the countdown (the pending
+        // timeout persists by hook position, like `create_loop`'s loop).
+        t.borrow_mut()
+            .entry(id)
+            .or_insert_with(|| Timeout { at: None, delay: secs.max(0.0), action: Rc::new(f), guard });
+    });
+    crate::reactive::create_cleanup(move || {
+        TIMEOUTS.with(|t| {
+            t.borrow_mut().remove(&id);
+        });
+    });
 }
 
 /// A component hook: returns a value that cycles `0.0..1.0` every `period` seconds,
@@ -121,12 +159,39 @@ pub fn tick(now: f64) -> bool {
         }
         !l.is_empty()
     });
-    tweening || looping
+    // Collect due timeouts and drop them from the map BEFORE firing (an action may
+    // register another timeout / write signals — must not alias the borrow).
+    let due: Vec<Rc<dyn Fn()>> = TIMEOUTS.with(|t| {
+        let mut t = t.borrow_mut();
+        let mut due = Vec::new();
+        let mut done = Vec::new();
+        for (id, to) in t.iter_mut() {
+            if !to.guard.alive() {
+                done.push(*id);
+                continue;
+            }
+            let at = *to.at.get_or_insert(now + to.delay);
+            if now >= at {
+                due.push(to.action.clone());
+                done.push(*id);
+            }
+        }
+        for id in done {
+            t.remove(&id);
+        }
+        due
+    });
+    for f in &due {
+        f();
+    }
+    let timing_out = TIMEOUTS.with(|t| !t.borrow().is_empty());
+    tweening || looping || timing_out
 }
 
 /// Reset the driver (used when tearing down between apps/tests).
 pub fn reset() {
     TRACKS.with(|t| t.borrow_mut().clear());
+    TIMEOUTS.with(|t| t.borrow_mut().clear());
 }
 
 /// Component hook: returns the current animated value that smoothly follows

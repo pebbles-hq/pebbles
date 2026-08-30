@@ -32,7 +32,7 @@ pub mod scroll;
 pub mod task;
 pub mod widget;
 
-pub use animation::{animate_to, animated, create_loop};
+pub use animation::{animate_to, animated, create_loop, create_timeout};
 pub use component::{Component, Element, component, component_props};
 pub use context::{Callback, IntoCallback, action, action_event};
 pub use element::{ElementId, Ui};

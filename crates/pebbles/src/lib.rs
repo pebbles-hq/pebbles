@@ -58,7 +58,8 @@ pub mod prelude {
     pub use pebbles_core::{
         Channel, Component, Element, FocusNode, KeyInput, Motion, Resource, Signal, Store, action,
         action_event, animate_to, animated, channel, component, component_props, create_effect,
-        create_focus, create_memo, create_resource, create_signal, create_store, spawn,
+        create_focus, create_memo, create_resource, create_signal, create_store, create_timeout,
+        spawn,
     };
 
     // runtime (pebbles-core): the widget contract + reconciler handles
@@ -76,8 +77,10 @@ pub mod prelude {
     // the global overlay layer (dropdowns / menus / popovers)
     pub use pebbles_widgets::{OverlayHost, hide_overlay, show_overlay};
 
-    // modal dialogs (main-window overlay)
-    pub use pebbles_widgets::{Dialog, DialogId, close_dialog, dialog};
+    // modal dialogs (main-window overlay) + the AlertDialog preset
+    pub use pebbles_widgets::{
+        AlertDialog, Dialog, DialogId, alert_dialog, close_dialog, dialog,
+    };
 
     // secondary OS windows (share the runtime; talk via signals / Channel)
     pub use pebbles_widgets::{

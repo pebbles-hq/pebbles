@@ -160,6 +160,117 @@ impl Dialog {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Alert Dialog — a preset over Dialog (shadcn AlertDialog)
+// ---------------------------------------------------------------------------
+
+/// A confirmation modal: title + description + Cancel/Confirm buttons. Unlike a plain
+/// [`Dialog`] it is **non-dismissible by default** (an explicit choice is required).
+pub struct AlertDialog {
+    title: String,
+    description: String,
+    confirm: String,
+    cancel: String,
+    destructive: bool,
+    dismissible: bool,
+    on_confirm: Option<Rc<dyn Fn()>>,
+    on_cancel: Option<Rc<dyn Fn()>>,
+}
+
+/// Create an [`AlertDialog`] with the given title.
+pub fn alert_dialog(title: impl Into<String>) -> AlertDialog {
+    AlertDialog {
+        title: title.into(),
+        description: String::new(),
+        confirm: "Continue".to_string(),
+        cancel: "Cancel".to_string(),
+        destructive: false,
+        dismissible: false,
+        on_confirm: None,
+        on_cancel: None,
+    }
+}
+
+impl AlertDialog {
+    pub fn description(mut self, s: impl Into<String>) -> Self {
+        self.description = s.into();
+        self
+    }
+    /// The confirm button label (default "Continue").
+    pub fn confirm(mut self, s: impl Into<String>) -> Self {
+        self.confirm = s.into();
+        self
+    }
+    /// The cancel button label (default "Cancel").
+    pub fn cancel(mut self, s: impl Into<String>) -> Self {
+        self.cancel = s.into();
+        self
+    }
+    /// Style the confirm button as destructive (red).
+    pub fn destructive(mut self, destructive: bool) -> Self {
+        self.destructive = destructive;
+        self
+    }
+    /// Allow Escape / outside-click to dismiss (default `false` — shadcn semantics).
+    pub fn dismissible(mut self, dismissible: bool) -> Self {
+        self.dismissible = dismissible;
+        self
+    }
+    pub fn on_confirm(mut self, f: impl Fn() + 'static) -> Self {
+        self.on_confirm = Some(Rc::new(f));
+        self
+    }
+    pub fn on_cancel(mut self, f: impl Fn() + 'static) -> Self {
+        self.on_cancel = Some(Rc::new(f));
+        self
+    }
+    /// Build the standard panel and open it as a modal. Returns its [`DialogId`].
+    pub fn open(self) -> DialogId {
+        use crate::components::{Button, ButtonVariant, button};
+        use crate::widgets::{SizedBox, column, row, text};
+        let c = theme().colors;
+
+        let on_confirm = self.on_confirm.clone();
+        let confirm_variant =
+            if self.destructive { ButtonVariant::Destructive } else { ButtonVariant::Primary };
+        // Both buttons close the top modal (one per window) then fire their callback.
+        let confirm_btn = button(self.confirm.clone()).variant(confirm_variant).on_pressed(move || {
+            close_dialog(0);
+            if let Some(f) = &on_confirm {
+                f();
+            }
+        });
+        let on_cancel = self.on_cancel.clone();
+        let cancel_btn: Button =
+            button(self.cancel.clone()).variant(ButtonVariant::Outline).on_pressed(move || {
+                close_dialog(0);
+                if let Some(f) = &on_cancel {
+                    f();
+                }
+            });
+
+        let mut kids: Vec<AnyWidget> = vec![
+            text(self.title.clone()).size(18.0).weight(600.0).color(c.foreground).into_widget(),
+        ];
+        if !self.description.is_empty() {
+            kids.push(SizedBox::spacer(0.0, 8.0).into_widget());
+            kids.push(
+                text(self.description.clone()).size(14.0).color(c.muted_foreground).into_widget(),
+            );
+        }
+        kids.push(SizedBox::spacer(0.0, 22.0).into_widget());
+        kids.push(
+            row((cancel_btn, SizedBox::spacer(10.0, 0.0), confirm_btn)).main_end().into_widget(),
+        );
+
+        let content = column(kids)
+            .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
+            .main_axis_min();
+
+        dialog(content).width(440.0).dismissible(self.dismissible).open()
+    }
+}
+
 /// The overlay children for the open dialog (scrim + centered surface), or empty.
 /// Rendered by [`OverlayHost`](crate::overlay::OverlayHost) above the popover layer.
 pub(crate) fn overlay_children() -> Vec<AnyWidget> {

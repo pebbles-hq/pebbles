@@ -20,7 +20,7 @@ pub mod theme;
 pub mod widgets;
 pub mod window;
 
-pub use dialog::{Dialog, DialogId, close_dialog, dialog};
+pub use dialog::{AlertDialog, Dialog, DialogId, alert_dialog, close_dialog, dialog};
 pub use window::{
     Window, WindowId, close_window, focus_window, minimize_window, set_window_maximized,
     set_window_position, set_window_resizable, set_window_title, window,
