@@ -2,44 +2,36 @@
 //!
 //! A Flutter-style, desktop-first GUI framework built on [Vello](https://vello.dev).
 //!
-//! Pebbles keeps Flutter's three-tree architecture — **Widget → Element →
-//! RenderObject** — and its box layout protocol (constraints down, sizes up, parent
-//! sets position), but implements them in idiomatic Rust: the element and render
-//! trees are generational arenas, and `setState` is a borrow-safe, type-erased
-//! callback rather than an `Rc<RefCell>` dance.
+//! Pebbles pairs **Flutter's widget model** for building UI with **Solid's signals**
+//! for state. It keeps Flutter's three-tree architecture — **Widget → Element →
+//! RenderObject** — and box layout protocol (constraints down, sizes up, parent sets
+//! position), but state is a `create_signal` you read and write directly: reading a
+//! signal inside a component subscribes it, writing re-renders only the components
+//! that read it. No `StatefulWidget`, no `setState`, no `Rc<RefCell>` dance.
 //!
-//! This umbrella crate re-exports the layered crates and offers a [`prelude`] with
-//! everything you need to write an app.
+//! A component is a plain function; local state is a signal; a handler is a closure:
 //!
 //! ```ignore
 //! use pebbles::prelude::*;
 //!
-//! struct Counter;
-//! struct CounterState { count: i64 }
-//!
-//! impl StatefulWidget for Counter {
-//!     fn create_state(&self) -> Box<dyn State> {
-//!         Box::new(CounterState { count: 0 })
-//!     }
-//! }
-//! stateful_widget!(Counter);
-//!
-//! impl State for CounterState {
-//!     fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
-//!     fn build(&mut self, cx: &mut BuildContext) -> AnyWidget {
-//!         let inc = cx.callback(|s: &mut CounterState| s.count += 1);
-//!         center(column(children![
-//!             text(format!("{}", self.count)).size(48.0),
-//!             GestureDetector::on_tap(inc, Container::new().color(palette::BLUE)
-//!                 .padding(EdgeInsets::all(12.0)).child(text("+").color(palette::WHITE))),
-//!         ])).into_widget()
-//!     }
+//! fn counter() -> Element {
+//!     let count = create_signal(0);
+//!     center(column(children![
+//!         text(format!("{}", count.get())).size(48.0),
+//!         button("+").on_pressed(action(move || count.update(|c| *c += 1))),
+//!     ]))
+//!     .into_widget()
 //! }
 //!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
-//!     App::new(Counter).title("Counter").run()
+//!     App::new(component(counter)).title("Counter").run()
 //! }
 //! ```
+//!
+//! Global state (shared across the whole app, even across windows) is the *same*
+//! `create_signal` primitive created at app scope — that's the Solid model. This
+//! umbrella crate re-exports the layered crates and offers a [`prelude`] with
+//! everything you need.
 
 pub use pebbles_core as core;
 pub use pebbles_foundation as foundation;

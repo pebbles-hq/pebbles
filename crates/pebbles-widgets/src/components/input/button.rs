@@ -41,6 +41,7 @@ pub enum ButtonSize {
 }
 
 /// A clickable action button.
+#[derive(Default)]
 pub struct Button {
     label: String,
     leading: Option<IconData>,
@@ -84,46 +85,7 @@ pub struct Button {
 
 /// Create a [`Button`] with the given text label.
 pub fn button(label: impl Into<String>) -> Button {
-    Button {
-        label: label.into(),
-        leading: None,
-        trailing: None,
-        content: None,
-        variant: ButtonVariant::default(),
-        size: ButtonSize::default(),
-        color: None,
-        text_color: None,
-        radius: None,
-        padding: None,
-        shadow: None,
-        full_width: false,
-        disabled: false,
-        loading: false,
-        autofocus: false,
-        on_pressed: None,
-        on_long_press: None,
-        on_double_tap: None,
-        on_secondary_tap: None,
-        on_tap_down: None,
-        on_tap_up: None,
-        on_tap_cancel: None,
-        on_secondary_tap_down: None,
-        on_secondary_tap_up: None,
-        on_secondary_tap_cancel: None,
-        on_hover_enter: None,
-        on_hover_exit: None,
-        on_focus_change: None,
-        on_highlight_changed: None,
-        on_long_press_down: None,
-        on_long_press_start: None,
-        on_long_press_move: None,
-        on_long_press_up: None,
-        on_long_press_end: None,
-        on_long_press_cancel: None,
-        on_tertiary_tap_down: None,
-        on_tertiary_tap_up: None,
-        on_tertiary_tap_cancel: None,
-    }
+    Button { label: label.into(), ..Default::default() }
 }
 
 impl Button {

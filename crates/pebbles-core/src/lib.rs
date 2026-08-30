@@ -3,15 +3,17 @@
 //! The runtime layer — the framework engine every widget is built on, with **no**
 //! catalog of its own. It owns three things:
 //!
-//! * **The widget contract** — [`Widget`] and its categories ([`StatelessWidget`],
-//!   [`StatefulWidget`] + [`State`], [`RenderWidget`], [`ParentDataWidget`]), the
-//!   [`IntoWidget`]/[`AnyWidget`] boxing layer, and the declaration macros
-//!   ([`render_widget!`], [`stateless_widget!`], [`children!`], …).
+//! * **Reactivity** — the Solid-style [`Signal`]/[`create_memo`]/[`create_effect`]/
+//!   [`create_store`] primitives. State is a signal you read and write directly;
+//!   reads inside a component subscribe, writes re-render only the readers.
+//! * **The widget contract** — [`Widget`], the [`component`]/[`component_props`]
+//!   function-component adapter (the primary way to author UI), the [`RenderWidget`]/
+//!   [`ParentDataWidget`] render layer, and the [`IntoWidget`]/[`AnyWidget`] boxing
+//!   layer. (The class-style [`StatelessWidget`]/[`StatefulWidget`]/[`State`] traits
+//!   are legacy, being migrated to function components and removed.)
 //! * **The reconciling engine** — [`Ui`], the element arena keyed by [`ElementId`]
 //!   that turns a widget tree into a [`pebbles_render`] tree each frame, plus the
-//!   [`BuildContext`]/[`Callback`] build-time handles and the [`focus`] system.
-//! * **Reactivity** — the SolidJS-style [`Signal`]/[`create_memo`]/[`create_effect`]/
-//!   [`create_store`] primitives and the [`component`] function-component adapter.
+//!   [`focus`] system and the [`Callback`] handle.
 //!
 //! The widget catalog lives one layer up in `pebbles-widgets`; the GPU/windowing
 //! shell lives in `pebbles-shell`. This crate depends only on `pebbles-foundation`

@@ -77,6 +77,10 @@ struct Runtime {
     /// windows even though raw element ids do.
     instances: std::collections::HashMap<CompKey, u64>,
     next_instance: u64,
+    /// Reverse index: which signals each component is subscribed to. Lets
+    /// `begin_component`/`dispose_component` clear a component's subscriptions in
+    /// O(its own subs) instead of O(all signals in the app).
+    subs_of: std::collections::HashMap<CompKey, HashSet<SignalId>>,
     /// Components scheduled to re-render.
     pending_components: Vec<CompKey>,
     /// Effects scheduled to re-run.
@@ -151,13 +155,15 @@ impl<T: 'static + Clone> Signal<T> {
     pub fn get(&self) -> T {
         with_rt(|rt| {
             if let Some(observer) = rt.observer {
-                let slot = &mut rt.signals[self.id];
                 match observer {
-                    Observer::Component(id) => {
-                        slot.component_subs.insert(id);
+                    Observer::Component(key) => {
+                        rt.signals[self.id].component_subs.insert(key);
+                        // Record the reverse edge so we can clear this component's
+                        // subscriptions later without walking every signal.
+                        rt.subs_of.entry(key).or_default().insert(self.id);
                     }
                     Observer::Effect(id) => {
-                        slot.effect_subs.insert(id);
+                        rt.signals[self.id].effect_subs.insert(id);
                     }
                 }
             }
@@ -328,15 +334,27 @@ pub(crate) fn begin_component(id: ElementId) -> ComponentGuard {
         }
         // Cleanups are re-registered fresh each render (they only run on unmount).
         rt.cleanups.remove(&key);
-        // Clear this component's old subscriptions so tracking is fresh each run.
-        for slot in rt.signals.values_mut() {
-            slot.component_subs.remove(&key);
+        // Clear this component's old subscriptions so tracking is fresh each run —
+        // touching only the signals it actually read (via the reverse index).
+        if let Some(sids) = rt.subs_of.remove(&key) {
+            for sid in sids {
+                if let Some(slot) = rt.signals.get_mut(sid) {
+                    slot.component_subs.remove(&key);
+                }
+            }
         }
         guard
     })
 }
 
 /// Restore the observer/owner state saved by [`begin_component`].
+///
+/// Note on the "hooks rule": local signals persist by creation *order* (index), so a
+/// signal created conditionally at a *stable trailing position* is safe (its slot is
+/// never reused for something else). The genuinely unsafe case is an *order shift* —
+/// index N mapping to a different logical signal between renders. A precise debug lint
+/// for that (per-index identity tracking) is future work; a naive count check would
+/// false-positive on the safe conditional-trailing pattern used across the catalog.
 pub(crate) fn end_component(guard: ComponentGuard) {
     with_rt(|rt| {
         rt.owner = guard.owner;
@@ -359,8 +377,13 @@ pub(crate) fn dispose_component(id: ElementId) {
                 rt.signals.remove(sid);
             }
         }
-        for slot in rt.signals.values_mut() {
-            slot.component_subs.remove(&key);
+        // Drop this component's subscriptions via the reverse index (O(its own subs)).
+        if let Some(sids) = rt.subs_of.remove(&key) {
+            for sid in sids {
+                if let Some(slot) = rt.signals.get_mut(sid) {
+                    slot.component_subs.remove(&key);
+                }
+            }
         }
         rt.instances.remove(&key);
     });
