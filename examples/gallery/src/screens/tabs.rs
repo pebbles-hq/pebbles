@@ -11,7 +11,7 @@ pub fn tabs_screen() -> Element {
         .description("A tab bar plus the selected tab's content — controlled (selection in, on_select out), keyboard-navigable (focus the strip, Left/Right switch), content cross-fades. Three designs, and every piece is customizable.")
         .body(children![
             doc("Underline — the shadcn classic")
-                .description("A hairline runs under the whole strip; the active tab carries a 2px accent underline on top of it. Focus the strip (Tab) then use Left/Right — disabled tabs are skipped.")
+                .description("A hairline runs the FULL width of the strip; the active tab carries a rounded 3px accent indicator on top of it — the Google look. Tab focuses the strip (the ring is keyboard-only — clicking never flashes it), then Left/Right switch.")
                 .body(
                     column(children![
                         tabs(tab.get())
@@ -27,7 +27,7 @@ pub fn tabs_screen() -> Element {
                         gap_h(8.0),
                         muted(format!("selected tab: {}", tab.get())),
                     ])
-                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .cross_axis_alignment(CrossAxisAlignment::Stretch)
                     .main_axis_size(MainAxisSize::Min),
                 ),
             doc("Pills")
@@ -71,7 +71,7 @@ pub fn tabs_screen() -> Element {
                             .tab("Podcasts", body("Your shows."), move || pill.set(1))
                             .active_color(palette::rose::S600),
                     ])
-                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .cross_axis_alignment(CrossAxisAlignment::Stretch)
                     .main_axis_size(MainAxisSize::Min),
                 ),
             doc("Styled")
@@ -108,7 +108,7 @@ pub fn tabs_screen() -> Element {
                                     .color(palette::WHITE),
                             ),
                     ])
-                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .cross_axis_alignment(CrossAxisAlignment::Stretch)
                     .main_axis_size(MainAxisSize::Min),
                 ),
         ])

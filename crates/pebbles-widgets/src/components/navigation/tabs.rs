@@ -178,7 +178,6 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
         if i == p.selected {
             selected_content = Some(tab.content.clone());
         }
-        let focus = node.clone();
         bar.push(
             component_props(
                 render_tab_button,
@@ -188,7 +187,6 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
                     disabled: tab.disabled,
                     variant: p.variant,
                     on_tap: tab.on_select.clone(),
-                    on_focus: Rc::new(move || focus.request_focus()),
                     color: label_color,
                     size: label_size,
                     weight: label_weight,
@@ -253,7 +251,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
     body.push(Padding::new(p.content_padding, content).into_widget());
 
     column(body)
-        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .cross_axis_alignment(CrossAxisAlignment::Stretch)
         .main_axis_size(MainAxisSize::Min)
         .into_widget()
 }
@@ -265,7 +263,6 @@ struct TabButtonProps {
     disabled: bool,
     variant: TabsVariant,
     on_tap: Option<Callback>,
-    on_focus: Rc<dyn Fn()>,
     color: pebbles_foundation::Color,
     size: f32,
     weight: f32,
@@ -290,13 +287,19 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
         TabsVariant::Underline => {
             // The 2px accent line sits at the very bottom of the cell — on top of
             // the strip's hairline border (the shadcn overlap).
+            // The Google-style indicator: a 3px rounded bar on top of the strip's
+            // hairline, spanning the active tab's full width.
             let underline_color = if p.selected { p.active_color } else { palette::TRANSPARENT };
             column(children![
                 Padding::new(
                     p.tab_padding,
                     text(p.label.clone()).size(p.size).weight(p.weight).color(label_color),
                 ),
-                Container::new().color(underline_color).height(2.0),
+                Container::new()
+                    .decoration(
+                        BoxDecoration::new().color(underline_color).radius(BorderRadius::all(999.0)),
+                    )
+                    .height(3.0),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Stretch)
             .main_axis_size(MainAxisSize::Min)
@@ -335,8 +338,8 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
         .cursor(Cursor::Pointer)
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false));
-    let focus = p.on_focus.clone();
-    g = g.on_pointer_down(move || focus());
+    // NOTE: clicking does NOT focus the strip — the focus ring is keyboard-only
+    // (Tab reaches the strip, then Left/Right navigate). No ring flash on click.
     if let Some(cb) = p.on_tap.clone() {
         g = g.on_tap(cb);
     }
