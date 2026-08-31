@@ -17,7 +17,9 @@ use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, Ico
 use super::{ButtonSize, ButtonVariant, button, icon_button};
 use crate::style::Style;
 use crate::theme::theme;
-use crate::widgets::{Container, GestureDetector, SizedBox, column, gap_h, gap_w, row, spacer, text};
+use crate::widgets::{
+    Container, GestureDetector, Opacity, SizedBox, column, gap_h, gap_w, row, spacer, text,
+};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, component_props, create_signal};
 
@@ -98,12 +100,22 @@ enum View {
     Years,
 }
 
+/// A calendar `(year, month, day)` triple.
+pub type Date = (i32, u32, u32);
+
 /// A month-grid date picker. `on_pick(year, month, day)` fires on a day tap.
 pub struct Calendar {
     on_pick: Rc<dyn Fn(i32, u32, u32)>,
     caption: CaptionLayout,
-    selected: Option<(i32, u32, u32)>,
+    selected: Option<Date>,
     start: Option<(i32, u32)>,
+    range: bool,
+    range_start: Option<Date>,
+    range_end: Option<Date>,
+    on_range_changed: Option<Rc<dyn Fn(Date, Date)>>,
+    min: Option<Date>,
+    max: Option<Date>,
+    disabled_pred: Option<Rc<dyn Fn(i32, u32, u32) -> bool>>,
     style: Option<Style>,
 }
 
@@ -114,6 +126,13 @@ pub fn calendar(on_pick: impl Fn(i32, u32, u32) + 'static) -> Calendar {
         caption: CaptionLayout::Label,
         selected: None,
         start: None,
+        range: false,
+        range_start: None,
+        range_end: None,
+        on_range_changed: None,
+        min: None,
+        max: None,
+        disabled_pred: None,
         style: None,
     }
 }
@@ -134,6 +153,43 @@ impl Calendar {
         self.start = Some((y, m));
         self
     }
+    /// Switch to **range** mode: the first tap sets the start, the second the end
+    /// (endpoints swap if picked out of order), and the span between them is
+    /// highlighted. A third tap starts a new range. Fires
+    /// [`on_range_changed`](Calendar::on_range_changed) when both ends are set.
+    pub fn range(mut self, on: bool) -> Self {
+        self.range = on;
+        self
+    }
+    /// Pre-select a range (implies range mode; opens on the start's month).
+    pub fn range_value(mut self, start: Date, end: Date) -> Self {
+        self.range = true;
+        self.range_start = Some(start);
+        self.range_end = Some(end);
+        self
+    }
+    /// Fired with `(start, end)` once both ends of a range are chosen.
+    pub fn on_range_changed(mut self, f: impl Fn(Date, Date) + 'static) -> Self {
+        self.on_range_changed = Some(Rc::new(f));
+        self
+    }
+    /// Earliest selectable date — earlier days are muted and non-interactive, and
+    /// month navigation stops at its month.
+    pub fn min(mut self, y: i32, m: u32, d: u32) -> Self {
+        self.min = Some((y, m, d));
+        self
+    }
+    /// Latest selectable date — later days are muted and non-interactive.
+    pub fn max(mut self, y: i32, m: u32, d: u32) -> Self {
+        self.max = Some((y, m, d));
+        self
+    }
+    /// Disable individual days by predicate (e.g. weekends, holidays). A day for
+    /// which `pred(y, m, d)` is `true` is muted and non-interactive.
+    pub fn disabled_dates(mut self, pred: impl Fn(i32, u32, u32) -> bool + 'static) -> Self {
+        self.disabled_pred = Some(Rc::new(pred));
+        self
+    }
     /// Customize the popover's box (background, border, radius, shadow, padding,
     /// width) via a [`Style`] — the same style values used everywhere.
     pub fn style(mut self, style: Style) -> Self {
@@ -145,8 +201,15 @@ impl Calendar {
 struct Props {
     on_pick: Rc<dyn Fn(i32, u32, u32)>,
     caption: CaptionLayout,
-    selected: Option<(i32, u32, u32)>,
+    selected: Option<Date>,
     start: Option<(i32, u32)>,
+    range: bool,
+    range_start: Option<Date>,
+    range_end: Option<Date>,
+    on_range_changed: Option<Rc<dyn Fn(Date, Date)>>,
+    min: Option<Date>,
+    max: Option<Date>,
+    disabled_pred: Option<Rc<dyn Fn(i32, u32, u32) -> bool>>,
     style: Option<Style>,
 }
 
@@ -159,6 +222,13 @@ impl IntoWidget for Calendar {
                 caption: self.caption,
                 selected: self.selected,
                 start: self.start,
+                range: self.range,
+                range_start: self.range_start,
+                range_end: self.range_end,
+                on_range_changed: self.on_range_changed,
+                min: self.min,
+                max: self.max,
+                disabled_pred: self.disabled_pred,
                 style: self.style,
             },
         )
@@ -166,16 +236,23 @@ impl IntoWidget for Calendar {
     }
 }
 
+/// Whether `d` falls outside the `[min, max]` bounds (tuple order is date order).
+fn out_of_bounds(d: Date, min: Option<Date>, max: Option<Date>) -> bool {
+    min.is_some_and(|lo| d < lo) || max.is_some_and(|hi| d > hi)
+}
+
 const CELL: f64 = 40.0;
 const BODY_W: f64 = 7.0 * CELL;
 
 // --- small building blocks ---
 
-/// A square outline nav arrow (prev/next).
-fn nav_arrow(kind: IconKind, on_tap: impl Fn() + 'static) -> AnyWidget {
+/// A square outline nav arrow (prev/next). Disabled arrows stop month navigation
+/// at the calendar's bounds.
+fn nav_arrow(kind: IconKind, disabled: bool, on_tap: impl Fn() + 'static) -> AnyWidget {
     icon_button(kind)
         .variant(ButtonVariant::Outline)
         .size(15.0)
+        .disabled(disabled)
         .on_pressed(on_tap)
         .into_widget()
 }
@@ -203,28 +280,51 @@ fn grid(cells: Vec<AnyWidget>, cols: usize) -> AnyWidget {
     column(rows).main_axis_size(MainAxisSize::Min).into_widget()
 }
 
-/// A single day cell — highlights the selected day, then today.
-fn day_cell(
+/// A single day cell: selected/endpoint (primary fill), in-range span (accent
+/// band), today (accent), disabled (muted, non-interactive) or plain — with a
+/// hover tint on enabled plain cells.
+struct DayCellProps {
     y: i32,
     m: u32,
     d: u32,
-    is_today: bool,
-    is_selected: bool,
+    today: bool,
+    /// A single selection or a range endpoint — filled with `primary`.
+    endpoint: bool,
+    /// Strictly inside a chosen range — an `accent` band.
+    in_range: bool,
+    disabled: bool,
     on_pick: Rc<dyn Fn(i32, u32, u32)>,
-) -> AnyWidget {
+}
+
+fn day_cell(p: DayCellProps) -> AnyWidget {
+    component_props(render_day_cell, p).into_widget()
+}
+
+fn render_day_cell(p: &DayCellProps) -> AnyWidget {
     let c = theme().colors;
+    let hovered = create_signal(false);
+    let (y, m, d) = (p.y, p.m, p.d);
+
     let mut deco = BoxDecoration::new().radius(BorderRadius::all(6.0));
-    let fg = if is_selected {
+    let fg = if p.disabled {
+        c.muted_foreground
+    } else if p.endpoint {
         deco = deco.color(c.primary);
         c.primary_foreground
-    } else if is_today {
+    } else if p.in_range {
+        deco = deco.color(c.accent);
+        c.accent_foreground
+    } else if p.today {
         deco = deco.color(c.accent);
         c.accent_foreground
     } else {
+        if !p.disabled && hovered.get() {
+            deco = deco.color(c.accent);
+        }
         c.foreground
     };
     let mut label = text(format!("{d}")).size(13.0).color(fg);
-    if is_selected {
+    if p.endpoint {
         label = label.semibold();
     }
     let cell = Container::new()
@@ -233,8 +333,15 @@ fn day_cell(
         .alignment(Alignment::CENTER)
         .decoration(deco)
         .child(label);
+
+    if p.disabled {
+        return GestureDetector::new(Opacity::new(0.4, cell)).cursor(Cursor::NotAllowed).into_widget();
+    }
+    let on_pick = p.on_pick.clone();
     GestureDetector::new(cell)
         .cursor(Cursor::Pointer)
+        .on_hover_enter(move || hovered.set(true))
+        .on_hover_exit(move || hovered.set(false))
         .on_tap(move || on_pick(y, m, d))
         .into_widget()
 }
@@ -263,18 +370,30 @@ fn choice_cell(label: String, current: bool, on_tap: impl Fn() + 'static) -> Any
 
 // --- panels ---
 
-fn days_panel(
-    disp: Signal<(i32, u32)>,
-    view: Signal<View>,
+/// Everything the day grid needs to render its cell states (selection, range,
+/// bounds, disabled predicate) plus the tap handler.
+struct DayGridCtx {
     caption: CaptionLayout,
-    selected: Option<(i32, u32, u32)>,
+    selected: Option<Date>,
+    range_start: Option<Date>,
+    range_end: Option<Date>,
+    min: Option<Date>,
+    max: Option<Date>,
+    pred: Option<Rc<dyn Fn(i32, u32, u32) -> bool>>,
     on_pick: Rc<dyn Fn(i32, u32, u32)>,
-) -> AnyWidget {
+}
+
+fn days_panel(disp: Signal<(i32, u32)>, view: Signal<View>, ctx: DayGridCtx) -> AnyWidget {
     let c = theme().colors;
     let (ty, tm, td) = today();
     let (y, m) = disp.get();
+    let caption = ctx.caption;
 
-    let prev = nav_arrow(IconKind::ChevronLeft, move || {
+    // Bounds clamp: don't navigate to a month wholly outside [min, max].
+    let prev_disabled = ctx.min.is_some_and(|(ly, lm, _)| (y, m) <= (ly, lm));
+    let next_disabled = ctx.max.is_some_and(|(hy, hm, _)| (y, m) >= (hy, hm));
+
+    let prev = nav_arrow(IconKind::ChevronLeft, prev_disabled, move || {
         disp.update(|(yy, mm)| {
             if *mm == 1 {
                 *mm = 12;
@@ -284,7 +403,7 @@ fn days_panel(
             }
         })
     });
-    let next = nav_arrow(IconKind::ChevronRight, move || {
+    let next = nav_arrow(IconKind::ChevronRight, next_disabled, move || {
         disp.update(|(yy, mm)| {
             if *mm == 12 {
                 *mm = 1;
@@ -362,14 +481,25 @@ fn days_panel(
         let cells: Vec<AnyWidget> = week
             .iter()
             .map(|slot| match slot {
-                Some(d) => day_cell(
-                    y,
-                    m,
-                    *d,
-                    *d == td && y == ty && m == tm,
-                    selected == Some((y, m, *d)),
-                    on_pick.clone(),
-                ),
+                Some(d) => {
+                    let date = (y, m, *d);
+                    let disabled = out_of_bounds(date, ctx.min, ctx.max)
+                        || ctx.pred.as_ref().is_some_and(|p| p(y, m, *d));
+                    let endpoint = ctx.selected == Some(date)
+                        || ctx.range_start == Some(date)
+                        || ctx.range_end == Some(date);
+                    let in_range = matches!((ctx.range_start, ctx.range_end), (Some(s), Some(e)) if date > s && date < e);
+                    day_cell(DayCellProps {
+                        y,
+                        m,
+                        d: *d,
+                        today: *d == td && y == ty && m == tm,
+                        endpoint,
+                        in_range,
+                        disabled,
+                        on_pick: ctx.on_pick.clone(),
+                    })
+                }
                 None => SizedBox::new(Some(CELL), Some(CELL), None).into_widget(),
             })
             .collect();
@@ -389,8 +519,8 @@ fn days_panel(
 fn months_panel(disp: Signal<(i32, u32)>, view: Signal<View>) -> AnyWidget {
     let (y, cur_m) = disp.get();
 
-    let prev = nav_arrow(IconKind::ChevronLeft, move || disp.update(|(yy, _)| *yy -= 1));
-    let next = nav_arrow(IconKind::ChevronRight, move || disp.update(|(yy, _)| *yy += 1));
+    let prev = nav_arrow(IconKind::ChevronLeft, false, move || disp.update(|(yy, _)| *yy -= 1));
+    let next = nav_arrow(IconKind::ChevronRight, false, move || disp.update(|(yy, _)| *yy += 1));
     let title = button(format!("{y}"))
         .variant(ButtonVariant::Ghost)
         .size(ButtonSize::Sm)
@@ -418,8 +548,8 @@ fn years_panel(disp: Signal<(i32, u32)>, view: Signal<View>) -> AnyWidget {
     // A 12-year block aligned to multiples of 12.
     let block = y - y.rem_euclid(12);
 
-    let prev = nav_arrow(IconKind::ChevronLeft, move || disp.update(|(yy, _)| *yy -= 12));
-    let next = nav_arrow(IconKind::ChevronRight, move || disp.update(|(yy, _)| *yy += 12));
+    let prev = nav_arrow(IconKind::ChevronLeft, false, move || disp.update(|(yy, _)| *yy -= 12));
+    let next = nav_arrow(IconKind::ChevronRight, false, move || disp.update(|(yy, _)| *yy += 12));
     let title =
         text(format!("{} – {}", block, block + 11)).size(14.0).semibold().color(c.foreground);
     let header =
@@ -443,12 +573,55 @@ fn years_panel(disp: Signal<(i32, u32)>, view: Signal<View>) -> AnyWidget {
 fn render_calendar(p: &Props) -> AnyWidget {
     let c = theme().colors;
     let (ty, tm, _) = today();
-    let init = p.start.or(p.selected.map(|(y, m, _)| (y, m))).unwrap_or((ty, tm));
+    let init = p
+        .start
+        .or(p.selected.map(|(y, m, _)| (y, m)))
+        .or(p.range_start.map(|(y, m, _)| (y, m)))
+        .unwrap_or((ty, tm));
     let disp = create_signal(init);
     let view = create_signal(View::Days);
 
+    // Range state (only meaningful in range mode). The tap handler advances it:
+    // 1st tap → start (end cleared), 2nd → end (ordered), 3rd → new start.
+    let rstart: Signal<Option<Date>> = create_signal(p.range_start);
+    let rend: Signal<Option<Date>> = create_signal(p.range_end);
+
+    let on_pick: Rc<dyn Fn(i32, u32, u32)> = if p.range {
+        let user = p.on_range_changed.clone();
+        Rc::new(move |y, m, d| {
+            let date = (y, m, d);
+            if rstart.peek().is_none() || rend.peek().is_some() {
+                // Begin a fresh range.
+                rstart.set(Some(date));
+                rend.set(None);
+            } else {
+                // Close the range, ordering the endpoints.
+                let s = rstart.peek().unwrap();
+                let (lo, hi) = if date < s { (date, s) } else { (s, date) };
+                rstart.set(Some(lo));
+                rend.set(Some(hi));
+                if let Some(cb) = &user {
+                    cb(lo, hi);
+                }
+            }
+        })
+    } else {
+        p.on_pick.clone()
+    };
+
+    let ctx = DayGridCtx {
+        caption: p.caption,
+        selected: if p.range { None } else { p.selected },
+        range_start: rstart.get(),
+        range_end: rend.get(),
+        min: p.min,
+        max: p.max,
+        pred: p.disabled_pred.clone(),
+        on_pick: on_pick.clone(),
+    };
+
     let panel = match view.get() {
-        View::Days => days_panel(disp, view, p.caption, p.selected, p.on_pick.clone()),
+        View::Days => days_panel(disp, view, ctx),
         View::Months => months_panel(disp, view),
         View::Years => years_panel(disp, view),
     };

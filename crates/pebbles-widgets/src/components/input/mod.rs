@@ -21,7 +21,7 @@ mod toggles;
 
 pub use button::{Button, ButtonSize, ButtonVariant, IconButton, button, icon_button};
 pub use button_group::{ButtonGroup, button_group};
-pub use calendar::{Calendar, CaptionLayout, calendar};
+pub use calendar::{Calendar, CaptionLayout, Date, calendar};
 pub use combobox::{Combobox, MultiSelect, combobox, multi_select};
 pub use command::{
     Command, CommandGroup, CommandItem, command, command_group, command_item, command_palette,
