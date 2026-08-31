@@ -9,6 +9,7 @@ use pebbles_core::{component_props, create_loop};
 use crate::theme::{mix, theme};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{ClipRRect, Container, Positioned, SizedBox, center, column, row, spacer, stack, text};
+use crate::style::{Style, style, styled};
 use crate::ImageView;
 
 use crate::components::icon;
@@ -28,6 +29,7 @@ pub struct Card {
     action: Option<AnyWidget>,
     footer: Option<AnyWidget>,
     padding: EdgeInsets,
+    style: Option<Style>,
 }
 
 /// Create an empty [`Card`] and compose it with the builder methods.
@@ -39,6 +41,7 @@ pub fn card() -> Card {
         action: None,
         footer: None,
         padding: EdgeInsets::all(16.0),
+        style: None,
     }
 }
 
@@ -74,6 +77,12 @@ impl Card {
     }
     pub fn padding(mut self, insets: EdgeInsets) -> Self {
         self.padding = insets;
+        self
+    }
+    /// Override the surface presentation (bg / border / radius / shadow / size …) by
+    /// merging a [`Style`] onto the card's base — user fields win.
+    pub fn style(mut self, s: Style) -> Self {
+        self.style = Some(s);
         self
     }
 }
@@ -123,22 +132,14 @@ impl IntoWidget for Card {
             column(kids).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().into_widget()
         };
 
-        Container::new()
-            .decoration(
-                BoxDecoration::new()
-                    .color(c.card)
-                    .border(Border::new(c.border, 1.0))
-                    .radius(BorderRadius::all(theme().radius + 4.0))
-                    .shadow(BoxShadow::new(
-                        Color::from_rgba8(0, 0, 0, 18),
-                        Offset::new(0.0, 2.0),
-                        8.0,
-                        0.0,
-                    )),
-            )
-            .padding(self.padding)
-            .child(body)
-            .into_widget()
+        // Base presentation as a Style; the user's `.style(..)` merges on top (wins).
+        let base = style()
+            .background(c.card)
+            .border(Border::new(c.border, 1.0))
+            .radius_all(theme().radius + 4.0)
+            .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 18), Offset::new(0.0, 2.0), 8.0, 0.0))
+            .padding(self.padding);
+        styled(body, base.merge(self.style.take().unwrap_or_default()))
     }
 }
 
@@ -161,16 +162,22 @@ pub enum BadgeVariant {
 pub struct Badge {
     label: String,
     variant: BadgeVariant,
+    style: Option<Style>,
 }
 
 /// Create a [`Badge`].
 pub fn badge(label: impl Into<String>) -> Badge {
-    Badge { label: label.into(), variant: BadgeVariant::default() }
+    Badge { label: label.into(), variant: BadgeVariant::default(), style: None }
 }
 
 impl Badge {
     pub fn variant(mut self, variant: BadgeVariant) -> Self {
         self.variant = variant;
+        self
+    }
+    /// Merge a [`Style`] onto the pill's base presentation (user fields win).
+    pub fn style(mut self, s: Style) -> Self {
+        self.style = Some(s);
         self
     }
 }
@@ -186,18 +193,15 @@ impl IntoWidget for Badge {
             BadgeVariant::Success => (Some(c.success), Color::WHITE, false),
             BadgeVariant::Outline => (None, c.foreground, true),
         };
-        let mut deco = BoxDecoration::new().radius(BorderRadius::all(999.0));
+        let mut base = style().radius_all(999.0).padding_xy(10.0, 3.0);
         if let Some(bg) = bg {
-            deco = deco.color(bg);
+            base = base.background(bg);
         }
         if border {
-            deco = deco.border(Border::new(c.border, 1.0));
+            base = base.border(Border::new(c.border, 1.0));
         }
-        Container::new()
-            .decoration(deco)
-            .padding(EdgeInsets::symmetric(10.0, 3.0))
-            .child(text(std::mem::take(&mut self.label)).size(12.0).weight(500.0).color(fg))
-            .into_widget()
+        let label = text(std::mem::take(&mut self.label)).size(12.0).weight(500.0).color(fg);
+        styled(label, base.merge(self.style.take().unwrap_or_default()))
     }
 }
 
@@ -220,16 +224,27 @@ pub struct Alert {
     title: String,
     description: String,
     variant: AlertVariant,
+    style: Option<Style>,
 }
 
 /// Create an [`Alert`].
 pub fn alert(title: impl Into<String>, description: impl Into<String>) -> Alert {
-    Alert { title: title.into(), description: description.into(), variant: AlertVariant::default() }
+    Alert {
+        title: title.into(),
+        description: description.into(),
+        variant: AlertVariant::default(),
+        style: None,
+    }
 }
 
 impl Alert {
     pub fn variant(mut self, variant: AlertVariant) -> Self {
         self.variant = variant;
+        self
+    }
+    /// Merge a [`Style`] onto the callout's base surface (user fields win).
+    pub fn style(mut self, s: Style) -> Self {
+        self.style = Some(s);
         self
     }
 }
@@ -244,15 +259,12 @@ impl IntoWidget for Alert {
             AlertVariant::Warning => (c.warning, IconKind::Warning),
             AlertVariant::Destructive => (c.destructive, IconKind::Warning),
         };
-        Container::new()
-            .decoration(
-                BoxDecoration::new()
-                    .color(c.card)
-                    .border(Border::new(c.border, 1.0))
-                    .radius(BorderRadius::all(theme().radius)),
-            )
-            .padding(EdgeInsets::all(14.0))
-            .child(
+        let base = style()
+            .background(c.card)
+            .border(Border::new(c.border, 1.0))
+            .radius_all(theme().radius)
+            .padding_all(14.0);
+        let body =
                 row(children![
                     icon(kind).size(18.0).color(accent),
                     SizedBox::spacer(12.0, 0.0),
@@ -265,9 +277,8 @@ impl IntoWidget for Alert {
                     .main_axis_min(),
                 ])
                 .cross_axis_alignment(CrossAxisAlignment::Start)
-                .main_axis_min(),
-            )
-            .into_widget()
+                .main_axis_min();
+        styled(body, base.merge(self.style.take().unwrap_or_default()))
     }
 }
 

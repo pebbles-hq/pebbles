@@ -13,7 +13,7 @@ use std::rc::Rc;
 use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets};
 use pebbles_render::text_edit as edit;
 use pebbles_render::{
-    BorderRadius, BoxDecoration, Cursor, IconData, IconKind, PointerEvent, TextFieldStyle, lucide,
+    BoxDecoration, Cursor, IconData, IconKind, PointerEvent, TextFieldStyle, lucide,
 };
 
 use super::{ButtonVariant, icon_button};
@@ -171,6 +171,7 @@ pub struct TextField {
     on_editing_complete: Option<Rc<dyn Fn()>>,
     on_tap: Option<Rc<dyn Fn()>>,
     on_focus_change: Option<Rc<dyn Fn(bool)>>,
+    style: Option<crate::style::Style>,
 }
 
 /// A single-line text input.
@@ -199,6 +200,7 @@ pub fn text_field() -> TextField {
         on_editing_complete: None,
         on_tap: None,
         on_focus_change: None,
+        style: None,
     }
 }
 
@@ -230,6 +232,12 @@ impl TextField {
     /// Fixed width (else it fills its parent).
     pub fn width(mut self, w: f64) -> Self {
         self.width = Some(w);
+        self
+    }
+    /// Merge a [`Style`](crate::Style) onto the field box (bg / border / radius /
+    /// shadow / width overrides). The label and helper/error text stay themed.
+    pub fn style(mut self, s: crate::style::Style) -> Self {
+        self.style = Some(s);
         self
     }
     /// Obscure input (password). Renders each character as `•`.
@@ -357,6 +365,7 @@ struct Props {
     on_editing_complete: Option<Rc<dyn Fn()>>,
     on_tap: Option<Rc<dyn Fn()>>,
     on_focus_change: Option<Rc<dyn Fn(bool)>>,
+    style: Option<crate::style::Style>,
 }
 
 impl IntoWidget for TextField {
@@ -387,6 +396,7 @@ impl IntoWidget for TextField {
                 on_editing_complete: self.on_editing_complete,
                 on_tap: self.on_tap,
                 on_focus_change: self.on_focus_change,
+                style: self.style,
             },
         )
         .into_widget()
@@ -853,18 +863,21 @@ fn render_field(p: &Props) -> AnyWidget {
     let lead_off = if eff_leading.is_some() { 24.0 } else { 0.0 };
     let (cl, ct) = if p.multiline { (11.0, 11.0) } else { (13.0 + lead_off, 10.0) };
 
+    // The field box's presentation as a base Style; the user's `.style(..)` merges on
+    // top (bg / border / radius / shadow overrides), user wins.
+    let base = crate::style::style()
+        .background(bg)
+        .border(pebbles_render::Border::new(border_color, border_w))
+        .radius_all(theme().radius);
+    let merged = base.merge(p.style.clone().unwrap_or_default());
+    let deco = merged.decoration().unwrap_or_else(BoxDecoration::new);
     let mut field = Container::new()
-        .decoration(
-            BoxDecoration::new()
-                .color(bg)
-                .border(pebbles_render::Border::new(border_color, border_w))
-                .radius(BorderRadius::all(theme().radius)),
-        )
+        .decoration(deco)
         .padding(padding)
         .height(height)
         .alignment(align)
         .child(content);
-    if let Some(w) = p.width {
+    if let Some(w) = merged.width.or(p.width) {
         field = field.width(w);
     }
 

@@ -21,14 +21,17 @@
 //!
 //! Styles compose with [`Style::merge`] (later wins), like layering CSS classes.
 
-use pebbles_foundation::{Alignment, Color, EdgeInsets};
+use pebbles_foundation::{Alignment, Color, EdgeInsets, TextAlign};
 use pebbles_render::{
-    BlendMode, Border, BorderRadius, BoxDecoration, BoxShadow, BoxShape, Gradient, Image, ImageFit,
-    image_from_rgba8,
+    Affine, BlendMode, Border, BorderRadius, BorderSide, BoxConstraints, BoxDecoration, BoxShadow,
+    BoxShape, Cursor, Gradient, Image, ImageFit, image_from_rgba8,
 };
 
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{Align, DecoratedBox, Opacity, Padding, SizedBox};
+use crate::widgets::{
+    Align, ConstrainedBox, DecoratedBox, GestureDetector, Opacity, Padding, SizedBox, aspect_ratio,
+    transform,
+};
 
 /// A general style value (CSS-like). Every field is optional; unset fields are
 /// inherited from a merged base or simply not applied. Not `Copy` — it can own a
@@ -51,11 +54,27 @@ pub struct Style {
     pub image_fit: Option<ImageFit>,
     pub opacity: Option<f32>,
     pub align: Option<Alignment>,
+    pub min_width: Option<f64>,
+    pub min_height: Option<f64>,
+    pub max_width: Option<f64>,
+    pub max_height: Option<f64>,
+    pub aspect_ratio: Option<f64>,
+    /// Paint + hit-test transform (rotate/scale/translate); layout is untouched.
+    pub transform: Option<Affine>,
+    /// The mouse cursor shown over this box.
+    pub cursor: Option<Cursor>,
     // ---- text (apply only to `Text`) ----
     pub color: Option<Color>,
     pub font_size: Option<f32>,
     pub font_weight: Option<f32>,
     pub line_height: Option<f32>,
+    pub text_align: Option<TextAlign>,
+    pub letter_spacing: Option<f32>,
+    pub italic: Option<bool>,
+    pub underline: Option<bool>,
+    pub strikethrough: Option<bool>,
+    pub font_family: Option<String>,
+    pub max_lines: Option<u32>,
 }
 
 /// Start a new [`Style`].
@@ -155,6 +174,95 @@ impl Style {
         self
     }
 
+    // ---- size constraints ----
+    pub fn min_width(mut self, v: f64) -> Self {
+        self.min_width = Some(v);
+        self
+    }
+    pub fn min_height(mut self, v: f64) -> Self {
+        self.min_height = Some(v);
+        self
+    }
+    pub fn max_width(mut self, v: f64) -> Self {
+        self.max_width = Some(v);
+        self
+    }
+    pub fn max_height(mut self, v: f64) -> Self {
+        self.max_height = Some(v);
+        self
+    }
+    /// Constrain the box to a width:height ratio (wraps in `AspectRatio`).
+    pub fn aspect_ratio(mut self, ratio: f64) -> Self {
+        self.aspect_ratio = Some(ratio);
+        self
+    }
+
+    // ---- per-side borders (compose onto `border`) ----
+    fn border_side(mut self, set: impl FnOnce(&mut Border)) -> Self {
+        let mut b = self.border.unwrap_or(Border::all(BorderSide::NONE));
+        set(&mut b);
+        self.border = Some(b);
+        self
+    }
+    pub fn border_top(self, side: BorderSide) -> Self {
+        self.border_side(|b| b.top = side)
+    }
+    pub fn border_right(self, side: BorderSide) -> Self {
+        self.border_side(|b| b.right = side)
+    }
+    pub fn border_bottom(self, side: BorderSide) -> Self {
+        self.border_side(|b| b.bottom = side)
+    }
+    pub fn border_left(self, side: BorderSide) -> Self {
+        self.border_side(|b| b.left = side)
+    }
+    /// Left + right sides.
+    pub fn border_x(self, side: BorderSide) -> Self {
+        self.border_side(|b| {
+            b.left = side;
+            b.right = side;
+        })
+    }
+    /// Top + bottom sides.
+    pub fn border_y(self, side: BorderSide) -> Self {
+        self.border_side(|b| {
+            b.top = side;
+            b.bottom = side;
+        })
+    }
+
+    // ---- transform (composes onto any existing transform) ----
+    fn compose(mut self, m: Affine) -> Self {
+        self.transform = Some(self.transform.map_or(m, |cur| cur * m));
+        self
+    }
+    /// Rotate around the box origin (radians).
+    pub fn rotate(self, radians: f64) -> Self {
+        self.compose(Affine::rotate(radians))
+    }
+    /// Uniform scale.
+    pub fn scale(self, factor: f64) -> Self {
+        self.compose(Affine::scale(factor))
+    }
+    /// Non-uniform scale.
+    pub fn scale_xy(self, sx: f64, sy: f64) -> Self {
+        self.compose(Affine::scale_non_uniform(sx, sy))
+    }
+    /// Translate by `(x, y)` logical px.
+    pub fn translate(self, x: f64, y: f64) -> Self {
+        self.compose(Affine::translate((x, y)))
+    }
+    /// Apply an explicit affine transform.
+    pub fn transform(self, matrix: Affine) -> Self {
+        self.compose(matrix)
+    }
+
+    /// The mouse cursor shown while hovering this box.
+    pub fn cursor(mut self, cursor: Cursor) -> Self {
+        self.cursor = Some(cursor);
+        self
+    }
+
     // ---- text setters ----
     pub fn color(mut self, color: Color) -> Self {
         self.color = Some(color);
@@ -178,6 +286,38 @@ impl Style {
         self.line_height = Some(factor);
         self
     }
+    /// Horizontal text alignment (applies to `Text`).
+    pub fn text_align(mut self, align: TextAlign) -> Self {
+        self.text_align = Some(align);
+        self
+    }
+    /// Extra spacing between letters (logical px).
+    pub fn letter_spacing(mut self, px: f32) -> Self {
+        self.letter_spacing = Some(px);
+        self
+    }
+    pub fn italic(mut self, italic: bool) -> Self {
+        self.italic = Some(italic);
+        self
+    }
+    pub fn underline(mut self, underline: bool) -> Self {
+        self.underline = Some(underline);
+        self
+    }
+    pub fn strikethrough(mut self, strikethrough: bool) -> Self {
+        self.strikethrough = Some(strikethrough);
+        self
+    }
+    /// A font family name (system fallback if unavailable).
+    pub fn font_family(mut self, family: impl Into<String>) -> Self {
+        self.font_family = Some(family.into());
+        self
+    }
+    /// Clamp `Text` to at most `n` lines (excess dropped).
+    pub fn max_lines(mut self, n: u32) -> Self {
+        self.max_lines = Some(n);
+        self
+    }
 
     /// Layer `other` on top of `self` — `other`'s set fields win (like stacking CSS
     /// classes or `style={[base, override]}` in React Native).
@@ -199,10 +339,24 @@ impl Style {
             image_fit: other.image_fit.or(self.image_fit),
             opacity: other.opacity.or(self.opacity),
             align: other.align.or(self.align),
+            min_width: other.min_width.or(self.min_width),
+            min_height: other.min_height.or(self.min_height),
+            max_width: other.max_width.or(self.max_width),
+            max_height: other.max_height.or(self.max_height),
+            aspect_ratio: other.aspect_ratio.or(self.aspect_ratio),
+            transform: other.transform.or(self.transform),
+            cursor: other.cursor.or(self.cursor),
             color: other.color.or(self.color),
             font_size: other.font_size.or(self.font_size),
             font_weight: other.font_weight.or(self.font_weight),
             line_height: other.line_height.or(self.line_height),
+            text_align: other.text_align.or(self.text_align),
+            letter_spacing: other.letter_spacing.or(self.letter_spacing),
+            italic: other.italic.or(self.italic),
+            underline: other.underline.or(self.underline),
+            strikethrough: other.strikethrough.or(self.strikethrough),
+            font_family: other.font_family.or(self.font_family),
+            max_lines: other.max_lines.or(self.max_lines),
         }
     }
 
@@ -265,16 +419,45 @@ pub fn styled(child: impl IntoWidget, s: Style) -> AnyWidget {
     if let Some(d) = s.decoration() {
         w = DecoratedBox::new(d, w).into_widget();
     }
+    // Min/max constraints slot between decoration and the fixed size.
+    if s.min_width.is_some() || s.min_height.is_some() || s.max_width.is_some() || s.max_height.is_some()
+    {
+        let c = BoxConstraints {
+            min_width: s.min_width.unwrap_or(0.0),
+            min_height: s.min_height.unwrap_or(0.0),
+            max_width: s.max_width.unwrap_or(f64::INFINITY),
+            max_height: s.max_height.unwrap_or(f64::INFINITY),
+        };
+        w = ConstrainedBox::new(c, w).into_widget();
+    }
     if s.width.is_some() || s.height.is_some() {
         w = SizedBox::new(s.width, s.height, Some(w)).into_widget();
     }
+    if let Some(r) = s.aspect_ratio {
+        w = aspect_ratio(r, w).into_widget();
+    }
+    if let Some(t) = s.transform {
+        w = transform(t, w).into_widget();
+    }
     if let Some(o) = s.opacity {
         w = Opacity::new(o, w).into_widget();
+    }
+    if let Some(cur) = s.cursor {
+        w = GestureDetector::new(w).cursor(cur).into_widget();
     }
     if let Some(m) = s.margin {
         w = Padding::new(m, w).into_widget();
     }
     w
+}
+
+/// Compose several styles left-to-right (later layers win) — the RN `style={[a, b, c]}`
+/// idiom. Equivalent to `a.merge(b).merge(c)`.
+pub fn styles<I>(layers: I) -> Style
+where
+    I: IntoIterator<Item = Style>,
+{
+    layers.into_iter().fold(Style::default(), Style::merge)
 }
 
 /// `.styled(style)` on every widget.

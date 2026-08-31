@@ -7,9 +7,9 @@
 //! scene, and because vello rasterizes glyph outlines through that transform the
 //! text stays crisp at any DPI.
 
-use pebbles_foundation::{Color, Offset, Size};
+use pebbles_foundation::{Color, Offset, Size, TextAlign};
 use parley::{
-    Alignment, AlignmentOptions, FontWeight, Layout, LineHeight, PositionedLayoutItem,
+    Alignment, AlignmentOptions, FontStyle, FontWeight, Layout, LineHeight, PositionedLayoutItem,
     StyleProperty,
 };
 use vello::Glyph;
@@ -29,6 +29,17 @@ pub struct ParagraphStyle {
     pub line_height: f32,
     /// Font weight (400 = normal, 600 = semibold, 700 = bold).
     pub weight: f32,
+    /// Horizontal alignment within the paragraph's width.
+    pub align: TextAlign,
+    /// Extra spacing between letters (logical px; 0 = none).
+    pub letter_spacing: f32,
+    pub italic: bool,
+    pub underline: bool,
+    pub strikethrough: bool,
+    /// A font family name (system fallback if unset/unavailable).
+    pub font_family: Option<String>,
+    /// Clamp the paragraph to at most this many lines (excess lines are dropped).
+    pub max_lines: Option<u32>,
 }
 
 impl Default for ParagraphStyle {
@@ -38,7 +49,25 @@ impl Default for ParagraphStyle {
             color: pebbles_foundation::palette::BLACK,
             line_height: 1.2,
             weight: 400.0,
+            align: TextAlign::Start,
+            letter_spacing: 0.0,
+            italic: false,
+            underline: false,
+            strikethrough: false,
+            font_family: None,
+            max_lines: None,
         }
+    }
+}
+
+fn to_parley_align(a: TextAlign) -> Alignment {
+    match a {
+        TextAlign::Left => Alignment::Left,
+        TextAlign::Right => Alignment::Right,
+        TextAlign::Center => Alignment::Center,
+        TextAlign::Justify => Alignment::Justify,
+        TextAlign::Start => Alignment::Start,
+        TextAlign::End => Alignment::End,
     }
 }
 
@@ -70,12 +99,41 @@ impl RenderObject for RenderParagraph {
             self.style.line_height,
         )));
         builder.push_default(StyleProperty::Brush(brush));
+        if self.style.letter_spacing != 0.0 {
+            builder.push_default(StyleProperty::LetterSpacing(self.style.letter_spacing));
+        }
+        if self.style.italic {
+            builder.push_default(StyleProperty::FontStyle(FontStyle::Italic));
+        }
+        if self.style.underline {
+            builder.push_default(StyleProperty::Underline(true));
+        }
+        if self.style.strikethrough {
+            builder.push_default(StyleProperty::Strikethrough(true));
+        }
+        if let Some(family) = &self.style.font_family {
+            builder.push_default(StyleProperty::FontFamily(family.as_str().into()));
+        }
 
         let mut layout: Layout<Brush> = builder.build(&self.text);
         layout.break_all_lines(max_advance);
-        layout.align(Alignment::Start, AlignmentOptions::default());
+        layout.align(to_parley_align(self.style.align), AlignmentOptions::default());
 
-        let size = Size::new(layout.width() as f64, layout.height() as f64);
+        // Clamp to `max_lines`: report a height covering only the kept lines; paint
+        // skips the rest. (v1 truncation — no ellipsis re-shaping yet.)
+        let full_h = layout.height() as f64;
+        let height = match self.style.max_lines {
+            Some(max) => {
+                let kept = layout.lines().take(max as usize);
+                let mut h = 0.0f64;
+                for line in kept {
+                    h += line.metrics().line_height as f64;
+                }
+                if h > 0.0 { h.min(full_h) } else { full_h }
+            }
+            None => full_h,
+        };
+        let size = Size::new(layout.width() as f64, height);
         self.cached = Some(layout);
         constraints.constrain(size)
     }
@@ -84,7 +142,8 @@ impl RenderObject for RenderParagraph {
         let Some(layout) = &self.cached else { return };
         let transform = Affine::translate((offset.x, offset.y));
 
-        for line in layout.lines() {
+        let max_lines = self.style.max_lines.map(|m| m as usize).unwrap_or(usize::MAX);
+        for line in layout.lines().take(max_lines) {
             for item in line.items() {
                 let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                     continue;

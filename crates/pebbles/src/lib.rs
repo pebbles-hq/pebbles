@@ -50,7 +50,7 @@ pub mod prelude {
     // render-level styling primitives (for advanced/custom decoration) + events
     pub use pebbles_render::{
         Affine, BlendMode, Border, BorderRadius, BorderSide, BoxDecoration, BoxShadow, BoxShape,
-        Cursor, Gradient, IconData, IconKind, IconPrim, Image, ImageFit, PointerButton, PointerEvent, TextFieldStyle,
+        Cursor, Gradient, IconData, IconKind, IconPrim, Image, ImageFit, PointerButton, PointerEvent,
         lucide,
     };
 
@@ -69,7 +69,7 @@ pub mod prelude {
     };
 
     // theming + the general style system (RN/CSS-like, apply anywhere)
-    pub use pebbles_widgets::{Colors, ModifierExt, Style, StyleExt, Theme, image_from_bytes, image_from_path, set_theme, style, styled, theme, toggle_theme};
+    pub use pebbles_widgets::{Colors, ModifierExt, Style, StyleExt, Theme, image_from_bytes, image_from_path, set_theme, style, styled, styles, theme, toggle_theme};
 
     // accessibility semantics (screen-reader roles/labels/state)
     pub use pebbles_widgets::{Semantics, SemanticsExt, SemanticsProps, SemanticsRole, semantics};

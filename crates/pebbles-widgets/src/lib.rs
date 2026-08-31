@@ -35,7 +35,7 @@ pub use modifiers::ModifierExt;
 pub use overlay::{OverlayHost, hide_overlay, hide_passive, show_overlay, show_passive};
 pub use sheet::{Sheet, SheetId, Side, close_sheet, sheet};
 pub use toast::{Toast, ToastId, ToastVariant, dismiss_toast, toast};
-pub use style::{Style, StyleExt, image_from_bytes, image_from_path, style, styled};
+pub use style::{Style, StyleExt, image_from_bytes, image_from_path, style, styled, styles};
 pub use theme::{Colors, Theme, set_theme, theme, toggle_theme};
 pub use widgets::{
     Align, AspectRatio, ClipRRect, ColoredBox, Column, ConstrainedBox, Container, DecoratedBox,
