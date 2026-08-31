@@ -441,7 +441,7 @@ fn render_select(p: &Props) -> AnyWidget {
         trigger_kids.push(icon(li).size(16.0).color(c.muted_foreground).into_widget());
         trigger_kids.push(gap_w(8.0).into_widget());
     }
-    trigger_kids.push(text(label).size(14.0).color(label_color).into_widget());
+    trigger_kids.push(text(label.clone()).size(14.0).color(label_color).into_widget());
     trigger_kids.push(spacer().into_widget());
     if p.clearable && has_value {
         let on_cleared = p.on_cleared.clone();
@@ -479,7 +479,7 @@ fn render_select(p: &Props) -> AnyWidget {
         .alignment(Alignment::CENTER_LEFT)
         .child(row(trigger_kids));
 
-    GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(
+    let control = GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(
         move |e: PointerEvent| {
             // The trigger's window-space rect = click global − click local.
             let trigger_left = e.global.x - e.position.x;
@@ -522,6 +522,11 @@ fn render_select(p: &Props) -> AnyWidget {
             show_overlay(menu.into_widget(), left, top, width, menu_h);
             node.request_focus();
         },
-    ))
-    .into_widget()
+    ));
+
+    // Accessibility: a combo box announcing its name + current value.
+    let name = label.clone();
+    crate::widgets::semantics(pebbles_render::SemanticsRole::ComboBox, name.clone(), control)
+        .value(if has_value { name } else { String::new() })
+        .into_widget()
 }

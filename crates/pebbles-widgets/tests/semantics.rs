@@ -6,7 +6,7 @@
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::{SemanticsRole, TextEnv};
-use pebbles_widgets::{View, button, checkbox, column, semantics, switch, text, text_field};
+use pebbles_widgets::{View, button, checkbox, column, select, slider, switch, text_field};
 
 fn root() -> impl IntoWidget {
     column(vec![
@@ -14,8 +14,9 @@ fn root() -> impl IntoWidget {
         checkbox(true).label("Accept terms").into_widget(),
         switch(false).label("Notifications").into_widget(),
         text_field().label("Email").into_widget(),
-        // A custom control annotated by hand.
-        semantics(SemanticsRole::Slider, "Volume", text("volume")).value("7").into_widget(),
+        // Slider + Select carry their own semantics nodes now (checklist 1.1).
+        slider(200.0).label("Volume").into_widget(),
+        select(["Apple", "Banana"]).value(1).into_widget(),
     ])
     .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
 }
@@ -50,9 +51,13 @@ fn interactive_widgets_populate_the_semantics_tree() {
     let tf = by_role(SemanticsRole::TextInput).expect("text input node");
     assert_eq!(tf.props.label, "Email");
 
-    let sl = by_role(SemanticsRole::Slider).expect("hand-annotated slider node");
+    let sl = by_role(SemanticsRole::Slider).expect("slider node");
     assert_eq!(sl.props.label, "Volume");
-    assert_eq!(sl.props.value.as_deref(), Some("7"));
+    assert_eq!(sl.props.value.as_deref(), Some("50"), "default single thumb at the domain midpoint");
+
+    let combo = by_role(SemanticsRole::ComboBox).expect("select combo box node");
+    assert_eq!(combo.props.label, "Banana", "the selected option's label is the name");
+    assert_eq!(combo.props.value.as_deref(), Some("Banana"));
 
     // Nodes carry real window-space bounds (laid out, non-empty, stacked vertically).
     assert!(btn.bounds.width() > 0.0 && btn.bounds.height() > 0.0, "button has bounds");

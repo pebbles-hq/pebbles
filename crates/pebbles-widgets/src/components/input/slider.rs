@@ -36,6 +36,8 @@ pub struct Slider {
     orientation: Axis,
     disabled: bool,
     autofocus: bool,
+    /// The accessible name (read out by the screen reader).
+    label: Option<String>,
     on_changed: Option<Rc<dyn Fn(Vec<f64>)>>,
 }
 
@@ -52,6 +54,7 @@ pub fn slider(length: f64) -> Slider {
         orientation: Axis::Horizontal,
         disabled: false,
         autofocus: false,
+        label: None,
         on_changed: None,
     }
 }
@@ -95,6 +98,11 @@ impl Slider {
         self.autofocus = true;
         self
     }
+    /// The accessible name read out by the screen reader (default "Slider").
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
     /// Fired with the full value list on every click / drag / key step.
     pub fn on_changed(mut self, f: impl Fn(Vec<f64>) + 'static) -> Self {
         self.on_changed = Some(Rc::new(f));
@@ -111,6 +119,7 @@ struct SliderProps {
     orientation: Axis,
     disabled: bool,
     autofocus: bool,
+    label: Option<String>,
     on_changed: Option<Rc<dyn Fn(Vec<f64>)>>,
 }
 
@@ -129,6 +138,7 @@ impl IntoWidget for Slider {
                 orientation: self.orientation,
                 disabled: self.disabled,
                 autofocus: self.autofocus,
+                label: self.label,
                 on_changed: self.on_changed,
             },
         )
@@ -275,24 +285,37 @@ fn render_slider(p: &SliderProps) -> AnyWidget {
         .alignment(Alignment::TOP_LEFT)
         .child(stack(kids).alignment(Alignment::TOP_LEFT));
 
-    if p.disabled {
-        return GestureDetector::new(Opacity::new(0.55, body)).cursor(Cursor::NotAllowed).into_widget();
-    }
+    let control: AnyWidget = if p.disabled {
+        GestureDetector::new(Opacity::new(0.55, body)).cursor(Cursor::NotAllowed).into_widget()
+    } else {
+        let a_start = move_to.clone();
+        let a_move = move_to.clone();
+        GestureDetector::new(body)
+            .cursor(Cursor::Pointer)
+            .on_hover_enter({
+                let hovered = hovered;
+                move || hovered.set(true)
+            })
+            .on_hover_exit({
+                let hovered = hovered;
+                move || hovered.set(false)
+            })
+            .on_pan_start(action_event(move |e| a_start(e.position.x, e.position.y)))
+            .on_pan_update(action_event(move |e| a_move(e.position.x, e.position.y)))
+            .into_widget()
+    };
 
-    let a_start = move_to.clone();
-    let a_move = move_to.clone();
-    GestureDetector::new(body)
-        .cursor(Cursor::Pointer)
-        .on_hover_enter({
-            let hovered = hovered;
-            move || hovered.set(true)
-        })
-        .on_hover_exit({
-            let hovered = hovered;
-            move || hovered.set(false)
-        })
-        .on_pan_start(action_event(move |e| a_start(e.position.x, e.position.y)))
-        .on_pan_update(action_event(move |e| a_move(e.position.x, e.position.y)))
+    // Accessibility: the slider announces its name + current values.
+    let name = p.label.clone().unwrap_or_else(|| "Slider".to_string());
+    let value = vals
+        .get()
+        .iter()
+        .map(|v| format!("{v:.0}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    crate::widgets::semantics(pebbles_render::SemanticsRole::Slider, name, control)
+        .value(value)
+        .disabled(p.disabled)
         .into_widget()
 }
 
