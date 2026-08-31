@@ -9,7 +9,7 @@ use pebbles_core::{IntoWidget, KeyInput, Ui, component, create_signal};
 use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{
-    FileTree, FsKind, OverlayHost, View, button, column, file_explorer,
+    Container, FileTree, FsKind, OverlayHost, View, button, column, file_explorer,
 };
 
 // ---------------------------------------------------------------------------
@@ -31,11 +31,19 @@ fn model_insert_rename_delete_move() {
     assert!(!t.rename(f, "   "), "blank renames are rejected");
 
     // Move into another folder works; guardrails reject the rest.
-    assert!(t.move_node(f, b), "move into a sibling folder");
+    assert!(t.move_node(f, Some(b)), "move into a sibling folder");
     assert_eq!(t.parent_of(f), Some(b));
-    assert!(!t.move_node(a, a), "moving into itself is rejected");
-    assert!(!t.move_node(a, child), "moving into a descendant is rejected");
-    assert!(!t.move_node(b, f), "moving into a file is rejected");
+    assert!(!t.move_node(a, Some(a)), "moving into itself is rejected");
+    assert!(!t.move_node(a, Some(child)), "moving into a descendant is rejected");
+    assert!(!t.move_node(b, Some(f)), "moving into a file is rejected");
+    assert!(t.move_node(f, None), "move to the root");
+    assert_eq!(t.parent_of(f), None, "now a root node");
+
+    // Names de-duplicate against siblings.
+    let x = t.insert(None, FsKind::File, "readme.txt");
+    let y = t.insert(None, FsKind::File, "readme.txt");
+    assert_eq!(t.node(x).map(|n| n.name.as_str()), Some("readme.txt"));
+    assert_eq!(t.node(y).map(|n| n.name.as_str()), Some("readme 2.txt"));
 
     // Delete removes the subtree.
     assert!(t.delete(a));
@@ -49,6 +57,11 @@ fn model_insert_rename_delete_move() {
 
 thread_local! {
     static TREE: RefCell<Option<pebbles_core::Signal<FileTree>>> = const { RefCell::new(None) };
+    static EX: RefCell<Option<pebbles_widgets::FileExplorer>> = const { RefCell::new(None) };
+}
+
+fn ex() -> pebbles_widgets::FileExplorer {
+    EX.with(|c| c.borrow().expect("explorer stored"))
 }
 
 fn tree_sig() -> pebbles_core::Signal<FileTree> {
@@ -71,11 +84,16 @@ fn explorer() -> pebbles_widgets::FileExplorer {
 
 fn root() -> impl IntoWidget {
     let ex = explorer();
+    EX.with(|c| *c.borrow_mut() = Some(ex));
     OverlayHost::wrap(
         column(vec![
             button("New file").on_pressed(ex.new_file()).into_widget(),
             button("Delete").on_pressed(ex.delete_selected()).into_widget(),
-            ex.tree().into_widget(),
+            // A tall panel so the explorer has empty space (right-click there).
+            Container::new()
+                .height(220.0)
+                .child(ex.tree())
+                .into_widget(),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Stretch),
     )
@@ -191,4 +209,142 @@ fn drag_onto_folder_moves() {
         "README.md moved into src"
     );
     assert!(!t.root.iter().any(|n| n.name == "README.md"), "and left the root");
+}
+
+#[test]
+fn ctrl_click_toggles_and_shift_click_ranges() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let _ = tree_sig();
+    pebbles_core::keyboard::set_modifiers(false, false);
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+
+    // Rows: src (72..94), README.md (94..122).
+    let mut tap_at = |ui: &mut Ui, y: f64| {
+        let p = Offset::new(60.0, y);
+        ui.dispatch_pointer_down(p);
+        ui.dispatch_tap(p);
+        ui.dispatch_pointer_up(p);
+        frame(ui, &mut env, win);
+    };
+
+    // Plain clicks select single. (Tapping src expands it, shifting README
+    // down to 122..150 — tap README first.)
+    tap_at(&mut ui, 105.0);
+    assert_eq!(ex().selection().get(), vec![readme_id()], "plain click selects one");
+    tap_at(&mut ui, 80.0);
+    assert_eq!(ex().selection().get(), vec![src_id()], "and another replaces it");
+
+    // Ctrl-click toggles the other node into the selection (README now at
+    // 122..150 under the expanded src).
+    pebbles_core::keyboard::set_modifiers(false, true);
+    tap_at(&mut ui, 135.0);
+    assert_eq!(ex().selection().get(), vec![src_id(), readme_id()], "ctrl-click adds");
+    tap_at(&mut ui, 135.0);
+    assert_eq!(ex().selection().get(), vec![src_id()], "ctrl-click removes");
+
+    // Shift-click range-selects every VISIBLE row between src and README —
+    // main.rs included (src is expanded).
+    pebbles_core::keyboard::set_modifiers(true, false);
+    tap_at(&mut ui, 135.0);
+    assert_eq!(
+        ex().selection().get(),
+        vec![src_id(), main_id(), readme_id()],
+        "shift-click selects the visible range"
+    );
+    pebbles_core::keyboard::set_modifiers(false, false);
+}
+
+fn src_id() -> u64 {
+    tree_sig().peek().root.iter().find(|n| n.name == "src").expect("src").id
+}
+
+fn main_id() -> u64 {
+    let t = tree_sig().peek();
+    let src = t.root.iter().find(|n| n.name == "src").expect("src");
+    src.children.iter().find(|n| n.name == "main.rs").expect("main").id
+}
+
+fn readme_id() -> u64 {
+    tree_sig().peek().root.iter().find(|n| n.name == "README.md").expect("readme").id
+}
+
+#[test]
+fn dragging_a_selection_moves_them_all() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let _ = tree_sig();
+    pebbles_core::keyboard::set_modifiers(false, false);
+
+    // Add a second file next to README for a two-file selection.
+    tree_sig().update(|t| {
+        t.insert(None, FsKind::File, "LICENSE");
+    });
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+
+    // Rows: src (72..94), README.md (94..122), LICENSE (122..150).
+    let readme = Offset::new(60.0, 105.0);
+    let license = Offset::new(60.0, 133.0);
+    let src_row = Offset::new(60.0, 80.0);
+
+    // Ctrl-click both files.
+    pebbles_core::keyboard::set_modifiers(false, true);
+    for p in [readme, license] {
+        ui.dispatch_pointer_down(p);
+        ui.dispatch_tap(p);
+        ui.dispatch_pointer_up(p);
+        frame(&mut ui, &mut env, win);
+    }
+    pebbles_core::keyboard::set_modifiers(false, false);
+    assert_eq!(ex().selection().get().len(), 2, "two files selected");
+
+    // Drag README (one of the selected) onto src → BOTH move.
+    let target = ui.pan_target_at(readme).expect("a draggable row");
+    ui.dispatch_pan_start(target, readme);
+    ui.dispatch_pan_update(target, readme);
+    ui.dispatch_hover(src_row);
+    frame(&mut ui, &mut env, win);
+    ui.dispatch_pan_end(target, src_row);
+    frame(&mut ui, &mut env, win);
+
+    let t = tree_sig().peek();
+    let src = t.root.iter().find(|n| n.name == "src").expect("src");
+    let in_src: Vec<&str> = src.children.iter().map(|c| c.name.as_str()).collect();
+    assert!(in_src.contains(&"README.md") && in_src.contains(&"LICENSE"), "both moved: {in_src:?}");
+    assert!(!t.root.iter().any(|n| n.name == "README.md" || n.name == "LICENSE"));
+}
+
+#[test]
+fn right_clicking_empty_space_offers_new_nodes() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let _ = tree_sig();
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+
+    // Below the last row is empty explorer space (y ≈ 200). The PRESS claims
+    // it (the shell then skips the global menu).
+    let p = Offset::new(60.0, 200.0);
+    let handled = ui.dispatch_secondary_tap_down(p);
+    frame(&mut ui, &mut env, win);
+    assert!(handled, "the explorer claims the right-click");
+    assert!(pebbles_widgets::overlay::is_open(), "its menu opens (New File / New Folder)");
+    pebbles_widgets::overlay::hide_overlay();
 }

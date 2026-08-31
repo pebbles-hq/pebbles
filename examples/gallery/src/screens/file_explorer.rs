@@ -21,7 +21,7 @@ pub fn file_explorer_screen() -> Element {
     let explorer = file_explorer(tree);
 
     screen("File Explorer")
-        .description("A VSCode-style file explorer built from composable pieces: the FileTree model (app-owned), the file_explorer() controller, and a tree that selects, expands, renames inline, context-menus, and drag-moves. Click to select, double-click to rename, right-click for actions, drag onto a folder to move.")
+        .description("A VSCode-style file explorer built from composable pieces: click selects, Ctrl/Cmd-click toggles, Shift-click range-selects, double-click renames inline, right-click opens actions (empty space: New File / New Folder), and dragging a SELECTION onto a folder moves them all — hover a collapsed folder to expand it, drop on empty space to move to the root.")
         .body(children![
             doc("The explorer")
                 .description("The default toolbar (New File · New Folder · Collapse All) above the tree — or skip the toolbar entirely.")
@@ -36,14 +36,14 @@ pub fn file_explorer_screen() -> Element {
                             .padding(EdgeInsets::all(4.0))
                             .child(explorer.tree()),
                         gap_h(10.0),
-                        muted(format!(
-                            "selected: {}",
-                            explorer
-                                .selection()
-                                .get()
-                                .and_then(|id| tree.get().node(id).map(|n| n.name.clone()))
-                                .unwrap_or_else(|| "—".into())
-                        )),
+                        muted({
+                            let sel = explorer.selection().get();
+                            let names: Vec<String> = sel
+                                .iter()
+                                .filter_map(|id| tree.get().node(*id).map(|n| n.name.clone()))
+                                .collect();
+                            format!("selected ({}): {}", sel.len(), names.join(", "))
+                        }),
                     ])
                     .cross_axis_alignment(CrossAxisAlignment::Stretch)
                     .main_axis_size(MainAxisSize::Min),

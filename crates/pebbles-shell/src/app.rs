@@ -255,6 +255,9 @@ struct Runner {
     /// The tap target of the previous click — a double-tap only counts if the two
     /// clicks land on the same widget.
     last_tap_target: Option<u64>,
+    /// Whether the right-button PRESS was claimed by a widget (its own context
+    /// menu, a blocker) — the release must not open the global menu then.
+    secondary_down_handled: bool,
     current_cursor: Cursor,
     /// Deadline at which a held primary button becomes a long-press.
     press_deadline: Option<Instant>,
@@ -303,6 +306,7 @@ impl Runner {
             cursor: Offset::ZERO,
             last_click: None,
             last_tap_target: None,
+            secondary_down_handled: false,
             current_cursor: Cursor::Default,
             press_deadline: None,
             shift_down: false,
@@ -1015,12 +1019,14 @@ impl ApplicationHandler for Runner {
                         up || result
                     }
                     (MouseButton::Right, ElementState::Pressed) => {
-                        self.ui.dispatch_secondary_tap_down(cursor)
+                        self.secondary_down_handled =
+                            self.ui.dispatch_secondary_tap_down(cursor);
+                        self.secondary_down_handled
                     }
                     (MouseButton::Right, ElementState::Released) => {
                         let up = self.ui.dispatch_secondary_tap_up(cursor);
                         let tap = self.ui.dispatch_secondary_tap(cursor);
-                        if !up && !tap {
+                        if !up && !tap && !self.secondary_down_handled {
                             // Nothing claimed the right-click (no widget context
                             // menu, no blocker) — open the global menu.
                             pebbles_widgets::global_menu::show(cursor.x, cursor.y);
