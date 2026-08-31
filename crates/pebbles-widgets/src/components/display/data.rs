@@ -1,5 +1,6 @@
-//! Data-display components: [`ListTile`] (a list row) and [`Table`] (a data grid
-//! with optional column sorting, row selection, zebra striping and an empty state).
+//! Data-display components: [`Table`] (a data grid with optional column sorting,
+//! row selection, zebra striping and an empty state). [`ListTile`] lives in
+//! [`super::list_tile`].
 
 use std::rc::Rc;
 
@@ -9,78 +10,10 @@ use pebbles_render::{BoxDecoration, Cursor, IconKind};
 use crate::components::{checkbox, icon};
 use crate::theme::{mix, theme};
 use crate::widgets::{
-    Container, Expanded, GestureDetector, Padding, SizedBox, center, column, gap_h, gap_w, row,
-    spacer, text,
+    Container, Expanded, GestureDetector, Padding, SizedBox, center, column, gap_w, row, text,
 };
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{animated, component_props, create_signal};
-
-/// A list row: optional leading widget, a title + optional subtitle, optional
-/// trailing widget.
-#[derive(Clone, Default)]
-pub struct ListTile {
-    leading: Option<AnyWidget>,
-    title: String,
-    subtitle: Option<String>,
-    trailing: Option<AnyWidget>,
-}
-
-/// Create a [`ListTile`] with a title.
-pub fn list_tile(title: impl Into<String>) -> ListTile {
-    ListTile { title: title.into(), ..Default::default() }
-}
-
-impl ListTile {
-    pub fn leading(mut self, leading: impl IntoWidget) -> Self {
-        self.leading = Some(leading.into_widget());
-        self
-    }
-    pub fn subtitle(mut self, subtitle: impl Into<String>) -> Self {
-        self.subtitle = Some(subtitle.into());
-        self
-    }
-    pub fn trailing(mut self, trailing: impl IntoWidget) -> Self {
-        self.trailing = Some(trailing.into_widget());
-        self
-    }
-}
-
-
-impl IntoWidget for ListTile {
-    fn into_widget(mut self) -> AnyWidget {
-        let th = theme();
-        let mut title_col = vec![
-            text(std::mem::take(&mut self.title)).size(14.0).weight(500.0).color(th.colors.foreground).into_widget(),
-        ];
-        if let Some(sub) = self.subtitle.take() {
-            title_col.push(gap_h(2.0).into_widget());
-            title_col.push(text(sub).size(12.0).color(th.colors.muted_foreground).into_widget());
-        }
-
-        let mut items: Vec<AnyWidget> = Vec::new();
-        if let Some(leading) = self.leading.take() {
-            items.push(leading);
-            items.push(gap_w(12.0).into_widget());
-        }
-        items.push(
-            Expanded::new(
-                column(title_col).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min),
-            )
-            .into_widget(),
-        );
-        if let Some(trailing) = self.trailing.take() {
-            items.push(trailing);
-        } else {
-            items.push(spacer().into_widget());
-        }
-
-        Padding::new(
-            EdgeInsets::symmetric(12.0, 10.0),
-            row(items).cross_axis_alignment(CrossAxisAlignment::Center),
-        )
-        .into_widget()
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Table

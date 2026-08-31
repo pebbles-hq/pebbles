@@ -2,6 +2,7 @@
 
 mod data;
 mod empty;
+mod list_tile;
 mod hover_card;
 mod kbd;
 mod icon;
@@ -11,7 +12,8 @@ mod tooltip;
 mod tree;
 mod typography;
 
-pub use data::{ListTile, SortDir, Table, list_tile, table};
+pub use data::{SortDir, Table, table};
+pub use list_tile::{ListTile, list_tile};
 pub use hover_card::{HoverCard, hover_card};
 pub use empty::{Empty, empty};
 pub use kbd::{Kbd, kbd};
