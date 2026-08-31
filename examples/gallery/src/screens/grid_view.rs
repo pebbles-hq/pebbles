@@ -83,6 +83,22 @@ pub fn grid_view() -> Element {
                         .max_extent(140.0)
                         .spacing(6.0)),
                 ),
+            doc("Reversed & padded")
+                .description(".reverse() stacks rows from the bottom; .padding(EdgeInsets) scrolls with the content. Combine with spacing for a breathing layout.")
+                .body(
+                    Container::new()
+                        .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
+                        .height(240.0)
+                        .child(GridView::builder(16, 3, 72.0, |i| {
+                            Container::new()
+                                .decoration(BoxDecoration::new().color(palette::amber::S500).radius(BorderRadius::all(theme().radius)))
+                                .alignment(Alignment::CENTER)
+                                .child(text(format!("{i}")).size(13.0))
+                        })
+                        .spacing(6.0)
+                        .padding(EdgeInsets::all(10.0))
+                        .reverse()),
+                ),
         ])
 }
 

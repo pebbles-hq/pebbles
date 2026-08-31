@@ -110,6 +110,57 @@ pub fn list_view() -> Element {
                             )
                         })),
                 ),
+            doc("Variable extents")
+                .description("ListView::variable(..) — each item declares its OWN extent (Flutter's variable-extent delegate, Rust-style): a feed of mixed card heights. Virtualized by prefix sums.")
+                .body(
+                    Container::new()
+                        .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
+                        .height(240.0)
+                        .child(ListView::variable(
+                            20,
+                            |i| if i % 3 == 0 { 72.0 } else if i % 2 == 0 { 48.0 } else { 56.0 },
+                            |i| {
+                                Container::new()
+                                    .margin(EdgeInsets::symmetric(8.0, 4.0))
+                                    .decoration(BoxDecoration::new().color(theme().colors.secondary).radius(BorderRadius::all(theme().radius)))
+                                    .padding(EdgeInsets::all(12.0))
+                                    .child(muted(format!("post {i} — a {} tall card", if i % 3 == 0 { 72 } else if i % 2 == 0 { 48 } else { 56 })))
+                            },
+                        )),
+                ),
+            doc("Reversed")
+                .description(".reverse() — item 0 sits at the END and the list starts scrolled there (chat logs, consoles, terminals).")
+                .body(
+                    Container::new()
+                        .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
+                        .height(200.0)
+                        .child(ListView::builder(40, 36.0, |i| {
+                            Padding::new(
+                                EdgeInsets::symmetric(14.0, 9.0),
+                                row(children![
+                                    muted(format!("{i:02}:")),
+                                    gap_w(8.0),
+                                    text(if i % 5 == 0 { "system: all systems nominal" } else { "log line" }).size(13.0),
+                                ])
+                                .main_axis_size(MainAxisSize::Min),
+                            )
+                        })
+                        .reverse()),
+                ),
+            doc("Padded")
+                .description(".padding(EdgeInsets) — outer padding that scrolls with the content, so the first/last items never hug the edges.")
+                .body(
+                    Container::new()
+                        .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
+                        .height(160.0)
+                        .child(ListView::builder(20, 44.0, |i| {
+                            Container::new()
+                                .decoration(BoxDecoration::new().color(theme().colors.secondary).radius(BorderRadius::all(theme().radius)))
+                                .alignment(Alignment::CENTER)
+                                .child(text(format!("Row {i}")).size(13.0))
+                        })
+                        .padding(EdgeInsets::all(12.0))),
+                ),
             doc("Scrollbar styles")
                 .description(".scrollbar(..) — hidden, overlay, or always-visible with a thickness.")
                 .body(

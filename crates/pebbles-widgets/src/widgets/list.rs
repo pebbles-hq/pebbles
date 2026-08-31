@@ -119,6 +119,10 @@ pub struct ListView {
     builder: Rc<dyn Fn(usize) -> AnyWidget>,
     /// `(separator extent, builder)` when built with [`separated`](ListView::separated).
     separator: Option<(f64, Rc<dyn Fn(usize) -> AnyWidget>)>,
+    /// Per-item extents when built with [`variable`](ListView::variable).
+    extents: Option<Rc<dyn Fn(usize) -> f64>>,
+    reverse: bool,
+    padding: Option<pebbles_foundation::EdgeInsets>,
 }
 
 impl ListView {
@@ -137,6 +141,33 @@ impl ListView {
             controller: None,
             builder: Rc::new(move |i| builder(i).into_widget()),
             separator: None,
+            extents: None,
+            reverse: false,
+            padding: None,
+        }
+    }
+
+    /// A list whose items have their OWN extents (Flutter's variable-extent
+    /// delegate, Rust-style): `extents(i)` returns item `i`'s height (or width,
+    /// when horizontal). Virtualization stays — only the visible items build.
+    /// Best for feeds/messages; prefer the fixed [`builder`](ListView::builder)
+    /// for uniform rows (O(1) window math).
+    pub fn variable<W: IntoWidget>(
+        count: usize,
+        extents: impl Fn(usize) -> f64 + 'static,
+        builder: impl Fn(usize) -> W + 'static,
+    ) -> Self {
+        ListView {
+            count,
+            item_extent: 1.0,
+            axis: Axis::Vertical,
+            scrollbar: ScrollbarStyle::default(),
+            controller: None,
+            builder: Rc::new(move |i| builder(i).into_widget()),
+            separator: None,
+            extents: Some(Rc::new(extents)),
+            reverse: false,
+            padding: None,
         }
     }
 
@@ -158,6 +189,9 @@ impl ListView {
             controller: None,
             builder: Rc::new(move |i| item(i).into_widget()),
             separator: Some((separator_extent, Rc::new(move |i| separator(i).into_widget()))),
+            extents: None,
+            reverse: false,
+            padding: None,
         }
     }
 
@@ -176,6 +210,18 @@ impl ListView {
         self.controller = Some(controller);
         self
     }
+    /// Reverse the list: item 0 sits at the END (bottom / right) and the list
+    /// starts scrolled there — Flutter's `reverse` (chat logs, consoles).
+    pub fn reverse(mut self) -> Self {
+        self.reverse = true;
+        self
+    }
+    /// Outer padding around the scrollable content (part of the scrollable
+    /// extent — the first/last items don't touch the edges).
+    pub fn padding(mut self, insets: pebbles_foundation::EdgeInsets) -> Self {
+        self.padding = Some(insets);
+        self
+    }
 }
 
 struct Props {
@@ -186,6 +232,9 @@ struct Props {
     controller: Option<ScrollController>,
     builder: Rc<dyn Fn(usize) -> AnyWidget>,
     separator: Option<(f64, Rc<dyn Fn(usize) -> AnyWidget>)>,
+    extents: Option<Rc<dyn Fn(usize) -> f64>>,
+    reverse: bool,
+    padding: Option<pebbles_foundation::EdgeInsets>,
 }
 
 impl IntoWidget for ListView {
@@ -200,6 +249,9 @@ impl IntoWidget for ListView {
                 controller: self.controller,
                 builder: self.builder,
                 separator: self.separator,
+                extents: self.extents,
+                reverse: self.reverse,
+                padding: self.padding,
             },
         )
         .into_widget()
@@ -217,11 +269,36 @@ fn render_list(p: &Props) -> ListViewport {
     };
     let sep_ext = p.separator.as_ref().map(|(e, _)| *e).unwrap_or(0.0);
     let stride = p.item_extent + sep_ext;
-    let content_extent = if sep_ext > 0.0 {
+    // Variable extents: a running prefix over the per-item extents gives both
+    // the content extent and each item's position (O(n) per render — fine for
+    // the counts variable lists serve).
+    let variable = p.extents.is_some();
+    let prefix: Vec<f64> = match &p.extents {
+        Some(ext) => {
+            let mut pre = Vec::with_capacity(p.count + 1);
+            pre.push(0.0);
+            let mut acc = 0.0;
+            for i in 0..p.count {
+                acc += ext(i).max(1.0);
+                pre.push(acc);
+            }
+            pre
+        }
+        None => Vec::new(),
+    };
+    let content_extent = if variable {
+        prefix[p.count]
+    } else if sep_ext > 0.0 {
         p.count as f64 * p.item_extent + (p.count.saturating_sub(1)) as f64 * sep_ext
     } else {
         p.count as f64 * p.item_extent
     };
+    let pad = p.padding.unwrap_or(pebbles_foundation::EdgeInsets::ZERO);
+    let (pad_lead, pad_trail) = match p.axis {
+        Axis::Vertical => (pad.top, pad.bottom),
+        Axis::Horizontal => (pad.left, pad.right),
+    };
+    let padded_extent = content_extent + pad_lead + pad_trail;
 
     // Drop this list's registry entries when it unmounts.
     create_cleanup(move || {
@@ -233,7 +310,7 @@ fn render_list(p: &Props) -> ListViewport {
     // viewport). Re-installed each render (idempotent) so `content_extent` stays
     // current if `count` changes.
     {
-        let ce = content_extent;
+        let ce = padded_extent;
         scroll::install(
             id,
             Rc::new(move |to| {
@@ -253,40 +330,64 @@ fn render_list(p: &Props) -> ListViewport {
     let viewport = scroll_metrics::get(id).map(|m| m.viewport).unwrap_or(800.0);
     let ext = p.item_extent.max(1.0);
     let unit = if sep_ext > 0.0 { stride } else { ext };
-    let first = (((o / unit).floor() as isize) - OVERSCAN).max(0) as usize;
-    let last = ((((o + viewport) / unit).ceil() as isize) + OVERSCAN).max(0) as usize;
-    let last = last.min(p.count);
+
+    // The visible window: binary search over the prefix when variable, else
+    // the fixed-extent arithmetic.
+    let (first, last) = if variable {
+        let lo = o.max(0.0);
+        let hi = (o + viewport).max(0.0);
+        let first = prefix.partition_point(|&top| top < lo).saturating_sub(OVERSCAN as usize);
+        let last = prefix.partition_point(|&top| top <= hi).min(p.count).saturating_add(OVERSCAN as usize).min(p.count);
+        (first, last)
+    } else {
+        let first = (((o / unit).floor() as isize) - OVERSCAN).max(0) as usize;
+        let last = ((((o + viewport) / unit).ceil() as isize) + OVERSCAN).max(0) as usize;
+        (first, last.min(p.count))
+    };
+
+    let position = |i: usize| -> (f64, f64) {
+        // (top/left in content space, item extent)
+        if variable {
+            (prefix[i], (prefix[i + 1] - prefix[i]).max(1.0))
+        } else {
+            let at = if sep_ext > 0.0 { i as f64 * stride } else { i as f64 * ext };
+            (at, ext)
+        }
+    };
 
     let mut items: Vec<AnyWidget> = Vec::new();
     for i in first..last {
         let item = (p.builder)(i);
-        let at = if sep_ext > 0.0 { i as f64 * stride } else { i as f64 * ext };
+        let (at, item_ext) = position(i);
+        let at = at + pad_lead;
+        let at = if p.reverse { padded_extent - at - item_ext } else { at };
         let placed = match p.axis {
             Axis::Vertical => Positioned::new(item)
                 .top(at)
-                .left(0.0)
-                .right(0.0)
-                .height(ext),
+                .left(pad.left)
+                .right(pad.right)
+                .height(item_ext),
             Axis::Horizontal => Positioned::new(item)
                 .left(at)
-                .top(0.0)
-                .bottom(0.0)
-                .width(ext),
+                .top(pad.top)
+                .bottom(pad.bottom)
+                .width(item_ext),
         };
         items.push(placed.into_widget());
         if let Some((se, sep_builder)) = &p.separator {
             if i + 1 < p.count {
                 let sep_widget = (sep_builder)(i);
+                let sep_at = if p.reverse { padded_extent - (at - pad_lead) - item_ext - *se + pad_lead } else { at + item_ext };
                 let placed_sep = match p.axis {
                     Axis::Vertical => Positioned::new(sep_widget)
-                        .top(at + ext)
-                        .left(0.0)
-                        .right(0.0)
+                        .top(sep_at)
+                        .left(pad.left)
+                        .right(pad.right)
                         .height(*se),
                     Axis::Horizontal => Positioned::new(sep_widget)
-                        .left(at + ext)
-                        .top(0.0)
-                        .bottom(0.0)
+                        .left(sep_at)
+                        .top(pad.top)
+                        .bottom(pad.bottom)
                         .width(*se),
                 };
                 items.push(placed_sep.into_widget());
@@ -294,11 +395,11 @@ fn render_list(p: &Props) -> ListViewport {
         }
     }
 
-    let max = (content_extent - viewport).max(0.0);
+    let max = (padded_extent - viewport).max(0.0);
     ListViewport {
         axis: p.axis,
         offset: o.clamp(0.0, max),
-        content_extent,
+        content_extent: padded_extent,
         id,
         scrollbar: p.scrollbar,
         child: Some(stack(items).into_widget()),
@@ -324,6 +425,8 @@ pub struct GridView {
     aspect_ratio: Option<f64>,
     max_extent: Option<f64>,
     controller: Option<ScrollController>,
+    reverse: bool,
+    padding: Option<pebbles_foundation::EdgeInsets>,
 }
 
 impl GridView {
@@ -345,6 +448,8 @@ impl GridView {
             aspect_ratio: None,
             max_extent: None,
             controller: None,
+            reverse: false,
+            padding: None,
         }
     }
     /// Customize the scrollbar.
@@ -385,6 +490,17 @@ impl GridView {
         self.spans = Some(Rc::new(spans));
         self
     }
+    /// Reverse the grid: row 0 sits at the bottom and the grid starts
+    /// scrolled there (Flutter's `reverse`).
+    pub fn reverse(mut self) -> Self {
+        self.reverse = true;
+        self
+    }
+    /// Outer padding around the scrollable content.
+    pub fn padding(mut self, insets: pebbles_foundation::EdgeInsets) -> Self {
+        self.padding = Some(insets);
+        self
+    }
 }
 
 struct GridProps {
@@ -398,6 +514,8 @@ struct GridProps {
     aspect_ratio: Option<f64>,
     max_extent: Option<f64>,
     controller: Option<ScrollController>,
+    reverse: bool,
+    padding: Option<pebbles_foundation::EdgeInsets>,
 }
 
 impl IntoWidget for GridView {
@@ -415,6 +533,8 @@ impl IntoWidget for GridView {
                 aspect_ratio: self.aspect_ratio,
                 max_extent: self.max_extent,
                 controller: self.controller,
+                reverse: self.reverse,
+                padding: self.padding,
             },
         )
         .into_widget()
@@ -522,9 +642,11 @@ fn render_grid(p: &GridProps) -> ListViewport {
     } else {
         rows_used as f64 * stride - gap
     };
+    let pad = p.padding.unwrap_or(pebbles_foundation::EdgeInsets::ZERO);
+    let padded_extent = content_extent + pad.top + pad.bottom;
 
     {
-        let ce = content_extent;
+        let ce = padded_extent;
         scroll::install(
             id,
             Rc::new(move |to| {
@@ -557,19 +679,24 @@ fn render_grid(p: &GridProps) -> ListViewport {
         }
         {
             let item = (p.builder)(i);
+            let height = rs as f64 * row_h + (rs as f64 - 1.0) * gap;
+            let mut top = row as f64 * stride + pad.top;
+            if p.reverse {
+                top = padded_extent - top - height;
+            }
             let placed = Positioned::new(item)
-                .top(row as f64 * stride)
-                .left(col as f64 * cell_stride)
+                .top(top)
+                .left(col as f64 * cell_stride + pad.left)
                 .width(cs as f64 * cell_w + (cs as f64 - 1.0) * gap)
-                .height(rs as f64 * row_h + (rs as f64 - 1.0) * gap);
+                .height(height);
             items.push(placed.into_widget());
         }
     }
-    let max = (content_extent - viewport).max(0.0);
+    let max = (padded_extent - viewport).max(0.0);
     ListViewport {
         axis: Axis::Vertical,
         offset: o.clamp(0.0, max),
-        content_extent,
+        content_extent: padded_extent,
         id,
         scrollbar: p.scrollbar,
         child: Some(stack(items).into_widget()),
