@@ -5,7 +5,7 @@ use crate::ui::{screen, section};
 pub fn navigation() -> Element {
     let tab = create_signal(0usize);
     let pill = create_signal(0usize);
-    let acc = create_signal([true, false, false]);
+    let acc_note = create_signal(String::from("—"));
     let pg = create_signal(2usize);
 
     screen(
@@ -30,10 +30,16 @@ pub fn navigation() -> Element {
             ),
             section(
                 "ACCORDION",
-                accordion()
-                    .item("Is it accessible?", muted("Yes. It follows the box protocol."), acc.get()[0], move || acc.update(|a| a[0] = !a[0]))
-                    .item("Is it styled?", muted("Yes, from theme tokens."), acc.get()[1], move || acc.update(|a| a[1] = !a[1]))
-                    .item("Is it animated?", muted("Not yet — on the roadmap."), acc.get()[2], move || acc.update(|a| a[2] = !a[2])),
+                column(children![
+                    accordion()
+                        .item("Is it accessible?", muted("Yes. It follows the box protocol."))
+                        .item("Is it styled?", muted("Yes, from theme tokens."))
+                        .item("Is it animated?", muted("Yes — the chevron rotates."))
+                        .default_open(0)
+                        .on_toggle(move |i, open| acc_note.set(format!("section {} → {}", i + 1, if open { "open" } else { "closed" }))),
+                    gap_h(8.0),
+                    muted(format!("last toggle: {}", acc_note.get())),
+                ]),
             ),
             section("BREADCRUMB", breadcrumb(vec!["Home".into(), "Projects".into(), "Pebbles".into()])),
             section(
