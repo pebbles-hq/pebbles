@@ -20,8 +20,8 @@ fn swatch(color: Color, shade: &str) -> impl IntoWidget {
         gap_h(4.0),
         text(shade.to_string()).size(10.0).color(theme().colors.muted_foreground),
     ])
-    .center_cross()
-    .min()
+    .cross_axis_alignment(CrossAxisAlignment::Center)
+    .main_axis_size(MainAxisSize::Min)
 }
 
 /// One family: its name plus the 11 shades 50→950.
@@ -36,11 +36,11 @@ fn scale(name: &str, shades: [Color; 11]) -> impl IntoWidget {
     column(children![
         text(name.to_string()).size(12.0).semibold().color(theme().colors.foreground),
         gap_h(6.0),
-        row(chips).min(),
+        row(chips).main_axis_size(MainAxisSize::Min),
         gap_h(14.0),
     ])
-    .start()
-    .min()
+    .cross_axis_alignment(CrossAxisAlignment::Start)
+    .main_axis_size(MainAxisSize::Min)
 }
 
 macro_rules! fam {
@@ -75,8 +75,8 @@ pub fn colors() -> Element {
                     scale("neutral", fam!(neutral)),
                     scale("stone", fam!(stone)),
                 ])
-                .start()
-                .min(),
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
             ),
             section(
                 "WARM",
@@ -87,8 +87,8 @@ pub fn colors() -> Element {
                     scale("yellow", fam!(yellow)),
                     scale("lime", fam!(lime)),
                 ])
-                .start()
-                .min(),
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
             ),
             section(
                 "GREENS & CYANS",
@@ -99,8 +99,8 @@ pub fn colors() -> Element {
                     scale("cyan", fam!(cyan)),
                     scale("sky", fam!(sky)),
                 ])
-                .start()
-                .min(),
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
             ),
             section(
                 "BLUES & PURPLES",
@@ -113,8 +113,8 @@ pub fn colors() -> Element {
                     scale("pink", fam!(pink)),
                     scale("rose", fam!(rose)),
                 ])
-                .start()
-                .min(),
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
             ),
             section(
                 "YOUR OWN COLORS — devs are never limited to the built-ins",
@@ -130,10 +130,10 @@ pub fn colors() -> Element {
                         SizedBox::spacer(6.0, 0.0),
                         swatch(palette::emerald::S500, "success"),
                     ])
-                    .min(),
+                    .main_axis_size(MainAxisSize::Min),
                 ])
-                .start()
-                .min(),
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
             ),
         ],
     )

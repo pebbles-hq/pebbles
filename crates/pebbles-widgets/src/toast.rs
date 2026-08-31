@@ -8,7 +8,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, Offset};
+use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, Offset};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, IconKind};
 
 use crate::components::icon;
@@ -181,11 +181,11 @@ fn toast_card(e: &ToastEntry) -> AnyWidget {
         textcol.push(text(d.clone()).size(12.5).color(c.muted_foreground).into_widget());
     }
     left.push(
-        column(textcol).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().into_widget(),
+        column(textcol).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget(),
     );
 
     let mut r: Vec<AnyWidget> =
-        vec![row(left).main_axis_min().into_widget(), spacer().into_widget()];
+        vec![row(left).main_axis_size(MainAxisSize::Min).into_widget(), spacer().into_widget()];
     if let Some((label, f)) = &e.action {
         let id = e.id;
         let f = f.clone();
@@ -244,7 +244,7 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
         }
         cards.push(toast_card(e));
     }
-    let stack = column(cards).cross_axis_alignment(CrossAxisAlignment::End).main_axis_min();
+    let stack = column(cards).cross_axis_alignment(CrossAxisAlignment::End).main_axis_size(MainAxisSize::Min);
     // Anchor bottom-right; window_size gives the current window's logical bounds.
     let (ww, _wh) = window_size();
     let panel = if ww > 0.0 {

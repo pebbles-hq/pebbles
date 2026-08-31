@@ -1,8 +1,6 @@
 //! Unit tests for the pure layout logic — no GPU, no window.
 
-use pebbles_foundation::{
-    Alignment, Axis, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, Size,
-};
+use pebbles_foundation::{Alignment, Axis, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, Size};
 
 use crate::constraints::BoxConstraints;
 use crate::objects::{RenderColoredBox, RenderConstrainedBox, RenderFlex, RenderPadding};

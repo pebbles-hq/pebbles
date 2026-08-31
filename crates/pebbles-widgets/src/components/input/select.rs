@@ -9,7 +9,7 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, Color, EdgeInsets, Offset};
+use pebbles_foundation::{Alignment, Color, EdgeInsets, MainAxisSize, Offset};
 use pebbles_render::{
     Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, IconData, IconKind, PointerEvent,
 };
@@ -186,7 +186,7 @@ fn build_menu(
 
     // `main_axis_min` so the popover shrink-wraps its rows instead of filling the
     // overlay to the window's bottom edge.
-    let list = column(items).main_axis_min();
+    let list = column(items).main_axis_size(MainAxisSize::Min);
     let body: AnyWidget = match max_height {
         Some(h) => Container::new()
             .height(h)

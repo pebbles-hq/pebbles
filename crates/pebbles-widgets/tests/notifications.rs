@@ -4,7 +4,7 @@
 
 use pebbles_core::animation;
 use pebbles_core::{IntoWidget, Ui, WidgetExt, component};
-use pebbles_foundation::{Offset, Size, palette};
+use pebbles_foundation::{CrossAxisAlignment, MainAxisSize, Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{Container, OverlayHost, View, column, overlay, text, toast, tooltip};
 
@@ -82,8 +82,8 @@ fn tip_root() -> impl IntoWidget {
                 .delay(0.2),
             Container::new().width(240.0).height(220.0),
         ])
-        .start()
-        .min(),
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min),
     )
 }
 

@@ -1,7 +1,7 @@
 //! Data-display components: [`ListTile`] (a list row) and [`Table`] (a simple data
 //! grid).
 
-use pebbles_foundation::{CrossAxisAlignment, EdgeInsets};
+use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisSize};
 use pebbles_render::BoxDecoration;
 
 use crate::theme::theme;
@@ -57,7 +57,7 @@ impl IntoWidget for ListTile {
         }
         items.push(
             Expanded::new(
-                column(title_col).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min(),
+                column(title_col).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min),
             )
             .into_widget(),
         );
@@ -134,6 +134,6 @@ impl IntoWidget for Table {
             body.push(make_row(widgets));
         }
 
-        column(body).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().into_widget()
+        column(body).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()
     }
 }

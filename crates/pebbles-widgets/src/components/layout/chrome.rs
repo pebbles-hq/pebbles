@@ -6,9 +6,7 @@
 //! top bar on top, side nav on the left, body filling the rest, bottom nav below.
 
 use pebbles_core::IntoCallback;
-use pebbles_foundation::{
-    Color, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, palette,
-};
+use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, palette};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconData};
 
 use pebbles_core::children;
@@ -276,7 +274,7 @@ impl IntoWidget for SideNav {
         // sidenav's right edge; the items are inset via their own padding.
         let scroller = SingleChildScrollView::vertical(Padding::new(
             EdgeInsets::symmetric(10.0, 0.0),
-            column(items).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_min(),
+            column(items).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
         ))
         .scrollbar_thickness(6.0);
 
@@ -352,7 +350,7 @@ fn render_bottom_nav_item(w: &BottomNavItem) -> AnyWidget {
         text(w.label.clone()).size(11.0).weight(if w.selected { 600.0 } else { 500.0 }).color(fg),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center)
-    .main_axis_min();
+    .main_axis_size(MainAxisSize::Min);
 
     let container =
         Container::new().padding(EdgeInsets::symmetric(16.0, 8.0)).child(center(content));

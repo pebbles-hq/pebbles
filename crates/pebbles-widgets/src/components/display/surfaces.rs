@@ -1,7 +1,7 @@
 //! Surface & display components: [`Card`], [`Badge`], [`Alert`], [`Avatar`],
 //! [`Separator`] and [`Skeleton`].
 
-use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, Offset};
+use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, Offset};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, ImageFit, IconKind};
 
 use pebbles_core::children;
@@ -106,7 +106,7 @@ impl IntoWidget for Card {
                 head_texts.push(text(d).size(13.5).line_height(1.4).color(c.muted_foreground).into_widget());
             }
             let head_col =
-                column(head_texts).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min();
+                column(head_texts).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min);
             let header: AnyWidget = match self.action.take() {
                 Some(action) => row(children![head_col.into_widget(), spacer(), action])
                     .cross_axis_alignment(CrossAxisAlignment::Start)
@@ -129,7 +129,7 @@ impl IntoWidget for Card {
         let body: AnyWidget = if kids.len() == 1 {
             kids.pop().unwrap()
         } else {
-            column(kids).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().into_widget()
+            column(kids).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()
         };
 
         // Base presentation as a Style; the user's `.style(..)` merges on top (wins).
@@ -274,10 +274,10 @@ impl IntoWidget for Alert {
                         text(std::mem::take(&mut self.description)).size(13.0).color(c.muted_foreground),
                     ])
                     .cross_axis_alignment(CrossAxisAlignment::Start)
-                    .main_axis_min(),
+                    .main_axis_size(MainAxisSize::Min),
                 ])
                 .cross_axis_alignment(CrossAxisAlignment::Start)
-                .main_axis_min();
+                .main_axis_size(MainAxisSize::Min);
         styled(body, base.merge(self.style.take().unwrap_or_default()))
     }
 }

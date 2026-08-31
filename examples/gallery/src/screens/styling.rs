@@ -16,15 +16,15 @@ pub fn styling() -> Element {
                         text("styled Text").styled(styles::pill()),
                         gap_h(10.0),
                         // ...the same pill on a Row of icons...
-                        row(children![icon(IconKind::Star).size(18.0), icon(IconKind::Check).size(18.0)]).min().spacing(8.0)
+                        row(children![icon(IconKind::Star).size(18.0), icon(IconKind::Check).size(18.0)]).main_axis_size(MainAxisSize::Min).spacing(8.0)
                             .styled(styles::pill()),
                         gap_h(10.0),
                         // ...and a card style on a Column.
                         column(children![title("Card via style()"), muted("background + border + radius + shadow")])
-                            .start()
-                            .min()
+                            .cross_axis_alignment(CrossAxisAlignment::Start)
+                            .main_axis_size(MainAxisSize::Min)
                             .styled(styles::card()),
-                    ]).start().min().spacing(0.0),
+                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(0.0),
             ),
             section(
                 "GRADIENT · CIRCLE · STACKED SHADOWS — all via Style, on any widget",
@@ -46,7 +46,7 @@ pub fn styling() -> Element {
                             .shadow(BoxShadow::new(theme().colors.primary, Offset::new(0.0, 12.0), 24.0, -8.0)),
                     ),
                 ])
-                .min()
+                .main_axis_size(MainAxisSize::Min)
                 .spacing(16.0),
             ),
             section(
@@ -82,7 +82,7 @@ pub fn styling() -> Element {
                             .blend(BlendMode::Multiply),
                     ),
                 ])
-                .min()
+                .main_axis_size(MainAxisSize::Min)
                 .spacing(16.0),
             ),
             section(
@@ -101,8 +101,8 @@ pub fn styling() -> Element {
                     gap_h(8.0),
                     muted("styles::muted_panel()"),
                 ])
-                .start()
-                .min()
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min)
                 .styled(styles::muted_panel()),
             ),
             section(
@@ -120,7 +120,7 @@ pub fn styling() -> Element {
                     center(muted("16:9")).styled(style().width(160.0).aspect_ratio(16.0 / 9.0).radius_all(8.0).background(theme().colors.secondary)),
                     center(muted("pointer cursor")).styled(style().size(150.0, 64.0).radius_all(8.0).background(theme().colors.secondary).cursor(Cursor::Pointer)),
                 ])
-                .min()
+                .main_axis_size(MainAxisSize::Min)
                 .spacing(16.0),
             ),
             section(
@@ -133,8 +133,8 @@ pub fn styling() -> Element {
                     text("This paragraph is clamped to a single line via max_lines(1); the rest is dropped rather than wrapping onto a second line.")
                         .style(style().max_lines(1).width(360.0).color(theme().colors.muted_foreground)),
                 ])
-                .start()
-                .min(),
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
             ),
             section(
                 "COMPONENT .style — Card / Badge / Alert / TextField accept a Style",
@@ -145,12 +145,12 @@ pub fn styling() -> Element {
                         badge("themed").variant(BadgeVariant::Secondary),
                         gap_w(8.0),
                         badge("styled").style(style().background(palette::emerald::S500)),
-                    ]).min(),
+                    ]).main_axis_size(MainAxisSize::Min),
                     gap_h(10.0),
                     text_field().placeholder("styled field").width(320.0).style(style().background(palette::amber::S50).border(Border::new(palette::amber::S400, 1.5))),
                 ])
-                .start()
-                .min(),
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
             ),
         ],
     )

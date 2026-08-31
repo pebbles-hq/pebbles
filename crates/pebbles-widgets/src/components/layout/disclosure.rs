@@ -4,7 +4,7 @@
 use pebbles_core::IntoCallback;
 use std::rc::Rc;
 
-use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment};
+use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
 use pebbles_render::IconKind;
 
 use pebbles_core::children;
@@ -79,7 +79,7 @@ fn section_widget(section: Section, th: crate::Theme) -> AnyWidget {
             Padding::new(EdgeInsets::only(4.0, 0.0, 4.0, 12.0), section.content).into_widget(),
         );
     }
-    column(items).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().into_widget()
+    column(items).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()
 }
 
 
@@ -94,7 +94,7 @@ impl IntoWidget for Accordion {
                 children_vec.push(Container::new().color(th.colors.border).height(1.0).into_widget());
             }
         }
-        column(children_vec).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().into_widget()
+        column(children_vec).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()
     }
 }
 
@@ -200,5 +200,5 @@ fn render_collapsible(p: &CollapsibleProps) -> AnyWidget {
     if is_open {
         items.push(Padding::new(EdgeInsets::only(4.0, 0.0, 4.0, 12.0), p.content.clone()).into_widget());
     }
-    column(items).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().into_widget()
+    column(items).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()
 }

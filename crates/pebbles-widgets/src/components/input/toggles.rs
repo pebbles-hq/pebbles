@@ -14,7 +14,7 @@
 use pebbles_core::IntoCallback;
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, Axis, Color, CrossAxisAlignment, EdgeInsets};
+use pebbles_foundation::{Alignment, Axis, Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconKind};
 
 use crate::components::icon;
@@ -116,11 +116,11 @@ fn labeled(
             text(d).size(size.font() - 1.0).line_height(1.35).color(c.muted_foreground).into_widget(),
         );
     }
-    let block = column(lines).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min();
+    let block = column(lines).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min);
     let cross = if has_desc { CrossAxisAlignment::Start } else { CrossAxisAlignment::Center };
     row(children![control, SizedBox::spacer(size.gap(), 0.0), block])
         .cross_axis_alignment(cross)
-        .main_axis_min()
+        .main_axis_size(MainAxisSize::Min)
         .into_widget()
 }
 
@@ -748,9 +748,9 @@ fn render_radio_group(p: &RadioGroupProps) -> AnyWidget {
     match p.orientation {
         Axis::Vertical => column(items)
             .cross_axis_alignment(CrossAxisAlignment::Start)
-            .main_axis_min()
+            .main_axis_size(MainAxisSize::Min)
             .spacing(12.0)
             .into_widget(),
-        Axis::Horizontal => row(items).main_axis_min().spacing(20.0).into_widget(),
+        Axis::Horizontal => row(items).main_axis_size(MainAxisSize::Min).spacing(20.0).into_widget(),
     }
 }

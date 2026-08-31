@@ -3,6 +3,7 @@
 //! 24-hour or 12-hour (AM/PM) and a configurable step. Styleable like any input.
 
 use std::rc::Rc;
+use pebbles_foundation::{MainAxisSize};
 
 use pebbles_render::{IconKind, PointerEvent, lucide};
 
@@ -163,7 +164,7 @@ fn render_time(p: &Props) -> AnyWidget {
                 .collect();
             let list = Container::new()
                 .height(260.0)
-                .child(SingleChildScrollView::vertical(column(items).main_axis_min()).scrollbar_thickness(6.0))
+                .child(SingleChildScrollView::vertical(column(items).main_axis_size(MainAxisSize::Min)).scrollbar_thickness(6.0))
                 .into_widget();
             let menu = popover_surface(width, 4.0, list);
 

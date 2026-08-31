@@ -5,7 +5,7 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, EdgeInsets};
+use pebbles_foundation::{Alignment, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BoxDecoration, Cursor, IconKind, PointerEvent};
 
 use super::menu::{ActionRowProps, action_row};
@@ -123,7 +123,7 @@ fn render_search_menu(p: &MenuProps) -> AnyWidget {
                 })
             })
             .collect();
-        let col = column(items).main_axis_min();
+        let col = column(items).main_axis_size(MainAxisSize::Min);
         if scrolls {
             Container::new()
                 .height(240.0)
@@ -137,7 +137,7 @@ fn render_search_menu(p: &MenuProps) -> AnyWidget {
     popover_surface(
         width,
         4.0,
-        column(children![search, SizedBox::spacer(0.0, 6.0), list]).main_axis_min().into_widget(),
+        column(children![search, SizedBox::spacer(0.0, 6.0), list]).main_axis_size(MainAxisSize::Min).into_widget(),
     )
 }
 

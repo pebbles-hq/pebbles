@@ -17,8 +17,8 @@ fn nav_section(label: &str) -> impl IntoWidget {
             text(label).size(11.0).semibold().color(c.muted_foreground),
         ),
     ])
-    .start()
-    .min()
+    .cross_axis_alignment(CrossAxisAlignment::Start)
+    .main_axis_size(MainAxisSize::Min)
 }
 
 pub fn app() -> impl IntoWidget {
@@ -33,7 +33,7 @@ pub fn app() -> impl IntoWidget {
             SizedBox::spacer(8.0, 0.0),
             text("Pebbles").size(17.0).bold().color(c.foreground),
         ])
-        .min(),
+        .main_axis_size(MainAxisSize::Min),
     );
     let mut side = side_nav()
         .width(232.0)

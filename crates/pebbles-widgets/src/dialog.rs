@@ -13,7 +13,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use pebbles_foundation::{Color, Offset};
+use pebbles_foundation::{Color, MainAxisAlignment, MainAxisSize, Offset};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow};
 
 use crate::theme::theme;
@@ -261,13 +261,13 @@ impl AlertDialog {
         kids.push(SizedBox::spacer(0.0, 22.0).into_widget());
         kids.push(
             row(pebbles_core::children![cancel_btn, SizedBox::spacer(10.0, 0.0), confirm_btn])
-                .main_end()
+                .main_axis_alignment(MainAxisAlignment::End)
                 .into_widget(),
         );
 
         let content = column(kids)
             .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
-            .main_axis_min();
+            .main_axis_size(MainAxisSize::Min);
 
         dialog(content).width(440.0).dismissible(self.dismissible).open()
     }

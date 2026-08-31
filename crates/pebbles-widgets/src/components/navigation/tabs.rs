@@ -1,7 +1,7 @@
 //! [`Tabs`] — a tab bar plus the selected tab's content. Controlled: `selected`
 //! is a prop and each tab carries an `on_select` [`Callback`].
 
-use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, palette};
+use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisSize, palette};
 use pebbles_render::BoxDecoration;
 
 use pebbles_core::children;
@@ -65,7 +65,7 @@ impl IntoWidget for Tabs {
                     Container::new().color(underline_color).height(2.0),
                 ])
                 .cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .main_axis_min(),
+                .main_axis_size(MainAxisSize::Min),
             );
             let button = match tab.on_select {
                 Some(cb) => button.on_tap(cb),
@@ -83,12 +83,12 @@ impl IntoWidget for Tabs {
         column(children![
             Container::new()
                 .decoration(BoxDecoration::new().color(th.colors.background))
-                .child(row(bar).main_axis_min()),
+                .child(row(bar).main_axis_size(MainAxisSize::Min)),
             Container::new().color(th.colors.border).height(1.0),
             Padding::new(EdgeInsets::symmetric(0.0, 16.0), content),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_min()
+        .main_axis_size(MainAxisSize::Min)
         .into_widget()
     }
 }

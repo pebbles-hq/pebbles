@@ -19,8 +19,8 @@ fn panel(title: &str, desc: &str, body_w: impl IntoWidget, footer: impl IntoWidg
                 SizedBox::spacer(0.0, 22.0),
                 row(children![spacer(), footer]),
             ])
-            .stretch()
-            .min(),
+            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .main_axis_size(MainAxisSize::Min),
         )
         .into_widget()
 }
@@ -105,8 +105,8 @@ fn form(status: Signal<String>) -> impl IntoWidget {
                     SizedBox::spacer(0.0, 6.0),
                     text_field().bind(name).width(300.0),
                 ])
-                .start()
-                .min(),
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
                 row(children![
                     button("Cancel")
                         .variant(ButtonVariant::Ghost)
@@ -117,7 +117,7 @@ fn form(status: Signal<String>) -> impl IntoWidget {
                         close_dialog(close_b.get());
                     }),
                 ])
-                .min(),
+                .main_axis_size(MainAxisSize::Min),
             );
             let id = dialog(content).title("Edit profile").size(420, 320).open();
             idc.set(id);
@@ -147,7 +147,7 @@ fn confirm(status: Signal<String>) -> impl IntoWidget {
                         close_dialog(del.get());
                     }),
                 ])
-                .min(),
+                .main_axis_size(MainAxisSize::Min),
             );
             let id = dialog(content).title("Confirm deletion").size(440, 260).open();
             idc.set(id);

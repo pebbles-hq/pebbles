@@ -11,7 +11,7 @@
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, Offset};
+use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, Offset};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, IconKind};
 
 use super::{ButtonSize, ButtonVariant, button, icon_button};
@@ -197,10 +197,10 @@ fn grid(cells: Vec<AnyWidget>, cols: usize) -> AnyWidget {
     while !cells.is_empty() {
         let take = cols.min(cells.len());
         let rest = cells.split_off(take);
-        rows.push(row(cells).main_axis_min().into_widget());
+        rows.push(row(cells).main_axis_size(MainAxisSize::Min).into_widget());
         cells = rest;
     }
-    column(rows).main_axis_min().into_widget()
+    column(rows).main_axis_size(MainAxisSize::Min).into_widget()
 }
 
 /// A single day cell — highlights the selected day, then today.
@@ -308,7 +308,7 @@ fn days_panel(
             .into_widget(),
         CaptionLayout::Dropdown => {
             row(vec![month_chip(), SizedBox::spacer(6.0, 0.0).into_widget(), year_chip()])
-                .main_axis_min()
+                .main_axis_size(MainAxisSize::Min)
                 .into_widget()
         }
         CaptionLayout::DropdownMonths => row(vec![
@@ -316,7 +316,7 @@ fn days_panel(
             SizedBox::spacer(8.0, 0.0).into_widget(),
             year_lbl().into_widget(),
         ])
-        .main_axis_min()
+        .main_axis_size(MainAxisSize::Min)
         .cross_axis_alignment(CrossAxisAlignment::Center)
         .into_widget(),
         CaptionLayout::DropdownYears => row(vec![
@@ -324,7 +324,7 @@ fn days_panel(
             SizedBox::spacer(8.0, 0.0).into_widget(),
             year_chip(),
         ])
-        .main_axis_min()
+        .main_axis_size(MainAxisSize::Min)
         .cross_axis_alignment(CrossAxisAlignment::Center)
         .into_widget(),
     };
@@ -373,17 +373,17 @@ fn days_panel(
                 None => SizedBox::spacer(CELL, CELL).into_widget(),
             })
             .collect();
-        weeks.push(row(cells).main_axis_min().into_widget());
+        weeks.push(row(cells).main_axis_size(MainAxisSize::Min).into_widget());
     }
 
     let mut body: Vec<AnyWidget> = vec![
         header.into_widget(),
         SizedBox::spacer(0.0, 10.0).into_widget(),
-        row(weekdays).main_axis_min().into_widget(),
+        row(weekdays).main_axis_size(MainAxisSize::Min).into_widget(),
         SizedBox::spacer(0.0, 4.0).into_widget(),
     ];
     body.extend(weeks);
-    column(body).main_axis_min().into_widget()
+    column(body).main_axis_size(MainAxisSize::Min).into_widget()
 }
 
 fn months_panel(disp: Signal<(i32, u32)>, view: Signal<View>) -> AnyWidget {
@@ -408,7 +408,7 @@ fn months_panel(disp: Signal<(i32, u32)>, view: Signal<View>) -> AnyWidget {
         .collect();
 
     column(vec![header.into_widget(), SizedBox::spacer(0.0, 8.0).into_widget(), grid(cells, 3)])
-        .main_axis_min()
+        .main_axis_size(MainAxisSize::Min)
         .into_widget()
 }
 
@@ -436,7 +436,7 @@ fn years_panel(disp: Signal<(i32, u32)>, view: Signal<View>) -> AnyWidget {
         .collect();
 
     column(vec![header.into_widget(), SizedBox::spacer(0.0, 8.0).into_widget(), grid(cells, 3)])
-        .main_axis_min()
+        .main_axis_size(MainAxisSize::Min)
         .into_widget()
 }
 

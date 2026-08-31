@@ -3,7 +3,7 @@
 //! panel and shrinks its neighbor (respecting per-panel minimums). Horizontal or
 //! vertical; the group owns the live sizes, so it just works once mounted.
 
-use pebbles_foundation::{Alignment, Axis, CrossAxisAlignment};
+use pebbles_foundation::{Alignment, Axis, CrossAxisAlignment, MainAxisSize};
 use pebbles_render::{BorderRadius, BoxDecoration, Cursor};
 
 use crate::theme::theme;
@@ -159,8 +159,8 @@ fn render_resizable(p: &Props) -> AnyWidget {
     }
 
     if horiz {
-        row(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_min().into_widget()
+        row(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min).into_widget()
     } else {
-        column(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_min().into_widget()
+        column(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min).into_widget()
     }
 }

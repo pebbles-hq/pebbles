@@ -19,7 +19,7 @@ fn counter() -> impl IntoWidget {
             SizedBox::spacer(16.0, 0.0),
             button("+").on_pressed(move || count.update(|c| *c += 1)),
         ])
-        .min(),
+        .main_axis_size(MainAxisSize::Min),
     ]))
 }
 

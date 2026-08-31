@@ -47,16 +47,16 @@ fn with_callback() -> impl IntoWidget {
             SizedBox::spacer(0.0, 8.0),
             muted(format!("state: {}", note.get())),
         ])
-        .start()
-        .min(),
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min),
     )
 }
 
 fn custom_trigger() -> impl IntoWidget {
     let repos =
         column(children![repo_row("@pebbles/foundation"), repo_row("@pebbles/render"), repo_row("@pebbles/widgets")])
-            .start()
-            .min()
+            .cross_axis_alignment(CrossAxisAlignment::Start)
+            .main_axis_size(MainAxisSize::Min)
             .spacing(6.0);
 
     doc(
@@ -86,5 +86,5 @@ fn repo_row(name: &str) -> impl IntoWidget {
                 .radius(BorderRadius::all(theme().radius)),
         )
         .padding(EdgeInsets::symmetric(12.0, 10.0))
-        .child(row(children![icon(IconKind::Circle).size(14.0), gap_w(10.0), text(name.to_string()).size(13.5)]).min())
+        .child(row(children![icon(IconKind::Circle).size(14.0), gap_w(10.0), text(name.to_string()).size(13.5)]).main_axis_size(MainAxisSize::Min))
 }

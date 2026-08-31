@@ -1,7 +1,7 @@
 //! [`Panel`] — a titled, bordered surface for docking-style desktop layouts (a
 //! side panel, an inspector, a tool window).
 
-use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment};
+use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
 use pebbles_render::{Border, BorderRadius, BoxDecoration};
 
 use pebbles_core::children;
@@ -65,7 +65,7 @@ impl IntoWidget for Panel {
                     body,
                 ])
                 .cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .main_axis_min(),
+                .main_axis_size(MainAxisSize::Min),
             )
             .into_widget()
     }

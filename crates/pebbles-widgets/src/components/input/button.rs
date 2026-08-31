@@ -6,7 +6,7 @@
 use pebbles_core::IntoCallback;
 use std::rc::Rc;
 
-use pebbles_foundation::{Color, EdgeInsets};
+use pebbles_foundation::{Color, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, IconData};
 
 use pebbles_core::component::{Element, component_props};
@@ -362,7 +362,7 @@ fn render_button(b: &Button) -> Element {
                     }
                     kids.push(icon(kind).size(isz).color(fg).into_widget());
                 }
-                row(kids).main_axis_min().into_widget()
+                row(kids).main_axis_size(MainAxisSize::Min).into_widget()
             }
         }
     };
@@ -370,7 +370,7 @@ fn render_button(b: &Button) -> Element {
     let content: AnyWidget = if b.loading {
         let sp = spinner(b.font_size() as f64 + 3.0).color(fg);
         row(pebbles_core::children![sp, SizedBox::spacer(8.0, 0.0), content])
-            .main_axis_min()
+            .main_axis_size(MainAxisSize::Min)
             .into_widget()
     } else {
         content

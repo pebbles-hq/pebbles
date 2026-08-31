@@ -7,7 +7,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets};
+use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BoxDecoration};
 
 use crate::theme::theme;
@@ -186,7 +186,7 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
         kids.push(SizedBox::spacer(0.0, 14.0).into_widget());
     }
     kids.push(e.content);
-    let body = column(kids).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min();
+    let body = column(kids).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min);
 
     let horizontal = matches!(e.side, Side::Left | Side::Right);
     let (ww, wh) = window_size();

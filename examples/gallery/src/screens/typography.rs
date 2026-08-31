@@ -20,7 +20,7 @@ pub fn typography() -> Element {
                         text("Medium 500").weight(500.0),
                         text("Semibold 600").weight(600.0),
                         text("Bold 700").weight(700.0),
-                    ]).min().spacing(16.0),
-            ]).start().min().spacing(8.0)],
+                    ]).main_axis_size(MainAxisSize::Min).spacing(16.0),
+            ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(8.0)],
     )
 }

@@ -10,7 +10,7 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets};
+use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets, MainAxisSize};
 use pebbles_render::text_edit as edit;
 use pebbles_render::{
     BoxDecoration, Cursor, IconData, IconKind, PointerEvent, TextFieldStyle, lucide,
@@ -943,7 +943,7 @@ fn render_field(p: &Props) -> AnyWidget {
         col.push(SizedBox::spacer(0.0, 6.0).into_widget());
         col.push(text(help.clone()).size(12.5).color(c.muted_foreground).into_widget());
     }
-    column(col).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().into_widget()
+    column(col).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()
 }
 
 /// Place the caret from a pointer press. With `extend`, keep the anchor (Shift-click).

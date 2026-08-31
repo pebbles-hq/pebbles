@@ -2,6 +2,7 @@
 //! title, description and optional action.
 
 use pebbles_foundation::EdgeInsets;
+use pebbles_foundation::MainAxisSize;
 use pebbles_render::{BorderRadius, BoxDecoration, IconData};
 
 use crate::components::icon;
@@ -71,7 +72,7 @@ impl IntoWidget for Empty {
         center(
             column(items)
                 .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Center)
-                .main_axis_min(),
+                .main_axis_size(MainAxisSize::Min),
         )
         .into_widget()
     }

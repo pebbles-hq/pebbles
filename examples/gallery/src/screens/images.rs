@@ -45,7 +45,7 @@ pub fn images() -> Element {
                     ImageView::memory(SAMPLE).size(140.0, 140.0).fit(ImageFit::Contain).radius(BorderRadius::all(8.0)),
                     ImageView::memory(SAMPLE).size(140.0, 140.0).fit(ImageFit::Fill).radius(BorderRadius::all(8.0)),
                 ])
-                .min()
+                .main_axis_size(MainAxisSize::Min)
                 .spacing(14.0),
             ),
             doc(

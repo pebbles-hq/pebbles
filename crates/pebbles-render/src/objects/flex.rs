@@ -3,9 +3,7 @@
 //! main-axis space to flexible children by their flex factor, then position
 //! everything per the main- and cross-axis alignment.
 
-use pebbles_foundation::{
-    Axis, CrossAxisAlignment, FlexFit, MainAxisAlignment, MainAxisSize, Offset, Size,
-};
+use pebbles_foundation::{Axis, CrossAxisAlignment, FlexFit, MainAxisAlignment, MainAxisSize, Offset, Size};
 
 use crate::RenderId;
 use crate::constraints::BoxConstraints;

@@ -9,6 +9,7 @@
 //! ```
 
 use std::rc::Rc;
+use pebbles_foundation::{MainAxisSize};
 
 use crate::components::{ToggleSize, ToggleVariant, toggle};
 use crate::widgets::{row, text};
@@ -137,6 +138,6 @@ impl IntoWidget for ToggleGroup {
             }
             out.push(t.into_widget());
         }
-        row(out).spacing(group.spacing).main_axis_min().into_widget()
+        row(out).spacing(group.spacing).main_axis_size(MainAxisSize::Min).into_widget()
     }
 }

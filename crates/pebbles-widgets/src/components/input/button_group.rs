@@ -5,6 +5,7 @@
 //! plain toolbar instead.
 
 use pebbles_foundation::Axis;
+use pebbles_foundation::MainAxisSize;
 use pebbles_render::{Border, BorderRadius, BoxDecoration};
 
 use super::button::Button;
@@ -46,9 +47,9 @@ impl IntoWidget for ButtonGroup {
         if self.spacing > 0.0 {
             let kids: Vec<AnyWidget> = self.buttons.into_iter().map(IntoWidget::into_widget).collect();
             let line: AnyWidget = if horiz {
-                row(kids).main_axis_min().spacing(self.spacing).into_widget()
+                row(kids).main_axis_size(MainAxisSize::Min).spacing(self.spacing).into_widget()
             } else {
-                column(kids).main_axis_min().spacing(self.spacing).into_widget()
+                column(kids).main_axis_size(MainAxisSize::Min).spacing(self.spacing).into_widget()
             };
             return line;
         }
@@ -68,12 +69,12 @@ impl IntoWidget for ButtonGroup {
         let line: AnyWidget = if horiz {
             row(kids)
                 .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Stretch)
-                .main_axis_min()
+                .main_axis_size(MainAxisSize::Min)
                 .into_widget()
         } else {
             column(kids)
                 .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Stretch)
-                .main_axis_min()
+                .main_axis_size(MainAxisSize::Min)
                 .into_widget()
         };
         Container::new()

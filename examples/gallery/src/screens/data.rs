@@ -40,7 +40,7 @@ pub fn data() -> Element {
                         button("Bottom").variant(ButtonVariant::Secondary).size(ButtonSize::Sm)
                             .on_pressed(move || list_ctrl.animate_to(5000.0 * 44.0)),
                     ])
-                    .min(),
+                    .main_axis_size(MainAxisSize::Min),
                     SizedBox::spacer(0.0, 10.0),
                     Container::new()
                         .decoration(
@@ -66,8 +66,8 @@ pub fn data() -> Element {
                         })
                         .controller(list_ctrl)),
                 ])
-                .stretch()
-                .min(),
+                .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .main_axis_size(MainAxisSize::Min),
             ),
             section(
                 "VIRTUALIZED GRID — 600 cells, 4 columns, only visible rows built",
@@ -104,8 +104,8 @@ pub fn data() -> Element {
                         separator(),
                         list_tile("Drafts").leading(icon(IconKind::Info).size(18.0)),
                     ])
-                    .stretch()
-                    .min(),
+                    .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .main_axis_size(MainAxisSize::Min),
                 )
                 .padding(EdgeInsets::all(4.0)),
             ),

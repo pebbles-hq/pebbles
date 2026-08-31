@@ -5,7 +5,7 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, EdgeInsets};
+use pebbles_foundation::{Alignment, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconData, IconKind, PointerEvent};
 
 use super::popover::{anchor_below, popover_surface};
@@ -359,7 +359,7 @@ impl RebuildableMenu {
                 }
             });
         }
-        popover_surface(width, 4.0, column(kids).main_axis_min().into_widget())
+        popover_surface(width, 4.0, column(kids).main_axis_size(MainAxisSize::Min).into_widget())
     }
 }
 

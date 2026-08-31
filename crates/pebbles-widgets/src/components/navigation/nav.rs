@@ -2,7 +2,7 @@
 //! [`Pagination`].
 
 use pebbles_core::IntoCallback;
-use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment};
+use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
 use pebbles_render::{Border, BoxDecoration, IconKind};
 
 use pebbles_core::children;
@@ -43,7 +43,7 @@ impl IntoWidget for Breadcrumb {
                 items.push(SizedBox::spacer(6.0, 0.0).into_widget());
             }
         }
-        row(items).main_axis_min().into_widget()
+        row(items).main_axis_size(MainAxisSize::Min).into_widget()
     }
 }
 
@@ -67,7 +67,7 @@ impl IntoWidget for Toolbar {
                 BoxDecoration::new().color(th.colors.background).border(Border::new(th.colors.border, 1.0)),
             )
             .padding(EdgeInsets::symmetric(12.0, 8.0))
-            .child(row(std::mem::take(&mut self.children)).main_axis_min())
+            .child(row(std::mem::take(&mut self.children)).main_axis_size(MainAxisSize::Min))
             .into_widget()
     }
 }
@@ -143,7 +143,7 @@ impl IntoWidget for Pagination {
             next,
         ])
         .cross_axis_alignment(CrossAxisAlignment::Center)
-        .main_axis_min()
+        .main_axis_size(MainAxisSize::Min)
         .into_widget()
     }
 }

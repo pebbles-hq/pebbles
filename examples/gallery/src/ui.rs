@@ -27,7 +27,7 @@ pub fn screen(title: &str, sub: &str, body: impl IntoChildren) -> Element {
     SingleChildScrollView::vertical(
         Container::new()
             .padding(EdgeInsets::all(30.0))
-            .child(column(items).stretch().min()),
+            .child(column(items).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min)),
     )
     .into_widget()
 }
@@ -40,8 +40,8 @@ pub fn section(title: &str, body: impl IntoWidget) -> Element {
         body,
         gap_h(28.0),
     ])
-    .stretch()
-    .min()
+    .cross_axis_alignment(CrossAxisAlignment::Stretch)
+    .main_axis_size(MainAxisSize::Min)
     .into_widget()
 }
 
@@ -57,8 +57,8 @@ pub fn doc(title: &str, desc: &str, body: impl IntoWidget) -> Element {
         body,
         gap_h(34.0),
     ])
-    .start()
-    .min()
+    .cross_axis_alignment(CrossAxisAlignment::Start)
+    .main_axis_size(MainAxisSize::Min)
     .into_widget()
 }
 
@@ -94,11 +94,11 @@ fn render_stat_card(p: &StatCardProps) -> Card {
                 gap_w(10.0),
                 text(p.title.clone()).size(13.0).color(c.muted_foreground),
             ])
-            .min(),
+            .main_axis_size(MainAxisSize::Min),
             gap_h(10.0),
             text(p.value.clone()).size(26.0).bold().color(c.foreground),
         ])
-        .start()
-        .min(),
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min),
     )
 }

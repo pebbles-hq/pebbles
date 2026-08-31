@@ -19,12 +19,12 @@ fn counter_window() -> impl IntoWidget {
                 gap_w(14.0),
                 button("+1").size(ButtonSize::Sm).on_pressed(move || count.update(|c| *c += 1)),
             ])
-            .min(),
+            .main_axis_size(MainAxisSize::Min),
             SizedBox::spacer(0.0, 16.0),
             muted(format!("Message from main: {msg}")),
         ])
-        .start()
-        .min(),
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min),
     )
 }
 
@@ -65,7 +65,7 @@ fn open_section(win: Signal<Option<WindowId>>) -> impl IntoWidget {
                     }
                 }),
         ])
-        .min(),
+        .main_axis_size(MainAxisSize::Min),
     )
 }
 
@@ -81,7 +81,7 @@ fn shared_section() -> impl IntoWidget {
             gap_w(8.0),
             button("Reset").variant(ButtonVariant::Ghost).on_pressed(move || count.set(0)),
         ])
-        .min(),
+        .main_axis_size(MainAxisSize::Min),
     )
 }
 
@@ -97,14 +97,14 @@ fn message_section(draft: Signal<String>) -> impl IntoWidget {
                     state::ping().send(draft.get());
                 }),
             ])
-            .min(),
+            .main_axis_size(MainAxisSize::Min),
             SizedBox::spacer(0.0, 10.0),
             muted(format!(
                 "Last sent: {}",
                 state::ping().latest().unwrap_or_else(|| "—".into())
             )),
         ])
-        .start()
-        .min(),
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min),
     )
 }

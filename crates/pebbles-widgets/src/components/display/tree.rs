@@ -4,6 +4,7 @@
 
 use pebbles_core::IntoCallback;
 use pebbles_foundation::palette;
+use pebbles_foundation::MainAxisSize;
 use pebbles_render::{IconData, IconKind};
 
 use pebbles_core::context::Callback;
@@ -134,7 +135,7 @@ impl IntoWidget for TreeView {
         }
         column(rows)
             .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Stretch)
-            .main_axis_min()
+            .main_axis_size(MainAxisSize::Min)
             .into_widget()
     }
 }

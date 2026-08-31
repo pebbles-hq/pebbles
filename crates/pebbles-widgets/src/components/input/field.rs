@@ -11,6 +11,7 @@
 //! ```
 
 use pebbles_foundation::CrossAxisAlignment;
+use pebbles_foundation::{MainAxisSize};
 
 use crate::theme::theme;
 use crate::widgets::{SizedBox, column, text};
@@ -69,6 +70,6 @@ impl IntoWidget for Field {
             col.push(SizedBox::spacer(0.0, 6.0).into_widget());
             col.push(text(help).size(12.5).color(c.muted_foreground).into_widget());
         }
-        column(col).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_min().into_widget()
+        column(col).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()
     }
 }

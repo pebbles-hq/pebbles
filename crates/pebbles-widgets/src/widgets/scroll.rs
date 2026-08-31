@@ -6,7 +6,7 @@
 //! [`Ui::dispatch_scroll`](pebbles_core::Ui::dispatch_scroll) and scrollbar drags to
 //! [`Ui::begin_scrollbar_drag`](pebbles_core::Ui::begin_scrollbar_drag).
 
-use pebbles_foundation::{Axis, Color};
+use pebbles_foundation::{Axis, Color, MainAxisSize};
 use pebbles_render::{RenderObject, RenderScroll, ScrollbarPolicy, ScrollbarStyle};
 
 use crate::widgets::column;
@@ -104,7 +104,7 @@ impl RenderWidget for SingleChildScrollView {
 
 /// A vertically-scrolling list: a `Column` of `children` inside a scroll view.
 pub fn list_view(children: Vec<AnyWidget>) -> SingleChildScrollView {
-    SingleChildScrollView::vertical(column(children).main_axis_min())
+    SingleChildScrollView::vertical(column(children).main_axis_size(MainAxisSize::Min))
 }
 
 /// Make any widget scrollable — the "scrollable property" for e.g. a `Container`

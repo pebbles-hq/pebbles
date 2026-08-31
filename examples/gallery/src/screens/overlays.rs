@@ -25,8 +25,8 @@ fn sheets() -> impl IntoWidget {
                         gap_h(14.0),
                         text_field().placeholder("Search").width(280.0),
                     ])
-                    .start()
-                    .min(),
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .main_axis_size(MainAxisSize::Min),
                 )
                 .side(Side::Right)
                 .size(340.0)
@@ -42,7 +42,7 @@ fn sheets() -> impl IntoWidget {
                     .open();
             }),
         ])
-        .min(),
+        .main_axis_size(MainAxisSize::Min),
     )
 }
 
@@ -57,7 +57,7 @@ fn tooltips() -> impl IntoWidget {
             gap_w(12.0),
             tooltip(badge("Beta").variant(BadgeVariant::Secondary), "Not yet stable"),
         ])
-        .min(),
+        .main_axis_size(MainAxisSize::Min),
     )
 }
 
@@ -77,14 +77,14 @@ fn popovers() -> impl IntoWidget {
                     gap_h(8.0),
                     text_field().placeholder("Height").width(200.0),
                 ])
-                .start()
-                .min(),
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
             )
             .width(232.0)
             .height(200.0)
             .trigger_height(38.0),
         ])
-        .min(),
+        .main_axis_size(MainAxisSize::Min),
     )
 }
 
@@ -113,6 +113,6 @@ fn toasts() -> impl IntoWidget {
                 toast("Message archived").action("Undo", || {}).duration(6.0).show();
             }),
         ])
-        .min(),
+        .main_axis_size(MainAxisSize::Min),
     )
 }
