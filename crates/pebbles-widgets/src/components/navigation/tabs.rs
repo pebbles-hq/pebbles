@@ -9,7 +9,9 @@ use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisSize, palette};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor};
 
 use crate::theme::{mix, theme};
-use crate::widgets::{Container, GestureDetector, Opacity, Padding, column, gap_h, row, text};
+use crate::widgets::{
+    Container, GestureDetector, Opacity, Padding, Positioned, column, gap_h, row, stack, text,
+};
 use pebbles_core::context::Callback;
 use pebbles_core::focus::create_focus;
 use pebbles_core::keyboard::{KeyInput, Motion};
@@ -287,22 +289,23 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
         TabsVariant::Underline => {
             // The 2px accent line sits at the very bottom of the cell — on top of
             // the strip's hairline border (the shadcn overlap).
-            // The Google-style indicator: a 3px rounded bar on top of the strip's
-            // hairline, spanning the active tab's full width.
+            // The Google-style indicator: a 3px rounded bar at the very bottom,
+            // spanning the tab's FULL width (the Stack + Positioned fill gives it
+            // the label's width — a bare Container would collapse to 0 wide under
+            // the row's unbounded cross constraints).
             let underline_color = if p.selected { p.active_color } else { palette::TRANSPARENT };
-            column(children![
+            let underline = Container::new()
+                .decoration(
+                    BoxDecoration::new().color(underline_color).radius(BorderRadius::all(999.0)),
+                )
+                .height(3.0);
+            stack(children![
                 Padding::new(
                     p.tab_padding,
                     text(p.label.clone()).size(p.size).weight(p.weight).color(label_color),
                 ),
-                Container::new()
-                    .decoration(
-                        BoxDecoration::new().color(underline_color).radius(BorderRadius::all(999.0)),
-                    )
-                    .height(3.0),
+                Positioned::new(underline).left(0.0).right(0.0).bottom(0.0),
             ])
-            .cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .main_axis_size(MainAxisSize::Min)
             .into_widget()
         }
         TabsVariant::Pills => {
