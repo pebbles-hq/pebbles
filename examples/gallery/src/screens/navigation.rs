@@ -93,9 +93,35 @@ pub fn navigation() -> Element {
             ),
             section(
                 "PAGINATION",
-                pagination(pg.get(), 10)
-                    .on_prev(move || pg.update(|p| *p = p.saturating_sub(1).max(1)))
-                    .on_next(move || pg.update(|p| *p = (*p + 1).min(10))),
+                column(children![
+                    text("Numbers — shadcn classic: pills, ellipses, chevrons").size(12.5).color(theme().colors.muted_foreground),
+                    gap_h(8.0),
+                    pagination(pg.get(), 20)
+                        .variant(PaginationVariant::Numbers)
+                        .on_page(move |p| pg.set(p)),
+                    gap_h(16.0),
+                    text("Simple — chevrons around 'Page X of Y'").size(12.5).color(theme().colors.muted_foreground),
+                    gap_h(8.0),
+                    pagination(pg.get(), 20)
+                        .variant(PaginationVariant::Simple)
+                        .on_page(move |p| pg.set(p)),
+                    gap_h(16.0),
+                    text("Arrows — the compact 'X / Y'").size(12.5).color(theme().colors.muted_foreground),
+                    gap_h(8.0),
+                    pagination(pg.get(), 20)
+                        .variant(PaginationVariant::Arrows)
+                        .on_page(move |p| pg.set(p)),
+                    gap_h(16.0),
+                    text("Styled — a surface Style (card bg + radius)").size(12.5).color(theme().colors.muted_foreground),
+                    gap_h(8.0),
+                    pagination(pg.get(), 20)
+                        .variant(PaginationVariant::Numbers)
+                        .max_buttons(5)
+                        .style(style().background(theme().colors.card).radius_all(theme().radius).padding_xy(6.0, 4.0))
+                        .on_page(move |p| pg.set(p)),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
             ),
         ])
 }

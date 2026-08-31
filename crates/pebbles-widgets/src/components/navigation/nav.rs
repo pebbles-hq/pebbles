@@ -1,18 +1,21 @@
 //! Navigation & chrome components: [`Breadcrumb`], [`Toolbar`], [`StatusBar`] and
 //! [`Pagination`].
 
+use std::rc::Rc;
+
 use pebbles_core::IntoCallback;
 use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
 use pebbles_render::{Border, BoxDecoration, IconKind};
 
 use pebbles_core::children;
 use pebbles_core::context::Callback;
+use crate::style::{Style, styled};
 use crate::theme::theme;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{Container, gap_w, row, text};
+use crate::widgets::{Container, Padding, gap_w, row, text};
 
 use crate::components::icon;
-use crate::components::{ButtonSize, ButtonVariant, button, dropdown_menu, menu_item};
+use crate::components::{ButtonSize, ButtonVariant, button, dropdown_menu, icon_button, menu_item};
 
 /// A breadcrumb trail of path segments. When there are more than
 /// [`max_visible`](Breadcrumb::max_visible) segments, the middle ones collapse
@@ -141,51 +144,195 @@ impl IntoWidget for StatusBar {
 }
 
 /// Prev/Next pagination with a page indicator.
+/// The visual design of a [`Pagination`] control.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum PaginationVariant {
+    /// Numbered page pills with ellipses and chevron arrows — shadcn's classic.
+    #[default]
+    Numbers,
+    /// Chevron arrows around a "Page X of Y" label.
+    Simple,
+    /// Chevron arrows around a compact "X / Y" label.
+    Arrows,
+}
+
+/// Prev/next pagination with numbered pages. Build with [`pagination`].
 #[derive(Clone, Default)]
 pub struct Pagination {
     page: usize,
     total: usize,
+    variant: PaginationVariant,
+    max_buttons: usize,
+    on_page: Option<Rc<dyn Fn(usize)>>,
     on_prev: Option<Callback>,
     on_next: Option<Callback>,
+    style: Option<Style>,
 }
 
 /// Create a [`Pagination`] control (1-based `page`).
 pub fn pagination(page: usize, total: usize) -> Pagination {
-    Pagination { page, total, ..Default::default() }
+    Pagination { page, total, max_buttons: 7, ..Default::default() }
 }
 
 impl Pagination {
+    /// The design (default [`PaginationVariant::Numbers`]).
+    pub fn variant(mut self, variant: PaginationVariant) -> Self {
+        self.variant = variant;
+        self
+    }
+    /// The `Numbers` design: how many pills before collapsing to ellipses
+    /// (default 7; minimum 5).
+    pub fn max_buttons(mut self, n: usize) -> Self {
+        self.max_buttons = n.max(5);
+        self
+    }
+    /// Reports EVERY page change (number pills, prev and next) as the target
+    /// 1-based page — the unified callback. When set, `on_prev`/`on_next` are
+    /// not used.
+    pub fn on_page(mut self, f: impl Fn(usize) + 'static) -> Self {
+        self.on_page = Some(Rc::new(f));
+        self
+    }
+    /// Legacy per-button callbacks (used only when [`on_page`](Pagination::on_page)
+    /// is unset). Kept for compatibility with the previous API.
     pub fn on_prev(mut self, cb: impl IntoCallback) -> Self {
         self.on_prev = Some(cb.into_callback());
         self
     }
+    /// Legacy per-button callbacks (used only when [`on_page`](Pagination::on_page)
+    /// is unset).
     pub fn on_next(mut self, cb: impl IntoCallback) -> Self {
         self.on_next = Some(cb.into_callback());
         self
     }
+    /// Merge a [`Style`](crate::Style) over the control's surface (background,
+    /// border, radius, padding, …).
+    pub fn style(mut self, style: Style) -> Self {
+        self.style = Some(style);
+        self
+    }
 }
 
+/// One item in the `Numbers` window.
+enum PageItem {
+    Page(usize),
+    Ellipsis,
+}
+
+/// The numbered window: `1 … p-1 p p+1 … total`, collapsed to ellipses.
+fn page_window(page: usize, total: usize, max: usize) -> Vec<PageItem> {
+    if total <= max {
+        return (1..=total).map(PageItem::Page).collect();
+    }
+    let mut items = vec![PageItem::Page(1)];
+    if page > 3 {
+        items.push(PageItem::Ellipsis);
+    }
+    for p in (page.saturating_sub(1)).max(2)..=(page + 1).min(total - 1) {
+        items.push(PageItem::Page(p));
+    }
+    if page < total.saturating_sub(2) {
+        items.push(PageItem::Ellipsis);
+    }
+    items.push(PageItem::Page(total));
+    items
+}
+
+/// Fire a legacy plain callback, if it is one.
+fn invoke(cb: &Callback) {
+    if let Callback::Plain(f) = cb {
+        f();
+    }
+}
 
 impl IntoWidget for Pagination {
     fn into_widget(mut self) -> AnyWidget {
         let th = theme();
-        let mut prev = button("Previous").variant(ButtonVariant::Outline).size(ButtonSize::Sm);
-        if let Some(cb) = self.on_prev.take() {
-            prev = prev.on_click(cb);
+        let total = self.total.max(1);
+        let page = self.page.clamp(1, total);
+        let on_page = self.on_page.take();
+        let on_prev = self.on_prev.take();
+        let on_next = self.on_next.take();
+
+        // The unified navigation: on_page wins; legacy callbacks are the fallback.
+        let go: Rc<dyn Fn(usize)> = Rc::new(move |p| {
+            if let Some(f) = &on_page {
+                f(p);
+            } else if p < page {
+                if let Some(cb) = &on_prev {
+                    invoke(cb);
+                }
+            } else if p > page {
+                if let Some(cb) = &on_next {
+                    invoke(cb);
+                }
+            }
+        });
+
+        let mut prev = icon_button(IconKind::ChevronLeft).variant(ButtonVariant::Ghost).size(15.0);
+        if page > 1 {
+            let go = go.clone();
+            prev = prev.on_pressed(move || go(page - 1));
+        } else {
+            prev = prev.disabled(true);
         }
-        let mut next = button("Next").variant(ButtonVariant::Outline).size(ButtonSize::Sm);
-        if let Some(cb) = self.on_next.take() {
-            next = next.on_click(cb);
+        let mut next = icon_button(IconKind::ChevronRight).variant(ButtonVariant::Ghost).size(15.0);
+        if page < total {
+            let go = go.clone();
+            next = next.on_pressed(move || go(page + 1));
+        } else {
+            next = next.disabled(true);
         }
-        row(children![
-            prev,
-            gap_w(12.0),
-            text(format!("Page {} of {}", self.page, self.total)).size(13.0).color(th.colors.muted_foreground),
-            gap_w(12.0),
-            next,
-        ])
-        .cross_axis_alignment(CrossAxisAlignment::Center)
-        .main_axis_size(MainAxisSize::Min)
-        .into_widget()
+
+        let line: AnyWidget = match self.variant {
+            PaginationVariant::Numbers => {
+                let mut kids: Vec<AnyWidget> = vec![prev.into_widget()];
+                for item in page_window(page, total, self.max_buttons) {
+                    kids.push(gap_w(4.0).into_widget());
+                    match item {
+                        PageItem::Page(p) => {
+                            let active = p == page;
+                            let mut b = button(format!("{p}")).size(ButtonSize::Sm).variant(
+                                if active { ButtonVariant::Primary } else { ButtonVariant::Outline },
+                            );
+                            let go = go.clone();
+                            b = b.on_pressed(move || go(p));
+                            kids.push(b.into_widget());
+                        }
+                        PageItem::Ellipsis => kids.push(
+                            Padding::new(
+                                EdgeInsets::symmetric(4.0, 2.0),
+                                text("…").size(13.0).color(th.colors.muted_foreground),
+                            )
+                            .into_widget(),
+                        ),
+                    }
+                }
+                kids.push(gap_w(4.0).into_widget());
+                kids.push(next.into_widget());
+                row(kids)
+                    .cross_axis_alignment(CrossAxisAlignment::Center)
+                    .main_axis_size(MainAxisSize::Min)
+                    .into_widget()
+            }
+            PaginationVariant::Simple | PaginationVariant::Arrows => {
+                let label = if self.variant == PaginationVariant::Simple {
+                    format!("Page {page} of {total}")
+                } else {
+                    format!("{page} / {total}")
+                };
+                row(children![
+                    prev,
+                    gap_w(10.0),
+                    text(label).size(13.0).color(th.colors.muted_foreground),
+                    gap_w(10.0),
+                    next,
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Center)
+                .main_axis_size(MainAxisSize::Min)
+                .into_widget()
+            }
+        };
+        styled(line, self.style.unwrap_or_default()).into_widget()
     }
 }
