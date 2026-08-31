@@ -315,6 +315,7 @@ impl RebuildableMenu {
                         reserve_gutter: reserve,
                         destructive: *destructive,
                         disabled: *disabled,
+                        highlighted: false,
                         width: inner,
                         on_select: Rc::new(move || {
                             if let Some(f) = &cb {
@@ -350,6 +351,7 @@ impl RebuildableMenu {
                         reserve_gutter: reserve,
                         destructive: false,
                         disabled: false,
+                        highlighted: false,
                         width: inner,
                         on_select: Rc::new(move || {
                             on_toggle(!now);
@@ -377,6 +379,9 @@ pub(crate) struct ActionRowProps {
     pub reserve_gutter: bool,
     pub destructive: bool,
     pub disabled: bool,
+    /// Force the active/highlight background even without a mouse hover — set by
+    /// keyboard list navigation to mark the active row.
+    pub highlighted: bool,
     pub width: f64,
     pub on_select: Rc<dyn Fn()>,
 }
@@ -390,7 +395,7 @@ fn render_action_row(p: &ActionRowProps) -> AnyWidget {
     let c = theme().colors;
     let hovered = create_signal(false);
     let active = !p.disabled;
-    let t = if active && hovered.get() { 1.0 } else { 0.0 };
+    let t = if active && (hovered.get() || p.highlighted) { 1.0 } else { 0.0 };
 
     let base_fg = if p.destructive { c.destructive } else { c.popover_foreground };
     let (bg, fg) = if p.destructive {

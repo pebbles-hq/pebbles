@@ -8,6 +8,7 @@ use std::rc::Rc;
 use pebbles_foundation::{Alignment, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BoxDecoration, Cursor, IconKind, PointerEvent};
 
+use super::list_nav::list_nav;
 use super::menu::{ActionRowProps, action_row};
 use super::popover::{anchor_below, popover_surface};
 use super::text_field::text_field;
@@ -78,6 +79,7 @@ fn render_search_menu(p: &MenuProps) -> AnyWidget {
     let inner = width - 8.0;
     let query = create_signal(String::new());
     let q = query.get().to_lowercase();
+    let nav = list_nav();
 
     let matches: Vec<(usize, String)> = p
         .options
@@ -87,11 +89,30 @@ fn render_search_menu(p: &MenuProps) -> AnyWidget {
         .map(|(i, o)| (i, o.clone()))
         .collect();
 
+    // Keep the keyboard cursor in range after filtering, then map a picked
+    // *visible-row* index back to the original option index.
+    nav.clamp(matches.len());
+    let active = nav.active();
+    let pick_by_row: Rc<dyn Fn(usize)> = {
+        let rows: Vec<usize> = matches.iter().map(|(i, _)| *i).collect();
+        let on_pick = p.on_pick.clone();
+        Rc::new(move |row| {
+            if let Some(&orig) = rows.get(row) {
+                on_pick(orig);
+            }
+        })
+    };
+    let nav_handler = {
+        let pick_by_row = pick_by_row.clone();
+        nav.handler(matches.len(), move |row| pick_by_row(row), hide_overlay)
+    };
+
     let search = text_field()
         .leading(IconKind::Search)
         .placeholder(p.search_ph.clone())
         .width(inner)
         .autofocus()
+        .on_nav(nav_handler)
         .on_changed(move |s| query.set(s.to_string()));
 
     let list: AnyWidget = if matches.is_empty() {
@@ -105,7 +126,8 @@ fn render_search_menu(p: &MenuProps) -> AnyWidget {
         let scrolls = matches.len() > 6;
         let items: Vec<AnyWidget> = matches
             .into_iter()
-            .map(|(i, label)| {
+            .enumerate()
+            .map(|(row, (i, label))| {
                 let sel = (p.is_selected)(i);
                 let pick = p.on_pick.clone();
                 action_row(ActionRowProps {
@@ -116,6 +138,7 @@ fn render_search_menu(p: &MenuProps) -> AnyWidget {
                     reserve_gutter: true,
                     destructive: false,
                     disabled: false,
+                    highlighted: active == Some(row),
                     width: inner,
                     on_select: Rc::new(move || pick(i)),
                 })

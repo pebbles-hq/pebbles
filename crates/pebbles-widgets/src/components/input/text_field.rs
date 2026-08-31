@@ -169,6 +169,7 @@ pub struct TextField {
     on_editing_complete: Option<Rc<dyn Fn()>>,
     on_tap: Option<Rc<dyn Fn()>>,
     on_focus_change: Option<Rc<dyn Fn(bool)>>,
+    on_nav: Option<Rc<dyn Fn(KeyInput) -> bool>>,
     style: Option<crate::style::Style>,
 }
 
@@ -198,6 +199,7 @@ pub fn text_field() -> TextField {
         on_editing_complete: None,
         on_tap: None,
         on_focus_change: None,
+        on_nav: None,
         style: None,
     }
 }
@@ -337,6 +339,14 @@ impl TextField {
         self.on_focus_change = Some(Rc::new(f));
         self
     }
+    /// Intercept keyboard intents before the field edits: `f(key)` runs first and,
+    /// if it returns `true`, the key is consumed (the field does not edit). Used to
+    /// drive list navigation (Up/Down/Enter/Escape) from a search field — see the
+    /// combobox and command palette.
+    pub fn on_nav(mut self, f: impl Fn(KeyInput) -> bool + 'static) -> Self {
+        self.on_nav = Some(Rc::new(f));
+        self
+    }
 }
 
 struct Props {
@@ -363,6 +373,7 @@ struct Props {
     on_editing_complete: Option<Rc<dyn Fn()>>,
     on_tap: Option<Rc<dyn Fn()>>,
     on_focus_change: Option<Rc<dyn Fn(bool)>>,
+    on_nav: Option<Rc<dyn Fn(KeyInput) -> bool>>,
     style: Option<crate::style::Style>,
 }
 
@@ -394,6 +405,7 @@ impl IntoWidget for TextField {
                 on_editing_complete: self.on_editing_complete,
                 on_tap: self.on_tap,
                 on_focus_change: self.on_focus_change,
+                on_nav: self.on_nav,
                 style: self.style,
             },
         )
@@ -752,7 +764,14 @@ fn render_field(p: &Props) -> AnyWidget {
         let filter = eff_filter.clone();
         let max_length = p.max_length;
         let format = eff_format.clone();
+        let on_nav = p.on_nav.clone();
         focus.register_editor(Rc::new(move |k: KeyInput| {
+            // A consumer (list navigation) gets first refusal on each key.
+            if let Some(nav) = &on_nav
+                && nav(k.clone())
+            {
+                return;
+            }
             let (changed, submit) =
                 ed.apply(k, filter.as_deref(), max_length, format.as_deref());
             if changed && let Some(cb) = &on_changed {

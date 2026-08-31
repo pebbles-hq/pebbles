@@ -151,6 +151,7 @@ fn render_time(p: &Props) -> AnyWidget {
                         reserve_gutter: false,
                         destructive: false,
                         disabled: false,
+                        highlighted: false,
                         width: inner,
                         on_select: Rc::new(move || {
                             text.set(slot.clone());
