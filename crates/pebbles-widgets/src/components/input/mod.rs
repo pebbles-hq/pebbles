@@ -36,7 +36,7 @@ pub use menu::{
     menu_separator,
 };
 pub use popover::{Popover, popover};
-pub use select::{Select, SelectItem, select, select_item};
+pub use select::{Select, SelectItem, select, select_group, select_item};
 pub use slider::{Slider, slider};
 pub use text_field::{InputKind, TextField, text_area, text_field};
 pub use toggle_group::{ToggleGroup, toggle_group, toggle_group_labels};

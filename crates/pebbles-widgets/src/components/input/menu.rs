@@ -8,11 +8,13 @@ use std::rc::Rc;
 use pebbles_foundation::{Alignment, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconData, IconKind, PointerEvent};
 
+use super::list_nav::{ListNav, list_nav};
 use super::popover::{anchor_below, popover_surface};
 use crate::components::icon;
 use crate::overlay::{hide_overlay, show_overlay};
 use crate::theme::{mix, theme};
 use crate::widgets::{Container, GestureDetector, Opacity, column, gap_h, row, spacer, text};
+use pebbles_core::focus::create_focus;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{action_event, children, component_props, create_signal};
 
@@ -227,6 +229,9 @@ pub(crate) fn estimate_height(entries: &[MenuEntry]) -> f64 {
 fn render_dropdown(p: &Props) -> AnyWidget {
     let width = p.width;
     let hovered = create_signal(false);
+    let node = create_focus();
+    let nav = list_nav();
+
     // A custom trigger is used verbatim; the default one gets button-like hover.
     let trigger = p
         .trigger
@@ -238,17 +243,52 @@ fn render_dropdown(p: &Props) -> AnyWidget {
     let blueprint = Rc::new(RebuildableMenu::from(&p.entries));
     let menu_h = estimate_height(&p.entries);
 
+    // Keyboard: one action per actionable row (enabled items + check rows); the
+    // SI-4 list model drives Up/Down/Enter/Escape while the menu is open.
+    let actions = blueprint.actions();
+    node.register(Rc::new(|| {}), None, false);
+    {
+        let actions = actions.clone();
+        let handler = nav.handler(actions.len(), move |row| actions[row](), hide_overlay);
+        node.register_editor(Rc::new(move |k| {
+            handler(k);
+        }));
+    }
+
+    let open_menu = {
+        let blueprint = blueprint.clone();
+        move |e: PointerEvent| {
+            let trigger_left = e.global.x - e.position.x;
+            let trigger_top = e.global.y - e.position.y;
+            let (left, top) = anchor_below(trigger_left, trigger_top, 38.0, width, menu_h);
+            let menu = component_props(
+                render_dd_menu,
+                DdMenuProps { blueprint: blueprint.clone(), width, nav, actions: actions.clone() },
+            );
+            show_overlay(menu.into_widget(), left, top, width, menu_h);
+            node.request_focus();
+        }
+    };
+
     GestureDetector::new(trigger)
         .cursor(Cursor::Pointer)
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false))
-        .on_tap(action_event(move |e: PointerEvent| {
-            let trigger_left = e.global.x - e.position.x;
-            let trigger_top = e.global.y - e.position.y;
-            let (left, top) = anchor_below(trigger_left, trigger_top, 38.0, width, menu_h);
-            show_overlay(blueprint.build(width), left, top, width, menu_h);
-        }))
+        .on_tap(action_event(open_menu))
         .into_widget()
+}
+
+/// Props for the open dropdown menu — a component so the keyboard highlight
+/// re-renders reactively as the [`ListNav`] active row changes.
+struct DdMenuProps {
+    blueprint: Rc<RebuildableMenu>,
+    width: f64,
+    nav: ListNav,
+    actions: Vec<Rc<dyn Fn()>>,
+}
+
+fn render_dd_menu(p: &DdMenuProps) -> AnyWidget {
+    p.blueprint.build_rows(p.width, p.nav.active(), &p.actions)
 }
 
 // A cloneable blueprint of the entries so the menu can be rebuilt each open (the
@@ -295,7 +335,43 @@ impl RebuildableMenu {
         RebuildableMenu { entries }
     }
 
+    /// One run-action per keyboard-navigable row (enabled items + check rows), in
+    /// entry order: each runs its callback and closes the menu.
+    pub(crate) fn actions(&self) -> Vec<Rc<dyn Fn()>> {
+        self.entries
+            .iter()
+            .filter_map(|e| match e {
+                BpEntry::Item { on_select, disabled, .. } if !disabled => {
+                    let f = on_select.clone();
+                    Some(Rc::new(move || {
+                        if let Some(g) = &f {
+                            g();
+                        }
+                        hide_overlay();
+                    }) as Rc<dyn Fn()>)
+                }
+                BpEntry::Check { checked, on_toggle, .. } => {
+                    let on_toggle = on_toggle.clone();
+                    let now = *checked;
+                    Some(Rc::new(move || {
+                        on_toggle(!now);
+                        hide_overlay();
+                    }) as Rc<dyn Fn()>)
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Build the menu without a keyboard highlight (mouse-driven, e.g. the
+    /// context menu).
     pub(crate) fn build(&self, width: f64) -> AnyWidget {
+        self.build_rows(width, None, &self.actions())
+    }
+
+    /// Build the menu, highlighting row `active` (the keyboard cursor, over the
+    /// actionable rows only) and using `actions` for every row's run-and-close.
+    pub(crate) fn build_rows(&self, width: f64, active: Option<usize>, actions: &[Rc<dyn Fn()>]) -> AnyWidget {
         let inner = width - 8.0;
         // If any row carries an icon or is a checkbox, reserve the leading gutter on
         // every row so labels line up.
@@ -303,10 +379,34 @@ impl RebuildableMenu {
             matches!(e, BpEntry::Item { icon: Some(_), .. } | BpEntry::Check { .. })
         });
         let mut kids: Vec<AnyWidget> = Vec::new();
+        let mut row = 0usize;
         for e in &self.entries {
             kids.push(match e {
                 BpEntry::Item { label, icon, shortcut, on_select, disabled, destructive } => {
-                    let cb = on_select.clone();
+                    let (highlighted, pick): (bool, Rc<dyn Fn()>);
+                    if *disabled {
+                        let cb = on_select.clone();
+                        highlighted = false;
+                        pick = Rc::new(move || {
+                            if let Some(f) = &cb {
+                                f();
+                            }
+                            hide_overlay();
+                        });
+                    } else {
+                        let idx = row;
+                        row += 1;
+                        highlighted = active == Some(idx);
+                        let cb = on_select.clone();
+                        pick = actions.get(idx).cloned().unwrap_or_else(move || {
+                            Rc::new(move || {
+                                if let Some(f) = &cb {
+                                    f();
+                                }
+                                hide_overlay();
+                            })
+                        });
+                    }
                     action_row(ActionRowProps {
                         label: label.clone(),
                         icon: *icon,
@@ -315,14 +415,9 @@ impl RebuildableMenu {
                         reserve_gutter: reserve,
                         destructive: *destructive,
                         disabled: *disabled,
-                        highlighted: false,
+                        highlighted,
                         width: inner,
-                        on_select: Rc::new(move || {
-                            if let Some(f) = &cb {
-                                f();
-                            }
-                            hide_overlay();
-                        }),
+                        on_select: pick,
                     })
                 }
                 BpEntry::Label(l) => Container::new()
@@ -341,8 +436,17 @@ impl RebuildableMenu {
                     )
                     .into_widget(),
                 BpEntry::Check { label, checked, on_toggle } => {
-                    let on_toggle = on_toggle.clone();
+                    let highlighted = active == Some(row);
                     let now = *checked;
+                    let on_toggle = on_toggle.clone();
+                    let pick: Rc<dyn Fn()> = match actions.get(row) {
+                        Some(a) => a.clone(),
+                        None => Rc::new(move || {
+                            on_toggle(!now);
+                            hide_overlay();
+                        }),
+                    };
+                    row += 1;
                     action_row(ActionRowProps {
                         label: label.clone(),
                         icon: None,
@@ -351,12 +455,9 @@ impl RebuildableMenu {
                         reserve_gutter: reserve,
                         destructive: false,
                         disabled: false,
-                        highlighted: false,
+                        highlighted,
                         width: inner,
-                        on_select: Rc::new(move || {
-                            on_toggle(!now);
-                            hide_overlay();
-                        }),
+                        on_select: pick,
                     })
                 }
             });

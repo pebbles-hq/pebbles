@@ -6,6 +6,7 @@ const PLANS: [&str; 7] = ["Free", "Pro", "Enterprise", "Team", "Startup", "Growt
 
 pub fn selects() -> Element {
     let picked = create_signal(String::from("Pro"));
+    let region = create_signal(String::from("Manila"));
     let action_note = create_signal(String::new());
     let show_status = create_signal(true);
     let show_activity = create_signal(false);
@@ -46,6 +47,30 @@ pub fn selects() -> Element {
                     ])
                 .cross_axis_alignment(CrossAxisAlignment::Start)
                 .main_axis_size(MainAxisSize::Min),
+            ),
+            doc(
+                "Select — groups, disabled, clearable",
+                "select_group() renders a section header; .disabled() dims an option (unpickable, keyboard skips it); .clearable(true) turns the chevron into a ✕ that resets to the placeholder.",
+                column(
+                    children![
+                        select(
+                            select_group("Asia", [
+                                select_item("Manila"),
+                                select_item("Tokyo"),
+                                select_item("Singapore"),
+                            ])
+                            .into_iter()
+                            .chain(select_group("Europe", [select_item("Berlin"), select_item("Paris")]))
+                            .chain([select_item("Remote").disabled(true)]),
+                        )
+                        .width(260.0)
+                        .value(0)
+                        .clearable(true)
+                        .placeholder("Choose a region")
+                        .on_changed(move |_i, label| region.set(label.to_string()))
+                        .on_cleared(move || region.set("—".into())),
+                        muted(format!("selected: {}", region.get())),
+                    ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(10.0),
             ),
             doc(
                 "Dropdown menu — run an action",
