@@ -11,8 +11,12 @@
 use std::rc::Rc;
 use pebbles_foundation::{MainAxisSize};
 
+use pebbles_foundation::CrossAxisAlignment;
+use pebbles_render::{Border, BorderRadius, BoxDecoration};
+
 use crate::components::{ToggleSize, ToggleVariant, toggle};
-use crate::widgets::{row, text};
+use crate::theme::theme;
+use crate::widgets::{Container, row, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// A joined set of toggle cells. Build with [`toggle_group`] / [`toggle_group_labels`].
@@ -37,7 +41,7 @@ fn make(cells: Vec<AnyWidget>) -> ToggleGroup {
         variant: ToggleVariant::Outline,
         size: ToggleSize::default(),
         disabled: false,
-        spacing: 6.0,
+        spacing: 0.0,
         on_changed: None,
     }
 }
@@ -126,24 +130,58 @@ impl ToggleGroup {
 
 impl IntoWidget for ToggleGroup {
     fn into_widget(mut self) -> AnyWidget {
+        let th = theme();
         let cells = std::mem::take(&mut self.cells);
         let group = Rc::new(self);
-        let mut out: Vec<AnyWidget> = Vec::with_capacity(cells.len());
-        for (i, cell) in cells.into_iter().enumerate() {
+        let n = cells.len();
+
+        let cell_widget = |i: usize, cell: AnyWidget, radius: f64| -> AnyWidget {
             let pressed = group.values.contains(&i);
             let g = group.clone();
             let mut t = toggle(pressed, cell)
                 .variant(group.variant)
                 .size(group.size)
-                .disabled(group.disabled);
+                .disabled(group.disabled)
+                .radius(radius);
             if let Some(cb) = group.on_changed.clone() {
                 t = t.on_changed(move || {
                     let next = g.next_selection(i);
                     cb(&next);
                 });
             }
-            out.push(t.into_widget());
+            t.into_widget()
+        };
+
+        if group.spacing > 0.0 {
+            // Detached cells: each keeps its own shape, just spaced apart.
+            let mut out: Vec<AnyWidget> = Vec::with_capacity(n);
+            for (i, cell) in cells.into_iter().enumerate() {
+                out.push(cell_widget(i, cell, th.radius));
+            }
+            return row(out).spacing(group.spacing).main_axis_size(MainAxisSize::Min).into_widget();
         }
-        row(out).spacing(group.spacing).main_axis_size(MainAxisSize::Min).into_widget()
+
+        // Joined segmented strip (the shadcn look): flatten every cell's radius,
+        // divide with a hairline, and clip the whole strip to a rounded frame.
+        let mut kids: Vec<AnyWidget> = Vec::with_capacity(n * 2);
+        for (i, cell) in cells.into_iter().enumerate() {
+            kids.push(cell_widget(i, cell, 0.0));
+            if i + 1 < n {
+                kids.push(Container::new().color(th.colors.border).width(1.0).into_widget());
+            }
+        }
+        Container::new()
+            .decoration(
+                BoxDecoration::new()
+                    .border(Border::new(th.colors.border, 1.0))
+                    .radius(BorderRadius::all(th.radius)),
+            )
+            .clip()
+            .child(
+                row(kids)
+                    .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .main_axis_size(MainAxisSize::Min),
+            )
+            .into_widget()
     }
 }

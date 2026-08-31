@@ -480,6 +480,7 @@ pub struct Toggle {
     variant: ToggleVariant,
     size: ToggleSize,
     color: Option<Color>,
+    radius: Option<f64>,
     disabled: bool,
     autofocus: bool,
     on_changed: Option<Callback>,
@@ -504,6 +505,12 @@ impl Toggle {
         self.color = Some(color);
         self
     }
+    /// Corner radius override (defaults to the theme radius; a joined
+    /// [`ToggleGroup`](super::ToggleGroup) flattens its cells with `0.0`).
+    pub fn radius(mut self, radius: f64) -> Self {
+        self.radius = Some(radius);
+        self
+    }
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
         self
@@ -524,6 +531,7 @@ struct ToggleProps {
     variant: ToggleVariant,
     size: ToggleSize,
     color: Option<Color>,
+    radius: Option<f64>,
     disabled: bool,
     autofocus: bool,
     on_changed: Option<Callback>,
@@ -540,6 +548,7 @@ impl IntoWidget for Toggle {
                 variant: self.variant,
                 size: self.size,
                 color: self.color,
+                radius: self.radius,
                 disabled: self.disabled,
                 autofocus: self.autofocus,
                 on_changed: self.on_changed,
@@ -562,7 +571,9 @@ fn render_toggle(p: &ToggleProps) -> AnyWidget {
     let hover_bg = mix(c.background, c.accent, 0.6 * hv as f32);
     let bg = mix(hover_bg, active, t as f32);
 
-    let mut deco = BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius));
+    let mut deco = BoxDecoration::new()
+        .color(bg)
+        .radius(BorderRadius::all(p.radius.unwrap_or(theme().radius)));
     if focused {
         deco = deco.border(Border::new(c.ring, 2.0));
     } else if p.variant == ToggleVariant::Outline {

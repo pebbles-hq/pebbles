@@ -62,9 +62,9 @@ fn toggle_group_single_select_picks_one() {
     };
     frame(&mut ui);
 
-    // The three cells sit left-to-right; tap within the second cell. Cells are ~48–64px
-    // wide with 6px gaps starting at x=0, y≈20. The middle cell is comfortably past x=90.
-    let mid = Offset::new(110.0, 18.0);
+    // The three cells sit left-to-right as a JOINED strip (no gaps); each is ~52px
+    // wide, so the middle cell spans x ≈ 52..104.
+    let mid = Offset::new(78.0, 18.0);
     ui.dispatch_pointer_down(mid);
     ui.dispatch_tap(mid);
     ui.dispatch_pointer_up(mid);
