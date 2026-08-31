@@ -63,14 +63,18 @@ fn fetch(url: &str) -> Result<Image, String> {
     decode(&bytes)
 }
 
-/// A component hook: start (once) a network load for `url` and return its state. The
-/// fetch runs in the background via [`pebbles_core::spawn`]; its result is delivered
-/// back on the UI thread into `state`.
-fn use_network(url: &str) -> Signal<ImageState> {
+/// The network load state: the load effect is position-stable, so the URL is a
+/// SIGNAL it reads — a source change re-fetches, and nothing else re-runs it.
+/// The fetch runs in the background via [`pebbles_core::spawn`]; its result is
+/// delivered back on the UI thread into `state`.
+fn use_network(url: Signal<String>) -> Signal<ImageState> {
     let state = create_signal(ImageState::Loading);
-    let url = url.to_string();
     create_effect(move || {
-        let url = url.clone();
+        let url = url.get(); // subscribe — the effect re-runs when the URL changes
+        if url.is_empty() {
+            return;
+        }
+        state.set(ImageState::Loading);
         spawn(
             move || match fetch(&url) {
                 Ok(img) => ImageState::Loaded(img),
@@ -260,10 +264,19 @@ fn error_box(p: &Props) -> AnyWidget {
 }
 
 fn render_image_view(p: &Props) -> AnyWidget {
+    // The network source as a signal, re-seeded when the source prop changes —
+    // the load effect reads it and re-fetches (position-stable effects freeze
+    // plain captured values, so the URL must travel through a signal).
+    let net_url = create_signal(String::new());
+    if let Source::Network(u) = &p.source
+        && net_url.peek() != *u
+    {
+        net_url.set(u.clone());
+    }
     match &p.source {
         Source::Ready(Ok(img)) => image_box(img, p),
         Source::Ready(Err(_)) => error_box(p),
-        Source::Network(url) => match use_network(url).get() {
+        Source::Network(_) => match use_network(net_url).get() {
             ImageState::Loading => placeholder_box(p),
             ImageState::Loaded(img) => image_box(&img, p),
             ImageState::Failed(_) => error_box(p),

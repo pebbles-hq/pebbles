@@ -10,7 +10,10 @@
 //!   `on_done(result)` on the UI thread (so it can write signals) once it finishes.
 //! * [`create_resource`] — the SolidJS-style async read: kick off `fetcher` once and
 //!   get a `Signal<Resource<T>>` that starts [`Loading`](Resource::Loading) and flips
-//!   to [`Ready`](Resource::Ready) when the value arrives.
+//!   to [`Ready`](Resource::Ready) when the value arrives. The fetcher runs ONCE per
+//!   component mount — values it captures from props are frozen at creation. To
+//!   refetch on a change, read that input as a signal INSIDE the fetcher, or
+//!   re-mount the component.
 //!
 //! ```ignore
 //! let user = create_resource(move || fetch_user(id)); // Signal<Resource<User>>
