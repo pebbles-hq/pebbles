@@ -175,10 +175,36 @@ Everything below is built and shown in `cargo run -p gallery`, styled to **shadc
   (`create_loop`) and a one-shot `create_timeout`, behind hover fades, sliding switches,
   focus rings and spinners.
 
+## Styling
+
+One universal **`Style`** — React-Native's `StyleSheet`, not Flutter's per-widget style
+objects. A `Style` is a bag of optional properties that applies where it makes sense and
+no-ops where it doesn't (text props on a box do nothing); define styles as functions and
+layer them like CSS classes:
+
+```rust
+fn card() -> Style {
+    style().background(theme().colors.card).radius_all(12.0).padding_all(16.0)
+}
+
+column((..)).styled(card());                       // box props wrap any widget
+text("Title").style(card().merge(style().bold())); // text props style the glyphs
+card_widget().style(style().background(palette::red::S50)); // components merge (user wins)
+let s = styles([base, brand, style().radius_all(20.0)]);    // RN style={[a, b, c]}
+```
+
+Box props (padding · margin · size · min/max · aspect · border incl. per-side · radius ·
+shadow · gradient · image · blend · opacity · align · transform · cursor) apply via
+`.styled(..)` around any widget. Text props (color · size · weight · line-height · align ·
+letter-spacing · italic · underline · strikethrough · font-family · max-lines) apply via
+`Text` (or a component that draws text). Layout stays a widget's job: no `overflow`
+(scrolling is a widget), no `position` (Stack/Positioned), no per-state styles (those are
+semantic component knobs).
+
 ## Testing
 
-Layout, the whole reconcile loop, reactivity, IME, async, accessibility and per-window
-isolation are all proven **without a GPU or window**:
+Layout, the whole reconcile loop, reactivity, IME, async, accessibility, per-window
+isolation and the styling system are all proven **without a GPU or window**:
 
 ```bash
 cargo test          # headless: mount a real tree, dispatch taps/keys/IME, assert

@@ -1,7 +1,7 @@
 use pebbles::prelude::*;
 
 use crate::styles;
-use crate::ui::{gap_h, screen, section};
+use crate::ui::{gap_h, gap_w, screen, section};
 
 pub fn styling() -> Element {
     screen(
@@ -104,6 +104,53 @@ pub fn styling() -> Element {
                 .start()
                 .min()
                 .styled(styles::muted_panel()),
+            ),
+            section(
+                "styles([a, b, c]) — compose layers left-to-right (RN style={[..]})",
+                center(text("layered").color(palette::WHITE).semibold()).styled(styles([
+                    style().size(200.0, 70.0).radius_all(10.0).background(theme().colors.muted_foreground),
+                    style().background(theme().colors.primary), // wins
+                    style().radius_all(20.0),                   // wins
+                ])),
+            ),
+            section(
+                "CONSTRAINTS · ASPECT RATIO · CURSOR",
+                row(children![
+                    center(muted("min 160×64")).styled(style().min_width(160.0).min_height(64.0).radius_all(8.0).background(theme().colors.card).border(Border::new(theme().colors.border, 1.0))),
+                    center(muted("16:9")).styled(style().width(160.0).aspect_ratio(16.0 / 9.0).radius_all(8.0).background(theme().colors.secondary)),
+                    center(muted("pointer cursor")).styled(style().size(150.0, 64.0).radius_all(8.0).background(theme().colors.secondary).cursor(Cursor::Pointer)),
+                ])
+                .min()
+                .spacing(16.0),
+            ),
+            section(
+                "TEXT PROPS — align · italic · underline · letter-spacing · max_lines",
+                column(children![
+                    text("Centered italic underlined").style(style().text_align(TextAlign::Center).italic(true).underline(true).font_size(15.0).width(360.0)),
+                    gap_h(8.0),
+                    text("W I D E   T R A C K I N G").style(style().letter_spacing(2.0).semibold()),
+                    gap_h(8.0),
+                    text("This paragraph is clamped to a single line via max_lines(1); the rest is dropped rather than wrapping onto a second line.")
+                        .style(style().max_lines(1).width(360.0).color(theme().colors.muted_foreground)),
+                ])
+                .start()
+                .min(),
+            ),
+            section(
+                "COMPONENT .style — Card / Badge / Alert / TextField accept a Style",
+                column(children![
+                    card().child(text("card().style(red bg, no radius)")).style(style().background(palette::red::S50).radius_all(0.0).border(Border::new(palette::red::S300, 1.0))),
+                    gap_h(10.0),
+                    row(children![
+                        badge("themed").variant(BadgeVariant::Secondary),
+                        gap_w(8.0),
+                        badge("styled").style(style().background(palette::emerald::S500)),
+                    ]).min(),
+                    gap_h(10.0),
+                    text_field().placeholder("styled field").width(320.0).style(style().background(palette::amber::S50).border(Border::new(palette::amber::S400, 1.5))),
+                ])
+                .start()
+                .min(),
             ),
         ],
     )

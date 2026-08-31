@@ -19,7 +19,37 @@
 //! text("Title").style(styles::heading())
 //! ```
 //!
-//! Styles compose with [`Style::merge`] (later wins), like layering CSS classes.
+//! Styles compose with [`Style::merge`] (later wins), or [`styles`] for the RN
+//! `style={[a, b, c]}` idiom. Layers are cheap to `clone`.
+//!
+//! # The application contract
+//!
+//! A `Style` reaches pixels three ways — each applies a disjoint slice:
+//!
+//! | Route | What applies | Where it lands |
+//! |-------|--------------|----------------|
+//! | `.styled(s)` on any widget | box props only | wraps AROUND the widget |
+//! | `Text::style(s)` (or typography) | text props only | the glyphs |
+//! | component `.style(s)` (Card/Alert/Badge/TextField/…) | box props (+ text where meaningful) | merged ONTO the component's base, user wins (`base.merge(user)`) |
+//!
+//! Precedence, low → high: component defaults → semantic builders (`.variant`/`.color`)
+//! → component `.style(s)` → an outer `.styled(s)` wrapper. Interactive state colors
+//! (hover/press) are derived AFTER, by the component, from the resolved base — `Style`
+//! sets the static base, never per-state deltas.
+//!
+//! `styled()` wraps in this fixed order (inner → outer): `Align → Padding →
+//! DecoratedBox → ConstrainedBox(min/max) → SizedBox(w/h) → AspectRatio → Transform →
+//! Opacity → cursor(GestureDetector) → Margin`.
+//!
+//! # Deliberately OUT (do not add — CSS/layout separation)
+//!
+//! `overflow` (scrolling is a widget — `SingleChildScrollView`/`.scrollable()`) ·
+//! `position`/`inset` (`Stack`/`Positioned`) · `gap` (flex `.spacing()` owns it) ·
+//! per-state styles like `hover()` (state visuals live in components, rule 4) ·
+//! `z_index` (paint order = tree order) · `text_transform` (do it in app code) · text
+//! cascade/inheritance (a `Style`'s text props affect only the `Text` they're on) ·
+//! `blur`/`backdrop` (no cheap vello primitive today). Ambient values come from
+//! [`theme()`](crate::theme), never a style cascade.
 
 use pebbles_foundation::{Alignment, Color, EdgeInsets, TextAlign};
 use pebbles_render::{
