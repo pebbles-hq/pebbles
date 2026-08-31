@@ -95,7 +95,11 @@ pub const NAV: &[NavGroup] = &[
     NavGroup {
         label: "DISPLAY",
         routes: &[
-            ("surfaces", lucide::LAYERS, "Surfaces"),
+            ("badge", lucide::TAG, "Badge"),
+            ("alert", lucide::BELL, "Alert"),
+            ("skeleton", lucide::BOXES, "Skeleton"),
+            ("kbd", lucide::KEYBOARD, "Kbd"),
+            ("empty", lucide::INBOX, "Empty"),
             ("card", lucide::CREDIT_CARD, "Card"),
             ("avatar", lucide::USER, "Avatar"),
             ("separator", lucide::SEPARATOR_HORIZONTAL, "Separator"),
