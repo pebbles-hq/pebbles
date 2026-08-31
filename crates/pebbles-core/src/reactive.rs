@@ -84,6 +84,17 @@ struct Runtime {
     /// `begin_component`/`dispose_component` clear a component's subscriptions in
     /// O(its own subs) instead of O(all signals in the app).
     subs_of: std::collections::HashMap<CompKey, HashSet<SignalId>>,
+    /// Per-component ordered effect ids — the effect equivalent of `hooks`. An effect
+    /// created in a component body is created ONCE (first render at its position) and
+    /// persists across re-renders (it re-runs itself when its signal deps change, not
+    /// on every owner re-render), then is disposed with the component. Without this an
+    /// effect was recreated every render — leaking a slot per render and, for effects
+    /// that write a signal the component reads (create_resource / ImageView), spinning
+    /// forever (set → re-render → new effect → new fetch → set → …).
+    effect_hooks: std::collections::HashMap<CompKey, Vec<EffectId>>,
+    /// Cursor into the current component's `effect_hooks`, reset each render (parallel
+    /// to `hook_cursor` for signals).
+    effect_cursor: usize,
     /// Components scheduled to re-render.
     pending_components: Vec<CompKey>,
     /// Effects scheduled to re-run.
@@ -303,8 +314,40 @@ fn schedule_subscribers(rt: &mut Runtime, id: SignalId) {
 // ---------------------------------------------------------------------------
 
 /// Run `f` now, and re-run it whenever a signal it read changes.
+///
+/// **Inside a component** the effect is *position-stable*, exactly like
+/// [`create_signal`]: it is created once (the first render that reaches this call) and
+/// persists across re-renders — it re-runs on its own when a signal it read changes,
+/// **not** on every re-render of the owning component — and is disposed when the
+/// component unmounts. (Recreating it per render would leak an effect slot each render,
+/// and an effect that writes a signal its component reads — `create_resource`,
+/// `ImageView` — would spin forever.) Create effects at the top level of a component,
+/// unconditionally, like any hook. **At app scope** (no owning component) the effect
+/// lives for the process, as before.
 pub fn create_effect(f: impl Fn() + 'static) {
-    let id = with_rt(|rt| rt.effects.insert(EffectSlot { func: Rc::new(f) }));
+    let owner = with_rt(|rt| rt.owner);
+    let Some(key) = owner else {
+        // App scope (e.g. `Channel::on`): untracked, lives for the app.
+        let id = with_rt(|rt| rt.effects.insert(EffectSlot { func: Rc::new(f) }));
+        run_effect(id);
+        return;
+    };
+    // Position-stable within the component: reuse the effect created at this position
+    // on a prior render (it's already live + reactive — do nothing), else create it.
+    let index = with_rt(|rt| {
+        let i = rt.effect_cursor;
+        rt.effect_cursor += 1;
+        i
+    });
+    let existing = with_rt(|rt| rt.effect_hooks.get(&key).and_then(|v| v.get(index)).copied());
+    if existing.is_some() {
+        return;
+    }
+    let id = with_rt(|rt| {
+        let id = rt.effects.insert(EffectSlot { func: Rc::new(f) });
+        rt.effect_hooks.entry(key).or_default().push(id);
+        id
+    });
     run_effect(id);
 }
 
@@ -397,6 +440,7 @@ pub(crate) struct ComponentGuard {
     owner: Option<CompKey>,
     observer: Option<Observer>,
     cursor: usize,
+    effect_cursor: usize,
 }
 
 /// Begin rendering component `id` (in the current window): it becomes the signal
@@ -405,10 +449,16 @@ pub(crate) struct ComponentGuard {
 pub(crate) fn begin_component(id: ElementId) -> ComponentGuard {
     with_rt(|rt| {
         let key = (rt.current_window, id);
-        let guard = ComponentGuard { owner: rt.owner, observer: rt.observer, cursor: rt.hook_cursor };
+        let guard = ComponentGuard {
+            owner: rt.owner,
+            observer: rt.observer,
+            cursor: rt.hook_cursor,
+            effect_cursor: rt.effect_cursor,
+        };
         rt.owner = Some(key);
         rt.observer = Some(Observer::Component(key));
         rt.hook_cursor = 0;
+        rt.effect_cursor = 0;
         // Assign a stable, globally-unique instance id on first render.
         if !rt.instances.contains_key(&key) {
             rt.next_instance += 1;
@@ -443,6 +493,7 @@ pub(crate) fn end_component(guard: ComponentGuard) {
         rt.owner = guard.owner;
         rt.observer = guard.observer;
         rt.hook_cursor = guard.cursor;
+        rt.effect_cursor = guard.effect_cursor;
     });
 }
 
@@ -461,6 +512,16 @@ pub(crate) fn dispose_component(id: ElementId) {
             }
         }
         rt.hook_types.remove(&key);
+        // Free this component's effects (the effect equivalent of freeing its signals
+        // above). A removed effect id may still linger in some surviving signal's
+        // `effect_subs`, but that self-cleans: the next write to that signal drains the
+        // id into `pending_effects`, and `run_effect` finds no slot and returns — so no
+        // reverse index (and no O(all-signals) scan) is needed here.
+        if let Some(eids) = rt.effect_hooks.remove(&key) {
+            for eid in eids {
+                rt.effects.remove(eid);
+            }
+        }
         // Drop this component's subscriptions via the reverse index (O(its own subs)).
         if let Some(sids) = rt.subs_of.remove(&key) {
             for sid in sids {

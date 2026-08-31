@@ -10,7 +10,7 @@
 //! but Tab traversal stays within a window.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::element::ElementId;
@@ -31,6 +31,11 @@ struct FocusManager {
     on_change: HashMap<FocusKey, Rc<dyn Fn(bool)>>,
     /// Text-editor key handlers — the routing target for [`dispatch_key`].
     edit: HashMap<FocusKey, Rc<dyn Fn(KeyInput)>>,
+    /// Nodes whose one-shot `autofocus` has already been consumed. Autofocus must fire
+    /// exactly once (on the node's first mount) — NOT every render in which nothing is
+    /// focused, which would let an autofocus field yank focus back after the user blurs
+    /// it (an infinite render→refocus→render oscillation, e.g. against the caret loop).
+    autofocused: HashSet<FocusKey>,
 }
 
 thread_local! {
@@ -49,6 +54,7 @@ fn with_mgr<R>(f: impl FnOnce(&mut FocusManager) -> R) -> R {
                 activation: HashMap::new(),
                 on_change: HashMap::new(),
                 edit: HashMap::new(),
+                autofocused: HashSet::new(),
             });
         }
         f(cell.as_mut().unwrap())
@@ -157,7 +163,7 @@ impl FocusNode {
         autofocus: bool,
     ) {
         let key = self.key();
-        with_mgr(|m| {
+        let should_autofocus = with_mgr(|m| {
             if !m.order.contains(&key) {
                 m.order.push(key);
             }
@@ -170,8 +176,16 @@ impl FocusNode {
                     m.on_change.remove(&key);
                 }
             }
+            // One-shot: mark autofocus consumed on the first render regardless, and only
+            // actually grab focus if nothing else holds it right now. After this the node
+            // never auto-grabs again, so an explicit blur sticks.
+            if autofocus && m.autofocused.insert(key) {
+                m.focus.peek().is_none()
+            } else {
+                false
+            }
         });
-        if autofocus && focus_signal().peek().is_none() {
+        if should_autofocus {
             self.request_focus();
         }
     }
@@ -186,6 +200,8 @@ pub fn unregister(id: ElementId) {
         m.activation.remove(&key);
         m.on_change.remove(&key);
         m.edit.remove(&key);
+        // Let a genuine remount of this id autofocus again.
+        m.autofocused.remove(&key);
         m.focus.peek() == Some(key)
     });
     if was_focused {

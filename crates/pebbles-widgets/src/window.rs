@@ -196,6 +196,18 @@ impl Window {
     }
 }
 
+/// Release everything the framework holds for a closed window in the shared
+/// per-window service maps — overlay/passive panels, modal dialog, sheet, toasts.
+/// The shell calls this (after `Ui::dispose`) when the OS window is destroyed.
+/// Window ids are never reused, so without this every open/close cycle leaks the
+/// closed window's entries and whatever widget trees they hold.
+pub fn drop_window_state(window: u32) {
+    crate::overlay::drop_window(window);
+    crate::dialog::drop_window(window);
+    crate::sheet::drop_window(window);
+    crate::toast::drop_window(window);
+}
+
 /// Request that the window with `id` be closed.
 pub fn close_window(id: WindowId) {
     CLOSE_QUEUE.with(|q| q.borrow_mut().push(id));

@@ -57,6 +57,14 @@ fn stack_signal() -> Signal<Vec<ToastEntry>> {
     TOASTS.with(|cell| *cell.borrow_mut().entry(window).or_insert_with(|| create_root_signal(Vec::new())))
 }
 
+/// Forget a closed window's toast stack (clear + drop its signal — window ids are
+/// never reused).
+pub(crate) fn drop_window(window: u32) {
+    if let Some(sig) = TOASTS.with(|m| m.borrow_mut().remove(&window)) {
+        sig.set(Vec::new());
+    }
+}
+
 /// Whether any toast is currently showing in the current window.
 pub fn any_open() -> bool {
     !stack_signal().peek().is_empty()

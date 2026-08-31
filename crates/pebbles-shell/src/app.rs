@@ -577,6 +577,15 @@ impl Runner {
                 if let Some(f) = &w.on_close {
                     f();
                 }
+                // Tear the window's tree out of the shared runtime (cleanups stop its
+                // loops/timers; its signals are freed) and drop its per-window
+                // overlay/dialog/sheet/toast state. Window ids are never reused, so
+                // this is the only chance — skipping it leaked the whole tree per
+                // open/close, and any surviving `create_loop` (a spinner, a focused
+                // field's caret) kept every remaining window redrawing at full rate
+                // forever.
+                w.ui.dispose();
+                pebbles_widgets::window::drop_window_state(w.ui.window_id());
                 keep = false;
             }
             WindowEvent::Resized(size) => {
@@ -1098,6 +1107,12 @@ impl ApplicationHandler for Runner {
                 w.window.request_redraw();
             }
         }
+        // Sleep until the next OS event instead of winit 0.30's DEFAULT `Poll`, which
+        // busy-spins this callback at 100% of a core for the app's entire lifetime.
+        // Nothing is lost: input and `request_redraw` wake a waiting loop, `render()`
+        // re-requests frames while animations/scroll springs/background tasks are
+        // live, and a pending long-press overrides this with `WaitUntil` below.
+        event_loop.set_control_flow(ControlFlow::Wait);
         // Recognize a long press once held past the deadline: fires on_long_press +
         // on_long_press_start, then the gesture becomes "active" (moves/end follow).
         if let Some(deadline) = self.press_deadline {

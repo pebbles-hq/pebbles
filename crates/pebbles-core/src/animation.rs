@@ -148,6 +148,31 @@ pub fn create_loop(period: f64) -> Signal<f64> {
     value
 }
 
+/// Like [`create_loop`], but the loop ticks ONLY while `active` is true. The signal
+/// (and its hook position) is stable across renders; the ticking entry is inserted or
+/// removed to match `active` on each render. An inactive loop costs nothing — in
+/// particular it does **not** keep the shell's frame loop running — so use this for
+/// effects that should animate only in one state (a caret blinking only while its
+/// field is focused).
+pub fn create_loop_while(active: bool, period: f64) -> Signal<f64> {
+    let value = create_signal(0.0_f64);
+    let id = value.raw_id();
+    LOOPS.with(|l| {
+        let mut l = l.borrow_mut();
+        if active {
+            l.entry(id).or_insert(Loop { value, period: period.max(0.05) });
+        } else {
+            l.remove(&id);
+        }
+    });
+    crate::reactive::create_cleanup(move || {
+        LOOPS.with(|l| {
+            l.borrow_mut().remove(&id);
+        });
+    });
+    value
+}
+
 /// Advance all animations to `now` (monotonic seconds). Returns whether any remain
 /// active. Called once per frame by the shell.
 pub fn tick(now: f64) -> bool {

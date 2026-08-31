@@ -50,6 +50,14 @@ pub fn init() {
     let _ = modal_signal();
 }
 
+/// Forget a closed window's modal state (clear + drop its signal — window ids are
+/// never reused).
+pub(crate) fn drop_window(window: u32) {
+    if let Some(sig) = MODAL.with(|m| m.borrow_mut().remove(&window)) {
+        sig.set(None);
+    }
+}
+
 /// The current window's modal signal (reactive), created on first access.
 fn modal_signal() -> Signal<Option<DialogEntry>> {
     let window = current_window();

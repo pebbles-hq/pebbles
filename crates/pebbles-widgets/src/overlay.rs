@@ -121,6 +121,21 @@ pub fn hide_overlay() {
     overlay_signal().set(None);
 }
 
+/// Forget a closed window's overlay state: clear + drop its overlay/passive signals
+/// and its recorded size. Window ids are never reused, so skipping this would grow
+/// the maps — and pin the dropped panels' widget trees — on every open/close cycle.
+pub(crate) fn drop_window(window: u32) {
+    if let Some(sig) = OVERLAY.with(|m| m.borrow_mut().remove(&window)) {
+        sig.set(None);
+    }
+    if let Some(sig) = PASSIVE.with(|m| m.borrow_mut().remove(&window)) {
+        sig.set(None);
+    }
+    WINDOW.with(|m| {
+        m.borrow_mut().remove(&window);
+    });
+}
+
 /// Nudge the open overlay (and its child panel) by `(dx, dy)` — used to keep it
 /// glued to its trigger as the page scrolls underneath. A no-op if nothing is open.
 pub fn shift(dx: f64, dy: f64) {

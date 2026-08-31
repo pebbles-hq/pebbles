@@ -844,6 +844,26 @@ impl Ui {
         self.elements[id].children = new_child.into_iter().collect();
     }
 
+    /// Tear down this window's whole tree: unmount every element — running component
+    /// cleanups (animation loops, timeouts, focus/scroll registrations) — and free its
+    /// signals from the shared runtime. The shell calls this when the OS window
+    /// closes. Without it the closed window's components stay alive in the shared
+    /// runtime: any `create_loop` in them pins the frame loop at full rate forever,
+    /// and every open/close cycle leaks the whole tree.
+    pub fn dispose(&mut self) {
+        self.make_current();
+        if let Some(root) = self.root.take() {
+            self.unmount(root);
+        }
+        // Drop any re-render requests already queued for this window — nothing will
+        // ever drain them again.
+        let _ = crate::reactive::take_pending_components(self.ui_id);
+        self.dirty.clear();
+        self.hovered = None;
+        self.scrollbar_drag = None;
+        self.scroll_anim.clear();
+    }
+
     fn unmount(&mut self, id: ElementId) {
         let children = std::mem::take(&mut self.elements[id].children);
         for child in children {

@@ -52,6 +52,14 @@ pub fn init() {
     let _ = sheet_signal();
 }
 
+/// Forget a closed window's sheet state (clear + drop its signal — window ids are
+/// never reused).
+pub(crate) fn drop_window(window: u32) {
+    if let Some(sig) = SHEET.with(|m| m.borrow_mut().remove(&window)) {
+        sig.set(None);
+    }
+}
+
 fn sheet_signal() -> Signal<Option<SheetEntry>> {
     let window = current_window();
     SHEET.with(|cell| *cell.borrow_mut().entry(window).or_insert_with(|| create_root_signal(None)))

@@ -23,7 +23,7 @@ use crate::widgets::{Container, Expanded, GestureDetector, Opacity, column, edit
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{
     KeyInput, Motion, Signal, action_event, animated, clipboard, component_props,
-    create_focus, create_loop, create_signal, keyboard,
+    create_focus, create_loop_while, create_signal, keyboard,
 };
 
 /// One undo/redo snapshot: text + selection.
@@ -715,9 +715,11 @@ fn render_field(p: &Props) -> AnyWidget {
     };
     let focused = !disabled && focus.is_focused();
 
-    // Caret blink: a 0.5s loop phase; the caret shows for the first half of each
-    // cycle after the last edit and hides for the second (solid while composing).
-    let blink_loop = create_loop(0.5);
+    // Caret blink: a 0.5s loop phase, ticking ONLY while focused — an idle field must
+    // never keep the frame loop alive (an unconditional loop here redrew the whole
+    // app at full rate whenever any TextField was merely on screen). The caret shows
+    // for the first half of each cycle after the last edit (solid while composing).
+    let blink_loop = create_loop_while(focused, 0.5);
     let blink_stamp = create_signal(0.0_f64);
 
     // Type-driven defaults — the kind's filter, icon, placeholder, format and
