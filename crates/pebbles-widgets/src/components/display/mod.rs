@@ -11,7 +11,7 @@ mod tooltip;
 mod tree;
 mod typography;
 
-pub use data::{ListTile, Table, list_tile, table};
+pub use data::{ListTile, SortDir, Table, list_tile, table};
 pub use hover_card::{HoverCard, hover_card};
 pub use empty::{Empty, empty};
 pub use kbd::{Kbd, kbd};
