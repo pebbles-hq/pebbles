@@ -6,7 +6,7 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, EdgeInsets};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconKind, PointerEvent};
+use pebbles_render::{Border, BoxDecoration, Cursor, IconKind, PointerEvent};
 
 use super::menu::{ActionRowProps, action_row};
 use super::popover::{anchor_below, popover_surface};
@@ -24,18 +24,20 @@ const TRIGGER_H: f64 = 38.0;
 
 /// A trigger that looks like the [`Select`](super::Select) trigger: bordered box,
 /// value-or-placeholder text, trailing chevron.
-fn trigger_box(label: String, filled: bool, width: f64) -> AnyWidget {
+fn trigger_box(label: String, filled: bool, width: f64, user: Option<crate::style::Style>) -> AnyWidget {
     let c = theme().colors;
     let fg = if filled { c.foreground } else { c.muted_foreground };
+    let deco = crate::style::style()
+        .background(c.background)
+        .border(Border::new(c.input, 1.0))
+        .radius_all(theme().radius)
+        .merge(user.unwrap_or_default())
+        .decoration()
+        .unwrap_or_else(BoxDecoration::new);
     Container::new()
         .width(width)
         .height(TRIGGER_H)
-        .decoration(
-            BoxDecoration::new()
-                .color(c.background)
-                .border(Border::new(c.input, 1.0))
-                .radius(BorderRadius::all(theme().radius)),
-        )
+        .decoration(deco)
         .padding(EdgeInsets::symmetric(12.0, 0.0))
         .alignment(Alignment::CENTER_LEFT)
         .child(row(children![
@@ -152,6 +154,7 @@ pub struct Combobox {
     empty: String,
     width: f64,
     on_changed: Option<Rc<dyn Fn(usize, &str)>>,
+    style: Option<crate::style::Style>,
 }
 
 /// Create a [`Combobox`] over `options`.
@@ -168,6 +171,7 @@ where
         empty: "No results.".to_string(),
         width: 240.0,
         on_changed: None,
+        style: None,
     }
 }
 
@@ -196,6 +200,11 @@ impl Combobox {
         self.on_changed = Some(Rc::new(f));
         self
     }
+    /// Merge a [`Style`](crate::Style) onto the trigger box.
+    pub fn style(mut self, s: crate::style::Style) -> Self {
+        self.style = Some(s);
+        self
+    }
 }
 
 struct ComboProps {
@@ -206,6 +215,7 @@ struct ComboProps {
     empty: String,
     width: f64,
     on_changed: Option<Rc<dyn Fn(usize, &str)>>,
+    style: Option<crate::style::Style>,
 }
 
 impl IntoWidget for Combobox {
@@ -220,6 +230,7 @@ impl IntoWidget for Combobox {
                 empty: self.empty,
                 width: self.width,
                 on_changed: self.on_changed,
+                style: self.style,
             },
         )
         .into_widget()
@@ -238,7 +249,7 @@ fn render_combobox(p: &ComboProps) -> AnyWidget {
         Some(i) => options.get(i).cloned().unwrap_or_else(|| p.placeholder.clone()),
         None => p.placeholder.clone(),
     };
-    let trigger = trigger_box(label, selected.get().is_some(), width);
+    let trigger = trigger_box(label, selected.get().is_some(), width, p.style.clone());
 
     let menu_options = options.clone();
     GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(move |e: PointerEvent| {
@@ -276,6 +287,7 @@ pub struct MultiSelect {
     empty: String,
     width: f64,
     on_changed: Option<Rc<dyn Fn(&[usize])>>,
+    style: Option<crate::style::Style>,
 }
 
 /// Create a [`MultiSelect`] over `options`.
@@ -292,6 +304,7 @@ where
         empty: "No results.".to_string(),
         width: 240.0,
         on_changed: None,
+        style: None,
     }
 }
 
@@ -320,6 +333,11 @@ impl MultiSelect {
         self.on_changed = Some(Rc::new(f));
         self
     }
+    /// Merge a [`Style`](crate::Style) onto the trigger box.
+    pub fn style(mut self, s: crate::style::Style) -> Self {
+        self.style = Some(s);
+        self
+    }
 }
 
 struct MultiProps {
@@ -330,6 +348,7 @@ struct MultiProps {
     empty: String,
     width: f64,
     on_changed: Option<Rc<dyn Fn(&[usize])>>,
+    style: Option<crate::style::Style>,
 }
 
 impl IntoWidget for MultiSelect {
@@ -344,6 +363,7 @@ impl IntoWidget for MultiSelect {
                 empty: self.empty,
                 width: self.width,
                 on_changed: self.on_changed,
+                style: self.style,
             },
         )
         .into_widget()
@@ -367,7 +387,7 @@ fn render_multi(p: &MultiProps) -> AnyWidget {
     } else {
         format!("{} selected", sel.len())
     };
-    let trigger = trigger_box(label, !sel.is_empty(), width);
+    let trigger = trigger_box(label, !sel.is_empty(), width, p.style.clone());
 
     let menu_options = options.clone();
     GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(move |e: PointerEvent| {

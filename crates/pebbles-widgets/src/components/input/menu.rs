@@ -112,11 +112,12 @@ pub struct DropdownMenu {
     trigger: Option<AnyWidget>,
     entries: Vec<MenuEntry>,
     width: f64,
+    style: Option<crate::style::Style>,
 }
 
 /// Create a [`DropdownMenu`] whose default trigger is a button showing `label`.
 pub fn dropdown_menu(label: impl Into<String>) -> DropdownMenu {
-    DropdownMenu { label: label.into(), trigger: None, entries: Vec::new(), width: 240.0 }
+    DropdownMenu { label: label.into(), trigger: None, entries: Vec::new(), width: 240.0, style: None }
 }
 
 impl DropdownMenu {
@@ -151,6 +152,12 @@ impl DropdownMenu {
         self.entries.push(menu_check(label, checked, on_toggle));
         self
     }
+    /// Merge a [`Style`](crate::Style) onto the default trigger box (ignored when a
+    /// custom `.trigger(..)` is set).
+    pub fn style(mut self, s: crate::style::Style) -> Self {
+        self.style = Some(s);
+        self
+    }
 }
 
 struct Props {
@@ -158,13 +165,20 @@ struct Props {
     trigger: Option<AnyWidget>,
     entries: Vec<MenuEntry>,
     width: f64,
+    style: Option<crate::style::Style>,
 }
 
 impl IntoWidget for DropdownMenu {
     fn into_widget(self) -> AnyWidget {
         component_props(
             render_dropdown,
-            Props { label: self.label, trigger: self.trigger, entries: self.entries, width: self.width },
+            Props {
+                label: self.label,
+                trigger: self.trigger,
+                entries: self.entries,
+                width: self.width,
+                style: self.style,
+            },
         )
         .into_widget()
     }
@@ -174,18 +188,20 @@ impl IntoWidget for DropdownMenu {
 /// wrapping open-gesture receives the tap). Bounded to `width` with the chevron
 /// pushed to the right edge, like a Select. `hovered` tints it so it reads as
 /// interactive.
-fn default_trigger(label: &str, width: f64, hovered: bool) -> AnyWidget {
+fn default_trigger(label: &str, width: f64, hovered: bool, user: Option<crate::style::Style>) -> AnyWidget {
     let c = theme().colors;
     let bg = if hovered { c.accent } else { c.background };
+    let deco = crate::style::style()
+        .background(bg)
+        .border(Border::new(c.input, 1.0))
+        .radius_all(theme().radius)
+        .merge(user.unwrap_or_default())
+        .decoration()
+        .unwrap_or_else(BoxDecoration::new);
     Container::new()
         .width(width)
         .height(38.0)
-        .decoration(
-            BoxDecoration::new()
-                .color(bg)
-                .border(Border::new(c.input, 1.0))
-                .radius(BorderRadius::all(theme().radius)),
-        )
+        .decoration(deco)
         .padding(EdgeInsets::symmetric(12.0, 0.0))
         .alignment(Alignment::CENTER_LEFT)
         .child(row(children![
@@ -212,8 +228,10 @@ fn render_dropdown(p: &Props) -> AnyWidget {
     let width = p.width;
     let hovered = create_signal(false);
     // A custom trigger is used verbatim; the default one gets button-like hover.
-    let trigger =
-        p.trigger.clone().unwrap_or_else(|| default_trigger(&p.label, p.width, hovered.get()));
+    let trigger = p
+        .trigger
+        .clone()
+        .unwrap_or_else(|| default_trigger(&p.label, p.width, hovered.get(), p.style.clone()));
 
     // The menu entries are consumed into a fresh menu widget on each open. We can't
     // clone the closures generically, so rebuild the menu from a shared blueprint.
