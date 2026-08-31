@@ -12,7 +12,7 @@ mod tooltip;
 mod tree;
 mod typography;
 
-pub use data::{SortDir, Table, table};
+pub use data::{Cell, SortDir, Table, cell, table};
 pub use list_tile::{ListTile, list_tile};
 pub use hover_card::{HoverCard, hover_card};
 pub use empty::{Empty, empty};

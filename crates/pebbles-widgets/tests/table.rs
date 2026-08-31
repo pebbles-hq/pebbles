@@ -5,9 +5,11 @@
 use std::cell::RefCell;
 
 use pebbles_core::{IntoWidget, Ui, component, create_signal};
-use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
-use pebbles_render::TextEnv;
-use pebbles_widgets::{SortDir, View, column, empty, table};
+use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets, Offset, Size, palette};
+use pebbles_render::{Border, RenderDecoratedBox, TextEnv};
+use pebbles_widgets::{
+    SortDir, View, avatar, badge, cell, column, empty, muted, style, table, text,
+};
 
 thread_local! {
     static SORT_EVENTS: RefCell<Vec<(usize, SortDir)>> = const { RefCell::new(Vec::new()) };
@@ -17,8 +19,8 @@ thread_local! {
 fn sortable_view() -> impl IntoWidget {
     let sort = create_signal(None::<(usize, SortDir)>);
     let mut t = table(vec!["Name".into(), "Role".into(), "Status".into()])
-        .row(vec!["Andres".into(), "Engineer".into(), "Away".into()])
-        .row(vec!["Reyco".into(), "Lead".into(), "Active".into()])
+        .row(vec!["Andres", "Engineer", "Away"])
+        .row(vec!["Reyco", "Lead", "Active"])
         .sortable(0)
         .sortable(1)
         .sortable(2);
@@ -34,9 +36,9 @@ fn sortable_view() -> impl IntoWidget {
 fn selectable_view() -> impl IntoWidget {
     let selected = create_signal(Vec::<usize>::new());
     table(vec!["Name".into(), "Role".into()])
-        .row(vec!["Andres".into(), "Engineer".into()])
-        .row(vec!["Reyco".into(), "Lead".into()])
-        .row(vec!["Joseph".into(), "Engineer".into()])
+        .row(vec!["Andres", "Engineer"])
+        .row(vec!["Reyco", "Lead"])
+        .row(vec!["Joseph", "Engineer"])
         .selectable()
         .selection(selected.get())
         .on_selection(move |s| {
@@ -154,8 +156,8 @@ fn empty_state_and_striped_paint() {
                     table(vec!["A".into(), "B".into()])
                         .selectable()
                         .striped(true)
-                        .row(vec!["x".into(), "y".into()])
-                        .row(vec!["p".into(), "q".into()])
+                        .row(vec!["x", "y"])
+                        .row(vec!["p", "q"])
                         .into_widget(),
                     table(vec!["Only".into()]).empty(empty().title("Nothing here")).into_widget(),
                 ])
@@ -168,4 +170,81 @@ fn empty_state_and_striped_paint() {
     ui.layout(&mut text_env, window);
     let mut scene = pebbles_render::Scene::new();
     ui.paint(&mut scene);
+}
+
+#[test]
+fn surface_style_lands_on_the_table() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            component(|| {
+                table(vec!["A".into(), "B".into()])
+                    .row(vec!["1", "2"])
+                    .style(style().background(palette::BLUE).radius_all(0.0))
+                    .into_widget()
+            }),
+        )
+        .into_widget(),
+    );
+    ui.rebuild_if_dirty();
+    ui.layout(&mut env, win);
+    let mut scene = pebbles_render::Scene::new();
+    ui.paint(&mut scene);
+
+    // The surface style wraps the whole table — its DecoratedBox mounts first,
+    // so it is the first decorated box in the tree.
+    let tree = ui.render_tree();
+    let rid = tree.find::<RenderDecoratedBox>().expect("a decorated surface");
+    let deco = tree.object_ref(rid).downcast_ref::<RenderDecoratedBox>().expect("decorated box");
+    assert_eq!(deco.decoration.color, Some(palette::BLUE), "style background lands on the table");
+    assert_eq!(deco.decoration.radius, pebbles_render::BorderRadius::all(0.0), "sharp radius lands on the table");
+}
+
+#[test]
+fn rich_cells_footer_and_customizations_paint() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(500.0, 400.0);
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            component(|| {
+                column(vec![
+                    table(vec!["User".into(), "Role".into()])
+                        .row(vec![cell(avatar("RS")), cell(badge("Lead"))])
+                        .row(vec![cell(text("Andres")), "Engineer".into()])
+                        .sortable(0)
+                        .selectable()
+                        .striped(true)
+                        .row_hover(true)
+                        .cell_padding(EdgeInsets::symmetric(8.0, 6.0))
+                        .align(1, Alignment::CENTER_RIGHT)
+                        .header_style(style().background(palette::VIOLET).color(palette::WHITE))
+                        .footer(muted("footer slot"))
+                        .selection_column_width(56.0)
+                        .style(style().border(Border::new(palette::BLUE, 1.0)).radius_all(4.0))
+                        .into_widget(),
+                ])
+            }),
+        )
+        .into_widget(),
+    );
+    ui.rebuild_if_dirty();
+    ui.layout(&mut env, win);
+    let mut scene = pebbles_render::Scene::new();
+    ui.paint(&mut scene);
+
+    // The table laid out taller than a bare two-row grid (footer present).
+    let tree = ui.render_tree();
+    let rid = tree.find::<RenderDecoratedBox>().expect("surface");
+    assert!(tree.size_of(rid).height > 60.0, "footer + rows + header laid out");
 }
