@@ -7,8 +7,9 @@ mod combobox;
 mod context_menu;
 mod field;
 mod fields;
-mod menu;
-mod popover;
+mod input_otp;
+pub(crate) mod menu;
+pub(crate) mod popover;
 mod select;
 mod slider;
 mod text_field;
@@ -23,6 +24,7 @@ pub use combobox::{Combobox, MultiSelect, combobox, multi_select};
 pub use context_menu::{ContextMenu, context_menu};
 pub use field::{Field, field};
 pub use fields::{DateField, DateFormat, DateOrder, date_field};
+pub use input_otp::{InputOtp, input_otp};
 pub use menu::{
     DropdownMenu, MenuEntry, MenuItem, dropdown_menu, menu_check, menu_item, menu_label,
     menu_separator,

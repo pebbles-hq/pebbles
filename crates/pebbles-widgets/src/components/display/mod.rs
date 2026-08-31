@@ -2,6 +2,7 @@
 
 mod data;
 mod empty;
+mod hover_card;
 mod kbd;
 mod icon;
 mod progress;
@@ -11,6 +12,7 @@ mod tree;
 mod typography;
 
 pub use data::{ListTile, Table, list_tile, table};
+pub use hover_card::{HoverCard, hover_card};
 pub use empty::{Empty, empty};
 pub use kbd::{Kbd, kbd};
 pub use icon::{Icon, icon};
