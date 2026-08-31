@@ -196,7 +196,7 @@ fn default_trigger(label: &str, width: f64, hovered: bool) -> AnyWidget {
         .into_widget()
 }
 
-fn estimate_height(entries: &[MenuEntry]) -> f64 {
+pub(crate) fn estimate_height(entries: &[MenuEntry]) -> f64 {
     let rows: f64 = entries
         .iter()
         .map(|e| match e {
@@ -235,7 +235,7 @@ fn render_dropdown(p: &Props) -> AnyWidget {
 
 // A cloneable blueprint of the entries so the menu can be rebuilt each open (the
 // overlay takes a fresh widget; entry closures are shared via `Rc`).
-struct RebuildableMenu {
+pub(crate) struct RebuildableMenu {
     entries: Vec<BpEntry>,
 }
 
@@ -254,7 +254,7 @@ enum BpEntry {
 }
 
 impl RebuildableMenu {
-    fn from(entries: &[MenuEntry]) -> Self {
+    pub(crate) fn from(entries: &[MenuEntry]) -> Self {
         // Move-free clone: entries hold `Rc` callbacks, so we shallow-copy fields.
         let entries = entries
             .iter()
@@ -277,7 +277,7 @@ impl RebuildableMenu {
         RebuildableMenu { entries }
     }
 
-    fn build(&self, width: f64) -> AnyWidget {
+    pub(crate) fn build(&self, width: f64) -> AnyWidget {
         let inner = width - 8.0;
         // If any row carries an icon or is a checkbox, reserve the leading gutter on
         // every row so labels line up.

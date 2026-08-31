@@ -4,6 +4,7 @@ mod button;
 mod button_group;
 mod calendar;
 mod combobox;
+mod context_menu;
 mod field;
 mod fields;
 mod menu;
@@ -19,6 +20,7 @@ pub use button::{Button, ButtonSize, ButtonVariant, IconButton, button, icon_but
 pub use button_group::{ButtonGroup, button_group};
 pub use calendar::{Calendar, CaptionLayout, calendar};
 pub use combobox::{Combobox, MultiSelect, combobox, multi_select};
+pub use context_menu::{ContextMenu, context_menu};
 pub use field::{Field, field};
 pub use fields::{DateField, DateFormat, DateOrder, date_field};
 pub use menu::{

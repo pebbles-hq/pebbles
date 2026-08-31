@@ -81,6 +81,27 @@ pub fn selects() -> Element {
                         )),
                     ]).start().min().spacing(10.0),
             ),
+            doc(
+                "Context menu",
+                "Right-click (secondary tap) opens the same menu blueprint at the cursor, clamped on-screen. Left-click elsewhere or Escape dismisses.",
+                context_menu(
+                    Container::new()
+                        .decoration(
+                            BoxDecoration::new()
+                                .color(theme().colors.secondary)
+                                .radius(BorderRadius::all(theme().radius)),
+                        )
+                        .width(280.0)
+                        .height(96.0)
+                        .alignment(Alignment::CENTER)
+                        .child(muted("Right-click anywhere in this area")),
+                )
+                .item(menu_item("Cut").shortcut("⌘X"))
+                .item(menu_item("Copy").shortcut("⌘C"))
+                .item(menu_item("Paste").shortcut("⌘V"))
+                .separator()
+                .item(menu_item("Delete").destructive()),
+            ),
         ],
     )
 }
