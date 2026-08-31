@@ -119,7 +119,10 @@ enum Invoke {
 }
 
 struct HoverTarget {
-    key: RenderId,
+    /// The hovered element's stable `source` id (NOT the render id, which a re-render
+    /// can reassign — e.g. showing a tooltip re-renders the overlay host). Keying by
+    /// source lets hover-exit still fire after such a re-render.
+    source: u64,
     exits: Vec<Invoke>,
 }
 
@@ -406,18 +409,19 @@ impl Ui {
     /// the widget restyles itself. A pointer staying over the same widget is a no-op.
     pub fn dispatch_hover(&mut self, point: Offset) -> bool {
         let hits = self.render.hit_test(point);
-        let found: Option<(RenderId, Vec<Invoke>, Vec<Invoke>)> = hits.iter().rev().find_map(|&rid| {
+        let found: Option<(u64, Vec<Invoke>, Vec<Invoke>)> = hits.iter().rev().find_map(|&rid| {
             let listener = self.render.object_ref(rid).downcast_ref::<RenderPointerListener>()?;
             if !listener.wants_hover() {
                 return None;
             }
+            let source = self.render.source_of(rid)?;
             let enters = Self::invokes_of(listener, |l| &l.on_enter);
             let exits = Self::invokes_of(listener, |l| &l.on_exit);
-            Some((rid, enters, exits))
+            Some((source, enters, exits))
         });
 
-        let new_key = found.as_ref().map(|(k, _, _)| *k);
-        let old_key = self.hovered.as_ref().map(|h| h.key);
+        let new_key = found.as_ref().map(|(s, _, _)| *s);
+        let old_key = self.hovered.as_ref().map(|h| h.source);
         if new_key == old_key {
             return false; // still over the same widget
         }
@@ -426,24 +430,25 @@ impl Ui {
             PointerEvent { position: point, global: point, button: PointerButton::Primary };
         let mut fired = false;
         if let Some(old) = self.hovered.take() {
-            // Only fire the previously-hovered widget's exit handlers if it still
-            // exists. If it unmounted while hovered (e.g. a click swapped the panel
-            // out from under the cursor), its handler closures capture now-freed
-            // signals — invoking them would use-after-free. The widget is already
-            // gone, so there is nothing to "exit".
-            if self.render.contains(old.key) {
+            // Only fire the previously-hovered widget's exit handlers if its element
+            // still exists. If it unmounted while hovered (e.g. a click swapped the
+            // panel out from under the cursor), its handler closures capture now-freed
+            // signals — invoking them would use-after-free. Keying by the stable source
+            // (not the render id) means a mere re-render that reassigned render ids
+            // still counts as "exists", so exit fires correctly.
+            if self.render.find_by_source(old.source).is_some() {
                 for invoke in old.exits {
                     self.run_invoke(invoke, hover_event);
                     fired = true;
                 }
             }
         }
-        if let Some((key, enters, exits)) = found {
+        if let Some((source, enters, exits)) = found {
             for invoke in enters {
                 self.run_invoke(invoke, hover_event);
                 fired = true;
             }
-            self.hovered = Some(HoverTarget { key, exits });
+            self.hovered = Some(HoverTarget { source, exits });
         }
         fired
     }

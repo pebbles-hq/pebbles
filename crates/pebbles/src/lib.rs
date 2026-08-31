@@ -74,8 +74,12 @@ pub mod prelude {
     // accessibility semantics (screen-reader roles/labels/state)
     pub use pebbles_widgets::{Semantics, SemanticsExt, SemanticsProps, SemanticsRole, semantics};
 
-    // the global overlay layer (dropdowns / menus / popovers)
-    pub use pebbles_widgets::{OverlayHost, hide_overlay, show_overlay};
+    // the global overlay layer (dropdowns / menus / popovers) + the passive layer
+    // (tooltips / hover cards) + toasts
+    pub use pebbles_widgets::{
+        OverlayHost, Toast, ToastId, ToastVariant, dismiss_toast, hide_overlay, hide_passive,
+        show_overlay, show_passive, toast,
+    };
 
     // modal dialogs (main-window overlay) + the AlertDialog preset
     pub use pebbles_widgets::{

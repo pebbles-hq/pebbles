@@ -17,6 +17,7 @@ pub mod modifiers;
 pub mod overlay;
 pub mod style;
 pub mod theme;
+pub mod toast;
 pub mod widgets;
 pub mod window;
 
@@ -30,7 +31,8 @@ pub use window::{
 // `window::set_window_size`.
 pub use image_view::ImageView;
 pub use modifiers::ModifierExt;
-pub use overlay::{OverlayHost, hide_overlay, show_overlay};
+pub use overlay::{OverlayHost, hide_overlay, hide_passive, show_overlay, show_passive};
+pub use toast::{Toast, ToastId, ToastVariant, dismiss_toast, toast};
 pub use style::{Style, StyleExt, image_from_bytes, image_from_path, style, styled};
 pub use theme::{Colors, Theme, set_theme, theme, toggle_theme};
 pub use widgets::{

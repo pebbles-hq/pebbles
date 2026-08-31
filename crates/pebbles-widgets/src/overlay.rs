@@ -105,6 +105,48 @@ pub fn over_panel(x: f64, y: f64) -> bool {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Passive layer — non-blocking overlays (tooltips, hover cards). No scrim, no
+// outside-click dismiss, never captures clicks; painted above content.
+// ---------------------------------------------------------------------------
+
+/// A passive overlay: a widget at a window-space position, painted above the app but
+/// click-through (unlike the menu layer, which has a dismissing scrim).
+#[derive(Clone)]
+pub struct PassiveEntry {
+    pub content: AnyWidget,
+    pub left: f64,
+    pub top: f64,
+}
+
+thread_local! {
+    static PASSIVE: RefCell<HashMap<u32, Signal<Option<PassiveEntry>>>> =
+        RefCell::new(HashMap::new());
+}
+
+fn passive_signal() -> Signal<Option<PassiveEntry>> {
+    let window = current_window();
+    PASSIVE.with(|cell| {
+        *cell.borrow_mut().entry(window).or_insert_with(|| create_root_signal(None))
+    })
+}
+
+/// Show click-through `content` at window position `(left, top)` in the current
+/// window's passive layer, replacing any current passive entry.
+pub fn show_passive(content: AnyWidget, left: f64, top: f64) {
+    passive_signal().set(Some(PassiveEntry { content, left, top }));
+}
+
+/// Dismiss the current window's passive overlay, if any.
+pub fn hide_passive() {
+    passive_signal().set(None);
+}
+
+/// Whether a passive overlay is currently showing in the current window.
+pub fn passive_is_open() -> bool {
+    passive_signal().peek().is_some()
+}
+
 /// Wraps the app root and renders the active overlay above it. The shell installs
 /// one of these around every app automatically.
 pub struct OverlayHost {
@@ -130,6 +172,10 @@ impl IntoWidget for OverlayHost {
 
 fn render_host(p: &Props) -> crate::widgets::Stack {
     let mut kids: Vec<AnyWidget> = vec![p.child.clone()];
+    // Passive layer (tooltips / hover cards): above content, click-through, no scrim.
+    if let Some(entry) = passive_signal().get() {
+        kids.push(Positioned::new(entry.content).left(entry.left).top(entry.top).into_widget());
+    }
     if let Some(entry) = overlay_signal().get() {
         // Full-window scrim: an outside click dismisses.
         let scrim = Positioned::fill(
@@ -142,5 +188,7 @@ fn render_host(p: &Props) -> crate::widgets::Stack {
     }
     // Modal dialogs paint above the popover layer (dim scrim + centered surface).
     kids.extend(crate::dialog::overlay_children());
+    // Toasts paint topmost (over modals) so notifications are always visible.
+    kids.extend(crate::toast::overlay_children());
     stack(kids).alignment(Alignment::TOP_LEFT).expand()
 }

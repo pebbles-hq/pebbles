@@ -44,9 +44,10 @@ struct Timeout {
     at: Option<f64>,
     delay: f64,
     action: Rc<dyn Fn()>,
-    /// Liveness handle — a hook-owned signal; when its component unmounts the signal
-    /// dies and the timeout is dropped (backstop to `create_cleanup`).
-    guard: Signal<()>,
+    /// Liveness handle — for the [`create_timeout`] hook, a component-owned signal; when
+    /// its component unmounts the signal dies and the timeout is dropped. `None` for a
+    /// keyed [`set_timeout`] whose lifecycle the caller owns (fire or `clear_timeout`).
+    guard: Option<Signal<()>>,
 }
 
 thread_local! {
@@ -97,14 +98,36 @@ pub fn create_timeout(secs: f64, f: impl Fn() + 'static) {
     TIMEOUTS.with(|t| {
         // `or_insert_with` so a re-render doesn't restart the countdown (the pending
         // timeout persists by hook position, like `create_loop`'s loop).
-        t.borrow_mut()
-            .entry(id)
-            .or_insert_with(|| Timeout { at: None, delay: secs.max(0.0), action: Rc::new(f), guard });
+        t.borrow_mut().entry(id).or_insert_with(|| Timeout {
+            at: None,
+            delay: secs.max(0.0),
+            action: Rc::new(f),
+            guard: Some(guard),
+        });
     });
     crate::reactive::create_cleanup(move || {
         TIMEOUTS.with(|t| {
             t.borrow_mut().remove(&id);
         });
+    });
+}
+
+/// A non-hook one-shot timer keyed by a caller-supplied `id`: fires `f` once after
+/// `secs`, then removes itself. Unlike [`create_timeout`] it is NOT tied to a component
+/// — the caller owns its lifecycle and cancels early with [`clear_timeout`]. Registering
+/// the same `id` again replaces the pending timer. For app services (toast auto-dismiss)
+/// that schedule from an event handler rather than a component body.
+pub fn set_timeout(id: u64, secs: f64, f: impl Fn() + 'static) {
+    TIMEOUTS.with(|t| {
+        t.borrow_mut()
+            .insert(id, Timeout { at: None, delay: secs.max(0.0), action: Rc::new(f), guard: None });
+    });
+}
+
+/// Cancel a pending [`set_timeout`] by its `id` (a no-op if it already fired/absent).
+pub fn clear_timeout(id: u64) {
+    TIMEOUTS.with(|t| {
+        t.borrow_mut().remove(&id);
     });
 }
 
@@ -166,7 +189,7 @@ pub fn tick(now: f64) -> bool {
         let mut due = Vec::new();
         let mut done = Vec::new();
         for (id, to) in t.iter_mut() {
-            if !to.guard.alive() {
+            if to.guard.is_some_and(|g| !g.alive()) {
                 done.push(*id);
                 continue;
             }

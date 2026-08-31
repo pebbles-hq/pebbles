@@ -6,6 +6,7 @@ mod kbd;
 mod icon;
 mod progress;
 mod surfaces;
+mod tooltip;
 mod tree;
 mod typography;
 
@@ -18,5 +19,6 @@ pub use surfaces::{
     Alert, AlertVariant, Avatar, AvatarGroup, AvatarShape, Badge, BadgeVariant, Card, Separator,
     Skeleton, alert, avatar, avatar_group, badge, card, separator, skeleton,
 };
+pub use tooltip::{Tooltip, tooltip};
 pub use tree::{TreeNode, TreeView, tree_node, tree_view};
 pub use typography::{body, heading, label, muted, subtitle, title};
