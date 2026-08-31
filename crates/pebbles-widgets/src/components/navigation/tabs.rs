@@ -19,11 +19,15 @@ use pebbles_core::{animate_to, animated, children, component_props, create_signa
 /// The visual style of a [`Tabs`] strip.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum TabsVariant {
-    /// The active tab is underlined (the default).
+    /// The shadcn classic: a hairline under the strip, the active tab carrying a
+    /// 2px accent underline on top of it (the default).
     #[default]
     Underline,
-    /// The active tab sits in a rounded pill.
+    /// Light: the active tab sits in a tinted rounded pill on a plain strip.
     Pills,
+    /// Solid: a muted, rounded strip with the active tab elevated as a card
+    /// fill — the classic boxed look.
+    Solid,
 }
 
 #[derive(Clone)]
@@ -41,12 +45,20 @@ pub struct Tabs {
     tabs: Vec<TabDef>,
     variant: TabsVariant,
     autofocus: bool,
+    active_color: Option<pebbles_foundation::Color>,
+    content_padding: EdgeInsets,
+    tab_padding: EdgeInsets,
     style: Option<crate::style::Style>,
 }
 
 /// Create a [`Tabs`] with the given selected index.
 pub fn tabs(selected: usize) -> Tabs {
-    Tabs { selected, ..Default::default() }
+    Tabs {
+        selected,
+        content_padding: EdgeInsets::symmetric(0.0, 16.0),
+        tab_padding: EdgeInsets::symmetric(14.0, 8.0),
+        ..Default::default()
+    }
 }
 
 impl Tabs {
@@ -90,6 +102,22 @@ impl Tabs {
         self.style = Some(style);
         self
     }
+    /// The active tab's accent — the underline color, the pill tint and the
+    /// active label (defaults to the theme primary).
+    pub fn active_color(mut self, color: pebbles_foundation::Color) -> Self {
+        self.active_color = Some(color);
+        self
+    }
+    /// The padding around the content area (default `(0, 16)`).
+    pub fn content_padding(mut self, insets: EdgeInsets) -> Self {
+        self.content_padding = insets;
+        self
+    }
+    /// The padding inside each tab button (default `(14, 8)`).
+    pub fn tab_padding(mut self, insets: EdgeInsets) -> Self {
+        self.tab_padding = insets;
+        self
+    }
 }
 
 impl IntoWidget for Tabs {
@@ -109,6 +137,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
     let label_color = merged.color.unwrap_or(th.colors.foreground);
     let label_size = merged.font_size.unwrap_or(14.0);
     let label_weight = merged.font_weight.unwrap_or(500.0);
+    let active_color = p.active_color.unwrap_or(th.colors.primary);
 
     // Keyboard: while the strip is focused, Left/Right cycle to the next enabled
     // tab (wrapping); disabled tabs are skipped.
@@ -163,22 +192,54 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
                     color: label_color,
                     size: label_size,
                     weight: label_weight,
+                    active_color,
+                    tab_padding: p.tab_padding,
                 },
             )
             .into_widget(),
         );
     }
 
-    let mut strip_deco = BoxDecoration::new().color(merged.background.unwrap_or(th.colors.background));
-    if node.is_focused() {
-        strip_deco = strip_deco.border(Border::new(th.colors.ring, 2.0));
-    } else if let Some(border) = merged.border {
-        strip_deco = strip_deco.border(border);
-    }
-    let strip = Container::new()
+    // Per-variant strip: Underline carries a hairline bottom border (the active
+    // underline overlaps it); Pills is plain; Solid is a muted rounded trough.
+    let (strip_deco, strip_pad): (BoxDecoration, Option<EdgeInsets>) = match p.variant {
+        TabsVariant::Underline => {
+            let base = crate::style::style().background(th.colors.background).border_bottom(
+                pebbles_render::BorderSide::new(th.colors.border, 1.0),
+            );
+            let m = base.merge(p.style.clone().unwrap_or_default());
+            let mut deco = m.decoration().unwrap_or_else(BoxDecoration::new);
+            if node.is_focused() {
+                deco = deco.border(Border::new(th.colors.ring, 2.0));
+            }
+            (deco, None)
+        }
+        TabsVariant::Pills => {
+            let base = crate::style::style().background(th.colors.background);
+            let m = base.merge(p.style.clone().unwrap_or_default());
+            let mut deco = m.decoration().unwrap_or_else(BoxDecoration::new);
+            if node.is_focused() {
+                deco = deco.border(Border::new(th.colors.ring, 2.0));
+            }
+            (deco, None)
+        }
+        TabsVariant::Solid => {
+            let base = crate::style::style().background(th.colors.muted).radius_all(th.radius);
+            let m = base.merge(p.style.clone().unwrap_or_default());
+            let mut deco = m.decoration().unwrap_or_else(BoxDecoration::new);
+            if node.is_focused() {
+                deco = deco.border(Border::new(th.colors.ring, 2.0));
+            }
+            (deco, Some(EdgeInsets::all(4.0)))
+        }
+    };
+    let mut strip = Container::new()
         .decoration(strip_deco)
-        .child(row(bar).main_axis_size(MainAxisSize::Min))
-        .into_widget();
+        .child(row(bar).main_axis_size(MainAxisSize::Min));
+    if let Some(pad) = strip_pad {
+        strip = strip.padding(pad);
+    }
+    let strip = strip.into_widget();
 
     // --- content (cross-faded on switch) ------------------------------------
     let content = selected_content
@@ -189,10 +250,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
         .unwrap_or_else(|| gap_h(0.0).into_widget());
 
     let mut body = vec![strip];
-    if p.variant == TabsVariant::Underline {
-        body.push(Container::new().color(th.colors.border).height(1.0).into_widget());
-    }
-    body.push(Padding::new(EdgeInsets::symmetric(0.0, 16.0), content).into_widget());
+    body.push(Padding::new(p.content_padding, content).into_widget());
 
     column(body)
         .cross_axis_alignment(CrossAxisAlignment::Start)
@@ -211,6 +269,8 @@ struct TabButtonProps {
     color: pebbles_foundation::Color,
     size: f32,
     weight: f32,
+    active_color: pebbles_foundation::Color,
+    tab_padding: EdgeInsets,
 }
 
 /// One strip button: underline or pill, hover feedback, pointer cursor, tap
@@ -228,10 +288,12 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
 
     let cell: AnyWidget = match p.variant {
         TabsVariant::Underline => {
-            let underline_color = if p.selected { c.primary } else { palette::TRANSPARENT };
+            // The 2px accent line sits at the very bottom of the cell — on top of
+            // the strip's hairline border (the shadcn overlap).
+            let underline_color = if p.selected { p.active_color } else { palette::TRANSPARENT };
             column(children![
                 Padding::new(
-                    EdgeInsets::symmetric(14.0, 8.0),
+                    p.tab_padding,
                     text(p.label.clone()).size(p.size).weight(p.weight).color(label_color),
                 ),
                 Container::new().color(underline_color).height(2.0),
@@ -241,11 +303,25 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
             .into_widget()
         }
         TabsVariant::Pills => {
-            let bg = if p.selected { c.muted } else { palette::TRANSPARENT };
+            let bg = if p.selected {
+                mix(c.background, p.active_color, 0.14)
+            } else {
+                palette::TRANSPARENT
+            };
             Container::new()
                 .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(999.0)))
                 .child(Padding::new(
-                    EdgeInsets::symmetric(14.0, 6.0),
+                    p.tab_padding,
+                    text(p.label.clone()).size(p.size).weight(p.weight).color(label_color),
+                ))
+                .into_widget()
+        }
+        TabsVariant::Solid => {
+            let bg = if p.selected { c.background } else { palette::TRANSPARENT };
+            Container::new()
+                .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius)))
+                .child(Padding::new(
+                    p.tab_padding,
                     text(p.label.clone()).size(p.size).weight(p.weight).color(label_color),
                 ))
                 .into_widget()
