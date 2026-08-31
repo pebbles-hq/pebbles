@@ -29,8 +29,32 @@ pub fn dialogs_screen() -> Element {
     let status = create_signal(String::from("—"));
     screen(
         "Dialog",
-        "A modal that opens in its OWN OS window (winit multi-window). Close it with the footer button, the Escape key, or the window's own close control — each fires on_close.",
-        children![basic(status), form(status), confirm(status), sized(status), status_line(status)],
+        "A modal rendered in the overlay layer: a dimmed scrim over the app with a centered surface. Close it with the footer button, the Escape key, or an outside click — each fires on_close.",
+        children![
+            basic(status),
+            form(status),
+            confirm(status),
+            sized(status),
+            alert(status),
+            status_line(status)
+        ],
+    )
+}
+
+fn alert(status: Signal<String>) -> impl IntoWidget {
+    doc(
+        "Alert dialog",
+        "A confirm/cancel preset — non-dismissible by default (an explicit choice is required); the confirm button goes destructive on request.",
+        button("Delete account").variant(ButtonVariant::Destructive).on_pressed(move || {
+            alert_dialog("Are you absolutely sure?")
+                .description("This permanently deletes your account and cannot be undone.")
+                .confirm("Delete")
+                .cancel("Cancel")
+                .destructive(true)
+                .on_confirm(move || status.set("alert: confirmed (deleted)".into()))
+                .on_cancel(move || status.set("alert: cancelled".into()))
+                .open();
+        }),
     )
 }
 
@@ -41,13 +65,13 @@ fn status_line(status: Signal<String>) -> impl IntoWidget {
 fn basic(status: Signal<String>) -> impl IntoWidget {
     doc(
         "Basic",
-        "Opens a real window. It shares the reactive runtime, so its widgets are fully live.",
+        "A centered modal surface over a dimmed scrim; its widgets are fully live.",
         button("Open dialog").on_pressed(move || {
             let idc = Rc::new(Cell::new(0u64));
             let idc2 = idc.clone();
             let content = panel(
                 "Welcome to Pebbles",
-                "This is a separate operating-system window, rendered by the same engine.",
+                "A modal surface, rendered in the app's overlay layer by the same engine.",
                 body("Anything you build works here — text, buttons, inputs, the lot."),
                 button("Close")
                     .variant(ButtonVariant::Secondary)

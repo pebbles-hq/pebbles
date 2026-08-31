@@ -118,6 +118,10 @@ pub const NAV: &[NavGroup] = &[
         routes: &[("navigation", lucide::NAVIGATION, "Navigation")],
     },
     NavGroup {
+        label: "OVERLAYS",
+        routes: &[("overlays", lucide::MESSAGE_CIRCLE, "Overlays & Feedback")],
+    },
+    NavGroup {
         label: "FOUNDATIONS",
         routes: &[
             ("colors", lucide::PALETTE, "Colors"),

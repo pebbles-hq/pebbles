@@ -6,7 +6,46 @@ pub fn toggles() -> Element {
     screen(
         "Toggles",
         "Selection controls — checkbox, switch, radio and toggle — each with sizes, colors, labels, disabled and focus states, animated on change.",
-        children![checkbox_section(), switch_section(), radio_section(), toggle_section()],
+        children![
+            checkbox_section(),
+            switch_section(),
+            radio_section(),
+            toggle_section(),
+            toggle_group_section()
+        ],
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Toggle Group
+// ---------------------------------------------------------------------------
+
+fn toggle_group_section() -> impl IntoWidget {
+    let align = create_signal(1usize);
+    let marks = create_signal(vec![0usize]);
+    doc(
+        "Toggle group",
+        "A joined set of toggles — single-select (exclusive) or multi-select. Controlled: selection in, on_changed out.",
+        column(children![
+            text("Single-select (alignment)").size(12.5).color(theme().colors.muted_foreground),
+            gap_h(8.0),
+            toggle_group_labels(["Left", "Center", "Right"])
+                .value(align.get())
+                .on_changed(move |sel| {
+                    if let Some(i) = sel.first() {
+                        align.set(*i);
+                    }
+                }),
+            gap_h(18.0),
+            text("Multi-select (text style)").size(12.5).color(theme().colors.muted_foreground),
+            gap_h(8.0),
+            toggle_group_labels(["Bold", "Italic", "Underline"])
+                .multiple(true)
+                .values(marks.get())
+                .on_changed(move |sel| marks.set(sel.to_vec())),
+        ])
+        .start()
+        .min(),
     )
 }
 

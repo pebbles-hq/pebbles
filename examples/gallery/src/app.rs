@@ -78,6 +78,7 @@ pub fn app() -> impl IntoWidget {
         .route("styling", || component(screens::styling::styling))
         .route("colors", || component(screens::colors::colors))
         .route("navigation", || component(screens::navigation::navigation))
+        .route("overlays", || component(screens::overlays::overlays))
         .route("data", || component(screens::data::data))
         .route("typography", || component(screens::typography::typography))
         .route("icons", || component(screens::icons::icons))

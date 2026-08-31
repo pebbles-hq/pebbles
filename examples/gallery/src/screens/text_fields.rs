@@ -93,6 +93,21 @@ pub fn text_fields() -> Element {
                 "text_area(lines) grows to the given number of rows; Enter inserts a newline and the caret navigates by line.",
                 text_area(4).placeholder("Write a description…").width(460.0),
             ),
+            doc(
+                "Field — labeled wrapper",
+                "field(control) puts a label above, and a muted description or (via error_opt(Some)) a red error below — around ANY control, not just text inputs.",
+                column(children![
+                    field(text_field().kind(InputKind::Email).width(W))
+                        .label("Email")
+                        .description("We'll never share it."),
+                    gap_h(16.0),
+                    field(text_field().width(W))
+                        .label("Username")
+                        .error_opt(Some("That username is taken")),
+                ])
+                .start()
+                .min(),
+            ),
         ],
     )
 }
