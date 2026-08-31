@@ -4,7 +4,7 @@ use crate::ui::{doc, screen};
 
 pub fn grid_view() -> Element {
     screen("Grid View")
-        .description("A virtualized grid — fixed columns × fixed row height, only visible rows built. Cells can SPAN columns and rows (the CSS-grid colspan/rowspan): the packing wraps around them.")
+        .description("A virtualized grid — fixed columns × fixed row height, only visible rows built. Cells span columns AND rows (CSS-grid colspan/rowspan); spacing, width-derived aspect ratios, and responsive max-extent columns keep it flexible.")
         .body(children![
             doc("600 cells, 4 columns")
                 .description("Only the visible rows are built, even while scrolling fast.")
@@ -25,53 +25,69 @@ pub fn grid_view() -> Element {
                         })),
                 ),
             doc("Spanning cells — colspan & rowspan")
-                .description(".spans(|i| (cols, rows)) lets a cell occupy several grid cells, CSS-grid style: the layout packs around it. Here a dashboard: a 2×2 hero, a 2×1 banner, and singles filling around them.")
+                .description(".spans(|i| (cols, rows)) lets a cell occupy several grid cells, CSS-grid style — the layout packs around it. Here a magazine layout: a 2×2 hero, a 1×2 TALL tile, a 2×1 banner, and singles filling around them.")
                 .body(
                     Container::new()
                         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
-                        .height(340.0)
-                        .child(GridView::builder(12, 4, 84.0, |i| {
-                            tile(i, ["Overview", "Revenue", "Users", "Latency", "Storage", "Bandwidth", "Uptime", "Errors", "Region", "Plans", "Logs", "Backups"][i])
+                        .height(360.0)
+                        .child(GridView::builder(14, 4, 84.0, |i| {
+                            tile(i, ["Hero", "A", "B", "Tall", "C", "D", "Wide", "E", "F", "G", "H", "I", "J", "K"][i])
                         })
                         .spans(|i| match i {
-                            0 => (2, 2), // hero tile
-                            6 => (2, 1), // wide banner
+                            0 => (2, 2), // hero: 2 columns × 2 rows
+                            3 => (1, 2), // tall: 1 column × 2 rows
+                            6 => (2, 1), // wide: 2 columns × 1 row
                             _ => (1, 1),
                         })),
                 ),
-            doc("Fewer columns, taller cells")
-                .description("Columns and row extent are yours — a photo-grid feel: 3 columns of square tiles.")
+            doc("Spacing")
+                .description(".spacing(px) gaps rows AND columns — the tiled look without self-padding.")
                 .body(
                     Container::new()
                         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
-                        .height(280.0)
-                        .child(GridView::builder(30, 3, 100.0, |i| {
+                        .height(240.0)
+                        .child(GridView::builder(24, 3, 72.0, |i| {
                             Container::new()
-                                .padding(EdgeInsets::all(5.0))
-                                .child(
-                                    Container::new()
-                                        .decoration(
-                                            BoxDecoration::new()
-                                                .gradient(Gradient::Linear {
-                                                    begin: Alignment::TOP_LEFT,
-                                                    end: Alignment::BOTTOM_RIGHT,
-                                                    colors: vec![
-                                                        palette::violet::S600,
-                                                        palette::blue::S600,
-                                                    ],
-                                                })
-                                                .radius(BorderRadius::all(theme().radius)),
-                                        )
-                                        .alignment(Alignment::CENTER)
-                                        .child(text(format!("{i}")).size(14.0).color(theme().colors.muted_foreground)),
-                                )
-                        })),
+                                .decoration(BoxDecoration::new().color(theme().colors.secondary).radius(BorderRadius::all(theme().radius)))
+                                .alignment(Alignment::CENTER)
+                                .child(text(format!("{i}")).size(13.0))
+                        })
+                        .spacing(8.0)),
+                ),
+            doc("Aspect ratio")
+                .description(".aspect_ratio(1.0) derives the row height from the cell width — square cells at ANY width (Flutter's childAspectRatio).")
+                .body(
+                    Container::new()
+                        .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
+                        .height(260.0)
+                        .child(GridView::builder(20, 4, 80.0, |i| {
+                            Container::new()
+                                .decoration(BoxDecoration::new().color(palette::sky::S500).radius(BorderRadius::all(theme().radius)))
+                                .alignment(Alignment::CENTER)
+                                .child(text(format!("{i}")).size(13.0).color(palette::WHITE))
+                        })
+                        .aspect_ratio(1.0)),
+                ),
+            doc("Responsive columns")
+                .description(".max_extent(px) derives the column count from the available width — resize the window and the grid re-flows (Flutter's maxCrossAxisExtent).")
+                .body(
+                    Container::new()
+                        .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
+                        .height(240.0)
+                        .child(GridView::builder(40, 4, 64.0, |i| {
+                            Container::new()
+                                .decoration(BoxDecoration::new().color(palette::emerald::S600).radius(BorderRadius::all(theme().radius)))
+                                .alignment(Alignment::CENTER)
+                                .child(text(format!("{i}")).size(13.0).color(palette::WHITE))
+                        })
+                        .max_extent(140.0)
+                        .spacing(6.0)),
                 ),
         ])
 }
 
 fn tile(i: usize, label: &str) -> impl IntoWidget {
-    let colors = [palette::violet::S600, palette::blue::S600, palette::emerald::S600, palette::amber::S500];
+    let colors = [palette::violet::S600, palette::blue::S600, palette::emerald::S600, palette::amber::S500, palette::rose::S600];
     let tint = colors[i % colors.len()];
     Container::new()
         .padding(EdgeInsets::all(6.0))

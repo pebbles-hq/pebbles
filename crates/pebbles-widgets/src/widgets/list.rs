@@ -320,6 +320,10 @@ pub struct GridView {
     scrollbar: ScrollbarStyle,
     builder: Rc<dyn Fn(usize) -> AnyWidget>,
     spans: Option<Rc<dyn Fn(usize) -> (u32, u32)>>,
+    spacing: f64,
+    aspect_ratio: Option<f64>,
+    max_extent: Option<f64>,
+    controller: Option<ScrollController>,
 }
 
 impl GridView {
@@ -337,11 +341,40 @@ impl GridView {
             scrollbar: ScrollbarStyle::default(),
             builder: Rc::new(move |i| builder(i).into_widget()),
             spans: None,
+            spacing: 0.0,
+            aspect_ratio: None,
+            max_extent: None,
+            controller: None,
         }
     }
     /// Customize the scrollbar.
     pub fn scrollbar(mut self, style: ScrollbarStyle) -> Self {
         self.scrollbar = style;
+        self
+    }
+    /// The gap between rows AND between columns (Flutter's
+    /// `mainAxisSpacing` + `crossAxisSpacing` in one). Default 0.
+    pub fn spacing(mut self, px: f64) -> Self {
+        self.spacing = px.max(0.0);
+        self
+    }
+    /// Derive the row height from the cell width: `row = width / ratio`
+    /// (Flutter's `childAspectRatio`) — square cells = 1.0. Overrides the
+    /// fixed `row_extent`.
+    pub fn aspect_ratio(mut self, ratio: f64) -> Self {
+        self.aspect_ratio = Some(ratio.max(0.01));
+        self
+    }
+    /// Derive the column count from the available width: as many columns as
+    /// fit at `extent` px each (Flutter's `maxCrossAxisExtent`) — the grid
+    /// turns responsive. Overrides the fixed `columns`.
+    pub fn max_extent(mut self, extent: f64) -> Self {
+        self.max_extent = Some(extent.max(1.0));
+        self
+    }
+    /// Drive the grid programmatically with a [`ScrollController`].
+    pub fn controller(mut self, controller: ScrollController) -> Self {
+        self.controller = Some(controller);
         self
     }
     /// Let each cell declare its (columns, rows) span — the CSS-grid
@@ -361,6 +394,10 @@ struct GridProps {
     scrollbar: ScrollbarStyle,
     builder: Rc<dyn Fn(usize) -> AnyWidget>,
     spans: Option<Rc<dyn Fn(usize) -> (u32, u32)>>,
+    spacing: f64,
+    aspect_ratio: Option<f64>,
+    max_extent: Option<f64>,
+    controller: Option<ScrollController>,
 }
 
 impl IntoWidget for GridView {
@@ -374,6 +411,10 @@ impl IntoWidget for GridView {
                 scrollbar: self.scrollbar,
                 builder: self.builder,
                 spans: self.spans,
+                spacing: self.spacing,
+                aspect_ratio: self.aspect_ratio,
+                max_extent: self.max_extent,
+                controller: self.controller,
             },
         )
         .into_widget()
@@ -436,10 +477,34 @@ pub(crate) fn pack_grid(count: usize, cols: usize, spans: &dyn Fn(usize) -> (u32
 }
 
 fn render_grid(p: &GridProps) -> ListViewport {
-    let id = owner_id().unwrap_or(0);
-    let offset = create_signal(0.0_f64);
-    let cols = p.columns.max(1);
-    let row_h = p.row_extent.max(1.0);
+    let (id, offset) = match &p.controller {
+        Some(c) => (c.id, c.offset),
+        None => {
+            let offset = create_signal(0.0_f64);
+            (owner_id().unwrap_or(0), offset)
+        }
+    };
+    let gap = p.spacing.max(0.0);
+
+    create_cleanup(move || {
+        scroll::clear(id);
+        scroll_metrics::clear(id);
+    });
+
+    // Column count and row height may derive from the live viewport
+    // (max_extent → responsive columns; aspect_ratio → width-based rows).
+    let metrics_pre = scroll_metrics::get(id);
+    let cross_pre = metrics_pre.map(|x| x.cross).filter(|c| *c > 0.0).unwrap_or(800.0);
+    let cols = match p.max_extent {
+        Some(me) => ((cross_pre / me).floor() as usize).max(1),
+        None => p.columns.max(1),
+    };
+    let cell_w = cross_pre / cols as f64;
+    let row_h = match p.aspect_ratio {
+        Some(r) => (cell_w / r).max(1.0),
+        None => p.row_extent.max(1.0),
+    };
+
     let (placements, rows_used) = match &p.spans {
         Some(spans) => pack_grid(p.count, cols, spans.as_ref()),
         None => {
@@ -450,12 +515,13 @@ fn render_grid(p: &GridProps) -> ListViewport {
             (placements, rows)
         }
     };
-    let content_extent = rows_used as f64 * row_h;
-
-    create_cleanup(move || {
-        scroll::clear(id);
-        scroll_metrics::clear(id);
-    });
+    let stride = row_h + gap;
+    let cell_stride = cell_w + gap;
+    let content_extent = if rows_used == 0 {
+        0.0
+    } else {
+        rows_used as f64 * stride - gap
+    };
 
     {
         let ce = content_extent;
@@ -479,8 +545,8 @@ fn render_grid(p: &GridProps) -> ListViewport {
     let cross = m.map(|x| x.cross).filter(|c| *c > 0.0).unwrap_or(800.0);
     let cell_w = cross / cols as f64;
 
-    let first_row = (((o / row_h).floor() as isize) - OVERSCAN).max(0) as usize;
-    let last_row = ((((o + viewport) / row_h).ceil() as isize) + OVERSCAN).max(0) as usize;
+    let first_row = (((o / stride).floor() as isize) - OVERSCAN).max(0) as usize;
+    let last_row = ((((o + viewport) / stride).ceil() as isize) + OVERSCAN).max(0) as usize;
     let last_row = last_row.min(rows_used);
 
     let mut items: Vec<AnyWidget> = Vec::new();
@@ -492,10 +558,10 @@ fn render_grid(p: &GridProps) -> ListViewport {
         {
             let item = (p.builder)(i);
             let placed = Positioned::new(item)
-                .top(row as f64 * row_h)
-                .left(col as f64 * cell_w)
-                .width(cs as f64 * cell_w)
-                .height(rs as f64 * row_h);
+                .top(row as f64 * stride)
+                .left(col as f64 * cell_stride)
+                .width(cs as f64 * cell_w + (cs as f64 - 1.0) * gap)
+                .height(rs as f64 * row_h + (rs as f64 - 1.0) * gap);
             items.push(placed.into_widget());
         }
     }
