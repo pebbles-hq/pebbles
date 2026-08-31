@@ -188,6 +188,8 @@ fn render_host(p: &Props) -> crate::widgets::Stack {
     }
     // Modal dialogs paint above the popover layer (dim scrim + centered surface).
     kids.extend(crate::dialog::overlay_children());
+    // Sheets / drawers — edge-anchored modal panels, above dialogs.
+    kids.extend(crate::sheet::overlay_children());
     // Toasts paint topmost (over modals) so notifications are always visible.
     kids.extend(crate::toast::overlay_children());
     stack(kids).alignment(Alignment::TOP_LEFT).expand()

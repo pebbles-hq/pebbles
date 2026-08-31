@@ -111,3 +111,23 @@ fn alert_dialog_can_opt_into_dismissible() {
     dialog::dismiss_top();
     assert!(!dialog::is_open(), "dismissible(true) honors Escape/outside-click");
 }
+
+#[test]
+fn sheet_opens_and_dismisses() {
+    use pebbles_widgets::{Side, sheet};
+    sheet::init();
+
+    let id = sheet(text("filters")).side(Side::Right).size(320.0).title("Filters").open();
+    assert!(sheet::is_open(), "the sheet opened");
+    // Dismissible by default → Escape/scrim closes.
+    sheet::dismiss_top();
+    assert!(!sheet::is_open(), "dismissed");
+    let _ = id;
+
+    // Non-dismissible ignores dismiss but honors an explicit close.
+    let id2 = sheet(text("x")).dismissible(false).open();
+    sheet::dismiss_top();
+    assert!(sheet::is_open(), "non-dismissible ignores dismiss");
+    sheet::close_sheet(id2);
+    assert!(!sheet::is_open(), "explicit close works");
+}

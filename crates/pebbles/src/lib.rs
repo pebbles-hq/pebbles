@@ -81,9 +81,10 @@ pub mod prelude {
         show_overlay, show_passive, toast,
     };
 
-    // modal dialogs (main-window overlay) + the AlertDialog preset
+    // modal dialogs (main-window overlay) + the AlertDialog preset + Sheet/Drawer
     pub use pebbles_widgets::{
-        AlertDialog, Dialog, DialogId, alert_dialog, close_dialog, dialog,
+        AlertDialog, Dialog, DialogId, Sheet, SheetId, Side, alert_dialog, close_dialog,
+        close_sheet, dialog, sheet,
     };
 
     // secondary OS windows (share the runtime; talk via signals / Channel)

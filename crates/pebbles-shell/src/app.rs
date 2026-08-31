@@ -812,6 +812,7 @@ impl ApplicationHandler for Runner {
             pebbles_core::focus::init(); // create the global focus signal (before any component)
             pebbles_widgets::overlay::init(); // create the global overlay signal too
             pebbles_widgets::dialog::init(); // and the global modal-dialog signal
+            pebbles_widgets::sheet::init(); // and the global sheet/drawer signal
             pebbles_widgets::theme::init(); // and the global reactive theme signal
             install_clipboard(); // wire the system clipboard for Ctrl+C/X/V
             let root = self.pending_root.take().expect("root widget");
@@ -1032,10 +1033,11 @@ impl ApplicationHandler for Runner {
 
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == ElementState::Pressed {
-                    // Escape closes an open (dismissible) modal dialog first.
+                    // Escape closes an open (dismissible) sheet or modal dialog first.
                     if event.logical_key == Key::Named(NamedKey::Escape)
-                        && pebbles_widgets::dialog::is_open()
+                        && (pebbles_widgets::sheet::is_open() || pebbles_widgets::dialog::is_open())
                     {
+                        pebbles_widgets::sheet::dismiss_top();
                         pebbles_widgets::dialog::dismiss_top();
                         self.request_redraw();
                         return;

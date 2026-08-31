@@ -15,6 +15,7 @@ pub mod dialog;
 pub mod image_view;
 pub mod modifiers;
 pub mod overlay;
+pub mod sheet;
 pub mod style;
 pub mod theme;
 pub mod toast;
@@ -32,6 +33,7 @@ pub use window::{
 pub use image_view::ImageView;
 pub use modifiers::ModifierExt;
 pub use overlay::{OverlayHost, hide_overlay, hide_passive, show_overlay, show_passive};
+pub use sheet::{Sheet, SheetId, Side, close_sheet, sheet};
 pub use toast::{Toast, ToastId, ToastVariant, dismiss_toast, toast};
 pub use style::{Style, StyleExt, image_from_bytes, image_from_path, style, styled};
 pub use theme::{Colors, Theme, set_theme, theme, toggle_theme};

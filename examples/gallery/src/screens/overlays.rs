@@ -8,8 +8,41 @@ use crate::ui::{doc, gap_w, screen};
 pub fn overlays() -> Element {
     screen(
         "Overlays & Feedback",
-        "Floating, layered UI: hover tooltips in the passive layer, click-triggered popovers in the overlay layer, and stacked toast notifications.",
-        children![tooltips(), popovers(), toasts()],
+        "Floating, layered UI: hover tooltips in the passive layer, click-triggered popovers in the overlay layer, edge-anchored sheets/drawers, and stacked toast notifications.",
+        children![tooltips(), popovers(), sheets(), toasts()],
+    )
+}
+
+fn sheets() -> impl IntoWidget {
+    doc(
+        "Sheet / Drawer",
+        "An edge-anchored modal panel over a dimmed scrim — Right/Left for a full-height sheet, Bottom for a drawer. Escape or an outside click dismisses.",
+        row(children![
+            button("Open right sheet").variant(ButtonVariant::Outline).on_pressed(|| {
+                sheet(
+                    column(children![
+                        muted("Filter the results by the fields below."),
+                        gap_h(14.0),
+                        text_field().placeholder("Search").width(280.0),
+                    ])
+                    .start()
+                    .min(),
+                )
+                .side(Side::Right)
+                .size(340.0)
+                .title("Filters")
+                .open();
+            }),
+            gap_w(10.0),
+            button("Open bottom drawer").variant(ButtonVariant::Outline).on_pressed(|| {
+                sheet(muted("A drawer slides up from the bottom edge."))
+                    .side(Side::Bottom)
+                    .size(220.0)
+                    .title("Details")
+                    .open();
+            }),
+        ])
+        .min(),
     )
 }
 
