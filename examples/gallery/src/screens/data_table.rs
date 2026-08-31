@@ -50,7 +50,7 @@ pub fn data_tables() -> Element {
         .description("A data grid — a header row plus rows of cells, with sorting, selection, striping, a footer and an empty state. Cells accept any widget; every piece (surface, header, cells, checkbox column, paddings, alignment) is styleable.")
         .body(children![
             doc("Default — sort + select + striped + footer pagination")
-                .description("The shadcn look out of the box: click a header to sort (▲▼ cycles), checkboxes select rows (indeterminate select-all), zebra striping, and a .footer(..) slot holding the pagination.")
+                .description("The shadcn look out of the box: sortable headers carry an always-visible glyph at their right edge (chevrons-up-down idle, ▲/▼ when active), checkboxes select rows (indeterminate select-all), zebra striping, and a .footer(..) slot holding the pagination.")
                 .body(
                     card().child(
                         {
@@ -123,6 +123,31 @@ pub fn data_tables() -> Element {
                                 .font_weight(700.0),
                         )
                         .style(style().border(Border::new(theme().colors.border, 1.0))),
+                ),
+            doc("Custom sort icons")
+                .description("The sort glyphs are configurable — arrows instead of chevrons, a colored active icon, or hide the idle glyph entirely.")
+                .body(
+                    column(children![
+                        table(vec!["Task".into(), "Priority".into()])
+                            .row(vec!["Refactor table", "High"])
+                            .row(vec!["Ship gallery", "Medium"])
+                            .sortable(0)
+                            .sortable(1)
+                            .sort_asc_icon(lucide::ARROW_UP)
+                            .sort_desc_icon(lucide::ARROW_DOWN)
+                            .sort_idle_icon(lucide::ARROWS_UP_FROM_LINE)
+                            .sort_icon_size(14.0)
+                            .sort_icon_color(palette::blue::S600)
+                            .style(style().border(Border::new(theme().colors.border, 1.0))),
+                        gap_h(16.0),
+                        table(vec!["Name".into(), "Role".into()])
+                            .row(vec!["Reyco", "Lead"])
+                            .row(vec!["Andres", "Engineer"])
+                            .sortable(0)
+                            .sort_idle_visible(false),
+                    ])
+                    .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .main_axis_size(MainAxisSize::Min),
                 ),
             doc("Rich cells")
                 .description("Cells accept ANY widget via cell(..) — avatars, badges, buttons, icons — mixed with plain text in the same row.")

@@ -12,7 +12,7 @@ use crate::style::{Style, styled};
 use crate::theme::{mix, theme};
 use crate::widgets::{
     Align, Container, Expanded, GestureDetector, Padding, SizedBox, center, column, gap_w, row,
-    text,
+    spacer, text,
 };
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{animated, component_props, create_signal};
@@ -68,7 +68,7 @@ impl From<AnyWidget> for Cell {
 /// [`selection`](Table::selection)) and changes are reported out
 /// ([`on_sort`](Table::on_sort) / [`on_selection`](Table::on_selection)); the
 /// table never reorders or stores rows itself.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Table {
     headers: Vec<String>,
     rows: Vec<Vec<Cell>>,
@@ -88,6 +88,12 @@ pub struct Table {
     header_style: Option<Style>,
     selection_column_width: f64,
     row_hover: bool,
+    sort_asc_icon: pebbles_render::IconData,
+    sort_desc_icon: pebbles_render::IconData,
+    sort_idle_icon: pebbles_render::IconData,
+    sort_idle_visible: bool,
+    sort_icon_color: Option<pebbles_foundation::Color>,
+    sort_icon_size: f64,
     style: Option<Style>,
 }
 
@@ -95,11 +101,30 @@ pub struct Table {
 pub fn table(headers: Vec<String>) -> Table {
     Table {
         headers,
+        rows: Vec::new(),
         cell_padding: EdgeInsets::symmetric(12.0, 10.0),
         cell_size: 13.0,
         selection_column_width: 40.0,
         row_hover: true,
-        ..Default::default()
+        sort_asc_icon: IconKind::ChevronUp.into(),
+        sort_desc_icon: IconKind::ChevronDown.into(),
+        sort_idle_icon: IconKind::ChevronsUpDown.into(),
+        sort_idle_visible: true,
+        sort_icon_color: None,
+        sort_icon_size: 12.0,
+        style: None,
+        striped: false,
+        empty_state: None,
+        footer: None,
+        align: Vec::new(),
+        cell_color: None,
+        header_style: None,
+        sortable: Vec::new(),
+        sort: None,
+        on_sort: None,
+        selectable: false,
+        selection: Vec::new(),
+        on_selection: None,
     }
 }
 
@@ -215,6 +240,37 @@ impl Table {
         self.style = Some(style);
         self
     }
+    /// The active ascending sort glyph (default `ChevronUp`).
+    pub fn sort_asc_icon(mut self, glyph: impl Into<pebbles_render::IconData>) -> Self {
+        self.sort_asc_icon = glyph.into();
+        self
+    }
+    /// The active descending sort glyph (default `ChevronDown`).
+    pub fn sort_desc_icon(mut self, glyph: impl Into<pebbles_render::IconData>) -> Self {
+        self.sort_desc_icon = glyph.into();
+        self
+    }
+    /// The idle glyph shown on sortable columns with no active sort
+    /// (default `ChevronsUpDown`).
+    pub fn sort_idle_icon(mut self, glyph: impl Into<pebbles_render::IconData>) -> Self {
+        self.sort_idle_icon = glyph.into();
+        self
+    }
+    /// Whether unsorted sortable columns show the idle glyph (default true).
+    pub fn sort_idle_visible(mut self, visible: bool) -> Self {
+        self.sort_idle_visible = visible;
+        self
+    }
+    /// The active sort glyph's color (defaults to the header label color).
+    pub fn sort_icon_color(mut self, color: pebbles_foundation::Color) -> Self {
+        self.sort_icon_color = Some(color);
+        self
+    }
+    /// The sort glyph size (default 12).
+    pub fn sort_icon_size(mut self, size: f64) -> Self {
+        self.sort_icon_size = size;
+        self
+    }
 }
 
 /// Props for one sortable header cell.
@@ -227,6 +283,12 @@ struct SortHeaderProps {
     weight: f32,
     pad: EdgeInsets,
     align: Alignment,
+    asc_icon: pebbles_render::IconData,
+    desc_icon: pebbles_render::IconData,
+    idle_icon: pebbles_render::IconData,
+    idle_visible: bool,
+    icon_color: Option<pebbles_foundation::Color>,
+    icon_size: f64,
 }
 
 /// A sortable header cell: label + active-direction chevron, clickable with hover
@@ -237,28 +299,31 @@ fn render_sort_header(p: &SortHeaderProps) -> AnyWidget {
     let hv = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12);
     let bg = mix(c.muted, c.foreground, 0.05 * hv as f32);
 
-    let mut items: Vec<AnyWidget> = vec![
-        text(p.label.clone()).size(p.size).weight(p.weight).color(p.color).into_widget(),
-    ];
-    if let Some(dir) = p.dir {
-        items.push(gap_w(4.0).into_widget());
-        items.push(
-            icon(match dir {
-                SortDir::Asc => IconKind::ChevronUp,
-                SortDir::Desc => IconKind::ChevronDown,
-            })
-            .size(12.0)
-            .color(p.color)
-            .into_widget(),
-        );
+    // The sort glyph sits at the RIGHTMOST edge of the cell (shadcn), always
+    // visible: directional when this column is the active sort, the idle glyph
+    // otherwise.
+    let (glyph, glyph_color) = match p.dir {
+        Some(SortDir::Asc) => (p.asc_icon, p.icon_color.unwrap_or(p.color)),
+        Some(SortDir::Desc) => (p.desc_icon, p.icon_color.unwrap_or(p.color)),
+        None => (p.idle_icon, c.muted_foreground),
+    };
+    let label = text(p.label.clone()).size(p.size).weight(p.weight).color(p.color);
+    let mut items: Vec<AnyWidget> = if p.align.x > 0.0 {
+        // Right-aligned column: the text hugs the rightmost sort glyph.
+        vec![spacer().into_widget(), label.into_widget()]
+    } else {
+        vec![label.into_widget(), spacer().into_widget()]
+    };
+    if p.dir.is_some() || p.idle_visible {
+        items.push(gap_w(6.0).into_widget());
+        items.push(icon(glyph).size(p.icon_size).color(glyph_color).into_widget());
     }
 
     let inner = Padding::new(
         p.pad,
-        Align::new(
-            p.align,
-            row(items).cross_axis_alignment(CrossAxisAlignment::Center).main_axis_size(MainAxisSize::Min),
-        ),
+        row(items)
+            .cross_axis_alignment(CrossAxisAlignment::Center)
+            .main_axis_size(MainAxisSize::Max),
     );
     let mut g = GestureDetector::new(Container::new().color(bg).child(inner))
         .cursor(Cursor::Pointer)
@@ -394,6 +459,12 @@ impl IntoWidget for Table {
                             weight: header_weight,
                             pad: self.cell_padding,
                             align: alignment,
+                            asc_icon: self.sort_asc_icon,
+                            desc_icon: self.sort_desc_icon,
+                            idle_icon: self.sort_idle_icon,
+                            idle_visible: self.sort_idle_visible,
+                            icon_color: self.sort_icon_color,
+                            icon_size: self.sort_icon_size,
                         },
                     ))
                     .into_widget(),
