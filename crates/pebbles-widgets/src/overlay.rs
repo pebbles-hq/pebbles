@@ -50,6 +50,18 @@ pub struct OverlayEntry {
     pub top: f64,
     pub width: f64,
     pub height: f64,
+    /// An optional second panel rendered beside the content (a submenu).
+    pub child: Option<OverlayChild>,
+}
+
+/// The overlay's optional nested panel (dropdown submenus).
+#[derive(Clone)]
+pub struct OverlayChild {
+    pub content: AnyWidget,
+    pub left: f64,
+    pub top: f64,
+    pub width: f64,
+    pub height: f64,
 }
 
 thread_local! {
@@ -77,7 +89,31 @@ pub fn overlay_signal() -> Signal<Option<OverlayEntry>> {
 /// `width`/`height` are the panel's approximate size — the shell uses them to keep
 /// the popover anchored to its trigger while the page scrolls (see [`shift`]).
 pub fn show_overlay(content: AnyWidget, left: f64, top: f64, width: f64, height: f64) {
-    overlay_signal().set(Some(OverlayEntry { content, left, top, width, height }));
+    overlay_signal().set(Some(OverlayEntry { content, left, top, width, height, child: None }));
+}
+
+/// Attach (or replace) the open overlay's child panel at window position
+/// `(left, top)`. A no-op if no overlay is open.
+pub fn set_child(content: AnyWidget, left: f64, top: f64, width: f64, height: f64) {
+    overlay_signal().update(|e| {
+        if let Some(entry) = e {
+            entry.child = Some(OverlayChild { content, left, top, width, height });
+        }
+    });
+}
+
+/// Dismiss the open overlay's child panel (the overlay itself stays).
+pub fn clear_child() {
+    overlay_signal().update(|e| {
+        if let Some(entry) = e {
+            entry.child = None;
+        }
+    });
+}
+
+/// Whether the open overlay has a child panel (a submenu is showing).
+pub fn child_is_open() -> bool {
+    overlay_signal().peek().is_some_and(|e| e.child.is_some())
 }
 
 /// Dismiss the current overlay, if any.
@@ -185,6 +221,14 @@ fn render_host(p: &Props) -> crate::widgets::Stack {
         let panel = Positioned::new(entry.content).left(entry.left).top(entry.top).into_widget();
         kids.push(scrim);
         kids.push(panel);
+        if let Some(child) = &entry.child {
+            kids.push(
+                Positioned::new(child.content.clone())
+                    .left(child.left)
+                    .top(child.top)
+                    .into_widget(),
+            );
+        }
     }
     // Modal dialogs paint above the popover layer (dim scrim + centered surface).
     kids.extend(crate::dialog::overlay_children());

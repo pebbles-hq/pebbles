@@ -83,7 +83,7 @@ pub fn selects() -> Element {
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(10.0),
             ),
             doc("Dropdown menu — run an action")
-                .description("A menu of commands, not a value: a section label, icons, right-aligned shortcut hints, a disabled item, a separator, and a destructive action. Choosing runs it and closes.")
+                .description("A menu of commands, not a value: a section label, icons, right-aligned shortcut hints, a hover submenu, a disabled item, a separator, and a destructive action. Choosing runs it and closes.")
                 .body(
                 column(
                     children![
@@ -92,6 +92,14 @@ pub fn selects() -> Element {
                             .item(menu_item("Profile").icon(lucide::USER).shortcut("⇧⌘P").on_select(move || action_note.set("Profile".into())))
                             .item(menu_item("Billing").icon(lucide::CREDIT_CARD).shortcut("⌘B").on_select(move || action_note.set("Billing".into())))
                             .item(menu_item("Settings").icon(lucide::SETTINGS).shortcut("⌘,").on_select(move || action_note.set("Settings".into())))
+                            .item(menu_sub(
+                                "Share",
+                                [
+                                    menu_item("Copy link").on_select(move || action_note.set("Copied link".into())),
+                                    menu_item("Invite teammates").on_select(move || action_note.set("Invite sent".into())),
+                                    menu_item("Email").on_select(move || action_note.set("Emailed".into())),
+                                ],
+                            ))
                             .item(menu_item("Keyboard shortcuts").disabled(true))
                             .separator()
                             .item(menu_item("Log out").icon(lucide::LOG_OUT).destructive().on_select(move || action_note.set("Logged out".into()))),

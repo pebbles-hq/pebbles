@@ -33,7 +33,7 @@ pub use input_otp::{InputOtp, input_otp};
 pub use list_nav::{ListNav, list_nav};
 pub use menu::{
     DropdownMenu, MenuEntry, MenuItem, dropdown_menu, menu_check, menu_item, menu_label,
-    menu_separator,
+    menu_separator, menu_sub,
 };
 pub use popover::{Popover, popover};
 pub use select::{Select, SelectItem, select, select_group, select_item};

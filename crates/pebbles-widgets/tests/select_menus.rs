@@ -5,11 +5,11 @@
 
 use std::cell::RefCell;
 
-use pebbles_core::{IntoWidget, KeyInput, Motion, Ui, component};
+use pebbles_core::{IntoWidget, KeyInput, Motion, Ui, animation, component};
 use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{
-    OverlayHost, View, column, dropdown_menu, menu_item, overlay, select, select_item,
+    OverlayHost, View, column, dropdown_menu, menu_item, menu_sub, overlay, select, select_item,
 };
 
 thread_local! {
@@ -160,6 +160,27 @@ fn dd_root() -> impl IntoWidget {
     )
 }
 
+fn sub_root() -> impl IntoWidget {
+    OverlayHost::wrap(
+        column(vec![
+            dropdown_menu("Open")
+                .label("My Account")
+                .item(menu_item("Profile"))
+                .item(menu_item("Billing"))
+                .item(menu_item("Settings"))
+                .item(menu_sub(
+                    "Share",
+                    [
+                        menu_item("Copy link").on_select(|| ACTION.with(|a| *a.borrow_mut() = Some("Copied link".into()))),
+                        menu_item("Invite teammates").on_select(|| ACTION.with(|a| *a.borrow_mut() = Some("Invite sent".into()))),
+                    ],
+                ))
+                .into_widget(),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Stretch),
+    )
+}
+
 #[test]
 fn dropdown_menu_keyboard_runs_actionable_rows() {
     overlay::init();
@@ -192,4 +213,61 @@ fn dropdown_menu_keyboard_runs_actionable_rows() {
         "Enter runs the second actionable row (labels/separators skipped)"
     );
     assert!(!overlay::is_open(), "running an action closes the menu");
+}
+
+#[test]
+fn submenu_opens_on_hover_and_closes_after_grace() {
+    overlay::init();
+    pebbles_core::focus::init();
+    animation::reset();
+    ACTION.with(|a| *a.borrow_mut() = None);
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(600.0, 400.0);
+    overlay::set_window_size(600.0, 400.0);
+    ui.mount_root(View::new(palette::WHITE, component(sub_root)).into_widget());
+    ui.layout(&mut env, win);
+    let mut frame = |ui: &mut Ui| {
+        ui.rebuild_if_dirty();
+        ui.layout(&mut env, win);
+        let mut scene = pebbles_render::Scene::new();
+        ui.paint(&mut scene);
+    };
+    frame(&mut ui);
+
+    // Open the menu (trigger at the top-left; menu anchors below it).
+    tap(&mut ui, Offset::new(20.0, 18.0));
+    frame(&mut ui);
+    assert!(overlay::is_open());
+
+    // The sub row: label(28) + 4 rows(32) → y ≈ 4+28+128+16 = 176 in the panel.
+    // The panel starts at (20, 62); its right edge is at 20+240=260.
+    ui.dispatch_hover(Offset::new(100.0, 176.0));
+    frame(&mut ui);
+    assert!(overlay::child_is_open(), "hovering the sub row opens the child panel");
+
+    // Moving onto the child panel (≈ x 256..456) keeps it open…
+    ui.dispatch_hover(Offset::new(300.0, 180.0));
+    frame(&mut ui);
+    assert!(overlay::child_is_open(), "the child stays open while hovered");
+
+    // …and leaving both arms the grace-close.
+    ui.dispatch_hover(Offset::new(480.0, 10.0));
+    frame(&mut ui);
+    assert!(overlay::child_is_open(), "not closed before the grace delay");
+    animation::tick(0.01);
+    animation::tick(0.30);
+    frame(&mut ui);
+    assert!(!overlay::child_is_open(), "closed after the grace delay");
+
+    // Reopen the submenu and pick its first item: the action runs and the whole
+    // overlay closes.
+    ui.dispatch_hover(Offset::new(100.0, 176.0));
+    frame(&mut ui);
+    assert!(overlay::child_is_open());
+    tap(&mut ui, Offset::new(300.0, 172.0));
+    frame(&mut ui);
+    assert_eq!(ACTION.with(|a| a.borrow().clone()), Some("Copied link".to_string()));
+    assert!(!overlay::is_open(), "picking a submenu item closes the menu");
 }

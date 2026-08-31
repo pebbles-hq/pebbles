@@ -16,7 +16,7 @@ use crate::theme::{mix, theme};
 use crate::widgets::{Container, GestureDetector, Opacity, column, gap_h, row, spacer, text};
 use pebbles_core::focus::create_focus;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{action_event, children, component_props, create_signal};
+use pebbles_core::{action_event, animated, children, component_props, create_signal};
 
 // ---------------------------------------------------------------------------
 // Entries
@@ -31,6 +31,9 @@ pub enum MenuEntry {
     Separator,
     /// A toggleable item that shows a check when on.
     Check { label: String, checked: bool, on_toggle: Rc<dyn Fn(bool)> },
+    /// A submenu: hovering the row opens a second panel to the right with
+    /// `entries` (one level deep — nested submenus render as plain rows).
+    Sub { label: String, entries: Vec<MenuEntry> },
 }
 
 /// A single actionable menu item. Build with [`menu_item`].
@@ -102,6 +105,15 @@ pub fn menu_separator() -> MenuEntry {
 /// A checkbox entry.
 pub fn menu_check(label: impl Into<String>, checked: bool, on_toggle: impl Fn(bool) + 'static) -> MenuEntry {
     MenuEntry::Check { label: label.into(), checked, on_toggle: Rc::new(on_toggle) }
+}
+
+/// A submenu entry: hovering it opens a second panel to the right.
+pub fn menu_sub<I, E>(label: impl Into<String>, entries: I) -> MenuEntry
+where
+    I: IntoIterator<Item = E>,
+    E: Into<MenuEntry>,
+{
+    MenuEntry::Sub { label: label.into(), entries: entries.into_iter().map(Into::into).collect() }
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +231,7 @@ pub(crate) fn estimate_height(entries: &[MenuEntry]) -> f64 {
     let rows: f64 = entries
         .iter()
         .map(|e| match e {
-            MenuEntry::Item(_) | MenuEntry::Check { .. } => 32.0,
+            MenuEntry::Item(_) | MenuEntry::Check { .. } | MenuEntry::Sub { .. } => 32.0,
             MenuEntry::Label(_) => 28.0,
             MenuEntry::Separator => 9.0,
         })
@@ -279,6 +291,124 @@ fn render_dropdown(p: &Props) -> AnyWidget {
         .into_widget()
 }
 
+/// Approximate panel height for a `BpEntry` list.
+fn bp_height(entries: &[BpEntry]) -> f64 {
+    entries
+        .iter()
+        .map(|e| match e {
+            BpEntry::Item { .. } | BpEntry::Check { .. } | BpEntry::Sub { .. } => 32.0,
+            BpEntry::Label(_) => 28.0,
+            BpEntry::Separator => 9.0,
+        })
+        .sum::<f64>()
+        + 8.0
+}
+
+/// The width of a submenu panel.
+const SUB_WIDTH: f64 = 200.0;
+
+/// Props for one submenu row.
+struct SubRowProps {
+    label: String,
+    width: f64,
+    reserve_gutter: bool,
+    /// The row's estimated top offset within the parent panel (panel-top + this
+    /// = the row's window-space top — used to align the child panel with it).
+    top_offset: f64,
+    sub: Rc<RebuildableMenu>,
+}
+
+/// A submenu row: label + right chevron, hover highlight, and hover-open of a
+/// child panel that closes (after a grace delay) when neither the row nor the
+/// panel is hovered — the hover-refcount pattern from [`HoverCard`].
+fn render_sub_row(p: &SubRowProps) -> AnyWidget {
+    let c = theme().colors;
+    let hovered = create_signal(false);
+    let over = create_signal(0i32);
+    let close_key = create_signal(()).raw_id();
+    let t = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.1);
+    let bg = mix(c.popover, c.accent, t as f32);
+    let fg = mix(c.popover_foreground, c.accent_foreground, t as f32);
+
+    let schedule_close: Rc<dyn Fn()> = Rc::new({
+        let over = over;
+        move || {
+            pebbles_core::animation::set_timeout(close_key, 0.28, move || {
+                if over.peek() <= 0 {
+                    crate::overlay::clear_child();
+                }
+            });
+        }
+    });
+
+    let mut kids: Vec<AnyWidget> = Vec::new();
+    if p.reserve_gutter {
+        kids.push(Container::new().width(24.0).into_widget());
+    }
+    kids.push(text(p.label.clone()).size(14.0).color(fg).into_widget());
+    kids.push(spacer().into_widget());
+    kids.push(icon(IconKind::ChevronRight).size(14.0).color(c.muted_foreground).into_widget());
+
+    let body = Container::new()
+        .width(p.width)
+        .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(4.0)))
+        .padding(EdgeInsets::symmetric(8.0, 7.0))
+        .child(row(kids));
+
+    let sub = p.sub.clone();
+    let top_offset = p.top_offset;
+    let enter_close = schedule_close.clone();
+    GestureDetector::new(body)
+        .cursor(Cursor::Pointer)
+        .on_hover_enter(action_event(move |_e: PointerEvent| {
+            hovered.set(true);
+            over.update(|n| *n += 1);
+            pebbles_core::animation::clear_timeout(close_key);
+            // Build the child panel: the same row renderer, hover-tracked so it
+            // stays open while the pointer moves onto it.
+            let panel_h = sub.height;
+            let panel = GestureDetector::new(sub.build(SUB_WIDTH))
+                .on_hover_enter({
+                    let over = over;
+                    move || {
+                        over.update(|n| *n += 1);
+                        pebbles_core::animation::clear_timeout(close_key);
+                    }
+                })
+                .on_hover_exit({
+                    let over = over;
+                    let schedule_close = enter_close.clone();
+                    move || {
+                        over.update(|n| *n -= 1);
+                        schedule_close();
+                    }
+                });
+            let (parent_left, parent_top, parent_w) =
+                match crate::overlay::overlay_signal().peek() {
+                    Some(e) => (e.left, e.top, e.width),
+                    None => (0.0, 0.0, SUB_WIDTH),
+                };
+            let (ww, wh) = crate::overlay::window_size();
+            let left = if ww > 0.0 {
+                (parent_left + parent_w - 4.0).min(ww - SUB_WIDTH - 8.0).max(8.0)
+            } else {
+                parent_left + parent_w - 4.0
+            };
+            let top = if wh > 0.0 {
+                (parent_top + top_offset - 4.0).min(wh - panel_h - 8.0).max(8.0)
+            } else {
+                parent_top + top_offset - 4.0
+            };
+            crate::overlay::set_child(panel.into_widget(), left, top, SUB_WIDTH, panel_h);
+        }))
+        .on_hover_exit(move || {
+            hovered.set(false);
+            over.update(|n| *n -= 1);
+            schedule_close();
+        })
+        .into_widget()
+}
+
 /// Props for the open dropdown menu — a component so the keyboard highlight
 /// re-renders reactively as the [`ListNav`] active row changes.
 struct DdMenuProps {
@@ -296,8 +426,11 @@ fn render_dd_menu(p: &DdMenuProps) -> AnyWidget {
 // overlay takes a fresh widget; entry closures are shared via `Rc`).
 pub(crate) struct RebuildableMenu {
     entries: Vec<BpEntry>,
+    /// Approximate open-panel height (rows summed).
+    pub(crate) height: f64,
 }
 
+#[derive(Clone)]
 enum BpEntry {
     Item {
         label: String,
@@ -310,30 +443,36 @@ enum BpEntry {
     Label(String),
     Separator,
     Check { label: String, checked: bool, on_toggle: Rc<dyn Fn(bool)> },
+    Sub { label: String, entries: Vec<BpEntry> },
+}
+
+/// Move-free clone of one entry: entries hold `Rc` callbacks, so this shallow-copies
+/// fields (recursing into submenus).
+fn bp_entry(e: &MenuEntry) -> BpEntry {
+    match e {
+        MenuEntry::Item(i) => BpEntry::Item {
+            label: i.label.clone(),
+            icon: i.icon,
+            shortcut: i.shortcut.clone(),
+            on_select: i.on_select.clone(),
+            disabled: i.disabled,
+            destructive: i.destructive,
+        },
+        MenuEntry::Label(l) => BpEntry::Label(l.clone()),
+        MenuEntry::Separator => BpEntry::Separator,
+        MenuEntry::Check { label, checked, on_toggle } => {
+            BpEntry::Check { label: label.clone(), checked: *checked, on_toggle: on_toggle.clone() }
+        }
+        MenuEntry::Sub { label, entries } => {
+            BpEntry::Sub { label: label.clone(), entries: entries.iter().map(bp_entry).collect() }
+        }
+    }
 }
 
 impl RebuildableMenu {
     pub(crate) fn from(entries: &[MenuEntry]) -> Self {
-        // Move-free clone: entries hold `Rc` callbacks, so we shallow-copy fields.
-        let entries = entries
-            .iter()
-            .map(|e| match e {
-                MenuEntry::Item(i) => BpEntry::Item {
-                    label: i.label.clone(),
-                    icon: i.icon,
-                    shortcut: i.shortcut.clone(),
-                    on_select: i.on_select.clone(),
-                    disabled: i.disabled,
-                    destructive: i.destructive,
-                },
-                MenuEntry::Label(l) => BpEntry::Label(l.clone()),
-                MenuEntry::Separator => BpEntry::Separator,
-                MenuEntry::Check { label, checked, on_toggle } => {
-                    BpEntry::Check { label: label.clone(), checked: *checked, on_toggle: on_toggle.clone() }
-                }
-            })
-            .collect();
-        RebuildableMenu { entries }
+        let height = estimate_height(entries).min(300.0);
+        RebuildableMenu { entries: entries.iter().map(bp_entry).collect(), height }
     }
 
     /// One run-action per keyboard-navigable row (enabled items + check rows), in
@@ -373,6 +512,18 @@ impl RebuildableMenu {
     /// Build the menu, highlighting row `active` (the keyboard cursor, over the
     /// actionable rows only) and using `actions` for every row's run-and-close.
     pub(crate) fn build_rows(&self, width: f64, active: Option<usize>, actions: &[Rc<dyn Fn()>]) -> AnyWidget {
+        self.build_rows_inner(width, active, actions, true)
+    }
+
+    /// Build the rows; `allow_sub` enables interactive submenu rows (top-level
+    /// menus only — submenu panels render nested subs as plain rows).
+    pub(crate) fn build_rows_inner(
+        &self,
+        width: f64,
+        active: Option<usize>,
+        actions: &[Rc<dyn Fn()>],
+        allow_sub: bool,
+    ) -> AnyWidget {
         let inner = width - 8.0;
         // If any row carries an icon or is a checkbox, reserve the leading gutter on
         // every row so labels line up.
@@ -380,8 +531,10 @@ impl RebuildableMenu {
             matches!(e, BpEntry::Item { icon: Some(_), .. } | BpEntry::Check { .. })
         });
         let mut kids: Vec<AnyWidget> = Vec::new();
-        let mut row = 0usize;
+        let mut row_idx = 0usize;
+        let mut y = 4.0; // surface padding, in panel-local space
         for e in &self.entries {
+            let row_top = y;
             kids.push(match e {
                 BpEntry::Item { label, icon, shortcut, on_select, disabled, destructive } => {
                     let (highlighted, pick): (bool, Rc<dyn Fn()>);
@@ -395,8 +548,8 @@ impl RebuildableMenu {
                             hide_overlay();
                         });
                     } else {
-                        let idx = row;
-                        row += 1;
+                        let idx = row_idx;
+                        row_idx += 1;
                         highlighted = active == Some(idx);
                         let cb = on_select.clone();
                         pick = actions.get(idx).cloned().unwrap_or_else(move || {
@@ -408,6 +561,7 @@ impl RebuildableMenu {
                             })
                         });
                     }
+                    y += 32.0;
                     action_row(ActionRowProps {
                         label: label.clone(),
                         icon: *icon,
@@ -421,33 +575,40 @@ impl RebuildableMenu {
                         on_select: pick,
                     })
                 }
-                BpEntry::Label(l) => Container::new()
-                    .padding(EdgeInsets::symmetric(8.0, 6.0))
-                    .alignment(Alignment::CENTER_LEFT)
-                    .child(text(l.clone()).size(11.5).semibold().color(theme().colors.muted_foreground))
-                    .into_widget(),
-                BpEntry::Separator => Container::new()
-                    .width(inner)
-                    .padding(EdgeInsets::symmetric(0.0, 4.0))
-                    .child(
-                        Container::new()
-                            .width(inner)
-                            .height(1.0)
-                            .decoration(BoxDecoration::new().color(theme().colors.border)),
-                    )
-                    .into_widget(),
+                BpEntry::Label(l) => {
+                    y += 28.0;
+                    Container::new()
+                        .padding(EdgeInsets::symmetric(8.0, 6.0))
+                        .alignment(Alignment::CENTER_LEFT)
+                        .child(text(l.clone()).size(11.5).semibold().color(theme().colors.muted_foreground))
+                        .into_widget()
+                }
+                BpEntry::Separator => {
+                    y += 9.0;
+                    Container::new()
+                        .width(inner)
+                        .padding(EdgeInsets::symmetric(0.0, 4.0))
+                        .child(
+                            Container::new()
+                                .width(inner)
+                                .height(1.0)
+                                .decoration(BoxDecoration::new().color(theme().colors.border)),
+                        )
+                        .into_widget()
+                }
                 BpEntry::Check { label, checked, on_toggle } => {
-                    let highlighted = active == Some(row);
+                    let highlighted = active == Some(row_idx);
                     let now = *checked;
                     let on_toggle = on_toggle.clone();
-                    let pick: Rc<dyn Fn()> = match actions.get(row) {
+                    let pick: Rc<dyn Fn()> = match actions.get(row_idx) {
                         Some(a) => a.clone(),
                         None => Rc::new(move || {
                             on_toggle(!now);
                             hide_overlay();
                         }),
                     };
-                    row += 1;
+                    row_idx += 1;
+                    y += 32.0;
                     action_row(ActionRowProps {
                         label: label.clone(),
                         icon: None,
@@ -460,6 +621,44 @@ impl RebuildableMenu {
                         width: inner,
                         on_select: pick,
                     })
+                }
+                BpEntry::Sub { label, entries } => {
+                    y += 32.0;
+                    if allow_sub {
+                        // Hovering this row opens the submenu panel to the right.
+                        component_props(
+                            render_sub_row,
+                            SubRowProps {
+                                label: label.clone(),
+                                width: inner,
+                                reserve_gutter: reserve,
+                                top_offset: row_top,
+                                sub: Rc::new(RebuildableMenu {
+                                    entries: (*entries).clone(),
+                                    height: bp_height(entries).min(300.0),
+                                }),
+                            },
+                        )
+                        .into_widget()
+                    } else {
+                        // Nested submenus are one level deep: render as a plain
+                        // muted row (honest limitation, not silently dropped).
+                        Opacity::new(
+                            0.55,
+                            Container::new()
+                                .width(inner)
+                                .padding(EdgeInsets::symmetric(8.0, 7.0))
+                                .child(row(children![
+                                    if reserve {
+                                        Container::new().width(24.0).into_widget()
+                                    } else {
+                                        gap_h(0.0).into_widget()
+                                    },
+                                    text(label.clone()).size(14.0).color(theme().colors.muted_foreground),
+                                ])),
+                        )
+                        .into_widget()
+                    }
                 }
             });
         }
