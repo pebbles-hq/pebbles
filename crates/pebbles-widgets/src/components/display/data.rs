@@ -17,7 +17,7 @@ use pebbles_core::{animated, component_props, create_signal};
 
 /// A list row: optional leading widget, a title + optional subtitle, optional
 /// trailing widget.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ListTile {
     leading: Option<AnyWidget>,
     title: String,
@@ -27,7 +27,7 @@ pub struct ListTile {
 
 /// Create a [`ListTile`] with a title.
 pub fn list_tile(title: impl Into<String>) -> ListTile {
-    ListTile { leading: None, title: title.into(), subtitle: None, trailing: None }
+    ListTile { title: title.into(), ..Default::default() }
 }
 
 impl ListTile {
@@ -103,7 +103,7 @@ pub enum SortDir {
 /// changes are reported out ([`on_sort`](Table::on_sort) /
 /// [`on_selection`](Table::on_selection)); the table never reorders or stores rows
 /// itself.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Table {
     headers: Vec<String>,
     rows: Vec<Vec<String>>,
@@ -119,18 +119,7 @@ pub struct Table {
 
 /// Create a [`Table`] with column headers.
 pub fn table(headers: Vec<String>) -> Table {
-    Table {
-        headers,
-        rows: Vec::new(),
-        sortable: Vec::new(),
-        sort: None,
-        on_sort: None,
-        selectable: false,
-        selection: Vec::new(),
-        on_selection: None,
-        striped: false,
-        empty_state: None,
-    }
+    Table { headers, ..Default::default() }
 }
 
 impl Table {

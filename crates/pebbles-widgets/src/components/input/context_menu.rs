@@ -14,6 +14,7 @@ use pebbles_core::widget::{AnyWidget, IntoWidget};
 use std::rc::Rc;
 
 /// A right-click (context) menu wrapping a child. Build with [`context_menu`].
+#[derive(Default)]
 pub struct ContextMenu {
     child: Option<AnyWidget>,
     entries: Vec<MenuEntry>,
@@ -22,7 +23,7 @@ pub struct ContextMenu {
 
 /// Wrap `child` so a secondary (right) click opens a menu at the cursor.
 pub fn context_menu(child: impl IntoWidget) -> ContextMenu {
-    ContextMenu { child: Some(child.into_widget()), entries: Vec::new(), width: 220.0 }
+    ContextMenu { child: Some(child.into_widget()), width: 220.0, ..Default::default() }
 }
 
 impl ContextMenu {

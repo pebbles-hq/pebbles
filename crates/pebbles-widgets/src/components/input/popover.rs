@@ -60,6 +60,7 @@ pub(crate) fn anchor_below(
 /// A click-triggered floating panel with arbitrary content, rendered in the overlay
 /// layer (so it flips near edges, follows page scroll, and hosts real inputs). Build
 /// with [`popover`]; dismisses on outside-click / Escape via the overlay scrim.
+#[derive(Clone, Default)]
 pub struct Popover {
     trigger: Option<AnyWidget>,
     content: Option<AnyWidget>,
@@ -81,8 +82,7 @@ pub fn popover(content: impl IntoWidget, trigger: impl IntoWidget) -> Popover {
         width: 280.0,
         height: 220.0,
         trigger_height: 40.0,
-        pad: 8.0,
-        style: None,
+        ..Default::default()
     }
 }
 

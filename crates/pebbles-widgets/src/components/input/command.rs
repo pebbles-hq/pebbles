@@ -70,6 +70,7 @@ where
 
 /// A searchable command list. Build with [`command`] (inline) or
 /// [`command_palette`] (centered modal).
+#[derive(Clone, Default)]
 pub struct Command {
     groups: Vec<CommandGroup>,
     placeholder: String,
@@ -88,7 +89,7 @@ where
         placeholder: "Type a command…".to_string(),
         empty: "No results.".to_string(),
         width: 480.0,
-        modal: false,
+        ..Default::default()
     }
 }
 

@@ -17,7 +17,7 @@ use crate::components::{ButtonSize, ButtonVariant, button, dropdown_menu, menu_i
 /// A breadcrumb trail of path segments. When there are more than
 /// [`max_visible`](Breadcrumb::max_visible) segments, the middle ones collapse
 /// into a "…" dropdown (shadcn's ellipsis breadcrumb).
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Breadcrumb {
     segments: Vec<String>,
     max_visible: usize,
@@ -25,7 +25,7 @@ pub struct Breadcrumb {
 
 /// Create a [`Breadcrumb`] from path segments.
 pub fn breadcrumb(segments: Vec<String>) -> Breadcrumb {
-    Breadcrumb { segments, max_visible: usize::MAX }
+    Breadcrumb { segments, max_visible: usize::MAX, ..Default::default() }
 }
 
 impl Breadcrumb {
@@ -141,7 +141,7 @@ impl IntoWidget for StatusBar {
 }
 
 /// Prev/Next pagination with a page indicator.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Pagination {
     page: usize,
     total: usize,
@@ -151,7 +151,7 @@ pub struct Pagination {
 
 /// Create a [`Pagination`] control (1-based `page`).
 pub fn pagination(page: usize, total: usize) -> Pagination {
-    Pagination { page, total, on_prev: None, on_next: None }
+    Pagination { page, total, ..Default::default() }
 }
 
 impl Pagination {

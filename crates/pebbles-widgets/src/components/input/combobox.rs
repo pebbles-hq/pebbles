@@ -167,6 +167,7 @@ fn render_search_menu(p: &MenuProps) -> AnyWidget {
 // ---------------------------------------------------------------------------
 
 /// A searchable single-select. Build with [`combobox`].
+#[derive(Clone, Default)]
 pub struct Combobox {
     options: Vec<String>,
     initial: Option<usize>,
@@ -186,13 +187,11 @@ where
 {
     Combobox {
         options: options.into_iter().map(Into::into).collect(),
-        initial: None,
         placeholder: "Select…".to_string(),
         search_placeholder: "Search…".to_string(),
         empty: "No results.".to_string(),
         width: 240.0,
-        on_changed: None,
-        style: None,
+        ..Default::default()
     }
 }
 
@@ -300,6 +299,7 @@ fn render_combobox(p: &ComboProps) -> AnyWidget {
 // ---------------------------------------------------------------------------
 
 /// A searchable multi-select. Build with [`multi_select`].
+#[derive(Clone, Default)]
 pub struct MultiSelect {
     options: Vec<String>,
     initial: Vec<usize>,
@@ -319,13 +319,11 @@ where
 {
     MultiSelect {
         options: options.into_iter().map(Into::into).collect(),
-        initial: Vec::new(),
         placeholder: "Select…".to_string(),
         search_placeholder: "Search…".to_string(),
         empty: "No results.".to_string(),
         width: 240.0,
-        on_changed: None,
-        style: None,
+        ..Default::default()
     }
 }
 

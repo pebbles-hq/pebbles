@@ -14,6 +14,7 @@ use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{animation, component_props, create_signal};
 
 /// A tooltip wrapping a trigger. Build with [`tooltip`].
+#[derive(Clone, Default)]
 pub struct Tooltip {
     child: Option<AnyWidget>,
     label: String,
@@ -25,7 +26,7 @@ pub struct Tooltip {
 /// Show `label` when hovering `child` after a short delay. `child` is last (the
 /// in-tree child convention).
 pub fn tooltip(label: impl Into<String>, child: impl IntoWidget) -> Tooltip {
-    Tooltip { child: Some(child.into_widget()), label: label.into(), rich: None, delay: 0.5, style: None }
+    Tooltip { child: Some(child.into_widget()), label: label.into(), delay: 0.5, ..Default::default() }
 }
 
 impl Tooltip {

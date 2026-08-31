@@ -136,6 +136,7 @@ impl DateFormat {
 /// from the calendar popover. Customize the caption, the format, and both the
 /// input's and the calendar's [`Style`]. Date-only by design — for time use
 /// [`time_field`](super::time_field).
+#[derive(Clone, Default)]
 pub struct DateField {
     placeholder: Option<String>,
     width: Option<f64>,
@@ -147,14 +148,7 @@ pub struct DateField {
 
 /// Create a [`DateField`].
 pub fn date_field() -> DateField {
-    DateField {
-        placeholder: None,
-        width: None,
-        caption: CaptionLayout::Dropdown,
-        format: DateFormat::MDY,
-        style: None,
-        calendar_style: None,
-    }
+    DateField { caption: CaptionLayout::Dropdown, ..Default::default() }
 }
 
 impl DateField {

@@ -35,7 +35,7 @@ struct TabDef {
 }
 
 /// A tabbed panel.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Tabs {
     selected: usize,
     tabs: Vec<TabDef>,
@@ -45,7 +45,7 @@ pub struct Tabs {
 
 /// Create a [`Tabs`] with the given selected index.
 pub fn tabs(selected: usize) -> Tabs {
-    Tabs { selected, tabs: Vec::new(), variant: TabsVariant::Underline, autofocus: false }
+    Tabs { selected, ..Default::default() }
 }
 
 impl Tabs {

@@ -15,6 +15,7 @@ use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{animation, component_props, create_signal};
 
 /// A hover card wrapping a trigger. Build with [`hover_card`].
+#[derive(Clone, Default)]
 pub struct HoverCard {
     content: Option<AnyWidget>,
     trigger: Option<AnyWidget>,
@@ -29,7 +30,7 @@ pub fn hover_card(content: impl IntoWidget, trigger: impl IntoWidget) -> HoverCa
         content: Some(content.into_widget()),
         trigger: Some(trigger.into_widget()),
         width: 320.0,
-        delay: 0.6,
+        ..Default::default()
     }
 }
 

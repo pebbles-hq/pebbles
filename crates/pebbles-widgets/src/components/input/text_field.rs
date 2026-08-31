@@ -145,6 +145,7 @@ fn format_currency(s: &str) -> String {
 }
 
 /// A themed text input. Build with [`text_field`] / [`text_area`].
+#[derive(Clone, Default)]
 pub struct TextField {
     kind: InputKind,
     placeholder: String,
@@ -175,33 +176,7 @@ pub struct TextField {
 
 /// A single-line text input.
 pub fn text_field() -> TextField {
-    TextField {
-        kind: InputKind::Text,
-        placeholder: String::new(),
-        initial: String::new(),
-        width: None,
-        multiline: false,
-        lines: 1,
-        obscure: None,
-        leading: None,
-        trailing: None,
-        char_filter: None,
-        max_length: None,
-        bind: None,
-        format: None,
-        label: None,
-        helper: None,
-        error: None,
-        disabled: false,
-        autofocus: false,
-        on_changed: None,
-        on_submit: None,
-        on_editing_complete: None,
-        on_tap: None,
-        on_focus_change: None,
-        on_nav: None,
-        style: None,
-    }
+    TextField { kind: InputKind::Text, ..Default::default() }
 }
 
 /// A multiline text input (textarea), `lines` rows tall.

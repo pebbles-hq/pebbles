@@ -109,6 +109,7 @@ pub fn menu_check(label: impl Into<String>, checked: bool, on_toggle: impl Fn(bo
 // ---------------------------------------------------------------------------
 
 /// An action menu. Build with [`dropdown_menu`].
+#[derive(Default)]
 pub struct DropdownMenu {
     label: String,
     trigger: Option<AnyWidget>,
@@ -119,7 +120,7 @@ pub struct DropdownMenu {
 
 /// Create a [`DropdownMenu`] whose default trigger is a button showing `label`.
 pub fn dropdown_menu(label: impl Into<String>) -> DropdownMenu {
-    DropdownMenu { label: label.into(), trigger: None, entries: Vec::new(), width: 240.0, style: None }
+    DropdownMenu { label: label.into(), width: 240.0, ..Default::default() }
 }
 
 impl DropdownMenu {

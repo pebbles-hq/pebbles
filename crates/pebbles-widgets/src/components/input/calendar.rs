@@ -80,9 +80,10 @@ fn month_abbr(m: u32) -> &'static str {
 
 /// How the calendar's month/year caption is presented — mirrors shadcn's
 /// `captionLayout`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CaptionLayout {
     /// Month + year as a static label, flanked by prev/next arrows (the default).
+    #[default]
     Label,
     /// Month **and** year as clickable dropdowns that open pickers.
     Dropdown,

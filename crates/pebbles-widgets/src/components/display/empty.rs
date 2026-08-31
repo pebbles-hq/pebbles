@@ -11,6 +11,7 @@ use crate::widgets::{Container, center, column, gap_h, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// An empty-state block. Build with [`empty`]; all parts are optional.
+#[derive(Clone, Default)]
 pub struct Empty {
     icon: Option<IconData>,
     title: Option<String>,
@@ -20,7 +21,7 @@ pub struct Empty {
 
 /// Create an [`Empty`] state.
 pub fn empty() -> Empty {
-    Empty { icon: None, title: None, description: None, action: None }
+    Empty::default()
 }
 
 impl Empty {

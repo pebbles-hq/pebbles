@@ -18,6 +18,7 @@ use crate::widgets::{column, gap_h, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// A labeled control with an optional description / error. Build with [`field`].
+#[derive(Clone, Default)]
 pub struct Field {
     control: Option<AnyWidget>,
     label: Option<String>,
@@ -27,7 +28,7 @@ pub struct Field {
 
 /// Wrap `control` in a form field. Add `.label(..)` / `.description(..)` / `.error_opt(..)`.
 pub fn field(control: impl IntoWidget) -> Field {
-    Field { control: Some(control.into_widget()), label: None, description: None, error: None }
+    Field { control: Some(control.into_widget()), ..Default::default() }
 }
 
 impl Field {

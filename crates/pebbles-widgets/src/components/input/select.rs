@@ -100,6 +100,7 @@ impl From<&str> for SelectItem {
 // ---------------------------------------------------------------------------
 
 /// A dropdown select. Build with [`select`].
+#[derive(Clone, Default)]
 pub struct Select {
     options: Vec<SelectItem>,
     initial: Option<usize>,
@@ -122,15 +123,9 @@ where
 {
     Select {
         options: options.into_iter().map(Into::into).collect(),
-        initial: None,
         placeholder: "Select…".to_string(),
         width: 220.0,
-        leading: None,
-        trailing: None,
-        clearable: false,
-        on_changed: None,
-        on_cleared: None,
-        style: None,
+        ..Default::default()
     }
 }
 

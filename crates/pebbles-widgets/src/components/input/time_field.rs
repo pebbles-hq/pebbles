@@ -54,6 +54,7 @@ fn time_options(hour12: bool, step: u32) -> Vec<String> {
 }
 
 /// A time input with a slot dropdown. Build with [`time_field`].
+#[derive(Clone, Default)]
 pub struct TimeField {
     placeholder: Option<String>,
     width: Option<f64>,
@@ -65,7 +66,7 @@ pub struct TimeField {
 
 /// Create a [`TimeField`] (24-hour, 30-minute slots by default).
 pub fn time_field() -> TimeField {
-    TimeField { placeholder: None, width: None, hour12: false, step: 30, style: None, on_changed: None }
+    TimeField { step: 30, ..Default::default() }
 }
 
 impl TimeField {

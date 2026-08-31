@@ -29,7 +29,7 @@ struct Section {
 /// open/closed state lives inside the component (seed it with
 /// [`default_open`](Accordion::default_open)); toggles are reported through
 /// [`on_toggle`](Accordion::on_toggle).
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Accordion {
     sections: Vec<Section>,
     multiple: bool,
@@ -39,7 +39,7 @@ pub struct Accordion {
 
 /// Create an empty [`Accordion`]; add sections with [`Accordion::item`].
 pub fn accordion() -> Accordion {
-    Accordion { sections: Vec::new(), multiple: false, default_open: Vec::new(), on_toggle: None }
+    Accordion::default()
 }
 
 impl Accordion {
@@ -179,6 +179,7 @@ fn render_accordion(p: &Accordion) -> AnyWidget {
 /// header toggles it and reports through [`on_toggle`](Collapsible::on_toggle).
 /// Supply a custom [`trigger`](Collapsible::trigger) to replace the default
 /// title-and-chevron header entirely.
+#[derive(Clone, Default)]
 pub struct Collapsible {
     title: String,
     content: Option<AnyWidget>,
@@ -192,9 +193,7 @@ pub fn collapsible(title: impl Into<String>, content: impl IntoWidget) -> Collap
     Collapsible {
         title: title.into(),
         content: Some(content.into_widget()),
-        trigger: None,
-        open: false,
-        on_toggle: None,
+        ..Default::default()
     }
 }
 

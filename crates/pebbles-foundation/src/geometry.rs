@@ -28,6 +28,12 @@ pub struct EdgeInsets {
     pub bottom: f64,
 }
 
+impl Default for EdgeInsets {
+    fn default() -> Self {
+        Self::ZERO
+    }
+}
+
 impl EdgeInsets {
     pub const ZERO: EdgeInsets = EdgeInsets { left: 0.0, top: 0.0, right: 0.0, bottom: 0.0 };
 

@@ -21,7 +21,7 @@ use crate::components::icon;
 /// An elevated content surface with border, radius, shadow and padding. Mirrors
 /// shadcn's `Card`: an optional header (title / description / trailing action), a
 /// content body, and an optional footer.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Card {
     content: Option<AnyWidget>,
     title: Option<String>,
@@ -34,15 +34,7 @@ pub struct Card {
 
 /// Create an empty [`Card`] and compose it with the builder methods.
 pub fn card() -> Card {
-    Card {
-        content: None,
-        title: None,
-        description: None,
-        action: None,
-        footer: None,
-        padding: EdgeInsets::all(16.0),
-        style: None,
-    }
+    Card { padding: EdgeInsets::all(16.0), ..Default::default() }
 }
 
 impl Card {
@@ -154,7 +146,7 @@ pub enum BadgeVariant {
 }
 
 /// A small status pill.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Badge {
     label: String,
     variant: BadgeVariant,
@@ -163,7 +155,7 @@ pub struct Badge {
 
 /// Create a [`Badge`].
 pub fn badge(label: impl Into<String>) -> Badge {
-    Badge { label: label.into(), variant: BadgeVariant::default(), style: None }
+    Badge { label: label.into(), ..Default::default() }
 }
 
 impl Badge {
@@ -215,7 +207,7 @@ pub enum AlertVariant {
 }
 
 /// A callout with an icon, title and description.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Alert {
     title: String,
     description: String,
@@ -225,12 +217,7 @@ pub struct Alert {
 
 /// Create an [`Alert`] with a title; add a body line with [`description`](Alert::description).
 pub fn alert(title: impl Into<String>) -> Alert {
-    Alert {
-        title: title.into(),
-        description: String::new(),
-        variant: AlertVariant::default(),
-        style: None,
-    }
+    Alert { title: title.into(), ..Default::default() }
 }
 
 impl Alert {
@@ -304,7 +291,7 @@ pub enum AvatarShape {
 /// An avatar showing an image (with an initials fallback) or just initials on a
 /// colored background. Mirrors shadcn's `Avatar` (image + fallback), plus optional
 /// shape and a status dot.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Avatar {
     initials: String,
     size: f64,
@@ -316,7 +303,7 @@ pub struct Avatar {
 
 /// Create an [`Avatar`] from initials (e.g. "RS").
 pub fn avatar(initials: impl Into<String>) -> Avatar {
-    Avatar { initials: initials.into(), size: 40.0, color: None, src: None, shape: AvatarShape::default(), status: None }
+    Avatar { initials: initials.into(), size: 40.0, ..Default::default() }
 }
 
 impl Avatar {
@@ -419,7 +406,7 @@ impl IntoWidget for Avatar {
 // ---------------------------------------------------------------------------
 
 /// A row of overlapping avatars, capped with a "+N" bubble — shadcn's avatar stack.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct AvatarGroup {
     avatars: Vec<Avatar>,
     max: Option<usize>,
@@ -428,7 +415,7 @@ pub struct AvatarGroup {
 
 /// Create an [`AvatarGroup`] from a list of avatars.
 pub fn avatar_group(avatars: Vec<Avatar>) -> AvatarGroup {
-    AvatarGroup { avatars, max: None, size: 40.0 }
+    AvatarGroup { avatars, size: 40.0, ..Default::default() }
 }
 
 impl AvatarGroup {
@@ -496,7 +483,7 @@ impl IntoWidget for AvatarGroup {
 // ---------------------------------------------------------------------------
 
 /// A hairline divider — shadcn's `Separator`, horizontal or vertical.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Separator {
     vertical: bool,
     length: Option<f64>,
@@ -506,13 +493,13 @@ pub struct Separator {
 
 /// A horizontal separator (fills the available width unless given a length).
 pub fn separator() -> Separator {
-    Separator { vertical: false, length: None, thickness: 1.0, color: None }
+    Separator { thickness: 1.0, ..Default::default() }
 }
 
 impl Separator {
     /// A vertical separator (give it a length or place it in a bounded row).
     pub fn vertical() -> Self {
-        Separator { vertical: true, length: None, thickness: 1.0, color: None }
+        Separator { vertical: true, thickness: 1.0, ..Default::default() }
     }
     /// Fixed extent along the separator's run (width if horizontal, height if
     /// vertical). Omit horizontally to fill the parent.

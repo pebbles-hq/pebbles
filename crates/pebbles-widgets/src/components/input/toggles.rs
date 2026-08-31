@@ -158,6 +158,7 @@ fn wire(
 // ---------------------------------------------------------------------------
 
 /// A checkbox. `value` is the current state; `on_changed` fires on tap.
+#[derive(Clone, Default)]
 pub struct Checkbox {
     value: bool,
     indeterminate: bool,
@@ -172,17 +173,7 @@ pub struct Checkbox {
 
 /// Create a [`Checkbox`].
 pub fn checkbox(value: bool) -> Checkbox {
-    Checkbox {
-        value,
-        indeterminate: false,
-        size: ToggleSize::default(),
-        color: None,
-        disabled: false,
-        autofocus: false,
-        label: None,
-        description: None,
-        on_changed: None,
-    }
+    Checkbox { value, ..Default::default() }
 }
 
 impl Checkbox {
@@ -279,6 +270,7 @@ fn render_checkbox(p: &Checkbox) -> AnyWidget {
 // ---------------------------------------------------------------------------
 
 /// A toggle switch. The thumb slides and the track fades between states.
+#[derive(Clone, Default)]
 pub struct Switch {
     value: bool,
     size: ToggleSize,
@@ -292,16 +284,7 @@ pub struct Switch {
 
 /// Create a [`Switch`].
 pub fn switch(value: bool) -> Switch {
-    Switch {
-        value,
-        size: ToggleSize::default(),
-        color: None,
-        disabled: false,
-        autofocus: false,
-        label: None,
-        description: None,
-        on_changed: None,
-    }
+    Switch { value, ..Default::default() }
 }
 
 impl Switch {
@@ -380,6 +363,7 @@ fn render_switch(p: &Switch) -> AnyWidget {
 // ---------------------------------------------------------------------------
 
 /// A radio button. `selected` is the current state; `on_selected` fires on tap.
+#[derive(Clone, Default)]
 pub struct Radio {
     selected: bool,
     size: ToggleSize,
@@ -393,16 +377,7 @@ pub struct Radio {
 
 /// Create a [`Radio`].
 pub fn radio(selected: bool) -> Radio {
-    Radio {
-        selected,
-        size: ToggleSize::default(),
-        color: None,
-        disabled: false,
-        autofocus: false,
-        label: None,
-        description: None,
-        on_selected: None,
-    }
+    Radio { selected, ..Default::default() }
 }
 
 impl Radio {
@@ -498,6 +473,7 @@ pub enum ToggleVariant {
 }
 
 /// A two-state toggle button wrapping any child.
+#[derive(Clone, Default)]
 pub struct Toggle {
     pressed: bool,
     child: Option<AnyWidget>,
@@ -511,16 +487,7 @@ pub struct Toggle {
 
 /// Create a [`Toggle`] around `child`.
 pub fn toggle(pressed: bool, child: impl IntoWidget) -> Toggle {
-    Toggle {
-        pressed,
-        child: Some(child.into_widget()),
-        variant: ToggleVariant::default(),
-        size: ToggleSize::default(),
-        color: None,
-        disabled: false,
-        autofocus: false,
-        on_changed: None,
-    }
+    Toggle { pressed, child: Some(child.into_widget()), ..Default::default() }
 }
 
 impl Toggle {

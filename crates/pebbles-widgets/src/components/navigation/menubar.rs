@@ -46,13 +46,14 @@ impl MenubarMenu {
 }
 
 /// A horizontal menu strip. Build with [`menubar`], add menus with [`menu`](Menubar::menu).
+#[derive(Default)]
 pub struct Menubar {
     menus: Vec<MenubarMenu>,
 }
 
 /// Create an empty [`Menubar`]; add menus with [`menu`](Menubar::menu).
 pub fn menubar() -> Menubar {
-    Menubar { menus: Vec::new() }
+    Menubar::default()
 }
 
 impl Menubar {
