@@ -41,6 +41,7 @@ pub struct Tabs {
     tabs: Vec<TabDef>,
     variant: TabsVariant,
     autofocus: bool,
+    style: Option<crate::style::Style>,
 }
 
 /// Create a [`Tabs`] with the given selected index.
@@ -82,6 +83,13 @@ impl Tabs {
         self.autofocus = true;
         self
     }
+    /// Merge a [`Style`](crate::Style) over the strip: box props (background,
+    /// border, radius) style the bar; text props (color, size, weight) style
+    /// the tab labels.
+    pub fn style(mut self, style: crate::style::Style) -> Self {
+        self.style = Some(style);
+        self
+    }
 }
 
 impl IntoWidget for Tabs {
@@ -95,6 +103,12 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
     let node = create_focus();
     let n = p.tabs.len();
     let selected = p.selected;
+    let merged = crate::style::style()
+        .background(th.colors.background)
+        .merge(p.style.clone().unwrap_or_default());
+    let label_color = merged.color.unwrap_or(th.colors.foreground);
+    let label_size = merged.font_size.unwrap_or(14.0);
+    let label_weight = merged.font_weight.unwrap_or(500.0);
 
     // Keyboard: while the strip is focused, Left/Right cycle to the next enabled
     // tab (wrapping); disabled tabs are skipped.
@@ -146,15 +160,20 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
                     variant: p.variant,
                     on_tap: tab.on_select.clone(),
                     on_focus: Rc::new(move || focus.request_focus()),
+                    color: label_color,
+                    size: label_size,
+                    weight: label_weight,
                 },
             )
             .into_widget(),
         );
     }
 
-    let mut strip_deco = BoxDecoration::new().color(th.colors.background);
+    let mut strip_deco = BoxDecoration::new().color(merged.background.unwrap_or(th.colors.background));
     if node.is_focused() {
         strip_deco = strip_deco.border(Border::new(th.colors.ring, 2.0));
+    } else if let Some(border) = merged.border {
+        strip_deco = strip_deco.border(border);
     }
     let strip = Container::new()
         .decoration(strip_deco)
@@ -189,6 +208,9 @@ struct TabButtonProps {
     variant: TabsVariant,
     on_tap: Option<Callback>,
     on_focus: Rc<dyn Fn()>,
+    color: pebbles_foundation::Color,
+    size: f32,
+    weight: f32,
 }
 
 /// One strip button: underline or pill, hover feedback, pointer cursor, tap
@@ -199,9 +221,9 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
     let hv =
         if p.disabled { 0.0 } else { animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12) };
     let label_color = if p.selected {
-        c.foreground
+        p.color
     } else {
-        mix(c.muted_foreground, c.foreground, 0.25 * hv as f32)
+        mix(c.muted_foreground, p.color, 0.3 * hv as f32)
     };
 
     let cell: AnyWidget = match p.variant {
@@ -210,7 +232,7 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
             column(children![
                 Padding::new(
                     EdgeInsets::symmetric(14.0, 8.0),
-                    text(p.label.clone()).size(14.0).weight(500.0).color(label_color),
+                    text(p.label.clone()).size(p.size).weight(p.weight).color(label_color),
                 ),
                 Container::new().color(underline_color).height(2.0),
             ])
@@ -224,7 +246,7 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
                 .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(999.0)))
                 .child(Padding::new(
                     EdgeInsets::symmetric(14.0, 6.0),
-                    text(p.label.clone()).size(14.0).weight(500.0).color(label_color),
+                    text(p.label.clone()).size(p.size).weight(p.weight).color(label_color),
                 ))
                 .into_widget()
         }

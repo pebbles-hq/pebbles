@@ -61,6 +61,7 @@ impl MenubarMenu {
 #[derive(Default)]
 pub struct Menubar {
     menus: Vec<MenubarMenu>,
+    style: Option<crate::style::Style>,
 }
 
 /// Create an empty [`Menubar`]; add menus with [`menu`](Menubar::menu).
@@ -78,15 +79,23 @@ impl Menubar {
         self.menus.push(menubar_menu(label, entries));
         self
     }
+    /// Merge a [`Style`](crate::Style) over the strip: box props (background,
+    /// border, radius, padding) style the bar; text props (color, size) style
+    /// the trigger labels.
+    pub fn style(mut self, style: crate::style::Style) -> Self {
+        self.style = Some(style);
+        self
+    }
 }
 
 struct Props {
     menus: Vec<MenubarMenu>,
+    style: Option<crate::style::Style>,
 }
 
 impl IntoWidget for Menubar {
     fn into_widget(self) -> AnyWidget {
-        component_props(render_menubar, Props { menus: self.menus }).into_widget()
+        component_props(render_menubar, Props { menus: self.menus, style: self.style }).into_widget()
     }
 }
 
@@ -99,6 +108,9 @@ fn render_menubar(p: &Props) -> AnyWidget {
     let open = create_signal(Option::<usize>::None);
     let child_nav = list_nav();
     let child_ctx = create_signal::<Option<Rc<ChildCtx>>>(None);
+    let merged = crate::style::style().merge(p.style.clone().unwrap_or_default());
+    let label_color = merged.color.unwrap_or(c.foreground);
+    let label_size = merged.font_size.unwrap_or(14.0);
 
     let mut triggers: Vec<AnyWidget> = Vec::with_capacity(p.menus.len());
     for (i, m) in p.menus.iter().enumerate() {
@@ -107,7 +119,7 @@ fn render_menubar(p: &Props) -> AnyWidget {
         let width = m.width;
         let active = open.get() == Some(i);
         let bg = if active { c.accent } else { palette_transparent() };
-        let fg = if active { c.accent_foreground } else { c.foreground };
+        let fg = if active { c.accent_foreground } else { label_color };
 
         let show_at = {
             let bp = bp.clone();
@@ -130,7 +142,7 @@ fn render_menubar(p: &Props) -> AnyWidget {
             .alignment(Alignment::CENTER)
             .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius)))
             .padding(EdgeInsets::symmetric(12.0, 0.0))
-            .child(text(m.label.clone()).size(14.0).weight(500.0).color(fg));
+            .child(text(m.label.clone()).size(label_size).weight(500.0).color(fg));
 
         let hover_show = show_at.clone();
         let g = GestureDetector::new(trigger)
@@ -153,7 +165,11 @@ fn render_menubar(p: &Props) -> AnyWidget {
         triggers.push(g.into_widget());
     }
 
-    row(triggers).spacing(2.0).main_axis_size(MainAxisSize::Min).into_widget()
+    crate::style::styled(
+        row(triggers).spacing(2.0).main_axis_size(MainAxisSize::Min),
+        merged,
+    )
+    .into_widget()
 }
 
 fn palette_transparent() -> pebbles_foundation::Color {

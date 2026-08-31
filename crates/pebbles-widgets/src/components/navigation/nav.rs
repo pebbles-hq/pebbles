@@ -20,15 +20,22 @@ use crate::components::{ButtonSize, ButtonVariant, button, dropdown_menu, icon_b
 /// A breadcrumb trail of path segments. When there are more than
 /// [`max_visible`](Breadcrumb::max_visible) segments, the middle ones collapse
 /// into a "…" dropdown (shadcn's ellipsis breadcrumb).
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Breadcrumb {
     segments: Vec<String>,
     max_visible: usize,
+    separator: pebbles_render::IconData,
+    style: Option<Style>,
 }
 
 /// Create a [`Breadcrumb`] from path segments.
 pub fn breadcrumb(segments: Vec<String>) -> Breadcrumb {
-    Breadcrumb { segments, max_visible: usize::MAX, ..Default::default() }
+    Breadcrumb {
+        segments,
+        max_visible: usize::MAX,
+        separator: IconKind::ChevronRight.into(),
+        style: None,
+    }
 }
 
 impl Breadcrumb {
@@ -36,6 +43,18 @@ impl Breadcrumb {
     /// than `n` (minimum 3 — first + "…" + `n - 2` trailing segments).
     pub fn max_visible(mut self, n: usize) -> Self {
         self.max_visible = n;
+        self
+    }
+    /// The glyph between segments (default `ChevronRight`).
+    pub fn separator(mut self, glyph: impl Into<pebbles_render::IconData>) -> Self {
+        self.separator = glyph.into();
+        self
+    }
+    /// Merge a [`Style`](crate::Style) over the trail: box props wrap the row;
+    /// text props (color, size) style the segment labels (the active segment
+    /// takes the color, the rest stay muted).
+    pub fn style(mut self, style: Style) -> Self {
+        self.style = Some(style);
         self
     }
 }
@@ -46,6 +65,9 @@ impl IntoWidget for Breadcrumb {
         let segments = std::mem::take(&mut self.segments);
         let n = self.max_visible.max(3);
         let len = segments.len();
+        let merged = crate::style::style().merge(self.style.clone().unwrap_or_default());
+        let seg_color = merged.color.unwrap_or(th.colors.foreground);
+        let seg_size = merged.font_size.unwrap_or(13.0);
 
         // Split into [first] + [hidden middle] + [trailing n-2] when overflowing.
         let hidden: Vec<String> = if len <= n {
@@ -77,18 +99,18 @@ impl IntoWidget for Breadcrumb {
                 }
                 items.push(menu.into_widget());
             } else {
-                let color = if i == last { th.colors.foreground } else { th.colors.muted_foreground };
-                items.push(text(seg).size(13.0).color(color).into_widget());
+                let color = if i == last { seg_color } else { th.colors.muted_foreground };
+                items.push(text(seg).size(seg_size).color(color).into_widget());
             }
             if i != last {
                 items.push(gap_w(6.0).into_widget());
                 items.push(
-                    icon(IconKind::ChevronRight).size(14.0).color(th.colors.muted_foreground).into_widget(),
+                    icon(self.separator).size(14.0).color(th.colors.muted_foreground).into_widget(),
                 );
                 items.push(gap_w(6.0).into_widget());
             }
         }
-        row(items).main_axis_size(MainAxisSize::Min).into_widget()
+        crate::style::styled(row(items).main_axis_size(MainAxisSize::Min), merged).into_widget()
     }
 }
 

@@ -6,7 +6,7 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
-use pebbles_render::IconKind;
+use pebbles_render::{BoxDecoration, IconKind};
 
 use pebbles_core::children;
 use pebbles_core::context::action;
@@ -35,6 +35,7 @@ pub struct Accordion {
     multiple: bool,
     default_open: Vec<usize>,
     on_toggle: Option<Rc<dyn Fn(usize, bool)>>,
+    style: Option<crate::style::Style>,
 }
 
 /// Create an empty [`Accordion`]; add sections with [`Accordion::item`].
@@ -65,6 +66,13 @@ impl Accordion {
         self.on_toggle = Some(Rc::new(f));
         self
     }
+    /// Merge a [`Style`](crate::Style) over the sections: box props (background,
+    /// border, radius) style each header; text props (color, size, weight)
+    /// style the section titles.
+    pub fn style(mut self, style: crate::style::Style) -> Self {
+        self.style = Some(style);
+        self
+    }
 }
 
 /// Props for one accordion section.
@@ -75,6 +83,12 @@ struct SectionProps {
     index: usize,
     multiple: bool,
     on_toggle: Option<Rc<dyn Fn(usize, bool)>>,
+    header_bg: pebbles_foundation::Color,
+    border: Option<pebbles_render::Border>,
+    radius: pebbles_render::BorderRadius,
+    title_color: pebbles_foundation::Color,
+    title_size: f32,
+    title_weight: f32,
 }
 
 /// One section: a hover-highlighting header with a tweening chevron, and the
@@ -105,14 +119,20 @@ fn render_section(p: &SectionProps) -> AnyWidget {
         }
     });
 
+    let mut header_deco = BoxDecoration::new()
+        .color(mix(p.header_bg, c.muted, 0.5 * hv as f32))
+        .radius(p.radius);
+    if let Some(border) = p.border {
+        header_deco = header_deco.border(border);
+    }
     let header = GestureDetector::new(
         Container::new()
-            .color(mix(c.background, c.muted, 0.5 * hv as f32))
+            .decoration(header_deco)
             .child(
                 Padding::new(
                     EdgeInsets::symmetric(4.0, 12.0),
                     row(children![
-                        text(p.title.clone()).size(14.0).weight(500.0).color(c.foreground),
+                        text(p.title.clone()).size(p.title_size).weight(p.title_weight).color(p.title_color),
                         spacer(),
                         Transform::rotate(rot * std::f64::consts::PI, icon(IconKind::ChevronDown).size(18.0).color(c.muted_foreground)),
                     ])
@@ -140,6 +160,11 @@ impl IntoWidget for Accordion {
 
 fn render_accordion(p: &Accordion) -> AnyWidget {
     let c = theme().colors;
+    let merged = crate::style::style().merge(p.style.clone().unwrap_or_default());
+    let header_bg = merged.background.unwrap_or(c.background);
+    let title_color = merged.color.unwrap_or(c.foreground);
+    let title_size = merged.font_size.unwrap_or(14.0);
+    let title_weight = merged.font_weight.unwrap_or(500.0);
     let open = create_signal({
         let mut v = vec![false; p.sections.len()];
         for &i in &p.default_open {
@@ -163,6 +188,12 @@ fn render_accordion(p: &Accordion) -> AnyWidget {
                     index: i,
                     multiple: p.multiple,
                     on_toggle: p.on_toggle.clone(),
+                    header_bg,
+                    border: merged.border,
+                    radius: merged.radius.unwrap_or_default(),
+                    title_color,
+                    title_size,
+                    title_weight,
                 },
             )
             .into_widget(),
