@@ -17,7 +17,9 @@ fn counter_window() -> impl IntoWidget {
             row(children![
                 text(format!("Shared counter: {}", count.get())).size(15.0),
                 gap_w(14.0),
-                button("+1").size(ButtonSize::Sm).on_pressed(move || count.update(|c| *c += 1)),
+                button("+1")
+                    .size(ButtonSize::Sm)
+                    .on_pressed(move || count.update(|c| *c += 1)),
             ])
             .main_axis_size(MainAxisSize::Min),
             gap_h(16.0),
@@ -32,17 +34,19 @@ pub fn windows() -> Element {
     let win = create_signal::<Option<WindowId>>(None);
     let draft = create_signal(String::from("Hello, window!"));
 
-    screen(
-        "Windows & IPC",
-        "Open a second OS window that shares this app's reactive runtime. Cross-window state is just a shared signal or a typed Channel — no serialization, unlike Electron. winit stays hidden; you drive it all from Pebbles.",
+    screen("Windows & IPC")
+
+        .description("Open a second OS window that shares this app's reactive runtime. Cross-window state is just a shared signal or a typed Channel — no serialization, unlike Electron. winit stays hidden; you drive it all from Pebbles.")
+
+        .body(
         children![open_section(win), shared_section(), message_section(draft)],
     )
 }
 
 fn open_section(win: Signal<Option<WindowId>>) -> impl IntoWidget {
-    doc(
-        "Open a window",
-        "window(content).title(..).size(..).open() spawns a real OS window and returns an id; close_window(id) closes it (so does its own control).",
+    doc("Open a window")
+        .description("window(content).title(..).size(..).open() spawns a real OS window and returns an id; close_window(id) closes it (so does its own control).")
+        .body(
         row(children![
             button("Open counter window").leading(IconKind::Plus).on_pressed(move || {
                 if win.get().is_none() {
@@ -71,9 +75,9 @@ fn open_section(win: Signal<Option<WindowId>>) -> impl IntoWidget {
 
 fn shared_section() -> impl IntoWidget {
     let count = state::counter();
-    doc(
-        "Shared state (IPC)",
-        "This counter is one global signal. Increment it here or in the other window — both update live, instantly, because they read the same signal.",
+    doc("Shared state (IPC)")
+        .description("This counter is one global signal. Increment it here or in the other window — both update live, instantly, because they read the same signal.")
+        .body(
         row(children![
             text(format!("Counter: {}", count.get())).size(16.0).semibold(),
             gap_w(14.0),
@@ -86,9 +90,9 @@ fn shared_section() -> impl IntoWidget {
 }
 
 fn message_section(draft: Signal<String>) -> impl IntoWidget {
-    doc(
-        "Send a message (typed Channel)",
-        "channel::<String>() is a typed cross-window bus. Send from here; the counter window shows the latest via .latest(). No (de)serialization — it's the same value.",
+    doc("Send a message (typed Channel)")
+        .description("channel::<String>() is a typed cross-window bus. Send from here; the counter window shows the latest via .latest(). No (de)serialization — it's the same value.")
+        .body(
         column(children![
             row(children![
                 text_field().bind(draft).width(260.0),

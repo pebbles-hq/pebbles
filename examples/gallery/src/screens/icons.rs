@@ -21,7 +21,11 @@ pub fn icons() -> Element {
 
     let grid_items = matches.clone();
     let grid = Container::new()
-        .decoration(BoxDecoration::new().border(Border::new(c.border, 1.0)).radius(BorderRadius::all(theme().radius)))
+        .decoration(
+            BoxDecoration::new()
+                .border(Border::new(c.border, 1.0))
+                .radius(BorderRadius::all(theme().radius)),
+        )
         .height(420.0)
         .child(GridView::builder(count, 6, 82.0, move |i| {
             let cc = theme().colors;
@@ -42,13 +46,15 @@ pub fn icons() -> Element {
             )
         }));
 
-    screen(
-        "Icons",
-        "The default icon set is Lucide — every glyph below ships in the framework. Icons are plain data (IconData), so any Lucide glyph, a named IconKind, or your own icon drops in wherever an icon is accepted.",
+    screen("Icons")
+
+        .description("The default icon set is Lucide — every glyph below ships in the framework. Icons are plain data (IconData), so any Lucide glyph, a named IconKind, or your own icon drops in wherever an icon is accepted.")
+
+        .body(
         children![
-            doc(
-                "Named handles",
-                "IconKind covers the common glyphs the widgets use — icon(IconKind::Check). Each resolves to a Lucide icon.",
+            doc("Named handles")
+                .description("IconKind covers the common glyphs the widgets use — icon(IconKind::Check). Each resolves to a Lucide icon.")
+                .body(
                 wrap(children![
                     icon(IconKind::Check).size(22.0),
                     icon(IconKind::Search).size(22.0),
@@ -61,9 +67,9 @@ pub fn icons() -> Element {
                 ])
                 .spacing(14.0),
             ),
-            doc(
-                "The full Lucide set",
-                "Reach any of the bundled icons by const — icon(lucide::CAMERA) — or by name at runtime — icon(lucide::by_name(\"circle-check\").unwrap()). Search the whole catalog:",
+            doc("The full Lucide set")
+                .description("Reach any of the bundled icons by const — icon(lucide::CAMERA) — or by name at runtime — icon(lucide::by_name(\"circle-check\").unwrap()). Search the whole catalog:")
+                .body(
                 column(
                     children![
                         text_field()
@@ -80,9 +86,9 @@ pub fn icons() -> Element {
                 .cross_axis_alignment(CrossAxisAlignment::Start)
                 .main_axis_size(MainAxisSize::Min),
             ),
-            doc(
-                "Bring your own",
-                "An icon is just data. Define a const IconData from SVG path strings (or load one at runtime) and it works everywhere — no enum entry, no framework change.",
+            doc("Bring your own")
+                .description("An icon is just data. Define a const IconData from SVG path strings (or load one at runtime) and it works everywhere — no enum entry, no framework change.")
+                .body(
                 icon(HEART).size(28.0).color(c.destructive),
             ),
         ],

@@ -9,37 +9,37 @@ const PHOTO_B64: &str = "/9j/4QDeRXhpZgAASUkqAAgAAAAGABIBAwABAAAAAQAAABoBBQABAAA
 const SAMPLE: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/sample.jpg"));
 
 pub fn images() -> Element {
-    screen(
-        "Images",
-        "One ImageView, four sources — all showing the SAME photo: URL (fetched + decoded on a background thread), asset (file on disk), base64/data-URI, and raw memory bytes — with object-fit modes, rounded corners, a loading placeholder and an error fallback.",
+    screen("Images")
+        .description("One ImageView, four sources — all showing the SAME photo: URL (fetched + decoded on a background thread), asset (file on disk), base64/data-URI, and raw memory bytes — with object-fit modes, rounded corners, a loading placeholder and an error fallback.")
+        .body(
         children![
-            doc(
-                "URL image (network)",
-                "ImageView::network(url) fetches and decodes on a background thread; a spinner placeholder shows while it loads and an error box if it fails. (Needs internet.)",
+            doc("URL image (network)")
+                .description("ImageView::network(url) fetches and decodes on a background thread; a spinner placeholder shows while it loads and an error box if it fails. (Needs internet.)")
+                .body(
                 ImageView::network("https://picsum.photos/seed/pebbles/480/320")
                     .size(360.0, 240.0)
                     .radius(BorderRadius::all(12.0)),
             ),
-            doc(
-                "Asset image (file)",
-                "ImageView::asset(path) decodes a PNG/JPEG/GIF/WebP from disk — the same photo, saved to assets/.",
+            doc("Asset image (file)")
+                .description("ImageView::asset(path) decodes a PNG/JPEG/GIF/WebP from disk — the same photo, saved to assets/.")
+                .body(
                 ImageView::asset(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/sample.jpg"))
                     .size(240.0, 160.0)
                     .radius(BorderRadius::all(10.0)),
             ),
-            doc(
-                "Base64 / data-URI",
-                "ImageView::base64(str) decodes an embedded image; the same photo, base64-encoded. `data:` URIs work too.",
+            doc("Base64 / data-URI")
+                .description("ImageView::base64(str) decodes an embedded image; the same photo, base64-encoded. `data:` URIs work too.")
+                .body(
                 ImageView::base64(PHOTO_B64).size(240.0, 160.0).radius(BorderRadius::all(10.0)),
             ),
-            doc(
-                "Memory bytes",
-                "ImageView::memory(bytes) decodes encoded bytes you already hold — here the same photo via include_bytes!.",
+            doc("Memory bytes")
+                .description("ImageView::memory(bytes) decodes encoded bytes you already hold — here the same photo via include_bytes!.")
+                .body(
                 ImageView::memory(SAMPLE).size(240.0, 160.0).radius(BorderRadius::all(10.0)),
             ),
-            doc(
-                "Fit modes (object-fit)",
-                "Cover crops to fill, Contain fits entirely inside, Fill stretches to the box.",
+            doc("Fit modes (object-fit)")
+                .description("Cover crops to fill, Contain fits entirely inside, Fill stretches to the box.")
+                .body(
                 row(children![
                     ImageView::memory(SAMPLE).size(140.0, 140.0).fit(ImageFit::Cover).radius(BorderRadius::all(8.0)),
                     ImageView::memory(SAMPLE).size(140.0, 140.0).fit(ImageFit::Contain).radius(BorderRadius::all(8.0)),
@@ -48,9 +48,9 @@ pub fn images() -> Element {
                 .main_axis_size(MainAxisSize::Min)
                 .spacing(14.0),
             ),
-            doc(
-                "Error fallback",
-                "A bad URL or undecodable source shows the error widget (default warning, or your own via .error(..)).",
+            doc("Error fallback")
+                .description("A bad URL or undecodable source shows the error widget (default warning, or your own via .error(..)).")
+                .body(
                 ImageView::network("https://invalid.invalid/nope.png")
                     .size(240.0, 150.0)
                     .radius(BorderRadius::all(10.0)),

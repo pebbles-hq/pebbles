@@ -4,15 +4,25 @@ use crate::ui::{doc, gap_h, screen};
 
 /// A labelled date field demonstrating one caption layout.
 fn caption_demo(label: &str, layout: CaptionLayout) -> impl IntoWidget {
-    column(
-        children![muted(label), gap_h(6.0), date_field().caption(layout).width(210.0)]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(0.0)
+    column(children![
+        muted(label),
+        gap_h(6.0),
+        date_field().caption(layout).width(210.0)
+    ])
+    .cross_axis_alignment(CrossAxisAlignment::Start)
+    .main_axis_size(MainAxisSize::Min)
+    .spacing(0.0)
 }
 
 /// A labelled date field demonstrating one date format.
 fn caption_fmt(label: &str, fmt: DateFormat) -> impl IntoWidget {
-    column(children![muted(label), gap_h(6.0), date_field().format(fmt).width(200.0)])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_size(MainAxisSize::Min)
+    column(children![
+        muted(label),
+        gap_h(6.0),
+        date_field().format(fmt).width(200.0)
+    ])
+    .cross_axis_alignment(CrossAxisAlignment::Start)
+    .main_axis_size(MainAxisSize::Min)
 }
 
 /// A labelled time field.
@@ -27,18 +37,20 @@ pub fn date_picker() -> Element {
     let inline = calendar(move |y, m, d| picked.set(format!("{m:02}/{d:02}/{y:04}")))
         .caption(CaptionLayout::Dropdown);
 
-    screen(
-        "Date Picker",
-        "A shadcn-style calendar. Click the month or year in the caption to jump straight to a month grid or year grid — no scrubbing through the arrows. Pick the caption layout that fits.",
+    screen("Date Picker")
+
+        .description("A shadcn-style calendar. Click the month or year in the caption to jump straight to a month grid or year grid — no scrubbing through the arrows. Pick the caption layout that fits.")
+
+        .body(
         children![
-            doc(
-                "Date input",
-                "Type digits (they auto-format to MM/DD/YYYY) or click the calendar button to open the picker. Reopening the picker highlights the current value and opens on its month.",
+            doc("Date input")
+                .description("Type digits (they auto-format to MM/DD/YYYY) or click the calendar button to open the picker. Reopening the picker highlights the current value and opens on its month.")
+                .body(
                 date_field().width(240.0),
             ),
-            doc(
-                "Caption layouts",
-                "shadcn's captionLayout — a plain label with arrows, or clickable month/year dropdowns. Each dropdown drills into a grid so years are one click away.",
+            doc("Caption layouts")
+                .description("shadcn's captionLayout — a plain label with arrows, or clickable month/year dropdowns. Each dropdown drills into a grid so years are one click away.")
+                .body(
                 wrap(children![
                     caption_demo("Label", CaptionLayout::Label),
                     caption_demo("Dropdown", CaptionLayout::Dropdown),
@@ -48,9 +60,9 @@ pub fn date_picker() -> Element {
                 .spacing(22.0)
                 .run_spacing(18.0),
             ),
-            doc(
-                "Custom formats",
-                "The developer picks the format — order + separator. MDY, DMY, YMD, or your own separator; typing and the picker both honor it.",
+            doc("Custom formats")
+                .description("The developer picks the format — order + separator. MDY, DMY, YMD, or your own separator; typing and the picker both honor it.")
+                .body(
                 wrap(children![
                     caption_fmt("MM/DD/YYYY", DateFormat::MDY),
                     caption_fmt("DD/MM/YYYY", DateFormat::DMY),
@@ -60,9 +72,9 @@ pub fn date_picker() -> Element {
                 .spacing(22.0)
                 .run_spacing(18.0),
             ),
-            doc(
-                "Time picker — separate from the date picker",
-                "time_field() is its own widget: type a specific time, or open the dropdown of slots. 24-hour or .hour12() (AM/PM), and a configurable .step().",
+            doc("Time picker — separate from the date picker")
+                .description("time_field() is its own widget: type a specific time, or open the dropdown of slots. 24-hour or .hour12() (AM/PM), and a configurable .step().")
+                .body(
                 wrap(children![
                     caption_time("24-hour · 30m", time_field()),
                     caption_time("12-hour · 15m", time_field().hour12().step(15)),
@@ -70,9 +82,9 @@ pub fn date_picker() -> Element {
                 .spacing(22.0)
                 .run_spacing(18.0),
             ),
-            doc(
-                "Styled calendar via Style",
-                "The calendar popover takes a Style — background, border, radius, shadow — like every other widget. (.style(..) does the same for the input box.)",
+            doc("Styled calendar via Style")
+                .description("The calendar popover takes a Style — background, border, radius, shadow — like every other widget. (.style(..) does the same for the input box.)")
+                .body(
                 date_field().width(240.0).calendar_style(
                     style()
                         .background(theme().colors.card)
@@ -80,9 +92,9 @@ pub fn date_picker() -> Element {
                         .border(Border::new(theme().colors.primary, 1.5)),
                 ),
             ),
-            doc(
-                "Inline calendar — pick month & year",
-                "The calendar on its own. Click “Month ▾” for the 12-month grid, or the year for a year grid (page decades with the arrows). Selecting a day reports it back.",
+            doc("Inline calendar — pick month & year")
+                .description("The calendar on its own. Click “Month ▾” for the 12-month grid, or the year for a year grid (page decades with the arrows). Selecting a day reports it back.")
+                .body(
                 column(
                     children![
                         inline,

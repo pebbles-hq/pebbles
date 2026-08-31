@@ -6,17 +6,17 @@ use pebbles::prelude::*;
 use crate::ui::{doc, gap_w, screen};
 
 pub fn overlays() -> Element {
-    screen(
-        "Overlays & Feedback",
-        "Floating, layered UI: hover tooltips in the passive layer, click-triggered popovers in the overlay layer, edge-anchored sheets/drawers, and stacked toast notifications.",
+    screen("Overlays & Feedback")
+        .description("Floating, layered UI: hover tooltips in the passive layer, click-triggered popovers in the overlay layer, edge-anchored sheets/drawers, and stacked toast notifications.")
+        .body(
         children![tooltips(), popovers(), sheets(), toasts()],
     )
 }
 
 fn sheets() -> impl IntoWidget {
-    doc(
-        "Sheet / Drawer",
-        "An edge-anchored modal panel over a dimmed scrim — Right/Left for a full-height sheet, Bottom for a drawer. Escape or an outside click dismisses.",
+    doc("Sheet / Drawer")
+        .description("An edge-anchored modal panel over a dimmed scrim — Right/Left for a full-height sheet, Bottom for a drawer. Escape or an outside click dismisses.")
+        .body(
         row(children![
             button("Open right sheet").variant(ButtonVariant::Outline).on_pressed(|| {
                 sheet(
@@ -47,9 +47,9 @@ fn sheets() -> impl IntoWidget {
 }
 
 fn tooltips() -> impl IntoWidget {
-    doc(
-        "Tooltip",
-        "Hover a trigger; after a short delay a hint appears near the pointer and follows hover-exit to dismiss. Never blocks clicks.",
+    doc("Tooltip")
+        .description("Hover a trigger; after a short delay a hint appears near the pointer and follows hover-exit to dismiss. Never blocks clicks.")
+        .body(
         row(children![
             tooltip("Saved to disk", button("Hover me").variant(ButtonVariant::Outline)),
             gap_w(12.0),
@@ -62,9 +62,9 @@ fn tooltips() -> impl IntoWidget {
 }
 
 fn popovers() -> impl IntoWidget {
-    doc(
-        "Popover",
-        "Click a trigger to float arbitrary content in the overlay layer — it flips near edges, follows page scroll, and hosts real inputs. Click outside to dismiss.",
+    doc("Popover")
+        .description("Click a trigger to float arbitrary content in the overlay layer — it flips near edges, follows page scroll, and hosts real inputs. Click outside to dismiss.")
+        .body(
         row(children![
             popover(
                 column(children![
@@ -88,11 +88,10 @@ fn popovers() -> impl IntoWidget {
     )
 }
 
-
 fn toasts() -> impl IntoWidget {
-    doc(
-        "Toast",
-        "Transient notifications stacked bottom-right, auto-dismissed after a few seconds (or manually). Variants carry an icon + accent; an optional action button.",
+    doc("Toast")
+        .description("Transient notifications stacked bottom-right, auto-dismissed after a few seconds (or manually). Variants carry an icon + accent; an optional action button.")
+        .body(
         row(children![
             button("Default").variant(ButtonVariant::Outline).on_pressed(|| {
                 toast("Event created").description("Fri, Jan 3 at 5:00 PM").show();

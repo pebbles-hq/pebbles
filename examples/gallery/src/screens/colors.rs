@@ -18,7 +18,9 @@ fn swatch(color: Color, shade: &str) -> impl IntoWidget {
             )
             .child(SizedBox::new(Some(46.0), Some(40.0), None)),
         gap_h(4.0),
-        text(shade.to_string()).size(10.0).color(theme().colors.muted_foreground),
+        text(shade.to_string())
+            .size(10.0)
+            .color(theme().colors.muted_foreground),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center)
     .main_axis_size(MainAxisSize::Min)
@@ -26,15 +28,19 @@ fn swatch(color: Color, shade: &str) -> impl IntoWidget {
 
 /// One family: its name plus the 11 shades 50→950.
 fn scale(name: &str, shades: [Color; 11]) -> impl IntoWidget {
-    const LABELS: [&str; 11] =
-        ["50", "100", "200", "300", "400", "500", "600", "700", "800", "900", "950"];
+    const LABELS: [&str; 11] = [
+        "50", "100", "200", "300", "400", "500", "600", "700", "800", "900", "950",
+    ];
     let mut chips: Vec<AnyWidget> = Vec::new();
     for (i, c) in shades.into_iter().enumerate() {
         chips.push(swatch(c, LABELS[i]).into_widget());
         chips.push(gap_w(6.0).into_widget());
     }
     column(children![
-        text(name.to_string()).size(12.0).semibold().color(theme().colors.foreground),
+        text(name.to_string())
+            .size(12.0)
+            .semibold()
+            .color(theme().colors.foreground),
         gap_h(6.0),
         row(chips).main_axis_size(MainAxisSize::Min),
         gap_h(14.0),
@@ -62,9 +68,9 @@ macro_rules! fam {
 }
 
 pub fn colors() -> Element {
-    screen(
-        "Colors",
-        "The built-in palette is the full Tailwind/shadcn scale — 22 families × shades 50–950. Reference any as palette::<family>::S<shade>.",
+    screen("Colors")
+        .description("The built-in palette is the full Tailwind/shadcn scale — 22 families × shades 50–950. Reference any as palette::<family>::S<shade>.")
+        .body(
         children![
             section(
                 "NEUTRALS",

@@ -2,7 +2,15 @@ use pebbles::prelude::*;
 
 use crate::ui::{doc, screen};
 
-const PLANS: [&str; 7] = ["Free", "Pro", "Enterprise", "Team", "Startup", "Growth", "Custom"];
+const PLANS: [&str; 7] = [
+    "Free",
+    "Pro",
+    "Enterprise",
+    "Team",
+    "Startup",
+    "Growth",
+    "Custom",
+];
 
 pub fn selects() -> Element {
     let picked = create_signal(String::from("Pro"));
@@ -12,13 +20,15 @@ pub fn selects() -> Element {
     let show_activity = create_signal(false);
     let show_panel = create_signal(true);
 
-    screen(
-        "Select & Dropdowns",
-        "shadcn draws a line between a Select (pick a value) and a Dropdown Menu (run an action) — both are here. The searchable Combobox lives on its own screen. Every one opens in the overlay layer and flips up near the bottom edge.",
+    screen("Select & Dropdowns")
+
+        .description("shadcn draws a line between a Select (pick a value) and a Dropdown Menu (run an action) — both are here. The searchable Combobox lives on its own screen. Every one opens in the overlay layer and flips up near the bottom edge.")
+
+        .body(
         children![
-            doc(
-                "Select — pick a value",
-                "One choice from a list; the current value gets a check. This is a form control — its job is to hold a value.",
+            doc("Select — pick a value")
+                .description("One choice from a list; the current value gets a check. This is a form control — its job is to hold a value.")
+                .body(
                 column(
                     children![
                         select(PLANS)
@@ -29,9 +39,9 @@ pub fn selects() -> Element {
                         muted(format!("selected: {}", picked.get())),
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(10.0),
             ),
-            doc(
-                "Select with icons",
-                "Options are SelectItems, so each row can carry an icon (select_item(\"Away\").icon(…)). The trigger shows the selected item's icon, and .leading() adds a fixed one — Flutter's DropdownMenuEntry style.",
+            doc("Select with icons")
+                .description("Options are SelectItems, so each row can carry an icon (select_item(\"Away\").icon(…)). The trigger shows the selected item's icon, and .leading() adds a fixed one — Flutter's DropdownMenuEntry style.")
+                .body(
                 column(
                     children![
                         select([
@@ -48,9 +58,9 @@ pub fn selects() -> Element {
                 .cross_axis_alignment(CrossAxisAlignment::Start)
                 .main_axis_size(MainAxisSize::Min),
             ),
-            doc(
-                "Select — groups, disabled, clearable",
-                "select_group() renders a section header; .disabled() dims an option (unpickable, keyboard skips it); .clearable(true) turns the chevron into a ✕ that resets to the placeholder.",
+            doc("Select — groups, disabled, clearable")
+                .description("select_group() renders a section header; .disabled() dims an option (unpickable, keyboard skips it); .clearable(true) turns the chevron into a ✕ that resets to the placeholder.")
+                .body(
                 column(
                     children![
                         select(
@@ -72,9 +82,9 @@ pub fn selects() -> Element {
                         muted(format!("selected: {}", region.get())),
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(10.0),
             ),
-            doc(
-                "Dropdown menu — run an action",
-                "A menu of commands, not a value: a section label, icons, right-aligned shortcut hints, a disabled item, a separator, and a destructive action. Choosing runs it and closes.",
+            doc("Dropdown menu — run an action")
+                .description("A menu of commands, not a value: a section label, icons, right-aligned shortcut hints, a disabled item, a separator, and a destructive action. Choosing runs it and closes.")
+                .body(
                 column(
                     children![
                         dropdown_menu("Open menu")
@@ -88,9 +98,9 @@ pub fn selects() -> Element {
                         muted(format!("last action: {}", if action_note.get().is_empty() { "—".to_string() } else { action_note.get() })),
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(10.0),
             ),
-            doc(
-                "Checkbox menu",
-                "Dropdown items that toggle a boolean. (Like Radix, choosing one applies it and closes; reopen to see it checked.)",
+            doc("Checkbox menu")
+                .description("Dropdown items that toggle a boolean. (Like Radix, choosing one applies it and closes; reopen to see it checked.)")
+                .body(
                 column(
                     children![
                         dropdown_menu("View options")
@@ -106,9 +116,9 @@ pub fn selects() -> Element {
                         )),
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(10.0),
             ),
-            doc(
-                "Context menu",
-                "Right-click (secondary tap) opens the same menu blueprint at the cursor, clamped on-screen. Left-click elsewhere or Escape dismisses.",
+            doc("Context menu")
+                .description("Right-click (secondary tap) opens the same menu blueprint at the cursor, clamped on-screen. Left-click elsewhere or Escape dismisses.")
+                .body(
                 context_menu(
                     Container::new()
                         .decoration(

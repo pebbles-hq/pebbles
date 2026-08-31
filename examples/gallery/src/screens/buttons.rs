@@ -4,11 +4,21 @@ use crate::ui::{doc, gap_h, gap_w, screen};
 
 /// A medium drop shadow (shadcn `shadow-md`).
 fn shadow_md() -> BoxShadow {
-    BoxShadow::new(Color::from_rgba8(0, 0, 0, 66), Offset::new(0.0, 4.0), 7.0, -1.0)
+    BoxShadow::new(
+        Color::from_rgba8(0, 0, 0, 66),
+        Offset::new(0.0, 4.0),
+        7.0,
+        -1.0,
+    )
 }
 /// A larger, floating shadow (shadcn `shadow-lg`).
 fn shadow_lg() -> BoxShadow {
-    BoxShadow::new(Color::from_rgba8(0, 0, 0, 74), Offset::new(0.0, 9.0), 13.0, -3.0)
+    BoxShadow::new(
+        Color::from_rgba8(0, 0, 0, 74),
+        Offset::new(0.0, 9.0),
+        13.0,
+        -3.0,
+    )
 }
 
 pub fn buttons() -> Element {
@@ -21,14 +31,16 @@ pub fn buttons() -> Element {
     let busy = create_signal(false);
     let ev = move |name: &'static str| move || last.set(name.to_string());
 
-    screen(
-        "Buttons",
-        "The button component in full — every variant, size, style, state and event, so you never reach for another library.",
+    screen("Buttons")
+
+        .description("The button component in full — every variant, size, style, state and event, so you never reach for another library.")
+
+        .body(
         children![
             // -------------------------------------------------------------- variants
-            doc(
-                "Variants",
-                "Six built-in styles, one per emphasis level — from the solid Primary call-to-action down to the borderless Link.",
+            doc("Variants")
+                .description("Six built-in styles, one per emphasis level — from the solid Primary call-to-action down to the borderless Link.")
+                .body(
                 wrap(children![
                     button("Primary"),
                     button("Secondary").variant(ButtonVariant::Secondary),
@@ -40,9 +52,9 @@ pub fn buttons() -> Element {
                 .spacing(10.0),
             ),
             // ----------------------------------------------------------------- sizes
-            doc(
-                "Sizes",
-                "Three sizes scale padding and font together, each with a minimum tap-target size so short-label buttons stay comfortable. Match the size to the density of the surface.",
+            doc("Sizes")
+                .description("Three sizes scale padding and font together, each with a minimum tap-target size so short-label buttons stay comfortable. Match the size to the density of the surface.")
+                .body(
                 wrap(children![
                     button("Small").size(ButtonSize::Sm),
                     button("Medium").size(ButtonSize::Md),
@@ -51,9 +63,9 @@ pub fn buttons() -> Element {
                 .spacing(10.0),
             ),
             // --------------------------------------------------------------- icons
-            doc(
-                "With an icon",
-                "A leading icon with .leading(), a trailing icon with .trailing(), any widget with .child(), or IconButton for a compact icon-only control.",
+            doc("With an icon")
+                .description("A leading icon with .leading(), a trailing icon with .trailing(), any widget with .child(), or IconButton for a compact icon-only control.")
+                .body(
                 column(
                     children![
                         wrap(children![
@@ -74,9 +86,9 @@ pub fn buttons() -> Element {
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(0.0),
             ),
             // -------------------------------------------------------------- colored
-            doc(
-                "Colored",
-                "Any brand color via .color(); pair it with .text_color() for legible contrast. Hover/press shading is derived automatically.",
+            doc("Colored")
+                .description("Any brand color via .color(); pair it with .text_color() for legible contrast. Hover/press shading is derived automatically.")
+                .body(
                 wrap(children![
                     button("Blue").color(palette::blue::S600).text_color(palette::WHITE),
                     button("Emerald").color(palette::emerald::S600).text_color(palette::WHITE),
@@ -88,9 +100,9 @@ pub fn buttons() -> Element {
                 .spacing(10.0),
             ),
             // ----------------------------------------------------------- shadow/shape
-            doc(
-                "Shadow & shape",
-                "Lift a button off the surface with .shadow() — here shadcn's medium and large elevations — or reshape it with .radius(), from sharp corners to a fully rounded pill.",
+            doc("Shadow & shape")
+                .description("Lift a button off the surface with .shadow() — here shadcn's medium and large elevations — or reshape it with .radius(), from sharp corners to a fully rounded pill.")
+                .body(
                 wrap(children![
                     button("Elevated").shadow(shadow_md()),
                     button("Floating").shadow(shadow_lg()),
@@ -101,15 +113,15 @@ pub fn buttons() -> Element {
                 .spacing(16.0),
             ),
             // ------------------------------------------------------------ full width
-            doc(
-                "Full width",
-                "Fills the width of its container with .full_width() — ideal for forms and mobile-style layouts.",
+            doc("Full width")
+                .description("Fills the width of its container with .full_width() — ideal for forms and mobile-style layouts.")
+                .body(
                 Container::new().width(340.0).child(button("Sign in").full_width().leading(IconKind::Check)),
             ),
             // -------------------------------------------------------------- disabled
-            doc(
-                "Disabled",
-                "Non-interactive and dimmed via .disabled(true); the cursor becomes not-allowed. Hover and press feedback are automatic when enabled.",
+            doc("Disabled")
+                .description("Non-interactive and dimmed via .disabled(true); the cursor becomes not-allowed. Hover and press feedback are automatic when enabled.")
+                .body(
                 wrap(children![
                     button("Primary").disabled(true),
                     button("Secondary").variant(ButtonVariant::Secondary).disabled(true),
@@ -118,9 +130,9 @@ pub fn buttons() -> Element {
                 .spacing(10.0),
             ),
             // --------------------------------------------------------------- loading
-            doc(
-                "Loading",
-                "Show a spinner and block interaction while an async action runs with .loading(true). The label stays so the button never jumps. Toggle the switch to try it.",
+            doc("Loading")
+                .description("Show a spinner and block interaction while an async action runs with .loading(true). The label stays so the button never jumps. Toggle the switch to try it.")
+                .body(
                 column(
                     children![
                         row(
@@ -138,9 +150,9 @@ pub fn buttons() -> Element {
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(0.0),
             ),
             // ------------------------------------------------------------ click events
-            doc(
-                "Click events",
-                "onPressed fires on a normal click; double-click, right-click (secondary) and long-press each have their own handler.",
+            doc("Click events")
+                .description("onPressed fires on a normal click; double-click, right-click (secondary) and long-press each have their own handler.")
+                .body(
                 column(
                     children![
                         card().child(title(format!("Last event: {}", last.get()))),
@@ -155,9 +167,9 @@ pub fn buttons() -> Element {
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(0.0),
             ),
             // ---------------------------------------------------------- press feedback
-            doc(
-                "Press feedback",
-                "Follow a press precisely: the down position (on_tap_down), a cancel when you release off the button (on_tap_cancel), and highlight changes (on_highlight_changed).",
+            doc("Press feedback")
+                .description("Follow a press precisely: the down position (on_tap_down), a cancel when you release off the button (on_tap_cancel), and highlight changes (on_highlight_changed).")
+                .body(
                 column(
                     children![
                         card().child(title(format!("Detail: {}", detail.get()))),
@@ -171,9 +183,9 @@ pub fn buttons() -> Element {
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(0.0),
             ),
             // -------------------------------------------------- long-press & middle-click
-            doc(
-                "Long-press & middle-click",
-                "The full long-press lifecycle — down → start → move → end/cancel — plus middle-click (tertiary). Every payload carries the pointer position.",
+            doc("Long-press & middle-click")
+                .description("The full long-press lifecycle — down → start → move → end/cancel — plus middle-click (tertiary). Every payload carries the pointer position.")
+                .body(
                 column(
                     children![
                         card().child(title(format!("Long-press / tertiary: {}", lp.get()))),
@@ -190,9 +202,9 @@ pub fn buttons() -> Element {
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(0.0),
             ),
             // ----------------------------------------------------------- focus & keyboard
-            doc(
-                "Focus & keyboard",
-                "Tab moves focus, Enter/Space activates, .autofocus() grabs focus on mount, and .on_focus_change() reports gain/loss — a focus ring animates in.",
+            doc("Focus & keyboard")
+                .description("Tab moves focus, Enter/Space activates, .autofocus() grabs focus on mount, and .on_focus_change() reports gain/loss — a focus ring animates in.")
+                .body(
                 column(
                     children![
                         card().child(title(format!("Focus change: {}", focus_note.get()))),
@@ -213,9 +225,9 @@ pub fn buttons() -> Element {
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(0.0),
             ),
             // ------------------------------------------------------------ custom content
-            doc(
-                "Custom content",
-                "Put any widget inside with .child() — an icon+text row, a column, a badge, anything. The button just handles interaction and styling.",
+            doc("Custom content")
+                .description("Put any widget inside with .child() — an icon+text row, a column, a badge, anything. The button just handles interaction and styling.")
+                .body(
                 wrap(children![
                     button("").child(
                         row(children![

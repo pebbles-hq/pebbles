@@ -36,7 +36,11 @@ pub fn data() -> Element {
                 _ => row.2.to_lowercase(),
             };
             let ord = key(a).cmp(&key(b));
-            if dir == SortDir::Desc { ord.reverse() } else { ord }
+            if dir == SortDir::Desc {
+                ord.reverse()
+            } else {
+                ord
+            }
         });
         rows
     };
@@ -50,20 +54,31 @@ pub fn data() -> Element {
             .expanded(open.get()[0])
             .on_toggle(move || open.update(|o| o[0] = !o[0]))
             .children(vec![
-                tree_node("main.rs").icon(IconKind::Dot).selected(sel.get() == 0).on_select(move || sel.set(0)),
+                tree_node("main.rs")
+                    .icon(IconKind::Dot)
+                    .selected(sel.get() == 0)
+                    .on_select(move || sel.set(0)),
                 tree_node("components")
                     .expanded(open.get()[1])
                     .on_toggle(move || open.update(|o| o[1] = !o[1]))
                     .children(vec![
-                        tree_node("button.rs").icon(IconKind::Dot).selected(sel.get() == 2).on_select(move || sel.set(2)),
+                        tree_node("button.rs")
+                            .icon(IconKind::Dot)
+                            .selected(sel.get() == 2)
+                            .on_select(move || sel.set(2)),
                     ]),
             ]),
-        tree_node("Cargo.toml").icon(IconKind::Dot).selected(sel.get() == 1).on_select(move || sel.set(1)),
+        tree_node("Cargo.toml")
+            .icon(IconKind::Dot)
+            .selected(sel.get() == 1)
+            .on_select(move || sel.set(1)),
     ]);
 
-    screen(
-        "Data & Desktop",
-        "List, table, tree/file-explorer, split view and panels.",
+    screen("Data & Desktop")
+
+        .description("List, table, tree/file-explorer, split view and panels.")
+
+        .body(
         children![
             section(
                 "VIRTUALIZED LIST — 5,000 rows, only visible ones built. Smooth wheel, keyboard (PageDn/Home/End), drag the bar, or the buttons (ScrollController)",

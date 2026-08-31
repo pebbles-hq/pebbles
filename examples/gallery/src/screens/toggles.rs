@@ -3,9 +3,9 @@ use pebbles::prelude::*;
 use crate::ui::{doc, gap_h, screen};
 
 pub fn toggles() -> Element {
-    screen(
-        "Toggles",
-        "Selection controls — checkbox, switch, radio and toggle — each with sizes, colors, labels, disabled and focus states, animated on change.",
+    screen("Toggles")
+        .description("Selection controls — checkbox, switch, radio and toggle — each with sizes, colors, labels, disabled and focus states, animated on change.")
+        .body(
         children![
             checkbox_section(),
             switch_section(),
@@ -23,9 +23,9 @@ pub fn toggles() -> Element {
 fn toggle_group_section() -> impl IntoWidget {
     let align = create_signal(1usize);
     let marks = create_signal(vec![0usize]);
-    doc(
-        "Toggle group",
-        "A joined set of toggles — single-select (exclusive) or multi-select. Controlled: selection in, on_changed out.",
+    doc("Toggle group")
+        .description("A joined set of toggles — single-select (exclusive) or multi-select. Controlled: selection in, on_changed out.")
+        .body(
         column(children![
             text("Single-select (alignment)").size(12.5).color(theme().colors.muted_foreground),
             gap_h(8.0),
@@ -57,9 +57,11 @@ fn checkbox_section() -> impl IntoWidget {
     let terms = create_signal(true);
     let notify = create_signal(false);
 
-    doc(
-        "Checkbox",
-        "A binary choice. Bind it to a signal and flip it in on_changed; add a label — or a label plus description — and the whole row becomes the target.",
+    doc("Checkbox")
+
+        .description("A binary choice. Bind it to a signal and flip it in on_changed; add a label — or a label plus description — and the whole row becomes the target.")
+
+        .body(
         column(children![
             // interactive, labeled
             column(children![
@@ -119,9 +121,11 @@ fn switch_section() -> impl IntoWidget {
     let airplane = create_signal(true);
     let wifi = create_signal(false);
 
-    doc(
-        "Switch",
-        "An instant on/off toggle for settings that apply immediately. The thumb slides and the track fades between states.",
+    doc("Switch")
+
+        .description("An instant on/off toggle for settings that apply immediately. The thumb slides and the track fades between states.")
+
+        .body(
         column(children![
             column(children![
                 switch(airplane.get())
@@ -175,13 +179,18 @@ fn radio_section() -> impl IntoWidget {
         .into_iter()
         .enumerate()
         .map(|(i, name)| {
-            radio(plan.get() == i).label(name).on_selected(move || plan.set(i)).into_widget()
+            radio(plan.get() == i)
+                .label(name)
+                .on_selected(move || plan.set(i))
+                .into_widget()
         })
         .collect();
 
-    doc(
-        "Radio",
-        "A single choice from a set — one selected at a time. Give each option the same on_selected that stores its index; the selected index drives which is filled.",
+    doc("Radio")
+
+        .description("A single choice from a set — one selected at a time. Give each option the same on_selected that stores its index; the selected index drives which is filled.")
+
+        .body(
         column(children![
             // interactive group
             column(plans).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(12.0),
@@ -223,9 +232,11 @@ fn toggle_section() -> impl IntoWidget {
     let visible = create_signal(true);
     let locked = create_signal(false);
 
-    doc(
-        "Toggle",
-        "A button that stays pressed — wrap any child (an icon or short text). Two variants, three sizes, and a filled active state.",
+    doc("Toggle")
+
+        .description("A button that stays pressed — wrap any child (an icon or short text). Two variants, three sizes, and a filled active state.")
+
+        .body(
         column(children![
             // a small icon toolbar of independent toggles
             row(children![

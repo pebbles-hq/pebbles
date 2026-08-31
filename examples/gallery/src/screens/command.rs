@@ -22,7 +22,9 @@ pub fn command_screen() -> Element {
             command_group(
                 "Settings",
                 [
-                    command_item("Toggle Theme").icon(lucide::MOON).on_select(toggle_theme),
+                    command_item("Toggle Theme")
+                        .icon(lucide::MOON)
+                        .on_select(toggle_theme),
                     command_item("Toggle Fullscreen")
                         .icon(lucide::MAXIMIZE)
                         .on_select(move || picked.set("Picked: Toggle Fullscreen".into())),
@@ -31,18 +33,20 @@ pub fn command_screen() -> Element {
         ]
     };
 
-    screen(
-        "Command",
-        "A searchable command list (shadcn's Command) — inline, or centered as the ⌘K palette.",
+    screen("Command")
+
+        .description("A searchable command list (shadcn's Command) — inline, or centered as the ⌘K palette.")
+
+        .body(
         children![
-            doc(
-                "Inline command",
-                "Type to filter across groups; Up/Down move the highlight, Enter runs, Escape clears.",
+            doc("Inline command")
+                .description("Type to filter across groups; Up/Down move the highlight, Enter runs, Escape clears.")
+                .body(
                 command(groups()).width(460.0),
             ),
-            doc(
-                "Command palette",
-                "The same list centered in a dismissible modal — call .open() from a key handler (the ⌘K binding is app-side).",
+            doc("Command palette")
+                .description("The same list centered in a dismissible modal — call .open() from a key handler (the ⌘K binding is app-side).")
+                .body(
                 column(children![
                     row(children![
                         button("Open palette").on_pressed(move || command_palette(groups()).open()),

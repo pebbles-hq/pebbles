@@ -4,9 +4,9 @@ use crate::styles;
 use crate::ui::{gap_h, gap_w, screen, section};
 
 pub fn styling() -> Element {
-    screen(
-        "Styling",
-        "One general Style value, applied to any widget — React-Native / CSS-like.",
+    screen("Styling")
+        .description("One general Style value, applied to any widget — React-Native / CSS-like.")
+        .body(
         children![
             section(
                 "SAME STYLE, ANY WIDGET — .styled(style) applies box properties",

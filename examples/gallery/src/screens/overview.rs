@@ -3,9 +3,9 @@ use pebbles::prelude::*;
 use crate::ui::{gap_h, gap_w, screen, section, stat_card};
 
 pub fn overview() -> Element {
-    screen(
-        "Welcome to Pebbles",
-        "A Flutter-style, desktop-first GUI framework built on Vello.",
+    screen("Welcome to Pebbles")
+        .description("A Flutter-style, desktop-first GUI framework built on Vello.")
+        .body(
         children![
             section(
                 "STATS — props demo (reusable parameterized component)",

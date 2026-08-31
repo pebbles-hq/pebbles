@@ -5,15 +5,18 @@ use crate::ui::{gap_w, screen, section};
 pub fn layout() -> Element {
     let swatch = |color: Color, w: f64| {
         Container::new()
-            .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)))
+            .decoration(
+                BoxDecoration::new()
+                    .color(color)
+                    .radius(BorderRadius::all(6.0)),
+            )
             .width(w)
             .height(40.0)
     };
 
-    screen(
-        "Layout",
-        "Row, Column, Stack, Wrap, Expanded, AspectRatio — the box protocol.",
-        children![
+    screen("Layout")
+        .description("Row, Column, Stack, Wrap, Expanded, AspectRatio — the box protocol.")
+        .body(children![
             section(
                 "ROW + EXPANDED",
                 row(children![
@@ -28,8 +31,8 @@ pub fn layout() -> Element {
                 "WRAP (reflows to width)",
                 wrap(
                     [
-                        "design", "rust", "vello", "gpu", "widgets", "flutter", "desktop", "shadcn",
-                        "layout", "reactive", "pebbles", "gravel",
+                        "design", "rust", "vello", "gpu", "widgets", "flutter", "desktop",
+                        "shadcn", "layout", "reactive", "pebbles", "gravel",
                     ]
                     .into_iter()
                     .map(|t| badge(t).variant(BadgeVariant::Secondary))
@@ -41,11 +44,19 @@ pub fn layout() -> Element {
             section(
                 "STACK + POSITIONED",
                 Container::new()
-                    .decoration(BoxDecoration::new().color(theme().colors.muted).radius(BorderRadius::all(8.0)))
+                    .decoration(
+                        BoxDecoration::new()
+                            .color(theme().colors.muted)
+                            .radius(BorderRadius::all(8.0))
+                    )
                     .height(120.0)
                     .child(stack(children![
-                        Positioned::new(swatch(palette::PURPLE, 90.0)).left(12.0).top(12.0),
-                        Positioned::new(swatch(palette::TEAL, 90.0)).right(12.0).bottom(12.0),
+                        Positioned::new(swatch(palette::PURPLE, 90.0))
+                            .left(12.0)
+                            .top(12.0),
+                        Positioned::new(swatch(palette::TEAL, 90.0))
+                            .right(12.0)
+                            .bottom(12.0),
                         Positioned::new(badge("center")).left(150.0).top(48.0),
                     ])),
             ),
@@ -57,7 +68,9 @@ pub fn layout() -> Element {
                     aspect_ratio(
                         16.0 / 9.0,
                         Container::new().decoration(
-                            BoxDecoration::new().color(palette::INDIGO).radius(BorderRadius::all(8.0)),
+                            BoxDecoration::new()
+                                .color(palette::INDIGO)
+                                .radius(BorderRadius::all(8.0)),
                         ),
                     ),
                 ),
@@ -65,14 +78,17 @@ pub fn layout() -> Element {
             section(
                 "SCROLL AREA (bounded, always-on scrollbar)",
                 scroll_area(
-                    column((1..=25).map(|i| text(format!("Line {i}"))).collect::<Vec<_>>())
-                        .cross_axis_alignment(CrossAxisAlignment::Start)
-                        .main_axis_size(MainAxisSize::Min)
-                        .spacing(6.0),
+                    column(
+                        (1..=25)
+                            .map(|i| text(format!("Line {i}")))
+                            .collect::<Vec<_>>()
+                    )
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .main_axis_size(MainAxisSize::Min)
+                    .spacing(6.0),
                 )
                 .width(260.0)
                 .height(160.0),
             ),
-        ],
-    )
+        ])
 }
