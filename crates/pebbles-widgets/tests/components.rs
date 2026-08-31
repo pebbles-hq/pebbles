@@ -43,7 +43,7 @@ fn gallery() -> impl IntoWidget {
         .into_widget(),
         kbd("⌘K").into_widget(),
         empty().icon(pebbles_render::lucide::SEARCH).title("Nothing here").into_widget(),
-        scroll_area(column((text("a"), text("b"), text("c"))))
+        scroll_area(column(pebbles_core::children![text("a"), text("b"), text("c")]))
             .width(120.0)
             .height(60.0)
             .into_widget(),

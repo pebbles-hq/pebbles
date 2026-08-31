@@ -368,8 +368,10 @@ fn render_button(b: &Button) -> Element {
     };
     // While loading, prepend a spinner (keeps the label so the button doesn't jump).
     let content: AnyWidget = if b.loading {
-        let sp = spinner(b.font_size() as f64 + 3.0).color(fg).into_widget();
-        row([sp, SizedBox::spacer(8.0, 0.0).into_widget(), content]).main_axis_min().into_widget()
+        let sp = spinner(b.font_size() as f64 + 3.0).color(fg);
+        row(pebbles_core::children![sp, SizedBox::spacer(8.0, 0.0), content])
+            .main_axis_min()
+            .into_widget()
     } else {
         content
     };

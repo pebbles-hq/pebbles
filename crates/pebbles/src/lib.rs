@@ -16,10 +16,10 @@
 //!
 //! fn counter() -> Element {
 //!     let count = create_signal(0);
-//!     center(column((
+//!     center(column(children![
 //!         text(format!("{}", count.get())).size(48.0),
 //!         button("+").on_pressed(move || count.update(|c| *c += 1)),
-//!     )))
+//!     ]))
 //!     .into_widget()
 //! }
 //!

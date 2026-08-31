@@ -22,16 +22,16 @@ use pebbles::prelude::*;
 fn counter() -> impl IntoWidget {
     let count = create_signal(0); // local state, SolidJS-style
 
-    center(column((
+    center(column(children![
         text(format!("{}", count.get())).size(72.0),
-        row((
+        row(children![
             button("−").variant(ButtonVariant::Outline)
                 .on_pressed(move || count.update(|c| *c -= 1)), // handler = bare closure
             SizedBox::spacer(16.0, 0.0),
             button("+").on_pressed(move || count.update(|c| *c += 1)),
-        ))
+        ])
         .min(), // shrink-wrap the row's main axis
-    )))
+    ]))
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,10 +46,11 @@ cargo run -p gallery     # the full widget showcase / documentation
 
 ## Programming model
 
-- **UI syntax is Flutter.** `column((a, b, c))`, `Container::new().color(..).padding(..)`,
-  `Row`/`Expanded`/`Stack`, the constraints-down / sizes-up box layout — a Flutter
-  developer is immediately at home. Children are a **tuple** (heterogeneous, no boxing)
-  or a `Vec`/`children![…]`.
+- **UI syntax is Flutter.** `column(children![a, b, c])` mirrors `Column(children: [...])`,
+  `Container::new().color(..).padding(..)`, `Row`/`Expanded`/`Stack`, the constraints-down /
+  sizes-up box layout — a Flutter developer is immediately at home. **One children syntax:**
+  the `children![…]` list literal for fixed children, a `Vec` (`.map(..).collect()`) for
+  computed ones — same as Dart's list literal vs `.toList()`.
 - **State is SolidJS.** No `StatefulWidget`, no `setState`. Local *and* global state use
   the same `create_signal` primitive; reads auto-subscribe, writes re-render only the
   components that read them. Plus `create_memo` (equality-deduped), `create_effect`,
@@ -187,7 +188,7 @@ fn card() -> Style {
     style().background(theme().colors.card).radius_all(12.0).padding_all(16.0)
 }
 
-column((..)).styled(card());                       // box props wrap any widget
+column(children![..]).styled(card());              // box props wrap any widget
 text("Title").style(card().merge(style().bold())); // text props style the glyphs
 card_widget().style(style().background(palette::red::S50)); // components merge (user wins)
 let s = styles([base, brand, style().radius_all(20.0)]);    // RN style={[a, b, c]}

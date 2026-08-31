@@ -260,7 +260,9 @@ impl AlertDialog {
         }
         kids.push(SizedBox::spacer(0.0, 22.0).into_widget());
         kids.push(
-            row((cancel_btn, SizedBox::spacer(10.0, 0.0), confirm_btn)).main_end().into_widget(),
+            row(pebbles_core::children![cancel_btn, SizedBox::spacer(10.0, 0.0), confirm_btn])
+                .main_end()
+                .into_widget(),
         );
 
         let content = column(kids)

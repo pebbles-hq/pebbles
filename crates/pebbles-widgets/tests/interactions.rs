@@ -237,18 +237,22 @@ fn modifier_ext_chains_and_renders() {
 }
 
 #[test]
-fn into_children_accepts_tuples_vecs_arrays_options() {
+fn into_children_is_one_syntax() {
     use pebbles_core::widget::IntoChildren;
+    // The ONE literal form: children![..] — heterogeneous, boxed, any length.
+    let lit = pebbles_core::children![text("a"), Container::new(), text("b")];
+    assert_eq!(lit.into_children().len(), 3, "children![..] literal");
+    let empty: Vec<pebbles_core::AnyWidget> = pebbles_core::children![];
+    assert_eq!(empty.into_children().len(), 0, "empty children![]");
+    // The ONE computed form: a Vec (of one concrete type, or of AnyWidget).
     let t = || text("x");
-    assert_eq!((t(), t(), t()).into_children().len(), 3, "3-tuple");
-    assert_eq!((t(),).into_children().len(), 1, "1-tuple");
-    assert_eq!(vec![t(), t()].into_children().len(), 2, "Vec");
-    assert_eq!([t(), t(), t(), t()].into_children().len(), 4, "array");
-    assert_eq!(Some(t()).into_children().len(), 1, "Some");
-    assert_eq!(None::<pebbles_widgets::Text>.into_children().len(), 0, "None");
-    assert_eq!(().into_children().len(), 0, "unit = no children");
-    // heterogeneous tuple (different widget types) compiles + collects:
-    assert_eq!((text("a"), Container::new(), text("b")).into_children().len(), 3, "heterogeneous");
+    assert_eq!(vec![t(), t()].into_children().len(), 2, "computed Vec<Concrete>");
+    // Conditional recipe: build the list, push conditionally.
+    let mut kids = pebbles_core::children![text("always")];
+    if 1 + 1 == 2 {
+        kids.push(Container::new().into_widget());
+    }
+    assert_eq!(kids.into_children().len(), 2, "conditional push recipe");
 }
 
 // ---------------------------------------------------------------------------

@@ -48,7 +48,7 @@ pub fn surfaces() -> Element {
                     ]).min().spacing(12.0),
             ),
             section("SKELETON (shimmer)", column(children![skeleton(320.0, 16.0).shimmer(), skeleton(260.0, 16.0).shimmer(), skeleton(190.0, 16.0)]).start().min().spacing(8.0)),
-            section("KBD", row((kbd("⌘K"), kbd("Ctrl+C"), kbd("⇧⌘P"), kbd("Esc"))).min().spacing(8.0)),
+            section("KBD", row(children![kbd("⌘K"), kbd("Ctrl+C"), kbd("⇧⌘P"), kbd("Esc")]).min().spacing(8.0)),
             section(
                 "EMPTY STATE",
                 Container::new().height(220.0).child(

@@ -105,33 +105,18 @@ impl IntoWidget for AnyWidget {
     }
 }
 
-/// Collect any iterator of widgets into a `Vec<AnyWidget>` (boxing each). Lets
-/// `row`/`column`/`wrap`/`stack` accept both `children![…]` and `iter.map(…)`
-/// without per-item `.into_widget()`.
-pub fn collect_widgets<I, W>(items: I) -> Vec<AnyWidget>
-where
-    I: IntoIterator<Item = W>,
-    W: IntoWidget,
-{
-    items.into_iter().map(IntoWidget::into_widget).collect()
-}
-
-/// A list of child widgets for `row`/`column`/`wrap`/`stack`. The ergonomic form is a
-/// **tuple** of heterogeneous widgets — `column((text("a"), button("b"), card()))` —
-/// but a `Vec<W>` (what `children![..]` produces), an array `[a, b]`, an `Option<W>`,
-/// or `()` for none all work too.
+/// A list of child widgets for `row`/`column`/`wrap`/`stack` (and any other
+/// children-taking API). **One syntax** (see the UI syntax guide):
 ///
-/// Impls are explicit per shape (tuples up to 16, `Vec`, arrays, `Option`, `()`) — a
-/// blanket `impl<I: IntoIterator>` would collide with the tuple impls under coherence,
-/// so a dynamic list must be `.collect::<Vec<_>>()`ed (or use `children![..]`).
+/// * literal children — the [`children!`] list: `column(children![text("a"), button("b")])`
+/// * computed children — a `Vec`: `column(items.iter().map(row_for).collect::<Vec<_>>())`
+///
+/// Both are the same thing — `children![..]` builds the `Vec` while boxing each
+/// element to [`AnyWidget`] (Rust children are heterogeneous concrete types; the macro
+/// erases them, which Dart's untyped `List<Widget>` did implicitly). The `Vec<W>` impl
+/// accepts both `Vec<AnyWidget>` and a `Vec` of one concrete widget type.
 pub trait IntoChildren {
     fn into_children(self) -> Vec<AnyWidget>;
-}
-
-impl IntoChildren for () {
-    fn into_children(self) -> Vec<AnyWidget> {
-        Vec::new()
-    }
 }
 
 impl<W: IntoWidget> IntoChildren for Vec<W> {
@@ -139,46 +124,6 @@ impl<W: IntoWidget> IntoChildren for Vec<W> {
         self.into_iter().map(IntoWidget::into_widget).collect()
     }
 }
-
-impl<W: IntoWidget, const N: usize> IntoChildren for [W; N] {
-    fn into_children(self) -> Vec<AnyWidget> {
-        self.into_iter().map(IntoWidget::into_widget).collect()
-    }
-}
-
-impl<W: IntoWidget> IntoChildren for Option<W> {
-    fn into_children(self) -> Vec<AnyWidget> {
-        self.into_iter().map(IntoWidget::into_widget).collect()
-    }
-}
-
-macro_rules! impl_into_children_tuple {
-    ($($T:ident),+) => {
-        impl<$($T: IntoWidget),+> IntoChildren for ($($T,)+) {
-            #[allow(non_snake_case)]
-            fn into_children(self) -> Vec<AnyWidget> {
-                let ($($T,)+) = self;
-                vec![$($T.into_widget()),+]
-            }
-        }
-    };
-}
-impl_into_children_tuple!(A);
-impl_into_children_tuple!(A, B);
-impl_into_children_tuple!(A, B, C);
-impl_into_children_tuple!(A, B, C, D);
-impl_into_children_tuple!(A, B, C, D, E);
-impl_into_children_tuple!(A, B, C, D, E, F);
-impl_into_children_tuple!(A, B, C, D, E, F, G);
-impl_into_children_tuple!(A, B, C, D, E, F, G, H);
-impl_into_children_tuple!(A, B, C, D, E, F, G, H, I);
-impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J);
-impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K);
-impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
-impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M);
-impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
-impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
-impl_into_children_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 
 /// A widget that owns a [`RenderObject`] — the leaves of composition where actual
 /// layout and painting happen. `take_children` yields the child *widgets* (none

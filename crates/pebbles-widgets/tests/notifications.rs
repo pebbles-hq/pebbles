@@ -77,11 +77,11 @@ fn tip_root() -> impl IntoWidget {
     // bounded 80×30 at the top-left (not stretched to fill the whole window) — hovering
     // off it then genuinely leaves it.
     OverlayHost::wrap(
-        column((
+        column(pebbles_core::children![
             tooltip(Container::new().width(80.0).height(30.0).child(text("hover me")), "Saved to disk")
                 .delay(0.2),
             Container::new().width(240.0).height(220.0),
-        ))
+        ])
         .start()
         .min(),
     )

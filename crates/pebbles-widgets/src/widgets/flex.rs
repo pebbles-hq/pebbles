@@ -116,8 +116,8 @@ pub struct Row {
     config: FlexConfig,
 }
 
-/// Create a horizontal [`Row`]. Accepts a tuple `(a, b, c)`, `children![…]`, a `Vec`,
-/// an array, or an `Option`.
+/// Create a horizontal [`Row`]. Children are a `children![…]` list literal, or a
+/// `Vec` for computed lists.
 pub fn row(children: impl pebbles_core::widget::IntoChildren) -> Row {
     Row { children: children.into_children(), config: FlexConfig::default() }
 }
@@ -162,8 +162,8 @@ pub struct Column {
     config: FlexConfig,
 }
 
-/// Create a vertical [`Column`]. Accepts a tuple `(a, b, c)`, `children![…]`, a `Vec`,
-/// an array, or an `Option`.
+/// Create a vertical [`Column`]. Children are a `children![…]` list literal, or a
+/// `Vec` for computed lists.
 pub fn column(children: impl pebbles_core::widget::IntoChildren) -> Column {
     Column { children: children.into_children(), config: FlexConfig::default() }
 }
