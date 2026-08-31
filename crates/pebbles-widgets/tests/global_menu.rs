@@ -180,3 +180,111 @@ fn styled_surface_paints() {
     frame(&mut ui, &mut env, win);
     assert!(overlay::is_open());
 }
+
+#[test]
+fn defaults_disabled_but_opt_ins_work() {
+    init();
+    set_global_menu_enabled(false); // the new default
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(
+        View::new(palette::WHITE, component(|| OverlayHost::wrap(column(vec![text("x").into_widget()]))))
+            .into_widget(),
+    );
+    ui.layout(&mut env, win);
+    overlay::set_window_size(400.0, 300.0);
+
+    // The shell's fallback is a no-op while disabled…
+    pebbles_widgets::global_menu::show(40.0, 40.0);
+    frame(&mut ui, &mut env, win);
+    assert!(!overlay::is_open(), "disabled: the fallback opens nothing");
+
+    // …but explicit opens ignore the switch.
+    pebbles_widgets::global_menu::show_here(40.0, 40.0);
+    frame(&mut ui, &mut env, win);
+    assert!(overlay::is_open(), "show_here opens regardless of the switch");
+    overlay::hide_overlay();
+    frame(&mut ui, &mut env, win);
+
+    // global_menu_on attaches the default menu to a widget — works while off.
+    let handled = ui.dispatch_secondary_tap(pebbles_foundation::Offset::new(10.0, 10.0));
+    assert!(!handled, "plain text claims nothing");
+    overlay::hide_overlay();
+}
+
+#[test]
+fn widget_opt_ins_open_the_menu_while_disabled() {
+    init();
+    set_global_menu_enabled(false);
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            component(|| {
+                OverlayHost::wrap(
+                    column(vec![pebbles_widgets::global_menu_on(text("opt-in")).into_widget()])
+                        .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start),
+                )
+            }),
+        )
+        .into_widget(),
+    );
+    ui.layout(&mut env, win);
+    overlay::set_window_size(400.0, 300.0);
+    frame(&mut ui, &mut env, win);
+
+    let p = pebbles_foundation::Offset::new(10.0, 10.0);
+    let handled = ui.dispatch_secondary_tap(p);
+    frame(&mut ui, &mut env, win);
+    assert!(handled, "the opt-in widget claims the right-click");
+    assert!(overlay::is_open(), "and opens the default menu while global is off");
+}
+
+#[test]
+fn buttons_consume_right_clicks_until_opted_in() {
+    init();
+    set_global_menu_enabled(true);
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            component(|| {
+                OverlayHost::wrap(
+                    column(vec![
+                        pebbles_widgets::button("plain").into_widget(),
+                        pebbles_widgets::button("opted")
+                            .context_menu(|| PICKED.with(|p| *p.borrow_mut() = Some("ctx".into())))
+                            .into_widget(),
+                    ])
+                    .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start),
+                )
+            }),
+        )
+        .into_widget(),
+    );
+    ui.layout(&mut env, win);
+    overlay::set_window_size(400.0, 300.0);
+    frame(&mut ui, &mut env, win);
+    PICKED.with(|p| *p.borrow_mut() = None);
+
+    // Plain button (y ≈ 0..36): consumes, nothing opens.
+    let p = pebbles_foundation::Offset::new(30.0, 18.0);
+    assert!(ui.dispatch_secondary_tap(p), "a button consumes right-clicks by default");
+    pebbles_widgets::global_menu::show(40.0, 40.0); // shell would skip — sanity: still opens on demand
+    frame(&mut ui, &mut env, win);
+    overlay::hide_overlay();
+    assert_eq!(PICKED.with(|p| p.borrow().clone()), None);
+
+    // Opted-in button (y ≈ 36..72): fires the developer's handler.
+    let q = pebbles_foundation::Offset::new(30.0, 54.0);
+    assert!(ui.dispatch_secondary_tap(q));
+    assert_eq!(PICKED.with(|p| p.borrow().clone()), Some("ctx".into()));
+}

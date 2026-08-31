@@ -150,6 +150,8 @@ fn wire(
     if let Some(cb) = on.clone() {
         g = g.on_tap(cb);
     }
+    // Selection controls consume right-clicks by default.
+    g = g.on_secondary_tap(|| {});
     g.into_widget()
 }
 

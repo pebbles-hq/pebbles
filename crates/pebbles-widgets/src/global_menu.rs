@@ -1,15 +1,22 @@
 //! A **global right-click menu** — the standard desktop fallback: right-clicking
-//! anywhere nothing else claims it (no widget context menu, no blocker) opens a
-//! small menu with Cut / Copy / Paste / Select All, at the cursor.
+//! a surface nothing else claims (no widget context menu, no blocker, no
+//! per-widget handler) opens a small menu with Cut / Copy / Paste / Select All
+//! at the cursor.
 //!
 //! Controllable by app developers:
-//! * [`set_global_menu_enabled`] — off/on app-wide (on by default).
-//! * [`block_context_menu`] — wrap any widget/area to suppress the menu there
-//!   (widgets with their OWN context menu — [`ContextMenu`](crate::ContextMenu),
-//!   the file explorer — suppress it automatically).
+//! * [`set_global_menu_enabled`] — off/on app-wide (default: DISABLED — opt in).
+//! * [`block_context_menu`] — wrap any widget/area to suppress the menu there.
+//! * [`on_context_menu`] — attach a per-widget handler (always active, the
+//!   switch doesn't affect it); [`global_menu_on`] attaches the DEFAULT menu
+//!   to a widget, also regardless of the switch.
 //! * [`set_global_menu`] — replace the options entirely; [`reset_global_menu`]
 //!   restores the standard set.
 //! * [`set_global_menu_style`] / [`set_global_menu_width`] — the look.
+//!
+//! Interactive controls (buttons, toggles, sliders) consume right-clicks by
+//! default — the global menu never opens over them; Button/IconButton offer a
+//! `.context_menu(..)` builder to opt in. Widgets with their OWN context menu
+//! (the file explorer) claim theirs automatically.
 //!
 //! The standard items route to the focused editor (clipboard + selection), and
 //! disable themselves when no editor holds focus — the IDE convention.
@@ -39,14 +46,14 @@ struct Config {
 
 thread_local! {
     static CONFIG: RefCell<Config> = RefCell::new(Config {
-        enabled: true,
+        enabled: false,
         entries: None,
         style: None,
         width: 220.0,
     });
 }
 
-/// Enable or disable the global right-click menu (default: enabled).
+/// Enable or disable the global right-click menu (default: DISABLED — opt in).
 pub fn set_global_menu_enabled(enabled: bool) {
     CONFIG.with(|c| c.borrow_mut().enabled = enabled);
 }
@@ -83,6 +90,22 @@ pub fn block_context_menu(child: impl IntoWidget) -> GestureDetector {
     GestureDetector::new(child).on_secondary_tap(|| {})
 }
 
+/// Attach a per-widget right-click handler to `child` (always active — the
+/// global switch doesn't affect it). `f` receives the pointer event (its
+/// `global` position is the cursor).
+pub fn on_context_menu(
+    child: impl IntoWidget,
+    f: impl Fn(pebbles_render::PointerEvent) + 'static,
+) -> GestureDetector {
+    GestureDetector::new(child).on_secondary_tap(pebbles_core::action_event(f))
+}
+
+/// Attach the DEFAULT global menu to `child`: right-clicking it opens the
+/// standard menu at the cursor — even while the global switch is disabled.
+pub fn global_menu_on(child: impl IntoWidget) -> GestureDetector {
+    on_context_menu(child, |e| show_here(e.global.x, e.global.y))
+}
+
 /// The standard options, focus-aware: clipboard/selection intents disable when
 /// no editor holds focus (the IDE convention).
 fn standard_entries() -> Vec<MenuEntry> {
@@ -106,12 +129,20 @@ fn standard_entries() -> Vec<MenuEntry> {
 
 /// Open the global menu at the cursor (the shell calls this when a right-click
 /// found no other claimant). A no-op while disabled.
+/// The shell's fallback: open at the cursor when nothing claimed the
+/// right-click. A no-op while the global switch is disabled.
 pub fn show(x: f64, y: f64) {
+    if !is_global_menu_enabled() {
+        return;
+    }
+    show_here(x, y);
+}
+
+/// Open the menu regardless of the global switch — per-widget opt-ins and
+/// programmatic opens.
+pub fn show_here(x: f64, y: f64) {
     CONFIG.with(|c| {
         let c = c.borrow();
-        if !c.enabled {
-            return;
-        }
         let width = c.width;
         let style = c.style.clone();
         match c.entries.as_deref() {

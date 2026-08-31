@@ -178,6 +178,13 @@ impl Button {
         self.on_secondary_tap = Some(cb.into_callback());
         self
     }
+    /// Attach a right-click action (the developer's own menu or anything else).
+    /// By default a button CONSUMES right-clicks silently — the global context
+    /// menu never opens over it — set this to opt in.
+    pub fn context_menu(mut self, cb: impl IntoCallback) -> Self {
+        self.on_secondary_tap = Some(cb.into_callback());
+        self
+    }
     pub fn on_tap_down(mut self, cb: impl IntoCallback) -> Self {
         self.on_tap_down = Some(cb.into_callback());
         self
@@ -477,6 +484,12 @@ fn render_button(b: &Button) -> Element {
             };
         }
     }
+    // Interactive controls consume right-clicks by default: the global context
+    // menu never opens over a button unless the developer attached a handler
+    // (`.context_menu(..)` / `.on_secondary_tap(..)`).
+    if b.on_secondary_tap.is_none() {
+        gesture = gesture.on_secondary_tap(|| {});
+    }
     if let Some(cb) = b.on_tap_cancel.clone() {
         gesture = gesture.on_tap_cancel(cb);
     }
@@ -614,5 +627,7 @@ fn render_icon_button(b: &IconButton) -> Element {
     if let Some(cb) = b.on_pressed.clone() {
         gesture = gesture.on_tap(cb);
     }
+    // Icon buttons consume right-clicks by default (no global menu over them).
+    gesture = gesture.on_secondary_tap(|| {});
     gesture.into_widget()
 }

@@ -302,6 +302,8 @@ fn render_slider(p: &SliderProps) -> AnyWidget {
             })
             .on_pan_start(action_event(move |e| a_start(e.position.x, e.position.y)))
             .on_pan_update(action_event(move |e| a_move(e.position.x, e.position.y)))
+            // Sliders consume right-clicks by default.
+            .on_secondary_tap(|| {})
             .into_widget()
     };
 

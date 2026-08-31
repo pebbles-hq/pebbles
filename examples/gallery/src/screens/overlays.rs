@@ -14,53 +14,82 @@ pub fn overlays() -> Element {
 }
 
 fn global_menu() -> impl IntoWidget {
-    let enabled = create_signal(true);
+    let enabled = create_signal(false);
     doc("Global right-click")
-        .description("Right-click ANYWHERE with no widget claiming it and the standard menu opens — Cut / Copy / Paste / Select All, disabled when no editor holds focus. Disable it app-wide, replace its options, restyle it, or suppress it per area.")
+        .description("DISABLED by default — opt in globally, per widget, or per area. Buttons and controls consume right-clicks by default (opt in with .context_menu). The File Explorer always has its own.")
         .body(
         column(children![
-            button(if enabled.get() { "Disable global menu" } else { "Enable global menu" }).variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(move || {
-                let next = !enabled.get();
-                enabled.set(next);
-                set_global_menu_enabled(next);
-            }),
-            gap_w(8.0),
-            button("Custom options").variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(|| {
-                set_global_menu(vec![
-                    menu_item("Refresh").icon(lucide::REFRESH_CW).on_select(|| {}).into(),
-                    menu_sub(
-                        "Go to",
-                        [menu_item("Overview"), menu_item("Data Table")],
-                    ),
-                    menu_separator(),
-                    menu_item("Settings").icon(lucide::SETTINGS).on_select(|| {}).into(),
-                ]);
-            }),
-            gap_w(8.0),
-            button("Restore defaults").variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(reset_global_menu),
-            gap_w(8.0),
-            button("Style it").variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(|| {
-                set_global_menu_style(
-                    style()
-                        .background(theme().colors.card)
-                        .border(Border::new(theme().colors.border, 1.0))
-                        .radius_all(theme().radius + 2.0),
-                );
-            }),
-            gap_h(12.0),
-            Container::new()
-                .height(120.0)
-                .decoration(
-                    BoxDecoration::new()
-                        .color(theme().colors.secondary)
-                        .radius(BorderRadius::all(theme().radius)),
-                )
-                .alignment(Alignment::CENTER)
-                .child(block_context_menu(muted("Right-click here is suppressed (block_context_menu)"))),
+            row(children![
+                button(if enabled.get() { "Disable global menu" } else { "Enable global menu" }).variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(move || {
+                    let next = !enabled.get();
+                    enabled.set(next);
+                    set_global_menu_enabled(next);
+                }),
+                gap_w(8.0),
+                button("Custom options").variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(|| {
+                    set_global_menu(vec![
+                        menu_item("Refresh").icon(lucide::REFRESH_CW).on_select(|| {}).into(),
+                        menu_sub(
+                            "Go to",
+                            [menu_item("Overview"), menu_item("Data Table")],
+                        ),
+                        menu_separator(),
+                        menu_item("Settings").icon(lucide::SETTINGS).on_select(|| {}).into(),
+                    ]);
+                }),
+                gap_w(8.0),
+                button("Restore defaults").variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(reset_global_menu),
+                gap_w(8.0),
+                button("Style it").variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(|| {
+                    set_global_menu_style(
+                        style()
+                            .background(theme().colors.card)
+                            .border(Border::new(theme().colors.border, 1.0))
+                            .radius_all(theme().radius + 2.0),
+                    );
+                }),
+            ])
+            .main_axis_size(MainAxisSize::Min),
+            gap_h(14.0),
+            wrap(children![
+                demo_box("Right-click this box", "global_menu_on(..) — the default menu on THIS widget, even while global is off", global_menu_on(
+                    Container::new()
+                        .height(90.0)
+                        .decoration(BoxDecoration::new().color(theme().colors.secondary).radius(BorderRadius::all(theme().radius)))
+                        .alignment(Alignment::CENTER)
+                        .child(muted("global_menu_on(..)")),
+                )),
+                demo_box("Right-click this box", "block_context_menu(..) — suppressed here, always", block_context_menu(
+                    Container::new()
+                        .height(90.0)
+                        .decoration(BoxDecoration::new().color(theme().colors.secondary).radius(BorderRadius::all(theme().radius)))
+                        .alignment(Alignment::CENTER)
+                        .child(muted("block_context_menu(..)")),
+                )),
+                demo_box("Right-click this button", "buttons consume right-clicks by default", button("Plain button").variant(ButtonVariant::Secondary)),
+                demo_box("Right-click this button", ".context_menu(..) opts the button back in", button("With context menu").variant(ButtonVariant::Secondary).context_menu(|| {
+                    toast("Button context menu").show();
+                })),
+                demo_box("Right-click the text", "text surfaces get the global menu when enabled", text("Right-click me when the global menu is on.").size(13.0)),
+            ])
+            .spacing(12.0),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Start)
         .main_axis_size(MainAxisSize::Min),
     )
+}
+
+fn demo_box(label: &str, hint: &str, content: impl IntoWidget) -> impl IntoWidget {
+    column(children![
+        muted(label),
+        gap_w(0.0),
+        content,
+        gap_w(0.0),
+        text(hint).size(11.5).color(theme().colors.muted_foreground),
+    ])
+    .cross_axis_alignment(CrossAxisAlignment::Start)
+    .main_axis_size(MainAxisSize::Min)
+    .spacing(6.0)
 }
 
 fn sheets() -> impl IntoWidget {

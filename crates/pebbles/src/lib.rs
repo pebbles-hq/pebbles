@@ -83,8 +83,9 @@ pub mod prelude {
 
     // the global right-click menu (the fallback when nothing claims a right-click)
     pub use pebbles_widgets::{
-        block_context_menu, is_global_menu_enabled, reset_global_menu, set_global_menu,
-        set_global_menu_enabled, set_global_menu_style, set_global_menu_width,
+        block_context_menu, global_menu_on, is_global_menu_enabled, on_context_menu,
+        reset_global_menu, set_global_menu, set_global_menu_enabled, set_global_menu_style,
+        set_global_menu_width, show_global_menu_here,
     };
 
     // modal dialogs (main-window overlay) + the AlertDialog preset + Sheet/Drawer
