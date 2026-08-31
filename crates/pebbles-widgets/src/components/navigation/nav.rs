@@ -12,29 +12,71 @@ use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Container, gap_w, row, text};
 
 use crate::components::icon;
-use crate::components::{ButtonSize, ButtonVariant, button};
+use crate::components::{ButtonSize, ButtonVariant, button, dropdown_menu, menu_item};
 
-/// A breadcrumb trail of path segments.
+/// A breadcrumb trail of path segments. When there are more than
+/// [`max_visible`](Breadcrumb::max_visible) segments, the middle ones collapse
+/// into a "…" dropdown (shadcn's ellipsis breadcrumb).
 #[derive(Clone)]
 pub struct Breadcrumb {
     segments: Vec<String>,
+    max_visible: usize,
 }
 
 /// Create a [`Breadcrumb`] from path segments.
 pub fn breadcrumb(segments: Vec<String>) -> Breadcrumb {
-    Breadcrumb { segments }
+    Breadcrumb { segments, max_visible: usize::MAX }
 }
 
+impl Breadcrumb {
+    /// Collapse middle segments into a "…" dropdown when the trail is longer
+    /// than `n` (minimum 3 — first + "…" + `n - 2` trailing segments).
+    pub fn max_visible(mut self, n: usize) -> Self {
+        self.max_visible = n;
+        self
+    }
+}
 
 impl IntoWidget for Breadcrumb {
     fn into_widget(mut self) -> AnyWidget {
         let th = theme();
+        let segments = std::mem::take(&mut self.segments);
+        let n = self.max_visible.max(3);
+        let len = segments.len();
+
+        // Split into [first] + [hidden middle] + [trailing n-2] when overflowing.
+        let hidden: Vec<String> = if len <= n {
+            Vec::new()
+        } else {
+            segments[1..len - (n - 2)].to_vec()
+        };
+        let trailing: Vec<String> = if len <= n {
+            segments[1..].to_vec()
+        } else {
+            segments[len - (n - 2)..].to_vec()
+        };
+
         let mut items: Vec<AnyWidget> = Vec::new();
-        let last = self.segments.len().saturating_sub(1);
-        for (i, seg) in std::mem::take(&mut self.segments).into_iter().enumerate() {
-            let color =
-                if i == last { th.colors.foreground } else { th.colors.muted_foreground };
-            items.push(text(seg).size(13.0).color(color).into_widget());
+        let mut slots: Vec<String> = Vec::new();
+        slots.push(segments[0].clone());
+        if !hidden.is_empty() {
+            slots.push(String::new()); // sentinel — rendered as the "…" dropdown
+        }
+        slots.extend(trailing);
+        let last = slots.len().saturating_sub(1);
+        for (i, seg) in slots.into_iter().enumerate() {
+            if seg.is_empty() {
+                let menu = dropdown_menu("…")
+                    .trigger(text("…").size(13.0).color(th.colors.muted_foreground));
+                let mut menu = menu;
+                for h in &hidden {
+                    menu = menu.item(menu_item(h.clone()).disabled(true));
+                }
+                items.push(menu.into_widget());
+            } else {
+                let color = if i == last { th.colors.foreground } else { th.colors.muted_foreground };
+                items.push(text(seg).size(13.0).color(color).into_widget());
+            }
             if i != last {
                 items.push(gap_w(6.0).into_widget());
                 items.push(

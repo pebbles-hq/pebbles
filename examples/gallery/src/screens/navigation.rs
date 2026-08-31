@@ -41,7 +41,20 @@ pub fn navigation() -> Element {
                     muted(format!("last toggle: {}", acc_note.get())),
                 ]),
             ),
-            section("BREADCRUMB", breadcrumb(vec!["Home".into(), "Projects".into(), "Pebbles".into()])),
+            section(
+                "BREADCRUMB",
+                column(children![
+                    breadcrumb(vec!["Home".into(), "Projects".into(), "Pebbles".into()]),
+                    gap_h(16.0),
+                    breadcrumb(
+                        ["Home", "Workspace", "Design", "Components", "Input", "Select", "pebbles.rs"]
+                            .into_iter()
+                            .map(String::from)
+                            .collect(),
+                    )
+                    .max_visible(4),
+                ]),
+            ),
             section(
                 "MENUBAR",
                 menubar()
