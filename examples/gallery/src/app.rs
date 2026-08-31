@@ -83,6 +83,7 @@ pub fn app() -> impl IntoWidget {
         .route("styling", || component(screens::styling::styling))
         .route("colors", || component(screens::colors::colors))
         .route("navigation", || component(screens::navigation::navigation))
+        .route("pagination", || component(screens::pagination::paginations))
         .route("overlays", || component(screens::overlays::overlays))
         .route("list", || component(screens::list::lists))
         .route("data-table", || component(screens::data_table::data_tables))

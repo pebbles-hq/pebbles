@@ -20,6 +20,7 @@ pub mod images;
 pub mod layout;
 pub mod navigation;
 pub mod overlays;
+pub mod pagination;
 pub mod overview;
 pub mod progress;
 pub mod radiogroup;

@@ -124,7 +124,10 @@ pub const NAV: &[NavGroup] = &[
     },
     NavGroup {
         label: "NAVIGATION",
-        routes: &[("navigation", lucide::NAVIGATION, "Navigation")],
+        routes: &[
+            ("navigation", lucide::NAVIGATION, "Navigation"),
+            ("pagination", lucide::CHEVRONS_LEFT, "Pagination"),
+        ],
     },
     NavGroup {
         label: "OVERLAYS",

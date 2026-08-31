@@ -6,7 +6,6 @@ pub fn navigation() -> Element {
     let tab = create_signal(0usize);
     let pill = create_signal(0usize);
     let acc_note = create_signal(String::from("—"));
-    let pg = create_signal(2usize);
 
     screen("Navigation")
         .description("Tabs, accordion, breadcrumb, pagination.")
@@ -90,38 +89,6 @@ pub fn navigation() -> Element {
                     )
                     .menu("Edit", [menu_item("Undo"), menu_item("Redo")])
                     .menu("View", [menu_item("Toggle Sidebar"), menu_item("Zen Mode")]),
-            ),
-            section(
-                "PAGINATION",
-                column(children![
-                    text("Numbers — shadcn classic: pills, ellipses, chevrons").size(12.5).color(theme().colors.muted_foreground),
-                    gap_h(8.0),
-                    pagination(pg.get(), 20)
-                        .variant(PaginationVariant::Numbers)
-                        .on_page(move |p| pg.set(p)),
-                    gap_h(16.0),
-                    text("Simple — chevrons around 'Page X of Y'").size(12.5).color(theme().colors.muted_foreground),
-                    gap_h(8.0),
-                    pagination(pg.get(), 20)
-                        .variant(PaginationVariant::Simple)
-                        .on_page(move |p| pg.set(p)),
-                    gap_h(16.0),
-                    text("Arrows — the compact 'X / Y'").size(12.5).color(theme().colors.muted_foreground),
-                    gap_h(8.0),
-                    pagination(pg.get(), 20)
-                        .variant(PaginationVariant::Arrows)
-                        .on_page(move |p| pg.set(p)),
-                    gap_h(16.0),
-                    text("Styled — a surface Style (card bg + radius)").size(12.5).color(theme().colors.muted_foreground),
-                    gap_h(8.0),
-                    pagination(pg.get(), 20)
-                        .variant(PaginationVariant::Numbers)
-                        .max_buttons(5)
-                        .style(style().background(theme().colors.card).radius_all(theme().radius).padding_xy(6.0, 4.0))
-                        .on_page(move |p| pg.set(p)),
-                ])
-                .cross_axis_alignment(CrossAxisAlignment::Start)
-                .main_axis_size(MainAxisSize::Min),
             ),
         ])
 }
