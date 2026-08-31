@@ -106,7 +106,7 @@ pub const NAV: &[NavGroup] = &[
             ("progress", lucide::GAUGE, "Progress"),
             ("list", lucide::LIST, "List"),
             ("data-table", lucide::TABLE, "Data Table"),
-            ("tree", lucide::FOLDER_TREE, "Tree"),
+            ("file-explorer", lucide::FOLDER_TREE, "File Explorer"),
             ("split-view", lucide::COLUMNS_2, "Split View"),
             ("virtualization", lucide::LAYERS, "Virtualization"),
             ("typography", lucide::TYPE, "Typography"),

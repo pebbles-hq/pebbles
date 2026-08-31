@@ -90,7 +90,7 @@ pub fn app() -> impl IntoWidget {
         .route("overlays", || component(screens::overlays::overlays))
         .route("list", || component(screens::list::lists))
         .route("data-table", || component(screens::data_table::data_tables))
-        .route("tree", || component(screens::tree::trees))
+        .route("file-explorer", || component(screens::file_explorer::file_explorer_screen))
         .route("split-view", || component(screens::split_view::split_views))
         .route("virtualization", || component(screens::virtualization::virtualization))
         .route("typography", || component(screens::typography::typography))

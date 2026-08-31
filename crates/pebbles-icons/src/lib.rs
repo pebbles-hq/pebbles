@@ -116,6 +116,8 @@ pub enum IconKind {
     Lock,
     User,
     Phone,
+    Folder,
+    File,
 }
 
 impl IconKind {
@@ -146,6 +148,8 @@ impl IconKind {
             IconKind::Lock => lucide::LOCK,
             IconKind::User => lucide::USER,
             IconKind::Phone => lucide::PHONE,
+            IconKind::Folder => lucide::FOLDER,
+            IconKind::File => lucide::FILE,
         }
     }
 }

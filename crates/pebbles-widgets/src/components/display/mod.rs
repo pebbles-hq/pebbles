@@ -2,6 +2,7 @@
 
 mod data;
 mod empty;
+mod file_explorer;
 mod list_tile;
 mod hover_card;
 mod kbd;
@@ -16,6 +17,7 @@ pub use data::{Cell, SortDir, Table, cell, table};
 pub use list_tile::{ListTile, list_tile};
 pub use hover_card::{HoverCard, hover_card};
 pub use empty::{Empty, empty};
+pub use file_explorer::{FileExplorer, FileTree, FsKind, FsNode, file_explorer};
 pub use kbd::{Kbd, kbd};
 pub use icon::{Icon, icon};
 pub use progress::{Progress, progress};

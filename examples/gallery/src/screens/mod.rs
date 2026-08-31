@@ -11,7 +11,7 @@ pub mod command;
 pub mod data_table;
 pub mod list;
 pub mod split_view;
-pub mod tree;
+pub mod file_explorer;
 pub mod virtualization;
 pub mod date_picker;
 pub mod dialog;
