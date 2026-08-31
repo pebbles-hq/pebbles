@@ -27,10 +27,10 @@ fn counter() -> impl IntoWidget {
         row(children![
             button("−").variant(ButtonVariant::Outline)
                 .on_pressed(move || count.update(|c| *c -= 1)), // handler = bare closure
-            SizedBox::spacer(16.0, 0.0),
+            gap_w(16.0),
             button("+").on_pressed(move || count.update(|c| *c += 1)),
         ])
-        .min(), // shrink-wrap the row's main axis
+        .main_axis_size(MainAxisSize::Min), // Flutter's mainAxisSize
     ]))
 }
 
@@ -132,8 +132,9 @@ encoder with **no** wgpu — keeping layout/paint logic unit-testable headlessly
 
 Everything below is built and shown in `cargo run -p gallery`, styled to **shadcn**.
 
-- **Layout & primitives** — `Text`, `Container`, `Row`/`Column` (with `.start()/.center_cross()/
-  .end()/.stretch()/.min()/.space_between()` shorthands), `Expanded`/`Flexible`/`spacer`,
+- **Layout & primitives** — `Text`, `Container`, `Row`/`Column` (Flutter's
+  `.main_axis_alignment()/.cross_axis_alignment()/.main_axis_size()/.spacing()`),
+  `Expanded`/`Flexible`/`spacer`, `gap_w`/`gap_h` (fixed gaps),
   `Stack`/`Positioned`, `Padding`, `Align`/`center`, `SizedBox`, `ConstrainedBox`,
   `DecoratedBox`, `Opacity`, `ClipRRect`, `Wrap`, `AspectRatio`, `Icon`, `Spinner`,
   `ScrollArea`, `Resizable`, `Separator`; child-first modifiers (`.padded()/.centered()/
