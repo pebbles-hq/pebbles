@@ -105,6 +105,7 @@ pub struct Style {
     pub strikethrough: Option<bool>,
     pub font_family: Option<String>,
     pub max_lines: Option<u32>,
+    pub ellipsis: Option<bool>,
 }
 
 /// Start a new [`Style`].
@@ -348,6 +349,11 @@ impl Style {
         self.max_lines = Some(n);
         self
     }
+    /// With `max_lines`, append "…" to the last line when the text overflows.
+    pub fn ellipsis(mut self, ellipsis: bool) -> Self {
+        self.ellipsis = Some(ellipsis);
+        self
+    }
 
     /// Layer `other` on top of `self` — `other`'s set fields win (like stacking CSS
     /// classes or `style={[base, override]}` in React Native).
@@ -387,6 +393,7 @@ impl Style {
             strikethrough: other.strikethrough.or(self.strikethrough),
             font_family: other.font_family.or(self.font_family),
             max_lines: other.max_lines.or(self.max_lines),
+            ellipsis: other.ellipsis.or(self.ellipsis),
         }
     }
 

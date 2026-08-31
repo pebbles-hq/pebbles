@@ -90,6 +90,11 @@ impl Text {
         self.style.max_lines = Some(n);
         self
     }
+    /// With `max_lines`, append "…" to the last line when the text overflows.
+    pub fn ellipsis(mut self) -> Self {
+        self.style.ellipsis = true;
+        self
+    }
 
     /// Style this text from an explicit [`ParagraphStyle`].
     pub fn paragraph_style(mut self, style: ParagraphStyle) -> Self {
@@ -133,6 +138,9 @@ impl Text {
         }
         if let Some(m) = s.max_lines {
             self.style.max_lines = Some(m);
+        }
+        if let Some(e) = s.ellipsis {
+            self.style.ellipsis = e;
         }
         crate::style::styled(self, s)
     }

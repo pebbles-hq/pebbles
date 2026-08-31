@@ -40,6 +40,8 @@ pub struct ParagraphStyle {
     pub font_family: Option<String>,
     /// Clamp the paragraph to at most this many lines (excess lines are dropped).
     pub max_lines: Option<u32>,
+    /// With `max_lines`, append "…" to the last kept line when the text overflows.
+    pub ellipsis: bool,
 }
 
 impl Default for ParagraphStyle {
@@ -56,6 +58,7 @@ impl Default for ParagraphStyle {
             strikethrough: false,
             font_family: None,
             max_lines: None,
+            ellipsis: false,
         }
     }
 }
@@ -83,22 +86,16 @@ impl RenderParagraph {
     pub fn new(text: impl Into<String>, style: ParagraphStyle) -> Self {
         RenderParagraph { text: text.into(), style, cached: None }
     }
-}
 
-impl RenderObject for RenderParagraph {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
-        let max_advance =
-            if constraints.has_bounded_width() { Some(constraints.max_width as f32) } else { None };
-
-        let brush = Brush::Solid(self.style.color);
-        let mut builder =
-            cx.text.layout.ranged_builder(&mut cx.text.fonts, &self.text, 1.0, true);
+    /// Shape `s` into a broken, aligned layout with this paragraph's style.
+    fn build(&self, cx: &mut LayoutCx, s: &str, max_advance: Option<f32>) -> Layout<Brush> {
+        let mut builder = cx.text.layout.ranged_builder(&mut cx.text.fonts, s, 1.0, true);
         builder.push_default(StyleProperty::FontSize(self.style.font_size));
         builder.push_default(StyleProperty::FontWeight(FontWeight::new(self.style.weight)));
         builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
             self.style.line_height,
         )));
-        builder.push_default(StyleProperty::Brush(brush));
+        builder.push_default(StyleProperty::Brush(Brush::Solid(self.style.color)));
         if self.style.letter_spacing != 0.0 {
             builder.push_default(StyleProperty::LetterSpacing(self.style.letter_spacing));
         }
@@ -114,25 +111,51 @@ impl RenderObject for RenderParagraph {
         if let Some(family) = &self.style.font_family {
             builder.push_default(StyleProperty::FontFamily(family.as_str().into()));
         }
-
-        let mut layout: Layout<Brush> = builder.build(&self.text);
+        let mut layout: Layout<Brush> = builder.build(s);
         layout.break_all_lines(max_advance);
         layout.align(to_parley_align(self.style.align), AlignmentOptions::default());
+        layout
+    }
+}
 
-        // Clamp to `max_lines`: report a height covering only the kept lines; paint
-        // skips the rest. (v1 truncation — no ellipsis re-shaping yet.)
+impl RenderObject for RenderParagraph {
+    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+        let max_advance =
+            if constraints.has_bounded_width() { Some(constraints.max_width as f32) } else { None };
+
+        let mut layout = self.build(cx, &self.text, max_advance);
+
+        // `max_lines` clamp. With `ellipsis`, when the text overflows, re-shape the
+        // longest character prefix that still fits in `max_lines` lines once "…" is
+        // appended (binary search on the char boundary).
         let full_h = layout.height() as f64;
-        let height = match self.style.max_lines {
-            Some(max) => {
-                let kept = layout.lines().take(max as usize);
-                let mut h = 0.0f64;
-                for line in kept {
-                    h += line.metrics().line_height as f64;
+        let mut height = full_h;
+        if let Some(max) = self.style.max_lines {
+            let max = max as usize;
+            let over = layout.lines().count() > max;
+            if over && self.style.ellipsis && !self.text.is_empty() {
+                let chars: Vec<usize> = self.text.char_indices().map(|(i, _)| i).collect();
+                let (mut lo, mut hi, mut best) = (0usize, chars.len(), String::from("…"));
+                while lo < hi {
+                    let mid = (lo + hi).div_ceil(2);
+                    let cut = chars.get(mid).copied().unwrap_or(self.text.len());
+                    let candidate = format!("{}…", &self.text[..cut]);
+                    let trial = self.build(cx, &candidate, max_advance);
+                    if trial.lines().count() <= max {
+                        best = candidate;
+                        lo = mid;
+                    } else {
+                        hi = mid - 1;
+                    }
                 }
-                if h > 0.0 { h.min(full_h) } else { full_h }
+                layout = self.build(cx, &best, max_advance);
             }
-            None => full_h,
-        };
+            // Report a height covering only the kept lines; paint skips the rest.
+            let h: f64 = layout.lines().take(max).map(|l| l.metrics().line_height as f64).sum();
+            if h > 0.0 {
+                height = h.min(layout.height() as f64);
+            }
+        }
         let size = Size::new(layout.width() as f64, height);
         self.cached = Some(layout);
         constraints.constrain(size)

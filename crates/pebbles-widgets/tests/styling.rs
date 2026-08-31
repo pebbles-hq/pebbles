@@ -4,7 +4,7 @@
 
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
-use pebbles_render::{Cursor, RenderConstrainedBox, TextEnv};
+use pebbles_render::{Cursor, RenderConstrainedBox, RenderParagraph, TextEnv};
 use pebbles_widgets::{Container, StyleExt, View, card, style, styles, text, text_field};
 
 #[test]
@@ -121,4 +121,77 @@ fn component_style_adoption_builds_and_paints() {
     ui2.layout(&mut env, Size::new(400.0, 120.0));
     let mut scene2 = pebbles_render::Scene::new();
     ui2.paint(&mut scene2);
+}
+
+// --- §7 remaining coverage ---------------------------------------------------
+
+fn wrapper_order_probe() -> impl IntoWidget {
+    // A unique text marker wrapped with box padding(10) + margin(20). Its absolute
+    // offset reveals the wrapper order: margin(outermost) + padding(innermost) = 30.
+    text("x").styled(style().padding_all(10.0).background(palette::RED).margin_all(20.0))
+}
+
+#[test]
+fn styled_wrapper_order_margin_outside_padding_inside() {
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(View::new(palette::WHITE, component(wrapper_order_probe)).into_widget());
+    ui.layout(&mut env, Size::new(400.0, 400.0));
+    let tree = ui.render_tree();
+    let t = tree.find::<RenderParagraph>().expect("the text marker (unique)");
+    assert_eq!(tree.absolute_offset(t), Offset::new(30.0, 30.0), "margin(20) outside, padding(10) inside");
+}
+
+fn no_op_text_style_probe() -> impl IntoWidget {
+    // A text-only Style (no box props) must add NO wrapper around the widget.
+    text("x").styled(style().font_size(40.0).color(palette::RED).italic(true).letter_spacing(3.0))
+}
+
+#[test]
+fn text_only_style_on_box_is_a_no_op() {
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(View::new(palette::WHITE, component(no_op_text_style_probe)).into_widget());
+    ui.layout(&mut env, Size::new(400.0, 400.0));
+    let tree = ui.render_tree();
+    let t = tree.find::<RenderParagraph>().expect("the text marker");
+    // No Align/Padding/Margin wrapper was added by a text-only style → text at origin.
+    assert_eq!(tree.absolute_offset(t), Offset::ZERO, "text-only style added no box wrapper");
+}
+
+#[test]
+fn theme_fn_style_reevaluates_after_theme_switch() {
+    use pebbles_widgets::{theme, toggle_theme};
+    pebbles_widgets::theme::init();
+    // A style function re-reads theme() each call (never cache a Style in a static).
+    let chip = || style().background(theme().colors.card);
+    let before = chip().background;
+    toggle_theme();
+    let after = chip().background;
+    assert_ne!(before, after, "the same style fn yields a new color after a theme switch");
+    toggle_theme(); // restore
+}
+
+fn ellipsis_probe() -> impl IntoWidget {
+    // A long string in a narrow box, clamped to 1 line with ellipsis. `center` gives
+    // the child loose constraints so the paragraph reports its NATURAL (clamped) height
+    // rather than being stretched to fill the window.
+    pebbles_widgets::center(
+        text("This is a fairly long paragraph that will not fit on one narrow line at all")
+            .max_lines(1)
+            .ellipsis()
+            .styled(style().width(120.0)),
+    )
+}
+
+#[test]
+fn max_lines_ellipsis_clamps_to_one_line() {
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(View::new(palette::WHITE, component(ellipsis_probe)).into_widget());
+    ui.layout(&mut env, Size::new(120.0, 200.0));
+    let tree = ui.render_tree();
+    let t = tree.find::<RenderParagraph>().expect("text");
+    // One line tall (~ font_size * line_height ≈ 16*1.2 = 19.2), not the full wrapped height.
+    assert!(tree.size_of(t).height < 30.0, "clamped to one line (got {})", tree.size_of(t).height);
 }
