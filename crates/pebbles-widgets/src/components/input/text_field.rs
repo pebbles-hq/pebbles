@@ -23,7 +23,7 @@ use crate::widgets::{Container, Expanded, GestureDetector, Opacity, column, edit
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{
     KeyInput, Motion, Signal, action_event, animated, clipboard, component_props,
-    create_focus, create_signal, keyboard,
+    create_focus, create_loop, create_signal, keyboard,
 };
 
 /// One undo/redo snapshot: text + selection.
@@ -715,6 +715,11 @@ fn render_field(p: &Props) -> AnyWidget {
     };
     let focused = !disabled && focus.is_focused();
 
+    // Caret blink: a 0.5s loop phase; the caret shows for the first half of each
+    // cycle after the last edit and hides for the second (solid while composing).
+    let blink_loop = create_loop(0.5);
+    let blink_stamp = create_signal(0.0_f64);
+
     // Type-driven defaults — the kind's filter, icon, placeholder, format and
     // built-in affordances. Each is overridden by an explicit builder call.
     let kind = p.kind;
@@ -749,8 +754,11 @@ fn render_field(p: &Props) -> AnyWidget {
             }
             let (changed, submit) =
                 ed.apply(k, filter.as_deref(), max_length, format.as_deref());
-            if changed && let Some(cb) = &on_changed {
-                cb(&ed.value.peek());
+            if changed {
+                blink_stamp.set(blink_loop.peek());
+                if let Some(cb) = &on_changed {
+                    cb(&ed.value.peek());
+                }
             }
             if submit {
                 if let Some(cb) = &on_editing {
@@ -779,11 +787,21 @@ fn render_field(p: &Props) -> AnyWidget {
 
     let val = ed.value.get();
     let vlen = val.len();
+    let caret_visible = if focused {
+        if ed.preedit.peek().is_empty() {
+            (blink_loop.get() - blink_stamp.get()).rem_euclid(1.0) < 0.5
+        } else {
+            true // solid while composing
+        }
+    } else {
+        false
+    };
     let inner = editable(val)
         .placeholder(eff_placeholder.clone())
         .selection(ed.anchor.get().min(vlen), ed.focus.get().min(vlen))
         .preedit(ed.preedit.get())
         .focused(focused)
+        .caret_visible(caret_visible)
         .obscure(eff_obscure)
         .multiline(p.multiline)
         .field_id(ed.id)
@@ -883,6 +901,7 @@ fn render_field(p: &Props) -> AnyWidget {
             .on_pan_start(action_event(move |e: PointerEvent| {
                 focus.request_focus();
                 place_caret(ed, e, cl, ct, keyboard::shift_held());
+                blink_stamp.set(blink_loop.peek());
                 if let Some(cb) = &on_tap {
                     cb();
                 }
@@ -894,6 +913,7 @@ fn render_field(p: &Props) -> AnyWidget {
                 {
                     ed.anchor.set(a);
                     ed.focus.set(f);
+                    blink_stamp.set(blink_loop.peek());
                 }
             }))
             .on_double_tap(action_event(move |e: PointerEvent| {
@@ -901,6 +921,7 @@ fn render_field(p: &Props) -> AnyWidget {
                 if let Some((a, f)) = edit::word_at(ed.id, tx, ty) {
                     ed.anchor.set(a);
                     ed.focus.set(f);
+                    blink_stamp.set(blink_loop.peek());
                 }
             }))
             .into_widget()

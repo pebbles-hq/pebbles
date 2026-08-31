@@ -17,6 +17,7 @@ pub struct EditableText {
     pub focus: usize,
     pub preedit: String,
     pub focused: bool,
+    pub caret_visible: bool,
     pub obscure: Option<char>,
     pub multiline: bool,
     pub field_id: u64,
@@ -32,6 +33,7 @@ pub fn editable(text: impl Into<String>) -> EditableText {
         focus: 0,
         preedit: String::new(),
         focused: false,
+        caret_visible: true,
         obscure: None,
         multiline: false,
         field_id: 0,
@@ -61,6 +63,12 @@ impl EditableText {
         self.focused = focused;
         self
     }
+    /// Blink phase — the caret is drawn only while `true` (default). The text
+    /// field toggles it while focused.
+    pub fn caret_visible(mut self, visible: bool) -> Self {
+        self.caret_visible = visible;
+        self
+    }
     pub fn obscure(mut self, ch: Option<char>) -> Self {
         self.obscure = ch;
         self
@@ -85,6 +93,7 @@ impl EditableText {
         r.focus = self.focus;
         r.preedit = self.preedit.clone();
         r.focused = self.focused;
+        r.caret_visible = self.caret_visible;
         r.obscure = self.obscure;
         r.multiline = self.multiline;
         r.field_id = self.field_id;

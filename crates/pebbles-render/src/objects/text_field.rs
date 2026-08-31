@@ -65,6 +65,9 @@ pub struct RenderTextField {
     pub preedit: String,
     /// Whether the field is focused (controls the caret + hit-test publishing).
     pub focused: bool,
+    /// Blink phase — the caret is drawn only while this is `true` (the widget
+    /// layer toggles it ~2 Hz while focused; solid while composing).
+    pub caret_visible: bool,
     /// If set, every character renders as this glyph (password fields).
     pub obscure: Option<char>,
     /// Whether newlines stack (textarea) vs. a single line.
@@ -86,6 +89,7 @@ impl RenderTextField {
             focus: 0,
             preedit: String::new(),
             focused: false,
+            caret_visible: true,
             obscure: None,
             multiline: false,
             field_id: 0,
@@ -271,7 +275,7 @@ impl RenderObject for RenderTextField {
 
         // 4. Caret at the focus (when focused). While composing it sits at the end of
         // the preedit; the placeholder shows it at the very start.
-        if self.focused {
+        if self.focused && self.caret_visible {
             let f = if has_text || composing { composed.caret } else { 0 };
             let bb = Cursor::from_byte_index(layout, f, Affinity::Downstream).geometry(layout, 1.5);
             let rect = Rect::new(
