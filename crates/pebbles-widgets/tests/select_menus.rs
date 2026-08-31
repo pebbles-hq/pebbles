@@ -241,33 +241,139 @@ fn submenu_opens_on_hover_and_closes_after_grace() {
     frame(&mut ui);
     assert!(overlay::is_open());
 
-    // The sub row: label(28) + 4 rows(32) → y ≈ 4+28+128+16 = 176 in the panel.
-    // The panel starts at (20, 62); its right edge is at 20+240=260.
-    ui.dispatch_hover(Offset::new(100.0, 176.0));
+    // The sub row: panel top (44) + pad (4) + label (28) + 3 items (96) → the row
+    // spans y ≈ 172..204; the child panel opens to its right at (244, 168) — but
+    // only after the 0.25s hover delay.
+    ui.dispatch_hover(Offset::new(100.0, 188.0));
     frame(&mut ui);
-    assert!(overlay::child_is_open(), "hovering the sub row opens the child panel");
+    assert!(!overlay::child_is_open(), "not open before the hover delay");
+    animation::tick(0.01);
+    animation::tick(0.30);
+    frame(&mut ui);
+    assert!(overlay::child_is_open(), "opens after the hover delay");
 
-    // Moving onto the child panel (≈ x 256..456) keeps it open…
-    ui.dispatch_hover(Offset::new(300.0, 180.0));
+    // Moving onto the child panel (≈ x 244..444) keeps it open…
+    ui.dispatch_hover(Offset::new(300.0, 190.0));
     frame(&mut ui);
     assert!(overlay::child_is_open(), "the child stays open while hovered");
 
-    // …and leaving both arms the grace-close.
+    // …and leaving both arms the grace-close (0.3s).
     ui.dispatch_hover(Offset::new(480.0, 10.0));
     frame(&mut ui);
     assert!(overlay::child_is_open(), "not closed before the grace delay");
     animation::tick(0.01);
-    animation::tick(0.30);
+    animation::tick(0.35);
     frame(&mut ui);
     assert!(!overlay::child_is_open(), "closed after the grace delay");
 
     // Reopen the submenu and pick its first item: the action runs and the whole
     // overlay closes.
-    ui.dispatch_hover(Offset::new(100.0, 176.0));
+    ui.dispatch_hover(Offset::new(100.0, 188.0));
+    frame(&mut ui);
+    animation::tick(0.01);
+    animation::tick(0.30);
     frame(&mut ui);
     assert!(overlay::child_is_open());
-    tap(&mut ui, Offset::new(300.0, 172.0));
+    tap(&mut ui, Offset::new(300.0, 188.0));
     frame(&mut ui);
     assert_eq!(ACTION.with(|a| a.borrow().clone()), Some("Copied link".to_string()));
     assert!(!overlay::is_open(), "picking a submenu item closes the menu");
+}
+
+#[test]
+fn submenu_keyboard_right_enters_and_left_closes() {
+    overlay::init();
+    pebbles_core::focus::init();
+    ACTION.with(|a| *a.borrow_mut() = None);
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(600.0, 400.0);
+    overlay::set_window_size(600.0, 400.0);
+    ui.mount_root(View::new(palette::WHITE, component(sub_root)).into_widget());
+    ui.layout(&mut env, win);
+    let mut frame = |ui: &mut Ui| {
+        ui.rebuild_if_dirty();
+        ui.layout(&mut env, win);
+        let mut scene = pebbles_render::Scene::new();
+        ui.paint(&mut scene);
+    };
+    frame(&mut ui);
+
+    tap(&mut ui, Offset::new(20.0, 18.0));
+    frame(&mut ui);
+    assert!(overlay::is_open());
+
+    // Navigable rows: Profile, Billing, Settings, Share (the label is not a row).
+    // ArrowDown ×4 → the sub row; Right enters its child.
+    for _ in 0..4 {
+        ui.dispatch_key(down());
+        frame(&mut ui);
+    }
+    let right = KeyInput::Move { motion: Motion::Right, extend: false };
+    ui.dispatch_key(right.clone());
+    frame(&mut ui);
+    assert!(overlay::child_is_open(), "Right opens the active row's submenu");
+
+    // Down → the child's first item, Enter runs it and closes everything.
+    ui.dispatch_key(down());
+    frame(&mut ui);
+    ui.dispatch_key(KeyInput::Enter);
+    frame(&mut ui);
+    assert_eq!(ACTION.with(|a| a.borrow().clone()), Some("Copied link".to_string()));
+    assert!(!overlay::is_open(), "picking in the child closes the whole overlay");
+
+    // Left closes the child (reopened via Right) without closing the parent.
+    tap(&mut ui, Offset::new(20.0, 18.0));
+    frame(&mut ui);
+    for _ in 0..4 {
+        ui.dispatch_key(down());
+        frame(&mut ui);
+    }
+    ui.dispatch_key(right);
+    frame(&mut ui);
+    assert!(overlay::child_is_open());
+    let left = KeyInput::Move { motion: Motion::Left, extend: false };
+    ui.dispatch_key(left);
+    frame(&mut ui);
+    assert!(!overlay::child_is_open(), "Left closes the child");
+    assert!(overlay::is_open(), "the parent menu stays open");
+}
+
+#[test]
+fn submenu_flips_left_when_the_right_edge_is_full() {
+    overlay::init();
+    pebbles_core::focus::init();
+    animation::reset();
+    ACTION.with(|a| *a.borrow_mut() = None);
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 400.0); // too narrow for a right-side panel
+    overlay::set_window_size(400.0, 400.0);
+    ui.mount_root(View::new(palette::WHITE, component(sub_root)).into_widget());
+    ui.layout(&mut env, win);
+    let mut frame = |ui: &mut Ui| {
+        ui.rebuild_if_dirty();
+        ui.layout(&mut env, win);
+        let mut scene = pebbles_render::Scene::new();
+        ui.paint(&mut scene);
+    };
+    frame(&mut ui);
+
+    tap(&mut ui, Offset::new(20.0, 18.0));
+    frame(&mut ui);
+    ui.dispatch_hover(Offset::new(100.0, 188.0));
+    frame(&mut ui);
+    animation::tick(0.01);
+    animation::tick(0.30);
+    frame(&mut ui);
+    assert!(overlay::child_is_open());
+
+    // The child flipped to the parent's LEFT edge (x ≈ 8..208): its first item
+    // (y ≈ 172..204) is tappable there and runs.
+    tap(&mut ui, Offset::new(100.0, 188.0));
+    frame(&mut ui);
+    assert_eq!(ACTION.with(|a| a.borrow().clone()), Some("Copied link".to_string()));
+    assert!(!overlay::is_open(), "picking the flipped child closes the menu");
 }

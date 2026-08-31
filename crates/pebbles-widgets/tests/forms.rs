@@ -71,4 +71,18 @@ fn toggle_group_single_select_picks_one() {
     frame(&mut ui);
 
     assert_eq!(SEL.with(|c| c.borrow().clone()), vec![1], "tapping the middle cell selects index 1");
+
+    // Joined-strip guard (C4): the point that used to be the 6px gap between
+    // cells now lands on the second cell — no gaps in the joined strip.
+    SEL.with(|c| c.borrow_mut().clear());
+    let seam = Offset::new(55.0, 18.0);
+    ui.dispatch_pointer_down(seam);
+    ui.dispatch_tap(seam);
+    ui.dispatch_pointer_up(seam);
+    frame(&mut ui);
+    assert_eq!(
+        SEL.with(|c| c.borrow().clone()),
+        vec![1],
+        "the former gap position is cell 2 — the strip is joined with no gaps"
+    );
 }

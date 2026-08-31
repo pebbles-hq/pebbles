@@ -121,22 +121,35 @@ pub fn hide_overlay() {
     overlay_signal().set(None);
 }
 
-/// Nudge the open overlay by `(dx, dy)` — used to keep it glued to its trigger as
-/// the page scrolls underneath. A no-op if nothing is open.
+/// Nudge the open overlay (and its child panel) by `(dx, dy)` — used to keep it
+/// glued to its trigger as the page scrolls underneath. A no-op if nothing is open.
 pub fn shift(dx: f64, dy: f64) {
     overlay_signal().update(|e| {
         if let Some(entry) = e {
             entry.left += dx;
             entry.top += dy;
+            if let Some(child) = &mut entry.child {
+                child.left += dx;
+                child.top += dy;
+            }
         }
     });
 }
 
-/// Whether `(x, y)` (window space) falls within the open overlay's panel rect — so
-/// the shell scrolls the popover's own content instead of following the page.
+/// Whether `(x, y)` (window space) falls within the open overlay's panel rect or
+/// its child panel — so the shell scrolls the popover's own content instead of
+/// following the page.
 pub fn over_panel(x: f64, y: f64) -> bool {
+    let in_rect = |left: f64, top: f64, w: f64, h: f64| {
+        x >= left && x <= left + w && y >= top && y <= top + h
+    };
     match overlay_signal().peek() {
-        Some(e) => x >= e.left && x <= e.left + e.width && y >= e.top && y <= e.top + e.height,
+        Some(e) => {
+            in_rect(e.left, e.top, e.width, e.height)
+                || e.child
+                    .as_ref()
+                    .is_some_and(|c| in_rect(c.left, c.top, c.width, c.height))
+        }
         None => false,
     }
 }

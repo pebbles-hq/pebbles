@@ -3,15 +3,18 @@
 //! difference is the trigger (secondary-tap) and the anchor (the pointer, clamped
 //! on-screen). Left-click elsewhere / Escape dismisses via the overlay scrim.
 
+use std::rc::Rc;
+
 use pebbles_render::PointerEvent;
 
-use super::menu::{RebuildableMenu, estimate_height};
-use crate::components::MenuEntry;
+use super::list_nav::list_nav;
+use super::menu::{ChildCtx, RebuildableMenu, SubMenuHandles, estimate_height};
+use crate::components::{MenuEntry, menu_sub};
 use crate::overlay::{show_overlay, window_size};
 use crate::widgets::GestureDetector;
 use pebbles_core::context::action_event;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use std::rc::Rc;
+use pebbles_core::{component_props, create_signal};
 
 /// A right-click (context) menu wrapping a child. Build with [`context_menu`].
 #[derive(Default)]
@@ -47,27 +50,57 @@ impl ContextMenu {
         self.entries.push(MenuEntry::Check { label: label.into(), checked, on_toggle: Rc::new(on_toggle) });
         self
     }
+    /// Append a submenu: hovering the row opens a second panel to the right.
+    pub fn sub<I, E>(mut self, label: impl Into<String>, entries: I) -> Self
+    where
+        I: IntoIterator<Item = E>,
+        E: Into<MenuEntry>,
+    {
+        self.entries.push(menu_sub(label, entries));
+        self
+    }
     pub fn width(mut self, w: f64) -> Self {
         self.width = w;
         self
     }
 }
 
+struct CtxProps {
+    child: AnyWidget,
+    width: f64,
+    entries: Vec<MenuEntry>,
+}
+
 impl IntoWidget for ContextMenu {
     fn into_widget(mut self) -> AnyWidget {
         let child = self.child.take().unwrap_or_else(|| crate::widgets::Container::new().into_widget());
-        let width = self.width;
-        let blueprint = Rc::new(RebuildableMenu::from(&self.entries));
-        let menu_h = estimate_height(&self.entries);
-        GestureDetector::new(child)
-            .on_secondary_tap_down(action_event(move |e: PointerEvent| {
-                // Open at the cursor, clamped to stay on-screen.
-                let (ww, wh) = window_size();
-                let (gx, gy) = (e.global.x, e.global.y);
-                let left = if ww > 0.0 { gx.min(ww - width - 8.0).max(8.0) } else { gx };
-                let top = if wh > 0.0 { gy.min(wh - menu_h - 8.0).max(8.0) } else { gy };
-                show_overlay(blueprint.build(width), left, top, width, menu_h);
-            }))
-            .into_widget()
+        component_props(
+            render_context,
+            CtxProps { child, width: self.width, entries: std::mem::take(&mut self.entries) },
+        )
+        .into_widget()
     }
+}
+
+fn render_context(p: &CtxProps) -> AnyWidget {
+    let child_nav = list_nav();
+    let child_ctx = create_signal::<Option<Rc<ChildCtx>>>(None);
+    let blueprint = Rc::new(RebuildableMenu::from(&p.entries));
+    let handles = SubMenuHandles {
+        nav: child_nav,
+        ctx: child_ctx,
+        subs: Rc::new(blueprint.sub_rows()),
+    };
+    let width = p.width;
+    let menu_h = estimate_height(&p.entries);
+    GestureDetector::new(p.child.clone())
+        .on_secondary_tap_down(action_event(move |e: PointerEvent| {
+            // Open at the cursor, clamped to stay on-screen.
+            let (ww, wh) = window_size();
+            let (gx, gy) = (e.global.x, e.global.y);
+            let left = if ww > 0.0 { gx.min(ww - width - 8.0).max(8.0) } else { gx };
+            let top = if wh > 0.0 { gy.min(wh - menu_h - 8.0).max(8.0) } else { gy };
+            show_overlay(blueprint.build(width, &handles), left, top, width, menu_h);
+        }))
+        .into_widget()
 }

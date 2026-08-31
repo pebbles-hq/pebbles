@@ -8,7 +8,10 @@ use std::rc::Rc;
 use pebbles_foundation::{Alignment, EdgeInsets, MainAxisSize};
 use pebbles_render::{BorderRadius, BoxDecoration, Cursor, PointerEvent};
 
-use crate::components::input::menu::{MenuEntry, RebuildableMenu, estimate_height};
+use crate::components::input::list_nav::list_nav;
+use crate::components::input::menu::{
+    ChildCtx, MenuEntry, RebuildableMenu, SubMenuHandles, estimate_height, menu_sub,
+};
 use crate::components::input::popover::anchor_below;
 use crate::overlay::{hide_overlay, is_open, show_overlay};
 use crate::theme::theme;
@@ -41,6 +44,15 @@ impl MenubarMenu {
     /// The dropdown width for this menu (default 220).
     pub fn width(mut self, w: f64) -> Self {
         self.width = w;
+        self
+    }
+    /// Append a submenu: hovering the row opens a second panel to the right.
+    pub fn sub<I, E>(mut self, label: impl Into<String>, entries: I) -> Self
+    where
+        I: IntoIterator<Item = E>,
+        E: Into<MenuEntry>,
+    {
+        self.entries.push(menu_sub(label, entries));
         self
     }
 }
@@ -85,6 +97,8 @@ fn render_menubar(p: &Props) -> AnyWidget {
     // Which top-level menu is open (index), so the trigger can highlight and hover can
     // switch. `is_open()` (the overlay) is the source of truth for "a menu is showing".
     let open = create_signal(Option::<usize>::None);
+    let child_nav = list_nav();
+    let child_ctx = create_signal::<Option<Rc<ChildCtx>>>(None);
 
     let mut triggers: Vec<AnyWidget> = Vec::with_capacity(p.menus.len());
     for (i, m) in p.menus.iter().enumerate() {
@@ -101,7 +115,12 @@ fn render_menubar(p: &Props) -> AnyWidget {
                 let left = e.global.x - e.position.x;
                 let top = e.global.y - e.position.y;
                 let (l, t) = anchor_below(left, top, TRIGGER_H, width, menu_h);
-                show_overlay(bp.build(width), l, t, width, menu_h);
+                let handles = SubMenuHandles {
+                    nav: child_nav,
+                    ctx: child_ctx,
+                    subs: Rc::new(bp.sub_rows()),
+                };
+                show_overlay(bp.build(width, &handles), l, t, width, menu_h);
                 open.set(Some(i));
             }
         };

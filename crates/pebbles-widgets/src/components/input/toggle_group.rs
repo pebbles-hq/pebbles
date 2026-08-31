@@ -28,7 +28,6 @@ pub struct ToggleGroup {
     variant: ToggleVariant,
     size: ToggleSize,
     disabled: bool,
-    spacing: f64,
     on_changed: Option<Rc<dyn Fn(&[usize])>>,
 }
 
@@ -41,7 +40,6 @@ fn make(cells: Vec<AnyWidget>) -> ToggleGroup {
         variant: ToggleVariant::Outline,
         size: ToggleSize::default(),
         disabled: false,
-        spacing: 0.0,
         on_changed: None,
     }
 }
@@ -100,10 +98,6 @@ impl ToggleGroup {
         self.disabled = disabled;
         self
     }
-    pub fn spacing(mut self, spacing: f64) -> Self {
-        self.spacing = spacing;
-        self
-    }
     /// Reports the new selection whenever a cell is toggled.
     pub fn on_changed(mut self, f: impl Fn(&[usize]) + 'static) -> Self {
         self.on_changed = Some(Rc::new(f));
@@ -135,14 +129,17 @@ impl IntoWidget for ToggleGroup {
         let group = Rc::new(self);
         let n = cells.len();
 
-        let cell_widget = |i: usize, cell: AnyWidget, radius: f64| -> AnyWidget {
+        let cell_widget = |i: usize, cell: AnyWidget| -> AnyWidget {
             let pressed = group.values.contains(&i);
             let g = group.clone();
             let mut t = toggle(pressed, cell)
                 .variant(group.variant)
                 .size(group.size)
                 .disabled(group.disabled)
-                .radius(radius);
+                .radius(0.0);
+            if pressed {
+                t = t.color(th.colors.secondary);
+            }
             if let Some(cb) = group.on_changed.clone() {
                 t = t.on_changed(move || {
                     let next = g.next_selection(i);
@@ -152,20 +149,12 @@ impl IntoWidget for ToggleGroup {
             t.into_widget()
         };
 
-        if group.spacing > 0.0 {
-            // Detached cells: each keeps its own shape, just spaced apart.
-            let mut out: Vec<AnyWidget> = Vec::with_capacity(n);
-            for (i, cell) in cells.into_iter().enumerate() {
-                out.push(cell_widget(i, cell, th.radius));
-            }
-            return row(out).spacing(group.spacing).main_axis_size(MainAxisSize::Min).into_widget();
-        }
-
-        // Joined segmented strip (the shadcn look): flatten every cell's radius,
-        // divide with a hairline, and clip the whole strip to a rounded frame.
+        // Joined segmented strip (the ONE look, shadcn's): flatten every cell's
+        // radius, divide with a hairline, and clip the whole strip to a rounded
+        // frame. The selected cell takes the secondary fill.
         let mut kids: Vec<AnyWidget> = Vec::with_capacity(n * 2);
         for (i, cell) in cells.into_iter().enumerate() {
-            kids.push(cell_widget(i, cell, 0.0));
+            kids.push(cell_widget(i, cell));
             if i + 1 < n {
                 kids.push(Container::new().color(th.colors.border).width(1.0).into_widget());
             }

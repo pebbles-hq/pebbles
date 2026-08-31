@@ -15,6 +15,8 @@ use crate::overlay::{hide_overlay, show_overlay};
 use crate::theme::{mix, theme};
 use crate::widgets::{Container, GestureDetector, Opacity, column, gap_h, row, spacer, text};
 use pebbles_core::focus::create_focus;
+use pebbles_core::keyboard::{KeyInput, Motion};
+use pebbles_core::reactive::Signal;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{action_event, animated, children, component_props, create_signal};
 
@@ -167,6 +169,15 @@ impl DropdownMenu {
         self.entries.push(menu_check(label, checked, on_toggle));
         self
     }
+    /// Append a submenu: hovering the row opens a second panel to the right.
+    pub fn sub<I, E>(mut self, label: impl Into<String>, entries: I) -> Self
+    where
+        I: IntoIterator<Item = E>,
+        E: Into<MenuEntry>,
+    {
+        self.entries.push(menu_sub(label, entries));
+        self
+    }
     /// Merge a [`Style`](crate::Style) onto the default trigger box (ignored when a
     /// custom `.trigger(..)` is set).
     pub fn style(mut self, s: crate::style::Style) -> Self {
@@ -244,6 +255,8 @@ fn render_dropdown(p: &Props) -> AnyWidget {
     let hovered = create_signal(false);
     let node = create_focus();
     let nav = list_nav();
+    let child_nav = list_nav();
+    let child_ctx = create_signal::<Option<Rc<ChildCtx>>>(None);
 
     // A custom trigger is used verbatim; the default one gets button-like hover.
     let trigger = p
@@ -256,15 +269,71 @@ fn render_dropdown(p: &Props) -> AnyWidget {
     let blueprint = Rc::new(RebuildableMenu::from(&p.entries));
     let menu_h = estimate_height(&p.entries);
 
-    // Keyboard: one action per actionable row (enabled items + check rows); the
-    // SI-4 list model drives Up/Down/Enter/Escape while the menu is open.
+    // Keyboard: navigable rows (enabled items + checks + sub rows) drive the SI-4
+    // model — Up/Down move, Enter runs (sub rows are entered with Right), Escape
+    // dismisses. While a child menu is open it owns the keyboard.
     let actions = blueprint.actions();
+    let navigable = blueprint.navigable();
+    let sub_rows = blueprint.sub_rows();
+    let handles = SubMenuHandles {
+        nav: child_nav,
+        ctx: child_ctx,
+        subs: Rc::new(sub_rows.clone()),
+    };
     node.register(Rc::new(|| {}), None, false);
     {
         let actions = actions.clone();
-        let handler = nav.handler(actions.len(), move |row| actions[row](), hide_overlay);
-        node.register_editor(Rc::new(move |k| {
-            handler(k);
+        let navigable = navigable.clone();
+        let sub_rows = sub_rows.clone();
+        let pick = nav.handler(
+            navigable.len(),
+            {
+                let actions = actions.clone();
+                let navigable = navigable.clone();
+                move |row| {
+                    if let Some(RowTarget::Action(a)) = navigable.get(row) {
+                        actions[*a]();
+                    }
+                }
+            },
+            hide_overlay,
+        );
+        node.register_editor(Rc::new(move |k: KeyInput| {
+            // The child menu owns the keyboard while its panel is open: Up/Down/
+            // Enter drive it, Left closes it, Escape closes everything. (The panel
+            // check drops a stale context after a pick closed the whole overlay.)
+            if child_ctx.peek().is_some() && crate::overlay::child_is_open() {
+                match k {
+                    KeyInput::Move { motion: Motion::Left, .. } => {
+                        close_sub_child(child_nav, child_ctx)
+                    }
+                    KeyInput::Escape => hide_overlay(),
+                    _ => {
+                        if let Some(ctx) = child_ctx.peek() {
+                            let h = child_nav.handler(
+                                ctx.actions.len(),
+                                {
+                                    let actions = ctx.actions.clone();
+                                    move |row| actions[row]()
+                                },
+                                hide_overlay,
+                            );
+                            let _ = h(k);
+                        }
+                    }
+                }
+                return;
+            }
+            // Right opens the submenu under the active row (if it is one).
+            if let KeyInput::Move { motion: Motion::Right, .. } = k
+                && let Some(row) = nav.active()
+                && let Some(RowTarget::Sub(si)) = navigable.get(row)
+                && let Some((bp, top)) = sub_rows.get(*si)
+            {
+                open_sub_child(bp, *top, child_nav, child_ctx, None);
+                return;
+            }
+            let _ = pick(k);
         }));
     }
 
@@ -276,7 +345,13 @@ fn render_dropdown(p: &Props) -> AnyWidget {
             let (left, top) = anchor_below(trigger_left, trigger_top, 38.0, width, menu_h);
             let menu = component_props(
                 render_dd_menu,
-                DdMenuProps { blueprint: blueprint.clone(), width, nav, actions: actions.clone() },
+                DdMenuProps {
+                    blueprint: blueprint.clone(),
+                    width,
+                    nav,
+                    actions: actions.clone(),
+                    handles: handles.clone(),
+                },
             );
             show_overlay(menu.into_widget(), left, top, width, menu_h);
             node.request_focus();
@@ -307,35 +382,118 @@ fn bp_height(entries: &[BpEntry]) -> f64 {
 /// The width of a submenu panel.
 const SUB_WIDTH: f64 = 200.0;
 
+/// The grace before a submenu closes once neither the row nor the panel is
+/// hovered (moving row→panel never flickers it shut).
+const SUB_CLOSE_DELAY: f64 = 0.3;
+
+/// One navigable row of the open menu.
+#[derive(Clone)]
+pub(crate) enum RowTarget {
+    /// Runs `actions[usize]` on Enter.
+    Action(usize),
+    /// A submenu row — entered with Right, not runnable.
+    Sub(usize),
+}
+
+/// The open child menu's runnable rows (shared with the keyboard handler).
+pub(crate) struct ChildCtx {
+    actions: Vec<Rc<dyn Fn()>>,
+}
+
+/// The per-menu plumbing the submenu rows need: the child's keyboard cursor,
+/// its context, and the sub blueprints (with their panel-top offsets) in
+/// entry order.
+#[derive(Clone)]
+pub(crate) struct SubMenuHandles {
+    pub(crate) nav: ListNav,
+    pub(crate) ctx: Signal<Option<Rc<ChildCtx>>>,
+    pub(crate) subs: Rc<Vec<(Rc<RebuildableMenu>, f64)>>,
+}
+
+/// Open a submenu's child panel: position it beside the parent (flipping left
+/// when there is no room on the right, clamped vertically), then attach it to
+/// the overlay with the child's own keyboard context.
+fn open_sub_child(
+    bp: &Rc<RebuildableMenu>,
+    top_offset: f64,
+    child_nav: ListNav,
+    child_ctx: Signal<Option<Rc<ChildCtx>>>,
+    hover: Option<(Rc<dyn Fn()>, Rc<dyn Fn()>)>,
+) {
+    let (parent_left, parent_top, parent_w) = match crate::overlay::overlay_signal().peek() {
+        Some(e) => (e.left, e.top, e.width),
+        None => (0.0, 0.0, SUB_WIDTH),
+    };
+    let (ww, wh) = crate::overlay::window_size();
+    let panel_h = bp.height;
+    let right_left = parent_left + parent_w - 4.0;
+    let left = if ww > 0.0 && right_left + SUB_WIDTH > ww - 8.0 {
+        (parent_left - SUB_WIDTH + 4.0).max(8.0) // flip to the left edge
+    } else {
+        right_left.max(8.0)
+    };
+    let top = if wh > 0.0 {
+        (parent_top + top_offset - 4.0).clamp(8.0, (wh - panel_h - 8.0).max(8.0))
+    } else {
+        parent_top + top_offset - 4.0
+    };
+    let ctx = Rc::new(ChildCtx { actions: bp.actions() });
+    child_ctx.set(Some(ctx.clone()));
+    let panel = component_props(
+        render_sub_menu,
+        SubMenuProps {
+            bp: bp.clone(),
+            nav: child_nav,
+            actions: ctx.actions.clone(),
+            hover,
+        },
+    );
+    crate::overlay::set_child(panel.into_widget(), left, top, SUB_WIDTH, panel_h);
+}
+
+/// Dismiss the child menu (overlay panel + keyboard context).
+fn close_sub_child(child_nav: ListNav, child_ctx: Signal<Option<Rc<ChildCtx>>>) {
+    child_ctx.set(None);
+    child_nav.set_active(None);
+    crate::overlay::clear_child();
+}
+
 /// Props for one submenu row.
 struct SubRowProps {
     label: String,
     width: f64,
     reserve_gutter: bool,
-    /// The row's estimated top offset within the parent panel (panel-top + this
-    /// = the row's window-space top — used to align the child panel with it).
+    /// Keyboard highlight (the SI-4 active row).
+    active: bool,
+    bp: Rc<RebuildableMenu>,
     top_offset: f64,
-    sub: Rc<RebuildableMenu>,
+    child_nav: ListNav,
+    child_ctx: Signal<Option<Rc<ChildCtx>>>,
 }
 
-/// A submenu row: label + right chevron, hover highlight, and hover-open of a
-/// child panel that closes (after a grace delay) when neither the row nor the
-/// panel is hovered — the hover-refcount pattern from [`HoverCard`].
+/// A submenu row: label + right chevron, hover highlight (or keyboard active),
+/// and a delayed hover-open of the child panel; the child closes (after the
+/// grace) when neither the row nor the panel is hovered — the hover-refcount
+/// pattern from [`HoverCard`](crate::components::HoverCard).
 fn render_sub_row(p: &SubRowProps) -> AnyWidget {
     let c = theme().colors;
     let hovered = create_signal(false);
     let over = create_signal(0i32);
     let close_key = create_signal(()).raw_id();
-    let t = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.1);
+    let show_key = create_signal(()).raw_id();
+    let shown = p.active || hovered.get();
+    let t = animated(if shown { 1.0 } else { 0.0 }, 0.1);
     let bg = mix(c.popover, c.accent, t as f32);
     let fg = mix(c.popover_foreground, c.accent_foreground, t as f32);
+    let child_nav = p.child_nav;
+    let child_ctx = p.child_ctx;
 
     let schedule_close: Rc<dyn Fn()> = Rc::new({
         let over = over;
         move || {
-            pebbles_core::animation::set_timeout(close_key, 0.28, move || {
+            pebbles_core::animation::set_timeout(close_key, SUB_CLOSE_DELAY, move || {
                 if over.peek() <= 0 {
-                    crate::overlay::clear_child();
+                    close_sub_child(child_nav, child_ctx);
                 }
             });
         }
@@ -355,7 +513,7 @@ fn render_sub_row(p: &SubRowProps) -> AnyWidget {
         .padding(EdgeInsets::symmetric(8.0, 7.0))
         .child(row(kids));
 
-    let sub = p.sub.clone();
+    let bp = p.bp.clone();
     let top_offset = p.top_offset;
     let enter_close = schedule_close.clone();
     GestureDetector::new(body)
@@ -364,66 +522,91 @@ fn render_sub_row(p: &SubRowProps) -> AnyWidget {
             hovered.set(true);
             over.update(|n| *n += 1);
             pebbles_core::animation::clear_timeout(close_key);
-            // Build the child panel: the same row renderer, hover-tracked so it
-            // stays open while the pointer moves onto it.
-            let panel_h = sub.height;
-            let panel = GestureDetector::new(sub.build(SUB_WIDTH))
-                .on_hover_enter({
-                    let over = over;
-                    move || {
-                        over.update(|n| *n += 1);
-                        pebbles_core::animation::clear_timeout(close_key);
-                    }
-                })
-                .on_hover_exit({
-                    let over = over;
-                    let schedule_close = enter_close.clone();
-                    move || {
-                        over.update(|n| *n -= 1);
-                        schedule_close();
-                    }
-                });
-            let (parent_left, parent_top, parent_w) =
-                match crate::overlay::overlay_signal().peek() {
-                    Some(e) => (e.left, e.top, e.width),
-                    None => (0.0, 0.0, SUB_WIDTH),
-                };
-            let (ww, wh) = crate::overlay::window_size();
-            let left = if ww > 0.0 {
-                (parent_left + parent_w - 4.0).min(ww - SUB_WIDTH - 8.0).max(8.0)
-            } else {
-                parent_left + parent_w - 4.0
-            };
-            let top = if wh > 0.0 {
-                (parent_top + top_offset - 4.0).min(wh - panel_h - 8.0).max(8.0)
-            } else {
-                parent_top + top_offset - 4.0
-            };
-            crate::overlay::set_child(panel.into_widget(), left, top, SUB_WIDTH, panel_h);
+            // Open after a short hover delay (cancelled on exit), hover-tracked
+            // so moving onto the panel keeps it open.
+            let panel_enter: Rc<dyn Fn()> = Rc::new({
+                let over = over;
+                move || {
+                    over.update(|n| *n += 1);
+                    pebbles_core::animation::clear_timeout(close_key);
+                }
+            });
+            let panel_exit: Rc<dyn Fn()> = Rc::new({
+                let over = over;
+                let schedule_close = enter_close.clone();
+                move || {
+                    over.update(|n| *n -= 1);
+                    schedule_close();
+                }
+            });
+            let bp2 = bp.clone();
+            pebbles_core::animation::set_timeout(show_key, 0.25, move || {
+                if over.peek() <= 0 {
+                    return;
+                }
+                open_sub_child(
+                    &bp2,
+                    top_offset,
+                    child_nav,
+                    child_ctx,
+                    Some((panel_enter.clone(), panel_exit.clone())),
+                );
+            });
         }))
         .on_hover_exit(move || {
             hovered.set(false);
             over.update(|n| *n -= 1);
+            pebbles_core::animation::clear_timeout(show_key);
             schedule_close();
         })
         .into_widget()
 }
 
+/// Props for the open child menu — a component so the keyboard highlight
+/// re-renders reactively as the child's [`ListNav`] active row changes.
+struct SubMenuProps {
+    bp: Rc<RebuildableMenu>,
+    nav: ListNav,
+    actions: Vec<Rc<dyn Fn()>>,
+    hover: Option<(Rc<dyn Fn()>, Rc<dyn Fn()>)>,
+}
+
+fn render_sub_menu(p: &SubMenuProps) -> AnyWidget {
+    let active = p.nav.active();
+    let empty_handles = SubMenuHandles {
+        nav: list_nav(),
+        ctx: create_signal(None),
+        subs: Rc::new(Vec::new()),
+    };
+    let mut g =
+        GestureDetector::new(p.bp.build_rows(SUB_WIDTH, active, &p.actions, &empty_handles));
+    if let Some((enter, exit)) = &p.hover {
+        let enter = enter.clone();
+        let exit = exit.clone();
+        g = g.on_hover_enter(move || enter()).on_hover_exit(move || exit());
+    }
+    g.into_widget()
+}
+
 /// Props for the open dropdown menu — a component so the keyboard highlight
 /// re-renders reactively as the [`ListNav`] active row changes.
+#[derive(Clone)]
 struct DdMenuProps {
     blueprint: Rc<RebuildableMenu>,
     width: f64,
     nav: ListNav,
     actions: Vec<Rc<dyn Fn()>>,
+    handles: SubMenuHandles,
 }
 
 fn render_dd_menu(p: &DdMenuProps) -> AnyWidget {
-    p.blueprint.build_rows(p.width, p.nav.active(), &p.actions)
+    p.blueprint
+        .build_rows(p.width, p.nav.active(), &p.actions, &p.handles)
 }
 
 // A cloneable blueprint of the entries so the menu can be rebuilt each open (the
 // overlay takes a fresh widget; entry closures are shared via `Rc`).
+#[derive(Clone)]
 pub(crate) struct RebuildableMenu {
     entries: Vec<BpEntry>,
     /// Approximate open-panel height (rows summed).
@@ -464,6 +647,10 @@ fn bp_entry(e: &MenuEntry) -> BpEntry {
             BpEntry::Check { label: label.clone(), checked: *checked, on_toggle: on_toggle.clone() }
         }
         MenuEntry::Sub { label, entries } => {
+            debug_assert!(
+                entries.iter().all(|e| !matches!(e, MenuEntry::Sub { .. })),
+                "submenus are one level deep — a Sub inside a Sub is rejected"
+            );
             BpEntry::Sub { label: label.clone(), entries: entries.iter().map(bp_entry).collect() }
         }
     }
@@ -503,26 +690,69 @@ impl RebuildableMenu {
             .collect()
     }
 
+    /// The keyboard-navigable rows in order: runnable entries map to their
+    /// action index, sub rows map to their sub index.
+    pub(crate) fn navigable(&self) -> Vec<RowTarget> {
+        let mut act = 0usize;
+        let mut sub = 0usize;
+        self.entries
+            .iter()
+            .filter_map(|e| match e {
+                BpEntry::Item { disabled: false, .. } | BpEntry::Check { .. } => {
+                    let a = act;
+                    act += 1;
+                    Some(RowTarget::Action(a))
+                }
+                BpEntry::Sub { .. } => {
+                    let s = sub;
+                    sub += 1;
+                    Some(RowTarget::Sub(s))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The sub menus `(blueprint, panel-top offset)` in entry order.
+    pub(crate) fn sub_rows(&self) -> Vec<(Rc<RebuildableMenu>, f64)> {
+        let mut y = 4.0;
+        let mut out = Vec::new();
+        for e in &self.entries {
+            match e {
+                BpEntry::Item { .. } | BpEntry::Check { .. } | BpEntry::Sub { .. } => {
+                    if let BpEntry::Sub { entries, .. } = e {
+                        out.push((
+                            Rc::new(RebuildableMenu {
+                                entries: entries.clone(),
+                                height: bp_height(entries).min(300.0),
+                            }),
+                            y,
+                        ));
+                    }
+                    y += 32.0;
+                }
+                BpEntry::Label(_) => y += 28.0,
+                BpEntry::Separator => y += 9.0,
+            }
+        }
+        out
+    }
+
     /// Build the menu without a keyboard highlight (mouse-driven, e.g. the
-    /// context menu).
-    pub(crate) fn build(&self, width: f64) -> AnyWidget {
-        self.build_rows(width, None, &self.actions())
+    /// context menu). `handles` supplies the submenu plumbing.
+    pub(crate) fn build(&self, width: f64, handles: &SubMenuHandles) -> AnyWidget {
+        self.build_rows(width, None, &self.actions(), handles)
     }
 
     /// Build the menu, highlighting row `active` (the keyboard cursor, over the
-    /// actionable rows only) and using `actions` for every row's run-and-close.
-    pub(crate) fn build_rows(&self, width: f64, active: Option<usize>, actions: &[Rc<dyn Fn()>]) -> AnyWidget {
-        self.build_rows_inner(width, active, actions, true)
-    }
-
-    /// Build the rows; `allow_sub` enables interactive submenu rows (top-level
-    /// menus only — submenu panels render nested subs as plain rows).
-    pub(crate) fn build_rows_inner(
+    /// navigable rows) and using `actions` for every runnable row. `handles`
+    /// carries the submenu plumbing (child cursor + context + sub blueprints).
+    pub(crate) fn build_rows(
         &self,
         width: f64,
         active: Option<usize>,
         actions: &[Rc<dyn Fn()>],
-        allow_sub: bool,
+        handles: &SubMenuHandles,
     ) -> AnyWidget {
         let inner = width - 8.0;
         // If any row carries an icon or is a checkbox, reserve the leading gutter on
@@ -532,6 +762,7 @@ impl RebuildableMenu {
         });
         let mut kids: Vec<AnyWidget> = Vec::new();
         let mut row_idx = 0usize;
+        let mut sub_idx = 0usize;
         let mut y = 4.0; // surface padding, in panel-local space
         for e in &self.entries {
             let row_top = y;
@@ -623,42 +854,31 @@ impl RebuildableMenu {
                     })
                 }
                 BpEntry::Sub { label, entries } => {
+                    // A navigable row (Right enters it); hovering opens the child
+                    // panel after a short delay.
+                    let highlighted = active == Some(row_idx);
+                    row_idx += 1;
                     y += 32.0;
-                    if allow_sub {
-                        // Hovering this row opens the submenu panel to the right.
-                        component_props(
-                            render_sub_row,
-                            SubRowProps {
-                                label: label.clone(),
-                                width: inner,
-                                reserve_gutter: reserve,
-                                top_offset: row_top,
-                                sub: Rc::new(RebuildableMenu {
-                                    entries: (*entries).clone(),
-                                    height: bp_height(entries).min(300.0),
-                                }),
-                            },
-                        )
-                        .into_widget()
-                    } else {
-                        // Nested submenus are one level deep: render as a plain
-                        // muted row (honest limitation, not silently dropped).
-                        Opacity::new(
-                            0.55,
-                            Container::new()
-                                .width(inner)
-                                .padding(EdgeInsets::symmetric(8.0, 7.0))
-                                .child(row(children![
-                                    if reserve {
-                                        Container::new().width(24.0).into_widget()
-                                    } else {
-                                        gap_h(0.0).into_widget()
-                                    },
-                                    text(label.clone()).size(14.0).color(theme().colors.muted_foreground),
-                                ])),
-                        )
-                        .into_widget()
-                    }
+                    let (bp, _) = handles
+                        .subs
+                        .get(sub_idx)
+                        .cloned()
+                        .unwrap_or_else(|| (Rc::new(RebuildableMenu { entries: (*entries).clone(), height: bp_height(entries).min(300.0) }), row_top));
+                    sub_idx += 1;
+                    component_props(
+                        render_sub_row,
+                        SubRowProps {
+                            label: label.clone(),
+                            width: inner,
+                            reserve_gutter: reserve,
+                            active: highlighted,
+                            bp,
+                            top_offset: row_top,
+                            child_nav: handles.nav,
+                            child_ctx: handles.ctx,
+                        },
+                    )
+                    .into_widget()
                 }
             });
         }
