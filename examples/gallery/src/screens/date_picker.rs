@@ -34,6 +34,7 @@ fn caption_time(label: &str, field: TimeField) -> impl IntoWidget {
 
 pub fn date_picker() -> Element {
     let picked = create_signal(String::new());
+    let range_note = create_signal(String::from("—"));
     let inline = calendar(move |y, m, d| picked.set(format!("{m:02}/{d:02}/{y:04}")))
         .caption(CaptionLayout::Dropdown);
 
@@ -47,6 +48,21 @@ pub fn date_picker() -> Element {
                 .description("Type digits (they auto-format to MM/DD/YYYY) or click the calendar button to open the picker. Reopening the picker highlights the current value and opens on its month.")
                 .body(
                 date_field().width(240.0),
+            ),
+            doc("Range date")
+                .description("date_field().range(true): the calendar picks a start + end (order doesn't matter — endpoints sort), the input shows both, and on_range_changed reports each completed pick.")
+                .body(
+                column(children![
+                    date_field()
+                        .range(true)
+                        .range_value((2026, 1, 1), (2026, 1, 7))
+                        .width(280.0)
+                        .on_range_changed(move |s, e| range_note.set(format!("{:02}/{:02}/{} – {:02}/{:02}/{}", s.1, s.2, s.0, e.1, e.2, e.0))),
+                    muted(format!("last pick: {}", range_note.get())),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min)
+                .spacing(10.0),
             ),
             doc("Caption layouts")
                 .description("shadcn's captionLayout — a plain label with arrows, or clickable month/year dropdowns. Each dropdown drills into a grid so years are one click away.")

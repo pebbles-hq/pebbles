@@ -8,7 +8,9 @@
 
 use pebbles_render::{IconKind, PointerEvent};
 
-use super::calendar::{CaptionLayout, calendar};
+use std::rc::Rc;
+
+use super::calendar::{CaptionLayout, Date, calendar};
 use super::text_field::text_field;
 use super::{ButtonVariant, icon_button};
 use crate::overlay::{hide_overlay, show_overlay, window_size};
@@ -144,6 +146,9 @@ pub struct DateField {
     format: DateFormat,
     style: Option<Style>,
     calendar_style: Option<Style>,
+    range: bool,
+    range_value: Option<(Date, Date)>,
+    on_range_changed: Option<Rc<dyn Fn(Date, Date)>>,
 }
 
 /// Create a [`DateField`].
@@ -180,6 +185,23 @@ impl DateField {
         self.calendar_style = Some(style);
         self
     }
+    /// Switch to **range** mode: the calendar picks a start + end date, the input
+    /// shows both (read-only — the picker owns the value), and
+    /// [`on_range_changed`](DateField::on_range_changed) reports each pick.
+    pub fn range(mut self, yes: bool) -> Self {
+        self.range = yes;
+        self
+    }
+    /// The initial range in range mode (a [`Date`] is `(year, month, day)`).
+    pub fn range_value(mut self, start: Date, end: Date) -> Self {
+        self.range_value = Some((start, end));
+        self
+    }
+    /// Reports a completed range pick (both ends chosen).
+    pub fn on_range_changed(mut self, f: impl Fn(Date, Date) + 'static) -> Self {
+        self.on_range_changed = Some(Rc::new(f));
+        self
+    }
 }
 
 struct DateProps {
@@ -189,6 +211,9 @@ struct DateProps {
     format: DateFormat,
     style: Option<Style>,
     calendar_style: Option<Style>,
+    range: bool,
+    range_value: Option<(Date, Date)>,
+    on_range_changed: Option<Rc<dyn Fn(Date, Date)>>,
 }
 
 impl IntoWidget for DateField {
@@ -202,6 +227,9 @@ impl IntoWidget for DateField {
                 format: self.format,
                 style: self.style,
                 calendar_style: self.calendar_style,
+                range: self.range,
+                range_value: self.range_value,
+                on_range_changed: self.on_range_changed,
             },
         )
         .into_widget()
@@ -212,26 +240,58 @@ impl IntoWidget for DateField {
 const POP_W: f64 = 7.0 * 40.0 + 24.0;
 
 fn render_date(p: &DateProps) -> AnyWidget {
-    let text = create_signal(String::new());
+    // Range mode seeds the display from the initial range (else starts empty).
+    let text = create_signal(if p.range {
+        p.range_value.map(|(s, e)| joined(&p.format, s, e)).unwrap_or_default()
+    } else {
+        String::new()
+    });
     let caption = p.caption;
     let fmt = p.format;
     let width = p.width;
     let cal_style = p.calendar_style.clone();
+    let range_mode = p.range;
+    let range_initial = p.range_value;
+    let on_range_changed = p.on_range_changed.clone();
 
     let cal_btn = icon_button(IconKind::Calendar).variant(ButtonVariant::Ghost).size(16.0).on_pressed(
         action_event(move |e: PointerEvent| {
             let current = fmt.parse(&text.peek());
-            let mut cal = calendar(move |y, m, d| {
-                text.set(fmt.format(y, m, d));
-                hide_overlay();
-            })
-            .caption(caption);
-            if let Some((y, m, d)) = current {
-                cal = cal.selected(y, m, d).month(y, m);
-            }
-            if let Some(cs) = &cal_style {
-                cal = cal.style(cs.clone());
-            }
+            let content: AnyWidget = if range_mode {
+                // Range calendar: both ends picked in the popover, then reported
+                // and written into the (read-only) input display.
+                let on_range = on_range_changed.clone();
+                let mut cal = calendar(move |_, _, _| {})
+                    .caption(caption)
+                    .range(true);
+                if let Some((s, e2)) = range_initial {
+                    cal = cal.range_value(s, e2);
+                }
+                cal = cal.on_range_changed(move |s, e2| {
+                    text.set(joined(&fmt, s, e2));
+                    if let Some(cb) = &on_range {
+                        cb(s, e2);
+                    }
+                    hide_overlay();
+                });
+                if let Some(cs) = &cal_style {
+                    cal = cal.style(cs.clone());
+                }
+                cal.into_widget()
+            } else {
+                let mut cal = calendar(move |y, m, d| {
+                    text.set(fmt.format(y, m, d));
+                    hide_overlay();
+                })
+                .caption(caption);
+                if let Some((y, m, d)) = current {
+                    cal = cal.selected(y, m, d).month(y, m);
+                }
+                if let Some(cs) = &cal_style {
+                    cal = cal.style(cs.clone());
+                }
+                cal.into_widget()
+            };
 
             // Left-align the popover to the input's LEFT edge, opening below. The
             // calendar button sits ~34px from the input's right edge.
@@ -245,17 +305,30 @@ fn render_date(p: &DateProps) -> AnyWidget {
             };
             let max_left = if ww > 0.0 { ww - pop_w - 8.0 } else { 8.0 };
             let left = input_left.clamp(8.0, max_left.max(8.0));
-            show_overlay(cal.into_widget(), left, button_top + 42.0, pop_w, 340.0);
+            show_overlay(content, left, button_top + 42.0, pop_w, 340.0);
         }),
     );
 
-    let ph = p.placeholder.clone().unwrap_or_else(|| fmt.hint());
+    let ph = p.placeholder.clone().unwrap_or_else(|| {
+        if range_mode {
+            format!("{} – {}", fmt.hint(), fmt.hint())
+        } else {
+            fmt.hint()
+        }
+    });
     let mut tf = text_field()
         .placeholder(ph)
         .bind(text)
-        .format(move |s| fmt.mask(s))
-        .filter(move |c| fmt.allows(c))
         .trailing(cal_btn);
+    if range_mode {
+        // Read-only display: the picker owns the value — no characters may land,
+        // and any edit (incl. deletions) is reverted to the current display.
+        tf = tf.filter(|_c| false).format(move |_s| text.peek());
+    } else {
+        tf = tf
+            .format(move |s| fmt.mask(s))
+            .filter(move |c| fmt.allows(c));
+    }
     if let Some(w) = width {
         tf = tf.width(w);
     }
@@ -264,4 +337,9 @@ fn render_date(p: &DateProps) -> AnyWidget {
         Some(s) => styled(field, s.clone()),
         None => field,
     }
+}
+
+/// The range display: `MM/DD/YYYY – MM/DD/YYYY`.
+fn joined(fmt: &DateFormat, s: Date, e: Date) -> String {
+    format!("{} – {}", fmt.format(s.0, s.1, s.2), fmt.format(e.0, e.1, e.2))
 }
