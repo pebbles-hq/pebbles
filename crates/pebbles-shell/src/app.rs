@@ -1019,7 +1019,14 @@ impl ApplicationHandler for Runner {
                     }
                     (MouseButton::Right, ElementState::Released) => {
                         let up = self.ui.dispatch_secondary_tap_up(cursor);
-                        up | self.ui.dispatch_secondary_tap(cursor)
+                        let tap = self.ui.dispatch_secondary_tap(cursor);
+                        if !up && !tap {
+                            // Nothing claimed the right-click (no widget context
+                            // menu, no blocker) — open the global menu.
+                            pebbles_widgets::global_menu::show(cursor.x, cursor.y);
+                            self.request_redraw();
+                        }
+                        up || tap
                     }
                     (MouseButton::Middle, ElementState::Pressed) => {
                         self.ui.dispatch_tertiary_down(cursor)

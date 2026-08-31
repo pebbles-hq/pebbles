@@ -12,6 +12,7 @@
 
 pub mod components;
 pub mod dialog;
+pub mod global_menu;
 pub mod image_view;
 pub mod modifiers;
 pub mod overlay;
@@ -23,6 +24,10 @@ pub mod widgets;
 pub mod window;
 
 pub use dialog::{AlertDialog, Dialog, DialogId, alert_dialog, close_dialog, dialog};
+pub use global_menu::{
+    block_context_menu, is_global_menu_enabled, reset_global_menu, set_global_menu,
+    set_global_menu_enabled, set_global_menu_style, set_global_menu_width,
+};
 pub use window::{
     Window, WindowId, close_window, focus_window, minimize_window, set_window_maximized,
     set_window_position, set_window_resizable, set_window_title, window,

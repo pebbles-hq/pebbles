@@ -7,9 +7,59 @@ use crate::ui::{doc, gap_w, screen};
 
 pub fn overlays() -> Element {
     screen("Overlays & Feedback")
-        .description("Floating, layered UI: hover tooltips in the passive layer, click-triggered popovers in the overlay layer, edge-anchored sheets/drawers, and stacked toast notifications.")
+        .description("Floating, layered UI: hover tooltips in the passive layer, click-triggered popovers in the overlay layer, edge-anchored sheets/drawers, stacked toast notifications, and the GLOBAL right-click menu.")
         .body(
-        children![tooltips(), popovers(), sheets(), toasts()],
+        children![global_menu(), tooltips(), popovers(), sheets(), toasts()],
+    )
+}
+
+fn global_menu() -> impl IntoWidget {
+    let enabled = create_signal(true);
+    doc("Global right-click")
+        .description("Right-click ANYWHERE with no widget claiming it and the standard menu opens — Cut / Copy / Paste / Select All, disabled when no editor holds focus. Disable it app-wide, replace its options, restyle it, or suppress it per area.")
+        .body(
+        column(children![
+            button(if enabled.get() { "Disable global menu" } else { "Enable global menu" }).variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(move || {
+                let next = !enabled.get();
+                enabled.set(next);
+                set_global_menu_enabled(next);
+            }),
+            gap_w(8.0),
+            button("Custom options").variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(|| {
+                set_global_menu(vec![
+                    menu_item("Refresh").icon(lucide::REFRESH_CW).on_select(|| {}).into(),
+                    menu_sub(
+                        "Go to",
+                        [menu_item("Overview"), menu_item("Data Table")],
+                    ),
+                    menu_separator(),
+                    menu_item("Settings").icon(lucide::SETTINGS).on_select(|| {}).into(),
+                ]);
+            }),
+            gap_w(8.0),
+            button("Restore defaults").variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(reset_global_menu),
+            gap_w(8.0),
+            button("Style it").variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(|| {
+                set_global_menu_style(
+                    style()
+                        .background(theme().colors.card)
+                        .border(Border::new(theme().colors.border, 1.0))
+                        .radius_all(theme().radius + 2.0),
+                );
+            }),
+            gap_h(12.0),
+            Container::new()
+                .height(120.0)
+                .decoration(
+                    BoxDecoration::new()
+                        .color(theme().colors.secondary)
+                        .radius(BorderRadius::all(theme().radius)),
+                )
+                .alignment(Alignment::CENTER)
+                .child(block_context_menu(muted("Right-click here is suppressed (block_context_menu)"))),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min),
     )
 }
 

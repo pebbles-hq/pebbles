@@ -216,6 +216,12 @@ pub fn focused_is_editor() -> bool {
     with_mgr(|m| focused.is_some_and(|k| m.edit.contains_key(&k)))
 }
 
+/// Whether a text editor currently holds focus (so clipboard intents have a
+/// target).
+pub fn editor_is_focused() -> bool {
+    with_mgr(|m| m.focus.peek().is_some_and(|k| m.edit.contains_key(&k)))
+}
+
 /// Route a keyboard edit intent to the focused editor. Returns whether it was
 /// handled (i.e. an editor was focused).
 pub fn dispatch_key(key: KeyInput) -> bool {

@@ -39,7 +39,7 @@ pub use animation::{
 pub use component::{Component, Element, component, component_props};
 pub use context::{Callback, IntoCallback, action, action_event};
 pub use element::{ElementId, Ui};
-pub use focus::{FocusNode, create_focus};
+pub use focus::{FocusNode, create_focus, editor_is_focused};
 pub use ipc::{Channel, channel};
 pub use key::Key;
 pub use keyboard::{KeyInput, Motion};
