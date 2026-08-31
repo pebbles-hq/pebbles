@@ -348,3 +348,71 @@ fn right_clicking_empty_space_offers_new_nodes() {
     assert!(pebbles_widgets::overlay::is_open(), "its menu opens (New File / New Folder)");
     pebbles_widgets::overlay::hide_overlay();
 }
+
+// ---------------------------------------------------------------------------
+// Filesystem mode: real directories, real mutations
+// ---------------------------------------------------------------------------
+
+fn temp_dir(tag: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "pebbles-explorer-{tag}-{}-{:?}",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[test]
+fn filesystem_mode_reads_creates_renames_deletes_and_moves_on_disk() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+
+    let root = temp_dir("fs");
+    std::fs::create_dir(root.join("docs")).unwrap();
+    std::fs::write(root.join("README.md"), "readme").unwrap();
+    std::fs::write(root.join("docs").join("guide.md"), "guide").unwrap();
+
+    let tree = create_signal(FileTree::new());
+    let ex = file_explorer(tree);
+    assert!(ex.open_folder(&root), "opens a real directory");
+    assert!(ex.fs_root().get().is_some(), "filesystem mode engaged");
+
+    let names = |t: &FileTree| t.root.iter().map(|n| n.name.clone()).collect::<Vec<_>>();
+    let mut got = names(&tree.peek());
+    got.sort();
+    assert_eq!(got, vec!["README.md".to_string(), "docs".to_string()], "real entries, folders first");
+
+    // Expanding a folder reads its children from disk (lazily).
+    let docs = tree.peek().root.iter().find(|n| n.name == "docs").expect("docs").id;
+    ex.select_only(docs);
+    ex.toggle_folder(docs);
+    let docs_children: Vec<String> = tree
+        .peek()
+        .node(docs)
+        .map(|n| n.children.iter().map(|c| c.name.clone()).collect())
+        .unwrap_or_default();
+    assert_eq!(docs_children, vec!["guide.md".to_string()], "folder children read from disk");
+
+    // Create a real file on disk (via the public action).
+    ex.new_file()();
+    let fid = tree.peek().node(docs).unwrap().children.iter().find(|c| c.name == "new_file.txt").expect("new file").id;
+    assert!(root.join("docs/new_file.txt").exists(), "created on disk");
+
+    // Rename it on disk.
+    ex.rename_node(fid, "renamed.txt".to_string());
+    assert!(root.join("docs/renamed.txt").exists(), "rename hit the disk");
+    assert!(!root.join("docs/new_file.txt").exists());
+
+    // Move it to the root (real fs move).
+    ex.move_nodes(&[fid], None);
+    assert!(root.join("renamed.txt").exists(), "move to root hit the disk");
+    assert!(!root.join("docs/renamed.txt").exists());
+
+    // Delete it for real.
+    ex.select_only(fid);
+    ex.delete_selected()();
+    assert!(!root.join("renamed.txt").exists(), "delete removed the real file");
+
+    std::fs::remove_dir_all(&root).ok();
+}

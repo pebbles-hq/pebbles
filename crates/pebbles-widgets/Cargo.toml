@@ -14,4 +14,5 @@ ureq = "2"
 base64 = "0.22"
 pebbles-core.workspace = true
 pebbles-foundation.workspace = true
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"] }
 pebbles-render.workspace = true

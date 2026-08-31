@@ -21,6 +21,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisSize};
 use pebbles_render::{Cursor, IconKind};
@@ -54,16 +55,20 @@ pub struct FsNode {
     pub name: String,
     pub kind: FsKind,
     pub children: Vec<FsNode>,
+    /// Filesystem mode only: whether this folder's children have been read
+    /// from disk yet (folders load lazily on first expand). In-memory nodes
+    /// are always loaded.
+    pub loaded: bool,
 }
 
 impl FsNode {
     /// Create a folder node (the tree assigns the id when inserting).
     pub fn folder(name: impl Into<String>) -> Self {
-        FsNode { id: 0, name: name.into(), kind: FsKind::Folder, children: Vec::new() }
+        FsNode { id: 0, name: name.into(), kind: FsKind::Folder, children: Vec::new(), loaded: true }
     }
     /// Create a file node (the tree assigns the id when inserting).
     pub fn file(name: impl Into<String>) -> Self {
-        FsNode { id: 0, name: name.into(), kind: FsKind::File, children: Vec::new() }
+        FsNode { id: 0, name: name.into(), kind: FsKind::File, children: Vec::new(), loaded: true }
     }
 }
 
@@ -96,7 +101,7 @@ impl FileTree {
         walk(&self.root, id)
     }
 
-    fn node_mut(&mut self, id: u64) -> Option<&mut FsNode> {
+    pub(crate) fn node_mut(&mut self, id: u64) -> Option<&mut FsNode> {
         fn walk(nodes: &mut [FsNode], id: u64) -> Option<&mut FsNode> {
             for n in nodes {
                 if n.id == id {
@@ -138,6 +143,16 @@ impl FileTree {
         }
     }
 
+    /// Assign fresh unique ids to `nodes` and their descendants (read_dir
+    /// output carries placeholder ids — adopt it through this).
+    pub(crate) fn assign_ids(&mut self, nodes: &mut [FsNode]) {
+        for n in nodes {
+            n.id = self.next_id;
+            self.next_id += 1;
+            self.assign_ids(&mut n.children);
+        }
+    }
+
     /// Insert `kind` `name` into `parent` (`None` = the root) and return the
     /// new node's id. The name is de-duplicated against its siblings
     /// (`new_file.txt`, `new_file 2.txt`, …).
@@ -151,7 +166,7 @@ impl FileTree {
         }
         .unwrap_or_default();
         let name = unique_name(&base, &siblings);
-        let node = FsNode { id, name, kind, children: Vec::new() };
+        let node = FsNode { id, name, kind, children: Vec::new(), loaded: true };
         match parent {
             Some(p) => {
                 if let Some(pn) = self.node_mut(p) {
@@ -246,6 +261,42 @@ impl FileTree {
     }
 }
 
+/// Read a real directory into nodes: folders first, then files, both sorted
+/// by name (folders start unloaded — their children load on expand).
+fn read_dir(path: &Path) -> std::io::Result<Vec<FsNode>> {
+    let mut folders: Vec<FsNode> = Vec::new();
+    let mut files: Vec<FsNode> = Vec::new();
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        let ft = entry.file_type()?;
+        if ft.is_dir() {
+            folders.push(FsNode {
+                id: 0,
+                name,
+                kind: FsKind::Folder,
+                children: Vec::new(),
+                loaded: false,
+            });
+        } else if ft.is_file() {
+            files.push(FsNode { id: 0, name, kind: FsKind::File, children: Vec::new(), loaded: true });
+        }
+    }
+    folders.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    folders.extend(files);
+    Ok(folders)
+}
+
+/// Open the OS folder picker (blocking, on a background thread) and deliver the
+/// chosen path (or `None` on cancel) to `on_picked` on the UI thread.
+pub fn pick_folder(on_picked: impl Fn(Option<PathBuf>) + 'static) {
+    pebbles_core::spawn(
+        || rfd::FileDialog::new().pick_folder(),
+        on_picked,
+    );
+}
+
 /// `base` made unique against `taken` (`name`, `name 2`, `name 3`, …) — the
 /// extension stays put: `readme.txt` → `readme 2.txt`.
 fn unique_name(base: &str, taken: &[&str]) -> String {
@@ -287,6 +338,10 @@ pub struct FileExplorer {
     drop_target: Signal<Option<u64>>,
     root_drop: Signal<bool>,
     hover_key: u64,
+    /// Filesystem mode: the directory the explorer mirrors (None = in-memory).
+    fs_root: Signal<Option<PathBuf>>,
+    /// The last filesystem error, if any (read for toasts/inline hints).
+    last_error: Signal<Option<String>>,
 }
 
 /// Create an explorer over `tree` (the app's `Signal<FileTree>`). Call inside
@@ -301,6 +356,8 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         drop_target: create_signal(None),
         root_drop: create_signal(false),
         hover_key: create_signal(()).raw_id(),
+        fs_root: create_signal(None),
+        last_error: create_signal(None),
     }
 }
 
@@ -313,6 +370,204 @@ impl FileExplorer {
     /// The expansion set (read it, or drive it yourself).
     pub fn expanded(&self) -> Signal<HashSet<u64>> {
         self.expanded
+    }
+
+    /// The backing directory (filesystem mode), or `None` for the in-memory
+    /// model. When set, expanding a folder reads its children from disk and
+    /// every mutation hits the real filesystem.
+    pub fn fs_root(&self) -> Signal<Option<PathBuf>> {
+        self.fs_root
+    }
+
+    /// The last filesystem error (read it for toasts/inline hints).
+    pub fn last_error(&self) -> Signal<Option<String>> {
+        self.last_error
+    }
+
+    /// Load a REAL directory into the explorer (children only — folders read
+    /// their own children lazily on first expand). Clears the selection and
+    /// expansion; reports failures through [`last_error`](Self::last_error).
+    pub fn open_folder(&self, path: impl AsRef<Path>) -> bool {
+        match read_dir(path.as_ref()) {
+            Ok(children) => {
+                self.fs_root.set(Some(path.as_ref().to_path_buf()));
+                self.tree.update(|t| {
+                    let mut children = children;
+                    t.assign_ids(&mut children);
+                    t.root = children;
+                });
+                self.selected.set(Vec::new());
+                self.expanded.set(HashSet::new());
+                self.renaming.set(None);
+                self.last_error.set(None);
+                true
+            }
+            Err(e) => {
+                self.last_error.set(Some(format!("Could not open {}: {e}", path.as_ref().display())));
+                false
+            }
+        }
+    }
+
+    /// The absolute path of a node (filesystem mode only — in-memory nodes
+    /// have none).
+    pub fn path_of(&self, id: u64) -> Option<PathBuf> {
+        let root = self.fs_root.get()?;
+        // Walk up through the parents, collecting names.
+        let mut names = vec![self.tree.peek().node(id)?.name.clone()];
+        let mut cur = self.tree.peek().parent_of(id);
+        while let Some(p) = cur {
+            names.push(self.tree.peek().node(p)?.name.clone());
+            cur = self.tree.peek().parent_of(p);
+        }
+        names.reverse();
+        Some(names.iter().fold(root, |acc, n| acc.join(n)))
+    }
+
+    /// Read a folder's children from disk into the model (filesystem mode).
+    fn ensure_loaded(&self, id: u64) {
+        if self.fs_root.get().is_none() {
+            return;
+        }
+        let needs = self
+            .tree
+            .peek()
+            .node(id)
+            .is_some_and(|n| n.kind == FsKind::Folder && !n.loaded);
+        if !needs {
+            return;
+        }
+        if let Some(dir) = self.path_of(id) {
+            match read_dir(&dir) {
+                Ok(children) => {
+                    self.tree.update(|t| {
+                        let mut children = children;
+                        t.assign_ids(&mut children);
+                        if let Some(n) = t.node_mut(id) {
+                            n.children = children;
+                            n.loaded = true;
+                        }
+                    });
+                }
+                Err(e) => {
+                    self.last_error.set(Some(format!("Could not read {}: {e}", dir.display())));
+                }
+            }
+        }
+    }
+
+    /// Expand/collapse a folder (loading its children from disk first, in
+    /// filesystem mode).
+    pub fn toggle_folder(&self, id: u64) {
+        self.ensure_loaded(id);
+        self.expanded.update(|ex| {
+            if !ex.remove(&id) {
+                ex.insert(id);
+            }
+        });
+    }
+
+    /// Rename a node — on disk in filesystem mode, in the model otherwise.
+    pub fn rename_node(&self, id: u64, name: String) -> bool {
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            self.renaming.set(None);
+            return false;
+        }
+        let done = if let Some(root) = self.fs_root.get() {
+            let old = self.path_of(id);
+            match old {
+                Some(old) => {
+                    let new = old.with_file_name(&name);
+                    match std::fs::rename(&old, &new) {
+                        Ok(()) => {
+                            self.tree.update(|t| {
+                                t.rename(id, name);
+                            });
+                            true
+                        }
+                        Err(e) => {
+                            self.last_error.set(Some(format!("Could not rename: {e}")));
+                            false
+                        }
+                    }
+                }
+                None => {
+                    self.last_error.set(Some(format!("Could not resolve a path for a node in {root:?}")));
+                    false
+                }
+            }
+        } else {
+            self.tree.update(|t| {
+                t.rename(id, name);
+            });
+            true
+        };
+        self.renaming.set(None);
+        done
+    }
+
+    /// Delete nodes — on disk in filesystem mode, in the model otherwise.
+    fn delete_nodes(&self, ids: &[u64]) {
+        for id in ids {
+            if self.fs_root.get().is_some() {
+                if let Some(path) = self.path_of(*id) {
+                    let is_dir = self.tree.peek().node(*id).is_some_and(|n| n.kind == FsKind::Folder);
+                    let res = if is_dir {
+                        std::fs::remove_dir_all(&path)
+                    } else {
+                        std::fs::remove_file(&path)
+                    };
+                    if let Err(e) = res {
+                        self.last_error.set(Some(format!("Could not delete {}: {e}", path.display())));
+                        continue;
+                    }
+                } else {
+                    self.last_error.set(Some(format!("Could not resolve a path for a node")));
+                    continue;
+                }
+            }
+            self.tree.update(|t| {
+                t.delete(*id);
+            });
+        }
+        self.selected.set(Vec::new());
+        self.renaming.set(None);
+    }
+
+    /// Move nodes into a folder (or the root) — on disk in filesystem mode,
+    /// in the model otherwise. Also used programmatically.
+    pub fn move_nodes(&self, ids: &[u64], target: Option<u64>) {
+        let fs = self.fs_root.get().is_some();
+        for id in ids {
+            if fs {
+                let Some(from) = self.path_of(*id) else {
+                    self.last_error.set(Some("Could not resolve a path for a node".into()));
+                    continue;
+                };
+                let into = match target {
+                    Some(t) => self.path_of(t),
+                    None => self.fs_root.get(),
+                };
+                let Some(into) = into else {
+                    self.last_error.set(Some("Could not resolve the target folder".into()));
+                    continue;
+                };
+                let to = into.join(from.file_name().unwrap_or_default());
+                if let Err(e) = std::fs::rename(&from, &to) {
+                    self.last_error.set(Some(format!("Could not move {}: {e}", from.display())));
+                    continue;
+                }
+            }
+            self.tree.update(|t| {
+                t.move_node(*id, target);
+            });
+        }
+        if let Some(t) = target {
+            self.expanded.update(|e| {
+                e.insert(t);
+            });
+        }
     }
 
     /// The active node — the LAST selected one (rename/new-node targets).
@@ -335,7 +590,7 @@ impl FileExplorer {
         out
     }
 
-    fn select_only(&self, id: u64) {
+    pub fn select_only(&self, id: u64) {
         self.selected.set(vec![id]);
     }
 
@@ -394,21 +649,64 @@ impl FileExplorer {
         self.renaming.set(Some(id));
     }
 
-    /// Create a file (in the active folder) and start renaming it.
+    /// Create a file (in the active folder) and start renaming it. In
+    /// filesystem mode the file is created on disk.
     pub fn new_file(self) -> impl Fn() + 'static {
         move || {
             let parent = self.insertion_parent();
-            let id = self.insert_at(parent, FsKind::File, "new_file.txt");
+            let (id, name) = self.create_node(parent, FsKind::File, "new_file.txt");
+            self.start_rename_for(id);
+            let _ = name;
+        }
+    }
+
+    /// Create a folder (in the active folder) and start renaming it. In
+    /// filesystem mode the folder is created on disk.
+    pub fn new_folder(self) -> impl Fn() + 'static {
+        move || {
+            let parent = self.insertion_parent();
+            let (id, _name) = self.create_node(parent, FsKind::Folder, "New Folder");
             self.start_rename_for(id);
         }
     }
 
-    /// Create a folder (in the active folder) and start renaming it.
-    pub fn new_folder(self) -> impl Fn() + 'static {
-        move || {
-            let parent = self.insertion_parent();
-            let id = self.insert_at(parent, FsKind::Folder, "New Folder");
-            self.start_rename_for(id);
+    /// Create a node — on disk in filesystem mode (unique name probed against
+    /// the real directory), then inserted into the model.
+    fn create_node(&self, parent: Option<u64>, kind: FsKind, base: &'static str) -> (u64, String) {
+        if let Some(root) = self.fs_root.get() {
+            let dir = match parent {
+                Some(p) => self.path_of(p).unwrap_or_else(|| root.clone()),
+                None => root,
+            };
+            let taken = std::fs::read_dir(&dir)
+                .map(|rd| {
+                    rd.filter_map(|e| e.ok())
+                        .map(|e| e.file_name().to_string_lossy().to_string())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            let taken_refs: Vec<&str> = taken.iter().map(|s| s.as_str()).collect();
+            let name = unique_name(base, &taken_refs);
+            let target = dir.join(&name);
+            let created = if kind == FsKind::Folder {
+                std::fs::create_dir(&target).map_err(|e| e.to_string())
+            } else {
+                std::fs::File::create(&target).map(|_| ()).map_err(|e| e.to_string())
+            };
+            match created {
+                Ok(()) => {
+                    let id = self.insert_at(parent, kind, Box::leak(name.clone().into_boxed_str()));
+                    (id, name)
+                }
+                Err(e) => {
+                    self.last_error.set(Some(format!("Could not create {}: {e}", target.display())));
+                    let id = self.insert_at(parent, kind, base);
+                    (id, base.to_string())
+                }
+            }
+        } else {
+            let id = self.insert_at(parent, kind, base);
+            (id, base.to_string())
         }
     }
 
@@ -431,17 +729,12 @@ impl FileExplorer {
         }
     }
 
-    /// Delete the selection (all selected nodes, subtrees included).
+    /// Delete the selection (all selected nodes, subtrees included) — on
+    /// disk in filesystem mode.
     pub fn delete_selected(self) -> impl Fn() + 'static {
         move || {
             let ids = self.selected.get();
-            self.tree.update(|t| {
-                for id in &ids {
-                    t.delete(*id);
-                }
-            });
-            self.selected.set(Vec::new());
-            self.renaming.set(None);
+            self.delete_nodes(&ids);
         }
     }
 
@@ -663,20 +956,7 @@ fn render_node(p: &NodeProps) -> AnyWidget {
                     let ids = explorer.selected.get();
                     let target = explorer.drop_target.get();
                     let root = explorer.root_drop.get();
-                    explorer.tree.update(|t| {
-                        for id in &ids {
-                            if let Some(tid) = target {
-                                t.move_node(*id, Some(tid));
-                            } else if root {
-                                t.move_node(*id, None);
-                            }
-                        }
-                    });
-                    if let Some(tid) = target {
-                        explorer.expanded.update(|e| {
-                            e.insert(tid);
-                        });
-                    }
+                    explorer.move_nodes(&ids, if root { None } else { target });
                     explorer.dragging.set(false);
                     explorer.drop_target.set(None);
                     explorer.root_drop.set(false);
@@ -691,11 +971,7 @@ fn render_node(p: &NodeProps) -> AnyWidget {
                     } else {
                         explorer.select_only(id);
                         if is_folder {
-                            explorer.expanded.update(|ex| {
-                                if !ex.remove(&id) {
-                                    ex.insert(id);
-                                }
-                            });
+                            explorer.toggle_folder(id);
                         }
                     }
                 }
@@ -744,11 +1020,11 @@ fn render_rename_editor(p: &RenameProps) -> AnyWidget {
     let commit = move || {
         let name = buf.peek().trim().to_string();
         if !name.is_empty() {
-            explorer.tree.update(|t| {
-                t.rename(id, name);
-            });
+            // Filesystem mode renames on disk; in-memory renames the model.
+            explorer.rename_node(id, name);
+        } else {
+            explorer.renaming.set(None);
         }
-        explorer.renaming.set(None);
     };
     text_field()
         .placeholder(p.placeholder.clone())
