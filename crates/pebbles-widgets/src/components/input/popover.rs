@@ -69,6 +69,7 @@ pub struct Popover {
     /// Trigger height used for anchoring (the panel opens just below it).
     trigger_height: f64,
     pad: f64,
+    style: Option<crate::style::Style>,
 }
 
 /// Create a [`Popover`]: clicking `trigger` opens `content` in a floating surface.
@@ -80,7 +81,19 @@ pub fn popover(trigger: impl IntoWidget, content: impl IntoWidget) -> Popover {
         height: 220.0,
         trigger_height: 40.0,
         pad: 8.0,
+        style: None,
     }
+}
+
+/// The default popover-surface presentation as a [`Style`], so callers can merge
+/// overrides onto it.
+fn popover_base() -> crate::style::Style {
+    let c = theme().colors;
+    crate::style::style()
+        .background(c.popover)
+        .border(Border::new(c.border, 1.0))
+        .radius_all(theme().radius)
+        .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 45), Offset::new(0.0, 8.0), 22.0, -4.0))
 }
 
 impl Popover {
@@ -104,6 +117,12 @@ impl Popover {
         self.pad = pad;
         self
     }
+    /// Merge a [`Style`](crate::Style) onto the popover surface (bg / border / radius /
+    /// shadow overrides).
+    pub fn style(mut self, s: crate::style::Style) -> Self {
+        self.style = Some(s);
+        self
+    }
 }
 
 impl IntoWidget for Popover {
@@ -112,6 +131,7 @@ impl IntoWidget for Popover {
         let trigger = self.trigger.take().unwrap_or_else(|| Container::new().into_widget());
         let (width, height, trigger_height, pad) =
             (self.width, self.height, self.trigger_height, self.pad);
+        let user_style = self.style.take();
         GestureDetector::new(trigger)
             .cursor(Cursor::Pointer)
             .on_tap(action_event(move |e: PointerEvent| {
@@ -119,7 +139,20 @@ impl IntoWidget for Popover {
                 let trigger_left = e.global.x - e.position.x;
                 let trigger_top = e.global.y - e.position.y;
                 let (left, top) = anchor_below(trigger_left, trigger_top, trigger_height, width, height);
-                let surface = popover_surface(width, pad, content.clone());
+                let surface = match &user_style {
+                    None => popover_surface(width, pad, content.clone()),
+                    Some(st) => {
+                        // Merge onto the default surface look; keep the fixed width.
+                        let merged = popover_base().width(width).merge(st.clone());
+                        crate::style::styled(
+                            crate::widgets::Padding::new(
+                                pebbles_foundation::EdgeInsets::all(pad),
+                                content.clone(),
+                            ),
+                            merged,
+                        )
+                    }
+                };
                 show_overlay(surface, left, top, width, height);
             }))
             .into_widget()

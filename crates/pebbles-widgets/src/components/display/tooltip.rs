@@ -3,8 +3,8 @@
 //! timer); when it elapses a small chip is shown near the pointer; hover-exit hides it
 //! and cancels a pending show.
 
-use pebbles_foundation::{Color, EdgeInsets, Offset};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, PointerEvent};
+use pebbles_foundation::{Color, Offset};
+use pebbles_render::{Border, BoxShadow, PointerEvent};
 
 use crate::overlay::{hide_passive, show_passive};
 use crate::theme::theme;
@@ -19,11 +19,12 @@ pub struct Tooltip {
     label: String,
     rich: Option<AnyWidget>,
     delay: f64,
+    style: Option<crate::style::Style>,
 }
 
 /// Wrap `child` so hovering it shows `label` after a short delay.
 pub fn tooltip(child: impl IntoWidget, label: impl Into<String>) -> Tooltip {
-    Tooltip { child: Some(child.into_widget()), label: label.into(), rich: None, delay: 0.5 }
+    Tooltip { child: Some(child.into_widget()), label: label.into(), rich: None, delay: 0.5, style: None }
 }
 
 impl Tooltip {
@@ -37,6 +38,11 @@ impl Tooltip {
         self.rich = Some(content.into_widget());
         self
     }
+    /// Merge a [`Style`](crate::Style) onto the chip surface.
+    pub fn style(mut self, s: crate::style::Style) -> Self {
+        self.style = Some(s);
+        self
+    }
 }
 
 struct Props {
@@ -44,6 +50,7 @@ struct Props {
     label: String,
     rich: Option<AnyWidget>,
     delay: f64,
+    style: Option<crate::style::Style>,
 }
 
 impl IntoWidget for Tooltip {
@@ -55,6 +62,7 @@ impl IntoWidget for Tooltip {
                 label: self.label,
                 rich: self.rich.take(),
                 delay: self.delay,
+                style: self.style.take(),
             },
         )
         .into_widget()
@@ -68,22 +76,13 @@ fn chip(p: &Props) -> AnyWidget {
         Some(w) => w.clone(),
         None => text(p.label.clone()).size(12.0).color(c.popover_foreground).into_widget(),
     };
-    Container::new()
-        .decoration(
-            BoxDecoration::new()
-                .color(c.popover)
-                .border(Border::new(c.border, 1.0))
-                .radius(BorderRadius::all(6.0))
-                .shadow(BoxShadow::new(
-                    Color::from_rgba8(0, 0, 0, 45),
-                    Offset::new(0.0, 6.0),
-                    16.0,
-                    -4.0,
-                )),
-        )
-        .padding(EdgeInsets::symmetric(10.0, 6.0))
-        .child(body)
-        .into_widget()
+    let base = crate::style::style()
+        .background(c.popover)
+        .border(Border::new(c.border, 1.0))
+        .radius_all(6.0)
+        .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 45), Offset::new(0.0, 6.0), 16.0, -4.0))
+        .padding_xy(10.0, 6.0);
+    crate::style::styled(body, base.merge(p.style.clone().unwrap_or_default()))
 }
 
 fn render_tooltip(p: &Props) -> AnyWidget {
@@ -93,14 +92,16 @@ fn render_tooltip(p: &Props) -> AnyWidget {
     // Capture what the timer needs (chip is rebuilt when it fires).
     let label = p.label.clone();
     let rich = p.rich.clone();
+    let tstyle = p.style.clone();
 
     GestureDetector::new(p.child.clone())
         .on_hover_enter(action_event(move |e: PointerEvent| {
             let (gx, gy) = (e.global.x, e.global.y);
             let label = label.clone();
             let rich = rich.clone();
+            let tstyle = tstyle.clone();
             animation::set_timeout(key, delay, move || {
-                let props = Props { child: Container::new().into_widget(), label: label.clone(), rich: rich.clone(), delay: 0.0 };
+                let props = Props { child: Container::new().into_widget(), label: label.clone(), rich: rich.clone(), delay: 0.0, style: tstyle.clone() };
                 // Anchor just below the pointer.
                 show_passive(chip(&props), gx + 12.0, gy + 18.0);
             });

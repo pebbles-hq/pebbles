@@ -41,6 +41,7 @@ struct ToastEntry {
     variant: ToastVariant,
     action: Option<(String, Rc<dyn Fn()>)>,
     dismissible: bool,
+    style: Option<crate::style::Style>,
 }
 
 /// The most a stack shows at once; older toasts queue behind these.
@@ -81,6 +82,7 @@ pub struct Toast {
     duration: f64,
     action: Option<(String, Rc<dyn Fn()>)>,
     dismissible: bool,
+    style: Option<crate::style::Style>,
 }
 
 /// Create a [`Toast`] with the given title.
@@ -92,6 +94,7 @@ pub fn toast(title: impl Into<String>) -> Toast {
         duration: 4.0,
         action: None,
         dismissible: true,
+        style: None,
     }
 }
 
@@ -118,6 +121,11 @@ impl Toast {
         self.dismissible = dismissible;
         self
     }
+    /// Merge a [`Style`](crate::Style) onto the toast surface.
+    pub fn style(mut self, s: crate::style::Style) -> Self {
+        self.style = Some(s);
+        self
+    }
     /// Show the toast; returns its [`ToastId`]. Auto-dismisses after `duration` (unless 0).
     pub fn show(self) -> ToastId {
         let id = NEXT_ID.with(|n| {
@@ -133,6 +141,7 @@ impl Toast {
                 variant: self.variant,
                 action: self.action,
                 dismissible: self.dismissible,
+                style: self.style,
             });
         });
         if self.duration > 0.0 {
@@ -206,23 +215,17 @@ fn toast_card(e: &ToastEntry) -> AnyWidget {
         );
     }
 
-    Container::new()
+    let base = crate::style::style()
         .width(WIDTH)
-        .decoration(
-            BoxDecoration::new()
-                .color(c.popover)
-                .border(Border::new(c.border, 1.0))
-                .radius(BorderRadius::all(theme().radius + 2.0))
-                .shadow(BoxShadow::new(
-                    Color::from_rgba8(0, 0, 0, 60),
-                    Offset::new(0.0, 8.0),
-                    24.0,
-                    -6.0,
-                )),
-        )
-        .padding(EdgeInsets::symmetric(14.0, 12.0))
-        .child(row(r).cross_axis_alignment(CrossAxisAlignment::Center))
-        .into_widget()
+        .background(c.popover)
+        .border(Border::new(c.border, 1.0))
+        .radius_all(theme().radius + 2.0)
+        .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 60), Offset::new(0.0, 8.0), 24.0, -6.0))
+        .padding_xy(14.0, 12.0);
+    crate::style::styled(
+        row(r).cross_axis_alignment(CrossAxisAlignment::Center),
+        base.merge(e.style.clone().unwrap_or_default()),
+    )
 }
 
 /// Overlay children for the current window's toast stack (bottom-right, newest at the

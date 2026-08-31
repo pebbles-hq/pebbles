@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets};
-use pebbles_render::{Border, BorderRadius, BoxDecoration};
+use pebbles_render::{Border, BoxDecoration};
 
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, Positioned, SizedBox, column, text};
@@ -38,6 +38,7 @@ struct SheetEntry {
     size: f64,
     title: String,
     background: Option<Color>,
+    style: Option<crate::style::Style>,
     dismissible: bool,
     on_close: Option<Rc<dyn Fn()>>,
 }
@@ -90,6 +91,7 @@ pub struct Sheet {
     size: f64,
     title: String,
     background: Option<Color>,
+    style: Option<crate::style::Style>,
     dismissible: bool,
     on_close: Option<Rc<dyn Fn()>>,
 }
@@ -102,6 +104,7 @@ pub fn sheet(content: impl IntoWidget) -> Sheet {
         size: 360.0,
         title: String::new(),
         background: None,
+        style: None,
         dismissible: true,
         on_close: None,
     }
@@ -127,6 +130,11 @@ impl Sheet {
         self.background = Some(color);
         self
     }
+    /// Merge a [`Style`](crate::Style) onto the panel surface (bg / border / radius …).
+    pub fn style(mut self, s: crate::style::Style) -> Self {
+        self.style = Some(s);
+        self
+    }
     pub fn dismissible(mut self, dismissible: bool) -> Self {
         self.dismissible = dismissible;
         self
@@ -149,6 +157,7 @@ impl Sheet {
             size: self.size,
             title: self.title,
             background: self.background,
+            style: self.style,
             dismissible: self.dismissible,
             on_close: self.on_close,
         }));
@@ -181,15 +190,16 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
 
     let horizontal = matches!(e.side, Side::Left | Side::Right);
     let (ww, wh) = window_size();
-    let mut surface = Container::new()
-        .decoration(
-            BoxDecoration::new()
-                .color(e.background.unwrap_or(c.background))
-                .border(Border::new(c.border, 1.0))
-                .radius(BorderRadius::all(0.0)),
-        )
-        .padding(EdgeInsets::all(22.0))
-        .child(body);
+    // Base surface presentation as a Style; the user's `.style(..)` merges on top.
+    let base = crate::style::style()
+        .background(e.background.unwrap_or(c.background))
+        .border(Border::new(c.border, 1.0))
+        .radius_all(0.0);
+    let deco = base
+        .merge(e.style.clone().unwrap_or_default())
+        .decoration()
+        .unwrap_or_else(BoxDecoration::new);
+    let mut surface = Container::new().decoration(deco).padding(EdgeInsets::all(22.0)).child(body);
     if horizontal {
         surface = surface.width(e.size);
         if wh > 0.0 {

@@ -72,6 +72,7 @@ pub struct Select {
     leading: Option<IconData>,
     trailing: Option<IconData>,
     on_changed: Option<Rc<dyn Fn(usize, &str)>>,
+    style: Option<crate::style::Style>,
 }
 
 /// Create a [`Select`] over `options` — any mix of `&str`/`String` (icon-less) and
@@ -89,6 +90,7 @@ where
         leading: None,
         trailing: None,
         on_changed: None,
+        style: None,
     }
 }
 
@@ -120,6 +122,11 @@ impl Select {
         self.on_changed = Some(Rc::new(f));
         self
     }
+    /// Merge a [`Style`](crate::Style) onto the trigger box (bg / border / radius …).
+    pub fn style(mut self, s: crate::style::Style) -> Self {
+        self.style = Some(s);
+        self
+    }
 }
 
 struct Props {
@@ -130,6 +137,7 @@ struct Props {
     leading: Option<IconData>,
     trailing: Option<IconData>,
     on_changed: Option<Rc<dyn Fn(usize, &str)>>,
+    style: Option<crate::style::Style>,
 }
 
 impl IntoWidget for Select {
@@ -144,6 +152,7 @@ impl IntoWidget for Select {
                 leading: self.leading,
                 trailing: self.trailing,
                 on_changed: self.on_changed,
+                style: self.style,
             },
         )
         .into_widget()
@@ -292,15 +301,17 @@ fn render_select(p: &Props) -> GestureDetector {
     trigger_kids.push(spacer().into_widget());
     trigger_kids.push(icon(trail).size(16.0).color(c.muted_foreground).into_widget());
 
+    let deco = crate::style::style()
+        .background(c.background)
+        .border(Border::new(c.input, 1.0))
+        .radius_all(theme().radius)
+        .merge(p.style.clone().unwrap_or_default())
+        .decoration()
+        .unwrap_or_else(BoxDecoration::new);
     let trigger = Container::new()
         .width(width)
         .height(38.0)
-        .decoration(
-            BoxDecoration::new()
-                .color(c.background)
-                .border(Border::new(c.input, 1.0))
-                .radius(BorderRadius::all(theme().radius)),
-        )
+        .decoration(deco)
         .padding(EdgeInsets::symmetric(12.0, 0.0))
         .alignment(Alignment::CENTER_LEFT)
         .child(row(trigger_kids));
