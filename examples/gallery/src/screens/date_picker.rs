@@ -50,13 +50,16 @@ pub fn date_picker() -> Element {
                 date_field().width(240.0),
             ),
             doc("Range date")
-                .description("date_field().range(true): the calendar picks a start + end (order doesn't matter — endpoints sort), the input shows both, and on_range_changed reports each completed pick.")
+                .description("date_field().range(true): the calendar picks a start + end (order doesn't matter — endpoints sort), the input shows both read-only, on_range_changed reports each pick, and min/max bound the pickable days.")
                 .body(
                 column(children![
                     date_field()
                         .range(true)
                         .range_value((2026, 1, 1), (2026, 1, 7))
-                        .width(280.0)
+                        .clearable(true)
+                        .min(2026, 1, 1)
+                        .max(2026, 3, 31)
+                        .width(300.0)
                         .on_range_changed(move |s, e| range_note.set(format!("{:02}/{:02}/{} – {:02}/{:02}/{}", s.1, s.2, s.0, e.1, e.2, e.0))),
                     muted(format!("last pick: {}", range_note.get())),
                 ])

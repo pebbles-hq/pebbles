@@ -14,6 +14,7 @@ use super::calendar::{CaptionLayout, Date, calendar};
 use super::text_field::text_field;
 use super::{ButtonVariant, icon_button};
 use crate::overlay::{hide_overlay, show_overlay, window_size};
+use crate::widgets::{gap_w, row};
 use crate::style::{Style, styled};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{action_event, component_props, create_signal};
@@ -149,6 +150,10 @@ pub struct DateField {
     range: bool,
     range_value: Option<(Date, Date)>,
     on_range_changed: Option<Rc<dyn Fn(Date, Date)>>,
+    clearable: bool,
+    min: Option<Date>,
+    max: Option<Date>,
+    disabled_pred: Option<Rc<dyn Fn(i32, u32, u32) -> bool>>,
 }
 
 /// Create a [`DateField`].
@@ -202,6 +207,27 @@ impl DateField {
         self.on_range_changed = Some(Rc::new(f));
         self
     }
+    /// Show a ✕ that resets the input to its placeholder (range mode especially:
+    /// the picker owns the value).
+    pub fn clearable(mut self, yes: bool) -> Self {
+        self.clearable = yes;
+        self
+    }
+    /// The earliest pickable date; earlier days are muted + disabled.
+    pub fn min(mut self, y: i32, m: u32, d: u32) -> Self {
+        self.min = Some((y, m, d));
+        self
+    }
+    /// The latest pickable date; later days are muted + disabled.
+    pub fn max(mut self, y: i32, m: u32, d: u32) -> Self {
+        self.max = Some((y, m, d));
+        self
+    }
+    /// Days for which this predicate returns `true` are muted + disabled.
+    pub fn disabled_dates(mut self, pred: impl Fn(i32, u32, u32) -> bool + 'static) -> Self {
+        self.disabled_pred = Some(Rc::new(pred));
+        self
+    }
 }
 
 struct DateProps {
@@ -214,6 +240,10 @@ struct DateProps {
     range: bool,
     range_value: Option<(Date, Date)>,
     on_range_changed: Option<Rc<dyn Fn(Date, Date)>>,
+    clearable: bool,
+    min: Option<Date>,
+    max: Option<Date>,
+    disabled_pred: Option<Rc<dyn Fn(i32, u32, u32) -> bool>>,
 }
 
 impl IntoWidget for DateField {
@@ -230,6 +260,10 @@ impl IntoWidget for DateField {
                 range: self.range,
                 range_value: self.range_value,
                 on_range_changed: self.on_range_changed,
+                clearable: self.clearable,
+                min: self.min,
+                max: self.max,
+                disabled_pred: self.disabled_pred,
             },
         )
         .into_widget()
@@ -253,6 +287,8 @@ fn render_date(p: &DateProps) -> AnyWidget {
     let range_mode = p.range;
     let range_initial = p.range_value;
     let on_range_changed = p.on_range_changed.clone();
+    let (cmin, cmax, cpred) = (p.min, p.max, p.disabled_pred.clone());
+    let clearable = p.clearable;
 
     let cal_btn = icon_button(IconKind::Calendar).variant(ButtonVariant::Ghost).size(16.0).on_pressed(
         action_event(move |e: PointerEvent| {
@@ -266,6 +302,16 @@ fn render_date(p: &DateProps) -> AnyWidget {
                     .range(true);
                 if let Some((s, e2)) = range_initial {
                     cal = cal.range_value(s, e2);
+                }
+                if let Some((y, m, d)) = cmin {
+                    cal = cal.min(y, m, d);
+                }
+                if let Some((y, m, d)) = cmax {
+                    cal = cal.max(y, m, d);
+                }
+                if let Some(pred) = &cpred {
+                    let pred = pred.clone();
+                    cal = cal.disabled_dates(move |y, m, d| pred(y, m, d));
                 }
                 cal = cal.on_range_changed(move |s, e2| {
                     text.set(joined(&fmt, s, e2));
@@ -286,6 +332,16 @@ fn render_date(p: &DateProps) -> AnyWidget {
                 .caption(caption);
                 if let Some((y, m, d)) = current {
                     cal = cal.selected(y, m, d).month(y, m);
+                }
+                if let Some((y, m, d)) = cmin {
+                    cal = cal.min(y, m, d);
+                }
+                if let Some((y, m, d)) = cmax {
+                    cal = cal.max(y, m, d);
+                }
+                if let Some(pred) = &cpred {
+                    let pred = pred.clone();
+                    cal = cal.disabled_dates(move |y, m, d| pred(y, m, d));
                 }
                 if let Some(cs) = &cal_style {
                     cal = cal.style(cs.clone());
@@ -311,15 +367,22 @@ fn render_date(p: &DateProps) -> AnyWidget {
 
     let ph = p.placeholder.clone().unwrap_or_else(|| {
         if range_mode {
-            format!("{} – {}", fmt.hint(), fmt.hint())
+            "Pick a range".to_string()
         } else {
             fmt.hint()
         }
     });
-    let mut tf = text_field()
-        .placeholder(ph)
-        .bind(text)
-        .trailing(cal_btn);
+    let mut tf = text_field().placeholder(ph).bind(text);
+    if clearable && !text.get().is_empty() {
+        // ✕ resets to the placeholder; the calendar button stays to the right.
+        let clear = icon_button(IconKind::Close)
+            .variant(ButtonVariant::Ghost)
+            .size(15.0)
+            .on_pressed(move || text.set(String::new()));
+        tf = tf.trailing(row(vec![clear.into_widget(), gap_w(2.0).into_widget(), cal_btn.into_widget()]));
+    } else {
+        tf = tf.trailing(cal_btn);
+    }
     if range_mode {
         // Read-only display: the picker owns the value — no characters may land,
         // and any edit (incl. deletions) is reverted to the current display.
@@ -339,7 +402,17 @@ fn render_date(p: &DateProps) -> AnyWidget {
     }
 }
 
-/// The range display: `MM/DD/YYYY – MM/DD/YYYY`.
-fn joined(fmt: &DateFormat, s: Date, e: Date) -> String {
-    format!("{} – {}", fmt.format(s.0, s.1, s.2), fmt.format(e.0, e.1, e.2))
+/// The range display: `Jan 5, 2026 – Feb 2, 2026`.
+fn joined(_fmt: &DateFormat, s: Date, e: Date) -> String {
+    format!("{} – {}", readable(s), readable(e))
+}
+
+const MONTHS: [&str; 12] = [
+    "January", "February", "March", "April", "May", "June", "July", "August", "September",
+    "October", "November", "December",
+];
+
+/// `Jan 5, 2026`.
+fn readable(d: Date) -> String {
+    format!("{} {}, {}", &MONTHS[d.1.saturating_sub(1) as usize][..3], d.2, d.0)
 }

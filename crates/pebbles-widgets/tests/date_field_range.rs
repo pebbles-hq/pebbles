@@ -6,7 +6,7 @@ use std::cell::RefCell;
 
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
-use pebbles_render::TextEnv;
+use pebbles_render::{SemanticsRole, TextEnv};
 use pebbles_widgets::{Date, OverlayHost, View, column, date_field, overlay};
 
 thread_local! {
@@ -19,6 +19,7 @@ fn root() -> impl IntoWidget {
             date_field()
                 .range(true)
                 .range_value((2026, 1, 1), (2026, 1, 31))
+                .clearable(true)
                 .width(300.0)
                 .on_range_changed(|s, e| RANGE.with(|r| *r.borrow_mut() = Some((s, e))))
                 .into_widget(),
@@ -77,4 +78,27 @@ fn range_field_picks_and_reports_ordered_endpoints() {
         "on_range_changed reports the ordered range regardless of tap order"
     );
     assert!(!overlay::is_open(), "completing the range closes the popover");
+
+    // The input now shows the readable range (semantics value).
+    let value = ui
+        .render_tree()
+        .semantics_tree()
+        .iter()
+        .find(|n| n.props.role == SemanticsRole::TextInput)
+        .and_then(|n| n.props.value.clone());
+    assert_eq!(value.as_deref(), Some("Jan 1, 2026 – Jan 3, 2026"), "readable range display");
+
+    // The ✕ (x ≈ 240, the trailing affordance) resets to the placeholder.
+    let clear = Offset::new(240.0, 19.0);
+    ui.dispatch_pointer_down(clear);
+    ui.dispatch_tap(clear);
+    ui.dispatch_pointer_up(clear);
+    frame(&mut ui);
+    let value = ui
+        .render_tree()
+        .semantics_tree()
+        .iter()
+        .find(|n| n.props.role == SemanticsRole::TextInput)
+        .and_then(|n| n.props.value.clone());
+    assert_eq!(value.as_deref(), Some(""), "clear resets the input to its placeholder");
 }
