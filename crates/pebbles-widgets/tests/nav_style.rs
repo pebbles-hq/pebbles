@@ -47,7 +47,7 @@ fn tabs_style_lands_on_the_strip() {
 }
 
 #[test]
-fn accordion_style_lands_on_the_headers() {
+fn accordion_style_lands_on_the_surface() {
     pebbles_widgets::overlay::init();
     pebbles_core::focus::init();
 
@@ -70,13 +70,13 @@ fn accordion_style_lands_on_the_headers() {
     frame(&mut ui, &mut env, win);
 
     let tree = ui.render_tree();
-    let rid = tree.find::<RenderDecoratedBox>().expect("a styled header");
+    let rid = tree.find::<RenderDecoratedBox>().expect("the styled surface");
     let deco = tree.object_ref(rid).downcast_ref::<RenderDecoratedBox>().expect("decorated");
-    assert_eq!(deco.decoration.color, Some(palette::BLUE), "style background lands on the headers");
+    assert_eq!(deco.decoration.color, Some(palette::BLUE), "style background lands on the surface");
     assert_eq!(
         deco.decoration.radius,
         pebbles_render::BorderRadius::all(0.0),
-        "style radius lands on the headers"
+        "style radius lands on the surface"
     );
 }
 

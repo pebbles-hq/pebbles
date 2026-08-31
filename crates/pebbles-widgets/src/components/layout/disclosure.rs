@@ -6,7 +6,7 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
-use pebbles_render::{BoxDecoration, IconKind};
+use pebbles_render::IconKind;
 
 use pebbles_core::children;
 use pebbles_core::context::action;
@@ -83,9 +83,9 @@ struct SectionProps {
     index: usize,
     multiple: bool,
     on_toggle: Option<Rc<dyn Fn(usize, bool)>>,
-    header_bg: pebbles_foundation::Color,
-    border: Option<pebbles_render::Border>,
-    radius: pebbles_render::BorderRadius,
+    /// The surface background the hover tint mixes onto (the style's bg, else
+    /// the theme background).
+    hover_base: pebbles_foundation::Color,
     title_color: pebbles_foundation::Color,
     title_size: f32,
     title_weight: f32,
@@ -119,15 +119,12 @@ fn render_section(p: &SectionProps) -> AnyWidget {
         }
     });
 
-    let mut header_deco = BoxDecoration::new()
-        .color(mix(p.header_bg, c.muted, 0.5 * hv as f32))
-        .radius(p.radius);
-    if let Some(border) = p.border {
-        header_deco = header_deco.border(border);
-    }
+    // Headers are plain — a soft hover tint only. The Style frames the WHOLE
+    // accordion (one clean card), never each header (per-header borders read
+    // fragmented).
     let header = GestureDetector::new(
         Container::new()
-            .decoration(header_deco)
+            .color(mix(p.hover_base, c.muted, 0.5 * hv as f32))
             .child(
                 Padding::new(
                     EdgeInsets::symmetric(4.0, 12.0),
@@ -161,7 +158,7 @@ impl IntoWidget for Accordion {
 fn render_accordion(p: &Accordion) -> AnyWidget {
     let c = theme().colors;
     let merged = crate::style::style().merge(p.style.clone().unwrap_or_default());
-    let header_bg = merged.background.unwrap_or(c.background);
+    let hover_base = merged.background.unwrap_or(c.background);
     let title_color = merged.color.unwrap_or(c.foreground);
     let title_size = merged.font_size.unwrap_or(14.0);
     let title_weight = merged.font_weight.unwrap_or(500.0);
@@ -188,9 +185,7 @@ fn render_accordion(p: &Accordion) -> AnyWidget {
                     index: i,
                     multiple: p.multiple,
                     on_toggle: p.on_toggle.clone(),
-                    header_bg,
-                    border: merged.border,
-                    radius: merged.radius.unwrap_or_default(),
+                    hover_base,
                     title_color,
                     title_size,
                     title_weight,
@@ -202,7 +197,13 @@ fn render_accordion(p: &Accordion) -> AnyWidget {
             children_vec.push(Container::new().color(c.border).height(1.0).into_widget());
         }
     }
-    column(children_vec).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()
+    crate::style::styled(
+        column(children_vec)
+            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .main_axis_size(MainAxisSize::Min),
+        merged,
+    )
+    .into_widget()
 }
 
 /// A single collapsible section — shadcn's `Collapsible`. Self-managing: it owns
