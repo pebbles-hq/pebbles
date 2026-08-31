@@ -285,11 +285,11 @@ fn render_slider(p: &SliderProps) -> AnyWidget {
         .cursor(Cursor::Pointer)
         .on_hover_enter({
             let hovered = hovered;
-            pebbles_core::context::action(move || hovered.set(true))
+            move || hovered.set(true)
         })
         .on_hover_exit({
             let hovered = hovered;
-            pebbles_core::context::action(move || hovered.set(false))
+            move || hovered.set(false)
         })
         .on_pan_start(action_event(move |e| a_start(e.position.x, e.position.y)))
         .on_pan_update(action_event(move |e| a_move(e.position.x, e.position.y)))

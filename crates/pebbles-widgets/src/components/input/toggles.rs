@@ -19,11 +19,8 @@ use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconKind};
 
 use crate::components::icon;
 use crate::theme::{mix, theme};
-use crate::widgets::{
-    ClipRRect, Container, GestureDetector, Opacity, Positioned, SizedBox, center, column, row,
-    stack, text,
-};
-use pebbles_core::context::{Callback, action};
+use crate::widgets::{ClipRRect, Container, GestureDetector, Opacity, Positioned, center, column, gap_h, gap_w, row, stack, text};
+use pebbles_core::context::Callback;
 use pebbles_core::focus::{FocusNode, create_focus};
 use pebbles_core::reactive::{Signal, create_signal};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
@@ -110,7 +107,7 @@ fn labeled(
     }
     if let Some(d) = desc {
         if !lines.is_empty() {
-            lines.push(SizedBox::spacer(0.0, 2.0).into_widget());
+            lines.push(gap_h(2.0).into_widget());
         }
         lines.push(
             text(d).size(size.font() - 1.0).line_height(1.35).color(c.muted_foreground).into_widget(),
@@ -118,7 +115,7 @@ fn labeled(
     }
     let block = column(lines).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min);
     let cross = if has_desc { CrossAxisAlignment::Start } else { CrossAxisAlignment::Center };
-    row(children![control, SizedBox::spacer(size.gap(), 0.0), block])
+    row(children![control, gap_w(size.gap()), block])
         .cross_axis_alignment(cross)
         .main_axis_size(MainAxisSize::Min)
         .into_widget()
@@ -147,9 +144,9 @@ fn wire(
     node.register(activation, None, autofocus);
     let mut g = GestureDetector::new(body)
         .cursor(Cursor::Pointer)
-        .on_hover_enter(action(move || hovered.set(true)))
-        .on_hover_exit(action(move || hovered.set(false)))
-        .on_pointer_down(action(move || node.request_focus()));
+        .on_hover_enter(move || hovered.set(true))
+        .on_hover_exit(move || hovered.set(false))
+        .on_pointer_down(move || node.request_focus());
     if let Some(cb) = on.clone() {
         g = g.on_tap(cb);
     }
@@ -735,12 +732,12 @@ fn render_radio_group(p: &RadioGroupProps) -> AnyWidget {
                 r = r.description(d.clone());
             }
             let on = p.on_changed.clone();
-            r.on_selected(action(move || {
+            r.on_selected(move || {
                 selected.set(i);
                 if let Some(cb) = &on {
                     cb(i);
                 }
-            }))
+            })
             .into_widget()
         })
         .collect();

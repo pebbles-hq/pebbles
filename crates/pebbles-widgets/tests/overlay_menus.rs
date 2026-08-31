@@ -4,7 +4,7 @@
 //! Sweep-taps the whole surface with a full frame after each event, exactly like
 //! the shell, so any use-after-free of a freed signal would panic here.
 
-use pebbles_core::{IntoWidget, Ui, WidgetExt, component};
+use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
 use pebbles_render::{RenderDecoratedBox, TextEnv};
 use pebbles_widgets::{
@@ -48,7 +48,7 @@ fn dropdown_trigger_is_bounded_width() {
             ])
             .cross_axis_alignment(CrossAxisAlignment::Start),
         )
-        .boxed(),
+        .into_widget(),
     );
     ui.layout(&mut text, Size::new(900.0, 600.0));
 
@@ -70,7 +70,7 @@ fn overlay_menus_never_crash() {
     let mut text = TextEnv::new();
     let window = Size::new(360.0, 560.0);
 
-    ui.mount_root(View::new(palette::WHITE, component(root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
     ui.layout(&mut text, window);
 
     let mut now = 0.0_f64;

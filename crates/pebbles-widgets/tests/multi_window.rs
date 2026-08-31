@@ -9,7 +9,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use pebbles_core::focus::{FocusNode, create_focus};
-use pebbles_core::{IntoWidget, Signal, Ui, WidgetExt, component, create_signal};
+use pebbles_core::{IntoWidget, Signal, Ui, component, create_signal};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{View, text};
@@ -73,8 +73,8 @@ fn two_windows_share_a_runtime_without_aliasing() {
     let mut w1 = Ui::new(); // window 1
     assert_ne!(w0.window_id(), w1.window_id(), "each Ui gets a distinct window id");
 
-    w0.mount_root(View::new(palette::WHITE, component(w0_root)).boxed());
-    w1.mount_root(View::new(palette::WHITE, component(w1_root)).boxed());
+    w0.mount_root(View::new(palette::WHITE, component(w0_root)).into_widget());
+    w1.mount_root(View::new(palette::WHITE, component(w1_root)).into_widget());
     w0.layout(&mut env, window);
     w1.layout(&mut env, window);
     assert_eq!(W0_RENDERS.with(Cell::get), 1);

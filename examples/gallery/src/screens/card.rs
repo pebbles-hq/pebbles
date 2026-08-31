@@ -14,7 +14,7 @@ fn simple() -> impl IntoWidget {
     doc(
         "Simple",
         "Card::new(child) wraps any content with the surface, border, radius and shadow.",
-        Container::new().width(360.0).child(Card::new(body(
+        Container::new().width(360.0).child(card().child(body(
             "A plain card. Drop any widget inside and it gets the elevated surface.",
         ))),
     )
@@ -87,7 +87,7 @@ fn composed() -> impl IntoWidget {
                             .main_axis_size(MainAxisSize::Min),
                         ])
                         .main_axis_size(MainAxisSize::Min),
-                        SizedBox::spacer(0.0, 12.0),
+                        gap_h(12.0),
                         body("“Slider now supports range + keyboard; progress got its own screen.”"),
                     ])
                     .cross_axis_alignment(CrossAxisAlignment::Start)

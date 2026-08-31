@@ -9,7 +9,7 @@ use pebbles_render::{Border, BoxShadow, PointerEvent};
 use crate::overlay::{hide_passive, show_passive};
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, text};
-use pebbles_core::context::{action, action_event};
+use pebbles_core::context::action_event;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{animation, component_props, create_signal};
 
@@ -22,8 +22,9 @@ pub struct Tooltip {
     style: Option<crate::style::Style>,
 }
 
-/// Wrap `child` so hovering it shows `label` after a short delay.
-pub fn tooltip(child: impl IntoWidget, label: impl Into<String>) -> Tooltip {
+/// Show `label` when hovering `child` after a short delay. `child` is last (the
+/// in-tree child convention).
+pub fn tooltip(label: impl Into<String>, child: impl IntoWidget) -> Tooltip {
     Tooltip { child: Some(child.into_widget()), label: label.into(), rich: None, delay: 0.5, style: None }
 }
 
@@ -106,9 +107,9 @@ fn render_tooltip(p: &Props) -> AnyWidget {
                 show_passive(chip(&props), gx + 12.0, gy + 18.0);
             });
         }))
-        .on_hover_exit(action(move || {
+        .on_hover_exit(move || {
             animation::clear_timeout(key);
             hide_passive();
-        }))
+        })
         .into_widget()
 }

@@ -39,7 +39,7 @@ impl IntoWidget for Panel {
             text(std::mem::take(&mut self.title)).size(12.0).semibold().color(c.muted_foreground).into_widget(),
         ];
         if let Some(actions) = self.actions.take() {
-            header_row.push(Expanded::new(crate::widgets::SizedBox::spacer(0.0, 0.0)).into_widget());
+            header_row.push(Expanded::new(crate::widgets::gap_h(0.0)).into_widget());
             header_row.push(actions);
         }
         let header = Container::new()

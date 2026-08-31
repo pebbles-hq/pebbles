@@ -4,7 +4,7 @@
 //! active window with `Ui::make_current` before dispatching input; here we drive that
 //! directly with two `Ui`s.
 
-use pebbles_core::{IntoWidget, Ui, WidgetExt, component};
+use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{OverlayHost, View, dialog, overlay, text};
@@ -17,7 +17,7 @@ fn mount() -> (Ui, TextEnv) {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
     ui.make_current(); // key this window's lazily-created overlay/dialog signals
-    ui.mount_root(View::new(palette::WHITE, component(root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
     ui.layout(&mut env, Size::new(300.0, 200.0));
     (ui, env)
 }

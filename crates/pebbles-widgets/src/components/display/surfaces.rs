@@ -8,7 +8,7 @@ use pebbles_core::children;
 use pebbles_core::{component_props, create_loop};
 use crate::theme::{mix, theme};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{ClipRRect, Container, Positioned, SizedBox, center, column, row, spacer, stack, text};
+use crate::widgets::{ClipRRect, Container, Positioned, center, column, gap_h, gap_w, row, spacer, stack, text};
 use crate::style::{Style, style, styled};
 use crate::ImageView;
 
@@ -46,10 +46,6 @@ pub fn card() -> Card {
 }
 
 impl Card {
-    /// Create a card wrapping `child` directly (no header/footer).
-    pub fn new(child: impl IntoWidget) -> Self {
-        Card { content: Some(child.into_widget()), ..card() }
-    }
     /// The main content body.
     pub fn child(mut self, child: impl IntoWidget) -> Self {
         self.content = Some(child.into_widget());
@@ -101,7 +97,7 @@ impl IntoWidget for Card {
             }
             if let Some(d) = self.description.take() {
                 if !head_texts.is_empty() {
-                    head_texts.push(SizedBox::spacer(0.0, 4.0).into_widget());
+                    head_texts.push(gap_h(4.0).into_widget());
                 }
                 head_texts.push(text(d).size(13.5).line_height(1.4).color(c.muted_foreground).into_widget());
             }
@@ -117,12 +113,12 @@ impl IntoWidget for Card {
         }
         if let Some(content) = self.content.take() {
             if has_header {
-                kids.push(SizedBox::spacer(0.0, 14.0).into_widget());
+                kids.push(gap_h(14.0).into_widget());
             }
             kids.push(content);
         }
         if let Some(footer) = self.footer.take() {
-            kids.push(SizedBox::spacer(0.0, 16.0).into_widget());
+            kids.push(gap_h(16.0).into_widget());
             kids.push(footer);
         }
 
@@ -227,17 +223,22 @@ pub struct Alert {
     style: Option<Style>,
 }
 
-/// Create an [`Alert`].
-pub fn alert(title: impl Into<String>, description: impl Into<String>) -> Alert {
+/// Create an [`Alert`] with a title; add a body line with [`description`](Alert::description).
+pub fn alert(title: impl Into<String>) -> Alert {
     Alert {
         title: title.into(),
-        description: description.into(),
+        description: String::new(),
         variant: AlertVariant::default(),
         style: None,
     }
 }
 
 impl Alert {
+    /// A muted body line under the title (omitted when unset).
+    pub fn description(mut self, s: impl Into<String>) -> Self {
+        self.description = s.into();
+        self
+    }
     pub fn variant(mut self, variant: AlertVariant) -> Self {
         self.variant = variant;
         self
@@ -264,15 +265,20 @@ impl IntoWidget for Alert {
             .border(Border::new(c.border, 1.0))
             .radius_all(theme().radius)
             .padding_all(14.0);
+        let mut texts: Vec<AnyWidget> = vec![
+            text(std::mem::take(&mut self.title)).size(14.0).semibold().color(c.foreground).into_widget(),
+        ];
+        if !self.description.is_empty() {
+            texts.push(gap_h(2.0).into_widget());
+            texts.push(
+                text(std::mem::take(&mut self.description)).size(13.0).color(c.muted_foreground).into_widget(),
+            );
+        }
         let body =
                 row(children![
                     icon(kind).size(18.0).color(accent),
-                    SizedBox::spacer(12.0, 0.0),
-                    column(children![
-                        text(std::mem::take(&mut self.title)).size(14.0).semibold().color(c.foreground),
-                        SizedBox::spacer(0.0, 2.0),
-                        text(std::mem::take(&mut self.description)).size(13.0).color(c.muted_foreground),
-                    ])
+                    gap_w(12.0),
+                    column(texts)
                     .cross_axis_alignment(CrossAxisAlignment::Start)
                     .main_axis_size(MainAxisSize::Min),
                 ])

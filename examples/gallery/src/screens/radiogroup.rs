@@ -19,7 +19,7 @@ fn basic() -> impl IntoWidget {
             radio_group(["Default", "Comfortable", "Compact"])
                 .value(0)
                 .on_changed(move |i| choice.set(i)),
-            SizedBox::spacer(0.0, 10.0),
+            gap_h(10.0),
             muted(format!("selected index: {}", choice.get())),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Start)

@@ -2,7 +2,7 @@
 //! through the inverse transform. Also guards that the hit-test rewrite left
 //! untransformed hit-testing unchanged.
 
-use pebbles_core::{IntoWidget, Ui, WidgetExt, action};
+use pebbles_core::{IntoWidget, Ui, action};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{GestureDetector, SizedBox, Transform, View};
@@ -13,7 +13,7 @@ fn hit(tapped: &std::rc::Rc<std::cell::Cell<bool>>) -> impl IntoWidget {
     Transform::translate(
         100.0,
         0.0,
-        GestureDetector::new(SizedBox::spacer(40.0, 40.0)).on_tap(action(move || t.set(true))),
+        GestureDetector::new(SizedBox::new(Some(40.0), Some(40.0), None)).on_tap(action(move || t.set(true))),
     )
     .alignment(pebbles_foundation::Alignment::TOP_LEFT)
 }
@@ -23,7 +23,7 @@ fn translated_widget_is_hit_at_its_translated_position() {
     let tapped = std::rc::Rc::new(std::cell::Cell::new(false));
     let mut ui = Ui::new();
     let mut text = TextEnv::new();
-    ui.mount_root(View::new(palette::WHITE, hit(&tapped)).boxed());
+    ui.mount_root(View::new(palette::WHITE, hit(&tapped)).into_widget());
     ui.layout(&mut text, Size::new(400.0, 400.0));
 
     // The box's *untransformed* location (0..40) is now empty — a tap there misses.

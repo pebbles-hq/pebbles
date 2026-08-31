@@ -13,14 +13,14 @@ fn counter_window() -> impl IntoWidget {
         column(children![
             text("Counter window").size(18.0).semibold(),
             muted("A separate OS window sharing the app's reactive runtime."),
-            SizedBox::spacer(0.0, 20.0),
+            gap_h(20.0),
             row(children![
                 text(format!("Shared counter: {}", count.get())).size(15.0),
                 gap_w(14.0),
                 button("+1").size(ButtonSize::Sm).on_pressed(move || count.update(|c| *c += 1)),
             ])
             .main_axis_size(MainAxisSize::Min),
-            SizedBox::spacer(0.0, 16.0),
+            gap_h(16.0),
             muted(format!("Message from main: {msg}")),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Start)
@@ -98,7 +98,7 @@ fn message_section(draft: Signal<String>) -> impl IntoWidget {
                 }),
             ])
             .main_axis_size(MainAxisSize::Min),
-            SizedBox::spacer(0.0, 10.0),
+            gap_h(10.0),
             muted(format!(
                 "Last sent: {}",
                 state::ping().latest().unwrap_or_else(|| "—".into())

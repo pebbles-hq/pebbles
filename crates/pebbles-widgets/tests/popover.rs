@@ -1,7 +1,7 @@
 //! Public Popover (3.9): clicking the trigger opens arbitrary content in the overlay
 //! layer; outside-click dismisses via the scrim. Driven through a real Ui headlessly.
 
-use pebbles_core::{IntoWidget, Ui, WidgetExt, component};
+use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{Container, OverlayHost, View, context_menu, menu_item, overlay, popover, text};
@@ -9,7 +9,7 @@ use pebbles_widgets::{Container, OverlayHost, View, context_menu, menu_item, ove
 fn root() -> impl IntoWidget {
     // A fixed-size trigger at the top-left so we know where to tap.
     OverlayHost::wrap(
-        popover(Container::new().width(120.0).height(40.0).child(text("Open")), text("panel body"))
+        popover(text("panel body"), Container::new().width(120.0).height(40.0).child(text("Open")))
             .width(200.0)
             .height(120.0),
     )
@@ -23,7 +23,7 @@ fn popover_opens_on_trigger_click_and_dismisses_outside() {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
     let window = Size::new(500.0, 400.0);
-    ui.mount_root(View::new(palette::WHITE, component(root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
     ui.layout(&mut env, window);
     let mut frame = |ui: &mut Ui| {
         ui.rebuild_if_dirty();
@@ -72,7 +72,7 @@ fn context_menu_opens_on_secondary_click_at_the_cursor() {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
     let window = Size::new(500.0, 400.0);
-    ui.mount_root(View::new(palette::WHITE, component(ctx_root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(ctx_root)).into_widget());
     ui.layout(&mut env, window);
     let mut frame = |ui: &mut Ui| {
         ui.rebuild_if_dirty();

@@ -11,7 +11,7 @@ use crate::state::{NAV, label_for, navigate, route};
 fn nav_section(label: &str) -> impl IntoWidget {
     let c = theme().colors;
     column(children![
-        SizedBox::spacer(0.0, 12.0),
+        gap_h(12.0),
         Padding::new(
             EdgeInsets::symmetric(8.0, 2.0),
             text(label).size(11.0).semibold().color(c.muted_foreground),
@@ -30,7 +30,7 @@ pub fn app() -> impl IntoWidget {
         EdgeInsets::symmetric(6.0, 10.0),
         row(children![
             icon(lucide::GEM).size(20.0).color(c.primary),
-            SizedBox::spacer(8.0, 0.0),
+            gap_w(8.0),
             text("Pebbles").size(17.0).bold().color(c.foreground),
         ])
         .main_axis_size(MainAxisSize::Min),

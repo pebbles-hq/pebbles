@@ -3,7 +3,7 @@
 //! report by sweep-tapping the whole calendar and running a full frame (reconcile
 //! + animation tick + relayout) after every tap, exactly as the shell would.
 
-use pebbles_core::{IntoWidget, Ui, WidgetExt};
+use pebbles_core::{IntoWidget, Ui};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{CaptionLayout, View, calendar};
@@ -18,7 +18,7 @@ fn calendar_view_switching_never_crashes() {
 
     ui.mount_root(
         View::new(palette::WHITE, calendar(|_, _, _| {}).caption(CaptionLayout::Dropdown).into_widget())
-            .boxed(),
+            .into_widget(),
     );
     ui.layout(&mut text, window);
 

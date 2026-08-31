@@ -3,7 +3,7 @@
 //! label, state, window-space bounds) that the shell maps onto AccessKit. Verified
 //! headlessly — no screen reader or platform needed to prove the tree is correct.
 
-use pebbles_core::{IntoWidget, Ui, WidgetExt, component};
+use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::{SemanticsRole, TextEnv};
 use pebbles_widgets::{View, button, checkbox, column, semantics, switch, text, text_field};
@@ -27,7 +27,7 @@ fn interactive_widgets_populate_the_semantics_tree() {
 
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
-    ui.mount_root(View::new(palette::WHITE, component(root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
     ui.layout(&mut env, Size::new(400.0, 400.0));
 
     let tree = ui.render_tree().semantics_tree();
@@ -70,7 +70,7 @@ fn disabled_state_is_reported() {
 
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
-    ui.mount_root(View::new(palette::WHITE, component(locked_button)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(locked_button)).into_widget());
     ui.layout(&mut env, Size::new(200.0, 100.0));
 
     let tree = ui.render_tree().semantics_tree();

@@ -19,12 +19,10 @@ use pebbles_render::{
 use super::{ButtonVariant, icon_button};
 use crate::components::icon;
 use crate::theme::{mix, theme};
-use crate::widgets::{
-    Container, Expanded, GestureDetector, Opacity, SizedBox, column, editable, row, text,
-};
+use crate::widgets::{Container, Expanded, GestureDetector, Opacity, column, editable, gap_h, gap_w, row, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{
-    KeyInput, Motion, Signal, action, action_event, animated, clipboard, component_props,
+    KeyInput, Motion, Signal, action_event, animated, clipboard, component_props,
     create_focus, create_signal, keyboard,
 };
 
@@ -808,7 +806,7 @@ fn render_field(p: &Props) -> AnyWidget {
                 icon_button(if visible.get() { IconKind::EyeOff } else { IconKind::Eye })
                     .variant(ButtonVariant::Ghost)
                     .size(16.0)
-                    .on_pressed(action(move || visible.update(|v| *v = !*v)))
+                    .on_pressed(move || visible.update(|v| *v = !*v))
                     .into_widget(),
             ),
             InputKind::Search if !ed.value.get().is_empty() => {
@@ -817,14 +815,14 @@ fn render_field(p: &Props) -> AnyWidget {
                     icon_button(IconKind::Close)
                         .variant(ButtonVariant::Ghost)
                         .size(15.0)
-                        .on_pressed(action(move || {
+                        .on_pressed(move || {
                             ed.value.set(String::new());
                             ed.anchor.set(0);
                             ed.focus.set(0);
                             if let Some(cb) = &oc {
                                 cb("");
                             }
-                        }))
+                        })
                         .into_widget(),
                 )
             }
@@ -837,11 +835,11 @@ fn render_field(p: &Props) -> AnyWidget {
         let mut kids: Vec<AnyWidget> = Vec::new();
         if let Some(lead) = eff_leading {
             kids.push(icon(lead).size(16.0).color(c.muted_foreground).into_widget());
-            kids.push(SizedBox::spacer(8.0, 0.0).into_widget());
+            kids.push(gap_w(8.0).into_widget());
         }
         kids.push(Expanded::new(inner).into_widget());
         if let Some(trail) = eff_trailing {
-            kids.push(SizedBox::spacer(6.0, 0.0).into_widget());
+            kids.push(gap_w(6.0).into_widget());
             kids.push(trail);
         }
         row(kids).cross_axis_alignment(CrossAxisAlignment::Center).into_widget()
@@ -933,14 +931,14 @@ fn render_field(p: &Props) -> AnyWidget {
     let mut col: Vec<AnyWidget> = Vec::new();
     if let Some(lbl) = &p.label {
         col.push(text(lbl.clone()).size(13.5).weight(500.0).color(c.foreground).into_widget());
-        col.push(SizedBox::spacer(0.0, 7.0).into_widget());
+        col.push(gap_h(7.0).into_widget());
     }
     col.push(field_box);
     if let Some(err) = &p.error {
-        col.push(SizedBox::spacer(0.0, 6.0).into_widget());
+        col.push(gap_h(6.0).into_widget());
         col.push(text(err.clone()).size(12.5).color(c.destructive).into_widget());
     } else if let Some(help) = &p.helper {
-        col.push(SizedBox::spacer(0.0, 6.0).into_widget());
+        col.push(gap_h(6.0).into_widget());
         col.push(text(help.clone()).size(12.5).color(c.muted_foreground).into_widget());
     }
     column(col).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()

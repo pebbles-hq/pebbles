@@ -5,7 +5,7 @@ use std::cell::{Cell, RefCell};
 
 use pebbles_core::animation;
 use pebbles_core::{
-    AnyWidget, IntoWidget, Signal, Ui, WidgetExt, component, create_signal, create_timeout,
+    AnyWidget, IntoWidget, Signal, Ui, component, create_signal, create_timeout,
 };
 use pebbles_foundation::{Size, palette};
 use pebbles_render::TextEnv;
@@ -42,7 +42,7 @@ fn create_timeout_fires_once_after_the_delay() {
 
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
-    ui.mount_root(View::new(palette::WHITE, component(timer_root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(timer_root)).into_widget());
     ui.layout(&mut env, Size::new(100.0, 100.0));
 
     // First tick anchors the deadline at now + 0.05 = 0.06.
@@ -70,7 +70,7 @@ fn create_timeout_is_cancelled_when_its_component_unmounts() {
 
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
-    ui.mount_root(View::new(palette::WHITE, component(toggle_shell)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(toggle_shell)).into_widget());
     ui.layout(&mut env, Size::new(100.0, 100.0));
     animation::tick(0.01); // deadline armed at 0.06
 

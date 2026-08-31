@@ -11,9 +11,8 @@ use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BoxDecoration};
 
 use crate::theme::theme;
-use crate::widgets::{Container, GestureDetector, Positioned, SizedBox, column, text};
+use crate::widgets::{Container, GestureDetector, Positioned, column, gap_h, text};
 use crate::overlay::window_size;
-use pebbles_core::context::action;
 use pebbles_core::reactive::current_window;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, create_root_signal};
@@ -175,7 +174,7 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
 
     let scrim = Positioned::fill(
         GestureDetector::new(Container::new().color(Color::new([0.0, 0.0, 0.0, 0.4])))
-            .on_tap(action(dismiss_top)),
+            .on_tap(dismiss_top),
     )
     .into_widget();
 
@@ -183,7 +182,7 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
     let mut kids: Vec<AnyWidget> = Vec::new();
     if !e.title.is_empty() {
         kids.push(text(e.title.clone()).size(17.0).weight(600.0).color(c.foreground).into_widget());
-        kids.push(SizedBox::spacer(0.0, 14.0).into_widget());
+        kids.push(gap_h(14.0).into_widget());
     }
     kids.push(e.content);
     let body = column(kids).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min);

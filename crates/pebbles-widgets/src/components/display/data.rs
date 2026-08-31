@@ -6,7 +6,7 @@ use pebbles_render::BoxDecoration;
 
 use crate::theme::theme;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{Container, Expanded, Padding, SizedBox, column, row, spacer, text};
+use crate::widgets::{Container, Expanded, Padding, column, gap_h, gap_w, row, spacer, text};
 
 /// A list row: optional leading widget, a title + optional subtitle, optional
 /// trailing widget.
@@ -46,14 +46,14 @@ impl IntoWidget for ListTile {
             text(std::mem::take(&mut self.title)).size(14.0).weight(500.0).color(th.colors.foreground).into_widget(),
         ];
         if let Some(sub) = self.subtitle.take() {
-            title_col.push(SizedBox::spacer(0.0, 2.0).into_widget());
+            title_col.push(gap_h(2.0).into_widget());
             title_col.push(text(sub).size(12.0).color(th.colors.muted_foreground).into_widget());
         }
 
         let mut items: Vec<AnyWidget> = Vec::new();
         if let Some(leading) = self.leading.take() {
             items.push(leading);
-            items.push(SizedBox::spacer(12.0, 0.0).into_widget());
+            items.push(gap_w(12.0).into_widget());
         }
         items.push(
             Expanded::new(

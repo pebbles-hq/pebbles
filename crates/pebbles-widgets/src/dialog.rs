@@ -17,8 +17,7 @@ use pebbles_foundation::{Color, MainAxisAlignment, MainAxisSize, Offset};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow};
 
 use crate::theme::theme;
-use crate::widgets::{Container, GestureDetector, Positioned, center};
-use pebbles_core::context::action;
+use crate::widgets::{Container, GestureDetector, Positioned, center, gap_h, gap_w};
 use pebbles_core::reactive::current_window;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, create_root_signal};
@@ -116,14 +115,9 @@ impl Dialog {
         self.title = title.into();
         self
     }
-    /// The panel width (height follows the content). `size(w, _)` is an alias.
+    /// The panel width (height follows the content).
     pub fn width(mut self, width: f64) -> Self {
         self.width = width;
-        self
-    }
-    /// Alias for [`width`](Dialog::width); the height is content-driven.
-    pub fn size(mut self, width: u32, _height: u32) -> Self {
-        self.width = width as f64;
         self
     }
     /// The surface background (defaults to the theme popover color).
@@ -227,7 +221,7 @@ impl AlertDialog {
     /// Build the standard panel and open it as a modal. Returns its [`DialogId`].
     pub fn open(self) -> DialogId {
         use crate::components::{Button, ButtonVariant, button};
-        use crate::widgets::{SizedBox, column, row, text};
+        use crate::widgets::{column, row, text};
         let c = theme().colors;
 
         let on_confirm = self.on_confirm.clone();
@@ -253,14 +247,14 @@ impl AlertDialog {
             text(self.title.clone()).size(18.0).weight(600.0).color(c.foreground).into_widget(),
         ];
         if !self.description.is_empty() {
-            kids.push(SizedBox::spacer(0.0, 8.0).into_widget());
+            kids.push(gap_h(8.0).into_widget());
             kids.push(
                 text(self.description.clone()).size(14.0).color(c.muted_foreground).into_widget(),
             );
         }
-        kids.push(SizedBox::spacer(0.0, 22.0).into_widget());
+        kids.push(gap_h(22.0).into_widget());
         kids.push(
-            row(pebbles_core::children![cancel_btn, SizedBox::spacer(10.0, 0.0), confirm_btn])
+            row(pebbles_core::children![cancel_btn, gap_w(10.0), confirm_btn])
                 .main_axis_alignment(MainAxisAlignment::End)
                 .into_widget(),
         );
@@ -284,7 +278,7 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
     // Dimming scrim; an outside click dismisses (if dismissible).
     let scrim = Positioned::fill(
         GestureDetector::new(Container::new().color(Color::new([0.0, 0.0, 0.0, 0.45])))
-            .on_tap(action(dismiss_top)),
+            .on_tap(dismiss_top),
     )
     .into_widget();
 

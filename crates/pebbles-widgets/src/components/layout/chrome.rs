@@ -14,10 +14,7 @@ use pebbles_core::context::Callback;
 use pebbles_core::{component_props, create_signal};
 use crate::theme::{mix, theme};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{
-    Container, Expanded, GestureDetector, Padding, SingleChildScrollView, SizedBox, center, column,
-    row, spacer, text,
-};
+use crate::widgets::{Container, Expanded, GestureDetector, Padding, SingleChildScrollView, center, column, gap_h, gap_w, row, spacer, text};
 
 use crate::components::icon;
 
@@ -63,7 +60,7 @@ impl Scaffold {
 impl IntoWidget for Scaffold {
     fn into_widget(mut self) -> AnyWidget {
         let bg = self.background.unwrap_or(theme().colors.background);
-        let body = self.body.take().unwrap_or_else(|| SizedBox::spacer(0.0, 0.0).into_widget());
+        let body = self.body.take().unwrap_or_else(|| gap_h(0.0).into_widget());
 
         // side (fixed) + body (fills)
         let middle: AnyWidget = match self.side.take() {
@@ -126,13 +123,13 @@ impl IntoWidget for TopPanel {
         let mut items: Vec<AnyWidget> = Vec::new();
         if let Some(leading) = self.leading.take() {
             items.push(leading);
-            items.push(SizedBox::spacer(12.0, 0.0).into_widget());
+            items.push(gap_w(12.0).into_widget());
         }
         items.push(text(std::mem::take(&mut self.title)).size(16.0).semibold().color(c.foreground).into_widget());
         items.push(spacer().into_widget());
         for action in std::mem::take(&mut self.actions) {
             items.push(action);
-            items.push(SizedBox::spacer(6.0, 0.0).into_widget());
+            items.push(gap_w(6.0).into_widget());
         }
 
         Container::new()
@@ -199,7 +196,7 @@ fn render_nav_item(w: &NavItem) -> AnyWidget {
     let mut cells: Vec<AnyWidget> = Vec::new();
     if let Some(kind) = w.icon {
         cells.push(icon(kind).size(18.0).color(fg).into_widget());
-        cells.push(SizedBox::spacer(10.0, 0.0).into_widget());
+        cells.push(gap_w(10.0).into_widget());
     }
     cells.push(text(w.label.clone()).size(14.0).weight(weight).color(fg).into_widget());
 
@@ -266,7 +263,7 @@ impl IntoWidget for SideNav {
         let mut items: Vec<AnyWidget> = Vec::new();
         for (i, item) in std::mem::take(&mut self.items).into_iter().enumerate() {
             if i > 0 {
-                items.push(SizedBox::spacer(0.0, 2.0).into_widget());
+                items.push(gap_h(2.0).into_widget());
             }
             items.push(item);
         }
@@ -346,7 +343,7 @@ fn render_bottom_nav_item(w: &BottomNavItem) -> AnyWidget {
     };
     let content = column(children![
         icon(w.icon).size(20.0).color(fg),
-        SizedBox::spacer(0.0, 4.0),
+        gap_h(4.0),
         text(w.label.clone()).size(11.0).weight(if w.selected { 600.0 } else { 500.0 }).color(fg),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center)

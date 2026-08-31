@@ -11,7 +11,7 @@ use pebbles_core::children;
 use pebbles_core::context::{Callback, action};
 use crate::theme::theme;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{Container, GestureDetector, Padding, SizedBox, column, row, spacer, text};
+use crate::widgets::{Container, GestureDetector, Padding, column, gap_h, row, spacer, text};
 use pebbles_core::{component_props, create_signal};
 
 use crate::components::icon;
@@ -150,7 +150,7 @@ struct CollapsibleProps {
 
 impl IntoWidget for Collapsible {
     fn into_widget(mut self) -> AnyWidget {
-        let content = self.content.take().unwrap_or_else(|| SizedBox::spacer(0.0, 0.0).into_widget());
+        let content = self.content.take().unwrap_or_else(|| gap_h(0.0).into_widget());
         component_props(
             render_collapsible,
             CollapsibleProps {

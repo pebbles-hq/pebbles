@@ -17,11 +17,9 @@ use pebbles_render::{
 use crate::components::icon;
 use crate::overlay::{hide_overlay, show_overlay, window_size};
 use crate::theme::{mix, theme};
-use crate::widgets::{
-    Container, GestureDetector, SingleChildScrollView, SizedBox, column, row, spacer, text,
-};
+use crate::widgets::{Container, GestureDetector, SingleChildScrollView, column, gap_h, gap_w, row, spacer, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Signal, action, action_event, animated, component_props, create_signal};
+use pebbles_core::{Signal, action_event, animated, component_props, create_signal};
 
 // ---------------------------------------------------------------------------
 // Options
@@ -248,14 +246,14 @@ fn render_menu_item(p: &MenuItemProps) -> GestureDetector {
     let check: AnyWidget = if p.selected {
         icon(IconKind::Check).size(15.0).color(fg).into_widget()
     } else {
-        SizedBox::spacer(0.0, 0.0).into_widget()
+        gap_h(0.0).into_widget()
     };
     let mut kids: Vec<AnyWidget> = vec![
         Container::new().width(22.0).alignment(Alignment::CENTER_LEFT).child(check).into_widget(),
     ];
     if let Some(ic) = p.icon {
         kids.push(icon(ic).size(16.0).color(fg).into_widget());
-        kids.push(SizedBox::spacer(8.0, 0.0).into_widget());
+        kids.push(gap_w(8.0).into_widget());
     }
     kids.push(text(p.label.clone()).size(14.0).color(fg).into_widget());
 
@@ -268,9 +266,9 @@ fn render_menu_item(p: &MenuItemProps) -> GestureDetector {
     let pick = p.pick.clone();
     GestureDetector::new(body)
         .cursor(Cursor::Pointer)
-        .on_hover_enter(action(move || hovered.set(true)))
-        .on_hover_exit(action(move || hovered.set(false)))
-        .on_tap(action(move || pick()))
+        .on_hover_enter(move || hovered.set(true))
+        .on_hover_exit(move || hovered.set(false))
+        .on_tap(move || pick())
 }
 
 fn render_select(p: &Props) -> GestureDetector {
@@ -295,7 +293,7 @@ fn render_select(p: &Props) -> GestureDetector {
     let mut trigger_kids: Vec<AnyWidget> = Vec::new();
     if let Some(li) = lead {
         trigger_kids.push(icon(li).size(16.0).color(c.muted_foreground).into_widget());
-        trigger_kids.push(SizedBox::spacer(8.0, 0.0).into_widget());
+        trigger_kids.push(gap_w(8.0).into_widget());
     }
     trigger_kids.push(text(label).size(14.0).color(label_color).into_widget());
     trigger_kids.push(spacer().into_widget());

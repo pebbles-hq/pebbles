@@ -2,12 +2,12 @@
 //! child a flex factor, plus [`spacer`], a flexible empty gap.
 
 use std::any::Any;
+use crate::widgets::{gap_h};
 
 use pebbles_foundation::FlexFit;
 use pebbles_render::FlexParentData;
 
 use pebbles_core::widget::{AnyWidget, ParentDataWidget};
-use crate::widgets::SizedBox;
 
 /// A flex child that fills its share of the main axis (`FlexFit::Tight`).
 #[derive(Clone)]
@@ -68,5 +68,5 @@ impl ParentDataWidget for Flexible {
 
 /// A flexible empty gap that pushes siblings apart in a `Row`/`Column`.
 pub fn spacer() -> Expanded {
-    Expanded::new(SizedBox::spacer(0.0, 0.0))
+    Expanded::new(gap_h(0.0))
 }

@@ -14,9 +14,7 @@ use super::text_field::text_field;
 use crate::components::icon;
 use crate::overlay::{hide_overlay, show_overlay};
 use crate::theme::theme;
-use crate::widgets::{
-    Container, GestureDetector, SingleChildScrollView, SizedBox, column, row, spacer, text,
-};
+use crate::widgets::{Container, GestureDetector, SingleChildScrollView, column, gap_h, row, spacer, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, action_event, children, component_props, create_signal};
 
@@ -137,7 +135,7 @@ fn render_search_menu(p: &MenuProps) -> AnyWidget {
     popover_surface(
         width,
         4.0,
-        column(children![search, SizedBox::spacer(0.0, 6.0), list]).main_axis_size(MainAxisSize::Min).into_widget(),
+        column(children![search, gap_h(6.0), list]).main_axis_size(MainAxisSize::Min).into_widget(),
     )
 }
 

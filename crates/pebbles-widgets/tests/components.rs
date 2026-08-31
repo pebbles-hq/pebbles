@@ -5,7 +5,7 @@
 
 use std::cell::Cell;
 
-use pebbles_core::{IntoWidget, Ui, WidgetExt, component, create_signal};
+use pebbles_core::{IntoWidget, Ui, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{
@@ -61,7 +61,7 @@ fn surfaces_and_disclosure_paint_and_toggle() {
     let mut ui = Ui::new();
     let mut text_env = TextEnv::new();
     let window = Size::new(500.0, 600.0);
-    ui.mount_root(View::new(palette::WHITE, component(gallery)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(gallery)).into_widget());
     ui.layout(&mut text_env, window);
 
     let mut frame = |ui: &mut Ui| {

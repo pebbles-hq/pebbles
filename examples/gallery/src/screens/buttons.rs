@@ -143,7 +143,7 @@ pub fn buttons() -> Element {
                 "onPressed fires on a normal click; double-click, right-click (secondary) and long-press each have their own handler.",
                 column(
                     children![
-                        Card::new(title(format!("Last event: {}", last.get()))),
+                        card().child(title(format!("Last event: {}", last.get()))),
                         gap_h(12.0),
                         wrap(children![
                             button("on_pressed").on_pressed(ev("on_pressed")),
@@ -160,7 +160,7 @@ pub fn buttons() -> Element {
                 "Follow a press precisely: the down position (on_tap_down), a cancel when you release off the button (on_tap_cancel), and highlight changes (on_highlight_changed).",
                 column(
                     children![
-                        Card::new(title(format!("Detail: {}", detail.get()))),
+                        card().child(title(format!("Detail: {}", detail.get()))),
                         gap_h(12.0),
                         button("Press · drag off · release")
                             .size(ButtonSize::Lg)
@@ -176,7 +176,7 @@ pub fn buttons() -> Element {
                 "The full long-press lifecycle — down → start → move → end/cancel — plus middle-click (tertiary). Every payload carries the pointer position.",
                 column(
                     children![
-                        Card::new(title(format!("Long-press / tertiary: {}", lp.get()))),
+                        card().child(title(format!("Long-press / tertiary: {}", lp.get()))),
                         gap_h(12.0),
                         button("Hold me · or middle-click")
                             .size(ButtonSize::Lg)
@@ -195,7 +195,7 @@ pub fn buttons() -> Element {
                 "Tab moves focus, Enter/Space activates, .autofocus() grabs focus on mount, and .on_focus_change() reports gain/loss — a focus ring animates in.",
                 column(
                     children![
-                        Card::new(title(format!("Focus change: {}", focus_note.get()))),
+                        card().child(title(format!("Focus change: {}", focus_note.get()))),
                         gap_h(12.0),
                         wrap(children![
                             button("First (autofocus)")

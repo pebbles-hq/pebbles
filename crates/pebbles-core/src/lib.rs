@@ -46,5 +46,5 @@ pub use reactive::{
 };
 pub use task::{Resource, create_resource, spawn};
 pub use widget::{
-    AnyWidget, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget, Widget, WidgetExt,
+    AnyWidget, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget, Widget,
 };

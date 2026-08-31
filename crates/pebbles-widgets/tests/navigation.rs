@@ -3,13 +3,10 @@
 //! when I navigate to the toggles screen" by flipping a route signal while the
 //! toggle thumbs animate, running a full frame after each event like the shell.
 
-use pebbles_core::{IntoWidget, KeyInput, Ui, WidgetExt, action, component, create_signal};
+use pebbles_core::{IntoWidget, KeyInput, Ui, action, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{
-    Container, GestureDetector, SingleChildScrollView, SizedBox, View, checkbox, column, radio,
-    switch, text, text_field,
-};
+use pebbles_widgets::{Container, GestureDetector, SingleChildScrollView, View, checkbox, column, gap_h, radio, switch, text, text_field};
 
 fn toggles_page() -> impl IntoWidget {
     let a = create_signal(true);
@@ -26,7 +23,7 @@ fn toggles_page() -> impl IntoWidget {
     // Pad it out so the content overflows and the scroll view actually scrolls,
     // exactly like a real (tall) screen wrapped by `screen()`.
     for _ in 0..40 {
-        kids.push(SizedBox::spacer(0.0, 30.0).into_widget());
+        kids.push(gap_h(30.0).into_widget());
     }
     // Every gallery screen is wrapped in a SingleChildScrollView.
     SingleChildScrollView::vertical(column(kids).spacing(10.0))
@@ -56,7 +53,7 @@ fn navigating_between_screens_never_crashes() {
     let mut ui = Ui::new();
     let mut text_env = TextEnv::new();
     let window = Size::new(400.0, 500.0);
-    ui.mount_root(View::new(palette::WHITE, component(nav_root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(nav_root)).into_widget());
     ui.layout(&mut text_env, window);
 
     let nav = Offset::new(70.0, 15.0);

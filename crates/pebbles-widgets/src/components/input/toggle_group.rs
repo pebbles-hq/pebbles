@@ -13,7 +13,7 @@ use pebbles_foundation::{MainAxisSize};
 
 use crate::components::{ToggleSize, ToggleVariant, toggle};
 use crate::widgets::{row, text};
-use pebbles_core::widget::{AnyWidget, IntoChildren, IntoWidget};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// A joined set of toggle cells. Build with [`toggle_group`] / [`toggle_group_labels`].
 pub struct ToggleGroup {
@@ -42,9 +42,10 @@ fn make(cells: Vec<AnyWidget>) -> ToggleGroup {
     }
 }
 
-/// Create a [`ToggleGroup`] from arbitrary cell widgets (e.g. icons).
-pub fn toggle_group(cells: impl IntoChildren) -> ToggleGroup {
-    make(cells.into_children())
+/// Create an empty [`ToggleGroup`]; add cells with [`item`](ToggleGroup::item), e.g.
+/// icons. For text labels use [`toggle_group_labels`].
+pub fn toggle_group() -> ToggleGroup {
+    make(Vec::new())
 }
 
 /// Create a [`ToggleGroup`] whose cells are text labels.
@@ -57,6 +58,11 @@ where
 }
 
 impl ToggleGroup {
+    /// Append a cell widget (e.g. an icon). The house `.item()` builder pattern.
+    pub fn item(mut self, cell: impl IntoWidget) -> Self {
+        self.cells.push(cell.into_widget());
+        self
+    }
     /// Allow multiple cells selected at once (default: single-select).
     pub fn multiple(mut self, multiple: bool) -> Self {
         self.multiple = multiple;

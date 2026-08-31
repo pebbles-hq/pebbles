@@ -18,9 +18,9 @@ fn horizontal() -> impl IntoWidget {
             column(children![
                 text("Pebbles").size(15.0).semibold(),
                 muted("A Flutter-style Rust GUI framework."),
-                SizedBox::spacer(0.0, 12.0),
+                gap_h(12.0),
                 separator(),
-                SizedBox::spacer(0.0, 12.0),
+                gap_h(12.0),
                 muted("Everything below the line."),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Start)
@@ -52,9 +52,9 @@ fn thickness() -> impl IntoWidget {
         Container::new().width(360.0).child(
             column(children![
                 separator().thickness(1.0),
-                SizedBox::spacer(0.0, 16.0),
+                gap_h(16.0),
                 separator().thickness(2.0),
-                SizedBox::spacer(0.0, 16.0),
+                gap_h(16.0),
                 separator().thickness(4.0),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Stretch)
@@ -70,9 +70,9 @@ fn colors() -> impl IntoWidget {
         Container::new().width(360.0).child(
             column(children![
                 separator().thickness(2.0).color(palette::emerald::S500),
-                SizedBox::spacer(0.0, 16.0),
+                gap_h(16.0),
                 separator().thickness(2.0).color(palette::blue::S500),
-                SizedBox::spacer(0.0, 16.0),
+                gap_h(16.0),
                 separator().thickness(2.0).color(palette::rose::S500),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Stretch)

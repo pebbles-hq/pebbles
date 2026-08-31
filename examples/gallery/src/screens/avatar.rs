@@ -101,7 +101,7 @@ fn group() -> impl IntoWidget {
                 avatar("JB").color(palette::rose::S600),
                 avatar("CN").src(IMG),
             ]),
-            SizedBox::spacer(0.0, 18.0),
+            gap_h(18.0),
             avatar_group(vec![
                 avatar("RS").color(palette::emerald::S600),
                 avatar("AK").color(palette::blue::S600),

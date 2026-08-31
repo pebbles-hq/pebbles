@@ -9,7 +9,7 @@ use pebbles_core::IntoCallback;
 use pebbles_core::context::Callback;
 use crate::theme::theme;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{Container, GestureDetector, Padding, SizedBox, column, row, text};
+use crate::widgets::{Container, GestureDetector, Padding, column, gap_h, row, text};
 
 #[derive(Clone)]
 struct TabDef {
@@ -78,7 +78,7 @@ impl IntoWidget for Tabs {
             }
         }
 
-        let content = selected_content.unwrap_or_else(|| SizedBox::spacer(0.0, 0.0).into_widget());
+        let content = selected_content.unwrap_or_else(|| gap_h(0.0).into_widget());
 
         column(children![
             Container::new()

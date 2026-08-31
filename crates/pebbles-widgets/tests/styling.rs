@@ -2,7 +2,7 @@
 //! `styled()` wrapper's box props (constraints / cursor), text props, and component
 //! `.style(..)` adoption. Layout/paint asserted headlessly.
 
-use pebbles_core::{IntoWidget, Ui, WidgetExt, component};
+use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{Cursor, RenderConstrainedBox, TextEnv};
 use pebbles_widgets::{Container, StyleExt, View, card, style, styles, text, text_field};
@@ -49,7 +49,7 @@ fn min_sized() -> impl IntoWidget {
 fn styled_min_constraints_apply() {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
-    ui.mount_root(View::new(palette::WHITE, component(min_sized)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(min_sized)).into_widget());
     ui.layout(&mut env, Size::new(500.0, 500.0));
     let tree = ui.render_tree();
     let cb = tree.find::<RenderConstrainedBox>().expect("styled min → ConstrainedBox");
@@ -67,7 +67,7 @@ fn styled_cursor_applies() {
     pebbles_core::focus::init();
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
-    ui.mount_root(View::new(palette::WHITE, component(cursor_box)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(cursor_box)).into_widget());
     ui.layout(&mut env, Size::new(300.0, 300.0));
     let mut scene = pebbles_render::Scene::new();
     ui.paint(&mut scene);
@@ -92,7 +92,7 @@ fn styled_text() -> impl IntoWidget {
 fn text_style_props_lay_out_and_paint() {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
-    ui.mount_root(View::new(palette::WHITE, component(styled_text)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(styled_text)).into_widget());
     ui.layout(&mut env, Size::new(160.0, 200.0)); // narrow → wraps
     let mut scene = pebbles_render::Scene::new();
     ui.paint(&mut scene); // must not panic with the parley style props set
@@ -107,7 +107,7 @@ fn styled_card() -> impl IntoWidget {
 fn component_style_adoption_builds_and_paints() {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
-    ui.mount_root(View::new(palette::WHITE, component(styled_card)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(styled_card)).into_widget());
     ui.layout(&mut env, Size::new(400.0, 300.0));
     let mut scene = pebbles_render::Scene::new();
     ui.paint(&mut scene);
@@ -116,7 +116,7 @@ fn component_style_adoption_builds_and_paints() {
     pebbles_core::focus::init();
     pebbles_widgets::overlay::init();
     ui2.mount_root(
-        View::new(palette::WHITE, component(|| text_field().style(style().background(palette::BLUE)).width(200.0))).boxed(),
+        View::new(palette::WHITE, component(|| text_field().style(style().background(palette::BLUE)).width(200.0))).into_widget(),
     );
     ui2.layout(&mut env, Size::new(400.0, 120.0));
     let mut scene2 = pebbles_render::Scene::new();

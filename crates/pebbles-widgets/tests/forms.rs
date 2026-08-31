@@ -4,7 +4,7 @@
 
 use std::cell::RefCell;
 
-use pebbles_core::{IntoWidget, Ui, WidgetExt, component};
+use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{OverlayHost, View, field, text_field, toggle_group_labels};
@@ -24,7 +24,7 @@ fn field_paints_label_control_and_error() {
 
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
-    ui.mount_root(View::new(palette::WHITE, component(root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
     ui.layout(&mut env, Size::new(300.0, 200.0));
     let mut scene = pebbles_render::Scene::new();
     ui.paint(&mut scene); // must lay out + paint the label/control/error stack, no panic
@@ -52,7 +52,7 @@ fn toggle_group_single_select_picks_one() {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
     let window = Size::new(400.0, 120.0);
-    ui.mount_root(View::new(palette::WHITE, component(group_root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(group_root)).into_widget());
     ui.layout(&mut env, window);
     let mut frame = |ui: &mut Ui| {
         ui.rebuild_if_dirty();

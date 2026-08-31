@@ -11,7 +11,7 @@ pub fn collapsibles() -> Element {
 }
 
 fn panel(child: impl IntoWidget) -> impl IntoWidget {
-    Container::new().width(380.0).child(Card::new(child).padding(EdgeInsets::all(6.0)))
+    Container::new().width(380.0).child(card().child(child).padding(EdgeInsets::all(6.0)))
 }
 
 fn basic() -> impl IntoWidget {
@@ -44,7 +44,7 @@ fn with_callback() -> impl IntoWidget {
                 collapsible("Advanced settings", body("Flags, experiments and other advanced options."))
                     .on_toggle(move |open| note.set(if open { "open".into() } else { "closed".into() })),
             ),
-            SizedBox::spacer(0.0, 8.0),
+            gap_h(8.0),
             muted(format!("state: {}", note.get())),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Start)

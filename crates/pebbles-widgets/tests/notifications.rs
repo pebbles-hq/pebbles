@@ -3,7 +3,7 @@
 //! animation driver.
 
 use pebbles_core::animation;
-use pebbles_core::{IntoWidget, Ui, WidgetExt, component};
+use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{CrossAxisAlignment, MainAxisSize, Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{Container, OverlayHost, View, column, overlay, text, toast, tooltip};
@@ -16,7 +16,7 @@ fn mount() -> (Ui, TextEnv) {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
     ui.make_current();
-    ui.mount_root(View::new(palette::WHITE, component(host)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(host)).into_widget());
     ui.layout(&mut env, Size::new(500.0, 400.0));
     (ui, env)
 }
@@ -78,7 +78,7 @@ fn tip_root() -> impl IntoWidget {
     // off it then genuinely leaves it.
     OverlayHost::wrap(
         column(pebbles_core::children![
-            tooltip(Container::new().width(80.0).height(30.0).child(text("hover me")), "Saved to disk")
+            tooltip("Saved to disk", Container::new().width(80.0).height(30.0).child(text("hover me")))
                 .delay(0.2),
             Container::new().width(240.0).height(220.0),
         ])
@@ -97,7 +97,7 @@ fn tooltip_shows_after_hover_delay_and_hides_on_exit() {
     let mut env = TextEnv::new();
     let window = Size::new(400.0, 300.0);
     ui.make_current();
-    ui.mount_root(View::new(palette::WHITE, component(tip_root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(tip_root)).into_widget());
     ui.layout(&mut env, window);
     overlay::set_window_size(400.0, 300.0);
     let frame = |ui: &mut Ui, env: &mut TextEnv| {

@@ -17,7 +17,7 @@ use pebbles_foundation::Alignment;
 use crate::widgets::{Container, GestureDetector, Positioned, stack};
 use pebbles_core::reactive::current_window;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Signal, action, component_props, create_root_signal};
+use pebbles_core::{Signal, component_props, create_root_signal};
 
 thread_local! {
     /// Each window's logical size, published by the shell each frame so popovers can
@@ -179,7 +179,7 @@ fn render_host(p: &Props) -> crate::widgets::Stack {
     if let Some(entry) = overlay_signal().get() {
         // Full-window scrim: an outside click dismisses.
         let scrim = Positioned::fill(
-            GestureDetector::new(Container::new()).on_tap(action(hide_overlay)),
+            GestureDetector::new(Container::new()).on_tap(hide_overlay),
         )
         .into_widget();
         let panel = Positioned::new(entry.content).left(entry.left).top(entry.top).into_widget();

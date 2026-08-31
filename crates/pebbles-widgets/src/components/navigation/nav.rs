@@ -9,7 +9,7 @@ use pebbles_core::children;
 use pebbles_core::context::Callback;
 use crate::theme::theme;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{Container, SizedBox, row, text};
+use crate::widgets::{Container, gap_w, row, text};
 
 use crate::components::icon;
 use crate::components::{ButtonSize, ButtonVariant, button};
@@ -36,11 +36,11 @@ impl IntoWidget for Breadcrumb {
                 if i == last { th.colors.foreground } else { th.colors.muted_foreground };
             items.push(text(seg).size(13.0).color(color).into_widget());
             if i != last {
-                items.push(SizedBox::spacer(6.0, 0.0).into_widget());
+                items.push(gap_w(6.0).into_widget());
                 items.push(
                     icon(IconKind::ChevronRight).size(14.0).color(th.colors.muted_foreground).into_widget(),
                 );
-                items.push(SizedBox::spacer(6.0, 0.0).into_widget());
+                items.push(gap_w(6.0).into_widget());
             }
         }
         row(items).main_axis_size(MainAxisSize::Min).into_widget()
@@ -137,9 +137,9 @@ impl IntoWidget for Pagination {
         }
         row(children![
             prev,
-            SizedBox::spacer(12.0, 0.0),
+            gap_w(12.0),
             text(format!("Page {} of {}", self.page, self.total)).size(13.0).color(th.colors.muted_foreground),
-            SizedBox::spacer(12.0, 0.0),
+            gap_w(12.0),
             next,
         ])
         .cross_axis_alignment(CrossAxisAlignment::Center)

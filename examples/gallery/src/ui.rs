@@ -8,12 +8,7 @@
 
 use pebbles::prelude::*;
 
-pub fn gap_w(n: f64) -> impl IntoWidget {
-    SizedBox::spacer(n, 0.0)
-}
-pub fn gap_h(n: f64) -> impl IntoWidget {
-    SizedBox::spacer(0.0, n)
-}
+pub use pebbles::prelude::{gap_h, gap_w};
 
 /// A scrollable, padded screen with a heading + subtitle.
 pub fn screen(title: &str, sub: &str, body: impl IntoChildren) -> Element {
@@ -84,7 +79,7 @@ pub fn stat_card(title: &str, value: &str, icon: IconKind, tint: Color) -> impl 
 
 fn render_stat_card(p: &StatCardProps) -> Card {
     let c = theme().colors;
-    Card::new(
+    card().child(
         column(children![
             row(children![
                 Container::new()

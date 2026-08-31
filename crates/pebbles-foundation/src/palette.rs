@@ -628,10 +628,3 @@ pub const FUCHSIA: Color = fuchsia::S500;
 pub const PINK: Color = pink::S500;
 pub const ROSE: Color = rose::S500;
 
-// ---- legacy grey aliases (map onto the zinc scale) ----
-pub const GREY_50: Color = zinc::S50;
-pub const GREY_200: Color = zinc::S200;
-pub const GREY_400: Color = zinc::S400;
-pub const GREY_600: Color = zinc::S600;
-pub const GREY_800: Color = zinc::S800;
-pub const GREY_900: Color = zinc::S900;

@@ -16,7 +16,7 @@ fn swatch(color: Color, shade: &str) -> impl IntoWidget {
                     .radius(BorderRadius::all(6.0))
                     .border(Border::new(theme().colors.border, 1.0)),
             )
-            .child(SizedBox::spacer(46.0, 40.0)),
+            .child(SizedBox::new(Some(46.0), Some(40.0), None)),
         gap_h(4.0),
         text(shade.to_string()).size(10.0).color(theme().colors.muted_foreground),
     ])
@@ -31,7 +31,7 @@ fn scale(name: &str, shades: [Color; 11]) -> impl IntoWidget {
     let mut chips: Vec<AnyWidget> = Vec::new();
     for (i, c) in shades.into_iter().enumerate() {
         chips.push(swatch(c, LABELS[i]).into_widget());
-        chips.push(SizedBox::spacer(6.0, 0.0).into_widget());
+        chips.push(gap_w(6.0).into_widget());
     }
     column(children![
         text(name.to_string()).size(12.0).semibold().color(theme().colors.foreground),
@@ -125,9 +125,9 @@ pub fn colors() -> Element {
                     gap_h(10.0),
                     row(children![
                         swatch(Color::from_rgba8(0xFF, 0x5A, 0x1F, 255), "brand"),
-                        SizedBox::spacer(6.0, 0.0),
+                        gap_w(6.0),
                         swatch(palette::violet::S600, "primary"),
-                        SizedBox::spacer(6.0, 0.0),
+                        gap_w(6.0),
                         swatch(palette::emerald::S500, "success"),
                     ])
                     .main_axis_size(MainAxisSize::Min),

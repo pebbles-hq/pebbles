@@ -10,13 +10,13 @@ use pebbles_foundation::{Color, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, IconData};
 
 use pebbles_core::component::{Element, component_props};
-use pebbles_core::context::{Callback, action};
+use pebbles_core::context::Callback;
 use pebbles_core::focus::create_focus;
 use pebbles_core::animated;
 use pebbles_core::reactive::create_signal;
 use crate::theme::{mix, theme};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{Container, GestureDetector, Opacity, SizedBox, center, row, spinner, text};
+use crate::widgets::{Container, GestureDetector, Opacity, center, gap_w, row, spinner, text};
 
 use crate::components::icon;
 
@@ -352,13 +352,13 @@ fn render_button(b: &Button) -> Element {
                 if let Some(kind) = b.leading {
                     kids.push(icon(kind).size(isz).color(fg).into_widget());
                     if !b.label.is_empty() {
-                        kids.push(SizedBox::spacer(8.0, 0.0).into_widget());
+                        kids.push(gap_w(8.0).into_widget());
                     }
                 }
                 kids.push(label.into_widget());
                 if let Some(kind) = b.trailing {
                     if !b.label.is_empty() {
-                        kids.push(SizedBox::spacer(8.0, 0.0).into_widget());
+                        kids.push(gap_w(8.0).into_widget());
                     }
                     kids.push(icon(kind).size(isz).color(fg).into_widget());
                 }
@@ -369,7 +369,7 @@ fn render_button(b: &Button) -> Element {
     // While loading, prepend a spinner (keeps the label so the button doesn't jump).
     let content: AnyWidget = if b.loading {
         let sp = spinner(b.font_size() as f64 + 3.0).color(fg);
-        row(pebbles_core::children![sp, SizedBox::spacer(8.0, 0.0), content])
+        row(pebbles_core::children![sp, gap_w(8.0), content])
             .main_axis_size(MainAxisSize::Min)
             .into_widget()
     } else {
@@ -430,8 +430,8 @@ fn render_button(b: &Button) -> Element {
 
     let mut gesture = GestureDetector::new(container)
         .cursor(Cursor::Pointer)
-        .on_hover_enter(action(move || hovered.set(true)))
-        .on_hover_exit(action(move || {
+        .on_hover_enter(move || hovered.set(true))
+        .on_hover_exit(move || {
             if pressed.peek() {
                 if let Some(h) = &hi_exit {
                     h(false);
@@ -439,20 +439,20 @@ fn render_button(b: &Button) -> Element {
             }
             hovered.set(false);
             pressed.set(false);
-        }))
-        .on_pointer_down(action(move || {
+        })
+        .on_pointer_down(move || {
             pressed.set(true);
             node.request_focus(); // clicking focuses, like Flutter
             if let Some(h) = &hi_down {
                 h(true);
             }
-        }))
-        .on_pointer_up(action(move || {
+        })
+        .on_pointer_up(move || {
             pressed.set(false);
             if let Some(h) = &hi_up {
                 h(false);
             }
-        }));
+        });
 
     for (slot, cb) in [
         (0, &b.on_pressed),
@@ -604,13 +604,13 @@ fn render_icon_button(b: &IconButton) -> Element {
 
     let mut gesture = GestureDetector::new(container)
         .cursor(Cursor::Pointer)
-        .on_hover_enter(action(move || hovered.set(true)))
-        .on_hover_exit(action(move || {
+        .on_hover_enter(move || hovered.set(true))
+        .on_hover_exit(move || {
             hovered.set(false);
             pressed.set(false);
-        }))
-        .on_pointer_down(action(move || pressed.set(true)))
-        .on_pointer_up(action(move || pressed.set(false)));
+        })
+        .on_pointer_down(move || pressed.set(true))
+        .on_pointer_up(move || pressed.set(false));
     if let Some(cb) = b.on_pressed.clone() {
         gesture = gesture.on_tap(cb);
     }

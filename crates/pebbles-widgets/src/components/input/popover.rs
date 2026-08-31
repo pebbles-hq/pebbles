@@ -73,7 +73,8 @@ pub struct Popover {
 }
 
 /// Create a [`Popover`]: clicking `trigger` opens `content` in a floating surface.
-pub fn popover(trigger: impl IntoWidget, content: impl IntoWidget) -> Popover {
+/// `trigger` is last (the in-tree child convention).
+pub fn popover(content: impl IntoWidget, trigger: impl IntoWidget) -> Popover {
     Popover {
         trigger: Some(trigger.into_widget()),
         content: Some(content.into_widget()),

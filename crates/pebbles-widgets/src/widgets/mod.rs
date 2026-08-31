@@ -23,7 +23,7 @@ mod view;
 
 mod transform;
 pub use transform::{Transform, transform};
-pub use boxes::{Align, ColoredBox, ConstrainedBox, Padding, SizedBox, center, sized_box};
+pub use boxes::{Align, ColoredBox, ConstrainedBox, Padding, SizedBox, center, gap_h, gap_w, sized_box};
 pub use container::Container;
 pub use decorated::DecoratedBox;
 pub use editable::{EditableText, editable};

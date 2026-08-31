@@ -10,7 +10,7 @@ use pebbles_render::{IconData, IconKind};
 use pebbles_core::context::Callback;
 use crate::theme::theme;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{Container, GestureDetector, Padding, SizedBox, column, row, text};
+use crate::widgets::{Container, GestureDetector, Padding, column, gap_w, row, text};
 
 use crate::components::icon;
 
@@ -86,17 +86,17 @@ fn emit(node: TreeNode, depth: f64, indent: f64, out: &mut Vec<AnyWidget>) {
     let has_children = !node.children.is_empty();
 
     let mut cells: Vec<AnyWidget> = Vec::new();
-    cells.push(SizedBox::spacer(depth * indent, 0.0).into_widget());
+    cells.push(gap_w(depth * indent).into_widget());
     if has_children {
         let chevron = if node.expanded { IconKind::ChevronDown } else { IconKind::ChevronRight };
         cells.push(icon(chevron).size(16.0).color(c.muted_foreground).into_widget());
     } else {
-        cells.push(SizedBox::spacer(16.0, 0.0).into_widget());
+        cells.push(gap_w(16.0).into_widget());
     }
-    cells.push(SizedBox::spacer(4.0, 0.0).into_widget());
+    cells.push(gap_w(4.0).into_widget());
     if let Some(kind) = node.icon {
         cells.push(icon(kind).size(16.0).color(c.muted_foreground).into_widget());
-        cells.push(SizedBox::spacer(6.0, 0.0).into_widget());
+        cells.push(gap_w(6.0).into_widget());
     }
     let text_color = if node.selected { c.accent_foreground } else { c.foreground };
     cells.push(text(node.label).size(13.0).color(text_color).into_widget());

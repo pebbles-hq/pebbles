@@ -64,8 +64,8 @@ pub mod prelude {
 
     // runtime (pebbles-core): the widget contract + reconciler handles
     pub use pebbles_core::{
-        AnyWidget, Callback, ElementId, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget, Ui, Widget,
-        WidgetExt,
+        AnyWidget, Callback, ElementId, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget,
+        Ui, Widget,
     };
 
     // theming + the general style system (RN/CSS-like, apply anywhere)
@@ -99,8 +99,8 @@ pub mod prelude {
         EditableText, Expanded, Flexible, GestureDetector, GridView, ListView, Opacity, Padding,
         Positioned, Row, ScrollController, ScrollExt, ScrollbarPolicy, ScrollbarStyle,
         ImageView, SingleChildScrollView, SizedBox, Spinner, Stack, Text, Transform, View, Wrap, aspect_ratio,
-        center, column, editable, list_view, row, sized_box, spacer, spinner, stack, text, transform,
-        use_scroll_controller, wrap,
+        center, column, editable, gap_h, gap_w, list_view, row, sized_box, spacer, spinner, stack,
+        text, transform, use_scroll_controller, wrap,
     };
 
     // the shadcn-style component catalog

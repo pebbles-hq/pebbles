@@ -17,9 +17,9 @@ use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, Ico
 use super::{ButtonSize, ButtonVariant, button, icon_button};
 use crate::style::Style;
 use crate::theme::theme;
-use crate::widgets::{Container, GestureDetector, SizedBox, column, row, spacer, text};
+use crate::widgets::{Container, GestureDetector, SizedBox, column, gap_h, gap_w, row, spacer, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Signal, action, component_props, create_signal};
+use pebbles_core::{Signal, component_props, create_signal};
 
 // --- date math ---
 
@@ -176,7 +176,7 @@ fn nav_arrow(kind: IconKind, on_tap: impl Fn() + 'static) -> AnyWidget {
     icon_button(kind)
         .variant(ButtonVariant::Outline)
         .size(15.0)
-        .on_pressed(action(on_tap))
+        .on_pressed(on_tap)
         .into_widget()
 }
 
@@ -186,7 +186,7 @@ fn caption_chip(label: String, on_tap: impl Fn() + 'static) -> AnyWidget {
         .variant(ButtonVariant::Outline)
         .size(ButtonSize::Sm)
         .trailing(IconKind::ChevronDown)
-        .on_pressed(action(on_tap))
+        .on_pressed(on_tap)
         .into_widget()
 }
 
@@ -235,7 +235,7 @@ fn day_cell(
         .child(label);
     GestureDetector::new(cell)
         .cursor(Cursor::Pointer)
-        .on_tap(action(move || on_pick(y, m, d)))
+        .on_tap(move || on_pick(y, m, d))
         .into_widget()
 }
 
@@ -257,7 +257,7 @@ fn choice_cell(label: String, current: bool, on_tap: impl Fn() + 'static) -> Any
         .child(text(label).size(13.0).color(fg));
     GestureDetector::new(cell)
         .cursor(Cursor::Pointer)
-        .on_tap(action(on_tap))
+        .on_tap(on_tap)
         .into_widget()
 }
 
@@ -307,13 +307,13 @@ fn days_panel(
             .color(c.foreground)
             .into_widget(),
         CaptionLayout::Dropdown => {
-            row(vec![month_chip(), SizedBox::spacer(6.0, 0.0).into_widget(), year_chip()])
+            row(vec![month_chip(), gap_w(6.0).into_widget(), year_chip()])
                 .main_axis_size(MainAxisSize::Min)
                 .into_widget()
         }
         CaptionLayout::DropdownMonths => row(vec![
             month_chip(),
-            SizedBox::spacer(8.0, 0.0).into_widget(),
+            gap_w(8.0).into_widget(),
             year_lbl().into_widget(),
         ])
         .main_axis_size(MainAxisSize::Min)
@@ -321,7 +321,7 @@ fn days_panel(
         .into_widget(),
         CaptionLayout::DropdownYears => row(vec![
             month_lbl().into_widget(),
-            SizedBox::spacer(8.0, 0.0).into_widget(),
+            gap_w(8.0).into_widget(),
             year_chip(),
         ])
         .main_axis_size(MainAxisSize::Min)
@@ -370,7 +370,7 @@ fn days_panel(
                     selected == Some((y, m, *d)),
                     on_pick.clone(),
                 ),
-                None => SizedBox::spacer(CELL, CELL).into_widget(),
+                None => SizedBox::new(Some(CELL), Some(CELL), None).into_widget(),
             })
             .collect();
         weeks.push(row(cells).main_axis_size(MainAxisSize::Min).into_widget());
@@ -378,9 +378,9 @@ fn days_panel(
 
     let mut body: Vec<AnyWidget> = vec![
         header.into_widget(),
-        SizedBox::spacer(0.0, 10.0).into_widget(),
+        gap_h(10.0).into_widget(),
         row(weekdays).main_axis_size(MainAxisSize::Min).into_widget(),
-        SizedBox::spacer(0.0, 4.0).into_widget(),
+        gap_h(4.0).into_widget(),
     ];
     body.extend(weeks);
     column(body).main_axis_size(MainAxisSize::Min).into_widget()
@@ -394,7 +394,7 @@ fn months_panel(disp: Signal<(i32, u32)>, view: Signal<View>) -> AnyWidget {
     let title = button(format!("{y}"))
         .variant(ButtonVariant::Ghost)
         .size(ButtonSize::Sm)
-        .on_pressed(action(move || view.set(View::Years)))
+        .on_pressed(move || view.set(View::Years))
         .into_widget();
     let header = row(vec![prev, spacer().into_widget(), title, spacer().into_widget(), next]);
 
@@ -407,7 +407,7 @@ fn months_panel(disp: Signal<(i32, u32)>, view: Signal<View>) -> AnyWidget {
         })
         .collect();
 
-    column(vec![header.into_widget(), SizedBox::spacer(0.0, 8.0).into_widget(), grid(cells, 3)])
+    column(vec![header.into_widget(), gap_h(8.0).into_widget(), grid(cells, 3)])
         .main_axis_size(MainAxisSize::Min)
         .into_widget()
 }
@@ -435,7 +435,7 @@ fn years_panel(disp: Signal<(i32, u32)>, view: Signal<View>) -> AnyWidget {
         })
         .collect();
 
-    column(vec![header.into_widget(), SizedBox::spacer(0.0, 8.0).into_widget(), grid(cells, 3)])
+    column(vec![header.into_widget(), gap_h(8.0).into_widget(), grid(cells, 3)])
         .main_axis_size(MainAxisSize::Min)
         .into_widget()
 }

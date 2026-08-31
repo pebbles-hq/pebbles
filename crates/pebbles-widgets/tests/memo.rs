@@ -5,7 +5,7 @@
 use std::cell::{Cell, RefCell};
 
 use pebbles_core::{
-    Element, IntoWidget, Signal, Ui, WidgetExt, component, create_memo, create_signal,
+    Element, IntoWidget, Signal, Ui, component, create_memo, create_signal,
 };
 use pebbles_foundation::{Size, palette};
 use pebbles_render::TextEnv;
@@ -28,7 +28,7 @@ fn parity() -> Signal<bool> {
 fn child() -> Element {
     RENDERS.with(|c| c.set(c.get() + 1));
     let even = parity().get(); // subscribe to the memo, not the raw source
-    SizedBox::spacer(if even { 10.0 } else { 20.0 }, 10.0).into_widget()
+    SizedBox::new(Some(if even { 10.0 } else { 20.0 }), Some(10.0), None).into_widget()
 }
 
 #[test]
@@ -42,7 +42,7 @@ fn memo_dedups_downstream_rerenders() {
     let mut ui = Ui::new();
     let mut text = TextEnv::new();
     let window = Size::new(100.0, 100.0);
-    ui.mount_root(View::new(palette::WHITE, component(child)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(child)).into_widget());
     ui.layout(&mut text, window);
     assert_eq!(RENDERS.with(Cell::get), 1, "one render on mount");
 

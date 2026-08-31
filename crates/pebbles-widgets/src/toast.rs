@@ -13,9 +13,8 @@ use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, IconKind};
 
 use crate::components::icon;
 use crate::theme::theme;
-use crate::widgets::{Container, GestureDetector, Positioned, SizedBox, column, row, spacer, text};
+use crate::widgets::{Container, GestureDetector, Positioned, column, gap_h, gap_w, row, spacer, text};
 use crate::overlay::window_size;
-use pebbles_core::context::action;
 use pebbles_core::reactive::current_window;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, animation, create_root_signal};
@@ -172,12 +171,12 @@ fn toast_card(e: &ToastEntry) -> AnyWidget {
     let mut left: Vec<AnyWidget> = Vec::new();
     if let Some((ic, tint)) = variant_icon(e.variant) {
         left.push(icon(ic).size(18.0).color(tint).into_widget());
-        left.push(SizedBox::spacer(10.0, 0.0).into_widget());
+        left.push(gap_w(10.0).into_widget());
     }
     let mut textcol: Vec<AnyWidget> =
         vec![text(e.title.clone()).size(14.0).weight(600.0).color(c.foreground).into_widget()];
     if let Some(d) = &e.description {
-        textcol.push(SizedBox::spacer(0.0, 3.0).into_widget());
+        textcol.push(gap_h(3.0).into_widget());
         textcol.push(text(d.clone()).size(12.5).color(c.muted_foreground).into_widget());
     }
     left.push(
@@ -197,20 +196,20 @@ fn toast_card(e: &ToastEntry) -> AnyWidget {
                     .child(text(label.clone()).size(12.5).weight(500.0).color(c.secondary_foreground)),
             )
             .cursor(pebbles_render::Cursor::Pointer)
-            .on_tap(action(move || {
+            .on_tap(move || {
                 f();
                 dismiss_toast(id);
-            }))
+            })
             .into_widget(),
         );
     }
     if e.dismissible {
         let id = e.id;
-        r.push(SizedBox::spacer(6.0, 0.0).into_widget());
+        r.push(gap_w(6.0).into_widget());
         r.push(
             GestureDetector::new(icon(IconKind::Close).size(15.0).color(c.muted_foreground))
                 .cursor(pebbles_render::Cursor::Pointer)
-                .on_tap(action(move || dismiss_toast(id)))
+                .on_tap(move || dismiss_toast(id))
                 .into_widget(),
         );
     }
@@ -240,7 +239,7 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
     let mut cards: Vec<AnyWidget> = Vec::new();
     for (i, e) in visible.iter().enumerate() {
         if i > 0 {
-            cards.push(SizedBox::spacer(0.0, 10.0).into_widget());
+            cards.push(gap_h(10.0).into_widget());
         }
         cards.push(toast_card(e));
     }

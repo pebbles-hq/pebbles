@@ -12,9 +12,9 @@ use super::popover::{anchor_below, popover_surface};
 use crate::components::icon;
 use crate::overlay::{hide_overlay, show_overlay};
 use crate::theme::{mix, theme};
-use crate::widgets::{Container, GestureDetector, Opacity, SizedBox, column, row, spacer, text};
+use crate::widgets::{Container, GestureDetector, Opacity, column, gap_h, row, spacer, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{action, action_event, children, component_props, create_signal};
+use pebbles_core::{action_event, children, component_props, create_signal};
 
 // ---------------------------------------------------------------------------
 // Entries
@@ -240,8 +240,8 @@ fn render_dropdown(p: &Props) -> AnyWidget {
 
     GestureDetector::new(trigger)
         .cursor(Cursor::Pointer)
-        .on_hover_enter(action(move || hovered.set(true)))
-        .on_hover_exit(action(move || hovered.set(false)))
+        .on_hover_enter(move || hovered.set(true))
+        .on_hover_exit(move || hovered.set(false))
         .on_tap(action_event(move |e: PointerEvent| {
             let trigger_left = e.global.x - e.position.x;
             let trigger_top = e.global.y - e.position.y;
@@ -404,7 +404,7 @@ fn render_action_row(p: &ActionRowProps) -> AnyWidget {
     let leading: AnyWidget = match (p.leading_check, p.icon) {
         (Some(true), _) => icon(IconKind::Check).size(15.0).color(fg).into_widget(),
         (None, Some(ic)) => icon(ic).size(15.0).color(fg).into_widget(),
-        _ => SizedBox::spacer(0.0, 0.0).into_widget(),
+        _ => gap_h(0.0).into_widget(),
     };
     let show_gutter = p.reserve_gutter || p.leading_check.is_some() || p.icon.is_some();
 
@@ -431,8 +431,8 @@ fn render_action_row(p: &ActionRowProps) -> AnyWidget {
     let pick = p.on_select.clone();
     GestureDetector::new(body)
         .cursor(Cursor::Pointer)
-        .on_hover_enter(action(move || hovered.set(true)))
-        .on_hover_exit(action(move || hovered.set(false)))
-        .on_tap(action(move || pick()))
+        .on_hover_enter(move || hovered.set(true))
+        .on_hover_exit(move || hovered.set(false))
+        .on_tap(move || pick())
         .into_widget()
 }

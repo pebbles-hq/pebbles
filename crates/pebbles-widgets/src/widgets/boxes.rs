@@ -137,10 +137,6 @@ impl SizedBox {
     pub fn exact(width: f64, height: f64, child: impl pebbles_core::IntoWidget) -> Self {
         SizedBox::new(Some(width), Some(height), Some(child.into_widget()))
     }
-    /// An empty box of a fixed size — handy as a spacer.
-    pub fn spacer(width: f64, height: f64) -> Self {
-        SizedBox::new(Some(width), Some(height), None)
-    }
     /// A square box of side `dim` (Flutter's `SizedBox.square`).
     pub fn square(dim: f64, child: impl pebbles_core::IntoWidget) -> Self {
         SizedBox::new(Some(dim), Some(dim), Some(child.into_widget()))
@@ -181,6 +177,18 @@ impl SizedBox {
 /// size — Flutter's `SizedBox(width:, height:, child:)`. Unset axes pass through.
 pub fn sized_box(child: impl pebbles_core::IntoWidget) -> SizedBox {
     SizedBox::new(None, None, Some(child.into_widget()))
+}
+
+/// A fixed horizontal gap, `width` logical px wide — the one way to space widgets
+/// apart on a row (Flutter's `SizedBox(width: …)`).
+pub fn gap_w(width: f64) -> SizedBox {
+    SizedBox::new(Some(width), Some(0.0), None)
+}
+
+/// A fixed vertical gap, `height` logical px tall — the one way to space widgets
+/// apart in a column (Flutter's `SizedBox(height: …)`).
+pub fn gap_h(height: f64) -> SizedBox {
+    SizedBox::new(Some(0.0), Some(height), None)
 }
 
 pebbles_core::render_widget!(SizedBox);

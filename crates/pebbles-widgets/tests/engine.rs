@@ -2,7 +2,7 @@
 //! reconcile → relayout, all without a window or GPU. This exercises the entire
 //! Flutter-style pipeline end to end.
 
-use pebbles_core::{IntoWidget, Ui, WidgetExt, component, create_signal};
+use pebbles_core::{IntoWidget, Ui, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{RenderConstrainedBox, TextEnv};
 use pebbles_widgets::{GestureDetector, SizedBox, View, center};
@@ -14,7 +14,7 @@ fn probe() -> impl IntoWidget {
     let taps = create_signal(0i64);
     // `center` fills the window (so a tap anywhere hits the detector); the inner
     // childless SizedBox's width == 10 + taps*10 is what we assert on.
-    GestureDetector::new(center(SizedBox::spacer(10.0 + taps.get() as f64 * 10.0, 10.0)))
+    GestureDetector::new(center(SizedBox::new(Some(10.0 + taps.get() as f64 * 10.0), Some(10.0), None)))
         .on_tap(move || taps.update(|t| *t += 1))
 }
 
@@ -30,7 +30,7 @@ fn tap_drives_setstate_reconcile_and_relayout() {
     let mut text = TextEnv::new();
     let window = Size::new(200.0, 200.0);
 
-    ui.mount_root(View::new(palette::WHITE, component(probe)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(probe)).into_widget());
     ui.layout(&mut text, window);
 
     // Initial state: taps == 0 → width 10.
@@ -60,7 +60,7 @@ fn tap_outside_any_listener_is_unhandled() {
     let mut ui = Ui::new();
     let mut text = TextEnv::new();
     ui.mount_root(
-        View::new(palette::WHITE, center(SizedBox::spacer(10.0, 10.0))).boxed(),
+        View::new(palette::WHITE, center(SizedBox::new(Some(10.0), Some(10.0), None))).into_widget(),
     );
     ui.layout(&mut text, Size::new(100.0, 100.0));
     // No GestureDetector in this tree → nothing handles the tap.

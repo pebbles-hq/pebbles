@@ -5,7 +5,7 @@
 use std::cell::RefCell;
 
 use pebbles_core::keyboard::{KeyInput, Motion};
-use pebbles_core::{IntoWidget, Ui, WidgetExt, component, create_signal};
+use pebbles_core::{IntoWidget, Ui, component, create_signal};
 use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{View, column, slider};
@@ -39,7 +39,7 @@ fn drag_and_keyboard_move_the_thumb() {
     let mut ui = Ui::new();
     let mut text_env = TextEnv::new();
     let window = Size::new(400.0, 300.0);
-    ui.mount_root(View::new(palette::WHITE, component(root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
     ui.layout(&mut text_env, window);
 
     let mut frame = |ui: &mut Ui| {

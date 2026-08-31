@@ -16,9 +16,9 @@
 //! ```
 
 use std::rc::Rc;
+use crate::widgets::{gap_h};
 
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::SizedBox;
 
 /// A navigation history — a stack of route names. Keep one in a signal; it is
 /// `Clone` + `Default` and mutated through `signal.update(..)`.
@@ -122,7 +122,7 @@ impl IntoWidget for RouteView {
         }
         match &self.fallback {
             Some(builder) => builder(),
-            None => SizedBox::spacer(0.0, 0.0).into_widget(),
+            None => gap_h(0.0).into_widget(),
         }
     }
 }

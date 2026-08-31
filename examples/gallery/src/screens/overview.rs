@@ -18,7 +18,7 @@ pub fn overview() -> Element {
                 ])
                 .main_axis_size(MainAxisSize::Min),
             ),
-            Card::new(column(
+            card().child(column(
                 children![
                     title("This app is built with Pebbles"),
                     body("The sidebar is a SideNav, the bar above a TopPanel, and this content a RouteView. Navigation is a global signal — click the menu."),

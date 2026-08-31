@@ -14,7 +14,7 @@ use pebbles_foundation::CrossAxisAlignment;
 use pebbles_foundation::{MainAxisSize};
 
 use crate::theme::theme;
-use crate::widgets::{SizedBox, column, text};
+use crate::widgets::{column, gap_h, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// A labeled control with an optional description / error. Build with [`field`].
@@ -60,14 +60,14 @@ impl IntoWidget for Field {
         let mut col: Vec<AnyWidget> = Vec::new();
         if let Some(lbl) = self.label.take() {
             col.push(text(lbl).size(13.5).weight(500.0).color(c.foreground).into_widget());
-            col.push(SizedBox::spacer(0.0, 7.0).into_widget());
+            col.push(gap_h(7.0).into_widget());
         }
-        col.push(self.control.take().unwrap_or_else(|| SizedBox::spacer(0.0, 0.0).into_widget()));
+        col.push(self.control.take().unwrap_or_else(|| gap_h(0.0).into_widget()));
         if let Some(err) = self.error.take() {
-            col.push(SizedBox::spacer(0.0, 6.0).into_widget());
+            col.push(gap_h(6.0).into_widget());
             col.push(text(err).size(12.5).color(c.destructive).into_widget());
         } else if let Some(help) = self.description.take() {
-            col.push(SizedBox::spacer(0.0, 6.0).into_widget());
+            col.push(gap_h(6.0).into_widget());
             col.push(text(help).size(12.5).color(c.muted_foreground).into_widget());
         }
         column(col).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()

@@ -76,15 +76,6 @@ impl dyn Widget {
     }
 }
 
-/// Extension helpers available on every widget.
-pub trait WidgetExt: Widget + Sized {
-    /// Box this widget into an [`AnyWidget`] for use in a child list.
-    fn boxed(self) -> AnyWidget {
-        Box::new(self)
-    }
-}
-impl<W: Widget + Sized> WidgetExt for W {}
-
 /// Conversion into an [`AnyWidget`]. Implemented for every concrete widget (by
 /// boxing) and for [`AnyWidget`] itself (identity), so constructors can accept
 /// either a concrete widget or an already-boxed one without double-boxing — which

@@ -33,15 +33,15 @@ pub fn data() -> Element {
                     row(children![
                         button("Top").variant(ButtonVariant::Secondary).size(ButtonSize::Sm)
                             .on_pressed(move || list_ctrl.animate_to(0.0)),
-                        SizedBox::spacer(8.0, 0.0),
+                        gap_w(8.0),
                         button("Jump to #2500").variant(ButtonVariant::Secondary).size(ButtonSize::Sm)
                             .on_pressed(move || list_ctrl.scroll_to_index(2500, 44.0)),
-                        SizedBox::spacer(8.0, 0.0),
+                        gap_w(8.0),
                         button("Bottom").variant(ButtonVariant::Secondary).size(ButtonSize::Sm)
                             .on_pressed(move || list_ctrl.animate_to(5000.0 * 44.0)),
                     ])
                     .main_axis_size(MainAxisSize::Min),
-                    SizedBox::spacer(0.0, 10.0),
+                    gap_h(10.0),
                     Container::new()
                         .decoration(
                             BoxDecoration::new()
@@ -58,7 +58,7 @@ pub fn data() -> Element {
                                 .decoration(BoxDecoration::new().border(Border::new(c.border, 0.5)))
                                 .child(row(children![
                                     icon(IconKind::Dot).size(16.0).color(c.muted_foreground),
-                                    SizedBox::spacer(10.0, 0.0),
+                                    gap_w(10.0),
                                     text(format!("Row {i}")).size(14.0).color(c.foreground),
                                     spacer(),
                                     muted(format!("#{i}")),
@@ -96,7 +96,7 @@ pub fn data() -> Element {
             ),
             section(
                 "LIST",
-                Card::new(
+                card().child(
                     column(children![
                         list_tile("Inbox").leading(icon(IconKind::Menu).size(18.0)).subtitle("12 new").trailing(badge("12")),
                         separator(),
@@ -111,7 +111,7 @@ pub fn data() -> Element {
             ),
             section(
                 "TABLE",
-                Card::new(
+                card().child(
                     table(vec!["Name".into(), "Role".into(), "Status".into()])
                         .row(vec!["Reyco".into(), "Lead".into(), "Active".into()])
                         .row(vec!["Andres".into(), "Engineer".into(), "Active".into()])
@@ -119,7 +119,7 @@ pub fn data() -> Element {
                 )
                 .padding(EdgeInsets::all(0.0)),
             ),
-            section("FILE EXPLORER (TreeView)", Card::new(tree).padding(EdgeInsets::all(4.0))),
+            section("FILE EXPLORER (TreeView)", card().child(tree).padding(EdgeInsets::all(4.0))),
             section(
                 "SPLIT VIEW + PANELS",
                 Container::new()

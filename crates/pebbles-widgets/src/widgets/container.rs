@@ -7,7 +7,7 @@ use pebbles_foundation::{Alignment, Color, EdgeInsets};
 use pebbles_render::{Affine, Border, BorderRadius, BoxConstraints, BoxDecoration, BoxShadow};
 
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{Align, ClipRRect, ConstrainedBox, DecoratedBox, Padding, SizedBox, transform};
+use crate::widgets::{Align, ClipRRect, ConstrainedBox, DecoratedBox, Padding, SizedBox, gap_h, transform};
 
 /// A convenience box combining decoration, padding, margin, sizing, constraints,
 /// alignment and clipping — Flutter's `Container`.
@@ -114,7 +114,7 @@ impl IntoWidget for Container {
         // it outermost — as a previous version did — instead moved the whole box and
         // pinned the child top-left (which broke e.g. the Switch thumb).
         let mut current: AnyWidget =
-            self.child.take().unwrap_or_else(|| SizedBox::spacer(0.0, 0.0).into_widget());
+            self.child.take().unwrap_or_else(|| gap_h(0.0).into_widget());
 
         if let Some(alignment) = self.alignment {
             current = Align::new(alignment, current).into_widget();

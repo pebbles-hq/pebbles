@@ -51,11 +51,11 @@ fn tooltips() -> impl IntoWidget {
         "Tooltip",
         "Hover a trigger; after a short delay a hint appears near the pointer and follows hover-exit to dismiss. Never blocks clicks.",
         row(children![
-            tooltip(button("Hover me").variant(ButtonVariant::Outline), "Saved to disk"),
+            tooltip("Saved to disk", button("Hover me").variant(ButtonVariant::Outline)),
             gap_w(12.0),
-            tooltip(icon_button(IconKind::Info), "More information").delay(0.3),
+            tooltip("More information", icon_button(IconKind::Info)).delay(0.3),
             gap_w(12.0),
-            tooltip(badge("Beta").variant(BadgeVariant::Secondary), "Not yet stable"),
+            tooltip("Not yet stable", badge("Beta").variant(BadgeVariant::Secondary)),
         ])
         .main_axis_size(MainAxisSize::Min),
     )
@@ -67,7 +67,6 @@ fn popovers() -> impl IntoWidget {
         "Click a trigger to float arbitrary content in the overlay layer — it flips near edges, follows page scroll, and hosts real inputs. Click outside to dismiss.",
         row(children![
             popover(
-                button("Open popover").variant(ButtonVariant::Outline),
                 column(children![
                     text("Dimensions").size(14.0).semibold(),
                     gap_h(8.0),
@@ -79,6 +78,7 @@ fn popovers() -> impl IntoWidget {
                 ])
                 .cross_axis_alignment(CrossAxisAlignment::Start)
                 .main_axis_size(MainAxisSize::Min),
+                button("Open popover").variant(ButtonVariant::Outline),
             )
             .width(232.0)
             .height(200.0)
@@ -88,9 +88,6 @@ fn popovers() -> impl IntoWidget {
     )
 }
 
-fn gap_h(n: f64) -> impl IntoWidget {
-    SizedBox::spacer(0.0, n)
-}
 
 fn toasts() -> impl IntoWidget {
     doc(

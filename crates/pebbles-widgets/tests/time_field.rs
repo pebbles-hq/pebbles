@@ -1,7 +1,7 @@
 //! Regression: picking a time (opening the dropdown, scrolling, hovering a slot
 //! mid-animation, then picking) must never crash — the exact user report.
 
-use pebbles_core::{IntoWidget, KeyInput, Ui, WidgetExt, component};
+use pebbles_core::{IntoWidget, KeyInput, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{OverlayHost, View, column, time_field};
@@ -18,7 +18,7 @@ fn picking_a_time_never_crashes() {
     let mut ui = Ui::new();
     let mut text = TextEnv::new();
     let window = Size::new(400.0, 600.0);
-    ui.mount_root(View::new(palette::WHITE, component(root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
     ui.layout(&mut text, window);
 
     let mut now = 0.0_f64;

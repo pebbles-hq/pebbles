@@ -12,11 +12,11 @@ fn panel(title: &str, desc: &str, body_w: impl IntoWidget, footer: impl IntoWidg
         .child(
             column(children![
                 text(title.to_string()).size(18.0).semibold(),
-                SizedBox::spacer(0.0, 6.0),
+                gap_h(6.0),
                 muted(desc.to_string()),
-                SizedBox::spacer(0.0, 18.0),
+                gap_h(18.0),
                 body_w,
-                SizedBox::spacer(0.0, 22.0),
+                gap_h(22.0),
                 row(children![spacer(), footer]),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Stretch)
@@ -79,7 +79,7 @@ fn basic(status: Signal<String>) -> impl IntoWidget {
             );
             let id = dialog(content)
                 .title("Welcome")
-                .size(440, 300)
+                .width(440.0)
                 .on_close(move || status.set("basic dialog closed".into()))
                 .open();
             idc.set(id);
@@ -102,7 +102,7 @@ fn form(status: Signal<String>) -> impl IntoWidget {
                 "Make changes to your profile here. Click save when you're done.",
                 column(children![
                     label("Name"),
-                    SizedBox::spacer(0.0, 6.0),
+                    gap_h(6.0),
                     text_field().bind(name).width(300.0),
                 ])
                 .cross_axis_alignment(CrossAxisAlignment::Start)
@@ -119,7 +119,7 @@ fn form(status: Signal<String>) -> impl IntoWidget {
                 ])
                 .main_axis_size(MainAxisSize::Min),
             );
-            let id = dialog(content).title("Edit profile").size(420, 320).open();
+            let id = dialog(content).title("Edit profile").width(420.0).open();
             idc.set(id);
         }),
     )
@@ -149,7 +149,7 @@ fn confirm(status: Signal<String>) -> impl IntoWidget {
                 ])
                 .main_axis_size(MainAxisSize::Min),
             );
-            let id = dialog(content).title("Confirm deletion").size(440, 260).open();
+            let id = dialog(content).title("Confirm deletion").width(440.0).open();
             idc.set(id);
         }),
     )
@@ -171,7 +171,7 @@ fn sized(status: Signal<String>) -> impl IntoWidget {
             );
             let id = dialog(content)
                 .title("Large dialog")
-                .size(680, 460)
+                .width(680.0)
                 .on_close(move || status.set("large dialog closed".into()))
                 .open();
             idc.set(id);

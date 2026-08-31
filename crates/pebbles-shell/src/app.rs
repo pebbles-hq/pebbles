@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use pebbles_core::{IntoWidget, KeyInput, Motion, Ui, WidgetExt};
+use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
 use pebbles_foundation::{Color, Offset, Size, palette};
 use pebbles_widgets::View;
 use vello::kurbo::Affine;
@@ -543,7 +543,7 @@ impl Runner {
         let mut ui = Ui::new();
         ui.make_current(); // so lazily-created per-window overlay signals key to this window
         let root = pebbles_widgets::OverlayHost::wrap(spec.root).into_widget();
-        ui.mount_root(View::new(spec.background, root).boxed());
+        ui.mount_root(View::new(spec.background, root).into_widget());
         let wid = window.id();
         window.request_redraw();
         self.window_by_id.insert(spec.id, wid);
@@ -816,7 +816,7 @@ impl ApplicationHandler for Runner {
             pebbles_widgets::theme::init(); // and the global reactive theme signal
             install_clipboard(); // wire the system clipboard for Ctrl+C/X/V
             let root = self.pending_root.take().expect("root widget");
-            self.ui.mount_root(View::new(self.background, root).boxed());
+            self.ui.mount_root(View::new(self.background, root).into_widget());
             self.mounted = true;
         }
 

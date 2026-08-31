@@ -9,7 +9,7 @@ pub fn surfaces() -> Element {
         children![
             section(
                 "CARD",
-                Card::new(column(
+                card().child(column(
                     children![
                         title("Create project"),
                         muted("Deploy your new project in one click."),
@@ -32,9 +32,9 @@ pub fn surfaces() -> Element {
                 "ALERTS",
                 column(
                     children![
-                        alert("Heads up!", "You can add components using the CLI."),
-                        alert("Success", "Your changes have been saved.").variant(AlertVariant::Success),
-                        alert("Warning", "This action cannot be undone.").variant(AlertVariant::Warning),
+                        alert("Heads up!").description("You can add components using the CLI."),
+                        alert("Success").description("Your changes have been saved.").variant(AlertVariant::Success),
+                        alert("Warning").description("This action cannot be undone.").variant(AlertVariant::Warning),
                     ]).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).spacing(10.0),
             ),
             section(

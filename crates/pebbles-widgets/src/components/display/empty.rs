@@ -7,7 +7,7 @@ use pebbles_render::{BorderRadius, BoxDecoration, IconData};
 
 use crate::components::icon;
 use crate::theme::theme;
-use crate::widgets::{Container, SizedBox, center, column, text};
+use crate::widgets::{Container, center, column, gap_h, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// An empty-state block. Build with [`empty`]; all parts are optional.
@@ -56,17 +56,17 @@ impl IntoWidget for Empty {
                     .child(icon(ic).size(24.0).color(c.muted_foreground))
                     .into_widget(),
             );
-            items.push(SizedBox::spacer(0.0, 14.0).into_widget());
+            items.push(gap_h(14.0).into_widget());
         }
         if let Some(t) = self.title {
             items.push(text(t).size(15.0).semibold().color(c.foreground).into_widget());
         }
         if let Some(d) = self.description {
-            items.push(SizedBox::spacer(0.0, 4.0).into_widget());
+            items.push(gap_h(4.0).into_widget());
             items.push(text(d).size(13.0).line_height(1.4).color(c.muted_foreground).into_widget());
         }
         if let Some(a) = self.action {
-            items.push(SizedBox::spacer(0.0, 16.0).into_widget());
+            items.push(gap_h(16.0).into_widget());
             items.push(a);
         }
         center(

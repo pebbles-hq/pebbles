@@ -5,7 +5,7 @@
 
 use std::cell::RefCell;
 
-use pebbles_core::{IntoWidget, KeyInput, Signal, Ui, WidgetExt, component, create_signal};
+use pebbles_core::{IntoWidget, KeyInput, Signal, Ui, component, create_signal};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{OverlayHost, View, column, text_field};
@@ -39,7 +39,7 @@ fn ime_preedit_is_uncommitted_then_commit_inserts() {
     let mut ui = Ui::new();
     let mut text = TextEnv::new();
     let window = Size::new(400.0, 200.0);
-    ui.mount_root(View::new(palette::WHITE, component(root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
     ui.layout(&mut text, window);
 
     let frame = |ui: &mut Ui, text: &mut TextEnv| {

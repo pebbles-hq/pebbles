@@ -4,7 +4,7 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-use pebbles_core::{IntoWidget, Signal, Ui, WidgetExt, component, create_signal};
+use pebbles_core::{IntoWidget, Signal, Ui, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{Container, OverlayHost, View, column, radio_group, resizable, text};
@@ -35,7 +35,7 @@ fn radio_group_selects_on_tap() {
     let mut ui = Ui::new();
     let mut text_env = TextEnv::new();
     let window = Size::new(300.0, 300.0);
-    ui.mount_root(View::new(palette::WHITE, component(radio_root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(radio_root)).into_widget());
     ui.layout(&mut text_env, window);
 
     let mut frame = |ui: &mut Ui| {
@@ -87,7 +87,7 @@ fn resizable_handle_drags() {
     let mut ui = Ui::new();
     let mut text_env = TextEnv::new();
     let window = Size::new(500.0, 200.0);
-    ui.mount_root(View::new(palette::WHITE, component(resizable_root)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(resizable_root)).into_widget());
     ui.layout(&mut text_env, window);
     let mut frame = |ui: &mut Ui| {
         ui.rebuild_if_dirty();
@@ -128,7 +128,7 @@ fn dialog_modal_opens_closes_and_paints() {
     let mut ui = Ui::new();
     let mut text_env = TextEnv::new();
     let window = Size::new(500.0, 400.0);
-    ui.mount_root(View::new(palette::WHITE, OverlayHost::wrap(text("app behind the modal"))).boxed());
+    ui.mount_root(View::new(palette::WHITE, OverlayHost::wrap(text("app behind the modal"))).into_widget());
     ui.layout(&mut text_env, window);
     let mut frame = |ui: &mut Ui| {
         ui.rebuild_if_dirty();
@@ -215,7 +215,7 @@ fn hooks_rule_violation_is_caught() {
     let _ = rev(); // create the global signal BEFORE mount (app scope, not owned)
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
-    ui.mount_root(View::new(palette::WHITE, component(hooks_violator)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(hooks_violator)).into_widget());
     ui.layout(&mut env, Size::new(100.0, 100.0)); // render 1: position 0 = i32
     rev().set(1); // mark the component dirty
     ui.rebuild_if_dirty(); // render 2: position 0 = &str → guardrail panics
@@ -230,7 +230,7 @@ fn modifier_ext_chains_and_renders() {
     let mut env = TextEnv::new();
     // SwiftUI-style child-first chain — compiles (trait on any widget) and paints.
     let root = text("hi").clipped(8.0).padded(12.0).sized(120.0, 40.0).opacity(0.9).centered();
-    ui.mount_root(View::new(palette::WHITE, root).boxed());
+    ui.mount_root(View::new(palette::WHITE, root).into_widget());
     ui.layout(&mut env, Size::new(240.0, 160.0));
     let mut scene = pebbles_render::Scene::new();
     ui.paint(&mut scene); // must not panic
@@ -285,7 +285,7 @@ fn toggle_theme_rerenders_subscribers() {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
     let window = Size::new(200.0, 200.0);
-    ui.mount_root(View::new(palette::WHITE, component(themed_probe)).boxed());
+    ui.mount_root(View::new(palette::WHITE, component(themed_probe)).into_widget());
     ui.layout(&mut env, window);
     let mut frame = |ui: &mut Ui| {
         let dirtied = ui.rebuild_if_dirty();
