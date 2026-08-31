@@ -7,8 +7,8 @@ const IMG: &str = "https://github.com/shadcn.png";
 pub fn avatars() -> Element {
     screen(
         "Avatar",
-        "An image with an initials fallback (shadcn's Avatar), plus sizes, shapes, a status dot, and an overlapping group.",
-        children![default(), fallback(), sizes(), shapes(), colors(), status_dots(), group()],
+        "An image with an initials fallback (shadcn's Avatar), plus sizes, shapes, a status dot, an overlapping group, and a hover card.",
+        children![default(), fallback(), sizes(), shapes(), colors(), status_dots(), group(), hover_card_demo()],
     )
 }
 
@@ -87,6 +87,43 @@ fn status_dots() -> impl IntoWidget {
             avatar("CN").src(IMG).status(palette::emerald::S500),
         ])
         .spacing(16.0),
+    )
+}
+
+fn hover_card_demo() -> impl IntoWidget {
+    doc(
+        "Hover card",
+        "Hover the trigger: a rich card appears after a short delay and stays open while the pointer moves onto it (classic @user preview).",
+        row(children![
+            hover_card(
+                column(children![
+                    row(children![
+                        avatar("RS"),
+                        gap_w(12.0),
+                        column(children![
+                            text("Reyco Seguma").size(14.0).semibold(),
+                            gap_h(2.0),
+                            muted("@xreyc"),
+                        ])
+                        .cross_axis_alignment(CrossAxisAlignment::Start)
+                        .main_axis_size(MainAxisSize::Min),
+                    ])
+                    .main_axis_size(MainAxisSize::Min),
+                    gap_h(10.0),
+                    text("Building Pebbles — a Flutter-style GUI framework.").size(13.0),
+                    gap_h(10.0),
+                    button("Follow").size(ButtonSize::Sm).variant(ButtonVariant::Secondary),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
+                avatar("RS"),
+            )
+            .width(300.0)
+            .delay(0.3),
+            gap_w(20.0),
+            hover_card(text("Andres — Engineer").size(13.0), avatar("AK")),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Center),
     )
 }
 

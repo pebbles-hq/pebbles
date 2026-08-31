@@ -61,6 +61,7 @@ pub fn app() -> impl IntoWidget {
         .route("date-picker", || component(screens::date_picker::date_picker))
         .route("select", || component(screens::selects::selects))
         .route("combobox", || component(screens::combobox::combobox_screen))
+        .route("command", || component(screens::command::command_screen))
         .route("toggles", || component(screens::toggles::toggles))
         .route("radio-group", || component(screens::radiogroup::radio_groups))
         .route("slider", || component(screens::sliders::sliders))

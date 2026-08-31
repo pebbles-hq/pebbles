@@ -84,6 +84,7 @@ pub const NAV: &[NavGroup] = &[
             ("date-picker", lucide::CALENDAR_DAYS, "Date Picker"),
             ("select", lucide::CHEVRON_DOWN, "Select & Menus"),
             ("combobox", lucide::SEARCH, "Combobox"),
+            ("command", lucide::FILE_TERMINAL, "Command"),
             ("toggles", lucide::TOGGLE_RIGHT, "Toggles"),
             ("radio-group", lucide::CIRCLE_DOT, "Radio Group"),
             ("slider", lucide::SLIDERS_HORIZONTAL, "Slider"),

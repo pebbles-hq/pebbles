@@ -7,6 +7,7 @@ pub mod card;
 pub mod collapsible;
 pub mod colors;
 pub mod combobox;
+pub mod command;
 pub mod data;
 pub mod date_picker;
 pub mod dialog;

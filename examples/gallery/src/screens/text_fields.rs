@@ -8,6 +8,7 @@ pub fn text_fields() -> Element {
     let name = create_signal(String::new());
     let query = create_signal(String::new());
     let mail = create_signal(String::new());
+    let otp = create_signal(String::new());
     // Live validation: show an error once there's text without an "@".
     let mail_err =
         (!mail.get().is_empty() && !mail.get().contains('@')).then(|| "Enter a valid email address".to_string());
@@ -104,6 +105,24 @@ pub fn text_fields() -> Element {
                     field(text_field().width(W))
                         .label("Username")
                         .error_opt(Some("That username is taken")),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
+            ),
+            doc(
+                "One-time password",
+                "N cells over one hidden editor: digits append, Backspace deletes, paste fills, arrows move the active cell, and on_complete fires at full length.",
+                column(children![
+                    input_otp(6)
+                        .group_size(3)
+                        .on_changed(move |s| otp.set(s.to_string())),
+                    gap_h(10.0),
+                    row(children![
+                        text(format!("value: {}", otp.get())).size(12.0).color(theme().colors.muted_foreground),
+                        gap_w(10.0),
+                        if otp.get().len() == 6 { badge("Complete").into_widget() } else { gap_w(0.0).into_widget() },
+                    ])
+                    .main_axis_size(MainAxisSize::Min),
                 ])
                 .cross_axis_alignment(CrossAxisAlignment::Start)
                 .main_axis_size(MainAxisSize::Min),

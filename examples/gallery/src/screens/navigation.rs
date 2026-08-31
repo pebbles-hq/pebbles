@@ -37,6 +37,13 @@ pub fn navigation() -> Element {
             ),
             section("BREADCRUMB", breadcrumb(vec!["Home".into(), "Projects".into(), "Pebbles".into()])),
             section(
+                "MENUBAR",
+                menubar()
+                    .menu("File", [menu_item("New").shortcut("⌘N"), menu_item("Open"), menu_item("Save")])
+                    .menu("Edit", [menu_item("Undo"), menu_item("Redo")])
+                    .menu("View", [menu_item("Toggle Sidebar"), menu_item("Zen Mode")]),
+            ),
+            section(
                 "PAGINATION",
                 pagination(pg.get(), 10)
                     .on_prev(move || pg.update(|p| *p = p.saturating_sub(1).max(1)))
