@@ -10,4 +10,4 @@ pub use nav::{
 };
 pub use menubar::{Menubar, MenubarMenu, menubar, menubar_menu};
 pub use routing::{NavStack, RouteView, route_view};
-pub use tabs::{Tabs, tabs};
+pub use tabs::{Tabs, TabsVariant, tabs};
