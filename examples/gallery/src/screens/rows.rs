@@ -33,6 +33,7 @@ pub fn rows() -> Element {
             "Horizontal flex in Flutter-parity detail: six main-axis alignments, cross-axis alignment incl. baseline and stretch, spacing, shrink-wrap vs fill, flex factors — then the real-world patterns (toolbar, card header) they compose into.",
         )
         .body(children![
+            any_count(),
             main_axis(),
             cross_axis(),
             baseline(),
@@ -41,6 +42,52 @@ pub fn rows() -> Element {
             expanded_flexible(),
             patterns(),
         ])
+}
+
+fn any_count() -> impl IntoWidget {
+    let count = create_signal(3usize);
+    let n = count.get();
+    let colors = [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
+    doc("Any number of children")
+        .description("Rows take as many children as you like — drag the slider to grow the row live. Shown twice: SpaceBetween (children pinned to the edges, gaps flex) and Start with fixed spacing.")
+        .body(
+            column(children![
+                row(children![
+                    slider(320.0).min(2.0).max(24.0).step(1.0).value(n as f64).on_changed(move |v| count.set(v[0] as usize)),
+                    gap_w(10.0),
+                    muted(format!("{n} items")).size(12.0),
+                ])
+                .main_axis_size(MainAxisSize::Min),
+                gap_h(8.0),
+                stage(
+                    40.0,
+                    row({
+                        let mut items: Vec<AnyWidget> = Vec::new();
+                        for i in 0..n {
+                            items.push(chip(colors[i % colors.len()], 26.0, 20.0).into_widget());
+                        }
+                        items
+                    })
+                    .main_axis_alignment(MainAxisAlignment::SpaceBetween),
+                )
+                .into_widget(),
+                gap_h(8.0),
+                stage(
+                    40.0,
+                    row({
+                        let mut items: Vec<AnyWidget> = Vec::new();
+                        for i in 0..n {
+                            items.push(chip(colors[i % colors.len()], 26.0, 20.0).into_widget());
+                        }
+                        items
+                    })
+                    .spacing(4.0),
+                )
+                .into_widget(),
+            ])
+            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .main_axis_size(MainAxisSize::Min),
+        )
 }
 
 fn main_axis() -> impl IntoWidget {

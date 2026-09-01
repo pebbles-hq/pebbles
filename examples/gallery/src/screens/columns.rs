@@ -31,6 +31,7 @@ pub fn columns() -> Element {
             "Vertical flex, same contract as Row: six main-axis alignments in a fixed-height stage, cross-axis placement with stretch, spacing, shrink-wrap vs fill, vertical flex factors — and the chat-panel pattern they compose into.",
         )
         .body(children![
+            any_count(),
             main_axis(),
             cross_axis(),
             spacing(),
@@ -38,6 +39,42 @@ pub fn columns() -> Element {
             expanded(),
             patterns(),
         ])
+}
+
+fn any_count() -> impl IntoWidget {
+    let count = create_signal(4usize);
+    let n = count.get();
+    let colors = [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
+    doc("Any number of children")
+        .description("Columns stack as many children as you like — here up to 48, in a fixed-height stage with a scrollbar, so nothing overflows. Drag the slider to grow the list live.")
+        .body(
+            column(children![
+                row(children![
+                    slider(320.0).min(2.0).max(48.0).step(1.0).value(n as f64).on_changed(move |v| count.set(v[0] as usize)),
+                    gap_w(10.0),
+                    muted(format!("{n} items")).size(12.0),
+                ])
+                .main_axis_size(MainAxisSize::Min),
+                gap_h(8.0),
+                stage(
+                    180.0,
+                    scroll_area(
+                        column({
+                            let mut items: Vec<AnyWidget> = Vec::new();
+                            for i in 0..n {
+                                items.push(chip(colors[i % colors.len()], 120.0, 22.0).into_widget());
+                            }
+                            items
+                        })
+                        .main_axis_size(MainAxisSize::Min)
+                        .spacing(4.0),
+                    ),
+                )
+                .into_widget(),
+            ])
+            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .main_axis_size(MainAxisSize::Min),
+        )
 }
 
 fn main_axis() -> impl IntoWidget {
