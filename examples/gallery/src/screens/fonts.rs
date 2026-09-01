@@ -7,7 +7,7 @@ const SPECIMEN: &str = "0123456789 — AaBbCc… &$%#@";
 
 pub fn fonts() -> Element {
     let query = create_signal(String::new());
-    let filter = create_signal(0usize);
+    let filter = create_signal(1usize);
 
     screen("Fonts")
         .description(
