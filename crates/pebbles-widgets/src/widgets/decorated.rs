@@ -16,6 +16,11 @@ impl DecoratedBox {
     pub fn new(decoration: BoxDecoration, child: impl pebbles_core::IntoWidget) -> Self {
         DecoratedBox { decoration, child: Some(child.into_widget()) }
     }
+    /// A childless decorated box: paints its decoration and fills the
+    /// constraints it is given (the render-level fill primitive).
+    pub fn childless(decoration: BoxDecoration) -> Self {
+        DecoratedBox { decoration, child: None }
+    }
 }
 
 pebbles_core::render_widget!(DecoratedBox);

@@ -3,10 +3,17 @@ use pebbles::prelude::*;
 use crate::ui::{doc, gap_h, gap_w, screen};
 
 fn chip(color: Color, w: f64, h: f64) -> Container {
-    Container::new()
-        .width(w)
-        .height(h)
-        .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)))
+    // A zero dimension means "fill": the container omits that SizedBox, and a
+    // childless decorated container expands to its constraints (Flutter parity).
+    let mut c = Container::new()
+        .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)));
+    if w > 0.0 {
+        c = c.width(w);
+    }
+    if h > 0.0 {
+        c = c.height(h);
+    }
+    c
 }
 
 fn stage(h: f64, child: impl IntoWidget) -> Container {
@@ -35,6 +42,7 @@ pub fn columns() -> Element {
             many_items(),
             main_axis(),
             cross_axis(),
+            baseline(),
             spacing(),
             axis_size(),
             expanded(),
@@ -159,24 +167,33 @@ fn cross_axis() -> impl IntoWidget {
         (CrossAxisAlignment::Stretch, "Stretch"),
     ];
     doc("Cross axis alignment")
-        .description("Horizontal placement of children with different widths: pinned left, centered, pinned right, or Stretch — every child forced to the column's full width (the default for form-like layouts).")
+        .description("Horizontal placement of children with different widths inside a fixed-width stage: pinned left, centered, pinned right, or Stretch — every child forced to the column's full width (the default for form-like layouts). Explicit child widths always win, so the Stretch sample drops them.")
         .body(
             row({
                 let mut items: Vec<AnyWidget> = Vec::new();
                 for (alignment, label) in cols {
+                    let stretched = matches!(alignment, CrossAxisAlignment::Stretch);
                     items.push(
                         column(children![
-                            stage(
-                                116.0,
-                                column(children![
-                                    chip(a, 40.0, 18.0),
-                                    chip(b, 96.0, 18.0),
-                                    chip(c, 64.0, 18.0),
-                                ])
-                                .cross_axis_alignment(alignment)
-                                .spacing(8.0),
-                            )
-                            .into_widget(),
+                            Container::new()
+                                .width(150.0)
+                                .height(116.0)
+                                .padding(EdgeInsets::all(6.0))
+                                .decoration(
+                                    BoxDecoration::new()
+                                        .border(Border::new(theme().colors.border, 1.0))
+                                        .radius(BorderRadius::all(theme().radius)),
+                                )
+                                .child(
+                                    column(children![
+                                        chip(a, if stretched { 0.0 } else { 40.0 }, 18.0),
+                                        chip(b, if stretched { 0.0 } else { 96.0 }, 24.0),
+                                        chip(c, if stretched { 0.0 } else { 64.0 }, 18.0),
+                                    ])
+                                    .cross_axis_alignment(alignment)
+                                    .spacing(8.0),
+                                )
+                                .into_widget(),
                             gap_h(6.0),
                             muted(label.to_string()).size(11.0).into_widget(),
                         ])
@@ -188,6 +205,24 @@ fn cross_axis() -> impl IntoWidget {
             })
             .main_axis_size(MainAxisSize::Min)
             .spacing(12.0),
+        )
+}
+
+fn baseline() -> impl IntoWidget {
+    doc("Baseline")
+        .description("CrossAxisAlignment::Baseline aligns text baselines horizontally when mixed sizes share a line — the same contract as Row, along the column's cross axis.")
+        .body(
+            stage(
+                64.0,
+                row(children![
+                    text("big").size(30.0),
+                    text("medium").size(20.0),
+                    text("small").size(12.0),
+                    chip(palette::PURPLE, 48.0, 40.0),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Baseline)
+                .spacing(12.0),
+            ),
         )
 }
 
@@ -232,17 +267,23 @@ fn axis_size() -> impl IntoWidget {
         .body(
             row(children![
                 column(children![
-                    stage(
-                        120.0,
-                        column(children![
-                            chip(a, 56.0, 20.0),
-                            chip(b, 56.0, 20.0),
-                            chip(c, 56.0, 20.0),
-                        ])
-                        .main_axis_size(MainAxisSize::Min)
-                        .spacing(8.0),
-                    )
-                    .into_widget(),
+                    Container::new()
+                        .padding(EdgeInsets::all(6.0))
+                        .decoration(
+                            BoxDecoration::new()
+                                .border(Border::new(theme().colors.border, 1.0))
+                                .radius(BorderRadius::all(theme().radius)),
+                        )
+                        .child(
+                            column(children![
+                                chip(a, 56.0, 20.0),
+                                chip(b, 56.0, 20.0),
+                                chip(c, 56.0, 20.0),
+                            ])
+                            .main_axis_size(MainAxisSize::Min)
+                            .spacing(8.0),
+                        )
+                        .into_widget(),
                     gap_h(6.0),
                     muted("Min — shrink-wrapped").size(11.0).into_widget(),
                 ])
@@ -286,7 +327,7 @@ fn expanded() -> impl IntoWidget {
                 )
                 .into_widget(),
                 gap_h(6.0),
-                muted("flex 2 : 1 : 1").size(11.0).into_widget(),
+                muted("flex 2 : 1 : 1 — each chip fills its share").size(11.0).into_widget(),
             ])
             .main_axis_size(MainAxisSize::Min),
         )
@@ -366,7 +407,7 @@ fn patterns() -> impl IntoWidget {
                             .decoration(BoxDecoration::new().border(Border::only(BorderSide::new(th.colors.border, 1.0), BorderSide::NONE, BorderSide::NONE, BorderSide::NONE)))
                             .child(
                                 row(children![
-                                    text_field().placeholder("Type a message…"),
+                                    Expanded::new(text_field().placeholder("Type a message…")),
                                     gap_w(8.0),
                                     button("Send"),
                                 ]),

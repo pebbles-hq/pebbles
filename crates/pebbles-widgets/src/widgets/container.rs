@@ -113,6 +113,9 @@ impl IntoWidget for Container {
         // `alignment` positions the child *inside* the (padded, sized) box; putting
         // it outermost — as a previous version did — instead moved the whole box and
         // pinned the child top-left (which broke e.g. the Switch thumb).
+        // Childless containers with a decoration fill the constraints they are
+        // given (Flutter parity: a childless `Container(color: ...)` expands).
+        let childless = self.child.is_none();
         let mut current: AnyWidget =
             self.child.take().unwrap_or_else(|| gap_h(0.0).into_widget());
 
@@ -129,7 +132,11 @@ impl IntoWidget for Container {
             current = ClipRRect::new(radius, current).into_widget();
         }
         if let Some(decoration) = self.decoration.take() {
-            current = DecoratedBox::new(decoration, current).into_widget();
+            current = if childless && self.padding.is_none() {
+                DecoratedBox::childless(decoration).into_widget()
+            } else {
+                DecoratedBox::new(decoration, current).into_widget()
+            };
         }
         if self.width.is_some() || self.height.is_some() {
             current = SizedBox::new(self.width, self.height, Some(current)).into_widget();

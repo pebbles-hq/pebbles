@@ -4,7 +4,7 @@
 
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
-use pebbles_render::{Cursor, RenderConstrainedBox, RenderParagraph, TextEnv};
+use pebbles_render::{BoxDecoration, Cursor, RenderConstrainedBox, RenderDecoratedBox, RenderParagraph, TextEnv};
 use pebbles_widgets::{Container, StyleExt, View, card, style, styles, text, text_field};
 
 #[test]
@@ -194,4 +194,34 @@ fn max_lines_ellipsis_clamps_to_one_line() {
     let t = tree.find::<RenderParagraph>().expect("text");
     // One line tall (~ font_size * line_height ≈ 16*1.2 = 19.2), not the full wrapped height.
     assert!(tree.size_of(t).height < 30.0, "clamped to one line (got {})", tree.size_of(t).height);
+}
+
+
+/// A childless decorated Container fills the constraints it is given
+/// (Flutter's childless `Container(color: ...)` behavior) — the primitive
+/// that lets flex/stretch children and Positioned::fill render a real box.
+#[test]
+fn childless_decorated_container_fills() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(300.0, 200.0);
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            pebbles_widgets::center(pebbles_widgets::widgets::SizedBox::exact(
+                120.0,
+                60.0,
+                Container::new().decoration(BoxDecoration::new().color(palette::BLUE)),
+            )),
+        )
+        .into_widget(),
+    );
+    ui.rebuild_if_dirty();
+    ui.layout(&mut env, win);
+    let tree = ui.render_tree();
+    let rid = tree.find::<RenderDecoratedBox>().expect("the decorated box");
+    assert_eq!(tree.size_of(rid), Size::new(120.0, 60.0), "childless decorated container must fill its constraints");
 }

@@ -4,10 +4,17 @@ use crate::ui::{doc, gap_h, gap_w, screen};
 
 /// A colored swatch used as a flex child throughout the layout screens.
 fn chip(color: Color, w: f64, h: f64) -> Container {
-    Container::new()
-        .width(w)
-        .height(h)
-        .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)))
+    // A zero dimension means "fill": the container omits that SizedBox, and a
+    // childless decorated container expands to its constraints (Flutter parity).
+    let mut c = Container::new()
+        .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)));
+    if w > 0.0 {
+        c = c.width(w);
+    }
+    if h > 0.0 {
+        c = c.height(h);
+    }
+    c
 }
 
 /// A bordered stage that constrains its child, so alignment effects are visible.
@@ -180,11 +187,12 @@ fn cross_axis() -> impl IntoWidget {
         (CrossAxisAlignment::Stretch, "Stretch"),
     ];
     doc("Cross axis alignment")
-        .description("Where children sit vertically. Start/End honor the vertical direction, Center floats them mid-height, and Stretch forces every child to the row's full height — the chips keep different intrinsic heights so you can see it.")
+        .description("Where children sit vertically. Start/End honor the vertical direction, Center floats them mid-height, and Stretch forces every child to the row's full height — for Start/Center/End the chips keep their intrinsic heights, and for Stretch they drop the explicit height so the stretch is visible (explicit sizes always win, exactly like Flutter).")
         .body(
             column({
                 let mut items: Vec<AnyWidget> = Vec::new();
                 for (alignment, label) in rows {
+                    let stretched = matches!(alignment, CrossAxisAlignment::Stretch);
                     items.push(
                         column(children![
                             muted(label.to_string()).size(11.5),
@@ -192,9 +200,9 @@ fn cross_axis() -> impl IntoWidget {
                             stage(
                                 76.0,
                                 row(children![
-                                    chip(a, 56.0, 20.0),
-                                    chip(b, 56.0, 40.0),
-                                    chip(c, 56.0, 60.0),
+                                    chip(a, 56.0, if stretched { 0.0 } else { 20.0 }),
+                                    chip(b, 56.0, if stretched { 0.0 } else { 40.0 }),
+                                    chip(c, 56.0, if stretched { 0.0 } else { 60.0 }),
                                 ])
                                 .cross_axis_alignment(alignment),
                             )
@@ -327,11 +335,11 @@ fn expanded_flexible() -> impl IntoWidget {
                     stage(
                         44.0,
                         row(children![
-                            Expanded::new(chip(a, 0.0, 28.0)).flex(2),
+                            Expanded::new(chip(a, 0.0, 0.0)).flex(2),
                             gap_w(8.0),
-                            Expanded::new(chip(b, 0.0, 28.0)).flex(1),
+                            Expanded::new(chip(b, 0.0, 0.0)).flex(1),
                             gap_w(8.0),
-                            Expanded::new(chip(c, 0.0, 28.0)).flex(1),
+                            Expanded::new(chip(c, 0.0, 0.0)).flex(1),
                         ]),
                     )
                     .into_widget(),

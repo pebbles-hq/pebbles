@@ -3,10 +3,17 @@ use pebbles::prelude::*;
 use crate::ui::{doc, gap_h, gap_w, screen};
 
 fn chip(color: Color, w: f64, h: f64) -> Container {
-    Container::new()
-        .width(w)
-        .height(h)
-        .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)))
+    // A zero dimension means "fill": the container omits that SizedBox, and a
+    // childless decorated container expands to its constraints (Flutter parity).
+    let mut c = Container::new()
+        .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)));
+    if w > 0.0 {
+        c = c.width(w);
+    }
+    if h > 0.0 {
+        c = c.height(h);
+    }
+    c
 }
 
 fn stage(w: f64, h: f64, child: impl IntoWidget) -> Container {
@@ -130,8 +137,8 @@ fn fit_and_zorder() -> impl IntoWidget {
                         150.0,
                         110.0,
                         stack(children![
-                            chip(palette::BLUE, 70.0, 40.0),
-                            chip(palette::GREEN, 70.0, 40.0),
+                            chip(palette::BLUE, 0.0, 0.0),
+                            chip(palette::GREEN, 0.0, 0.0),
                         ])
                         .expand(),
                     ),
