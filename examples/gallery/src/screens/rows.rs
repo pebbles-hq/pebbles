@@ -34,6 +34,7 @@ pub fn rows() -> Element {
         )
         .body(children![
             any_count(),
+            many_items(),
             main_axis(),
             cross_axis(),
             baseline(),
@@ -82,6 +83,43 @@ fn any_count() -> impl IntoWidget {
                         items
                     })
                     .spacing(4.0),
+                )
+                .into_widget(),
+            ])
+            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .main_axis_size(MainAxisSize::Min),
+        )
+}
+
+fn many_items() -> impl IntoWidget {
+    let colors = [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
+    doc("Many items, live")
+        .description("A static look at 16 children in one row: top with .spacing(4) so every chip is visible, bottom with SpaceBetween so the edges pin and the gaps flex. No item limit — only your width.")
+        .body(
+            column(children![
+                stage(
+                    40.0,
+                    row({
+                        let mut items: Vec<AnyWidget> = Vec::new();
+                        for i in 0..16 {
+                            items.push(chip(colors[i % colors.len()], 24.0, 20.0).into_widget());
+                        }
+                        items
+                    })
+                    .spacing(4.0),
+                )
+                .into_widget(),
+                gap_h(8.0),
+                stage(
+                    40.0,
+                    row({
+                        let mut items: Vec<AnyWidget> = Vec::new();
+                        for i in 0..16 {
+                            items.push(chip(colors[i % colors.len()], 24.0, 20.0).into_widget());
+                        }
+                        items
+                    })
+                    .main_axis_alignment(MainAxisAlignment::SpaceBetween),
                 )
                 .into_widget(),
             ])

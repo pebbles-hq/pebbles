@@ -32,6 +32,7 @@ pub fn columns() -> Element {
         )
         .body(children![
             any_count(),
+            many_items(),
             main_axis(),
             cross_axis(),
             spacing(),
@@ -74,6 +75,36 @@ fn any_count() -> impl IntoWidget {
             ])
             .cross_axis_alignment(CrossAxisAlignment::Stretch)
             .main_axis_size(MainAxisSize::Min),
+        )
+}
+
+fn many_items() -> impl IntoWidget {
+    let colors = [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
+    doc("Many items, live")
+        .description("A static 24-item column inside a fixed-height scroll area — long lists are just Columns, and the scrollbar keeps everything reachable.")
+        .body(
+            stage(
+                200.0,
+                scroll_area(
+                    column({
+                        let mut items: Vec<AnyWidget> = Vec::new();
+                        for i in 0..24 {
+                            items.push(
+                                row(children![
+                                    chip(colors[i % colors.len()], 20.0, 20.0),
+                                    gap_w(8.0),
+                                    text(format!("Item {i}")).size(12.5),
+                                ])
+                                .main_axis_size(MainAxisSize::Min)
+                                .into_widget(),
+                            );
+                        }
+                        items
+                    })
+                    .main_axis_size(MainAxisSize::Min)
+                    .spacing(6.0),
+                ),
+            ),
         )
 }
 
