@@ -68,6 +68,9 @@ pub mod prelude {
         Ui, Widget,
     };
 
+    // font discovery: bundled families + everything installed on the host
+    pub use pebbles_widgets::{builtins, families, has, is_builtin};
+
     // theming + the general style system (RN/CSS-like, apply anywhere)
     pub use pebbles_widgets::{Colors, ModifierExt, Style, StyleExt, Theme, image_from_bytes, image_from_path, set_theme, style, styled, styles, theme, toggle_theme};
 

@@ -3,7 +3,7 @@
 use pebbles_foundation::{Alignment, Axis, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, Size};
 
 use crate::constraints::BoxConstraints;
-use crate::objects::{RenderColoredBox, RenderConstrainedBox, RenderFlex, RenderPadding};
+use crate::objects::{RenderColoredBox, RenderConstrainedBox, RenderFlex, RenderPadding, RenderParagraph, ParagraphStyle};
 use crate::text::TextEnv;
 use crate::tree::RenderTree;
 
@@ -34,6 +34,39 @@ fn alignment_inscribes_child() {
     assert_eq!(Alignment::TOP_LEFT.inscribe(child, parent).to_point().x, 0.0);
     assert_eq!(Alignment::CENTER.inscribe(child, parent).to_point().x, 40.0);
     assert_eq!(Alignment::BOTTOM_RIGHT.inscribe(child, parent).to_point().y, 80.0);
+}
+
+/// Bundled families register into every `TextEnv`, are listed first in
+/// discovery, and actually change shaping: the same string must measure
+/// differently in Inter vs JetBrains Mono.
+#[test]
+fn builtin_fonts_register_list_and_shape() {
+    let mut text = TextEnv::new();
+    let fams = crate::fonts::available_families();
+    assert_eq!(&fams[..crate::fonts::BUILTIN_FAMILIES.len()], crate::fonts::BUILTIN_FAMILIES);
+    assert!(crate::fonts::has_family("inter")); // case-insensitive
+    assert!(crate::fonts::is_builtin("SPACE GROTESK"));
+
+    let mut tree = RenderTree::new();
+    let sans = tree.insert(Box::new(RenderParagraph::new(
+        "Baguette 0123456789",
+        ParagraphStyle { font_family: Some("Inter".into()), ..ParagraphStyle::default() },
+    )));
+    let mono = tree.insert(Box::new(RenderParagraph::new(
+        "Baguette 0123456789",
+        ParagraphStyle { font_family: Some("JetBrains Mono".into()), ..ParagraphStyle::default() },
+    )));
+    tree.root = Some(sans);
+    tree.layout(&mut text, BoxConstraints::UNBOUNDED);
+    let sans_w = tree.size_of(sans).width;
+    tree.root = Some(mono);
+    tree.layout(&mut text, BoxConstraints::UNBOUNDED);
+    let mono_w = tree.size_of(mono).width;
+    assert_ne!(sans_w, mono_w, "family selection must change shaping");
+
+    // Registering a bundled face again through the public API works.
+    let n = text.register_font(crate::fonts::builtin_fonts()[0].1.to_vec());
+    assert!(n > 0);
 }
 
 /// A childless colored box fills the space it is given.

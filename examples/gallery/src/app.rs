@@ -95,6 +95,7 @@ pub fn app() -> impl IntoWidget {
         .route("list-view", || component(screens::list_view::list_view))
         .route("grid-view", || component(screens::grid_view::grid_view))
         .route("typography", || component(screens::typography::typography))
+        .route("fonts", || component(screens::fonts::fonts))
         .route("icons", || component(screens::icons::icons))
         .route("images", || component(screens::images::images))
         .fallback(|| component(screens::overview::overview));

@@ -111,6 +111,7 @@ pub const NAV: &[NavGroup] = &[
             ("list-view", lucide::LIST_ORDERED, "List View"),
             ("grid-view", lucide::LAYOUT_GRID, "Grid View"),
             ("typography", lucide::TYPE, "Typography"),
+            ("fonts", lucide::PILCROW, "Fonts"),
             ("icons", lucide::SHAPES, "Icons"),
             ("images", lucide::IMAGE, "Images"),
         ],

@@ -13,12 +13,36 @@ pub struct TextEnv {
 
 impl Default for TextEnv {
     fn default() -> Self {
-        TextEnv { fonts: parley::FontContext::new(), layout: parley::LayoutContext::new() }
+        Self::new()
     }
 }
 
 impl TextEnv {
+    /// Creates a text environment with the bundled families registered and
+    /// the host's system fonts discovered.
     pub fn new() -> Self {
-        Self::default()
+        let mut fonts = parley::FontContext::new();
+        crate::fonts::apply_builtins(&mut fonts);
+        crate::fonts::refresh_families(&mut fonts);
+        TextEnv { fonts, layout: parley::LayoutContext::new() }
+    }
+    /// Registers font bytes (one or more faces) and refreshes discovery.
+    /// Returns the number of faces registered.
+    pub fn register_font(&mut self, bytes: Vec<u8>) -> usize {
+        let n = self.fonts.collection.register_fonts(crate::fonts::FontBlob::new(std::sync::Arc::new(bytes)), None).len();
+        crate::fonts::refresh_families(&mut self.fonts);
+        n
+    }
+    /// Loads and registers a font file from disk (ttf/otf/ttc).
+    pub fn register_font_file(&mut self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+        let data = std::fs::read(path)?;
+        self.register_font(data);
+        Ok(())
+    }
+    /// Reloads the OS font set (e.g. after the user installs a font) and
+    /// refreshes discovery.
+    pub fn register_system_fonts(&mut self) {
+        self.fonts.collection.load_system_fonts();
+        crate::fonts::refresh_families(&mut self.fonts);
     }
 }

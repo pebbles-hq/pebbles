@@ -18,6 +18,7 @@ pub mod decoration;
 pub mod object;
 pub mod objects;
 pub mod scroll_metrics;
+pub mod fonts;
 pub mod text;
 pub mod text_edit;
 pub mod tree;
@@ -39,6 +40,7 @@ pub use objects::{
     ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps, SemanticsRole, StackFit,
     StackParentData, TapCallback, TextFieldStyle, lucide,
 };
+pub use fonts::{available_families, builtin_families, builtin_fonts, has_family, is_builtin, BUILTIN_FAMILIES};
 pub use text::TextEnv;
 pub use tree::{LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};
 

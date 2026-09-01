@@ -12,6 +12,7 @@
 
 pub mod components;
 pub mod dialog;
+pub mod fonts;
 pub mod global_menu;
 pub mod image_view;
 pub mod modifiers;
@@ -24,6 +25,7 @@ pub mod widgets;
 pub mod window;
 
 pub use dialog::{AlertDialog, Dialog, DialogId, alert_dialog, close_dialog, dialog};
+pub use fonts::{builtins, families, has, is_builtin};
 pub use global_menu::{
     block_context_menu, global_menu_on, is_global_menu_enabled, on_context_menu,
     reset_global_menu, set_global_menu, set_global_menu_enabled, set_global_menu_style,
