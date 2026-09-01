@@ -140,7 +140,13 @@ pub const NAV: &[NavGroup] = &[
     },
     NavGroup {
         label: "OVERLAYS",
-        routes: &[("overlays", lucide::MESSAGE_CIRCLE, "Overlays & Feedback")],
+        routes: &[
+            ("tooltips", lucide::INFO, "Tooltip"),
+            ("popovers", lucide::SQUARE_ARROW_OUT_UP_LEFT, "Popover"),
+            ("sheets", lucide::PANEL_RIGHT_OPEN, "Sheet & Drawer"),
+            ("toasts", lucide::BELL, "Toast"),
+            ("context-menu", lucide::MOUSE_POINTER_2, "Context Menu"),
+        ],
     },
     NavGroup {
         label: "FOUNDATIONS",
