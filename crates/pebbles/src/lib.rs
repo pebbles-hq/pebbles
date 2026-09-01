@@ -49,7 +49,7 @@ pub mod prelude {
 
     // render-level styling primitives (for advanced/custom decoration) + events
     pub use pebbles_render::{
-        Affine, BlendMode, Border, BorderRadius, BorderSide, BoxDecoration, BoxShadow, BoxShape,
+        Affine, BlendMode, Border, BorderRadius, BorderSide, BoxConstraints, BoxDecoration, BoxShadow, BoxShape,
         Cursor, Gradient, IconData, IconKind, IconPrim, Image, ImageFit, PointerButton, PointerEvent,
         lucide,
     };

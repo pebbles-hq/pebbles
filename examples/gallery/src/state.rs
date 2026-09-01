@@ -119,7 +119,11 @@ pub const NAV: &[NavGroup] = &[
     NavGroup {
         label: "LAYOUT",
         routes: &[
-            ("layout", lucide::LAYOUT_TEMPLATE, "Layout"),
+            ("rows", lucide::ROWS_2, "Row"),
+            ("columns", lucide::COLUMNS_2, "Column"),
+            ("stacks", lucide::LAYERS, "Stack"),
+            ("wraps", lucide::TEXT_WRAP, "Wrap"),
+            ("boxes", lucide::BOX, "Boxes & Sizing"),
             ("resizable", lucide::PANEL_LEFT, "Resizable"),
             ("collapsible", lucide::CHEVRONS_DOWN_UP, "Collapsible"),
         ],
