@@ -14,5 +14,9 @@
 
 mod a11y;
 mod app;
+mod hotkeys;
+#[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
+mod native_menu;
 
 pub use app::App;
+pub use hotkeys::{HotkeyId, register_global_hotkey, unregister_global_hotkey};

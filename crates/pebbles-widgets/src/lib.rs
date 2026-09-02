@@ -16,9 +16,12 @@ pub mod fonts;
 pub mod global_menu;
 pub mod image_view;
 pub mod modifiers;
+pub mod native_menu;
 pub mod overlay;
 pub mod sheet;
+pub mod side;
 pub mod style;
+pub mod text_direction;
 pub mod theme;
 pub mod toast;
 pub mod widgets;
@@ -32,30 +35,36 @@ pub use global_menu::{
     set_global_menu_width, show_here as show_global_menu_here,
 };
 pub use window::{
-    Window, WindowId, close_window, focus_window, minimize_window, set_window_maximized,
-    set_window_position, set_window_resizable, set_window_title, window,
+    MonitorInfo, Window, WindowId, close_window, focus_window, minimize_window, monitors,
+    set_monitors, set_window_maximized, set_window_position, set_window_resizable,
+    set_window_title, window,
 };
 // `window::set_window_size` (OS resize) is intentionally NOT re-exported at the crate
 // root to avoid colliding with `overlay::set_window_size` (popover sizing); reach it as
 // `window::set_window_size`.
 pub use image_view::ImageView;
 pub use modifiers::ModifierExt;
+pub use native_menu::{MenuBar, NativeEntry, NativeMenu, menu, menu_bar};
 pub use overlay::{OverlayHost, hide_overlay, hide_passive, show_overlay, show_passive};
-pub use sheet::{Sheet, SheetId, Side, close_sheet, sheet};
+pub use side::Side;
+pub use sheet::{Sheet, SheetId, close_sheet, sheet};
+pub use text_direction::{set_text_direction, text_direction};
 pub use toast::{Toast, ToastId, ToastVariant, dismiss_toast, toast};
 pub use style::{Style, StyleExt, image_from_bytes, image_from_path, style, styled, styles};
 pub use theme::{Colors, Theme, set_theme, theme, theme_override, toggle_theme};
 pub use widgets::{
-    Align, AnimatedContainer, AspectRatio, ClipRRect, ColoredBox, Column, ConstrainedBox,
+    Align, AnimatedContainer, AspectRatio, CanvasWidget, ClipRRect, ColoredBox, Column, ConstrainedBox,
     Container, DecoratedBox,
     EditableText, Expanded, FittedBox, Flexible, FractionallySizedBox, GestureDetector, GridView,
     IntrinsicHeight, IntrinsicWidth, LimitedBox, ListView, Opacity, OverflowBox, Padding,
     Positioned, Row, ScrollController, ScrollExt, ScrollbarPolicy, ScrollbarStyle, Semantics,
     SemanticsExt, SemanticsProps, SemanticsRole, SingleChildScrollView, SizedBox, Transform, Spinner,
-    Stack, Text, View, Wrap, animated_container, aspect_ratio, center,
+    Stack, Text, View, Wrap, animated_container, aspect_ratio, canvas, center,
     column, editable, fitted_box, focus_scope, fractionally_sized_box, gap_h, gap_w, intrinsic_height,
     intrinsic_width, limited_box, list_view, overflow_box, row, semantics, sized_box, spacer, spinner, stack,
     text, transform, use_scroll_controller, wrap,
 };
+// The immediate-mode drawing surface (H2) a `canvas(..)` painter receives.
+pub use pebbles_render::Canvas;
 
 pub use components::*;

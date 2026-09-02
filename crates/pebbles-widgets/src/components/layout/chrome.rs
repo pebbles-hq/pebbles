@@ -5,18 +5,26 @@
 //! with no `SideNav`, and so on. `Scaffold` just arranges whichever you provide:
 //! top bar on top, side nav on the left, body filling the rest, bottom nav below.
 
+use std::rc::Rc;
+
 use pebbles_core::IntoCallback;
-use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, palette};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconData};
+use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, palette};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconData, IconKind};
 
 use pebbles_core::children;
 use pebbles_core::context::Callback;
-use pebbles_core::{component_props, create_signal};
+use pebbles_core::{animated, component_props, consume_context, create_signal, provide_context};
 use crate::theme::{mix, theme};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Container, Expanded, GestureDetector, Padding, SingleChildScrollView, center, column, gap_h, gap_w, row, spacer, text};
 
-use crate::components::icon;
+use crate::Side;
+use crate::components::{icon, tooltip};
+
+/// Context (C5): a [`SideNav`] provides this so its [`NavItem`]s render icon-only and
+/// grow a right-side tooltip when the rail is collapsed. `bool` = collapsed.
+#[derive(Clone, Copy)]
+struct NavCollapsed(bool);
 
 // ===========================================================================
 // Scaffold
@@ -182,6 +190,7 @@ impl IntoWidget for NavItem {
 
 fn render_nav_item(w: &NavItem) -> AnyWidget {
     let c = theme().colors;
+    let collapsed = consume_context::<NavCollapsed>().map(|x| x.0).unwrap_or(false);
     let hovered = create_signal(false);
     let bg = if w.selected {
         c.accent
@@ -193,17 +202,32 @@ fn render_nav_item(w: &NavItem) -> AnyWidget {
     let fg = if w.selected { c.accent_foreground } else { c.foreground };
     let weight = if w.selected { 600.0 } else { 500.0 };
 
-    let mut cells: Vec<AnyWidget> = Vec::new();
-    if let Some(kind) = w.icon {
-        cells.push(icon(kind).size(18.0).color(fg).into_widget());
-        cells.push(gap_w(10.0).into_widget());
-    }
-    cells.push(text(w.label.clone()).size(14.0).weight(weight).color(fg).into_widget());
+    // Collapsed rail (C5): icon centered, label hidden; falls back to the label's
+    // first glyph when an item has no icon so the row is never blank.
+    let inner: AnyWidget = if collapsed {
+        let glyph: AnyWidget = match w.icon {
+            Some(kind) => icon(kind).size(18.0).color(fg).into_widget(),
+            None => text(w.label.chars().next().map(|ch| ch.to_string()).unwrap_or_default())
+                .size(14.0)
+                .weight(weight)
+                .color(fg)
+                .into_widget(),
+        };
+        center(glyph).into_widget()
+    } else {
+        let mut cells: Vec<AnyWidget> = Vec::new();
+        if let Some(kind) = w.icon {
+            cells.push(icon(kind).size(18.0).color(fg).into_widget());
+            cells.push(gap_w(10.0).into_widget());
+        }
+        cells.push(text(w.label.clone()).size(14.0).weight(weight).color(fg).into_widget());
+        row(cells).into_widget()
+    };
 
     let container = Container::new()
         .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius)))
-        .padding(EdgeInsets::symmetric(10.0, 9.0))
-        .child(row(cells));
+        .padding(EdgeInsets::symmetric(if collapsed { 0.0 } else { 10.0 }, 9.0))
+        .child(inner);
 
     let mut gesture = GestureDetector::new(container)
         .cursor(Cursor::Pointer)
@@ -212,7 +236,14 @@ fn render_nav_item(w: &NavItem) -> AnyWidget {
     if let Some(cb) = w.on_select.clone() {
         gesture = gesture.on_tap(cb);
     }
-    gesture.into_widget()
+    let row_widget = gesture.into_widget();
+
+    // Collapsed rows surface their label as a right-side tooltip (C5 + C2).
+    if collapsed {
+        tooltip(w.label.clone(), row_widget).side(Side::Right).into_widget()
+    } else {
+        row_widget
+    }
 }
 
 // ===========================================================================
@@ -227,11 +258,25 @@ pub struct SideNav {
     header: Option<AnyWidget>,
     footer: Option<AnyWidget>,
     items: Vec<AnyWidget>,
+    collapsible: bool,
+    collapsed: bool,
+    on_collapse_changed: Option<Rc<dyn Fn(bool)>>,
 }
+
+/// The collapsed icon-rail width (C5).
+const RAIL_WIDTH: f64 = 56.0;
 
 /// Create an empty [`SideNav`]; add rows with `.item(..)`.
 pub fn side_nav() -> SideNav {
-    SideNav { width: 240.0, header: None, footer: None, items: Vec::new() }
+    SideNav {
+        width: 240.0,
+        header: None,
+        footer: None,
+        items: Vec::new(),
+        collapsible: false,
+        collapsed: false,
+        on_collapse_changed: None,
+    }
 }
 
 impl SideNav {
@@ -251,49 +296,95 @@ impl SideNav {
         self.items.push(item.into_widget());
         self
     }
+    /// Show a chevron toggle (pinned bottom) that collapses the nav to a 56px icon
+    /// rail. Pair with `.collapsed(..)` + `.on_collapse_changed(..)` — the state is
+    /// controlled, like every value in the catalog (C5).
+    pub fn collapsible(mut self, yes: bool) -> Self {
+        self.collapsible = yes;
+        self
+    }
+    /// The current collapsed state (controlled).
+    pub fn collapsed(mut self, collapsed: bool) -> Self {
+        self.collapsed = collapsed;
+        self
+    }
+    /// Called with the requested new collapsed state when the chevron is clicked.
+    pub fn on_collapse_changed(mut self, f: impl Fn(bool) + 'static) -> Self {
+        self.on_collapse_changed = Some(Rc::new(f));
+        self
+    }
 }
 
-
 impl IntoWidget for SideNav {
-    fn into_widget(mut self) -> AnyWidget {
-        let c = theme().colors;
-
-        // Items live in a scroll view that fills the space between a fixed header
-        // and footer, so they scroll (never clip) when the window is short.
-        let mut items: Vec<AnyWidget> = Vec::new();
-        for (i, item) in std::mem::take(&mut self.items).into_iter().enumerate() {
-            if i > 0 {
-                items.push(gap_h(2.0).into_widget());
-            }
-            items.push(item);
-        }
-        // The viewport spans the full width so the scrollbar sits flush on the
-        // sidenav's right edge; the items are inset via their own padding.
-        let scroller = SingleChildScrollView::vertical(Padding::new(
-            EdgeInsets::symmetric(10.0, 0.0),
-            column(items).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
-        ))
-        .scrollbar_thickness(6.0);
-
-        let mut col: Vec<AnyWidget> = Vec::new();
-        if let Some(header) = self.header.take() {
-            col.push(Padding::new(EdgeInsets::only(10.0, 10.0, 10.0, 6.0), header).into_widget());
-        }
-        col.push(Expanded::new(scroller).into_widget());
-        if let Some(footer) = self.footer.take() {
-            col.push(Padding::new(EdgeInsets::only(10.0, 6.0, 10.0, 10.0), footer).into_widget());
-        }
-
-        let content = Container::new()
-            .color(c.card)
-            .width(self.width - 1.0)
-            .child(column(col).cross_axis_alignment(CrossAxisAlignment::Stretch));
-
-        // Panel + a 1px right divider (we have no per-side borders yet).
-        row(children![content, Container::new().color(c.border).width(1.0)])
-            .cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .into_widget()
+    fn into_widget(self) -> AnyWidget {
+        component_props(render_side_nav, self).into_widget()
     }
+}
+
+fn render_side_nav(p: &SideNav) -> AnyWidget {
+    let c = theme().colors;
+    let collapsed = p.collapsible && p.collapsed;
+    // Width animates between the full width and the icon rail (C5).
+    let target = if collapsed { RAIL_WIDTH } else { p.width };
+    let w = animated(target, 0.15);
+
+    // Tell descendant NavItems whether to render as an icon rail.
+    provide_context(NavCollapsed(collapsed));
+
+    // Items live in a scroll view that fills the space between a fixed header and
+    // footer, so they scroll (never clip) when the window is short.
+    let mut items: Vec<AnyWidget> = Vec::new();
+    for (i, item) in p.items.iter().enumerate() {
+        if i > 0 {
+            items.push(gap_h(2.0).into_widget());
+        }
+        items.push(item.clone());
+    }
+    let scroller = SingleChildScrollView::vertical(Padding::new(
+        EdgeInsets::symmetric(if collapsed { 8.0 } else { 10.0 }, 0.0),
+        column(items).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
+    ))
+    .scrollbar_thickness(6.0);
+
+    let mut col: Vec<AnyWidget> = Vec::new();
+    if let Some(header) = &p.header {
+        if !collapsed {
+            col.push(Padding::new(EdgeInsets::only(10.0, 10.0, 10.0, 6.0), header.clone()).into_widget());
+        }
+    }
+    col.push(Expanded::new(scroller).into_widget());
+    if let Some(footer) = &p.footer {
+        if !collapsed {
+            col.push(Padding::new(EdgeInsets::only(10.0, 6.0, 10.0, 10.0), footer.clone()).into_widget());
+        }
+    }
+    // The collapse chevron, pinned to the bottom.
+    if p.collapsible {
+        let on_change = p.on_collapse_changed.clone();
+        let next = !collapsed;
+        let glyph = if collapsed { IconKind::ChevronRight } else { IconKind::ChevronLeft };
+        let mut toggle = GestureDetector::new(
+            Container::new()
+                .alignment(Alignment::CENTER)
+                .padding(EdgeInsets::symmetric(0.0, 10.0))
+                .child(icon(glyph).size(18.0).color(c.muted_foreground)),
+        )
+        .cursor(Cursor::Pointer);
+        if let Some(cb) = on_change {
+            toggle = toggle.on_tap(move || cb(next));
+        }
+        col.push(toggle.into_widget());
+    }
+
+    let content = Container::new()
+        .color(c.card)
+        .width((w - 1.0).max(0.0))
+        .child(column(col).cross_axis_alignment(CrossAxisAlignment::Stretch));
+
+    // Panel + a 1px right divider (we have no per-side borders yet).
+    row(children![content, Container::new().color(c.border).width(1.0)])
+        .cross_axis_alignment(CrossAxisAlignment::Stretch)
+        .into_widget()
 }
 
 // ===========================================================================

@@ -19,6 +19,7 @@ pebbles-render = { path = "crates/pebbles-render", version = "0.0.1" }
 pebbles-core = { path = "crates/pebbles-core", version = "0.0.1" }
 pebbles-widgets = { path = "crates/pebbles-widgets", version = "0.0.1" }
 pebbles-shell = { path = "crates/pebbles-shell", version = "0.0.1" }
+pebbles-macros = { path = "crates/pebbles-macros", version = "0.0.1" }
 pebbles = { path = "crates/pebbles", version = "0.0.1" }
 
 # --- Linebender 2D stack ---

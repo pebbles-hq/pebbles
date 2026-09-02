@@ -118,6 +118,106 @@ where
     state
 }
 
+// ---------------------------------------------------------------------------
+// F3 — optional tokio async (behind the `tokio` feature; default off)
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "tokio")]
+mod tokio_support {
+    use std::sync::OnceLock;
+
+    use super::*;
+
+    /// A lazily-created multi-thread tokio runtime shared by all futures.
+    fn runtime() -> &'static tokio::runtime::Runtime {
+        static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+        RT.get_or_init(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("build tokio runtime")
+        })
+    }
+
+    /// The future counterpart of [`spawn`]: drive `fut` on the tokio runtime, then
+    /// deliver its output to `on_done` on the UI thread (via the same [`pump`]).
+    /// Additive name because a closure and a future can't share one fn signature.
+    pub fn spawn_future<T, Fut, D>(fut: Fut, on_done: D)
+    where
+        T: Send + 'static,
+        Fut: std::future::Future<Output = T> + Send + 'static,
+        D: FnOnce(T) + 'static,
+    {
+        let slot: Arc<Mutex<Option<T>>> = Arc::new(Mutex::new(None));
+        let write = slot.clone();
+        runtime().spawn(async move {
+            let result = fut.await;
+            if let Ok(mut s) = write.lock() {
+                *s = Some(result);
+            }
+        });
+        request_frame();
+        let mut on_done = Some(on_done);
+        PENDING.with(|p| {
+            p.borrow_mut().push(Box::new(move || {
+                match slot.lock().ok().and_then(|mut s| s.take()) {
+                    Some(v) => {
+                        if let Some(cb) = on_done.take() {
+                            cb(v);
+                        }
+                        true
+                    }
+                    None => false,
+                }
+            }));
+        });
+    }
+
+    /// The future counterpart of [`create_resource`]: `make` runs once on mount to
+    /// build the future; the returned signal is `Loading` until it resolves.
+    pub fn create_resource_future<T, Fut, MakeFut>(make: MakeFut) -> Signal<Resource<T>>
+    where
+        T: Send + Clone + 'static,
+        Fut: std::future::Future<Output = T> + Send + 'static,
+        MakeFut: FnOnce() -> Fut + 'static,
+    {
+        let state = create_signal(Resource::Loading);
+        let cell = std::rc::Rc::new(RefCell::new(Some(make)));
+        create_effect(move || {
+            if let Some(mk) = cell.borrow_mut().take() {
+                spawn_future(mk(), move |v| state.set(Resource::Ready(v)));
+            }
+        });
+        state
+    }
+}
+
+#[cfg(feature = "tokio")]
+pub use tokio_support::{create_resource_future, spawn_future};
+
+#[cfg(all(test, feature = "tokio"))]
+mod tokio_tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    #[test]
+    fn ready_future_delivers_after_pump() {
+        let got = Rc::new(Cell::new(0));
+        let g = got.clone();
+        spawn_future(async { 42 }, move |v| g.set(v));
+        // The runtime resolves the ready future near-instantly; poll pump briefly.
+        for _ in 0..2000 {
+            pump();
+            if got.get() != 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert_eq!(got.get(), 42, "future output delivered on the UI thread");
+    }
+}
+
 /// Drain finished background tasks and deliver their results (writing signals) on the
 /// UI thread. Called once per frame by the shell. Returns whether any tasks are still
 /// in flight (so the shell keeps requesting frames until they complete).

@@ -475,7 +475,7 @@ struct Props {
 
 impl IntoWidget for ListView {
     fn into_widget(self) -> AnyWidget {
-        component_props(
+        let viewport = component_props(
             render_list,
             Props {
                 count: self.count,
@@ -492,8 +492,9 @@ impl IntoWidget for ListView {
                 reverse: self.reverse,
                 padding: self.padding,
             },
-        )
-        .into_widget()
+        );
+        // C7: a ListView is a List container (its ListTile rows are ListItems).
+        crate::widgets::semantics(pebbles_render::SemanticsRole::List, "", viewport).into_widget()
     }
 }
 

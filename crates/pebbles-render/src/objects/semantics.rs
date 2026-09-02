@@ -25,6 +25,25 @@ pub enum SemanticsRole {
     Image,
     Label,
     Group,
+    // C7 long-tail roles — menus, tabs, dialogs, alerts, progress, lists.
+    /// An actionable row in a menu.
+    MenuItem,
+    /// A menu container (the open dropdown/context panel).
+    Menu,
+    /// A single tab in a tab list.
+    Tab,
+    /// The tab strip that owns the tabs.
+    TabList,
+    /// A modal dialog surface.
+    Dialog,
+    /// A transient alert / toast announcement.
+    Alert,
+    /// A progress indicator (pair with a `value` of the percent).
+    ProgressBar,
+    /// A list container.
+    List,
+    /// A row within a list.
+    ListItem,
 }
 
 /// The accessibility description a widget attaches to its render subtree.

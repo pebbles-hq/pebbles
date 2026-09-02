@@ -139,6 +139,9 @@ pub const NAV: &[NavGroup] = &[
             ("breadcrumb", lucide::CHEVRON_RIGHT, "Breadcrumb"),
             ("menubar", lucide::MENU, "Menubar"),
             ("pagination", lucide::CHEVRONS_LEFT, "Pagination"),
+            ("toolbar", lucide::LAYOUT_DASHBOARD, "Toolbar & Status"),
+            ("chrome", lucide::APP_WINDOW, "App Shell"),
+            ("routing", lucide::LAYERS, "Routing"),
         ],
     },
     NavGroup {

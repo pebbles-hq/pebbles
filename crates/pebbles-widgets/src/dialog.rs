@@ -34,6 +34,8 @@ struct DialogEntry {
     background: Option<Color>,
     dismissible: bool,
     on_close: Option<Rc<dyn Fn()>>,
+    /// Accessible name announced for the dialog surface (C7 semantics).
+    title: String,
 }
 
 thread_local! {
@@ -157,6 +159,7 @@ impl Dialog {
             background: self.background,
             dismissible: self.dismissible,
             on_close: self.on_close,
+            title: self.title,
         }));
         id
     }
@@ -306,7 +309,10 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
                 )),
         )
         .child(entry.content);
-    let panel = Positioned::fill(center(surface)).into_widget();
+    // C7: announce the surface as a Dialog (label = title) to assistive tech.
+    let labelled =
+        crate::widgets::semantics(pebbles_render::SemanticsRole::Dialog, entry.title.clone(), surface);
+    let panel = Positioned::fill(center(labelled)).into_widget();
 
     vec![scrim, panel]
 }

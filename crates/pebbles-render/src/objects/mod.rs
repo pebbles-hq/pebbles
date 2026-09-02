@@ -3,6 +3,7 @@
 
 mod aspect;
 mod basic;
+mod canvas;
 mod decorated;
 mod effects;
 mod fitted;
@@ -25,6 +26,7 @@ mod wrap;
 
 pub use aspect::RenderAspectRatio;
 pub use basic::{RenderAlign, RenderColoredBox, RenderConstrainedBox, RenderPadding};
+pub use canvas::{Canvas, RenderCanvas};
 pub use decorated::RenderDecoratedBox;
 pub use wrap::RenderWrap;
 pub use effects::{RenderClipRRect, RenderOpacity};
@@ -36,6 +38,8 @@ pub use intrinsic::{RenderIntrinsicHeight, RenderIntrinsicWidth};
 pub use measure::RenderMeasureProbe;
 pub use overflow::{RenderLimitedBox, RenderOverflowBox};
 pub use paragraph::{ParagraphStyle, RenderParagraph};
+#[cfg(debug_assertions)]
+pub use paragraph::{reset_shape_count, shape_count};
 pub use pointer::{Cursor, PointerButton, PointerEvent, RenderPointerListener, TapCallback};
 pub use scroll::{RefreshState, RenderList, RenderScroll, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle};
 pub use semantics::{SemanticsNode, SemanticsProps, SemanticsRole};

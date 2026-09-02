@@ -33,6 +33,10 @@ pub fn command_screen() -> Element {
         ]
     };
 
+    // The ⌘K palette binding (B2): a real shortcut hook, auto-unregistered when
+    // this screen unmounts — the "app-side recipe" is gone.
+    create_shortcut("Mod+K", move || command_palette(groups()).open());
+
     screen("Command")
 
         .description("A searchable command list (shadcn's Command) — inline, or centered as the ⌘K palette.")
@@ -45,7 +49,7 @@ pub fn command_screen() -> Element {
                 command(groups()).width(460.0),
             ),
             doc("Command palette")
-                .description("The same list centered in a dismissible modal — call .open() from a key handler (the ⌘K binding is app-side).")
+                .description("The same list centered in a dismissible modal — press ⌘K anywhere (even while typing in a field — editor intents still win for their own keys) to open it. The binding is a real create_shortcut hook, not app-side glue.")
                 .body(
                 column(children![
                     row(children![

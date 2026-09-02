@@ -38,6 +38,29 @@ pub(crate) fn apply_builtins(fonts: &mut parley::FontContext) {
     }
 }
 
+/// User fonts registered via `App::font` (F4): raw `'static` bytes, applied by every
+/// [`TextEnv`](crate::TextEnv) so all windows (each own a `TextEnv`) see the family.
+static USER_FONTS: OnceLock<RwLock<Vec<&'static [u8]>>> = OnceLock::new();
+
+fn user_fonts() -> &'static RwLock<Vec<&'static [u8]>> {
+    USER_FONTS.get_or_init(|| RwLock::new(Vec::new()))
+}
+
+/// Register user-supplied font bytes globally (F4). The bytes are `&'static` so they
+/// outlive every window's collection. Call before `App::run` (via `App::font`); the
+/// font's own metadata family name is what `style().font_family("…")` then matches.
+/// Runtime (post-startup) loading is v2 (§J).
+pub fn register_user_font(bytes: &'static [u8]) {
+    user_fonts().write().unwrap().push(bytes);
+}
+
+/// Apply every registered user font into a fresh font context.
+pub(crate) fn apply_user_fonts(fonts: &mut parley::FontContext) {
+    for bytes in user_fonts().read().unwrap().iter() {
+        fonts.collection.register_fonts(Blob::new(std::sync::Arc::new(bytes.to_vec())), None);
+    }
+}
+
 /// Last known family snapshot (built-ins first, then system families sorted).
 static FAMILIES: OnceLock<RwLock<Vec<String>>> = OnceLock::new();
 

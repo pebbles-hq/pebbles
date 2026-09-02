@@ -86,6 +86,25 @@ impl MenuItem {
         self.destructive = true;
         self
     }
+
+    // --- read accessors for the native-menu builder (B3) -------------------
+    /// The item's label.
+    pub(crate) fn label_str(&self) -> &str {
+        &self.label
+    }
+    /// The shortcut string as authored — for a native menu it is parsed as a B2
+    /// binding grammar (`"Mod+S"`); for the in-window menu it is a display hint.
+    pub(crate) fn shortcut_str(&self) -> Option<&str> {
+        self.shortcut.as_deref()
+    }
+    /// The select callback, if any.
+    pub(crate) fn on_select_rc(&self) -> Option<Rc<dyn Fn()>> {
+        self.on_select.clone()
+    }
+    /// Whether the item is disabled.
+    pub(crate) fn is_disabled(&self) -> bool {
+        self.disabled
+    }
 }
 
 impl From<MenuItem> for MenuEntry {
@@ -793,18 +812,25 @@ impl RebuildableMenu {
                         });
                     }
                     y += 32.0;
-                    action_row(ActionRowProps {
-                        label: label.clone(),
-                        icon: *icon,
-                        shortcut: shortcut.clone(),
-                        leading_check: None,
-                        reserve_gutter: reserve,
-                        destructive: *destructive,
-                        disabled: *disabled,
-                        highlighted,
-                        width: inner,
-                        on_select: pick,
-                    })
+                    // C7: each row is a MenuItem (label = row text).
+                    crate::widgets::semantics(
+                        pebbles_render::SemanticsRole::MenuItem,
+                        label.clone(),
+                        action_row(ActionRowProps {
+                            label: label.clone(),
+                            icon: *icon,
+                            shortcut: shortcut.clone(),
+                            leading_check: None,
+                            reserve_gutter: reserve,
+                            destructive: *destructive,
+                            disabled: *disabled,
+                            highlighted,
+                            width: inner,
+                            on_select: pick,
+                        }),
+                    )
+                    .disabled(*disabled)
+                    .into_widget()
                 }
                 BpEntry::Label(l) => {
                     y += 28.0;
@@ -840,18 +866,25 @@ impl RebuildableMenu {
                     };
                     row_idx += 1;
                     y += 32.0;
-                    action_row(ActionRowProps {
-                        label: label.clone(),
-                        icon: None,
-                        shortcut: None,
-                        leading_check: Some(now),
-                        reserve_gutter: reserve,
-                        destructive: false,
-                        disabled: false,
-                        highlighted,
-                        width: inner,
-                        on_select: pick,
-                    })
+                    // C7: a checkable MenuItem (checked state announced).
+                    crate::widgets::semantics(
+                        pebbles_render::SemanticsRole::MenuItem,
+                        label.clone(),
+                        action_row(ActionRowProps {
+                            label: label.clone(),
+                            icon: None,
+                            shortcut: None,
+                            leading_check: Some(now),
+                            reserve_gutter: reserve,
+                            destructive: false,
+                            disabled: false,
+                            highlighted,
+                            width: inner,
+                            on_select: pick,
+                        }),
+                    )
+                    .checked(now)
+                    .into_widget()
                 }
                 BpEntry::Sub { label, entries } => {
                     // A navigable row (Right enters it); hovering opens the child
@@ -882,7 +915,13 @@ impl RebuildableMenu {
                 }
             });
         }
-        popover_surface(width, 4.0, column(kids).main_axis_size(MainAxisSize::Min).into_widget())
+        // C7: the open panel is a Menu (submenu panels build through here too).
+        crate::widgets::semantics(
+            pebbles_render::SemanticsRole::Menu,
+            "",
+            popover_surface(width, 4.0, column(kids).main_axis_size(MainAxisSize::Min).into_widget()),
+        )
+        .into_widget()
     }
 }
 

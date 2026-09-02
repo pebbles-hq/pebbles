@@ -6,7 +6,11 @@
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::{SemanticsRole, TextEnv};
-use pebbles_widgets::{View, button, checkbox, column, select, slider, switch, text_field};
+use pebbles_widgets::components::{TabsVariant, list_tile, progress, tabs};
+use pebbles_widgets::{
+    Container, ListView, View, button, checkbox, column, select, semantics, slider, switch, text,
+    text_field,
+};
 
 fn root() -> impl IntoWidget {
     column(vec![
@@ -62,6 +66,116 @@ fn interactive_widgets_populate_the_semantics_tree() {
     // Nodes carry real window-space bounds (laid out, non-empty, stacked vertically).
     assert!(btn.bounds.width() > 0.0 && btn.bounds.height() > 0.0, "button has bounds");
     assert!(cb.bounds.y0 > btn.bounds.y0, "checkbox is below the button in the column");
+}
+
+// --- C7: long-tail roles ---------------------------------------------------
+
+fn long_tail_roles() -> impl IntoWidget {
+    use SemanticsRole::*;
+    column(vec![
+        semantics(MenuItem, "Copy", text("Copy")).into_widget(),
+        semantics(Menu, "menu", text("m")).into_widget(),
+        semantics(Dialog, "Settings", text("d")).into_widget(),
+        semantics(Alert, "Saved", text("a")).into_widget(),
+        semantics(List, "items", text("l")).into_widget(),
+        semantics(ListItem, "row 1", text("li")).into_widget(),
+    ])
+}
+
+#[test]
+fn long_tail_roles_reach_the_tree() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(View::new(palette::WHITE, component(long_tail_roles)).into_widget());
+    ui.layout(&mut env, Size::new(400.0, 400.0));
+
+    let tree = ui.render_tree().semantics_tree();
+    let has = |r: SemanticsRole, label: &str| {
+        tree.iter().any(|n| n.props.role == r && n.props.label == label)
+    };
+    assert!(has(SemanticsRole::MenuItem, "Copy"));
+    assert!(has(SemanticsRole::Menu, "menu"));
+    assert!(has(SemanticsRole::Dialog, "Settings"));
+    assert!(has(SemanticsRole::Alert, "Saved"));
+    assert!(has(SemanticsRole::List, "items"));
+    assert!(has(SemanticsRole::ListItem, "row 1"));
+}
+
+fn progress_root() -> impl IntoWidget {
+    progress(0.5, 200.0)
+}
+
+#[test]
+fn progress_reports_a_progressbar_with_percent() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(View::new(palette::WHITE, component(progress_root)).into_widget());
+    ui.layout(&mut env, Size::new(300.0, 100.0));
+
+    let tree = ui.render_tree().semantics_tree();
+    let pb = tree
+        .iter()
+        .find(|n| n.props.role == SemanticsRole::ProgressBar)
+        .expect("progressbar node");
+    assert_eq!(pb.props.value.as_deref(), Some("50%"));
+}
+
+fn tabs_root() -> impl IntoWidget {
+    tabs(0)
+        .tab("Account", text("acct"), || {})
+        .tab("Password", text("pw"), || {})
+        .variant(TabsVariant::Underline)
+}
+
+#[test]
+fn tabs_report_tablist_and_the_selected_tab() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(View::new(palette::WHITE, component(tabs_root)).into_widget());
+    ui.layout(&mut env, Size::new(400.0, 200.0));
+
+    let tree = ui.render_tree().semantics_tree();
+    assert!(tree.iter().any(|n| n.props.role == SemanticsRole::TabList), "tablist present");
+    let tab_nodes: Vec<_> =
+        tree.iter().filter(|n| n.props.role == SemanticsRole::Tab).collect();
+    assert_eq!(tab_nodes.len(), 2, "two tab nodes");
+    let account = tab_nodes.iter().find(|n| n.props.label == "Account").expect("Account tab");
+    assert_eq!(account.props.value.as_deref(), Some("selected"), "selected tab carries the flag");
+    let password = tab_nodes.iter().find(|n| n.props.label == "Password").expect("Password tab");
+    assert_eq!(password.props.value, None, "unselected tab has no value");
+}
+
+fn list_root() -> impl IntoWidget {
+    Container::new()
+        .height(300.0)
+        .child(ListView::builder(3, 44.0, |i| list_tile(format!("Item {i}"))))
+}
+
+#[test]
+fn list_view_reports_a_list_of_listitems() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(View::new(palette::WHITE, component(list_root)).into_widget());
+    ui.layout(&mut env, Size::new(400.0, 400.0));
+
+    let tree = ui.render_tree().semantics_tree();
+    assert!(tree.iter().any(|n| n.props.role == SemanticsRole::List), "list container present");
+    let items: Vec<_> =
+        tree.iter().filter(|n| n.props.role == SemanticsRole::ListItem).collect();
+    assert!(items.len() >= 3, "each visible non-interactive tile is a ListItem (got {})", items.len());
+    assert!(items.iter().any(|n| n.props.label == "Item 0"), "tile title is the ListItem label");
 }
 
 fn locked_button() -> impl IntoWidget {

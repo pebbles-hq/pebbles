@@ -77,22 +77,25 @@ fn render_progress(p: &Progress) -> AnyWidget {
             .decoration(BoxDecoration::new().color(color).radius(radius))
             .width(seg)
             .height(p.thickness);
-        return track()
-            .child(ClipRRect::new(
-                radius,
-                stack(children![Positioned::new(bar).left(x).top(0.0)]),
-            ))
+        let bar = track().child(ClipRRect::new(
+            radius,
+            stack(children![Positioned::new(bar).left(x).top(0.0)]),
+        ));
+        // C7: an indeterminate ProgressBar (no value).
+        return crate::widgets::semantics(pebbles_render::SemanticsRole::ProgressBar, "", bar)
             .into_widget();
     }
 
     let frac = (p.value / p.max).clamp(0.0, 1.0);
-    track()
-        .alignment(Alignment::CENTER_LEFT)
-        .child(
-            Container::new()
-                .decoration(BoxDecoration::new().color(color).radius(radius))
-                .width(p.width * frac)
-                .height(p.thickness),
-        )
+    let pct = (frac * 100.0).round() as i64;
+    let bar = track().alignment(Alignment::CENTER_LEFT).child(
+        Container::new()
+            .decoration(BoxDecoration::new().color(color).radius(radius))
+            .width(p.width * frac)
+            .height(p.thickness),
+    );
+    // C7: a determinate ProgressBar announced with its percentage.
+    crate::widgets::semantics(pebbles_render::SemanticsRole::ProgressBar, "", bar)
+        .value(format!("{pct}%"))
         .into_widget()
 }

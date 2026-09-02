@@ -66,12 +66,16 @@ pub enum KeyInput {
 thread_local! {
     static SHIFT: Cell<bool> = const { Cell::new(false) };
     static CTRL: Cell<bool> = const { Cell::new(false) };
+    static ALT: Cell<bool> = const { Cell::new(false) };
+    static META: Cell<bool> = const { Cell::new(false) };
 }
 
 /// Update the live modifier state (called by the shell on every change).
-pub fn set_modifiers(shift: bool, ctrl: bool) {
+pub fn set_modifiers(shift: bool, ctrl: bool, alt: bool, meta: bool) {
     SHIFT.with(|s| s.set(shift));
     CTRL.with(|c| c.set(ctrl));
+    ALT.with(|a| a.set(alt));
+    META.with(|m| m.set(meta));
 }
 
 /// Whether Shift is currently held (for Shift-click selection).
@@ -82,4 +86,14 @@ pub fn shift_held() -> bool {
 /// Whether Ctrl is currently held.
 pub fn ctrl_held() -> bool {
     CTRL.with(Cell::get)
+}
+
+/// Whether Alt is currently held (B1 — the modifier shortcuts need it).
+pub fn alt_held() -> bool {
+    ALT.with(Cell::get)
+}
+
+/// Whether Meta (Super/Command) is currently held.
+pub fn meta_held() -> bool {
+    META.with(Cell::get)
 }

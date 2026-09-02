@@ -143,7 +143,7 @@ Run `cargo run -p gallery` — ~50 dedicated screens, one per component family.
 |-----------|--------|-------|
 | Reactivity (signals, memo, `Store`, resource, `spawn`) | ✅ | `select_memo` convenience (E4) open; tokio feature (F3) open |
 | Focus (Tab traversal, activate, editor routing, focus ring) | ✅ | scoped `FocusScope`/focus-trap primitive ✅ |
-| Keyboard | ✅ 🔶B1 | Shift/Ctrl only — Alt/Meta (B1), shortcut map (B2), native menubar (B3), global hotkeys (B4) open |
+| Keyboard | ✅ | Alt/Meta modifiers (B1) + app shortcut map (B2, `create_shortcut`) done; native menu bar (B3, `native-menus` feat, macOS/Windows) + global hotkeys (B4, `global-hotkeys` feat) implemented behind default-off features (pending build-verify) |
 | Animation (`animated`, `animate_to`, loops, keyed timeouts, timer-wake) | ✅ 🔶H1 | curves/springs/`transition()` presence (H1) open |
 | Clipboard · IME preedit | ✅ | |
 | Accessibility (AccessKit: read + focus announce) | ✅ 🔶D1/C7 | AT-driven actions (D1), long-tail roles (C7) open |

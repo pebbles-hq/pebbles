@@ -107,8 +107,11 @@ struct Runtime {
     /// Cursor into the current component's `effect_hooks`, reset each render (parallel
     /// to `hook_cursor` for signals).
     effect_cursor: usize,
-    /// Components scheduled to re-render.
+    /// Components scheduled to re-render (drain order).
     pending_components: Vec<CompKey>,
+    /// O(1) membership guard mirroring `pending_components` (E1) — replaces the linear
+    /// `contains` on every schedule; kept in lockstep with the Vec.
+    pending_components_set: HashSet<CompKey>,
     /// Effects scheduled to re-run.
     pending_effects: Vec<EffectId>,
     /// Set when a write happened; the shell polls this to request a frame.
@@ -309,7 +312,8 @@ fn schedule_subscribers(rt: &mut Runtime, id: SignalId) {
     let components: Vec<CompKey> = rt.signals[id].component_subs.drain().collect();
     let effects: Vec<EffectId> = rt.signals[id].effect_subs.drain().collect();
     for c in components {
-        if !rt.pending_components.contains(&c) {
+        // O(1) dedup (E1): the set insert reports novelty; the Vec keeps drain order.
+        if rt.pending_components_set.insert(c) {
             rt.pending_components.push(c);
         }
     }
@@ -432,6 +436,22 @@ impl<S: 'static + Clone> Store<S> {
     /// Select a slice of the state (subscribing).
     pub fn select<R>(&self, f: impl FnOnce(&S) -> R) -> R {
         self.signal.with(f)
+    }
+    /// A deduped selector (E4): returns a `Signal<R>` that recomputes `f` when the
+    /// store changes but only propagates (re-renders downstream) when the selected
+    /// slice actually changes (`PartialEq`). Sugar for
+    /// `create_memo(move || store.select(&f))` — call it at the top level of a
+    /// component, like any hook.
+    ///
+    /// ```ignore
+    /// let name = store.select_memo(|s| s.user.name.clone()); // re-renders only when the name changes
+    /// ```
+    pub fn select_memo<R: 'static + Clone + PartialEq>(
+        &self,
+        f: impl Fn(&S) -> R + 'static,
+    ) -> Signal<R> {
+        let signal = self.signal;
+        create_memo(move || signal.with(&f))
     }
     /// Replace the state.
     pub fn set(&self, state: S) {
@@ -629,15 +649,20 @@ pub fn consume_context<T: 'static + Clone>() -> Option<T> {
 /// its own, leaving other windows' pending work untouched).
 pub(crate) fn take_pending_components(window: u32) -> Vec<ElementId> {
     with_rt(|rt| {
+        // Take the Vec out first so the loop can also update the membership set
+        // (E1) without a second borrow of `rt`.
+        let all = std::mem::take(&mut rt.pending_components);
         let mut mine = Vec::new();
-        rt.pending_components.retain(|&(w, e)| {
+        let mut keep = Vec::with_capacity(all.len());
+        for (w, e) in all {
             if w == window {
+                rt.pending_components_set.remove(&(w, e));
                 mine.push(e);
-                false
             } else {
-                true
+                keep.push((w, e));
             }
-        });
+        }
+        rt.pending_components = keep;
         mine
     })
 }

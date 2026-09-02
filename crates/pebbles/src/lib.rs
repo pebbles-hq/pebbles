@@ -45,7 +45,7 @@ pub mod prelude {
     pub use pebbles_foundation::{
         Alignment, Axis, BoxFit, Color, CrossAxisAlignment, EdgeInsets, FlexFit,
         MainAxisAlignment, MainAxisSize, Offset, Rect, Size, TextAlign, TextBaseline,
-        VerticalDirection, WrapAlignment, palette,
+        TextDirection, VerticalDirection, WrapAlignment, palette,
     };
 
     // render-level styling primitives (for advanced/custom decoration) + events
@@ -58,10 +58,11 @@ pub mod prelude {
     // runtime (pebbles-core): reactivity (SolidJS-style) + function components + focus
     pub use pebbles_core::{
         Channel, Component, Curve, Element, FocusNode, KeyInput, Motion, Resource, ScopeTag,
-        Signal, Store, action, action_event, animate_to, animate_to_with, animated, animated_with,
-        channel, component, component_props, consume_context, create_effect, create_focus,
-        create_focus_scope, create_memo, create_resource, create_signal, create_store,
-        create_timeout, provide_context, spawn,
+        Signal, Spring, Store, Transition, action, action_event, animate_spring, animate_to,
+        animate_to_with, animated, animated_spring, animated_with, channel, component,
+        component_props, consume_context, create_effect, create_focus, create_focus_scope,
+        create_memo, create_resource, create_signal, create_store, create_timeout, provide_context,
+        spawn, transition,
     };
 
     // runtime (pebbles-core): the widget contract + reconciler handles
@@ -74,7 +75,7 @@ pub mod prelude {
     pub use pebbles_widgets::{builtins, families, has, is_builtin};
 
     // theming + the general style system (RN/CSS-like, apply anywhere)
-    pub use pebbles_widgets::{Colors, ModifierExt, Style, StyleExt, Theme, image_from_bytes, image_from_path, set_theme, style, styled, styles, theme, theme_override, toggle_theme};
+    pub use pebbles_widgets::{Colors, ModifierExt, Style, StyleExt, Theme, image_from_bytes, image_from_path, set_text_direction, set_theme, style, styled, styles, text_direction, theme, theme_override, toggle_theme};
 
     // accessibility semantics (screen-reader roles/labels/state)
     pub use pebbles_widgets::{Semantics, SemanticsExt, SemanticsProps, SemanticsRole, semantics};
@@ -99,21 +100,21 @@ pub mod prelude {
         close_sheet, dialog, sheet,
     };
 
-    // secondary OS windows (share the runtime; talk via signals / Channel)
+    // secondary OS windows (share the runtime; talk via signals / Channel) + monitors
     pub use pebbles_widgets::{
-        Window, WindowId, close_window, focus_window, minimize_window, set_window_maximized,
-        set_window_position, set_window_resizable, set_window_title, window,
+        MonitorInfo, Window, WindowId, close_window, focus_window, minimize_window, monitors,
+        set_window_maximized, set_window_position, set_window_resizable, set_window_title, window,
     };
 
     // widgets: layout primitives + constructors
     pub use pebbles_widgets::{
-        Align, AnimatedContainer, AspectRatio, ClipRRect, ColoredBox, Column, ConstrainedBox,
-        Container, DecoratedBox,
+        Align, AnimatedContainer, AspectRatio, Canvas, CanvasWidget, ClipRRect, ColoredBox, Column,
+        ConstrainedBox, Container, DecoratedBox,
         EditableText, Expanded, FittedBox, Flexible, FractionallySizedBox, GestureDetector,
         GridView, IntrinsicHeight, IntrinsicWidth, LimitedBox, ListView, Opacity, OverflowBox,
         Padding, Positioned, Row, ScrollController, ScrollExt, ScrollbarPolicy, ScrollbarStyle,
         ImageView, SingleChildScrollView, SizedBox, Spinner, Stack, Text, Transform, View, Wrap,
-        animated_container, aspect_ratio, center, column, editable, fitted_box, focus_scope,
+        animated_container, aspect_ratio, canvas, center, column, editable, fitted_box, focus_scope,
         fractionally_sized_box, gap_h, gap_w, intrinsic_height, intrinsic_width, limited_box,
         list_view, overflow_box, row, sized_box, spacer, spinner, stack, text, transform,
         use_scroll_controller, wrap,
@@ -122,9 +123,18 @@ pub mod prelude {
     // the shadcn-style component catalog
     pub use pebbles_widgets::components::*;
 
+    // B3 native OS menu bar spec (attached via `App::menu`; needs the `native-menus`
+    // feature to take effect — the in-window `menubar(..)` is the default form)
+    pub use pebbles_widgets::{MenuBar, NativeEntry, NativeMenu, menu, menu_bar};
+
     // widget-impl macros (pebbles-core)
     pub use pebbles_core::{children, parent_data_widget, render_widget};
 
-    // the app runner
-    pub use pebbles_shell::App;
+    // the #[component] authoring macro (F1). Shares the name with the `component(fn)`
+    // helper above — they live in different namespaces (attribute macro vs fn).
+    pub use pebbles_macros::component;
+
+    // the app runner + B4 global hotkeys (graceful Err without the `global-hotkeys`
+    // feature)
+    pub use pebbles_shell::{App, HotkeyId, register_global_hotkey, unregister_global_hotkey};
 }

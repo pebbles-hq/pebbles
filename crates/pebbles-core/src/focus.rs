@@ -115,6 +115,23 @@ pub fn set_focus(next: Option<FocusKey>) {
     }
 }
 
+/// Focus the registered node in `window` whose FFI id equals `source` (the id a
+/// [`SemanticsNode`](pebbles_render::SemanticsNode) carries). Returns whether a match
+/// was found and focused. Used by the shell to honor an AT-driven `Focus` action (D1).
+pub fn focus_by_source(window: u32, source: u64) -> bool {
+    use slotmap::Key;
+    let key = with_mgr(|m| {
+        m.order.iter().copied().find(|(w, e)| *w == window && e.data().as_ffi() == source)
+    });
+    match key {
+        Some(k) => {
+            set_focus(Some(k));
+            true
+        }
+        None => false,
+    }
+}
+
 /// A handle to a focusable node — its component's `(window, element id)`.
 #[derive(Clone, Copy)]
 pub struct FocusNode {

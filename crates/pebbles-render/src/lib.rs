@@ -15,6 +15,8 @@
 
 pub mod constraints;
 pub mod decoration;
+pub mod direction;
+pub mod inspect;
 pub mod object;
 pub mod objects;
 pub mod scroll_metrics;
@@ -27,13 +29,15 @@ pub mod tree;
 mod tests;
 
 pub use constraints::BoxConstraints;
+pub use direction::{set_text_direction, text_direction};
+pub use inspect::{InspectNode, format_chain, inspect_at};
 pub use decoration::{BlendMode, Border, BorderRadius, BorderSide, BoxDecoration, BoxShadow, BoxShape, Gradient, Image, ImageFit, image_from_rgba8};
 // (Image = peniko ImageBrush)
 pub use object::RenderObject;
 pub use objects::{
-    Cursor, FlexParentData, IconData, IconKind, IconPrim, ParagraphStyle, PointerButton,
+    Canvas, Cursor, FlexParentData, IconData, IconKind, IconPrim, ParagraphStyle, PointerButton,
     PointerEvent, RenderAlign,
-    RenderAspectRatio,
+    RenderAspectRatio, RenderCanvas,
     RenderClipRRect, RenderColoredBox, RenderConstrainedBox, RenderDecoratedBox, RenderFlex,
     RenderFittedBox, RenderFractionallySizedBox, RenderIcon, RenderIntrinsicHeight,
     RenderIntrinsicWidth, RenderLimitedBox, RenderMeasureProbe, RenderOpacity, RenderOverflowBox, RenderPadding,
@@ -42,7 +46,7 @@ pub use objects::{
     RefreshState, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps, SemanticsRole, StackFit,
     StackParentData, TapCallback, TextFieldStyle, lucide,
 };
-pub use fonts::{available_families, builtin_families, builtin_fonts, has_family, is_builtin, BUILTIN_FAMILIES};
+pub use fonts::{available_families, builtin_families, builtin_fonts, has_family, is_builtin, register_user_font, BUILTIN_FAMILIES};
 pub use text::TextEnv;
 pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};
 

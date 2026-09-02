@@ -183,3 +183,92 @@ fn flex_spacing_reserves_and_positions() {
     // The second child sits after the first plus the gap.
     assert_eq!(tree.offset_of(b).to_point().x, 50.0);
 }
+
+/// D2: under a right-to-left ambient direction, a Row lays its children out in reverse
+/// — the first child ends up on the RIGHT. (Each `#[test]` runs on its own thread, so
+/// the thread-local direction is isolated; reset anyway.)
+#[test]
+fn row_reverses_child_order_under_rtl() {
+    use pebbles_foundation::TextDirection;
+
+    crate::set_text_direction(TextDirection::Rtl);
+
+    let mut tree = RenderTree::new();
+    let mut text = TextEnv::new();
+    let flex = tree.insert(Box::new(RenderFlex::new(
+        Axis::Horizontal,
+        MainAxisAlignment::Start,
+        CrossAxisAlignment::Start,
+        MainAxisSize::Min,
+        0.0,
+        VerticalDirection::Down,
+        TextBaseline::Alphabetic,
+    )));
+    let a = tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(40.0, 20.0)))));
+    let b = tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(40.0, 20.0)))));
+    tree.insert_child(flex, a, 0);
+    tree.insert_child(flex, b, 1);
+    tree.root = Some(flex);
+
+    tree.layout(&mut text, BoxConstraints::UNBOUNDED);
+    // Reversed: child `a` (index 0) is placed second → to the right of `b`.
+    assert_eq!(tree.offset_of(b).to_point().x, 0.0, "index-1 child leads on the left under RTL");
+    assert_eq!(tree.offset_of(a).to_point().x, 40.0, "index-0 child is on the right under RTL");
+
+    crate::set_text_direction(TextDirection::Ltr);
+}
+
+/// F2: the inspector's hit chain runs root → deepest, tagging each node's name + size.
+#[test]
+fn inspect_returns_the_hit_chain_deepest_last() {
+    let mut tree = RenderTree::new();
+    let mut text = TextEnv::new();
+    let flex = tree.insert(Box::new(RenderFlex::new(
+        Axis::Horizontal,
+        MainAxisAlignment::Start,
+        CrossAxisAlignment::Start,
+        MainAxisSize::Min,
+        0.0,
+        VerticalDirection::Down,
+        TextBaseline::Alphabetic,
+    )));
+    let child = tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(40.0, 20.0)))));
+    tree.insert_child(flex, child, 0);
+    tree.root = Some(flex);
+    tree.layout(&mut text, BoxConstraints::UNBOUNDED);
+
+    let chain = crate::inspect::inspect_at(&tree, pebbles_foundation::Offset::new(20.0, 10.0));
+    assert!(!chain.is_empty(), "the point hits something");
+    assert_eq!(chain.first().unwrap().name, "RenderFlex", "root is the flex");
+    let deepest = chain.last().unwrap();
+    assert_eq!(deepest.bounds.width(), 40.0, "deepest node is the 40×20 child");
+    assert_eq!(deepest.bounds.height(), 20.0);
+}
+
+/// E3: a paragraph re-shapes only when its text / style / wrap-width change; an
+/// identical relayout reuses the cached shaped layout.
+#[test]
+fn paragraph_reshapes_only_when_inputs_change() {
+    use crate::objects::{reset_shape_count, shape_count};
+
+    reset_shape_count();
+    let mut tree = RenderTree::new();
+    let mut text = TextEnv::new();
+    let p = tree.insert(Box::new(RenderParagraph::new("Hello world", ParagraphStyle::default())));
+    tree.root = Some(p);
+
+    tree.layout(&mut text, tight(200.0, 100.0));
+    assert_eq!(shape_count(), 1, "first layout shapes once");
+
+    // Identical constraints → cache hit, no re-shape.
+    tree.layout(&mut text, tight(200.0, 100.0));
+    assert_eq!(shape_count(), 1, "an identical relayout reuses the shape");
+
+    // A narrower wrap width → re-shape.
+    tree.layout(&mut text, tight(120.0, 100.0));
+    assert_eq!(shape_count(), 2, "a wrap-width change re-shapes");
+
+    // …and that new width is itself cached.
+    tree.layout(&mut text, tight(120.0, 100.0));
+    assert_eq!(shape_count(), 2, "the new width is cached too");
+}

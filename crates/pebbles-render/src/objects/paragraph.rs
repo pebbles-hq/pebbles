@@ -80,17 +80,59 @@ fn to_parley_align(a: TextAlign) -> Alignment {
     }
 }
 
+/// Debug-only tally of parley re-shapes (E3): the tests assert a stable string doesn't
+/// re-shape on a repeat layout. Bumped once per layout that actually shapes.
+#[cfg(debug_assertions)]
+thread_local! {
+    static SHAPES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Debug-only: total parley re-shapes since [`reset_shape_count`]. Test hook (E3).
+#[cfg(debug_assertions)]
+pub fn shape_count() -> u64 {
+    SHAPES.with(std::cell::Cell::get)
+}
+
+/// Debug-only: reset the re-shape tally.
+#[cfg(debug_assertions)]
+pub fn reset_shape_count() {
+    SHAPES.with(|c| c.set(0));
+}
+
 /// A leaf render object that lays out and paints text.
 pub struct RenderParagraph {
     pub text: String,
     pub style: ParagraphStyle,
     /// Shaped layout, produced in [`RenderObject::layout`] and consumed in paint.
     cached: Option<Layout<Brush>>,
+    /// E3 shape cache: a hash of `(text, style, max_advance)` from the last shape, and
+    /// the unconstrained size it produced. A layout whose key matches reuses `cached`
+    /// (no re-shape); the returned size is re-`constrain`ed against the fresh
+    /// constraints, so min-bound changes are still honored.
+    shape_key: Option<u64>,
+    shape_size: Size,
 }
 
 impl RenderParagraph {
     pub fn new(text: impl Into<String>, style: ParagraphStyle) -> Self {
-        RenderParagraph { text: text.into(), style, cached: None }
+        RenderParagraph {
+            text: text.into(),
+            style,
+            cached: None,
+            shape_key: None,
+            shape_size: Size::new(0.0, 0.0),
+        }
+    }
+
+    /// A cheap key over everything that affects the shaped layout. `ParagraphStyle`'s
+    /// `Debug` is deterministic for equal styles and far cheaper than a re-shape.
+    fn shape_hash(&self, max_advance: Option<f32>) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.text.hash(&mut h);
+        format!("{:?}", self.style).hash(&mut h);
+        max_advance.map(f32::to_bits).hash(&mut h);
+        h.finish()
     }
 
     /// Shape `s` into a broken, aligned layout with this paragraph's style.
@@ -132,6 +174,15 @@ impl RenderObject for RenderParagraph {
             None
         };
 
+        // E3: skip the parley re-shape when text/style/wrap-width are unchanged. The
+        // cached `Layout` survives for paint; only re-`constrain` the stored size.
+        let key = self.shape_hash(max_advance);
+        if self.shape_key == Some(key) && self.cached.is_some() {
+            return constraints.constrain(self.shape_size);
+        }
+        #[cfg(debug_assertions)]
+        SHAPES.with(|c| c.set(c.get() + 1));
+
         let text_env = &mut *cx.text;
         let mut layout = self.build(text_env, &self.text, max_advance);
 
@@ -168,6 +219,8 @@ impl RenderObject for RenderParagraph {
         }
         let size = Size::new(layout.width() as f64, height);
         self.cached = Some(layout);
+        self.shape_size = size;
+        self.shape_key = Some(key);
         constraints.constrain(size)
     }
 

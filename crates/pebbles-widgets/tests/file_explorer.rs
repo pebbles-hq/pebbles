@@ -216,7 +216,7 @@ fn ctrl_click_toggles_and_shift_click_ranges() {
     pebbles_widgets::overlay::init();
     pebbles_core::focus::init();
     let _ = tree_sig();
-    pebbles_core::keyboard::set_modifiers(false, false);
+    pebbles_core::keyboard::set_modifiers(false, false, false, false);
 
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
@@ -243,7 +243,7 @@ fn ctrl_click_toggles_and_shift_click_ranges() {
 
     // Ctrl-click toggles the other node into the selection (README now at
     // 122..150 under the expanded src).
-    pebbles_core::keyboard::set_modifiers(false, true);
+    pebbles_core::keyboard::set_modifiers(false, true, false, false);
     tap_at(&mut ui, 135.0);
     assert_eq!(ex().selection().get(), vec![src_id(), readme_id()], "ctrl-click adds");
     tap_at(&mut ui, 135.0);
@@ -251,14 +251,14 @@ fn ctrl_click_toggles_and_shift_click_ranges() {
 
     // Shift-click range-selects every VISIBLE row between src and README —
     // main.rs included (src is expanded).
-    pebbles_core::keyboard::set_modifiers(true, false);
+    pebbles_core::keyboard::set_modifiers(true, false, false, false);
     tap_at(&mut ui, 135.0);
     assert_eq!(
         ex().selection().get(),
         vec![src_id(), main_id(), readme_id()],
         "shift-click selects the visible range"
     );
-    pebbles_core::keyboard::set_modifiers(false, false);
+    pebbles_core::keyboard::set_modifiers(false, false, false, false);
 }
 
 fn src_id() -> u64 {
@@ -280,7 +280,7 @@ fn dragging_a_selection_moves_them_all() {
     pebbles_widgets::overlay::init();
     pebbles_core::focus::init();
     let _ = tree_sig();
-    pebbles_core::keyboard::set_modifiers(false, false);
+    pebbles_core::keyboard::set_modifiers(false, false, false, false);
 
     // Add a second file next to README for a two-file selection.
     tree_sig().update(|t| {
@@ -300,14 +300,14 @@ fn dragging_a_selection_moves_them_all() {
     let src_row = Offset::new(60.0, 80.0);
 
     // Ctrl-click both files.
-    pebbles_core::keyboard::set_modifiers(false, true);
+    pebbles_core::keyboard::set_modifiers(false, true, false, false);
     for p in [readme, license] {
         ui.dispatch_pointer_down(p);
         ui.dispatch_tap(p);
         ui.dispatch_pointer_up(p);
         frame(&mut ui, &mut env, win);
     }
-    pebbles_core::keyboard::set_modifiers(false, false);
+    pebbles_core::keyboard::set_modifiers(false, false, false, false);
     assert_eq!(ex().selection().get().len(), 2, "two files selected");
 
     // Drag README (one of the selected) onto src → BOTH move.

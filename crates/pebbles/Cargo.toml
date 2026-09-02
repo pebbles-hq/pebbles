@@ -14,3 +14,11 @@ pebbles-render.workspace = true
 pebbles-core.workspace = true
 pebbles-widgets.workspace = true
 pebbles-shell.workspace = true
+pebbles-macros.workspace = true
+
+[features]
+default = []
+# Forward the shell's optional integrations so apps can opt in via the umbrella,
+# e.g. `cargo run -p gallery --features pebbles/native-menus`.
+native-menus = ["pebbles-shell/native-menus"]
+global-hotkeys = ["pebbles-shell/global-hotkeys"]

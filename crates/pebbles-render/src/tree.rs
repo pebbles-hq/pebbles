@@ -100,6 +100,15 @@ impl RenderTree {
         self.nodes[id].size
     }
 
+    /// The render object's `debug_name` (for the F2 inspector / diagnostics).
+    pub fn debug_name(&self, id: RenderId) -> &'static str {
+        self.nodes
+            .get(id)
+            .and_then(|n| n.object.as_ref())
+            .map(|o| o.debug_name())
+            .unwrap_or("<taken>")
+    }
+
     /// Find the first render node whose object is of type `T`. Handy for tests and
     /// debugging (locate a specific box in a laid-out tree).
     pub fn find<T: RenderObject>(&self) -> Option<RenderId> {

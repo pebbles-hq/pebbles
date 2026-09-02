@@ -15,7 +15,7 @@
 //! let pos = animated(if on { 1.0 } else { 0.0 }, 0.16); // 0.0..=1.0, smooth
 //! ```
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::reactive::{Signal, create_signal};
@@ -23,12 +23,50 @@ use crate::reactive::{Signal, create_signal};
 #[derive(Clone, Copy)]
 struct Track {
     value: Signal<f64>,
-    from: f64,
     to: f64,
-    /// Filled on the first tick that sees this track (so timing starts at paint).
-    start: Option<f64>,
-    duration: f64,
-    curve: Curve,
+    mode: TrackMode,
+}
+
+/// How a [`Track`] advances toward `to` (H1).
+#[derive(Clone, Copy)]
+enum TrackMode {
+    /// Duration + easing interpolation from `from` (the classic tween).
+    Tween {
+        from: f64,
+        /// Filled on the first tick that sees this track (so timing starts at paint).
+        start: Option<f64>,
+        duration: f64,
+        curve: Curve,
+    },
+    /// A damped harmonic oscillator integrated per frame — velocity-preserving on
+    /// retarget. `last` is the previous tick time (per-track dt).
+    Spring {
+        stiffness: f64,
+        damping: f64,
+        velocity: f64,
+        last: Option<f64>,
+    },
+}
+
+/// A physical spring for [`animated_spring`]. Defaults are a snappy UI spring.
+#[derive(Clone, Copy, Debug)]
+pub struct Spring {
+    pub stiffness: f64,
+    pub damping: f64,
+}
+
+impl Default for Spring {
+    fn default() -> Self {
+        Spring { stiffness: 240.0, damping: 22.0 }
+    }
+}
+
+/// The result of [`transition`]: `t` is the 0→1 presence progress; `on_screen` stays
+/// true through the exit tween so overlays keep rendering until `t` reaches 0.
+#[derive(Clone, Copy, Debug)]
+pub struct Transition {
+    pub t: f64,
+    pub on_screen: bool,
 }
 
 /// A continuous, repeating driver (spinners, indeterminate progress). Its signal
@@ -57,6 +95,16 @@ thread_local! {
         RefCell::new(std::collections::HashMap::new());
     static TIMEOUTS: RefCell<std::collections::HashMap<u64, Timeout>> =
         RefCell::new(std::collections::HashMap::new());
+    /// The most recent [`tick`] timestamp — the monotonic "now" (seconds) in the
+    /// animation clock's base. `set_timeout` bookkeeping (e.g. toast hover-pause
+    /// remaining time) reads it via [`now`].
+    static NOW: Cell<f64> = const { Cell::new(0.0) };
+}
+
+/// The current animation-clock time (seconds) — the last value passed to [`tick`].
+/// Zero until the first frame. Use for elapsed/remaining math around [`set_timeout`].
+pub fn now() -> f64 {
+    NOW.with(Cell::get)
 }
 
 /// Ease-out cubic — fast start, gentle settle. The default UI curve.
@@ -118,8 +166,44 @@ pub fn animate_to_with(value: Signal<f64>, to: f64, duration: f64, curve: Curve)
         if duration <= 0.0 || (from - to).abs() <= 1e-4 {
             value.set(to);
         } else {
-            t.push(Track { value, from, to, start: None, duration, curve });
+            t.push(Track { value, to, mode: TrackMode::Tween { from, start: None, duration, curve } });
         }
+    });
+}
+
+/// Animate `value` toward `to` with a [`Spring`], preserving the current velocity if a
+/// spring on the same signal is already in flight (a smooth mid-flight retarget). A
+/// non-hook primitive (mirrors [`animate_to`]); the ergonomic form is [`animated_spring`].
+pub fn animate_spring(value: Signal<f64>, to: f64, spring: Spring) {
+    TRACKS.with(|t| {
+        let mut t = t.borrow_mut();
+        // Inherit velocity from an in-flight spring on this signal; drop it either way.
+        let mut velocity = 0.0;
+        t.retain(|tr| {
+            if tr.value == value {
+                if let TrackMode::Spring { velocity: v, .. } = tr.mode {
+                    velocity = v;
+                }
+                false
+            } else {
+                true
+            }
+        });
+        let x = value.peek();
+        if (x - to).abs() <= 1e-4 && velocity.abs() <= 1e-4 {
+            value.set(to);
+            return;
+        }
+        t.push(Track {
+            value,
+            to,
+            mode: TrackMode::Spring {
+                stiffness: spring.stiffness,
+                damping: spring.damping,
+                velocity,
+                last: None,
+            },
+        });
     });
 }
 
@@ -244,6 +328,7 @@ pub fn create_loop_while(active: bool, period: f64) -> Signal<f64> {
 /// Advance all animations to `now` (monotonic seconds). Returns whether any remain
 /// active. Called once per frame by the shell.
 pub fn tick(now: f64) -> bool {
+    NOW.with(|n| n.set(now));
     let tweening = TRACKS.with(|t| {
         let mut t = t.borrow_mut();
         t.retain_mut(|tr| {
@@ -251,16 +336,41 @@ pub fn tick(now: f64) -> bool {
             if !tr.value.alive() {
                 return false;
             }
-            let start = *tr.start.get_or_insert(now);
-            let elapsed = now - start;
-            if elapsed >= tr.duration {
-                tr.value.set(tr.to);
-                false
-            } else {
-                let p = (elapsed / tr.duration).clamp(0.0, 1.0);
-                let eased = tr.curve.apply(p);
-                tr.value.set(tr.from + (tr.to - tr.from) * eased);
-                true
+            let to = tr.to;
+            match &mut tr.mode {
+                TrackMode::Tween { from, start, duration, curve } => {
+                    let s = *start.get_or_insert(now);
+                    let elapsed = now - s;
+                    if elapsed >= *duration {
+                        tr.value.set(to);
+                        false
+                    } else {
+                        let p = (elapsed / *duration).clamp(0.0, 1.0);
+                        tr.value.set(*from + (to - *from) * curve.apply(p));
+                        true
+                    }
+                }
+                TrackMode::Spring { stiffness, damping, velocity, last } => {
+                    match last.replace(now) {
+                        // First tick just establishes the clock — move next frame.
+                        None => true,
+                        Some(prev) => {
+                            // Clamp dt so a stalled frame can't explode the integrator.
+                            let dt = (now - prev).clamp(0.0, 0.064);
+                            let x = tr.value.peek();
+                            let disp = x - to;
+                            *velocity += (-*stiffness * disp - *damping * *velocity) * dt;
+                            let nx = x + *velocity * dt;
+                            if disp.abs() < 0.001 && velocity.abs() < 0.01 {
+                                tr.value.set(to);
+                                false
+                            } else {
+                                tr.value.set(nx);
+                                true
+                            }
+                        }
+                    }
+                }
             }
         });
         !t.is_empty()
@@ -308,6 +418,8 @@ pub fn tick(now: f64) -> bool {
 pub fn reset() {
     TRACKS.with(|t| t.borrow_mut().clear());
     TIMEOUTS.with(|t| t.borrow_mut().clear());
+    LOOPS.with(|l| l.borrow_mut().clear());
+    NOW.with(|n| n.set(0.0));
 }
 
 /// Component hook: returns the current animated value that smoothly follows
@@ -331,4 +443,90 @@ pub fn animated_with(target: f64, secs: f64, curve: Curve) -> f64 {
         animate_to_with(value, target, secs, curve);
     }
     value.get()
+}
+
+/// Component hook: like [`animated`], but the value follows `target` with a physical
+/// [`Spring`] instead of a fixed-duration curve — a retarget mid-flight preserves
+/// velocity (no snap). Call at the top level of a component.
+pub fn animated_spring(target: f64, spring: Spring) -> f64 {
+    let value = create_signal(target);
+    let last = create_signal(target);
+    if (last.peek() - target).abs() > 1e-9 {
+        last.set(target);
+        animate_spring(value, target, spring);
+    }
+    value.get()
+}
+
+/// Component hook: presence (mount/unmount) motion in one call. Returns a
+/// [`Transition`] whose `t` eases 0→1 while `visible` and 1→0 when hidden; `on_screen`
+/// stays true through the exit tween so the caller keeps rendering until `t` hits 0
+/// (dialogs/sheets/toasts/menus use this for exit frames). Re-showing mid-exit reverses
+/// smoothly. Enter is animated too: `t` starts at 0 and eases up one frame after mount.
+pub fn transition(visible: bool, secs: f64) -> Transition {
+    // Flip one frame after mount so a first-render `visible == true` still animates in.
+    let entered = create_signal(false);
+    let e = entered;
+    create_timeout(0.0, move || {
+        if !e.peek() {
+            e.set(true);
+        }
+    });
+    let target = if visible && entered.get() { 1.0 } else { 0.0 };
+    let t = animated(target, secs);
+    let on_screen = visible || t > 0.001;
+    Transition { t, on_screen }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::reactive::create_signal;
+
+    #[test]
+    fn curves_hit_endpoints_and_are_monotonic() {
+        for c in [Curve::Linear, Curve::EaseIn, Curve::EaseOut, Curve::EaseInOut, Curve::EaseOutCubic] {
+            assert!(c.apply(0.0).abs() < 1e-6, "{c:?} starts at 0");
+            assert!((c.apply(1.0) - 1.0).abs() < 1e-6, "{c:?} ends at 1");
+            let mut prev = c.apply(0.0);
+            for i in 1..=20 {
+                let v = c.apply(i as f64 / 20.0);
+                assert!(v + 1e-6 >= prev, "{c:?} non-decreasing");
+                prev = v;
+            }
+        }
+    }
+
+    #[test]
+    fn spring_settles_at_its_target() {
+        reset();
+        let s = create_signal(0.0);
+        animate_spring(s, 1.0, Spring::default());
+        let mut now = 0.0;
+        for _ in 0..240 {
+            now += 1.0 / 60.0;
+            tick(now);
+        }
+        assert!((s.peek() - 1.0).abs() < 0.01, "settles near target, got {}", s.peek());
+        assert!(!active(), "the spring finished (track dropped)");
+    }
+
+    #[test]
+    fn spring_retarget_preserves_forward_motion() {
+        reset();
+        let s = create_signal(0.0);
+        animate_spring(s, 1.0, Spring::default());
+        let mut now = 0.0;
+        for _ in 0..10 {
+            now += 1.0 / 60.0;
+            tick(now);
+        }
+        let mid = s.peek();
+        assert!(mid > 0.0 && mid < 1.0, "moving toward target mid-flight, got {mid}");
+        // Retarget upward mid-flight → keeps moving up (velocity preserved), no snap-back.
+        animate_spring(s, 2.0, Spring::default());
+        now += 1.0 / 60.0;
+        tick(now);
+        assert!(s.peek() >= mid, "retarget keeps forward motion");
+    }
 }

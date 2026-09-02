@@ -23,6 +23,7 @@ impl TextEnv {
     pub fn new() -> Self {
         let mut fonts = parley::FontContext::new();
         crate::fonts::apply_builtins(&mut fonts);
+        crate::fonts::apply_user_fonts(&mut fonts); // F4: user fonts from App::font
         crate::fonts::refresh_families(&mut fonts);
         TextEnv { fonts, layout: parley::LayoutContext::new() }
     }

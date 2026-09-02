@@ -6,6 +6,7 @@
 
 mod animated;
 mod boxes;
+mod canvas;
 mod container;
 mod decorated;
 mod editable;
@@ -29,6 +30,7 @@ mod transform;
 pub use transform::{Transform, transform};
 pub use animated::{AnimatedContainer, animated_container};
 pub use boxes::{Align, ColoredBox, ConstrainedBox, Padding, SizedBox, center, gap_h, gap_w, sized_box};
+pub use canvas::{CanvasWidget, canvas};
 pub use container::Container;
 pub use decorated::DecoratedBox;
 pub use editable::{EditableText, editable};

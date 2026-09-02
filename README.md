@@ -226,21 +226,28 @@ reconcile → relayout` end to end in-process.
 | Text editing + IME/CJK composition | ✅ |
 | Theming (reactive light/dark) + styling | ✅ |
 | Multi-window + cross-window IPC (`Channel`) | ✅ |
-| Async (`spawn` / `create_resource`) | ✅ |
-| Accessibility (AccessKit: read + focus) | ✅ (AT-driven *actions* are next) |
+| Async (`spawn` / `create_resource`; optional `tokio` feature) | ✅ |
+| Accessibility (AccessKit: read + focus + AT-driven Focus/Click actions) | ✅ |
 | Per-window overlays + dialogs | ✅ |
-| Catalog long-tail (Tooltip, Toast, Command, Sheet, Menubar, …) | 🔶 in progress |
-| Charts, carousel | ⏭ post-competition |
+| Catalog long-tail (Tooltip, Toast, Popover, ContextMenu, Sheet, Command, HoverCard, InputOTP, Menubar) | ✅ |
+| Carousel, custom-paint `canvas` | ✅ |
+| Charts | ⏭ planned (`documentations/chart-plan.md`) |
 
 *(A screenshot strip and the multi-window IPC demo GIF are captured from the running
 gallery — see `cargo run -p gallery`.)*
 
 ## Roadmap
 
-Natural next steps: the overlay long-tail (Tooltip → Toast → Popover → ContextMenu →
-Sheet/Command palette); AT-driven accessibility actions; data-table sort/selection and
-calendar range; variable-height list virtualization and slivers (sticky/collapsing
-headers); scale/spring transforms.
+The post-competition work is tracked in `documentations/p2-roadmap.md`. Current
+headline items: variable-height list virtualization + sticky/collapsing headers;
+a keyboard shortcut map (`create_shortcut`) with an optional native menu bar + global
+hotkeys; a `#[component]` authoring macro; a widget inspector; RTL / `TextDirection`;
+spring animations + presence transitions; a custom-paint `canvas` (shipped) feeding a
+planned charts library.
+
+> **Update granularity:** re-renders are per-component (Solid's model), not
+> per-signal-binding — a signal write re-runs the components that read it. AT-driven
+> `SetValue` (slider/text) is a follow-up to the shipped Focus/Click actions.
 
 ## License
 

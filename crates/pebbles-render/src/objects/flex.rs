@@ -5,7 +5,7 @@
 
 use pebbles_foundation::{
     Axis, CrossAxisAlignment, FlexFit, MainAxisAlignment, MainAxisSize, Offset, Size, TextBaseline,
-    VerticalDirection,
+    TextDirection, VerticalDirection,
 };
 
 use crate::RenderId;
@@ -65,9 +65,14 @@ impl RenderFlex {
         }
     }
 
-    /// Whether the main axis runs in reverse (`Column` with `Up`).
+    /// Whether the main axis runs in reverse: a `Column` with `Up`, or (D2) a `Row`
+    /// under a right-to-left ambient [`TextDirection`] — RTL reverses a Row's child
+    /// order and mirrors its Start/End alignment.
     fn main_reversed(&self) -> bool {
-        self.axis == Axis::Vertical && self.vertical_direction == VerticalDirection::Up
+        match self.axis {
+            Axis::Vertical => self.vertical_direction == VerticalDirection::Up,
+            Axis::Horizontal => crate::direction::text_direction() == TextDirection::Rtl,
+        }
     }
 
     /// Whether the cross axis runs in reverse (`Row` with `Up`).

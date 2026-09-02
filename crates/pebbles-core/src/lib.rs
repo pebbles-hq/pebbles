@@ -29,12 +29,14 @@ pub mod key;
 pub mod keyboard;
 pub mod reactive;
 pub mod scroll;
+pub mod shortcuts;
 pub mod task;
 pub mod widget;
 
 pub use animation::{
-    Curve, animate_to, animate_to_with, animated, animated_with, clear_timeout, create_loop,
-    create_loop_while, create_timeout, set_timeout,
+    Curve, Spring, Transition, animate_spring, animate_to, animate_to_with, animated,
+    animated_spring, animated_with, clear_timeout, create_loop, create_loop_while, create_timeout,
+    set_timeout, transition,
 };
 pub use component::{Component, Element, component, component_props};
 pub use context::{Callback, IntoCallback, action, action_event};
@@ -49,7 +51,10 @@ pub use reactive::{
     Signal, Store, consume_context, create_cleanup, create_effect, create_memo,
     create_root_signal, create_signal, create_store, owner_id, provide_context,
 };
+pub use shortcuts::{Mods, ShortcutKey, create_shortcut};
 pub use task::{Resource, create_resource, spawn};
+#[cfg(feature = "tokio")]
+pub use task::{create_resource_future, spawn_future};
 pub use widget::{
     AnyWidget, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget, Widget,
 };

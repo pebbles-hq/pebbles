@@ -12,3 +12,10 @@ description = "The Pebbles runtime: Widget/Element traits, the reconciling engin
 pebbles-foundation.workspace = true
 pebbles-render.workspace = true
 slotmap.workspace = true
+# F3 — optional async: a lazy multi-thread tokio runtime behind the `tokio` feature
+# (default off). Same pump-based UI-thread result delivery as the std-thread `spawn`.
+tokio = { version = "1", optional = true, features = ["rt", "rt-multi-thread"] }
+
+[features]
+default = []
+tokio = ["dep:tokio"]

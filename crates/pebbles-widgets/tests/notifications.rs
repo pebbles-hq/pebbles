@@ -45,7 +45,11 @@ fn toast_shows_and_auto_dismisses() {
     animation::tick(0.01);
     assert!(toast::any_open(), "still up before the duration");
     animation::tick(0.20);
-    assert!(!toast::any_open(), "auto-dismissed after the duration");
+    // C1: the auto-dismiss fires but removal is deferred until the exit tween ends.
+    assert!(toast::any_open(), "still visible during the exit tween");
+    animation::tick(0.30); // anchor the removal timer
+    animation::tick(0.60); // past the exit window → gone
+    assert!(!toast::any_open(), "removed after the exit tween");
     let _ = id;
 }
 
@@ -65,11 +69,15 @@ fn toast_manual_dismiss_cancels_timer() {
     let id = toast("Undo?").action("Undo", || {}).duration(5.0).show();
     assert!(toast::any_open());
     toast::dismiss_toast(id);
-    assert!(!toast::any_open(), "manual dismiss removes it immediately");
-    // The cancelled timer must not resurrect anything.
+    // C1: manual dismiss animates out, then removes after the exit window.
+    assert!(toast::any_open(), "still visible during the exit tween");
+    animation::tick(0.01); // anchor the removal timer
+    animation::tick(0.30); // past the exit window → gone
+    assert!(!toast::any_open(), "removed after the exit tween");
+    // The cancelled auto-dismiss timer must not resurrect / ghost-fire anything.
     animation::tick(1.0);
     animation::tick(10.0);
-    assert!(!toast::any_open());
+    assert!(!toast::any_open(), "no ghost re-fire");
 }
 
 fn tip_root() -> impl IntoWidget {

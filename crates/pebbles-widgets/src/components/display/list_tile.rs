@@ -205,10 +205,24 @@ fn render_tile(p: &TileProps) -> AnyWidget {
     let out = styled(content, surface);
 
     if p.disabled {
-        return GestureDetector::new(out).cursor(Cursor::NotAllowed).into_widget();
+        // C7: a disabled, non-actionable row is a ListItem (an interactive tile is a
+        // Button — see below).
+        return crate::widgets::semantics(
+            crate::widgets::SemanticsRole::ListItem,
+            p.title.clone(),
+            GestureDetector::new(out).cursor(Cursor::NotAllowed),
+        )
+        .disabled(true)
+        .into_widget();
     }
     if !interactive {
-        return out.into_widget();
+        // C7: a plain (non-clickable) row is a ListItem.
+        return crate::widgets::semantics(
+            crate::widgets::SemanticsRole::ListItem,
+            p.title.clone(),
+            out,
+        )
+        .into_widget();
     }
 
     let on_tap = p.on_tap.clone();

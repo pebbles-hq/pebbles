@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
-use pebbles_foundation::{Color, Offset, Size, palette};
-use pebbles_widgets::View;
+use pebbles_foundation::{Color, Offset, Size, TextDirection, palette};
+use pebbles_widgets::{MenuBar, View};
 use vello::kurbo::Affine;
 use vello::util::{RenderContext, RenderSurface};
 use vello::wgpu;
@@ -22,6 +22,40 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{CursorIcon, Window, WindowAttributes, WindowId};
 
 use pebbles_render::{Cursor, TextEnv};
+
+/// C6 — route a wheel `dy` when an overlay popover is open, so a scroll behind the
+/// popover slides it to stay glued to its trigger (and dismisses it when nothing
+/// scrolls). Shared by the main window and every secondary window — the overlay
+/// signals are per-window, so `ui` must be the current window first (both callers
+/// make it current before calling this). Returns whether a repaint is needed.
+fn wheel_with_overlay(ui: &mut Ui, cursor: Offset, dy: f64) -> bool {
+    use pebbles_widgets::overlay;
+    if !overlay::is_open() {
+        return ui.dispatch_scroll(cursor, dy);
+    }
+    if overlay::over_panel(cursor.x, cursor.y) {
+        // Wheel over the popover itself → scroll its own content only.
+        ui.dispatch_scroll(cursor, dy)
+    } else if ui.dispatch_scroll(cursor, dy) {
+        // Wheel over the page behind the popover → slide the popover with it.
+        overlay::shift(0.0, -dy);
+        true
+    } else {
+        // Nowhere to scroll → dismiss so it never floats detached.
+        overlay::hide_overlay();
+        true
+    }
+}
+
+/// E2: whether `PEBBLES_FRAME_STATS=1` (or `true`) is set — checked once. Gates the
+/// opt-in per-frame timing print in `render()`.
+fn frame_stats_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| {
+        std::env::var("PEBBLES_FRAME_STATS").is_ok_and(|v| v == "1" || v == "true")
+    })
+}
 
 fn to_winit_cursor(cursor: Cursor) -> CursorIcon {
     match cursor {
@@ -90,6 +124,50 @@ fn to_command(event: &KeyEvent, ctrl: bool, shift: bool) -> Option<KeyInput> {
     }
 }
 
+/// Map a winit key to a [`ShortcutKey`] token (B2) — `None` for keys outside
+/// the shortcut grammar.
+fn to_shortcut_key(event: &KeyEvent) -> Option<pebbles_core::ShortcutKey> {
+    use pebbles_core::ShortcutKey as SK;
+    use winit::keyboard::{Key, NamedKey};
+    match event.logical_key.as_ref() {
+        Key::Named(n) => match n {
+            NamedKey::Enter => Some(SK::Enter),
+            NamedKey::Escape => Some(SK::Escape),
+            NamedKey::Space => Some(SK::Space),
+            NamedKey::Tab => Some(SK::Tab),
+            NamedKey::ArrowUp => Some(SK::ArrowUp),
+            NamedKey::ArrowDown => Some(SK::ArrowDown),
+            NamedKey::ArrowLeft => Some(SK::ArrowLeft),
+            NamedKey::ArrowRight => Some(SK::ArrowRight),
+            NamedKey::Home => Some(SK::Home),
+            NamedKey::End => Some(SK::End),
+            NamedKey::Delete => Some(SK::Delete),
+            NamedKey::Backspace => Some(SK::Backspace),
+            NamedKey::F1 => Some(SK::F(1)),
+            NamedKey::F2 => Some(SK::F(2)),
+            NamedKey::F3 => Some(SK::F(3)),
+            NamedKey::F4 => Some(SK::F(4)),
+            NamedKey::F5 => Some(SK::F(5)),
+            NamedKey::F6 => Some(SK::F(6)),
+            NamedKey::F7 => Some(SK::F(7)),
+            NamedKey::F8 => Some(SK::F(8)),
+            NamedKey::F9 => Some(SK::F(9)),
+            NamedKey::F10 => Some(SK::F(10)),
+            NamedKey::F11 => Some(SK::F(11)),
+            NamedKey::F12 => Some(SK::F(12)),
+            _ => None,
+        },
+        Key::Character(s) => {
+            let mut chars = s.chars();
+            match (chars.next(), chars.next()) {
+                (Some(c), None) if !c.is_control() => Some(SK::Char(c.to_ascii_lowercase())),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 /// Max interval between two primary clicks to count as a double-tap.
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 /// How long the primary button must be held to count as a long-press.
@@ -116,6 +194,11 @@ pub struct App {
     maximized: bool,
     decorations: bool,
     root: Option<pebbles_core::AnyWidget>,
+    /// B3 native menu bar spec. Consumed by the shell only when the `native-menus`
+    /// feature is on; retained (unused) otherwise so app code compiles either way.
+    menu: Option<MenuBar>,
+    /// D2 global text direction, applied at mount (default LTR).
+    text_direction: TextDirection,
 }
 
 impl App {
@@ -134,6 +217,8 @@ impl App {
             maximized: false,
             decorations: true,
             root: Some(pebbles_widgets::OverlayHost::wrap(root).into_widget()),
+            menu: None,
+            text_direction: TextDirection::Ltr,
         }
     }
 
@@ -189,6 +274,40 @@ impl App {
         self
     }
 
+    /// Attach a native OS menu bar (B3) — macOS global menu / Windows window menu.
+    /// Built from [`menu_bar`](pebbles_widgets::menu_bar); only takes effect when the
+    /// `native-menus` feature is enabled (otherwise the spec is retained but unused,
+    /// and the in-window [`menubar`](pebbles_widgets::components::menubar) stays the
+    /// cross-platform form).
+    ///
+    /// ```ignore
+    /// use pebbles_widgets::{menu, menu_bar};
+    /// App::new(root).menu(menu_bar([
+    ///     menu("File", [menu_item("Quit").shortcut("Mod+Q").into()]),
+    /// ]))
+    /// ```
+    pub fn menu(mut self, bar: MenuBar) -> Self {
+        self.menu = Some(bar);
+        self
+    }
+
+    /// Set the global text direction (D2). `Rtl` reverses Row child order + mirrors
+    /// Start/End alignment, and sets paragraphs' bidi base direction. Applied at mount;
+    /// toggle at runtime with [`pebbles_widgets::set_text_direction`].
+    pub fn text_direction(mut self, dir: TextDirection) -> Self {
+        self.text_direction = dir;
+        self
+    }
+
+    /// Register a user-supplied font (F4), repeatable. `bytes` is `'static` (embed with
+    /// `include_bytes!` or leak an `Arc`) so it outlives every window's font collection.
+    /// Every window then resolves the font's family via `style().font_family("…")`.
+    /// Registered globally at call time, so call this before [`run`](App::run).
+    pub fn font(self, bytes: &'static [u8]) -> Self {
+        pebbles_render::register_user_font(bytes);
+        self
+    }
+
     /// Open the window and run the event loop until the window closes.
     pub fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         let event_loop = EventLoop::new()?;
@@ -234,6 +353,18 @@ struct Runner {
     maximized: bool,
     decorations: bool,
     pending_root: Option<pebbles_core::AnyWidget>,
+    /// B3 native menu bar spec, held until the window exists (see `resumed`). Read
+    /// only when the native menu path is actually compiled (feature on + macOS/Windows).
+    #[cfg_attr(
+        not(all(feature = "native-menus", any(target_os = "macos", target_os = "windows"))),
+        allow(dead_code)
+    )]
+    menu_spec: Option<MenuBar>,
+    /// D2 global text direction, applied once at mount.
+    text_direction: TextDirection,
+    /// The live native menu (built + attached in `resumed`, drained each turn).
+    #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
+    native_menu: Option<crate::native_menu::NativeMenus>,
 
     // gpu
     context: RenderContext,
@@ -263,6 +394,8 @@ struct Runner {
     press_deadline: Option<Instant>,
     shift_down: bool,
     ctrl_down: bool,
+    alt_down: bool,
+    meta_down: bool,
     /// The primary-tap target armed at pointer-down (for tap vs. cancel on release).
     armed_tap: Option<u64>,
     /// The long-press target armed at pointer-down.
@@ -294,6 +427,10 @@ impl Runner {
             maximized: app.maximized,
             decorations: app.decorations,
             pending_root: app.root,
+            menu_spec: app.menu,
+            text_direction: app.text_direction,
+            #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
+            native_menu: None,
             context: RenderContext::new(),
             renderers: Vec::new(),
             active: None,
@@ -311,6 +448,8 @@ impl Runner {
             press_deadline: None,
             shift_down: false,
             ctrl_down: false,
+            alt_down: false,
+            meta_down: false,
             armed_tap: None,
             lp_target: None,
             lp_active: false,
@@ -326,6 +465,24 @@ impl Runner {
         if let Some(active) = self.active.as_ref() {
             active.window.request_redraw();
         }
+    }
+
+    /// B3 — build the native menu from the spec (once) and attach it to the window.
+    /// Compiled only on macOS/Windows (where `muda` integrates with winit cleanly);
+    /// on Linux the in-window `menubar(..)` remains the form.
+    #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
+    fn install_native_menu(&mut self) {
+        if self.native_menu.is_some() {
+            return;
+        }
+        let Some(spec) = self.menu_spec.as_ref() else {
+            return;
+        };
+        let menus = crate::native_menu::NativeMenus::build(spec);
+        if let Some(active) = self.active.as_ref() {
+            menus.attach(&active.window);
+        }
+        self.native_menu = Some(menus);
     }
 
     /// Route an unclaimed key press to scroll the view under the pointer.
@@ -359,10 +516,19 @@ impl Runner {
         // fetches, spawn callbacks) — writes their result signals on the UI thread.
         let pending_tasks = pebbles_core::task::pump();
 
+        // D1: apply AT-driven actions (Focus/Click) queued off-thread by the accesskit
+        // handler; their signal writes are reconciled by `rebuild_if_dirty` below.
+        let window = self.ui.window_id();
+        crate::a11y::drain_actions(&mut self.ui, window);
+
         let Some(active) = self.active.as_mut() else { return };
 
+        let stats = frame_stats_enabled();
+
         // 1. Reconcile. (May register fresh animation tracks as components render.)
+        let t = Instant::now();
         self.ui.rebuild_if_dirty();
+        let rebuild = t.elapsed();
 
         // 2. Layout in logical pixels.
         let scale = active.window.scale_factor();
@@ -372,13 +538,33 @@ impl Runner {
         }
         let logical = Size::new(phys.width as f64 / scale, phys.height as f64 / scale);
         pebbles_widgets::overlay::set_window_size(logical.width, logical.height);
+        let t = Instant::now();
         self.ui.layout(&mut self.text, logical);
+        let layout = t.elapsed();
 
         // 3. Paint the logical scene, then scale it to physical pixels.
+        let t = Instant::now();
         self.scene.reset();
         self.ui.paint(&mut self.scene);
         self.frame.reset();
         self.frame.append(&self.scene, Some(Affine::scale(scale)));
+        let encode = t.elapsed();
+
+        // E2: opt-in per-frame CPU-side timing (`PEBBLES_FRAME_STATS=1`). GPU submit
+        // below is excluded — this measures rebuild/layout/scene-encode, the parts a
+        // damage/relayout optimization would target. Object count is the debug census.
+        if stats {
+            #[cfg(debug_assertions)]
+            let objects = self.ui.render_node_count().to_string();
+            #[cfg(not(debug_assertions))]
+            let objects = String::from("n/a (debug-only census)");
+            eprintln!(
+                "[pebbles frame] rebuild={:.2}ms layout={:.2}ms encode={:.2}ms objects={objects}",
+                rebuild.as_secs_f64() * 1e3,
+                layout.as_secs_f64() * 1e3,
+                encode.as_secs_f64() * 1e3,
+            );
+        }
 
         // 4. Render to the offscreen target and blit to the surface.
         let surface = &active.surface;
@@ -625,7 +811,8 @@ impl Runner {
                     MouseScrollDelta::LineDelta(_, y) => -(y as f64) * LINE_SCROLL,
                     MouseScrollDelta::PixelDelta(p) => -p.y / w.window.scale_factor(),
                 };
-                if w.ui.dispatch_scroll(w.cursor, dy) {
+                // C6: secondary windows now follow the popover on wheel (was main-only).
+                if wheel_with_overlay(&mut w.ui, w.cursor, dy) {
                     w.window.request_redraw();
                 }
             }
@@ -668,7 +855,14 @@ impl Runner {
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.shift_down = modifiers.state().shift_key();
                 self.ctrl_down = modifiers.state().control_key();
-                pebbles_core::keyboard::set_modifiers(self.shift_down, self.ctrl_down);
+                self.alt_down = modifiers.state().alt_key();
+                self.meta_down = modifiers.state().super_key();
+                pebbles_core::keyboard::set_modifiers(
+                    self.shift_down,
+                    self.ctrl_down,
+                    self.alt_down,
+                    self.meta_down,
+                );
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == ElementState::Pressed {
@@ -683,15 +877,27 @@ impl Runner {
                         }
                         return;
                     }
-                    let handled = if event.logical_key == Key::Named(NamedKey::Tab) {
+                    // B2 precedence: focused editor → shortcuts → Tab → activation.
+                    let intent = to_command(&event, self.ctrl_down, self.shift_down);
+                    let mods = pebbles_core::Mods {
+                        shift: self.shift_down,
+                        ctrl: self.ctrl_down,
+                        alt: self.alt_down,
+                        meta: self.meta_down,
+                    };
+                    let handled = if intent.is_some_and(|ki| w.ui.dispatch_key(ki)) {
+                        true
+                    } else if to_shortcut_key(&event)
+                        .is_some_and(|sk| pebbles_core::shortcuts::dispatch(w.ui.window_id(), mods, sk))
+                    {
+                        true
+                    } else if event.logical_key == Key::Named(NamedKey::Tab) {
                         w.ui.focus_move(!self.shift_down)
                     } else {
-                        let intent = to_command(&event, self.ctrl_down, self.shift_down);
-                        intent.is_some_and(|ki| w.ui.dispatch_key(ki))
-                            || matches!(
-                                event.logical_key.as_ref(),
-                                Key::Named(NamedKey::Enter | NamedKey::Space) | Key::Character(" ")
-                            ) && w.ui.dispatch_activate()
+                        matches!(
+                            event.logical_key.as_ref(),
+                            Key::Named(NamedKey::Enter | NamedKey::Space) | Key::Character(" ")
+                        ) && w.ui.dispatch_activate()
                     };
                     if handled {
                         w.window.request_redraw();
@@ -837,6 +1043,8 @@ impl ApplicationHandler for Runner {
             pebbles_widgets::dialog::init(); // and the global modal-dialog signal
             pebbles_widgets::sheet::init(); // and the global sheet/drawer signal
             pebbles_widgets::theme::init(); // and the global reactive theme signal
+            pebbles_widgets::text_direction::init(); // D2: the reactive direction signal
+            pebbles_widgets::set_text_direction(self.text_direction); // apply the app's direction
             install_clipboard(); // wire the system clipboard for Ctrl+C/X/V
             let root = self.pending_root.take().expect("root widget");
             self.ui.mount_root(View::new(self.background, root).into_widget());
@@ -845,6 +1053,10 @@ impl ApplicationHandler for Runner {
 
         window.request_redraw();
         self.active = Some(ActiveWindow { window, surface });
+
+        // B3: build + attach the native menu bar now that the window exists.
+        #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
+        self.install_native_menu();
     }
 
     fn window_event(
@@ -937,24 +1149,7 @@ impl ApplicationHandler for Runner {
                     }
                 };
                 let cursor = self.cursor;
-                use pebbles_widgets::overlay;
-                if overlay::is_open() {
-                    if overlay::over_panel(cursor.x, cursor.y) {
-                        // Wheel over the popover itself → scroll its own content only.
-                        if self.ui.dispatch_scroll(cursor, dy) {
-                            self.request_redraw();
-                        }
-                    } else if self.ui.dispatch_scroll(cursor, dy) {
-                        // Wheel over the page behind the popover → the page scrolls, so
-                        // slide the popover with it (stays glued to its trigger).
-                        overlay::shift(0.0, -dy);
-                        self.request_redraw();
-                    } else {
-                        // Nowhere to scroll → dismiss so it never floats detached.
-                        overlay::hide_overlay();
-                        self.request_redraw();
-                    }
-                } else if self.ui.dispatch_scroll(cursor, dy) {
+                if wheel_with_overlay(&mut self.ui, cursor, dy) {
                     self.request_redraw();
                 }
             }
@@ -1069,7 +1264,14 @@ impl ApplicationHandler for Runner {
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.shift_down = modifiers.state().shift_key();
                 self.ctrl_down = modifiers.state().control_key();
-                pebbles_core::keyboard::set_modifiers(self.shift_down, self.ctrl_down);
+                self.alt_down = modifiers.state().alt_key();
+                self.meta_down = modifiers.state().super_key();
+                pebbles_core::keyboard::set_modifiers(
+                    self.shift_down,
+                    self.ctrl_down,
+                    self.alt_down,
+                    self.meta_down,
+                );
             }
 
             WindowEvent::KeyboardInput { event, .. } => {
@@ -1083,19 +1285,27 @@ impl ApplicationHandler for Runner {
                         self.request_redraw();
                         return;
                     }
-                    // Tab always moves focus. Otherwise, translate to an edit intent
-                    // and route to the focused text editor; if none consumes it,
-                    // fall back to Enter/Space activation.
-                    let mut handled = if event.logical_key == Key::Named(NamedKey::Tab) {
+                    // B2 precedence: focused editor → shortcuts → Tab → activation.
+                    let intent = to_command(&event, self.ctrl_down, self.shift_down);
+                    let mods = pebbles_core::Mods {
+                        shift: self.shift_down,
+                        ctrl: self.ctrl_down,
+                        alt: self.alt_down,
+                        meta: self.meta_down,
+                    };
+                    let mut handled = if intent.is_some_and(|ki| self.ui.dispatch_key(ki)) {
+                        true
+                    } else if to_shortcut_key(&event)
+                        .is_some_and(|sk| pebbles_core::shortcuts::dispatch(self.ui.window_id(), mods, sk))
+                    {
+                        true
+                    } else if event.logical_key == Key::Named(NamedKey::Tab) {
                         self.ui.focus_move(!self.shift_down)
                     } else {
-                        let intent = to_command(&event, self.ctrl_down, self.shift_down);
-                        let consumed = intent.is_some_and(|ki| self.ui.dispatch_key(ki));
-                        consumed
-                            || matches!(
-                                event.logical_key.as_ref(),
-                                Key::Named(NamedKey::Enter | NamedKey::Space) | Key::Character(" ")
-                            ) && self.ui.dispatch_activate()
+                        matches!(
+                            event.logical_key.as_ref(),
+                            Key::Named(NamedKey::Enter | NamedKey::Space) | Key::Character(" ")
+                        ) && self.ui.dispatch_activate()
                     };
                     // If nothing else claimed the key, use it to scroll the view
                     // under the pointer (PageUp/Down, Home/End, arrows, Space).
@@ -1128,6 +1338,49 @@ impl ApplicationHandler for Runner {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // B3: deliver native-menu clicks on the UI thread (make_current so callback
+        // signal writes mark the right components dirty), then repaint if anything ran.
+        #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
+        {
+            self.ui.make_current();
+            let fired = self.native_menu.as_mut().map(|m| m.drain()).unwrap_or(false);
+            if fired {
+                self.request_redraw();
+                for w in self.windows.values() {
+                    w.window.request_redraw();
+                }
+            }
+        }
+        // B4: deliver global-hotkey presses the same way.
+        #[cfg(feature = "global-hotkeys")]
+        {
+            self.ui.make_current();
+            if crate::hotkeys::drain() {
+                self.request_redraw();
+                for w in self.windows.values() {
+                    w.window.request_redraw();
+                }
+            }
+        }
+        // F5: refresh the monitor snapshot (set_monitors is a no-op when unchanged).
+        {
+            let primary = event_loop.primary_monitor();
+            let list: Vec<pebbles_widgets::MonitorInfo> = event_loop
+                .available_monitors()
+                .map(|m| {
+                    let pos = m.position();
+                    let size = m.size();
+                    pebbles_widgets::MonitorInfo {
+                        primary: primary.as_ref() == Some(&m),
+                        name: m.name().unwrap_or_default(),
+                        position: (pos.x, pos.y),
+                        size: (size.width, size.height),
+                        scale: m.scale_factor(),
+                    }
+                })
+                .collect();
+            pebbles_widgets::set_monitors(list);
+        }
         // Open/close any secondary windows requested since the last turn.
         self.pump_windows(event_loop);
         // A reactive write (from an effect, timer, etc.) requests a new frame — on the

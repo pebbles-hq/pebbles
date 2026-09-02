@@ -239,7 +239,8 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
     if let Some(pad) = strip_pad {
         strip = strip.padding(pad);
     }
-    let strip = strip.into_widget();
+    // C7: the strip is a TabList (its buttons are Tabs — see render_tab_button).
+    let strip = crate::widgets::semantics(pebbles_render::SemanticsRole::TabList, "", strip).into_widget();
 
     // --- content (cross-faded on switch) ------------------------------------
     let content = selected_content
@@ -335,7 +336,14 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
     };
 
     if p.disabled {
-        return GestureDetector::new(cell).cursor(Cursor::NotAllowed).into_widget();
+        // C7: a disabled Tab.
+        return crate::widgets::semantics(
+            pebbles_render::SemanticsRole::Tab,
+            p.label.clone(),
+            GestureDetector::new(cell).cursor(Cursor::NotAllowed),
+        )
+        .disabled(true)
+        .into_widget();
     }
     let mut g = GestureDetector::new(cell)
         .cursor(Cursor::Pointer)
@@ -346,7 +354,10 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
     if let Some(cb) = p.on_tap.clone() {
         g = g.on_tap(cb);
     }
-    g.into_widget()
+    // C7: each strip button is a Tab; the selected one carries value "selected".
+    let node = crate::widgets::semantics(pebbles_render::SemanticsRole::Tab, p.label.clone(), g);
+    let node = if p.selected { node.value("selected") } else { node };
+    node.into_widget()
 }
 
 /// Props for the cross-fading content slot.

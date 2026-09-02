@@ -260,3 +260,46 @@ pub fn take_close_requests() -> Vec<WindowId> {
 pub fn take_window_commands() -> Vec<WindowCommand> {
     CMD_QUEUE.with(|q| std::mem::take(&mut *q.borrow_mut()))
 }
+
+// ---------------------------------------------------------------------------
+// F5 — monitor enumeration (a polled snapshot mirrored from the shell)
+// ---------------------------------------------------------------------------
+
+/// A connected display. A polled snapshot — no hot-plug events (§J).
+#[derive(Clone, Debug, PartialEq)]
+pub struct MonitorInfo {
+    pub name: String,
+    /// Top-left in physical desktop coordinates.
+    pub position: (i32, i32),
+    /// Resolution in physical pixels.
+    pub size: (u32, u32),
+    pub scale: f64,
+    pub primary: bool,
+}
+
+thread_local! {
+    static MONITORS: RefCell<Option<pebbles_core::Signal<Vec<MonitorInfo>>>> =
+        const { RefCell::new(None) };
+}
+
+fn monitors_signal() -> pebbles_core::Signal<Vec<MonitorInfo>> {
+    MONITORS.with(|c| {
+        *c.borrow_mut().get_or_insert_with(|| pebbles_core::create_root_signal(Vec::new()))
+    })
+}
+
+/// The connected monitors (reactive — reading it subscribes the caller, so a component
+/// re-renders when the shell publishes a changed snapshot). Empty until the first
+/// `about_to_wait` refresh.
+pub fn monitors() -> Vec<MonitorInfo> {
+    monitors_signal().get()
+}
+
+/// Shell-only: publish the current monitor snapshot. A no-op when unchanged (so it
+/// doesn't wake the frame loop every turn).
+pub fn set_monitors(list: Vec<MonitorInfo>) {
+    let sig = monitors_signal();
+    if sig.peek() != list {
+        sig.set(list);
+    }
+}
