@@ -106,6 +106,7 @@ pub struct Style {
     pub font_family: Option<String>,
     pub max_lines: Option<u32>,
     pub ellipsis: Option<bool>,
+    pub soft_wrap: Option<bool>,
 }
 
 /// Start a new [`Style`].
@@ -354,6 +355,11 @@ impl Style {
         self.ellipsis = Some(ellipsis);
         self
     }
+    /// Disable `Text` line wrapping (single unbounded line, clips to the box).
+    pub fn soft_wrap(mut self, wrap: bool) -> Self {
+        self.soft_wrap = Some(wrap);
+        self
+    }
 
     /// Layer `other` on top of `self` — `other`'s set fields win (like stacking CSS
     /// classes or `style={[base, override]}` in React Native).
@@ -394,6 +400,7 @@ impl Style {
             font_family: other.font_family.or(self.font_family),
             max_lines: other.max_lines.or(self.max_lines),
             ellipsis: other.ellipsis.or(self.ellipsis),
+            soft_wrap: other.soft_wrap.or(self.soft_wrap),
         }
     }
 

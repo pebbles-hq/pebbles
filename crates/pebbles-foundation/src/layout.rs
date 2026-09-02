@@ -57,6 +57,18 @@ pub enum FlexFit {
     Loose,
 }
 
+/// How children are distributed within a wrap's run (main axis), or how runs are
+/// distributed along the cross axis — Flutter's `WrapAlignment`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WrapAlignment {
+    Start,
+    End,
+    Center,
+    SpaceBetween,
+    SpaceAround,
+    SpaceEvenly,
+}
+
 /// The reading/stacking direction along the horizontal axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TextDirection {
@@ -87,4 +99,27 @@ pub enum TextAlign {
 pub enum TextBaseline {
     Alphabetic,
     Ideographic,
+}
+
+/// How a child is scaled to fit (or cover) a box of a different size — Flutter's
+/// `BoxFit`. A `FittedBox` uses this to scale a child laid out at its natural
+/// size into the box it is given.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BoxFit {
+    /// Scale down (never up) to fit entirely inside the box, preserving aspect.
+    /// A child smaller than the box stays at natural size.
+    #[default]
+    Contain,
+    /// Scale to cover the whole box, preserving aspect (cropping overflow).
+    Cover,
+    /// Stretch to exactly fill the box (distorting aspect when they differ).
+    Fill,
+    /// No scaling — the child keeps its natural size, positioned by alignment.
+    None,
+    /// Scale to match the box's width; height follows the child's aspect ratio.
+    FitWidth,
+    /// Scale to match the box's height; width follows the child's aspect ratio.
+    FitHeight,
+    /// Like [`Contain`](BoxFit::Contain) but never scales UP — `min(1, contain)`.
+    ScaleDown,
 }

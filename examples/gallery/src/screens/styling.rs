@@ -50,6 +50,42 @@ pub fn styling() -> Element {
                 .spacing(16.0),
             ),
             section(
+                "SWEEP GRADIENT — conic fills via Gradient::sweep",
+                row(children![
+                    // A full-circle sweep has no seam when the first and last colors match.
+                    center(text("sweep").color(palette::WHITE).semibold()).styled(
+                        style().size(84.0, 84.0).circle().gradient(Gradient::sweep([
+                            palette::red::S400, palette::amber::S400, palette::green::S400,
+                            palette::blue::S400, palette::purple::S400, palette::red::S400,
+                        ])),
+                    ),
+                    center(text("12-color").color(palette::WHITE).size(10.0)).styled(
+                        style().size(120.0, 120.0).circle().gradient(Gradient::sweep(
+                            [
+                                palette::red::S500, palette::orange::S500, palette::amber::S500,
+                                palette::yellow::S500, palette::lime::S500, palette::green::S500,
+                                palette::emerald::S500, palette::teal::S500, palette::cyan::S500,
+                                palette::sky::S500, palette::blue::S500, palette::indigo::S500,
+                                palette::violet::S500, palette::purple::S500, palette::fuchsia::S500,
+                                palette::red::S500,
+                            ],
+                        )),
+                    ),
+                    center(text("arc 0→π").color(palette::WHITE).size(10.5)).styled(
+                        style()
+                            .size(120.0, 84.0)
+                            .radius_all(12.0)
+                            .gradient(Gradient::sweep_arc(
+                                0.0,
+                                std::f64::consts::PI,
+                                [theme().colors.primary, theme().colors.secondary, theme().colors.primary],
+                            )),
+                    ),
+                ])
+                .main_axis_size(MainAxisSize::Min)
+                .spacing(16.0),
+            ),
+            section(
                 "PER-SIDE BORDER · TRANSFORM (rotate) · BLEND — Style + Container",
                 row(children![
                     // Per-side border: thick top+bottom, thin sides.

@@ -13,6 +13,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use pebbles_foundation::Alignment;
+use pebbles_render::StackFit;
 
 use crate::widgets::{Container, GestureDetector, Positioned, stack};
 use pebbles_core::reactive::current_window;
@@ -211,6 +212,18 @@ pub fn passive_is_open() -> bool {
     passive_signal().peek().is_some()
 }
 
+/// Number of windows with an open (menu/popover) overlay (debug-only).
+#[cfg(debug_assertions)]
+pub fn census_overlays() -> usize {
+    OVERLAY.with(|o| o.borrow().values().filter(|s| s.peek().is_some()).count())
+}
+
+/// Number of windows with an open passive overlay (debug-only).
+#[cfg(debug_assertions)]
+pub fn census_passive() -> usize {
+    PASSIVE.with(|p| p.borrow().values().filter(|s| s.peek().is_some()).count())
+}
+
 /// Wraps the app root and renders the active overlay above it. The shell installs
 /// one of these around every app automatically.
 pub struct OverlayHost {
@@ -264,5 +277,5 @@ fn render_host(p: &Props) -> crate::widgets::Stack {
     kids.extend(crate::sheet::overlay_children());
     // Toasts paint topmost (over modals) so notifications are always visible.
     kids.extend(crate::toast::overlay_children());
-    stack(kids).alignment(Alignment::TOP_LEFT).expand()
+    stack(kids).alignment(Alignment::TOP_LEFT).fit(StackFit::Expand)
 }

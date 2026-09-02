@@ -50,6 +50,15 @@ struct SignalSlot {
     effect_subs: HashSet<EffectId>,
 }
 
+/// One entry on the render-time context stack — a value provided by a component
+/// that stays visible while ITS subtree reconciles, then is popped when the
+/// component's render completes. The basis for scoped theme overrides and focus
+/// scopes (see [`provide_context`] / [`consume_context`]).
+struct ContextEntry {
+    owner: CompKey,
+    value: Rc<dyn Any>,
+}
+
 struct EffectSlot {
     func: Rc<dyn Fn()>,
 }
@@ -62,6 +71,9 @@ struct Runtime {
     observer: Option<Observer>,
     /// The component currently rendering (owns the local signals it creates).
     owner: Option<CompKey>,
+    /// Render-time context stack: values a component provides to its own subtree
+    /// while it renders. Popped in `end_component` once the subtree has reconciled.
+    contexts: Vec<ContextEntry>,
     /// The window (`Ui`) currently rendering — folded into each `CompKey` so two
     /// windows' components never alias. Set by the `Ui` before it builds/reconciles.
     current_window: u32,
@@ -437,6 +449,9 @@ impl<S: 'static + Clone> Store<S> {
 
 /// Opaque save-state returned by [`begin_component`].
 pub(crate) struct ComponentGuard {
+    /// This component's own key — so [`end_component`] can pop exactly the
+    /// contexts this render provided (after its subtree has reconciled).
+    key: CompKey,
     owner: Option<CompKey>,
     observer: Option<Observer>,
     cursor: usize,
@@ -445,11 +460,14 @@ pub(crate) struct ComponentGuard {
 
 /// Begin rendering component `id` (in the current window): it becomes the signal
 /// owner + read observer, and its local-signal cursor resets. Returns a guard to
-/// restore afterwards.
+/// restore afterwards. The guard must stay in scope until the component's child
+/// widget has been reconciled, so render-time contexts (theme overrides, focus
+/// scopes) remain visible to the whole subtree.
 pub(crate) fn begin_component(id: ElementId) -> ComponentGuard {
     with_rt(|rt| {
         let key = (rt.current_window, id);
         let guard = ComponentGuard {
+            key,
             owner: rt.owner,
             observer: rt.observer,
             cursor: rt.hook_cursor,
@@ -480,7 +498,10 @@ pub(crate) fn begin_component(id: ElementId) -> ComponentGuard {
     })
 }
 
-/// Restore the observer/owner state saved by [`begin_component`].
+/// Restore the observer/owner state saved by [`begin_component`], and pop the
+/// render-time contexts this component provided — its subtree has reconciled by
+/// now (the reconciler keeps the guard alive across the child update), so the
+/// contexts are no longer visible.
 ///
 /// Note on the "hooks rule": local signals persist by creation *order* (index), so a
 /// signal created conditionally at a *stable trailing position* is safe (its slot is
@@ -490,6 +511,11 @@ pub(crate) fn begin_component(id: ElementId) -> ComponentGuard {
 /// false-positive on the safe conditional-trailing pattern used across the catalog.
 pub(crate) fn end_component(guard: ComponentGuard) {
     with_rt(|rt| {
+        // Entries provided during this render sit on top (any descendant providers
+        // already popped their own) — drop everything this component owns.
+        while rt.contexts.last().is_some_and(|e| e.owner == guard.key) {
+            rt.contexts.pop();
+        }
         rt.owner = guard.owner;
         rt.observer = guard.observer;
         rt.hook_cursor = guard.cursor;
@@ -543,6 +569,60 @@ pub fn create_cleanup(f: impl FnOnce() + 'static) {
             rt.cleanups.entry(owner).or_default().push(Box::new(f));
         }
     });
+}
+
+// ---------------------------------------------------------------------------
+// Debug-only census (lifecycle soak tripwire — see performance-standards.md E6c)
+// ---------------------------------------------------------------------------
+
+/// Number of live signals (debug-only).
+#[cfg(debug_assertions)]
+pub fn census_signals() -> usize {
+    with_rt(|rt| rt.signals.len())
+}
+
+/// Number of active component→signal subscription edges (debug-only).
+#[cfg(debug_assertions)]
+pub fn census_subscriptions() -> usize {
+    with_rt(|rt| rt.subs_of.values().map(|s| s.len()).sum())
+}
+
+/// Number of pending (registered, not-yet-run) unmount cleanups (debug-only).
+#[cfg(debug_assertions)]
+pub fn census_cleanups() -> usize {
+    with_rt(|rt| rt.cleanups.values().map(|v| v.len()).sum())
+}
+
+/// Number of components + effects scheduled to re-run (debug-only).
+#[cfg(debug_assertions)]
+pub fn census_pending() -> usize {
+    with_rt(|rt| rt.pending_components.len() + rt.pending_effects.len())
+}
+
+/// Provide a value to the current component's **whole subtree** while it renders.
+/// Call at the top of a component's render function: every component rendered
+/// inside its returned widget (however deeply nested) can read the value back with
+/// [`consume_context`] until this component's render completes. Inner providers
+/// shadow outer ones of the same type (most-recently-provided wins). At app scope
+/// (no owning component) the call is a no-op.
+pub fn provide_context<T: 'static>(value: T) {
+    with_rt(|rt| {
+        if let Some(owner) = rt.owner {
+            rt.contexts.push(ContextEntry { owner, value: Rc::new(value) });
+        }
+    });
+}
+
+/// Read the innermost value of type `T` provided by an enclosing component (the
+/// render-time equivalent of React context / Flutter's `Theme.of`). Returns `None`
+/// outside a component subtree that provides `T`.
+pub fn consume_context<T: 'static + Clone>() -> Option<T> {
+    with_rt(|rt| {
+        rt.contexts
+            .iter()
+            .rev()
+            .find_map(|e| e.value.downcast_ref::<T>().cloned())
+    })
 }
 
 /// Drain the components of `window` scheduled to re-render (each `Ui` drains only

@@ -1,5 +1,6 @@
 //! Additional layout widgets beyond flex: [`Wrap`] (flow) and [`AspectRatio`].
 
+use pebbles_foundation::WrapAlignment;
 use pebbles_render::{RenderAspectRatio, RenderObject, RenderWrap};
 
 use pebbles_core::widget::{AnyWidget, RenderWidget};
@@ -10,12 +11,20 @@ pub struct Wrap {
     children: Vec<AnyWidget>,
     spacing: f64,
     run_spacing: f64,
+    alignment: WrapAlignment,
+    run_alignment: WrapAlignment,
 }
 
 /// Create a [`Wrap`] flowing `children`. Accepts a tuple `(a, b)`, `children![…]`, a
 /// `Vec`, an array, or an `Option`.
 pub fn wrap(children: impl pebbles_core::widget::IntoChildren) -> Wrap {
-    Wrap { children: children.into_children(), spacing: 8.0, run_spacing: 8.0 }
+    Wrap {
+        children: children.into_children(),
+        spacing: 8.0,
+        run_spacing: 8.0,
+        alignment: WrapAlignment::Start,
+        run_alignment: WrapAlignment::Start,
+    }
 }
 
 impl Wrap {
@@ -29,18 +38,30 @@ impl Wrap {
         self.run_spacing = run_spacing;
         self
     }
+    /// How children are distributed within a run (Flutter's `alignment`).
+    pub fn alignment(mut self, alignment: WrapAlignment) -> Self {
+        self.alignment = alignment;
+        self
+    }
+    /// How runs are distributed along the cross axis (Flutter's `runAlignment`).
+    pub fn run_alignment(mut self, run_alignment: WrapAlignment) -> Self {
+        self.run_alignment = run_alignment;
+        self
+    }
 }
 
 pebbles_core::render_widget!(Wrap);
 
 impl RenderWidget for Wrap {
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(RenderWrap::new(self.spacing, self.run_spacing))
+        Box::new(RenderWrap::new(self.spacing, self.run_spacing, self.alignment, self.run_alignment))
     }
     fn update_render_object(&self, object: &mut dyn RenderObject) {
         if let Some(w) = object.downcast_mut::<RenderWrap>() {
             w.spacing = self.spacing;
             w.run_spacing = self.run_spacing;
+            w.alignment = self.alignment;
+            w.run_alignment = self.run_alignment;
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {

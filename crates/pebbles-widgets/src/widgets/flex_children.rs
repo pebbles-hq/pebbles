@@ -42,15 +42,23 @@ impl ParentDataWidget for Expanded {
 #[derive(Clone)]
 pub struct Flexible {
     flex: u32,
+    fit: FlexFit,
     child: Option<AnyWidget>,
 }
 
 impl Flexible {
     pub fn new(child: impl pebbles_core::IntoWidget) -> Self {
-        Flexible { flex: 1, child: Some(child.into_widget()) }
+        Flexible { flex: 1, fit: FlexFit::Loose, child: Some(child.into_widget()) }
     }
     pub fn flex(mut self, flex: u32) -> Self {
         self.flex = flex.max(1);
+        self
+    }
+    /// How the child is sized within its share of the main axis
+    /// (`FlexFit::Loose` = up to its share; `FlexFit::Tight` = exactly — the
+    /// `Expanded` idiom). Default `Loose`.
+    pub fn fit(mut self, fit: FlexFit) -> Self {
+        self.fit = fit;
         self
     }
 }
@@ -62,7 +70,7 @@ impl ParentDataWidget for Flexible {
         self.child.take()
     }
     fn parent_data(&self) -> Box<dyn Any> {
-        Box::new(FlexParentData { flex: self.flex, fit: FlexFit::Loose })
+        Box::new(FlexParentData { flex: self.flex, fit: self.fit })
     }
 }
 

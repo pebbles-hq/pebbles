@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
-use pebbles_foundation::{Color, Offset, Size, palette};
+use pebbles_foundation::{Axis, Color, Offset, Size, palette};
 use pebbles_widgets::View;
 use vello::kurbo::Affine;
 use vello::util::{RenderContext, RenderSurface};
@@ -217,6 +217,10 @@ struct WindowRuntime {
     cursor: Offset,
     armed_tap: Option<u64>,
     pan_target: Option<u64>,
+    axis_pan_target: Option<u64>,
+    pan_start: Option<Offset>,
+    pan_last: Option<Offset>,
+    pan_axis: Option<Axis>,
     current_cursor: Cursor,
     on_close: Option<Rc<dyn Fn()>>,
 }
@@ -271,6 +275,15 @@ struct Runner {
     lp_active: bool,
     /// The drag (pan) target armed at pointer-down; receives move/end until release.
     pan_target: Option<u64>,
+    /// The axis-recognized drag target armed at pointer-down (mutually exclusive
+    /// with `pan_target`).
+    axis_pan_target: Option<u64>,
+    /// The pointer-down position for axis recognition.
+    pan_start: Option<Offset>,
+    /// The last dispatched drag position (for incremental deltas).
+    pan_last: Option<Offset>,
+    /// The recognized drag axis, once the slop has been crossed.
+    pan_axis: Option<Axis>,
     /// Monotonic clock start — the time base for animations.
     clock: Instant,
     /// Elapsed seconds at the previous frame, for the per-frame scroll-spring `dt`.
@@ -315,6 +328,10 @@ impl Runner {
             lp_target: None,
             lp_active: false,
             pan_target: None,
+            axis_pan_target: None,
+            pan_start: None,
+            pan_last: None,
+            pan_axis: None,
             clock: Instant::now(),
             last_frame_t: 0.0,
             windows: HashMap::new(),
@@ -562,6 +579,10 @@ impl Runner {
                 cursor: Offset::ZERO,
                 armed_tap: None,
                 pan_target: None,
+                axis_pan_target: None,
+                pan_start: None,
+                pan_last: None,
+                pan_axis: None,
                 current_cursor: Cursor::Default,
                 on_close: spec.on_close,
             },
@@ -1142,6 +1163,16 @@ impl ApplicationHandler for Runner {
             } else {
                 event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
             }
+        }
+        // Wake exactly when the next pending timeout (tooltip / hover-card delays,
+        // create_timeout callbacks) is due — a fully still mouse must still show
+        // the tooltip. No pending timers means plain `Wait` above.
+        let now_secs = self.clock.elapsed().as_secs_f64();
+        if let Some(at) = pebbles_core::animation::next_deadline(now_secs) {
+            let remaining = (at - now_secs).max(0.0);
+            event_loop.set_control_flow(ControlFlow::WaitUntil(
+                Instant::now() + std::time::Duration::from_secs_f64(remaining),
+            ));
         }
     }
 }

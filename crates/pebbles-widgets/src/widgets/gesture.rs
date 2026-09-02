@@ -52,6 +52,12 @@ pub struct GestureDetector {
     on_pan_start: Vec<Callback>,
     on_pan_update: Vec<Callback>,
     on_pan_end: Vec<Callback>,
+    on_vertical_drag_start: Vec<Callback>,
+    on_vertical_drag_update: Vec<Callback>,
+    on_vertical_drag_end: Vec<Callback>,
+    on_horizontal_drag_start: Vec<Callback>,
+    on_horizontal_drag_update: Vec<Callback>,
+    on_horizontal_drag_end: Vec<Callback>,
     cursor: Option<Cursor>,
     child: Option<AnyWidget>,
 }
@@ -163,6 +169,37 @@ impl GestureDetector {
         self.on_pan_end.push(cb.into_callback());
         self
     }
+    /// A vertical drag began (fires once the vertical axis wins the slop). Mutually
+    /// exclusive with the `pan_*` trio on the same detector.
+    pub fn on_vertical_drag_start(mut self, cb: impl IntoCallback) -> Self {
+        self.on_vertical_drag_start.push(cb.into_callback());
+        self
+    }
+    /// The pointer moved during a vertical drag (`action_event` carries `delta`).
+    pub fn on_vertical_drag_update(mut self, cb: impl IntoCallback) -> Self {
+        self.on_vertical_drag_update.push(cb.into_callback());
+        self
+    }
+    /// The vertical drag ended (primary released).
+    pub fn on_vertical_drag_end(mut self, cb: impl IntoCallback) -> Self {
+        self.on_vertical_drag_end.push(cb.into_callback());
+        self
+    }
+    /// A horizontal drag began (fires once the horizontal axis wins the slop).
+    pub fn on_horizontal_drag_start(mut self, cb: impl IntoCallback) -> Self {
+        self.on_horizontal_drag_start.push(cb.into_callback());
+        self
+    }
+    /// The pointer moved during a horizontal drag (`action_event` carries `delta`).
+    pub fn on_horizontal_drag_update(mut self, cb: impl IntoCallback) -> Self {
+        self.on_horizontal_drag_update.push(cb.into_callback());
+        self
+    }
+    /// The horizontal drag ended (primary released).
+    pub fn on_horizontal_drag_end(mut self, cb: impl IntoCallback) -> Self {
+        self.on_horizontal_drag_end.push(cb.into_callback());
+        self
+    }
     /// The cursor to show while hovering this widget.
     pub fn cursor(mut self, cursor: Cursor) -> Self {
         self.cursor = Some(cursor);
@@ -195,6 +232,12 @@ impl GestureDetector {
             on_pan_start: erase(&self.on_pan_start),
             on_pan_update: erase(&self.on_pan_update),
             on_pan_end: erase(&self.on_pan_end),
+            on_vertical_drag_start: erase(&self.on_vertical_drag_start),
+            on_vertical_drag_update: erase(&self.on_vertical_drag_update),
+            on_vertical_drag_end: erase(&self.on_vertical_drag_end),
+            on_horizontal_drag_start: erase(&self.on_horizontal_drag_start),
+            on_horizontal_drag_update: erase(&self.on_horizontal_drag_update),
+            on_horizontal_drag_end: erase(&self.on_horizontal_drag_end),
             // Default to a pointer cursor when this detector is clickable.
             cursor: self.cursor.or_else(|| (!self.on_tap.is_empty()).then_some(Cursor::Pointer)),
         }

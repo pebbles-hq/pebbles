@@ -152,6 +152,10 @@ pub enum Gradient {
     /// A radial gradient from `center` out to `radius` (fraction of the box's
     /// shorter side) through evenly-spaced `colors`.
     Radial { center: Alignment, radius: f64, colors: Vec<Color> },
+    /// A conic ("sweep") gradient rotating clockwise around `center` from
+    /// `start_angle` to `end_angle` (radians, 0 = positive X axis) through
+    /// evenly-spaced `colors`. A full `0..2π` sweep has no seam.
+    Sweep { center: Alignment, start_angle: f64, end_angle: f64, colors: Vec<Color> },
 }
 
 impl Gradient {
@@ -174,6 +178,31 @@ impl Gradient {
     /// A radial gradient centered in the box (`radius` = fraction of the shorter side).
     pub fn radial(radius: f64, colors: impl IntoIterator<Item = Color>) -> Self {
         Gradient::Radial { center: Alignment::CENTER, radius, colors: colors.into_iter().collect() }
+    }
+    /// A full-circle conic gradient centered in the box, starting at the positive
+    /// X axis (12 o'clock is `start_angle` + `-π/2`; pass an offset to rotate).
+    pub fn sweep(colors: impl IntoIterator<Item = Color>) -> Self {
+        Gradient::Sweep {
+            center: Alignment::CENTER,
+            start_angle: 0.0,
+            end_angle: std::f64::consts::TAU,
+            colors: colors.into_iter().collect(),
+        }
+    }
+    /// A conic gradient with an explicit arc. `start_angle`/`end_angle` are radians
+    /// clockwise from the positive X axis; a full-circle sweep must close the loop
+    /// with matching first/last colors to avoid a hard seam.
+    pub fn sweep_arc(
+        start_angle: f64,
+        end_angle: f64,
+        colors: impl IntoIterator<Item = Color>,
+    ) -> Self {
+        Gradient::Sweep {
+            center: Alignment::CENTER,
+            start_angle,
+            end_angle,
+            colors: colors.into_iter().collect(),
+        }
     }
 }
 

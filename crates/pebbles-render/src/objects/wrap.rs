@@ -2,7 +2,7 @@
 //! (lines) when they exceed the available width. Backs `Wrap` (tag lists, chips,
 //! responsive toolbars).
 
-use pebbles_foundation::{Offset, Size};
+use pebbles_foundation::{Offset, Size, WrapAlignment};
 use smallvec::SmallVec;
 
 use crate::RenderId;
@@ -16,11 +16,42 @@ pub struct RenderWrap {
     pub spacing: f64,
     /// Gap between runs.
     pub run_spacing: f64,
+    /// How children are distributed within a run (the main axis).
+    pub alignment: WrapAlignment,
+    /// How runs are distributed along the cross axis.
+    pub run_alignment: WrapAlignment,
 }
 
 impl RenderWrap {
-    pub fn new(spacing: f64, run_spacing: f64) -> Self {
-        RenderWrap { spacing, run_spacing }
+    pub fn new(
+        spacing: f64,
+        run_spacing: f64,
+        alignment: WrapAlignment,
+        run_alignment: WrapAlignment,
+    ) -> Self {
+        RenderWrap { spacing, run_spacing, alignment, run_alignment }
+    }
+}
+
+/// Distribute `free` leftover space across `n` items per an alignment: returns
+/// `(leading, between)` — the offset of the first item and the extra gap between
+/// adjacent items (added on top of the fixed `spacing`).
+fn distribute(free: f64, n: usize, alignment: WrapAlignment) -> (f64, f64) {
+    match alignment {
+        WrapAlignment::Start => (0.0, 0.0),
+        WrapAlignment::End => (free, 0.0),
+        WrapAlignment::Center => (free / 2.0, 0.0),
+        WrapAlignment::SpaceBetween => {
+            if n > 1 { (0.0, free / (n - 1) as f64) } else { (0.0, 0.0) }
+        }
+        WrapAlignment::SpaceAround => {
+            let b = if n > 0 { free / n as f64 } else { 0.0 };
+            (b / 2.0, b)
+        }
+        WrapAlignment::SpaceEvenly => {
+            let b = free / (n as f64 + 1.0);
+            (b, b)
+        }
     }
 }
 
@@ -54,23 +85,41 @@ impl RenderObject for RenderWrap {
             runs.push((cur, cur_w, cur_h));
         }
 
-        // Position runs top-to-bottom, children left-to-right.
         let mut total_w = 0.0_f64;
-        let mut y = 0.0_f64;
-        for (i, (items, run_w, run_h)) in runs.iter().enumerate() {
-            let mut x = 0.0_f64;
-            for &child in items {
-                cx.set_child_offset(child, Offset::new(x, y));
-                x += cx.child_size(child).width + self.spacing;
-            }
+        let mut content_h = 0.0_f64;
+        for (i, (_, run_w, run_h)) in runs.iter().enumerate() {
             total_w = total_w.max(*run_w);
-            y += run_h;
+            content_h += run_h;
             if i + 1 < runs.len() {
-                y += self.run_spacing;
+                content_h += self.run_spacing;
             }
         }
 
-        constraints.constrain(Size::new(total_w, y))
+        let size = constraints.constrain(Size::new(total_w, content_h));
+        let final_w = size.width;
+        let final_h = size.height;
+
+        // Distribute runs along the cross axis (extra space only when the wrap is
+        // given more cross extent than its content).
+        let cross_extra = (final_h - content_h).max(0.0);
+        let (run_lead, run_between) = distribute(cross_extra, runs.len(), self.run_alignment);
+
+        let mut y = run_lead;
+        for (i, (items, run_w, run_h)) in runs.iter().enumerate() {
+            let leftover = (final_w - run_w).max(0.0);
+            let (lead, between) = distribute(leftover, items.len(), self.alignment);
+            let mut x = lead;
+            for &child in items {
+                cx.set_child_offset(child, Offset::new(x, y));
+                x += cx.child_size(child).width + self.spacing + between;
+            }
+            y += run_h;
+            if i + 1 < runs.len() {
+                y += self.run_spacing + run_between;
+            }
+        }
+
+        size
     }
 
     fn paint(&self, cx: &mut PaintCx, offset: Offset) {

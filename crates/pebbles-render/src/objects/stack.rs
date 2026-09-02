@@ -2,12 +2,12 @@
 //! children are aligned within the stack; [`StackParentData`]-positioned children
 //! are placed by their edge insets. Backs `Stack`/`Positioned`.
 
-use pebbles_foundation::{Alignment, Offset, Size};
+use pebbles_foundation::{Alignment, Axis, Offset, Size};
 
 use crate::RenderId;
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;
-use crate::tree::{LayoutCx, PaintCx};
+use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 
 /// How a stack sizes its non-positioned children.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,6 +120,16 @@ impl RenderObject for RenderStack {
         for child in cx.children() {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
+    }
+
+    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+        // A stack's intrinsic extent is its largest child's.
+        let mut acc: Option<f64> = None;
+        for child in cx.children() {
+            let v = cx.child_intrinsic(child, axis, cross_extent)?;
+            acc = Some(acc.map_or(v, |a: f64| a.max(v)));
+        }
+        acc
     }
 
     fn debug_name(&self) -> &'static str {

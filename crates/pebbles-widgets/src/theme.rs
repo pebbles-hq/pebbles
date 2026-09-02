@@ -6,6 +6,7 @@
 
 use std::cell::RefCell;
 
+use pebbles_core::widget::IntoWidget as _;
 use pebbles_core::{Signal, create_root_signal};
 use pebbles_foundation::Color;
 
@@ -150,9 +151,12 @@ fn theme_signal() -> Signal<Theme> {
 }
 
 /// The current theme (cheap `Copy`). Reading it inside a component subscribes that
-/// component, so it re-renders when the theme changes.
+/// component, so it re-renders when the theme changes — and, inside a
+/// [`theme_override`] subtree, returns that subtree's overridden theme instead of
+/// the global one.
 pub fn theme() -> Theme {
-    theme_signal().get()
+    let global = theme_signal().get(); // subscribe so a global toggle re-renders too
+    pebbles_core::reactive::consume_context::<Theme>().unwrap_or(global)
 }
 
 /// Swap the current theme. Every component that read [`theme`] re-renders.
@@ -164,6 +168,28 @@ pub fn set_theme(theme: Theme) {
 pub fn toggle_theme() {
     let next = if theme().dark { Theme::light() } else { Theme::dark() };
     set_theme(next);
+}
+
+// ---------------------------------------------------------------------------
+// Scoped theme override
+// ---------------------------------------------------------------------------
+
+/// Override the theme for `child`'s **whole subtree**: every component rendered
+/// inside it reads `t` from [`theme`] instead of the global theme, while the rest
+/// of the app is unaffected. Inner overrides shadow outer ones. The rendering
+/// context is provided via [`pebbles_core::reactive::provide_context`], so the
+/// override is visible exactly while the subtree reconciles.
+pub fn theme_override(t: Theme, child: impl pebbles_core::IntoWidget) -> pebbles_core::Element {
+    #[derive(Clone)]
+    struct Props {
+        theme: Theme,
+        child: pebbles_core::widget::AnyWidget,
+    }
+    fn render(props: &Props) -> pebbles_core::Element {
+        pebbles_core::reactive::provide_context(props.theme);
+        props.child.clone()
+    }
+    pebbles_core::component_props(render, Props { theme: t, child: child.into_widget() }).into_widget()
 }
 
 /// Scale a color's RGB channels by `factor` (`<1.0` darkens, `>1.0` lightens),

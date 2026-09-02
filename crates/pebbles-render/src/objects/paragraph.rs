@@ -7,7 +7,7 @@
 //! scene, and because vello rasterizes glyph outlines through that transform the
 //! text stays crisp at any DPI.
 
-use pebbles_foundation::{Color, Offset, Size, TextAlign};
+use pebbles_foundation::{Axis, Color, Offset, Size, TextAlign};
 use parley::{
     Alignment, AlignmentOptions, FontStyle, FontWeight, Layout, LineHeight, PositionedLayoutItem,
     StyleProperty,
@@ -18,7 +18,8 @@ use vello::peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;
-use crate::tree::{LayoutCx, PaintCx};
+use crate::text::TextEnv;
+use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 
 /// Styling for a paragraph of text.
 #[derive(Clone, Debug)]
@@ -42,6 +43,10 @@ pub struct ParagraphStyle {
     pub max_lines: Option<u32>,
     /// With `max_lines`, append "…" to the last kept line when the text overflows.
     pub ellipsis: bool,
+    /// Break onto the next line when the text exceeds the available width
+    /// (`true`, the default). `false` shapes a single unbounded line that clips to
+    /// the box (the classic one-line label, combine with `ellipsis`).
+    pub soft_wrap: bool,
 }
 
 impl Default for ParagraphStyle {
@@ -59,6 +64,7 @@ impl Default for ParagraphStyle {
             font_family: None,
             max_lines: None,
             ellipsis: false,
+            soft_wrap: true,
         }
     }
 }
@@ -88,8 +94,8 @@ impl RenderParagraph {
     }
 
     /// Shape `s` into a broken, aligned layout with this paragraph's style.
-    fn build(&self, cx: &mut LayoutCx, s: &str, max_advance: Option<f32>) -> Layout<Brush> {
-        let mut builder = cx.text.layout.ranged_builder(&mut cx.text.fonts, s, 1.0, true);
+    fn build(&self, text_env: &mut TextEnv, s: &str, max_advance: Option<f32>) -> Layout<Brush> {
+        let mut builder = text_env.layout.ranged_builder(&mut text_env.fonts, s, 1.0, true);
         builder.push_default(StyleProperty::FontSize(self.style.font_size));
         builder.push_default(StyleProperty::FontWeight(FontWeight::new(self.style.weight)));
         builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
@@ -120,10 +126,14 @@ impl RenderParagraph {
 
 impl RenderObject for RenderParagraph {
     fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
-        let max_advance =
-            if constraints.has_bounded_width() { Some(constraints.max_width as f32) } else { None };
+        let max_advance = if self.style.soft_wrap && constraints.has_bounded_width() {
+            Some(constraints.max_width as f32)
+        } else {
+            None
+        };
 
-        let mut layout = self.build(cx, &self.text, max_advance);
+        let text_env = &mut *cx.text;
+        let mut layout = self.build(text_env, &self.text, max_advance);
 
         // `max_lines` clamp. With `ellipsis`, when the text overflows, re-shape the
         // longest character prefix that still fits in `max_lines` lines once "…" is
@@ -140,7 +150,7 @@ impl RenderObject for RenderParagraph {
                     let mid = (lo + hi).div_ceil(2);
                     let cut = chars.get(mid).copied().unwrap_or(self.text.len());
                     let candidate = format!("{}…", &self.text[..cut]);
-                    let trial = self.build(cx, &candidate, max_advance);
+                    let trial = self.build(text_env, &candidate, max_advance);
                     if trial.lines().count() <= max {
                         best = candidate;
                         lo = mid;
@@ -148,7 +158,7 @@ impl RenderObject for RenderParagraph {
                         hi = mid - 1;
                     }
                 }
-                layout = self.build(cx, &best, max_advance);
+                layout = self.build(text_env, &best, max_advance);
             }
             // Report a height covering only the kept lines; paint skips the rest.
             let h: f64 = layout.lines().take(max).map(|l| l.metrics().line_height as f64).sum();
@@ -190,6 +200,45 @@ impl RenderObject for RenderParagraph {
                     );
             }
         }
+    }
+
+    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+        match axis {
+            // The widest unbreakable run — approximated as the widest
+            // whitespace-separated token (Flutter uses the same word-boundary
+            // notion for `getMinIntrinsicWidth`). Capped for pathological input.
+            Axis::Horizontal => {
+                let text_env = &mut *cx.text;
+                let natural =
+                    self.build(text_env, &self.text, None).width() as f64;
+                let mut max_word: f64 = 0.0;
+                for token in self.text.split_whitespace().take(256) {
+                    let w = self.build(text_env, token, None).width() as f64;
+                    max_word = max_word.max(w);
+                }
+                Some(if max_word > 0.0 { max_word } else { natural })
+            }
+            // The height the paragraph takes when wrapped at `cross_extent`.
+            Axis::Vertical => {
+                let max_advance = if cross_extent.is_finite() {
+                    Some(cross_extent.max(0.0) as f32)
+                } else {
+                    None
+                };
+                Some(self.build(&mut *cx.text, &self.text, max_advance).height() as f64)
+            }
+        }
+    }
+
+    fn baseline(&self, _cx: &mut LayoutCx) -> Option<f64> {
+        // The first line's baseline: the line's top offset plus its metrics'
+        // baseline (the distance from the line top to the alphabetic baseline).
+        self.cached.as_ref().and_then(|layout| {
+            layout.lines().next().map(|line| {
+                let m = line.metrics();
+                (m.block_min_coord + m.baseline) as f64
+            })
+        })
     }
 
     fn debug_name(&self) -> &'static str {

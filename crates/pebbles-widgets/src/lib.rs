@@ -44,14 +44,17 @@ pub use overlay::{OverlayHost, hide_overlay, hide_passive, show_overlay, show_pa
 pub use sheet::{Sheet, SheetId, Side, close_sheet, sheet};
 pub use toast::{Toast, ToastId, ToastVariant, dismiss_toast, toast};
 pub use style::{Style, StyleExt, image_from_bytes, image_from_path, style, styled, styles};
-pub use theme::{Colors, Theme, set_theme, theme, toggle_theme};
+pub use theme::{Colors, Theme, set_theme, theme, theme_override, toggle_theme};
 pub use widgets::{
-    Align, AspectRatio, ClipRRect, ColoredBox, Column, ConstrainedBox, Container, DecoratedBox,
-    EditableText, Expanded, Flexible, GestureDetector, GridView, ListView, Opacity, Padding,
+    Align, AnimatedContainer, AspectRatio, ClipRRect, ColoredBox, Column, ConstrainedBox,
+    Container, DecoratedBox,
+    EditableText, Expanded, FittedBox, Flexible, FractionallySizedBox, GestureDetector, GridView,
+    IntrinsicHeight, IntrinsicWidth, LimitedBox, ListView, Opacity, OverflowBox, Padding,
     Positioned, Row, ScrollController, ScrollExt, ScrollbarPolicy, ScrollbarStyle, Semantics,
     SemanticsExt, SemanticsProps, SemanticsRole, SingleChildScrollView, SizedBox, Transform, Spinner,
-    Stack, Text, View, Wrap, aspect_ratio, center,
-    column, editable, gap_h, gap_w, list_view, row, semantics, sized_box, spacer, spinner, stack,
+    Stack, Text, View, Wrap, animated_container, aspect_ratio, center,
+    column, editable, fitted_box, focus_scope, fractionally_sized_box, gap_h, gap_w, intrinsic_height,
+    intrinsic_width, limited_box, list_view, overflow_box, row, semantics, sized_box, spacer, spinner, stack,
     text, transform, use_scroll_controller, wrap,
 };
 

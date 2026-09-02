@@ -2,7 +2,9 @@
 //! [`pebbles_render::RenderFlex`]. Build their children with the [`children!`]
 //! macro: `column(children![text("a"), text("b")])`.
 
-use pebbles_foundation::{Axis, CrossAxisAlignment, MainAxisAlignment, MainAxisSize};
+use pebbles_foundation::{
+    Axis, CrossAxisAlignment, MainAxisAlignment, MainAxisSize, TextBaseline, VerticalDirection,
+};
 use pebbles_render::{RenderFlex, RenderObject};
 
 use pebbles_core::widget::{AnyWidget, RenderWidget};
@@ -14,6 +16,8 @@ struct FlexConfig {
     cross_axis_alignment: CrossAxisAlignment,
     main_axis_size: MainAxisSize,
     spacing: f64,
+    vertical_direction: VerticalDirection,
+    text_baseline: TextBaseline,
 }
 
 impl Default for FlexConfig {
@@ -23,6 +27,8 @@ impl Default for FlexConfig {
             cross_axis_alignment: CrossAxisAlignment::Center,
             main_axis_size: MainAxisSize::Max,
             spacing: 0.0,
+            vertical_direction: VerticalDirection::Down,
+            text_baseline: TextBaseline::Alphabetic,
         }
     }
 }
@@ -50,6 +56,18 @@ macro_rules! flex_builders {
         /// A fixed gap between adjacent children (Flutter's `spacing:`).
         pub fn spacing(mut self, value: f64) -> Self {
             self.config.spacing = value;
+            self
+        }
+        /// Which vertical direction is "start" (Flutter's `verticalDirection:`).
+        /// `Down` (default) = top-down; `Up` = bottom-up.
+        pub fn vertical_direction(mut self, value: VerticalDirection) -> Self {
+            self.config.vertical_direction = value;
+            self
+        }
+        /// The baseline to align on with `CrossAxisAlignment::Baseline`
+        /// (Flutter's `textBaseline:`).
+        pub fn text_baseline(mut self, value: TextBaseline) -> Self {
+            self.config.text_baseline = value;
             self
         }
     };
@@ -86,6 +104,8 @@ impl RenderWidget for Row {
             self.config.cross_axis_alignment,
             self.config.main_axis_size,
             self.config.spacing,
+            self.config.vertical_direction,
+            self.config.text_baseline,
         ))
     }
     fn update_render_object(&self, object: &mut dyn RenderObject) {
@@ -94,6 +114,8 @@ impl RenderWidget for Row {
             f.cross_axis_alignment = self.config.cross_axis_alignment;
             f.main_axis_size = self.config.main_axis_size;
             f.spacing = self.config.spacing;
+            f.vertical_direction = self.config.vertical_direction;
+            f.text_baseline = self.config.text_baseline;
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {
@@ -132,6 +154,8 @@ impl RenderWidget for Column {
             self.config.cross_axis_alignment,
             self.config.main_axis_size,
             self.config.spacing,
+            self.config.vertical_direction,
+            self.config.text_baseline,
         ))
     }
     fn update_render_object(&self, object: &mut dyn RenderObject) {
@@ -140,6 +164,8 @@ impl RenderWidget for Column {
             f.cross_axis_alignment = self.config.cross_axis_alignment;
             f.main_axis_size = self.config.main_axis_size;
             f.spacing = self.config.spacing;
+            f.vertical_direction = self.config.vertical_direction;
+            f.text_baseline = self.config.text_baseline;
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {

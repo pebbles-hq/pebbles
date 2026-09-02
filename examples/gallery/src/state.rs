@@ -96,6 +96,7 @@ pub const NAV: &[NavGroup] = &[
         label: "DISPLAY",
         routes: &[
             ("badge", lucide::TAG, "Badge"),
+            ("chips", lucide::BADGE_CHECK, "Chip"),
             ("alert", lucide::BELL, "Alert"),
             ("skeleton", lucide::BOXES, "Skeleton"),
             ("kbd", lucide::KEYBOARD, "Kbd"),
@@ -107,9 +108,6 @@ pub const NAV: &[NavGroup] = &[
             ("list", lucide::LIST, "List"),
             ("data-table", lucide::TABLE, "Data Table"),
             ("file-explorer", lucide::FOLDER_TREE, "File Explorer"),
-            ("split-view", lucide::COLUMNS_2, "Split View"),
-            ("list-view", lucide::LIST_ORDERED, "List View"),
-            ("grid-view", lucide::LAYOUT_GRID, "Grid View"),
             ("typography", lucide::TYPE, "Typography"),
             ("fonts", lucide::PILCROW, "Fonts"),
             ("icons", lucide::SHAPES, "Icons"),
@@ -124,7 +122,12 @@ pub const NAV: &[NavGroup] = &[
             ("stacks", lucide::LAYERS, "Stack"),
             ("wraps", lucide::TEXT_WRAP, "Wrap"),
             ("boxes", lucide::BOX, "Boxes & Sizing"),
+            ("animated-container", lucide::WAND, "Animated Container"),
+            ("list-view", lucide::LIST_ORDERED, "List View"),
+            ("grid-view", lucide::LAYOUT_GRID, "Grid View"),
+            ("split-view", lucide::COLUMNS_2, "Split View"),
             ("resizable", lucide::PANEL_LEFT, "Resizable"),
+            ("accordion", lucide::LIST_COLLAPSE, "Accordion"),
             ("collapsible", lucide::CHEVRONS_DOWN_UP, "Collapsible"),
         ],
     },
@@ -132,7 +135,6 @@ pub const NAV: &[NavGroup] = &[
         label: "NAVIGATION",
         routes: &[
             ("tabs", lucide::SQUARE_STACK, "Tabs"),
-            ("accordion", lucide::LIST_COLLAPSE, "Accordion"),
             ("breadcrumb", lucide::CHEVRON_RIGHT, "Breadcrumb"),
             ("menubar", lucide::MENU, "Menubar"),
             ("pagination", lucide::CHEVRONS_LEFT, "Pagination"),
@@ -153,6 +155,7 @@ pub const NAV: &[NavGroup] = &[
         routes: &[
             ("colors", lucide::PALETTE, "Colors"),
             ("styling", lucide::PAINTBRUSH, "Styling"),
+            ("context", lucide::TREE_DECIDUOUS, "Context & Scopes"),
         ],
     },
 ];

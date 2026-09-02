@@ -8,11 +8,11 @@
 
 use std::any::Any;
 
-use pebbles_foundation::{Offset, Size};
+use pebbles_foundation::{Axis, Offset, Size};
 use vello::kurbo::Affine;
 
 use crate::constraints::BoxConstraints;
-use crate::tree::{LayoutCx, PaintCx};
+use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 
 /// A node in the render tree: it computes its own [`Size`] under a set of
 /// [`BoxConstraints`] and paints itself into a scene.
@@ -37,6 +37,26 @@ pub trait RenderObject: Any {
     /// The tree applies it during painting (as a transformed sub-scene) and inverts
     /// it during hit-testing, so pointer events still land on transformed widgets.
     fn transform(&self, _size: Size) -> Option<Affine> {
+        None
+    }
+
+    /// This node's **intrinsic extent** on `axis` — the size it would choose with
+    /// no external constraints on that axis, given that the perpendicular axis is
+    /// fixed at `cross_extent` (infinite when unconstrained). `None` means the
+    /// object has no intrinsic notion (plain boxes, flex containers of children
+    /// that don't report one) and must be sized by the box protocol alone.
+    /// [`RenderIntrinsicWidth`](crate::RenderIntrinsicWidth) / `RenderIntrinsicHeight`
+    /// drive layout from this instead of the ordinary constraint pass.
+    fn intrinsic(&self, _cx: &mut IntrinsicCx, _axis: Axis, _cross_extent: f64) -> Option<f64> {
+        None
+    }
+
+    /// The distance from this object's top edge to its first text baseline, in its
+    /// own coordinate space — the input to `CrossAxisAlignment::Baseline`. Text
+    /// reports its first line's baseline; single-child wrappers (padding, boxes,
+    /// decoration) pass it through with their child's top inset added. `None` for
+    /// objects with no baseline notion.
+    fn baseline(&self, _cx: &mut LayoutCx) -> Option<f64> {
         None
     }
 

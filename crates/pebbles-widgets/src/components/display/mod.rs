@@ -1,5 +1,6 @@
 //! Display & content components — surfaces, data, typography, icons, progress.
 
+mod chip;
 mod data;
 mod empty;
 mod file_explorer;
@@ -13,6 +14,7 @@ mod tooltip;
 mod tree;
 mod typography;
 
+pub use chip::{Chip, chip};
 pub use data::{Cell, SortDir, Table, cell, table};
 pub use list_tile::{ListTile, list_tile};
 pub use hover_card::{HoverCard, hover_card};

@@ -3,12 +3,15 @@
 //! main-axis space to flexible children by their flex factor, then position
 //! everything per the main- and cross-axis alignment.
 
-use pebbles_foundation::{Axis, CrossAxisAlignment, FlexFit, MainAxisAlignment, MainAxisSize, Offset, Size};
+use pebbles_foundation::{
+    Axis, CrossAxisAlignment, FlexFit, MainAxisAlignment, MainAxisSize, Offset, Size, TextBaseline,
+    VerticalDirection,
+};
 
 use crate::RenderId;
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;
-use crate::tree::{LayoutCx, PaintCx};
+use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 
 /// Layout data attached to a flex child by an `Expanded`/`Flexible` widget.
 #[derive(Clone, Copy, Debug)]
@@ -33,6 +36,12 @@ pub struct RenderFlex {
     pub main_axis_size: MainAxisSize,
     /// Fixed gap inserted between adjacent children (Flutter's `Flex.spacing`).
     pub spacing: f64,
+    /// Which vertical direction is "start" (`Down` = top-down, `Up` = bottom-up).
+    /// Affects a Column's main axis and a Row's cross axis.
+    pub vertical_direction: VerticalDirection,
+    /// The baseline to align on when `cross_axis_alignment == Baseline`
+    /// (alphabetic vs ideographic — parley's baseline serves both today).
+    pub text_baseline: TextBaseline,
 }
 
 impl RenderFlex {
@@ -42,8 +51,28 @@ impl RenderFlex {
         cross_axis_alignment: CrossAxisAlignment,
         main_axis_size: MainAxisSize,
         spacing: f64,
+        vertical_direction: VerticalDirection,
+        text_baseline: TextBaseline,
     ) -> Self {
-        RenderFlex { axis, main_axis_alignment, cross_axis_alignment, main_axis_size, spacing }
+        RenderFlex {
+            axis,
+            main_axis_alignment,
+            cross_axis_alignment,
+            main_axis_size,
+            spacing,
+            vertical_direction,
+            text_baseline,
+        }
+    }
+
+    /// Whether the main axis runs in reverse (`Column` with `Up`).
+    fn main_reversed(&self) -> bool {
+        self.axis == Axis::Vertical && self.vertical_direction == VerticalDirection::Up
+    }
+
+    /// Whether the cross axis runs in reverse (`Row` with `Up`).
+    fn cross_reversed(&self) -> bool {
+        self.axis == Axis::Horizontal && self.vertical_direction == VerticalDirection::Up
     }
 
     fn main_of(&self, size: Size) -> f64 {
@@ -172,9 +201,19 @@ impl RenderObject for RenderFlex {
         let final_main = self.main_of(size);
         let final_cross = self.cross_of(size);
 
-        // Position children along the main axis per the alignment.
+        // Position children along the main axis per the alignment. A reversed main
+        // axis (`Column` with `Up`) swaps Start↔End and lays children bottom-up.
         let free = (final_main - content_main).max(0.0);
-        let (leading, between) = match self.main_axis_alignment {
+        let eff_align = if self.main_reversed() {
+            match self.main_axis_alignment {
+                MainAxisAlignment::Start => MainAxisAlignment::End,
+                MainAxisAlignment::End => MainAxisAlignment::Start,
+                other => other,
+            }
+        } else {
+            self.main_axis_alignment
+        };
+        let (leading, between) = match eff_align {
             MainAxisAlignment::Start => (0.0, 0.0),
             MainAxisAlignment::End => (free, 0.0),
             MainAxisAlignment::Center => (free / 2.0, 0.0),
@@ -191,16 +230,38 @@ impl RenderObject for RenderFlex {
             }
         };
 
+        // Baseline alignment: children sit on the tallest baseline among them.
+        let baseline = self.axis == Axis::Horizontal
+            && self.cross_axis_alignment == CrossAxisAlignment::Baseline;
+        let max_baseline = if baseline {
+            children.iter().filter_map(|&(c, _)| cx.child_baseline(c)).fold(0.0_f64, f64::max)
+        } else {
+            0.0
+        };
+
         let mut pos = leading;
-        for &(child, _) in &children {
+        let placed: Box<dyn Iterator<Item = (RenderId, FlexParentData)>> = if self.main_reversed() {
+            Box::new(children.iter().rev().copied())
+        } else {
+            Box::new(children.iter().copied())
+        };
+        for (child, _) in placed {
             let child_size = cx.child_size(child);
             let child_main = self.main_of(child_size);
             let child_cross = self.cross_of(child_size);
-            let cross_pos = match self.cross_axis_alignment {
-                CrossAxisAlignment::Start | CrossAxisAlignment::Stretch => 0.0,
-                CrossAxisAlignment::End => final_cross - child_cross,
-                CrossAxisAlignment::Center | CrossAxisAlignment::Baseline => {
-                    (final_cross - child_cross) / 2.0
+            let cross_pos = if baseline {
+                max_baseline - cx.child_baseline(child).unwrap_or(0.0)
+            } else {
+                match self.cross_axis_alignment {
+                    CrossAxisAlignment::Start | CrossAxisAlignment::Stretch => {
+                        if self.cross_reversed() { final_cross - child_cross } else { 0.0 }
+                    }
+                    CrossAxisAlignment::End => {
+                        if self.cross_reversed() { 0.0 } else { final_cross - child_cross }
+                    }
+                    CrossAxisAlignment::Center | CrossAxisAlignment::Baseline => {
+                        (final_cross - child_cross) / 2.0
+                    }
                 }
             };
             cx.set_child_offset(child, self.make_offset(pos, cross_pos));
@@ -214,6 +275,27 @@ impl RenderObject for RenderFlex {
         for child in cx.children() {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
+    }
+
+    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+        // On the main axis a flex is the sum of its children's intrinsic extents
+        // plus the gaps between them; on the cross axis it's the largest child's.
+        let children = cx.children();
+        let main = self.axis == axis;
+        let count = children.len() as f64;
+        let gaps = if main && count > 1.0 { (count - 1.0) * self.spacing.max(0.0) } else { 0.0 };
+        let mut acc = 0.0_f64;
+        for child in children {
+            let Some(v) = cx.child_intrinsic(child, axis, cross_extent) else {
+                return None;
+            };
+            if main {
+                acc += v;
+            } else {
+                acc = acc.max(v);
+            }
+        }
+        Some(acc + gaps)
     }
 
     fn debug_name(&self) -> &'static str {

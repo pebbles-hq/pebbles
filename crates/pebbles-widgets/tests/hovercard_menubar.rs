@@ -6,7 +6,7 @@ use pebbles_core::{IntoWidget, Ui, animation, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{
-    Container, OverlayHost, View, hover_card, menu_item, menubar, overlay, text,
+    Container, OverlayHost, View, hover_card, menu_item, menubar, overlay, text, tooltip,
 };
 
 fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
@@ -58,6 +58,46 @@ fn hover_card_shows_after_delay_and_hides_after_exit() {
     animation::tick(0.40); // fire it
     frame(&mut ui, &mut env, win);
     assert!(!overlay::passive_is_open(), "card hides after leaving trigger + card");
+}
+
+fn tooltip_root() -> impl IntoWidget {
+    OverlayHost::wrap(
+        pebbles_widgets::column(pebbles_core::children![
+            tooltip("Saved to disk", Container::new().width(90.0).height(28.0)).delay(0.2),
+            Container::new().width(300.0).height(240.0), // empty area to hover off onto
+        ])
+        .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
+        .main_axis_size(pebbles_foundation::MainAxisSize::Min),
+    )
+}
+
+#[test]
+fn tooltip_shows_after_delay_and_hides_immediately_on_exit() {
+    overlay::init();
+    pebbles_core::focus::init();
+    animation::reset();
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 320.0);
+    ui.mount_root(View::new(palette::WHITE, component(tooltip_root)).into_widget());
+    ui.layout(&mut env, win);
+    overlay::set_window_size(400.0, 320.0);
+    frame(&mut ui, &mut env, win);
+
+    assert!(!overlay::passive_is_open(), "no tooltip before hover");
+    ui.dispatch_hover(Offset::new(40.0, 14.0)); // over the trigger
+    frame(&mut ui, &mut env, win);
+    animation::tick(0.01);
+    assert!(!overlay::passive_is_open(), "not before the delay");
+    animation::tick(0.30);
+    frame(&mut ui, &mut env, win);
+    assert!(overlay::passive_is_open(), "tooltip shows after the delay");
+
+    // Tooltips dismiss immediately on hover-exit (no close grace like HoverCard).
+    ui.dispatch_hover(Offset::new(40.0, 150.0));
+    frame(&mut ui, &mut env, win);
+    assert!(!overlay::passive_is_open(), "tooltip hides on leaving the trigger");
 }
 
 fn mb_root() -> impl IntoWidget {

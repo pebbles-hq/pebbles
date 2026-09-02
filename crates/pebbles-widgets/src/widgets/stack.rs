@@ -32,9 +32,11 @@ impl Stack {
         self.alignment = alignment;
         self
     }
-    /// Force non-positioned children to fill the stack.
-    pub fn expand(mut self) -> Self {
-        self.fit = StackFit::Expand;
+    /// How non-positioned children are sized: [`StackFit::Loose`] (default) lets
+    /// them keep their own size; [`StackFit::Expand`] forces them to the stack's
+    /// bounds.
+    pub fn fit(mut self, fit: StackFit) -> Self {
+        self.fit = fit;
         self
     }
 }

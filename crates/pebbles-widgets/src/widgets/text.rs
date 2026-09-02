@@ -95,6 +95,12 @@ impl Text {
         self.style.ellipsis = true;
         self
     }
+    /// Disable line wrapping: the text shapes as a single unbounded line that clips
+    /// to its box (combine with [`Self::ellipsis`] for a one-line "…" label).
+    pub fn soft_wrap(mut self, wrap: bool) -> Self {
+        self.style.soft_wrap = wrap;
+        self
+    }
 
     /// Style this text from an explicit [`ParagraphStyle`].
     pub fn paragraph_style(mut self, style: ParagraphStyle) -> Self {
@@ -141,6 +147,9 @@ impl Text {
         }
         if let Some(e) = s.ellipsis {
             self.style.ellipsis = e;
+        }
+        if let Some(sw) = s.soft_wrap {
+            self.style.soft_wrap = sw;
         }
         crate::style::styled(self, s)
     }

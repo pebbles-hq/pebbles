@@ -23,7 +23,7 @@ use crate::widgets::{Container, Expanded, GestureDetector, Opacity, column, edit
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{
     KeyInput, Motion, Signal, action_event, animated, clipboard, component_props,
-    create_focus, create_loop_while, create_signal, keyboard,
+    create_cleanup, create_focus, create_loop_while, create_signal, keyboard,
 };
 
 /// One undo/redo snapshot: text + selection.
@@ -713,6 +713,11 @@ fn render_field(p: &Props) -> AnyWidget {
         id: focus.raw_id(),
         multiline: p.multiline,
     };
+    // Release the field's published parley layout when it unmounts (E6a): the
+    // render object stores it every layout pass keyed by `ed.id`, and nothing
+    // else clears it — a text field unmounted while holding text would otherwise
+    // keep its glyph runs alive forever.
+    create_cleanup(move || edit::clear(ed.id));
     let focused = !disabled && focus.is_focused();
 
     // Caret blink: a 0.5s loop phase, ticking ONLY while focused — an idle field must

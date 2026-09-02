@@ -33,3 +33,9 @@ pub fn clear(id: u64) {
         m.borrow_mut().remove(&id);
     });
 }
+
+/// Number of live metric entries (debug observability for the lifecycle soak test).
+#[cfg(debug_assertions)]
+pub fn len() -> usize {
+    METRICS.with(|m| m.borrow().len())
+}

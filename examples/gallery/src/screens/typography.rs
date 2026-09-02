@@ -19,6 +19,7 @@ pub fn typography() -> Element {
             alignment_playground(align),
             line_height(),
             truncation(),
+            no_wrap(),
             families(),
         ])
 }
@@ -288,6 +289,30 @@ fn truncation() -> impl IntoWidget {
             })
             .main_axis_size(MainAxisSize::Min)
             .spacing(14.0),
+        )
+}
+
+fn no_wrap() -> impl IntoWidget {
+    let th = theme();
+    doc("No wrap")
+        .description(".soft_wrap(false) shapes a single unbounded line that clips to its box — pair with .ellipsis() for the classic one-line label. The default (soft_wrap true) wraps to fit.")
+        .body(
+            row(children![
+                Container::new()
+                    .width(150.0)
+                    .padding(EdgeInsets::all(10.0))
+                    .decoration(
+                        BoxDecoration::new()
+                            .border(Border::new(th.colors.border, 1.0))
+                            .radius(BorderRadius::all(th.radius)),
+                    )
+                    .clip()
+                    .child(text(SAMPLE.to_string()).size(12.5).soft_wrap(false).ellipsis())
+                    .into_widget(),
+                gap_w(16.0),
+                muted("soft_wrap(false) → one line, …".to_string()).size(11.5).into_widget(),
+            ])
+            .main_axis_size(MainAxisSize::Min),
         )
 }
 

@@ -15,10 +15,20 @@ use std::rc::Rc;
 
 use crate::element::ElementId;
 use crate::keyboard::KeyInput;
-use crate::reactive::{Signal, create_root_signal, current_owner, current_window, instance_id};
+use crate::reactive::{
+    Signal, consume_context, create_root_signal, current_owner, current_window, instance_id,
+    provide_context,
+};
 
 /// A focus node's identity: `(window, element id)`.
 type FocusKey = (u32, ElementId);
+
+/// The render-time context a `FocusScope` provides to its subtree (see
+/// [`create_focus_scope`]). Focusable nodes registered inside it inherit the
+/// scope id; [`focus_move`] then cycles Tab within the scope — the focus trap
+/// that keeps keyboard traversal inside dialogs and sheets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScopeTag(pub u64);
 
 struct FocusManager {
     /// Reactive source of truth for the currently-focused node.
@@ -36,6 +46,8 @@ struct FocusManager {
     /// focused, which would let an autofocus field yank focus back after the user blurs
     /// it (an infinite render→refocus→render oscillation, e.g. against the caret loop).
     autofocused: HashSet<FocusKey>,
+    /// The innermost focus scope each node registered under (`0` = root scope).
+    scope_of: HashMap<FocusKey, u64>,
 }
 
 thread_local! {
@@ -55,6 +67,7 @@ fn with_mgr<R>(f: impl FnOnce(&mut FocusManager) -> R) -> R {
                 on_change: HashMap::new(),
                 edit: HashMap::new(),
                 autofocused: HashSet::new(),
+                scope_of: HashMap::new(),
             });
         }
         f(cell.as_mut().unwrap())
@@ -118,6 +131,31 @@ pub fn create_focus() -> FocusNode {
     FocusNode { window: current_window(), id }
 }
 
+/// Create a focus **scope** for the current component: while this component's
+/// subtree renders, every focusable node inside it registers under this scope's
+/// id, and [`focus_move`] cycles Tab within the scope — the focus trap that keeps
+/// keyboard traversal inside a dialog or sheet. Scopes nest: a node belongs to
+/// the innermost enclosing scope. Call at the top level of a component (a hook);
+/// on unmount the scope and any surviving member entries are removed.
+pub fn create_focus_scope() -> ScopeTag {
+    let window = current_window();
+    let element =
+        current_owner().expect("create_focus_scope must be called inside a component");
+    let id = instance_id(window, element);
+    provide_context(ScopeTag(id));
+    crate::reactive::create_cleanup(move || {
+        with_mgr(|m| {
+            m.scope_of.retain(|_, &mut scope| scope != id);
+        });
+    });
+    ScopeTag(id)
+}
+
+/// The scope the currently-rendering component belongs to, if any.
+fn current_scope() -> u64 {
+    consume_context::<ScopeTag>().map(|s| s.0).unwrap_or(0)
+}
+
 impl FocusNode {
     fn key(&self) -> FocusKey {
         (self.window, self.id)
@@ -168,6 +206,9 @@ impl FocusNode {
                 m.order.push(key);
             }
             m.activation.insert(key, activation);
+            // Membership in the innermost enclosing focus scope is captured here,
+            // during render, while the scope's context is on the stack.
+            m.scope_of.insert(key, current_scope());
             match on_change {
                 Some(c) => {
                     m.on_change.insert(key, c);
@@ -200,6 +241,7 @@ pub fn unregister(id: ElementId) {
         m.activation.remove(&key);
         m.on_change.remove(&key);
         m.edit.remove(&key);
+        m.scope_of.remove(&key);
         // Let a genuine remount of this id autofocus again.
         m.autofocused.remove(&key);
         m.focus.peek() == Some(key)
@@ -220,6 +262,18 @@ pub fn focused_is_editor() -> bool {
 /// target).
 pub fn editor_is_focused() -> bool {
     with_mgr(|m| m.focus.peek().is_some_and(|k| m.edit.contains_key(&k)))
+}
+
+/// The focusable nodes registered in `window`, in traversal order. Read-only —
+/// for tests, debugging and tooling (inspectors, focus lists).
+pub fn registered_nodes(window: u32) -> Vec<(u32, ElementId)> {
+    with_mgr(|m| m.order.iter().copied().filter(|&(w, _)| w == window).collect())
+}
+
+/// Number of live focus registrations across all windows (debug-only).
+#[cfg(debug_assertions)]
+pub fn census_registrations() -> usize {
+    with_mgr(|m| m.order.len())
 }
 
 /// Route a keyboard edit intent to the focused editor. Returns whether it was
@@ -254,21 +308,41 @@ pub fn activate_focused() -> bool {
 }
 
 /// Move focus to the next focusable in `window` (Tab). `forward = false` moves to the
-/// previous. Traversal stays within the one window so Tab never jumps to another.
+/// previous. Traversal stays within the one window so Tab never jumps to another, and
+/// within the focused node's **focus scope** (the trap: Tab cycles inside the
+/// innermost enclosing [`create_focus_scope`] — dialogs and sheets contain focus).
+/// With nothing focused, cycles the root scope (nodes outside any scope).
 pub fn focus_move(window: u32, forward: bool) -> bool {
     let next = with_mgr(|m| {
         let nodes: Vec<FocusKey> = m.order.iter().copied().filter(|&(w, _)| w == window).collect();
         if nodes.is_empty() {
             return None;
         }
-        let len = nodes.len();
-        let cur = m.focus.peek().and_then(|k| nodes.iter().position(|&x| x == k));
+        // The scope we may not leave: the focused node's, or the root scope when
+        // nothing is focused yet.
+        let scope = m
+            .focus
+            .peek()
+            .and_then(|k| m.scope_of.get(&k).copied())
+            .unwrap_or(0);
+        let candidates: Vec<FocusKey> = nodes
+            .iter()
+            .copied()
+            .filter(|k| m.scope_of.get(k).copied().unwrap_or(0) == scope)
+            .collect();
+        // A scope with no members (unmounted mid-cycle) falls back to the root set.
+        let pool = if candidates.is_empty() && scope != 0 { nodes } else { candidates };
+        if pool.is_empty() {
+            return None;
+        }
+        let len = pool.len();
+        let cur = m.focus.peek().and_then(|k| pool.iter().position(|&x| x == k));
         let idx = match cur {
             Some(i) if forward => (i + 1) % len,
             Some(i) => (i + len - 1) % len,
             None => 0,
         };
-        Some(nodes[idx])
+        Some(pool[idx])
     });
     if next.is_some() {
         set_focus(next);

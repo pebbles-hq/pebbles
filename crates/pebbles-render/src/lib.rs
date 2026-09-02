@@ -35,14 +35,16 @@ pub use objects::{
     PointerEvent, RenderAlign,
     RenderAspectRatio,
     RenderClipRRect, RenderColoredBox, RenderConstrainedBox, RenderDecoratedBox, RenderFlex,
-    RenderIcon, RenderOpacity, RenderPadding, RenderParagraph, RenderPointerListener, RenderScroll,
+    RenderFittedBox, RenderFractionallySizedBox, RenderIcon, RenderIntrinsicHeight,
+    RenderIntrinsicWidth, RenderLimitedBox, RenderOpacity, RenderOverflowBox, RenderPadding,
+    RenderParagraph, RenderPointerListener, RenderScroll,
     RenderList, RenderSpinner, RenderTransform, RenderStack, RenderTextField, RenderView, RenderWrap,
     ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps, SemanticsRole, StackFit,
     StackParentData, TapCallback, TextFieldStyle, lucide,
 };
 pub use fonts::{available_families, builtin_families, builtin_fonts, has_family, is_builtin, BUILTIN_FAMILIES};
 pub use text::TextEnv;
-pub use tree::{LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};
+pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};
 
 /// Re-export the vello scene type the paint layer targets.
 pub use vello::Scene;

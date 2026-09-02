@@ -4,7 +4,7 @@
 //! vertical; the group owns the live sizes, so it just works once mounted.
 
 use pebbles_foundation::{Alignment, Axis, CrossAxisAlignment, MainAxisSize};
-use pebbles_render::{BorderRadius, BoxDecoration, Cursor};
+use pebbles_render::{BorderRadius, BoxDecoration, Cursor, StackFit};
 
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, Positioned, center, column, row, stack};
@@ -95,7 +95,7 @@ fn render_resizable(p: &Props) -> AnyWidget {
     for i in 0..n {
         // Panel: fixed along the axis, filled across it, clipped. The content is
         // stretched to fill the panel box (a bare child would shrink-wrap).
-        let filled = stack(children![Positioned::fill(p.panels[i].clone())]).expand();
+        let filled = stack(children![Positioned::fill(p.panels[i].clone())]).fit(StackFit::Expand);
         let mut panel = Container::new().clip().child(filled);
         panel = if horiz {
             panel.width(*cur.get(i).unwrap_or(&0.0))

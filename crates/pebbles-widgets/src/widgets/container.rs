@@ -14,6 +14,7 @@ use crate::widgets::{Align, ClipRRect, ConstrainedBox, DecoratedBox, Padding, Si
 #[derive(Clone, Default)]
 pub struct Container {
     decoration: Option<BoxDecoration>,
+    foreground_decoration: Option<BoxDecoration>,
     padding: Option<EdgeInsets>,
     margin: Option<EdgeInsets>,
     width: Option<f64>,
@@ -59,6 +60,12 @@ impl Container {
     /// Replace the whole decoration at once.
     pub fn decoration(mut self, decoration: BoxDecoration) -> Self {
         self.decoration = Some(decoration);
+        self
+    }
+    /// A decoration painted OVER the child and border (Flutter's
+    /// `foregroundDecoration`) — e.g. an inner border or overlay.
+    pub fn foreground_decoration(mut self, decoration: BoxDecoration) -> Self {
+        self.foreground_decoration = Some(decoration);
         self
     }
     /// Inner spacing between the box edge and its child.
@@ -132,11 +139,16 @@ impl IntoWidget for Container {
             current = ClipRRect::new(radius, current).into_widget();
         }
         if let Some(decoration) = self.decoration.take() {
-            current = if childless && self.padding.is_none() {
-                DecoratedBox::childless(decoration).into_widget()
+            let foreground = self.foreground_decoration.take();
+            let mut boxed = if childless && self.padding.is_none() {
+                DecoratedBox::childless(decoration)
             } else {
-                DecoratedBox::new(decoration, current).into_widget()
+                DecoratedBox::new(decoration, current)
             };
+            if let Some(fg) = foreground {
+                boxed = boxed.foreground(fg);
+            }
+            current = boxed.into_widget();
         }
         if self.width.is_some() || self.height.is_some() {
             current = SizedBox::new(self.width, self.height, Some(current)).into_widget();

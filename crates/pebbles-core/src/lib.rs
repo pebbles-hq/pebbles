@@ -33,21 +33,33 @@ pub mod task;
 pub mod widget;
 
 pub use animation::{
-    animate_to, animated, clear_timeout, create_loop, create_loop_while, create_timeout,
-    set_timeout,
+    Curve, animate_to, animate_to_with, animated, animated_with, clear_timeout, create_loop,
+    create_loop_while, create_timeout, set_timeout,
 };
 pub use component::{Component, Element, component, component_props};
 pub use context::{Callback, IntoCallback, action, action_event};
 pub use element::{ElementId, Ui};
-pub use focus::{FocusNode, create_focus, editor_is_focused};
+pub use focus::{
+    FocusNode, ScopeTag, create_focus, create_focus_scope, editor_is_focused, registered_nodes,
+};
 pub use ipc::{Channel, channel};
 pub use key::Key;
 pub use keyboard::{KeyInput, Motion};
 pub use reactive::{
-    Signal, Store, create_cleanup, create_effect, create_memo, create_root_signal, create_signal,
-    create_store, owner_id,
+    Signal, Store, consume_context, create_cleanup, create_effect, create_memo,
+    create_root_signal, create_signal, create_store, owner_id, provide_context,
 };
 pub use task::{Resource, create_resource, spawn};
 pub use widget::{
     AnyWidget, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget, Widget,
 };
+
+// Debug-only census accessors (lifecycle soak tripwire — performance-standards.md E6c).
+#[cfg(debug_assertions)]
+pub use animation::{census_loops, census_timeouts};
+#[cfg(debug_assertions)]
+pub use focus::census_registrations;
+#[cfg(debug_assertions)]
+pub use reactive::{census_cleanups, census_pending, census_signals, census_subscriptions};
+#[cfg(debug_assertions)]
+pub use scroll::census_handlers;

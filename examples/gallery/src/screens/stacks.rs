@@ -117,7 +117,7 @@ fn _label(container: Container, text: &str) -> impl IntoWidget {
 
 fn fit_and_zorder() -> impl IntoWidget {
     doc("Fit & z-order")
-        .description("StackFit::Loose lets children keep their own size; .expand() forces them to the stack's bounds. Later children paint on top — so the last chip wins overlaps.")
+        .description("StackFit::Loose lets children keep their own size; .fit(StackFit::Expand) forces them to the stack's bounds. Later children paint on top — so the last chip wins overlaps.")
         .body(
             row(children![
                 _label(
@@ -140,7 +140,7 @@ fn fit_and_zorder() -> impl IntoWidget {
                             chip(palette::BLUE, 0.0, 0.0),
                             chip(palette::GREEN, 0.0, 0.0),
                         ])
-                        .expand(),
+                        .fit(StackFit::Expand),
                     ),
                     "expand — children fill the stack",
                 ),

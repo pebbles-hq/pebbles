@@ -28,6 +28,7 @@ struct Track {
     /// Filled on the first tick that sees this track (so timing starts at paint).
     start: Option<f64>,
     duration: f64,
+    curve: Curve,
 }
 
 /// A continuous, repeating driver (spinners, indeterminate progress). Its signal
@@ -64,10 +65,52 @@ fn ease_out_cubic(t: f64) -> f64 {
     1.0 - f * f * f
 }
 
+/// An easing curve mapping linear progress `0..=1` onto eased progress.
+/// Flutter's `Curves` vocabulary, the subset every UI actually needs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Curve {
+    /// Slow at both ends, fast in the middle (the default when unspecified).
+    #[default]
+    EaseInOut,
+    /// Constant speed.
+    Linear,
+    /// Slow start, accelerating.
+    EaseIn,
+    /// Fast start, decelerating.
+    EaseOut,
+    /// Ease-out with a cubic shape (the house default for tweens).
+    EaseOutCubic,
+}
+
+impl Curve {
+    /// Map linear progress `t` (already clamped to `0..=1`) through the curve.
+    pub fn apply(self, t: f64) -> f64 {
+        let t = t.clamp(0.0, 1.0);
+        match self {
+            Curve::Linear => t,
+            Curve::EaseIn => t * t * t,
+            Curve::EaseOut => ease_out_cubic(t),
+            Curve::EaseInOut => {
+                if t < 0.5 {
+                    4.0 * t * t * t
+                } else {
+                    1.0 - (-2.0 * t + 2.0).powi(3) / 2.0
+                }
+            }
+            Curve::EaseOutCubic => ease_out_cubic(t),
+        }
+    }
+}
+
 /// Animate `value` from its current reading to `to` over `duration` seconds. A new
 /// call to the same signal replaces any in-flight animation (smooth reversal). A
 /// zero-distance change snaps immediately.
 pub fn animate_to(value: Signal<f64>, to: f64, duration: f64) {
+    animate_to_with(value, to, duration, Curve::EaseOutCubic);
+}
+
+/// Like [`animate_to`], with an explicit easing [`Curve`].
+pub fn animate_to_with(value: Signal<f64>, to: f64, duration: f64, curve: Curve) {
     let from = value.peek();
     TRACKS.with(|t| {
         let mut t = t.borrow_mut();
@@ -75,7 +118,7 @@ pub fn animate_to(value: Signal<f64>, to: f64, duration: f64) {
         if duration <= 0.0 || (from - to).abs() <= 1e-4 {
             value.set(to);
         } else {
-            t.push(Track { value, from, to, start: None, duration });
+            t.push(Track { value, from, to, start: None, duration, curve });
         }
     });
 }
@@ -86,6 +129,18 @@ pub fn active() -> bool {
     TRACKS.with(|t| !t.borrow().is_empty())
         || LOOPS.with(|l| !l.borrow().is_empty())
         || TIMEOUTS.with(|t| !t.borrow().is_empty())
+}
+
+/// Number of live loops (debug-only).
+#[cfg(debug_assertions)]
+pub fn census_loops() -> usize {
+    LOOPS.with(|l| l.borrow().len())
+}
+
+/// Number of pending timeouts (debug-only).
+#[cfg(debug_assertions)]
+pub fn census_timeouts() -> usize {
+    TIMEOUTS.with(|t| t.borrow().len())
 }
 
 /// A component hook: run `f` **once**, `secs` seconds from now. The delay is anchored
@@ -129,6 +184,19 @@ pub fn clear_timeout(id: u64) {
     TIMEOUTS.with(|t| {
         t.borrow_mut().remove(&id);
     });
+}
+
+/// The earliest absolute fire time (in the [`tick`] time base) among pending
+/// timeouts, if any. The shell uses this to wake a waiting event loop exactly
+/// when the next timer is due — otherwise hover timers (tooltips, hover cards)
+/// would sleep until the next unrelated event.
+pub fn next_deadline(now: f64) -> Option<f64> {
+    TIMEOUTS.with(|t| {
+        t.borrow()
+            .values()
+            .map(|to| to.at.unwrap_or(now + to.delay))
+            .min_by(f64::total_cmp)
+    })
 }
 
 /// A component hook: returns a value that cycles `0.0..1.0` every `period` seconds,
@@ -190,7 +258,7 @@ pub fn tick(now: f64) -> bool {
                 false
             } else {
                 let p = (elapsed / tr.duration).clamp(0.0, 1.0);
-                let eased = ease_out_cubic(p);
+                let eased = tr.curve.apply(p);
                 tr.value.set(tr.from + (tr.to - tr.from) * eased);
                 true
             }
@@ -249,11 +317,18 @@ pub fn reset() {
 /// local signals — the animated value and the last target — so successive renders
 /// during a transition don't restart it.
 pub fn animated(target: f64, secs: f64) -> f64 {
+    animated_with(target, secs, Curve::EaseOutCubic)
+}
+
+/// Like [`animated`], with an explicit easing [`Curve`]. The basis for implicit
+/// animations (`AnimatedContainer`-style) that need a curve other than the
+/// default ease-out cubic.
+pub fn animated_with(target: f64, secs: f64, curve: Curve) -> f64 {
     let value = create_signal(target);
     let last = create_signal(target);
     if (last.peek() - target).abs() > 1e-9 {
         last.set(target);
-        animate_to(value, target, secs);
+        animate_to_with(value, target, secs, curve);
     }
     value.get()
 }

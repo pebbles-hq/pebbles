@@ -36,6 +36,12 @@ pub fn clear(id: u64) {
     });
 }
 
+/// Number of live published layouts (debug observability for the lifecycle soak test).
+#[cfg(debug_assertions)]
+pub fn len() -> usize {
+    LAYOUTS.with(|m| m.borrow().len())
+}
+
 fn with_layout<R>(id: u64, f: impl FnOnce(&Layout<Brush>) -> R) -> Option<R> {
     LAYOUTS.with(|m| m.borrow().get(&id).map(|l| f(l)))
 }

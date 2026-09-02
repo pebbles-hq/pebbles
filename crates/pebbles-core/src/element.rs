@@ -149,6 +149,18 @@ impl Ui {
         &self.render
     }
 
+    /// Number of live elements in this window's tree (debug observability).
+    #[cfg(debug_assertions)]
+    pub fn element_count(&self) -> usize {
+        self.elements.len()
+    }
+
+    /// Number of live render nodes in this window's tree (debug observability).
+    #[cfg(debug_assertions)]
+    pub fn render_node_count(&self) -> usize {
+        self.render.node_count()
+    }
+
     // ----- lifecycle -------------------------------------------------------
 
     /// Inflate `widget` as the root of the tree. The root widget must ultimately
@@ -233,7 +245,7 @@ impl Ui {
                 .unwrap_or_default();
             if !invokes.is_empty() {
                 let local = point - self.render.absolute_offset(rid);
-                let event = PointerEvent { position: local, global: point, button };
+                let event = PointerEvent { position: local, global: point, button, delta: Offset::ZERO };
                 for invoke in invokes {
                     self.run_invoke(invoke, event);
                 }
@@ -319,7 +331,7 @@ impl Ui {
             return false;
         }
         let local = point - self.render.absolute_offset(rid);
-        let event = PointerEvent { position: local, global: point, button };
+        let event = PointerEvent { position: local, global: point, button, delta: Offset::ZERO };
         for invoke in invokes {
             self.run_invoke(invoke, event);
         }
@@ -381,6 +393,16 @@ impl Ui {
         })
     }
 
+    /// The source id of the topmost axis-drag listener under `point` (the
+    /// mutually-exclusive alternative to [`pan_target_at`]).
+    pub fn axis_pan_target_at(&self, point: Offset) -> Option<u64> {
+        let hits = self.render.hit_test(point);
+        hits.iter().rev().find_map(|&rid| {
+            let l = self.render.object_ref(rid).downcast_ref::<RenderPointerListener>()?;
+            if l.wants_axis_drag() { self.render.source_of(rid) } else { None }
+        })
+    }
+
     /// A drag began on the target (primary press).
     pub fn dispatch_pan_start(&mut self, source: u64, point: Offset) -> bool {
         self.fire_source(source, point, PointerButton::Primary, |l| &l.on_pan_start)
@@ -392,6 +414,62 @@ impl Ui {
     /// The drag ended (primary released).
     pub fn dispatch_pan_end(&mut self, source: u64, point: Offset) -> bool {
         self.fire_source(source, point, PointerButton::Primary, |l| &l.on_pan_end)
+    }
+
+    /// Fire an axis-drag event with a movement `delta` in the event.
+    fn fire_source_delta(
+        &mut self,
+        source: u64,
+        point: Offset,
+        delta: Offset,
+        pick: impl Fn(&RenderPointerListener) -> &[pebbles_render::TapCallback],
+    ) -> bool {
+        let Some(rid) = self.render.find_by_source(source) else { return false };
+        let invokes = self
+            .render
+            .object_ref(rid)
+            .downcast_ref::<RenderPointerListener>()
+            .map(|l| Self::invokes_of(l, &pick))
+            .unwrap_or_default();
+        if invokes.is_empty() {
+            return false;
+        }
+        let local = point - self.render.absolute_offset(rid);
+        let event = PointerEvent {
+            position: local,
+            global: point,
+            button: PointerButton::Primary,
+            delta,
+        };
+        for invoke in invokes {
+            self.run_invoke(invoke, event);
+        }
+        true
+    }
+
+    /// A vertical drag began (vertical axis won the slop).
+    pub fn dispatch_vertical_drag_start(&mut self, source: u64, point: Offset, delta: Offset) -> bool {
+        self.fire_source_delta(source, point, delta, |l| &l.on_vertical_drag_start)
+    }
+    /// Pointer moved during a vertical drag.
+    pub fn dispatch_vertical_drag_update(&mut self, source: u64, point: Offset, delta: Offset) -> bool {
+        self.fire_source_delta(source, point, delta, |l| &l.on_vertical_drag_update)
+    }
+    /// The vertical drag ended.
+    pub fn dispatch_vertical_drag_end(&mut self, source: u64, point: Offset, delta: Offset) -> bool {
+        self.fire_source_delta(source, point, delta, |l| &l.on_vertical_drag_end)
+    }
+    /// A horizontal drag began (horizontal axis won the slop).
+    pub fn dispatch_horizontal_drag_start(&mut self, source: u64, point: Offset, delta: Offset) -> bool {
+        self.fire_source_delta(source, point, delta, |l| &l.on_horizontal_drag_start)
+    }
+    /// Pointer moved during a horizontal drag.
+    pub fn dispatch_horizontal_drag_update(&mut self, source: u64, point: Offset, delta: Offset) -> bool {
+        self.fire_source_delta(source, point, delta, |l| &l.on_horizontal_drag_update)
+    }
+    /// The horizontal drag ended.
+    pub fn dispatch_horizontal_drag_end(&mut self, source: u64, point: Offset, delta: Offset) -> bool {
+        self.fire_source_delta(source, point, delta, |l| &l.on_horizontal_drag_end)
     }
 
     /// Tertiary (middle) button pressed at `point`.
@@ -427,7 +505,7 @@ impl Ui {
         }
 
         let hover_event =
-            PointerEvent { position: point, global: point, button: PointerButton::Primary };
+            PointerEvent { position: point, global: point, button: PointerButton::Primary, delta: Offset::ZERO };
         let mut fired = false;
         if let Some(old) = self.hovered.take() {
             // Only fire the previously-hovered widget's exit handlers if its element
@@ -677,14 +755,16 @@ impl Ui {
                     render_id: None,
                     depth,
                 });
-                // Run the component with reactive tracking on this element.
-                let child_widget = {
+                // Run the component with reactive tracking on this element, and keep
+                // the guard alive while its child reconciles — render-time contexts
+                // (theme overrides, focus scopes) must stay visible to the subtree.
+                let child = {
                     let guard = crate::reactive::begin_component(id);
                     let out = render();
+                    let child = self.inflate(Some(id), out);
                     crate::reactive::end_component(guard);
-                    out
+                    child
                 };
-                let child = self.inflate(Some(id), child_widget);
                 self.elements[id].children.push(child);
                 id
             }
@@ -777,14 +857,16 @@ impl Ui {
             Category::Function => {
                 let (_, render) = new_widget.as_component().unwrap();
                 self.elements[id].widget = new_widget;
-                let child_widget = {
+                let old_child = self.elements[id].children.first().copied();
+                // Keep the component guard alive across the child reconcile so the
+                // render-time contexts this component provides cover its subtree.
+                let new_child = {
                     let guard = crate::reactive::begin_component(id);
                     let out = render();
+                    let child = self.update_child(id, old_child, Some(out));
                     crate::reactive::end_component(guard);
-                    out
+                    child
                 };
-                let old_child = self.elements[id].children.first().copied();
-                let new_child = self.update_child(id, old_child, Some(child_widget));
                 self.elements[id].children = new_child.into_iter().collect();
             }
             Category::Render => {
@@ -833,14 +915,16 @@ impl Ui {
             .widget
             .as_component()
             .expect("a dirty element must be a function component");
-        let child_widget = {
+        let old_child = self.elements[id].children.first().copied();
+        // Guard spans the child reconcile (render-time contexts stay visible to the
+        // subtree — same discipline as `update`/`inflate`).
+        let new_child = {
             let guard = crate::reactive::begin_component(id);
             let out = render();
+            let child = self.update_child(id, old_child, Some(out));
             crate::reactive::end_component(guard);
-            out
+            child
         };
-        let old_child = self.elements[id].children.first().copied();
-        let new_child = self.update_child(id, old_child, Some(child_widget));
         self.elements[id].children = new_child.into_iter().collect();
     }
 

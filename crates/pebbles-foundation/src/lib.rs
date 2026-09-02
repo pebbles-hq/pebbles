@@ -24,8 +24,8 @@ pub use geometry::{
     Affine, Point, Vec2,
 };
 pub use layout::{
-    Axis, CrossAxisAlignment, FlexFit, MainAxisAlignment, MainAxisSize, TextAlign, TextBaseline,
-    TextDirection, VerticalDirection,
+    Axis, BoxFit, CrossAxisAlignment, FlexFit, MainAxisAlignment, MainAxisSize, TextAlign,
+    TextBaseline, TextDirection, VerticalDirection, WrapAlignment,
 };
 
 /// Re-export of the underlying 2D geometry crate so downstream code can reach the full API.

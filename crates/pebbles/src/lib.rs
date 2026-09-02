@@ -43,23 +43,25 @@ pub use pebbles_widgets as widgets;
 pub mod prelude {
     // foundation
     pub use pebbles_foundation::{
-        Alignment, Axis, Color, CrossAxisAlignment, EdgeInsets, FlexFit, MainAxisAlignment,
-        MainAxisSize, Offset, Rect, Size, TextAlign, VerticalDirection, palette,
+        Alignment, Axis, BoxFit, Color, CrossAxisAlignment, EdgeInsets, FlexFit,
+        MainAxisAlignment, MainAxisSize, Offset, Rect, Size, TextAlign, TextBaseline,
+        VerticalDirection, WrapAlignment, palette,
     };
 
     // render-level styling primitives (for advanced/custom decoration) + events
     pub use pebbles_render::{
         Affine, BlendMode, Border, BorderRadius, BorderSide, BoxConstraints, BoxDecoration, BoxShadow, BoxShape,
         Cursor, Gradient, IconData, IconKind, IconPrim, Image, ImageFit, PointerButton, PointerEvent,
-        lucide,
+        StackFit, lucide,
     };
 
     // runtime (pebbles-core): reactivity (SolidJS-style) + function components + focus
     pub use pebbles_core::{
-        Channel, Component, Element, FocusNode, KeyInput, Motion, Resource, Signal, Store, action,
-        action_event, animate_to, animated, channel, component, component_props, create_effect,
-        create_focus, create_memo, create_resource, create_signal, create_store, create_timeout,
-        spawn,
+        Channel, Component, Curve, Element, FocusNode, KeyInput, Motion, Resource, ScopeTag,
+        Signal, Store, action, action_event, animate_to, animate_to_with, animated, animated_with,
+        channel, component, component_props, consume_context, create_effect, create_focus,
+        create_focus_scope, create_memo, create_resource, create_signal, create_store,
+        create_timeout, provide_context, spawn,
     };
 
     // runtime (pebbles-core): the widget contract + reconciler handles
@@ -72,7 +74,7 @@ pub mod prelude {
     pub use pebbles_widgets::{builtins, families, has, is_builtin};
 
     // theming + the general style system (RN/CSS-like, apply anywhere)
-    pub use pebbles_widgets::{Colors, ModifierExt, Style, StyleExt, Theme, image_from_bytes, image_from_path, set_theme, style, styled, styles, theme, toggle_theme};
+    pub use pebbles_widgets::{Colors, ModifierExt, Style, StyleExt, Theme, image_from_bytes, image_from_path, set_theme, style, styled, styles, theme, theme_override, toggle_theme};
 
     // accessibility semantics (screen-reader roles/labels/state)
     pub use pebbles_widgets::{Semantics, SemanticsExt, SemanticsProps, SemanticsRole, semantics};
@@ -105,12 +107,16 @@ pub mod prelude {
 
     // widgets: layout primitives + constructors
     pub use pebbles_widgets::{
-        Align, AspectRatio, ClipRRect, ColoredBox, Column, ConstrainedBox, Container, DecoratedBox,
-        EditableText, Expanded, Flexible, GestureDetector, GridView, ListView, Opacity, Padding,
-        Positioned, Row, ScrollController, ScrollExt, ScrollbarPolicy, ScrollbarStyle,
-        ImageView, SingleChildScrollView, SizedBox, Spinner, Stack, Text, Transform, View, Wrap, aspect_ratio,
-        center, column, editable, gap_h, gap_w, list_view, row, sized_box, spacer, spinner, stack,
-        text, transform, use_scroll_controller, wrap,
+        Align, AnimatedContainer, AspectRatio, ClipRRect, ColoredBox, Column, ConstrainedBox,
+        Container, DecoratedBox,
+        EditableText, Expanded, FittedBox, Flexible, FractionallySizedBox, GestureDetector,
+        GridView, IntrinsicHeight, IntrinsicWidth, LimitedBox, ListView, Opacity, OverflowBox,
+        Padding, Positioned, Row, ScrollController, ScrollExt, ScrollbarPolicy, ScrollbarStyle,
+        ImageView, SingleChildScrollView, SizedBox, Spinner, Stack, Text, Transform, View, Wrap,
+        animated_container, aspect_ratio, center, column, editable, fitted_box, focus_scope,
+        fractionally_sized_box, gap_h, gap_w, intrinsic_height, intrinsic_width, limited_box,
+        list_view, overflow_box, row, sized_box, spacer, spinner, stack, text, transform,
+        use_scroll_controller, wrap,
     };
 
     // the shadcn-style component catalog

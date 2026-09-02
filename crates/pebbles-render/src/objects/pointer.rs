@@ -29,6 +29,9 @@ pub struct PointerEvent {
     pub global: Offset,
     /// Which button was involved.
     pub button: PointerButton,
+    /// Movement since the previous update (drag deltas; `Offset::ZERO` for
+    /// non-drag events).
+    pub delta: Offset,
 }
 
 /// The mouse cursor a widget requests while hovered. The shell maps these to the
@@ -102,6 +105,18 @@ pub struct RenderPointerListener {
     pub on_pan_update: Vec<TapCallback>,
     /// The drag ended (primary released).
     pub on_pan_end: Vec<TapCallback>,
+    /// A vertical drag began (recognized once the vertical axis wins the slop).
+    pub on_vertical_drag_start: Vec<TapCallback>,
+    /// Pointer moved during the vertical drag (event carries the movement delta).
+    pub on_vertical_drag_update: Vec<TapCallback>,
+    /// The vertical drag ended.
+    pub on_vertical_drag_end: Vec<TapCallback>,
+    /// A horizontal drag began (recognized once the horizontal axis wins the slop).
+    pub on_horizontal_drag_start: Vec<TapCallback>,
+    /// Pointer moved during the horizontal drag (event carries the movement delta).
+    pub on_horizontal_drag_update: Vec<TapCallback>,
+    /// The horizontal drag ended.
+    pub on_horizontal_drag_end: Vec<TapCallback>,
     /// The cursor to show while hovered.
     pub cursor: Option<Cursor>,
 }
@@ -121,6 +136,17 @@ impl RenderPointerListener {
         !self.on_pan_start.is_empty()
             || !self.on_pan_update.is_empty()
             || !self.on_pan_end.is_empty()
+    }
+
+    /// Whether this listener participates in axis-recognized drag tracking (the
+    /// mutually-exclusive alternative to the generic `pan_*` trio).
+    pub fn wants_axis_drag(&self) -> bool {
+        !self.on_vertical_drag_start.is_empty()
+            || !self.on_vertical_drag_update.is_empty()
+            || !self.on_vertical_drag_end.is_empty()
+            || !self.on_horizontal_drag_start.is_empty()
+            || !self.on_horizontal_drag_update.is_empty()
+            || !self.on_horizontal_drag_end.is_empty()
     }
 }
 

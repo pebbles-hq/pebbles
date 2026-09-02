@@ -1,19 +1,22 @@
 //! Basic single-child render objects: colored box, padding, align, constrained box.
 //! Each takes at most one child (the first entry in its child list).
 
-use pebbles_foundation::{Alignment, Color, EdgeInsets, Offset, Rect, Size};
+use pebbles_foundation::{Alignment, Axis, Color, EdgeInsets, Offset, Rect, Size};
 use vello::kurbo::Affine;
 use vello::peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;
-use crate::tree::{LayoutCx, PaintCx};
+use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 
 /// Convenience: the single (first) child of the object being laid out/painted.
 fn only_child_layout(cx: &LayoutCx) -> Option<crate::RenderId> {
     cx.children().first().copied()
 }
 fn only_child_paint(cx: &PaintCx) -> Option<crate::RenderId> {
+    cx.children().first().copied()
+}
+fn only_child_intrinsic(cx: &IntrinsicCx) -> Option<crate::RenderId> {
     cx.children().first().copied()
 }
 
@@ -53,6 +56,10 @@ impl RenderObject for RenderColoredBox {
         }
     }
 
+    fn baseline(&self, cx: &mut LayoutCx) -> Option<f64> {
+        only_child_layout(cx).and_then(|child| cx.child_baseline(child))
+    }
+
     fn debug_name(&self) -> &'static str {
         "RenderColoredBox"
     }
@@ -90,10 +97,32 @@ impl RenderObject for RenderPadding {
         }
     }
 
+    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+        // The child's intrinsic extent plus the insets; the cross extent the child
+        // is asked about shrinks by the insets on that axis.
+        let insets = self.insets;
+        let (add, deflate_cross) = match axis {
+            Axis::Horizontal => (insets.horizontal(), insets.horizontal()),
+            Axis::Vertical => (insets.vertical(), insets.vertical()),
+        };
+        let cross = if cross_extent.is_finite() {
+            (cross_extent - deflate_cross).max(0.0)
+        } else {
+            cross_extent
+        };
+        only_child_intrinsic(cx)
+            .and_then(|child| cx.child_intrinsic(child, axis, cross))
+            .map(|v| v + add)
+    }
+
     fn paint(&self, cx: &mut PaintCx, offset: Offset) {
         if let Some(child) = only_child_paint(cx) {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
+    }
+
+    fn baseline(&self, cx: &mut LayoutCx) -> Option<f64> {
+        only_child_layout(cx).and_then(|child| cx.child_baseline(child))
     }
 
     fn debug_name(&self) -> &'static str {
@@ -138,10 +167,20 @@ impl RenderObject for RenderAlign {
         }
     }
 
+    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+        // Alignment is placement, not size — pass the child's intrinsic through.
+        only_child_intrinsic(cx)
+            .and_then(|child| cx.child_intrinsic(child, axis, cross_extent))
+    }
+
     fn paint(&self, cx: &mut PaintCx, offset: Offset) {
         if let Some(child) = only_child_paint(cx) {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
+    }
+
+    fn baseline(&self, cx: &mut LayoutCx) -> Option<f64> {
+        only_child_layout(cx).and_then(|child| cx.child_baseline(child))
     }
 
     fn debug_name(&self) -> &'static str {
@@ -178,10 +217,38 @@ impl RenderObject for RenderConstrainedBox {
         }
     }
 
+    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+        // A constrained box clamps the child's intrinsic extent to the additional
+        // constraints (a tight SizedBox's intrinsic is exactly its size).
+        let from_child = only_child_intrinsic(cx)
+            .and_then(|child| cx.child_intrinsic(child, axis, cross_extent));
+        match from_child {
+            Some(v) => Some(match axis {
+                Axis::Horizontal => self.additional.constrain_width(v),
+                Axis::Vertical => self.additional.constrain_height(v),
+            }),
+            // Tight additional constraints on this axis are an intrinsic even when
+            // the child has none of its own.
+            None => match axis {
+                Axis::Horizontal if self.additional.has_tight_width() => {
+                    Some(self.additional.min_width)
+                }
+                Axis::Vertical if self.additional.has_tight_height() => {
+                    Some(self.additional.min_height)
+                }
+                _ => None,
+            },
+        }
+    }
+
     fn paint(&self, cx: &mut PaintCx, offset: Offset) {
         if let Some(child) = only_child_paint(cx) {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
+    }
+
+    fn baseline(&self, cx: &mut LayoutCx) -> Option<f64> {
+        only_child_layout(cx).and_then(|child| cx.child_baseline(child))
     }
 
     fn debug_name(&self) -> &'static str {

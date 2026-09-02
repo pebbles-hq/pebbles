@@ -13,7 +13,7 @@
 
 use std::any::Any;
 
-use pebbles_foundation::{Offset, Rect, Size};
+use pebbles_foundation::{Axis, Offset, Rect, Size};
 use slotmap::{SlotMap, new_key_type};
 use smallvec::SmallVec;
 use vello::kurbo::Affine;
@@ -90,6 +90,12 @@ impl RenderTree {
         self.nodes.contains_key(id)
     }
 
+    /// Number of live render nodes in this tree (debug observability for the
+    /// lifecycle soak test).
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
     pub fn size_of(&self, id: RenderId) -> Size {
         self.nodes[id].size
     }
@@ -101,6 +107,43 @@ impl RenderTree {
             .iter()
             .find(|(_, node)| node.object.as_deref().is_some_and(|o| o.is::<T>()))
             .map(|(id, _)| id)
+    }
+
+    /// All render nodes whose object is of type `T`, in insertion order. For tests
+    /// and tooling that must tell multiple instances apart (or pick, say, the
+    /// widest constrained box rather than the first).
+    pub fn find_all<T: RenderObject>(&self) -> Vec<RenderId> {
+        self.nodes
+            .iter()
+            .filter(|(_, node)| node.object.as_deref().is_some_and(|o| o.is::<T>()))
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    /// A human-readable tree dump (debug names + sizes), indented by depth. For
+    /// tests and tooling.
+    pub fn debug_dump(&self) -> String {
+        fn walk(tree: &RenderTree, id: RenderId, depth: usize, out: &mut String) {
+            let node = &tree.nodes[id];
+            let name = node.object.as_deref().map(|o| o.debug_name()).unwrap_or("(lifted)");
+            out.push_str(&format!(
+                "{}{} {:.1}×{:.1} @ {:.1},{:.1}\n",
+                "  ".repeat(depth),
+                name,
+                node.size.width,
+                node.size.height,
+                node.offset.x,
+                node.offset.y,
+            ));
+            for &child in &node.children {
+                walk(tree, child, depth + 1, out);
+            }
+        }
+        let mut out = String::new();
+        if let Some(root) = self.root {
+            walk(self, root, 0, &mut out);
+        }
+        out
     }
 
     pub fn offset_of(&self, id: RenderId) -> Offset {
@@ -396,6 +439,29 @@ impl LayoutCx<'_> {
         size
     }
 
+    /// Ask `child` for its intrinsic extent on `axis` (see
+    /// [`RenderObject::intrinsic`]), with `cross_extent` fixed on the perpendicular
+    /// axis. The intrinsic-objects ([`RenderIntrinsicWidth`]) drive layout from
+    /// this; ordinary parents rarely need it.
+    pub fn child_intrinsic(
+        &mut self,
+        child: RenderId,
+        axis: Axis,
+        cross_extent: f64,
+    ) -> Option<f64> {
+        let object = self.tree.nodes[child].object.take().expect(
+            "child object present during intrinsic measurement",
+        );
+        let result = {
+            let mut cx =
+                IntrinsicCx { tree: &mut *self.tree, current: child, text: &mut *self.text };
+            object.intrinsic(&mut cx, axis, cross_extent)
+        };
+        let node = &mut self.tree.nodes[child];
+        node.object = Some(object);
+        result
+    }
+
     /// Position an already-laid-out `child` relative to the current object's origin.
     pub fn set_child_offset(&mut self, child: RenderId, offset: Offset) {
         self.tree.nodes[child].offset = offset;
@@ -409,6 +475,59 @@ impl LayoutCx<'_> {
     /// the requested type.
     pub fn child_parent_data<T: 'static>(&self, child: RenderId) -> Option<&T> {
         self.tree.nodes[child].parent_data.as_ref().and_then(|d| d.downcast_ref::<T>())
+    }
+
+    /// Ask `child` for its first text baseline, in this parent's coordinate space
+    /// (the child's own baseline plus its top offset). See
+    /// [`RenderObject::baseline`].
+    pub fn child_baseline(&mut self, child: RenderId) -> Option<f64> {
+        let offset = self.tree.nodes[child].offset;
+        let object = self.tree.nodes[child].object.take().expect("child object present");
+        let result = {
+            let mut cx = LayoutCx { tree: &mut *self.tree, current: child, text: &mut *self.text };
+            object.baseline(&mut cx)
+        };
+        let node = &mut self.tree.nodes[child];
+        node.object = Some(object);
+        result.map(|b| b + offset.y)
+    }
+}
+
+/// Traversal context handed to [`RenderObject::intrinsic`]. Mirrors [`LayoutCx`]'s
+/// arena discipline: a parent asks for its children's intrinsic extents through
+/// the context, which lifts each child's object out of the arena for the duration.
+pub struct IntrinsicCx<'a> {
+    tree: &'a mut RenderTree,
+    current: RenderId,
+    /// Font/layout contexts for text render objects.
+    pub text: &'a mut TextEnv,
+}
+
+impl IntrinsicCx<'_> {
+    /// The children of the object currently being measured, in paint order.
+    pub fn children(&self) -> SmallVec<[RenderId; 4]> {
+        self.tree.nodes[self.current].children.clone()
+    }
+
+    /// Ask `child` for its intrinsic extent on `axis`, given `cross_extent` fixed
+    /// on the perpendicular axis (infinite when unconstrained). `None` when the
+    /// child has no intrinsic notion.
+    pub fn child_intrinsic(
+        &mut self,
+        child: RenderId,
+        axis: Axis,
+        cross_extent: f64,
+    ) -> Option<f64> {
+        let object =
+            self.tree.nodes[child].object.take().expect("child object present during intrinsics");
+        let result = {
+            let mut cx =
+                IntrinsicCx { tree: &mut *self.tree, current: child, text: &mut *self.text };
+            object.intrinsic(&mut cx, axis, cross_extent)
+        };
+        let node = &mut self.tree.nodes[child];
+        node.object = Some(object);
+        result
     }
 }
 

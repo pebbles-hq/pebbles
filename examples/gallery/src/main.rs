@@ -8,6 +8,9 @@ mod state;
 mod styles;
 mod ui;
 
+#[cfg(test)]
+mod soak;
+
 use pebbles::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
