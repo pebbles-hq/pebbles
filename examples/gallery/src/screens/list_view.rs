@@ -128,6 +128,22 @@ pub fn list_view() -> Element {
                             },
                         )),
                 ),
+            doc("Feed — auto-measured (5,000 rows)")
+                .description("ListView::builder_auto(..) — no extent argument at all: rows MEASURE themselves as they scroll into view (heights 40/64/96) and the virtualization learns their real extents. Scroll deep — only the visible rows ever build.")
+                .body(
+                    Container::new()
+                        .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
+                        .height(240.0)
+                        .child(ListView::builder_auto(5_000, |i| {
+                            let h = match i % 3 { 0 => 40.0, 1 => 64.0, _ => 96.0 };
+                            Container::new()
+                                .height(h)
+                                .decoration(BoxDecoration::new().color(if i % 6 == 0 { theme().colors.secondary } else { theme().colors.background }).border(Border::new(theme().colors.border, 1.0)))
+                                .padding(EdgeInsets::symmetric(14.0, 0.0))
+                                .child(muted(format!("feed item {i} · measured {h:.0}px tall")))
+                        })
+                        .estimated_extent(40.0)),
+                ),
             doc("Reversed")
                 .description(".reverse() — item 0 sits at the END and the list starts scrolled there (chat logs, consoles, terminals).")
                 .body(

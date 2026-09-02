@@ -38,6 +38,7 @@ pub mod overview;
 pub mod progress;
 pub mod radiogroup;
 pub mod resizable;
+pub mod scrolling;
 pub mod selects;
 pub mod separator;
 pub mod sliders;

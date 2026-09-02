@@ -52,7 +52,7 @@ pub mod prelude {
     pub use pebbles_render::{
         Affine, BlendMode, Border, BorderRadius, BorderSide, BoxConstraints, BoxDecoration, BoxShadow, BoxShape,
         Cursor, Gradient, IconData, IconKind, IconPrim, Image, ImageFit, PointerButton, PointerEvent,
-        StackFit, lucide,
+        RefreshState, ScrollPhysics, StackFit, lucide,
     };
 
     // runtime (pebbles-core): reactivity (SolidJS-style) + function components + focus

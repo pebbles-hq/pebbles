@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
-use pebbles_foundation::{Axis, Color, Offset, Size, palette};
+use pebbles_foundation::{Color, Offset, Size, palette};
 use pebbles_widgets::View;
 use vello::kurbo::Affine;
 use vello::util::{RenderContext, RenderSurface};
@@ -217,10 +217,6 @@ struct WindowRuntime {
     cursor: Offset,
     armed_tap: Option<u64>,
     pan_target: Option<u64>,
-    axis_pan_target: Option<u64>,
-    pan_start: Option<Offset>,
-    pan_last: Option<Offset>,
-    pan_axis: Option<Axis>,
     current_cursor: Cursor,
     on_close: Option<Rc<dyn Fn()>>,
 }
@@ -275,15 +271,6 @@ struct Runner {
     lp_active: bool,
     /// The drag (pan) target armed at pointer-down; receives move/end until release.
     pan_target: Option<u64>,
-    /// The axis-recognized drag target armed at pointer-down (mutually exclusive
-    /// with `pan_target`).
-    axis_pan_target: Option<u64>,
-    /// The pointer-down position for axis recognition.
-    pan_start: Option<Offset>,
-    /// The last dispatched drag position (for incremental deltas).
-    pan_last: Option<Offset>,
-    /// The recognized drag axis, once the slop has been crossed.
-    pan_axis: Option<Axis>,
     /// Monotonic clock start — the time base for animations.
     clock: Instant,
     /// Elapsed seconds at the previous frame, for the per-frame scroll-spring `dt`.
@@ -328,10 +315,6 @@ impl Runner {
             lp_target: None,
             lp_active: false,
             pan_target: None,
-            axis_pan_target: None,
-            pan_start: None,
-            pan_last: None,
-            pan_axis: None,
             clock: Instant::now(),
             last_frame_t: 0.0,
             windows: HashMap::new(),
@@ -579,10 +562,6 @@ impl Runner {
                 cursor: Offset::ZERO,
                 armed_tap: None,
                 pan_target: None,
-                axis_pan_target: None,
-                pan_start: None,
-                pan_last: None,
-                pan_axis: None,
                 current_cursor: Cursor::Default,
                 on_close: spec.on_close,
             },
@@ -625,9 +604,14 @@ impl Runner {
                 if w.ui.dispatch_hover(w.cursor) {
                     w.window.request_redraw();
                 }
-                if let Some(t) = w.pan_target
-                    && w.ui.dispatch_pan_update(t, w.cursor)
-                {
+                let moved = if w.ui.content_drag_active() {
+                    w.ui.update_content_drag(w.cursor)
+                } else if let Some(t) = w.pan_target {
+                    w.ui.dispatch_pan_update(t, w.cursor)
+                } else {
+                    false
+                };
+                if moved {
                     w.window.request_redraw();
                 }
                 let want = w.ui.cursor_at(w.cursor).unwrap_or(Cursor::Default);
@@ -651,11 +635,16 @@ impl Runner {
                     ElementState::Pressed => {
                         pebbles_core::focus::set_focus(None);
                         w.armed_tap = w.ui.tap_target_at(cursor);
-                        w.pan_target = w.ui.pan_target_at(cursor);
+                        // A drag-scroll viewport claims the drag first (A4); a
+                        // pan-hungry descendant under the pointer wins instead.
+                        let claimed = w.ui.begin_content_drag(cursor);
+                        w.pan_target =
+                            if claimed { None } else { w.ui.pan_target_at(cursor) };
                         let panned = w.pan_target.is_some_and(|t| w.ui.dispatch_pan_start(t, cursor));
-                        w.ui.dispatch_pointer_down(cursor) || panned
+                        w.ui.dispatch_pointer_down(cursor) || panned || claimed
                     }
                     ElementState::Released => {
+                        let drag_ended = w.ui.end_content_drag(cursor);
                         if let Some(t) = w.pan_target.take() {
                             w.ui.dispatch_pan_end(t, cursor);
                         }
@@ -669,7 +658,7 @@ impl Runner {
                         } else {
                             false
                         };
-                        up || tapped
+                        up || tapped || drag_ended
                     }
                 };
                 if handled {
@@ -911,10 +900,15 @@ impl ApplicationHandler for Runner {
                 if self.ui.dispatch_hover(cursor) {
                     self.request_redraw();
                 }
-                // Feed movement into an active drag.
-                if let Some(t) = self.pan_target
-                    && self.ui.dispatch_pan_update(t, cursor)
-                {
+                // Feed movement into an active content drag (A4 drag-scroll) or pan.
+                let moved = if self.ui.content_drag_active() {
+                    self.ui.update_content_drag(cursor)
+                } else if let Some(t) = self.pan_target {
+                    self.ui.dispatch_pan_update(t, cursor)
+                } else {
+                    false
+                };
+                if moved {
                     self.request_redraw();
                 }
                 // Feed movement into an active long press.
@@ -989,15 +983,19 @@ impl ApplicationHandler for Runner {
                         if let Some(t) = self.lp_target {
                             self.ui.dispatch_long_press_down(t, cursor);
                         }
-                        // Arm and begin a drag if a pan listener is under the pointer.
-                        self.pan_target = self.ui.pan_target_at(cursor);
+                        // A drag-scroll viewport claims the drag first (A4); a
+                        // pan-hungry descendant under the pointer wins instead.
+                        let claimed = self.ui.begin_content_drag(cursor);
+                        self.pan_target =
+                            if claimed { None } else { self.ui.pan_target_at(cursor) };
                         let panned =
                             self.pan_target.is_some_and(|t| self.ui.dispatch_pan_start(t, cursor));
-                        self.ui.dispatch_pointer_down(cursor) || panned
+                        self.ui.dispatch_pointer_down(cursor) || panned || claimed
                     }
                     (MouseButton::Left, ElementState::Released) => {
                         // End any scrollbar / content drag.
                         self.ui.end_scrollbar_drag();
+                        let drag_ended = self.ui.end_content_drag(cursor);
                         if let Some(t) = self.pan_target.take() {
                             self.ui.dispatch_pan_end(t, cursor);
                         }
@@ -1037,7 +1035,7 @@ impl ApplicationHandler for Runner {
                         } else {
                             false
                         };
-                        up || result
+                        up || result || drag_ended
                     }
                     (MouseButton::Right, ElementState::Pressed) => {
                         self.secondary_down_handled =

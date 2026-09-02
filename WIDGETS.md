@@ -37,12 +37,14 @@ Run `cargo run -p gallery` — ~50 dedicated screens, one per component family.
 | `Spinner` | ✅ | indeterminate arc |
 | `GestureDetector` | ✅ 🔶G7 | tap/double/secondary/down/up/hover/cursor/pan; axis-drag trios (G7) open |
 | `Semantics` (+ `SemanticsRole`) | ✅ 🔶C7 | long-tail roles (Menu/Tab/Dialog/…) open (C7) |
-| `SingleChildScrollView` | ✅ 🔶A4 | wheel/scrollbar/keys/snap/spring; drag-fling/overscroll/physics knobs (A4) open |
+| `SingleChildScrollView` | ✅ | wheel/scrollbar/keys/snap/spring + `.drag_scroll(true)` pan-to-scroll with fling, `.physics(ScrollPhysics)` knobs and rubber-band overscroll (A4 ✅) |
 | `ListView::builder` (fixed extent) | ✅ | virtualized, `.horizontal/.reverse/.padding/.scrollbar/.controller` |
-| `ListView::variable` (per-item extents) | ✅ 🔶A1 | caller-supplied extents; auto-MEASURED mode (`builder_auto`) is A1's remainder |
+| `ListView::variable` (per-item extents) | ✅ | caller-supplied extents; virtualized by prefix sums |
+| `ListView::builder_auto` (auto-measured) | ✅ | items measure themselves as they scroll in (A1 ✅); `.estimated_extent(..)`, `scroll_to_index_auto`, anchor-stable corrections |
 | `ListView::separated` | ✅ | Flutter's `ListView.separated`; virtualized separators |
 | `GridView::builder` | ✅ | columns, `row_extent`, `.spans((col,row))`, `.spacing`, `.aspect_ratio`, `.max_extent`, reverse/padding |
-| `ScrollController` / `use_scroll_controller` | ✅ | `offset/jump_to/animate_to/scroll_to_index` |
+| `ScrollController` / `use_scroll_controller` | ✅ | `offset/jump_to/animate_to/scroll_to_index` + `scroll_to_index_auto`; `.snap(..)` paged lists |
+| `ExtentProbe` (`extent_probe`) | ✅ | measures a child's laid-out extent into a callback (carousel page width, live viewport sizing) |
 | `FittedBox` · `FractionallySizedBox` | ✅ | BoxFit scale-to-fit · fraction-of-constraints sizing |
 | `IntrinsicWidth` · `IntrinsicHeight` | ✅ | shrink-wrap to child's intrinsic extent |
 | `LimitedBox` · `OverflowBox` | ✅ | unbounded-axis cap · unclipped overflow |
@@ -93,6 +95,7 @@ Run `cargo run -p gallery` — ~50 dedicated screens, one per component family.
 | `TreeView` / `TreeNode` | ✅ | multi-select, drag |
 | `FileExplorer` / `FileTree` (+ `pick_folder`) | ✅ | real disk: native picker, lazy loading, mutations, multi-select/-drag, empty-space menu |
 | `ImageView` | ✅ | `asset`/`network`/`memory`/`base64`/`image` + `ImageFit`; reactive source |
+| `Carousel` | ✅ | snap-paged slides, dots, arrows (hidden at ends), autoplay w/ hover-pause, `CarouselController` (A6 ✅) |
 
 ## 4. Layout & navigation components (`components/layout/`, `components/navigation/`)
 
@@ -105,6 +108,7 @@ Run `cargo run -p gallery` — ~50 dedicated screens, one per component family.
 | `Breadcrumb` | ✅ | `.max_visible` middle-collapse |
 | `Pagination` | ✅ | Numbers/Simple/Arrows designs, unified `on_page` |
 | `Menubar` / `menubar_menu` | ✅ | hover-switch between open menus, submenus |
+| `StickyList` / `sticky_section` · `CollapsingHeader` | ✅ | pinned section headers with push-off; collapsing hero driven by scroll progress `t` (A3 ✅) |
 | `Toolbar` · `StatusBar` | ✅ 🔶C8f | work; dedicated gallery screen (C8f) open |
 | `NavStack` / `RouteView` | ✅ 🔶C8h | push/replace/pop, fallback; dedicated gallery screen (C8h) open |
 
@@ -114,6 +118,7 @@ Run `cargo run -p gallery` — ~50 dedicated screens, one per component family.
 |---------|--------|-------|
 | `dialog` / `alert_dialog` | ✅ | per-window modal; alert preset non-dismissible by default |
 | `sheet` (Drawer) | ✅ 🔶C3 | `Side::{Left,Right,Top,Bottom}`; slide/scrim motion (C3) open |
+| `refresh_indicator` | ✅ | pull-to-refresh over drag-scroll + rubber-band (A5 ✅); `RefreshDone.finish()` contract |
 | `toast` | ✅ 🔶C1 | variants/duration/action/dismiss, max-3 stack; hover-pause + motion (C1) open |
 | overlay (`show_overlay`/`show_passive`/`OverlayHost`) | ✅ 🔶C6 | anchor+flip+scroll-follow; secondary-window scroll-follow (C6) open |
 | global context menu | ✅ | disabled-by-default fallback, per-widget opt-in/out, styleable |

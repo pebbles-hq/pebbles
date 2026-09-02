@@ -12,7 +12,7 @@
 use std::any::Any;
 use std::rc::Rc;
 
-use pebbles_foundation::{Offset, Size};
+use pebbles_foundation::{Axis, Offset, Size};
 use pebbles_render::{
     BoxConstraints, PointerButton, PointerEvent, RenderId, RenderList, RenderPointerListener,
     RenderScroll, RenderTree, Scene, TextEnv,
@@ -20,6 +20,14 @@ use pebbles_render::{
 
 use crate::scroll::ScrollTo;
 use slotmap::{Key, SlotMap, new_key_type};
+
+/// The pointer's position along a scroll view's axis (for drag-to-scroll).
+fn drag_axis_pos(axis: Axis, point: Offset) -> f64 {
+    match axis {
+        Axis::Vertical => point.y,
+        Axis::Horizontal => point.x,
+    }
+}
 
 use crate::context::Callback;
 use crate::widget::{AnyWidget, Widget};
@@ -107,6 +115,11 @@ pub struct Ui {
     hovered: Option<HoverTarget>,
     /// The scroll viewport whose scrollbar is being dragged, if any.
     scrollbar_drag: Option<RenderId>,
+    /// The drag-scroll viewport a content drag is currently driving, if any.
+    content_drag: Option<RenderId>,
+    /// Test override for [`Ui::clock_now`] (drag/fling velocity estimation);
+    /// `None` uses the wall clock.
+    clock_override: Option<f64>,
     /// Imperative scroll views whose spring is currently animating.
     scroll_anim: std::collections::HashSet<RenderId>,
 }
@@ -414,6 +427,109 @@ impl Ui {
     /// The drag ended (primary released).
     pub fn dispatch_pan_end(&mut self, source: u64, point: Offset) -> bool {
         self.fire_source(source, point, PointerButton::Primary, |l| &l.on_pan_end)
+    }
+
+    // ----- content drag (drag-to-scroll viewports) -------------------------
+
+    /// Whether a content drag is currently in progress (began with
+    /// [`begin_content_drag`](Self::begin_content_drag)).
+    pub fn content_drag_active(&self) -> bool {
+        self.content_drag.is_some()
+    }
+
+    /// Claim a pointer drag as a **content drag** on a drag-scroll viewport under
+    /// `point`. Arbitration: a pan-hungry descendant at the point wins — the
+    /// viewport only claims drags nothing else wants (A4).
+    pub fn begin_content_drag(&mut self, point: Offset) -> bool {
+        if self.content_drag.is_some() || self.pan_target_at(point).is_some() {
+            return false;
+        }
+        let hits = self.render.hit_test(point);
+        let rid = hits.iter().rev().find_map(|&rid| {
+            let s = self.render.object_ref(rid).downcast_ref::<RenderScroll>()?;
+            s.drag_scroll.then_some(rid)
+        });
+        let Some(rid) = rid else { return false };
+        let now = self.clock_now();
+        let (at, claimed) = self
+            .render
+            .object_mut(rid)
+            .downcast_mut::<RenderScroll>()
+            .map(|s| (drag_axis_pos(s.axis, point), s.drag_begin(drag_axis_pos(s.axis, point), now)))
+            .unwrap_or((0.0, false));
+        let _ = at;
+        if claimed {
+            self.content_drag = Some(rid);
+        }
+        claimed
+    }
+
+    /// The pointer moved during a content drag: moves the content 1:1 (the
+    /// rubber-band math lives in [`RenderScroll::drag_move`]) and fires any
+    /// pull-to-refresh arm trigger (A5).
+    pub fn update_content_drag(&mut self, point: Offset) -> bool {
+        let Some(rid) = self.content_drag else { return false };
+        let now = self.clock_now();
+        let moved = self
+            .render
+            .object_mut(rid)
+            .downcast_mut::<RenderScroll>()
+            .map(|s| {
+                let at = drag_axis_pos(s.axis, point);
+                let moved = s.drag_move(at, now);
+                s.refresh_update();
+                moved
+            })
+            .unwrap_or(false);
+        if moved {
+            self.render.mark_needs_layout(rid);
+        }
+        moved
+    }
+
+    /// End the content drag: estimates the fling velocity and lets the spring
+    /// settle (or snap back from overscroll). An armed pull-to-refresh fires its
+    /// release callback here. Frames keep ticking while the spring settles.
+    pub fn end_content_drag(&mut self, point: Offset) -> bool {
+        let Some(rid) = self.content_drag.take() else { return false };
+        let now = self.clock_now();
+        let ended = self
+            .render
+            .object_mut(rid)
+            .downcast_mut::<RenderScroll>()
+            .map(|s| {
+                let at = drag_axis_pos(s.axis, point);
+                s.drag_move(at, now);
+                s.refresh_end();
+                s.drag_end(now)
+            })
+            .unwrap_or(false);
+        if ended {
+            self.scroll_anim.insert(rid);
+            self.render.mark_needs_layout(rid);
+        }
+        ended
+    }
+
+    /// Monotonic seconds for drag velocity estimation. Production uses the wall
+    /// clock; tests fix it with [`set_test_clock`](Self::set_test_clock) so fling
+    /// velocities are deterministic.
+    fn clock_now(&self) -> f64 {
+        if let Some(t) = self.clock_override {
+            t
+        } else {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs_f64())
+                .unwrap_or(0.0)
+        }
+    }
+
+    /// Fix the drag clock to `t` (test-only): drag/fling velocity estimates then
+    /// use exactly this time base. Pass `None` to restore the wall clock.
+    #[doc(hidden)]
+    pub fn set_test_clock(&mut self, t: Option<f64>) {
+        self.clock_override = t;
     }
 
     /// Fire an axis-drag event with a movement `delta` in the event.

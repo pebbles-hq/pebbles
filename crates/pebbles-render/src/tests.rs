@@ -1,6 +1,6 @@
 //! Unit tests for the pure layout logic — no GPU, no window.
 
-use pebbles_foundation::{Alignment, Axis, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, Size};
+use pebbles_foundation::{Alignment, Axis, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, Size, TextBaseline, VerticalDirection};
 
 use crate::constraints::BoxConstraints;
 use crate::objects::{RenderColoredBox, RenderConstrainedBox, RenderFlex, RenderPadding, RenderParagraph, ParagraphStyle};
@@ -132,6 +132,8 @@ fn flex_distributes_remaining_space() {
         CrossAxisAlignment::Start,
         MainAxisSize::Max,
         0.0,
+        VerticalDirection::Down,
+        TextBaseline::Alphabetic,
     )));
     // Fixed 40px-wide child.
     let fixed = tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(
@@ -164,6 +166,8 @@ fn flex_spacing_reserves_and_positions() {
         CrossAxisAlignment::Start,
         MainAxisSize::Min,
         10.0,
+        VerticalDirection::Down,
+        TextBaseline::Alphabetic,
     )));
     let a =
         tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(40.0, 20.0)))));

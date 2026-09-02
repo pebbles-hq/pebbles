@@ -7,7 +7,9 @@
 //! [`Ui::begin_scrollbar_drag`](pebbles_core::Ui::begin_scrollbar_drag).
 
 use pebbles_foundation::{Axis, Color, MainAxisSize};
-use pebbles_render::{RenderObject, RenderScroll, ScrollbarPolicy, ScrollbarStyle};
+use pebbles_render::{
+    RefreshState, RenderObject, RenderScroll, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle,
+};
 
 use crate::widgets::column;
 use pebbles_core::widget::{AnyWidget, RenderWidget};
@@ -19,6 +21,9 @@ pub struct SingleChildScrollView {
     axis: Axis,
     scrollbar: ScrollbarStyle,
     snap: f64,
+    drag_scroll: bool,
+    physics: ScrollPhysics,
+    refresh: Option<RefreshState>,
     child: Option<AnyWidget>,
 }
 
@@ -29,6 +34,9 @@ impl SingleChildScrollView {
             axis: Axis::Vertical,
             scrollbar: ScrollbarStyle::default(),
             snap: 0.0,
+            drag_scroll: false,
+            physics: ScrollPhysics::default(),
+            refresh: None,
             child: Some(child.into_widget()),
         }
     }
@@ -38,6 +46,9 @@ impl SingleChildScrollView {
             axis: Axis::Horizontal,
             scrollbar: ScrollbarStyle::default(),
             snap: 0.0,
+            drag_scroll: false,
+            physics: ScrollPhysics::default(),
+            refresh: None,
             child: Some(child.into_widget()),
         }
     }
@@ -46,6 +57,29 @@ impl SingleChildScrollView {
     /// scroll). `0` disables snapping (the default).
     pub fn snap(mut self, extent: f64) -> Self {
         self.snap = extent;
+        self
+    }
+
+    /// Opt into pan-to-scroll: dragging anywhere over the content scrolls it 1:1
+    /// (touch, pen, or trackpad-drag). A draggable child under the pointer still
+    /// wins — the viewport only claims drags nothing else wants.
+    pub fn drag_scroll(mut self, enabled: bool) -> Self {
+        self.drag_scroll = enabled;
+        self
+    }
+
+    /// Replace the scroll physics: spring stiffness, fling friction and whether
+    /// drags may rubber-band past the edges.
+    pub fn physics(mut self, physics: ScrollPhysics) -> Self {
+        self.physics = physics;
+        self
+    }
+
+    /// Install a pull-to-refresh trigger: while a content drag pulls past the top
+    /// (with overscroll on), the arm/release callbacks fire. The
+    /// `refresh_indicator` component builds this for you.
+    pub fn refresh(mut self, refresh: RefreshState) -> Self {
+        self.refresh = Some(refresh);
         self
     }
 
@@ -80,6 +114,9 @@ impl SingleChildScrollView {
         let mut r = RenderScroll::new(self.axis);
         r.scrollbar = self.scrollbar;
         r.snap = self.snap;
+        r.drag_scroll = self.drag_scroll;
+        r.physics = self.physics;
+        r.refresh = self.refresh.clone();
         r
     }
 }
@@ -95,6 +132,9 @@ impl RenderWidget for SingleChildScrollView {
             s.axis = self.axis;
             s.scrollbar = self.scrollbar;
             s.snap = self.snap;
+            s.drag_scroll = self.drag_scroll;
+            s.physics = self.physics;
+            s.refresh = self.refresh.clone();
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {

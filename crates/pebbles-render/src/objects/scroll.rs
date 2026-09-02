@@ -52,6 +52,54 @@ impl Default for ScrollbarStyle {
     }
 }
 
+/// The physics of a scroll view: how the offset eases toward its target, how a
+/// fling decays, and whether drags may pull past the edges (rubber-banding).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScrollPhysics {
+    /// Spring stiffness for the offset→target ease (critically damped).
+    pub stiffness: f64,
+    /// Per-frame fling friction: velocity *= (1 − friction)^(dt·60).
+    pub friction: f64,
+    /// Whether content drags may pull past `[0, max]` with resistance (excess/3),
+    /// springing back on release.
+    pub overscroll: bool,
+}
+
+impl Default for ScrollPhysics {
+    fn default() -> Self {
+        ScrollPhysics { stiffness: 240.0, friction: 0.015, overscroll: false }
+    }
+}
+
+/// The pull-to-refresh trigger attached to a scroll view (A5). The drag driver
+/// calls the callbacks as the pointer pulls past the top edge and releases.
+#[derive(Clone)]
+pub struct RefreshState {
+    /// Pull distance (negative offset) that arms the indicator.
+    pub threshold: f64,
+    /// Fired once when the pull crosses `threshold` (the spinner rotates in).
+    pub on_arm: Option<std::rc::Rc<dyn Fn()>>,
+    /// Fired once when an ARMED pull is released — the app's `on_refresh`.
+    pub on_arm_release: Option<std::rc::Rc<dyn Fn()>>,
+    /// Fired once when a pull is released without ever arming (clears the
+    /// half-rotated spinner state).
+    pub on_release: Option<std::rc::Rc<dyn Fn()>>,
+    /// Whether the arm threshold has been crossed in the current drag.
+    pub fired_arm: bool,
+}
+
+impl RefreshState {
+    pub fn new(threshold: f64) -> Self {
+        RefreshState {
+            threshold: threshold.max(1.0),
+            on_arm: None,
+            on_arm_release: None,
+            on_release: None,
+            fired_arm: false,
+        }
+    }
+}
+
 /// A scrollable viewport.
 pub struct RenderScroll {
     pub axis: Axis,
@@ -60,8 +108,14 @@ pub struct RenderScroll {
     /// Where the offset is heading — wheel/keyboard move this; the spring animates
     /// `offset` toward it for a smooth, momentum-like glide.
     pub target: f64,
-    /// Current spring velocity (px/s).
+    /// Current spring velocity (px/s) — the offset→target ease. During a fling
+    /// this tracks the moving target; the fling's own speed lives in
+    /// [`fling_velocity`](Self::fling_velocity).
     pub velocity: f64,
+    /// Decaying fling speed (px/s) while [`flinging`](Self::flinging).
+    fling_velocity: f64,
+    /// Whether a fling is in progress (the target advances, the spring follows).
+    flinging: bool,
     /// Snap increment: after settling, the target rounds to a multiple of this
     /// (0 = no snapping).
     pub snap: f64,
@@ -70,6 +124,24 @@ pub struct RenderScroll {
     /// Viewport extent along `axis`, computed each layout.
     pub viewport_extent: f64,
     pub scrollbar: ScrollbarStyle,
+    /// Opt-in pan-to-scroll: when set, a pointer drag over this viewport moves the
+    /// content 1:1 (the shell arbitrates against draggable descendants).
+    pub drag_scroll: bool,
+    /// Spring stiffness, fling friction and overscroll behavior.
+    pub physics: ScrollPhysics,
+    /// Pull-to-refresh trigger, when the owning widget installed one.
+    pub refresh: Option<RefreshState>,
+    /// True while a content drag is in progress (offset follows the pointer).
+    dragging: bool,
+    /// Pointer position along `axis` at the last drag update (delta source).
+    drag_last: f64,
+    /// The UNBANDED offset during a drag — the rubber-band transform applies on
+    /// top of this, so re-applying it to an already-banded offset can't compound.
+    drag_real: f64,
+    /// Recent (time, offset) samples for the fling velocity estimate.
+    fling_samples: [(f64, f64); 4],
+    fling_samples_len: usize,
+    fling_cursor: usize,
 }
 
 impl RenderScroll {
@@ -83,13 +155,27 @@ impl RenderScroll {
             max_offset: 0.0,
             viewport_extent: 0.0,
             scrollbar: ScrollbarStyle::default(),
+            drag_scroll: false,
+            physics: ScrollPhysics::default(),
+            refresh: None,
+            dragging: false,
+            drag_last: 0.0,
+            drag_real: 0.0,
+            fling_velocity: 0.0,
+            flinging: false,
+            fling_samples: [(0.0, 0.0); 4],
+            fling_samples_len: 0,
+            fling_cursor: 0,
         }
     }
 
     /// Move the scroll *target* by `delta` (the spring eases the offset there).
     /// Returns whether the target moved (false when already pinned at an edge — the
-    /// caller uses that to bubble the scroll to a parent).
+    /// caller uses that to bubble the scroll to a parent). An explicit scroll stops
+    /// any fling in progress.
     pub fn scroll_by(&mut self, delta: f64) -> bool {
+        self.flinging = false;
+        self.fling_velocity = 0.0;
         let mut next = (self.target + delta).clamp(0.0, self.max_offset);
         if self.snap > 0.0 {
             next = ((next / self.snap).round() * self.snap).clamp(0.0, self.max_offset);
@@ -105,15 +191,160 @@ impl RenderScroll {
         (delta < 0.0 && self.target <= 0.0) || (delta > 0.0 && self.target >= self.max_offset)
     }
 
-    /// Jump the target to an absolute offset (spring animates there).
+    /// Jump the target to an absolute offset (spring animates there). Stops any
+    /// fling in progress.
     pub fn scroll_to(&mut self, offset: f64) {
+        self.flinging = false;
+        self.fling_velocity = 0.0;
         self.target = offset.clamp(0.0, self.max_offset);
     }
 
-    /// Advance the spring by `dt` seconds. Returns whether it is still moving.
+    // ----- content drag (pan-to-scroll) -----------------------------------
+
+    /// The rubber-band transform applied to an unbanded offset (A4 overscroll:
+    /// content past the edges moves at 1/3 the pointer speed).
+    fn band(&self, v: f64) -> f64 {
+        if v < 0.0 {
+            v / 3.0
+        } else if v > self.max_offset {
+            self.max_offset + (v - self.max_offset) / 3.0
+        } else {
+            v
+        }
+    }
+
+    /// Begin a content drag: the pointer is at `at` along the scroll axis.
+    /// Returns whether this viewport accepts drags.
+    pub fn drag_begin(&mut self, at: f64, now: f64) -> bool {
+        if !self.drag_scroll {
+            return false;
+        }
+        self.dragging = true;
+        self.drag_last = at;
+        self.drag_real = self.offset;
+        self.velocity = 0.0;
+        self.flinging = false;
+        self.fling_velocity = 0.0;
+        self.fling_samples_len = 0;
+        self.fling_cursor = 0;
+        self._sample(now);
+        true
+    }
+
+    /// The pointer moved to `at`. Moves the content 1:1 (rubber-banded past the
+    /// edges when `physics.overscroll`). Returns whether the offset changed.
+    pub fn drag_move(&mut self, at: f64, now: f64) -> bool {
+        if !self.dragging {
+            return false;
+        }
+        let delta = at - self.drag_last; // positive = content moves with the pointer
+        self.drag_last = at;
+        self.drag_real -= delta;
+        self.offset = if self.physics.overscroll { self.band(self.drag_real) } else {
+            self.drag_real.clamp(0.0, self.max_offset)
+        };
+        self.target = self.offset;
+        self._sample(now);
+        true
+    }
+
+    fn _sample(&mut self, now: f64) {
+        let slot = &mut self.fling_samples[self.fling_cursor];
+        *slot = (now, self.offset);
+        self.fling_cursor = (self.fling_cursor + 1) % 4;
+        self.fling_samples_len = self.fling_samples_len.saturating_add(1).min(4);
+    }
+
+    /// After a drag update: fire the pull-to-refresh arm callback once the pull
+    /// crosses the threshold (A5).
+    pub fn refresh_update(&mut self) {
+        if let Some(r) = &mut self.refresh {
+            if self.offset <= -r.threshold && !r.fired_arm {
+                r.fired_arm = true;
+                if let Some(cb) = r.on_arm.clone() {
+                    cb();
+                }
+            }
+        }
+    }
+
+    /// At drag end: fire the armed-release callback (the app's refresh) or the
+    /// plain-release callback (clears the half-armed spinner).
+    pub fn refresh_end(&mut self) {
+        if let Some(r) = &mut self.refresh {
+            if r.fired_arm {
+                let cb = if self.offset <= -r.threshold {
+                    r.on_arm_release.clone()
+                } else {
+                    r.on_release.clone()
+                };
+                if let Some(cb) = cb {
+                    cb();
+                }
+            } else if let Some(cb) = r.on_release.clone() {
+                cb();
+            }
+            r.fired_arm = false;
+        }
+    }
+
+    /// End the drag: estimates the fling velocity from the last samples, springs
+    /// back from any overscroll, and (unless past an edge) flings.
+    pub fn drag_end(&mut self, now: f64) -> bool {
+        if !self.dragging {
+            return false;
+        }
+        self.dragging = false;
+        self._sample(now);
+        let past_start = self.offset < 0.0;
+        let past_end = self.offset > self.max_offset;
+        self.target = self.offset.clamp(0.0, self.max_offset);
+        self.velocity = 0.0; // the spring starts from rest at the release point
+        // Fling velocity from the oldest still-recorded sample.
+        if !past_start && !past_end {
+            let (t0, o0) = self.fling_samples
+                [(self.fling_cursor + 4 - self.fling_samples_len) % 4];
+            let dt = now - t0;
+            let v = if dt > 1e-4 { (self.offset - o0) / dt } else { 0.0 };
+            self.fling_velocity = if self.physics.overscroll { v } else { v.clamp(-4000.0, 4000.0) };
+            if self.snap > 0.0 && self.fling_velocity.abs() < 200.0 {
+                // Weak flings settle on the nearest snap point immediately.
+                self.target = ((self.target / self.snap).round() * self.snap)
+                    .clamp(0.0, self.max_offset);
+                self.fling_velocity = 0.0;
+            }
+            self.flinging = self.fling_velocity.abs() >= 0.5;
+        } else {
+            self.fling_velocity = 0.0;
+            self.flinging = false;
+        }
+        self.fling_samples_len = 0;
+        true
+    }
+
+    /// Advance the spring (and any fling) by `dt` seconds. Returns whether it is
+    /// still moving.
     pub fn tick(&mut self, dt: f64) -> bool {
+        if self.dragging {
+            return false; // the pointer drives the offset; nothing to animate
+        }
         let dt = dt.clamp(0.0, 0.05); // guard against long stalls
-        let stiffness = 240.0_f64;
+        // Fling: the target keeps moving while the fling velocity decays.
+        if self.flinging {
+            let decay = (1.0 - self.physics.friction).powf(dt * 60.0);
+            self.fling_velocity *= decay;
+            self.target =
+                (self.target + self.fling_velocity * dt).clamp(0.0, self.max_offset);
+            if self.fling_velocity.abs() < 0.5 {
+                self.flinging = false;
+                self.fling_velocity = 0.0;
+                if self.snap > 0.0 {
+                    self.target = ((self.target / self.snap).round() * self.snap)
+                        .clamp(0.0, self.max_offset);
+                }
+            }
+        }
+        let stiffness = self.physics.stiffness.max(1.0);
         let damping = 2.0 * stiffness.sqrt(); // critically damped — no overshoot
         let x = self.offset - self.target;
         let accel = -stiffness * x - damping * self.velocity;
@@ -215,8 +446,13 @@ impl RenderObject for RenderScroll {
         };
         self.viewport_extent = viewport_extent;
         self.max_offset = (content_extent - viewport_extent).max(0.0);
-        self.offset = self.offset.clamp(0.0, self.max_offset);
-        self.target = self.target.clamp(0.0, self.max_offset);
+        // During a content drag the offset may rubber-band past the edges (A4
+        // overscroll) — clamping here would fight the pointer. The clamp applies
+        // once the drag ends (the spring then pulls it back).
+        if !self.dragging {
+            self.offset = self.offset.clamp(0.0, self.max_offset);
+            self.target = self.target.clamp(0.0, self.max_offset);
+        }
 
         let child_offset = match self.axis {
             Axis::Vertical => Offset::new(0.0, -self.offset),

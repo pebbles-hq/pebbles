@@ -122,6 +122,7 @@ pub const NAV: &[NavGroup] = &[
             ("stacks", lucide::LAYERS, "Stack"),
             ("wraps", lucide::TEXT_WRAP, "Wrap"),
             ("boxes", lucide::BOX, "Boxes & Sizing"),
+            ("scrolling", lucide::MOVE_VERTICAL, "Scroll & Motion"),
             ("animated-container", lucide::WAND, "Animated Container"),
             ("list-view", lucide::LIST_ORDERED, "List View"),
             ("grid-view", lucide::LAYOUT_GRID, "Grid View"),

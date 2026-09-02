@@ -1,5 +1,6 @@
 //! Display & content components — surfaces, data, typography, icons, progress.
 
+mod carousel;
 mod chip;
 mod data;
 mod empty;
@@ -14,6 +15,7 @@ mod tooltip;
 mod tree;
 mod typography;
 
+pub use carousel::{Carousel, CarouselController, carousel, use_carousel_controller};
 pub use chip::{Chip, chip};
 pub use data::{Cell, SortDir, Table, cell, table};
 pub use list_tile::{ListTile, list_tile};

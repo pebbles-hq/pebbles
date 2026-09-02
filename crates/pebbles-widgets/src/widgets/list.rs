@@ -8,18 +8,169 @@
 //! scrollbar drag are routed to the signal via `pebbles_core::scroll`, and the
 //! viewport extent is read back from `pebbles_render::scroll_metrics`.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use pebbles_foundation::Axis;
-use pebbles_render::{RenderList, RenderObject, ScrollbarStyle, scroll_metrics};
+use pebbles_render::{RenderList, RenderMeasureProbe, RenderObject, ScrollbarStyle, scroll_metrics};
 
 use crate::widgets::{Positioned, stack};
 use pebbles_core::scroll::{self, ScrollTo};
 use pebbles_core::widget::{AnyWidget, IntoWidget, RenderWidget};
-use pebbles_core::{Signal, animate_to, component_props, create_cleanup, create_signal, owner_id};
+use pebbles_core::reactive::request_frame;
+use pebbles_core::{
+    Signal, animate_to, component_props, create_cleanup, create_signal, owner_id,
+};
 
 /// How many extra items to build above/below the viewport (smooths fast flings).
 const OVERSCAN: isize = 3;
+
+// ---------------------------------------------------------------------------
+// ExtentCache — per-item extents for auto-measured lists (A1).
+// ---------------------------------------------------------------------------
+
+/// The live extent bookkeeping of a [`ListView::builder_auto`] list: real
+/// measurements replace the estimate as items lay out, and lazy prefix sums give
+/// item positions (`offset_of`), content extent (`total`) and index lookup
+/// (`index_at`).
+#[derive(Default)]
+struct ExtentCache {
+    /// `Some(e)` = measured; `None` = use `estimate`.
+    measured: Vec<Option<f64>>,
+    /// Lazily-rebuilt prefix sums of `measured` (with estimates filled in).
+    prefix: Vec<f64>,
+    total_cache: f64,
+    dirty: bool,
+    /// Fallback extent for unmeasured items (the `.estimated_extent` knob).
+    estimate: f64,
+}
+
+impl ExtentCache {
+    fn extent_of(&self, i: usize) -> f64 {
+        self.measured
+            .get(i)
+            .copied()
+            .flatten()
+            .unwrap_or(self.estimate)
+            .max(1.0)
+    }
+
+    fn rebuild(&mut self) {
+        let mut pre = Vec::with_capacity(self.measured.len() + 1);
+        pre.push(0.0);
+        let mut acc = 0.0;
+        for i in 0..self.measured.len() {
+            acc += self.extent_of(i);
+            pre.push(acc);
+        }
+        self.total_cache = acc;
+        self.prefix = pre;
+        self.dirty = false;
+    }
+
+    /// The content-space top of item `i`.
+    fn offset_of(&mut self, i: usize) -> f64 {
+        if self.dirty {
+            self.rebuild();
+        }
+        self.prefix.get(i).copied().unwrap_or(self.total_cache)
+    }
+
+    /// The index of the item containing `offset` (binary search over the prefix).
+    fn index_at(&mut self, offset: f64) -> usize {
+        if self.dirty {
+            self.rebuild();
+        }
+        self.prefix.partition_point(|&top| top <= offset).saturating_sub(1)
+    }
+
+    /// The current total content extent.
+    fn total(&mut self) -> f64 {
+        if self.dirty {
+            self.rebuild();
+        }
+        self.total_cache
+    }
+
+    /// Record a real measurement. Returns the extent delta (vs the estimate or
+    /// the previous measurement) when it changed by more than 0.5px.
+    fn set(&mut self, i: usize, v: f64) -> Option<f64> {
+        if i >= self.measured.len() {
+            return None;
+        }
+        let old = self.measured[i];
+        let changed = match old {
+            Some(o) => (o - v).abs() > 0.5,
+            None => true,
+        };
+        if changed {
+            self.measured[i] = Some(v);
+            self.dirty = true;
+            Some(v - old.unwrap_or(self.estimate))
+        } else {
+            None
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MeasureProbe — reports an item's laid-out extent into the cache (A1).
+// ---------------------------------------------------------------------------
+
+/// A layout pass-through that reports its child's main-axis extent into the
+/// list's [`ExtentCache`] after every layout (the cache ignores no-op updates).
+#[derive(Clone)]
+struct MeasureProbe {
+    axis: Axis,
+    cache: Rc<RefCell<ExtentCache>>,
+    bump: Signal<u64>,
+    offset: Signal<f64>,
+    index: usize,
+    child: Option<AnyWidget>,
+}
+
+pebbles_core::render_widget!(MeasureProbe);
+
+impl RenderWidget for MeasureProbe {
+    fn create_render_object(&self) -> Box<dyn RenderObject> {
+        let mut probe = RenderMeasureProbe::new(self.axis, Some(self.report()));
+        probe.unbound = true;
+        Box::new(probe)
+    }
+    fn update_render_object(&self, object: &mut dyn RenderObject) {
+        if let Some(p) = object.downcast_mut::<RenderMeasureProbe>() {
+            p.axis = self.axis;
+            p.report = Some(self.report());
+            p.unbound = true;
+        }
+    }
+    fn take_children(&mut self) -> Vec<AnyWidget> {
+        self.child.take().into_iter().collect()
+    }
+}
+
+impl MeasureProbe {
+    /// The post-layout callback: writes the measurement into the cache, keeps
+    /// content under the cursor anchored when an item ABOVE the viewport grows,
+    /// and schedules one corrective rebuild.
+    fn report(&self) -> Rc<dyn Fn(f64)> {
+        let cache = self.cache.clone();
+        let bump = self.bump;
+        let offset = self.offset;
+        let index = self.index;
+        Rc::new(move |extent: f64| {
+            let delta = cache.borrow_mut().set(index, extent);
+            if let Some(delta) = delta {
+                let above = cache.borrow_mut().offset_of(index) < offset.peek();
+                if above {
+                    offset.set((offset.peek() + delta).max(0.0));
+                }
+                bump.set(bump.peek().wrapping_add(1));
+                request_frame();
+            }
+        })
+    }
+}
 
 // ---------------------------------------------------------------------------
 // ScrollController — programmatic control of a list's offset.
@@ -43,12 +194,29 @@ pub fn use_scroll_controller() -> ScrollController {
 }
 
 impl ScrollController {
+    /// Build a controller over an existing offset signal (internal — composite
+    /// widgets like the carousel drive a list through their own signals).
+    #[doc(hidden)]
+    pub fn from_parts(id: u64, offset: Signal<f64>) -> Self {
+        ScrollController { id, offset }
+    }
     fn max(&self) -> f64 {
         scroll_metrics::get(self.id).map(|m| (m.content - m.viewport).max(0.0)).unwrap_or(0.0)
     }
     /// The current pixel offset.
     pub fn offset(&self) -> f64 {
         self.offset.peek()
+    }
+    /// The reactive offset signal (doc-hidden — composite widgets like the
+    /// sticky/collapsing headers read it to re-render on every scroll).
+    #[doc(hidden)]
+    pub fn offset_signal(&self) -> Signal<f64> {
+        self.offset
+    }
+    /// The viewport registry id (doc-hidden — tests/tooling).
+    #[doc(hidden)]
+    pub fn id(&self) -> u64 {
+        self.id
     }
     /// Jump instantly to a pixel offset.
     pub fn jump_to(&self, px: f64) {
@@ -61,6 +229,15 @@ impl ScrollController {
     /// Animate so item `index` (of `item_extent` each) reaches the top.
     pub fn scroll_to_index(&self, index: usize, item_extent: f64) {
         self.animate_to(index as f64 * item_extent);
+    }
+    /// Animate so item `index` of an AUTO-MEASURED list reaches the top — the
+    /// offset resolves through that list's live extent cache (estimates for
+    /// unmeasured items; the list self-corrects as they measure). Only works
+    /// while the list is mounted.
+    pub fn scroll_to_index_auto(&self, index: usize) {
+        if let Some(top) = scroll::index_of(self.id, index) {
+            self.animate_to(top);
+        }
     }
 }
 
@@ -121,6 +298,13 @@ pub struct ListView {
     separator: Option<(f64, Rc<dyn Fn(usize) -> AnyWidget>)>,
     /// Per-item extents when built with [`variable`](ListView::variable).
     extents: Option<Rc<dyn Fn(usize) -> f64>>,
+    /// Auto-MEASURED extents when built with [`builder_auto`](ListView::builder_auto).
+    auto: bool,
+    /// Fallback extent for unmeasured items in auto mode.
+    estimate: f64,
+    /// Snap the controlled offset to multiples of this (0 = off) — paged lists
+    /// and carousels.
+    snap: f64,
     reverse: bool,
     padding: Option<pebbles_foundation::EdgeInsets>,
 }
@@ -142,6 +326,37 @@ impl ListView {
             builder: Rc::new(move |i| builder(i).into_widget()),
             separator: None,
             extents: None,
+            auto: false,
+            estimate: 40.0,
+            snap: 0.0,
+            reverse: false,
+            padding: None,
+        }
+    }
+
+    /// Build a list whose rows MEASURE themselves (A1): no extent argument —
+    /// items are laid out at their natural size and the virtualization learns
+    /// their real extents as they scroll into view (corrective passes converge
+    /// in a frame or two). Use when row heights can't be precomputed; prefer the
+    /// fixed [`builder`](ListView::builder) when they can. Items with local
+    /// state must be their own components (the builder re-runs per rebuild
+    /// window).
+    pub fn builder_auto<W: IntoWidget>(
+        count: usize,
+        builder: impl Fn(usize) -> W + 'static,
+    ) -> Self {
+        ListView {
+            count,
+            item_extent: 1.0,
+            axis: Axis::Vertical,
+            scrollbar: ScrollbarStyle::default(),
+            controller: None,
+            builder: Rc::new(move |i| builder(i).into_widget()),
+            separator: None,
+            extents: None,
+            auto: true,
+            estimate: 40.0,
+            snap: 0.0,
             reverse: false,
             padding: None,
         }
@@ -166,6 +381,9 @@ impl ListView {
             builder: Rc::new(move |i| builder(i).into_widget()),
             separator: None,
             extents: Some(Rc::new(extents)),
+            auto: false,
+            estimate: 40.0,
+            snap: 0.0,
             reverse: false,
             padding: None,
         }
@@ -190,6 +408,9 @@ impl ListView {
             builder: Rc::new(move |i| item(i).into_widget()),
             separator: Some((separator_extent, Rc::new(move |i| separator(i).into_widget()))),
             extents: None,
+            auto: false,
+            estimate: 40.0,
+            snap: 0.0,
             reverse: false,
             padding: None,
         }
@@ -222,6 +443,18 @@ impl ListView {
         self.padding = Some(insets);
         self
     }
+    /// The extent assumed for not-yet-measured rows in auto mode (default 40).
+    /// A good guess reduces the corrective passes after deep jumps.
+    pub fn estimated_extent(mut self, extent: f64) -> Self {
+        self.estimate = extent.max(1.0);
+        self
+    }
+    /// Snap the scroll offset to multiples of `extent` (paged lists, carousels).
+    /// Each scroll settles on the nearest page. `0` disables snapping.
+    pub fn snap(mut self, extent: f64) -> Self {
+        self.snap = extent.max(0.0);
+        self
+    }
 }
 
 struct Props {
@@ -233,6 +466,9 @@ struct Props {
     builder: Rc<dyn Fn(usize) -> AnyWidget>,
     separator: Option<(f64, Rc<dyn Fn(usize) -> AnyWidget>)>,
     extents: Option<Rc<dyn Fn(usize) -> f64>>,
+    auto: bool,
+    estimate: f64,
+    snap: f64,
     reverse: bool,
     padding: Option<pebbles_foundation::EdgeInsets>,
 }
@@ -250,6 +486,9 @@ impl IntoWidget for ListView {
                 builder: self.builder,
                 separator: self.separator,
                 extents: self.extents,
+                auto: self.auto,
+                estimate: self.estimate,
+                snap: self.snap,
                 reverse: self.reverse,
                 padding: self.padding,
             },
@@ -267,12 +506,34 @@ fn render_list(p: &Props) -> ListViewport {
             (owner_id().unwrap_or(0), offset)
         }
     };
+    // The auto-mode extent cache + its corrective-rebuild bump. Hooks at stable
+    // positions for every list (cheap in the non-auto modes).
+    let cache_rc = create_signal(Rc::new(RefCell::new(ExtentCache {
+        estimate: p.estimate.max(1.0),
+        ..Default::default()
+    })));
+    let bump = create_signal(0_u64);
+    bump.get(); // subscribe: a measurement re-renders the list for one corrective pass
+
     let sep_ext = p.separator.as_ref().map(|(e, _)| *e).unwrap_or(0.0);
     let stride = p.item_extent + sep_ext;
-    // Variable extents: a running prefix over the per-item extents gives both
-    // the content extent and each item's position (O(n) per render — fine for
-    // the counts variable lists serve).
-    let variable = p.extents.is_some();
+    let auto = p.auto;
+    let variable = p.extents.is_some() || auto;
+    let ext = p.item_extent.max(1.0);
+
+    // Auto mode: refresh the cache's estimate/size for this render.
+    if auto {
+        let rc = cache_rc.get();
+        let mut cache = rc.borrow_mut();
+        cache.estimate = p.estimate.max(1.0);
+        if cache.measured.len() != p.count {
+            cache.measured.resize(p.count, None);
+            cache.dirty = true;
+        }
+    }
+
+    // The content extent + item positions: auto uses the live cache, variable
+    // uses a running prefix over the caller-supplied extents.
     let prefix: Vec<f64> = match &p.extents {
         Some(ext) => {
             let mut pre = Vec::with_capacity(p.count + 1);
@@ -286,7 +547,9 @@ fn render_list(p: &Props) -> ListViewport {
         }
         None => Vec::new(),
     };
-    let content_extent = if variable {
+    let content_extent = if auto {
+        cache_rc.get().borrow_mut().total()
+    } else if variable {
         prefix[p.count]
     } else if sep_ext > 0.0 {
         p.count as f64 * p.item_extent + (p.count.saturating_sub(1)) as f64 * sep_ext
@@ -306,21 +569,32 @@ fn render_list(p: &Props) -> ListViewport {
         scroll_metrics::clear(id);
     });
 
+    // The auto-mode index→offset function (for `scroll_to_index_auto`).
+    if auto {
+        let cache = cache_rc.get();
+        scroll::install_index(id, Rc::new(move |i| cache.borrow_mut().offset_of(i)));
+    }
+
     // Route wheel + scrollbar drag into the offset signal (clamped to the live
     // viewport). Re-installed each render (idempotent) so `content_extent` stays
     // current if `count` changes.
     {
         let ce = padded_extent;
+        let snap = p.snap;
         scroll::install(
             id,
             Rc::new(move |to| {
                 let vp = scroll_metrics::get(id).map(|m| m.viewport).unwrap_or(0.0);
                 let max = (ce - vp).max(0.0);
-                let next = match to {
+                let mut next = match to {
                     ScrollTo::By(d) => offset.peek() + d,
                     ScrollTo::ToFraction(f) => f * max,
-                };
-                offset.set(next.clamp(0.0, max));
+                }
+                .clamp(0.0, max);
+                if snap > 0.0 {
+                    next = ((next / snap).round() * snap).clamp(0.0, max);
+                }
+                offset.set(next);
             }),
         );
     }
@@ -328,12 +602,24 @@ fn render_list(p: &Props) -> ListViewport {
     // Visible window from the current offset + last-known viewport extent.
     let o = offset.get();
     let viewport = scroll_metrics::get(id).map(|m| m.viewport).unwrap_or(800.0);
-    let ext = p.item_extent.max(1.0);
     let unit = if sep_ext > 0.0 { stride } else { ext };
 
-    // The visible window: binary search over the prefix when variable, else
-    // the fixed-extent arithmetic.
-    let (first, last) = if variable {
+    // The visible window: binary search over the prefix when variable, a walk
+    // over the extent cache when auto, else the fixed-extent arithmetic.
+    let (first, last) = if auto {
+        let lo = o.max(0.0);
+        let hi = (o + viewport).max(0.0);
+        let rc = cache_rc.get();
+        let mut cache = rc.borrow_mut();
+        let first = cache.index_at(lo).saturating_sub(OVERSCAN as usize);
+        let mut last = first;
+        let mut acc = cache.offset_of(first);
+        while last < p.count && acc < hi {
+            acc += cache.extent_of(last);
+            last += 1;
+        }
+        (first, (last + OVERSCAN as usize).min(p.count))
+    } else if variable {
         let lo = o.max(0.0);
         let hi = (o + viewport).max(0.0);
         let first = prefix.partition_point(|&top| top < lo).saturating_sub(OVERSCAN as usize);
@@ -347,7 +633,11 @@ fn render_list(p: &Props) -> ListViewport {
 
     let position = |i: usize| -> (f64, f64) {
         // (top/left in content space, item extent)
-        if variable {
+        if auto {
+            let rc = cache_rc.get();
+            let mut cache = rc.borrow_mut();
+            (cache.offset_of(i), cache.extent_of(i))
+        } else if variable {
             (prefix[i], (prefix[i + 1] - prefix[i]).max(1.0))
         } else {
             let at = if sep_ext > 0.0 { i as f64 * stride } else { i as f64 * ext };
@@ -358,20 +648,49 @@ fn render_list(p: &Props) -> ListViewport {
     let mut items: Vec<AnyWidget> = Vec::new();
     for i in first..last {
         let item = (p.builder)(i);
+        // Auto mode: probe the item so its real extent lands in the cache.
+        let item: AnyWidget = if auto {
+            MeasureProbe {
+                axis: p.axis,
+                cache: cache_rc.get(),
+                bump,
+                offset,
+                index: i,
+                child: Some(item.into_widget()),
+            }
+            .into_widget()
+        } else {
+            item.into_widget()
+        };
         let (at, item_ext) = position(i);
         let at = at + pad_lead;
         let at = if p.reverse { padded_extent - at - item_ext } else { at };
-        let placed = match p.axis {
-            Axis::Vertical => Positioned::new(item)
-                .top(at)
-                .left(pad.left)
-                .right(pad.right)
-                .height(item_ext),
-            Axis::Horizontal => Positioned::new(item)
-                .left(at)
-                .top(pad.top)
-                .bottom(pad.bottom)
-                .width(item_ext),
+        // Auto mode: the measure probe sizes the item naturally — no fixed
+        // extent on the scroll axis (the cached extent only decides the top).
+        let placed = if auto {
+            match p.axis {
+                Axis::Vertical => Positioned::new(item)
+                    .top(at)
+                    .left(pad.left)
+                    .right(pad.right),
+                Axis::Horizontal => Positioned::new(item)
+                    .left(at)
+                    .top(pad.top)
+                    .bottom(pad.bottom),
+            }
+        } else {
+            match p.axis {
+                Axis::Vertical => Positioned::new(item)
+                    .top(at)
+                    .left(pad.left)
+                    .right(pad.right)
+                    .height(item_ext),
+                Axis::Horizontal => Positioned::new(item)
+                    .left(at)
+                    .top(pad.top)
+                    .bottom(pad.bottom)
+                    .width(item_ext),
+            }
         };
         items.push(placed.into_widget());
         if let Some((se, sep_builder)) = &p.separator {

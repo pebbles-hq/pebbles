@@ -74,6 +74,7 @@ pub fn app() -> impl IntoWidget {
         .route("stacks", || component(screens::stacks::stacks))
         .route("wraps", || component(screens::wraps::wraps))
         .route("boxes", || component(screens::boxes::boxes))
+        .route("scrolling", || component(screens::scrolling::scrolling))
         .route("animated-container", || component(screens::animated_container::animated_containers))
         .route("resizable", || component(screens::resizable::resizables))
         .route("badge", || component(screens::badge::badges))

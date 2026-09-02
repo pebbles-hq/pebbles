@@ -21,6 +21,9 @@ pub enum ScrollTo {
 
 thread_local! {
     static HANDLERS: RefCell<HashMap<u64, Rc<dyn Fn(ScrollTo)>>> = RefCell::new(HashMap::new());
+    /// Per-viewport index→offset functions (auto-measured lists) so
+    /// `scroll_to_index` resolves through the live extent cache.
+    static INDEX_FNS: RefCell<HashMap<u64, Rc<dyn Fn(usize) -> f64>>> = RefCell::new(HashMap::new());
 }
 
 /// Install (or replace) the scroll handler for viewport `id`.
@@ -30,9 +33,25 @@ pub fn install(id: u64, handler: Rc<dyn Fn(ScrollTo)>) {
     });
 }
 
-/// Remove a viewport's handler (on unmount).
+/// Install (or replace) the index→offset function for viewport `id` — the
+/// auto-measured list path of `ScrollController::scroll_to_index_auto`.
+pub fn install_index(id: u64, f: Rc<dyn Fn(usize) -> f64>) {
+    INDEX_FNS.with(|h| {
+        h.borrow_mut().insert(id, f);
+    });
+}
+
+/// The cached offset of `index` in viewport `id` (auto-measured lists).
+pub fn index_of(id: u64, index: usize) -> Option<f64> {
+    INDEX_FNS.with(|h| h.borrow().get(&id).map(|f| f(index)))
+}
+
+/// Remove a viewport's handler + index function (on unmount).
 pub fn clear(id: u64) {
     HANDLERS.with(|h| {
+        h.borrow_mut().remove(&id);
+    });
+    INDEX_FNS.with(|h| {
         h.borrow_mut().remove(&id);
     });
 }
