@@ -2,15 +2,7 @@ use pebbles::prelude::*;
 
 use crate::ui::{doc, screen};
 
-const PLANS: [&str; 7] = [
-    "Free",
-    "Pro",
-    "Enterprise",
-    "Team",
-    "Startup",
-    "Growth",
-    "Custom",
-];
+const PLANS: [&str; 7] = ["Free", "Pro", "Enterprise", "Team", "Startup", "Growth", "Custom"];
 
 pub fn selects() -> Element {
     let picked = create_signal(String::from("Pro"));

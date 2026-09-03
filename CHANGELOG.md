@@ -15,7 +15,14 @@ Flutter-style tooling for a Rust desktop UI, dependency-free (std only):
   `PEBBLES_LOG=debug`), stream the framework's logs **prettified/colorized by
   level and category**, and **hot-restart on every file save** (mtime-poll
   watch → rebuild → relaunch, ~sub-3s for a one-file change; verified). Flags:
+  `-p/--package <name>` (also `--example`/`--bin`), `--watch <dir>` (repeatable),
   `--release`, `--no-reload`, `-q/--quiet`, `--log <level>`, `-- <app args>`.
+- **Runs workspace samples**, not just scaffolded apps: `pebbles run -p gallery`
+  from the repo root, or `cd examples/counter && pebbles run` (auto-detect). It
+  finds the workspace root (`[workspace]`) so a member's binary is located in the
+  shared `target/`, builds with `cargo build -p <name>`, and lists the available
+  packages if you run it at the root with no `-p`. `--watch crates` hot-restarts
+  a sample when you edit the framework itself.
   (Note: this is fast hot-*restart*, not state-preserving hot-reload — Rust has
   no VM to swap code in a live process; the runner is structured so a future
   hot-patch engine can slot in.)

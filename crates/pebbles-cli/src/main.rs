@@ -70,6 +70,10 @@ fn print_help() {
     {CYAN}help{RESET}              Show this help
 
 {BOLD}pebbles run OPTIONS{RESET}
+    -p, --package <n> Run a specific workspace member / sample by name
+                      (aliases: --example, --bin)
+    --watch <dir>     Also watch <dir> for hot-restart (repeatable) — e.g. the
+                      framework crates while iterating on a sample
     --release         Build/run optimized (no dev diagnostics)
     --no-reload       Disable hot-restart (build + run once)
     -q, --quiet       Only app logs at warn+ (default: debug)
@@ -78,6 +82,9 @@ fn print_help() {
 
 {BOLD}EXAMPLES{RESET}
     pebbles new hello && cd hello && pebbles run
+    pebbles run -p gallery          {DIM}# run a sample from the workspace root{RESET}
+    pebbles run -p gallery --watch crates   {DIM}# also hot-restart on framework edits{RESET}
+    cd examples/counter && pebbles run
     pebbles run --log trace
     pebbles doctor
 "

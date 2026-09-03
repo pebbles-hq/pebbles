@@ -16,11 +16,20 @@ struct Opts {
     release: bool,
     reload: bool,
     log: String,
+    package: Option<String>,
+    extra_watch: Vec<String>,
     app_args: Vec<String>,
 }
 
 pub fn run(args: &[String]) -> ExitCode {
-    let mut o = Opts { release: false, reload: true, log: "debug".into(), app_args: vec![] };
+    let mut o = Opts {
+        release: false,
+        reload: true,
+        log: "debug".into(),
+        package: None,
+        extra_watch: vec![],
+        app_args: vec![],
+    };
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -30,6 +39,19 @@ pub fn run(args: &[String]) -> ExitCode {
             "--log" => {
                 if let Some(l) = it.next() {
                     o.log = l.clone();
+                }
+            }
+            // Select a workspace member (or example) by name — run it from anywhere.
+            "-p" | "--package" | "--example" | "--bin" => {
+                if let Some(name) = it.next() {
+                    o.package = Some(name.clone());
+                }
+            }
+            // Watch an extra directory for hot-restart (repeatable) — e.g. the
+            // framework crates when iterating on Pebbles while running a sample.
+            "--watch" => {
+                if let Some(d) = it.next() {
+                    o.extra_watch.push(d.clone());
                 }
             }
             "--" => {
@@ -44,16 +66,57 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     }
 
-    // Locate the project (walk up for Cargo.toml).
-    let Some(project) = find_project(&std::env::current_dir().unwrap_or_default()) else {
-        term::error("no Cargo.toml found here — run this inside a Pebbles project (or `pebbles new <name>`)");
-        return ExitCode::FAILURE;
+    let cwd = std::env::current_dir().unwrap_or_default();
+    // The workspace root (nearest ancestor Cargo.toml with `[workspace]`), if any —
+    // its `target/` is where a member's binary actually lands.
+    let workspace_root = find_workspace_root(&cwd);
+
+    // Resolve which package to run and its source directory.
+    let (member_dir, bin) = match &o.package {
+        Some(name) => {
+            let search_root = workspace_root.clone().unwrap_or_else(|| cwd.clone());
+            match find_member(&search_root, name) {
+                Some(dir) => (dir, name.clone()),
+                None => {
+                    term::error(&format!("no package `{name}` in this workspace"));
+                    list_members(&search_root);
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+        None => {
+            let Some(project) = find_project(&cwd) else {
+                term::error(
+                    "no Cargo.toml found here — run this inside a Pebbles project (or `pebbles new <name>`)",
+                );
+                return ExitCode::FAILURE;
+            };
+            match package_name(&project) {
+                Some(name) => (project, name),
+                None => {
+                    // A workspace root (no [package]) — the user must pick a member.
+                    term::error("this is a Cargo workspace — choose a package to run:");
+                    list_members(&project);
+                    println!("  e.g. pebbles run -p gallery");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
     };
-    let Some(bin) = package_name(&project) else {
-        term::error("could not read the package name from Cargo.toml");
-        return ExitCode::FAILURE;
-    };
-    let watch_dirs = read_watch_dirs(&project);
+
+    // Where the binary lands: the workspace target if in a workspace, else the
+    // package's own target (a standalone `pebbles new` project).
+    let target_root = workspace_root.clone().unwrap_or_else(|| member_dir.clone());
+
+    let mut watch_dirs = read_watch_dirs(&member_dir);
+    for w in &o.extra_watch {
+        let p = target_root.join(w);
+        if p.exists() {
+            watch_dirs.push(p);
+        } else if Path::new(w).exists() {
+            watch_dirs.push(PathBuf::from(w));
+        }
+    }
 
     term::banner(&format!(
         "pebbles run — {bin} ({}, {})",
@@ -66,7 +129,7 @@ pub fn run(args: &[String]) -> ExitCode {
     let running = Arc::new(AtomicBool::new(true));
     install_sigint(running.clone());
 
-    let bin_path = target_bin(&project, &bin, o.release);
+    let bin_path = target_bin(&target_root, &bin, o.release);
 
     loop {
         if !running.load(Ordering::Relaxed) {
@@ -75,9 +138,9 @@ pub fn run(args: &[String]) -> ExitCode {
         // 1. Build.
         let t = Instant::now();
         term::step("building…");
-        if !cargo_build(&project, o.release) {
+        if !cargo_build(&target_root, &bin, o.release) {
             term::error("build failed — fix the errors above; waiting for a change…");
-            if !o.reload || !wait_for_change(&project, &watch_dirs, &running) {
+            if !o.reload || !wait_for_change(&member_dir, &watch_dirs, &running) {
                 return ExitCode::FAILURE;
             }
             continue;
@@ -97,7 +160,7 @@ pub fn run(args: &[String]) -> ExitCode {
 
         // 3. Watch for a source change or the app exiting.
         let outcome = if o.reload {
-            watch_until_change_or_exit(&project, &watch_dirs, &mut child, &running)
+            watch_until_change_or_exit(&member_dir, &watch_dirs, &mut child, &running)
         } else {
             let status = child.wait();
             drop(status);
@@ -112,14 +175,14 @@ pub fn run(args: &[String]) -> ExitCode {
             Outcome::Exited if !o.reload => break,
             Outcome::Exited => {
                 term::warn("app exited — waiting for a change to restart…");
-                if !wait_for_change(&project, &watch_dirs, &running) {
+                if !wait_for_change(&member_dir, &watch_dirs, &running) {
                     break;
                 }
             }
             Outcome::Changed(file) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                term::hot(&format!("changed {} — restarting", short(&project, &file)));
+                term::hot(&format!("changed {} — restarting", short(&member_dir, &file)));
             }
         }
     }
@@ -134,9 +197,11 @@ enum Outcome {
     Interrupted,
 }
 
-fn cargo_build(project: &Path, release: bool) -> bool {
+fn cargo_build(run_dir: &Path, package: &str, release: bool) -> bool {
+    // `-p <package>` works whether `run_dir` is a workspace root or a standalone
+    // package, so a sample builds the same way as a scaffolded app.
     let mut cmd = Command::new("cargo");
-    cmd.arg("build").current_dir(project);
+    cmd.arg("build").arg("-p").arg(package).current_dir(run_dir);
     if release {
         cmd.arg("--release");
     }
@@ -285,9 +350,14 @@ fn find_project(start: &Path) -> Option<PathBuf> {
     None
 }
 
-/// The `name = "..."` under `[package]` in Cargo.toml (naive but dependency-free).
+/// The `name = "..."` under `[package]` in a Cargo.toml file (naive, dep-free).
 fn package_name(project: &Path) -> Option<String> {
     let text = std::fs::read_to_string(project.join("Cargo.toml")).ok()?;
+    package_name_from(&text)
+}
+
+/// The `[package] name` from Cargo.toml text (`None` for a `[workspace]`-only root).
+fn package_name_from(text: &str) -> Option<String> {
     let mut in_package = false;
     for line in text.lines() {
         let t = line.trim();
@@ -324,9 +394,79 @@ fn read_watch_dirs(project: &Path) -> Vec<PathBuf> {
     vec![project.join("src")]
 }
 
-fn target_bin(project: &Path, bin: &str, release: bool) -> PathBuf {
+fn target_bin(target_root: &Path, bin: &str, release: bool) -> PathBuf {
     let profile = if release { "release" } else { "debug" };
-    project.join("target").join(profile).join(bin)
+    target_root.join("target").join(profile).join(bin)
+}
+
+/// The nearest ancestor whose Cargo.toml declares `[workspace]` — a member's
+/// binary is built into THAT directory's `target/`, not the member's own.
+fn find_workspace_root(start: &Path) -> Option<PathBuf> {
+    let mut dir = Some(start);
+    while let Some(d) = dir {
+        let manifest = d.join("Cargo.toml");
+        if manifest.is_file()
+            && std::fs::read_to_string(&manifest).is_ok_and(|t| has_workspace_table(&t))
+        {
+            return Some(d.to_path_buf());
+        }
+        dir = d.parent();
+    }
+    None
+}
+
+fn has_workspace_table(toml: &str) -> bool {
+    toml.lines().any(|l| l.trim() == "[workspace]")
+}
+
+/// Find a workspace member by package name — walks the tree under `root` for a
+/// Cargo.toml whose `[package] name` matches. Returns the member's directory.
+fn find_member(root: &Path, name: &str) -> Option<PathBuf> {
+    let mut found = None;
+    walk_manifests(root, &mut |dir, pkg| {
+        if pkg == name {
+            found = Some(dir.to_path_buf());
+        }
+    });
+    found
+}
+
+/// Print every runnable package under `root` (for error hints).
+fn list_members(root: &Path) {
+    let mut names = Vec::new();
+    walk_manifests(root, &mut |_dir, pkg| names.push(pkg.to_string()));
+    names.sort();
+    names.dedup();
+    if names.is_empty() {
+        return;
+    }
+    println!("  packages: {}", names.join(", "));
+}
+
+/// Visit every `Cargo.toml` with a `[package] name` under `root` (skips target/.git).
+fn walk_manifests(root: &Path, f: &mut dyn FnMut(&Path, &str)) {
+    fn go(dir: &Path, f: &mut dyn FnMut(&Path, &str), depth: usize) {
+        if depth > 4 {
+            return; // members live shallow (crates/*, examples/*)
+        }
+        let manifest = dir.join("Cargo.toml");
+        if manifest.is_file()
+            && let Ok(text) = std::fs::read_to_string(&manifest)
+            && let Some(name) = package_name_from(&text)
+        {
+            f(dir, &name);
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if entry.file_type().is_ok_and(|t| t.is_dir())
+                && !path.file_name().is_some_and(|n| n == "target" || n == ".git")
+            {
+                go(&path, f, depth + 1);
+            }
+        }
+    }
+    go(root, f, 0);
 }
 
 fn short(project: &Path, file: &Path) -> String {
