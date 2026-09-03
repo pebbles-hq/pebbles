@@ -108,36 +108,12 @@ impl Runner {
                     let dy = if storm.next() & 1 == 0 { lines } else { -lines } * LINE_SCROLL;
                     let _ = wheel_with_overlay(&mut self.ui, p, dy);
                 }
-                // Click (press + release on the same point), sometimes a double-tap.
+                // Click — through the REAL pointer pipeline (dispatch_pointer), the
+                // exact path a winit MouseInput takes, so the storm tests it too.
                 6..=7 => {
                     self.cursor = p;
-                    if self.ui.begin_scrollbar_drag(p) {
-                        self.ui.end_scrollbar_drag();
-                        continue;
-                    }
-                    pebbles_core::focus::set_focus(None);
-                    let armed = self.ui.tap_target_at(p);
-                    let claimed = self.ui.begin_content_drag(p);
-                    let pan = if claimed { None } else { self.ui.pan_target_at(p) };
-                    if let Some(t) = pan {
-                        let _ = self.ui.dispatch_pan_start(t, p);
-                    }
-                    let _ = self.ui.dispatch_pointer_down(p);
-                    // release
-                    let _ = self.ui.end_content_drag(p);
-                    if let Some(t) = pan {
-                        self.ui.dispatch_pan_end(t, p);
-                    }
-                    let _ = self.ui.dispatch_pointer_up(p);
-                    let up_target = self.ui.tap_target_at(p);
-                    if up_target.is_some() && up_target == armed {
-                        if storm.next() % 4 == 0 {
-                            let _ = self.ui.dispatch_double_tap(p);
-                        }
-                        let _ = self.ui.dispatch_tap(p);
-                    } else if let Some(a) = armed {
-                        let _ = self.ui.dispatch_tap_cancel(a);
-                    }
+                    let _ = self.dispatch_pointer(p, MouseButton::Left, ElementState::Pressed);
+                    let _ = self.dispatch_pointer(p, MouseButton::Left, ElementState::Released);
                 }
                 // Drag: press, a few moves, release — pans, text drag-select, sliders.
                 8 => {

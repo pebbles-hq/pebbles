@@ -320,6 +320,18 @@ impl Runner {
         } else {
             log::trace(log::Cat::Frame, line());
         }
+        // Content-change tripwire: when the render-object count changes, the
+        // on-screen content actually changed this frame (e.g. a navigation swapped
+        // screens). If you navigate and this NEVER fires, the content isn't
+        // updating — the reconcile isn't producing a new tree.
+        let objects = self.ui.render_tree().node_count();
+        if objects != self.last_objects {
+            log::debug(
+                log::Cat::Frame,
+                format!("content changed: {} → {objects} objects (frame {fno})", self.last_objects),
+            );
+            self.last_objects = objects;
+        }
     }
 
     /// Render one secondary window (mirrors [`render`], reusing the shared scene,

@@ -65,6 +65,7 @@ pub fn app() -> impl IntoWidget {
     install_tour();
     let c = theme().colors;
     let current = route().get();
+    pebbles::core::log::debug(pebbles::core::log::Cat::Nav, format!("app() render → route={current}"));
 
     // ----- side navigation -----
     let brand = Padding::new(

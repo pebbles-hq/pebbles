@@ -250,6 +250,9 @@ pub(super) struct Runner {
 
     /// Monotonic frame counter — the diagnostic heartbeat (see `render`).
     frame_no: u64,
+    /// Last frame's render-object count — a change means the on-screen content
+    /// actually changed (e.g. a navigation swapped screens). Logged in dev mode.
+    last_objects: usize,
 
     /// Dev-only synthetic-input monkey (`PEBBLES_INPUT_STORM=1`); `None` in
     /// normal runs. See [`storm`].
@@ -305,6 +308,7 @@ impl Runner {
             windows: HashMap::new(),
             window_by_id: HashMap::new(),
             frame_no: 0,
+            last_objects: 0,
             storm: storm::InputStorm::from_env(),
         }
     }
@@ -343,6 +347,103 @@ impl Runner {
         let parent =
             if chain.len() >= 2 { format!("{} › ", chain[chain.len() - 2].name) } else { String::new() };
         format!("{parent}{}{src}", deepest.name)
+    }
+
+    /// The pointer press/release pipeline — the single source of truth for
+    /// scrollbar grab, long-press, content/pan drag, and tap/double-tap
+    /// resolution. Called by the real `MouseInput` handler AND by the synthetic
+    /// input storm, so the storm exercises the exact real path. Returns whether
+    /// the UI consumed the event (the caller requests a redraw if so).
+    pub(super) fn dispatch_pointer(
+        &mut self,
+        cursor: Offset,
+        button: MouseButton,
+        state: ElementState,
+    ) -> bool {
+        match (button, state) {
+            (MouseButton::Left, ElementState::Pressed) if self.ui.begin_scrollbar_drag(cursor) => {
+                // Grabbed a scrollbar — it captures the pointer until release.
+                true
+            }
+            (MouseButton::Left, ElementState::Pressed) => {
+                // Blur first: a press clears focus, then the widget under the
+                // pointer (button/field) re-grabs it in its own press handler.
+                pebbles_core::focus::set_focus(None);
+                // Arm the tap (for tap vs. cancel) and the long-press.
+                self.armed_tap = self.ui.tap_target_at(cursor);
+                self.lp_target = self.ui.long_press_target_at(cursor);
+                self.lp_active = false;
+                self.press_deadline = self.lp_target.map(|_| Instant::now() + LONG_PRESS);
+                if let Some(t) = self.lp_target {
+                    self.ui.dispatch_long_press_down(t, cursor);
+                }
+                // A drag-scroll viewport claims the drag first (A4); a pan-hungry
+                // descendant under the pointer wins instead.
+                let claimed = self.ui.begin_content_drag(cursor);
+                self.pan_target = if claimed { None } else { self.ui.pan_target_at(cursor) };
+                let panned = self.pan_target.is_some_and(|t| self.ui.dispatch_pan_start(t, cursor));
+                self.ui.dispatch_pointer_down(cursor) || panned || claimed
+            }
+            (MouseButton::Left, ElementState::Released) => {
+                // End any scrollbar / content drag.
+                self.ui.end_scrollbar_drag();
+                let drag_ended = self.ui.end_content_drag(cursor);
+                if let Some(t) = self.pan_target.take() {
+                    self.ui.dispatch_pan_end(t, cursor);
+                }
+                // Resolve the long-press gesture.
+                if self.lp_active {
+                    if let Some(t) = self.lp_target.take() {
+                        self.ui.dispatch_long_press_end(t, cursor);
+                    }
+                    self.lp_active = false;
+                } else if self.press_deadline.is_some() {
+                    if let Some(t) = self.lp_target.take() {
+                        self.ui.dispatch_long_press_cancel(t);
+                    }
+                }
+                self.press_deadline = None;
+                let up = self.ui.dispatch_pointer_up(cursor);
+                let up_target = self.ui.tap_target_at(cursor);
+                let armed = self.armed_tap.take();
+                let result = if up_target.is_some() && up_target == armed {
+                    // Released over the same widget → tap / double-tap.
+                    let now = Instant::now();
+                    let is_double = self.last_tap_target == up_target
+                        && self.last_click.is_some_and(|t| now.duration_since(t) <= DOUBLE_CLICK);
+                    self.last_click = Some(now);
+                    self.last_tap_target = up_target;
+                    if is_double && self.ui.dispatch_double_tap(cursor) {
+                        true
+                    } else {
+                        self.ui.dispatch_tap(cursor)
+                    }
+                } else if let Some(a) = armed {
+                    // Released off the armed widget → cancel.
+                    self.ui.dispatch_tap_cancel(a)
+                } else {
+                    false
+                };
+                up || result || drag_ended
+            }
+            (MouseButton::Right, ElementState::Pressed) => {
+                self.secondary_down_handled = self.ui.dispatch_secondary_tap_down(cursor);
+                self.secondary_down_handled
+            }
+            (MouseButton::Right, ElementState::Released) => {
+                let up = self.ui.dispatch_secondary_tap_up(cursor);
+                let tap = self.ui.dispatch_secondary_tap(cursor);
+                if !up && !tap && !self.secondary_down_handled {
+                    // Nothing claimed the right-click — open the global menu.
+                    pebbles_widgets::global_menu::show(cursor.x, cursor.y);
+                    self.request_redraw();
+                }
+                up || tap
+            }
+            (MouseButton::Middle, ElementState::Pressed) => self.ui.dispatch_tertiary_down(cursor),
+            (MouseButton::Middle, ElementState::Released) => self.ui.dispatch_tertiary_up(cursor),
+            _ => false,
+        }
     }
 
     /// Route an unclaimed key press to scroll the view under the pointer.
@@ -567,106 +668,7 @@ impl ApplicationHandler for Runner {
                     eprint!("{}", pebbles_render::format_chain(&chain));
                     return;
                 }
-                let handled = match (button, state) {
-                    (MouseButton::Left, ElementState::Pressed)
-                        if self.ui.begin_scrollbar_drag(cursor) =>
-                    {
-                        // Grabbed a scrollbar — it captures the pointer until release.
-                        true
-                    }
-                    (MouseButton::Left, ElementState::Pressed) => {
-                        // Blur first: a press clears focus, then the widget under the
-                        // pointer (button/field) re-grabs it in its own press handler.
-                        // A press on empty space (or a non-focusable widget) stays
-                        // blurred — the standard "tap outside unfocuses" behavior.
-                        pebbles_core::focus::set_focus(None);
-                        // Arm the tap (for tap vs. cancel) and the long-press.
-                        self.armed_tap = self.ui.tap_target_at(cursor);
-                        self.lp_target = self.ui.long_press_target_at(cursor);
-                        self.lp_active = false;
-                        self.press_deadline =
-                            self.lp_target.map(|_| Instant::now() + LONG_PRESS);
-                        if let Some(t) = self.lp_target {
-                            self.ui.dispatch_long_press_down(t, cursor);
-                        }
-                        // A drag-scroll viewport claims the drag first (A4); a
-                        // pan-hungry descendant under the pointer wins instead.
-                        let claimed = self.ui.begin_content_drag(cursor);
-                        self.pan_target =
-                            if claimed { None } else { self.ui.pan_target_at(cursor) };
-                        let panned =
-                            self.pan_target.is_some_and(|t| self.ui.dispatch_pan_start(t, cursor));
-                        self.ui.dispatch_pointer_down(cursor) || panned || claimed
-                    }
-                    (MouseButton::Left, ElementState::Released) => {
-                        // End any scrollbar / content drag.
-                        self.ui.end_scrollbar_drag();
-                        let drag_ended = self.ui.end_content_drag(cursor);
-                        if let Some(t) = self.pan_target.take() {
-                            self.ui.dispatch_pan_end(t, cursor);
-                        }
-                        // Resolve the long-press gesture.
-                        if self.lp_active {
-                            if let Some(t) = self.lp_target.take() {
-                                self.ui.dispatch_long_press_end(t, cursor);
-                            }
-                            self.lp_active = false;
-                        } else if self.press_deadline.is_some() {
-                            if let Some(t) = self.lp_target.take() {
-                                self.ui.dispatch_long_press_cancel(t);
-                            }
-                        }
-                        self.press_deadline = None;
-                        let up = self.ui.dispatch_pointer_up(cursor);
-                        let up_target = self.ui.tap_target_at(cursor);
-                        let armed = self.armed_tap.take();
-                        let result = if up_target.is_some() && up_target == armed {
-                            // Released over the same widget → tap / double-tap. A
-                            // double-tap requires both clicks on the SAME target.
-                            let now = Instant::now();
-                            let is_double = self.last_tap_target == up_target
-                                && self
-                                    .last_click
-                                    .is_some_and(|t| now.duration_since(t) <= DOUBLE_CLICK);
-                            self.last_click = Some(now);
-                            self.last_tap_target = up_target;
-                            if is_double && self.ui.dispatch_double_tap(cursor) {
-                                true
-                            } else {
-                                self.ui.dispatch_tap(cursor)
-                            }
-                        } else if let Some(a) = armed {
-                            // Released off the armed widget → cancel.
-                            self.ui.dispatch_tap_cancel(a)
-                        } else {
-                            false
-                        };
-                        up || result || drag_ended
-                    }
-                    (MouseButton::Right, ElementState::Pressed) => {
-                        self.secondary_down_handled =
-                            self.ui.dispatch_secondary_tap_down(cursor);
-                        self.secondary_down_handled
-                    }
-                    (MouseButton::Right, ElementState::Released) => {
-                        let up = self.ui.dispatch_secondary_tap_up(cursor);
-                        let tap = self.ui.dispatch_secondary_tap(cursor);
-                        if !up && !tap && !self.secondary_down_handled {
-                            // Nothing claimed the right-click (no widget context
-                            // menu, no blocker) — open the global menu.
-                            pebbles_widgets::global_menu::show(cursor.x, cursor.y);
-                            self.request_redraw();
-                        }
-                        up || tap
-                    }
-                    (MouseButton::Middle, ElementState::Pressed) => {
-                        self.ui.dispatch_tertiary_down(cursor)
-                    }
-                    (MouseButton::Middle, ElementState::Released) => {
-                        self.ui.dispatch_tertiary_up(cursor)
-                    }
-                    _ => false,
-                };
+                let handled = self.dispatch_pointer(cursor, button, state);
                 if handled {
                     self.request_redraw();
                 }
