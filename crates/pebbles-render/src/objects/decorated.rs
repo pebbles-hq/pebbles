@@ -78,6 +78,12 @@ impl RenderObject for RenderDecoratedBox {
             if shadow_rect.width() < 0.5 || shadow_rect.height() < 0.5 {
                 continue;
             }
+            if pebbles_foundation::log::dev_mode() {
+                pebbles_foundation::log::trace(
+                    pebbles_foundation::log::Cat::Gpu,
+                    format!("paint shadow blur {:.0}×{:.0} r={:.1}", shadow_rect.width(), shadow_rect.height(), shadow.blur),
+                );
+            }
             cx.scene.draw_blurred_rounded_rect(
                 Affine::IDENTITY,
                 shadow_rect,
@@ -135,6 +141,12 @@ fn fill_surface(cx: &mut PaintCx<'_>, rect: Rect, size: Size, path: &BezPath, d:
             cx.scene.push_layer(Fill::NonZero, blend, 1.0, Affine::IDENTITY, path);
         }
         if let Some(gradient) = &d.gradient {
+            if pebbles_foundation::log::dev_mode() {
+                pebbles_foundation::log::trace(
+                    pebbles_foundation::log::Cat::Gpu,
+                    format!("paint gradient fill {:.0}×{:.0} @ {:.0},{:.0}", size.width, size.height, rect.x0, rect.y0),
+                );
+            }
             let brush = gradient_brush(gradient, rect);
             cx.scene.fill(Fill::NonZero, Affine::IDENTITY, &brush, None, path);
         } else if let Some(color) = d.color {
@@ -164,6 +176,12 @@ fn fill_surface(cx: &mut PaintCx<'_>, rect: Rect, size: Size, path: &BezPath, d:
             let tx = rect.x0 + (size.width - dw) / 2.0;
             let ty = rect.y0 + (size.height - dh) / 2.0;
             let placement = Affine::translate((tx, ty)) * Affine::scale_non_uniform(sx, sy);
+            if pebbles_foundation::log::dev_mode() {
+                pebbles_foundation::log::trace(
+                    pebbles_foundation::log::Cat::Gpu,
+                    format!("paint image {}×{} (src)", image.image.width, image.image.height),
+                );
+            }
             cx.scene.push_layer(Fill::NonZero, BlendMode::Normal, 1.0, Affine::IDENTITY, path);
             cx.scene.draw_image(image, placement);
             cx.scene.pop_layer();
