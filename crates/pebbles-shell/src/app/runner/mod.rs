@@ -110,11 +110,22 @@ pub(super) fn install_error_handler(device: &wgpu::Device) {
 }
 
 /// Build a vello renderer for `device` (initial setup and error recovery).
+/// `PEBBLES_CPU_RENDER=1` forces vello's CPU pipeline — a workaround for GPU
+/// drivers whose glyph-atlas path is broken (seen on some Intel/Vulkan setups
+/// where the GPU renderer emits `Texture … is invalid` and text fails to draw).
 pub(super) fn new_renderer(device: &wgpu::Device, _queue: &wgpu::Queue) -> Renderer {
+    let use_cpu = std::env::var("PEBBLES_CPU_RENDER").is_ok_and(|v| v == "1" || v == "true");
+    if use_cpu {
+        pebbles_core::log::warn(
+            pebbles_core::log::Cat::Gpu,
+            "PEBBLES_CPU_RENDER — using vello's CPU pipeline (slower, but avoids GPU driver bugs)"
+                .to_string(),
+        );
+    }
     Renderer::new(
         device,
         RendererOptions {
-            use_cpu: false,
+            use_cpu,
             antialiasing_support: AaSupport::all(),
             num_init_threads: None,
             pipeline_cache: None,

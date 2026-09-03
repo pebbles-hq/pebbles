@@ -149,6 +149,15 @@ impl Runner {
         self.ui.layout(&mut self.text, logical);
         let layout = t.elapsed();
 
+        // NaN tripwire (dev mode): a non-finite size/offset becomes a NaN path
+        // coordinate that corrupts vello's GPU glyph atlas and panics its CPU
+        // renderer. Log the offending widget once per frame so it can be fixed.
+        if log::dev_mode()
+            && let Some(bad) = self.ui.render_tree().nan_report()
+        {
+            log::error(log::Cat::Layout, format!("NON-FINITE layout (NaN/∞): {bad}"));
+        }
+
         // 2b. Publish laid-out rects for components using `use_bounds()` (C2 tooltip
         // focus positioning, …); GC keys whose element unmounted.
         {

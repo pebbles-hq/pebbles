@@ -6,6 +6,27 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — the markdown-screen crash, ROOT CAUSE (a non-finite layout size)
+The real cause, found at last with the dev tooling: a widget on the markdown
+screen laid out to **infinite height** (a `RenderDecoratedBox` sized `1×∞`). That
+∞ became a NaN path coordinate that (a) corrupted vello's GPU glyph atlas —
+surfacing as the recurring `Texture … is invalid` warning and blank/broken text —
+and (b) hard-panics vello's CPU renderer (`assertion failed: !n.is_nan()`). It
+was never the renderer or the markdown widget; it was one bad layout size.
+- **The fix**: `layout_child` (the single chokepoint every node size passes
+  through) now **clamps any non-finite (∞/NaN) size** to the finite max
+  constraint, else 0. A layout bug degrades to a visual glitch instead of a
+  GPU-atlas corruption or a crash. Verified: markdown renders cleanly on **both**
+  the GPU and CPU renderers (0 glyph errors, 0 panics); a 90-second tour+storm
+  burn-in over every screen (1 243 navigations) is clean, and the clamp fires
+  only on the one genuinely-buggy widget — no false positives.
+- **Kept visible**: in dev mode the clamp logs the offending widget by name
+  (`clamped non-finite size on RenderDecoratedBox: 1×inf → 1×0 …`) and a
+  `nan_report` tripwire scans each frame, so the underlying sizing bug can still
+  be fixed properly.
+- **Escape hatch**: `PEBBLES_CPU_RENDER=1` forces vello's CPU pipeline for GPU
+  drivers with other issues (slower, but now crash-free on this content).
+
 ### Added — the `pebbles` developer CLI (`crates/pebbles-cli`)
 Flutter-style tooling for a Rust desktop UI, dependency-free (std only):
 - `pebbles new <name>` — scaffold a runnable app (Cargo.toml wired to the local

@@ -69,6 +69,49 @@ impl RenderNode {
     }
 }
 
+/// Replace any non-finite (∞ / NaN) dimension of a laid-out `size` with a finite
+/// value — the finite max constraint if there is one, else 0. A non-finite size
+/// is always a layout bug (a fill/stretch inside an unbounded constraint, a
+/// divide-by-zero); left alone it becomes a NaN path coordinate that corrupts
+/// vello's GPU glyph atlas and hard-panics its CPU renderer. Clamping here — the
+/// single chokepoint every node size passes through — makes a layout bug degrade
+/// to a visual glitch instead of a crash. In dev mode the `nan_report` tripwire
+/// still surfaces the offending widget.
+/// Throttle clamp warnings to once per ~3s per widget name (a persistent bug
+/// re-clamps every frame otherwise).
+fn clamp_should_log(name: &'static str) -> bool {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+    thread_local! {
+        static SEEN: RefCell<HashMap<&'static str, Instant>> = RefCell::new(HashMap::new());
+    }
+    SEEN.with(|seen| {
+        let mut seen = seen.borrow_mut();
+        let now = Instant::now();
+        match seen.get(name) {
+            Some(&t) if now.duration_since(t) < Duration::from_secs(3) => false,
+            _ => {
+                seen.insert(name, now);
+                true
+            }
+        }
+    })
+}
+
+fn sanitize_size(size: Size, constraints: BoxConstraints) -> Size {
+    fn fix(v: f64, max: f64) -> f64 {
+        if v.is_finite() {
+            v
+        } else if max.is_finite() {
+            max
+        } else {
+            0.0
+        }
+    }
+    Size::new(fix(size.width, constraints.max_width), fix(size.height, constraints.max_height))
+}
+
 /// The arena that owns every render object plus the identity of the root.
 #[derive(Default)]
 pub struct RenderTree {
@@ -127,6 +170,47 @@ impl RenderTree {
             .filter(|(_, node)| node.object.as_deref().is_some_and(|o| o.is::<T>()))
             .map(|(id, _)| id)
             .collect()
+    }
+
+    /// Dev diagnostic: the first render node whose size or offset is non-finite
+    /// (NaN / ∞) — such a value becomes a NaN path coordinate that corrupts the
+    /// GPU glyph atlas and hard-panics vello's CPU renderer. Returns the node's
+    /// debug name + the bad numbers so the offending widget can be found.
+    pub fn nan_report(&self) -> Option<String> {
+        fn bad(f: f64) -> bool {
+            !f.is_finite()
+        }
+        // Focus on non-finite SIZE (an ∞ dimension is the root; NaN offsets are
+        // just downstream fallout of positioning against ∞). The SOURCE is the
+        // deepest node with a bad size whose children all have finite size.
+        let size_bad = |id: RenderId| {
+            self.nodes.get(id).is_some_and(|n| bad(n.size.width) || bad(n.size.height))
+        };
+        for (_id, node) in self.nodes.iter() {
+            if !(bad(node.size.width) || bad(node.size.height)) {
+                continue;
+            }
+            if node.children.iter().any(|&c| size_bad(c)) {
+                continue; // a child is the deeper source
+            }
+            let name = node.object.as_deref().map(|ob| ob.debug_name()).unwrap_or("(lifted)");
+            // Walk up to the root so we can see WHICH part of the UI it is.
+            let mut chain = vec![name];
+            let mut cur = node.parent;
+            while let Some(p) = cur {
+                let Some(pn) = self.nodes.get(p) else { break };
+                chain.push(pn.object.as_deref().map(|ob| ob.debug_name()).unwrap_or("(lifted)"));
+                cur = pn.parent;
+            }
+            chain.reverse();
+            return Some(format!(
+                "{name}: size {}×{} — SOURCE of the ∞\n    path: {}",
+                node.size.width,
+                node.size.height,
+                chain.join(" › ")
+            ));
+        }
+        None
     }
 
     /// A human-readable tree dump (debug names + sizes), indented by depth. For
@@ -368,7 +452,7 @@ impl RenderTree {
         };
         let node = &mut self.nodes[root];
         node.object = Some(object);
-        node.size = size;
+        node.size = sanitize_size(size, root_constraints);
         node.offset = Offset::ZERO;
         node.needs_layout = false;
     }
@@ -446,6 +530,29 @@ impl LayoutCx<'_> {
             let mut cx = LayoutCx { tree: &mut *self.tree, current: child, text: &mut *self.text };
             object.layout(&mut cx, constraints)
         };
+        // A non-finite (∞/NaN) size is always a bug — a widget filled an unbounded
+        // constraint (e.g. a fill/stretch inside a scroll view) or divided by zero.
+        // It would become a NaN path coordinate that corrupts the GPU glyph atlas
+        // and hard-panics vello's CPU renderer, so clamp it here at the one
+        // chokepoint every child size passes through. The clamp target is the
+        // finite max constraint, else 0.
+        let clean = sanitize_size(size, constraints);
+        if clean != size && pebbles_foundation::log::dev_mode() {
+            let name = object.debug_name();
+            // The deepest node lays out first, so the first clamp of a frame names
+            // the SOURCE widget. Throttled so it doesn't spam every frame.
+            if clamp_should_log(name) {
+                pebbles_foundation::log::warn(
+                    pebbles_foundation::log::Cat::Layout,
+                    format!(
+                        "clamped non-finite size on {name}: {}×{} → {}×{} (a fill/stretch in an \
+                         unbounded constraint, or a divide-by-zero — fix the widget's sizing)",
+                        size.width, size.height, clean.width, clean.height
+                    ),
+                );
+            }
+        }
+        let size = clean;
         let node = &mut self.tree.nodes[child];
         node.object = Some(object);
         node.size = size;
