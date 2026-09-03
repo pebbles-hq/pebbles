@@ -75,12 +75,18 @@ pub fn file_explorer_screen() -> Element {
     let explorer = file_explorer(tree);
 
     screen("File Explorer")
-        .description("A standalone, VSCode-grade file explorer: the tree is the widget, the chrome around it is YOURS (no built-in open-folder UI — wire your own buttons to the action closures). It runs over REAL directories (open_folder(..): lazy loading, on-disk create/rename/delete/move/copy) or fully in-memory. Right-click menus are built in and independent of the global-menu switch. Keyboard: ↑/↓ walk (Shift extends), →/← expand/collapse, Home/End jump, F2 renames (prefilled, stem selected), Delete, Mod+A selects all (even from idle), Mod+C/X/V copy/cut/paste (cut rows dim; Escape cancels), Escape clears. Rows show the full state set: hover, selected (accent), active (focus ring), cut (dimmed), drop target.")
+        .description("A standalone, VSCode-grade file explorer: the tree is the widget, the chrome around it is YOURS (no built-in open-folder UI or filter box — wire your own inputs to the control surface). It runs over REAL directories (open_folder(..): lazy loading, on-disk create/rename/delete/move/copy) or fully in-memory. Right-click menus are built in and independent of the global-menu switch. Keyboard: ↑/↓ walk (Shift extends), Mod+↑/↓ move the FOCUS ring without selecting + Mod+Space toggles it in (one-by-one multi-select), →/← expand/collapse, Home/End jump, F2 renames (prefilled, stem selected), Delete, Mod+A selects all (even from idle), Mod+C/X/V copy/cut/paste (cut rows dim; Escape cancels), Escape clears. Rows show the full state set: hover, selected (accent), focus ring, cut (dimmed), drop target.")
         .body(children![
             doc("The explorer — bring your own chrome")
-                .description("Every button here is app code calling the action closures (new_file, rename_selected, …) — design the surrounding UI however your product needs. The demo starts on an in-memory project; Open folder switches it to the real disk.")
+                .description("Everything here is app code driving the control surface: the filter is a plain text_field bound to explorer.filter() (the widget ships no filter box), the buttons call the action closures, Reveal expands + selects a node programmatically (reveal + select_only — the 'Reveal in Explorer' hook). The demo starts on an in-memory project; Open folder switches to the real disk.")
                 .body(
                     column(children![
+                        text_field()
+                            .placeholder("Filter files… (bound to explorer.filter())")
+                            .leading(lucide::SEARCH)
+                            .bind(explorer.filter())
+                            .width(320.0),
+                        gap_h(8.0),
                         wrap(children![
                             button("Open folder").variant(ButtonVariant::Primary).size(ButtonSize::Sm).on_pressed({
                                 let explorer = explorer;
@@ -106,6 +112,21 @@ pub fn file_explorer_screen() -> Element {
                             button("Rename").variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(explorer.rename_selected()),
                             button("Delete").variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(explorer.delete_selected()),
                             button("Collapse all").variant(ButtonVariant::Ghost).size(ButtonSize::Sm).on_pressed(explorer.collapse_all()),
+                            button("Expand all").variant(ButtonVariant::Ghost).size(ButtonSize::Sm).on_pressed(move || explorer.expand_all()),
+                            button("Reveal TODO.md").variant(ButtonVariant::Ghost).size(ButtonSize::Sm).on_pressed({
+                                let tree = tree;
+                                move || {
+                                    fn find(nodes: &[FsNode], name: &str) -> Option<u64> {
+                                        nodes.iter().find_map(|n| {
+                                            (n.name == name).then_some(n.id).or_else(|| find(&n.children, name))
+                                        })
+                                    }
+                                    if let Some(id) = find(&tree.peek().root, "TODO.md") {
+                                        explorer.reveal(id);
+                                        explorer.select_only(id);
+                                    }
+                                }
+                            }),
                         ])
                         .spacing(6.0),
                         gap_h(10.0),

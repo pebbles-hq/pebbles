@@ -22,6 +22,15 @@ All notable changes to Pebbles are documented here. The format follows
   entry per render.
 - `ContextMenu::on_open` — a hook that runs just before the menu opens (e.g.
   sync selection to the clicked row).
+- File explorer outside-control surface: a bindable `filter()` signal (wire
+  any input; live pruning — matched folders keep their subtree, folders
+  force-expand while filtering, keyboard navigation walks exactly the filtered
+  rows), a focus row independent of the selection (`active_row()`, rendered
+  as the ring; Mod+↑/↓ walks it without selecting, Mod+Space toggles it in —
+  one-by-one keyboard multi-select), and programmatic control: public
+  `reveal(id)` ("Reveal in Explorer"), `expand_all()`, `detach_folder()`.
+  Range anchors (Shift-click / Shift-arrows) follow the focus row while it
+  remains selected.
 - File explorer icon themes: `FileExplorer::set_icon_theme(fn)` /
   `clear_icon_theme` / `resolved_icon` — a VSCode-style resolver mapping every
   node (+ open state) to any of the ~1800 bundled lucide glyphs and an

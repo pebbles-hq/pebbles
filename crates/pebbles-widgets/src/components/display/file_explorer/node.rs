@@ -10,6 +10,8 @@ pub(super) struct NodeProps {
     pub(super) explorer: FileExplorer,
     pub(super) node: FsNode,
     pub(super) depth: usize,
+    /// Filtering: an ancestor's name already matched (this subtree stays whole).
+    pub(super) anc_match: bool,
 }
 
 /// One tree row: indent, twistie, glyph, label — with select/expand (Ctrl/Shift
@@ -20,12 +22,16 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     let explorer = p.explorer;
     let node = &p.node;
     let is_folder = node.kind == FsKind::Folder;
-    let expanded = is_folder && explorer.expanded.get().contains(&node.id);
+    let q = explorer.filter.get().trim().to_lowercase();
+    let filtering = !q.is_empty();
+    let expanded =
+        is_folder && (explorer.expanded.get().contains(&node.id) || filtering);
     let sel = explorer.selected.get();
     let selected = sel.contains(&node.id);
-    // The ACTIVE row (the last selected — keyboard/rename target) gets the
-    // focus ring on top of the selection tint, VSCode-style.
-    let active = selected && sel.last() == Some(&node.id);
+    // The FOCUS row gets the ring — driven by the focus signal (Mod+↑/↓ walks
+    // it without selecting), falling back to the selection's active end.
+    let active =
+        explorer.active.get().or_else(|| sel.last().copied()) == Some(node.id);
     let renaming = explorer.renaming.get() == Some(node.id);
     let dragging = explorer.dragging.get();
     let dragged = dragging && selected;
@@ -210,11 +216,15 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
 
     let mut kids = vec![row_widget];
     if is_folder && expanded && !renaming {
+        let anc_match = p.anc_match || name_matches(&p.node, &q);
         for child in &node.children {
+            if filtering && !filter_keeps(child, &q, anc_match) {
+                continue;
+            }
             kids.push(
                 component_props(
                     render_node,
-                    NodeProps { explorer, node: child.clone(), depth: p.depth + 1 },
+                    NodeProps { explorer, node: child.clone(), depth: p.depth + 1, anc_match },
                 )
                 .into_widget(),
             );

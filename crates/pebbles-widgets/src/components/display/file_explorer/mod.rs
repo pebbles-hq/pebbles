@@ -27,14 +27,26 @@
 //!
 //! **Keyboard** (every binding is conditional — it declines when it doesn't
 //! apply, so nothing is hijacked): **↑/↓** walk the visible rows (**Shift**
-//! extends), **→** expands / steps into, **←** collapses / jumps to the parent,
-//! **Home/End** jump to the first/last row, **F2** renames (the editor opens
-//! PREFILLED with the current name, stem selected — typing replaces the name,
-//! arrows edit in place), **Delete** deletes, **Mod+A** selects all visible
-//! (works from idle), **Mod+C/X/V** copy/cut/paste (cut rows dim; Copy
-//! duplicates whole subtrees, on disk too in filesystem mode), **Escape**
-//! cancels a pending cut/copy, then clears the selection. A focused editor
-//! always wins its own keys first (typing, Ctrl+A/C/X/V in the rename field).
+//! extends), **Mod+↑/↓** move the FOCUS ring without selecting and
+//! **Mod+Space** toggles the focused row in/out (one-by-one multi-select, the
+//! Windows/VSCode pattern), **→** expands / steps into, **←** collapses /
+//! jumps to the parent, **Home/End** jump to the first/last row, **F2**
+//! renames (the editor opens PREFILLED with the current name, stem selected),
+//! **Delete** deletes, **Mod+A** selects all visible (works from idle),
+//! **Mod+C/X/V** copy/cut/paste (cut rows dim; Copy duplicates whole subtrees,
+//! on disk too in filesystem mode), **Escape** cancels a pending cut/copy,
+//! then clears the selection. A focused editor always wins its own keys first.
+//!
+//! **Controllable from outside** — the widget ships the tree, you ship the
+//! chrome: bind any input to [`filter`](FileExplorer::filter) (live pruning,
+//! matched folders keep their subtree, folders force-expand while filtering,
+//! the keyboard walks exactly the filtered rows), drive
+//! [`selection`](FileExplorer::selection)/[`expanded`](FileExplorer::expanded)/
+//! [`active_row`](FileExplorer::active_row) directly, and use
+//! [`reveal`](FileExplorer::reveal) + [`select_only`](FileExplorer::select_only)
+//! for "Reveal in Explorer", [`expand_all`](FileExplorer::expand_all)/
+//! [`collapse_all`](FileExplorer::collapse_all), [`open_folder`](FileExplorer::open_folder)/
+//! [`detach_folder`](FileExplorer::detach_folder).
 //!
 //! **Icons are themable** ([`set_icon_theme`](FileExplorer::set_icon_theme) —
 //! the hook an IDE's icon theming plugs into): a resolver maps every node to
@@ -81,6 +93,21 @@ use tree::{copy_path, read_dir, unique_name};
 /// [`FileExplorer::set_icon_theme`] — the hook an IDE's icon theming plugs into.
 pub(super) type IconTheme = Rc<dyn Fn(&FsNode, bool) -> Option<(IconData, Option<Color>)>>;
 
+/// Whether `n`'s own name matches the (lowercased) filter query.
+pub(super) fn name_matches(n: &FsNode, q: &str) -> bool {
+    !q.is_empty() && n.name.to_lowercase().contains(q)
+}
+
+/// The filter rule: with a non-empty query a node stays visible when its name
+/// matches, an ANCESTOR's name matched (`anc` — a matched folder shows its
+/// contents), or any descendant matches.
+pub(super) fn filter_keeps(n: &FsNode, q: &str, anc: bool) -> bool {
+    fn descendant(n: &FsNode, q: &str) -> bool {
+        name_matches(n, q) || n.children.iter().any(|c| descendant(c, q))
+    }
+    q.is_empty() || anc || descendant(n, q)
+}
+
 /// What a clipboard entry does on paste.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum ClipMode {
@@ -111,6 +138,11 @@ pub struct FileExplorer {
     pub(super) clipboard: Signal<Option<(Vec<u64>, ClipMode)>>,
     /// The installed icon theme, if any (see [`set_icon_theme`](Self::set_icon_theme)).
     pub(super) icon_theme: Signal<Option<IconTheme>>,
+    /// The keyboard-focus row (the ring) — independent of the selection, so
+    /// Mod+↑/↓ can walk rows without selecting (toggle with Mod+Space).
+    pub(super) active: Signal<Option<u64>>,
+    /// The live filter query (case-insensitive substring) — bind your own input.
+    pub(super) filter: Signal<String>,
 }
 
 /// Create an explorer over `tree` (the app's `Signal<FileTree>`). Call inside
@@ -130,6 +162,8 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         rename_buf: create_signal(String::new()),
         clipboard: create_signal(None),
         icon_theme: create_signal(None),
+        active: create_signal(None),
+        filter: create_signal(String::new()),
     };
     explorer.install_keys();
     explorer
@@ -187,6 +221,36 @@ impl FileExplorer {
             IconKind::File.data()
         };
         (d, node.color)
+    }
+
+    /// The live filter query — **bind your own input to it**:
+    /// `text_field().bind(explorer.filter())`. Non-empty: only nodes whose name
+    /// matches (case-insensitive substring), sits under a matching folder, or
+    /// contains a match are shown, with folders force-expanded; the keyboard
+    /// walks the filtered rows.
+    pub fn filter(&self) -> Signal<String> {
+        self.filter
+    }
+
+    /// The keyboard-focus row (rendered with the ring), independent of the
+    /// selection. Move it with Mod+↑/↓; Mod+Space toggles it into the selection.
+    pub fn active_row(&self) -> Signal<Option<u64>> {
+        self.active
+    }
+
+    /// Expand every folder.
+    pub fn expand_all(&self) {
+        fn collect(nodes: &[FsNode], out: &mut HashSet<u64>) {
+            for n in nodes {
+                if n.kind == FsKind::Folder {
+                    out.insert(n.id);
+                    collect(&n.children, out);
+                }
+            }
+        }
+        let mut all = HashSet::new();
+        collect(&self.tree.peek().root, &mut all);
+        self.expanded.set(all);
     }
 
     /// The expansion set (read it, or drive it yourself).
@@ -360,6 +424,7 @@ impl FileExplorer {
             });
         }
         self.selected.set(Vec::new());
+        self.active.set(None);
         self.renaming.set(None);
     }
 
@@ -398,31 +463,44 @@ impl FileExplorer {
         }
     }
 
-    /// The active node — the LAST selected one (rename/new-node targets).
+    /// The active node: the keyboard-focus row when set (and still present),
+    /// else the LAST selected one (rename/new-node/paste targets).
     fn active(&self) -> Option<u64> {
-        self.selected.get().last().copied()
+        self.active
+            .peek()
+            .filter(|id| self.tree.peek().node(*id).is_some())
+            .or_else(|| self.selected.peek().last().copied())
     }
 
-    /// The visible nodes in display order (folders expanded).
+    /// The visible nodes in display order (folders expanded), honoring the
+    /// filter with the SAME rules the renderer uses — keyboard navigation always
+    /// walks exactly what's on screen.
     fn visible_ids(&self) -> Vec<u64> {
-        fn walk(nodes: &[FsNode], expanded: &HashSet<u64>, out: &mut Vec<u64>) {
+        let q = self.filter.peek().trim().to_lowercase();
+        fn walk(nodes: &[FsNode], expanded: &HashSet<u64>, q: &str, anc: bool, out: &mut Vec<u64>) {
             for n in nodes {
+                if !filter_keeps(n, q, anc) {
+                    continue;
+                }
                 out.push(n.id);
-                if n.kind == FsKind::Folder && expanded.contains(&n.id) {
-                    walk(&n.children, expanded, out);
+                let open = if q.is_empty() { expanded.contains(&n.id) } else { true };
+                if n.kind == FsKind::Folder && open {
+                    walk(&n.children, expanded, q, anc || name_matches(n, q), out);
                 }
             }
         }
         let mut out = Vec::new();
-        walk(&self.tree.peek().root, &self.expanded.peek(), &mut out);
+        walk(&self.tree.peek().root, &self.expanded.peek(), &q, false, &mut out);
         out
     }
 
     pub fn select_only(&self, id: u64) {
         self.selected.set(vec![id]);
+        self.active.set(Some(id));
     }
 
     fn toggle_select(&self, id: u64) {
+        self.active.set(Some(id));
         self.selected.update(|s| {
             if let Some(i) = s.iter().position(|&v| v == id) {
                 s.remove(i);
@@ -434,12 +512,21 @@ impl FileExplorer {
 
     fn range_select(&self, id: u64) {
         let visible = self.visible_ids();
-        let anchor = self.active().and_then(|a| visible.iter().position(|&v| v == a));
+        // The range anchors on the focus row only while it is still SELECTED
+        // (a ctrl-click deselect moves focus but must not anchor), else on the
+        // last selected node.
+        let anchor_id = self
+            .active
+            .peek()
+            .filter(|a| self.selected.peek().contains(a))
+            .or_else(|| self.selected.peek().last().copied());
+        let anchor = anchor_id.and_then(|a| visible.iter().position(|&v| v == a));
         let end = visible.iter().position(|&v| v == id);
         match (anchor, end) {
             (Some(a), Some(b)) => {
                 let (lo, hi) = (a.min(b), a.max(b));
                 self.selected.set(visible[lo..=hi].to_vec());
+                self.active.set(Some(id));
             }
             _ => self.select_only(id),
         }
@@ -458,8 +545,9 @@ impl FileExplorer {
         }
     }
 
-    /// Expand every ancestor of `id` so it is visible.
-    fn reveal(&self, id: u64) {
+    /// Expand every ancestor of `id` so it is visible — the "Reveal in
+    /// Explorer" hook (pair with [`select_only`](Self::select_only)).
+    pub fn reveal(&self, id: u64) {
         let mut cur = self.tree.peek().parent_of(id);
         while let Some(p) = cur {
             self.expanded.update(|e| {
@@ -535,6 +623,15 @@ impl FileExplorer {
         // idle explorer never steals page scrolling).
         create_shortcut_if("Home", move || self.key_jump(true));
         create_shortcut_if("End", move || self.key_jump(false));
+        // Mod+↑/↓ — move the focus row WITHOUT changing the selection, then
+        // Mod+Space toggles the focused row in/out (one-by-one multi-select).
+        create_shortcut_if("Mod+ArrowDown", move || self.key_focus(1));
+        create_shortcut_if("Mod+ArrowUp", move || self.key_focus(-1));
+        create_shortcut_if("Mod+Space", move || {
+            let Some(id) = self.active() else { return false };
+            self.toggle_select(id);
+            true
+        });
         // Arrows — walk the visible rows; Shift extends the selection.
         create_shortcut_if("ArrowDown", move || self.key_step(1, false));
         create_shortcut_if("ArrowUp", move || self.key_step(-1, false));
@@ -693,8 +790,22 @@ impl FileExplorer {
                 s.retain(|&v| v != next);
                 s.push(next); // becomes the new active end of the selection
             });
+            self.active.set(Some(next));
         } else {
             self.select_only(next);
+        }
+        true
+    }
+
+    /// Mod+↑/↓ — move the FOCUS row without touching the selection (the
+    /// Windows/VSCode one-by-one pattern; Mod+Space then toggles it in).
+    fn key_focus(&self, dir: i64) -> bool {
+        let Some(cur) = self.active() else { return false };
+        let visible = self.visible_ids();
+        let Some(pos) = visible.iter().position(|&v| v == cur) else { return false };
+        let next = pos as i64 + dir;
+        if next >= 0 && (next as usize) < visible.len() {
+            self.active.set(Some(visible[next as usize]));
         }
         true
     }
@@ -838,20 +949,24 @@ impl FileExplorer {
     /// root.
     pub fn tree(self) -> impl IntoWidget {
         let model = self.tree.get();
+        let q = self.filter.get().trim().to_lowercase();
         let mut kids: Vec<AnyWidget> = Vec::new();
         for node in &model.root {
+            if !filter_keeps(node, &q, false) {
+                continue;
+            }
             kids.push(
                 component_props(
                     render_node,
-                    NodeProps { explorer: self, node: node.clone(), depth: 0 },
+                    NodeProps { explorer: self, node: node.clone(), depth: 0, anc_match: false },
                 )
                 .into_widget(),
             );
         }
         if kids.is_empty() {
-            kids.push(
-                Padding::new(EdgeInsets::all(12.0), muted("Empty — add a file or folder.")).into_widget(),
-            );
+            let hint =
+                if q.is_empty() { "Empty — add a file or folder." } else { "No matches." };
+            kids.push(Padding::new(EdgeInsets::all(12.0), muted(hint)).into_widget());
         }
         // Fill the parent's height when it gives one (a panel), shrink-wrap
         // otherwise — the empty space stays part of the explorer (right-click

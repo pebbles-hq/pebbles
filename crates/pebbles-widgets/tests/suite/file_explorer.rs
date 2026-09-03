@@ -700,3 +700,91 @@ fn icon_theme_resolution_priority() {
     ex().clear_icon_theme();
     assert_eq!(ex().resolved_icon(&file, false).0, IconKind::File.data());
 }
+
+// ---------------------------------------------------------------------------
+// Focus walk (Mod+arrows + Mod+Space) and the external filter
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mod_arrows_walk_focus_and_mod_space_toggles_one_by_one() {
+    use pebbles_core::{Mods, ShortcutKey, shortcuts};
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let _ = tree_sig();
+    pebbles_core::keyboard::set_modifiers(false, false, false, false);
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+    let w = ui.window_id();
+    #[cfg(target_os = "macos")]
+    let modk = Mods { meta: true, ..Mods::default() };
+    #[cfg(not(target_os = "macos"))]
+    let modk = Mods { ctrl: true, ..Mods::default() };
+    // Ids: src=0 (collapsed folder), main.rs=1 (inside), README.md=2.
+
+    // Select src, then walk the FOCUS down without touching the selection.
+    ex().select_only(0);
+    assert_eq!(ex().active_row().peek(), Some(0), "selecting focuses");
+    assert!(shortcuts::dispatch(w, modk, ShortcutKey::ArrowDown), "Mod+Down moves focus");
+    assert_eq!(ex().active_row().peek(), Some(2), "focus walked to README (src collapsed)");
+    assert_eq!(ex().selection().peek(), vec![0], "…while the selection stayed put");
+
+    // Mod+Space toggles the focused row INTO the selection (one-by-one).
+    assert!(shortcuts::dispatch(w, modk, ShortcutKey::Space), "Mod+Space toggles");
+    assert_eq!(ex().selection().peek(), vec![0, 2], "focused row joined the selection");
+    assert!(shortcuts::dispatch(w, modk, ShortcutKey::Space));
+    assert_eq!(ex().selection().peek(), vec![0], "…and toggles back out");
+
+    // Mod+Up walks back.
+    assert!(shortcuts::dispatch(w, modk, ShortcutKey::ArrowUp));
+    assert_eq!(ex().active_row().peek(), Some(0));
+}
+
+#[test]
+fn external_filter_prunes_the_tree_and_keyboard_follows() {
+    use pebbles_core::{Mods, ShortcutKey, shortcuts};
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let _ = tree_sig();
+    pebbles_core::keyboard::set_modifiers(false, false, false, false);
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+    let w = ui.window_id();
+    let none = Mods::default();
+    // Tree: src=0 { main.rs=1 }, README.md=2.
+
+    // "rs" matches main.rs → src (its ancestor) + main.rs stay; README is pruned.
+    // Folders are force-expanded while filtering, so main.rs is reachable even
+    // though src was never expanded.
+    ex().filter().set("rs".to_string());
+    frame(&mut ui, &mut env, win);
+    ex().select_only(0);
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::ArrowDown));
+    assert_eq!(ex().selection().peek(), vec![1], "keyboard walks the FILTERED rows");
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::ArrowDown));
+    assert_eq!(ex().selection().peek(), vec![1], "README is filtered out — the walk stops");
+
+    // A folder-name match keeps the folder's whole subtree visible.
+    ex().filter().set("src".to_string());
+    ex().select_only(0);
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::ArrowDown));
+    assert_eq!(ex().selection().peek(), vec![1], "children ride an ancestor match");
+
+    // No matches → nothing to walk; clearing restores everything.
+    ex().filter().set("zzz".to_string());
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::End), "engaged: consumed at the edge");
+    ex().filter().set(String::new());
+    frame(&mut ui, &mut env, win);
+    ex().select_only(0);
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::End));
+    assert_eq!(ex().selection().peek(), vec![2], "unfiltered again: End reaches README");
+}
