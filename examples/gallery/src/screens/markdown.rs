@@ -68,6 +68,13 @@ pub fn markdown_screen() -> Element {
     // ----- the vault: a file explorer feeding the editor (open real .md files)
     let tree = create_signal(FileTree::new());
     let explorer = file_explorer(tree);
+    // Dev/burn-in hook: GALLERY_MD_VAULT=<dir> opens that folder at mount —
+    // real files without the OS dialog (the input storm suppresses dialogs).
+    if let Ok(dir) = std::env::var("GALLERY_MD_VAULT")
+        && !dir.is_empty()
+    {
+        explorer.open_folder(std::path::PathBuf::from(dir));
+    }
     let open_path = create_signal(Option::<std::path::PathBuf>::None);
     let loaded_id = create_signal(Option::<u64>::None);
     // Selecting a .md file in the explorer loads it into the editor.

@@ -13,6 +13,11 @@ pub(super) struct InputStorm {
     rng: u64,
     /// Total dispatched steps (progress logging every ~1000).
     steps: u64,
+    /// Optional clamp region (logical px, `PEBBLES_STORM_REGION="x0,y0,x1,y1"`)
+    /// — every synthetic point lands inside it. Use it to pin the storm to ONE
+    /// screen's content area (e.g. exclude the nav sidebar so the storm can
+    /// never navigate away from the screen under test).
+    region: Option<(f64, f64, f64, f64)>,
 }
 
 impl InputStorm {
@@ -22,8 +27,15 @@ impl InputStorm {
         if v.is_empty() || v == "0" {
             return None;
         }
+        let region = std::env::var("PEBBLES_STORM_REGION").ok().and_then(|s| {
+            let v: Vec<f64> = s.split(',').filter_map(|n| n.trim().parse().ok()).collect();
+            (v.len() == 4).then(|| (v[0], v[1], v[2], v[3]))
+        });
         eprintln!("pebbles: INPUT STORM armed — synthetic input will hammer this window");
-        Some(InputStorm { rng: 0x9E37_79B9_7F4A_7C15, steps: 0 })
+        if let Some(r) = region {
+            eprintln!("pebbles: storm pinned to region {r:?}");
+        }
+        Some(InputStorm { rng: 0x9E37_79B9_7F4A_7C15, steps: 0, region })
     }
 
     /// xorshift64 — cheap, deterministic, good enough for a monkey.
@@ -58,13 +70,32 @@ impl Runner {
         }
         self.ui.make_current();
 
+        // Occasionally resize the REAL window (compositor round-trip, surface
+        // reconfigure) — maximize-like jumps a user makes that dispatch-level
+        // input never exercises. RARE on purpose: each Wayland resize stalls the
+        // loop on a configure round-trip, so frequent ones throttle the storm.
+        if storm.next() % 1500 == 0
+            && let Some(a) = self.active.as_ref()
+        {
+            let nw = 700 + (storm.next() % 900) as u32;
+            let nh = 500 + (storm.next() % 500) as u32;
+            let _ = a.window.request_inner_size(LogicalSize::new(nw, nh));
+        }
+
+        // The point pool: the whole window, or the pinned region intersected
+        // with it.
+        let (rx0, ry0, rx1, ry1) = match storm.region {
+            Some((a, b, c, d)) => (a.min(w), b.min(h), c.min(w), d.min(h)),
+            None => (0.0, 0.0, w, h),
+        };
+        let (rw, rh) = ((rx1 - rx0).max(1.0), (ry1 - ry0).max(1.0));
         for _ in 0..6 {
             storm.steps += 1;
             let p = Offset::new(
-                (storm.next() % (w as u64).max(1)) as f64,
-                (storm.next() % (h as u64).max(1)) as f64,
+                rx0 + (storm.next() % rw as u64) as f64,
+                ry0 + (storm.next() % rh as u64) as f64,
             );
-            match storm.next() % 10 {
+            match storm.next() % 12 {
                 // Hover sweep — the highest-volume real-world input.
                 0..=3 => {
                     self.cursor = p;
@@ -121,8 +152,8 @@ impl Runner {
                     let _ = self.ui.dispatch_pointer_down(p);
                     for _ in 0..3 {
                         let q = Offset::new(
-                            (p.x + (storm.next() % 240) as f64 - 120.0).clamp(0.0, w),
-                            (p.y + (storm.next() % 160) as f64 - 80.0).clamp(0.0, h),
+                            (p.x + (storm.next() % 240) as f64 - 120.0).clamp(rx0, rx1),
+                            (p.y + (storm.next() % 160) as f64 - 80.0).clamp(ry0, ry1),
                         );
                         self.cursor = q;
                         if claimed {
@@ -140,6 +171,31 @@ impl Runner {
                     let _ = self.ui.dispatch_pointer_up(end);
                     if let Some(a) = armed {
                         let _ = self.ui.dispatch_tap_cancel(a);
+                    }
+                }
+                // Right-click: the full secondary-tap sequence, falling through
+                // to the global menu when nothing claims it (mirrors the shell).
+                9 => {
+                    self.cursor = p;
+                    let down = self.ui.dispatch_secondary_tap_down(p);
+                    let up = self.ui.dispatch_secondary_tap_up(p);
+                    let tap = self.ui.dispatch_secondary_tap(p);
+                    if !down && !up && !tap {
+                        pebbles_widgets::global_menu::show(p.x, p.y);
+                    }
+                }
+                // Long-press: down → begin → moves → end on a long-press target.
+                10 => {
+                    self.cursor = p;
+                    if let Some(t) = self.ui.long_press_target_at(p) {
+                        self.ui.dispatch_long_press_down(t, p);
+                        let _ = self.ui.dispatch_long_press_begin(t, p);
+                        let q = Offset::new(
+                            (p.x + 24.0).min(rx1),
+                            (p.y + 12.0).min(ry1),
+                        );
+                        let _ = self.ui.dispatch_long_press_move(t, q);
+                        self.ui.dispatch_long_press_end(t, q);
                     }
                 }
                 // Keys: editing commands, shortcut tokens, Tab focus, activation —

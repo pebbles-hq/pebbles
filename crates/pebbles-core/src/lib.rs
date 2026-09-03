@@ -28,6 +28,7 @@ pub mod focus;
 pub mod ipc;
 pub mod key;
 pub mod keyboard;
+pub mod log;
 pub mod reactive;
 pub mod scroll;
 pub mod shortcuts;

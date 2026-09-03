@@ -6,6 +6,38 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — the markdown-screen "black screen" (the real one)
+The markdown screen froze to a black window. Root-caused with the new UI log
+(below), which showed the frame loop stalling in exactly one place:
+- **A blocking GPU barrier deadlocked the render thread.** An earlier "driver
+  race" fix called `device.poll(Wait)` with no timeout between the vello pass
+  and present. On this Intel/Vulkan setup that submission never signalled, so
+  the main thread blocked forever → black window. Replaced with a non-blocking
+  `poll(Poll)` (the swapchain + AutoVsync already pace frames).
+- **Aggressive GPU-stack resets turned a harmless warning into a freeze.** vello
+  0.10 emits a spurious per-frame `create_view` *validation* error for the
+  markdown scene on this GPU — but the frame still renders correctly (measured
+  125 fps straight through it). The shell was rebuilding the entire GPU stack
+  (~3 s) on every such error, so it managed ~1 frame per 3 s: a frozen black
+  screen. The uncaptured-error handler now distinguishes **non-fatal validation
+  errors** (log, throttled; keep rendering) from **fatal device-lost/OOM
+  errors** (rebuild the stack). Result: the markdown screen renders steadily
+  (2 239 frames under an input storm, 0 resets, 0 fatal errors).
+- Defensive: `RenderDecoratedBox` skips shadow/background/image draws for a
+  zero/collapsed size (a 0-sized blur/image would make wgpu allocate an invalid
+  texture), and bounded the secondary-window present the same way.
+
+### Added — GUI diagnostic log (`pebbles_core::log`)
+A timestamped, leveled, categorized event log for the whole stack with an
+in-memory ring buffer. **This is what found every bug above.**
+- Levels Trace…Error; categories Frame/Gpu/Input/Nav/Reactive/Overlay/Widget.
+- `PEBBLES_LOG=1|trace|debug|info|warn|error` echoes to stderr;
+  `PEBBLES_LOG_FILE=<path>` appends every record (flushed per line, so a hard
+  freeze still leaves the last event on disk).
+- The shell logs a **frame heartbeat** (every 120 frames + every slow frame),
+  GPU errors/resets, and navigation; installs a **panic hook** that dumps the
+  ring buffer so a crash always shows the run-up. Ring buffer is always on.
+
 ### Fixed — the "navigate while anything is in flight" crash family
 Found with the new synthetic-input monkey (`PEBBLES_INPUT_STORM=1`, below):
 navigating away from a screen while something it owned was still in flight

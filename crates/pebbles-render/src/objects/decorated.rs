@@ -53,13 +53,31 @@ impl RenderObject for RenderDecoratedBox {
         let rect = Rect::from_origin_size(offset.to_point(), size);
         let d = &self.decoration;
 
+        // A box that hasn't been laid out yet (or collapsed to nothing) has a
+        // zero/negative size. Painting a shadow/blur or image for it makes vello
+        // allocate a 0-sized GPU texture, which wgpu rejects as an invalid
+        // texture — poisoning the device and (with the old blocking present)
+        // freezing the window to black. Nothing is visible at this size anyway,
+        // so skip the GPU-texture-producing draws entirely.
+        if size.width < 0.5 || size.height < 0.5 {
+            // Still paint the child (it may size itself); just no bg/border/shadow.
+            if let Some(child) = cx.children().first().copied() {
+                cx.paint_child(child, offset + cx.child_offset(child));
+            }
+            return;
+        }
+
         // The outline path, plus an equivalent corner radius for the shadow.
         let (path, shadow_radius) = outline(d, size, rect);
 
-        // 1. Shadows (behind everything).
+        // 1. Shadows (behind everything). Guard each blurred rect against a
+        // degenerate (≤0) size after spread — a negative spread can collapse it.
         for shadow in &d.shadows {
             let shadow_rect = Rect::from_origin_size((offset + shadow.offset).to_point(), size)
                 .inflate(shadow.spread, shadow.spread);
+            if shadow_rect.width() < 0.5 || shadow_rect.height() < 0.5 {
+                continue;
+            }
             cx.scene.draw_blurred_rounded_rect(
                 Affine::IDENTITY,
                 shadow_rect,

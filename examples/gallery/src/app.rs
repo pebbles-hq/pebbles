@@ -36,17 +36,26 @@ fn install_tour() {
     let Some(ms) = std::env::var("GALLERY_TOUR").ok().and_then(|v| v.parse::<u64>().ok()) else {
         return;
     };
-    fn hop(all: std::rc::Rc<Vec<&'static str>>, i: usize, key: u64, secs: f64) {
+    fn hop(all: std::rc::Rc<Vec<String>>, i: usize, key: u64, secs: f64) {
         pebbles::core::animation::set_timeout(key, secs, move || {
-            let route = all[i % all.len()];
+            let route = all[i % all.len()].clone();
             // Log each hop so burn-in output PROVES which screens were covered.
             eprintln!("gallery tour → {route}");
-            navigate(route);
+            navigate(&route);
             hop(all.clone(), i + 1, key, secs);
         });
     }
-    let all: Vec<&'static str> =
-        NAV.iter().flat_map(|g| g.routes.iter().map(|(r, _, _)| *r)).collect();
+    // GALLERY_TOUR_ROUTES="overview,markdown" pins the tour to just those
+    // screens (screen-focused burn-in); default = every NAV route.
+    let all: Vec<String> = match std::env::var("GALLERY_TOUR_ROUTES") {
+        Ok(list) if !list.trim().is_empty() => {
+            list.split(',').map(|s| s.trim().to_string()).collect()
+        }
+        _ => NAV
+            .iter()
+            .flat_map(|g| g.routes.iter().map(|(r, _, _)| (*r).to_string()))
+            .collect(),
+    };
     // A fixed caller-owned timer key (set_timeout ids are a caller namespace).
     let key = u64::from_le_bytes(*b"gal-tour");
     hop(std::rc::Rc::new(all), 0, key, (ms as f64 / 1000.0).max(0.05));

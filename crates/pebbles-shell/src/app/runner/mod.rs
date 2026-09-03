@@ -48,21 +48,46 @@ const LINE_SCROLL: f64 = 48.0;
 /// when it moved. See [`install_error_handler`].
 pub(super) static GPU_ERRORS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// A GUI shell must not die on a transient GPU validation hiccup: some
-/// driver/compositor startup races (seen on Linux/Vulkan) surface as spurious
-/// wgpu validation errors, which wgpu's DEFAULT uncaptured-error handler turns
-/// into a process panic. Worse, a failed resource can stay cached inside the
-/// renderer's pool, poisoning every subsequent frame. So: count the errors
-/// (throttled log) and let the render loop rebuild the renderer + surface
-/// target whenever the count moves — a clean pool the very next frame.
+/// A GUI shell must not die on a GPU hiccup, but it must ALSO not overreact.
+///
+/// wgpu's DEFAULT uncaptured-error handler panics the process; we never want
+/// that. But there are two very different kinds of error, and conflating them
+/// is what caused the markdown-screen "black screen":
+///
+/// * **Validation errors** are NON-FATAL here. On this vello 0.10 + Intel/Vulkan
+///   combination the markdown scene emits a spurious per-frame `create_view`
+///   validation error, yet the frame still renders correctly (measured: 125 fps
+///   straight through the errors). Rebuilding the whole GPU stack on each one
+///   cost ~3 s a pop, so the app spent ALL its time resetting — ~1 frame every
+///   3 s — which reads as a frozen black window. So: log validation errors
+///   (throttled) and otherwise IGNORE them. Do not trigger recovery.
+/// * **Out-of-memory / internal / device-lost** errors DO poison the device.
+///   Those bump [`GPU_ERRORS`], and the render loop rebuilds the GPU stack.
 pub(super) fn install_error_handler(device: &wgpu::Device) {
+    use std::sync::atomic::AtomicU64;
+    static VALIDATION_SEEN: AtomicU64 = AtomicU64::new(0);
     device.on_uncaptured_error(Arc::new(|e: wgpu::Error| {
-        let n = GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-        if n <= 3 || n.is_multiple_of(50) {
-            eprintln!("pebbles: wgpu error #{n} — rebuilding the GPU state: {e}");
-            if std::env::var("PEBBLES_GPU_TRACE").is_ok() {
-                eprintln!("{}", std::backtrace::Backtrace::force_capture());
+        let fatal = !matches!(e, wgpu::Error::Validation { .. });
+        if fatal {
+            let n = GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            pebbles_core::log::error(
+                pebbles_core::log::Cat::Gpu,
+                format!("FATAL wgpu error #{n} (device poisoned — scheduling reset): {e}"),
+            );
+            eprintln!("pebbles: fatal wgpu error #{n} — rebuilding the GPU state: {e}");
+        } else {
+            // Non-fatal validation error: log it (heavily throttled — it can fire
+            // every frame) but do NOT reset. Frames keep rendering.
+            let n = VALIDATION_SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            if n <= 3 || n.is_multiple_of(600) {
+                pebbles_core::log::warn(
+                    pebbles_core::log::Cat::Gpu,
+                    format!("non-fatal wgpu validation error (x{n}, ignored): {e}"),
+                );
             }
+        }
+        if std::env::var("PEBBLES_GPU_TRACE").is_ok() {
+            eprintln!("{}", std::backtrace::Backtrace::force_capture());
         }
     }));
 }
@@ -206,6 +231,9 @@ pub(super) struct Runner {
     windows: HashMap<WindowId, WindowRuntime>,
     window_by_id: HashMap<u64, WindowId>,
 
+    /// Monotonic frame counter — the diagnostic heartbeat (see `render`).
+    frame_no: u64,
+
     /// Dev-only synthetic-input monkey (`PEBBLES_INPUT_STORM=1`); `None` in
     /// normal runs. See [`storm`].
     storm: Option<storm::InputStorm>,
@@ -259,6 +287,7 @@ impl Runner {
             last_frame_t: 0.0,
             windows: HashMap::new(),
             window_by_id: HashMap::new(),
+            frame_no: 0,
             storm: storm::InputStorm::from_env(),
         }
     }

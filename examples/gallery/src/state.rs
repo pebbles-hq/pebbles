@@ -61,6 +61,7 @@ pub fn route() -> Signal<String> {
 
 /// Navigate to a route.
 pub fn navigate(to: &str) {
+    pebbles::core::log::info(pebbles::core::log::Cat::Nav, format!("navigate → {to}"));
     route().set(to.to_string());
 }
 

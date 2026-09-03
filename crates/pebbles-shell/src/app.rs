@@ -146,9 +146,22 @@ impl App {
 
     /// Open the window and run the event loop until the window closes.
     pub fn run(self) -> Result<(), Box<dyn std::error::Error>> {
+        use pebbles_core::log;
+        log::init();
+        // A panic anywhere in the UI dumps the whole event log first, so we always
+        // see what the UI was doing in the run-up to the crash — then the normal
+        // panic message/backtrace.
+        let prev = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            log::error(log::Cat::General, format!("PANIC: {info}"));
+            log::dump("panic");
+            prev(info);
+        }));
+        log::info(log::Cat::General, "pebbles app starting");
         let event_loop = EventLoop::new()?;
         let mut runner = Runner::new(self);
         event_loop.run_app(&mut runner)?;
+        log::info(log::Cat::General, "pebbles app exited cleanly");
         Ok(())
     }
 }

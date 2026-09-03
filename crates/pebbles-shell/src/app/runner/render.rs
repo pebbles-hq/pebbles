@@ -37,6 +37,10 @@ impl Runner {
         }
         self.gpu_errors_seen = errs;
         self.last_gpu_reset = Some(Instant::now());
+        pebbles_core::log::warn(
+            pebbles_core::log::Cat::Gpu,
+            format!("resetting GPU stack (device + surfaces + renderers) after {errs} errors"),
+        );
         eprintln!("pebbles: resetting the GPU stack (device + surfaces + renderers)…");
 
         // A fresh instance/adapter/device pool; the old one may be lost.
@@ -87,6 +91,14 @@ impl Runner {
     }
 
     pub(super) fn render(&mut self) {
+        use pebbles_core::log;
+        // Frame heartbeat: bump the counter and log a periodic pulse (and every
+        // slow frame). If the log stops pulsing, the loop froze — and the LAST
+        // line tells you exactly which stage it died in.
+        self.frame_no += 1;
+        let frame_start = Instant::now();
+        let fno = self.frame_no;
+        log::trace(log::Cat::Frame, format!("frame {fno} begin"));
         if self.recover_gpu_if_poisoned() {
             // Render fresh state this same frame; also repaint secondary windows.
             for w in self.windows.values() {
@@ -243,7 +255,16 @@ impl Runner {
         // validation errors ("Texture/Buffer … is invalid") that poison the
         // device. A desktop UI is nowhere near GPU-bound, so the sync costs
         // nothing perceptible; correctness beats pipelining here.
-        let _ = device_handle.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
+        //
+        // BUT bounded: a `Wait` with no timeout blocks THIS (main) thread forever
+        // if the submission never completes — a lost device would freeze the app
+        // to a black window instead of triggering recovery. Poll returns Timeout,
+        // we log it, and fall through; the error handler / reset path takes over.
+        // Non-blocking: process any completed GPU work without WAITING. A `Wait`
+        // here froze markdown-heavy scenes on Intel (the submission never
+        // signalled in time and every frame timed out → black screen). Present
+        // immediately; the swapchain + AutoVsync already pace us.
+        let _ = device_handle.device.poll(wgpu::PollType::Poll);
 
         let surface_texture = match surface.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture)
@@ -278,6 +299,22 @@ impl Runner {
         let focus = pebbles_core::focus::focused_element_ffi(self.ui.window_id());
         if let Some(a11y) = self.a11y.as_mut() {
             a11y.update(&nodes, focus);
+        }
+
+        // Heartbeat: pulse every 120 frames, and flag any frame slower than 32ms
+        // (a dropped frame at 60fps) so jank/stalls are visible in the log.
+        let total = frame_start.elapsed();
+        if fno.is_multiple_of(120) || total.as_millis() > 32 {
+            log::debug(
+                log::Cat::Frame,
+                format!(
+                    "frame {fno} done in {:.1}ms (rebuild {:.1} layout {:.1} encode {:.1})",
+                    total.as_secs_f64() * 1e3,
+                    rebuild.as_secs_f64() * 1e3,
+                    layout.as_secs_f64() * 1e3,
+                    encode.as_secs_f64() * 1e3,
+                ),
+            );
         }
     }
 
@@ -352,8 +389,8 @@ impl Runner {
             w.window.request_redraw();
             return;
         }
-        // See render(): wait the vello pass out before the blit (driver workaround).
-        let _ = device_handle.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
+        // Non-blocking (see render()): never Wait on the render submission.
+        let _ = device_handle.device.poll(wgpu::PollType::Poll);
         let surface_texture = match surface.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
             _ => return,
