@@ -62,6 +62,13 @@ All notable changes to Pebbles are documented here. The format follows
   `untrack`), exported from the prelude.
 
 ### Fixed
+- The shell no longer dies on a transient GPU validation error: some
+  Linux/Vulkan driver startup races surface as ONE spurious wgpu validation
+  error on an early frame, which wgpu's default handler turns into a process
+  panic (seen as `Texture with '' label is invalid` when opening a heavy
+  screen). Pebbles now installs an uncaptured-error handler per device that
+  logs and skips the frame — the next frame renders normally; persistent
+  errors keep logging so they stay visible.
 - `use_bounds()` leaked one immortal root signal per component remount (the
   registry entry was dropped but never its arena slot, and headless runs never
   GC'd at all) — caught by the gallery's lifecycle soak. Bounds signals are

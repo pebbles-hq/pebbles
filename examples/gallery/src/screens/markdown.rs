@@ -8,7 +8,7 @@ A GFM document rendered **live** — edit the source on the left and watch it
 update. *Italic*, **bold**, ***both***, ~~strikethrough~~ and `inline code`
 all flow inside wrapped paragraphs, and [links are clickable](https://github.com/pebbles-hq/pebbles).
 
-## Task list — click the checkboxes
+## Task list -- click the checkboxes
 
 - [x] Parse GFM (tables, tasks, strikethrough)
 - [ ] Toggle me — the SOURCE rewrites, Obsidian-style

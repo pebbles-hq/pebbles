@@ -95,6 +95,7 @@ impl Runner {
         ))
         .expect("create surface");
         self.renderers.resize_with(self.context.devices.len(), || None);
+        install_error_handler(&self.context.devices[surface.dev_id].device);
         self.renderers[surface.dev_id].get_or_insert_with(|| {
             Renderer::new(
                 &self.context.devices[surface.dev_id].device,

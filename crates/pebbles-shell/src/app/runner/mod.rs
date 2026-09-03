@@ -42,6 +42,18 @@ const LONG_PRESS: Duration = Duration::from_millis(500);
 /// Logical pixels scrolled per wheel line.
 const LINE_SCROLL: f64 = 48.0;
 
+/// A GUI shell must not die on a transient GPU validation hiccup: some
+/// driver/compositor startup races (seen on Linux/Vulkan) surface as a single
+/// spurious wgpu validation error on an early frame, which wgpu's DEFAULT
+/// uncaptured-error handler turns into a process panic. Log-and-continue
+/// instead — the next frame renders normally. Real, persistent errors still
+/// show up (repeatedly) in stderr.
+pub(super) fn install_error_handler(device: &wgpu::Device) {
+    device.on_uncaptured_error(Arc::new(|e: wgpu::Error| {
+        eprintln!("pebbles: recovered from a wgpu error (frame skipped): {e}");
+    }));
+}
+
 /// Wire the OS clipboard into `pebbles_core::clipboard`. Falls back to the core's
 /// in-process clipboard if the platform clipboard can't be opened (e.g. headless).
 fn install_clipboard() {
@@ -294,6 +306,7 @@ impl ApplicationHandler for Runner {
 
         // Ensure a renderer exists for this surface's device.
         self.renderers.resize_with(self.context.devices.len(), || None);
+        install_error_handler(&self.context.devices[surface.dev_id].device);
         self.renderers[surface.dev_id].get_or_insert_with(|| {
             Renderer::new(
                 &self.context.devices[surface.dev_id].device,
