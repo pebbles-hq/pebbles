@@ -62,6 +62,13 @@ All notable changes to Pebbles are documented here. The format follows
   `untrack`), exported from the prelude.
 
 ### Fixed
+- GPU error recovery now resets the ENTIRE GPU stack — instance, adapter,
+  device, all surfaces, all renderers (throttled to ~1/second): a lost device
+  hands out invalid resources forever, so renderer-level rebuilds could never
+  recover (observed as `Buffer 'vello.scene' is invalid` on a fresh renderer).
+  The event loop also wakes itself when the error count moves, so recovery
+  runs even from an idle `Wait` state. Empirically: one recovered error at
+  startup, zero repeats, zero panics.
 - GPU error recovery now REBUILDS the poisoned state instead of merely
   skipping the frame: a failed resource could stay cached inside vello's
   renderer pool, erroring on every subsequent frame. The render loop watches

@@ -20,23 +20,67 @@ fn frame_stats_enabled() -> bool {
 
 impl Runner {
     /// Reconcile any dirty subtrees, lay out to the window, paint, and present.
-    /// If uncaptured GPU errors landed since the last check, tear down and
-    /// rebuild the poisoned state: a FRESH vello renderer (clean internal
-    /// resource pool) and a re-created surface target. Returns whether a
-    /// recovery happened (the caller re-renders immediately after).
+    /// If uncaptured GPU errors landed since the last check, rebuild the WHOLE
+    /// GPU stack — instance, adapter, device, every surface, every renderer.
+    /// A renderer-level rebuild is not enough: a lost/errored DEVICE hands out
+    /// invalid resources forever (observed as `Buffer 'vello.scene' is invalid`
+    /// straight after a fresh renderer). Throttled to ~1/second so a
+    /// persistently broken driver logs steadily instead of thrashing. Returns
+    /// whether a reset ran (the caller re-renders immediately after).
     pub(super) fn recover_gpu_if_poisoned(&mut self) -> bool {
         let errs = GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed);
         if errs == self.gpu_errors_seen {
             return false;
         }
+        if self.last_gpu_reset.is_some_and(|t| t.elapsed() < Duration::from_secs(1)) {
+            return false; // let the pending reset settle before judging it
+        }
         self.gpu_errors_seen = errs;
+        self.last_gpu_reset = Some(Instant::now());
+        eprintln!("pebbles: resetting the GPU stack (device + surfaces + renderers)…");
+
+        // A fresh instance/adapter/device pool; the old one may be lost.
+        self.context = RenderContext::new();
+        self.renderers = Vec::new();
+
+        // Recreate the main window's surface + renderer on the new device.
         if let Some(active) = self.active.as_mut() {
-            let dev = active.surface.dev_id;
-            self.renderers[dev] = Some(new_renderer(&self.context.devices[dev].device));
-            // Recreate the offscreen target + swapchain config at the same size.
             let phys = active.window.inner_size();
-            if phys.width > 0 && phys.height > 0 {
-                self.context.resize_surface(&mut active.surface, phys.width, phys.height);
+            match pollster::block_on(self.context.create_surface(
+                active.window.clone(),
+                phys.width.max(1),
+                phys.height.max(1),
+                wgpu::PresentMode::AutoVsync,
+            )) {
+                Ok(surface) => {
+                    self.renderers.resize_with(self.context.devices.len(), || None);
+                    let device = &self.context.devices[surface.dev_id].device;
+                    install_error_handler(device);
+                    self.renderers[surface.dev_id] = Some(new_renderer(device));
+                    active.surface = surface;
+                }
+                Err(e) => eprintln!("pebbles: GPU reset could not recreate the main surface: {e}"),
+            }
+        }
+        // And every secondary window's surface.
+        for w in self.windows.values_mut() {
+            let phys = w.window.inner_size();
+            match pollster::block_on(self.context.create_surface(
+                w.window.clone(),
+                phys.width.max(1),
+                phys.height.max(1),
+                wgpu::PresentMode::AutoVsync,
+            )) {
+                Ok(surface) => {
+                    self.renderers.resize_with(self.context.devices.len(), || None);
+                    let device = &self.context.devices[surface.dev_id].device;
+                    install_error_handler(device);
+                    if self.renderers[surface.dev_id].is_none() {
+                        self.renderers[surface.dev_id] = Some(new_renderer(device));
+                    }
+                    w.surface = surface;
+                }
+                Err(e) => eprintln!("pebbles: GPU reset could not recreate a window surface: {e}"),
             }
         }
         true
@@ -218,10 +262,22 @@ impl Runner {
     /// Render one secondary window (mirrors [`render`], reusing the shared scene,
     /// renderers and GPU context).
     pub(super) fn render_window(&mut self, w: &mut WindowRuntime) {
+        // NOTE: `w` is detached from `self.windows` during dispatch, so a reset
+        // here cannot refresh its surface in the map — recreate it directly.
         if self.recover_gpu_if_poisoned() {
             let phys = w.window.inner_size();
-            if phys.width > 0 && phys.height > 0 {
-                self.context.resize_surface(&mut w.surface, phys.width, phys.height);
+            if let Ok(surface) = pollster::block_on(self.context.create_surface(
+                w.window.clone(),
+                phys.width.max(1),
+                phys.height.max(1),
+                wgpu::PresentMode::AutoVsync,
+            )) {
+                self.renderers.resize_with(self.context.devices.len(), || None);
+                let device = &self.context.devices[surface.dev_id].device;
+                if self.renderers[surface.dev_id].is_none() {
+                    self.renderers[surface.dev_id] = Some(new_renderer(device));
+                }
+                w.surface = surface;
             }
         }
         let now = self.clock.elapsed().as_secs_f64();

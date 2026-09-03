@@ -156,6 +156,8 @@ pub(super) struct Runner {
     renderers: Vec<Option<Renderer>>,
     /// The [`GPU_ERRORS`] count already recovered from (see `recover_gpu_if_poisoned`).
     gpu_errors_seen: u64,
+    /// When the last full GPU reset ran (recovery is throttled to ~1/second).
+    last_gpu_reset: Option<Instant>,
     active: Option<ActiveWindow>,
     /// AccessKit platform bridge for the main window (accessibility tree + focus).
     a11y: Option<crate::a11y::Bridge>,
@@ -223,6 +225,7 @@ impl Runner {
             context: RenderContext::new(),
             renderers: Vec::new(),
             gpu_errors_seen: 0,
+            last_gpu_reset: None,
             active: None,
             a11y: None,
             ui: Ui::new(),
@@ -706,6 +709,15 @@ impl ApplicationHandler for Runner {
                 })
                 .collect();
             pebbles_widgets::set_monitors(list);
+        }
+        // GPU errors landed this turn? Wake the render loop so the recovery
+        // reset actually runs (an idle `Wait` loop would otherwise sit on a
+        // poisoned device until the next input event).
+        if GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed) != self.gpu_errors_seen {
+            self.request_redraw();
+            for w in self.windows.values() {
+                w.window.request_redraw();
+            }
         }
         // Open/close any secondary windows requested since the last turn.
         self.pump_windows(event_loop);
