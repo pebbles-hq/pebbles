@@ -45,19 +45,40 @@ fn main() {
 That rule above is a `---`. Images work too (with the `image-view` feature).
 "#;
 
-/// A serif-heading, roomier variant — themes are plain data.
+/// A serif-heading, roomier variant with a WARM syntax-highlight palette — shows
+/// that code coloring is fully themeable, not fixed.
 fn serif_style() -> MarkdownStyle {
     MarkdownStyle {
         heading_family: Some("Lora".to_string()),
         heading_scale: [2.1, 1.7, 1.4, 1.2, 1.05, 0.95],
         block_gap: 14.0,
+        syntax: SyntaxColors {
+            keyword: palette::rose::S500,
+            string: palette::amber::S600,
+            comment: palette::stone::S400,
+            number: palette::orange::S600,
+            ident: palette::teal::S600,
+            ..SyntaxColors::from_theme()
+        },
         ..MarkdownStyle::from_theme()
     }
 }
 
-/// A dense variant for sidebars/tooltips.
+/// A dense variant for sidebars/tooltips, with a COOL syntax palette.
 fn compact_style() -> MarkdownStyle {
-    MarkdownStyle { body_size: 12.5, block_gap: 6.0, ..MarkdownStyle::from_theme() }
+    MarkdownStyle {
+        body_size: 12.5,
+        block_gap: 6.0,
+        syntax: SyntaxColors {
+            keyword: palette::indigo::S500,
+            string: palette::emerald::S500,
+            comment: palette::slate::S400,
+            number: palette::cyan::S600,
+            ident: palette::blue::S600,
+            ..SyntaxColors::from_theme()
+        },
+        ..MarkdownStyle::from_theme()
+    }
 }
 
 pub fn markdown_screen() -> Element {

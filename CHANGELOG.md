@@ -6,6 +6,26 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — themeable syntax highlighting in Markdown code blocks
+Fenced code blocks are now syntax-highlighted, Obsidian-style, with a small
+dependency-free lexer (comments, strings, numbers, keywords, function-call
+identifiers, punctuation) that handles the common languages — C-family `//`+`/* */`,
+plus `#` (Python/Ruby/Bash/YAML/TOML) and `--` (SQL/Lua/Haskell) line comments.
+- **Fully themeable**: `MarkdownStyle.syntax: SyntaxColors { keyword, string,
+  comment, number, ident, punct }` — every token color is a plain `Color`, so a
+  theme recolors the whole scheme. Default derives from the palette; the gallery's
+  Serif/Compact themes ship warm and cool syntax palettes to show it off.
+- Whitespace renders as non-breaking spaces so indentation is preserved (parley
+  trims ordinary trailing whitespace). Tests cover token coloring + indentation.
+
+### Fixed — Markdown View rendering (three separate bugs)
+- **List/task text leaked into the next block**: a tight list emits item text as
+  bare `Text` events (no `Paragraph`), so it was never flushed into the item and
+  spilled into the following heading. Now flushed at item-end and nested-list start.
+- **Words jammed together**: word-chunks relied on a trailing space for
+  separation, but parley trims trailing whitespace — so `wrap` spacing now adds a
+  real ~0.26em inter-word gap.
+
 ### Fixed — the markdown-screen crash, ROOT CAUSE (a non-finite layout size)
 The real cause, found at last with the dev tooling: a widget on the markdown
 screen laid out to **infinite height** (a `RenderDecoratedBox` sized `1×∞`). That

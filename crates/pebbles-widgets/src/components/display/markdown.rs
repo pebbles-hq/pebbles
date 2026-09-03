@@ -23,7 +23,7 @@ use std::rc::Rc;
 
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
-use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
+use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, palette};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, lucide};
 
 use crate::theme::{mix, theme};
@@ -51,6 +51,10 @@ pub struct MarkdownStyle {
     pub code_color: Color,
     /// The monospace family for code ("JetBrains Mono" is bundled).
     pub code_family: String,
+    /// Syntax-highlight palette for fenced code blocks (Obsidian-style). Every
+    /// color is themeable; the default scheme reads on both light and dark code
+    /// backgrounds.
+    pub syntax: SyntaxColors,
     pub quote_bar: Color,
     pub quote_color: Color,
     pub link_color: Color,
@@ -58,6 +62,36 @@ pub struct MarkdownStyle {
     pub table_border: Color,
     /// Vertical gap between blocks (px).
     pub block_gap: f64,
+}
+
+/// The token colors used to syntax-highlight fenced code blocks. Every field is
+/// a plain [`Color`], so a theme can recolor the whole scheme.
+#[derive(Clone)]
+pub struct SyntaxColors {
+    pub keyword: Color,
+    pub string: Color,
+    pub comment: Color,
+    pub number: Color,
+    /// Function/type/builtin identifiers.
+    pub ident: Color,
+    /// Punctuation and operators.
+    pub punct: Color,
+}
+
+impl SyntaxColors {
+    /// A default scheme derived from the palette — medium-saturation colors that
+    /// stay legible on both a light and a dark code background.
+    pub fn from_theme() -> Self {
+        let c = theme().colors;
+        SyntaxColors {
+            keyword: palette::violet::S500,
+            string: palette::emerald::S600,
+            comment: c.muted_foreground,
+            number: palette::amber::S600,
+            ident: palette::sky::S600,
+            punct: mix(c.foreground, c.background, 0.25),
+        }
+    }
 }
 
 impl MarkdownStyle {
@@ -73,6 +107,7 @@ impl MarkdownStyle {
             code_bg: mix(c.background, c.foreground, 0.07),
             code_color: c.foreground,
             code_family: "JetBrains Mono".to_string(),
+            syntax: SyntaxColors::from_theme(),
             quote_bar: c.border,
             quote_color: c.muted_foreground,
             link_color: c.primary,
@@ -506,6 +541,177 @@ fn render_blocks(blocks: &[Block], cx: &Cx) -> AnyWidget {
         .into_widget()
 }
 
+// ---------------------------------------------------------------------------
+// Syntax highlighting — a small, dependency-free lexer good enough to color the
+// common languages (C-family + a few script styles), Obsidian-style. Not a full
+// grammar; it tokenizes comments, strings, numbers, keywords, identifiers and
+// punctuation, and colors them from the themeable `SyntaxColors`.
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Copy, PartialEq)]
+enum Tok {
+    Plain,
+    Keyword,
+    Str,
+    Comment,
+    Number,
+    Ident,
+    Punct,
+}
+
+/// Line-comment prefix and whether the language has C-style `/* */` blocks + JS-y
+/// keywords, chosen from the fence's language tag.
+fn lang_profile(lang: &str) -> (&'static str, bool) {
+    match lang.trim().to_ascii_lowercase().as_str() {
+        "python" | "py" | "ruby" | "rb" | "bash" | "sh" | "shell" | "zsh" | "yaml" | "yml"
+        | "toml" | "ini" | "r" | "perl" | "makefile" => ("#", false),
+        "sql" | "lua" | "haskell" | "hs" | "elm" => ("--", false),
+        // C-family default: // line comments + /* */ blocks.
+        _ => ("//", true),
+    }
+}
+
+/// A broad, language-agnostic keyword set — covers Rust/JS/TS/Go/Java/C/Python/…
+/// "well enough" for a reader without a per-language grammar.
+fn is_keyword(w: &str) -> bool {
+    const KW: &[&str] = &[
+        "fn", "let", "mut", "const", "static", "pub", "use", "mod", "impl", "trait", "struct",
+        "enum", "type", "where", "as", "dyn", "ref", "move", "match", "if", "else", "for", "while",
+        "loop", "return", "break", "continue", "in", "self", "Self", "super", "crate", "async",
+        "await", "unsafe", "extern", "function", "var", "def", "class", "interface", "extends",
+        "implements", "import", "from", "export", "default", "new", "delete", "try", "catch",
+        "finally", "throw", "throws", "switch", "case", "do", "public", "private", "protected",
+        "abstract", "final", "void", "int", "long", "float", "double", "bool", "boolean", "char",
+        "string", "package", "func", "go", "defer", "chan", "map", "range", "nil", "None", "True",
+        "False", "true", "false", "null", "undefined", "and", "or", "not", "with", "yield", "lambda",
+        "elif", "then", "end", "begin", "val", "object", "override",
+    ];
+    KW.contains(&w)
+}
+
+/// Tokenize one line. `in_block` tracks an open `/* … */` across lines.
+fn highlight_line(line: &str, line_comment: &str, blocks: bool, in_block: &mut bool) -> Vec<(String, Tok)> {
+    let mut out: Vec<(String, Tok)> = Vec::new();
+    let b = line.as_bytes();
+    let mut i = 0;
+    let push = |out: &mut Vec<(String, Tok)>, s: &str, t: Tok| {
+        if !s.is_empty() {
+            out.push((s.to_string(), t));
+        }
+    };
+    while i < b.len() {
+        if *in_block {
+            let start = i;
+            while i < b.len() {
+                if b[i] == b'*' && i + 1 < b.len() && b[i + 1] == b'/' {
+                    i += 2;
+                    *in_block = false;
+                    break;
+                }
+                i += 1;
+            }
+            push(&mut out, &line[start..i], Tok::Comment);
+            continue;
+        }
+        let c = b[i] as char;
+        // Whitespace → plain (kept so indentation survives).
+        if c == ' ' || c == '\t' {
+            let start = i;
+            while i < b.len() && (b[i] == b' ' || b[i] == b'\t') {
+                i += 1;
+            }
+            push(&mut out, &line[start..i], Tok::Plain);
+            continue;
+        }
+        // Line comment.
+        if line[i..].starts_with(line_comment) {
+            push(&mut out, &line[i..], Tok::Comment);
+            break;
+        }
+        // Block comment start.
+        if blocks && line[i..].starts_with("/*") {
+            *in_block = true;
+            continue;
+        }
+        // String / char literal.
+        if c == '"' || c == '\'' || c == '`' {
+            let quote = b[i];
+            let start = i;
+            i += 1;
+            while i < b.len() {
+                if b[i] == b'\\' {
+                    i += 2;
+                    continue;
+                }
+                if b[i] == quote {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            push(&mut out, &line[start..i.min(b.len())], Tok::Str);
+            continue;
+        }
+        // Number.
+        if c.is_ascii_digit() {
+            let start = i;
+            while i < b.len()
+                && (b[i].is_ascii_alphanumeric() || b[i] == b'.' || b[i] == b'_' || b[i] == b'x')
+            {
+                i += 1;
+            }
+            push(&mut out, &line[start..i], Tok::Number);
+            continue;
+        }
+        // Identifier / keyword.
+        if c.is_alphabetic() || c == '_' {
+            let start = i;
+            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
+                i += 1;
+            }
+            let w = &line[start..i];
+            let kind = if is_keyword(w) {
+                Tok::Keyword
+            } else if i < b.len() && b[i] == b'(' {
+                Tok::Ident // a call → function-ish
+            } else {
+                Tok::Plain
+            };
+            push(&mut out, w, kind);
+            continue;
+        }
+        // Punctuation / operator (one char at a time).
+        push(&mut out, &line[i..i + 1], Tok::Punct);
+        i += 1;
+    }
+    out
+}
+
+/// Highlight a whole code block into per-line colored runs.
+fn highlight(code: &str, lang: &str, s: &SyntaxColors, base: Color) -> Vec<Vec<(String, Color)>> {
+    let (line_comment, blocks) = lang_profile(lang);
+    let mut in_block = false;
+    code.lines()
+        .map(|line| {
+            highlight_line(line, line_comment, blocks, &mut in_block)
+                .into_iter()
+                .map(|(text, tok)| {
+                    let color = match tok {
+                        Tok::Keyword => s.keyword,
+                        Tok::Str => s.string,
+                        Tok::Comment => s.comment,
+                        Tok::Number => s.number,
+                        Tok::Ident => s.ident,
+                        Tok::Punct => s.punct,
+                        Tok::Plain => base,
+                    };
+                    (text, color)
+                })
+                .collect()
+        })
+        .collect()
+}
+
 fn render_block(b: &Block, cx: &Cx) -> AnyWidget {
     let s = &cx.style;
     match b {
@@ -525,11 +731,35 @@ fn render_block(b: &Block, cx: &Cx) -> AnyWidget {
                         .into_widget(),
                 );
             }
+            // Syntax-highlighted, one row of colored chunks per line. Whitespace is
+            // rendered as non-breaking spaces so parley doesn't trim indentation.
+            let size = s.body_size * 0.92;
+            let lines = highlight(code.trim_end(), lang, &s.syntax, s.code_color);
+            let mut line_widgets: Vec<AnyWidget> = Vec::with_capacity(lines.len());
+            for line in &lines {
+                if line.is_empty() {
+                    line_widgets.push(
+                        text("\u{00A0}").size(size).font_family(s.code_family.clone()).into_widget(),
+                    );
+                    continue;
+                }
+                let chunks: Vec<AnyWidget> = line
+                    .iter()
+                    .map(|(t, color)| {
+                        let vis = t.replace(' ', "\u{00A0}").replace('\t', "\u{00A0}\u{00A0}\u{00A0}\u{00A0}");
+                        text(vis)
+                            .size(size)
+                            .color(*color)
+                            .font_family(s.code_family.clone())
+                            .into_widget()
+                    })
+                    .collect();
+                line_widgets.push(row(chunks).main_axis_size(MainAxisSize::Min).into_widget());
+            }
             kids.push(
-                text(code.trim_end().to_string())
-                    .size(s.body_size * 0.92)
-                    .color(s.code_color)
-                    .font_family(s.code_family.clone())
+                column(line_widgets)
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .main_axis_size(MainAxisSize::Min)
                     .into_widget(),
             );
             Container::new()
@@ -904,6 +1134,39 @@ mod parse_tests {
         assert!(first_para_text(&items[1].blocks[0]).contains("beta"), "item 1 keeps its text");
         let Block::Heading(_, inls) = &blocks[1] else { panic!("second block should be a heading") };
         assert_eq!(inline_text(inls).trim(), "Heading", "heading must not absorb the list text");
+    }
+
+    #[test]
+    fn syntax_highlight_colors_the_common_tokens() {
+        let (red, green, gray, orange, blue, black, white) = (
+            Color::from_rgba8(255, 0, 0, 255),
+            Color::from_rgba8(0, 255, 0, 255),
+            Color::from_rgba8(128, 128, 128, 255),
+            Color::from_rgba8(255, 128, 0, 255),
+            Color::from_rgba8(0, 0, 255, 255),
+            Color::from_rgba8(0, 0, 0, 255),
+            Color::from_rgba8(255, 255, 255, 255),
+        );
+        let s = SyntaxColors {
+            keyword: red,
+            string: green,
+            comment: gray,
+            number: orange,
+            ident: blue,
+            punct: black,
+        };
+        let code = "fn main() {\n    let x = \"hi\"; // note\n    let n = 42;\n}";
+        let flat: Vec<(String, Color)> =
+            highlight(code, "rust", &s, white).into_iter().flatten().collect();
+        let colored = |needle: &str| flat.iter().find(|(t, _)| t == needle).map(|(_, c)| *c);
+        assert_eq!(colored("fn"), Some(red), "keyword");
+        assert_eq!(colored("let"), Some(red), "keyword");
+        assert_eq!(colored("\"hi\""), Some(green), "string");
+        assert_eq!(colored("// note"), Some(gray), "comment");
+        assert_eq!(colored("42"), Some(orange), "number");
+        assert_eq!(colored("main"), Some(blue), "function-call identifier");
+        // Indentation is preserved as a plain (base-colored) whitespace run.
+        assert!(flat.iter().any(|(t, c)| t.trim().is_empty() && !t.is_empty() && *c == white));
     }
 
     #[test]
