@@ -657,7 +657,11 @@ fn inline_flow(inlines: &[Inline], cx: &Cx, size: f32, color: Color, bold_all: b
                 }
                 let link_color = run.link.as_ref().map(|_| s.link_color);
                 for word in run.text.split_whitespace() {
-                    let mut t = text(format!("{word} "))
+                    // No trailing space: parley trims trailing whitespace from a
+                    // line's measured width, so a trailing space would collapse and
+                    // words would jam together. Inter-word space is added as the
+                    // wrap's horizontal spacing below instead.
+                    let mut t = text(word.to_string())
                         .size(size)
                         .color(link_color.unwrap_or(color));
                     if bold_all || run.bold {
@@ -696,7 +700,10 @@ fn inline_flow(inlines: &[Inline], cx: &Cx, size: f32, color: Color, bold_all: b
             }
         }
     }
-    wrap(chunks).spacing(0.0).run_spacing(3.0).into_widget()
+    // Horizontal gap between word-chunks ≈ a space glyph's advance (~0.26em), so
+    // words read as words. run_spacing is the gap between wrapped lines.
+    let space = f64::from(size) * 0.26;
+    wrap(chunks).spacing(space).run_spacing(3.0).into_widget()
 }
 
 #[cfg(feature = "image-view")]

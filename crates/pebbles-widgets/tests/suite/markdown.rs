@@ -109,3 +109,35 @@ fn editor_switches_modes_via_the_external_signal() {
     ui.layout(&mut env, win);
     assert!(ui.element_count() > read_count, "Split shows both panes");
 }
+
+// ---------------------------------------------------------------------------
+// Word spacing: parley trims trailing whitespace from a line's width, so word
+// chunks must be separated by the wrap's horizontal spacing — not a (collapsed)
+// trailing space — or the text jams together ("alphabetagamma").
+// ---------------------------------------------------------------------------
+
+#[test]
+fn words_in_a_paragraph_are_spaced_not_jammed() {
+    use pebbles_render::RenderParagraph;
+    pebbles_widgets::theme::init();
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(
+        View::new(palette::WHITE, component(|| markdown("alpha beta gamma"))).into_widget(),
+    );
+    ui.layout(&mut env, Size::new(600.0, 400.0));
+    let tree = ui.render_tree();
+    let mut words: Vec<(f64, f64)> = tree
+        .find_all::<RenderParagraph>()
+        .into_iter()
+        .map(|id| (tree.absolute_offset(id).x, tree.size_of(id).width))
+        .collect();
+    words.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    assert!(words.len() >= 3, "three words → three chunks, got {}", words.len());
+    for pair in words.windows(2) {
+        let (x0, w0) = pair[0];
+        let (x1, _) = pair[1];
+        let gap = x1 - (x0 + w0);
+        assert!(gap > 1.0, "words jammed together: only {gap:.1}px between chunks");
+    }
+}
