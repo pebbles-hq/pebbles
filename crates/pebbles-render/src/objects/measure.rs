@@ -30,7 +30,7 @@ impl RenderMeasureProbe {
 }
 
 impl RenderObject for RenderMeasureProbe {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let Some(child) = cx.children().first().copied() else {
             return constraints.constrain(constraints.biggest());
         };
@@ -69,7 +69,7 @@ impl RenderObject for RenderMeasureProbe {
         size
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         if let Some(child) = cx.children().first().copied() {
             cx.paint_child(child, offset + cx.child_offset(child));
         }

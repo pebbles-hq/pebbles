@@ -11,3 +11,6 @@ description = "Foundation layer for Pebbles: geometry, layout enums, and color p
 [dependencies]
 kurbo.workspace = true
 peniko.workspace = true
+
+[lints]
+workspace = true

@@ -36,7 +36,7 @@ impl RenderAspectRatio {
 }
 
 impl RenderObject for RenderAspectRatio {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let size = self.target(constraints);
         if let Some(child) = cx.children().first().copied() {
             cx.layout_child(child, BoxConstraints::tight(size));
@@ -45,7 +45,7 @@ impl RenderObject for RenderAspectRatio {
         size
     }
 
-    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+    fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         // From the child if it reports one, else from the aspect ratio itself.
         let from_child = cx
             .children()
@@ -73,7 +73,7 @@ impl RenderObject for RenderAspectRatio {
         }
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         if let Some(child) = cx.children().first().copied() {
             cx.paint_child(child, offset + cx.child_offset(child));
         }

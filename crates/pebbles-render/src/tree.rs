@@ -297,7 +297,7 @@ impl RenderTree {
             out.push(crate::SemanticsNode {
                 id: nid,
                 props: props.clone(),
-                bounds: pebbles_foundation::Rect::from_origin_size(
+                bounds: Rect::from_origin_size(
                     (origin.x, origin.y),
                     (node.size.width, node.size.height),
                 ),

@@ -22,3 +22,9 @@ default = []
 # e.g. `cargo run -p gallery --features pebbles/native-menus`.
 native-menus = ["pebbles-shell/native-menus"]
 global-hotkeys = ["pebbles-shell/global-hotkeys"]
+# Forward the widget catalog's optional integrations the same way.
+image-view = ["pebbles-widgets/image-view"]
+file-dialogs = ["pebbles-widgets/file-dialogs"]
+
+[lints]
+workspace = true

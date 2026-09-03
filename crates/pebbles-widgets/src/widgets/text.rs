@@ -18,6 +18,25 @@ pub fn text(data: impl Into<String>) -> Text {
     Text { data: data.into(), style: ParagraphStyle::default() }
 }
 
+/// E5 — a `Text` bound to a `Signal<String>`, isolated in its own leaf component: a
+/// write re-renders ONLY this text node, not the owning component. That's the spike's
+/// finding — per-component granularity, applied to a leaf, already gives fine-grained
+/// text updates, so the heavier render-object-direct-write path stays unbuilt (its win
+/// is unproven per the E5 charter). Style it via the closure, e.g.
+/// `text_signal(count)` or wrap: `text(sig.get()).size(24.0)` inside `component(..)`.
+pub fn text_signal(signal: pebbles_core::Signal<String>) -> impl pebbles_core::IntoWidget {
+    pebbles_core::component_props(render_text_signal, TextSignalProps { signal })
+}
+
+#[derive(Clone)]
+struct TextSignalProps {
+    signal: pebbles_core::Signal<String>,
+}
+
+fn render_text_signal(p: &TextSignalProps) -> Text {
+    text(p.signal.get())
+}
+
 impl Text {
     /// Set the font size (logical px).
     pub fn size(mut self, size: f32) -> Self {

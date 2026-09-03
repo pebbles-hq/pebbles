@@ -147,7 +147,7 @@ impl IntoWidget for Popover {
                         let merged = popover_base().width(width).merge(st.clone());
                         crate::style::styled(
                             crate::widgets::Padding::new(
-                                pebbles_foundation::EdgeInsets::all(pad),
+                                EdgeInsets::all(pad),
                                 content.clone(),
                             ),
                             merged,

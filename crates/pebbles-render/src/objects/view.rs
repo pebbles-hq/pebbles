@@ -22,7 +22,7 @@ impl RenderView {
 }
 
 impl RenderObject for RenderView {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         // The window hands us tight constraints; adopt that size and pass it down.
         let size = constraints.biggest();
         let child_constraints = BoxConstraints::tight(size);
@@ -33,7 +33,7 @@ impl RenderObject for RenderView {
         size
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let rect = Rect::from_origin_size(offset.to_point(), cx.size());
         cx.scene.fill(Fill::NonZero, Affine::IDENTITY, &Brush::Solid(self.background), None, &rect);
         for child in cx.children() {

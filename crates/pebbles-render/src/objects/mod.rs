@@ -11,6 +11,7 @@ mod flex;
 mod fractional;
 mod icon;
 mod intrinsic;
+mod list;
 mod measure;
 mod overflow;
 mod paragraph;
@@ -41,7 +42,8 @@ pub use paragraph::{ParagraphStyle, RenderParagraph};
 #[cfg(debug_assertions)]
 pub use paragraph::{reset_shape_count, shape_count};
 pub use pointer::{Cursor, PointerButton, PointerEvent, RenderPointerListener, TapCallback};
-pub use scroll::{RefreshState, RenderList, RenderScroll, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle};
+pub use list::RenderList;
+pub use scroll::{RefreshState, RenderScroll, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle};
 pub use semantics::{SemanticsNode, SemanticsProps, SemanticsRole};
 pub use spinner::RenderSpinner;
 pub use stack::{RenderStack, StackFit, StackParentData};

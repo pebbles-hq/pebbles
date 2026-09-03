@@ -56,7 +56,7 @@ fn distribute(free: f64, n: usize, alignment: WrapAlignment) -> (f64, f64) {
 }
 
 impl RenderObject for RenderWrap {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let max_w = constraints.max_width;
         let child_constraints =
             BoxConstraints { min_width: 0.0, max_width: max_w, min_height: 0.0, max_height: f64::INFINITY };
@@ -122,7 +122,7 @@ impl RenderObject for RenderWrap {
         size
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         for child in cx.children() {
             cx.paint_child(child, offset + cx.child_offset(child));
         }

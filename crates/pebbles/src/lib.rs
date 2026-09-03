@@ -61,8 +61,8 @@ pub mod prelude {
         Signal, Spring, Store, Transition, action, action_event, animate_spring, animate_to,
         animate_to_with, animated, animated_spring, animated_with, channel, component,
         component_props, consume_context, create_effect, create_focus, create_focus_scope,
-        create_memo, create_resource, create_signal, create_store, create_timeout, provide_context,
-        spawn, transition,
+        create_memo, create_resource, create_shortcut, create_signal, create_store, create_timeout,
+        provide_context, spawn, transition, use_bounds,
     };
 
     // runtime (pebbles-core): the widget contract + reconciler handles
@@ -75,7 +75,9 @@ pub mod prelude {
     pub use pebbles_widgets::{builtins, families, has, is_builtin};
 
     // theming + the general style system (RN/CSS-like, apply anywhere)
-    pub use pebbles_widgets::{Colors, ModifierExt, Style, StyleExt, Theme, image_from_bytes, image_from_path, set_text_direction, set_theme, style, styled, styles, text_direction, theme, theme_override, toggle_theme};
+    pub use pebbles_widgets::{Colors, ModifierExt, Style, StyleExt, Theme, set_text_direction, set_theme, style, styled, styles, text_direction, theme, theme_override, toggle_theme};
+    #[cfg(feature = "image-view")]
+    pub use pebbles_widgets::{ImageView, image_from_bytes, image_from_path};
 
     // accessibility semantics (screen-reader roles/labels/state)
     pub use pebbles_widgets::{Semantics, SemanticsExt, SemanticsProps, SemanticsRole, semantics};
@@ -113,11 +115,11 @@ pub mod prelude {
         EditableText, Expanded, FittedBox, Flexible, FractionallySizedBox, GestureDetector,
         GridView, IntrinsicHeight, IntrinsicWidth, LimitedBox, ListView, Opacity, OverflowBox,
         Padding, Positioned, Row, ScrollController, ScrollExt, ScrollbarPolicy, ScrollbarStyle,
-        ImageView, SingleChildScrollView, SizedBox, Spinner, Stack, Text, Transform, View, Wrap,
+        SingleChildScrollView, SizedBox, Spinner, Stack, Text, Transform, View, Wrap,
         animated_container, aspect_ratio, canvas, center, column, editable, fitted_box, focus_scope,
         fractionally_sized_box, gap_h, gap_w, intrinsic_height, intrinsic_width, limited_box,
-        list_view, overflow_box, row, sized_box, spacer, spinner, stack, text, transform,
-        use_scroll_controller, wrap,
+        list_view, overflow_box, row, sized_box, spacer, spinner, stack, text, text_signal,
+        transform, use_scroll_controller, wrap,
     };
 
     // the shadcn-style component catalog

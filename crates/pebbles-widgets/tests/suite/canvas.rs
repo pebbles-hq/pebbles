@@ -13,7 +13,7 @@ thread_local! {
 }
 
 fn root() -> impl IntoWidget {
-    canvas(|c: &mut Canvas| {
+    canvas(|c: &mut Canvas<'_>| {
         PAINTS.with(|p| p.set(p.get() + 1));
         let s = c.size();
         c.fill_circle(Offset::new(s.width / 2.0, s.height / 2.0), 10.0, palette::BLUE);

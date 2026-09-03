@@ -108,7 +108,7 @@ impl ActionHandler for QueueAction {
             Action::Click => AtAction::Click,
             _ => return,
         };
-        queue_action(request.target.0, action);
+        queue_action(request.target_node.0, action);
     }
 }
 

@@ -9,7 +9,27 @@ rust-version = "1.90"
 license = "Apache-2.0"
 authors = ["Reyco Seguma"]
 repository = "https://github.com/pebbles-hq/pebbles"
+homepage = "https://github.com/pebbles-hq/pebbles"
 description = "Pebbles — a Flutter-style, desktop-first GUI framework built on Vello."
+keywords = ["gui", "ui", "graphics", "vello", "flutter"]
+categories = ["gui", "graphics", "rendering"]
+
+# Warn-only shared lints (CI ratchets with `-D warnings` once the debt is measured;
+# never bake `deny` into the manifest). Members opt in with `[lints] workspace = true`.
+[workspace.lints.rust]
+rust_2018_idioms = { level = "warn", priority = -1 }
+unused_qualifications = "warn"
+# NOT `unsafe_code = "forbid"`: reactive.rs + native_menu.rs legitimately use unsafe.
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+# leftovers that always escape into GUI codebases:
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+# the two perf footguns that matter in a per-frame hot path:
+large_types_passed_by_value = "warn"
+trivially_copy_pass_by_ref = "warn"
 
 [workspace.dependencies]
 # --- internal crates (bottom-up: foundation → render → core → widgets → shell → umbrella) ---

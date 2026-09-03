@@ -144,7 +144,7 @@ pub trait ParentDataWidget: 'static {
     fn take_child(&mut self) -> Option<AnyWidget>;
 
     /// The parent-data value to attach (e.g. a boxed `FlexParentData`).
-    fn parent_data(&self) -> Box<dyn std::any::Any>;
+    fn parent_data(&self) -> Box<dyn Any>;
 }
 
 /// Implement [`Widget`] for a parent-data widget type.

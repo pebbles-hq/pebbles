@@ -32,7 +32,7 @@ impl RenderIntrinsicHeight {
 
 /// The shared algorithm: query the child's intrinsic extent on `axis` (unless the
 /// incoming constraints already fix it), tighten that axis, and lay the child out.
-fn layout_intrinsic(cx: &mut LayoutCx, constraints: BoxConstraints, axis: Axis) -> Size {
+fn layout_intrinsic(cx: &mut LayoutCx<'_>, constraints: BoxConstraints, axis: Axis) -> Size {
     let Some(child) = cx.children().first().copied() else {
         return constraints.constrain(constraints.biggest());
     };
@@ -77,11 +77,11 @@ fn layout_intrinsic(cx: &mut LayoutCx, constraints: BoxConstraints, axis: Axis) 
 }
 
 impl RenderObject for RenderIntrinsicWidth {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         layout_intrinsic(cx, constraints, Axis::Horizontal)
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         if let Some(child) = cx.children().first().copied() {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
@@ -93,11 +93,11 @@ impl RenderObject for RenderIntrinsicWidth {
 }
 
 impl RenderObject for RenderIntrinsicHeight {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         layout_intrinsic(cx, constraints, Axis::Vertical)
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         if let Some(child) = cx.children().first().copied() {
             cx.paint_child(child, offset + cx.child_offset(child));
         }

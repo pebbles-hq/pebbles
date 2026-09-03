@@ -40,3 +40,6 @@ default = []
 native-menus = ["dep:muda"]
 # Enable `register_global_hotkey(..)` via `global-hotkey` (B4).
 global-hotkeys = ["dep:global-hotkey"]
+
+[lints]
+workspace = true

@@ -110,7 +110,7 @@ impl IntoWidget for Breadcrumb {
                 items.push(gap_w(6.0).into_widget());
             }
         }
-        crate::style::styled(row(items).main_axis_size(MainAxisSize::Min), merged).into_widget()
+        styled(row(items).main_axis_size(MainAxisSize::Min), merged).into_widget()
     }
 }
 

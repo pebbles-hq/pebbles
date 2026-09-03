@@ -10,13 +10,13 @@ use crate::object::RenderObject;
 use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 
 /// Convenience: the single (first) child of the object being laid out/painted.
-fn only_child_layout(cx: &LayoutCx) -> Option<crate::RenderId> {
+fn only_child_layout(cx: &LayoutCx<'_>) -> Option<crate::RenderId> {
     cx.children().first().copied()
 }
-fn only_child_paint(cx: &PaintCx) -> Option<crate::RenderId> {
+fn only_child_paint(cx: &PaintCx<'_>) -> Option<crate::RenderId> {
     cx.children().first().copied()
 }
-fn only_child_intrinsic(cx: &IntrinsicCx) -> Option<crate::RenderId> {
+fn only_child_intrinsic(cx: &IntrinsicCx<'_>) -> Option<crate::RenderId> {
     cx.children().first().copied()
 }
 
@@ -37,7 +37,7 @@ impl RenderColoredBox {
 }
 
 impl RenderObject for RenderColoredBox {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         match only_child_layout(cx) {
             Some(child) => {
                 let size = cx.layout_child(child, constraints);
@@ -48,7 +48,7 @@ impl RenderObject for RenderColoredBox {
         }
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let rect = Rect::from_origin_size(offset.to_point(), cx.size());
         cx.scene.fill(Fill::NonZero, Affine::IDENTITY, &Brush::Solid(self.color), None, &rect);
         if let Some(child) = only_child_paint(cx) {
@@ -56,7 +56,7 @@ impl RenderObject for RenderColoredBox {
         }
     }
 
-    fn baseline(&self, cx: &mut LayoutCx) -> Option<f64> {
+    fn baseline(&self, cx: &mut LayoutCx<'_>) -> Option<f64> {
         only_child_layout(cx).and_then(|child| cx.child_baseline(child))
     }
 
@@ -81,7 +81,7 @@ impl RenderPadding {
 }
 
 impl RenderObject for RenderPadding {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let insets = self.insets;
         match only_child_layout(cx) {
             Some(child) => {
@@ -97,7 +97,7 @@ impl RenderObject for RenderPadding {
         }
     }
 
-    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+    fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         // The child's intrinsic extent plus the insets; the cross extent the child
         // is asked about shrinks by the insets on that axis.
         let insets = self.insets;
@@ -115,13 +115,13 @@ impl RenderObject for RenderPadding {
             .map(|v| v + add)
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         if let Some(child) = only_child_paint(cx) {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
     }
 
-    fn baseline(&self, cx: &mut LayoutCx) -> Option<f64> {
+    fn baseline(&self, cx: &mut LayoutCx<'_>) -> Option<f64> {
         only_child_layout(cx).and_then(|child| cx.child_baseline(child))
     }
 
@@ -147,7 +147,7 @@ impl RenderAlign {
 }
 
 impl RenderObject for RenderAlign {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let alignment = self.alignment;
         match only_child_layout(cx) {
             Some(child) => {
@@ -167,19 +167,19 @@ impl RenderObject for RenderAlign {
         }
     }
 
-    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+    fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         // Alignment is placement, not size — pass the child's intrinsic through.
         only_child_intrinsic(cx)
             .and_then(|child| cx.child_intrinsic(child, axis, cross_extent))
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         if let Some(child) = only_child_paint(cx) {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
     }
 
-    fn baseline(&self, cx: &mut LayoutCx) -> Option<f64> {
+    fn baseline(&self, cx: &mut LayoutCx<'_>) -> Option<f64> {
         only_child_layout(cx).and_then(|child| cx.child_baseline(child))
     }
 
@@ -205,7 +205,7 @@ impl RenderConstrainedBox {
 }
 
 impl RenderObject for RenderConstrainedBox {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let effective = self.additional.enforce(constraints);
         match only_child_layout(cx) {
             Some(child) => {
@@ -217,7 +217,7 @@ impl RenderObject for RenderConstrainedBox {
         }
     }
 
-    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+    fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         // A constrained box clamps the child's intrinsic extent to the additional
         // constraints (a tight SizedBox's intrinsic is exactly its size).
         let from_child = only_child_intrinsic(cx)
@@ -241,13 +241,13 @@ impl RenderObject for RenderConstrainedBox {
         }
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         if let Some(child) = only_child_paint(cx) {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
     }
 
-    fn baseline(&self, cx: &mut LayoutCx) -> Option<f64> {
+    fn baseline(&self, cx: &mut LayoutCx<'_>) -> Option<f64> {
         only_child_layout(cx).and_then(|child| cx.child_baseline(child))
     }
 

@@ -10,7 +10,7 @@ use crate::decoration::BorderRadius;
 use crate::object::RenderObject;
 use crate::tree::{LayoutCx, PaintCx};
 
-fn layout_single_child(cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+fn layout_single_child(cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
     match cx.children().first().copied() {
         Some(child) => {
             let size = cx.layout_child(child, constraints);
@@ -37,11 +37,11 @@ impl RenderOpacity {
 }
 
 impl RenderObject for RenderOpacity {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         layout_single_child(cx, constraints)
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let Some(child) = cx.children().first().copied() else { return };
         let bounds = Rect::from_origin_size(offset.to_point(), cx.size());
         cx.scene.push_layer(Fill::NonZero, Mix::Normal, self.opacity, Affine::IDENTITY, &bounds);
@@ -70,11 +70,11 @@ impl RenderClipRRect {
 }
 
 impl RenderObject for RenderClipRRect {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         layout_single_child(cx, constraints)
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let Some(child) = cx.children().first().copied() else { return };
         let rounded =
             Rect::from_origin_size(offset.to_point(), cx.size()).to_rounded_rect(self.radius.to_radii());

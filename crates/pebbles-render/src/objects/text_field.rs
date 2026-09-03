@@ -167,7 +167,7 @@ struct Composed {
 }
 
 impl RenderObject for RenderTextField {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let max_advance = if self.multiline && constraints.has_bounded_width() {
             Some(constraints.max_width as f32)
         } else {
@@ -204,7 +204,7 @@ impl RenderObject for RenderTextField {
         constraints.constrain(Size::new(width, height))
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let Some(layout) = &self.cached else { return };
         let transform = Affine::translate((offset.x, offset.y));
         let composed = self.composed();

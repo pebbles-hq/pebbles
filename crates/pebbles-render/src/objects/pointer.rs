@@ -151,7 +151,7 @@ impl RenderPointerListener {
 }
 
 impl RenderObject for RenderPointerListener {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         match cx.children().first().copied() {
             Some(child) => {
                 let size = cx.layout_child(child, constraints);
@@ -162,7 +162,7 @@ impl RenderObject for RenderPointerListener {
         }
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         if let Some(child) = cx.children().first().copied() {
             cx.paint_child(child, offset + cx.child_offset(child));
         }

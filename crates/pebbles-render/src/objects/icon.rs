@@ -63,11 +63,11 @@ fn points_path(pts: &[(f64, f64)], close: bool) -> BezPath {
 }
 
 impl RenderObject for RenderIcon {
-    fn layout(&mut self, _cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, _cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         constraints.constrain(Size::new(self.size, self.size))
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let scale = self.size / self.data.view;
         let t = Affine::translate((offset.x, offset.y)) * Affine::scale(scale);
         let stroke =

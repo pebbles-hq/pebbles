@@ -54,8 +54,10 @@
 use pebbles_foundation::{Alignment, Color, EdgeInsets, TextAlign};
 use pebbles_render::{
     Affine, BlendMode, Border, BorderRadius, BorderSide, BoxConstraints, BoxDecoration, BoxShadow,
-    BoxShape, Cursor, Gradient, Image, ImageFit, image_from_rgba8,
+    BoxShape, Cursor, Gradient, Image, ImageFit,
 };
+#[cfg(feature = "image-view")]
+use pebbles_render::image_from_rgba8;
 
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{
@@ -518,14 +520,17 @@ impl<W: IntoWidget> StyleExt for W {}
 // ---------------------------------------------------------------------------
 
 /// Decode PNG/JPEG bytes into a paintable [`Image`] for `style().image(..)`.
-/// Returns `None` if the data can't be decoded.
+/// Returns `None` if the data can't be decoded. Needs the `image-view` feature.
+#[cfg(feature = "image-view")]
 pub fn image_from_bytes(bytes: &[u8]) -> Option<Image> {
     let rgba = ::image::load_from_memory(bytes).ok()?.to_rgba8();
     let (w, h) = rgba.dimensions();
     Some(image_from_rgba8(w, h, rgba.into_raw()))
 }
 
-/// Read and decode an image file into a paintable [`Image`].
+/// Read and decode an image file into a paintable [`Image`]. Needs the
+/// `image-view` feature.
+#[cfg(feature = "image-view")]
 pub fn image_from_path(path: impl AsRef<std::path::Path>) -> Option<Image> {
     image_from_bytes(&std::fs::read(path).ok()?)
 }

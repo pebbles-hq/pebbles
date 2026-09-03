@@ -3,6 +3,7 @@
 pub mod avatar;
 pub mod button_group;
 pub mod buttons;
+pub mod canvas;
 pub mod card;
 pub mod collapsible;
 pub mod colors;

@@ -93,7 +93,7 @@ impl RenderFittedBox {
 }
 
 impl RenderObject for RenderFittedBox {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let Some(child) = cx.children().first().copied() else {
             return constraints.constrain(constraints.biggest());
         };
@@ -117,7 +117,7 @@ impl RenderObject for RenderFittedBox {
         size
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         if let Some(child) = cx.children().first().copied() {
             cx.paint_child(child, offset);
         }
@@ -133,7 +133,7 @@ impl RenderObject for RenderFittedBox {
         }
     }
 
-    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+    fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         // A fitted box's intrinsic extent is its child's — scaling is a paint-time
         // concern, not an intrinsic one.
         cx.children()

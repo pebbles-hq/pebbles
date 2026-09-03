@@ -1,0 +1,5 @@
+# Matches the existing hand-formatted style (~110-column). The tree is not yet
+# rustfmt-clean — CI's fmt job is non-blocking until the one-time reformat lands.
+style_edition = "2024"
+max_width = 110
+use_small_heuristics = "Max"

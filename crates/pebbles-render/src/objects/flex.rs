@@ -134,7 +134,7 @@ impl RenderFlex {
 }
 
 impl RenderObject for RenderFlex {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let main_max = self.main_of(constraints.biggest());
         let cross_max = self.cross_of(constraints.biggest());
         let cross_bounded = cross_max.is_finite();
@@ -276,13 +276,13 @@ impl RenderObject for RenderFlex {
         size
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         for child in cx.children() {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
     }
 
-    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+    fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         // On the main axis a flex is the sum of its children's intrinsic extents
         // plus the gaps between them; on the cross axis it's the largest child's.
         let children = cx.children();

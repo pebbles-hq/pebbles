@@ -7,7 +7,7 @@
 //! scene, and because vello rasterizes glyph outlines through that transform the
 //! text stays crisp at any DPI.
 
-use pebbles_foundation::{Axis, Color, Offset, Size, TextAlign};
+use pebbles_foundation::{Axis, Color, Offset, Size, TextAlign, TextDirection};
 use parley::{
     Alignment, AlignmentOptions, FontStyle, FontWeight, Layout, LineHeight, PositionedLayoutItem,
     StyleProperty,
@@ -69,19 +69,33 @@ impl Default for ParagraphStyle {
     }
 }
 
-fn to_parley_align(a: TextAlign) -> Alignment {
+/// Map to parley's alignment. `Start`/`End` resolve against the ambient text
+/// direction (D2): under RTL, `Start` is the right edge and `End` the left.
+fn to_parley_align(a: TextAlign, rtl: bool) -> Alignment {
     match a {
         TextAlign::Left => Alignment::Left,
         TextAlign::Right => Alignment::Right,
         TextAlign::Center => Alignment::Center,
         TextAlign::Justify => Alignment::Justify,
-        TextAlign::Start => Alignment::Start,
-        TextAlign::End => Alignment::End,
+        TextAlign::Start => {
+            if rtl {
+                Alignment::Right
+            } else {
+                Alignment::Left
+            }
+        }
+        TextAlign::End => {
+            if rtl {
+                Alignment::Left
+            } else {
+                Alignment::Right
+            }
+        }
     }
 }
 
-/// Debug-only tally of parley re-shapes (E3): the tests assert a stable string doesn't
-/// re-shape on a repeat layout. Bumped once per layout that actually shapes.
+// Debug-only tally of parley re-shapes (E3): the tests assert a stable string doesn't
+// re-shape on a repeat layout. Bumped once per layout that actually shapes.
 #[cfg(debug_assertions)]
 thread_local! {
     static SHAPES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -132,6 +146,8 @@ impl RenderParagraph {
         self.text.hash(&mut h);
         format!("{:?}", self.style).hash(&mut h);
         max_advance.map(f32::to_bits).hash(&mut h);
+        // D2: ambient direction affects Start/End alignment, so it's part of the key.
+        (crate::direction::text_direction() == TextDirection::Rtl).hash(&mut h);
         h.finish()
     }
 
@@ -161,13 +177,14 @@ impl RenderParagraph {
         }
         let mut layout: Layout<Brush> = builder.build(s);
         layout.break_all_lines(max_advance);
-        layout.align(to_parley_align(self.style.align), AlignmentOptions::default());
+        let rtl = crate::direction::text_direction() == TextDirection::Rtl;
+        layout.align(to_parley_align(self.style.align, rtl), AlignmentOptions::default());
         layout
     }
 }
 
 impl RenderObject for RenderParagraph {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let max_advance = if self.style.soft_wrap && constraints.has_bounded_width() {
             Some(constraints.max_width as f32)
         } else {
@@ -224,7 +241,7 @@ impl RenderObject for RenderParagraph {
         constraints.constrain(size)
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let Some(layout) = &self.cached else { return };
         let transform = Affine::translate((offset.x, offset.y));
 
@@ -255,7 +272,7 @@ impl RenderObject for RenderParagraph {
         }
     }
 
-    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+    fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         match axis {
             // The widest unbreakable run — approximated as the widest
             // whitespace-separated token (Flutter uses the same word-boundary
@@ -283,7 +300,7 @@ impl RenderObject for RenderParagraph {
         }
     }
 
-    fn baseline(&self, _cx: &mut LayoutCx) -> Option<f64> {
+    fn baseline(&self, _cx: &mut LayoutCx<'_>) -> Option<f64> {
         // The first line's baseline: the line's top offset plus its metrics'
         // baseline (the distance from the line top to the alphabetic baseline).
         self.cached.as_ref().and_then(|layout| {

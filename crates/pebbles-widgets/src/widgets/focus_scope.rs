@@ -22,6 +22,6 @@ fn render(props: &Props) -> pebbles_core::Element {
 /// Trap Tab-cycling within `child`: focusable widgets inside it form their own
 /// cycle, so keyboard traversal never leaks out (and, while nothing inside is
 /// focused, widgets outside the scope are what Tab visits).
-pub fn focus_scope(child: impl pebbles_core::IntoWidget) -> pebbles_core::Element {
+pub fn focus_scope(child: impl IntoWidget) -> pebbles_core::Element {
     component_props(render, Props { child: child.into_widget() }).into_widget()
 }

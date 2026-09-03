@@ -24,12 +24,12 @@ pub trait RenderObject: Any {
     /// Compute this object's size for the given constraints, laying out and
     /// positioning children via `cx`. Must return a [`Size`] that satisfies
     /// `constraints`. This is the "sizes come up" half of the protocol.
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size;
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size;
 
     /// Paint this object into the scene. `offset` is this object's absolute
     /// top-left position in the window's coordinate space. Children are painted
     /// with [`PaintCx::paint_child`].
-    fn paint(&self, cx: &mut PaintCx, offset: Offset);
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset);
 
     /// An optional paint/hit-test transform applied to this object's whole subtree,
     /// expressed in the object's **local** space (already resolved around its
@@ -47,7 +47,7 @@ pub trait RenderObject: Any {
     /// that don't report one) and must be sized by the box protocol alone.
     /// [`RenderIntrinsicWidth`](crate::RenderIntrinsicWidth) / `RenderIntrinsicHeight`
     /// drive layout from this instead of the ordinary constraint pass.
-    fn intrinsic(&self, _cx: &mut IntrinsicCx, _axis: Axis, _cross_extent: f64) -> Option<f64> {
+    fn intrinsic(&self, _cx: &mut IntrinsicCx<'_>, _axis: Axis, _cross_extent: f64) -> Option<f64> {
         None
     }
 
@@ -56,7 +56,7 @@ pub trait RenderObject: Any {
     /// reports its first line's baseline; single-child wrappers (padding, boxes,
     /// decoration) pass it through with their child's top inset added. `None` for
     /// objects with no baseline notion.
-    fn baseline(&self, _cx: &mut LayoutCx) -> Option<f64> {
+    fn baseline(&self, _cx: &mut LayoutCx<'_>) -> Option<f64> {
         None
     }
 

@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep target/ lean on runners: no incremental caches, thin debuginfo.
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
+
+jobs:
+  check:
+    name: Check + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: System deps (fontconfig for parley/fontique)
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo check (all targets)
+        run: cargo check --workspace --all-targets
+      - name: cargo test (headless suites)
+        run: cargo test --workspace
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - uses: Swatinem/rust-cache@v2
+      # Warn-only for now: [workspace.lints] is the source of truth. Ratchet to
+      # `-- -D warnings` once the existing warning debt is burned down.
+      - run: cargo clippy --workspace --all-targets
+
+  fmt:
+    name: Rustfmt (non-blocking)
+    runs-on: ubuntu-latest
+    # The tree predates rustfmt.toml and is not yet fmt-clean; this job reports
+    # drift without gating. Flip to blocking after the one-time reformat.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo fmt --all --check
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  typos:
+    name: Typos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: crate-ci/typos@master

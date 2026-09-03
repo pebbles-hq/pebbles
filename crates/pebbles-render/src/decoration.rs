@@ -57,8 +57,8 @@ impl BorderRadius {
         self.top_left.max(self.top_right).max(self.bottom_right).max(self.bottom_left)
     }
 
-    pub(crate) fn to_radii(self) -> vello::kurbo::RoundedRectRadii {
-        vello::kurbo::RoundedRectRadii::new(
+    pub(crate) fn to_radii(self) -> kurbo::RoundedRectRadii {
+        kurbo::RoundedRectRadii::new(
             self.top_left,
             self.top_right,
             self.bottom_right,

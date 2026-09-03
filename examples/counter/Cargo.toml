@@ -6,3 +6,6 @@ publish = false
 
 [dependencies]
 pebbles = { workspace = true }
+
+[lints]
+workspace = true

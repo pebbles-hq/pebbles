@@ -77,24 +77,24 @@ impl Canvas<'_> {
 /// A leaf render object that runs a painter closure each paint. Sizes to the biggest
 /// bounded constraint (wrap in a sized box to give it explicit dimensions).
 pub struct RenderCanvas {
-    pub painter: Rc<dyn Fn(&mut Canvas)>,
+    pub painter: Rc<dyn Fn(&mut Canvas<'_>)>,
 }
 
 impl RenderCanvas {
-    pub fn new(painter: Rc<dyn Fn(&mut Canvas)>) -> Self {
+    pub fn new(painter: Rc<dyn Fn(&mut Canvas<'_>)>) -> Self {
         RenderCanvas { painter }
     }
 }
 
 impl RenderObject for RenderCanvas {
-    fn layout(&mut self, _cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, _cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let big = constraints.biggest();
         let w = if big.width.is_finite() { big.width } else { 0.0 };
         let h = if big.height.is_finite() { big.height } else { 0.0 };
         constraints.constrain(Size::new(w, h))
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let size = cx.size();
         let mut canvas = Canvas { scene: &mut *cx.scene, origin: offset, size };
         (self.painter)(&mut canvas);

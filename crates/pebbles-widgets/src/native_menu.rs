@@ -106,14 +106,10 @@ fn native_item(item: MenuItem) -> NativeEntry {
 ///     menu_item("Quit").shortcut("Mod+Q").into(),
 /// ])
 /// ```
-pub fn menu<I, E>(label: impl Into<String>, entries: I) -> NativeMenu
-where
-    I: IntoIterator<Item = E>,
-    E: Into<MenuEntry>,
-{
+pub fn menu<I: IntoIterator<Item = MenuEntry>>(label: impl Into<String>, entries: I) -> NativeMenu {
     NativeMenu {
         label: label.into(),
-        entries: entries.into_iter().map(|e| to_native(e.into())).collect(),
+        entries: entries.into_iter().map(to_native).collect(),
     }
 }
 

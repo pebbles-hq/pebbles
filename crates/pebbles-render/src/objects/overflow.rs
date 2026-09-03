@@ -24,7 +24,7 @@ impl RenderLimitedBox {
 }
 
 impl RenderObject for RenderLimitedBox {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let child_constraints = BoxConstraints {
             max_width: if constraints.max_width.is_infinite() {
                 constraints.max_width.min(self.max_width)
@@ -48,7 +48,7 @@ impl RenderObject for RenderLimitedBox {
         }
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         if let Some(child) = cx.children().first().copied() {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
@@ -76,7 +76,7 @@ impl RenderOverflowBox {
 }
 
 impl RenderObject for RenderOverflowBox {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let Some(child) = cx.children().first().copied() else {
             return constraints.constrain(constraints.biggest());
         };
@@ -95,18 +95,18 @@ impl RenderObject for RenderOverflowBox {
         size
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         if let Some(child) = cx.children().first().copied() {
             cx.paint_child(child, offset);
         }
     }
 
-    fn transform(&self, _size: Size) -> Option<vello::kurbo::Affine> {
+    fn transform(&self, _size: Size) -> Option<kurbo::Affine> {
         let pos = self.position;
         if pos == Offset::ZERO {
             None
         } else {
-            Some(vello::kurbo::Affine::translate((pos.x, pos.y)))
+            Some(kurbo::Affine::translate((pos.x, pos.y)))
         }
     }
 

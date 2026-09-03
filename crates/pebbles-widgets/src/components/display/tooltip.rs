@@ -3,23 +3,25 @@
 //! timer); when it elapses a small chip is shown on the chosen [`Side`] of the pointer
 //! — flipping to the opposite side and clamping when it would exit the window.
 //!
-//! # C2 note on geometry
-//! The chip anchors to the **pointer** (the geometry available in a hover event), not
-//! the trigger's laid-out rect — a widget can't read its own render bounds today. The
-//! side/flip/clamp math ([`chip_anchor`]) is exact and unit-tested; refining the anchor
-//! to the trigger rect (and wiring `show_on_focus` to focus geometry) is a shell-level
-//! follow-up. `show_on_focus` is accepted (default on) and reserved for that.
+//! # C2 geometry
+//! The chip anchors to the trigger's laid-out rect via
+//! [`use_bounds`](pebbles_core::use_bounds) (one frame behind) — `side_anchor` picks the
+//! edge, [`chip_anchor`] applies the flip + lateral clamp (exact + unit-tested). It falls
+//! back to the pointer only before the trigger has been laid out once. `show_on_focus`
+//! (default on) shows the chip without delay while the focused element (via
+//! [`focus_bounds`](pebbles_core::bounds::focus_bounds)) sits inside the trigger.
 
-use pebbles_foundation::{Color, Offset};
+use pebbles_foundation::{Color, Offset, Rect};
 use pebbles_render::{Border, BoxShadow, PointerEvent};
 
 use crate::Side;
 use crate::overlay::{hide_passive, show_passive, window_size};
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, text};
+use pebbles_core::bounds::focus_bounds;
 use pebbles_core::context::action_event;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{animation, component_props, create_signal};
+use pebbles_core::{animation, component_props, create_signal, use_bounds};
 
 /// A tooltip wrapping a trigger. Build with [`tooltip`].
 #[derive(Clone)]
@@ -90,6 +92,7 @@ struct Props {
     rich: Option<AnyWidget>,
     delay: f64,
     side: Side,
+    show_on_focus: bool,
     style: Option<crate::style::Style>,
 }
 
@@ -103,6 +106,7 @@ impl IntoWidget for Tooltip {
                 rich: self.rich.take(),
                 delay: self.delay,
                 side: self.side,
+                show_on_focus: self.show_on_focus,
                 style: self.style.take(),
             },
         )
@@ -178,6 +182,18 @@ pub(crate) fn chip_anchor(
     (left, top)
 }
 
+/// The chip's anchor point: the edge-center of the trigger rect for `side`.
+fn side_anchor(side: Side, r: Rect) -> (f64, f64) {
+    let cx = (r.x0 + r.x1) / 2.0;
+    let cy = (r.y0 + r.y1) / 2.0;
+    match side {
+        Side::Top => (cx, r.y0),
+        Side::Bottom => (cx, r.y1),
+        Side::Left => (r.x0, cy),
+        Side::Right => (r.x1, cy),
+    }
+}
+
 fn render_tooltip(p: &Props) -> AnyWidget {
     // A stable per-instance key for the show-delay timer (survives re-renders).
     let key = create_signal(()).raw_id();
@@ -188,24 +204,55 @@ fn render_tooltip(p: &Props) -> AnyWidget {
     let rich = p.rich.clone();
     let tstyle = p.style.clone();
 
+    // C2: the trigger's own laid-out rect (one frame behind) → anchor the chip to its
+    // edge, and drive show-on-focus by testing whether the focused element is inside it.
+    let own = use_bounds();
+    let anchored = own.width() > 0.0;
+    let build_props = {
+        let (label, rich, tstyle) = (label.clone(), rich.clone(), tstyle.clone());
+        move || Props {
+            child: Container::new().into_widget(),
+            label: label.clone(),
+            rich: rich.clone(),
+            delay: 0.0,
+            side,
+            show_on_focus: false,
+            style: tstyle.clone(),
+        }
+    };
+
+    // Show-on-focus: show (no delay) while the focused element sits inside the trigger;
+    // hide when focus leaves. `focus_showing` gates the hide so we don't fight hover.
+    let focus_showing = create_signal(false);
+    if p.show_on_focus && anchored {
+        let inside = focus_bounds().is_some_and(|fb| own.contains(fb.center()));
+        if inside {
+            let props = build_props();
+            let (cw, ch) = estimate_chip_size(&props);
+            let (ww, wh) = window_size();
+            let (ax, ay) = side_anchor(side, own);
+            let (left, top) = chip_anchor(side, ax, ay, cw, ch, 8.0, ww, wh);
+            show_passive(chip(&props), left, top);
+            if !focus_showing.peek() {
+                focus_showing.set(true);
+            }
+        } else if focus_showing.peek() {
+            hide_passive();
+            focus_showing.set(false);
+        }
+    }
+
     GestureDetector::new(p.child.clone())
         .on_hover_enter(action_event(move |e: PointerEvent| {
-            let (gx, gy) = (e.global.x, e.global.y);
-            let label = label.clone();
-            let rich = rich.clone();
-            let tstyle = tstyle.clone();
+            // Anchor to the trigger edge when the rect is known, else to the pointer.
+            let (ax, ay, gap) =
+                if anchored { let (x, y) = side_anchor(side, own); (x, y, 8.0) } else { (e.global.x, e.global.y, 12.0) };
+            let build = build_props.clone();
             animation::set_timeout(key, delay, move || {
-                let props = Props {
-                    child: Container::new().into_widget(),
-                    label: label.clone(),
-                    rich: rich.clone(),
-                    delay: 0.0,
-                    side,
-                    style: tstyle.clone(),
-                };
+                let props = build();
                 let (cw, ch) = estimate_chip_size(&props);
                 let (ww, wh) = window_size();
-                let (left, top) = chip_anchor(side, gx, gy, cw, ch, 12.0, ww, wh);
+                let (left, top) = chip_anchor(side, ax, ay, cw, ch, gap, ww, wh);
                 show_passive(chip(&props), left, top);
             });
         }))

@@ -3,7 +3,7 @@
 //! the painter) drive re-renders, so reactivity is free. Unblocks charts + Gravel.
 //!
 //! ```ignore
-//! canvas(move |c: &mut Canvas| {
+//! canvas(move |c: &mut Canvas<'_>| {
 //!     c.fill_rrect(Rect::new(0.0, 0.0, 80.0, 40.0), 8.0, theme().colors.primary);
 //! })
 //! .width(320.0)
@@ -21,7 +21,7 @@ use pebbles_core::widget::{AnyWidget, IntoWidget, RenderWidget};
 /// [`canvas`], which adds the `.width()/.height()` sizing sugar.
 #[derive(Clone)]
 struct CanvasLeaf {
-    painter: Rc<dyn Fn(&mut Canvas)>,
+    painter: Rc<dyn Fn(&mut Canvas<'_>)>,
 }
 
 pebbles_core::render_widget!(CanvasLeaf);
@@ -40,13 +40,13 @@ impl RenderWidget for CanvasLeaf {
 
 /// A custom-painting widget. Build with [`canvas`]; size with `.width()/.height()`.
 pub struct CanvasWidget {
-    painter: Rc<dyn Fn(&mut Canvas)>,
+    painter: Rc<dyn Fn(&mut Canvas<'_>)>,
     width: Option<f64>,
     height: Option<f64>,
 }
 
 /// Create a [`CanvasWidget`] that runs `painter` each paint.
-pub fn canvas(painter: impl Fn(&mut Canvas) + 'static) -> CanvasWidget {
+pub fn canvas(painter: impl Fn(&mut Canvas<'_>) + 'static) -> CanvasWidget {
     CanvasWidget { painter: Rc::new(painter), width: None, height: None }
 }
 

@@ -21,7 +21,9 @@ pub use data::{Cell, SortDir, Table, cell, table};
 pub use list_tile::{ListTile, list_tile};
 pub use hover_card::{HoverCard, hover_card};
 pub use empty::{Empty, empty};
-pub use file_explorer::{FileExplorer, FileTree, FsKind, FsNode, file_explorer, pick_folder};
+pub use file_explorer::{FileExplorer, FileTree, FsKind, FsNode, file_explorer};
+#[cfg(feature = "file-dialogs")]
+pub use file_explorer::pick_folder;
 pub use kbd::{Kbd, kbd};
 pub use icon::{Icon, icon};
 pub use progress::{Progress, progress};

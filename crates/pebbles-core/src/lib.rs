@@ -19,6 +19,7 @@
 //! and `pebbles-render`.
 
 pub mod animation;
+pub mod bounds;
 pub mod clipboard;
 pub mod component;
 pub mod context;
@@ -38,6 +39,7 @@ pub use animation::{
     animated_spring, animated_with, clear_timeout, create_loop, create_loop_while, create_timeout,
     set_timeout, transition,
 };
+pub use bounds::use_bounds;
 pub use component::{Component, Element, component, component_props};
 pub use context::{Callback, IntoCallback, action, action_event};
 pub use element::{ElementId, Ui};

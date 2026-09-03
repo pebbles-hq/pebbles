@@ -535,7 +535,8 @@ fn render_sub_row(p: &SubRowProps) -> AnyWidget {
     let bp = p.bp.clone();
     let top_offset = p.top_offset;
     let enter_close = schedule_close.clone();
-    GestureDetector::new(body)
+    let label = p.label.clone();
+    let gesture = GestureDetector::new(body)
         .cursor(Cursor::Pointer)
         .on_hover_enter(action_event(move |_e: PointerEvent| {
             hovered.set(true);
@@ -577,8 +578,9 @@ fn render_sub_row(p: &SubRowProps) -> AnyWidget {
             over.update(|n| *n -= 1);
             pebbles_core::animation::clear_timeout(show_key);
             schedule_close();
-        })
-        .into_widget()
+        });
+    // C7: a submenu trigger is a MenuItem too (label = row text).
+    crate::widgets::semantics(pebbles_render::SemanticsRole::MenuItem, label, gesture).into_widget()
 }
 
 /// Props for the open child menu — a component so the keyboard highlight

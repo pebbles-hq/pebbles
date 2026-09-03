@@ -1,0 +1,9 @@
+[files]
+extend-exclude = [
+    "crates/pebbles-icons/src/lucide.rs", # generated
+    "Cargo.lock",
+]
+
+[default.extendwords]
+# identifiers the checker would false-positive on
+Pebbles = "Pebbles"

@@ -2,7 +2,7 @@
 //! [`Separator`] and [`Skeleton`].
 
 use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, Offset};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, ImageFit, IconKind};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, IconKind};
 
 use pebbles_core::children;
 use pebbles_core::{component_props, create_loop};
@@ -10,6 +10,7 @@ use crate::theme::{mix, theme};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{ClipRRect, Container, Positioned, center, column, gap_h, gap_w, row, spacer, stack, text};
 use crate::style::{Style, style, styled};
+#[cfg(feature = "image-view")]
 use crate::ImageView;
 
 use crate::components::icon;
@@ -365,13 +366,18 @@ impl IntoWidget for Avatar {
         let mk = |init: String| initials_face(init, bg, c.secondary_foreground, size, radius);
 
         let face: AnyWidget = match self.src.take() {
+            #[cfg(feature = "image-view")]
             Some(url) => ImageView::network(url)
                 .size(size, size)
-                .fit(ImageFit::Cover)
+                .fit(pebbles_render::ImageFit::Cover)
                 .radius(BorderRadius::all(radius))
                 .placeholder(mk(initials.clone()))
                 .error(mk(initials.clone()))
                 .into_widget(),
+            // Without the `image-view` feature a `src` URL degrades to the initials
+            // face (the same thing `.error(..)` would show).
+            #[cfg(not(feature = "image-view"))]
+            Some(_) => mk(initials),
             None => mk(initials),
         };
 

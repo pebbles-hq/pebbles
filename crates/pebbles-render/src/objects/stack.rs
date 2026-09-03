@@ -54,7 +54,7 @@ impl RenderStack {
 }
 
 impl RenderObject for RenderStack {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let children: Vec<(RenderId, StackParentData)> = cx
             .children()
             .into_iter()
@@ -116,13 +116,13 @@ impl RenderObject for RenderStack {
         size
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         for child in cx.children() {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
     }
 
-    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+    fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         // A stack's intrinsic extent is its largest child's.
         let mut acc: Option<f64> = None;
         for child in cx.children() {

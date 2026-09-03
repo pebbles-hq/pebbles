@@ -25,7 +25,7 @@ impl RenderDecoratedBox {
 }
 
 impl RenderObject for RenderDecoratedBox {
-    fn layout(&mut self, cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         match cx.children().first().copied() {
             Some(child) => {
                 let size = cx.layout_child(child, constraints);
@@ -36,7 +36,7 @@ impl RenderObject for RenderDecoratedBox {
         }
     }
 
-    fn intrinsic(&self, cx: &mut IntrinsicCx, axis: Axis, cross_extent: f64) -> Option<f64> {
+    fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         // Decoration paints around the child, not beside it — pass through.
         cx.children()
             .first()
@@ -44,11 +44,11 @@ impl RenderObject for RenderDecoratedBox {
             .and_then(|child| cx.child_intrinsic(child, axis, cross_extent))
     }
 
-    fn baseline(&self, cx: &mut LayoutCx) -> Option<f64> {
+    fn baseline(&self, cx: &mut LayoutCx<'_>) -> Option<f64> {
         cx.children().first().copied().and_then(|child| cx.child_baseline(child))
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let size = cx.size();
         let rect = Rect::from_origin_size(offset.to_point(), size);
         let d = &self.decoration;
@@ -109,7 +109,7 @@ fn outline(d: &BoxDecoration, size: Size, rect: Rect) -> (BezPath, f64) {
 }
 
 /// Paint a decoration's background fill + image (no shadow, no border).
-fn fill_surface(cx: &mut PaintCx, rect: Rect, size: Size, path: &BezPath, d: &BoxDecoration) {
+fn fill_surface(cx: &mut PaintCx<'_>, rect: Rect, size: Size, path: &BezPath, d: &BoxDecoration) {
     let has_fill = d.gradient.is_some() || d.color.is_some();
     if has_fill {
         let layered = d.blend.is_some();
@@ -154,7 +154,7 @@ fn fill_surface(cx: &mut PaintCx, rect: Rect, size: Size, path: &BezPath, d: &Bo
 }
 
 /// Stroke a decoration's border (uniform strokes the outline; per-side strokes insets).
-fn border_surface(cx: &mut PaintCx, rect: Rect, path: &BezPath, d: &BoxDecoration) {
+fn border_surface(cx: &mut PaintCx<'_>, rect: Rect, path: &BezPath, d: &BoxDecoration) {
     if let Some(border) = d.border {
         if border.is_uniform() {
             let side = border.top;
@@ -179,7 +179,7 @@ fn point_in(rect: Rect, a: Alignment) -> Point {
 }
 
 /// Build a peniko gradient positioned within `rect` from a [`Gradient`] spec.
-fn gradient_brush(g: &Gradient, rect: Rect) -> vello::peniko::Gradient {
+fn gradient_brush(g: &Gradient, rect: Rect) -> peniko::Gradient {
     use vello::peniko::Gradient as PGrad;
     match g {
         Gradient::Linear { begin, end, colors } => {
@@ -200,7 +200,7 @@ fn gradient_brush(g: &Gradient, rect: Rect) -> vello::peniko::Gradient {
 }
 
 /// Stroke a single border edge as a straight line from `p0` to `p1`.
-fn paint_side(cx: &mut PaintCx, side: BorderSide, p0: (f64, f64), p1: (f64, f64)) {
+fn paint_side(cx: &mut PaintCx<'_>, side: BorderSide, p0: (f64, f64), p1: (f64, f64)) {
     if side.width <= 0.0 {
         return;
     }

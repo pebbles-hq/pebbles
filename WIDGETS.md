@@ -93,8 +93,8 @@ Run `cargo run -p gallery` — ~50 dedicated screens, one per component family.
 | `Table` (data table) | ✅ | sort (multi, configurable glyph), selection + select-all, striped, hover, empty state |
 | `ListTile` | ✅ | style/tap/selected/dense |
 | `TreeView` / `TreeNode` | ✅ | multi-select, drag |
-| `FileExplorer` / `FileTree` (+ `pick_folder`) | ✅ | real disk: native picker, lazy loading, mutations, multi-select/-drag, empty-space menu |
-| `ImageView` | ✅ | `asset`/`network`/`memory`/`base64`/`image` + `ImageFit`; reactive source |
+| `FileExplorer` / `FileTree` (+ `pick_folder`) | ✅ | real disk: native picker (`pick_folder` needs the `file-dialogs` feature), lazy loading, mutations, multi-select/-drag, empty-space menu |
+| `ImageView` | ✅ | `asset`/`network`/`memory`/`base64`/`image` + `ImageFit`; reactive source (`image-view` feature) |
 | `Carousel` | ✅ | snap-paged slides, dots, arrows (hidden at ends), autoplay w/ hover-pause, `CarouselController` (A6 ✅) |
 
 ## 4. Layout & navigation components (`components/layout/`, `components/navigation/`)

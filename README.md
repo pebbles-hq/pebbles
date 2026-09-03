@@ -44,6 +44,11 @@ cargo run -p counter     # the example above
 cargo run -p gallery     # the full widget showcase / documentation
 ```
 
+Optional integrations are opt-in cargo features on the `pebbles` crate:
+`image-view` (`ImageView` + image decoding), `file-dialogs` (`pick_folder`),
+`native-menus` (OS menu bar), `global-hotkeys`. A default build links none of
+them — no image codecs, no HTTP client, no async runtime.
+
 ## Programming model
 
 - **UI syntax is Flutter.** `column(children![a, b, c])` mirrors `Column(children: [...])`,

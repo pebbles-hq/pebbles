@@ -9,7 +9,7 @@ pub use kurbo::{Affine, Point, Vec2};
 /// A 2D displacement, i.e. a position relative to an origin. Flutter's `Offset`.
 ///
 /// This is an alias of [`kurbo::Vec2`]: `dx`/`dy` map to `x`/`y`.
-pub type Offset = kurbo::Vec2;
+pub type Offset = Vec2;
 
 /// A width/height pair. Flutter's `Size`, backed by [`kurbo::Size`].
 pub type Size = kurbo::Size;

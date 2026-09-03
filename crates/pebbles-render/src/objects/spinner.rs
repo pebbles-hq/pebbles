@@ -25,11 +25,11 @@ impl RenderSpinner {
 }
 
 impl RenderObject for RenderSpinner {
-    fn layout(&mut self, _cx: &mut LayoutCx, constraints: BoxConstraints) -> Size {
+    fn layout(&mut self, _cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         constraints.constrain(Size::new(self.diameter, self.diameter))
     }
 
-    fn paint(&self, cx: &mut PaintCx, offset: Offset) {
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let r = (self.diameter - self.stroke_width) / 2.0;
         let center = Point::new(offset.x + self.diameter / 2.0, offset.y + self.diameter / 2.0);
         // A 270° sweep (3π/2) leaves a gap so the rotation reads as motion.
