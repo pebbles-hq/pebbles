@@ -36,15 +36,21 @@
 //! cancels a pending cut/copy, then clears the selection. A focused editor
 //! always wins its own keys first (typing, Ctrl+A/C/X/V in the rename field).
 //!
-//! Every node is customizable individually: [`FsNode::icon`]/[`FsNode::color`]
-//! (builders on [`FsNode`], or in place via [`FileTree::node_mut`]).
+//! **Icons are themable** ([`set_icon_theme`](FileExplorer::set_icon_theme) —
+//! the hook an IDE's icon theming plugs into): a resolver maps every node to
+//! any bundled lucide glyph + color, per-node [`FsNode::icon`]/[`FsNode::color`]
+//! overrides win, and the defaults show open/closed folder glyphs.
+//!
+//! Rows carry the standard state set: hover tint, selected (accent), active
+//! (focus ring), cut (dimmed), drop target.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
+use std::rc::Rc;
 use std::path::{Path, PathBuf};
 
-use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisSize};
-use pebbles_render::{Cursor, IconKind};
+use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
+use pebbles_render::{Border, BoxDecoration, Cursor, IconData, IconKind, lucide};
 
 use crate::components::{ButtonVariant, context_menu, icon, icon_button, menu_item, muted, text_field};
 use crate::theme::{mix, theme};
@@ -68,6 +74,12 @@ use tree::{copy_path, read_dir, unique_name};
 // ---------------------------------------------------------------------------
 // The explorer controller
 // ---------------------------------------------------------------------------
+
+/// An icon theme: resolves a node (+ whether it renders expanded) to a glyph
+/// and an optional color. Return `None` to fall through to the default
+/// folder/file look for that node. Installed with
+/// [`FileExplorer::set_icon_theme`] — the hook an IDE's icon theming plugs into.
+pub(super) type IconTheme = Rc<dyn Fn(&FsNode, bool) -> Option<(IconData, Option<Color>)>>;
 
 /// What a clipboard entry does on paste.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -97,6 +109,8 @@ pub struct FileExplorer {
     pub(super) rename_buf: Signal<String>,
     /// The explorer clipboard: node ids + copy/cut, filled by Mod+C/X and the menus.
     pub(super) clipboard: Signal<Option<(Vec<u64>, ClipMode)>>,
+    /// The installed icon theme, if any (see [`set_icon_theme`](Self::set_icon_theme)).
+    pub(super) icon_theme: Signal<Option<IconTheme>>,
 }
 
 /// Create an explorer over `tree` (the app's `Signal<FileTree>`). Call inside
@@ -115,6 +129,7 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         last_error: create_signal(None),
         rename_buf: create_signal(String::new()),
         clipboard: create_signal(None),
+        icon_theme: create_signal(None),
     };
     explorer.install_keys();
     explorer
@@ -129,6 +144,49 @@ impl FileExplorer {
     /// The node being inline-renamed, if any (double-click / F2 / menu Rename).
     pub fn renaming(&self) -> Signal<Option<u64>> {
         self.renaming
+    }
+
+    /// Install an icon theme — the VSCode-style theming hook. `f` maps a node
+    /// (+ whether it renders expanded) to a glyph and optional color; return
+    /// `None` per node to keep the default look. Per-node [`FsNode::icon`]
+    /// overrides always win over the theme. Rows re-render on theme change.
+    ///
+    /// ```ignore
+    /// explorer.set_icon_theme(|n, _open| match n.name.rsplit('.').next() {
+    ///     Some("rs") => Some((lucide::FILE_CODE, None)),
+    ///     _ => None,
+    /// });
+    /// ```
+    pub fn set_icon_theme(
+        &self,
+        f: impl Fn(&FsNode, bool) -> Option<(IconData, Option<Color>)> + 'static,
+    ) {
+        self.icon_theme.set(Some(Rc::new(f)));
+    }
+
+    /// Remove the installed icon theme (back to the default folder/file glyphs).
+    pub fn clear_icon_theme(&self) {
+        self.icon_theme.set(None);
+    }
+
+    /// Resolve a node's glyph: per-node override → icon theme → the defaults
+    /// (open/closed folder, plain file). A `None` color means "the theme's
+    /// muted foreground".
+    pub fn resolved_icon(&self, node: &FsNode, expanded: bool) -> (IconData, Option<Color>) {
+        if let Some(d) = node.icon {
+            return (d, node.color);
+        }
+        if let Some(theme) = self.icon_theme.get()
+            && let Some((d, c)) = theme(node, expanded)
+        {
+            return (d, c.or(node.color));
+        }
+        let d = if node.kind == FsKind::Folder {
+            if expanded { lucide::FOLDER_OPEN } else { IconKind::Folder.data() }
+        } else {
+            IconKind::File.data()
+        };
+        (d, node.color)
     }
 
     /// The expansion set (read it, or drive it yourself).
@@ -171,6 +229,12 @@ impl FileExplorer {
                 false
             }
         }
+    }
+
+    /// Leave filesystem mode: detach from the disk. The model stays as-is and
+    /// mutations become in-memory only (pair with setting a fresh tree).
+    pub fn detach_folder(&self) {
+        self.fs_root.set(None);
     }
 
     /// The absolute path of a node (filesystem mode only — in-memory nodes
@@ -750,17 +814,17 @@ impl FileExplorer {
     /// compose your own buttons from the action closures wherever you want.
     pub fn toolbar(self) -> impl IntoWidget {
         row(children![
-            icon_button(pebbles_render::lucide::FILE_PLUS)
+            icon_button(lucide::FILE_PLUS)
                 .variant(ButtonVariant::Ghost)
                 .size(15.0)
                 .on_pressed(self.new_file()),
             gap_w(2.0),
-            icon_button(pebbles_render::lucide::FOLDER_PLUS)
+            icon_button(lucide::FOLDER_PLUS)
                 .variant(ButtonVariant::Ghost)
                 .size(15.0)
                 .on_pressed(self.new_folder()),
             gap_w(2.0),
-            icon_button(pebbles_render::lucide::CHEVRONS_DOWN_UP)
+            icon_button(lucide::CHEVRONS_DOWN_UP)
                 .variant(ButtonVariant::Ghost)
                 .size(15.0)
                 .on_pressed(self.collapse_all()),

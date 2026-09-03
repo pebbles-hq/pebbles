@@ -21,7 +21,11 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     let node = &p.node;
     let is_folder = node.kind == FsKind::Folder;
     let expanded = is_folder && explorer.expanded.get().contains(&node.id);
-    let selected = explorer.selected.get().contains(&node.id);
+    let sel = explorer.selected.get();
+    let selected = sel.contains(&node.id);
+    // The ACTIVE row (the last selected — keyboard/rename target) gets the
+    // focus ring on top of the selection tint, VSCode-style.
+    let active = selected && sel.last() == Some(&node.id);
     let renaming = explorer.renaming.get() == Some(node.id);
     let dragging = explorer.dragging.get();
     let dragged = dragging && selected;
@@ -30,30 +34,32 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     let cut_pending = matches!(explorer.clipboard.get(), Some((ref ids, ClipMode::Cut)) if ids.contains(&node.id));
     let hovered = create_signal(false);
 
-    // Row background: selection tint, hover tint, drop-target highlight.
+    // Row background: FULL accent for selection (a subtle mix reads as "nothing
+    // is selected"), hover tint on top, primary tint for the drop target.
     let hv = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12);
     let mut bg = c.background;
     if selected {
-        bg = mix(bg, c.accent, 0.12);
+        bg = c.accent;
     }
     if drop_target {
-        bg = mix(bg, c.accent, 0.24);
+        bg = mix(bg, c.primary, 0.18);
     }
-    bg = mix(bg, c.foreground, 0.04 * hv as f32);
+    bg = mix(bg, c.foreground, 0.05 * hv as f32);
 
     let indent = gap_w(p.depth as f64 * 14.0);
+    let dim = if selected { c.accent_foreground } else { c.muted_foreground };
     let twistie: AnyWidget = if is_folder {
         icon(if expanded { IconKind::ChevronDown } else { IconKind::ChevronRight })
             .size(14.0)
-            .color(c.muted_foreground)
+            .color(dim)
             .into_widget()
     } else {
         gap_w(14.0).into_widget()
     };
-    // Per-node customization: an explicit icon/color wins; the kind decides
-    // the default glyph.
-    let glyph_kind = p.node.icon.unwrap_or(if is_folder { IconKind::Folder } else { IconKind::File });
-    let glyph = icon(glyph_kind).size(16.0).color(p.node.color.unwrap_or(c.muted_foreground));
+    // Glyph resolution: per-node override → installed icon theme → the
+    // defaults (open/closed folder, plain file).
+    let (glyph_data, glyph_color) = explorer.resolved_icon(&p.node, expanded);
+    let glyph = icon(glyph_data).size(16.0).color(glyph_color.unwrap_or(dim));
 
     let label: AnyWidget = if renaming {
         component_props(
@@ -64,17 +70,27 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     } else {
         text(node.name.clone())
             .size(13.5)
-            .color(if dragged || cut_pending { c.muted_foreground } else { c.foreground })
+            .color(if dragged || cut_pending {
+                c.muted_foreground
+            } else if selected {
+                c.accent_foreground
+            } else {
+                c.foreground
+            })
             .into_widget()
     };
 
-    let body = Container::new()
-        .color(bg)
-        .padding(EdgeInsets::symmetric(6.0, 3.0))
-        .child(
-            row(children![indent, twistie, gap_w(4.0), glyph, gap_w(6.0), Expanded::new(label)])
-                .main_axis_size(MainAxisSize::Min),
-        );
+    let content = row(children![indent, twistie, gap_w(4.0), glyph, gap_w(6.0), Expanded::new(label)])
+        .main_axis_size(MainAxisSize::Min);
+    let body = if active && !renaming {
+        // The active row carries the focus ring (painted inside — no layout shift).
+        Container::new()
+            .decoration(BoxDecoration::new().color(bg).border(Border::new(c.ring, 1.0)))
+            .padding(EdgeInsets::symmetric(6.0, 3.0))
+            .child(content)
+    } else {
+        Container::new().color(bg).padding(EdgeInsets::symmetric(6.0, 3.0)).child(content)
+    };
 
     // Renaming: no row gestures — the editor owns the input.
     let id = node.id;

@@ -532,7 +532,7 @@ fn per_node_icon_and_color_are_individually_customizable() {
     custom.children.push(FsNode::file("main.rs").color(palette::BLACK));
     let src = t.insert_node(None, custom);
     let n = t.node(src).expect("inserted");
-    assert_eq!(n.icon, Some(IconKind::File));
+    assert_eq!(n.icon, Some(IconKind::File.data()));
     assert_eq!(n.color, Some(palette::WHITE));
     let child = n.children.first().expect("child got an id too");
     assert!(child.id != 0 || src != 0, "subtree ids assigned");
@@ -542,8 +542,8 @@ fn per_node_icon_and_color_are_individually_customizable() {
     // Plain nodes default to no overrides; node_mut customizes in place.
     let plain = t.insert(None, FsKind::File, "a.txt");
     assert!(t.node(plain).expect("plain").icon.is_none());
-    t.node_mut(plain).expect("mutable").icon = Some(IconKind::Folder);
-    assert_eq!(t.node(plain).expect("plain").icon, Some(IconKind::Folder));
+    t.node_mut(plain).expect("mutable").icon = Some(IconKind::Folder.data());
+    assert_eq!(t.node(plain).expect("plain").icon, Some(IconKind::Folder.data()));
 
     // insert_node still de-duplicates names against siblings.
     let dup = t.insert_node(None, FsNode::file("a.txt"));
@@ -654,4 +654,49 @@ fn clipboard_copy_cut_paste_and_the_remaining_common_shortcuts() {
     assert!(shortcuts::dispatch(w, none, ShortcutKey::Escape), "Escape cancels the cut");
     assert!(!shortcuts::dispatch(w, modk, ShortcutKey::Char('v')), "nothing left to paste");
     assert_eq!(ex().selection().peek(), vec![1], "the selection survived the cancel");
+}
+
+// ---------------------------------------------------------------------------
+// Icon themes: per-node override → installed theme → the defaults
+// ---------------------------------------------------------------------------
+
+#[test]
+fn icon_theme_resolution_priority() {
+    use pebbles_render::{IconKind, lucide};
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let _ = tree_sig();
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+
+    let t = tree_sig().peek();
+    let folder = t.node(0).expect("src").clone();
+    let file = t.node(1).expect("main.rs").clone();
+
+    // Defaults: closed/open folder glyphs differ; plain file glyph.
+    assert_eq!(ex().resolved_icon(&folder, false).0, IconKind::Folder.data());
+    assert_eq!(ex().resolved_icon(&folder, true).0, lucide::FOLDER_OPEN, "open folders get their own glyph");
+    assert_eq!(ex().resolved_icon(&file, false).0, IconKind::File.data());
+
+    // An installed theme wins over the defaults; returning None falls through.
+    ex().set_icon_theme(|n, _open| {
+        n.name.ends_with(".rs").then_some((lucide::FILE_CODE, Some(palette::WHITE)))
+    });
+    assert_eq!(ex().resolved_icon(&file, false), (lucide::FILE_CODE, Some(palette::WHITE)));
+    assert_eq!(ex().resolved_icon(&folder, false).0, IconKind::Folder.data(), "None keeps the default");
+
+    // A per-node override wins over everything.
+    let mut starred = file.clone();
+    starred.icon = Some(lucide::STAR);
+    starred.color = Some(palette::BLACK);
+    assert_eq!(ex().resolved_icon(&starred, false), (lucide::STAR, Some(palette::BLACK)));
+
+    // Clearing restores the defaults.
+    ex().clear_icon_theme();
+    assert_eq!(ex().resolved_icon(&file, false).0, IconKind::File.data());
 }

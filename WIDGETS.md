@@ -93,7 +93,7 @@ Run `cargo run -p gallery` — ~50 dedicated screens, one per component family.
 | `Table` (data table) | ✅ | sort (multi, configurable glyph), selection + select-all, striped, hover, empty state |
 | `ListTile` | ✅ | style/tap/selected/dense |
 | `TreeView` / `TreeNode` | ✅ | multi-select, drag |
-| `FileExplorer` / `FileTree` (+ `pick_folder`) | ✅ | real disk: native picker (`pick_folder` needs the `file-dialogs` feature), lazy loading, mutations, multi-select/-drag, per-node icon/color, VSCode keyboard set (↑/↓/←/→ + Shift-extend, Home/End, F2 prefilled-stem rename, Delete, Mod+A, Mod+C/X/V clipboard with cut-dimming), built-in right-click menus (independent of the global switch) |
+| `FileExplorer` / `FileTree` (+ `pick_folder`) | ✅ | real disk: native picker (`pick_folder` needs the `file-dialogs` feature), lazy loading, mutations, multi-select/-drag, icon themes (set_icon_theme resolver over ~1800 lucide glyphs) + per-node icon/color, full row-state set (hover/selected/active-ring/cut-dim/drop), VSCode keyboard set (↑/↓/←/→ + Shift-extend, Home/End, F2 prefilled-stem rename, Delete, Mod+A, Mod+C/X/V clipboard with cut-dimming), built-in right-click menus (independent of the global switch) |
 | `ImageView` | ✅ | `asset`/`network`/`memory`/`base64`/`image` + `ImageFit`; reactive source (`image-view` feature) |
 | `Carousel` | ✅ | snap-paged slides, dots, arrows (hidden at ends), autoplay w/ hover-pause, `CarouselController` (A6 ✅) |
 

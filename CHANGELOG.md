@@ -22,6 +22,18 @@ All notable changes to Pebbles are documented here. The format follows
   entry per render.
 - `ContextMenu::on_open` — a hook that runs just before the menu opens (e.g.
   sync selection to the clicked row).
+- File explorer icon themes: `FileExplorer::set_icon_theme(fn)` /
+  `clear_icon_theme` / `resolved_icon` — a VSCode-style resolver mapping every
+  node (+ open state) to any of the ~1800 bundled lucide glyphs and an
+  optional color; per-node `FsNode::icon`/`color` overrides always win.
+  `FsNode::icon` upgraded from `IconKind` to full `IconData`; open folders
+  now default to the open-folder glyph; `detach_folder()` leaves filesystem
+  mode. The gallery screen is a full configurator (theme dropdown, demo tree,
+  per-node override showcase).
+- File explorer selection is now clearly visible (the old 12% accent mix was
+  imperceptible): selected rows use the full accent background with
+  accent-foreground text, the ACTIVE row adds a focus ring, hover/drop-target/
+  cut-dim states are distinct — the standard list state set.
 - File explorer clipboard + standard rename UX: Mod+C/X/V copy/cut/paste
   (Cut moves on paste, Copy duplicates whole subtrees — on disk too in
   filesystem mode; cut rows render dimmed; Escape cancels), Cut/Copy/Paste in

@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use pebbles_foundation::Color;
-use pebbles_render::IconKind;
+use pebbles_render::IconData;
 #[cfg(feature = "file-dialogs")]
 use std::path::PathBuf;
 
@@ -30,8 +30,9 @@ pub struct FsNode {
     /// from disk yet (folders load lazily on first expand). In-memory nodes
     /// are always loaded.
     pub loaded: bool,
-    /// Per-node glyph override (`None` = the kind's default: folder/file icon).
-    pub icon: Option<IconKind>,
+    /// Per-node glyph override (`None` = the icon theme, then the kind's
+    /// default). Any of the ~1800 bundled lucide icons (or custom [`IconData`]).
+    pub icon: Option<IconData>,
     /// Per-node glyph color override (`None` = the theme's muted foreground).
     pub color: Option<Color>,
 }
@@ -62,9 +63,11 @@ impl FsNode {
         }
     }
     /// Give THIS node its own glyph (each node is customizable individually —
-    /// e.g. a `.rs` file gets a code icon, `src/` a special folder).
-    pub fn icon(mut self, icon: IconKind) -> Self {
-        self.icon = Some(icon);
+    /// e.g. a `.rs` file gets a code icon, `src/` a special folder). Accepts an
+    /// [`IconKind`](pebbles_render::IconKind) or any `pebbles_render::lucide::*`
+    /// const.
+    pub fn icon(mut self, icon: impl Into<IconData>) -> Self {
+        self.icon = Some(icon.into());
         self
     }
     /// Give THIS node its own glyph color.
