@@ -78,6 +78,8 @@ fn print_help() {
     --no-reload       Disable hot-restart (build + run once)
     -q, --quiet       Only app logs at warn+ (default: debug)
     --log <level>     trace | debug | info | warn | error  (default: debug)
+    --log-file [path] Also write the COMPLETE trace to a file (all levels);
+                      defaults to <tempdir>/pebbles-<app>.log
     --                Everything after `--` is passed to the app
 
 {BOLD}EXAMPLES{RESET}

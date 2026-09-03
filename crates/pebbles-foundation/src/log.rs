@@ -123,8 +123,11 @@ impl fmt::Display for Record {
     }
 }
 
-/// Echo threshold: 255 = off (ring buffer only). Set once from the environment.
+/// Stderr echo threshold: 255 = off (ring buffer only). Set once from the env.
 static ECHO: AtomicU8 = AtomicU8::new(255);
+/// File threshold — decoupled from stderr so the file can be complete without
+/// the console being noisy (or vice-versa). 255 = off.
+static FILE_LEVEL: AtomicU8 = AtomicU8::new(255);
 static START: OnceLock<Instant> = OnceLock::new();
 static FILE: OnceLock<Option<std::sync::Mutex<File>>> = OnceLock::new();
 
@@ -141,25 +144,38 @@ thread_local! {
 /// but any first log call also lazily initializes so library use never panics.
 pub fn init() {
     START.get_or_init(Instant::now);
-    FILE.get_or_init(|| {
-        std::env::var("PEBBLES_LOG_FILE").ok().and_then(|p| {
-            File::create(&p).ok().map(|f| {
-                eprintln!("pebbles: logging to {p}");
-                std::sync::Mutex::new(f)
+    let has_file = FILE
+        .get_or_init(|| {
+            std::env::var("PEBBLES_LOG_FILE").ok().and_then(|p| {
+                File::create(&p).ok().map(|f| {
+                    eprintln!("pebbles: logging to {p}");
+                    std::sync::Mutex::new(f)
+                })
             })
         })
+        .is_some();
+
+    // The console (stderr) threshold: explicit PEBBLES_LOG wins; else Debug in
+    // dev mode; else off.
+    let console = std::env::var("PEBBLES_LOG").ok().map(|v| {
+        if v == "1" || v == "true" { Level::Debug } else { Level::parse(&v).unwrap_or(Level::Debug) }
     });
-    // Dev mode (set by `pebbles run`, or manually) turns on Debug echo by default —
-    // an explicit PEBBLES_LOG still wins.
-    if let Ok(v) = std::env::var("PEBBLES_LOG") {
-        let lvl = if v == "1" || v == "true" {
-            Level::Debug
-        } else {
-            Level::parse(&v).unwrap_or(Level::Debug)
-        };
+    if let Some(lvl) = console {
         ECHO.store(lvl as u8, Ordering::Relaxed);
     } else if dev_mode() {
         ECHO.store(Level::Debug as u8, Ordering::Relaxed);
+    }
+
+    // The file threshold: PEBBLES_LOG_FILE_LEVEL wins; else the console level; else
+    // Debug (a file was explicitly requested, so default to a useful level — NOT
+    // Trace, which would flush per-frame I/O on the render thread).
+    if has_file {
+        let file_lvl = std::env::var("PEBBLES_LOG_FILE_LEVEL")
+            .ok()
+            .and_then(|v| Level::parse(&v))
+            .or(console)
+            .unwrap_or(Level::Debug);
+        FILE_LEVEL.store(file_lvl as u8, Ordering::Relaxed);
     }
 }
 
@@ -187,9 +203,13 @@ pub fn logf(level: Level, cat: Cat, args: fmt::Arguments<'_>) {
     if echo != 255 && level as u8 >= echo {
         eprintln!("{rec}");
     }
-    if let Some(Some(mx)) = FILE.get()
+    let file_lvl = FILE_LEVEL.load(Ordering::Relaxed);
+    if file_lvl != 255
+        && level as u8 >= file_lvl
+        && let Some(Some(mx)) = FILE.get()
         && let Ok(mut f) = mx.lock()
     {
+        // Flush per line so a hard freeze still leaves the last event on disk.
         let _ = writeln!(f, "{rec}");
         let _ = f.flush();
     }

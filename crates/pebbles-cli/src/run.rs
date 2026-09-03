@@ -16,6 +16,7 @@ struct Opts {
     release: bool,
     reload: bool,
     log: String,
+    log_file: Option<String>,
     package: Option<String>,
     extra_watch: Vec<String>,
     app_args: Vec<String>,
@@ -26,6 +27,7 @@ pub fn run(args: &[String]) -> ExitCode {
         release: false,
         reload: true,
         log: "debug".into(),
+        log_file: None,
         package: None,
         extra_watch: vec![],
         app_args: vec![],
@@ -39,6 +41,17 @@ pub fn run(args: &[String]) -> ExitCode {
             "--log" => {
                 if let Some(l) = it.next() {
                     o.log = l.clone();
+                }
+            }
+            // Write the full log to a file too. `--log-file` alone picks a default
+            // path under the OS temp dir; `--log-file <path>` uses that path.
+            "--log-file" => {
+                let next = it.clone().next();
+                if let Some(p) = next.filter(|p| !p.starts_with('-')) {
+                    o.log_file = Some(p.clone());
+                    it.next();
+                } else {
+                    o.log_file = Some(String::new()); // default path, filled below
                 }
             }
             // Select a workspace member (or example) by name — run it from anywhere.
@@ -118,11 +131,23 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     }
 
+    // Resolve the log-file path (default: <tempdir>/pebbles-<bin>.log).
+    if let Some(p) = &o.log_file
+        && p.is_empty()
+    {
+        o.log_file = Some(
+            std::env::temp_dir().join(format!("pebbles-{bin}.log")).display().to_string(),
+        );
+    }
+
     term::banner(&format!(
         "pebbles run — {bin} ({}, {})",
         if o.release { "release" } else { "dev" },
         if o.reload { "hot-restart on" } else { "hot-restart off" }
     ));
+    if let Some(p) = &o.log_file {
+        term::step(&format!("full log → {p}"));
+    }
 
     // Ctrl+C: flip a flag; the child shares our process group so it also gets the
     // signal, but we set the flag so our loop exits cleanly too.
@@ -217,6 +242,11 @@ fn spawn_app(bin: &Path, o: &Opts) -> std::io::Result<Child> {
         .env("RUST_BACKTRACE", "1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(path) = &o.log_file {
+        // The file captures the COMPLETE trace (all levels) regardless of the
+        // console level, so a post-mortem always has full detail.
+        cmd.env("PEBBLES_LOG_FILE", path).env("PEBBLES_LOG_FILE_LEVEL", "trace");
+    }
     cmd.spawn()
 }
 
