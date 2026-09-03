@@ -295,6 +295,27 @@ impl IntoWidget for OverlayHost {
     }
 }
 
+struct GuardProps {
+    content: AnyWidget,
+    alive: Option<std::rc::Rc<dyn Fn() -> bool>>,
+}
+
+/// Wrap overlay panel content so the aliveness probe is re-checked at the
+/// panel's own inflate/render time (see the comment in [`render_host`]).
+fn guarded(content: AnyWidget, alive: Option<std::rc::Rc<dyn Fn() -> bool>>) -> AnyWidget {
+    match alive {
+        None => content,
+        Some(_) => component_props(render_panel_guard, GuardProps { content, alive }).into_widget(),
+    }
+}
+
+fn render_panel_guard(p: &GuardProps) -> AnyWidget {
+    if p.alive.as_ref().is_some_and(|f| !f()) {
+        return Container::new().into_widget();
+    }
+    p.content.clone()
+}
+
 fn render_host(p: &Props) -> crate::widgets::Stack {
     let mut kids: Vec<AnyWidget> = vec![p.child.clone()];
     // Passive layer (tooltips / hover cards): above content, click-through, no scrim.
@@ -311,12 +332,19 @@ fn render_host(p: &Props) -> crate::widgets::Stack {
             GestureDetector::new(Container::new()).on_tap(hide_overlay),
         )
         .into_widget();
-        let panel = Positioned::new(entry.content).left(entry.left).top(entry.top).into_widget();
+        // The probe travels INTO a guard component around the panel content: the
+        // host can pass its own check and the opener still unmount later in the
+        // SAME rebuild pass, before the panel child inflates — the guard re-checks
+        // at that exact moment and inflates nothing instead of reading disposed
+        // signals. (The filter above + the shell's frame gc_dead handle the other
+        // two orderings.)
+        let panel =
+            Positioned::new(guarded(entry.content, entry.alive.clone())).left(entry.left).top(entry.top).into_widget();
         kids.push(scrim);
         kids.push(panel);
         if let Some(child) = &entry.child {
             kids.push(
-                Positioned::new(child.content.clone())
+                Positioned::new(guarded(child.content.clone(), entry.alive.clone()))
                     .left(child.left)
                     .top(child.top)
                     .into_widget(),

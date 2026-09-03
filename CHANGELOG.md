@@ -37,6 +37,25 @@ outliving its owner — plus a policy fix:
   skips the frame instead of `.expect`-crashing the app; a missing renderer is
   recreated in place.
 
+- **Overlay guard, third ordering** (found storming `grid-view`): the host can
+  pass its aliveness check and the opener still unmount later in the SAME
+  rebuild pass, before the panel child inflates. Panel content is now wrapped
+  in a guard component that re-checks the probe at its own inflate/render time
+  — the moment that matters.
+- **The gallery tour never actually toured**: `install_tour()` ran on every
+  `app()` re-render (every navigation), replacing the pending hop with a fresh
+  index-0 chain — so `GALLERY_TOUR` visited screen #0 forever and earlier
+  "all screens" burn-ins were false coverage. Now installed once per process,
+  and every hop is logged (`gallery tour → <route>`) so burn-in output PROVES
+  coverage.
+
+### Changed
+- `markdown_editor`'s source pane now **auto-grows with its content** (`lines`
+  is the minimum, default 16) — like the rendered view, the widget always shows
+  the full document and never scrolls internally; wrap it in a scroll area to
+  box it. The widget remains chrome-free: modes come from your `mode_signal`,
+  controls are yours to build.
+
 ### Added (dev tooling)
 - `PEBBLES_INPUT_STORM=1` — a deterministic input monkey inside the shell:
   synthetic hovers, wheels, taps, double-taps, drags and key presses driven

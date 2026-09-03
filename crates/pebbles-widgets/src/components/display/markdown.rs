@@ -766,7 +766,9 @@ impl MarkdownEditor {
         self.on_link = Some(Rc::new(f));
         self
     }
-    /// The source pane's visible line count (default 16).
+    /// The source pane's MINIMUM line count (default 16). The pane auto-grows
+    /// with the content past this — the editor never scrolls internally. To box
+    /// it, wrap the whole widget in a scroll area.
     pub fn lines(mut self, n: u32) -> Self {
         self.lines = n;
         self
@@ -815,7 +817,12 @@ fn render_editor(p: &EdProps) -> AnyWidget {
         md.into_widget()
     };
     let editor = || {
-        text_area(p.lines)
+        // Auto-grow: the pane is as tall as the source (never shorter than
+        // `lines`), so the editor shows the FULL content with no internal
+        // scrolling — same contract as the rendered view. Boxing is the app's
+        // job: wrap the widget in a scroll area.
+        let rows = p.source.get().split('\n').count() as u32;
+        text_area(rows.max(p.lines))
             .bind(p.source)
             .placeholder("Write some Markdown…")
             .into_widget()
