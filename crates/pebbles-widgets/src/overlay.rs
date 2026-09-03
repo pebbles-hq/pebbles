@@ -95,6 +95,12 @@ pub fn overlay_signal() -> Signal<Option<OverlayEntry>> {
 /// `width`/`height` are the panel's approximate size — the shell uses them to keep
 /// the popover anchored to its trigger while the page scrolls (see [`shift`]).
 pub fn show_overlay(content: AnyWidget, left: f64, top: f64, width: f64, height: f64) {
+    if pebbles_core::log::dev_mode() {
+        pebbles_core::log::debug(
+            pebbles_core::log::Cat::Overlay,
+            format!("overlay opened {width:.0}×{height:.0} @ {left:.0},{top:.0}"),
+        );
+    }
     overlay_signal().set(Some(OverlayEntry {
         content,
         left,
@@ -119,6 +125,12 @@ pub fn show_overlay_guarded(
     height: f64,
     alive: impl Fn() -> bool + 'static,
 ) {
+    if pebbles_core::log::dev_mode() {
+        pebbles_core::log::debug(
+            pebbles_core::log::Cat::Overlay,
+            format!("overlay opened (guarded) {width:.0}×{height:.0} @ {left:.0},{top:.0}"),
+        );
+    }
     overlay_signal().set(Some(OverlayEntry {
         content,
         left,
@@ -167,6 +179,9 @@ pub fn child_is_open() -> bool {
 
 /// Dismiss the current overlay, if any.
 pub fn hide_overlay() {
+    if pebbles_core::log::dev_mode() && overlay_signal().peek().is_some() {
+        pebbles_core::log::debug(pebbles_core::log::Cat::Overlay, "overlay closed".to_string());
+    }
     overlay_signal().set(None);
 }
 

@@ -302,19 +302,23 @@ impl Runner {
         }
 
         // Heartbeat: pulse every 120 frames, and flag any frame slower than 32ms
-        // (a dropped frame at 60fps) so jank/stalls are visible in the log.
+        // (a dropped frame at 60fps) so jank/stalls are visible at DEBUG. At TRACE,
+        // emit the full per-stage breakdown for EVERY frame — step-by-step detail.
         let total = frame_start.elapsed();
+        let line = || {
+            format!(
+                "frame {fno} done in {:.1}ms (rebuild {:.1} layout {:.1} encode {:.1} objects {})",
+                total.as_secs_f64() * 1e3,
+                rebuild.as_secs_f64() * 1e3,
+                layout.as_secs_f64() * 1e3,
+                encode.as_secs_f64() * 1e3,
+                self.ui.render_tree().node_count(),
+            )
+        };
         if fno.is_multiple_of(120) || total.as_millis() > 32 {
-            log::debug(
-                log::Cat::Frame,
-                format!(
-                    "frame {fno} done in {:.1}ms (rebuild {:.1} layout {:.1} encode {:.1})",
-                    total.as_secs_f64() * 1e3,
-                    rebuild.as_secs_f64() * 1e3,
-                    layout.as_secs_f64() * 1e3,
-                    encode.as_secs_f64() * 1e3,
-                ),
-            );
+            log::debug(log::Cat::Frame, line());
+        } else {
+            log::trace(log::Cat::Frame, line());
         }
     }
 

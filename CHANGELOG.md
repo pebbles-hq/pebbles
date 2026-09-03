@@ -29,6 +29,24 @@ Flutter-style tooling for a Rust desktop UI, dependency-free (std only):
 - `pebbles doctor` — checks cargo/rustc, the pebbles source, and Vulkan.
 - `cargo install --path crates/pebbles-cli` puts a `pebbles` binary on PATH.
 
+### Added — step-by-step dev trace (see exactly what happened before an error)
+In dev mode the log now reconstructs the full sequence of what the app did, so
+when an error hits you can read the run-up (the click, the navigation, the
+overlay that opened). At **debug** (the `pebbles run` default):
+- **Input** — every pointer press/release logs the button, position, AND the
+  widget it hit by name + element id (`pointer down Left at 512,300 → Button#42 › Text`);
+  every key logs the key, modifiers, and which stage claimed it (editor /
+  shortcut / focus-move / activate / scroll / unhandled).
+- **Focus** — every focus change (`focus None → Some(ElementId(637v1))`).
+- **Overlay** — every dropdown/menu/popover open and close, with size+position.
+- **Layout** — overflow warnings; **Frame** — heartbeat + slow frames; **Gpu** —
+  errors/resets; plus the app's own `Nav` logs.
+At **trace** (`--log trace`): a per-stage breakdown for *every* frame
+(rebuild/layout/encode/object-count), wheel events, and every texture-producing
+paint (image / gradient ramp / shadow blur).
+The panic hook still dumps the whole ring buffer, so a crash prints this entire
+timeline leading up to it.
+
 ### Added — deep dev logging & Flutter-style overflow detection
 - The diagnostic log moved from `pebbles-core` to **`pebbles-foundation`** (the
   lowest crate) so every layer — including the render engine below core — logs

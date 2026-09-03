@@ -333,6 +333,18 @@ impl Runner {
         self.native_menu = Some(menus);
     }
 
+    /// Dev-mode: a short description of the widget stack under `point` — the
+    /// deepest widget's name (+ its parent + element id) — for the input trace,
+    /// so the log says WHAT the user clicked, not just where.
+    fn hit_desc(&self, point: Offset) -> String {
+        let chain = pebbles_render::inspect_at(self.ui.render_tree(), point);
+        let Some(deepest) = chain.last() else { return "(empty)".to_string() };
+        let src = deepest.source.map(|s| format!("#{s}")).unwrap_or_default();
+        let parent =
+            if chain.len() >= 2 { format!("{} › ", chain[chain.len() - 2].name) } else { String::new() };
+        format!("{parent}{}{src}", deepest.name)
+    }
+
     /// Route an unclaimed key press to scroll the view under the pointer.
     fn scroll_key(&mut self, event: &KeyEvent) -> bool {
         let cursor = self.cursor;
@@ -514,13 +526,38 @@ impl ApplicationHandler for Runner {
                     }
                 };
                 let cursor = self.cursor;
-                if wheel_with_overlay(&mut self.ui, cursor, dy) {
+                let scrolled = wheel_with_overlay(&mut self.ui, cursor, dy);
+                if pebbles_core::log::dev_mode() {
+                    pebbles_core::log::trace(
+                        pebbles_core::log::Cat::Input,
+                        format!(
+                            "wheel dy={dy:.0} at {:.0},{:.0} → scrolled={scrolled}",
+                            cursor.x, cursor.y
+                        ),
+                    );
+                }
+                if scrolled {
                     self.request_redraw();
                 }
             }
 
             WindowEvent::MouseInput { state, button, .. } => {
                 let cursor = self.cursor;
+                if pebbles_core::log::dev_mode() {
+                    let kind = match state {
+                        ElementState::Pressed => "down",
+                        ElementState::Released => "up",
+                    };
+                    pebbles_core::log::debug(
+                        pebbles_core::log::Cat::Input,
+                        format!(
+                            "pointer {kind} {button:?} at {:.0},{:.0} → {}",
+                            cursor.x,
+                            cursor.y,
+                            self.hit_desc(cursor)
+                        ),
+                    );
+                }
                 // F2: in inspect mode a click prints the render chain instead of hitting the UI.
                 if self.inspect_mode
                     && button == MouseButton::Left
@@ -693,24 +730,49 @@ impl ApplicationHandler for Runner {
                         alt: self.alt_down,
                         meta: self.meta_down,
                     };
+                    // Track WHICH stage claimed the key, for the dev trace.
+                    let mut stage = "unhandled";
                     let mut handled = if intent.is_some_and(|ki| self.ui.dispatch_key(ki)) {
+                        stage = "editor";
                         true
                     } else if to_shortcut_key(&event)
                         .is_some_and(|sk| pebbles_core::shortcuts::dispatch(self.ui.window_id(), mods, sk))
                     {
+                        stage = "shortcut";
                         true
                     } else if event.logical_key == Key::Named(NamedKey::Tab) {
+                        stage = "focus-move";
                         self.ui.focus_move(!self.shift_down)
+                    } else if matches!(
+                        event.logical_key.as_ref(),
+                        Key::Named(NamedKey::Enter | NamedKey::Space) | Key::Character(" ")
+                    ) && self.ui.dispatch_activate()
+                    {
+                        stage = "activate";
+                        true
                     } else {
-                        matches!(
-                            event.logical_key.as_ref(),
-                            Key::Named(NamedKey::Enter | NamedKey::Space) | Key::Character(" ")
-                        ) && self.ui.dispatch_activate()
+                        false
                     };
                     // If nothing else claimed the key, use it to scroll the view
                     // under the pointer (PageUp/Down, Home/End, arrows, Space).
                     if !handled {
                         handled = self.scroll_key(&event);
+                        if handled {
+                            stage = "scroll";
+                        }
+                    }
+                    if pebbles_core::log::dev_mode() {
+                        pebbles_core::log::debug(
+                            pebbles_core::log::Cat::Input,
+                            format!(
+                                "key {:?} mods(c={} s={} a={} m={}) → {stage}",
+                                event.logical_key,
+                                self.ctrl_down as u8,
+                                self.shift_down as u8,
+                                self.alt_down as u8,
+                                self.meta_down as u8,
+                            ),
+                        );
                     }
                     if handled {
                         self.request_redraw();

@@ -106,6 +106,9 @@ pub fn set_focus(next: Option<FocusKey>) {
     if old == next {
         return;
     }
+    if crate::log::dev_mode() {
+        crate::log::debug(crate::log::Cat::Reactive, format!("focus {old:?} → {next:?}"));
+    }
     sig.set(next);
     if let Some(cb) = old_cb {
         cb(false);
