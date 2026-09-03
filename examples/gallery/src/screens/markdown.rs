@@ -82,7 +82,12 @@ fn compact_style() -> MarkdownStyle {
 }
 
 pub fn markdown_screen() -> Element {
-    let source = create_signal(DEMO.to_string());
+    // Dev: GALLERY_MD_FILE=<path> loads that file as the initial source (perf test).
+    let initial = std::env::var("GALLERY_MD_FILE")
+        .ok()
+        .and_then(|f| std::fs::read_to_string(f).ok())
+        .unwrap_or_else(|| DEMO.to_string());
+    let source = create_signal(initial);
     // Two clean single-pane modes: View = read-only formatted (Read); Edit = the
     // source editor (Edit). Read here so the toggle highlights the active mode and
     // the whole screen re-renders when it flips.

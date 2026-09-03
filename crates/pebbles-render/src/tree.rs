@@ -117,6 +117,9 @@ fn sanitize_size(size: Size, constraints: BoxConstraints) -> Size {
 pub struct RenderTree {
     nodes: SlotMap<RenderId, RenderNode>,
     pub root: Option<RenderId>,
+    /// The root constraints the last `layout()` ran under — so an idle frame
+    /// (nothing dirty, same window size) can skip the whole pass.
+    last_constraints: Option<BoxConstraints>,
 }
 
 impl RenderTree {
@@ -442,9 +445,20 @@ impl RenderTree {
         }
     }
 
-    /// Run a full layout pass from the root under `root_constraints`.
+    /// Run a layout pass from the root under `root_constraints`.
+    ///
+    /// Skips entirely when the tree is clean (`root.needs_layout == false`, which
+    /// — because `mark_needs_layout` propagates to the root — means NO node needs
+    /// layout) AND the window size is unchanged. This makes idle/paint-only frames
+    /// (a blinking caret, a hover fade) free instead of re-laying-out the whole
+    /// tree, which for a large document was tens of ms every frame. A structural
+    /// change or resize clears the skip because it dirties the root or changes the
+    /// constraints.
     pub fn layout(&mut self, text: &mut TextEnv, root_constraints: BoxConstraints) {
         let Some(root) = self.root else { return };
+        if !self.nodes[root].needs_layout && self.last_constraints == Some(root_constraints) {
+            return;
+        }
         let mut object = self.nodes[root].object.take().expect("root object present");
         let size = {
             let mut cx = LayoutCx { tree: self, current: root, text };
@@ -455,6 +469,7 @@ impl RenderTree {
         node.size = sanitize_size(size, root_constraints);
         node.offset = Offset::ZERO;
         node.needs_layout = false;
+        self.last_constraints = Some(root_constraints);
     }
 
     /// Paint the whole tree into `scene` starting from the root at the origin.

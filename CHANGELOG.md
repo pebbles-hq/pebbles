@@ -6,6 +6,17 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Performance — skip layout on idle frames
+`RenderTree::layout` used to run a full pass from the root **every frame**,
+ignoring the `needs_layout` flags — so a blinking caret or a hover fade
+re-laid-out the entire tree (tens of ms on a large document, every frame). It
+now skips the whole pass when nothing is dirty and the window size is unchanged
+(a structural change dirties the root; a resize changes the constraints — both
+clear the skip). A large Markdown document that idled at ~5 fps (100 ms+ layout
+per frame) now idles for free (0 ms layout on unchanged frames). Framework-wide,
+not Markdown-specific. (Note: editing a large doc still re-lays-out per keystroke
+— incremental relayout + fewer render objects per paragraph are the next step.)
+
 ### Added — themeable syntax highlighting in Markdown code blocks
 Fenced code blocks are now syntax-highlighted, Obsidian-style, with a small
 dependency-free lexer (comments, strings, numbers, keywords, function-call
