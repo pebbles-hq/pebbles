@@ -62,7 +62,11 @@ fn compact_style() -> MarkdownStyle {
 
 pub fn markdown_screen() -> Element {
     let source = create_signal(DEMO.to_string());
-    let mode = create_signal(MarkdownMode::Split);
+    // Two clean single-pane modes: View = read-only formatted (Read); Edit = the
+    // source editor (Edit). Read here so the toggle highlights the active mode and
+    // the whole screen re-renders when it flips.
+    let mode = create_signal(MarkdownMode::Edit);
+    let is_view = mode.get() == MarkdownMode::Read;
     let style_idx = create_signal(0usize);
 
     // ----- the vault: a file explorer feeding the editor (open real .md files)
@@ -105,10 +109,10 @@ pub fn markdown_screen() -> Element {
         .unwrap_or_else(|| "demo buffer (open a folder, click a .md)".into());
 
     screen("Markdown")
-        .description("An Obsidian-style Markdown reader + editor (feature `markdown`, GFM via pulldown-cmark): headings, emphasis, strikethrough, inline + fenced code (JetBrains Mono), clickable links, nested quotes and lists, TASK LISTS with live checkboxes that rewrite the bound source, tables, rules, and images (via `image-view`). Three modes — Edit, Split (live preview), Read — driven by a mode signal YOU own; the widget ships no chrome. Fully themable through MarkdownStyle (defaults follow the app theme, light and dark).")
+        .description("An Obsidian-style Markdown reader + editor (feature `markdown`, GFM via pulldown-cmark): headings, emphasis, strikethrough, inline + fenced code (JetBrains Mono), clickable links, nested quotes and lists, TASK LISTS with live checkboxes that rewrite the bound source, tables, rules, and images (via `image-view`). Two single-pane modes toggled by a segmented control — View (read-only formatted) and Edit (source editor) — driven by a mode signal YOU own; the widget ships no chrome. Fully themable through MarkdownStyle (defaults follow the app theme, light and dark).")
         .body(children![
             doc("The workbench — a vault of real .md files")
-                .description("Obsidian-style: the file explorer on the left is the stock widget over a REAL folder — Open folder, click any .md and it loads into the editor (create_effect on explorer.selection() + path_of + fs::read_to_string, all app code); Save writes the buffer back to disk. Edit/Split/Read and the theme select drive the same signals as before.")
+                .description("Obsidian-style: the file explorer on the left is the stock widget over a REAL folder — Open folder, click any .md and it loads into the editor (create_effect on explorer.selection() + path_of + fs::read_to_string, all app code); Save writes the buffer back to disk. The View/Edit toggle and the theme select drive the same signals as before.")
                 .body(
                     column(children![
                         row(children![
@@ -138,13 +142,17 @@ pub fn markdown_screen() -> Element {
                                 }
                             }),
                             gap_w(12.0),
+                            // A clean 2-mode segmented toggle, Obsidian-style: the
+                            // active mode is filled (Primary), the other outlined.
                             button_group(vec![
-                                button("Edit").variant(ButtonVariant::Outline).size(ButtonSize::Sm)
-                                    .on_pressed(move || mode.set(MarkdownMode::Edit)),
-                                button("Split").variant(ButtonVariant::Outline).size(ButtonSize::Sm)
-                                    .on_pressed(move || mode.set(MarkdownMode::Split)),
-                                button("Read").variant(ButtonVariant::Outline).size(ButtonSize::Sm)
+                                button("View")
+                                    .variant(if is_view { ButtonVariant::Primary } else { ButtonVariant::Outline })
+                                    .size(ButtonSize::Sm)
                                     .on_pressed(move || mode.set(MarkdownMode::Read)),
+                                button("Edit")
+                                    .variant(if is_view { ButtonVariant::Outline } else { ButtonVariant::Primary })
+                                    .size(ButtonSize::Sm)
+                                    .on_pressed(move || mode.set(MarkdownMode::Edit)),
                             ]),
                             gap_w(12.0),
                             select(["Theme: Default", "Theme: Serif headings", "Theme: Compact"])
