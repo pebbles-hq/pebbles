@@ -26,8 +26,9 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     let dragging = explorer.dragging.get();
     let dragged = dragging && selected;
     let drop_target = dragging && explorer.drop_target.get() == Some(node.id);
+    // A cut-pending row renders dimmed (like VSCode) until pasted or cancelled.
+    let cut_pending = matches!(explorer.clipboard.get(), Some((ref ids, ClipMode::Cut)) if ids.contains(&node.id));
     let hovered = create_signal(false);
-    let rename_buf = create_signal(String::new());
 
     // Row background: selection tint, hover tint, drop-target highlight.
     let hv = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12);
@@ -57,13 +58,13 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     let label: AnyWidget = if renaming {
         component_props(
             render_rename_editor,
-            RenameProps { explorer, id: node.id, buf: rename_buf, placeholder: node.name.clone() },
+            RenameProps { explorer, id: node.id, buf: explorer.rename_buf, placeholder: node.name.clone() },
         )
         .into_widget()
     } else {
         text(node.name.clone())
             .size(13.5)
-            .color(if dragged { c.muted_foreground } else { c.foreground })
+            .color(if dragged || cut_pending { c.muted_foreground } else { c.foreground })
             .into_widget()
     };
 
@@ -173,8 +174,21 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
             .item(menu_item("New File").on_select(explorer.new_file()))
             .item(menu_item("New Folder").on_select(explorer.new_folder()))
             .separator()
-            .item(menu_item("Rename").on_select(explorer.rename_selected()))
-            .item(menu_item("Delete").destructive().on_select(explorer.delete_selected()))
+            .item(menu_item("Cut").on_select(move || explorer.cut_selection()))
+            .item(menu_item("Copy").on_select(move || explorer.copy_selection()))
+            .item(
+                menu_item("Paste")
+                    .disabled(explorer.clipboard.get().is_none())
+                    .on_select(move || explorer.paste_clipboard()),
+            )
+            .separator()
+            .item(menu_item("Rename").shortcut("F2").on_select(explorer.rename_selected()))
+            .item(
+                menu_item("Delete")
+                    .shortcut("Del")
+                    .destructive()
+                    .on_select(explorer.delete_selected()),
+            )
             .into_widget()
     };
 
@@ -218,10 +232,21 @@ fn render_rename_editor(p: &RenameProps) -> AnyWidget {
             explorer.renaming.set(None);
         }
     };
+    // Select the stem (name without the extension) so typing replaces it while
+    // Right/End lets you edit in place — the standard rename UX. New nodes have
+    // an EMPTY buffer (the default name shows as the placeholder).
+    let stem = {
+        let v = buf.peek();
+        match v.rfind('.') {
+            Some(i) if i > 0 => i,
+            _ => v.len(),
+        }
+    };
     text_field()
         .placeholder(p.placeholder.clone())
         .bind(buf)
         .autofocus()
+        .select_range(0, stem)
         .on_submit(move |_| commit())
         .on_focus_change(move |focused| {
             if !focused {

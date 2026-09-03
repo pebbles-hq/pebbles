@@ -22,6 +22,13 @@ All notable changes to Pebbles are documented here. The format follows
   entry per render.
 - `ContextMenu::on_open` — a hook that runs just before the menu opens (e.g.
   sync selection to the clicked row).
+- File explorer clipboard + standard rename UX: Mod+C/X/V copy/cut/paste
+  (Cut moves on paste, Copy duplicates whole subtrees — on disk too in
+  filesystem mode; cut rows render dimmed; Escape cancels), Cut/Copy/Paste in
+  the context menus, Home/End row jumps, Mod+A works from idle. Renaming now
+  opens PREFILLED with the current name and the stem selected (typing
+  replaces, arrows edit in place); New File/Folder still start from an empty
+  field. `TextField::select_range` — initial selection applied at mount.
 - `untrack` — run a closure with dependency tracking suspended (Solid's
   `untrack`), exported from the prelude.
 

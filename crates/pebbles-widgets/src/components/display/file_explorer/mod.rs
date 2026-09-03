@@ -25,11 +25,16 @@
 //! only controls the *fallback* menu on unclaimed surfaces. Widget-specific
 //! always wins.
 //!
-//! **Keyboard** (active while the explorer has a selection; every binding
-//! declines when it doesn't, so nothing is hijacked): **↑/↓** walk the visible
-//! rows (**Shift** extends), **→** expands / steps into, **←** collapses /
-//! jumps to the parent, **F2** renames, **Delete** deletes, **Mod+A** selects
-//! all visible, **Escape** clears the selection.
+//! **Keyboard** (every binding is conditional — it declines when it doesn't
+//! apply, so nothing is hijacked): **↑/↓** walk the visible rows (**Shift**
+//! extends), **→** expands / steps into, **←** collapses / jumps to the parent,
+//! **Home/End** jump to the first/last row, **F2** renames (the editor opens
+//! PREFILLED with the current name, stem selected — typing replaces the name,
+//! arrows edit in place), **Delete** deletes, **Mod+A** selects all visible
+//! (works from idle), **Mod+C/X/V** copy/cut/paste (cut rows dim; Copy
+//! duplicates whole subtrees, on disk too in filesystem mode), **Escape**
+//! cancels a pending cut/copy, then clears the selection. A focused editor
+//! always wins its own keys first (typing, Ctrl+A/C/X/V in the rename field).
 //!
 //! Every node is customizable individually: [`FsNode::icon`]/[`FsNode::color`]
 //! (builders on [`FsNode`], or in place via [`FileTree::node_mut`]).
@@ -57,12 +62,19 @@ pub use tree::{FileTree, FsKind, FsNode};
 pub use tree::pick_folder;
 
 use node::{NodeProps, render_node};
-use tree::{read_dir, unique_name};
+use tree::{copy_path, read_dir, unique_name};
 
 
 // ---------------------------------------------------------------------------
 // The explorer controller
 // ---------------------------------------------------------------------------
+
+/// What a clipboard entry does on paste.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum ClipMode {
+    Copy,
+    Cut,
+}
 
 /// The shared explorer state over an app-owned [`FileTree`] signal — `Copy`.
 /// Wire your own buttons with the action closures; render the default pieces
@@ -81,6 +93,10 @@ pub struct FileExplorer {
     fs_root: Signal<Option<PathBuf>>,
     /// The last filesystem error, if any (read for toasts/inline hints).
     last_error: Signal<Option<String>>,
+    /// The inline-rename buffer — prefilled with the current name at rename start.
+    pub(super) rename_buf: Signal<String>,
+    /// The explorer clipboard: node ids + copy/cut, filled by Mod+C/X and the menus.
+    pub(super) clipboard: Signal<Option<(Vec<u64>, ClipMode)>>,
 }
 
 /// Create an explorer over `tree` (the app's `Signal<FileTree>`). Call inside
@@ -97,6 +113,8 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         hover_key: create_signal(()).raw_id(),
         fs_root: create_signal(None),
         last_error: create_signal(None),
+        rename_buf: create_signal(String::new()),
+        clipboard: create_signal(None),
     };
     explorer.install_keys();
     explorer
@@ -415,15 +433,44 @@ impl FileExplorer {
             self.delete_nodes(&ids);
             true
         });
-        // Mod+A — select every visible node (only while engaged; the editor's
-        // own Select All never reaches here — editor precedence).
+        // Mod+A — select every visible node, from idle too (a focused editor's
+        // own Select All never reaches here — editor precedence). Declines only
+        // over an empty tree.
         create_shortcut_if("Mod+A", move || {
+            let all = self.visible_ids();
+            if all.is_empty() {
+                return false;
+            }
+            self.selected.set(all);
+            true
+        });
+        // Mod+C / Mod+X / Mod+V — the explorer clipboard (a focused editor's
+        // clipboard intents win first, as everywhere).
+        create_shortcut_if("Mod+C", move || {
             if self.selected.peek().is_empty() {
                 return false;
             }
-            self.selected.set(self.visible_ids());
+            self.copy_selection();
             true
         });
+        create_shortcut_if("Mod+X", move || {
+            if self.selected.peek().is_empty() {
+                return false;
+            }
+            self.cut_selection();
+            true
+        });
+        create_shortcut_if("Mod+V", move || {
+            if self.clipboard.peek().is_none() {
+                return false;
+            }
+            self.paste_clipboard();
+            true
+        });
+        // Home / End — jump to the first/last visible row (while engaged, so an
+        // idle explorer never steals page scrolling).
+        create_shortcut_if("Home", move || self.key_jump(true));
+        create_shortcut_if("End", move || self.key_jump(false));
         // Arrows — walk the visible rows; Shift extends the selection.
         create_shortcut_if("ArrowDown", move || self.key_step(1, false));
         create_shortcut_if("ArrowUp", move || self.key_step(-1, false));
@@ -458,14 +505,111 @@ impl FileExplorer {
             }
             true
         });
-        // Escape — drop the selection (disengages the key set).
+        // Escape — cancel a pending cut/copy first (VSCode), then drop the
+        // selection (disengages the key set).
         create_shortcut_if("Escape", move || {
-            if self.selected.peek().is_empty() {
-                return false;
+            if self.clipboard.peek().is_some() {
+                self.clipboard.set(None);
+                true
+            } else if self.selected.peek().is_empty() {
+                false
+            } else {
+                self.selected.set(Vec::new());
+                true
             }
-            self.selected.set(Vec::new());
-            true
         });
+    }
+
+    /// Home/End — select the first/last visible row (declines while idle).
+    fn key_jump(&self, first: bool) -> bool {
+        if self.selected.peek().is_empty() {
+            return false;
+        }
+        let visible = self.visible_ids();
+        let target = if first { visible.first() } else { visible.last() };
+        if let Some(&id) = target {
+            self.select_only(id);
+        }
+        true
+    }
+
+    /// Copy the selection to the explorer clipboard (paste with Mod+V / the menu).
+    pub fn copy_selection(&self) {
+        let ids = self.selected.peek().clone();
+        if !ids.is_empty() {
+            self.clipboard.set(Some((ids, ClipMode::Copy)));
+        }
+    }
+
+    /// Cut the selection: pasting MOVES it. Cut rows render dimmed until pasted
+    /// or cancelled (Escape).
+    pub fn cut_selection(&self) {
+        let ids = self.selected.peek().clone();
+        if !ids.is_empty() {
+            self.clipboard.set(Some((ids, ClipMode::Cut)));
+        }
+    }
+
+    /// Paste the clipboard into the active folder (the selected folder, else the
+    /// selected file's parent, else the root — VSCode's target rules). Cut moves;
+    /// Copy duplicates the whole subtree (on disk too, in filesystem mode) with
+    /// sibling-deduped names.
+    pub fn paste_clipboard(&self) {
+        let Some((ids, mode)) = self.clipboard.peek().clone() else { return };
+        let target = self.insertion_parent();
+        match mode {
+            ClipMode::Cut => {
+                self.move_nodes(&ids, target);
+                self.clipboard.set(None);
+            }
+            ClipMode::Copy => {
+                for id in ids {
+                    // Snapshot the subtree first, so pasting into itself is safe.
+                    let Some(mut src) = self.tree.peek().node(id).cloned() else { continue };
+                    if self.fs_root.get().is_some() {
+                        let Some(from) = self.path_of(id) else {
+                            self.last_error.set(Some("Could not resolve a path for a node".into()));
+                            continue;
+                        };
+                        let dir = match target {
+                            Some(t) => self.path_of(t),
+                            None => self.fs_root.get(),
+                        };
+                        let Some(dir) = dir else {
+                            self.last_error.set(Some("Could not resolve the target folder".into()));
+                            continue;
+                        };
+                        // De-dup against the REAL directory, then mirror on disk.
+                        let taken = std::fs::read_dir(&dir)
+                            .map(|rd| {
+                                rd.filter_map(|e| e.ok())
+                                    .map(|e| e.file_name().to_string_lossy().to_string())
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default();
+                        let taken_refs: Vec<&str> = taken.iter().map(|s| s.as_str()).collect();
+                        let name = unique_name(&src.name, &taken_refs);
+                        if let Err(e) = copy_path(&from, &dir.join(&name)) {
+                            self.last_error.set(Some(format!("Could not copy {}: {e}", from.display())));
+                            continue;
+                        }
+                        src.name = name;
+                    }
+                    self.insert_subtree(target, src);
+                }
+            }
+        }
+    }
+
+    /// Insert a fully-built node (fresh subtree ids, name deduped) and reveal it.
+    fn insert_subtree(&self, parent: Option<u64>, node: FsNode) -> u64 {
+        let cell = RefCell::new(None);
+        self.tree.update(|t| {
+            *cell.borrow_mut() = Some(t.insert_node(parent, node));
+        });
+        let id = cell.take().expect("inserted");
+        self.reveal(id);
+        id
     }
 
     /// Move the active row `dir` steps through the visible order; `extend`
@@ -493,6 +637,11 @@ impl FileExplorer {
 
     fn start_rename_for(&self, id: u64) {
         self.select_only(id);
+        // Prefill the editor with the CURRENT name (the standard rename UX —
+        // the field selects the stem so typing replaces it, and arrow keys let
+        // you edit in place instead of retyping the whole name).
+        let current = self.tree.peek().node(id).map(|n| n.name.clone()).unwrap_or_default();
+        self.rename_buf.set(current);
         // Drop any held focus (e.g. the button that was just clicked) so the
         // rename editor's one-shot autofocus actually grabs the keyboard.
         pebbles_core::focus::set_focus(None);
@@ -506,6 +655,9 @@ impl FileExplorer {
             let parent = self.insertion_parent();
             let (id, name) = self.create_node(parent, FsKind::File, "new_file.txt");
             self.start_rename_for(id);
+            // A NEW node starts from an empty field (the created default shows as
+            // the placeholder; committing empty keeps it) — only renames prefill.
+            self.rename_buf.set(String::new());
             let _ = name;
         }
     }
@@ -517,6 +669,7 @@ impl FileExplorer {
             let parent = self.insertion_parent();
             let (id, _name) = self.create_node(parent, FsKind::Folder, "New Folder");
             self.start_rename_for(id);
+            self.rename_buf.set(String::new());
         }
     }
 
@@ -574,7 +727,7 @@ impl FileExplorer {
     pub fn rename_selected(self) -> impl Fn() + 'static {
         move || {
             if let Some(id) = self.active() {
-                self.renaming.set(Some(id));
+                self.start_rename_for(id);
             }
         }
     }
@@ -659,5 +812,11 @@ impl FileExplorer {
         context_menu(root_gesture)
             .item(menu_item("New File").on_select(self.new_file()))
             .item(menu_item("New Folder").on_select(self.new_folder()))
+            .separator()
+            .item(
+                menu_item("Paste")
+                    .disabled(self.clipboard.get().is_none())
+                    .on_select(move || self.paste_clipboard()),
+            )
     }
 }

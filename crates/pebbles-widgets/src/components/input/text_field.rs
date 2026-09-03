@@ -150,6 +150,7 @@ pub struct TextField {
     kind: InputKind,
     placeholder: String,
     initial: String,
+    select_range: Option<(usize, usize)>,
     width: Option<f64>,
     multiline: bool,
     lines: u32,
@@ -287,6 +288,14 @@ impl TextField {
         self.autofocus = true;
         self
     }
+    /// Initial selection (byte offsets into the value), applied when the field
+    /// mounts — e.g. a rename field selecting the file stem so typing replaces
+    /// it. Ignored (caret at the end) if the offsets are out of range or not on
+    /// char boundaries.
+    pub fn select_range(mut self, anchor: usize, focus: usize) -> Self {
+        self.select_range = Some((anchor, focus));
+        self
+    }
     /// Fired with the full text on every edit (Flutter's `onChanged`).
     pub fn on_changed(mut self, f: impl Fn(&str) + 'static) -> Self {
         self.on_changed = Some(Rc::new(f));
@@ -343,6 +352,7 @@ struct Props {
     error: Option<String>,
     disabled: bool,
     autofocus: bool,
+    select_range: Option<(usize, usize)>,
     on_changed: Option<Rc<dyn Fn(&str)>>,
     on_submit: Option<Rc<dyn Fn(&str)>>,
     on_editing_complete: Option<Rc<dyn Fn()>>,
@@ -375,6 +385,7 @@ impl IntoWidget for TextField {
                 error: self.error,
                 disabled: self.disabled,
                 autofocus: self.autofocus,
+                select_range: self.select_range,
                 on_changed: self.on_changed,
                 on_submit: self.on_submit,
                 on_editing_complete: self.on_editing_complete,
@@ -703,10 +714,23 @@ fn render_field(p: &Props) -> AnyWidget {
         None => create_signal(p.initial.clone()),
     };
     let start = value.peek().len();
+    // An explicit initial selection wins (rename fields select the stem);
+    // invalid offsets fall back to caret-at-end.
+    let (anchor0, focus0) = match p.select_range {
+        Some((a, f)) => {
+            let v = value.peek();
+            if a <= v.len() && f <= v.len() && v.is_char_boundary(a) && v.is_char_boundary(f) {
+                (a, f)
+            } else {
+                (start, start)
+            }
+        }
+        None => (start, start),
+    };
     let ed = Editor {
         value,
-        anchor: create_signal(start),
-        focus: create_signal(start),
+        anchor: create_signal(anchor0),
+        focus: create_signal(focus0),
         preedit: create_signal(String::new()),
         undo: create_signal(Vec::new()),
         redo: create_signal(Vec::new()),

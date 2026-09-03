@@ -549,3 +549,109 @@ fn per_node_icon_and_color_are_individually_customizable() {
     let dup = t.insert_node(None, FsNode::file("a.txt"));
     assert_eq!(t.node(dup).expect("dup").name, "a 2.txt");
 }
+
+// ---------------------------------------------------------------------------
+// Rename UX: the editor opens PREFILLED with the current name, stem selected
+// ---------------------------------------------------------------------------
+
+#[test]
+fn rename_prefills_the_current_name_with_the_stem_selected() {
+    use pebbles_core::{Mods, ShortcutKey, shortcuts};
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let _ = tree_sig();
+    pebbles_core::keyboard::set_modifiers(false, false, false, false);
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+    let w = ui.window_id();
+
+    // F2 on README.md (id 2): the editor mounts with "README.md" prefilled and
+    // the stem "README" selected — typing replaces ONLY the stem.
+    ex().select_only(2);
+    assert!(shortcuts::dispatch(w, Mods::default(), ShortcutKey::F(2)));
+    frame(&mut ui, &mut env, win);
+    ui.dispatch_key(KeyInput::Insert("GUIDE".to_string()));
+    frame(&mut ui, &mut env, win);
+    ui.dispatch_key(KeyInput::Enter);
+    frame(&mut ui, &mut env, win);
+
+    let names = tree_sig().peek().root.iter().map(|n| n.name.clone()).collect::<Vec<_>>();
+    assert!(
+        names.contains(&"GUIDE.md".to_string()),
+        "typing replaced the selected stem, keeping the extension: {names:?}"
+    );
+    assert!(!names.contains(&"README.md".to_string()), "the old name is gone");
+}
+
+// ---------------------------------------------------------------------------
+// Clipboard: Mod+C/X/V, Escape-cancel, Mod+A from idle, Home/End
+// ---------------------------------------------------------------------------
+
+#[test]
+fn clipboard_copy_cut_paste_and_the_remaining_common_shortcuts() {
+    use pebbles_core::{Mods, ShortcutKey, shortcuts};
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let _ = tree_sig();
+    pebbles_core::keyboard::set_modifiers(false, false, false, false);
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+    let w = ui.window_id();
+    let none = Mods::default();
+    #[cfg(target_os = "macos")]
+    let modk = Mods { meta: true, ..Mods::default() };
+    #[cfg(not(target_os = "macos"))]
+    let modk = Mods { ctrl: true, ..Mods::default() };
+    // Ids: src=0 (folder), main.rs=1 (inside src), README.md=2.
+
+    // Mod+A works from IDLE (no selection): selects every visible row.
+    assert!(ex().selection().peek().is_empty(), "starts idle");
+    assert!(shortcuts::dispatch(w, modk, ShortcutKey::Char('a')), "Ctrl+A engages from idle");
+    assert_eq!(ex().selection().peek().len(), 2, "all visible rows (src collapsed + README)");
+
+    // Home/End jump to the first/last visible row.
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::End));
+    assert_eq!(ex().selection().peek(), vec![2], "End selects the last row");
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::Home));
+    assert_eq!(ex().selection().peek(), vec![0], "Home selects the first row");
+
+    // COPY: duplicate main.rs next to itself (paste targets its parent folder).
+    ex().select_only(1);
+    assert!(shortcuts::dispatch(w, modk, ShortcutKey::Char('c')), "Ctrl+C copies");
+    assert!(shortcuts::dispatch(w, modk, ShortcutKey::Char('v')), "Ctrl+V pastes");
+    frame(&mut ui, &mut env, win);
+    let t = tree_sig().peek();
+    let src = t.root.iter().find(|n| n.name == "src").expect("src");
+    let kids: Vec<&str> = src.children.iter().map(|n| n.name.as_str()).collect();
+    assert!(kids.contains(&"main.rs") && kids.contains(&"main 2.rs"), "copy duplicated with a deduped name: {kids:?}");
+
+    // CUT: move README.md into src (select the folder as the paste target).
+    ex().select_only(2);
+    assert!(shortcuts::dispatch(w, modk, ShortcutKey::Char('x')), "Ctrl+X cuts");
+    ex().select_only(0);
+    assert!(shortcuts::dispatch(w, modk, ShortcutKey::Char('v')), "Ctrl+V pastes the cut");
+    frame(&mut ui, &mut env, win);
+    let t = tree_sig().peek();
+    assert!(!t.root.iter().any(|n| n.name == "README.md"), "cut left the root");
+    let src = t.root.iter().find(|n| n.name == "src").expect("src");
+    assert!(src.children.iter().any(|n| n.name == "README.md"), "…and moved into src");
+    // The cut clipboard is consumed: another paste declines.
+    assert!(!shortcuts::dispatch(w, modk, ShortcutKey::Char('v')), "cut clipboard consumed");
+
+    // Escape cancels a pending cut (before it clears the selection).
+    ex().select_only(1);
+    assert!(shortcuts::dispatch(w, modk, ShortcutKey::Char('x')));
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::Escape), "Escape cancels the cut");
+    assert!(!shortcuts::dispatch(w, modk, ShortcutKey::Char('v')), "nothing left to paste");
+    assert_eq!(ex().selection().peek(), vec![1], "the selection survived the cancel");
+}

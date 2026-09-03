@@ -346,6 +346,20 @@ pub fn pick_folder(on_picked: impl Fn(Option<PathBuf>) + 'static) {
     );
 }
 
+/// Recursively copy a file or a whole directory (filesystem-mode paste).
+pub(super) fn copy_path(from: &Path, to: &Path) -> std::io::Result<()> {
+    if std::fs::metadata(from)?.is_dir() {
+        std::fs::create_dir(to)?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            copy_path(&entry.path(), &to.join(entry.file_name()))?;
+        }
+    } else {
+        std::fs::copy(from, to)?;
+    }
+    Ok(())
+}
+
 /// `base` made unique against `taken` (`name`, `name 2`, `name 3`, …) — the
 /// extension stays put: `readme.txt` → `readme 2.txt`.
 pub(super) fn unique_name(base: &str, taken: &[&str]) -> String {
