@@ -107,6 +107,7 @@ pub fn app() -> impl IntoWidget {
         .route("list", || component(screens::list::lists))
         .route("data-table", || component(screens::data_table::data_tables))
         .route("file-explorer", || component(screens::file_explorer::file_explorer_screen))
+        .route("markdown", || component(screens::markdown::markdown_screen))
         .route("split-view", || component(screens::split_view::split_views))
         .route("list-view", || component(screens::list_view::list_view))
         .route("grid-view", || component(screens::grid_view::grid_view))

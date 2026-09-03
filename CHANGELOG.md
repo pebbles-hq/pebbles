@@ -7,6 +7,14 @@ All notable changes to Pebbles are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Markdown reader + editor (feature `markdown`, GFM via pulldown-cmark):
+  `markdown(text)` / `markdown().bind(signal)` renders headings, emphasis,
+  strikethrough, inline + fenced code (JetBrains Mono), clickable links
+  (`on_link`), nested quotes/lists, **task lists whose checkboxes rewrite the
+  bound source** (`toggle_task` is public), tables, rules, and images (via
+  `image-view`). `markdown_editor(signal)` adds Edit / Split-live-preview /
+  Read modes driven by an app-owned mode signal. Fully themable via
+  `MarkdownStyle` (theme-following defaults). Gallery screen included.
 - File explorer refinement to VSCode parity: built-in right-click menus now
   work regardless of the global-menu switch (widget-specific always wins —
   previously the row's selection handler starved the menu, so it never

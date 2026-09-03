@@ -5,7 +5,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-pebbles = { workspace = true, features = ["image-view", "file-dialogs"] }
+pebbles = { workspace = true, features = ["image-view", "file-dialogs", "markdown"] }
 
 [lints]
 workspace = true

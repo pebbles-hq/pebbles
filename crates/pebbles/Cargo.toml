@@ -25,6 +25,7 @@ global-hotkeys = ["pebbles-shell/global-hotkeys"]
 # Forward the widget catalog's optional integrations the same way.
 image-view = ["pebbles-widgets/image-view"]
 file-dialogs = ["pebbles-widgets/file-dialogs"]
+markdown = ["pebbles-widgets/markdown"]
 
 [lints]
 workspace = true

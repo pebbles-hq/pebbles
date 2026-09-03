@@ -28,6 +28,8 @@ mod interactions;
 mod lifecycle;
 mod list_auto;
 mod list_tile;
+#[cfg(feature = "markdown")]
+mod markdown;
 mod memo;
 mod monitors;
 mod multi_window;

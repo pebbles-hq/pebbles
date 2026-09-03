@@ -95,6 +95,7 @@ Run `cargo run -p gallery` — ~50 dedicated screens, one per component family.
 | `TreeView` / `TreeNode` | ✅ | multi-select, drag |
 | `FileExplorer` / `FileTree` (+ `pick_folder`) | ✅ | real disk: native picker (`pick_folder` needs the `file-dialogs` feature), lazy loading, mutations, multi-select/-drag, icon themes (set_icon_theme resolver over ~1800 lucide glyphs) + per-node icon/color, full row-state set (hover/selected/focus-ring/cut-dim/drop), VSCode keyboard set (↑/↓/←/→ + Shift-extend, Mod+↑/↓ focus walk + Mod+Space one-by-one toggle, Home/End, F2 prefilled-stem rename, Delete, Mod+A, Mod+C/X/V clipboard), external control surface (bindable filter(), active_row(), reveal, expand_all), built-in right-click menus (independent of the global switch) |
 | `ImageView` | ✅ | `asset`/`network`/`memory`/`base64`/`image` + `ImageFit`; reactive source (`image-view` feature) |
+| `markdown` / `markdown_editor` | ✅ | Obsidian-style GFM reader + editor (`markdown` feature): tables, task lists with source-rewriting checkboxes, code (JetBrains Mono), links, quotes, images; Edit/Split/Read via an app-owned mode signal; themable `MarkdownStyle` |
 | `Carousel` | ✅ | snap-paged slides, dots, arrows (hidden at ends), autoplay w/ hover-pause, `CarouselController` (A6 ✅) |
 
 ## 4. Layout & navigation components (`components/layout/`, `components/navigation/`)

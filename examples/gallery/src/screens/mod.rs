@@ -13,6 +13,7 @@ pub mod data_table;
 pub mod list;
 pub mod split_view;
 pub mod file_explorer;
+pub mod markdown;
 pub mod fonts;
 pub mod grid_view;
 pub mod list_view;
