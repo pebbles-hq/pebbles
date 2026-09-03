@@ -268,17 +268,22 @@ impl Ui {
     pub fn update_content_drag(&mut self, point: Offset) -> bool {
         let Some(rid) = self.content_drag else { return false };
         let now = self.clock_now();
-        let moved = self
+        // The scroll view may have unmounted mid-drag (navigation, overlay close)
+        // — drop the stale drag instead of indexing a freed node.
+        let Some(moved) = self
             .render
-            .object_mut(rid)
-            .downcast_mut::<RenderScroll>()
+            .try_object_mut(rid)
+            .and_then(|o| o.downcast_mut::<RenderScroll>())
             .map(|s| {
                 let at = drag_axis_pos(s.axis, point);
                 let moved = s.drag_move(at, now);
                 s.refresh_update();
                 moved
             })
-            .unwrap_or(false);
+        else {
+            self.content_drag = None;
+            return false;
+        };
         if moved {
             self.render.mark_needs_layout(rid);
         }
@@ -291,10 +296,11 @@ impl Ui {
     pub fn end_content_drag(&mut self, point: Offset) -> bool {
         let Some(rid) = self.content_drag.take() else { return false };
         let now = self.clock_now();
+        // Unmounted mid-drag → nothing to settle; the drag is simply over.
         let ended = self
             .render
-            .object_mut(rid)
-            .downcast_mut::<RenderScroll>()
+            .try_object_mut(rid)
+            .and_then(|o| o.downcast_mut::<RenderScroll>())
             .map(|s| {
                 let at = drag_axis_pos(s.axis, point);
                 s.drag_move(at, now);
@@ -513,15 +519,23 @@ impl Ui {
             return false;
         }
         for rid in self.scroll_anim.iter().copied().collect::<Vec<_>>() {
+            // The node may have unmounted mid-spring (navigation while the wheel
+            // momentum is still settling) — drop the dead spring, touch nothing.
             let still = self
                 .render
                 .try_object_mut(rid)
                 .and_then(|o| o.downcast_mut::<RenderScroll>())
-                .map(|s| s.tick(dt))
-                .unwrap_or(false);
-            self.render.mark_needs_layout(rid);
-            if !still {
-                self.scroll_anim.remove(&rid);
+                .map(|s| s.tick(dt));
+            match still {
+                Some(still) => {
+                    self.render.mark_needs_layout(rid);
+                    if !still {
+                        self.scroll_anim.remove(&rid);
+                    }
+                }
+                None => {
+                    self.scroll_anim.remove(&rid);
+                }
             }
         }
         !self.scroll_anim.is_empty()

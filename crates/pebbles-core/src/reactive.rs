@@ -232,6 +232,11 @@ impl<T: 'static + Clone> Signal<T> {
     /// Read the value, subscribing the current component/effect to changes.
     pub fn get(&self) -> T {
         with_rt(|rt| {
+            assert!(
+                rt.signals.contains_key(self.id),
+                "signal read after dispose — a callback outlived its component; \
+                 use try_peek() in timers/closures that can fire after unmount"
+            );
             if let Some(observer) = rt.observer {
                 match observer {
                     Observer::Component(key) => {
@@ -251,7 +256,25 @@ impl<T: 'static + Clone> Signal<T> {
 
     /// Read without subscribing.
     pub fn peek(&self) -> T {
-        with_rt(|rt| rt.signals[self.id].value.downcast_ref::<T>().unwrap().clone())
+        with_rt(|rt| {
+            let slot = rt.signals.get(self.id).unwrap_or_else(|| {
+                panic!(
+                    "signal read after dispose — a callback outlived its component; \
+                     use try_peek() in timers/closures that can fire after unmount"
+                )
+            });
+            slot.value.downcast_ref::<T>().unwrap().clone()
+        })
+    }
+
+    /// Read without subscribing; `None` once the owning component unmounted.
+    /// THE safe read for timer callbacks and any closure that can outlive its
+    /// component (mirrors how [`set`](Self::set)/[`update`](Self::update) no-op
+    /// after dispose).
+    pub fn try_peek(&self) -> Option<T> {
+        with_rt(|rt| {
+            rt.signals.get(self.id).map(|s| s.value.downcast_ref::<T>().unwrap().clone())
+        })
     }
 
     /// This signal's stable id as a `u64` — for keying per-signal registries (e.g. a

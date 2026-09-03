@@ -27,6 +27,12 @@ impl ListNav {
         self.active.get()
     }
 
+    /// Whether the owning component is still mounted — the aliveness probe for
+    /// overlay GC (`show_overlay_guarded`).
+    pub fn is_alive(&self) -> bool {
+        self.active.alive()
+    }
+
     /// Set the active row (e.g. mouse hover syncing the keyboard cursor).
     pub fn set_active(&self, i: Option<usize>) {
         self.active.set(i);

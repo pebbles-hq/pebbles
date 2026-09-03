@@ -228,3 +228,69 @@ fn pull_without_reaching_the_threshold_does_not_fire() {
     ui.layout(&mut env, Size::new(300.0, 200.0));
     assert!(ui.render_tree().find::<pebbles_render::RenderSpinner>().is_none(), "no spinner either");
 }
+
+/// A route flip: page 0 is the scrollable page, page 1 is "elsewhere". The blue
+/// strip at the top is the nav button (mirrors the navigation.rs harness).
+fn scroll_nav_root() -> impl IntoWidget {
+    use pebbles_core::{action, create_signal};
+    use pebbles_widgets::{Container, GestureDetector};
+    let route = create_signal(0i32);
+    let content = if route.get() == 0 {
+        // Bounded viewport (30..330 in the window) so the content overflows it.
+        Container::new().height(300.0).child(tall(false)).into_widget()
+    } else {
+        text("elsewhere").into_widget()
+    };
+    column(vec![
+        GestureDetector::new(Container::new().width(140.0).height(30.0).color(palette::BLUE))
+            .on_tap(action(move || route.update(|r| *r = 1 - *r)))
+            .into_widget(),
+        content,
+    ])
+}
+
+/// REGRESSION — the "scroll, then navigate" app-killer. A wheel fling leaves a
+/// spring animating; unmounting the scroll view (navigation) frees its RenderId;
+/// the next frame's `tick_scrolls` used to index the freed node and panic
+/// ("invalid SlotMap key used"), taking the whole app down. Same class for a
+/// content drag crossing an unmount. Both must be silently dropped.
+#[test]
+fn springs_and_drags_survive_unmount_mid_flight() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.set_test_clock(Some(0.0));
+    ui.mount_root(View::new(palette::WHITE, component(scroll_nav_root)).into_widget());
+    let window = Size::new(300.0, 400.0);
+    ui.layout(&mut env, window);
+    let nav = Offset::new(110.0, 15.0); // hits the 140-wide strip whether start-aligned or centered
+    let page = Offset::new(150.0, 200.0);
+    // A full tap, the way the shell delivers one.
+    fn tap(ui: &mut Ui, p: Offset) {
+        ui.dispatch_pointer_down(p);
+        ui.dispatch_tap(p);
+        ui.dispatch_pointer_up(p);
+    }
+
+    // Wheel fling: the spring goes live…
+    assert!(ui.dispatch_scroll(page, 120.0));
+    // …then navigate away before it settles: the scroll view unmounts.
+    tap(&mut ui, nav);
+    ui.rebuild_if_dirty();
+    ui.layout(&mut env, window);
+    assert!(ui.render_tree().find::<RenderScroll>().is_none(), "page 1 has no scroll view");
+    assert!(!ui.tick_scrolls(0.016), "a dead spring is dropped, not ticked");
+
+    // Back to the page, then a live content drag across the same unmount.
+    tap(&mut ui, nav);
+    ui.rebuild_if_dirty();
+    ui.layout(&mut env, window);
+    assert!(ui.begin_content_drag(page));
+    tap(&mut ui, nav);
+    ui.rebuild_if_dirty();
+    ui.layout(&mut env, window);
+    assert!(ui.render_tree().find::<RenderScroll>().is_none(), "unmounted again");
+    assert!(!ui.update_content_drag(Offset::new(150.0, 160.0)), "stale drag is dropped");
+    assert!(!ui.end_content_drag(Offset::new(150.0, 160.0)));
+}

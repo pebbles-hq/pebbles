@@ -124,7 +124,11 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
                         if !explorer.expanded.get().contains(&id) {
                             let ex = explorer;
                             pebbles_core::animation::set_timeout(explorer.hover_key, 0.6, move || {
-                                if ex.dragging.get() && ex.drop_target.get() == Some(id) {
+                                // try_peek: the explorer may unmount while the
+                                // expand-on-hold timer is pending.
+                                if ex.dragging.try_peek().unwrap_or(false)
+                                    && ex.drop_target.try_peek().flatten() == Some(id)
+                                {
                                     ex.expanded.update(|e| {
                                         e.insert(id);
                                     });

@@ -10,7 +10,7 @@ use pebbles_render::PointerEvent;
 use super::list_nav::list_nav;
 use super::menu::{ChildCtx, RebuildableMenu, SubMenuHandles, estimate_height};
 use crate::components::{MenuEntry, menu_sub};
-use crate::overlay::{show_overlay, window_size};
+use crate::overlay::{show_overlay_guarded, window_size};
 use crate::widgets::GestureDetector;
 use pebbles_core::context::action_event;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
@@ -112,7 +112,9 @@ fn render_context(p: &CtxProps) -> AnyWidget {
             let (gx, gy) = (e.global.x, e.global.y);
             let left = if ww > 0.0 { gx.min(ww - width - 8.0).max(8.0) } else { gx };
             let top = if wh > 0.0 { gy.min(wh - menu_h - 8.0).max(8.0) } else { gy };
-            show_overlay(blueprint.build(width, &handles), left, top, width, menu_h);
+            show_overlay_guarded(blueprint.build(width, &handles), left, top, width, menu_h, move || {
+                child_ctx.alive()
+            });
         }))
         .into_widget()
 }

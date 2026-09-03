@@ -53,6 +53,11 @@ pub struct OverlayEntry {
     pub height: f64,
     /// An optional second panel rendered beside the content (a submenu).
     pub child: Option<OverlayChild>,
+    /// Aliveness probe from the opener ([`show_overlay_guarded`]): once it reports
+    /// false (the opening component unmounted — e.g. navigation while a dropdown
+    /// was up), the shell's per-frame [`gc_dead`] tears the overlay down BEFORE
+    /// its content can re-render against the opener's disposed signals.
+    pub alive: Option<std::rc::Rc<dyn Fn() -> bool>>,
 }
 
 /// The overlay's optional nested panel (dropdown submenus).
@@ -90,7 +95,50 @@ pub fn overlay_signal() -> Signal<Option<OverlayEntry>> {
 /// `width`/`height` are the panel's approximate size — the shell uses them to keep
 /// the popover anchored to its trigger while the page scrolls (see [`shift`]).
 pub fn show_overlay(content: AnyWidget, left: f64, top: f64, width: f64, height: f64) {
-    overlay_signal().set(Some(OverlayEntry { content, left, top, width, height, child: None }));
+    overlay_signal().set(Some(OverlayEntry {
+        content,
+        left,
+        top,
+        width,
+        height,
+        child: None,
+        alive: None,
+    }));
+}
+
+/// [`show_overlay`] with an aliveness probe. Widgets whose overlay content captures
+/// component-scoped signals (select, menus, pickers…) MUST use this: pass a probe
+/// over a signal created in the opener's render (e.g. `move || token.alive()`), so
+/// the panel is garbage-collected the frame its owner unmounts instead of
+/// re-rendering against disposed signals.
+pub fn show_overlay_guarded(
+    content: AnyWidget,
+    left: f64,
+    top: f64,
+    width: f64,
+    height: f64,
+    alive: impl Fn() -> bool + 'static,
+) {
+    overlay_signal().set(Some(OverlayEntry {
+        content,
+        left,
+        top,
+        width,
+        height,
+        child: None,
+        alive: Some(std::rc::Rc::new(alive)),
+    }));
+}
+
+/// Tear down the current window's overlay if its opener unmounted (probe reports
+/// false). The shell calls this every frame BEFORE reconciliation, so a dead
+/// overlay's content is never rebuilt against disposed signals.
+pub fn gc_dead() {
+    let sig = overlay_signal();
+    let dead = sig.peek().is_some_and(|e| e.alive.as_ref().is_some_and(|f| !f()));
+    if dead {
+        sig.set(None);
+    }
 }
 
 /// Attach (or replace) the open overlay's child panel at window position
@@ -253,7 +301,11 @@ fn render_host(p: &Props) -> crate::widgets::Stack {
     if let Some(entry) = passive_signal().get() {
         kids.push(Positioned::new(entry.content).left(entry.left).top(entry.top).into_widget());
     }
-    if let Some(entry) = overlay_signal().get() {
+    // Skip (and let the shell's gc_dead drop) an overlay whose opener unmounted
+    // EARLIER IN THIS SAME REBUILD PASS — building its content here would read the
+    // opener's just-disposed signals. The frame-start gc_dead can't catch that
+    // ordering; this check is the mid-pass half of the same guard.
+    if let Some(entry) = overlay_signal().get().filter(|e| e.alive.as_ref().is_none_or(|f| f())) {
         // Full-window scrim: an outside click dismisses.
         let scrim = Positioned::fill(
             GestureDetector::new(Container::new()).on_tap(hide_overlay),

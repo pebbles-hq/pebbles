@@ -13,7 +13,7 @@ use super::menu::{ActionRowProps, action_row};
 use super::popover::{anchor_below, popover_surface};
 use super::text_field::text_field;
 use crate::components::icon;
-use crate::overlay::{hide_overlay, show_overlay};
+use crate::overlay::{hide_overlay, show_overlay_guarded};
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, SingleChildScrollView, column, gap_h, row, spacer, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
@@ -289,7 +289,11 @@ fn render_combobox(p: &ComboProps) -> AnyWidget {
             }
             hide_overlay();
         });
-        show_overlay(search_menu(opts, width, search_ph.clone(), empty.clone(), is_selected, on_pick), left, top, width, est);
+        show_overlay_guarded(
+            search_menu(opts, width, search_ph.clone(), empty.clone(), is_selected, on_pick),
+            left, top, width, est,
+            move || selected.alive(),
+        );
     }))
     .into_widget()
 }
@@ -431,7 +435,11 @@ fn render_multi(p: &MultiProps) -> AnyWidget {
             }
             // Stays open — no hide_overlay.
         });
-        show_overlay(search_menu(opts, width, search_ph.clone(), empty.clone(), is_selected, on_pick), left, top, width, est);
+        show_overlay_guarded(
+            search_menu(opts, width, search_ph.clone(), empty.clone(), is_selected, on_pick),
+            left, top, width, est,
+            move || selected.alive(),
+        );
     }))
     .into_widget()
 }

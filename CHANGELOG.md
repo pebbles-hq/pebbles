@@ -6,6 +6,46 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — the "navigate while anything is in flight" crash family
+Found with the new synthetic-input monkey (`PEBBLES_INPUT_STORM=1`, below):
+navigating away from a screen while something it owned was still in flight
+killed the whole app. Three instances of one class — a callback/handle
+outliving its owner — plus a policy fix:
+- **Scroll spring vs. navigation** (the reported markdown-screen crash): a
+  wheel fling leaves a spring animating; unmounting the scroll view freed its
+  `RenderId`; the next frame's `tick_scrolls` indexed the freed node and
+  panicked ("invalid SlotMap key used"). Dead springs are now dropped;
+  `mark_needs_layout`/`mark_needs_paint` tolerate stale ids; live content
+  drags crossing an unmount are dropped the same way (scrollbar drags already
+  were). Regression test: `springs_and_drags_survive_unmount_mid_flight`.
+- **Pending timers vs. navigation**: hover-card show/close, submenu open/close
+  and the explorer's expand-on-hold timers read component signals after their
+  owner unmounted. New `Signal::try_peek()` (None after dispose — the read-side
+  mirror of the already-safe `set`/`update`) is now used by every timer closure;
+  `get`/`peek` on a disposed signal now panic with a message naming this exact
+  bug class instead of "invalid SlotMap key used".
+- **Open overlays vs. navigation**: a select/menu/picker panel lives in the
+  global overlay and re-renders against its opener's signals — after the opener
+  unmounted, that read panicked. `show_overlay_guarded(...)` records an
+  aliveness probe; the shell GCs a dead overlay each frame AND the overlay host
+  skips a mid-rebuild-pass corpse (the frame-start GC can't catch that
+  ordering). All component-scoped openers converted: select, dropdown menu,
+  context menu, menubar, combobox, multi-select, popover, date field, time
+  field.
+- **The frame loop can no longer panic on GPU trouble**: a vello render failure
+  logs, bumps the error counter (scheduling the existing full GPU reset) and
+  skips the frame instead of `.expect`-crashing the app; a missing renderer is
+  recreated in place.
+
+### Added (dev tooling)
+- `PEBBLES_INPUT_STORM=1` — a deterministic input monkey inside the shell:
+  synthetic hovers, wheels, taps, double-taps, drags and key presses driven
+  through the exact dispatch paths real input takes. Combine with the gallery's
+  `GALLERY_TOUR=<ms>` for a full-app burn-in (this pairing found every crash
+  above; the final run survived 92k+ events over 5 minutes, all screens).
+  `pick_folder` resolves as "cancelled" under the storm so burn-ins stay
+  unattended.
+
 ### Added
 - Markdown reader + editor (feature `markdown`, GFM via pulldown-cmark):
   `markdown(text)` / `markdown().bind(signal)` renders headings, emphasis,

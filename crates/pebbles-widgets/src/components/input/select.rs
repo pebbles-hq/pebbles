@@ -19,7 +19,7 @@ use pebbles_render::{
 
 use super::list_nav::list_nav;
 use crate::components::icon;
-use crate::overlay::{hide_overlay, show_overlay, window_size};
+use crate::overlay::{hide_overlay, show_overlay_guarded, window_size};
 use crate::theme::{mix, theme};
 use crate::widgets::{
     Container, GestureDetector, Opacity, SingleChildScrollView, column, gap_h, gap_w, row, spacer,
@@ -519,7 +519,10 @@ fn render_select(p: &Props) -> AnyWidget {
                     nav,
                 },
             );
-            show_overlay(menu.into_widget(), left, top, width, menu_h);
+            // Guarded: tear the menu down if this select unmounts while open.
+            show_overlay_guarded(menu.into_widget(), left, top, width, menu_h, move || {
+                selected.alive()
+            });
             node.request_focus();
         },
     ));

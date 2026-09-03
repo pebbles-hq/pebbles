@@ -11,7 +11,7 @@ use super::menu::{ActionRowProps, action_row};
 use super::popover::{anchor_below, popover_surface};
 use super::text_field::text_field;
 use super::{ButtonVariant, icon_button};
-use crate::overlay::{hide_overlay, show_overlay};
+use crate::overlay::{hide_overlay, show_overlay_guarded};
 use crate::style::{Style, styled};
 use crate::widgets::{Container, SingleChildScrollView, column};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
@@ -175,7 +175,7 @@ fn render_time(p: &Props) -> AnyWidget {
             let button_top = e.global.y - e.position.y;
             let input_left = button_left - (width - 34.0);
             let (left, top) = anchor_below(input_left, button_top - 5.0, 38.0, width, 260.0);
-            show_overlay(menu, left, top, width, 260.0);
+            show_overlay_guarded(menu, left, top, width, 260.0, move || text.alive());
         }),
     );
 

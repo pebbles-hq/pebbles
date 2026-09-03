@@ -13,7 +13,7 @@ use std::rc::Rc;
 use super::calendar::{CaptionLayout, Date, calendar};
 use super::text_field::text_field;
 use super::{ButtonVariant, icon_button};
-use crate::overlay::{hide_overlay, show_overlay, window_size};
+use crate::overlay::{hide_overlay, show_overlay_guarded, window_size};
 use crate::widgets::{gap_w, row};
 use crate::style::{Style, styled};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
@@ -361,7 +361,9 @@ fn render_date(p: &DateProps) -> AnyWidget {
             };
             let max_left = if ww > 0.0 { ww - pop_w - 8.0 } else { 8.0 };
             let left = input_left.clamp(8.0, max_left.max(8.0));
-            show_overlay(content, left, button_top + 42.0, pop_w, 340.0);
+            show_overlay_guarded(content, left, button_top + 42.0, pop_w, 340.0, move || {
+                text.alive()
+            });
         }),
     );
 

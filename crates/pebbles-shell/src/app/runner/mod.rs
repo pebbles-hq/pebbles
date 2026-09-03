@@ -31,6 +31,7 @@ use super::App;
 
 mod input;
 mod render;
+mod storm;
 mod windows;
 
 use input::{to_command, to_shortcut_key, to_winit_cursor, wheel_with_overlay};
@@ -204,6 +205,10 @@ pub(super) struct Runner {
     // secondary windows (keyed by winit WindowId; app-facing ids map through)
     windows: HashMap<WindowId, WindowRuntime>,
     window_by_id: HashMap<u64, WindowId>,
+
+    /// Dev-only synthetic-input monkey (`PEBBLES_INPUT_STORM=1`); `None` in
+    /// normal runs. See [`storm`].
+    storm: Option<storm::InputStorm>,
 }
 
 impl Runner {
@@ -254,6 +259,7 @@ impl Runner {
             last_frame_t: 0.0,
             windows: HashMap::new(),
             window_by_id: HashMap::new(),
+            storm: storm::InputStorm::from_env(),
         }
     }
 
@@ -764,6 +770,13 @@ impl ApplicationHandler for Runner {
             let remaining = (at - now_secs).max(0.0);
             event_loop.set_control_flow(ControlFlow::WaitUntil(
                 Instant::now() + Duration::from_secs_f64(remaining),
+            ));
+        }
+        // Dev monkey-tester: hammer the UI with synthetic input and keep the loop hot.
+        if self.storm.is_some() && self.mounted {
+            self.storm_tick();
+            event_loop.set_control_flow(ControlFlow::WaitUntil(
+                Instant::now() + Duration::from_millis(10),
             ));
         }
     }

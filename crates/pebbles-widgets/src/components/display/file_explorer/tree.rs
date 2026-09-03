@@ -343,6 +343,12 @@ pub(super) fn read_dir(path: &Path) -> std::io::Result<Vec<FsNode>> {
 /// `file-dialogs` feature.
 #[cfg(feature = "file-dialogs")]
 pub fn pick_folder(on_picked: impl Fn(Option<PathBuf>) + 'static) {
+    // Under the synthetic-input monkey (PEBBLES_INPUT_STORM) never open a real
+    // OS dialog — resolve as "cancelled" so burn-in runs stay unattended.
+    if std::env::var("PEBBLES_INPUT_STORM").is_ok_and(|v| !v.is_empty() && v != "0") {
+        on_picked(None);
+        return;
+    }
     pebbles_core::spawn(
         || rfd::FileDialog::new().pick_folder(),
         on_picked,

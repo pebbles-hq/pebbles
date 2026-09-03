@@ -8,7 +8,7 @@ use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, Poi
 
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector};
-use crate::overlay::{show_overlay, window_size};
+use crate::overlay::{show_overlay_guarded, window_size};
 use pebbles_core::context::action_event;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
@@ -133,6 +133,9 @@ impl IntoWidget for Popover {
         let (width, height, trigger_height, pad) =
             (self.width, self.height, self.trigger_height, self.pad);
         let user_style = self.style.take();
+        // Owner token: created during the parent component's render, so it dies
+        // with the parent — the probe that GCs an orphaned panel.
+        let owner = pebbles_core::create_signal(());
         GestureDetector::new(trigger)
             .cursor(Cursor::Pointer)
             .on_tap(action_event(move |e: PointerEvent| {
@@ -154,7 +157,7 @@ impl IntoWidget for Popover {
                         )
                     }
                 };
-                show_overlay(surface, left, top, width, height);
+                show_overlay_guarded(surface, left, top, width, height, move || owner.alive());
             }))
             .into_widget()
     }

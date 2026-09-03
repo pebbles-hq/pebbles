@@ -13,7 +13,7 @@ use crate::components::input::menu::{
     ChildCtx, MenuEntry, RebuildableMenu, SubMenuHandles, estimate_height, menu_sub,
 };
 use crate::components::input::popover::anchor_below;
-use crate::overlay::{hide_overlay, is_open, show_overlay};
+use crate::overlay::{hide_overlay, is_open, show_overlay_guarded};
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, row, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
@@ -132,7 +132,9 @@ fn render_menubar(p: &Props) -> AnyWidget {
                     ctx: child_ctx,
                     subs: Rc::new(bp.sub_rows()),
                 };
-                show_overlay(bp.build(width, &handles), l, t, width, menu_h);
+                show_overlay_guarded(bp.build(width, &handles), l, t, width, menu_h, move || {
+                    open.alive()
+                });
                 open.set(Some(i));
             }
         };

@@ -110,6 +110,12 @@ impl Runner {
         let window = self.ui.window_id();
         crate::a11y::drain_actions(&mut self.ui, window);
 
+        // GC an overlay whose opener unmounted (navigation while a dropdown was up)
+        // BEFORE reconciling — its content must never re-render against disposed
+        // signals.
+        self.ui.make_current();
+        pebbles_widgets::overlay::gc_dead();
+
         let Some(active) = self.active.as_mut() else { return };
 
         let stats = frame_stats_enabled();
@@ -202,26 +208,34 @@ impl Runner {
         }
 
         // 4. Render to the offscreen target and blit to the surface.
+        // NOTHING in this GPU section may panic: a desktop app must survive any
+        // driver hiccup. On failure: log, bump GPU_ERRORS (the recovery reset
+        // picks it up next frame), and skip THIS frame.
         let surface = &active.surface;
         let device_handle = &self.context.devices[surface.dev_id];
-        let renderer = self.renderers[surface.dev_id]
-            .as_mut()
-            .expect("renderer initialized for this device");
+        let renderer = match self.renderers[surface.dev_id].as_mut() {
+            Some(r) => r,
+            None => self.renderers[surface.dev_id]
+                .insert(new_renderer(&device_handle.device, &device_handle.queue)),
+        };
 
-        renderer
-            .render_to_texture(
-                &device_handle.device,
-                &device_handle.queue,
-                &self.frame,
-                &surface.target_view,
-                &RenderParams {
-                    base_color: self.background,
-                    width: phys.width,
-                    height: phys.height,
-                    antialiasing_method: AaConfig::Area,
-                },
-            )
-            .expect("vello render");
+        if let Err(e) = renderer.render_to_texture(
+            &device_handle.device,
+            &device_handle.queue,
+            &self.frame,
+            &surface.target_view,
+            &RenderParams {
+                base_color: self.background,
+                width: phys.width,
+                height: phys.height,
+                antialiasing_method: AaConfig::Area,
+            },
+        ) {
+            eprintln!("pebbles: vello render failed (skipping frame, scheduling GPU reset): {e}");
+            GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            active.window.request_redraw();
+            return;
+        }
         // DRIVER WORKAROUND — wait the vello compute pass out before touching the
         // swapchain. On some Linux/Vulkan drivers (seen on RADV/Wayland), letting
         // the blit/present chain queue up while the vello submission is still in
@@ -292,6 +306,9 @@ impl Runner {
         pebbles_core::animation::tick(now);
         let pending_tasks = pebbles_core::task::pump();
 
+        // GC a dead overlay first (see render()); make_current so it hits THIS window's.
+        w.ui.make_current();
+        pebbles_widgets::overlay::gc_dead();
         w.ui.rebuild_if_dirty();
         let scale = w.window.scale_factor();
         let phys = w.window.inner_size();
@@ -311,21 +328,30 @@ impl Runner {
 
         let surface = &w.surface;
         let device_handle = &self.context.devices[surface.dev_id];
-        let renderer = self.renderers[surface.dev_id].as_mut().expect("renderer");
-        renderer
-            .render_to_texture(
-                &device_handle.device,
-                &device_handle.queue,
-                &self.frame,
-                &surface.target_view,
-                &RenderParams {
-                    base_color: w.background,
-                    width: phys.width,
-                    height: phys.height,
-                    antialiasing_method: AaConfig::Area,
-                },
-            )
-            .expect("vello render");
+        // Same no-panic policy as render(): recreate a missing renderer, skip the
+        // frame (and schedule the GPU reset) on a render failure.
+        let renderer = match self.renderers[surface.dev_id].as_mut() {
+            Some(r) => r,
+            None => self.renderers[surface.dev_id]
+                .insert(new_renderer(&device_handle.device, &device_handle.queue)),
+        };
+        if let Err(e) = renderer.render_to_texture(
+            &device_handle.device,
+            &device_handle.queue,
+            &self.frame,
+            &surface.target_view,
+            &RenderParams {
+                base_color: w.background,
+                width: phys.width,
+                height: phys.height,
+                antialiasing_method: AaConfig::Area,
+            },
+        ) {
+            eprintln!("pebbles: vello render failed (skipping frame, scheduling GPU reset): {e}");
+            GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            w.window.request_redraw();
+            return;
+        }
         // See render(): wait the vello pass out before the blit (driver workaround).
         let _ = device_handle.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
         let surface_texture = match surface.surface.get_current_texture() {

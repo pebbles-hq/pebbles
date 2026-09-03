@@ -11,7 +11,7 @@ use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconData, Icon
 use super::list_nav::{ListNav, list_nav};
 use super::popover::{anchor_below, popover_surface};
 use crate::components::icon;
-use crate::overlay::{hide_overlay, show_overlay};
+use crate::overlay::{hide_overlay, show_overlay_guarded};
 use crate::theme::{mix, theme};
 use crate::widgets::{Container, GestureDetector, Opacity, column, gap_h, row, spacer, text};
 use pebbles_core::focus::create_focus;
@@ -372,7 +372,9 @@ fn render_dropdown(p: &Props) -> AnyWidget {
                     handles: handles.clone(),
                 },
             );
-            show_overlay(menu.into_widget(), left, top, width, menu_h);
+            show_overlay_guarded(menu.into_widget(), left, top, width, menu_h, move || {
+                nav.is_alive()
+            });
             node.request_focus();
         }
     };
@@ -511,7 +513,8 @@ fn render_sub_row(p: &SubRowProps) -> AnyWidget {
         let over = over;
         move || {
             pebbles_core::animation::set_timeout(close_key, SUB_CLOSE_DELAY, move || {
-                if over.peek() <= 0 {
+                // Owner unmounted while pending → the submenu must not stay open.
+                if over.try_peek().unwrap_or(0) <= 0 {
                     close_sub_child(child_nav, child_ctx);
                 }
             });
@@ -561,7 +564,8 @@ fn render_sub_row(p: &SubRowProps) -> AnyWidget {
             });
             let bp2 = bp.clone();
             pebbles_core::animation::set_timeout(show_key, 0.25, move || {
-                if over.peek() <= 0 {
+                // Unmounted (or un-hovered) while the open delay ran → never open.
+                if over.try_peek().is_none_or(|n| n <= 0) {
                     return;
                 }
                 open_sub_child(

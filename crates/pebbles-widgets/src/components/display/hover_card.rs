@@ -98,7 +98,9 @@ fn render_hover_card(p: &Props) -> AnyWidget {
 
     let schedule_close = move || {
         animation::set_timeout(close_key, CLOSE_DELAY, move || {
-            if over.peek() <= 0 {
+            // The owner may have unmounted while this timer was pending
+            // (navigation) — a dead ref-count reads as 0: close the card.
+            if over.try_peek().unwrap_or(0) <= 0 {
                 hide_passive();
             }
         });
@@ -111,7 +113,8 @@ fn render_hover_card(p: &Props) -> AnyWidget {
             let (gx, gy) = (e.global.x, e.global.y);
             let content = content.clone();
             animation::set_timeout(show_key, delay, move || {
-                if over.peek() <= 0 {
+                // Unmounted (or un-hovered) while the show delay ran → never show.
+                if over.try_peek().is_none_or(|n| n <= 0) {
                     return;
                 }
                 // The card itself tracks hover so it stays open while pointed at.

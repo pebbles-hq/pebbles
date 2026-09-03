@@ -337,7 +337,10 @@ impl RenderTree {
     pub fn mark_needs_layout(&mut self, id: RenderId) {
         let mut cur = Some(id);
         while let Some(c) = cur {
-            let node = &mut self.nodes[c];
+            // Stale ids reach here (scroll springs / animations can outlive the
+            // node they drive by a frame) — a dirty-mark on a dead node is a
+            // no-op, never a panic.
+            let Some(node) = self.nodes.get_mut(c) else { return };
             if node.needs_layout {
                 // Ancestors above an already-dirty node are dirty too; stop early.
                 node.needs_paint = true;
@@ -350,7 +353,9 @@ impl RenderTree {
     }
 
     pub fn mark_needs_paint(&mut self, id: RenderId) {
-        self.nodes[id].needs_paint = true;
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.needs_paint = true;
+        }
     }
 
     /// Run a full layout pass from the root under `root_constraints`.
