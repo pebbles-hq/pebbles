@@ -194,7 +194,18 @@ fn parse_blocks(src: &str) -> Vec<Block> {
                     };
                     code = Some((lang, String::new()));
                 }
-                Tag::List(start) => lists.push((start.is_some(), start.unwrap_or(1), Vec::new())),
+                Tag::List(start) => {
+                    // A nested list inside a TIGHT item follows the item's bare
+                    // text — flush that text into the item frame first so it isn't
+                    // swallowed. (No-op at the top level, where inline is empty.)
+                    let content = std::mem::take(&mut inline);
+                    if !content.is_empty()
+                        && let Some(top) = stack.last_mut()
+                    {
+                        top.push(Block::Para(content));
+                    }
+                    lists.push((start.is_some(), start.unwrap_or(1), Vec::new()));
+                }
                 Tag::Item => {
                     stack.push(Vec::new());
                     item_task.push(None);
@@ -241,6 +252,16 @@ fn parse_blocks(src: &str) -> Vec<Block> {
                     }
                 }
                 TagEnd::Item => {
+                    // TIGHT lists emit an item's text as bare `Text` events with no
+                    // `Paragraph` wrapper, so `End(Paragraph)` never flushes it —
+                    // flush the pending inline into the item here before closing it,
+                    // or the text leaks into the following block.
+                    let content = std::mem::take(&mut inline);
+                    if !content.is_empty()
+                        && let Some(top) = stack.last_mut()
+                    {
+                        top.push(Block::Para(content));
+                    }
                     let blocks = stack.pop().unwrap_or_default();
                     let task = item_task.pop().flatten();
                     if let Some((_, _, items)) = lists.last_mut() {
@@ -845,5 +866,56 @@ fn render_editor(p: &EdProps) -> AnyWidget {
         .cross_axis_alignment(CrossAxisAlignment::Start)
         .main_axis_size(MainAxisSize::Min)
         .into_widget(),
+    }
+}
+
+#[cfg(test)]
+mod parse_tests {
+    use super::*;
+
+    fn inline_text(inls: &[Inline]) -> String {
+        inls.iter()
+            .filter_map(|i| match i {
+                Inline::Run(r) => Some(r.text.clone()),
+                Inline::Image { .. } => None,
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    fn first_para_text(b: &Block) -> String {
+        match b {
+            Block::Para(inls) | Block::Heading(_, inls) => inline_text(inls),
+            _ => String::new(),
+        }
+    }
+
+    // Regression: a TIGHT list emits item text as bare `Text` (no Paragraph), so
+    // the item text must be flushed into the item — not leaked into the next block.
+    #[test]
+    fn tight_list_items_keep_their_text_and_dont_leak_into_the_next_heading() {
+        let blocks = parse_blocks("- [x] alpha\n- [ ] beta\n\n## Heading\n");
+        assert_eq!(blocks.len(), 2, "one list + one heading, got {}", blocks.len());
+        let Block::List { items, .. } = &blocks[0] else { panic!("first block should be a list") };
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].task.map(|(c, _)| c), Some(true));
+        assert_eq!(items[1].task.map(|(c, _)| c), Some(false));
+        assert!(first_para_text(&items[0].blocks[0]).contains("alpha"), "item 0 keeps its text");
+        assert!(first_para_text(&items[1].blocks[0]).contains("beta"), "item 1 keeps its text");
+        let Block::Heading(_, inls) = &blocks[1] else { panic!("second block should be a heading") };
+        assert_eq!(inline_text(inls).trim(), "Heading", "heading must not absorb the list text");
+    }
+
+    #[test]
+    fn nested_list_text_stays_in_its_item() {
+        let blocks = parse_blocks("1. Ordered\n2. Nested\n   - child\n");
+        let Block::List { items, .. } = &blocks[0] else { panic!("list") };
+        assert_eq!(items.len(), 2);
+        assert!(first_para_text(&items[0].blocks[0]).contains("Ordered"));
+        assert!(first_para_text(&items[1].blocks[0]).contains("Nested"), "nested item keeps its text");
+        assert!(
+            items[1].blocks.iter().any(|b| matches!(b, Block::List { .. })),
+            "the nested list is inside item 1"
+        );
     }
 }
