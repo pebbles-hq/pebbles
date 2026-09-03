@@ -22,6 +22,7 @@ pub struct ContextMenu {
     child: Option<AnyWidget>,
     entries: Vec<MenuEntry>,
     width: f64,
+    on_open: Option<Rc<dyn Fn(PointerEvent)>>,
 }
 
 /// Wrap `child` so a secondary (right) click opens a menu at the cursor.
@@ -63,12 +64,19 @@ impl ContextMenu {
         self.width = w;
         self
     }
+    /// Run `f` on the right-click, just before the menu opens (e.g. sync the
+    /// selection to the clicked row). Receives the pointer event.
+    pub fn on_open(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
+        self.on_open = Some(Rc::new(f));
+        self
+    }
 }
 
 struct CtxProps {
     child: AnyWidget,
     width: f64,
     entries: Vec<MenuEntry>,
+    on_open: Option<Rc<dyn Fn(PointerEvent)>>,
 }
 
 impl IntoWidget for ContextMenu {
@@ -76,7 +84,7 @@ impl IntoWidget for ContextMenu {
         let child = self.child.take().unwrap_or_else(|| crate::widgets::Container::new().into_widget());
         component_props(
             render_context,
-            CtxProps { child, width: self.width, entries: std::mem::take(&mut self.entries) },
+            CtxProps { child, width: self.width, entries: std::mem::take(&mut self.entries), on_open: self.on_open.take() },
         )
         .into_widget()
     }
@@ -93,8 +101,12 @@ fn render_context(p: &CtxProps) -> AnyWidget {
     };
     let width = p.width;
     let menu_h = estimate_height(&p.entries);
+    let on_open = p.on_open.clone();
     GestureDetector::new(p.child.clone())
         .on_secondary_tap_down(action_event(move |e: PointerEvent| {
+            if let Some(f) = &on_open {
+                f(e);
+            }
             // Open at the cursor, clamped to stay on-screen.
             let (ww, wh) = window_size();
             let (gx, gy) = (e.global.x, e.global.y);

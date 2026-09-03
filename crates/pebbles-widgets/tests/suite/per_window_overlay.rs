@@ -24,7 +24,7 @@ fn mount() -> (Ui, TextEnv) {
 
 #[test]
 fn dialogs_are_isolated_per_window() {
-    pebbles_widgets::overlay::init();
+    overlay::init();
     pebbles_core::focus::init();
     dialog::init();
 
@@ -34,7 +34,7 @@ fn dialogs_are_isolated_per_window() {
 
     // Open a dialog in window 1.
     w1.make_current();
-    let id = dialog::dialog(text("in window 1")).open();
+    let id = dialog(text("in window 1")).open();
     assert!(dialog::is_open(), "window 1 has an open dialog");
 
     // Window 0 sees no dialog — full isolation.
@@ -48,7 +48,7 @@ fn dialogs_are_isolated_per_window() {
 
     // Now open one in window 0 too — both coexist independently.
     w0.make_current();
-    dialog::dialog(text("in window 0")).open();
+    dialog(text("in window 0")).open();
     assert!(dialog::is_open(), "window 0 now has its own dialog");
     w1.make_current();
     assert!(dialog::is_open(), "window 1 still open");
@@ -62,7 +62,7 @@ fn dialogs_are_isolated_per_window() {
 
 #[test]
 fn overlays_and_window_size_are_isolated_per_window() {
-    pebbles_widgets::overlay::init();
+    overlay::init();
 
     let (w0, _e0) = mount();
     let (w1, _e1) = mount();

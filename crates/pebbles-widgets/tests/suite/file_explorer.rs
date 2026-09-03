@@ -416,3 +416,136 @@ fn filesystem_mode_reads_creates_renames_deletes_and_moves_on_disk() {
 
     std::fs::remove_dir_all(&root).ok();
 }
+
+// ---------------------------------------------------------------------------
+// Right-click: the explorer's menu is independent of the global switch
+// ---------------------------------------------------------------------------
+
+#[test]
+fn row_context_menu_opens_with_the_global_menu_disabled() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let _ = tree_sig();
+    assert!(!pebbles_widgets::is_global_menu_enabled(), "the global switch defaults OFF");
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+
+    // Right-press README.md (row at ~94..122): the row's OWN menu claims the
+    // press — selection syncs and the menu opens, global switch irrelevant.
+    let readme = Offset::new(60.0, 105.0);
+    let handled = ui.dispatch_secondary_tap_down(readme);
+    frame(&mut ui, &mut env, win);
+    assert!(handled, "the row menu claims the press (no global fallback)");
+    assert!(pebbles_widgets::overlay::is_open(), "the row's context menu is open");
+    assert_eq!(ex().selection().peek().len(), 1, "right-click selected the row");
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard: the VSCode set — and it declines when the explorer is idle
+// ---------------------------------------------------------------------------
+
+#[test]
+fn keyboard_drives_the_explorer_and_declines_when_idle() {
+    use pebbles_core::{Mods, ShortcutKey, shortcuts};
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let _ = tree_sig();
+    pebbles_core::keyboard::set_modifiers(false, false, false, false);
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+
+    let w = ui.window_id();
+    let none = Mods::default();
+    // Ids from tree_sig(): src=0, main.rs=1, README.md=2.
+
+    // Idle (no selection): every binding declines — nothing is hijacked.
+    assert!(!shortcuts::dispatch(w, none, ShortcutKey::ArrowDown), "arrows fall through");
+    assert!(!shortcuts::dispatch(w, none, ShortcutKey::Delete), "Delete falls through");
+    assert!(!shortcuts::dispatch(w, none, ShortcutKey::Escape), "Escape falls through");
+
+    // Engage on the collapsed folder; ArrowRight expands it.
+    ex().select_only(0);
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::ArrowRight));
+    assert!(ex().expanded().peek().contains(&0), "ArrowRight expanded src");
+    frame(&mut ui, &mut env, win);
+
+    // ArrowDown walks into the folder; Shift+ArrowDown extends the selection.
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::ArrowDown));
+    assert_eq!(ex().selection().peek(), vec![1], "stepped to main.rs");
+    let shift = Mods { shift: true, ..Mods::default() };
+    assert!(shortcuts::dispatch(w, shift, ShortcutKey::ArrowDown));
+    assert_eq!(ex().selection().peek(), vec![1, 2], "Shift+Down extends");
+
+    // ArrowLeft from a file jumps to the parent; again on the folder collapses.
+    ex().select_only(1);
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::ArrowLeft));
+    assert_eq!(ex().selection().peek(), vec![0], "Left jumps to the parent");
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::ArrowLeft));
+    assert!(!ex().expanded().peek().contains(&0), "Left collapses the folder");
+
+    // F2 starts the inline rename of the active node.
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::F(2)));
+    assert_eq!(ex().renaming().peek(), Some(0), "F2 renames the active node");
+    ex().renaming().set(None); // cancel — the editor plays no part here
+
+    // Mod+A selects all visible; Escape clears (and disengages).
+    #[cfg(target_os = "macos")]
+    let modk = Mods { meta: true, ..Mods::default() };
+    #[cfg(not(target_os = "macos"))]
+    let modk = Mods { ctrl: true, ..Mods::default() };
+    ex().select_only(2);
+    assert!(shortcuts::dispatch(w, modk, ShortcutKey::Char('a')));
+    assert_eq!(ex().selection().peek().len(), 2, "all visible rows (src collapsed)");
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::Escape));
+    assert!(ex().selection().peek().is_empty(), "Escape clears the selection");
+
+    // Delete removes the selection.
+    ex().select_only(2);
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::Delete));
+    frame(&mut ui, &mut env, win);
+    let names = tree_sig().peek().root.iter().map(|n| n.name.clone()).collect::<Vec<_>>();
+    assert!(!names.contains(&"README.md".to_string()), "Delete removed the file");
+}
+
+// ---------------------------------------------------------------------------
+// Per-node customization: each folder/file styles individually
+// ---------------------------------------------------------------------------
+
+#[test]
+fn per_node_icon_and_color_are_individually_customizable() {
+    use pebbles_render::IconKind;
+    use pebbles_widgets::FsNode;
+
+    let mut t = FileTree::new();
+    // Builders on a hand-built node (insert_node assigns subtree ids + dedups).
+    let mut custom = FsNode::folder("src").icon(IconKind::File).color(palette::WHITE);
+    custom.children.push(FsNode::file("main.rs").color(palette::BLACK));
+    let src = t.insert_node(None, custom);
+    let n = t.node(src).expect("inserted");
+    assert_eq!(n.icon, Some(IconKind::File));
+    assert_eq!(n.color, Some(palette::WHITE));
+    let child = n.children.first().expect("child got an id too");
+    assert!(child.id != 0 || src != 0, "subtree ids assigned");
+    assert_eq!(child.color, Some(palette::BLACK));
+    assert!(child.icon.is_none(), "unset fields keep the kind's default");
+
+    // Plain nodes default to no overrides; node_mut customizes in place.
+    let plain = t.insert(None, FsKind::File, "a.txt");
+    assert!(t.node(plain).expect("plain").icon.is_none());
+    t.node_mut(plain).expect("mutable").icon = Some(IconKind::Folder);
+    assert_eq!(t.node(plain).expect("plain").icon, Some(IconKind::Folder));
+
+    // insert_node still de-duplicates names against siblings.
+    let dup = t.insert_node(None, FsNode::file("a.txt"));
+    assert_eq!(t.node(dup).expect("dup").name, "a 2.txt");
+}

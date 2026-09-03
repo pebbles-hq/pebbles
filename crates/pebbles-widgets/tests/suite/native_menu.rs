@@ -69,7 +69,7 @@ fn submenus_checks_and_callbacks_survive_translation() {
             "View",
             [
                 menu_check("Word Wrap", true, move |on| t.set(on)).into(),
-                menu_sub("Share", [menu_item("Email").into(), menu_item("Slack").into()]),
+                menu_sub("Share", [menu_item("Email"), menu_item("Slack")]),
                 menu_item("Run").on_select(move || f.set(f.get() + 1)).into(),
             ],
         )])

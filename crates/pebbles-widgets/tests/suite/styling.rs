@@ -162,7 +162,7 @@ fn text_only_style_on_box_is_a_no_op() {
 #[test]
 fn theme_fn_style_reevaluates_after_theme_switch() {
     use pebbles_widgets::{theme, toggle_theme};
-    pebbles_widgets::theme::init();
+    theme::init();
     // A style function re-reads theme() each call (never cache a Style in a static).
     let chip = || style().background(theme().colors.card);
     let before = chip().background;

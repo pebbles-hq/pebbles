@@ -22,7 +22,7 @@ fn probe() -> impl IntoWidget {
 fn toggling_direction_re_renders_subscribers() {
     pebbles_widgets::overlay::init();
     pebbles_core::focus::init();
-    pebbles_widgets::text_direction::init();
+    text_direction::init();
     set_text_direction(TextDirection::Ltr);
     SEEN.with(|s| s.set(None));
 

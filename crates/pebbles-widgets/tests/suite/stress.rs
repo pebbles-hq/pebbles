@@ -31,7 +31,7 @@ struct ChildProps {
     index: usize,
 }
 
-fn child(p: &ChildProps) -> impl IntoWidget {
+fn child(p: &ChildProps) -> SizedBox {
     // Subscribe to this component's own signal, and count the render.
     let _ = SIGNALS.with(|s| s.borrow()[p.index].get());
     RENDERS.with(|r| r.borrow_mut()[p.index] += 1);

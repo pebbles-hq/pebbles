@@ -59,7 +59,14 @@ type Binding = (Mods, ShortcutKey);
 struct Entry {
     /// Serial for exact removal on unmount (Rc pointers don't compare).
     id: u64,
-    cb: Rc<dyn Fn()>,
+    /// The registering component instance (`owner_id()`), when hook-registered.
+    /// Re-registering the same binding from the same instance OVERWRITES in
+    /// place instead of stacking — a component that re-renders every frame
+    /// neither leaks entries nor shifts dispatch order.
+    owner: Option<u64>,
+    /// Returns whether the press was consumed; `false` falls through to the
+    /// next (older) registration, then to the shell's scroll fallback.
+    cb: Rc<dyn Fn() -> bool>,
 }
 
 thread_local! {
@@ -156,23 +163,53 @@ fn key_token(token: &str) -> Result<ShortcutKey, String> {
 /// create_shortcut("Mod+K", move || palette.open());
 /// ```
 pub fn create_shortcut(binding: &str, cb: impl Fn() + 'static) {
+    register(binding, move || {
+        cb();
+        true
+    });
+}
+
+/// [`create_shortcut`] with a *conditional* handler: return `true` to consume
+/// the press, `false` to decline it — dispatch then falls through to the next
+/// (older) registration for the same binding, and finally to the shell's
+/// key-scroll fallback. Use it for bindings that should only act while a widget
+/// is "engaged" (e.g. the file explorer's arrows act only while it has a
+/// selection, so they never hijack page scrolling).
+pub fn create_shortcut_if(binding: &str, cb: impl Fn() -> bool + 'static) {
+    register(binding, cb);
+}
+
+/// The shared registrar. Keyed by the calling component instance: a re-render
+/// overwrites its own previous registration in place (same dispatch position,
+/// no leak — cleanups only run at unmount, so per-render pushes would stack).
+fn register(binding: &str, cb: impl Fn() -> bool + 'static) {
     let (mods, key) = parse(binding).expect("create_shortcut: invalid binding grammar");
     let window = current_window();
+    let owner = crate::reactive::owner_id();
     let id = NEXT.with(|n| {
         let v = n.get().wrapping_add(1);
         n.set(v);
         v
     });
-    let entry = Entry { id, cb: Rc::new(cb) };
+    let cb: Rc<dyn Fn() -> bool> = Rc::new(cb);
     REGISTRY.with(|r| {
-        r.borrow_mut().entry((window, mods, key)).or_default().push(entry);
+        let mut r = r.borrow_mut();
+        let list = r.entry((window, mods, key)).or_default();
+        match owner.and_then(|o| list.iter_mut().find(|e| e.owner == Some(o))) {
+            // Same component re-rendering: swap the callback in place.
+            Some(existing) => existing.cb = cb,
+            None => list.push(Entry { id, owner, cb }),
+        }
     });
     create_cleanup(move || {
         REGISTRY.with(|r| {
             let mut r = r.borrow_mut();
             let key = (window, mods, key);
             if let Some(list) = r.get_mut(&key) {
-                list.retain(|e| e.id != id);
+                match owner {
+                    Some(o) => list.retain(|e| e.owner != Some(o)),
+                    None => list.retain(|e| e.id != id),
+                }
                 if list.is_empty() {
                     r.remove(&key);
                 }
@@ -181,19 +218,18 @@ pub fn create_shortcut(binding: &str, cb: impl Fn() + 'static) {
     });
 }
 
-/// Dispatch a press to `window`'s registry. The most-recently-registered
-/// binding for the exact `(mods, key)` wins; returns whether anything fired.
+/// Dispatch a press to `window`'s registry. Registrations are tried newest →
+/// oldest until one CONSUMES the press (plain [`create_shortcut`] handlers
+/// always consume; [`create_shortcut_if`] handlers may decline). Returns
+/// whether anything consumed it.
 pub fn dispatch(window: u32, mods: Mods, key: ShortcutKey) -> bool {
-    let cb = REGISTRY.with(|r| {
-        r.borrow().get(&(window, mods, key)).and_then(|list| list.last().map(|e| e.cb.clone()))
+    let cbs: Vec<Rc<dyn Fn() -> bool>> = REGISTRY.with(|r| {
+        r.borrow()
+            .get(&(window, mods, key))
+            .map(|list| list.iter().rev().map(|e| e.cb.clone()).collect())
+            .unwrap_or_default()
     });
-    match cb {
-        Some(cb) => {
-            cb();
-            true
-        }
-        None => false,
-    }
+    cbs.into_iter().any(|cb| cb())
 }
 
 /// Number of live shortcut registrations (debug-only observability).

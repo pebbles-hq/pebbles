@@ -140,7 +140,7 @@ fn dialog_modal_opens_closes_and_paints() {
 
     let fired = Rc::new(Cell::new(false));
     let f2 = fired.clone();
-    let id = dialog::dialog(text("Hello from a modal dialog"))
+    let id = dialog(text("Hello from a modal dialog"))
         .title("Greetings")
         .width(300.0)
         .on_close(move || f2.set(true))
@@ -166,7 +166,7 @@ fn dialog_modal_opens_closes_and_paints() {
 #[test]
 fn window_open_and_close_enqueue() {
     use pebbles_widgets::window;
-    let id = window::window(text("inspector")).title("Inspector").size(500, 400).open();
+    let id = window(text("inspector")).title("Inspector").size(500, 400).open();
     let open = window::take_open_requests();
     assert_eq!(open.len(), 1);
     assert_eq!(open[0].id, id);
@@ -279,7 +279,7 @@ fn toggle_theme_rerenders_subscribers() {
     use pebbles_widgets::Theme;
     pebbles_widgets::overlay::init();
     pebbles_core::focus::init();
-    pebbles_widgets::theme::init(); // create the global theme signal at app scope
+    theme::init(); // create the global theme signal at app scope
 
     set_theme(Theme::light()); // known starting point
     let mut ui = Ui::new();
@@ -331,7 +331,7 @@ fn channel_carries_typed_messages() {
 fn dialog_non_dismissible_ignores_dismiss() {
     use pebbles_widgets::dialog;
     dialog::init();
-    let id = dialog::dialog(text("must choose")).dismissible(false).open();
+    let id = dialog(text("must choose")).dismissible(false).open();
     dialog::dismiss_top();
     assert!(dialog::is_open(), "a non-dismissible dialog ignores Escape/outside-click");
     dialog::close_dialog(id); // explicit close still works
@@ -347,7 +347,7 @@ fn overlay_shift_and_over_panel() {
     use pebbles_widgets::overlay;
     overlay::init();
 
-    overlay::show_overlay(pebbles_widgets::text("menu").into_widget(), 100.0, 100.0, 50.0, 40.0);
+    overlay::show_overlay(text("menu").into_widget(), 100.0, 100.0, 50.0, 40.0);
     assert!(overlay::over_panel(120.0, 110.0), "point inside the panel");
     assert!(!overlay::over_panel(10.0, 10.0), "point outside the panel");
 

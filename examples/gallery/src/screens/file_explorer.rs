@@ -7,7 +7,7 @@ pub fn file_explorer_screen() -> Element {
     let explorer = file_explorer(tree);
 
     screen("File Explorer")
-        .description("A VSCode-style file explorer over REAL directories: open a folder (or set one programmatically with open_folder(..)) and it reads the disk — expand loads lazily, and create/rename/delete/move happen on the real filesystem. Without a folder it is an in-memory model you can drive yourself.")
+        .description("A VSCode-style file explorer over REAL directories: open a folder (or set one programmatically with open_folder(..)) and it reads the disk — expand loads lazily, and create/rename/delete/move happen on the real filesystem. Without a folder it is an in-memory model you can drive yourself. Right-click menus are built in (independent of the global-menu switch). Keyboard, while a row is selected: ↑/↓ walk (Shift extends), → expands / steps in, ← collapses / jumps to the parent, F2 renames, Delete deletes, Mod+A selects all, Escape clears. Every node takes its own icon/color (FsNode::icon/color or FileTree::node_mut).")
         .body(children![
             doc("Real folders")
                 .description("Starts empty. Open a folder — its real contents appear (folders load lazily on expand); the mutations hit the actual filesystem. The same explorer works in-memory when no folder is set.")

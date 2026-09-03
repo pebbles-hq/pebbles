@@ -101,7 +101,7 @@ fn component_effect_is_created_once_and_does_not_spin() {
 }
 
 thread_local! {
-    static SIG_RUNS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    static SIG_RUNS: Cell<u32> = const { Cell::new(0) };
     static DEP: std::cell::RefCell<Option<pebbles_core::Signal<u32>>> =
         const { std::cell::RefCell::new(None) };
 }
@@ -140,21 +140,21 @@ fn signal_driven_effect_reruns_only_on_its_signal() {
     ui.mount_root(View::new(palette::WHITE, component(sig_effect_probe)).into_widget());
     ui.layout(&mut text, window);
     ui.rebuild_if_dirty();
-    assert_eq!(SIG_RUNS.with(std::cell::Cell::get), 1, "runs once on mount");
+    assert_eq!(SIG_RUNS.with(Cell::get), 1, "runs once on mount");
 
     // An unrelated re-render must not re-run it.
     ui.rebuild_if_dirty();
     ui.rebuild_if_dirty();
-    assert_eq!(SIG_RUNS.with(std::cell::Cell::get), 1, "no re-run on re-render");
+    assert_eq!(SIG_RUNS.with(Cell::get), 1, "no re-run on re-render");
 
     // Its input signal changing DOES re-run it.
     dep().set(1);
     ui.rebuild_if_dirty();
-    assert_eq!(SIG_RUNS.with(std::cell::Cell::get), 2, "re-runs when its signal changes");
+    assert_eq!(SIG_RUNS.with(Cell::get), 2, "re-runs when its signal changes");
 
     // Disposing the component stops it for good.
     ui.dispose();
     dep().set(2);
     ui.rebuild_if_dirty();
-    assert_eq!(SIG_RUNS.with(std::cell::Cell::get), 2, "disposed with its component");
+    assert_eq!(SIG_RUNS.with(Cell::get), 2, "disposed with its component");
 }

@@ -6,20 +6,25 @@ use std::cell::Cell;
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{Canvas, RenderCanvas, TextEnv};
-use pebbles_widgets::{View, canvas};
+use pebbles_widgets::{View, canvas, center};
 
 thread_local! {
     static PAINTS: Cell<u32> = const { Cell::new(0) };
 }
 
 fn root() -> impl IntoWidget {
-    canvas(|c: &mut Canvas<'_>| {
-        PAINTS.with(|p| p.set(p.get() + 1));
-        let s = c.size();
-        c.fill_circle(Offset::new(s.width / 2.0, s.height / 2.0), 10.0, palette::BLUE);
-    })
-    .width(120.0)
-    .height(80.0)
+    // center() loosens the root View's tight window constraints — a SizedBox
+    // under TIGHT constraints is forced to the parent's size (Flutter
+    // semantics), so the explicit 120×80 only holds under loose ones.
+    center(
+        canvas(|c: &mut Canvas<'_>| {
+            PAINTS.with(|p| p.set(p.get() + 1));
+            let s = c.size();
+            c.fill_circle(Offset::new(s.width / 2.0, s.height / 2.0), 10.0, palette::BLUE);
+        })
+        .width(120.0)
+        .height(80.0),
+    )
 }
 
 #[test]

@@ -217,6 +217,17 @@ pub fn create_root_signal<T: 'static + Clone>(value: T) -> Signal<T> {
     })
 }
 
+/// Free an app-scoped signal created with [`create_root_signal`]: its arena slot
+/// (and any lingering subscriptions) are dropped. Call it only when the signal's
+/// last reader is unmounting — reading a freed signal is a bug. Registry-keyed
+/// primitives (e.g. `use_bounds`) use this to return to baseline on unmount
+/// instead of leaking one root signal per remount.
+pub fn dispose_root_signal<T: 'static + Clone>(sig: Signal<T>) {
+    with_rt(|rt| {
+        rt.signals.remove(sig.id);
+    });
+}
+
 impl<T: 'static + Clone> Signal<T> {
     /// Read the value, subscribing the current component/effect to changes.
     pub fn get(&self) -> T {
@@ -386,12 +397,30 @@ fn run_effect(id: EffectId) {
 /// change. Create it once, at a stable position (app scope or the top of a component),
 /// like any signal.
 pub fn create_memo<T: 'static + Clone + PartialEq>(f: impl Fn() -> T + 'static) -> Signal<T> {
-    let signal = create_signal(f());
+    // The initial compute runs UNTRACKED: the memo's effect (below) owns the
+    // input subscriptions. Computing it under the calling component's observer
+    // would subscribe the component to the memo's raw inputs — every input
+    // write would then re-render it, defeating the memo's dedup entirely.
+    let signal = create_signal(untrack(&f));
     create_effect(move || {
         let value = f();
         signal.set_if_changed(value);
     });
     signal
+}
+
+/// Run `f` with dependency tracking suspended: signal reads inside do NOT
+/// subscribe the current component/effect (Solid's `untrack`). Use it to peek
+/// at reactive state from inside a render without re-rendering on its changes.
+pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
+    let prev = with_rt(|rt| {
+        let p = rt.observer;
+        rt.observer = None;
+        p
+    });
+    let out = f();
+    with_rt(|rt| rt.observer = prev);
+    out
 }
 
 // ---------------------------------------------------------------------------

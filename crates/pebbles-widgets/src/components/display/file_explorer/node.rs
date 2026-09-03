@@ -49,9 +49,10 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     } else {
         gap_w(14.0).into_widget()
     };
-    let glyph = icon(if is_folder { IconKind::Folder } else { IconKind::File })
-        .size(16.0)
-        .color(c.muted_foreground);
+    // Per-node customization: an explicit icon/color wins; the kind decides
+    // the default glyph.
+    let glyph_kind = p.node.icon.unwrap_or(if is_folder { IconKind::Folder } else { IconKind::File });
+    let glyph = icon(glyph_kind).size(16.0).color(p.node.color.unwrap_or(c.muted_foreground));
 
     let label: AnyWidget = if renaming {
         component_props(
@@ -88,15 +89,6 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
             .on_hover_exit({
                 let hovered = hovered;
                 move || hovered.set(false)
-            })
-            .on_secondary_tap_down({
-                move || {
-                    // Right-clicking an unselected node selects just it (keeps
-                    // the selection otherwise) — the standard behavior.
-                    if !explorer.selected.get().contains(&id) {
-                        explorer.select_only(id);
-                    }
-                }
             })
             .on_hover_enter({
                 move || {
@@ -167,6 +159,17 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
             })
             .on_double_tap(move || explorer.start_rename_for(id));
         context_menu(g)
+            // The selection sync lives on the menu's OWN right-click handler:
+            // pointer dispatch fires only the TOPMOST listener per slot, so a
+            // handler on the inner row would starve the menu (the bug where the
+            // explorer's menu never opened).
+            .on_open(move |_| {
+                // Right-clicking an unselected node selects just it (keeps the
+                // selection otherwise) — the standard behavior.
+                if !explorer.selected.get().contains(&id) {
+                    explorer.select_only(id);
+                }
+            })
             .item(menu_item("New File").on_select(explorer.new_file()))
             .item(menu_item("New Folder").on_select(explorer.new_folder()))
             .separator()

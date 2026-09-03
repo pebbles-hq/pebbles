@@ -3,6 +3,9 @@
 //! no widgets here.
 
 use std::path::Path;
+
+use pebbles_foundation::Color;
+use pebbles_render::IconKind;
 #[cfg(feature = "file-dialogs")]
 use std::path::PathBuf;
 
@@ -27,16 +30,47 @@ pub struct FsNode {
     /// from disk yet (folders load lazily on first expand). In-memory nodes
     /// are always loaded.
     pub loaded: bool,
+    /// Per-node glyph override (`None` = the kind's default: folder/file icon).
+    pub icon: Option<IconKind>,
+    /// Per-node glyph color override (`None` = the theme's muted foreground).
+    pub color: Option<Color>,
 }
 
 impl FsNode {
     /// Create a folder node (the tree assigns the id when inserting).
     pub fn folder(name: impl Into<String>) -> Self {
-        FsNode { id: 0, name: name.into(), kind: FsKind::Folder, children: Vec::new(), loaded: true }
+        FsNode {
+            id: 0,
+            name: name.into(),
+            kind: FsKind::Folder,
+            children: Vec::new(),
+            loaded: true,
+            icon: None,
+            color: None,
+        }
     }
     /// Create a file node (the tree assigns the id when inserting).
     pub fn file(name: impl Into<String>) -> Self {
-        FsNode { id: 0, name: name.into(), kind: FsKind::File, children: Vec::new(), loaded: true }
+        FsNode {
+            id: 0,
+            name: name.into(),
+            kind: FsKind::File,
+            children: Vec::new(),
+            loaded: true,
+            icon: None,
+            color: None,
+        }
+    }
+    /// Give THIS node its own glyph (each node is customizable individually —
+    /// e.g. a `.rs` file gets a code icon, `src/` a special folder).
+    pub fn icon(mut self, icon: IconKind) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+    /// Give THIS node its own glyph color.
+    pub fn color(mut self, color: Color) -> Self {
+        self.color = Some(color);
+        self
     }
 }
 
@@ -69,7 +103,9 @@ impl FileTree {
         walk(&self.root, id)
     }
 
-    pub(crate) fn node_mut(&mut self, id: u64) -> Option<&mut FsNode> {
+    /// Mutable access to a node — customize it in place (icon, color, …):
+    /// `tree.update(|t| { if let Some(n) = t.node_mut(id) { n.icon = Some(..); } })`.
+    pub fn node_mut(&mut self, id: u64) -> Option<&mut FsNode> {
         fn walk(nodes: &mut [FsNode], id: u64) -> Option<&mut FsNode> {
             for n in nodes {
                 if n.id == id {
@@ -134,7 +170,40 @@ impl FileTree {
         }
         .unwrap_or_default();
         let name = unique_name(&base, &siblings);
-        let node = FsNode { id, name, kind, children: Vec::new(), loaded: true };
+        let node = FsNode { id, name, kind, children: Vec::new(), loaded: true, icon: None, color: None };
+        match parent {
+            Some(p) => {
+                if let Some(pn) = self.node_mut(p) {
+                    pn.children.push(node);
+                } else {
+                    self.root.push(node);
+                }
+            }
+            None => self.root.push(node),
+        }
+        id
+    }
+
+    /// Insert a fully-built [`FsNode`] (with its per-node `icon`/`color` and any
+    /// pre-built children) into `parent` (`None` = the root). Ids are assigned to
+    /// the node and its whole subtree; the name is de-duplicated against its
+    /// siblings. Returns the new node's id.
+    ///
+    /// ```ignore
+    /// t.insert_node(None, FsNode::folder("src").icon(IconKind::FolderOpen));
+    /// t.insert_node(src, FsNode::file("main.rs").color(palette::AMBER_500));
+    /// ```
+    pub fn insert_node(&mut self, parent: Option<u64>, mut node: FsNode) -> u64 {
+        node.id = self.next_id;
+        self.next_id += 1;
+        self.assign_ids(&mut node.children);
+        let siblings: Vec<&str> = match parent {
+            Some(p) => self.node(p).map(|n| n.children.iter().map(|c| c.name.as_str()).collect()),
+            None => Some(self.root.iter().map(|n| n.name.as_str()).collect()),
+        }
+        .unwrap_or_default();
+        node.name = unique_name(&node.name, &siblings);
+        let id = node.id;
         match parent {
             Some(p) => {
                 if let Some(pn) = self.node_mut(p) {
@@ -245,9 +314,19 @@ pub(super) fn read_dir(path: &Path) -> std::io::Result<Vec<FsNode>> {
                 kind: FsKind::Folder,
                 children: Vec::new(),
                 loaded: false,
+                icon: None,
+                color: None,
             });
         } else if ft.is_file() {
-            files.push(FsNode { id: 0, name, kind: FsKind::File, children: Vec::new(), loaded: true });
+            files.push(FsNode {
+                id: 0,
+                name,
+                kind: FsKind::File,
+                children: Vec::new(),
+                loaded: true,
+                icon: None,
+                color: None,
+            });
         }
     }
     folders.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));

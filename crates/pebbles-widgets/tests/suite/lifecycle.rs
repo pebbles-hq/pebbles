@@ -125,9 +125,9 @@ fn drop_window_state_clears_per_window_services() {
     win.layout(&mut env, Size::new(300.0, 200.0));
 
     win.make_current();
-    toast::toast("saved").show();
+    toast("saved").show();
     assert!(toast::any_open(), "toast lives in this window's stack");
-    let _id = dialog::dialog(text("modal")).open();
+    let _id = dialog(text("modal")).open();
     assert!(dialog::is_open(), "dialog open in this window");
 
     win.dispose();

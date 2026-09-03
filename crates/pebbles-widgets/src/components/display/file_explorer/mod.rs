@@ -18,6 +18,21 @@
 //! right-clicking empty space offers New File/New Folder; and **dragging a
 //! selection onto a folder moves them all** (hovering a collapsed folder
 //! during a drag expands it; dropping on empty space moves to the root).
+//!
+//! **Right-click is built in and always on** — the explorer's own context
+//! menus work regardless of the app-wide global-menu switch
+//! ([`set_global_menu_enabled`](crate::set_global_menu_enabled)); that switch
+//! only controls the *fallback* menu on unclaimed surfaces. Widget-specific
+//! always wins.
+//!
+//! **Keyboard** (active while the explorer has a selection; every binding
+//! declines when it doesn't, so nothing is hijacked): **↑/↓** walk the visible
+//! rows (**Shift** extends), **→** expands / steps into, **←** collapses /
+//! jumps to the parent, **F2** renames, **Delete** deletes, **Mod+A** selects
+//! all visible, **Escape** clears the selection.
+//!
+//! Every node is customizable individually: [`FsNode::icon`]/[`FsNode::color`]
+//! (builders on [`FsNode`], or in place via [`FileTree::node_mut`]).
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -32,7 +47,7 @@ use crate::widgets::{Container, Expanded, GestureDetector, Padding, column, gap_
 use pebbles_core::children;
 use pebbles_core::keyboard::{KeyInput, ctrl_held, shift_held};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Signal, animated, component_props, create_signal};
+use pebbles_core::{Signal, animated, component_props, create_shortcut_if, create_signal};
 
 mod node;
 mod tree;
@@ -71,7 +86,7 @@ pub struct FileExplorer {
 /// Create an explorer over `tree` (the app's `Signal<FileTree>`). Call inside
 /// a component render.
 pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
-    FileExplorer {
+    let explorer = FileExplorer {
         tree,
         selected: create_signal(Vec::new()),
         expanded: create_signal(HashSet::new()),
@@ -82,13 +97,20 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         hover_key: create_signal(()).raw_id(),
         fs_root: create_signal(None),
         last_error: create_signal(None),
-    }
+    };
+    explorer.install_keys();
+    explorer
 }
 
 impl FileExplorer {
     /// The selected node ids (Ctrl/Cmd-click toggles, Shift-click ranges).
     pub fn selection(&self) -> Signal<Vec<u64>> {
         self.selected
+    }
+
+    /// The node being inline-renamed, if any (double-click / F2 / menu Rename).
+    pub fn renaming(&self) -> Signal<Option<u64>> {
+        self.renaming
     }
 
     /// The expansion set (read it, or drive it yourself).
@@ -363,6 +385,110 @@ impl FileExplorer {
             });
             cur = self.tree.peek().parent_of(p);
         }
+    }
+
+    /// The VSCode key set. Every binding is CONDITIONAL: it acts only while
+    /// the explorer is engaged (non-empty selection; F2 also engages via the
+    /// active node) and declines otherwise, so arrows/Delete/etc. fall through
+    /// to whatever else wants them. While the rename editor is focused, the
+    /// editor's own key precedence applies — none of these fire.
+    fn install_keys(self) {
+        // F2 — rename the active node.
+        create_shortcut_if("F2", move || {
+            if self.renaming.peek().is_some() {
+                return true; // already renaming — swallow the repeat
+            }
+            match self.active() {
+                Some(id) => {
+                    self.start_rename_for(id);
+                    true
+                }
+                None => false,
+            }
+        });
+        // Delete — delete the selection.
+        create_shortcut_if("Delete", move || {
+            let ids = self.selected.peek().clone();
+            if ids.is_empty() {
+                return false;
+            }
+            self.delete_nodes(&ids);
+            true
+        });
+        // Mod+A — select every visible node (only while engaged; the editor's
+        // own Select All never reaches here — editor precedence).
+        create_shortcut_if("Mod+A", move || {
+            if self.selected.peek().is_empty() {
+                return false;
+            }
+            self.selected.set(self.visible_ids());
+            true
+        });
+        // Arrows — walk the visible rows; Shift extends the selection.
+        create_shortcut_if("ArrowDown", move || self.key_step(1, false));
+        create_shortcut_if("ArrowUp", move || self.key_step(-1, false));
+        create_shortcut_if("Shift+ArrowDown", move || self.key_step(1, true));
+        create_shortcut_if("Shift+ArrowUp", move || self.key_step(-1, true));
+        // ArrowLeft — collapse the active folder, else jump to the parent.
+        create_shortcut_if("ArrowLeft", move || {
+            let Some(id) = self.active() else { return false };
+            let is_open = self.tree.peek().node(id).is_some_and(|n| n.kind == FsKind::Folder)
+                && self.expanded.peek().contains(&id);
+            if is_open {
+                self.expanded.update(|e| {
+                    e.remove(&id);
+                });
+            } else if let Some(parent) = self.tree.peek().parent_of(id) {
+                self.select_only(parent);
+            }
+            true
+        });
+        // ArrowRight — expand the active folder, else step into its first child.
+        create_shortcut_if("ArrowRight", move || {
+            let Some(id) = self.active() else { return false };
+            let node = self.tree.peek().node(id).cloned();
+            let Some(node) = node else { return false };
+            if node.kind != FsKind::Folder {
+                return true; // engaged but nothing to expand — consume, like VSCode
+            }
+            if !self.expanded.peek().contains(&id) {
+                self.toggle_folder(id);
+            } else if let Some(first) = node.children.first() {
+                self.select_only(first.id);
+            }
+            true
+        });
+        // Escape — drop the selection (disengages the key set).
+        create_shortcut_if("Escape", move || {
+            if self.selected.peek().is_empty() {
+                return false;
+            }
+            self.selected.set(Vec::new());
+            true
+        });
+    }
+
+    /// Move the active row `dir` steps through the visible order; `extend`
+    /// (Shift) grows the selection instead of replacing it. Declines (`false`)
+    /// with no selection so plain arrows keep scrolling the page.
+    fn key_step(&self, dir: i64, extend: bool) -> bool {
+        let Some(active) = self.active() else { return false };
+        let visible = self.visible_ids();
+        let Some(pos) = visible.iter().position(|&v| v == active) else { return false };
+        let next = pos as i64 + dir;
+        if next < 0 || next as usize >= visible.len() {
+            return true; // at the edge — consumed, no move
+        }
+        let next = visible[next as usize];
+        if extend {
+            self.selected.update(|s| {
+                s.retain(|&v| v != next);
+                s.push(next); // becomes the new active end of the selection
+            });
+        } else {
+            self.select_only(next);
+        }
+        true
     }
 
     fn start_rename_for(&self, id: u64) {

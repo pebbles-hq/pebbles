@@ -12,7 +12,7 @@ use std::collections::HashMap;
 
 use pebbles_foundation::Rect;
 
-use crate::reactive::{Signal, create_root_signal, current_window, owner_id};
+use crate::reactive::{Signal, create_cleanup, create_root_signal, current_window, dispose_root_signal, owner_id};
 
 thread_local! {
     static BOUNDS: RefCell<HashMap<(u32, u64), Signal<Rect>>> = RefCell::new(HashMap::new());
@@ -50,6 +50,14 @@ pub fn use_bounds() -> Rect {
     let sig = BOUNDS.with(|b| {
         *b.borrow_mut().entry((window, id)).or_insert_with(|| create_root_signal(Rect::ZERO))
     });
+    // Free the registry entry AND its root signal when this component unmounts.
+    // Root signals live outside the hook arena, so without this every remount
+    // minted a fresh immortal signal (the E6c lifecycle-soak tripwire).
+    create_cleanup(move || {
+        if let Some(s) = BOUNDS.with(|b| b.borrow_mut().remove(&(window, id))) {
+            dispose_root_signal(s);
+        }
+    });
     sig.get()
 }
 
@@ -70,9 +78,10 @@ pub fn publish_bounds(window: u32, source: u64, rect: Rect) {
     }
 }
 
-/// Shell-only: drop a key whose element is gone from the tree (unmounted).
+/// Shell-only: drop a key whose element is gone from the tree (unmounted) —
+/// frees the backing root signal too (idempotent with the unmount cleanup).
 pub fn forget_bounds(window: u32, source: u64) {
-    BOUNDS.with(|b| {
-        b.borrow_mut().remove(&(window, source));
-    });
+    if let Some(s) = BOUNDS.with(|b| b.borrow_mut().remove(&(window, source))) {
+        dispose_root_signal(s);
+    }
 }

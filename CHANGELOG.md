@@ -6,6 +6,36 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- File explorer refinement to VSCode parity: built-in right-click menus now
+  work regardless of the global-menu switch (widget-specific always wins —
+  previously the row's selection handler starved the menu, so it never
+  opened); the VSCode keyboard set (arrows + Shift-extend, F2 rename, Delete,
+  Mod+A select-all-visible, Escape clear) active only while the explorer has
+  a selection; per-node customization (`FsNode::icon`/`FsNode::color`
+  builders, `FileTree::insert_node`, public `FileTree::node_mut`,
+  `FileExplorer::renaming()`).
+- `create_shortcut_if` — conditional shortcut handlers that can decline a
+  press (falls through to older registrations, then the shell's scroll
+  fallback). Shortcut registrations are now owner-keyed: a re-rendering
+  component overwrites its binding in place instead of leaking a registry
+  entry per render.
+- `ContextMenu::on_open` — a hook that runs just before the menu opens (e.g.
+  sync selection to the clicked row).
+- `untrack` — run a closure with dependency tracking suspended (Solid's
+  `untrack`), exported from the prelude.
+
+### Fixed
+- `use_bounds()` leaked one immortal root signal per component remount (the
+  registry entry was dropped but never its arena slot, and headless runs never
+  GC'd at all) — caught by the gallery's lifecycle soak. Bounds signals are
+  now freed on unmount (`dispose_root_signal`), and the shell GC frees too.
+- `create_memo` computed its initial value under the *calling component's*
+  observer, accidentally subscribing the component to the memo's raw inputs —
+  every input write re-rendered it, defeating the dedup (`Store::select_memo`
+  inherited the bug). The initial compute now runs untracked; the memo's
+  effect owns the input subscriptions.
+
 ### Changed
 - Repository restructured to open-source conventions: consolidated the
   pebbles-widgets integration tests into a single harness
