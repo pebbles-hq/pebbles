@@ -6,6 +6,36 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — the `pebbles` developer CLI (`crates/pebbles-cli`)
+Flutter-style tooling for a Rust desktop UI, dependency-free (std only):
+- `pebbles new <name>` — scaffold a runnable app (Cargo.toml wired to the local
+  pebbles checkout, a starter counter `main.rs`, `pebbles.toml`, `.gitignore`,
+  README). `--git` uses a git dependency instead of a path.
+- `pebbles run` — build, launch with dev diagnostics on (`PEBBLES_DEV=1`,
+  `PEBBLES_LOG=debug`), stream the framework's logs **prettified/colorized by
+  level and category**, and **hot-restart on every file save** (mtime-poll
+  watch → rebuild → relaunch, ~sub-3s for a one-file change; verified). Flags:
+  `--release`, `--no-reload`, `-q/--quiet`, `--log <level>`, `-- <app args>`.
+  (Note: this is fast hot-*restart*, not state-preserving hot-reload — Rust has
+  no VM to swap code in a live process; the runner is structured so a future
+  hot-patch engine can slot in.)
+- `pebbles doctor` — checks cargo/rustc, the pebbles source, and Vulkan.
+- `cargo install --path crates/pebbles-cli` puts a `pebbles` binary on PATH.
+
+### Added — deep dev logging & Flutter-style overflow detection
+- The diagnostic log moved from `pebbles-core` to **`pebbles-foundation`** (the
+  lowest crate) so every layer — including the render engine below core — logs
+  to one stream. `pebbles_core::log` stays valid (re-export). New `Layout` and
+  `Perf` categories.
+- **Overflow detection**: in dev mode, `Row`/`Column` that can't fit their
+  children on a bounded main axis log a Flutter-style warning — *"Row overflowed
+  by 280.0px on the horizontal axis (children need 400.0px, only 120.0px
+  available; 2 children). Wrap it in a scroll view, use Expanded/Flexible, or
+  shrink a child."* Throttled to once per ~3 s per unique overflow; off outside
+  dev mode; no false positives across the gallery's 59 screens.
+- `PEBBLES_DEV=1` (set by `pebbles run`) turns on the dev diagnostics and
+  defaults the log to Debug.
+
 ### Fixed — the markdown-screen "black screen" (the real one)
 The markdown screen froze to a black window. Root-caused with the new UI log
 (below), which showed the frame loop stalling in exactly one place:

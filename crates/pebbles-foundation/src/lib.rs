@@ -15,6 +15,7 @@
 pub mod color;
 pub mod geometry;
 pub mod layout;
+pub mod log;
 pub mod palette;
 
 pub use color::Color;

@@ -28,7 +28,10 @@ pub mod focus;
 pub mod ipc;
 pub mod key;
 pub mod keyboard;
-pub mod log;
+/// Re-export the diagnostic log — it lives in `pebbles-foundation` (the lowest
+/// crate) so every layer, including the render engine below core, can log to one
+/// stream. `pebbles_core::log` stays a valid path.
+pub use pebbles_foundation::log;
 pub mod reactive;
 pub mod scroll;
 pub mod shortcuts;

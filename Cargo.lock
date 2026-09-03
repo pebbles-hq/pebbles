@@ -2601,6 +2601,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pebbles-cli"
+version = "0.0.1"
+
+[[package]]
 name = "pebbles-core"
 version = "0.0.1"
 dependencies = [

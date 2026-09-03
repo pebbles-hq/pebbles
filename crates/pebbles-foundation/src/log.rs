@@ -70,8 +70,12 @@ impl Level {
 pub enum Cat {
     /// Frame lifecycle: heartbeat, timings, slow frames.
     Frame,
+    /// Layout: constraint solving, overflow (Flutter-style), intrinsic sizing.
+    Layout,
     /// GPU: surface/renderer creation, render errors, device resets, present.
     Gpu,
+    /// CPU / performance: per-frame timings, task pumps, slow spans.
+    Perf,
     /// Input: pointer/key dispatch (mostly Trace).
     Input,
     /// Navigation / route changes.
@@ -90,7 +94,9 @@ impl Cat {
     fn tag(self) -> &'static str {
         match self {
             Cat::Frame => "frame",
+            Cat::Layout => "layout",
             Cat::Gpu => "gpu",
+            Cat::Perf => "perf",
             Cat::Input => "input",
             Cat::Nav => "nav",
             Cat::Reactive => "react",
@@ -143,6 +149,8 @@ pub fn init() {
             })
         })
     });
+    // Dev mode (set by `pebbles run`, or manually) turns on Debug echo by default —
+    // an explicit PEBBLES_LOG still wins.
     if let Ok(v) = std::env::var("PEBBLES_LOG") {
         let lvl = if v == "1" || v == "true" {
             Level::Debug
@@ -150,7 +158,17 @@ pub fn init() {
             Level::parse(&v).unwrap_or(Level::Debug)
         };
         ECHO.store(lvl as u8, Ordering::Relaxed);
+    } else if dev_mode() {
+        ECHO.store(Level::Debug as u8, Ordering::Relaxed);
     }
+}
+
+/// Whether the app is running under `pebbles run` / dev mode (`PEBBLES_DEV=1`).
+/// Dev mode enables Flutter-style diagnostics — overflow detection, richer render
+/// logging — that are too chatty for a shipped build. Checked once.
+pub fn dev_mode() -> bool {
+    static DEV: OnceLock<bool> = OnceLock::new();
+    *DEV.get_or_init(|| std::env::var("PEBBLES_DEV").is_ok_and(|v| v == "1" || v == "true"))
 }
 
 fn now_ms() -> u128 {

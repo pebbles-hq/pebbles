@@ -13,6 +13,29 @@ use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;
 use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 
+/// Dev-mode overflow-log throttle: emit each unique overflow signature at most
+/// once per ~3 seconds so a persistent overflow doesn't flood the log every frame.
+fn overflow_should_log(sig: (&'static str, i64, usize)) -> bool {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::time::{Duration, Instant};
+    thread_local! {
+        static SEEN: RefCell<HashMap<(&'static str, i64, usize), Instant>> =
+            RefCell::new(HashMap::new());
+    }
+    SEEN.with(|seen| {
+        let mut seen = seen.borrow_mut();
+        let now = Instant::now();
+        match seen.get(&sig) {
+            Some(&last) if now.duration_since(last) < Duration::from_secs(3) => false,
+            _ => {
+                seen.insert(sig, now);
+                true
+            }
+        }
+    })
+}
+
 /// Layout data attached to a flex child by an `Expanded`/`Flexible` widget.
 #[derive(Clone, Copy, Debug)]
 pub struct FlexParentData {
@@ -205,6 +228,33 @@ impl RenderObject for RenderFlex {
         let size = constraints.constrain(self.make_size(main_size, cross_size));
         let final_main = self.main_of(size);
         let final_cross = self.cross_of(size);
+
+        // Flutter-style overflow detection (dev mode only): the children want more
+        // main-axis room than we were given. This is the classic "A RenderFlex
+        // overflowed by N pixels" — the content is clipped/painted out of bounds.
+        // Only meaningful when our main axis is actually bounded (a scroll view
+        // hands down an infinite main extent on purpose — that's not overflow).
+        if pebbles_foundation::log::dev_mode() && main_max.is_finite() {
+            let overflow = content_main - final_main;
+            if overflow > 0.5 {
+                let axis = if self.axis == Axis::Horizontal { "horizontal" } else { "vertical" };
+                let widget = if self.axis == Axis::Horizontal { "Row" } else { "Column" };
+                // Throttle: the same overflow re-fires every frame during layout.
+                // Key by (widget, rounded overflow, child count) and emit at most
+                // once per ~3s per unique signature — enough to notice, not flood.
+                let sig = (widget, overflow.round() as i64, n);
+                if overflow_should_log(sig) {
+                    pebbles_foundation::log::warn(
+                        pebbles_foundation::log::Cat::Layout,
+                        format!(
+                            "{widget} overflowed by {overflow:.1}px on the {axis} axis \
+                             (children need {content_main:.1}px, only {final_main:.1}px available; \
+                             {n} children). Wrap it in a scroll view, use Expanded/Flexible, or shrink a child.",
+                        ),
+                    );
+                }
+            }
+        }
 
         // Position children along the main axis per the alignment. A reversed main
         // axis (`Column` with `Up`) swaps Start↔End and lays children bottom-up.

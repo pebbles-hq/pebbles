@@ -1,0 +1,22 @@
+[package]
+name = "pebbles-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "The Pebbles developer CLI: scaffold projects, run with hot-restart, and stream dev logs."
+
+# The binary is `pebbles` even though the crate is `pebbles-cli` (the crate name
+# `pebbles` is taken by the umbrella library). `cargo install --path .` puts a
+# `pebbles` on PATH.
+[[bin]]
+name = "pebbles"
+path = "src/main.rs"
+
+# Intentionally dependency-free: std-only (hand-rolled arg parsing, poll-based
+# file watching, std::process). Keeps `pebbles` install fast and portable.
+
+[lints]
+workspace = true
