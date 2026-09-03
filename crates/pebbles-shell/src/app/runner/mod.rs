@@ -59,12 +59,15 @@ pub(super) fn install_error_handler(device: &wgpu::Device) {
         let n = GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
         if n <= 3 || n.is_multiple_of(50) {
             eprintln!("pebbles: wgpu error #{n} — rebuilding the GPU state: {e}");
+            if std::env::var("PEBBLES_GPU_TRACE").is_ok() {
+                eprintln!("{}", std::backtrace::Backtrace::force_capture());
+            }
         }
     }));
 }
 
 /// Build a vello renderer for `device` (initial setup and error recovery).
-pub(super) fn new_renderer(device: &wgpu::Device) -> Renderer {
+pub(super) fn new_renderer(device: &wgpu::Device, _queue: &wgpu::Queue) -> Renderer {
     Renderer::new(
         device,
         RendererOptions {
@@ -336,8 +339,8 @@ impl ApplicationHandler for Runner {
         // Ensure a renderer exists for this surface's device.
         self.renderers.resize_with(self.context.devices.len(), || None);
         install_error_handler(&self.context.devices[surface.dev_id].device);
-        self.renderers[surface.dev_id]
-            .get_or_insert_with(|| new_renderer(&self.context.devices[surface.dev_id].device));
+        let dh = &self.context.devices[surface.dev_id];
+        self.renderers[surface.dev_id].get_or_insert_with(|| new_renderer(&dh.device, &dh.queue));
 
         // Mount the widget tree once, wrapped in the root View.
         if !self.mounted {

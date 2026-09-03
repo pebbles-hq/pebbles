@@ -54,9 +54,9 @@ impl Runner {
             )) {
                 Ok(surface) => {
                     self.renderers.resize_with(self.context.devices.len(), || None);
-                    let device = &self.context.devices[surface.dev_id].device;
-                    install_error_handler(device);
-                    self.renderers[surface.dev_id] = Some(new_renderer(device));
+                    let dh = &self.context.devices[surface.dev_id];
+                    install_error_handler(&dh.device);
+                    self.renderers[surface.dev_id] = Some(new_renderer(&dh.device, &dh.queue));
                     active.surface = surface;
                 }
                 Err(e) => eprintln!("pebbles: GPU reset could not recreate the main surface: {e}"),
@@ -73,10 +73,10 @@ impl Runner {
             )) {
                 Ok(surface) => {
                     self.renderers.resize_with(self.context.devices.len(), || None);
-                    let device = &self.context.devices[surface.dev_id].device;
-                    install_error_handler(device);
+                    let dh = &self.context.devices[surface.dev_id];
+                    install_error_handler(&dh.device);
                     if self.renderers[surface.dev_id].is_none() {
-                        self.renderers[surface.dev_id] = Some(new_renderer(device));
+                        self.renderers[surface.dev_id] = Some(new_renderer(&dh.device, &dh.queue));
                     }
                     w.surface = surface;
                 }
@@ -222,6 +222,14 @@ impl Runner {
                 },
             )
             .expect("vello render");
+        // DRIVER WORKAROUND — wait the vello compute pass out before touching the
+        // swapchain. On some Linux/Vulkan drivers (seen on RADV/Wayland), letting
+        // the blit/present chain queue up while the vello submission is still in
+        // flight races in the driver and surfaces as spurious, timing-dependent
+        // validation errors ("Texture/Buffer … is invalid") that poison the
+        // device. A desktop UI is nowhere near GPU-bound, so the sync costs
+        // nothing perceptible; correctness beats pipelining here.
+        let _ = device_handle.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
 
         let surface_texture = match surface.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(texture)
@@ -273,9 +281,9 @@ impl Runner {
                 wgpu::PresentMode::AutoVsync,
             )) {
                 self.renderers.resize_with(self.context.devices.len(), || None);
-                let device = &self.context.devices[surface.dev_id].device;
+                let dh = &self.context.devices[surface.dev_id];
                 if self.renderers[surface.dev_id].is_none() {
-                    self.renderers[surface.dev_id] = Some(new_renderer(device));
+                    self.renderers[surface.dev_id] = Some(new_renderer(&dh.device, &dh.queue));
                 }
                 w.surface = surface;
             }
@@ -318,6 +326,8 @@ impl Runner {
                 },
             )
             .expect("vello render");
+        // See render(): wait the vello pass out before the blit (driver workaround).
+        let _ = device_handle.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
         let surface_texture = match surface.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
             _ => return,

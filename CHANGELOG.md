@@ -62,6 +62,16 @@ All notable changes to Pebbles are documented here. The format follows
   `untrack`), exported from the prelude.
 
 ### Fixed
+- **The GPU validation-error crash is root-caused and fixed.** On some
+  Linux/Vulkan drivers (seen on RADV/Wayland), queueing the swapchain
+  blit/present while the vello compute submission of the same frame is still
+  in flight races inside the driver — surfacing as spurious, timing-dependent
+  validation errors ("Texture/Buffer … is invalid"; any logging overhead made
+  them vanish) that then poison the device, which is why heavy screens (the
+  Markdown workbench) crashed and lighter ones didn't. The shell now waits the
+  vello pass out (`device.poll(Wait)`) before touching the swapchain — one
+  frame in flight, zero errors across every screen. Vello itself is pristine
+  upstream 0.10; no fork.
 - GPU error recovery now resets the ENTIRE GPU stack — instance, adapter,
   device, all surfaces, all renderers (throttled to ~1/second): a lost device
   hands out invalid resources forever, so renderer-level rebuilds could never

@@ -96,8 +96,8 @@ impl Runner {
         .expect("create surface");
         self.renderers.resize_with(self.context.devices.len(), || None);
         install_error_handler(&self.context.devices[surface.dev_id].device);
-        self.renderers[surface.dev_id]
-            .get_or_insert_with(|| new_renderer(&self.context.devices[surface.dev_id].device));
+        let dh = &self.context.devices[surface.dev_id];
+        self.renderers[surface.dev_id].get_or_insert_with(|| new_renderer(&dh.device, &dh.queue));
         // A fresh Ui → a fresh window_id in the shared runtime. Wrap the root in an
         // OverlayHost so this window has its own popover/menu/dialog layer (the overlay
         // + dialog signals are namespaced per window id).
