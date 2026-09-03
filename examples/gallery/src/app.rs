@@ -21,7 +21,26 @@ fn nav_section(label: &str) -> impl IntoWidget {
     .main_axis_size(MainAxisSize::Min)
 }
 
+/// GALLERY_TOUR=<ms>: hop to the next screen every <ms>, forever — the
+/// burn-in / demo tour (exercises every screen's mount, render, unmount).
+fn install_tour() {
+    let Some(ms) = std::env::var("GALLERY_TOUR").ok().and_then(|v| v.parse::<u64>().ok()) else {
+        return;
+    };
+    fn hop(all: std::rc::Rc<Vec<&'static str>>, i: usize, key: u64, secs: f64) {
+        pebbles::core::animation::set_timeout(key, secs, move || {
+            navigate(all[i % all.len()]);
+            hop(all.clone(), i + 1, key, secs);
+        });
+    }
+    let all: Vec<&'static str> =
+        NAV.iter().flat_map(|g| g.routes.iter().map(|(r, _, _)| *r)).collect();
+    let key = create_signal(()).raw_id();
+    hop(std::rc::Rc::new(all), 0, key, (ms as f64 / 1000.0).max(0.05));
+}
+
 pub fn app() -> impl IntoWidget {
+    install_tour();
     let c = theme().colors;
     let current = route().get();
 

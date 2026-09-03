@@ -30,6 +30,8 @@ mod list_auto;
 mod list_tile;
 #[cfg(feature = "markdown")]
 mod markdown;
+#[cfg(feature = "markdown")]
+mod storm;
 mod memo;
 mod monitors;
 mod multi_window;

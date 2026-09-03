@@ -62,6 +62,18 @@ All notable changes to Pebbles are documented here. The format follows
   `untrack`), exported from the prelude.
 
 ### Fixed
+- **Text editing panicked on multi-byte characters** ("byte index … is not a
+  char boundary"): the editor's anchor/focus byte offsets go stale whenever
+  the bound value changes underneath it (a Markdown task toggle rewriting the
+  source, any external `signal.set`), and clicks/motions resolved against a
+  one-frame-old layout — the first slice then landed inside a multi-byte char
+  (the demo doc's em dashes) and crashed the app. This was the remaining
+  "Markdown screen crash" under real mouse use. Every offset is now snapped to
+  a char boundary before slicing (edit application, motion resolution, drag
+  selection, and the paint path). Proven by a new interaction-storm test:
+  1,764 click/double-click/drag/type points across Edit/Split/Read over
+  em-dash-laden content — plus a 75-second all-screens burn-in tour
+  (GALLERY_TOUR=<ms>) with zero panics and zero GPU errors.
 - **The GPU validation-error crash is root-caused and fixed.** On some
   Linux/Vulkan drivers (seen on RADV/Wayland), queueing the swapchain
   blit/present while the vello compute submission of the same frame is still

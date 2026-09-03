@@ -399,10 +399,24 @@ impl IntoWidget for TextField {
     }
 }
 
+/// Snap `i` into `s`: clamp to the length and back off to a char boundary.
+/// Selection offsets can go stale whenever the BOUND value changes underneath
+/// the editor (a Markdown task toggle rewriting the source, any external
+/// `signal.set(..)`) — every offset must be sanitized before slicing, or a
+/// click/keystroke lands mid-character and panics.
+fn snap_boundary(s: &str, i: usize) -> usize {
+    let mut i = i.min(s.len());
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
 fn prev_boundary(s: &str, i: usize) -> usize {
+    let i = snap_boundary(s, i);
     s[..i].char_indices().next_back().map(|(j, _)| j).unwrap_or(0)
 }
 fn next_boundary(s: &str, i: usize) -> usize {
+    let i = snap_boundary(s, i);
     s[i..].char_indices().nth(1).map(|(j, _)| i + j).unwrap_or(s.len())
 }
 fn ordered(a: usize, f: usize) -> (usize, usize) {
@@ -456,8 +470,10 @@ fn resolve_motion(
         Motion::Down => edit::line_down(id, a, f, extend),
         _ => None,
     };
-    if let Some(r) = laid {
-        return r;
+    if let Some((ra, rf)) = laid {
+        // The published layout can be one frame older than `v` (external writes)
+        // — snap layout-derived offsets before anyone slices with them.
+        return (snap_boundary(v, ra), snap_boundary(v, rf));
     }
     let target = match motion {
         Motion::Left => prev_boundary(v, f),
@@ -517,8 +533,12 @@ impl Editor {
         }
 
         let mut v = self.value.peek();
-        let mut a = self.anchor.peek().min(v.len());
-        let mut f = self.focus.peek().min(v.len());
+        // Snap BOTH offsets to char boundaries: the bound value may have been
+        // rewritten externally since the selection was set (task toggles, any
+        // signal.set) — a merely length-clamped offset can still sit inside a
+        // multi-byte character and panic the first slice.
+        let mut a = snap_boundary(&v, self.anchor.peek());
+        let mut f = snap_boundary(&v, self.focus.peek());
         let (s0, s1) = ordered(a, f);
         let has_sel = s0 != s1;
         let mut changed = false;
@@ -817,7 +837,7 @@ fn render_field(p: &Props) -> AnyWidget {
     };
 
     let val = ed.value.get();
-    let vlen = val.len();
+    let (sel_a, sel_f) = (snap_boundary(&val, ed.anchor.get()), snap_boundary(&val, ed.focus.get()));
     let caret_visible = if focused {
         if ed.preedit.peek().is_empty() {
             (blink_loop.get() - blink_stamp.get()).rem_euclid(1.0) < 0.5
@@ -829,7 +849,7 @@ fn render_field(p: &Props) -> AnyWidget {
     };
     let inner = editable(val)
         .placeholder(eff_placeholder.clone())
-        .selection(ed.anchor.get().min(vlen), ed.focus.get().min(vlen))
+        .selection(sel_a, sel_f)
         .preedit(ed.preedit.get())
         .focused(focused)
         .caret_visible(caret_visible)
@@ -939,9 +959,10 @@ fn render_field(p: &Props) -> AnyWidget {
             }))
             .on_pan_update(action_event(move |e: PointerEvent| {
                 let (tx, ty) = (e.position.x - cl, e.position.y - ct);
-                if let Some((a, f)) =
-                    edit::extend_to(ed.id, ed.anchor.peek(), ed.focus.peek(), tx, ty)
-                {
+                let v = ed.value.peek();
+                let (pa, pf) =
+                    (snap_boundary(&v, ed.anchor.peek()), snap_boundary(&v, ed.focus.peek()));
+                if let Some((a, f)) = edit::extend_to(ed.id, pa, pf, tx, ty) {
                     ed.anchor.set(a);
                     ed.focus.set(f);
                     blink_stamp.set(blink_loop.peek());
