@@ -20,7 +20,35 @@ fn frame_stats_enabled() -> bool {
 
 impl Runner {
     /// Reconcile any dirty subtrees, lay out to the window, paint, and present.
+    /// If uncaptured GPU errors landed since the last check, tear down and
+    /// rebuild the poisoned state: a FRESH vello renderer (clean internal
+    /// resource pool) and a re-created surface target. Returns whether a
+    /// recovery happened (the caller re-renders immediately after).
+    pub(super) fn recover_gpu_if_poisoned(&mut self) -> bool {
+        let errs = GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed);
+        if errs == self.gpu_errors_seen {
+            return false;
+        }
+        self.gpu_errors_seen = errs;
+        if let Some(active) = self.active.as_mut() {
+            let dev = active.surface.dev_id;
+            self.renderers[dev] = Some(new_renderer(&self.context.devices[dev].device));
+            // Recreate the offscreen target + swapchain config at the same size.
+            let phys = active.window.inner_size();
+            if phys.width > 0 && phys.height > 0 {
+                self.context.resize_surface(&mut active.surface, phys.width, phys.height);
+            }
+        }
+        true
+    }
+
     pub(super) fn render(&mut self) {
+        if self.recover_gpu_if_poisoned() {
+            // Render fresh state this same frame; also repaint secondary windows.
+            for w in self.windows.values() {
+                w.window.request_redraw();
+            }
+        }
         // Advance animations for this frame before reconciling, so interpolated
         // signal writes mark their components dirty and get picked up below.
         let now = self.clock.elapsed().as_secs_f64();
@@ -190,6 +218,12 @@ impl Runner {
     /// Render one secondary window (mirrors [`render`], reusing the shared scene,
     /// renderers and GPU context).
     pub(super) fn render_window(&mut self, w: &mut WindowRuntime) {
+        if self.recover_gpu_if_poisoned() {
+            let phys = w.window.inner_size();
+            if phys.width > 0 && phys.height > 0 {
+                self.context.resize_surface(&mut w.surface, phys.width, phys.height);
+            }
+        }
         let now = self.clock.elapsed().as_secs_f64();
         pebbles_core::animation::tick(now);
         let pending_tasks = pebbles_core::task::pump();

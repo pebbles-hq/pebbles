@@ -42,16 +42,39 @@ const LONG_PRESS: Duration = Duration::from_millis(500);
 /// Logical pixels scrolled per wheel line.
 const LINE_SCROLL: f64 = 48.0;
 
+/// Global count of uncaptured GPU errors — the render loop compares it per
+/// frame and REBUILDS the poisoned GPU state (vello renderer + surface target)
+/// when it moved. See [`install_error_handler`].
+pub(super) static GPU_ERRORS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// A GUI shell must not die on a transient GPU validation hiccup: some
-/// driver/compositor startup races (seen on Linux/Vulkan) surface as a single
-/// spurious wgpu validation error on an early frame, which wgpu's DEFAULT
-/// uncaptured-error handler turns into a process panic. Log-and-continue
-/// instead — the next frame renders normally. Real, persistent errors still
-/// show up (repeatedly) in stderr.
+/// driver/compositor startup races (seen on Linux/Vulkan) surface as spurious
+/// wgpu validation errors, which wgpu's DEFAULT uncaptured-error handler turns
+/// into a process panic. Worse, a failed resource can stay cached inside the
+/// renderer's pool, poisoning every subsequent frame. So: count the errors
+/// (throttled log) and let the render loop rebuild the renderer + surface
+/// target whenever the count moves — a clean pool the very next frame.
 pub(super) fn install_error_handler(device: &wgpu::Device) {
     device.on_uncaptured_error(Arc::new(|e: wgpu::Error| {
-        eprintln!("pebbles: recovered from a wgpu error (frame skipped): {e}");
+        let n = GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        if n <= 3 || n.is_multiple_of(50) {
+            eprintln!("pebbles: wgpu error #{n} — rebuilding the GPU state: {e}");
+        }
     }));
+}
+
+/// Build a vello renderer for `device` (initial setup and error recovery).
+pub(super) fn new_renderer(device: &wgpu::Device) -> Renderer {
+    Renderer::new(
+        device,
+        RendererOptions {
+            use_cpu: false,
+            antialiasing_support: AaSupport::all(),
+            num_init_threads: None,
+            pipeline_cache: None,
+        },
+    )
+    .expect("create vello renderer")
 }
 
 /// Wire the OS clipboard into `pebbles_core::clipboard`. Falls back to the core's
@@ -131,6 +154,8 @@ pub(super) struct Runner {
     // gpu
     context: RenderContext,
     renderers: Vec<Option<Renderer>>,
+    /// The [`GPU_ERRORS`] count already recovered from (see `recover_gpu_if_poisoned`).
+    gpu_errors_seen: u64,
     active: Option<ActiveWindow>,
     /// AccessKit platform bridge for the main window (accessibility tree + focus).
     a11y: Option<crate::a11y::Bridge>,
@@ -197,6 +222,7 @@ impl Runner {
             native_menu: None,
             context: RenderContext::new(),
             renderers: Vec::new(),
+            gpu_errors_seen: 0,
             active: None,
             a11y: None,
             ui: Ui::new(),
@@ -307,18 +333,8 @@ impl ApplicationHandler for Runner {
         // Ensure a renderer exists for this surface's device.
         self.renderers.resize_with(self.context.devices.len(), || None);
         install_error_handler(&self.context.devices[surface.dev_id].device);
-        self.renderers[surface.dev_id].get_or_insert_with(|| {
-            Renderer::new(
-                &self.context.devices[surface.dev_id].device,
-                RendererOptions {
-                    use_cpu: false,
-                    antialiasing_support: AaSupport::all(),
-                    num_init_threads: None,
-                    pipeline_cache: None,
-                },
-            )
-            .expect("create vello renderer")
-        });
+        self.renderers[surface.dev_id]
+            .get_or_insert_with(|| new_renderer(&self.context.devices[surface.dev_id].device));
 
         // Mount the widget tree once, wrapped in the root View.
         if !self.mounted {

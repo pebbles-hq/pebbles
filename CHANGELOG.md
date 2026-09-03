@@ -62,6 +62,11 @@ All notable changes to Pebbles are documented here. The format follows
   `untrack`), exported from the prelude.
 
 ### Fixed
+- GPU error recovery now REBUILDS the poisoned state instead of merely
+  skipping the frame: a failed resource could stay cached inside vello's
+  renderer pool, erroring on every subsequent frame. The render loop watches
+  the uncaptured-error count and recreates the renderer + surface target the
+  moment it moves — one recovered error at startup, clean frames after.
 - The shell no longer dies on a transient GPU validation error: some
   Linux/Vulkan driver startup races surface as ONE spurious wgpu validation
   error on an early frame, which wgpu's default handler turns into a process
