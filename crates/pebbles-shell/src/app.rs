@@ -158,6 +158,12 @@ impl App {
             prev(info);
         }));
         log::info(log::Cat::General, "pebbles app starting");
+        if log::dev_mode() {
+            log::info(
+                log::Cat::General,
+                "dev mode — devtools: Mod+Shift+I inspect widget · Mod+Shift+D dump render tree + logs",
+            );
+        }
         let event_loop = EventLoop::new()?;
         let mut runner = Runner::new(self);
         event_loop.run_app(&mut runner)?;

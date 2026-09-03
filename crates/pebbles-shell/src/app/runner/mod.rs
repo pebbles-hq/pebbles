@@ -643,6 +643,22 @@ impl ApplicationHandler for Runner {
                         self.request_redraw();
                         return;
                     }
+                    // Mod+Shift+D: dump the FULL render tree (every rendered object
+                    // with its size + window-space position) to the log — "capture
+                    // everything that is rendered". Also dumps the UI event log.
+                    if (self.ctrl_down || self.meta_down)
+                        && self.shift_down
+                        && to_shortcut_key(&event) == Some(pebbles_core::ShortcutKey::Char('d'))
+                    {
+                        let dump = self.ui.render_tree().debug_dump();
+                        let count = self.ui.render_tree().node_count();
+                        pebbles_core::log::info(
+                            pebbles_core::log::Cat::Layout,
+                            format!("render tree ({count} objects):\n{dump}"),
+                        );
+                        pebbles_core::log::dump("Mod+Shift+D render-tree capture");
+                        return;
+                    }
                     // Escape closes an open (dismissible) sheet or modal dialog first.
                     if event.logical_key == Key::Named(NamedKey::Escape)
                         && (pebbles_widgets::sheet::is_open() || pebbles_widgets::dialog::is_open())
