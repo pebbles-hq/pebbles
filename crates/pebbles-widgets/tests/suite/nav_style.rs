@@ -6,13 +6,7 @@ use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::{IconKind, RenderDecoratedBox, TextEnv};
 use pebbles_widgets::{View, accordion, breadcrumb, column, menubar, menu_item, style, tabs, text};
-
-fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
-    ui.rebuild_if_dirty();
-    ui.layout(env, win);
-    let mut scene = pebbles_render::Scene::new();
-    ui.paint(env, &mut scene);
-}
+use pebbles_testing::{draw_frame as frame};
 
 #[test]
 fn tabs_style_lands_on_the_strip() {

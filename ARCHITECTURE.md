@@ -51,7 +51,7 @@ published by the shell one frame behind.
 
 ## Reactivity
 
-SolidJS semantics in `pebbles-core/src/reactive.rs`:
+SolidJS semantics in `pebbles-core/src/reactive/`:
 
 - `create_signal` / `create_memo` / `create_effect` / `create_store` are **hooks** —
   position-based per component instance; never call them conditionally.
@@ -93,10 +93,15 @@ umbrella crate: `native-menus`, `global-hotkeys` (shell), `image-view`
 |---|---|
 | add a layout/paint behavior | `pebbles-render/src/objects/` + a widget wrapper in `pebbles-widgets/src/widgets/` |
 | add a catalog component | `pebbles-widgets/src/components/{input,display,layout,navigation}/` |
-| change reactivity/scheduling | `pebbles-core/src/reactive.rs` (contains `unsafe`; tread carefully) |
+| change theming / the style system | `pebbles-widgets/src/design/` (theme, style, modifiers, fonts, text direction) |
+| change an overlay layer | `pebbles-widgets/src/services/` (overlay, dialog, sheet, toast, global menu) |
+| change window / native-menu behavior | `pebbles-widgets/src/platform/` |
+| change reactivity/scheduling | `pebbles-core/src/reactive/` (contains `unsafe`; tread carefully) |
 | change reconciliation / hit-testing | `pebbles-core/src/element/` (`build.rs` / `dispatch.rs`) |
 | change event routing / windowing | `pebbles-shell/src/app/runner/` |
+| add a hook | define it next to what it drives, then index it in `crates/pebbles/src/hooks.rs` **and** the prelude |
 | add a public API | re-export it from `pebbles::prelude` (`crates/pebbles/src/lib.rs`) |
+| change the test frame pipeline | `crates/pebbles-testing/` only — tests must not re-derive it |
 
 ## Testing model
 
@@ -105,3 +110,23 @@ dispatch synthetic pointer/key events — no window, no GPU. All pebbles-widgets
 integration tests live in **one** harness (`crates/pebbles-widgets/tests/suite/`,
 one module per file) so the workspace links a single test binary; add new files
 there and register them in `suite/main.rs`.
+
+**Use `pebbles-testing`.** It owns the frame lifecycle so tests don't re-derive
+it (and so a pipeline change edits one crate, not every test file):
+
+```rust
+let mut h = Harness::new().window(500.0, 200.0);
+h.mount(my_component);
+h.draw();                       // rebuild -> layout -> paint, settled
+h.click(Offset::new(20.0, 9.0));
+assert!(h.render_node_count() < 900);
+```
+
+`Harness::new()` initializes every global service (theme, overlay, dialog,
+sheet, focus, animation); `mount` adds the `View` + `OverlayHost` wrapper the
+shell would. `draw()` loops the **corrective relayout** until geometry settles —
+paint can invalidate the layout it just ran on (a lazily materialized text line
+measuring taller than its estimate), so asserting on the first pass can read
+unsettled geometry. `ui`/`env` stay public for anything not wrapped. Tests that
+own their own `Ui` (multi-window) use the free `frame(..)` / `draw_frame(..)`
+functions instead.

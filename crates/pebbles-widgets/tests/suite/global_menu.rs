@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, KeyInput, Ui, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::TextEnv;
+use pebbles_testing::{draw_frame as frame};
 use pebbles_widgets::{
     OverlayHost, View, block_context_menu, column, menu_item, overlay, reset_global_menu,
     set_global_menu, set_global_menu_enabled, set_global_menu_style, style, text, text_field,
@@ -15,13 +16,6 @@ use pebbles_widgets::{
 
 thread_local! {
     static PICKED: RefCell<Option<String>> = const { RefCell::new(None) };
-}
-
-fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
-    ui.rebuild_if_dirty();
-    ui.layout(env, win);
-    let mut scene = pebbles_render::Scene::new();
-    ui.paint(env, &mut scene);
 }
 
 fn init() {

@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui, animation, component};
 use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
 use pebbles_render::TextEnv;
+use pebbles_testing::{draw_frame as frame};
 use pebbles_widgets::{
     OverlayHost, View, column, dropdown_menu, menu_item, menu_sub, overlay, select, select_item,
 };
@@ -20,13 +21,6 @@ thread_local! {
 
 fn down() -> KeyInput {
     KeyInput::Move { motion: Motion::Down, extend: false }
-}
-
-fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
-    ui.rebuild_if_dirty();
-    ui.layout(env, win);
-    let mut scene = pebbles_render::Scene::new();
-    ui.paint(env, &mut scene);
 }
 
 fn tap(ui: &mut Ui, p: Offset) {

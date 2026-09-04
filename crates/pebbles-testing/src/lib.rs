@@ -56,6 +56,37 @@ pub fn init_services() {
     pebbles_core::keyboard::set_modifiers(false, false, false, false);
 }
 
+// ---------------------------------------------------------------------------
+// Free-function lifecycle — for tests that own their own `Ui`/`TextEnv`
+// (multi-window cases, or anything the `Harness` shape doesn't fit). These are
+// the single definition of "a frame": the pipeline lives here, not copied into
+// each test file.
+// ---------------------------------------------------------------------------
+
+/// Reconcile + lay out, without painting. The cheap frame.
+pub fn frame(ui: &mut Ui, env: &mut TextEnv, window: Size) {
+    ui.make_current();
+    ui.rebuild_if_dirty();
+    ui.layout(env, window);
+}
+
+/// Reconcile + lay out + paint, looping the corrective-relayout settle (see
+/// [`Harness::draw`]) and discarding the scene.
+pub fn draw_frame(ui: &mut Ui, env: &mut TextEnv, window: Size) {
+    for _ in 0..8 {
+        ui.make_current();
+        ui.rebuild_if_dirty();
+        ui.layout(env, window);
+        let mut scene = Scene::new();
+        let corrective = ui.paint(env, &mut scene);
+        env.finish_frame();
+        if !corrective {
+            return;
+        }
+    }
+    panic!("layout/paint did not settle in 8 passes — geometry is oscillating");
+}
+
 /// A mounted, headless Pebbles tree plus its frame lifecycle.
 pub struct Harness {
     /// The element/render tree. Public: use it directly for anything the

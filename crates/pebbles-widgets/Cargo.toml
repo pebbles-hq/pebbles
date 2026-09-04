@@ -19,7 +19,7 @@ file-dialogs = ["dep:rfd"]
 # NOTE: the Markdown reader/editor now lives in its OWN package,
 # `pebbles-markdown` (github.com/pebbles-hq/pebbles-markdown) — the reference
 # third-party Pebbles widget crate. It depends on this catalog; the catalog does
-# NOT depend on it (the Flutter `flutter_markdown` model).
+# NOT depend on it.
 
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"], optional = true }

@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
+use pebbles_testing::{draw_frame as frame};
 use pebbles_widgets::{
     OverlayHost, View, combobox, command, command_group, command_item, dialog,
 };
@@ -40,13 +41,6 @@ fn cmd_root() -> impl IntoWidget {
         ])
         .width(420.0),
     )
-}
-
-fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
-    ui.rebuild_if_dirty();
-    ui.layout(env, win);
-    let mut scene = pebbles_render::Scene::new();
-    ui.paint(env, &mut scene);
 }
 
 #[test]

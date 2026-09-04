@@ -133,7 +133,8 @@ Layered so the GPU stack is quarantined and the core compiles in seconds:
 | [`pebbles-core`](crates/pebbles-core) | the runtime: `Widget`/`Element`, reconciler, reactivity, focus, keyboard, animation, async tasks, IPC, clipboard |
 | [`pebbles-widgets`](crates/pebbles-widgets) | the catalog: primitives + shadcn-style components, theme, styling, overlays, dialogs, windows |
 | [`pebbles-shell`](crates/pebbles-shell) | winit window + wgpu surface + Vello GPU renderer + event loop + AccessKit bridge |
-| [`pebbles`](crates/pebbles) | umbrella crate + `prelude` |
+| [`pebbles-testing`](crates/pebbles-testing) | the headless test harness: mount, frame/draw, input, queries |
+| [`pebbles`](crates/pebbles) | umbrella crate + `prelude` + the [`hooks`](crates/pebbles/src/hooks.rs) index |
 
 `vello`'s GPU deps are optional, so `pebbles-render` uses the CPU-side `vello::Scene`
 encoder with **no** wgpu — keeping layout/paint logic unit-testable headlessly. Only

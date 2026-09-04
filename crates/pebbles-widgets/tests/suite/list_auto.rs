@@ -8,6 +8,7 @@ use pebbles_core::{IntoWidget, Ui, animation, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::{RenderMeasureProbe, TextEnv};
 use pebbles_widgets::{container, list_view, ListView, ScrollController, text, use_scroll_controller, View};
+use pebbles_testing::{frame};
 
 thread_local! {
     static CTL: RefCell<Option<ScrollController>> = const { RefCell::new(None) };
@@ -46,11 +47,6 @@ fn auto_root(count: usize) -> impl IntoWidget {
 }
 
 /// Run one frame: fold dirty components into the tree and lay out.
-fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
-    ui.rebuild_if_dirty();
-    ui.layout(env, win);
-}
-
 /// The probes of the currently-built items, with their absolute window tops.
 fn probe_tops(ui: &Ui) -> Vec<(usize, f64)> {
     // Probe render nodes carry no index — recover it from the row text? Simpler:

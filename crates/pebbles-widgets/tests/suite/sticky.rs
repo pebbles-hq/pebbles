@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Point, Size, palette};
 use pebbles_render::{RenderParagraph, RenderTransform, TextEnv};
+use pebbles_testing::{frame};
 use pebbles_widgets::{
     ScrollController, View, collapsing_header, list_tile, section_header, sticky_list, text,
     use_scroll_controller,
@@ -32,11 +33,6 @@ fn sticky_root() -> impl IntoWidget {
         .header_extent(40.0)
         .row_extent(48.0)
         .controller(controller)
-}
-
-fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
-    ui.rebuild_if_dirty();
-    ui.layout(env, win);
 }
 
 #[test]

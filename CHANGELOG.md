@@ -6,12 +6,41 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — workspace organization pass
+Structural only; no behavior change and the public API is unchanged (verified by
+building the external `pebbles-markdown` consumer against it untouched).
+- **New `pebbles-testing` crate** — the headless harness (`Harness::new()`,
+  `mount`, `frame`/`draw`, `settle`/`tick`, `click`/`key`/`scroll`/`drag`, and
+  tree queries), plus free `frame(..)`/`draw_frame(..)` for tests that own their
+  `Ui`. The frame pipeline now lives in one crate instead of being copied into
+  56 test files (13 of which each redefined the same `frame` helper); `draw()`
+  also runs the corrective-relayout settle so tests can't assert on unsettled
+  geometry.
+- **`pebbles-widgets` regrouped**: the 14 loose root files became `design/`
+  (theme, style, modifiers, fonts, text direction), `services/` (overlay,
+  dialog, sheet, toast, global menu) and `platform/` (window, native menu);
+  `image_view` moved into `components/display/`. All modules are re-exported
+  flat, so `pebbles_widgets::theme`, `::overlay`, … are unchanged.
+- **New `pebbles::hooks`** — every hook in one documented index. This closed a
+  real gap: 9 public hooks were unreachable from the prelude (`create_cleanup`,
+  `create_loop`, `create_loop_while`, `create_memo_with`, `create_root_signal`,
+  `on`, `on_defer`, `create_resource_future`, `use_carousel_controller`). The
+  umbrella now also forwards the `tokio` feature it never exposed.
+- `pebbles-core`: `reactive.rs`/`reactive_bench.rs`/`reactive_stats.rs` →
+  `reactive/{mod,bench,stats}.rs` (`reactive_stats` keeps its public path).
+- `pebbles-render`: `src/tests.rs` → `tests/render.rs`, driven through the public
+  API. Added `LineTable::{line_is_materialized, line_height, line_top}` so the
+  tests query state instead of reaching into private fields.
+- `components/input/fields.rs` → `date_field.rs` (it only held the date field and
+  sat confusingly beside `field.rs`).
+
+
 ### Changed — Markdown moved to its own package (the ecosystem model)
 The Obsidian-style Markdown reader/editor left the catalog and now ships as a
 separate crate, [`pebbles-markdown`](https://github.com/pebbles-hq/pebbles-markdown)
 — the reference example of a **third-party Pebbles widget package**. It depends
 on the catalog through Pebbles' public API only; the catalog does not depend on
-it (the Flutter `flutter_markdown` model). Removed from this repo: the
+it. Removed from this repo: the
 `markdown` feature on `pebbles-widgets` and `pebbles` (and the optional
 `pulldown-cmark` dep), the `markdown`/`markdown_editor`/`MarkdownStyle`/… exports,
 the gallery's Markdown screen + nav route, and the markdown test suites (they

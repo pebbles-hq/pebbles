@@ -7,13 +7,7 @@ use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
 use pebbles_render::{SemanticsRole, TextEnv};
 use pebbles_widgets::{OverlayHost, View, column, dropdown_menu, menu_item, overlay};
-
-fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
-    ui.rebuild_if_dirty();
-    ui.layout(env, win);
-    let mut scene = pebbles_render::Scene::new();
-    ui.paint(env, &mut scene);
-}
+use pebbles_testing::{draw_frame as frame};
 
 fn tap(ui: &mut Ui, p: Offset) {
     ui.dispatch_pointer_down(p);

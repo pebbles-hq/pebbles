@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
+use pebbles_testing::{draw_frame as frame};
 use pebbles_widgets::{
     PaginationVariant, View, column, pagination,
 };
@@ -16,13 +17,6 @@ thread_local! {
     static WENT: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
     static PREV: RefCell<usize> = const { RefCell::new(0) };
     static NEXT: RefCell<usize> = const { RefCell::new(0) };
-}
-
-fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
-    ui.rebuild_if_dirty();
-    ui.layout(env, win);
-    let mut scene = pebbles_render::Scene::new();
-    ui.paint(env, &mut scene);
 }
 
 fn tap(ui: &mut Ui, p: Offset) {
