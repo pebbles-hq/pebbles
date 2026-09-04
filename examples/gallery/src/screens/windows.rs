@@ -6,7 +6,8 @@ use crate::ui::{doc, gap_w, screen};
 /// The root of the secondary window. It's an ordinary component — it just reads the
 /// SAME global signals the main window does, so everything stays in sync with no
 /// serialization. Mounted in its own window (its own `Ui`), sharing the runtime.
-fn counter_window() -> impl IntoWidget {
+/// `pub` so the headless demo-capture harness can mount it as a second window.
+pub fn counter_window() -> impl IntoWidget {
     let count = state::counter();
     let msg = state::ping().latest().unwrap_or_else(|| "—".into());
     container().padding(EdgeInsets::all(22.0)).child(

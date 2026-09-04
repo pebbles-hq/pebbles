@@ -3,6 +3,7 @@
 //! global signals, plain-closure events, built-in routing, and props.
 
 mod app;
+mod capture;
 mod screens;
 mod state;
 mod styles;
@@ -16,6 +17,11 @@ use pebbles::prelude::*;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     Theme::light().make_current();
     state::init(); // create the global route signal before any component runs
+    // GALLERY_CAPTURE=<dir>: render the two-window IPC demo headlessly to raw
+    // RGBA frames (the pre-competition demo capture) instead of opening a window.
+    if let Ok(dir) = std::env::var("GALLERY_CAPTURE") {
+        return capture::run(&dir);
+    }
     App::new(component(app::app))
         .title("Pebbles — Widget Gallery")
         .size(1180, 820)

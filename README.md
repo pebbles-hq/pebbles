@@ -239,8 +239,19 @@ reconcile → relayout` end to end in-process.
 | Carousel, custom-paint `canvas` | ✅ |
 | Charts | ⏭ planned (`documentations/chart-plan.md`) |
 
-*(A screenshot strip and the multi-window IPC demo GIF are captured from the running
-gallery — see `cargo run -p gallery`.)*
+### Two windows, one runtime (live IPC)
+
+![Two OS windows sharing one reactive runtime — the counter and a typed message stay in sync across windows](demo/windows-ipc.gif)
+
+The main **Windows & IPC** screen and a second OS window share the *same*
+`create_signal` counter and a typed `Channel<String>` — increment or send from
+one window and the other updates instantly, with no serialization (unlike
+Electron's `postMessage`). The still strip is [`demo/windows-ipc-strip.png`](demo/windows-ipc-strip.png).
+
+Both assets are rendered straight from the gallery, headless and reproducibly —
+`GALLERY_CAPTURE=<dir> cargo run -p gallery --release` rasterizes each window
+through vello off-screen, then `python3 demo/build_demo.py <dir> demo` composites
+the strip and GIF. No screenshot tool or display server required.
 
 ## Roadmap
 

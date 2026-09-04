@@ -1151,6 +1151,9 @@ name = "gallery"
 version = "0.0.1"
 dependencies = [
  "pebbles",
+ "pollster 1.0.1",
+ "vello",
+ "wgpu",
 ]
 
 [[package]]

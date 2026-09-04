@@ -25,6 +25,15 @@ all 6,000); a keystroke at 3,000 lines still shapes exactly one line; the
 1.5 MB gallery screen's worst mount frame drops to ~206 ms, dominated by
 parsing, with editor shaping O(window).
 
+### Tooling — headless two-window IPC demo capture
+`GALLERY_CAPTURE=<dir> cargo run -p gallery --release` renders the real
+Windows & IPC screen and its secondary counter window off-screen — two `Ui`s
+sharing one runtime — driving the actual shared signal + typed channel and
+rasterizing each window through vello to a texture it reads back to raw RGBA
+(no screenshot tool or display server). `demo/build_demo.py` composites the
+looping GIF + screenshot strip (committed under `demo/`, embedded in the
+README). Captures exact rendered pixels, reproducible in CI.
+
 ### Reliability — synthetic device-loss soak (opt-in)
 `PEBBLES_SYNTH_GPU_LOSS=N` (debug tool) poisons the GPU error counter every N
 frames, driving the real recovery path end to end — fresh instance/adapter/
