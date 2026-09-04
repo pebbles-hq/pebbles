@@ -272,3 +272,112 @@ fn paragraph_reshapes_only_when_inputs_change() {
     tree.layout(&mut text, tight(120.0, 100.0));
     assert_eq!(shape_count(), 2, "the new width is cached too");
 }
+
+// ---------------------------------------------------------------------------
+// Viewport culling (P0): nothing offscreen is encoded into the scene.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn scroll_viewport_culls_offscreen_subtrees() {
+    use crate::objects::RenderScroll;
+    let mut text = TextEnv::new();
+    let mut tree = RenderTree::new();
+    let scroll = tree.insert(Box::new(RenderScroll::new(Axis::Vertical)));
+    let col = tree.insert(Box::new(RenderFlex::new(
+        Axis::Vertical,
+        MainAxisAlignment::Start,
+        CrossAxisAlignment::Stretch,
+        MainAxisSize::Min,
+        0.0,
+        VerticalDirection::Down,
+        TextBaseline::Alphabetic,
+    )));
+    tree.insert_child(scroll, col, 0);
+    for i in 0..100 {
+        let p = tree
+            .insert(Box::new(RenderParagraph::new(format!("row {i}"), ParagraphStyle::default())));
+        tree.insert_child(col, p, i);
+    }
+    tree.root = Some(scroll);
+    tree.layout(&mut text, tight(300.0, 200.0));
+
+    crate::stats::reset_frame();
+    let mut scene = vello::Scene::new();
+    tree.paint(&mut scene);
+    let painted = crate::stats::painted_nodes();
+    let culled = crate::stats::culled_nodes();
+    assert!(painted < 30, "only ~a viewport of rows encodes (painted {painted})");
+    assert!(culled > 60, "the rest culls (culled {culled})");
+
+    // Scroll to the middle: rows on BOTH sides cull now, roughly the same window.
+    {
+        let s = tree.object_mut(scroll).downcast_mut::<RenderScroll>().unwrap();
+        s.offset = 600.0;
+        s.target = 600.0;
+    }
+    tree.mark_needs_layout(scroll);
+    tree.layout(&mut text, tight(300.0, 200.0));
+    crate::stats::reset_frame();
+    let mut scene = vello::Scene::new();
+    tree.paint(&mut scene);
+    let painted = crate::stats::painted_nodes();
+    assert!(painted < 30, "mid-scroll window stays bounded (painted {painted})");
+}
+
+#[test]
+fn shadow_bleeding_into_view_survives_culling() {
+    use crate::decoration::{BoxDecoration, BoxShadow};
+    use crate::objects::RenderDecoratedBox;
+    use pebbles_foundation::{Color, Offset};
+
+    // The window is 300×200. A shadowed card sits fully BELOW it (y 220..260),
+    // wrapped in a plain tight box whose own rect is offscreen — its blur reaches
+    // y≈190, so the subtree paint rect must keep it painted. A second card at
+    // y=560 is far below and must cull (wrapper and all).
+    let shadow = || {
+        BoxDecoration::new().color(Color::from_rgba8(10, 10, 10, 255)).shadow(BoxShadow::new(
+            Color::from_rgba8(0, 0, 0, 128),
+            Offset::new(0.0, 0.0),
+            15.0,
+            0.0,
+        ))
+    };
+    let mut text = TextEnv::new();
+    let mut tree = RenderTree::new();
+    let col = tree.insert(Box::new(RenderFlex::new(
+        Axis::Vertical,
+        MainAxisAlignment::Start,
+        CrossAxisAlignment::Stretch,
+        MainAxisSize::Min,
+        0.0,
+        VerticalDirection::Down,
+        TextBaseline::Alphabetic,
+    )));
+    let mut push = |tree: &mut RenderTree, node: crate::RenderId, idx: usize| {
+        tree.insert_child(col, node, idx);
+    };
+    let spacer1 = tree
+        .insert(Box::new(RenderConstrainedBox::new(tight(300.0, 220.0))));
+    push(&mut tree, spacer1, 0);
+    let wrap1 = tree.insert(Box::new(RenderConstrainedBox::new(tight(300.0, 40.0))));
+    let card1 = tree.insert(Box::new(RenderDecoratedBox::new(shadow())));
+    tree.insert_child(wrap1, card1, 0);
+    push(&mut tree, wrap1, 1);
+    let spacer2 = tree
+        .insert(Box::new(RenderConstrainedBox::new(tight(300.0, 300.0))));
+    push(&mut tree, spacer2, 2);
+    let wrap2 = tree.insert(Box::new(RenderConstrainedBox::new(tight(300.0, 40.0))));
+    let card2 = tree.insert(Box::new(RenderDecoratedBox::new(shadow())));
+    tree.insert_child(wrap2, card2, 0);
+    push(&mut tree, wrap2, 3);
+
+    tree.root = Some(col);
+    tree.layout(&mut text, tight(300.0, 200.0));
+    crate::stats::reset_frame();
+    let mut scene = vello::Scene::new();
+    tree.paint(&mut scene);
+    // Painted: col + spacer1 + wrap1 + card1 (the shadow reaches into view).
+    // Culled: spacer2 + wrap2 (card2 never visited — its parent culled).
+    assert_eq!(crate::stats::painted_nodes(), 4, "the offscreen shadowed card still paints");
+    assert_eq!(crate::stats::culled_nodes(), 2, "the far-away card culls at its wrapper");
+}

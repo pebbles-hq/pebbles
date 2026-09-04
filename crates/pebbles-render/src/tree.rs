@@ -48,6 +48,12 @@ pub struct RenderNode {
     pub source: Option<u64>,
     /// Accessibility annotation attached by a `Semantics` widget, if any.
     pub semantics: Option<crate::SemanticsProps>,
+    /// The subtree's paint reach in this node's LOCAL space: this object's
+    /// [`paint_bounds`](RenderObject::paint_bounds) unioned with every child's
+    /// paint rect (offset), capped at clipping nodes. Recomputed after each
+    /// layout pass; the paint-time viewport culling tests against it, so a
+    /// shadow that bleeds outside a tight wrapper still gets painted.
+    pub paint_rect: Rect,
     pub needs_layout: bool,
     pub needs_paint: bool,
 }
@@ -63,6 +69,7 @@ impl RenderNode {
             parent_data: None,
             source: None,
             semantics: None,
+            paint_rect: Rect::new(0.0, 0.0, 0.0, 0.0),
             needs_layout: true,
             needs_paint: true,
         }
@@ -470,12 +477,44 @@ impl RenderTree {
         node.offset = Offset::ZERO;
         node.needs_layout = false;
         self.last_constraints = Some(root_constraints);
+        self.recompute_paint_rects(root);
+    }
+
+    /// Recompute every node's subtree paint rect (bottom-up) after a layout pass:
+    /// own `paint_bounds` ∪ each child's paint rect at its offset (transform-aware),
+    /// capped at clipping nodes. O(n), but only runs when layout actually ran.
+    fn recompute_paint_rects(&mut self, id: RenderId) -> Rect {
+        let children = self.nodes[id].children.clone();
+        let (mut acc, clips) = {
+            let node = &self.nodes[id];
+            match node.object.as_deref() {
+                Some(o) => (o.paint_bounds(node.size), o.clips_children()),
+                None => (Rect::from_origin_size((0.0, 0.0), node.size), false),
+            }
+        };
+        for child in children {
+            let r = self.recompute_paint_rects(child);
+            if clips {
+                continue; // children paint inside this node's own bounds anyway
+            }
+            let cnode = &self.nodes[child];
+            let r = match cnode.object.as_deref().and_then(|o| o.transform(cnode.size)) {
+                Some(t) => t.transform_rect_bbox(r),
+                None => r,
+            };
+            let off = cnode.offset;
+            acc = acc.union(Rect::new(r.x0 + off.x, r.y0 + off.y, r.x1 + off.x, r.y1 + off.y));
+        }
+        self.nodes[id].paint_rect = acc;
+        acc
     }
 
     /// Paint the whole tree into `scene` starting from the root at the origin.
+    /// The visible window (viewport culling) starts as the root's own rect.
     pub fn paint(&self, scene: &mut vello::Scene) {
         let Some(root) = self.root else { return };
-        let mut cx = PaintCx { scene, tree: self, current: root };
+        let visible = Rect::from_origin_size((0.0, 0.0), self.nodes[root].size);
+        let mut cx = PaintCx { scene, tree: self, current: root, visible };
         cx.paint_child(root, Offset::ZERO);
     }
 
@@ -675,6 +714,21 @@ pub struct PaintCx<'a> {
     pub scene: &'a mut vello::Scene,
     tree: &'a RenderTree,
     current: RenderId,
+    /// The window-space rect anything painted from here can possibly show in —
+    /// the window rect, narrowed by each clipping ancestor (scroll viewports,
+    /// clip-rrects, opacity layers). `paint_child` culls subtrees against it.
+    visible: Rect,
+}
+
+/// Strict rect overlap — an empty or exactly-touching intersection is a miss.
+fn overlaps(a: Rect, b: Rect) -> bool {
+    a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
+}
+
+/// Whether an affine is a pure translation (identity linear part).
+fn is_translation(t: Affine) -> bool {
+    let c = t.as_coeffs();
+    c[0] == 1.0 && c[1] == 0.0 && c[2] == 0.0 && c[3] == 1.0
 }
 
 impl PaintCx<'_> {
@@ -688,28 +742,109 @@ impl PaintCx<'_> {
         self.tree.nodes[self.current].children.clone()
     }
 
+    /// The visible window (in window space) painting is currently culled against.
+    pub fn visible(&self) -> Rect {
+        self.visible
+    }
+
     /// Paint `child` at the given **absolute** window offset. If the child object
     /// declares a `transform`, its subtree is painted into a fresh scene at the
     /// local origin and appended transformed, so rotation/scale affect the whole
     /// subtree (matching the inverse mapping in hit-testing).
+    ///
+    /// This is the ONE viewport-culling chokepoint: a subtree whose
+    /// [`paint_bounds`](RenderObject::paint_bounds) cannot intersect the visible
+    /// window is skipped entirely — nothing offscreen is ever encoded into the
+    /// scene. Each child is judged by its OWN bounds (children may overflow their
+    /// parent); a pure-translation transform folds into the offset with no
+    /// sub-scene cost.
     pub fn paint_child(&mut self, child: RenderId, absolute_offset: Offset) {
         let node = &self.tree.nodes[child];
         let Some(object) = node.object.as_deref() else { return };
-        crate::stats::bump_painted();
+        let local = node.paint_rect;
         match object.transform(node.size) {
+            // Pure translation: no sub-scene, no bbox math — fold into the offset.
+            Some(t) if is_translation(t) => {
+                let c = t.as_coeffs();
+                let at = absolute_offset + Offset::new(c[4], c[5]);
+                let world =
+                    Rect::new(local.x0 + at.x, local.y0 + at.y, local.x1 + at.x, local.y1 + at.y);
+                if !overlaps(world, self.visible) {
+                    crate::stats::bump_culled();
+                    return;
+                }
+                crate::stats::bump_painted();
+                let mut sub = PaintCx {
+                    scene: &mut *self.scene,
+                    tree: self.tree,
+                    current: child,
+                    visible: self.visible,
+                };
+                object.paint(&mut sub, at);
+            }
             Some(local_t) => {
-                let mut sub_scene = vello::Scene::new();
-                let mut sub = PaintCx { scene: &mut sub_scene, tree: self.tree, current: child };
-                object.paint(&mut sub, Offset::ZERO);
                 let placement =
                     Affine::translate((absolute_offset.x, absolute_offset.y)) * local_t;
+                if !overlaps(placement.transform_rect_bbox(local), self.visible) {
+                    crate::stats::bump_culled();
+                    return;
+                }
+                crate::stats::bump_painted();
+                // Map the visible window into the subtree's local space so nested
+                // culling keeps working under the transform; a degenerate matrix
+                // disables culling for the subtree rather than mis-culling it.
+                let local_visible = if placement.determinant().abs() > 1e-9 {
+                    placement.inverse().transform_rect_bbox(self.visible)
+                } else {
+                    Rect::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::INFINITY)
+                };
+                let mut sub_scene = vello::Scene::new();
+                let mut sub = PaintCx {
+                    scene: &mut sub_scene,
+                    tree: self.tree,
+                    current: child,
+                    visible: local_visible,
+                };
+                object.paint(&mut sub, Offset::ZERO);
                 self.scene.append(&sub_scene, Some(placement));
             }
             None => {
-                let mut sub = PaintCx { scene: &mut *self.scene, tree: self.tree, current: child };
+                let world = Rect::new(
+                    local.x0 + absolute_offset.x,
+                    local.y0 + absolute_offset.y,
+                    local.x1 + absolute_offset.x,
+                    local.y1 + absolute_offset.y,
+                );
+                if !overlaps(world, self.visible) {
+                    crate::stats::bump_culled();
+                    return;
+                }
+                crate::stats::bump_painted();
+                let mut sub = PaintCx {
+                    scene: &mut *self.scene,
+                    tree: self.tree,
+                    current: child,
+                    visible: self.visible,
+                };
                 object.paint(&mut sub, absolute_offset);
             }
         }
+    }
+
+    /// Like [`paint_child`](Self::paint_child), but narrows the visible window to
+    /// `clip` for the child's whole subtree. Clipping render objects (scroll
+    /// viewports, clip-rrects, opacity layers) call this alongside their vello
+    /// clip layer so culling matches what the layer would clip away anyway.
+    pub fn paint_child_clipped(&mut self, child: RenderId, absolute_offset: Offset, clip: Rect) {
+        let saved = self.visible;
+        self.visible = Rect::new(
+            saved.x0.max(clip.x0),
+            saved.y0.max(clip.y0),
+            saved.x1.min(clip.x1),
+            saved.y1.min(clip.y1),
+        );
+        self.paint_child(child, absolute_offset);
+        self.visible = saved;
     }
 
     /// The relative offset a child was assigned during layout.

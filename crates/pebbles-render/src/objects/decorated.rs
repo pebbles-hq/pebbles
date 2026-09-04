@@ -25,6 +25,25 @@ impl RenderDecoratedBox {
 }
 
 impl RenderObject for RenderDecoratedBox {
+    fn paint_bounds(&self, size: Size) -> Rect {
+        // Drop shadows draw OUTSIDE the layout rect — grow the culling bounds by
+        // each shadow's worst-case reach (offset + spread + blur falloff), or a
+        // just-offscreen card's shadow would pop instead of bleeding into view.
+        let mut r = Rect::from_origin_size((0.0, 0.0), size);
+        for d in std::iter::once(&self.decoration).chain(self.foreground.as_ref()) {
+            for s in &d.shadows {
+                let grow = s.spread + 2.0 * s.blur;
+                r = r.union(Rect::new(
+                    s.offset.x - grow,
+                    s.offset.y - grow,
+                    size.width + s.offset.x + grow,
+                    size.height + s.offset.y + grow,
+                ));
+            }
+        }
+        r
+    }
+
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         match cx.children().first().copied() {
             Some(child) => {

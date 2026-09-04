@@ -8,7 +8,7 @@
 
 use std::any::Any;
 
-use pebbles_foundation::{Axis, Offset, Size};
+use pebbles_foundation::{Axis, Offset, Rect, Size};
 use vello::kurbo::Affine;
 
 use crate::constraints::BoxConstraints;
@@ -30,6 +30,24 @@ pub trait RenderObject: Any {
     /// top-left position in the window's coordinate space. Children are painted
     /// with [`PaintCx::paint_child`].
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset);
+
+    /// The rect this object (and its own drawing — not its children) may paint
+    /// into, in its **local** space. The paint-time viewport culling judges a
+    /// subtree by this rect at the subtree root, and each child again by its own
+    /// rect — so children may overflow their parent freely. The default is the
+    /// layout rect; objects that draw OUTSIDE it (drop shadows, glows) must
+    /// override, or their out-of-rect ink pops when the layout rect scrolls out.
+    fn paint_bounds(&self, size: Size) -> Rect {
+        Rect::from_origin_size((0.0, 0.0), size)
+    }
+
+    /// Whether this object CLIPS its children's painting to its own bounds (scroll
+    /// viewports, clip-rrects, layer effects). Clipping objects cap their subtree
+    /// paint rect at their own bounds, so a scrolled-out card containing a huge
+    /// inner scroll view still culls as one small rect.
+    fn clips_children(&self) -> bool {
+        false
+    }
 
     /// An optional paint/hit-test transform applied to this object's whole subtree,
     /// expressed in the object's **local** space (already resolved around its

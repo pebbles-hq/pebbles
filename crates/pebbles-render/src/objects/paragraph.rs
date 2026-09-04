@@ -245,8 +245,19 @@ impl RenderObject for RenderParagraph {
         let Some(layout) = &self.cached else { return };
         let transform = Affine::translate((offset.x, offset.y));
 
+        // Line-level culling: a single huge paragraph must not encode glyphs the
+        // viewport can't show. Lines are in top-to-bottom order, so once one
+        // starts below the visible window the rest can't be visible either.
+        let visible = cx.visible();
         let max_lines = self.style.max_lines.map(|m| m as usize).unwrap_or(usize::MAX);
         for line in layout.lines().take(max_lines) {
+            let m = line.metrics();
+            if offset.y + f64::from(m.block_max_coord) < visible.y0 {
+                continue;
+            }
+            if offset.y + f64::from(m.block_min_coord) > visible.y1 {
+                break;
+            }
             for item in line.items() {
                 let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                     continue;

@@ -45,8 +45,12 @@ impl RenderObject for RenderOpacity {
         let Some(child) = cx.children().first().copied() else { return };
         let bounds = Rect::from_origin_size(offset.to_point(), cx.size());
         cx.scene.push_layer(Fill::NonZero, Mix::Normal, self.opacity, Affine::IDENTITY, &bounds);
-        cx.paint_child(child, offset + cx.child_offset(child));
+        cx.paint_child_clipped(child, offset + cx.child_offset(child), bounds);
         cx.scene.pop_layer();
+    }
+
+    fn clips_children(&self) -> bool {
+        true // the opacity layer's clip shape bounds the subtree's ink
     }
 
     fn debug_name(&self) -> &'static str {
@@ -76,11 +80,15 @@ impl RenderObject for RenderClipRRect {
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let Some(child) = cx.children().first().copied() else { return };
-        let rounded =
-            Rect::from_origin_size(offset.to_point(), cx.size()).to_rounded_rect(self.radius.to_radii());
+        let bounds = Rect::from_origin_size(offset.to_point(), cx.size());
+        let rounded = bounds.to_rounded_rect(self.radius.to_radii());
         cx.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &rounded);
-        cx.paint_child(child, offset + cx.child_offset(child));
+        cx.paint_child_clipped(child, offset + cx.child_offset(child), bounds);
         cx.scene.pop_layer();
+    }
+
+    fn clips_children(&self) -> bool {
+        true
     }
 
     fn debug_name(&self) -> &'static str {

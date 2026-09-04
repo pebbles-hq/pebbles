@@ -132,4 +132,18 @@ fn huge_markdown_document_headless_pipeline() {
 
     assert!(elements > 1_000, "the fixture produced a real tree ({elements} elements)");
     assert!(stats::painted_nodes() > 0, "paint traversed the tree");
+    // P0 gates: paint is viewport-bounded — only a small fraction of the tree
+    // encodes (culled counts subtree ROOTS; their descendants are never visited),
+    // and the scene's glyph count tracks the window, not the document.
+    assert!(
+        stats::painted_nodes() * 10 < nodes as u64,
+        "painted nodes are a small fraction of the tree (painted {} of {nodes})",
+        stats::painted_nodes(),
+    );
+    assert!(stats::culled_nodes() > 0, "offscreen subtrees actually culled");
+    assert!(
+        stats::glyph_runs() < 4_000,
+        "encoded glyph runs are viewport-bounded ({})",
+        stats::glyph_runs(),
+    );
 }

@@ -467,10 +467,11 @@ impl RenderObject for RenderScroll {
         let size = cx.size();
         let Some(child) = cx.children().first().copied() else { return };
 
-        // Clip + paint the scrolled content.
+        // Clip + paint the scrolled content. The clip narrows the culling window
+        // too, so offscreen content is never encoded (not merely clipped away).
         let clip = Rect::from_origin_size(offset.to_point(), size);
         cx.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &clip);
-        cx.paint_child(child, offset + cx.child_offset(child));
+        cx.paint_child_clipped(child, offset + cx.child_offset(child), clip);
         cx.scene.pop_layer();
 
         // Scrollbar.
@@ -522,6 +523,10 @@ impl RenderObject for RenderScroll {
                 &RoundedRect::from_rect(thumb, sb.radius),
             );
         }
+    }
+
+    fn clips_children(&self) -> bool {
+        true // the viewport clips its content; culling caps at this box
     }
 
     fn debug_name(&self) -> &'static str {

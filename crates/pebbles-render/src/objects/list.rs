@@ -140,7 +140,7 @@ impl RenderObject for RenderList {
         if let Some(child) = cx.children().first().copied() {
             let clip = Rect::from_origin_size(offset.to_point(), size);
             cx.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &clip);
-            cx.paint_child(child, offset + cx.child_offset(child));
+            cx.paint_child_clipped(child, offset + cx.child_offset(child), clip);
             cx.scene.pop_layer();
         }
 
@@ -182,6 +182,10 @@ impl RenderObject for RenderList {
         if self.scrollable() {
             cx.scene.fill(Fill::NonZero, Affine::IDENTITY, sb.thumb_color, None, &RoundedRect::from_rect(thumb, sb.radius));
         }
+    }
+
+    fn clips_children(&self) -> bool {
+        true // the viewport clips its content; culling caps at this box
     }
 
     fn debug_name(&self) -> &'static str {
