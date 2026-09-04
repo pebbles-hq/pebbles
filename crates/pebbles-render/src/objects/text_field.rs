@@ -421,6 +421,15 @@ impl RenderTextField {
             h.finish()
         };
         if self.table_key != Some(table_key) || self.table.is_none() {
+            // Reuse layouts from the PREVIOUS table by line key: unchanged lines
+            // never re-shape on a rebuild, regardless of global cache pressure
+            // (a huge document's thousands of line entries can age out of the
+            // cache during blink fast-paths — the old table still owns them).
+            let reuse: std::collections::HashMap<u64, Rc<Layout<Brush>>> = self
+                .table
+                .as_ref()
+                .map(|t| t.lines.iter().map(|l| (l.key, l.layout.clone())).collect())
+                .unwrap_or_default();
             let mut lines = Vec::with_capacity(display.split('\n').count());
             let (mut y, mut start) = (0.0_f64, 0_usize);
             for seg in display.split('\n') {
@@ -436,8 +445,15 @@ impl RenderTextField {
                     width.to_bits().hash(&mut h);
                     h.finish()
                 };
-                let layout: Rc<Layout<Brush>> = match cx.text.cached_layout(line_key) {
-                    Some((rc, _, _)) => rc,
+                let reused = reuse.get(&line_key).cloned();
+                if let Some(rc) = &reused {
+                    // Keep the global cache generation fresh for recycled lines.
+                    cx.text.store_layout(line_key, rc.clone(), rc.width() as f64, rc.height() as f64);
+                }
+                let layout: Rc<Layout<Brush>> = match reused
+                    .or_else(|| cx.text.cached_layout(line_key).map(|(rc, _, _)| rc))
+                {
+                    Some(rc) => rc,
                     None => {
                         let mut builder =
                             cx.text.layout.ranged_builder(&mut cx.text.fonts, shaped, 1.0, true);
@@ -464,6 +480,7 @@ impl RenderTextField {
                 };
                 let height = (layout.height() as f64).max(self.line_px);
                 lines.push(crate::text_edit::LineSlot {
+                    key: line_key,
                     start,
                     len: seg.len(),
                     y,

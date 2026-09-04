@@ -36,6 +36,11 @@ use vello::peniko::Brush;
 /// space so caret/selection geometry exists; local offsets clamp to `len`, so
 /// the fake glyph is never addressable.
 pub(crate) struct LineSlot {
+    /// The line's shape-cache key (text + style + wrap width) — the REUSE key: a
+    /// table rebuild recycles unchanged lines' layouts from the previous table,
+    /// so a keystroke shapes O(changed lines) even if the global cache evicted
+    /// them under pressure.
+    pub(crate) key: u64,
     /// Byte offset of the line's first char in the full text.
     pub(crate) start: usize,
     /// Line length in bytes, EXCLUDING the trailing newline.

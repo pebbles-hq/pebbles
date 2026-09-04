@@ -29,8 +29,18 @@ struct CacheEntry {
     last_used: u32,
 }
 
-/// Entries kept beyond this trigger an eviction sweep at frame end.
-const SHAPE_CACHE_PRESSURE: usize = 2048;
+/// Entries kept beyond this trigger an eviction sweep at frame end. Sized for
+/// editor-scale documents: a megabyte source holds tens of thousands of per-line
+/// entries whose owner (the field's line table) rebuilds from them on remount —
+/// evicting those between screen hops turns a warm remount into a full reshape.
+const SHAPE_CACHE_PRESSURE: usize = 32_768;
+
+/// How many generations (frames) an entry may sit unused before a pressure sweep
+/// may drop it. Minutes, not seconds: an editor's working set (per-line layouts
+/// of the open document) must survive View/Edit remounts and idle pauses —
+/// re-shaping a megabyte because the user read the preview for a while is the
+/// exact jank this cache exists to kill. Reclaimed after sustained disuse.
+const SHAPE_CACHE_STALE: u32 = 4096;
 
 impl Default for TextEnv {
     fn default() -> Self {
@@ -55,9 +65,12 @@ impl TextEnv {
     /// pressure), so re-presenting a long-idle window never re-shapes the world.
     pub fn finish_frame(&mut self) {
         self.cache.generation = self.cache.generation.wrapping_add(1);
-        if self.cache.map.len() > SHAPE_CACHE_PRESSURE {
+        // Sweep only occasionally: a huge document legitimately holds thousands
+        // of per-line entries whose owners (the field's line table) keep them
+        // useful between rebuilds — scanning them every frame is wasted work.
+        if self.cache.map.len() > SHAPE_CACHE_PRESSURE && self.cache.generation % 256 == 0 {
             let current = self.cache.generation;
-            self.cache.map.retain(|_, e| current.wrapping_sub(e.last_used) <= 2);
+            self.cache.map.retain(|_, e| current.wrapping_sub(e.last_used) <= SHAPE_CACHE_STALE);
         }
     }
 
