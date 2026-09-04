@@ -12,6 +12,13 @@
 //! App::new(my_root()).title("Hello").size(480, 320).run()?;
 //! ```
 
+// AccessKit has no web adapter yet, so wasm gets a no-op bridge with the same
+// public surface (so the runner needs no per-call-site cfg). See
+// documentations/web-support.md §4.4.
+#[cfg(not(target_family = "wasm"))]
+mod a11y;
+#[cfg(target_family = "wasm")]
+#[path = "a11y_stub.rs"]
 mod a11y;
 mod app;
 mod hotkeys;

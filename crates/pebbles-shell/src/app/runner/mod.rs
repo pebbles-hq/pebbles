@@ -9,7 +9,8 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use web_time::Instant;
 
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
 use pebbles_foundation::{Color, Offset, Size, TextDirection};
@@ -136,6 +137,12 @@ pub(super) fn new_renderer(device: &wgpu::Device, _queue: &wgpu::Queue) -> Rende
 
 /// Wire the OS clipboard into `pebbles_core::clipboard`. Falls back to the core's
 /// in-process clipboard if the platform clipboard can't be opened (e.g. headless).
+///
+/// On wasm and Android there is no `arboard` backend, so this is a no-op and the
+/// core's in-process clipboard handles intra-app copy/paste. (Web will grow a
+/// `navigator.clipboard` backend and Android a JNI one — see
+/// documentations/cross-platform-overview.md.)
+#[cfg(not(any(target_family = "wasm", target_os = "android")))]
 fn install_clipboard() {
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -154,6 +161,11 @@ fn install_clipboard() {
         Err(err) => eprintln!("pebbles: system clipboard unavailable ({err}); using in-app clipboard"),
     }
 }
+
+/// No `arboard` backend on wasm/Android yet — the core's in-process fallback
+/// keeps intra-app copy/paste working.
+#[cfg(any(target_family = "wasm", target_os = "android"))]
+fn install_clipboard() {}
 
 /// The live window + its GPU surface.
 struct ActiveWindow {

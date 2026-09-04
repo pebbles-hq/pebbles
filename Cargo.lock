@@ -167,6 +167,7 @@ dependencies = [
  "ndk-context",
  "ndk-sys",
  "num_enum",
+ "simd_cesu8",
  "thiserror 2.0.20",
 ]
 
@@ -2671,6 +2672,7 @@ dependencies = [
  "pollster 1.0.1",
  "raw-window-handle",
  "vello",
+ "web-time",
  "wgpu",
  "winit",
 ]

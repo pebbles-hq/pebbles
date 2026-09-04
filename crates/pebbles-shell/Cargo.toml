@@ -19,13 +19,16 @@ wgpu.workspace = true
 winit.workspace = true
 raw-window-handle.workspace = true
 pollster.workspace = true
+# A std::time drop-in that works on wasm too: on native it IS std::time (zero
+# cost); on wasm `Instant` uses `performance.now()` instead of panicking. winit
+# already uses it for `ControlFlow::WaitUntil`.
+web-time = "1.1"
 peniko.workspace = true
 kurbo.workspace = true
-# System clipboard (text only — drop the heavy image feature).
-arboard = { version = "3", default-features = false }
-# Accessibility: AccessKit platform bridge (AT-SPI on Linux, UIA on Windows, …).
-accesskit = "0.25"
-accesskit_winit = "0.34.0"
+# System clipboard + AccessKit are declared per-target below: arboard has no
+# wasm/android backend, and accesskit_winit has no web adapter. On those targets
+# the core's in-process clipboard fallback and the (unpublished) semantics tree
+# take over; see documentations/cross-platform-overview.md.
 # NOTE: `muda` (B3 native menu bar) is declared per-target below — on Linux it
 # would drag in the whole GTK/glib stack for a feature whose code is compiled
 # only on macOS/Windows.
@@ -40,6 +43,15 @@ native-menus = ["dep:muda"]
 # Enable `register_global_hotkey(..)` via `global-hotkey` (B4).
 global-hotkeys = ["dep:global-hotkey"]
 
+# Android base-class selection (a library must not hardcode one — the final app
+# picks exactly one, or android-activity errors). GameActivity is the production
+# choice: AppCompat-based, with GameTextInput for the on-screen keyboard — but
+# its build script compiles C++ and so needs the Android NDK. NativeActivity is
+# pure Rust (no soft keyboard yet), so it is the one that `cargo check`s without
+# the NDK. See documentations/android-support.md §3.
+android-game-activity = ["winit/android-game-activity"]
+android-native-activity = ["winit/android-native-activity"]
+
 # B3 native OS menu bar (macOS global menu / Windows window menu). Optional +
 # default-OFF: the in-window `menubar(..)` stays THE cross-platform form.
 # Target-gated to match `native_menu`'s own `cfg`: enabling `native-menus` on
@@ -47,6 +59,19 @@ global-hotkeys = ["dep:global-hotkey"]
 # build, for code that is never compiled there.
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 muda = { version = "0.19", optional = true }
+
+# System clipboard (text only — the heavy image feature is dropped). arboard has
+# no wasm or Android backend; on those targets the core's in-process clipboard
+# fallback takes over.
+[target.'cfg(not(any(target_family = "wasm", target_os = "android")))'.dependencies]
+arboard = { version = "3", default-features = false }
+
+# The AccessKit platform bridge (AT-SPI on Linux, UIA on Windows, NSAccessibility
+# on macOS, the Java API on Android). No web adapter yet, so excluded on wasm; on
+# iOS it compiles as a no-op until the iOS adapter ships.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+accesskit = "0.25"
+accesskit_winit = "0.34.0"
 
 [lints]
 workspace = true
