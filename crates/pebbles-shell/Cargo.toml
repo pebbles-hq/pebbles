@@ -26,10 +26,9 @@ arboard = { version = "3", default-features = false }
 # Accessibility: AccessKit platform bridge (AT-SPI on Linux, UIA on Windows, …).
 accesskit = "0.25"
 accesskit_winit = "0.34.0"
-# B3 native OS menu bar (macOS global menu / Windows window menu). Optional +
-# default-OFF: the in-window `menubar(..)` stays THE cross-platform form. Only
-# compiled when the `native-menus` feature is on.
-muda = { version = "0.19", optional = true }
+# NOTE: `muda` (B3 native menu bar) is declared per-target below — on Linux it
+# would drag in the whole GTK/glib stack for a feature whose code is compiled
+# only on macOS/Windows.
 # B4 system-wide global hotkeys (fire while the app is unfocused). Optional +
 # default-OFF; X11/Windows/macOS only (Wayland returns an error gracefully).
 global-hotkey = { version = "0.8", optional = true }
@@ -40,6 +39,14 @@ default = []
 native-menus = ["dep:muda"]
 # Enable `register_global_hotkey(..)` via `global-hotkey` (B4).
 global-hotkeys = ["dep:global-hotkey"]
+
+# B3 native OS menu bar (macOS global menu / Windows window menu). Optional +
+# default-OFF: the in-window `menubar(..)` stays THE cross-platform form.
+# Target-gated to match `native_menu`'s own `cfg`: enabling `native-menus` on
+# Linux used to pull gtk → glib-sys and require system GTK dev packages to
+# build, for code that is never compiled there.
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+muda = { version = "0.19", optional = true }
 
 [lints]
 workspace = true

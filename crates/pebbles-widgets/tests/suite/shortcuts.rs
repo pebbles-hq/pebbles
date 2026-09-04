@@ -29,7 +29,12 @@ fn parse_accepts_the_grammar() {
     assert_eq!(shortcuts::parse("Ctrl+Shift+Enter").unwrap(), (m(true, true, false, false), Enter));
     assert_eq!(shortcuts::parse("Escape").unwrap(), (m(false, false, false, false), Escape));
     assert_eq!(shortcuts::parse("F12").unwrap(), (m(false, false, false, false), F(12)));
-    // Mod resolves to Ctrl on this platform (non-macOS).
+    // `Mod` is the PORTABLE modifier and resolves per platform: ⌘ (meta) on
+    // macOS, Ctrl everywhere else. Asserting one of those unconditionally is
+    // what made this test fail on macOS once CI grew a matrix.
+    #[cfg(target_os = "macos")]
+    assert_eq!(shortcuts::parse("Mod+K").unwrap(), (m(false, false, false, true), Char('k')));
+    #[cfg(not(target_os = "macos"))]
     assert_eq!(shortcuts::parse("Mod+K").unwrap(), (m(false, true, false, false), Char('k')));
 }
 

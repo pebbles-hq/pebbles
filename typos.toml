@@ -4,6 +4,14 @@ extend-exclude = [
     "Cargo.lock",
 ]
 
-[default.extendwords]
-# identifiers the checker would false-positive on
+# Identifiers the checker would false-positive on. The key is `extend-words`
+# (hyphenated) — a misspelling here is a CONFIG error (exit 78), which silently
+# failed the Typos job rather than reporting a typo.
+[default.extend-words]
 Pebbles = "Pebbles"
+anc = "anc"                  # `anc_match` — ancestor-match flag in the file tree
+ba = "ba"                    # b-alpha, from destructuring `[br, bg, bb, ba]`
+mis = "mis"                  # the prefix in "mis-culling"
+pn = "pn"                    # parent node, in tree walks
+Noe = "Noe"                  # a person's name in a demo avatar list
+unparseable = "unparseable"  # accepted variant; used in the accelerator parsers
