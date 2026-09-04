@@ -251,6 +251,7 @@ impl RenderObject for RenderParagraph {
                 let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                     continue;
                 };
+                crate::stats::bump_glyph_run();
                 let run = glyph_run.run();
                 let synthesis = run.synthesis();
                 let glyph_transform = synthesis

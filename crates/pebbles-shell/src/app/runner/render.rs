@@ -99,6 +99,7 @@ impl Runner {
         let frame_start = Instant::now();
         let fno = self.frame_no;
         log::trace(log::Cat::Frame, format!("frame {fno} begin"));
+        pebbles_render::stats::reset_frame();
         if self.recover_gpu_if_poisoned() {
             // Render fresh state this same frame; also repaint secondary windows.
             for w in self.windows.values() {
@@ -220,11 +221,18 @@ impl Runner {
             let objects = self.ui.render_node_count().to_string();
             #[cfg(not(debug_assertions))]
             let objects = String::from("n/a (debug-only census)");
+            use pebbles_render::stats;
             eprintln!(
-                "[pebbles frame] rebuild={:.2}ms layout={:.2}ms encode={:.2}ms objects={objects}",
+                "[pebbles frame] rebuild={:.2}ms layout={:.2}ms encode={:.2}ms objects={objects} \
+                 layouts={} skips={} painted={} culled={} glyph_runs={}",
                 rebuild.as_secs_f64() * 1e3,
                 layout.as_secs_f64() * 1e3,
                 encode.as_secs_f64() * 1e3,
+                stats::layout_calls(),
+                stats::layout_skips(),
+                stats::painted_nodes(),
+                stats::culled_nodes(),
+                stats::glyph_runs(),
             );
         }
 
@@ -367,6 +375,7 @@ impl Runner {
         let now = self.clock.elapsed().as_secs_f64();
         pebbles_core::animation::tick(now);
         let pending_tasks = pebbles_core::task::pump();
+        pebbles_render::stats::reset_frame();
 
         // GC a dead overlay first (see render()); make_current so it hits THIS window's.
         w.ui.make_current();

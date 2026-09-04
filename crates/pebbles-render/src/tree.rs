@@ -539,6 +539,7 @@ impl LayoutCx<'_> {
     /// This is the re-entrant call: `child`'s object is lifted out of the arena
     /// for the duration so the recursion holds a hole-free `&mut RenderTree`.
     pub fn layout_child(&mut self, child: RenderId, constraints: BoxConstraints) -> Size {
+        crate::stats::bump_layout();
         let mut object =
             self.tree.nodes[child].object.take().expect("child object present during layout");
         let size = {
@@ -694,6 +695,7 @@ impl PaintCx<'_> {
     pub fn paint_child(&mut self, child: RenderId, absolute_offset: Offset) {
         let node = &self.tree.nodes[child];
         let Some(object) = node.object.as_deref() else { return };
+        crate::stats::bump_painted();
         match object.transform(node.size) {
             Some(local_t) => {
                 let mut sub_scene = vello::Scene::new();

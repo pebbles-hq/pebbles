@@ -82,11 +82,16 @@ fn compact_style() -> MarkdownStyle {
 }
 
 pub fn markdown_screen() -> Element {
-    // Dev: GALLERY_MD_FILE=<path> loads that file as the initial source (perf test).
-    let initial = std::env::var("GALLERY_MD_FILE")
-        .ok()
-        .and_then(|f| std::fs::read_to_string(f).ok())
-        .unwrap_or_else(|| DEMO.to_string());
+    // Dev: GALLERY_MD_FILE=<path> loads that file as the initial source (perf test);
+    // GALLERY_MD_HUGE=1 loads the generated stress document instead.
+    let initial = if std::env::var("GALLERY_MD_HUGE").is_ok_and(|v| v == "1" || v == "true") {
+        huge_document()
+    } else {
+        std::env::var("GALLERY_MD_FILE")
+            .ok()
+            .and_then(|f| std::fs::read_to_string(f).ok())
+            .unwrap_or_else(|| DEMO.to_string())
+    };
     let source = create_signal(initial);
     // Two clean single-pane modes: View = read-only formatted (Read); Edit = the
     // source editor (Edit). Read here so the toggle highlights the active mode and
@@ -166,6 +171,12 @@ pub fn markdown_screen() -> Element {
                                         toast("no file open — the demo buffer is in-memory").show();
                                     }
                                 }
+                            }),
+                            gap_w(6.0),
+                            button("Huge demo").variant(ButtonVariant::Outline).size(ButtonSize::Sm).on_pressed(move || {
+                                source.set(huge_document());
+                                open_path.set(None);
+                                toast("loaded the generated stress document").show();
                             }),
                             gap_w(12.0),
                             // A clean 2-mode segmented toggle, Obsidian-style: the
@@ -251,4 +262,89 @@ pub fn markdown_screen() -> Element {
                         ),
                 ),
         ])
+}
+
+// ---------------------------------------------------------------------------
+// The stress fixture — a deterministic worst-case GFM document (~1.5 MB).
+// Loaded by the "Huge demo" button or GALLERY_MD_HUGE=1. No randomness, no I/O:
+// the same document every run, so perf numbers are comparable across sessions.
+// ---------------------------------------------------------------------------
+
+/// Generate the huge deterministic GFM stress document: thousands of styled
+/// paragraphs, 100+ fenced code blocks (one ~1000 lines), tables, nested
+/// quotes/lists, task lists, and two pathological cases — a single ~100k-char
+/// paragraph and a single ~20k-char code line.
+pub fn huge_document() -> String {
+    const WORDS: [&str; 16] = [
+        "viewport", "render", "signal", "widget", "layout", "scene", "glyph", "arena",
+        "frame", "paint", "scroll", "anchor", "extent", "cache", "measure", "pebbles",
+    ];
+    let mut s = String::with_capacity(1_600_000);
+    s.push_str("# Stress document\n\nGenerated fixture: deterministic worst-case GFM.\n\n");
+    for p in 0..4000usize {
+        // Section headings + rules to exercise block variety.
+        if p % 100 == 0 {
+            s.push_str(&format!("\n## Section {}\n\n", p / 100));
+        }
+        if p % 200 == 199 {
+            s.push_str("\n---\n\n");
+        }
+        // The flowing paragraph: ~40 words with periodic inline styles.
+        for w in 0..40usize {
+            let word = WORDS[(p + w) % WORDS.len()];
+            match (p + w) % 23 {
+                0 => s.push_str(&format!("**{word}** ")),
+                7 => s.push_str(&format!("*{word}* ")),
+                11 => s.push_str(&format!("`{word}` ")),
+                17 => s.push_str(&format!("[{word}](https://example.com/{word}) ")),
+                19 => s.push_str(&format!("~~{word}~~ ")),
+                _ => {
+                    s.push_str(word);
+                    s.push(' ');
+                }
+            }
+        }
+        s.push_str("\n\n");
+        // Fenced code every 40th block (100 total, 30 lines each).
+        if p % 40 == 0 {
+            s.push_str("```rust\n");
+            for l in 0..30usize {
+                s.push_str(&format!(
+                    "fn item_{p}_{l}(x: u64) -> u64 {{ x * {l} + {p} }} // {}\n",
+                    WORDS[l % WORDS.len()]
+                ));
+            }
+            s.push_str("```\n\n");
+        }
+        // A table every 80th block.
+        if p % 80 == 0 {
+            s.push_str("| col a | col b | col c | col d |\n|---|---|---|---|\n");
+            for r in 0..6usize {
+                s.push_str(&format!("| a{p}r{r} | `b{r}` | **c{r}** | d{r} |\n"));
+            }
+            s.push('\n');
+        }
+        // Nested quote + list every 60th, task list every 50th.
+        if p % 60 == 0 {
+            s.push_str("> quoted **block** with nesting\n> > deeper quote\n\n");
+            s.push_str(&format!("1. ordered {p}\n2. next\n   - nested child\n   - `code` child\n\n"));
+        }
+        if p % 50 == 0 {
+            s.push_str(&format!("- [ ] open task {p}\n- [x] done task {p}\n\n"));
+        }
+    }
+    // Pathological case 1: one enormous single paragraph (~100k chars, no breaks).
+    s.push_str("\n## Pathological paragraph\n\n");
+    for i in 0..12_500usize {
+        s.push_str(WORDS[i % WORDS.len()]);
+        s.push(' ');
+    }
+    s.push_str("\n\n");
+    // Pathological case 2: one enormous single code line (~20k chars).
+    s.push_str("## Pathological code line\n\n```\n");
+    for i in 0..2_500usize {
+        s.push_str(&format!("x{i};"));
+    }
+    s.push_str("\n```\n");
+    s
 }

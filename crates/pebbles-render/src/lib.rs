@@ -21,6 +21,7 @@ pub mod object;
 pub mod objects;
 pub mod scroll_metrics;
 pub mod fonts;
+pub mod stats;
 pub mod text;
 pub mod text_edit;
 pub mod tree;
