@@ -145,7 +145,7 @@ mod tokio_support {
     pub fn spawn_future<T, Fut, D>(fut: Fut, on_done: D)
     where
         T: Send + 'static,
-        Fut: std::future::Future<Output = T> + Send + 'static,
+        Fut: Future<Output = T> + Send + 'static,
         D: FnOnce(T) + 'static,
     {
         let slot: Arc<Mutex<Option<T>>> = Arc::new(Mutex::new(None));
@@ -178,7 +178,7 @@ mod tokio_support {
     pub fn create_resource_future<T, Fut, MakeFut>(make: MakeFut) -> Signal<Resource<T>>
     where
         T: Send + Clone + 'static,
-        Fut: std::future::Future<Output = T> + Send + 'static,
+        Fut: Future<Output = T> + Send + 'static,
         MakeFut: FnOnce() -> Fut + 'static,
     {
         let state = create_signal(Resource::Loading);

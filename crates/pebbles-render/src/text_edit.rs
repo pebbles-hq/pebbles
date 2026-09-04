@@ -25,6 +25,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use parley::{Affinity, Cursor, Layout, Selection};
+use vello::kurbo::Rect;
 use vello::peniko::Brush;
 
 // ---------------------------------------------------------------------------
@@ -107,15 +108,15 @@ impl LineTable {
 
     /// The caret rect (field-local space) for a global byte offset — used by the
     /// field's paint and by scroll-to-caret logic.
-    pub fn caret_rect(&self, b: usize, width: f64) -> vello::kurbo::Rect {
+    pub fn caret_rect(&self, b: usize, width: f64) -> Rect {
         if self.lines.is_empty() {
-            return vello::kurbo::Rect::new(0.0, 0.0, width, 0.0);
+            return Rect::new(0.0, 0.0, width, 0.0);
         }
         let i = self.line_of(b);
         let l = &self.lines[i];
         let bb = Cursor::from_byte_index(&l.layout, self.local(i, b), Affinity::Downstream)
             .geometry(&l.layout, width as f32);
-        vello::kurbo::Rect::new(bb.x0, bb.y0 + l.y, bb.x1, bb.y1 + l.y)
+        Rect::new(bb.x0, bb.y0 + l.y, bb.x1, bb.y1 + l.y)
     }
 }
 

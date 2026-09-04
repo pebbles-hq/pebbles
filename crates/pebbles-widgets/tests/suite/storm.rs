@@ -33,7 +33,7 @@ fn interaction_storm_over_multibyte_markdown() {
     let win = Size::new(760.0, 640.0);
     ui.mount_root(View::new(palette::WHITE, component(storm_root)).into_widget());
     ui.layout(&mut env, win);
-    let mut frame = |ui: &mut Ui, env: &mut TextEnv| {
+    let frame = |ui: &mut Ui, env: &mut TextEnv| {
         ui.rebuild_if_dirty();
         ui.layout(env, win);
         let mut scene = pebbles_render::Scene::new();
