@@ -38,6 +38,12 @@ pub fn clear(id: u64) {
 
 /// Number of live published layouts (debug observability for the lifecycle soak test).
 #[cfg(debug_assertions)]
+/// The published layout for `id`, if any (tests + tooling; `Rc` identity proves
+/// cache hits — a caret blink must NOT produce a new shaped layout).
+pub fn get(id: u64) -> Option<Rc<Layout<Brush>>> {
+    LAYOUTS.with(|r| r.borrow().get(&id).cloned())
+}
+
 pub fn len() -> usize {
     LAYOUTS.with(|m| m.borrow().len())
 }

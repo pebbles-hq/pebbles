@@ -176,23 +176,48 @@ impl RenderObject for RenderTextField {
         let composed = self.composed();
         let display = &composed.text;
 
-        let mut builder = cx.text.layout.ranged_builder(&mut cx.text.fonts, display, 1.0, true);
-        builder.push_default(StyleProperty::FontSize(self.style.font_size));
-        builder.push_default(StyleProperty::FontWeight(FontWeight::new(self.style.weight)));
-        builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
-            self.style.line_height,
-        )));
-        builder.push_default(StyleProperty::Brush(Brush::Solid(composed.color)));
-        let mut layout: Layout<Brush> = builder.build(display);
-        layout.break_all_lines(max_advance);
-        layout.align(Alignment::Start, AlignmentOptions::default());
+        // Shape through the window cache: caret blinks, focus flips, selection
+        // moves, and unrelated rebuilds re-layout this field WITHOUT re-shaping
+        // the document — only a text / style / wrap-width change shapes. One
+        // shape per keystroke, zero otherwise (the P5 editor contract).
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            0xF1E1D_u64.hash(&mut h); // field tag — never collides with paragraphs
+            display.hash(&mut h);
+            self.style.font_size.to_bits().hash(&mut h);
+            self.style.weight.to_bits().hash(&mut h);
+            self.style.line_height.to_bits().hash(&mut h);
+            for c in composed.color.components {
+                c.to_bits().hash(&mut h);
+            }
+            max_advance.map(f32::to_bits).hash(&mut h);
+            h.finish()
+        };
+        let layout: Rc<Layout<Brush>> = match cx.text.cached_layout(key) {
+            Some((rc, _, _)) => rc,
+            None => {
+                let mut builder =
+                    cx.text.layout.ranged_builder(&mut cx.text.fonts, display, 1.0, true);
+                builder.push_default(StyleProperty::FontSize(self.style.font_size));
+                builder.push_default(StyleProperty::FontWeight(FontWeight::new(self.style.weight)));
+                builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
+                    self.style.line_height,
+                )));
+                builder.push_default(StyleProperty::Brush(Brush::Solid(composed.color)));
+                let mut layout: Layout<Brush> = builder.build(display);
+                layout.break_all_lines(max_advance);
+                layout.align(Alignment::Start, AlignmentOptions::default());
+                let rc = Rc::new(layout);
+                cx.text.store_layout(key, rc.clone(), rc.width() as f64, rc.height() as f64);
+                rc
+            }
+        };
 
         self.line_px = (self.style.font_size as f64) * (self.style.line_height as f64);
         let height = (layout.height() as f64).max(self.line_px);
         let width =
             if constraints.has_bounded_width() { constraints.max_width } else { layout.width() as f64 };
-
-        let layout = Rc::new(layout);
         // Publish for hit-testing / motion — but only real (unobscured) text, and not
         // while composing (the published layout would include the transient preedit).
         if self.obscure.is_none() && self.preedit.is_empty() && !self.text.is_empty() {
@@ -220,6 +245,7 @@ impl RenderObject for RenderTextField {
                 Cursor::from_byte_index(layout, a, Affinity::Downstream),
                 Cursor::from_byte_index(layout, f, Affinity::Downstream),
             );
+            let visible = cx.visible();
             for (bb, _) in sel.geometry(layout) {
                 let rect = Rect::new(
                     offset.x + bb.x0,
@@ -227,16 +253,34 @@ impl RenderObject for RenderTextField {
                     offset.x + bb.x1,
                     offset.y + bb.y1,
                 );
+                if rect.y1 < visible.y0 || rect.y0 > visible.y1 {
+                    continue;
+                }
                 cx.scene.fill(Fill::NonZero, Affine::IDENTITY, self.style.selection_color, None, &rect);
             }
         }
 
-        // 2. Glyphs.
+        // 2. Glyphs — windowed exactly like paragraphs: line-level y-culling
+        // (top-to-bottom early break) and per-run x-culling, so a huge source
+        // never encodes more than the window can show.
+        let visible = cx.visible();
         for line in layout.lines() {
+            let m = line.metrics();
+            if offset.y + f64::from(m.block_max_coord) < visible.y0 {
+                continue;
+            }
+            if offset.y + f64::from(m.block_min_coord) > visible.y1 {
+                break;
+            }
             for item in line.items() {
                 let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                     continue;
                 };
+                let run_x0 = offset.x + f64::from(glyph_run.offset());
+                if run_x0 + f64::from(glyph_run.advance()) < visible.x0 || run_x0 > visible.x1 {
+                    continue;
+                }
+                crate::stats::bump_glyph_run();
                 let run = glyph_run.run();
                 let synthesis = run.synthesis();
                 let glyph_transform = synthesis

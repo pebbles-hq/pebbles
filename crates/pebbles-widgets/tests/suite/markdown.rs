@@ -198,3 +198,41 @@ fn code_blocks_keep_indentation_in_one_unwrapped_layout() {
     assert!(!p.style.soft_wrap, "code never soft-wraps; lines break at newlines only");
     assert!(p.spans.iter().any(|s| s.color.is_some()), "tokens carry color spans");
 }
+
+// ---------------------------------------------------------------------------
+// Split preview debounce: typing updates the editor immediately; the rendered
+// preview follows ~150 ms later (one parse per pause, not per keystroke).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn split_preview_debounces_typing() {
+    pebbles_widgets::theme::init();
+    pebbles_core::focus::init();
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(900.0, 700.0);
+    ui.mount_root(View::new(palette::WHITE, component(editor_root)).into_widget());
+    let mode = MODE.with(|c| c.borrow().expect("mode"));
+    mode.set(MarkdownMode::Split);
+    ui.rebuild_if_dirty();
+    ui.layout(&mut env, win);
+
+    // Type: the source changes; the preview must NOT re-render yet.
+    let src = SRC.with(|c| c.borrow().expect("src"));
+    src.update(|s| s.push_str("\n## Debounced\n\nnew paragraph here\n"));
+    ui.rebuild_if_dirty();
+    ui.layout(&mut env, win);
+    let during = ui.element_count();
+
+    // Let the debounce window elapse: the first tick ARMS the pending timer
+    // (delays anchor at the next frame), the second fires it.
+    pebbles_core::animation::tick(1.0e9);
+    pebbles_core::animation::tick(2.0e9);
+    ui.rebuild_if_dirty();
+    ui.layout(&mut env, win);
+    let after = ui.element_count();
+    assert!(
+        after > during,
+        "the preview updates only after the debounce ({during} -> {after} elements)"
+    );
+}

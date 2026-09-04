@@ -428,3 +428,70 @@ fn scrolling_repositions_without_relayout() {
     assert!(painted < 30, "mid-scroll paint window stays bounded (painted {painted})");
     assert!(culled > 0, "rows on both sides culled ({culled})");
 }
+
+// ---------------------------------------------------------------------------
+// P5: the editor field shapes through the window cache and paints windowed.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn text_field_caret_blink_reuses_the_shaped_layout() {
+    use crate::objects::{RenderTextField, TextFieldStyle};
+    let mut text = TextEnv::new();
+    let mut tree = RenderTree::new();
+    let mut field = RenderTextField::new("hello editor\nsecond line\nthird line", TextFieldStyle::default());
+    field.multiline = true;
+    field.field_id = 4242;
+    field.focused = true;
+    let id = tree.insert(Box::new(field));
+    tree.root = Some(id);
+    tree.layout(&mut text, tight(300.0, 200.0));
+    let first = crate::text_edit::get(4242).expect("published");
+    assert_eq!(text.shape_cache_len(), 1);
+
+    // A caret blink: mutate display-only state, relayout — the SAME shaped
+    // layout must come back (Rc identity), with zero new cache entries.
+    tree.object_mut(id).downcast_mut::<RenderTextField>().unwrap().caret_visible = false;
+    tree.mark_needs_layout(id);
+    tree.layout(&mut text, tight(300.0, 200.0));
+    let second = crate::text_edit::get(4242).expect("published");
+    assert!(std::rc::Rc::ptr_eq(&first, &second), "a blink must not re-shape the document");
+    assert_eq!(text.shape_cache_len(), 1);
+
+    // A real edit shapes exactly once more.
+    {
+        let f = tree.object_mut(id).downcast_mut::<RenderTextField>().unwrap();
+        f.text.push_str("\nfourth line");
+    }
+    tree.mark_needs_layout(id);
+    tree.layout(&mut text, tight(300.0, 200.0));
+    let third = crate::text_edit::get(4242).expect("published");
+    assert!(!std::rc::Rc::ptr_eq(&second, &third), "an edit re-shapes");
+    assert_eq!(text.shape_cache_len(), 2);
+    crate::text_edit::clear(4242);
+}
+
+#[test]
+fn text_field_paint_is_windowed_like_paragraphs() {
+    use crate::objects::{RenderScroll, RenderTextField, TextFieldStyle};
+    let mut text = TextEnv::new();
+    let mut tree = RenderTree::new();
+    let scroll = tree.insert(Box::new(RenderScroll::new(Axis::Vertical)));
+    let mut source = String::new();
+    for i in 0..3000 {
+        source.push_str(&format!("line {i} with several words here\n"));
+    }
+    let mut field = RenderTextField::new(source, TextFieldStyle::default());
+    field.multiline = true;
+    field.field_id = 4243;
+    let f = tree.insert(Box::new(field));
+    tree.insert_child(scroll, f, 0);
+    tree.root = Some(scroll);
+    tree.layout(&mut text, tight(400.0, 240.0));
+
+    crate::stats::reset_frame();
+    let mut scene = vello::Scene::new();
+    tree.paint(&mut scene);
+    let runs = crate::stats::glyph_runs();
+    assert!(runs < 200, "a 3000-line field encodes only the window ({runs} runs)");
+    crate::text_edit::clear(4243);
+}

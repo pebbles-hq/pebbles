@@ -6,6 +6,25 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Performance — the editor joins viewport-bounded rendering
+- `RenderTextField` shapes through the window's shaped-text cache: caret blinks,
+  focus flips, selection moves, and unrelated rebuilds re-layout the field with
+  **zero re-shaping** (a blink used to re-shape the whole document at 2 Hz);
+  only a real text/style/width change shapes.
+- The field's paint is windowed like paragraphs (line-level y-culling, per-run
+  x-culling, selection rects culled): a huge source encodes only the visible
+  window of glyphs.
+- `markdown_editor` Split mode: the preview follows the source through a ~150 ms
+  id-keyed debounce (`set_timeout` replace-on-reregister) — typing never races
+  the parser; checkbox toggles in the debounced preview still rewrite the REAL
+  source. Fixed-string `markdown(..)` sources parse through a small
+  content-keyed cache.
+
+Verified live on the ~1.5 MB stress document: 50 s input storm = 430 frames,
+zero GPU errors/resets, encode ≤ 1.8 ms; 15 s idle = 2 frames then silence.
+(The remaining editor work — per-LINE shaping so a keystroke re-shapes one line
+instead of one document — is specced and tracked.)
+
 ### Performance — viewport-bounded rendering (the "huge document" work)
 Frame cost now tracks what is **in the user's line of sight**, never the size of
 the content. Landed as one coordinated set:

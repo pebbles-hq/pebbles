@@ -160,6 +160,34 @@ enum Block {
     Table { header: Vec<Vec<Inline>>, rows: Vec<Vec<Vec<Inline>>> },
 }
 
+/// Content-keyed parse cache for FIXED sources (8-entry MRU): re-rendering a
+/// static document re-uses the parsed blocks; a different string parses fresh.
+fn parse_cached(s: &str) -> Rc<Vec<Block>> {
+    use std::hash::{Hash, Hasher};
+    thread_local! {
+        static CACHE: std::cell::RefCell<Vec<(u64, Rc<Vec<Block>>)>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut h);
+    let key = h.finish();
+    CACHE.with(|c| {
+        let mut c = c.borrow_mut();
+        if let Some(pos) = c.iter().position(|(k, _)| *k == key) {
+            let hit = c.remove(pos);
+            let blocks = hit.1.clone();
+            c.push(hit); // MRU to the back
+            return blocks;
+        }
+        let blocks = Rc::new(parse_blocks(s));
+        if c.len() >= 8 {
+            c.remove(0);
+        }
+        c.push((key, blocks.clone()));
+        blocks
+    })
+}
+
 /// Parse GFM into the block model (tables + strikethrough + task lists on).
 fn parse_blocks(src: &str) -> Vec<Block> {
     let mut opts = Options::empty();
@@ -545,17 +573,16 @@ fn render_markdown(p: &MdProps) -> AnyWidget {
             Source::Fixed(_) => None,
         },
     };
-    // Parse ONCE per source value (memoized): a task toggle or theme flip must
-    // not re-parse a multi-megabyte document, only re-render blocks.
+    // Parse ONCE per source value: a task toggle or theme flip must not re-parse
+    // a multi-megabyte document, only re-render blocks. Bound sources memoize
+    // through the reactive graph (dependency-driven); fixed sources go through a
+    // small content-keyed cache (a bounded memo, not a lifecycle registry).
     let blocks: Rc<Vec<Block>> = match &p.source {
         Source::Bound(sig) => {
             let sig = *sig;
             pebbles_core::create_memo(move || Rc::new(parse_blocks(&sig.get()))).get()
         }
-        Source::Fixed(s) => {
-            let s = s.clone();
-            pebbles_core::create_memo(move || Rc::new(parse_blocks(&s))).get()
-        }
+        Source::Fixed(s) => parse_cached(s),
     };
     if p.virtualized {
         // Only the blocks in the line of sight (+ cache margin) are BUILT; the
@@ -1136,18 +1163,43 @@ impl IntoWidget for MarkdownEditor {
 
 fn render_editor(p: &EdProps) -> AnyWidget {
     use crate::components::text_area;
+    // Hooks first (stable order across mode flips). The SPLIT preview follows the
+    // source through a ~150 ms debounce so typing never races the parser; Read
+    // mode stays directly bound (no typing happening there).
+    let source = p.source;
+    let preview_src = pebbles_core::create_signal(source.peek());
+    // One id-keyed timer per editor instance: re-registering REPLACES the pending
+    // timer, which is exactly debounce semantics — only the last edit in a quiet
+    // window syncs the preview.
+    let debounce_id = pebbles_core::owner_id().unwrap_or(0) ^ 0xDEB0_0000_0000_0000;
+    pebbles_core::create_effect(move || {
+        let _ = source.get(); // subscribe to every edit
+        pebbles_core::set_timeout(debounce_id, 0.15, move || {
+            preview_src.set(source.peek());
+        });
+    });
+    pebbles_core::create_cleanup(move || pebbles_core::clear_timeout(debounce_id));
     let mode = match p.mode {
         Some(sig) => sig.get(),
         None => MarkdownMode::Split,
     };
-    let preview = || {
-        let mut md = markdown("").bind(p.source);
+    let preview = |src: Signal<String>, write_back: bool| {
+        let mut md = markdown("").bind(src);
         if let Some(s) = p.style.clone() {
             md = md.style(s);
         }
         if let Some(f) = p.on_link.clone() {
             let f = f.clone();
             md = md.on_link(move |u| f(u));
+        }
+        if !write_back {
+            // The debounced mirror is display-only: checkbox toggles rewrite the
+            // REAL source (the mirror re-syncs through the debounce).
+            md = md.on_task(move |ordinal, _| {
+                if let Some(new) = toggle_task(&source.peek(), ordinal) {
+                    source.set(new);
+                }
+            });
         }
         md.into_widget()
     };
@@ -1164,11 +1216,11 @@ fn render_editor(p: &EdProps) -> AnyWidget {
     };
     match mode {
         MarkdownMode::Edit => editor(),
-        MarkdownMode::Read => preview(),
+        MarkdownMode::Read => preview(source, true),
         MarkdownMode::Split => row(children![
             Expanded::new(editor()),
             gap_w(12.0),
-            Expanded::new(preview()),
+            Expanded::new(preview(preview_src, false)),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Start)
         .main_axis_size(MainAxisSize::Min)
