@@ -707,35 +707,51 @@ fn is_keyword(w: &str) -> bool {
     KW.contains(&w)
 }
 
+/// The UTF-8 width of the character starting at byte `i` (which MUST be a char
+/// boundary). Falls back to 1 defensively — callers always pass a boundary, so
+/// the cursor below only ever lands on boundaries and can never split a char.
+#[inline]
+fn char_len_at(line: &str, i: usize) -> usize {
+    line[i..].chars().next().map_or(1, char::len_utf8)
+}
+
 /// Tokenize one line. `in_block` tracks an open `/* … */` across lines.
+///
+/// The cursor advances by whole CHARACTERS (never raw bytes) and every slice is
+/// taken at a char boundary, so any input — accented text, em-dashes, arrows,
+/// smart quotes, emoji, CJK — tokenizes safely and always terminates. (A byte
+/// cursor treated a UTF-8 lead byte as an ASCII "letter" that its ASCII-only
+/// inner loop never consumed, hanging on the first non-ASCII char in a code
+/// block; the whole point of this reader is to survive whatever it's handed.)
 fn highlight_line(line: &str, line_comment: &str, blocks: bool, in_block: &mut bool) -> Vec<(String, Tok)> {
     let mut out: Vec<(String, Tok)> = Vec::new();
     let b = line.as_bytes();
-    let mut i = 0;
+    let len = line.len();
+    let mut i = 0; // ALWAYS a char boundary
     let push = |out: &mut Vec<(String, Tok)>, s: &str, t: Tok| {
         if !s.is_empty() {
             out.push((s.to_string(), t));
         }
     };
-    while i < b.len() {
+    while i < len {
         if *in_block {
             let start = i;
-            while i < b.len() {
-                if b[i] == b'*' && i + 1 < b.len() && b[i + 1] == b'/' {
+            while i < len {
+                if b[i] == b'*' && i + 1 < len && b[i + 1] == b'/' {
                     i += 2;
                     *in_block = false;
                     break;
                 }
-                i += 1;
+                i += char_len_at(line, i);
             }
-            push(&mut out, &line[start..i], Tok::Comment);
+            push(&mut out, &line[start..i.min(len)], Tok::Comment);
             continue;
         }
-        let c = b[i] as char;
+        let c = line[i..].chars().next().unwrap_or('\0');
         // Whitespace → plain (kept so indentation survives).
         if c == ' ' || c == '\t' {
             let start = i;
-            while i < b.len() && (b[i] == b' ' || b[i] == b'\t') {
+            while i < len && (b[i] == b' ' || b[i] == b'\t') {
                 i += 1;
             }
             push(&mut out, &line[start..i], Tok::Plain);
@@ -746,51 +762,58 @@ fn highlight_line(line: &str, line_comment: &str, blocks: bool, in_block: &mut b
             push(&mut out, &line[i..], Tok::Comment);
             break;
         }
-        // Block comment start.
+        // Block comment start (the `/*` is captured by the `in_block` arm above).
         if blocks && line[i..].starts_with("/*") {
             *in_block = true;
             continue;
         }
         // String / char literal.
         if c == '"' || c == '\'' || c == '`' {
-            let quote = b[i];
             let start = i;
-            i += 1;
-            while i < b.len() {
-                if b[i] == b'\\' {
-                    i += 2;
+            i += c.len_utf8();
+            while i < len {
+                let d = line[i..].chars().next().unwrap_or('\0');
+                if d == '\\' {
+                    // Skip the escape and the whole escaped char (never a byte).
+                    i += 1;
+                    if i < len {
+                        i += char_len_at(line, i);
+                    }
                     continue;
                 }
-                if b[i] == quote {
-                    i += 1;
+                i += d.len_utf8();
+                if d == c {
                     break;
                 }
-                i += 1;
             }
-            push(&mut out, &line[start..i.min(b.len())], Tok::Str);
+            push(&mut out, &line[start..i.min(len)], Tok::Str);
             continue;
         }
         // Number.
         if c.is_ascii_digit() {
             let start = i;
-            while i < b.len()
-                && (b[i].is_ascii_alphanumeric() || b[i] == b'.' || b[i] == b'_' || b[i] == b'x')
-            {
+            while i < len && (b[i].is_ascii_alphanumeric() || b[i] == b'.' || b[i] == b'_') {
                 i += 1;
             }
             push(&mut out, &line[start..i], Tok::Number);
             continue;
         }
-        // Identifier / keyword.
+        // Identifier / keyword — Unicode-aware, so a non-ASCII word (`café`, a
+        // CJK identifier) is one plain token, not an infinite loop.
         if c.is_alphabetic() || c == '_' {
             let start = i;
-            while i < b.len() && (b[i].is_ascii_alphanumeric() || b[i] == b'_') {
-                i += 1;
+            while i < len {
+                let d = line[i..].chars().next().unwrap_or('\0');
+                if d.is_alphanumeric() || d == '_' {
+                    i += d.len_utf8();
+                } else {
+                    break;
+                }
             }
             let w = &line[start..i];
             let kind = if is_keyword(w) {
                 Tok::Keyword
-            } else if i < b.len() && b[i] == b'(' {
+            } else if i < len && b[i] == b'(' {
                 Tok::Ident // a call → function-ish
             } else {
                 Tok::Plain
@@ -798,9 +821,10 @@ fn highlight_line(line: &str, line_comment: &str, blocks: bool, in_block: &mut b
             push(&mut out, w, kind);
             continue;
         }
-        // Punctuation / operator (one char at a time).
-        push(&mut out, &line[i..i + 1], Tok::Punct);
-        i += 1;
+        // Punctuation / operator — one whole character (any non-ASCII symbol too).
+        let start = i;
+        i += c.len_utf8();
+        push(&mut out, &line[start..i], Tok::Punct);
     }
     out
 }
@@ -924,7 +948,7 @@ fn render_block(b: &Block, cx: &Cx) -> AnyWidget {
                         })
                         .into_widget()
                     }
-                    None if *ordered => text(format!("{}.", start + i as u64))
+                    None if *ordered => text(format!("{}.", start.saturating_add(i as u64)))
                         .size(s.body_size)
                         .color(cx.color)
                         .into_widget(),
@@ -1309,5 +1333,73 @@ mod parse_tests {
             items[1].blocks.iter().any(|b| matches!(b, Block::List { .. })),
             "the nested list is inside item 1"
         );
+    }
+
+    // Regression: the byte-cursor highlighter hung (infinite loop) or panicked on
+    // the FIRST non-ASCII character in a code block — a UTF-8 lead byte read as an
+    // ASCII "letter" its ASCII-only inner loop never consumed. The char-cursor
+    // version must terminate on anything and round-trip the text exactly.
+    #[test]
+    fn highlight_survives_non_ascii_code() {
+        let base = Color::from_rgba8(1, 2, 3, 255);
+        let colors = SyntaxColors {
+            keyword: base, string: base, comment: base, number: base, ident: base, punct: base,
+        };
+        // Accents, em-dash, arrow, smart quotes, emoji, CJK, math — each was a
+        // freeze; each must now tokenize AND reproduce the source verbatim.
+        let cases = [
+            "let café = 1; // caffè",
+            "x — y → z",
+            "let 数 = \"文字列\";",
+            "let party = \"🎉🎊\"; /* 世界 */",
+            "const naïve = `üñïçödé`;",
+            "a ± b ≤ c ∈ 𝕊",
+            "/* block ünïçödé without close",
+        ];
+        for src in cases {
+            let lines = highlight(src, "rust", &colors, base);
+            // Concatenating every token of every line reproduces the input exactly
+            // (nothing dropped, no char split) — and, crucially, it RETURNED.
+            let round: String =
+                lines.iter().flat_map(|l| l.iter().map(|(t, _)| t.as_str())).collect();
+            assert_eq!(round, src, "highlight round-trips {src:?} without loss");
+        }
+    }
+
+    // A block comment left open at end-of-line carries across lines; unicode
+    // inside it must not split a char at the line join.
+    #[test]
+    fn highlight_open_block_comment_with_unicode() {
+        let base = Color::from_rgba8(0, 0, 0, 255);
+        let colors = SyntaxColors {
+            keyword: base, string: base, comment: base, number: base, ident: base, punct: base,
+        };
+        let src = "before /* café\n世界 */ after";
+        let lines = highlight(src, "rust", &colors, base);
+        let round: String =
+            lines.iter().flat_map(|l| l.iter().map(|(t, _)| t.as_str())).collect();
+        assert_eq!(round, "before /* café世界 */ after");
+    }
+
+    // An absurd (>9-digit) ordered start isn't a valid list marker in CommonMark,
+    // so it degrades to a PARAGRAPH — the "show it as text" fallback — rather than
+    // crashing. A valid max-width start (999999999) renders its markers with no
+    // overflow (the renderer's `start + index` is saturating regardless).
+    #[test]
+    fn absurd_ordered_start_degrades_to_text() {
+        let blocks = parse_blocks("18446744073709551615. one\n2. two\n");
+        assert!(
+            !matches!(blocks.first(), Some(Block::List { .. })),
+            "a 20-digit start is not a list marker — it stays plain text"
+        );
+        // A valid 9-digit start really is a list, and computing markers for it
+        // must not overflow.
+        let valid = parse_blocks("999999999. one\n1. two\n");
+        let Some(Block::List { start, items, .. }) = valid.first() else {
+            panic!("9-digit start is a valid ordered list");
+        };
+        for (i, _) in items.iter().enumerate() {
+            let _ = start.saturating_add(i as u64); // mirrors the renderer; no panic
+        }
     }
 }

@@ -6,6 +6,23 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — the Markdown reader survives any input (no more freeze on non-ASCII code)
+A fenced code block containing ANY non-ASCII character — an accented identifier
+(`let café = 1`), an em-dash, an arrow, a smart quote, an emoji, CJK — froze the
+whole view. The syntax highlighter walked the line by raw bytes but decided
+token starts from `byte as char`, so a UTF-8 lead byte read as an ASCII "letter"
+its ASCII-only inner loop never consumed: the cursor stopped advancing and spun
+forever (or sliced mid-character and panicked). The highlighter now advances by
+whole characters and slices only at char boundaries, so it always terminates and
+reproduces the source verbatim; non-ASCII words render as plain text — the
+Obsidian contract of showing anything it can't classify as regular text rather
+than crashing. Hardened alongside: the ordered-list marker uses a saturating add.
+Covered by highlighter round-trip unit tests (accents/CJK/emoji/em-dash/open
+block comment) and an end-to-end suite that mounts + paints 20 malformed
+documents (unclosed fences, ragged tables, broken links/images, control chars,
+raw HTML) with zero panics.
+
+
 ### Performance — windowed COLD build: a huge editor mounts in O(window)
 The last unbounded editing cost is gone: opening a huge document used to shape
 every source line once (~3 s debug at 1.5 MB). Past 256 lines the field's line

@@ -32,6 +32,8 @@ mod list_tile;
 #[cfg(feature = "markdown")]
 mod markdown;
 #[cfg(feature = "markdown")]
+mod markdown_robustness;
+#[cfg(feature = "markdown")]
 mod perf;
 #[cfg(feature = "markdown")]
 mod storm;
