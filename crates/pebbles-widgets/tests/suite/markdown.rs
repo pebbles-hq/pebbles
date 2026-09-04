@@ -111,13 +111,12 @@ fn editor_switches_modes_via_the_external_signal() {
 }
 
 // ---------------------------------------------------------------------------
-// Word spacing: parley trims trailing whitespace from a line's width, so word
-// chunks must be separated by the wrap's horizontal spacing — not a (collapsed)
-// trailing space — or the text jams together ("alphabetagamma").
+// One flow = ONE paragraph: rich inline text shapes as a single layout with
+// per-range spans — real spaces, engine-owned wrapping, no widget-per-word.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn words_in_a_paragraph_are_spaced_not_jammed() {
+fn a_paragraph_is_one_shaped_layout_with_real_spaces() {
     use pebbles_render::RenderParagraph;
     pebbles_widgets::theme::init();
     let mut ui = Ui::new();
@@ -127,17 +126,75 @@ fn words_in_a_paragraph_are_spaced_not_jammed() {
     );
     ui.layout(&mut env, Size::new(600.0, 400.0));
     let tree = ui.render_tree();
-    let mut words: Vec<(f64, f64)> = tree
-        .find_all::<RenderParagraph>()
-        .into_iter()
-        .map(|id| (tree.absolute_offset(id).x, tree.size_of(id).width))
-        .collect();
-    words.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    assert!(words.len() >= 3, "three words → three chunks, got {}", words.len());
-    for pair in words.windows(2) {
-        let (x0, w0) = pair[0];
-        let (x1, _) = pair[1];
-        let gap = x1 - (x0 + w0);
-        assert!(gap > 1.0, "words jammed together: only {gap:.1}px between chunks");
-    }
+    let paras = tree.find_all::<RenderParagraph>();
+    assert_eq!(paras.len(), 1, "one flow = one paragraph, got {}", paras.len());
+    let text = &tree.object_ref(paras[0]).downcast_ref::<RenderParagraph>().unwrap().text;
+    assert_eq!(text, "alpha beta gamma", "spaces survive into the layout");
+    // The shaped width is wider than the glyphs alone (spaces carry advance).
+    assert!(tree.size_of(paras[0]).width > 80.0, "sentence measures like a sentence");
+}
+
+// ---------------------------------------------------------------------------
+// Rich spans: styles/links/chips map to byte ranges of ONE layout, and the
+// paragraph publishes link geometry for the tap resolver.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn rich_paragraph_spans_map_styles_links_and_chips() {
+    use pebbles_render::RenderParagraph;
+    pebbles_widgets::theme::init();
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            component(|| {
+                markdown("Some **bold** and `code` plus a [link](https://x.y) end")
+                    .on_link(|_| {})
+            }),
+        )
+        .into_widget(),
+    );
+    ui.layout(&mut env, Size::new(600.0, 400.0));
+    let tree = ui.render_tree();
+    let paras = tree.find_all::<RenderParagraph>();
+    assert_eq!(paras.len(), 1, "one flow = one paragraph");
+    let p = tree.object_ref(paras[0]).downcast_ref::<RenderParagraph>().unwrap();
+    assert_eq!(p.text, "Some bold and code plus a link end");
+    let bold = p.spans.iter().find(|s| s.weight == Some(600.0)).expect("bold span");
+    assert_eq!(&p.text[bold.range.clone()], "bold");
+    let chip = p.spans.iter().find(|s| s.chip.is_some()).expect("chip span");
+    assert_eq!(&p.text[chip.range.clone()], "code");
+    let link = p.spans.iter().find(|s| s.link.is_some()).expect("link span");
+    assert_eq!(&p.text[link.range.clone()], "link");
+    assert!(link.underline, "links underline");
+    // The paragraph published the link's laid-out boxes for the tap resolver.
+    let boxes = p.link_boxes.as_ref().expect("link geometry cell").borrow();
+    assert_eq!(boxes.len(), 1, "a one-line link publishes one box");
+    let (r, ix) = boxes[0];
+    assert_eq!(ix, 0);
+    assert!(r.width() > 5.0 && r.height() > 5.0, "the box covers real glyphs: {r:?}");
+}
+
+#[test]
+fn code_blocks_keep_indentation_in_one_unwrapped_layout() {
+    use pebbles_render::RenderParagraph;
+    pebbles_widgets::theme::init();
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            component(|| markdown("```\nfn main() {\n    let x = 1;\n}\n```")),
+        )
+        .into_widget(),
+    );
+    ui.layout(&mut env, Size::new(600.0, 400.0));
+    let tree = ui.render_tree();
+    let paras = tree.find_all::<RenderParagraph>();
+    assert_eq!(paras.len(), 1, "one code block = one paragraph");
+    let p = tree.object_ref(paras[0]).downcast_ref::<RenderParagraph>().unwrap();
+    assert!(p.text.contains("\n    let x = 1;"), "real newlines + real indentation: {:?}", p.text);
+    assert!(!p.style.soft_wrap, "code never soft-wraps; lines break at newlines only");
+    assert!(p.spans.iter().any(|s| s.color.is_some()), "tokens carry color spans");
 }

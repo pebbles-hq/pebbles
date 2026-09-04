@@ -27,7 +27,10 @@ use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, pa
 use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, lucide};
 
 use crate::theme::{mix, theme};
-use crate::widgets::{Container, Expanded, GestureDetector, Padding, column, gap_w, row, text, wrap};
+use crate::widgets::{
+    Container, Expanded, GestureDetector, Padding, TextSpan, column, gap_w, row, span, text,
+    text_rich, wrap,
+};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, children, component_props};
 
@@ -731,35 +734,29 @@ fn render_block(b: &Block, cx: &Cx) -> AnyWidget {
                         .into_widget(),
                 );
             }
-            // Syntax-highlighted, one row of colored chunks per line. Whitespace is
-            // rendered as non-breaking spaces so parley doesn't trim indentation.
+            // ONE rich paragraph for the whole block: per-token color spans, real
+            // newlines as hard breaks, no soft wrap — indentation is genuine
+            // whitespace inside a single shaped layout, not widget arithmetic.
             let size = s.body_size * 0.92;
             let lines = highlight(code.trim_end(), lang, &s.syntax, s.code_color);
-            let mut line_widgets: Vec<AnyWidget> = Vec::with_capacity(lines.len());
-            for line in &lines {
-                if line.is_empty() {
-                    line_widgets.push(
-                        text("\u{00A0}").size(size).font_family(s.code_family.clone()).into_widget(),
-                    );
-                    continue;
+            let mut spans: Vec<TextSpan> = Vec::new();
+            for (i, line) in lines.iter().enumerate() {
+                if i > 0 {
+                    spans.push(span("\n"));
                 }
-                let chunks: Vec<AnyWidget> = line
-                    .iter()
-                    .map(|(t, color)| {
-                        let vis = t.replace(' ', "\u{00A0}").replace('\t', "\u{00A0}\u{00A0}\u{00A0}\u{00A0}");
-                        text(vis)
-                            .size(size)
-                            .color(*color)
-                            .font_family(s.code_family.clone())
-                            .into_widget()
-                    })
-                    .collect();
-                line_widgets.push(row(chunks).main_axis_size(MainAxisSize::Min).into_widget());
+                for (t, color) in line {
+                    spans.push(span(t.clone()).color(*color));
+                }
+            }
+            if spans.is_empty() {
+                spans.push(span(" "));
             }
             kids.push(
-                column(line_widgets)
-                    .cross_axis_alignment(CrossAxisAlignment::Start)
-                    .main_axis_size(MainAxisSize::Min)
+                text_rich(spans)
+                    .size(size)
+                    .color(s.code_color)
+                    .font_family(s.code_family.clone())
+                    .soft_wrap(false)
                     .into_widget(),
             );
             Container::new()
@@ -881,80 +878,72 @@ fn render_block(b: &Block, cx: &Cx) -> AnyWidget {
     }
 }
 
-/// Lay inline runs out as a wrapping flow of word chunks (how rich inline text
-/// composes without a spans API — code spans and images stay whole).
+/// Lay inline runs out as ONE rich paragraph — bold/italic/strike/links/inline
+/// code are per-range spans over a single shaped layout, so word wrapping,
+/// inter-word spacing, and BiDi are the text engine's job (never a widget per
+/// word). Images split the flow: text segments and images compose in a wrap
+/// (the rare mixed case).
 fn inline_flow(inlines: &[Inline], cx: &Cx, size: f32, color: Color, bold_all: bool) -> AnyWidget {
     let s = &cx.style;
-    let mut chunks: Vec<AnyWidget> = Vec::new();
+    let heading_family = (size != s.body_size).then(|| s.heading_family.clone()).flatten();
+
+    let mut parts: Vec<AnyWidget> = Vec::new();
+    let mut spans: Vec<TextSpan> = Vec::new();
+    let flush = |spans: &mut Vec<TextSpan>, parts: &mut Vec<AnyWidget>| {
+        if spans.is_empty() {
+            return;
+        }
+        let mut rich = text_rich(std::mem::take(spans)).size(size).color(color);
+        if bold_all {
+            rich = rich.weight(600.0);
+        }
+        if let Some(fam) = &heading_family {
+            rich = rich.font_family(fam.clone());
+        }
+        if let Some(f) = &cx.on_link {
+            let f = f.clone();
+            rich = rich.on_link(move |u| f(u));
+        }
+        parts.push(rich.into_widget());
+    };
     for inline in inlines {
         match inline {
             Inline::Run(run) => {
+                let mut sp = span(run.text.clone());
                 if run.code {
-                    chunks.push(
-                        Container::new()
-                            .decoration(
-                                BoxDecoration::new().color(s.code_bg).radius(BorderRadius::all(4.0)),
-                            )
-                            .padding(EdgeInsets::symmetric(4.0, 1.0))
-                            .child(
-                                text(run.text.clone())
-                                    .size(size * 0.9)
-                                    .color(s.code_color)
-                                    .font_family(s.code_family.clone()),
-                            )
-                            .into_widget(),
-                    );
-                    continue;
-                }
-                let link_color = run.link.as_ref().map(|_| s.link_color);
-                for word in run.text.split_whitespace() {
-                    // No trailing space: parley trims trailing whitespace from a
-                    // line's measured width, so a trailing space would collapse and
-                    // words would jam together. Inter-word space is added as the
-                    // wrap's horizontal spacing below instead.
-                    let mut t = text(word.to_string())
-                        .size(size)
-                        .color(link_color.unwrap_or(color));
-                    if bold_all || run.bold {
-                        t = t.semibold();
+                    sp = sp
+                        .chip(s.code_bg)
+                        .color(s.code_color)
+                        .font_family(s.code_family.clone())
+                        .size(size * 0.9);
+                } else {
+                    if run.bold {
+                        sp = sp.semibold();
                     }
                     if run.italic {
-                        t = t.italic();
+                        sp = sp.italic();
                     }
                     if run.strike {
-                        t = t.strikethrough();
+                        sp = sp.strikethrough();
                     }
-                    if run.link.is_some() {
-                        t = t.underline();
-                    }
-                    if let Some(fam) = (size != s.body_size)
-                        .then(|| s.heading_family.clone())
-                        .flatten()
-                    {
-                        t = t.font_family(fam);
-                    }
-                    let chunk: AnyWidget = match (&run.link, &cx.on_link) {
-                        (Some(url), Some(f)) => {
-                            let (url, f) = (url.clone(), f.clone());
-                            GestureDetector::new(t)
-                                .cursor(Cursor::Pointer)
-                                .on_tap(move || f(&url))
-                                .into_widget()
-                        }
-                        _ => t.into_widget(),
-                    };
-                    chunks.push(chunk);
                 }
+                if let Some(url) = &run.link {
+                    sp = sp.link(url.clone()).underline().color(s.link_color);
+                }
+                spans.push(sp);
             }
             Inline::Image { url, alt } => {
-                chunks.push(render_image(url, alt, cx));
+                flush(&mut spans, &mut parts);
+                parts.push(render_image(url, alt, cx));
             }
         }
     }
-    // Horizontal gap between word-chunks ≈ a space glyph's advance (~0.26em), so
-    // words read as words. run_spacing is the gap between wrapped lines.
-    let space = f64::from(size) * 0.26;
-    wrap(chunks).spacing(space).run_spacing(3.0).into_widget()
+    flush(&mut spans, &mut parts);
+    match parts.len() {
+        0 => text_rich(vec![span("")]).size(size).color(color).into_widget(),
+        1 => parts.pop().expect("one part"),
+        _ => wrap(parts).spacing(4.0).run_spacing(3.0).into_widget(),
+    }
 }
 
 #[cfg(feature = "image-view")]

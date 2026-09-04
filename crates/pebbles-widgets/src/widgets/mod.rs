@@ -52,5 +52,5 @@ pub use sizing::{
 };
 pub use spinner::{Spinner, spinner};
 pub use stack::{Positioned, Stack, stack};
-pub use text::{Text, text, text_signal};
+pub use text::{RichText, Text, TextSpan, span, text, text_rich, text_signal};
 pub use view::View;

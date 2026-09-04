@@ -43,7 +43,7 @@ pub use objects::{
     RenderFittedBox, RenderFractionallySizedBox, RenderIcon, RenderIntrinsicHeight,
     RenderIntrinsicWidth, RenderLimitedBox, RenderMeasureProbe, RenderOpacity, RenderOverflowBox, RenderPadding,
     RenderParagraph, RenderPointerListener, RenderScroll,
-    RenderList, RenderSpinner, RenderTransform, RenderStack, RenderTextField, RenderView, RenderWrap,
+    RenderList, RenderSpinner, RenderTransform, RenderStack, RenderTextField, RenderView, RenderWrap, TextSpanStyle,
     RefreshState, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps, SemanticsRole, StackFit,
     StackParentData, TapCallback, TextFieldStyle, lucide,
 };

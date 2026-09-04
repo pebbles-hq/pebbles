@@ -38,7 +38,7 @@ pub use icon::{IconData, IconKind, IconPrim, RenderIcon, lucide};
 pub use intrinsic::{RenderIntrinsicHeight, RenderIntrinsicWidth};
 pub use measure::RenderMeasureProbe;
 pub use overflow::{RenderLimitedBox, RenderOverflowBox};
-pub use paragraph::{ParagraphStyle, RenderParagraph};
+pub use paragraph::{ParagraphStyle, RenderParagraph, TextSpanStyle};
 #[cfg(debug_assertions)]
 pub use paragraph::{reset_shape_count, shape_count};
 pub use pointer::{Cursor, PointerButton, PointerEvent, RenderPointerListener, TapCallback};
