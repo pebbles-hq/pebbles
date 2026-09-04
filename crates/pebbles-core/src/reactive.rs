@@ -105,7 +105,11 @@ struct MemoNode {
     /// (single source of truth), so a recompute bumps exactly one place.
     output: SignalId,
     state: NodeState,
-    sources: HashSet<SignalId>,
+    /// The signals this memo read, in READ ORDER. Ordered (not a set) so a
+    /// recompute that reads the same sources in the same order is detected as
+    /// unchanged and touches no subscription edges (zero-churn — Reactively/
+    /// Svelte's same-order reuse).
+    sources: Vec<SignalId>,
 }
 
 /// One entry on the render-time context stack — a value provided by a component
@@ -136,6 +140,15 @@ struct Runtime {
     /// their readers. Undemanded/intermediate memos stay lazy (never queued).
     pending_memos: Vec<MemoId>,
     pending_memos_set: HashSet<MemoId>,
+    /// A stack of source-collection buffers, one per memo currently recomputing
+    /// (nested when a memo pulls another). A read under `Observer::Memo` appends
+    /// to the top; the recompute diffs it against the memo's old sources so a
+    /// stable-dependency recompute changes no edges. Buffers cycle through
+    /// `source_pool` so the memo path is allocation-free.
+    source_stack: Vec<Vec<SignalId>>,
+    source_pool: Vec<Vec<SignalId>>,
+    /// Reusable worklist for the iterative, allocation-free memo-mark walk.
+    mark_worklist: Vec<(MemoId, NodeState)>,
     /// The observer currently running (for auto-subscription).
     observer: Option<Observer>,
     /// The component currently rendering (owns the local signals it creates).
@@ -332,12 +345,15 @@ impl<T: 'static + Clone> Signal<T> {
                     Observer::Effect(id) => {
                         rt.signals[self.id].effect_subs.insert(id);
                     }
-                    Observer::Memo(mid) => {
-                        // A recomputing memo tracks this signal as a source (both
-                        // directions, so a write can find + a recompute can clear).
-                        rt.signals[self.id].memo_subs.insert(mid);
-                        if let Some(node) = rt.memos.get_mut(mid) {
-                            node.sources.insert(self.id);
+                    Observer::Memo(_mid) => {
+                        // A recomputing memo COLLECTS this signal into its source
+                        // buffer (the top of the stack). The subscription edges are
+                        // reconciled by the diff at the end of the recompute, so a
+                        // stable-dependency recompute touches no edges at all.
+                        if let Some(buf) = rt.source_stack.last_mut()
+                            && !buf.contains(&self.id)
+                        {
+                            buf.push(self.id);
                         }
                     }
                 }
@@ -482,12 +498,13 @@ fn mark_written(rt: &mut Runtime, id: SignalId) {
 /// (components/effects) and mark its memo readers stale (they're pulled lazily).
 fn schedule_subscribers(rt: &mut Runtime, id: SignalId) {
     schedule_leaf_subscribers(rt, id);
-    // Memo subscribers: a DIRECT source changed, so they are definitely Dirty. The
-    // mark recurses to *their* memo readers as Check and queues any demanded memo.
-    // (Not drained — memos re-subscribe when they recompute, not per render.)
-    let memo_subs: Vec<MemoId> = rt.signals[id].memo_subs.iter().copied().collect();
-    for m in memo_subs {
-        mark_memo(rt, m, NodeState::Dirty);
+    // Memo subscribers: a DIRECT source changed, so they are definitely Dirty; the
+    // iterative mark walk propagates Check to their transitive readers.
+    if !rt.signals[id].memo_subs.is_empty() {
+        let mut work = std::mem::take(&mut rt.mark_worklist);
+        work.extend(rt.signals[id].memo_subs.iter().map(|&m| (m, NodeState::Dirty)));
+        mark_memos(rt, &mut work);
+        rt.mark_worklist = work; // capacity-retaining, empty after mark_memos drains it
     }
     rt.frame_requested = true;
 }
@@ -524,32 +541,30 @@ fn schedule_leaf_subscribers(rt: &mut Runtime, id: SignalId) {
     rt.scratch_effects = effs;
 }
 
-/// Mark a memo non-clean and propagate (Reactively's `stale`): a direct source
-/// change marks the memo `Dirty`, transitive changes mark `Check`. The
-/// `if node.state >= state` guard makes the mark idempotent so it never revisits
-/// a subgraph. NO computation happens here — this is pure flag-flipping. A memo
-/// whose value has a leaf reader (a demanded memo) is queued for the settle phase,
-/// which pulls it before render so the equality cut can decide whether to wake
-/// that reader; undemanded/intermediate memos stay lazy (pulled on read).
-fn mark_memo(rt: &mut Runtime, mid: MemoId, state: NodeState) {
-    let Some(node) = rt.memos.get_mut(mid) else { return };
-    if node.state >= state {
-        return; // already at least this stale — its subscribers were already marked
-    }
-    node.state = state;
-    let output = node.output;
-    // Demanded (a component/effect reads it) → settle before render.
-    let demanded = {
-        let out = &rt.signals[output];
-        !out.component_subs.is_empty() || !out.effect_subs.is_empty()
-    };
-    if demanded && rt.pending_memos_set.insert(mid) {
-        rt.pending_memos.push(mid);
-    }
-    // Recurse to downstream memos as Check (they *might* change).
-    let downstream: Vec<MemoId> = rt.signals[output].memo_subs.iter().copied().collect();
-    for d in downstream {
-        mark_memo(rt, d, NodeState::Check);
+/// Propagate staleness through the memo graph (Reactively's `stale`), iteratively
+/// over a worklist so there are no per-level allocations. Each entry marks a memo:
+/// a direct source change is `Dirty`, transitive changes are `Check`. The
+/// `state >= state` guard makes marking idempotent (never revisits a subgraph). NO
+/// computation happens — pure flag-flipping. A memo with a leaf reader (demanded)
+/// is queued for the settle phase, which pulls it before render so the equality cut
+/// can decide whether to wake that reader; undemanded memos stay lazy (pulled on read).
+fn mark_memos(rt: &mut Runtime, work: &mut Vec<(MemoId, NodeState)>) {
+    while let Some((mid, state)) = work.pop() {
+        let Some(node) = rt.memos.get_mut(mid) else { continue };
+        if node.state >= state {
+            continue; // already at least this stale — its readers were already marked
+        }
+        node.state = state;
+        let output = node.output;
+        let demanded = {
+            let out = &rt.signals[output];
+            !out.component_subs.is_empty() || !out.effect_subs.is_empty()
+        };
+        if demanded && rt.pending_memos_set.insert(mid) {
+            rt.pending_memos.push(mid);
+        }
+        // Enqueue downstream memos as Check (they *might* change).
+        work.extend(rt.signals[output].memo_subs.iter().map(|&d| (d, NodeState::Check)));
     }
 }
 
@@ -674,7 +689,7 @@ pub fn create_memo_with<T: 'static + Clone>(
             // wires the sources (a tracked run) and settles to Clean without waking
             // anyone (the value equals the untracked initial).
             state: NodeState::Dirty,
-            sources: HashSet::new(),
+            sources: Vec::new(),
         });
         rt.signals[output].memo = Some(mid);
         mid
@@ -728,14 +743,17 @@ fn update_if_necessary(mid: MemoId) {
         Some(NodeState::Check) => {
             // Pull sources; a source whose value changed past our last-seen version
             // makes us Dirty. Early-out on the first such source (Reactively's break).
-            // Our version IS our output signal's `wv`.
-            let (sources, my_wv) = with_rt(|rt| {
+            // Our version IS our output signal's `wv`. Indexed (no clone of the
+            // source list) — a source recompute never mutates THIS memo's sources.
+            let (len, my_wv) = with_rt(|rt| {
                 let node = &rt.memos[mid];
                 let wv = rt.signals.get(node.output).map(|s| s.wv).unwrap_or(0);
-                (node.sources.iter().copied().collect::<Vec<_>>(), wv)
+                (node.sources.len(), wv)
             });
             let mut dirty = false;
-            for src in sources {
+            for i in 0..len {
+                let src = with_rt(|rt| rt.memos.get(mid).and_then(|n| n.sources.get(i).copied()));
+                let Some(src) = src else { break };
                 // If the source is itself a memo, settle it first (recursive pull).
                 let inner = with_rt(|rt| rt.signals.get(src).and_then(|s| s.memo));
                 if let Some(inner) = inner {
@@ -760,21 +778,17 @@ fn update_if_necessary(mid: MemoId) {
     }
 }
 
-/// Recompute a memo: clear its old source edges, run the compute under
-/// `observer = Memo(id)` (which rebuilds the edges), then mark Clean.
+/// Recompute a memo: collect the sources it reads into a pooled buffer, then
+/// reconcile against the old sources. A recompute that reads the SAME sources in
+/// the SAME order changes no subscription edges (zero-churn); only added/removed
+/// sources touch the signals' `memo_subs`. Allocation-free — the buffers cycle
+/// through the pool.
 fn recompute_memo(mid: MemoId) {
+    // Push a fresh (recycled) collection buffer, set the observer, get the fn.
     let recompute = with_rt(|rt| {
-        let node = rt.memos.get(mid)?;
-        let f = node.recompute.clone();
-        // Clear old sources (both directions) so the tracked run rebuilds them —
-        // an input no longer read must stop waking this memo.
-        let old: Vec<SignalId> = node.sources.iter().copied().collect();
-        for src in old {
-            if let Some(s) = rt.signals.get_mut(src) {
-                s.memo_subs.remove(&mid);
-            }
-        }
-        rt.memos[mid].sources.clear();
+        let f = rt.memos.get(mid)?.recompute.clone();
+        let buf = rt.source_pool.pop().unwrap_or_default();
+        rt.source_stack.push(buf);
         Some(f)
     });
     let Some(recompute) = recompute else { return };
@@ -783,9 +797,43 @@ fn recompute_memo(mid: MemoId) {
         rt.observer = Some(Observer::Memo(mid));
         p
     });
-    recompute(mid); // reads rebuild sources + memo_subs; writes the value + bumps wv if changed
+    recompute(mid); // reads collect into the top buffer; writes the value + bumps wv if changed
     with_rt(|rt| {
         rt.observer = prev;
+        let mut new_sources = rt.source_stack.pop().unwrap_or_default();
+        let old_sources =
+            rt.memos.get_mut(mid).map(|n| std::mem::take(&mut n.sources)).unwrap_or_default();
+        if old_sources == new_sources {
+            // Stable dependencies: no edge changes at all. Keep old, recycle new.
+            if let Some(n) = rt.memos.get_mut(mid) {
+                n.sources = old_sources;
+            }
+            new_sources.clear();
+            rt.source_pool.push(new_sources);
+        } else {
+            // Unsubscribe from dropped sources, subscribe to new ones (fan-in is
+            // tiny, so the membership scans are cheaper than hashing every source).
+            for sid in &old_sources {
+                if !new_sources.contains(sid)
+                    && let Some(s) = rt.signals.get_mut(*sid)
+                {
+                    s.memo_subs.remove(&mid);
+                }
+            }
+            for sid in &new_sources {
+                if !old_sources.contains(sid)
+                    && let Some(s) = rt.signals.get_mut(*sid)
+                {
+                    s.memo_subs.insert(mid);
+                }
+            }
+            if let Some(n) = rt.memos.get_mut(mid) {
+                n.sources = new_sources;
+            }
+            let mut recycled = old_sources;
+            recycled.clear();
+            rt.source_pool.push(recycled);
+        }
         if let Some(n) = rt.memos.get_mut(mid) {
             n.state = NodeState::Clean;
         }

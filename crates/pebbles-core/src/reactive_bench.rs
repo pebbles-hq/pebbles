@@ -339,3 +339,42 @@ fn effect_cascade_through_lazy_memo_converges() {
     // trigger=3 → mid=30 → doubled=60. The cascade settled to the final value.
     assert_eq!(seen.get(), 60, "the effect→signal→memo→effect cascade converged");
 }
+
+#[test]
+fn memo_with_changing_dependencies_resubscribes_correctly() {
+    // A memo that reads DIFFERENT signals depending on a toggle. When its sources
+    // change, the recompute's source diff must unsubscribe the dropped input and
+    // subscribe the new one — so the old input stops waking it and the new one
+    // starts. Exercises the add/remove branch of the zero-churn source tracking.
+    let toggle = create_signal(true);
+    let a = create_signal(1i64);
+    let b = create_signal(100i64);
+    let m = create_memo(move || if toggle.get() { a.get() } else { b.get() });
+    assert_eq!(m.peek(), 1);
+    stats::reset();
+
+    // While reading `a`: writing `b` must NOT recompute (not a source).
+    b.set(200);
+    flush();
+    assert_eq!(stats::memo_recomputes(), 0, "b is not a source while the toggle reads a");
+    // Writing `a` recomputes.
+    a.set(2);
+    flush();
+    assert_eq!(m.peek(), 2);
+
+    // Flip to read `b`: the memo's sources change (a → toggle+b).
+    stats::reset();
+    toggle.set(false);
+    flush();
+    let _ = m.peek(); // pull to settle the new sources
+    assert_eq!(m.peek(), 200, "now reads b");
+    // `a` is no longer a source: writing it must NOT recompute the memo.
+    stats::reset();
+    a.set(999);
+    flush();
+    assert_eq!(stats::memo_recomputes(), 0, "a was unsubscribed — it no longer wakes the memo");
+    // `b` IS a source now: writing it recomputes.
+    b.set(300);
+    flush();
+    assert_eq!(m.peek(), 300, "b now drives the memo");
+}
