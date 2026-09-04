@@ -26,7 +26,7 @@ fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
     ui.rebuild_if_dirty();
     ui.layout(env, win);
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(env, &mut scene);
 }
 
 fn tap(ui: &mut Ui, p: Offset) {
@@ -232,7 +232,7 @@ fn submenu_opens_on_hover_and_closes_after_grace() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, win);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui);
 
@@ -296,7 +296,7 @@ fn submenu_keyboard_right_enters_and_left_closes() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, win);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui);
 
@@ -357,7 +357,7 @@ fn submenu_flips_left_when_the_right_edge_is_full() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, win);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui);
 

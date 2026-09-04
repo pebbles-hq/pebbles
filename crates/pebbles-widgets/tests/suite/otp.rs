@@ -40,7 +40,7 @@ fn typing_fills_cells_and_fires_on_complete() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui); // autofocus grabs the editor
 

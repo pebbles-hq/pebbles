@@ -30,7 +30,7 @@ fn picking_a_time_never_crashes() {
         ui.rebuild_if_dirty();
         ui.layout(text, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(text, &mut scene);
     };
 
     let chevron = Offset::new(182.0, 19.0); // the dropdown-open button

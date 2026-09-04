@@ -29,7 +29,7 @@ fn popover_opens_on_trigger_click_and_dismisses_outside() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui);
     // Publish the window size so anchoring/flip math has real bounds.
@@ -78,7 +78,7 @@ fn context_menu_opens_on_secondary_click_at_the_cursor() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui);
     overlay::set_window_size(500.0, 400.0);

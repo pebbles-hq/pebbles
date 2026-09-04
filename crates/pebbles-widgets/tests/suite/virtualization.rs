@@ -49,7 +49,7 @@ fn variable_reversed_and_padded_paint() {
     ui.rebuild_if_dirty();
     ui.layout(&mut env, win);
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
 }
 
 #[test]
@@ -88,5 +88,5 @@ fn separated_list_and_spanned_grid_paint() {
     ui.rebuild_if_dirty();
     ui.layout(&mut env, win);
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
 }

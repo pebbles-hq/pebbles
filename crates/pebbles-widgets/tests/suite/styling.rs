@@ -70,7 +70,7 @@ fn styled_cursor_applies() {
     ui.mount_root(View::new(palette::WHITE, component(cursor_box)).into_widget());
     ui.layout(&mut env, Size::new(300.0, 300.0));
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
     assert_eq!(ui.cursor_at(Offset::new(40.0, 30.0)), Some(Cursor::Pointer), "style cursor wraps a GestureDetector");
 }
 
@@ -95,7 +95,7 @@ fn text_style_props_lay_out_and_paint() {
     ui.mount_root(View::new(palette::WHITE, component(styled_text)).into_widget());
     ui.layout(&mut env, Size::new(160.0, 200.0)); // narrow → wraps
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene); // must not panic with the parley style props set
+    ui.paint(&mut env, &mut scene); // must not panic with the parley style props set
 }
 
 fn styled_card() -> impl IntoWidget {
@@ -110,7 +110,7 @@ fn component_style_adoption_builds_and_paints() {
     ui.mount_root(View::new(palette::WHITE, component(styled_card)).into_widget());
     ui.layout(&mut env, Size::new(400.0, 300.0));
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
     // text_field().style(..) also composes without panic.
     let mut ui2 = Ui::new();
     pebbles_core::focus::init();
@@ -120,7 +120,7 @@ fn component_style_adoption_builds_and_paints() {
     );
     ui2.layout(&mut env, Size::new(400.0, 120.0));
     let mut scene2 = pebbles_render::Scene::new();
-    ui2.paint(&mut scene2);
+    ui2.paint(&mut env, &mut scene2);
 }
 
 // --- §7 remaining coverage ---------------------------------------------------

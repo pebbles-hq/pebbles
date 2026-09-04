@@ -33,7 +33,7 @@ fn toast_shows_and_auto_dismisses() {
         ui.rebuild_if_dirty();
         ui.layout(env, Size::new(500.0, 400.0));
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(env, &mut scene);
     };
     frame(&mut ui, &mut env);
 
@@ -62,7 +62,7 @@ fn toast_manual_dismiss_cancels_timer() {
         ui.rebuild_if_dirty();
         ui.layout(env, Size::new(500.0, 400.0));
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(env, &mut scene);
     };
     frame(&mut ui, &mut env);
 
@@ -112,7 +112,7 @@ fn tooltip_shows_after_hover_delay_and_hides_on_exit() {
         ui.rebuild_if_dirty();
         ui.layout(env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(env, &mut scene);
     };
     frame(&mut ui, &mut env);
 

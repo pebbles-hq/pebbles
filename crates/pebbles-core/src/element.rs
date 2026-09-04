@@ -225,9 +225,18 @@ impl Ui {
         self.render.layout(text, BoxConstraints::tight(window));
     }
 
-    /// Paint the tree into `scene`.
-    pub fn paint(&self, scene: &mut Scene) {
-        self.render.paint(scene);
+    /// Paint the tree into `scene`. `text` gives paint-time shaping access
+    /// (P5.2 lazy text materialization). Returns `true` when a lazy measurement
+    /// changed estimated geometry and a **corrective relayout** is needed — the
+    /// affected nodes are already marked dirty; the caller schedules one more
+    /// frame (headless drivers: loop `layout` + `paint` until it returns false).
+    pub fn paint(&mut self, text: &mut TextEnv, scene: &mut Scene) -> bool {
+        let pending = self.render.paint(text, scene);
+        let corrective = !pending.is_empty();
+        for id in pending {
+            self.render.mark_needs_layout(id);
+        }
+        corrective
     }
 
 }

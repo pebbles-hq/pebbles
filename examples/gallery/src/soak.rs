@@ -85,12 +85,12 @@ fn census(ui: &Ui) -> Census {
 /// registries are exercised (not just pages).
 fn exercise_overlays(ui: &mut Ui, env: &mut pebbles::render::TextEnv, now: &mut f64) {
     ui.make_current();
-    pebbles::widgets::show_overlay(text("menu").into_widget(), 10.0, 10.0, 200.0, 120.0);
+    show_overlay(text("menu").into_widget(), 10.0, 10.0, 200.0, 120.0);
     frame(ui, env, now);
-    pebbles::widgets::hide_overlay();
-    pebbles::widgets::show_passive(text("tip").into_widget(), 10.0, 10.0);
+    hide_overlay();
+    show_passive(text("tip").into_widget(), 10.0, 10.0);
     frame(ui, env, now);
-    pebbles::widgets::hide_passive();
+    hide_passive();
     frame(ui, env, now);
 }
 
@@ -100,7 +100,7 @@ fn navigation_soak_returns_to_baseline() {
     crate::state::init();
     pebbles::widgets::overlay::init();
     pebbles::core::focus::init();
-    pebbles::widgets::dialog::init();
+    dialog::init();
     pebbles::core::animation::reset();
 
     let mut ui = Ui::new();

@@ -27,7 +27,7 @@ fn field_paints_label_control_and_error() {
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
     ui.layout(&mut env, Size::new(300.0, 200.0));
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene); // must lay out + paint the label/control/error stack, no panic
+    ui.paint(&mut env, &mut scene); // must lay out + paint the label/control/error stack, no panic
 }
 
 thread_local! {
@@ -58,7 +58,7 @@ fn toggle_group_single_select_picks_one() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui);
 

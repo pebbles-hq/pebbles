@@ -37,7 +37,7 @@ fn interaction_storm_over_multibyte_markdown() {
         ui.rebuild_if_dirty();
         ui.layout(env, win);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(env, &mut scene);
     };
     frame(&mut ui, &mut env);
 

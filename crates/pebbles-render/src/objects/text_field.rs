@@ -20,6 +20,17 @@ use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;
 use crate::tree::{LayoutCx, PaintCx};
 
+/// Line count above which a fresh table is built LAZILY (P5.2): heights start
+/// as estimates and a line shapes on first visibility/need. At or below it,
+/// every line shapes at build — exact heights, no corrective passes — so the
+/// common small field (forms, chat boxes) keeps the simple exact path.
+const LAZY_THRESHOLD: usize = 256;
+
+/// Lines materialized around the caret at every layout (P5.2): caret paint,
+/// scroll-to-caret and burst motion (key-repeat between frames) always resolve
+/// against shaped lines without waiting for a paint.
+const CARET_WINDOW: usize = 32;
+
 /// Visual styling for an editable text field.
 #[derive(Clone, Debug)]
 pub struct TextFieldStyle {
@@ -396,10 +407,15 @@ impl RenderObject for RenderTextField {
 // ---------------------------------------------------------------------------
 
 impl RenderTextField {
-    /// Multi-line layout: split the display text into source lines and shape each
-    /// through the window cache. Unchanged lines are cache HITS — a keystroke
-    /// shapes exactly the line(s) it touched; a caret blink (same table key)
-    /// skips the whole pass.
+    /// Multi-line layout: split the display text into source lines and build the
+    /// per-line table. Small documents shape every line immediately (exact
+    /// heights, today's behavior); past [`LAZY_THRESHOLD`] lines the table is
+    /// built **lazily** (P5.2) — line heights are estimates until a line first
+    /// shapes (on visibility, in paint, or in the caret window below), so a cold
+    /// mount of a megabyte source costs O(window), not O(document). Unchanged
+    /// lines carry their materialized layouts and measured heights across
+    /// rebuilds — a keystroke still shapes exactly the line(s) it touched; a
+    /// caret blink (same table key) skips the whole pass.
     fn layout_lines(
         &mut self,
         cx: &mut LayoutCx<'_>,
@@ -421,15 +437,37 @@ impl RenderTextField {
             h.finish()
         };
         if self.table_key != Some(table_key) || self.table.is_none() {
-            // Reuse layouts from the PREVIOUS table by line key: unchanged lines
-            // never re-shape on a rebuild, regardless of global cache pressure
-            // (a huge document's thousands of line entries can age out of the
-            // cache during blink fast-paths — the old table still owns them).
-            let reuse: std::collections::HashMap<u64, Rc<Layout<Brush>>> = self
+            // Carry from the PREVIOUS table by line key: unchanged lines keep
+            // their materialized layouts AND measured heights on a rebuild,
+            // regardless of global cache pressure (a huge document's thousands
+            // of line entries can age out of the cache during blink fast-paths —
+            // the old table still owns them).
+            struct Carry {
+                layout: Option<Rc<Layout<Brush>>>,
+                height: f64,
+                measured: bool,
+            }
+            let reuse: std::collections::HashMap<u64, Carry> = self
                 .table
                 .as_ref()
-                .map(|t| t.lines.iter().map(|l| (l.key, l.layout.clone())).collect())
+                .map(|t| {
+                    t.lines
+                        .iter()
+                        .map(|l| {
+                            (l.key, Carry {
+                                layout: l.layout.borrow().clone(),
+                                height: l.height.get(),
+                                measured: l.measured.get(),
+                            })
+                        })
+                        .collect()
+                })
                 .unwrap_or_default();
+            // Height estimate for a never-shaped line: nominal line boxes by an
+            // average-advance guess. An unwrapped line is EXACTLY one line box
+            // (`LineHeight::FontSizeRelative` is content-independent), so only
+            // wrapped lines can drift — and they correct on first visibility.
+            let avg_char_px = (self.style.font_size as f64) * 0.55;
             let mut lines = Vec::with_capacity(display.split('\n').count());
             let (mut y, mut start) = (0.0_f64, 0_usize);
             for seg in display.split('\n') {
@@ -445,59 +483,70 @@ impl RenderTextField {
                     width.to_bits().hash(&mut h);
                     h.finish()
                 };
-                let reused = reuse.get(&line_key).cloned();
-                if let Some(rc) = &reused {
+                let (layout, height, measured) = match reuse.get(&line_key) {
+                    Some(c) if c.measured => (c.layout.clone(), c.height, true),
+                    _ => {
+                        let est_rows = if empty || (seg.len() as f64) * avg_char_px <= width {
+                            1.0
+                        } else {
+                            ((seg.len() as f64) * avg_char_px / width.max(1.0)).ceil()
+                        };
+                        // An empty line's fake space always lays out to exactly
+                        // one line box — its "estimate" is already exact.
+                        (None, self.line_px * est_rows, empty)
+                    }
+                };
+                if let Some(rc) = &layout {
                     // Keep the global cache generation fresh for recycled lines.
                     cx.text.store_layout(line_key, rc.clone(), rc.width() as f64, rc.height() as f64);
                 }
-                let layout: Rc<Layout<Brush>> = match reused
-                    .or_else(|| cx.text.cached_layout(line_key).map(|(rc, _, _)| rc))
-                {
-                    Some(rc) => rc,
-                    None => {
-                        let mut builder =
-                            cx.text.layout.ranged_builder(&mut cx.text.fonts, shaped, 1.0, true);
-                        builder.push_default(StyleProperty::FontSize(self.style.font_size));
-                        builder.push_default(StyleProperty::FontWeight(FontWeight::new(
-                            self.style.weight,
-                        )));
-                        builder.push_default(StyleProperty::LineHeight(
-                            LineHeight::FontSizeRelative(self.style.line_height),
-                        ));
-                        builder.push_default(StyleProperty::Brush(Brush::Solid(composed.color)));
-                        let mut layout: Layout<Brush> = builder.build(shaped);
-                        layout.break_all_lines(Some(width as f32));
-                        layout.align(Alignment::Start, AlignmentOptions::default());
-                        let rc = Rc::new(layout);
-                        cx.text.store_layout(
-                            line_key,
-                            rc.clone(),
-                            rc.width() as f64,
-                            rc.height() as f64,
-                        );
-                        rc
-                    }
-                };
-                let height = (layout.height() as f64).max(self.line_px);
                 lines.push(crate::text_edit::LineSlot {
                     key: line_key,
                     start,
                     len: seg.len(),
-                    y,
-                    height,
-                    layout,
+                    y: std::cell::Cell::new(y),
+                    height: std::cell::Cell::new(height),
+                    measured: std::cell::Cell::new(measured),
+                    layout: std::cell::RefCell::new(layout),
                     empty,
                 });
                 y += height;
                 start += seg.len() + 1;
             }
-            self.table = Some(Rc::new(crate::text_edit::LineTable {
+            let table = crate::text_edit::LineTable {
                 lines,
                 text_len: display.len(),
-            }));
+                display: Rc::from(display.as_str()),
+                shape: crate::text_edit::ShapeSpec {
+                    font_size: self.style.font_size,
+                    weight: self.style.weight,
+                    line_height: self.style.line_height,
+                    brush: Brush::Solid(composed.color),
+                    width,
+                },
+                line_px: self.line_px,
+                dirty_geometry: std::cell::Cell::new(false),
+            };
+            // Small documents: shape everything now — exact heights, zero
+            // corrective passes, identical to the pre-P5.2 behavior.
+            if table.line_count() <= LAZY_THRESHOLD && !table.lines.is_empty() {
+                table.materialize_span(0, table.line_count() - 1, cx.text);
+                table.reflow();
+            }
+            self.table = Some(Rc::new(table));
             self.table_key = Some(table_key);
         }
         let table = self.table.clone().expect("table just built");
+
+        // Ensure the caret's neighborhood is shaped on EVERY layout (blink
+        // included — a no-op once materialized): caret paint, scroll-to-caret
+        // and the next few motion steps then always resolve against real
+        // layouts, however far the caret jumped.
+        if !table.lines.is_empty() {
+            let ci = table.line_of(composed.caret.min(display.len()));
+            table.materialize_span(ci.saturating_sub(CARET_WINDOW), ci + CARET_WINDOW, cx.text);
+            table.reflow();
+        }
 
         // Publish for hit-testing / motion — same conditions as the single path:
         // real text only, never while composing (offsets shift under the preedit).
@@ -513,21 +562,40 @@ impl RenderTextField {
     }
 
     /// Multi-line paint: selection, glyphs, preedit underline and caret through
-    /// the line table — every stage windowed to the visible rect (line-level
-    /// y-culling with early break, per-run x-culling).
+    /// the line table — every stage windowed to the visible rect. Lazily built
+    /// lines (P5.2) **materialize here**, the moment they scroll into view; when
+    /// a measurement moves the estimated geometry, the pass reflows the table
+    /// and requests a corrective relayout (estimate-then-measure, like the
+    /// ListView's extents).
     fn paint_lines(&self, cx: &mut PaintCx<'_>, offset: Offset, table: &crate::text_edit::LineTable) {
         let visible = cx.visible();
         let (caret_byte, preedit, composing) = self.composed_meta();
         let has_text = !self.text.is_empty();
+        if table.lines.is_empty() {
+            return;
+        }
+
+        // 0. Materialize the visible window (±1 line so single-step vertical
+        // motion always lands on a shaped line), then settle geometry. The span
+        // is found by binary search on the y prefix — never a full-table scan.
+        let lo = table.line_at_y(visible.y0 - offset.y).saturating_sub(1);
+        let hi = (table.line_at_y(visible.y1 - offset.y) + 1).min(table.line_count() - 1);
+        table.materialize_span(lo, hi, cx.text);
+        if table.reflow() {
+            // Heights moved: the size layout reported is stale — schedule the
+            // corrective pass. Painting continues with the SETTLED y's below.
+            cx.request_relayout();
+        }
+        let window = &table.lines[lo..=hi];
 
         // 1. Selection highlight (display offsets == text offsets: not obscured,
         // and skipped while composing, exactly like the single path).
         if has_text && !composing && self.anchor != self.focus {
             let (s0, s1) =
                 (self.anchor.min(self.focus), self.anchor.max(self.focus));
-            for l in &table.lines {
-                let top = offset.y + l.y;
-                if top + l.height < visible.y0 {
+            for l in window {
+                let top = offset.y + l.y.get();
+                if top + l.height.get() < visible.y0 {
                     continue;
                 }
                 if top > visible.y1 {
@@ -539,7 +607,7 @@ impl RenderTextField {
                 }
                 if l.empty {
                     // A fully-selected empty line shows a thin stub.
-                    let r = Rect::new(offset.x, top, offset.x + 6.0, top + l.height);
+                    let r = Rect::new(offset.x, top, offset.x + 6.0, top + l.height.get());
                     cx.scene.fill(
                         Fill::NonZero,
                         Affine::IDENTITY,
@@ -554,11 +622,12 @@ impl RenderTextField {
                 if la >= lf {
                     continue;
                 }
+                let Some(layout) = l.layout() else { continue };
                 let sel = Selection::new(
-                    Cursor::from_byte_index(&l.layout, la, Affinity::Downstream),
-                    Cursor::from_byte_index(&l.layout, lf, Affinity::Downstream),
+                    Cursor::from_byte_index(&layout, la, Affinity::Downstream),
+                    Cursor::from_byte_index(&layout, lf, Affinity::Downstream),
                 );
-                for (bb, _) in sel.geometry(&l.layout) {
+                for (bb, _) in sel.geometry(&layout) {
                     let rect = Rect::new(
                         offset.x + bb.x0,
                         top + bb.y0,
@@ -577,9 +646,9 @@ impl RenderTextField {
         }
 
         // 2. Glyphs — only the visible window of lines and runs.
-        for l in &table.lines {
-            let top = offset.y + l.y;
-            if top + l.height < visible.y0 {
+        for l in window {
+            let top = offset.y + l.y.get();
+            if top + l.height.get() < visible.y0 {
                 continue;
             }
             if top > visible.y1 {
@@ -588,8 +657,9 @@ impl RenderTextField {
             if l.empty {
                 continue; // nothing visible on an empty line (the space is fake)
             }
+            let Some(layout) = l.layout() else { continue };
             let transform = Affine::translate((offset.x, top));
-            for line in l.layout.lines() {
+            for line in layout.lines() {
                 for item in line.items() {
                     let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
                         continue;
@@ -622,10 +692,13 @@ impl RenderTextField {
             }
         }
 
-        // 3. Composition underline beneath the preedit range.
+        // 3. Composition underline beneath the preedit range — the affected
+        // lines are found by byte range (the preedit hugs the caret, whose
+        // window layout materialized).
         if let Some((p0, p1)) = preedit {
-            for l in &table.lines {
-                let top = offset.y + l.y;
+            let (i0, i1) = (table.line_of(p0), table.line_of(p1).min(table.line_count() - 1));
+            for l in &table.lines[i0..=i1] {
+                let top = offset.y + l.y.get();
                 let line_end = l.start + l.len;
                 if line_end < p0 || l.start > p1 || l.empty {
                     continue;
@@ -635,11 +708,12 @@ impl RenderTextField {
                 if la >= lf {
                     continue;
                 }
+                let Some(layout) = l.layout() else { continue };
                 let sel = Selection::new(
-                    Cursor::from_byte_index(&l.layout, la, Affinity::Downstream),
-                    Cursor::from_byte_index(&l.layout, lf, Affinity::Downstream),
+                    Cursor::from_byte_index(&layout, la, Affinity::Downstream),
+                    Cursor::from_byte_index(&layout, lf, Affinity::Downstream),
                 );
-                for (bb, _) in sel.geometry(&l.layout) {
+                for (bb, _) in sel.geometry(&layout) {
                     let rect = Rect::new(
                         offset.x + bb.x0,
                         top + bb.y1 - 1.5,

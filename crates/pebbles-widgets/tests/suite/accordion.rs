@@ -60,7 +60,7 @@ fn single_open_collapses_siblings() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, win);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui);
     let reports = || REPORTS.with(|r| r.borrow().clone());
@@ -96,7 +96,7 @@ fn multiple_mode_keeps_sections_open() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, win);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui);
     let reports = || REPORTS.with(|r| r.borrow().clone());

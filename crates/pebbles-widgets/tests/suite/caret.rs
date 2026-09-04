@@ -63,7 +63,7 @@ fn caret_blinks_while_focused_and_is_solid_while_composing() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, win);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui);
     assert!(caret_visible(&ui), "caret starts visible");
@@ -112,7 +112,7 @@ fn multiline_up_down_preserve_the_column() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, win);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui); // autofocus
 

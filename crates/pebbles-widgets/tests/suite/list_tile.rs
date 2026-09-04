@@ -46,7 +46,7 @@ fn tap_fires_and_disabled_never_does() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, win);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui);
 
@@ -108,7 +108,7 @@ fn style_lands_on_the_surface_and_title() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, win);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui);
 
@@ -160,5 +160,5 @@ fn bare_tile_still_paints_with_defaults() {
     ui.rebuild_if_dirty();
     ui.layout(&mut env, win);
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
 }

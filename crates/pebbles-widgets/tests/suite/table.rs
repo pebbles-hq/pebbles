@@ -78,7 +78,7 @@ fn sortable_headers_cycle_and_report() {
         ui.rebuild_if_dirty();
         ui.layout(&mut text_env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut text_env, &mut scene);
     };
     frame(&mut ui);
     let events = || SORT_EVENTS.with(|e| e.borrow().clone());
@@ -118,7 +118,7 @@ fn selection_checkboxes_and_select_all_report() {
         ui.rebuild_if_dirty();
         ui.layout(&mut text_env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut text_env, &mut scene);
     };
     frame(&mut ui);
     let selection = || SELECTION.with(|c| c.borrow().clone());
@@ -167,7 +167,7 @@ fn empty_state_and_striped_paint() {
     ui.rebuild_if_dirty();
     ui.layout(&mut text_env, window);
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(&mut text_env, &mut scene);
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn surface_style_lands_on_the_table() {
     ui.rebuild_if_dirty();
     ui.layout(&mut env, win);
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
 
     // The surface style wraps the whole table — its DecoratedBox mounts first,
     // so it is the first decorated box in the tree.
@@ -239,7 +239,7 @@ fn rich_cells_footer_and_customizations_paint() {
     ui.rebuild_if_dirty();
     ui.layout(&mut env, win);
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
 
     // The table laid out taller than a bare two-row grid (footer present).
     let tree = ui.render_tree();

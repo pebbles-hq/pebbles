@@ -553,11 +553,23 @@ impl RenderTree {
 
     /// Paint the whole tree into `scene` starting from the root at the origin.
     /// The visible window (viewport culling) starts as the root's own rect.
-    pub fn paint(&self, scene: &mut vello::Scene) {
-        let Some(root) = self.root else { return };
+    ///
+    /// `text` gives paint-time shaping access (P5.2): a huge text field
+    /// materializes only the lines that scroll into view. Returns the nodes that
+    /// requested a **corrective relayout** (a lazy measurement changed a size the
+    /// last layout pass estimated) — the caller marks them dirty and schedules
+    /// one more frame, the ListView estimate-then-measure pattern.
+    pub fn paint(
+        &self,
+        text: &mut TextEnv,
+        scene: &mut vello::Scene,
+    ) -> SmallVec<[RenderId; 2]> {
+        let Some(root) = self.root else { return SmallVec::new() };
+        let relayout = std::cell::RefCell::new(SmallVec::new());
         let visible = Rect::from_origin_size((0.0, 0.0), self.nodes[root].size);
-        let mut cx = PaintCx { scene, tree: self, current: root, visible };
+        let mut cx = PaintCx { scene, text, tree: self, current: root, visible, relayout: &relayout };
         cx.paint_child(root, Offset::ZERO);
+        relayout.into_inner()
     }
 
     /// Return the render nodes under `point` (window coordinates), ordered from
@@ -766,12 +778,18 @@ impl IntrinsicCx<'_> {
 /// object currently painting (so it can read its own size and children).
 pub struct PaintCx<'a> {
     pub scene: &'a mut vello::Scene,
+    /// Font/layout contexts + the window's shape cache (P5.2): paint-time
+    /// shaping access, so lazily materialized text (a huge field's line table)
+    /// shapes lines the moment they scroll into view.
+    pub text: &'a mut TextEnv,
     tree: &'a RenderTree,
     current: RenderId,
     /// The window-space rect anything painted from here can possibly show in —
     /// the window rect, narrowed by each clipping ancestor (scroll viewports,
     /// clip-rrects, opacity layers). `paint_child` culls subtrees against it.
     visible: Rect,
+    /// Corrective-relayout requests (see [`RenderTree::paint`]).
+    relayout: &'a std::cell::RefCell<SmallVec<[RenderId; 2]>>,
 }
 
 /// Strict rect overlap — an empty or exactly-touching intersection is a miss.
@@ -799,6 +817,14 @@ impl PaintCx<'_> {
     /// The visible window (in window space) painting is currently culled against.
     pub fn visible(&self) -> Rect {
         self.visible
+    }
+
+    /// Request a **corrective relayout** for the object currently painting: a
+    /// lazy paint-time measurement (P5.2) changed geometry the last layout pass
+    /// only estimated. The node is marked `needs_layout` after this paint and
+    /// one more frame is scheduled — the estimate-then-measure settle loop.
+    pub fn request_relayout(&mut self) {
+        self.relayout.borrow_mut().push(self.current);
     }
 
     /// Paint `child` at the given **absolute** window offset. If the child object
@@ -830,9 +856,11 @@ impl PaintCx<'_> {
                 crate::stats::bump_painted();
                 let mut sub = PaintCx {
                     scene: &mut *self.scene,
+                    text: &mut *self.text,
                     tree: self.tree,
                     current: child,
                     visible: self.visible,
+                    relayout: self.relayout,
                 };
                 object.paint(&mut sub, at);
             }
@@ -855,9 +883,11 @@ impl PaintCx<'_> {
                 let mut sub_scene = vello::Scene::new();
                 let mut sub = PaintCx {
                     scene: &mut sub_scene,
+                    text: &mut *self.text,
                     tree: self.tree,
                     current: child,
                     visible: local_visible,
+                    relayout: self.relayout,
                 };
                 object.paint(&mut sub, Offset::ZERO);
                 self.scene.append(&sub_scene, Some(placement));
@@ -876,9 +906,11 @@ impl PaintCx<'_> {
                 crate::stats::bump_painted();
                 let mut sub = PaintCx {
                     scene: &mut *self.scene,
+                    text: &mut *self.text,
                     tree: self.tree,
                     current: child,
                     visible: self.visible,
+                    relayout: self.relayout,
                 };
                 object.paint(&mut sub, absolute_offset);
             }
@@ -908,9 +940,11 @@ impl PaintCx<'_> {
         fragment.reset();
         let mut sub = PaintCx {
             scene: fragment,
+            text: &mut *self.text,
             tree: self.tree,
             current: child,
             visible: Rect::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::INFINITY),
+            relayout: self.relayout,
         };
         sub.paint_child(child, Offset::ZERO);
     }

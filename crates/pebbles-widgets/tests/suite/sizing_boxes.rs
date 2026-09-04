@@ -264,5 +264,5 @@ fn sweep_gradient_paints_without_panic() {
     );
     ui.layout(&mut env, Size::new(200.0, 200.0));
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene); // encodes the sweep brush — must not panic
+    ui.paint(&mut env, &mut scene); // encodes the sweep brush — must not panic
 }

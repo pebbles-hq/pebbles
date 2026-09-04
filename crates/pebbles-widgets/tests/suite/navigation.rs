@@ -72,7 +72,7 @@ fn navigating_between_screens_never_crashes() {
         ui.rebuild_if_dirty();
         ui.layout(&mut text_env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut text_env, &mut scene);
     };
 
     for _ in 0..8 {

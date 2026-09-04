@@ -42,7 +42,7 @@ fn range_field_picks_and_reports_ordered_endpoints() {
         ui.rebuild_if_dirty();
         ui.layout(&mut env, win);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
     };
     frame(&mut ui);
 

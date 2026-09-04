@@ -35,7 +35,7 @@ fn ellipsis_opens_a_menu_of_hidden_segments() {
     ui.rebuild_if_dirty();
     ui.layout(&mut env, win);
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
 
     assert!(!overlay::is_open(), "closed initially");
 
@@ -47,12 +47,12 @@ fn ellipsis_opens_a_menu_of_hidden_segments() {
     ui.dispatch_pointer_up(ellipsis);
     ui.rebuild_if_dirty();
     ui.layout(&mut env, win);
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
     assert!(overlay::is_open(), "clicking the … opens the hidden-segments menu");
 
     overlay::hide_overlay();
     ui.rebuild_if_dirty();
     ui.layout(&mut env, win);
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
     assert!(!overlay::is_open(), "and it dismisses");
 }

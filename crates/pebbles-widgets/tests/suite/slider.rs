@@ -46,7 +46,7 @@ fn drag_and_keyboard_move_the_thumb() {
         ui.rebuild_if_dirty();
         ui.layout(&mut text_env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut text_env, &mut scene);
     };
 
     // A point on the slider track (height HIT = 20 → y = 10 is centered).

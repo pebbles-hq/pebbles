@@ -46,7 +46,7 @@ fn ime_preedit_is_uncommitted_then_commit_inserts() {
         ui.rebuild_if_dirty();
         ui.layout(text, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene); // a real paint — composing must not panic
+        ui.paint(text, &mut scene); // a real paint — composing must not panic
     };
     frame(&mut ui, &mut text); // autofocus() focuses the field on mount
 

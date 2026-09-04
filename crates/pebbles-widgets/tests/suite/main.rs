@@ -18,6 +18,7 @@ mod components;
 mod context_scope;
 mod date_field_range;
 mod engine;
+mod field_lazy;
 mod file_explorer;
 mod fonts;
 mod forms;

@@ -16,15 +16,27 @@
 //!   including wrapped visual lines inside a source line) and hops source lines
 //!   at the boundaries.
 //!
+//! **Lazy materialization (P5.2):** above a size threshold, a fresh table holds
+//! only line metadata (byte ranges + height *estimates*) — a line shapes on
+//! first *visibility* (the field's paint materializes the visible window through
+//! the [`TextEnv`](crate::TextEnv) now carried by `PaintCx`) or on first
+//! *need* (the caret window, materialized during layout). Measured heights
+//! replace estimates and the field requests a corrective relayout, exactly like
+//! the ListView's estimate-then-measure extents. Motion on a line that has never
+//! been shaped falls back to char-boundary–safe arithmetic on the table's own
+//! copy of the text — approximate (chars, not graphemes; no BiDi) but
+//! panic-free, and reachable only when the caret is far outside the window
+//! (scroll-to-view + the caret window keep it materialized in practice).
+//!
 //! This module lives in `pebbles-render` (which owns parley) and exposes plain
 //! functions rather than the core `Motion` enum, because `pebbles-render` sits
 //! *below* `pebbles-core` in the crate graph.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use parley::{Affinity, Cursor, Layout, Selection};
+use parley::{Affinity, Alignment, AlignmentOptions, Cursor, FontWeight, Layout, LineHeight, Selection, StyleProperty};
 use vello::kurbo::Rect;
 use vello::peniko::Brush;
 
@@ -33,9 +45,9 @@ use vello::peniko::Brush;
 // ---------------------------------------------------------------------------
 
 /// One source line of a multi-line field: its byte range in the full text, its
-/// laid-out geometry, and its own shaped layout. Empty lines shape a single
-/// space so caret/selection geometry exists; local offsets clamp to `len`, so
-/// the fake glyph is never addressable.
+/// laid-out geometry, and (once materialized) its own shaped layout. Empty lines
+/// shape a single space so caret/selection geometry exists; local offsets clamp
+/// to `len`, so the fake glyph is never addressable.
 pub(crate) struct LineSlot {
     /// The line's shape-cache key (text + style + wrap width) — the REUSE key: a
     /// table rebuild recycles unchanged lines' layouts from the previous table,
@@ -46,31 +58,147 @@ pub(crate) struct LineSlot {
     pub(crate) start: usize,
     /// Line length in bytes, EXCLUDING the trailing newline.
     pub(crate) len: usize,
-    /// Local y of the line's top within the field.
-    pub(crate) y: f64,
-    pub(crate) height: f64,
-    pub(crate) layout: Rc<Layout<Brush>>,
+    /// Local y of the line's top within the field. A `Cell` because measuring a
+    /// lazily materialized line reflows every line below it.
+    pub(crate) y: Cell<f64>,
+    /// Estimated until `measured`; exact after the line first shapes.
+    pub(crate) height: Cell<f64>,
+    /// Whether `height` came from a real shape (empty lines are exact upfront —
+    /// the fake space always lays out to one line box).
+    pub(crate) measured: Cell<bool>,
+    /// The shaped layout, materialized on first visibility/need (P5.2).
+    pub(crate) layout: RefCell<Option<Rc<Layout<Brush>>>>,
     pub(crate) empty: bool,
 }
 
+impl LineSlot {
+    /// The materialized layout, if this line has ever shaped.
+    pub(crate) fn layout(&self) -> Option<Rc<Layout<Brush>>> {
+        self.layout.borrow().clone()
+    }
+}
+
+/// Everything needed to shape any line of the table after construction — the
+/// style inputs the owning field shaped with. Lets paint (and the caret window)
+/// materialize lines long after `layout_lines` returned.
+pub(crate) struct ShapeSpec {
+    pub(crate) font_size: f32,
+    pub(crate) weight: f32,
+    pub(crate) line_height: f32,
+    pub(crate) brush: Brush,
+    pub(crate) width: f64,
+}
+
 /// The per-line shaped model of a multi-line field (P5): source lines in order,
-/// each with its own layout. Built by `RenderTextField`, consumed by the motion
-/// helpers below and by the field's own paint.
+/// each with its own (possibly lazily materialized) layout. Built by
+/// `RenderTextField`, consumed by the motion helpers below and by the field's
+/// own paint.
 pub struct LineTable {
     pub(crate) lines: Vec<LineSlot>,
     /// Full text length (a caret may sit at `text_len`).
     pub(crate) text_len: usize,
+    /// The composed display text the slots' byte ranges index into — owned by
+    /// the table so lazy materialization (and the motion fallbacks) can slice
+    /// line text at any time.
+    pub(crate) display: Rc<str>,
+    /// The style inputs to shape any line with (P5.2).
+    pub(crate) shape: ShapeSpec,
+    /// One nominal line box (`font_size × line_height`) — the estimate unit.
+    pub(crate) line_px: f64,
+    /// Set when a materialization changed some line's height; cleared by
+    /// [`reflow`](Self::reflow).
+    pub(crate) dirty_geometry: Cell<bool>,
 }
 
 impl LineTable {
-    /// Total laid-out height (the field's content height).
+    /// Total laid-out height (the field's content height; estimated lines
+    /// contribute their estimates until they materialize).
     pub fn total_height(&self) -> f64 {
-        self.lines.last().map(|l| l.y + l.height).unwrap_or(0.0)
+        self.lines.last().map(|l| l.y.get() + l.height.get()).unwrap_or(0.0)
     }
 
     /// Number of source lines.
     pub fn line_count(&self) -> usize {
         self.lines.len()
+    }
+
+    /// Number of lines whose shaped layout is materialized (tests/census).
+    pub fn materialized_count(&self) -> usize {
+        self.lines.iter().filter(|l| l.layout.borrow().is_some()).count()
+    }
+
+    /// The text of line `i` as shaped: the display slice, or a single space for
+    /// an empty line (so caret/selection geometry exists).
+    pub(crate) fn slot_text(&self, i: usize) -> &str {
+        let l = &self.lines[i];
+        if l.empty { " " } else { &self.display[l.start..l.start + l.len] }
+    }
+
+    /// Materialize line `i`'s shaped layout (through the window's shape cache),
+    /// measuring its real height. A no-op when already materialized. Marks the
+    /// table's geometry dirty when the measured height differs from the
+    /// estimate — the caller reflows + requests a corrective relayout.
+    pub(crate) fn ensure_line(&self, i: usize, env: &mut crate::TextEnv) -> Rc<Layout<Brush>> {
+        if let Some(rc) = &*self.lines[i].layout.borrow() {
+            return rc.clone();
+        }
+        let l = &self.lines[i];
+        let text = if l.empty { " " } else { &self.display[l.start..l.start + l.len] };
+        let rc = match env.cached_layout(l.key) {
+            Some((rc, _, _)) => rc,
+            None => {
+                let s = &self.shape;
+                let mut builder = env.layout.ranged_builder(&mut env.fonts, text, 1.0, true);
+                builder.push_default(StyleProperty::FontSize(s.font_size));
+                builder.push_default(StyleProperty::FontWeight(FontWeight::new(s.weight)));
+                builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(s.line_height)));
+                builder.push_default(StyleProperty::Brush(s.brush.clone()));
+                let mut layout: Layout<Brush> = builder.build(text);
+                layout.break_all_lines(Some(s.width as f32));
+                layout.align(Alignment::Start, AlignmentOptions::default());
+                let rc = Rc::new(layout);
+                env.store_layout(l.key, rc.clone(), rc.width() as f64, rc.height() as f64);
+                rc
+            }
+        };
+        let h = (rc.height() as f64).max(self.line_px);
+        if (h - l.height.get()).abs() > 0.1 {
+            l.height.set(h);
+            self.dirty_geometry.set(true);
+        }
+        l.measured.set(true);
+        *l.layout.borrow_mut() = Some(rc.clone());
+        rc
+    }
+
+    /// Materialize every line in `lo..=hi` (indices clamped to the table).
+    pub(crate) fn materialize_span(&self, lo: usize, hi: usize, env: &mut crate::TextEnv) {
+        if self.lines.is_empty() {
+            return;
+        }
+        let hi = hi.min(self.lines.len() - 1);
+        for i in lo.min(hi)..=hi {
+            self.ensure_line(i, env);
+        }
+    }
+
+    /// Re-stack the `y` prefix after measurements changed heights. Returns
+    /// `true` when any line moved (the caller then requests a corrective
+    /// relayout so the field's reported size catches up).
+    pub(crate) fn reflow(&self) -> bool {
+        if !self.dirty_geometry.replace(false) {
+            return false;
+        }
+        let mut y = 0.0_f64;
+        let mut moved = false;
+        for l in &self.lines {
+            if (l.y.get() - y).abs() > 0.01 {
+                l.y.set(y);
+                moved = true;
+            }
+            y += l.height.get();
+        }
+        moved
     }
 
     /// Index of the source line containing byte `b` (a caret at a line's end —
@@ -84,7 +212,7 @@ impl LineTable {
 
     /// Index of the source line containing local `y` (clamped to the ends).
     pub(crate) fn line_at_y(&self, y: f64) -> usize {
-        let n = self.lines.partition_point(|l| l.y + l.height <= y);
+        let n = self.lines.partition_point(|l| l.y.get() + l.height.get() <= y);
         n.min(self.lines.len().saturating_sub(1))
     }
 
@@ -98,26 +226,89 @@ impl LineTable {
         (self.lines[i].start + local.min(self.lines[i].len)).min(self.text_len)
     }
 
-    /// The caret x (local space) of a byte offset within line `i`.
+    /// The caret x (local space) of a byte offset within line `i` — `0.0` when
+    /// the line has never materialized (only reachable off-window).
     pub(crate) fn caret_x(&self, i: usize, local: usize) -> f64 {
         let l = &self.lines[i];
-        Cursor::from_byte_index(&l.layout, local.min(l.len), Affinity::Downstream)
-            .geometry(&l.layout, 1.0)
-            .x0
+        match &*l.layout.borrow() {
+            Some(layout) => Cursor::from_byte_index(layout, local.min(l.len), Affinity::Downstream)
+                .geometry(layout, 1.0)
+                .x0,
+            None => 0.0,
+        }
     }
 
     /// The caret rect (field-local space) for a global byte offset — used by the
-    /// field's paint and by scroll-to-caret logic.
+    /// field's paint and by scroll-to-caret logic. An unmaterialized line yields
+    /// a synthetic rect at the line's start (its `y`/height are the estimates,
+    /// which is exactly what scroll-to-view needs to bring it on screen — the
+    /// next paint then materializes it and the rect becomes exact).
     pub fn caret_rect(&self, b: usize, width: f64) -> Rect {
         if self.lines.is_empty() {
             return Rect::new(0.0, 0.0, width, 0.0);
         }
         let i = self.line_of(b);
         let l = &self.lines[i];
-        let bb = Cursor::from_byte_index(&l.layout, self.local(i, b), Affinity::Downstream)
-            .geometry(&l.layout, width as f32);
-        Rect::new(bb.x0, bb.y0 + l.y, bb.x1, bb.y1 + l.y)
+        match &*l.layout.borrow() {
+            Some(layout) => {
+                let bb = Cursor::from_byte_index(layout, self.local(i, b), Affinity::Downstream)
+                    .geometry(layout, width as f32);
+                Rect::new(bb.x0, bb.y0 + l.y.get(), bb.x1, bb.y1 + l.y.get())
+            }
+            None => Rect::new(0.0, l.y.get(), width, l.y.get() + self.line_px),
+        }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Char-boundary–safe fallbacks (motion on a never-materialized line)
+// ---------------------------------------------------------------------------
+
+/// Previous char boundary within `s` (0 at the start).
+fn prev_char(s: &str, i: usize) -> usize {
+    let i = i.min(s.len());
+    s[..i].char_indices().next_back().map(|(j, _)| j).unwrap_or(0)
+}
+
+/// Next char boundary within `s` (`s.len()` at the end).
+fn next_char(s: &str, i: usize) -> usize {
+    let i = i.min(s.len());
+    s[i..].chars().next().map(|c| i + c.len_utf8()).unwrap_or(s.len())
+}
+
+/// Snap `i` back to a char boundary of `s`.
+fn snap_char(s: &str, i: usize) -> usize {
+    let mut i = i.min(s.len());
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// Pure char-class word-left within a line (no shaping): skip whitespace, then
+/// the word.
+fn pure_word_left(s: &str, mut i: usize) -> usize {
+    while i > 0 {
+        let p = prev_char(s, i);
+        if s[p..i].chars().next().is_some_and(char::is_whitespace) { i = p } else { break }
+    }
+    while i > 0 {
+        let p = prev_char(s, i);
+        if s[p..i].chars().next().is_some_and(|c| !c.is_whitespace()) { i = p } else { break }
+    }
+    i
+}
+
+fn pure_word_right(s: &str, mut i: usize) -> usize {
+    while i < s.len() {
+        let n = next_char(s, i);
+        if s[i..n].chars().next().is_some_and(char::is_whitespace) { i = n } else { break }
+    }
+    while i < s.len() {
+        let n = next_char(s, i);
+        if s[i..n].chars().next().is_some_and(|c| !c.is_whitespace()) { i = n } else { break }
+    }
+    i
 }
 
 // ---------------------------------------------------------------------------
@@ -227,9 +418,14 @@ fn lines_left(t: &LineTable, a: usize, f: usize, extend: bool) -> (usize, usize)
     let i = t.line_of(f);
     let local = t.local(i, f);
     let nf = if local > 0 && !t.lines[i].empty {
-        let l = &t.lines[i];
-        let s = selection(&l.layout, local, local).previous_visual(&l.layout, false);
-        t.global(i, s.focus().index())
+        match t.lines[i].layout() {
+            Some(layout) => {
+                let s = selection(&layout, local, local).previous_visual(&layout, false);
+                t.global(i, s.focus().index())
+            }
+            // Never materialized (off-window): char-boundary step, no shaping.
+            None => t.global(i, prev_char(t.slot_text(i), local)),
+        }
     } else if i > 0 {
         t.lines[i - 1].start + t.lines[i - 1].len
     } else {
@@ -247,8 +443,13 @@ fn lines_right(t: &LineTable, a: usize, f: usize, extend: bool) -> (usize, usize
     let local = t.local(i, f);
     let l = &t.lines[i];
     let nf = if local < l.len {
-        let s = selection(&l.layout, local, local).next_visual(&l.layout, false);
-        t.global(i, s.focus().index())
+        match l.layout() {
+            Some(layout) => {
+                let s = selection(&layout, local, local).next_visual(&layout, false);
+                t.global(i, s.focus().index())
+            }
+            None => t.global(i, next_char(t.slot_text(i), local)),
+        }
     } else if i + 1 < t.lines.len() {
         t.lines[i + 1].start
     } else {
@@ -261,9 +462,13 @@ fn lines_word_left(t: &LineTable, a: usize, f: usize, extend: bool) -> (usize, u
     let i = t.line_of(f);
     let local = t.local(i, f);
     let nf = if local > 0 && !t.lines[i].empty {
-        let l = &t.lines[i];
-        let s = selection(&l.layout, local, local).previous_visual_word(&l.layout, false);
-        t.global(i, s.focus().index())
+        match t.lines[i].layout() {
+            Some(layout) => {
+                let s = selection(&layout, local, local).previous_visual_word(&layout, false);
+                t.global(i, s.focus().index())
+            }
+            None => t.global(i, pure_word_left(t.slot_text(i), local)),
+        }
     } else if i > 0 {
         t.lines[i - 1].start + t.lines[i - 1].len
     } else {
@@ -277,8 +482,13 @@ fn lines_word_right(t: &LineTable, a: usize, f: usize, extend: bool) -> (usize, 
     let local = t.local(i, f);
     let l = &t.lines[i];
     let nf = if local < l.len {
-        let s = selection(&l.layout, local, local).next_visual_word(&l.layout, false);
-        t.global(i, s.focus().index())
+        match l.layout() {
+            Some(layout) => {
+                let s = selection(&layout, local, local).next_visual_word(&layout, false);
+                t.global(i, s.focus().index())
+            }
+            None => t.global(i, pure_word_right(t.slot_text(i), local)),
+        }
     } else if i + 1 < t.lines.len() {
         t.lines[i + 1].start
     } else {
@@ -291,12 +501,18 @@ fn lines_line_start(t: &LineTable, a: usize, f: usize, extend: bool) -> (usize, 
     let i = t.line_of(f);
     let local = t.local(i, f);
     let l = &t.lines[i];
-    // Visual-line start WITHIN the (possibly wrapped) source line.
+    // Visual-line start WITHIN the (possibly wrapped) source line; the
+    // unmaterialized fallback is the source-line start (exact when unwrapped).
     let nf = if l.empty {
         l.start
     } else {
-        let s = selection(&l.layout, local, local).line_start(&l.layout, false);
-        t.global(i, s.focus().index())
+        match l.layout() {
+            Some(layout) => {
+                let s = selection(&layout, local, local).line_start(&layout, false);
+                t.global(i, s.focus().index())
+            }
+            None => l.start,
+        }
     };
     apply(a, nf, extend)
 }
@@ -308,8 +524,13 @@ fn lines_line_end(t: &LineTable, a: usize, f: usize, extend: bool) -> (usize, us
     let nf = if l.empty {
         l.start
     } else {
-        let s = selection(&l.layout, local, local).line_end(&l.layout, false);
-        t.global(i, s.focus().index())
+        match l.layout() {
+            Some(layout) => {
+                let s = selection(&layout, local, local).line_end(&layout, false);
+                t.global(i, s.focus().index())
+            }
+            None => l.start + l.len,
+        }
     };
     apply(a, nf, extend)
 }
@@ -323,15 +544,13 @@ fn lines_vertical(t: &LineTable, a: usize, f: usize, extend: bool, up: bool) -> 
     // counts only if the caret actually changed VISUAL line (its y moved):
     // parley clamps to the line's start/end at the layout's boundary lines,
     // which must fall through to the source-line hop instead.
-    if !l.empty {
+    if !l.empty && let Some(layout) = l.layout() {
         let y_before =
-            Cursor::from_byte_index(&l.layout, local, Affinity::Downstream)
-                .geometry(&l.layout, 1.0)
-                .y0;
-        let sel = selection(&l.layout, local, local);
+            Cursor::from_byte_index(&layout, local, Affinity::Downstream).geometry(&layout, 1.0).y0;
+        let sel = selection(&layout, local, local);
         let moved =
-            if up { sel.previous_line(&l.layout, false) } else { sel.next_line(&l.layout, false) };
-        let y_after = moved.focus().geometry(&l.layout, 1.0).y0;
+            if up { sel.previous_line(&layout, false) } else { sel.next_line(&layout, false) };
+        let y_after = moved.focus().geometry(&layout, 1.0).y0;
         let crossed = if up { y_after < y_before - 0.5 } else { y_after > y_before + 0.5 };
         if crossed {
             let mf = moved.focus().index().min(l.len);
@@ -345,16 +564,27 @@ fn lines_vertical(t: &LineTable, a: usize, f: usize, extend: bool, up: bool) -> 
             f
         } else {
             let target = &t.lines[i - 1];
-            let y = (target.layout.height() - 0.1).max(0.0);
-            let s = Selection::from_point(&target.layout, x, y);
-            t.global(i - 1, s.focus().index())
+            match target.layout() {
+                Some(layout) => {
+                    let y = (layout.height() - 0.1).max(0.0);
+                    let s = Selection::from_point(&layout, x, y);
+                    t.global(i - 1, s.focus().index())
+                }
+                // Off-window target: land at a char-snapped ~same byte column.
+                None => t.global(i - 1, snap_char(t.slot_text(i - 1), local)),
+            }
         }
     } else if i + 1 >= t.lines.len() {
         f
     } else {
         let target = &t.lines[i + 1];
-        let s = Selection::from_point(&target.layout, x, 0.1);
-        t.global(i + 1, s.focus().index())
+        match target.layout() {
+            Some(layout) => {
+                let s = Selection::from_point(&layout, x, 0.1);
+                t.global(i + 1, s.focus().index())
+            }
+            None => t.global(i + 1, snap_char(t.slot_text(i + 1), local)),
+        }
     };
     apply(a, nf, extend)
 }
@@ -365,8 +595,15 @@ fn lines_hit(t: &LineTable, x: f64, y: f64) -> usize {
     }
     let i = t.line_at_y(y);
     let l = &t.lines[i];
-    let s = Selection::from_point(&l.layout, x as f32, (y - l.y) as f32);
-    t.global(i, s.focus().index())
+    match l.layout() {
+        Some(layout) => {
+            let s = Selection::from_point(&layout, x as f32, (y - l.y.get()) as f32);
+            t.global(i, s.focus().index())
+        }
+        // A hit on a never-painted line (drag auto-scroll racing paint): the
+        // line's start — the next frame materializes it and the drag corrects.
+        None => l.start,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -428,9 +665,14 @@ pub fn word_at(id: u64, x: f64, y: f64) -> Option<(usize, usize)> {
             }
             let i = t.line_at_y(y);
             let l = &t.lines[i];
-            let s = Selection::word_from_point(&l.layout, x as f32, (y - l.y) as f32);
-            let (a, f) = out(s);
-            (t.global(i, a), t.global(i, f))
+            match l.layout() {
+                Some(layout) => {
+                    let s = Selection::word_from_point(&layout, x as f32, (y - l.y.get()) as f32);
+                    let (a, f) = out(s);
+                    (t.global(i, a), t.global(i, f))
+                }
+                None => (l.start, l.start),
+            }
         })
     })
 }

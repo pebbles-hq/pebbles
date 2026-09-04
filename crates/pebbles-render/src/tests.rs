@@ -303,7 +303,7 @@ fn scroll_viewport_culls_offscreen_subtrees() {
 
     crate::stats::reset_frame();
     let mut scene = vello::Scene::new();
-    tree.paint(&mut scene);
+    tree.paint(&mut text, &mut scene);
     let painted = crate::stats::painted_nodes();
     let culled = crate::stats::culled_nodes();
     assert!(painted < 30, "only ~a viewport of rows encodes (painted {painted})");
@@ -319,7 +319,7 @@ fn scroll_viewport_culls_offscreen_subtrees() {
     tree.layout(&mut text, tight(300.0, 200.0));
     crate::stats::reset_frame();
     let mut scene = vello::Scene::new();
-    tree.paint(&mut scene);
+    tree.paint(&mut text, &mut scene);
     let painted = crate::stats::painted_nodes();
     assert!(painted < 30, "mid-scroll window stays bounded (painted {painted})");
 }
@@ -353,7 +353,7 @@ fn shadow_bleeding_into_view_survives_culling() {
         VerticalDirection::Down,
         TextBaseline::Alphabetic,
     )));
-    let mut push = |tree: &mut RenderTree, node: crate::RenderId, idx: usize| {
+    let push = |tree: &mut RenderTree, node: crate::RenderId, idx: usize| {
         tree.insert_child(col, node, idx);
     };
     let spacer1 = tree
@@ -375,7 +375,7 @@ fn shadow_bleeding_into_view_survives_culling() {
     tree.layout(&mut text, tight(300.0, 200.0));
     crate::stats::reset_frame();
     let mut scene = vello::Scene::new();
-    tree.paint(&mut scene);
+    tree.paint(&mut text, &mut scene);
     // Painted: col + spacer1 + wrap1 + card1 (the shadow reaches into view).
     // Culled: spacer2 + wrap2 (card2 never visited — its parent culled).
     assert_eq!(crate::stats::painted_nodes(), 4, "the offscreen shadowed card still paints");
@@ -422,7 +422,7 @@ fn scrolling_repositions_without_relayout() {
 
     // Paint sees the moved window: early rows cull, a mid-document band paints.
     let mut scene = vello::Scene::new();
-    tree.paint(&mut scene);
+    tree.paint(&mut text, &mut scene);
     let painted = crate::stats::painted_nodes();
     let culled = crate::stats::culled_nodes();
     assert!(painted < 30, "mid-scroll paint window stays bounded (painted {painted})");
@@ -552,19 +552,36 @@ fn text_field_paint_is_windowed_like_paragraphs() {
     tree.root = Some(scroll);
     tree.layout(&mut text, tight(400.0, 240.0));
 
+    // P5.2: the COLD build is lazy — a 3000-line document materializes only the
+    // caret window at layout (plus the visible window at paint below), never
+    // every line. Pre-P5.2 this was 3000 shapes on mount.
+    let cold = text.shape_cache_len();
+    assert!(cold < 200, "a cold 3000-line mount shapes O(window), not O(document) ({cold})");
+
     crate::stats::reset_frame();
     let mut scene = vello::Scene::new();
-    tree.paint(&mut scene);
+    tree.paint(&mut text, &mut scene);
     let runs = crate::stats::glyph_runs();
     assert!(runs < 200, "a 3000-line field encodes only the window ({runs} runs)");
 
-    // The keystroke contract at scale: editing ONE line of 3000 shapes exactly
-    // one new layout — the other 2999 are cache hits.
+    // The keystroke contract at scale: with the caret already ON the target line
+    // (its window materialized last frame, as in real typing), editing that line
+    // shapes exactly one new layout — every other line is carried or a cache hit.
+    let at = {
+        let f = tree.object_mut(f).downcast_mut::<RenderTextField>().unwrap();
+        let at = f.text.find("line 1500").expect("target line");
+        f.anchor = at;
+        f.focus = at;
+        at
+    };
+    tree.mark_needs_layout(f);
+    tree.layout(&mut text, tight(400.0, 240.0)); // caret window materializes here
     let before = text.shape_cache_len();
     {
         let f = tree.object_mut(f).downcast_mut::<RenderTextField>().unwrap();
-        let at = f.text.find("line 1500").expect("target line");
         f.text.insert(at, 'x');
+        f.anchor = at + 1;
+        f.focus = at + 1;
     }
     tree.mark_needs_layout(f);
     let t0 = std::time::Instant::now();
@@ -577,4 +594,140 @@ fn text_field_paint_is_windowed_like_paragraphs() {
         "a keystroke shapes exactly ONE line of 3000"
     );
     crate::text_edit::clear(4243);
+}
+
+// ---------------------------------------------------------------------------
+// P5.2 — lazy cold build: estimate-then-measure + motion fallbacks
+// ---------------------------------------------------------------------------
+
+/// Wrapped lines drift from their estimates; the paint pass measures them on
+/// first visibility, reflows the table, and requests a corrective relayout —
+/// which must SETTLE (no request once the visible window is measured). The
+/// wrapped region sits far below the caret window, so PAINT (not layout) does
+/// the measuring — the scroll offset puts it in view.
+#[test]
+fn text_field_lazy_estimates_settle_via_corrective_relayout() {
+    use crate::objects::{RenderScroll, RenderTextField, TextFieldStyle};
+    let mut text = TextEnv::new();
+    let mut tree = RenderTree::new();
+    let scroll = tree.insert(Box::new(RenderScroll::new(Axis::Vertical)));
+    // Short lines except a band of heavy wrappers well beyond the caret window.
+    let mut source = String::new();
+    for i in 0..1000 {
+        if (300..320).contains(&i) {
+            source.push_str(&format!("long line {i} "));
+            for _ in 0..30 {
+                source.push_str("wrapping words keep coming ");
+            }
+        } else {
+            source.push_str(&format!("short {i}"));
+        }
+        source.push('\n');
+    }
+    let mut field = RenderTextField::new(source, TextFieldStyle::default());
+    field.multiline = true;
+    field.field_id = 4245;
+    let f = tree.insert(Box::new(field));
+    tree.insert_child(scroll, f, 0);
+    tree.root = Some(scroll);
+
+    tree.layout(&mut text, tight(300.0, 400.0));
+    let style = TextFieldStyle::default();
+    let line_px = f64::from(style.font_size) * f64::from(style.line_height);
+    {
+        let table = crate::text_edit::get_lines(4245).expect("published");
+        assert!(
+            (table.lines[300].height.get() - line_px * 8.0).abs() > 0.0,
+            "sanity: slot exists"
+        );
+        assert!(table.lines[300].layout().is_none(), "the wrapped band starts unmaterialized");
+        // Scroll the band into view (estimated position is close enough) — the
+        // live wheel path: mutate the object's offset AND re-position the child
+        // (scroll-is-paint moves the node offset without a layout pass).
+        let y300 = table.lines[300].y.get();
+        let sc = tree.object_mut(scroll).downcast_mut::<RenderScroll>().unwrap();
+        sc.offset = y300;
+        sc.target = y300;
+        tree.set_scrolled_child_offset(scroll, pebbles_foundation::Offset::new(0.0, -y300));
+    }
+    tree.mark_needs_paint(scroll);
+
+    let mut scene = vello::Scene::new();
+    let mut passes = 0;
+    loop {
+        let pending = tree.paint(&mut text, &mut scene);
+        if pending.is_empty() {
+            break;
+        }
+        for id in pending {
+            tree.mark_needs_layout(id);
+        }
+        tree.layout(&mut text, tight(300.0, 400.0));
+        passes += 1;
+        assert!(passes < 6, "estimate-then-measure settles within a few passes");
+    }
+    eprintln!("[perf field] corrective passes to settle: {passes}");
+    assert!(passes >= 1, "scrolling into a wrapped band actually triggered the corrective pass");
+    let table = crate::text_edit::get_lines(4245).expect("published");
+    assert!(table.lines[300].layout().is_some(), "the visible band materialized");
+    assert!(
+        table.lines[300].height.get() > 2.0 * line_px,
+        "a wrapped line measured taller than its one-line estimate ({} vs {line_px})",
+        table.lines[300].height.get(),
+    );
+    assert!(table.materialized_count() < 400, "the tail stays estimates");
+    crate::text_edit::clear(4245);
+}
+
+/// Motion on a line that has never materialized (far outside the window +
+/// caret window) must stay char-boundary–safe on multibyte text — approximate
+/// is fine, panicking or splitting a char is not.
+#[test]
+fn text_field_lazy_motion_fallbacks_are_char_safe() {
+    use crate::objects::{RenderScroll, RenderTextField, TextFieldStyle};
+    let mut text = TextEnv::new();
+    let mut tree = RenderTree::new();
+    let scroll = tree.insert(Box::new(RenderScroll::new(Axis::Vertical)));
+    let mut source = String::new();
+    for i in 0..600 {
+        if i == 400 {
+            source.push_str("héllo wörld ε—дом");
+        } else {
+            source.push_str(&format!("line {i}"));
+        }
+        source.push('\n');
+    }
+    let full = source.clone();
+    let mut field = RenderTextField::new(source, TextFieldStyle::default());
+    field.multiline = true;
+    field.field_id = 4246;
+    let f = tree.insert(Box::new(field));
+    tree.insert_child(scroll, f, 0);
+    tree.root = Some(scroll);
+    tree.layout(&mut text, tight(400.0, 240.0));
+
+    let table = crate::text_edit::get_lines(4246).expect("published");
+    // Line 400 is far outside the caret window (caret at 0) and never painted.
+    let start: usize = full.split('\n').take(400).map(|l| l.len() + 1).sum();
+    let hline = "héllo wörld ε—дом";
+    assert_eq!(&full[start..start + hline.len()], hline, "target line located");
+    assert_eq!(table.materialized_count() < 100, true, "tail never materialized");
+
+    // One step right from the line start crosses the 2-byte 'h'? No — 'h' is
+    // ASCII; step from 'h' onto 'é' (2 bytes) and back, plus word/line motion.
+    let (_, r1) = crate::text_edit::right(4246, start, start, false).expect("right");
+    assert!(full.is_char_boundary(r1) && r1 > start, "right lands on a boundary");
+    let (_, r2) = crate::text_edit::right(4246, r1, r1, false).expect("right over é");
+    assert!(full.is_char_boundary(r2) && r2 > r1, "é stepped whole");
+    let (_, l1) = crate::text_edit::left(4246, r2, r2, false).expect("left");
+    assert_eq!(l1, r1, "left retraces the same boundary");
+    let (_, e) = crate::text_edit::line_end(4246, start, start, false).expect("end");
+    assert_eq!(e, start + hline.len(), "End = source line end without shaping");
+    let (_, s) = crate::text_edit::line_start(4246, e, e, false).expect("start");
+    assert_eq!(s, start, "Home = source line start without shaping");
+    let (_, w) = crate::text_edit::word_right(4246, start, start, false).expect("word");
+    assert!(full.is_char_boundary(w) && w > start, "word motion boundary-safe");
+    let (_, up) = crate::text_edit::line_up(4246, start + 1, start + 1, false).expect("up");
+    assert!(full.is_char_boundary(up) && up < start, "vertical hop lands above, on a boundary");
+    crate::text_edit::clear(4246);
 }

@@ -95,7 +95,7 @@ fn huge_markdown_document_headless_pipeline() {
 
     let mut scene = pebbles_render::Scene::new();
     let t = Instant::now();
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
     let paint = t.elapsed();
 
     let nodes = ui.render_node_count();
@@ -118,7 +118,7 @@ fn huge_markdown_document_headless_pipeline() {
     let layout_warm = t.elapsed();
     let mut scene2 = pebbles_render::Scene::new();
     let t = Instant::now();
-    ui.paint(&mut scene2);
+    ui.paint(&mut env, &mut scene2);
     let paint_warm = t.elapsed();
     eprintln!(
         "[perf huge-md] scroll-frame proxy: layout={layout_warm:?} paint={paint_warm:?} \
@@ -182,7 +182,7 @@ fn huge_markdown_virtualized_stays_viewport_bounded() {
     let elements = ui.element_count();
     let mut scene = pebbles_render::Scene::new();
     stats::reset_frame();
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
     eprintln!(
         "[perf huge-md virtual] cold={cold:?} elements={elements} nodes={nodes} painted={} glyph_runs={}",
         stats::painted_nodes(),
@@ -194,7 +194,7 @@ fn huge_markdown_virtualized_stays_viewport_bounded() {
     // clean item re-appends its retained fragment (P4).
     let mut scene2 = pebbles_render::Scene::new();
     stats::reset_frame();
-    ui.paint(&mut scene2);
+    ui.paint(&mut env, &mut scene2);
     assert_eq!(
         stats::fragments_encoded(),
         0,

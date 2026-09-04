@@ -143,5 +143,5 @@ fn foreground_decoration_paints_over_the_child_without_panic() {
     );
     ui.layout(&mut env, Size::new(200.0, 160.0));
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene); // encodes the foreground border — must not panic
+    ui.paint(&mut env, &mut scene); // encodes the foreground border — must not panic
 }

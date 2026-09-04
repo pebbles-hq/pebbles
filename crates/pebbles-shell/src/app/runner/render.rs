@@ -18,6 +18,18 @@ fn frame_stats_enabled() -> bool {
     })
 }
 
+/// X.6 — synthetic device-loss injection: `PEBBLES_SYNTH_GPU_LOSS=N` poisons the
+/// GPU error counter every N frames, driving the SAME full-stack recovery a real
+/// lost device triggers (fresh instance/adapter/device, every surface and
+/// renderer rebuilt). Soak tool only — unset in normal runs.
+fn synth_gpu_loss_every() -> u64 {
+    use std::sync::OnceLock;
+    static EVERY: OnceLock<u64> = OnceLock::new();
+    *EVERY.get_or_init(|| {
+        std::env::var("PEBBLES_SYNTH_GPU_LOSS").ok().and_then(|v| v.parse().ok()).unwrap_or(0)
+    })
+}
+
 impl Runner {
     /// Reconcile any dirty subtrees, lay out to the window, paint, and present.
     /// If uncaptured GPU errors landed since the last check, rebuild the WHOLE
@@ -101,6 +113,12 @@ impl Runner {
         log::trace(log::Cat::Frame, format!("frame {fno} begin"));
         pebbles_render::stats::reset_frame();
         pebbles_core::reactive_stats::reset();
+        // X.6: inject a synthetic device loss on schedule (soak tool; no-op unset).
+        let synth = synth_gpu_loss_every();
+        if synth > 0 && self.frame_no % synth == 0 {
+            eprintln!("pebbles: SYNTH device loss injected (frame {fno})");
+            GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
         if self.recover_gpu_if_poisoned() {
             // Render fresh state this same frame; also repaint secondary windows.
             for w in self.windows.values() {
@@ -198,7 +216,7 @@ impl Runner {
         // 3. Paint the logical scene, then scale it to physical pixels.
         let t = Instant::now();
         self.scene.reset();
-        self.ui.paint(&mut self.scene);
+        let corrective = self.ui.paint(&mut self.text, &mut self.scene);
         // F2: overlay the inspector outline (logical space, before the DPI scale).
         if self.inspect_mode
             && let Some(r) = self.inspect_rect
@@ -314,8 +332,10 @@ impl Runner {
         active.window.pre_present_notify();
         surface_texture.present();
 
-        // Keep the frames coming while any animation or scroll spring is running.
-        if scrolling || pending_tasks || pebbles_core::animation::active() {
+        // Keep the frames coming while any animation or scroll spring is running —
+        // or while a lazy paint-time measurement requested a corrective relayout
+        // (P5.2 estimate-then-measure settle).
+        if scrolling || pending_tasks || corrective || pebbles_core::animation::active() {
             active.window.request_redraw();
         }
 
@@ -407,7 +427,7 @@ impl Runner {
         w.ui.layout(&mut self.text, logical);
 
         self.scene.reset();
-        w.ui.paint(&mut self.scene);
+        let corrective = w.ui.paint(&mut self.text, &mut self.scene);
         self.frame.reset();
         self.frame.append(&self.scene, Some(Affine::scale(scale)));
         self.text.finish_frame();
@@ -454,7 +474,7 @@ impl Runner {
         w.window.pre_present_notify();
         surface_texture.present();
 
-        if pending_tasks || pebbles_core::animation::active() {
+        if pending_tasks || corrective || pebbles_core::animation::active() {
             w.window.request_redraw();
         }
     }

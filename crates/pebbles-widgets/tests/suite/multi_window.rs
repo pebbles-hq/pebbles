@@ -18,7 +18,7 @@ fn paint(ui: &mut Ui, env: &mut TextEnv, window: Size) {
     ui.rebuild_if_dirty();
     ui.layout(env, window);
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(env, &mut scene);
 }
 
 thread_local! {

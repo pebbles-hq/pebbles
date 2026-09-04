@@ -68,7 +68,7 @@ fn surfaces_and_disclosure_paint_and_toggle() {
         ui.rebuild_if_dirty();
         ui.layout(&mut text_env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut text_env, &mut scene);
     };
     frame(&mut ui);
 

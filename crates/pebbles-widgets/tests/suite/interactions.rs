@@ -42,7 +42,7 @@ fn radio_group_selects_on_tap() {
         ui.rebuild_if_dirty();
         ui.layout(&mut text_env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut text_env, &mut scene);
     };
     frame(&mut ui);
 
@@ -93,7 +93,7 @@ fn resizable_handle_drags() {
         ui.rebuild_if_dirty();
         ui.layout(&mut text_env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut text_env, &mut scene);
     };
     frame(&mut ui);
 
@@ -134,7 +134,7 @@ fn dialog_modal_opens_closes_and_paints() {
         ui.rebuild_if_dirty();
         ui.layout(&mut text_env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut text_env, &mut scene);
     };
     frame(&mut ui);
 
@@ -233,7 +233,7 @@ fn modifier_ext_chains_and_renders() {
     ui.mount_root(View::new(palette::WHITE, root).into_widget());
     ui.layout(&mut env, Size::new(240.0, 160.0));
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene); // must not panic
+    ui.paint(&mut env, &mut scene); // must not panic
 }
 
 #[test]
@@ -291,7 +291,7 @@ fn toggle_theme_rerenders_subscribers() {
         let dirtied = ui.rebuild_if_dirty();
         ui.layout(&mut env, window);
         let mut scene = pebbles_render::Scene::new();
-        ui.paint(&mut scene);
+        ui.paint(&mut env, &mut scene);
         dirtied
     };
     frame(&mut ui);

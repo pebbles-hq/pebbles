@@ -11,7 +11,7 @@ fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
     ui.rebuild_if_dirty();
     ui.layout(env, win);
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(env, &mut scene);
 }
 
 fn hc_root() -> impl IntoWidget {

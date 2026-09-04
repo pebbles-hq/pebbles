@@ -80,7 +80,7 @@ fn theme_override_nested_row_paints() {
     );
     ui.layout(&mut env, Size::new(300.0, 200.0));
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
 }
 
 #[test]

@@ -301,7 +301,7 @@ mod tests {
         init();
         sheet_signal().set(None); // isolate from any prior state in this thread
 
-        let id = super::sheet(text("filters")).side(Side::Right).size(300.0).open();
+        let id = sheet(text("filters")).side(Side::Right).size(300.0).open();
         assert!(is_open(), "opened");
 
         // C3: t rises 0 → 1 across MOTION_SECS (panel slides in from the edge).

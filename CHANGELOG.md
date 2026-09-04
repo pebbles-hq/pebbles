@@ -6,6 +6,32 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Performance — windowed COLD build: a huge editor mounts in O(window)
+The last unbounded editing cost is gone: opening a huge document used to shape
+every source line once (~3 s debug at 1.5 MB). Past 256 lines the field's line
+table now builds **lazily** — lines hold byte ranges and height *estimates*, and
+a line shapes on first **visibility**: paint (which now carries the window's
+text environment) materializes the visible window as it scrolls into view, and
+layout keeps a window around the caret shaped so motion, caret paint and
+scroll-to-caret always resolve against real geometry. Measured heights replace
+estimates and schedule a corrective relayout that settles in a frame or two
+(the same estimate-then-measure loop the virtualized lists use); an unwrapped
+line's estimate is already exact, so plain text never corrects at all. Caret
+motion onto a line that has never shaped falls back to char-boundary-safe
+arithmetic — approximate, panic-free, and unreachable in normal use. Small
+fields (≤ 256 lines) keep the eager exact path unchanged. Measured (debug): a
+6,000-line `text_area` cold-mounts in **9.9 ms shaping 69 lines** (previously
+all 6,000); a keystroke at 3,000 lines still shapes exactly one line; the
+1.5 MB gallery screen's worst mount frame drops to ~206 ms, dominated by
+parsing, with editor shaping O(window).
+
+### Reliability — synthetic device-loss soak (opt-in)
+`PEBBLES_SYNTH_GPU_LOSS=N` (debug tool) poisons the GPU error counter every N
+frames, driving the real recovery path end to end — fresh instance/adapter/
+device, every surface and renderer rebuilt. Soaked live under a huge-document
+input storm: 7 injected losses, 6 full-stack resets, 24,000 storm steps, zero
+panics or lost frames beyond the reset itself.
+
 ### API — one call-site convention: lowercase constructor fns (D10)
 Every widget is now constructed by a snake_case function; PascalCase names appear
 only in type positions. Added `container()`, `padding(..)`, `expanded(..)`,
@@ -75,8 +101,8 @@ shaped-text cache instead of one layout for the whole document:
 
 Verified live on the ~1.5 MB stress document: 50 s input storm = 430 frames,
 zero GPU errors/resets, encode ≤ 1.8 ms; 15 s idle = 2 frames then silence.
-(The remaining editor work — per-LINE shaping so a keystroke re-shapes one line
-instead of one document — is specced and tracked.)
+(Per-LINE shaping landed next — see the line-table entry above — and the cold
+mount joined it with the windowed cold build.)
 
 ### Performance — viewport-bounded rendering (the "huge document" work)
 Frame cost now tracks what is **in the user's line of sight**, never the size of

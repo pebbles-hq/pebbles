@@ -37,7 +37,7 @@ fn canvas_painter_runs_and_honors_size() {
     ui.layout(&mut env, Size::new(400.0, 400.0));
 
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut scene);
+    ui.paint(&mut env, &mut scene);
     assert!(PAINTS.with(Cell::get) >= 1, "the painter ran during paint");
 
     // The explicit width/height are honored (RenderCanvas sits in a SizedBox).
