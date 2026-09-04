@@ -225,18 +225,35 @@ pub fn markdown_screen() -> Element {
                                 ),
                             gap_w(12.0),
                             Expanded::new({
-                                let mut ed = markdown_editor(source)
-                                    .mode_signal(mode)
-                                    .lines(22)
-                                    .on_link(|url| {
-                                        toast(format!("link: {url}")).show();
-                                    });
-                                ed = match style_idx.get() {
-                                    1 => ed.style(serif_style()),
-                                    2 => ed.style(compact_style()),
-                                    _ => ed,
-                                };
-                                ed.into_widget()
+                                // Huge sources read through the VIRTUALIZED reader
+                                // (bounded box; only line-of-sight blocks build).
+                                // Normal sizes keep the editor workbench.
+                                if is_view && source.peek().len() > 200_000 {
+                                    let mut md = markdown("").bind(source).virtualized().on_link(
+                                        |url| {
+                                            toast(format!("link: {url}")).show();
+                                        },
+                                    );
+                                    md = match style_idx.get() {
+                                        1 => md.style(serif_style()),
+                                        2 => md.style(compact_style()),
+                                        _ => md,
+                                    };
+                                    Container::new().height(560.0).child(md).into_widget()
+                                } else {
+                                    let mut ed = markdown_editor(source)
+                                        .mode_signal(mode)
+                                        .lines(22)
+                                        .on_link(|url| {
+                                            toast(format!("link: {url}")).show();
+                                        });
+                                    ed = match style_idx.get() {
+                                        1 => ed.style(serif_style()),
+                                        2 => ed.style(compact_style()),
+                                        _ => ed,
+                                    };
+                                    ed.into_widget()
+                                }
                             }),
                         ])
                         .cross_axis_alignment(CrossAxisAlignment::Start)

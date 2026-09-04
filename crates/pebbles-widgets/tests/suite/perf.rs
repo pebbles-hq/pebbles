@@ -147,3 +147,58 @@ fn huge_markdown_document_headless_pipeline() {
         stats::glyph_runs(),
     );
 }
+
+// ---------------------------------------------------------------------------
+// Virtualized reader: only line-of-sight blocks exist, however big the source.
+// ---------------------------------------------------------------------------
+
+fn virtual_root() -> impl IntoWidget {
+    pebbles_widgets::Container::new()
+        .height(680.0)
+        .child(markdown(DOC.with(|d| d.borrow().clone())).virtualized())
+}
+
+#[test]
+fn huge_markdown_virtualized_stays_viewport_bounded() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    pebbles_widgets::theme::init();
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(900.0, 700.0);
+    DOC.with(|d| *d.borrow_mut() = huge_gfm(400));
+
+    ui.mount_root(View::new(palette::WHITE, component(virtual_root)).into_widget());
+    let t = Instant::now();
+    ui.rebuild_if_dirty();
+    ui.layout(&mut env, win);
+    // Corrective passes: auto-measure feeds real extents back for a frame or two.
+    for _ in 0..4 {
+        ui.rebuild_if_dirty();
+        ui.layout(&mut env, win);
+    }
+    let cold = t.elapsed();
+    let nodes = ui.render_node_count();
+    let elements = ui.element_count();
+    let mut scene = pebbles_render::Scene::new();
+    stats::reset_frame();
+    ui.paint(&mut scene);
+    eprintln!(
+        "[perf huge-md virtual] cold={cold:?} elements={elements} nodes={nodes} painted={} glyph_runs={}",
+        stats::painted_nodes(),
+        stats::glyph_runs(),
+    );
+    assert!(nodes < 900, "resident tree is O(viewport), not O(document): {nodes} nodes");
+
+    // Scroll deep: the window slides; the resident tree stays bounded.
+    ui.dispatch_scroll(pebbles_foundation::Offset::new(450.0, 350.0), 5_000.0);
+    for _ in 0..6 {
+        ui.rebuild_if_dirty();
+        ui.layout(&mut env, win);
+    }
+    let nodes_after = ui.render_node_count();
+    assert!(
+        nodes_after < 900,
+        "after a deep scroll the window stays bounded: {nodes_after} nodes"
+    );
+}

@@ -125,7 +125,7 @@ impl MarkdownStyle {
 // The parsed document model
 // ---------------------------------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct Run {
     text: String,
     bold: bool,
@@ -135,13 +135,13 @@ struct Run {
     link: Option<String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum Inline {
     Run(Run),
     Image { url: String, alt: String },
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct ListItem {
     /// `Some(checked)` for GFM task items; the usize is the document-order
     /// task ordinal (the handle [`toggle_task`] flips).
@@ -149,7 +149,7 @@ struct ListItem {
     blocks: Vec<Block>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 enum Block {
     Heading(u8, Vec<Inline>),
     Para(Vec<Inline>),
@@ -450,11 +450,18 @@ pub struct Markdown {
     style: Option<MarkdownStyle>,
     on_link: Option<Rc<dyn Fn(&str)>>,
     on_task: Option<Rc<dyn Fn(usize, bool)>>,
+    virtualized: bool,
 }
 
 /// Render `source` as Markdown (GFM: tables, task lists, strikethrough).
 pub fn markdown(source: impl Into<String>) -> Markdown {
-    Markdown { source: Source::Fixed(source.into()), style: None, on_link: None, on_task: None }
+    Markdown {
+        source: Source::Fixed(source.into()),
+        style: None,
+        on_link: None,
+        on_task: None,
+        virtualized: false,
+    }
 }
 
 impl Markdown {
@@ -480,6 +487,15 @@ impl Markdown {
         self.on_task = Some(Rc::new(f));
         self
     }
+    /// Render through the virtualized list: only the blocks in (or within one
+    /// cache margin of) the viewport are BUILT — the reader becomes its own
+    /// scroll view, so give it a bounded box on the main axis (a fixed height
+    /// or an `Expanded` slot). This is how a multi-megabyte document stays a
+    /// few hundred widgets no matter its length.
+    pub fn virtualized(mut self) -> Self {
+        self.virtualized = true;
+        self
+    }
 }
 
 struct MdProps {
@@ -487,6 +503,7 @@ struct MdProps {
     style: Option<MarkdownStyle>,
     on_link: Option<Rc<dyn Fn(&str)>>,
     on_task: Option<Rc<dyn Fn(usize, bool)>>,
+    virtualized: bool,
 }
 
 impl IntoWidget for Markdown {
@@ -498,6 +515,7 @@ impl IntoWidget for Markdown {
                 style: self.style.take(),
                 on_link: self.on_link.take(),
                 on_task: self.on_task.take(),
+                virtualized: self.virtualized,
             },
         )
         .into_widget()
@@ -516,10 +534,6 @@ struct Cx {
 }
 
 fn render_markdown(p: &MdProps) -> AnyWidget {
-    let src = match &p.source {
-        Source::Fixed(s) => s.clone(),
-        Source::Bound(sig) => sig.get(), // subscribe: edits re-render the view
-    };
     let style = Rc::new(p.style.clone().unwrap_or_else(MarkdownStyle::from_theme));
     let cx = Cx {
         color: style.body_color,
@@ -531,8 +545,82 @@ fn render_markdown(p: &MdProps) -> AnyWidget {
             Source::Fixed(_) => None,
         },
     };
-    let blocks = parse_blocks(&src);
+    // Parse ONCE per source value (memoized): a task toggle or theme flip must
+    // not re-parse a multi-megabyte document, only re-render blocks.
+    let blocks: Rc<Vec<Block>> = match &p.source {
+        Source::Bound(sig) => {
+            let sig = *sig;
+            pebbles_core::create_memo(move || Rc::new(parse_blocks(&sig.get()))).get()
+        }
+        Source::Fixed(s) => {
+            let s = s.clone();
+            pebbles_core::create_memo(move || Rc::new(parse_blocks(&s))).get()
+        }
+    };
+    if p.virtualized {
+        // Only the blocks in the line of sight (+ cache margin) are BUILT; the
+        // rest of the document exists as per-kind extent estimates that real
+        // measurements replace as they scroll in.
+        let gap = cx.style.block_gap;
+        let fallback = 3.0 * f64::from(cx.style.body_size);
+        let est_style = cx.style.clone();
+        let est_blocks = blocks.clone();
+        let count = blocks.len();
+        let item_cx = cx.clone();
+        return crate::widgets::ListView::builder_auto(count, move |i| {
+            let inner = render_block(&blocks[i], &item_cx);
+            if i + 1 < count {
+                Padding::new(EdgeInsets::only(0.0, 0.0, 0.0, gap), inner).into_widget()
+            } else {
+                inner
+            }
+        })
+        .estimated_extent_of(move |i| estimate_block(&est_blocks[i], &est_style) + gap)
+        .estimated_extent(fallback)
+        .into_widget();
+    }
     render_blocks(&blocks, &cx)
+}
+
+/// A cheap per-kind extent guess for a block (pre-measurement): keeps the
+/// virtual list's scrollbar stable and deep jumps accurate. Real layout
+/// measurements replace these as blocks scroll into view.
+fn estimate_block(b: &Block, s: &MarkdownStyle) -> f64 {
+    let line = f64::from(s.body_size) * 1.5;
+    fn inline_len(inls: &[Inline]) -> usize {
+        inls.iter()
+            .map(|i| match i {
+                Inline::Run(r) => r.text.len(),
+                Inline::Image { .. } => 200,
+            })
+            .sum()
+    }
+    match b {
+        Block::Heading(l, _) => {
+            f64::from(s.body_size * s.heading_scale[(*l as usize - 1).min(5)]) * 1.6
+        }
+        Block::Para(inls) => {
+            let chars = inline_len(inls).max(1) as f64;
+            (chars / 90.0).ceil().max(1.0) * line
+        }
+        Block::Code { text, .. } => {
+            (text.lines().count().max(1) as f64) * f64::from(s.body_size * 0.92) * 1.5 + 44.0
+        }
+        Block::Quote(body) => body.iter().map(|b| estimate_block(b, s)).sum::<f64>() + 4.0,
+        Block::List { items, .. } => {
+            items
+                .iter()
+                .map(|it| {
+                    it.blocks.iter().map(|b| estimate_block(b, s)).sum::<f64>().max(line) + 4.0
+                })
+                .sum::<f64>()
+                + 8.0
+        }
+        Block::Rule => 1.0,
+        Block::Table { header: _, rows } => {
+            ((rows.len() + 1) as f64) * (f64::from(s.body_size) + 10.0) + 8.0
+        }
+    }
 }
 
 fn render_blocks(blocks: &[Block], cx: &Cx) -> AnyWidget {

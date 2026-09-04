@@ -43,6 +43,10 @@ struct ExtentCache {
     dirty: bool,
     /// Fallback extent for unmeasured items (the `.estimated_extent` knob).
     estimate: f64,
+    /// Optional per-index estimator — a caller who knows each item's KIND can
+    /// seed far better first guesses than one global number (stable scrollbar,
+    /// fewer corrective passes after deep jumps).
+    estimates: Option<Rc<dyn Fn(usize) -> f64>>,
 }
 
 impl ExtentCache {
@@ -51,7 +55,9 @@ impl ExtentCache {
             .get(i)
             .copied()
             .flatten()
-            .unwrap_or(self.estimate)
+            .unwrap_or_else(|| {
+                self.estimates.as_ref().map(|f| f(i)).unwrap_or(self.estimate)
+            })
             .max(1.0)
     }
 
@@ -104,9 +110,12 @@ impl ExtentCache {
             None => true,
         };
         if changed {
+            let was = old.unwrap_or_else(|| {
+                self.estimates.as_ref().map(|f| f(i)).unwrap_or(self.estimate)
+            });
             self.measured[i] = Some(v);
             self.dirty = true;
-            Some(v - old.unwrap_or(self.estimate))
+            Some(v - was)
         } else {
             None
         }
@@ -302,6 +311,11 @@ pub struct ListView {
     auto: bool,
     /// Fallback extent for unmeasured items in auto mode.
     estimate: f64,
+    /// Per-index extent estimator for auto mode (`.estimated_extent_of`).
+    estimate_fn: Option<Rc<dyn Fn(usize) -> f64>>,
+    /// Extra build margin (logical px) on EACH side of the viewport: items within
+    /// it exist before they scroll into view, so flings don't pop blanks.
+    cache_extent: f64,
     /// Snap the controlled offset to multiples of this (0 = off) — paged lists
     /// and carousels.
     snap: f64,
@@ -328,6 +342,8 @@ impl ListView {
             extents: None,
             auto: false,
             estimate: 40.0,
+            estimate_fn: None,
+            cache_extent: 250.0,
             snap: 0.0,
             reverse: false,
             padding: None,
@@ -356,6 +372,8 @@ impl ListView {
             extents: None,
             auto: true,
             estimate: 40.0,
+            estimate_fn: None,
+            cache_extent: 250.0,
             snap: 0.0,
             reverse: false,
             padding: None,
@@ -383,6 +401,8 @@ impl ListView {
             extents: Some(Rc::new(extents)),
             auto: false,
             estimate: 40.0,
+            estimate_fn: None,
+            cache_extent: 250.0,
             snap: 0.0,
             reverse: false,
             padding: None,
@@ -410,6 +430,8 @@ impl ListView {
             extents: None,
             auto: false,
             estimate: 40.0,
+            estimate_fn: None,
+            cache_extent: 250.0,
             snap: 0.0,
             reverse: false,
             padding: None,
@@ -449,6 +471,20 @@ impl ListView {
         self.estimate = extent.max(1.0);
         self
     }
+    /// A PER-INDEX extent estimate for auto mode: when the caller knows each
+    /// item's kind (a heading vs a code block vs a table), per-kind guesses keep
+    /// the scrollbar stable and deep jumps accurate before measurement.
+    pub fn estimated_extent_of(mut self, f: impl Fn(usize) -> f64 + 'static) -> Self {
+        self.estimate_fn = Some(Rc::new(f));
+        self
+    }
+    /// Extra build margin (logical px) on each side of the viewport (default
+    /// 250): items inside it are built before they scroll into view, so flings
+    /// reveal content instead of blanks.
+    pub fn cache_extent(mut self, px: f64) -> Self {
+        self.cache_extent = px.max(0.0);
+        self
+    }
     /// Snap the scroll offset to multiples of `extent` (paged lists, carousels).
     /// Each scroll settles on the nearest page. `0` disables snapping.
     pub fn snap(mut self, extent: f64) -> Self {
@@ -468,6 +504,8 @@ struct Props {
     extents: Option<Rc<dyn Fn(usize) -> f64>>,
     auto: bool,
     estimate: f64,
+    estimate_fn: Option<Rc<dyn Fn(usize) -> f64>>,
+    cache_extent: f64,
     snap: f64,
     reverse: bool,
     padding: Option<pebbles_foundation::EdgeInsets>,
@@ -488,6 +526,8 @@ impl IntoWidget for ListView {
                 extents: self.extents,
                 auto: self.auto,
                 estimate: self.estimate,
+                estimate_fn: self.estimate_fn,
+                cache_extent: self.cache_extent,
                 snap: self.snap,
                 reverse: self.reverse,
                 padding: self.padding,
@@ -527,6 +567,10 @@ fn render_list(p: &Props) -> ListViewport {
         let rc = cache_rc.get();
         let mut cache = rc.borrow_mut();
         cache.estimate = p.estimate.max(1.0);
+        if cache.estimates.is_some() != p.estimate_fn.is_some() {
+            cache.dirty = true;
+        }
+        cache.estimates = p.estimate_fn.clone();
         if cache.measured.len() != p.count {
             cache.measured.resize(p.count, None);
             cache.dirty = true;
@@ -607,9 +651,10 @@ fn render_list(p: &Props) -> ListViewport {
 
     // The visible window: binary search over the prefix when variable, a walk
     // over the extent cache when auto, else the fixed-extent arithmetic.
+    let ce = p.cache_extent;
     let (first, last) = if auto {
-        let lo = o.max(0.0);
-        let hi = (o + viewport).max(0.0);
+        let lo = (o - ce).max(0.0);
+        let hi = (o + viewport + ce).max(0.0);
         let rc = cache_rc.get();
         let mut cache = rc.borrow_mut();
         let first = cache.index_at(lo).saturating_sub(OVERSCAN as usize);
@@ -621,14 +666,14 @@ fn render_list(p: &Props) -> ListViewport {
         }
         (first, (last + OVERSCAN as usize).min(p.count))
     } else if variable {
-        let lo = o.max(0.0);
-        let hi = (o + viewport).max(0.0);
+        let lo = (o - ce).max(0.0);
+        let hi = (o + viewport + ce).max(0.0);
         let first = prefix.partition_point(|&top| top < lo).saturating_sub(OVERSCAN as usize);
         let last = prefix.partition_point(|&top| top <= hi).min(p.count).saturating_add(OVERSCAN as usize).min(p.count);
         (first, last)
     } else {
-        let first = (((o / unit).floor() as isize) - OVERSCAN).max(0) as usize;
-        let last = ((((o + viewport) / unit).ceil() as isize) + OVERSCAN).max(0) as usize;
+        let first = ((((o - ce) / unit).floor() as isize) - OVERSCAN).max(0) as usize;
+        let last = ((((o + viewport + ce) / unit).ceil() as isize) + OVERSCAN).max(0) as usize;
         (first, last.min(p.count))
     };
 
