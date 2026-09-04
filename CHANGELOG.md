@@ -6,6 +6,27 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Performance — top-notch reactivity (lazy memos + allocation-free writes)
+The signal runtime keeps its best-in-class handle (a `Copy` slotmap id — no
+`Arc`, no borrow footgun) and glitch-free two-phase flush, and sharpens the rest:
+- **Allocation-free writes.** `set`/`update` reuse the value box in place (no
+  `Box::new` per write), and the scheduler drains subscribers through recycled
+  scratch buffers (no `Vec` per write). A steady-state write allocates nothing.
+- **Lazy push-pull memos (three-color).** A write to an input now flips flags and
+  computes nothing; a memo recomputes only when something rendered pulls it, and a
+  memo nothing reads this frame doesn't recompute at all (a 100-deep unread chain:
+  0 recomputes, was 100). The equality cut and glitch-freedom are preserved —
+  demanded memos settle before components render, so a recompute that lands on the
+  same value never wakes readers, and a leaf never sees a half-updated graph.
+- **New API.** `create_memo_with(f, equals)` — a memo with a custom equality
+  policy (e.g. `Rc::ptr_eq` to cut without a deep compare; drops the `PartialEq`
+  bound). `on(deps, f)` / `on_defer(deps, f)` — explicit-dependency effects
+  (track `deps`, run the body untracked; `on_defer` skips the mount run).
+  `Store::select_memo` is now a field-scoped lazy selector for free.
+- **Instrumentation.** `pebbles-core::reactive_stats` counters
+  (`PEBBLES_REACTIVE_STATS=1`) + a headless reactive stress harness; a memo
+  census so a leaked lazy node is caught by the navigation soak.
+
 ### Performance — per-LINE text editing (the line table)
 Multi-line fields now shape **one layout per source line** through the window's
 shaped-text cache instead of one layout for the whole document:

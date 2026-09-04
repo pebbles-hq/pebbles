@@ -312,3 +312,30 @@ fn on_tracks_only_deps_and_defer_skips_first() {
     flush();
     assert_eq!(ran2.get(), 1, "on_defer runs on the first change");
 }
+
+#[test]
+fn effect_cascade_through_lazy_memo_converges() {
+    // An effect writes a signal that feeds a memo that another effect reads: the
+    // settle-then-run flush loop must converge to the final consistent value
+    // (T4.3 reentrancy/ordering under the lazy marking).
+    use std::cell::Cell;
+    use std::rc::Rc;
+    let trigger = create_signal(0i64);
+    let mid = create_signal(0i64);
+    // Effect A: mirrors `trigger` into `mid` (a write feeding the memo below).
+    create_effect(move || {
+        let t = trigger.get();
+        mid.set(t * 10);
+    });
+    let doubled = create_memo(move || mid.get() * 2);
+    let seen = Rc::new(Cell::new(-1i64));
+    let s2 = seen.clone();
+    create_effect(move || {
+        s2.set(doubled.get());
+    });
+    assert_eq!(seen.get(), 0);
+    trigger.set(3);
+    flush();
+    // trigger=3 → mid=30 → doubled=60. The cascade settled to the final value.
+    assert_eq!(seen.get(), 60, "the effect→signal→memo→effect cascade converged");
+}

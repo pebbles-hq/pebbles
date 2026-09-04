@@ -1044,6 +1044,13 @@ pub fn census_signals() -> usize {
     with_rt(|rt| rt.signals.len())
 }
 
+/// Number of live memo (lazy derived) nodes (debug-only) — a memo that fails to
+/// dispose with its component is a leak the soak catches.
+#[cfg(debug_assertions)]
+pub fn census_memos() -> usize {
+    with_rt(|rt| rt.memos.len())
+}
+
 /// Number of active component→signal subscription edges (debug-only).
 #[cfg(debug_assertions)]
 pub fn census_subscriptions() -> usize {
@@ -1056,10 +1063,10 @@ pub fn census_cleanups() -> usize {
     with_rt(|rt| rt.cleanups.values().map(|v| v.len()).sum())
 }
 
-/// Number of components + effects scheduled to re-run (debug-only).
+/// Number of components + effects + memos scheduled/queued to settle (debug-only).
 #[cfg(debug_assertions)]
 pub fn census_pending() -> usize {
-    with_rt(|rt| rt.pending_components.len() + rt.pending_effects.len())
+    with_rt(|rt| rt.pending_components.len() + rt.pending_effects.len() + rt.pending_memos.len())
 }
 
 /// Provide a value to the current component's **whole subtree** while it renders.

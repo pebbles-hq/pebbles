@@ -57,6 +57,22 @@ SolidJS semantics in `pebbles-core/src/reactive.rs`:
   position-based per component instance; never call them conditionally.
 - `create_root_signal` is the non-hook escape hatch for registry-keyed state.
 - A write schedules only the subscribing components (deduped), not the whole tree.
+  It also allocates nothing on the hot path: the value box is reused in place and
+  the scheduler drains subscribers through recycled scratch buffers.
+- **Signals are eager, memos are lazy.** A write flips flags — it schedules the
+  signal's component/effect readers and marks its memo readers stale
+  (`Clean`/`Check`/`Dirty`), computing nothing. A memo recomputes only when
+  something rendered pulls it (`get`/`peek`), and cuts the re-render cascade when
+  its value is unchanged (`create_memo_with` takes a custom equality policy). A
+  memo nothing reads this frame never recomputes. Demanded memos are settled
+  before components render, so reads are glitch-free (a leaf never sees a
+  half-updated derived graph).
+- `on(deps, f)` / `on_defer(deps, f)` are explicit-dependency effects (track
+  `deps`, run the body untracked); `Store::select_memo` is a field-scoped lazy
+  selector — a write to an untouched field never wakes it.
+- Reactive-runtime work is measurable via `pebbles-core::reactive_stats`
+  (`PEBBLES_REACTIVE_STATS=1`): writes, notifies, memo recomputes, effect runs,
+  and hot-path allocations.
 
 ## The shell / engine boundary
 

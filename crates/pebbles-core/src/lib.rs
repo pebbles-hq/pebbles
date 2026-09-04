@@ -75,6 +75,8 @@ pub use animation::{census_loops, census_timeouts};
 #[cfg(debug_assertions)]
 pub use focus::census_registrations;
 #[cfg(debug_assertions)]
-pub use reactive::{census_cleanups, census_pending, census_signals, census_subscriptions};
+pub use reactive::{
+    census_cleanups, census_memos, census_pending, census_signals, census_subscriptions,
+};
 #[cfg(debug_assertions)]
 pub use scroll::census_handlers;
