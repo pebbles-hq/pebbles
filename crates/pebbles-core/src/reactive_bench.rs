@@ -212,3 +212,103 @@ fn diamond_reads_are_glitch_free() {
         assert_eq!(va, input * 2, "the leaf saw the up-to-date value");
     }
 }
+
+#[test]
+fn store_select_memo_is_lazy_and_field_scoped() {
+    use crate::reactive::create_store;
+    use std::cell::Cell;
+    use std::rc::Rc;
+    #[derive(Clone)]
+    struct State {
+        a: i64,
+        b: i64,
+    }
+    let store = create_store(State { a: 1, b: 100 });
+    // A selector on `a` only. Its reader (a leaf effect) must re-run ONLY when `a`
+    // changes — a write that touches only `b` must not wake it (field-scoped via
+    // the lazy equality-cut memo).
+    let a_sel = store.select_memo(|s| s.a);
+    let runs = Rc::new(Cell::new(0u32));
+    let r2 = runs.clone();
+    create_effect(move || {
+        let _ = a_sel.get();
+        r2.set(r2.get() + 1);
+    });
+    assert_eq!(runs.get(), 1, "the selector's reader ran once at mount");
+
+    // Write only `b`: the store notifies, but the `a` selector cuts (a unchanged)
+    // → its reader does NOT re-run.
+    store.update(|s| s.b = 200);
+    flush();
+    assert_eq!(runs.get(), 1, "a write to an untouched field does not wake the selector");
+
+    // Write `a`: the selector changes → its reader re-runs exactly once.
+    store.update(|s| s.a = 2);
+    flush();
+    assert_eq!(runs.get(), 2, "a write to the selected field wakes the reader once");
+}
+
+#[test]
+fn memo_with_reference_policy_cuts_on_pointer_identity() {
+    use crate::reactive::create_memo_with;
+    // A memo over Rc<i64> that cuts on pointer identity: recomputing to the SAME
+    // Rc must not wake readers even though the Rc is cloned each time.
+    let s = create_signal(0i64);
+    let shared = std::rc::Rc::new(7i64);
+    let shared2 = shared.clone();
+    let m = create_memo_with(
+        move || {
+            let _ = s.get(); // depends on s, but always returns the same Rc
+            shared2.clone()
+        },
+        |a, b| std::rc::Rc::ptr_eq(a, b),
+    );
+    let runs = std::rc::Rc::new(std::cell::Cell::new(0u32));
+    let r2 = runs.clone();
+    create_effect(move || {
+        let _ = m.get();
+        r2.set(r2.get() + 1);
+    });
+    assert_eq!(runs.get(), 1);
+    s.set(1);
+    flush();
+    assert_eq!(runs.get(), 1, "pointer-identical recompute does not wake the reader");
+    let _ = shared; // keep the original Rc alive
+}
+
+#[test]
+fn on_tracks_only_deps_and_defer_skips_first() {
+    use crate::reactive::{on, on_defer};
+    use std::cell::Cell;
+    use std::rc::Rc;
+    let dep = create_signal(0i64);
+    let noise = create_signal(0i64);
+    let ran = Rc::new(Cell::new(0u32));
+    let r2 = ran.clone();
+    on(
+        move || dep.get(),
+        move |d| {
+            // Body reads `noise` but must NOT subscribe to it.
+            let _ = noise.peek();
+            r2.set(r2.get() + 1);
+            let _ = d;
+        },
+    );
+    assert_eq!(ran.get(), 1, "on runs once at mount");
+    noise.set(5); // not a dependency → no re-run
+    flush();
+    assert_eq!(ran.get(), 1, "on ignores reads its body made (untracked body)");
+    dep.set(1);
+    flush();
+    assert_eq!(ran.get(), 2, "on re-runs when its dep changes");
+
+    // on_defer skips the mount run.
+    let dep2 = create_signal(0i64);
+    let ran2 = Rc::new(Cell::new(0u32));
+    let r3 = ran2.clone();
+    on_defer(move || dep2.get(), move |_| r3.set(r3.get() + 1));
+    assert_eq!(ran2.get(), 0, "on_defer does not run at mount");
+    dep2.set(1);
+    flush();
+    assert_eq!(ran2.get(), 1, "on_defer runs on the first change");
+}

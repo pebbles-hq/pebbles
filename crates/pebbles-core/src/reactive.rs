@@ -617,6 +617,23 @@ fn run_effect(id: EffectId) {
 /// a component, like any signal). Reads (`get`/`peek`) go through the returned
 /// `Signal<T>` exactly as before — the laziness is invisible at the call site.
 pub fn create_memo<T: 'static + Clone + PartialEq>(f: impl Fn() -> T + 'static) -> Signal<T> {
+    create_memo_with(f, |a, b| a == b)
+}
+
+/// A [`create_memo`] with a **custom equality policy** (Compose's
+/// `SnapshotMutationPolicy`): `equals(old, new)` decides when the memo's value is
+/// "unchanged" and the propagation is cut. Use it for values that aren't
+/// `PartialEq`, or to cut on a cheaper notion of equality — e.g. an
+/// `Rc<BigThing>` memo that cuts on pointer identity so a recompute producing the
+/// same `Rc` never wakes readers, without a deep compare:
+///
+/// ```ignore
+/// let doc = create_memo_with(move || parse(src.get()), |a, b| Rc::ptr_eq(a, b));
+/// ```
+pub fn create_memo_with<T: 'static + Clone>(
+    f: impl Fn() -> T + 'static,
+    equals: impl Fn(&T, &T) -> bool + 'static,
+) -> Signal<T> {
     // The output value lives in an ordinary signal (reusing the read API + the
     // subscriber sets). The initial value is computed UNTRACKED; the tracked
     // recompute below wires the sources. Position-stable inside a component: the
@@ -630,14 +647,15 @@ pub fn create_memo<T: 'static + Clone + PartialEq>(f: impl Fn() -> T + 'static) 
 
     let output = signal.id;
     // The type-erased recompute: runs the user fn under `observer = Memo(id)`
-    // (set by the caller), compares to the stored value, writes it back and bumps
-    // the write-version only when it changed, and reports whether it changed.
+    // (set by the caller), compares to the stored value via the policy, writes it
+    // back and bumps the write-version only when it changed, and reports whether it
+    // changed.
     let recompute: Rc<dyn Fn(MemoId) -> bool> = Rc::new(move |_mid| {
         crate::reactive_stats::bump_memo_recompute();
         let value = f(); // reads its inputs (observer is Memo(mid)); done outside any borrow
         with_rt(|rt| {
             let Some(slot) = rt.signals.get_mut(output) else { return false };
-            let changed = slot.value.downcast_ref::<T>().is_none_or(|old| old != &value);
+            let changed = slot.value.downcast_ref::<T>().is_none_or(|old| !equals(old, &value));
             if changed {
                 write_value(slot, value);
                 rt.write_version += 1;
@@ -665,6 +683,35 @@ pub fn create_memo<T: 'static + Clone + PartialEq>(f: impl Fn() -> T + 'static) 
     // write can find this memo. The value is unchanged, so no one is scheduled.
     update_if_necessary(mid);
     signal
+}
+
+/// An effect with **explicit dependencies** (Solid's `on`): `deps` is read
+/// *tracked* (so the effect re-runs when it changes), then `f(dep)` runs
+/// *untracked* — reads inside `f` never subscribe. Use it when the body touches
+/// signals it must NOT react to, or to state the trigger precisely:
+///
+/// ```ignore
+/// on(move || query.get(), move |q| { spawn_search(&q); }); // re-runs on `query` only
+/// ```
+pub fn on<D: 'static, F: Fn(D) + 'static>(deps: impl Fn() -> D + 'static, f: F) {
+    create_effect(move || {
+        let d = deps(); // tracked — this is what the effect subscribes to
+        untrack(|| f(d)); // body runs untracked
+    });
+}
+
+/// Like [`on`], but SKIPS the first (mount) run — the effect fires only on
+/// *subsequent* changes to `deps` (Solid's `on(..., { defer: true })`). The first
+/// evaluation still subscribes to `deps`; it just doesn't call `f`.
+pub fn on_defer<D: 'static, F: Fn(D) + 'static>(deps: impl Fn() -> D + 'static, f: F) {
+    let first = std::cell::Cell::new(true);
+    create_effect(move || {
+        let d = deps(); // tracked
+        if first.replace(false) {
+            return; // skip the mount run
+        }
+        untrack(|| f(d));
+    });
 }
 
 /// Bring a memo up to date if a source might have changed (Reactively's
@@ -831,11 +878,13 @@ impl<S: 'static + Clone> Store<S> {
     pub fn select<R>(&self, f: impl FnOnce(&S) -> R) -> R {
         self.signal.with(f)
     }
-    /// A deduped selector (E4): returns a `Signal<R>` that recomputes `f` when the
-    /// store changes but only propagates (re-renders downstream) when the selected
-    /// slice actually changes (`PartialEq`). Sugar for
-    /// `create_memo(move || store.select(&f))` — call it at the top level of a
-    /// component, like any hook.
+    /// A deduped, field-scoped selector: returns a `Signal<R>` whose readers
+    /// re-render only when the selected slice actually changes (`PartialEq`). It is
+    /// a **lazy** memo (see [`create_memo`]) — a store write it doesn't affect does
+    /// not recompute it, and the equality cut stops the re-render cascade at the
+    /// slice boundary. This is the blessed answer to the coarse `Store`: a write to
+    /// one field wakes only that field's selectors. Sugar for
+    /// `create_memo(move || store.select(&f))` — call it once, at a stable position.
     ///
     /// ```ignore
     /// let name = store.select_memo(|s| s.user.name.clone()); // re-renders only when the name changes
