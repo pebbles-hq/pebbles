@@ -445,29 +445,93 @@ fn text_field_caret_blink_reuses_the_shaped_layout() {
     let id = tree.insert(Box::new(field));
     tree.root = Some(id);
     tree.layout(&mut text, tight(300.0, 200.0));
-    let first = crate::text_edit::get(4242).expect("published");
-    assert_eq!(text.shape_cache_len(), 1);
+    let first = crate::text_edit::get_lines(4242).expect("published line table");
+    assert_eq!(first.line_count(), 3);
+    assert_eq!(text.shape_cache_len(), 3, "one shaped layout per line");
 
-    // A caret blink: mutate display-only state, relayout — the SAME shaped
-    // layout must come back (Rc identity), with zero new cache entries.
+    // A caret blink: mutate display-only state, relayout — the SAME table must
+    // come back (Rc identity), with zero new cache entries and zero shaping.
     tree.object_mut(id).downcast_mut::<RenderTextField>().unwrap().caret_visible = false;
     tree.mark_needs_layout(id);
     tree.layout(&mut text, tight(300.0, 200.0));
-    let second = crate::text_edit::get(4242).expect("published");
-    assert!(std::rc::Rc::ptr_eq(&first, &second), "a blink must not re-shape the document");
-    assert_eq!(text.shape_cache_len(), 1);
+    let second = crate::text_edit::get_lines(4242).expect("published line table");
+    assert!(std::rc::Rc::ptr_eq(&first, &second), "a blink must not rebuild the table");
+    assert_eq!(text.shape_cache_len(), 3);
 
-    // A real edit shapes exactly once more.
+    // A real edit (append a line) shapes exactly ONE new line: the untouched
+    // lines are cache hits — the keystroke cost is O(changed lines), never O(doc).
     {
         let f = tree.object_mut(id).downcast_mut::<RenderTextField>().unwrap();
         f.text.push_str("\nfourth line");
     }
     tree.mark_needs_layout(id);
     tree.layout(&mut text, tight(300.0, 200.0));
-    let third = crate::text_edit::get(4242).expect("published");
-    assert!(!std::rc::Rc::ptr_eq(&second, &third), "an edit re-shapes");
-    assert_eq!(text.shape_cache_len(), 2);
+    let third = crate::text_edit::get_lines(4242).expect("published line table");
+    assert!(!std::rc::Rc::ptr_eq(&second, &third), "an edit rebuilds the table");
+    assert_eq!(third.line_count(), 4);
+    assert_eq!(text.shape_cache_len(), 4, "exactly one NEW line shaped");
     crate::text_edit::clear(4242);
+}
+
+#[test]
+fn line_table_motion_moves_the_caret_across_lines() {
+    use crate::objects::{RenderTextField, TextFieldStyle};
+    use crate::text_edit as edit;
+    let mut text = TextEnv::new();
+    let mut tree = RenderTree::new();
+    let src = "alpha beta\n\ngamma delta words\nlast";
+    let mut field = RenderTextField::new(src, TextFieldStyle::default());
+    field.multiline = true;
+    field.field_id = 4244;
+    let id = tree.insert(Box::new(field));
+    tree.root = Some(id);
+    tree.layout(&mut text, tight(400.0, 300.0));
+    let table = edit::get_lines(4244).expect("table");
+    assert_eq!(table.line_count(), 4, "empty line is a real line");
+
+    // Line 0 = "alpha beta" (0..10), line 1 = "" (11..11),
+    // line 2 = "gamma delta words" (12..29), line 3 = "last" (30..34).
+    // Right at a line end crosses onto the next line's start (over the newline).
+    let (_, f) = edit::right(4244, 10, 10, false).expect("right");
+    assert_eq!(f, 11, "line end -> next (empty) line start");
+    let (_, f) = edit::right(4244, 11, 11, false).expect("right");
+    assert_eq!(f, 12, "empty line -> next line start");
+    // Left at a line start crosses to the previous line's end.
+    let (_, f) = edit::left(4244, 12, 12, false).expect("left");
+    assert_eq!(f, 11, "line start -> previous (empty) line end");
+    // Plain left/right inside a line moves one grapheme.
+    let (_, f) = edit::right(4244, 0, 0, false).expect("right");
+    assert_eq!(f, 1);
+    let (_, f) = edit::left(4244, 5, 5, false).expect("left");
+    assert_eq!(f, 4);
+    // Home/End resolve within the line.
+    let (_, f) = edit::line_start(4244, 17, 17, false).expect("home");
+    assert_eq!(f, 12);
+    let (_, f) = edit::line_end(4244, 17, 17, false).expect("end");
+    assert_eq!(f, 29);
+    // Down from line 0 lands on a real offset inside line 1 (the empty line -> its start).
+    let (_, f) = edit::line_down(4244, 3, 3, false).expect("down");
+    assert_eq!(f, 11, "down into the empty line sits at its start");
+    // Down again into "gamma delta words", up returns to the empty line.
+    let (_, f2) = edit::line_down(4244, f, f, false).expect("down");
+    assert!(f2 >= 12 && f2 <= 29, "down lands inside line 2 ({f2})");
+    let (_, f3) = edit::line_up(4244, f2, f2, false).expect("up");
+    assert_eq!(f3, 11);
+    // Word motion crosses the boundary at a line start.
+    let (_, f) = edit::word_left(4244, 12, 12, false).expect("word left");
+    assert_eq!(f, 11, "word-left at a line start hops to the previous line end");
+    // Hit-testing: a point on line 3's band maps into line 3's byte range.
+    let y3 = {
+        let r = table.caret_rect(30, 1.0);
+        (r.y0 + r.y1) / 2.0
+    };
+    let b = edit::hit(4244, 2.0, y3).expect("hit");
+    assert!((30..=34).contains(&b), "hit lands in the last line ({b})");
+    // Selection extend keeps the anchor.
+    let (a, f) = edit::extend_to(4244, 0, 0, 2.0, y3).expect("extend");
+    assert_eq!(a, 0);
+    assert!(f >= 30);
+    crate::text_edit::clear(4244);
 }
 
 #[test]
@@ -493,5 +557,24 @@ fn text_field_paint_is_windowed_like_paragraphs() {
     tree.paint(&mut scene);
     let runs = crate::stats::glyph_runs();
     assert!(runs < 200, "a 3000-line field encodes only the window ({runs} runs)");
+
+    // The keystroke contract at scale: editing ONE line of 3000 shapes exactly
+    // one new layout — the other 2999 are cache hits.
+    let before = text.shape_cache_len();
+    {
+        let f = tree.object_mut(f).downcast_mut::<RenderTextField>().unwrap();
+        let at = f.text.find("line 1500").expect("target line");
+        f.text.insert(at, 'x');
+    }
+    tree.mark_needs_layout(f);
+    let t0 = std::time::Instant::now();
+    tree.layout(&mut text, tight(400.0, 240.0));
+    let took = t0.elapsed();
+    eprintln!("[perf field] keystroke relayout on 3000 lines: {took:?}");
+    assert_eq!(
+        text.shape_cache_len(),
+        before + 1,
+        "a keystroke shapes exactly ONE line of 3000"
+    );
     crate::text_edit::clear(4243);
 }

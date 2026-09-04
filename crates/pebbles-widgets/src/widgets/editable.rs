@@ -110,7 +110,20 @@ impl RenderWidget for EditableText {
 
     fn update_render_object(&self, object: &mut dyn RenderObject) {
         if let Some(r) = object.downcast_mut::<RenderTextField>() {
-            *r = self.make();
+            // Assign props individually — never replace the object wholesale, or
+            // its internal caches (the P5 line table, the shaped-layout key) die
+            // on every blink/keystroke and the field re-shapes from scratch.
+            r.text = self.text.clone();
+            r.placeholder = self.placeholder.clone();
+            r.anchor = self.anchor;
+            r.focus = self.focus;
+            r.preedit = self.preedit.clone();
+            r.focused = self.focused;
+            r.caret_visible = self.caret_visible;
+            r.obscure = self.obscure;
+            r.multiline = self.multiline;
+            r.field_id = self.field_id;
+            r.style = self.style.clone();
         }
     }
 }

@@ -6,6 +6,25 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Performance — per-LINE text editing (the line table)
+Multi-line fields now shape **one layout per source line** through the window's
+shaped-text cache instead of one layout for the whole document:
+- **A keystroke shapes exactly the line it touched** — the other lines are cache
+  hits (tested at 3000 lines: one edit = one shape). A caret blink re-uses the
+  whole table untouched (Rc-identity tested).
+- Caret motion, word motion, Home/End, Up/Down, click/drag-select and
+  double-click word-select all run parley WITHIN the line's layout (BiDi,
+  graphemes, and wrapped visual lines inside a source line stay correct) and hop
+  source lines at the boundaries. The public `text_edit` API is unchanged — the
+  widget layer needed zero edits.
+- Selection highlights, the IME preedit underline, and the caret render per
+  line, windowed to the visible rect like everything else.
+- Empty lines shape a placeholder space for caret/selection geometry; offsets
+  clamp so the fake glyph is unreachable. Single-line fields, passwords, and the
+  placeholder keep the single-layout path.
+- `EditableText` updates assign props field-by-field instead of replacing the
+  render object — internal caches now survive every keystroke/blink.
+
 ### Performance — the editor joins viewport-bounded rendering
 - `RenderTextField` shapes through the window's shaped-text cache: caret blinks,
   focus flips, selection moves, and unrelated rebuilds re-layout the field with
