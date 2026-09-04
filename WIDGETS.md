@@ -32,6 +32,8 @@ Run `cargo run -p gallery` — ~50 dedicated screens, one per component family.
 | `Opacity` · `ClipRRect` | ✅ | |
 | `Transform` (`rotate`/`scale`/`translate`, also via `Style`) | ✅ | |
 | `Text` | ✅ | ellipsis ✅; `soft_wrap(false)` ✅ |
+| `RichText` / `text_rich` + `TextSpan`/`span` | ✅ | ONE shaped layout, per-range styles (weight/italic/underline/strike/color/family/size), inline-code chips, geometry-resolved links (`.on_link`) |
+| `RepaintBoundary` / `repaint_boundary` | ✅ | retained scene fragment, re-encoded only when the subtree changes; automatic on ListView items |
 | `EditableText` / `editable` | ✅ | low-level editor under TextField |
 | `Icon` (lucide set) | ✅ | |
 | `Spinner` | ✅ | indeterminate arc |
@@ -40,7 +42,7 @@ Run `cargo run -p gallery` — ~50 dedicated screens, one per component family.
 | `SingleChildScrollView` | ✅ | wheel/scrollbar/keys/snap/spring + `.drag_scroll(true)` pan-to-scroll with fling, `.physics(ScrollPhysics)` knobs and rubber-band overscroll (A4 ✅) |
 | `ListView::builder` (fixed extent) | ✅ | virtualized, `.horizontal/.reverse/.padding/.scrollbar/.controller` |
 | `ListView::variable` (per-item extents) | ✅ | caller-supplied extents; virtualized by prefix sums |
-| `ListView::builder_auto` (auto-measured) | ✅ | items measure themselves as they scroll in (A1 ✅); `.estimated_extent(..)`, `scroll_to_index_auto`, anchor-stable corrections |
+| `ListView::builder_auto` (auto-measured) | ✅ | items measure themselves as they scroll in (A1 ✅); `.estimated_extent(..)`, `.estimated_extent_of(i)` per-kind guesses, `scroll_to_index_auto`, anchor-stable corrections |
 | `ListView::separated` | ✅ | Flutter's `ListView.separated`; virtualized separators |
 | `GridView::builder` | ✅ | columns, `row_extent`, `.spans((col,row))`, `.spacing`, `.aspect_ratio`, `.max_extent`, reverse/padding |
 | `ScrollController` / `use_scroll_controller` | ✅ | `offset/jump_to/animate_to/scroll_to_index` + `scroll_to_index_auto`; `.snap(..)` paged lists |

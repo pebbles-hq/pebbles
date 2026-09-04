@@ -152,8 +152,10 @@ impl Runner {
 
         // NaN tripwire (dev mode): a non-finite size/offset becomes a NaN path
         // coordinate that corrupts vello's GPU glyph atlas and panics its CPU
-        // renderer. Log the offending widget once per frame so it can be fixed.
+        // renderer. Throttled to every 8th frame — the full-tree scan is dev-only
+        // diagnostics, not something every frame should pay for.
         if log::dev_mode()
+            && fno.is_multiple_of(8)
             && let Some(bad) = self.ui.render_tree().nan_report()
         {
             log::error(log::Cat::Layout, format!("NON-FINITE layout (NaN/∞): {bad}"));
@@ -313,11 +315,15 @@ impl Runner {
         }
 
         // 5. Publish the accessibility tree + focus for this frame (post-layout, so
-        // bounds are current). The `active` borrow has ended above.
-        let nodes = self.ui.render_tree().semantics_tree();
-        let focus = pebbles_core::focus::focused_element_ffi(self.ui.window_id());
-        if let Some(a11y) = self.a11y.as_mut() {
-            a11y.update(&nodes, focus);
+        // bounds are current). The `active` borrow has ended above. Collected ONLY
+        // when an assistive-technology adapter is live — the full-tree walk is
+        // wasted work otherwise.
+        if self.a11y.is_some() {
+            let nodes = self.ui.render_tree().semantics_tree();
+            let focus = pebbles_core::focus::focused_element_ffi(self.ui.window_id());
+            if let Some(a11y) = self.a11y.as_mut() {
+                a11y.update(&nodes, focus);
+            }
         }
 
         // Heartbeat: pulse every 120 frames, and flag any frame slower than 32ms
@@ -336,7 +342,8 @@ impl Runner {
         };
         if fno.is_multiple_of(120) || total.as_millis() > 32 {
             log::debug(log::Cat::Frame, line());
-        } else {
+        } else if log::dev_mode() {
+            // The per-frame breakdown string only exists where TRACE can print it.
             log::trace(log::Cat::Frame, line());
         }
         // Content-change tripwire: when the render-object count changes, the

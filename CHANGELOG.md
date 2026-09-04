@@ -6,6 +6,43 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Performance — viewport-bounded rendering (the "huge document" work)
+Frame cost now tracks what is **in the user's line of sight**, never the size of
+the content. Landed as one coordinated set:
+- **Viewport culling at the paint chokepoint.** Nothing outside the visible
+  window (narrowed by every clipping ancestor) is encoded into the scene; each
+  subtree is judged by a post-layout *paint rect* (own bounds ∪ children, shadow
+  reach included, capped at clipping viewports), so out-of-rect ink still bleeds
+  in correctly. Paragraphs additionally cull per LINE (y) and per glyph run (x) —
+  a single pathological block can't smuggle the document back in.
+- **Scrolling is paint, not layout.** Wheel, spring ticks, content drags, Home/
+  End, and scrollbar drags re-position the clipped content and request paint;
+  a fling frame runs ZERO layout. Clean subtrees also early-out of layout under
+  byte-identical constraints, so local changes are O(dirty path), not O(tree).
+- **Rich text spans: one block = ONE shaped layout.** `text_rich(spans)` /
+  `TextSpan` push per-range styles through parley's ranged builder — the
+  markdown reader stopped building a widget per word (and per code token). Real
+  spaces, real newlines, engine-owned wrapping; underline/strikethrough
+  decorations now actually paint; inline-code chips are range-box backgrounds;
+  links resolve by laid-out geometry (a wrapped link is exactly as clickable as
+  its glyphs).
+- **Virtualized markdown reader.** `markdown(..).virtualized()` renders blocks
+  through `ListView::builder_auto` with per-kind extent estimates: only
+  line-of-sight blocks (± a 250 px cache margin, `ListView::cache_extent`) are
+  BUILT, whatever the document size; the parse is memoized per source value.
+- **Window-level shape cache + retained fragments.** Shaped layouts are shared
+  through the `TextEnv` (content-keyed, generation-evicted): rebuilt paragraphs
+  reuse shapes instead of re-running parley. Every list item is a repaint
+  boundary (`repaint_boundary(..)` for anything else): clean items re-APPEND a
+  retained scene fragment each frame instead of re-encoding glyphs and paths.
+
+Measured on the 167 KB stress cut (headless, debug): cold open 689 ms → 27 ms,
+resident render nodes 26 442 → ~110, scroll-frame cost ~207 ms → sub-ms layout +
+~2 ms encode, glyph runs per frame 23 817 → ~300. The gallery Markdown screen
+gained a "Huge demo" button (`GALLERY_MD_HUGE=1`) generating a deterministic
+~1.5 MB worst-case document, and `PEBBLES_FRAME_STATS=1` now prints the pipeline
+counters (layouts/skips, painted/culled, glyph runs, fragments encoded/reused).
+
 ### Performance — skip layout on idle frames
 `RenderTree::layout` used to run a full pass from the root **every frame**,
 ignoring the `needs_layout` flags — so a blinking caret or a hover fade
