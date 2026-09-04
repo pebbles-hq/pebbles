@@ -14,6 +14,12 @@ description = "The Pebbles developer CLI: scaffold projects, run with hot-restar
 [[bin]]
 name = "pebbles"
 path = "src/main.rs"
+# No rustdoc for the CLI: a binary has no API surface to document, and because
+# this bin is *named* `pebbles` its doc output would land in target/doc/pebbles/
+# — the same directory as the `pebbles` LIBRARY crate. That collision is a race:
+# locally it is only a warning, but in CI the library's pages get clobbered
+# mid-write and `cargo doc` dies on a missing file.
+doc = false
 
 # Intentionally dependency-free: std-only (hand-rolled arg parsing, poll-based
 # file watching, std::process). Keeps `pebbles` install fast and portable.
