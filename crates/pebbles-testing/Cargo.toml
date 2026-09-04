@@ -1,0 +1,18 @@
+[package]
+name = "pebbles-testing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Headless test harness for Pebbles apps and widgets: mount, frame, paint, dispatch, query."
+
+[dependencies]
+pebbles-core.workspace = true
+pebbles-foundation.workspace = true
+pebbles-render.workspace = true
+pebbles-widgets.workspace = true
+
+[lints]
+workspace = true

@@ -7,7 +7,7 @@ mod combobox;
 mod command;
 mod context_menu;
 mod field;
-mod fields;
+mod date_field;
 mod input_otp;
 pub(crate) mod list_nav;
 pub(crate) mod menu;
@@ -28,7 +28,7 @@ pub use command::{
 };
 pub use context_menu::{ContextMenu, context_menu};
 pub use field::{Field, field};
-pub use fields::{DateField, DateFormat, DateOrder, date_field};
+pub use date_field::{DateField, DateFormat, DateOrder, date_field};
 pub use input_otp::{InputOtp, input_otp};
 pub use list_nav::{ListNav, list_nav};
 pub use menu::{

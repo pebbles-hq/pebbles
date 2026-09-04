@@ -12,7 +12,7 @@
 use std::time::Instant;
 
 use crate::reactive::{create_effect, create_memo, create_signal, flush_effects};
-use crate::reactive_stats as stats;
+use crate::reactive::stats;
 
 /// Flush the pending effect queue (what the shell does each frame via
 /// `rebuild_if_dirty`), so a headless write settles its graph.

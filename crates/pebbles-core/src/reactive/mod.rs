@@ -13,6 +13,11 @@
 //! Signals are `Copy` handles into the runtime, so they are trivially captured by
 //! the plain-closure event handlers (`on_pressed(move || count.update(|c| *c += 1))`).
 
+// The measuring instruments for this runtime (grouped with it).
+#[cfg(test)]
+mod bench;
+pub mod stats;
+
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -445,7 +450,7 @@ impl<T: 'static + Clone> Signal<T> {
     pub fn set(&self, value: T) {
         with_rt(|rt| {
             if let Some(slot) = rt.signals.get_mut(self.id) {
-                crate::reactive_stats::bump_write();
+                stats::bump_write();
                 write_value(slot, value);
                 mark_written(rt, self.id);
             }
@@ -466,7 +471,7 @@ impl<T: 'static + Clone> Signal<T> {
             rt.signals.get_mut(self.id).map(|s| std::mem::replace(&mut s.value, Box::new(())))
         });
         let Some(mut boxed) = taken else { return };
-        crate::reactive_stats::bump_write();
+        stats::bump_write();
         f(boxed.downcast_mut::<T>().expect("Signal<T> slot always holds a T"));
         with_rt(|rt| {
             if let Some(s) = rt.signals.get_mut(self.id) {
@@ -496,7 +501,7 @@ impl<T: 'static + Clone + PartialEq> Signal<T> {
             if rt.signals[self.id].value.downcast_ref::<T>().unwrap() == &value {
                 return false; // unchanged — no write, no reschedule
             }
-            crate::reactive_stats::bump_write();
+            stats::bump_write();
             write_value(&mut rt.signals[self.id], value);
             mark_written(rt, self.id);
             true
@@ -511,7 +516,7 @@ fn write_value<T: 'static>(slot: &mut SignalSlot, value: T) {
     if let Some(existing) = slot.value.downcast_mut::<T>() {
         *existing = value; // reuse the allocation
     } else {
-        crate::reactive_stats::bump_box_alloc();
+        stats::bump_box_alloc();
         slot.value = Box::new(value);
     }
 }
@@ -552,17 +557,17 @@ fn schedule_leaf_subscribers(rt: &mut Runtime, id: SignalId) {
     comps.extend(rt.signals[id].component_subs.drain());
     effs.extend(rt.signals[id].effect_subs.drain(..));
     if comps.capacity() > cap_c || effs.capacity() > cap_e {
-        crate::reactive_stats::bump_vec_alloc();
+        stats::bump_vec_alloc();
     }
     for c in comps.drain(..) {
-        crate::reactive_stats::bump_notify();
+        stats::bump_notify();
         if rt.pending_components_set.insert(c) {
-            crate::reactive_stats::bump_component_schedule();
+            stats::bump_component_schedule();
             rt.pending_components.push(c);
         }
     }
     for e in effs.drain(..) {
-        crate::reactive_stats::bump_notify();
+        stats::bump_notify();
         if rt.pending_effects_set.insert(e) {
             rt.pending_effects.push(e);
         }
@@ -643,7 +648,7 @@ pub fn create_effect(f: impl Fn() + 'static) {
 fn run_effect(id: EffectId) {
     let func = with_rt(|rt| rt.effects.get(id).map(|e| e.func.clone()));
     let Some(func) = func else { return };
-    crate::reactive_stats::bump_effect_run();
+    stats::bump_effect_run();
     let prev = with_rt(|rt| {
         let p = rt.observer;
         rt.observer = Some(Observer::Effect(id));
@@ -696,7 +701,7 @@ pub fn create_memo_with<T: 'static + Clone>(
     // back and bumps the write-version only when it changed, and reports whether it
     // changed.
     let recompute: Rc<dyn Fn(MemoId) -> bool> = Rc::new(move |_mid| {
-        crate::reactive_stats::bump_memo_recompute();
+        stats::bump_memo_recompute();
         let value = f(); // reads its inputs (observer is Memo(mid)); done outside any borrow
         with_rt(|rt| {
             let Some(slot) = rt.signals.get_mut(output) else { return false };

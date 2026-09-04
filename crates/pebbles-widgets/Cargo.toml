@@ -32,3 +32,6 @@ pebbles-render.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+pebbles-testing.workspace = true

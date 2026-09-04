@@ -2676,6 +2676,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pebbles-testing"
+version = "0.0.1"
+dependencies = [
+ "pebbles-core",
+ "pebbles-foundation",
+ "pebbles-render",
+ "pebbles-widgets",
+]
+
+[[package]]
 name = "pebbles-widgets"
 version = "0.0.1"
 dependencies = [
@@ -2684,6 +2694,7 @@ dependencies = [
  "pebbles-core",
  "pebbles-foundation",
  "pebbles-render",
+ "pebbles-testing",
  "rfd",
  "ureq",
 ]

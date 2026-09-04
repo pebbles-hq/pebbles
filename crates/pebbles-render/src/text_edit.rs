@@ -127,6 +127,23 @@ impl LineTable {
         self.lines.iter().filter(|l| l.layout.borrow().is_some()).count()
     }
 
+    /// Whether line `i` has actually been shaped yet (P5.2): `false` means its
+    /// geometry is still an estimate. Out-of-range reads `false`.
+    pub fn line_is_materialized(&self, i: usize) -> bool {
+        self.lines.get(i).is_some_and(|l| l.layout.borrow().is_some())
+    }
+
+    /// Line `i`'s height — exact once
+    /// [`line_is_materialized`](Self::line_is_materialized), an estimate before.
+    pub fn line_height(&self, i: usize) -> f64 {
+        self.lines.get(i).map_or(0.0, |l| l.height.get())
+    }
+
+    /// Local y of line `i`'s top within the field — what scroll-to-line needs.
+    pub fn line_top(&self, i: usize) -> f64 {
+        self.lines.get(i).map_or(0.0, |l| l.y.get())
+    }
+
     /// The text of line `i` as shaped: the display slice, or a single space for
     /// an empty line (so caret/selection geometry exists).
     pub(crate) fn slot_text(&self, i: usize) -> &str {

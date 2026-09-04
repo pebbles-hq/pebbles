@@ -10,23 +10,38 @@
 //!   navigation chrome, surfaces — built from those primitives.
 //! * The design system: [`Theme`]/[`Colors`] tokens and the general [`Style`] system.
 
+//! ### Crate layout
+//!
+//! Four groups, each a directory:
+//!
+//! * [`widgets`] — the Flutter-style primitives (each backed by a render object)
+//! * [`components`] — the shadcn-style catalog, by role (input / display /
+//!   layout / navigation)
+//! * `design` — the look: theme tokens, the style system, modifiers, fonts,
+//!   text direction
+//! * `services` — the ambient layers above the tree: overlays, dialogs, sheets,
+//!   toasts, the global menu
+//! * `platform` — OS surfaces: secondary windows, the native menu bar
+//!
+//! `design`, `services` and `platform` group for navigation only — every module
+//! inside them is re-exported here, so the public paths remain flat
+//! (`pebbles_widgets::theme`, `pebbles_widgets::overlay`, …).
+
 pub mod components;
-pub mod dialog;
-pub mod fonts;
-pub mod global_menu;
-#[cfg(feature = "image-view")]
-pub mod image_view;
-pub mod modifiers;
-pub mod native_menu;
-pub mod overlay;
-pub mod sheet;
 pub mod side;
-pub mod style;
-pub mod text_direction;
-pub mod theme;
-pub mod toast;
 pub mod widgets;
-pub mod window;
+
+mod design;
+mod platform;
+mod services;
+
+// The grouped modules, re-exported flat so the public API is unchanged by the
+// internal organization.
+pub use design::{fonts, modifiers, style, text_direction, theme};
+pub use platform::{native_menu, window};
+pub use services::{dialog, global_menu, overlay, sheet, toast};
+#[cfg(feature = "image-view")]
+pub use components::display::image_view;
 
 pub use dialog::{AlertDialog, Dialog, DialogId, alert_dialog, close_dialog, dialog};
 pub use fonts::{builtins, families, has, is_builtin};

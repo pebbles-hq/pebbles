@@ -26,8 +26,6 @@ pub mod text;
 pub mod text_edit;
 pub mod tree;
 
-#[cfg(test)]
-mod tests;
 
 pub use constraints::BoxConstraints;
 pub use direction::{set_text_direction, text_direction};

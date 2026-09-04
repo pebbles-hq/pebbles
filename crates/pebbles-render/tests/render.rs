@@ -1,11 +1,14 @@
 //! Unit tests for the pure layout logic — no GPU, no window.
+//!
+//! An integration test (it drives the crate through its public API), kept out of
+//! `src/` so the library source is implementation only.
 
 use pebbles_foundation::{Alignment, Axis, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, Size, TextBaseline, VerticalDirection};
 
-use crate::constraints::BoxConstraints;
-use crate::objects::{RenderColoredBox, RenderConstrainedBox, RenderFlex, RenderPadding, RenderParagraph, ParagraphStyle};
-use crate::text::TextEnv;
-use crate::tree::RenderTree;
+use pebbles_render::constraints::BoxConstraints;
+use pebbles_render::objects::{RenderColoredBox, RenderConstrainedBox, RenderFlex, RenderPadding, RenderParagraph, ParagraphStyle};
+use pebbles_render::text::TextEnv;
+use pebbles_render::tree::RenderTree;
 
 fn tight(w: f64, h: f64) -> BoxConstraints {
     BoxConstraints::tight(Size::new(w, h))
@@ -42,10 +45,10 @@ fn alignment_inscribes_child() {
 #[test]
 fn builtin_fonts_register_list_and_shape() {
     let mut text = TextEnv::new();
-    let fams = crate::fonts::available_families();
-    assert_eq!(&fams[..crate::fonts::BUILTIN_FAMILIES.len()], crate::fonts::BUILTIN_FAMILIES);
-    assert!(crate::fonts::has_family("inter")); // case-insensitive
-    assert!(crate::fonts::is_builtin("SPACE GROTESK"));
+    let fams = pebbles_render::fonts::available_families();
+    assert_eq!(&fams[..pebbles_render::fonts::BUILTIN_FAMILIES.len()], pebbles_render::fonts::BUILTIN_FAMILIES);
+    assert!(pebbles_render::fonts::has_family("inter")); // case-insensitive
+    assert!(pebbles_render::fonts::is_builtin("SPACE GROTESK"));
 
     let mut tree = RenderTree::new();
     let sans = tree.insert(Box::new(RenderParagraph::new(
@@ -65,7 +68,7 @@ fn builtin_fonts_register_list_and_shape() {
     assert_ne!(sans_w, mono_w, "family selection must change shaping");
 
     // Registering a bundled face again through the public API works.
-    let n = text.register_font(crate::fonts::builtin_fonts()[0].1.to_vec());
+    let n = text.register_font(pebbles_render::fonts::builtin_fonts()[0].1.to_vec());
     assert!(n > 0);
 }
 
@@ -102,7 +105,7 @@ fn padding_grows_and_offsets_child() {
 /// the renderer can't handle.
 #[test]
 fn all_lucide_paths_parse() {
-    use crate::objects::{IconPrim, lucide};
+    use pebbles_render::objects::{IconPrim, lucide};
     use vello::kurbo::BezPath;
 
     let mut checked = 0usize;
@@ -121,7 +124,7 @@ fn all_lucide_paths_parse() {
 /// space to the flex child.
 #[test]
 fn flex_distributes_remaining_space() {
-    use crate::objects::FlexParentData;
+    use pebbles_render::objects::FlexParentData;
     use pebbles_foundation::FlexFit;
 
     let mut tree = RenderTree::new();
@@ -191,7 +194,7 @@ fn flex_spacing_reserves_and_positions() {
 fn row_reverses_child_order_under_rtl() {
     use pebbles_foundation::TextDirection;
 
-    crate::set_text_direction(TextDirection::Rtl);
+    pebbles_render::set_text_direction(TextDirection::Rtl);
 
     let mut tree = RenderTree::new();
     let mut text = TextEnv::new();
@@ -215,7 +218,7 @@ fn row_reverses_child_order_under_rtl() {
     assert_eq!(tree.offset_of(b).to_point().x, 0.0, "index-1 child leads on the left under RTL");
     assert_eq!(tree.offset_of(a).to_point().x, 40.0, "index-0 child is on the right under RTL");
 
-    crate::set_text_direction(TextDirection::Ltr);
+    pebbles_render::set_text_direction(TextDirection::Ltr);
 }
 
 /// F2: the inspector's hit chain runs root → deepest, tagging each node's name + size.
@@ -237,7 +240,7 @@ fn inspect_returns_the_hit_chain_deepest_last() {
     tree.root = Some(flex);
     tree.layout(&mut text, BoxConstraints::UNBOUNDED);
 
-    let chain = crate::inspect::inspect_at(&tree, pebbles_foundation::Offset::new(20.0, 10.0));
+    let chain = pebbles_render::inspect::inspect_at(&tree, pebbles_foundation::Offset::new(20.0, 10.0));
     assert!(!chain.is_empty(), "the point hits something");
     assert_eq!(chain.first().unwrap().name, "RenderFlex", "root is the flex");
     let deepest = chain.last().unwrap();
@@ -249,7 +252,7 @@ fn inspect_returns_the_hit_chain_deepest_last() {
 /// identical relayout reuses the cached shaped layout.
 #[test]
 fn paragraph_reshapes_only_when_inputs_change() {
-    use crate::objects::{reset_shape_count, shape_count};
+    use pebbles_render::objects::{reset_shape_count, shape_count};
 
     reset_shape_count();
     let mut tree = RenderTree::new();
@@ -279,7 +282,7 @@ fn paragraph_reshapes_only_when_inputs_change() {
 
 #[test]
 fn scroll_viewport_culls_offscreen_subtrees() {
-    use crate::objects::RenderScroll;
+    use pebbles_render::objects::RenderScroll;
     let mut text = TextEnv::new();
     let mut tree = RenderTree::new();
     let scroll = tree.insert(Box::new(RenderScroll::new(Axis::Vertical)));
@@ -301,11 +304,11 @@ fn scroll_viewport_culls_offscreen_subtrees() {
     tree.root = Some(scroll);
     tree.layout(&mut text, tight(300.0, 200.0));
 
-    crate::stats::reset_frame();
+    pebbles_render::stats::reset_frame();
     let mut scene = vello::Scene::new();
     tree.paint(&mut text, &mut scene);
-    let painted = crate::stats::painted_nodes();
-    let culled = crate::stats::culled_nodes();
+    let painted = pebbles_render::stats::painted_nodes();
+    let culled = pebbles_render::stats::culled_nodes();
     assert!(painted < 30, "only ~a viewport of rows encodes (painted {painted})");
     assert!(culled > 60, "the rest culls (culled {culled})");
 
@@ -317,17 +320,17 @@ fn scroll_viewport_culls_offscreen_subtrees() {
     }
     tree.mark_needs_layout(scroll);
     tree.layout(&mut text, tight(300.0, 200.0));
-    crate::stats::reset_frame();
+    pebbles_render::stats::reset_frame();
     let mut scene = vello::Scene::new();
     tree.paint(&mut text, &mut scene);
-    let painted = crate::stats::painted_nodes();
+    let painted = pebbles_render::stats::painted_nodes();
     assert!(painted < 30, "mid-scroll window stays bounded (painted {painted})");
 }
 
 #[test]
 fn shadow_bleeding_into_view_survives_culling() {
-    use crate::decoration::{BoxDecoration, BoxShadow};
-    use crate::objects::RenderDecoratedBox;
+    use pebbles_render::decoration::{BoxDecoration, BoxShadow};
+    use pebbles_render::objects::RenderDecoratedBox;
     use pebbles_foundation::{Color, Offset};
 
     // The window is 300×200. A shadowed card sits fully BELOW it (y 220..260),
@@ -353,7 +356,7 @@ fn shadow_bleeding_into_view_survives_culling() {
         VerticalDirection::Down,
         TextBaseline::Alphabetic,
     )));
-    let push = |tree: &mut RenderTree, node: crate::RenderId, idx: usize| {
+    let push = |tree: &mut RenderTree, node: pebbles_render::RenderId, idx: usize| {
         tree.insert_child(col, node, idx);
     };
     let spacer1 = tree
@@ -373,18 +376,18 @@ fn shadow_bleeding_into_view_survives_culling() {
 
     tree.root = Some(col);
     tree.layout(&mut text, tight(300.0, 200.0));
-    crate::stats::reset_frame();
+    pebbles_render::stats::reset_frame();
     let mut scene = vello::Scene::new();
     tree.paint(&mut text, &mut scene);
     // Painted: col + spacer1 + wrap1 + card1 (the shadow reaches into view).
     // Culled: spacer2 + wrap2 (card2 never visited — its parent culled).
-    assert_eq!(crate::stats::painted_nodes(), 4, "the offscreen shadowed card still paints");
-    assert_eq!(crate::stats::culled_nodes(), 2, "the far-away card culls at its wrapper");
+    assert_eq!(pebbles_render::stats::painted_nodes(), 4, "the offscreen shadowed card still paints");
+    assert_eq!(pebbles_render::stats::culled_nodes(), 2, "the far-away card culls at its wrapper");
 }
 
 #[test]
 fn scrolling_repositions_without_relayout() {
-    use crate::objects::RenderScroll;
+    use pebbles_render::objects::RenderScroll;
     let mut text = TextEnv::new();
     let mut tree = RenderTree::new();
     let scroll = tree.insert(Box::new(RenderScroll::new(Axis::Vertical)));
@@ -416,15 +419,15 @@ fn scrolling_repositions_without_relayout() {
     tree.set_scrolled_child_offset(scroll, pebbles_foundation::Offset::new(0.0, -600.0));
 
     // The next frame's layout is a no-op: nothing is dirty, constraints unchanged.
-    crate::stats::reset_frame();
+    pebbles_render::stats::reset_frame();
     tree.layout(&mut text, tight(300.0, 200.0));
-    assert_eq!(crate::stats::layout_calls(), 0, "a scroll frame runs zero layout");
+    assert_eq!(pebbles_render::stats::layout_calls(), 0, "a scroll frame runs zero layout");
 
     // Paint sees the moved window: early rows cull, a mid-document band paints.
     let mut scene = vello::Scene::new();
     tree.paint(&mut text, &mut scene);
-    let painted = crate::stats::painted_nodes();
-    let culled = crate::stats::culled_nodes();
+    let painted = pebbles_render::stats::painted_nodes();
+    let culled = pebbles_render::stats::culled_nodes();
     assert!(painted < 30, "mid-scroll paint window stays bounded (painted {painted})");
     assert!(culled > 0, "rows on both sides culled ({culled})");
 }
@@ -435,7 +438,7 @@ fn scrolling_repositions_without_relayout() {
 
 #[test]
 fn text_field_caret_blink_reuses_the_shaped_layout() {
-    use crate::objects::{RenderTextField, TextFieldStyle};
+    use pebbles_render::objects::{RenderTextField, TextFieldStyle};
     let mut text = TextEnv::new();
     let mut tree = RenderTree::new();
     let mut field = RenderTextField::new("hello editor\nsecond line\nthird line", TextFieldStyle::default());
@@ -445,7 +448,7 @@ fn text_field_caret_blink_reuses_the_shaped_layout() {
     let id = tree.insert(Box::new(field));
     tree.root = Some(id);
     tree.layout(&mut text, tight(300.0, 200.0));
-    let first = crate::text_edit::get_lines(4242).expect("published line table");
+    let first = pebbles_render::text_edit::get_lines(4242).expect("published line table");
     assert_eq!(first.line_count(), 3);
     assert_eq!(text.shape_cache_len(), 3, "one shaped layout per line");
 
@@ -454,7 +457,7 @@ fn text_field_caret_blink_reuses_the_shaped_layout() {
     tree.object_mut(id).downcast_mut::<RenderTextField>().unwrap().caret_visible = false;
     tree.mark_needs_layout(id);
     tree.layout(&mut text, tight(300.0, 200.0));
-    let second = crate::text_edit::get_lines(4242).expect("published line table");
+    let second = pebbles_render::text_edit::get_lines(4242).expect("published line table");
     assert!(std::rc::Rc::ptr_eq(&first, &second), "a blink must not rebuild the table");
     assert_eq!(text.shape_cache_len(), 3);
 
@@ -466,17 +469,17 @@ fn text_field_caret_blink_reuses_the_shaped_layout() {
     }
     tree.mark_needs_layout(id);
     tree.layout(&mut text, tight(300.0, 200.0));
-    let third = crate::text_edit::get_lines(4242).expect("published line table");
+    let third = pebbles_render::text_edit::get_lines(4242).expect("published line table");
     assert!(!std::rc::Rc::ptr_eq(&second, &third), "an edit rebuilds the table");
     assert_eq!(third.line_count(), 4);
     assert_eq!(text.shape_cache_len(), 4, "exactly one NEW line shaped");
-    crate::text_edit::clear(4242);
+    pebbles_render::text_edit::clear(4242);
 }
 
 #[test]
 fn line_table_motion_moves_the_caret_across_lines() {
-    use crate::objects::{RenderTextField, TextFieldStyle};
-    use crate::text_edit as edit;
+    use pebbles_render::objects::{RenderTextField, TextFieldStyle};
+    use pebbles_render::text_edit as edit;
     let mut text = TextEnv::new();
     let mut tree = RenderTree::new();
     let src = "alpha beta\n\ngamma delta words\nlast";
@@ -531,12 +534,12 @@ fn line_table_motion_moves_the_caret_across_lines() {
     let (a, f) = edit::extend_to(4244, 0, 0, 2.0, y3).expect("extend");
     assert_eq!(a, 0);
     assert!(f >= 30);
-    crate::text_edit::clear(4244);
+    pebbles_render::text_edit::clear(4244);
 }
 
 #[test]
 fn text_field_paint_is_windowed_like_paragraphs() {
-    use crate::objects::{RenderScroll, RenderTextField, TextFieldStyle};
+    use pebbles_render::objects::{RenderScroll, RenderTextField, TextFieldStyle};
     let mut text = TextEnv::new();
     let mut tree = RenderTree::new();
     let scroll = tree.insert(Box::new(RenderScroll::new(Axis::Vertical)));
@@ -558,10 +561,10 @@ fn text_field_paint_is_windowed_like_paragraphs() {
     let cold = text.shape_cache_len();
     assert!(cold < 200, "a cold 3000-line mount shapes O(window), not O(document) ({cold})");
 
-    crate::stats::reset_frame();
+    pebbles_render::stats::reset_frame();
     let mut scene = vello::Scene::new();
     tree.paint(&mut text, &mut scene);
-    let runs = crate::stats::glyph_runs();
+    let runs = pebbles_render::stats::glyph_runs();
     assert!(runs < 200, "a 3000-line field encodes only the window ({runs} runs)");
 
     // The keystroke contract at scale: with the caret already ON the target line
@@ -593,7 +596,7 @@ fn text_field_paint_is_windowed_like_paragraphs() {
         before + 1,
         "a keystroke shapes exactly ONE line of 3000"
     );
-    crate::text_edit::clear(4243);
+    pebbles_render::text_edit::clear(4243);
 }
 
 // ---------------------------------------------------------------------------
@@ -607,7 +610,7 @@ fn text_field_paint_is_windowed_like_paragraphs() {
 /// the measuring — the scroll offset puts it in view.
 #[test]
 fn text_field_lazy_estimates_settle_via_corrective_relayout() {
-    use crate::objects::{RenderScroll, RenderTextField, TextFieldStyle};
+    use pebbles_render::objects::{RenderScroll, RenderTextField, TextFieldStyle};
     let mut text = TextEnv::new();
     let mut tree = RenderTree::new();
     let scroll = tree.insert(Box::new(RenderScroll::new(Axis::Vertical)));
@@ -635,16 +638,16 @@ fn text_field_lazy_estimates_settle_via_corrective_relayout() {
     let style = TextFieldStyle::default();
     let line_px = f64::from(style.font_size) * f64::from(style.line_height);
     {
-        let table = crate::text_edit::get_lines(4245).expect("published");
+        let table = pebbles_render::text_edit::get_lines(4245).expect("published");
         assert!(
-            (table.lines[300].height.get() - line_px * 8.0).abs() > 0.0,
+            (table.line_height(300) - line_px * 8.0).abs() > 0.0,
             "sanity: slot exists"
         );
-        assert!(table.lines[300].layout().is_none(), "the wrapped band starts unmaterialized");
+        assert!(!table.line_is_materialized(300), "the wrapped band starts unmaterialized");
         // Scroll the band into view (estimated position is close enough) — the
         // live wheel path: mutate the object's offset AND re-position the child
         // (scroll-is-paint moves the node offset without a layout pass).
-        let y300 = table.lines[300].y.get();
+        let y300 = table.line_top(300);
         let sc = tree.object_mut(scroll).downcast_mut::<RenderScroll>().unwrap();
         sc.offset = y300;
         sc.target = y300;
@@ -668,15 +671,15 @@ fn text_field_lazy_estimates_settle_via_corrective_relayout() {
     }
     eprintln!("[perf field] corrective passes to settle: {passes}");
     assert!(passes >= 1, "scrolling into a wrapped band actually triggered the corrective pass");
-    let table = crate::text_edit::get_lines(4245).expect("published");
-    assert!(table.lines[300].layout().is_some(), "the visible band materialized");
+    let table = pebbles_render::text_edit::get_lines(4245).expect("published");
+    assert!(table.line_is_materialized(300), "the visible band materialized");
     assert!(
-        table.lines[300].height.get() > 2.0 * line_px,
+        table.line_height(300) > 2.0 * line_px,
         "a wrapped line measured taller than its one-line estimate ({} vs {line_px})",
-        table.lines[300].height.get(),
+        table.line_height(300),
     );
     assert!(table.materialized_count() < 400, "the tail stays estimates");
-    crate::text_edit::clear(4245);
+    pebbles_render::text_edit::clear(4245);
 }
 
 /// Motion on a line that has never materialized (far outside the window +
@@ -684,7 +687,7 @@ fn text_field_lazy_estimates_settle_via_corrective_relayout() {
 /// is fine, panicking or splitting a char is not.
 #[test]
 fn text_field_lazy_motion_fallbacks_are_char_safe() {
-    use crate::objects::{RenderScroll, RenderTextField, TextFieldStyle};
+    use pebbles_render::objects::{RenderScroll, RenderTextField, TextFieldStyle};
     let mut text = TextEnv::new();
     let mut tree = RenderTree::new();
     let scroll = tree.insert(Box::new(RenderScroll::new(Axis::Vertical)));
@@ -706,7 +709,7 @@ fn text_field_lazy_motion_fallbacks_are_char_safe() {
     tree.root = Some(scroll);
     tree.layout(&mut text, tight(400.0, 240.0));
 
-    let table = crate::text_edit::get_lines(4246).expect("published");
+    let table = pebbles_render::text_edit::get_lines(4246).expect("published");
     // Line 400 is far outside the caret window (caret at 0) and never painted.
     let start: usize = full.split('\n').take(400).map(|l| l.len() + 1).sum();
     let hline = "héllo wörld ε—дом";
@@ -715,19 +718,19 @@ fn text_field_lazy_motion_fallbacks_are_char_safe() {
 
     // One step right from the line start crosses the 2-byte 'h'? No — 'h' is
     // ASCII; step from 'h' onto 'é' (2 bytes) and back, plus word/line motion.
-    let (_, r1) = crate::text_edit::right(4246, start, start, false).expect("right");
+    let (_, r1) = pebbles_render::text_edit::right(4246, start, start, false).expect("right");
     assert!(full.is_char_boundary(r1) && r1 > start, "right lands on a boundary");
-    let (_, r2) = crate::text_edit::right(4246, r1, r1, false).expect("right over é");
+    let (_, r2) = pebbles_render::text_edit::right(4246, r1, r1, false).expect("right over é");
     assert!(full.is_char_boundary(r2) && r2 > r1, "é stepped whole");
-    let (_, l1) = crate::text_edit::left(4246, r2, r2, false).expect("left");
+    let (_, l1) = pebbles_render::text_edit::left(4246, r2, r2, false).expect("left");
     assert_eq!(l1, r1, "left retraces the same boundary");
-    let (_, e) = crate::text_edit::line_end(4246, start, start, false).expect("end");
+    let (_, e) = pebbles_render::text_edit::line_end(4246, start, start, false).expect("end");
     assert_eq!(e, start + hline.len(), "End = source line end without shaping");
-    let (_, s) = crate::text_edit::line_start(4246, e, e, false).expect("start");
+    let (_, s) = pebbles_render::text_edit::line_start(4246, e, e, false).expect("start");
     assert_eq!(s, start, "Home = source line start without shaping");
-    let (_, w) = crate::text_edit::word_right(4246, start, start, false).expect("word");
+    let (_, w) = pebbles_render::text_edit::word_right(4246, start, start, false).expect("word");
     assert!(full.is_char_boundary(w) && w > start, "word motion boundary-safe");
-    let (_, up) = crate::text_edit::line_up(4246, start + 1, start + 1, false).expect("up");
+    let (_, up) = pebbles_render::text_edit::line_up(4246, start + 1, start + 1, false).expect("up");
     assert!(full.is_char_boundary(up) && up < start, "vertical hop lands above, on a boundary");
-    crate::text_edit::clear(4246);
+    pebbles_render::text_edit::clear(4246);
 }

@@ -33,6 +33,9 @@
 //! umbrella crate re-exports the layered crates and offers a [`prelude`] with
 //! everything you need.
 
+/// Every Pebbles hook in one indexed place (also flat in [`prelude`]).
+pub mod hooks;
+
 pub use pebbles_core as core;
 pub use pebbles_foundation as foundation;
 pub use pebbles_render as render;
@@ -64,6 +67,13 @@ pub mod prelude {
         create_memo, create_resource, create_shortcut, create_shortcut_if, create_signal, create_store, create_timeout,
         provide_context, spawn, transition, untrack, use_bounds,
     };
+    // The rest of the hook surface (was reachable only via `pebbles::core::…`).
+    pub use pebbles_core::{
+        create_cleanup, create_loop, create_loop_while, create_memo_with, create_root_signal, on,
+        on_defer,
+    };
+    #[cfg(feature = "tokio")]
+    pub use pebbles_core::create_resource_future;
 
     // runtime (pebbles-core): the widget contract + reconciler handles
     pub use pebbles_core::{
@@ -122,7 +132,7 @@ pub mod prelude {
         fractionally_sized_box, gap_h, gap_w, gesture_detector, intrinsic_height, intrinsic_width,
         limited_box, list_view, opacity, overflow_box, padding, positioned, repaint_boundary, row,
         scroll_view, sized_box, spacer, span, spinner, stack, text, text_rich, text_signal,
-        transform, use_scroll_controller, wrap,
+        transform, use_carousel_controller, use_scroll_controller, wrap,
     };
 
     // the shadcn-style component catalog
