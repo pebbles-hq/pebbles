@@ -1,5 +1,12 @@
 # Pebbles
 
+[![CI](https://github.com/pebbles-hq/pebbles/actions/workflows/ci.yml/badge.svg)](https://github.com/pebbles-hq/pebbles/actions/workflows/ci.yml)
+[![Security](https://github.com/pebbles-hq/pebbles/actions/workflows/security.yml/badge.svg)](https://github.com/pebbles-hq/pebbles/actions/workflows/security.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/pebbles-hq/pebbles/badge)](https://scorecard.dev/viewer/?uri=github.com/pebbles-hq/pebbles)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![MSRV](https://img.shields.io/badge/rustc-1.90+-orange.svg)](rust-toolchain.toml)
+[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-informational.svg)](#platform-support)
+
 A **Flutter-style, desktop-first GUI framework** for Rust, built on
 [Vello](https://vello.dev) (GPU 2D rendering) and the Linebender stack
 (kurbo · peniko · parley).
@@ -46,8 +53,9 @@ cargo run -p gallery     # the full widget showcase / documentation
 
 Optional integrations are opt-in cargo features on the `pebbles` crate:
 `image-view` (`ImageView` + image decoding), `file-dialogs` (`pick_folder`),
-`native-menus` (OS menu bar), `global-hotkeys`. A default build links none of
-them — no image codecs, no HTTP client, no async runtime.
+`native-menus` (OS menu bar), `global-hotkeys`, and `tokio` (`create_resource`
+over a `Future`). A default build links none of them — no image codecs, no HTTP
+client, no async runtime.
 
 Widgets can also ship as **separate packages** that depend on Pebbles — the
 ecosystem model. The Obsidian-style GFM reader/editor lives in its own crate,
@@ -254,6 +262,25 @@ The headless engine tests mount a real widget tree, dispatch taps and keystrokes
 assert the render (and accessibility) trees change — driving `input → signal write →
 reconcile → relayout` end to end in-process.
 
+Use [`pebbles-testing`](crates/pebbles-testing) rather than re-deriving the frame
+pipeline in each test:
+
+```rust
+use pebbles_testing::Harness;
+
+let mut h = Harness::new().window(500.0, 200.0);
+h.mount(my_component);
+h.draw();                        // reconcile → layout → paint, settled
+h.click(Offset::new(20.0, 9.0));
+assert!(h.render_node_count() < 900);
+```
+
+`Harness::new()` initializes every global service (theme, overlay, dialog, sheet,
+focus, animation) and `mount` adds the `View` + `OverlayHost` wrapper the shell
+would, so overlays and popovers behave as in a real app. `draw()` loops the
+corrective relayout until geometry settles — paint can invalidate the layout it
+just ran on — so a test cannot assert against unsettled geometry.
+
 ## Status
 
 | Area | State |
@@ -269,7 +296,8 @@ reconcile → relayout` end to end in-process.
 | Per-window overlays + dialogs | ✅ |
 | Catalog long-tail (Tooltip, Toast, Popover, ContextMenu, Sheet, Command, HoverCard, InputOTP, Menubar) | ✅ |
 | Carousel, custom-paint `canvas` | ✅ |
-| Charts | ⏭ planned (`documentations/chart-plan.md`) |
+| Charts | ⏭ planned (design done; `canvas` is the substrate) |
+| Desktop CI matrix (Linux/Windows/macOS) + supply-chain gates | ✅ |
 
 ### Two windows, one runtime (live IPC)
 
@@ -287,19 +315,46 @@ the strip and GIF. No screenshot tool or display server required.
 
 ## Roadmap
 
-The post-competition work is tracked in `documentations/p2-roadmap.md`. Current
-headline items: variable-height list virtualization + sticky/collapsing headers;
-a keyboard shortcut map (`create_shortcut`) with an optional native menu bar + global
-hotkeys; a `#[component]` authoring macro; a widget inspector; RTL / `TextDirection`;
-spring animations + presence transitions; a custom-paint `canvas` (shipped) feeding a
-planned charts library.
+Shipped since the first cut, and no longer on this list: variable-height list
+virtualization (`ListView::builder_auto` with per-item extent estimates), the
+keyboard shortcut map (`create_shortcut`) with the optional native menu bar and
+global hotkeys, the `#[component]` authoring macro, the widget inspector, RTL /
+`TextDirection`, spring animations + presence transitions, and the custom-paint
+`canvas`.
+
+Open, roughly in order:
+
+- **Charts**, built on `canvas`.
+- **Sticky / collapsing list headers.**
+- **The editor's remaining lazy path** — a huge document's cold mount is
+  windowed, and per-keystroke cost is one line; syntax highlighting inside the
+  editor pane is still reader-only.
+- **`SetValue` accessibility actions** (slider/text), following the shipped
+  Focus/Click ones.
+- **Mobile**, if it happens: the framework crates already compile for iOS and
+  Android — what is missing is touch/gesture input, app lifecycle, and a
+  clipboard backend. See [Platform support](#platform-support).
 
 > **Update granularity:** re-renders are per-component (Solid's model), not
 > per-signal-binding — a signal write re-runs the components that read it. AT-driven
 > `SetValue` (slider/text) is a follow-up to the shipped Focus/Click actions.
 
+## Documentation
+
+| Document | What's in it |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | crate layering, the three trees, the frame pipeline, and a "where does this change belong" table |
+| [WIDGETS.md](WIDGETS.md) | the full catalog with per-widget status and notes |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | how to build, test and land a change |
+| [SECURITY.md](SECURITY.md) | private vulnerability reporting, the threat model, and the CI hardening gates |
+| [CHANGELOG.md](CHANGELOG.md) | what changed, newest first |
+| [`pebbles::hooks`](crates/pebbles/src/hooks.rs) | every hook in one indexed place, grouped by purpose |
+
+API docs: `cargo doc --open`.
+
 ## License
 
-Licensed under the **Apache License, Version 2.0** — see [LICENSE](LICENSE).
+Licensed under the **Apache License, Version 2.0** — see [LICENSE](LICENSE) and
+[NOTICE](NOTICE).
 
 Copyright © 2026 Reyco Seguma.
