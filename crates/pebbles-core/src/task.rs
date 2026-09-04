@@ -72,12 +72,25 @@ where
 {
     let slot: Arc<Mutex<Option<T>>> = Arc::new(Mutex::new(None));
     let write = slot.clone();
+    // Native: run `work` on a background thread. wasm has no OS threads
+    // (`std::thread::spawn` compiles but panics at runtime), so run it inline —
+    // the result still lands via `pump` on a later frame, preserving the
+    // contract. True async on web is the `spawn_local`/futures follow-up (see
+    // documentations/web-support.md §4.3).
+    #[cfg(not(target_family = "wasm"))]
     std::thread::spawn(move || {
         let result = work();
         if let Ok(mut s) = write.lock() {
             *s = Some(result);
         }
     });
+    #[cfg(target_family = "wasm")]
+    {
+        let result = work();
+        if let Ok(mut s) = write.lock() {
+            *s = Some(result);
+        }
+    }
     // The result lands on a later frame; ask the shell to keep drawing until then.
     request_frame();
     let mut on_done = Some(on_done);

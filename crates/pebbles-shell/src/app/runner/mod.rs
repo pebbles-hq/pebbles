@@ -686,6 +686,50 @@ impl ApplicationHandler for Runner {
                 }
             }
 
+            // Touch (Android/iOS): map the primary finger onto the SAME pointer
+            // model the mouse uses, so every widget — buttons, scroll, drag,
+            // text selection — works under touch with no per-widget change. A
+            // touch-down is a left press at the touch point; moves drive pan /
+            // content-drag / long-press; up/cancel is a left release. Multi-touch
+            // (id-based pinch/rotate) is a follow-up — see
+            // documentations/android-support.md §4.4.
+            WindowEvent::Touch(touch) => {
+                use winit::event::TouchPhase;
+                let scale = self.active.as_ref().map_or(1.0, |a| a.window.scale_factor());
+                let cursor = Offset::new(touch.location.x / scale, touch.location.y / scale);
+                self.cursor = cursor;
+                match touch.phase {
+                    TouchPhase::Started => {
+                        if self.dispatch_pointer(cursor, MouseButton::Left, ElementState::Pressed) {
+                            self.request_redraw();
+                        }
+                    }
+                    TouchPhase::Moved => {
+                        let moved = if self.ui.content_drag_active() {
+                            self.ui.update_content_drag(cursor)
+                        } else if let Some(t) = self.pan_target {
+                            self.ui.dispatch_pan_update(t, cursor)
+                        } else {
+                            false
+                        };
+                        if moved {
+                            self.request_redraw();
+                        }
+                        if self.lp_active
+                            && let Some(t) = self.lp_target
+                            && self.ui.dispatch_long_press_move(t, cursor)
+                        {
+                            self.request_redraw();
+                        }
+                    }
+                    TouchPhase::Ended | TouchPhase::Cancelled => {
+                        if self.dispatch_pointer(cursor, MouseButton::Left, ElementState::Released) {
+                            self.request_redraw();
+                        }
+                    }
+                }
+            }
+
             WindowEvent::ModifiersChanged(modifiers) => {
                 self.shift_down = modifiers.state().shift_key();
                 self.ctrl_down = modifiers.state().control_key();
