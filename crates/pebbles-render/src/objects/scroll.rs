@@ -110,7 +110,7 @@ pub struct RenderScroll {
     pub target: f64,
     /// Current spring velocity (px/s) — the offset→target ease. During a fling
     /// this tracks the moving target; the fling's own speed lives in
-    /// [`fling_velocity`](Self::fling_velocity).
+    /// the private `fling_velocity` field.
     pub velocity: f64,
     /// Decaying fling speed (px/s) while [`flinging`](Self::flinging).
     fling_velocity: f64,

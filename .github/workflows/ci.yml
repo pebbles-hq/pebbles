@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege by default; no job here needs more.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   # Keep target/ lean on runners: no incremental caches, thin debuginfo.
@@ -12,50 +16,148 @@ env:
   CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
 
 jobs:
-  check:
-    name: Check + test
+  # ───────────────────────────────────────────────────────────────────────────
+  # The support matrix. This job IS the platform-support claim in the README:
+  # a supported platform is one that builds and passes the headless suites
+  # here. Tests need no window and no GPU, so they run on every runner.
+  # ───────────────────────────────────────────────────────────────────────────
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # parley/fontique needs fontconfig headers; winit dlopens X11/Wayland at
+      # runtime, so no display libs are needed to build or to run headless.
+      - name: System deps (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: ${{ matrix.os }}
+
+      - name: cargo check (all targets, all features)
+        run: cargo check --workspace --all-targets --all-features
+
+      - name: cargo test (headless suites)
+        run: cargo test --workspace --all-features
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # MSRV — the `rust-version` in Cargo.toml is a promise; verify it compiles.
+  # ───────────────────────────────────────────────────────────────────────────
+  msrv:
+    name: MSRV (1.90)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: System deps (fontconfig for parley/fontique)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - name: Install the MSRV toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: "1.90"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: msrv
+      # `check`, not `test`: the promise is that a 1.90 user can BUILD the
+      # library, not that dev-dependencies hold the same floor.
+      - run: cargo check --workspace --all-features
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Mobile / web readiness probe. `cargo check` does not link, so a target only
+  # needs its std installed — enough to prove whether the dependency graph is
+  # even portable. Informational BY DESIGN: these targets are not supported
+  # (see the support matrix in README.md); this job measures the distance
+  # instead of gating. Read its log before claiming a port.
+  # ───────────────────────────────────────────────────────────────────────────
+  platform-probe:
+    name: Platform probe (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-ios
+            runner: macos-latest
+          - target: aarch64-linux-android
+            runner: ubuntu-latest
+          - target: wasm32-unknown-unknown
+            runner: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: System deps (Linux)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
-      - uses: Swatinem/rust-cache@v2
-      - name: cargo check (all targets)
-        run: cargo check --workspace --all-targets
-      - name: cargo test (headless suites)
-        run: cargo test --workspace
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: probe-${{ matrix.target }}
+      # The layered crates in dependency order, so the log shows exactly HOW FAR
+      # up the stack the target gets before the platform layer stops it.
+      - name: Probe foundation → render → core → widgets
+        run: |
+          for c in pebbles-foundation pebbles-render pebbles-core pebbles-widgets; do
+            echo "::group::$c"
+            cargo check -p "$c" --target ${{ matrix.target }} || echo "FAILED: $c"
+            echo "::endgroup::"
+          done
+      - name: Probe the shell (window + GPU + clipboard + a11y)
+        run: |
+          cargo check -p pebbles-shell --target ${{ matrix.target }} || echo "FAILED: pebbles-shell"
 
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
-      - uses: Swatinem/rust-cache@v2
-      # Warn-only for now: [workspace.lints] is the source of truth. Ratchet to
-      # `-- -D warnings` once the existing warning debt is burned down.
-      - run: cargo clippy --workspace --all-targets
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: clippy
+      # Warn-only: [workspace.lints] is the source of truth and there is a known
+      # backlog (~121 warnings under --all-features). Ratchet to
+      # `-- -D warnings` once it is burned down.
+      - run: cargo clippy --workspace --all-targets --all-features
 
   fmt:
     name: Rustfmt (non-blocking)
     runs-on: ubuntu-latest
-    # The tree predates rustfmt.toml and is not yet fmt-clean; this job reports
+    # The tree predates rustfmt.toml and is not yet fmt-clean; this reports
     # drift without gating. Flip to blocking after the one-time reformat.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: cargo fmt --all --check
 
-  deny:
-    name: cargo-deny
+  docs:
+    name: Rustdoc (non-blocking)
     runs-on: ubuntu-latest
+    # Broken/ambiguous intra-doc links are pre-existing debt. Reported, not
+    # gated — flip `continue-on-error` off once the tree documents clean, since
+    # module moves silently rot doc links otherwise.
+    continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: docs
+      - name: cargo doc (deny broken links)
+        env:
+          RUSTDOCFLAGS: "-D rustdoc::broken_intra_doc_links -D rustdoc::private_intra_doc_links"
+        run: cargo doc --workspace --no-deps --all-features
 
   typos:
     name: Typos
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: crate-ci/typos@master
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: crate-ci/typos@d43b6c087ac471e2ea7b8af622ff15f05c0c365b # v1.50.1

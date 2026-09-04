@@ -6,7 +6,7 @@ use quote::{format_ident, quote};
 use syn::{FnArg, ItemFn, Pat, PatType, parse_macro_input};
 
 /// Turn a plain function into a Pebbles component. THE authoring form (the underlying
-/// [`component_props`](pebbles_core::component_props) stays the documented mechanism, not
+/// `component_props` stays the documented mechanism, not
 /// a second style).
 ///
 /// ```ignore

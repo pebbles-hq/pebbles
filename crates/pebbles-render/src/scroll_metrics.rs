@@ -1,4 +1,4 @@
-//! Viewport metrics published by controlled viewports ([`RenderList`]) each layout,
+//! Viewport metrics published by controlled viewports (see [`crate::objects`]) each layout,
 //! so the widget layer can clamp the offset and compute the visible item window.
 //! Keyed by the viewport's stable id.
 

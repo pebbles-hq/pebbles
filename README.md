@@ -55,6 +55,29 @@ ecosystem model. The Obsidian-style GFM reader/editor lives in its own crate,
 your app alongside `pebbles`. It is the reference example for building your own
 Pebbles widget package.
 
+## Platform support
+
+Pebbles is **desktop-first by design**. "Supported" here means a concrete
+claim — the platform builds and passes the headless test suites in
+[CI](.github/workflows/ci.yml) — not an aspiration.
+
+| Platform | Status | Notes |
+|---|---|---|
+| **Linux** (X11 + Wayland) | ✅ Supported | The primary development platform. Built, tested and run daily, including GPU device-loss recovery and long input-storm soaks. |
+| **Windows** | 🟡 In verification | Every dependency supports it and there is Windows-specific code (native window menu behind `native-menus`), but it had never been built in CI until now. The matrix job above is the verification; this row becomes ✅ once it is green. |
+| **macOS** | 🟡 In verification | As Windows. Has the most platform-specific code (global menu bar, `Mod`→⌘ shortcut mapping), so it is expected to work — but expected is not verified. |
+| **iOS** | ⛔ Not supported | No touch input, gesture model, or app-lifecycle integration exists, and the platform layer's clipboard (`arboard`) and accessibility (`accesskit_winit`) dependencies are desktop-only. `winit`/`wgpu` themselves do support iOS, so this is a real port, not a rewrite — the CI `platform-probe` job measures how far the stack currently compiles. |
+| **Android** | ⛔ Not supported | As iOS, plus it needs `android-activity` lifecycle integration. Tracked by the same probe job. |
+| **Web** (wasm) | ⛔ Out of scope | A deliberate decision record, not an omission: the shell blocks on the GPU device (`pollster::block_on`) and assumes native windowing, threads and fonts. Revisiting would mean a second, async shell backend. |
+
+Legend: ✅ built + tested in CI · 🟡 expected to work, verification in progress ·
+⛔ not supported.
+
+The desktop row statuses are produced by the CI matrix on every push, so this
+table cannot silently drift from reality. Mobile/web status changes only when
+the probe job turns green **and** the input + lifecycle work exists — a
+compiling dependency graph is not support.
+
 ## Programming model
 
 - **UI syntax is Flutter.** `column(children![a, b, c])` mirrors `Column(children: [...])`,

@@ -683,7 +683,7 @@ impl LayoutCx<'_> {
 
     /// Ask `child` for its intrinsic extent on `axis` (see
     /// [`RenderObject::intrinsic`]), with `cross_extent` fixed on the perpendicular
-    /// axis. The intrinsic-objects ([`RenderIntrinsicWidth`]) drive layout from
+    /// axis. The intrinsic-objects ([`crate::objects::RenderIntrinsicWidth`]) drive layout from
     /// this; ordinary parents rarely need it.
     pub fn child_intrinsic(
         &mut self,
