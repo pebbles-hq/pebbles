@@ -190,6 +190,19 @@ fn huge_markdown_virtualized_stays_viewport_bounded() {
     );
     assert!(nodes < 900, "resident tree is O(viewport), not O(document): {nodes} nodes");
 
+    // Fragments: after a warm frame, a repeat paint re-encodes NOTHING — every
+    // clean item re-appends its retained fragment (P4).
+    let mut scene2 = pebbles_render::Scene::new();
+    stats::reset_frame();
+    ui.paint(&mut scene2);
+    assert_eq!(
+        stats::fragments_encoded(),
+        0,
+        "a clean frame re-encodes no fragments (reused {})",
+        stats::fragments_reused(),
+    );
+    assert!(stats::fragments_reused() > 0, "fragments were re-appended");
+
     // Scroll deep: the window slides; the resident tree stays bounded.
     ui.dispatch_scroll(pebbles_foundation::Offset::new(450.0, 350.0), 5_000.0);
     for _ in 0..6 {

@@ -440,6 +440,16 @@ impl RenderTree {
             // node they drive by a frame) — a dirty-mark on a dead node is a
             // no-op, never a panic.
             let Some(node) = self.nodes.get_mut(c) else { return };
+            // A repaint boundary on the dirty path must re-encode its fragment.
+            // (Ancestors above an already-dirty node were flagged when IT was
+            // first marked, so the early break below stays sound.)
+            if let Some(b) = node
+                .object
+                .as_deref_mut()
+                .and_then(|o| o.downcast_mut::<crate::objects::RenderBoundary>())
+            {
+                b.mark_dirty();
+            }
             if node.needs_layout {
                 // Ancestors above an already-dirty node are dirty too; stop early.
                 node.needs_paint = true;
@@ -451,9 +461,23 @@ impl RenderTree {
         }
     }
 
+    /// Mark `id` as needing paint, walking up and invalidating the nearest
+    /// enclosing repaint boundary's retained fragment (paint-only changes —
+    /// scroll offsets, recolors — must re-encode the fragment they live in).
     pub fn mark_needs_paint(&mut self, id: RenderId) {
-        if let Some(node) = self.nodes.get_mut(id) {
+        let mut cur = Some(id);
+        while let Some(c) = cur {
+            let Some(node) = self.nodes.get_mut(c) else { return };
             node.needs_paint = true;
+            if let Some(b) = node
+                .object
+                .as_deref_mut()
+                .and_then(|o| o.downcast_mut::<crate::objects::RenderBoundary>())
+            {
+                b.mark_dirty();
+                return; // contained: outer composition re-appends fragments anyway
+            }
+            cur = node.parent;
         }
     }
 
@@ -875,6 +899,20 @@ impl PaintCx<'_> {
         );
         self.paint_child(child, absolute_offset);
         self.visible = saved;
+    }
+
+    /// Encode `child`'s subtree into `fragment` at the LOCAL origin with an
+    /// unbounded visible window. Repaint boundaries call this: fragments must be
+    /// viewport-INDEPENDENT so re-appending them at any scroll offset is sound.
+    pub fn encode_fragment(&mut self, child: RenderId, fragment: &mut vello::Scene) {
+        fragment.reset();
+        let mut sub = PaintCx {
+            scene: fragment,
+            tree: self.tree,
+            current: child,
+            visible: Rect::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::INFINITY),
+        };
+        sub.paint_child(child, Offset::ZERO);
     }
 
     /// The relative offset a child was assigned during layout.

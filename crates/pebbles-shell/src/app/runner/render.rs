@@ -212,6 +212,8 @@ impl Runner {
         self.frame.reset();
         self.frame.append(&self.scene, Some(Affine::scale(scale)));
         let encode = t.elapsed();
+        // Advance the shaped-text cache generation (evicts only under pressure).
+        self.text.finish_frame();
 
         // E2: opt-in per-frame CPU-side timing (`PEBBLES_FRAME_STATS=1`). GPU submit
         // below is excluded — this measures rebuild/layout/scene-encode, the parts a
@@ -396,6 +398,7 @@ impl Runner {
         w.ui.paint(&mut self.scene);
         self.frame.reset();
         self.frame.append(&self.scene, Some(Affine::scale(scale)));
+        self.text.finish_frame();
 
         let surface = &w.surface;
         let device_handle = &self.context.devices[surface.dev_id];

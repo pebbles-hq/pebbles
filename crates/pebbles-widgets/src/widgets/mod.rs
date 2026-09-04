@@ -34,7 +34,7 @@ pub use canvas::{CanvasWidget, canvas};
 pub use container::Container;
 pub use decorated::DecoratedBox;
 pub use editable::{EditableText, editable};
-pub use effects::{ClipRRect, Opacity};
+pub use effects::{ClipRRect, Opacity, RepaintBoundary, repaint_boundary};
 pub use flex::{Column, Row, column, row};
 pub use flex_children::{Expanded, Flexible, spacer};
 pub use focus_scope::focus_scope;

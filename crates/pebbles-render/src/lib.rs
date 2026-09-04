@@ -39,7 +39,7 @@ pub use objects::{
     Canvas, Cursor, FlexParentData, IconData, IconKind, IconPrim, ParagraphStyle, PointerButton,
     PointerEvent, RenderAlign,
     RenderAspectRatio, RenderCanvas,
-    RenderClipRRect, RenderColoredBox, RenderConstrainedBox, RenderDecoratedBox, RenderFlex,
+    RenderBoundary, RenderClipRRect, RenderColoredBox, RenderConstrainedBox, RenderDecoratedBox, RenderFlex,
     RenderFittedBox, RenderFractionallySizedBox, RenderIcon, RenderIntrinsicHeight,
     RenderIntrinsicWidth, RenderLimitedBox, RenderMeasureProbe, RenderOpacity, RenderOverflowBox, RenderPadding,
     RenderParagraph, RenderPointerListener, RenderScroll,

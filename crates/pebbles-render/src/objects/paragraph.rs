@@ -174,7 +174,10 @@ pub struct RenderParagraph {
     /// Chip (inline-code) backgrounds computed from the shaped layout, local space.
     chips: Vec<(Rect, Color)>,
     /// Shaped layout, produced in [`RenderObject::layout`] and consumed in paint.
-    cached: Option<Layout<Brush>>,
+    /// `Rc`: the same shaped layout is shared through the window's [`TextEnv`]
+    /// cache, so a REBUILT paragraph (virtual-list windows sliding, unrelated
+    /// toggles) reuses the shape instead of re-running parley.
+    cached: Option<Rc<Layout<Brush>>>,
     /// E3 shape cache: a hash of `(text, style, spans, max_advance)` from the last
     /// shape, and the unconstrained size it produced. A layout whose key matches
     /// reuses `cached` (no re-shape); the returned size is re-`constrain`ed against
@@ -399,6 +402,16 @@ impl RenderObject for RenderParagraph {
             self.refresh_span_geometry();
             return constraints.constrain(self.shape_size);
         }
+        // Window-level shape cache: a rebuilt paragraph (new render object, same
+        // content) reuses the shared shaped layout — shaping tracks NEW text, not
+        // rebuild traffic.
+        if let Some((rc, w, h)) = cx.text.cached_layout(key) {
+            self.cached = Some(rc);
+            self.shape_size = Size::new(w, h);
+            self.shape_key = Some(key);
+            self.refresh_span_geometry();
+            return constraints.constrain(self.shape_size);
+        }
         #[cfg(debug_assertions)]
         SHAPES.with(|c| c.set(c.get() + 1));
 
@@ -437,6 +450,8 @@ impl RenderObject for RenderParagraph {
             }
         }
         let size = Size::new(layout.width() as f64, height);
+        let layout = Rc::new(layout);
+        cx.text.store_layout(key, layout.clone(), size.width, size.height);
         self.cached = Some(layout);
         self.shape_size = size;
         self.shape_key = Some(key);
@@ -543,18 +558,31 @@ impl RenderObject for RenderParagraph {
 
     fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         match axis {
-            // The widest unbreakable run — approximated as the widest
-            // whitespace-separated token (Flutter uses the same word-boundary
-            // notion for `getMinIntrinsicWidth`). Capped for pathological input.
+            // The widest unbreakable run — the widest whitespace-separated word
+            // (Flutter's `getMinIntrinsicWidth` notion), measured by scanning the
+            // ONE natural layout's cluster advances. (The old path re-shaped up to
+            // 256 words individually — hundreds of parley runs per measure.)
             Axis::Horizontal => {
-                let text_env = &mut *cx.text;
-                let natural =
-                    self.build(text_env, &self.text, None).width() as f64;
-                let mut max_word: f64 = 0.0;
-                for token in self.text.split_whitespace().take(256) {
-                    let w = self.build(text_env, token, None).width() as f64;
-                    max_word = max_word.max(w);
+                let layout = self.build(&mut *cx.text, &self.text, None);
+                let natural = layout.width() as f64;
+                let (mut max_word, mut cur) = (0.0_f64, 0.0_f64);
+                for line in layout.lines() {
+                    for item in line.items() {
+                        let PositionedLayoutItem::GlyphRun(gr) = item else { continue };
+                        for cluster in gr.run().clusters() {
+                            if cluster.is_space_or_nbsp() {
+                                max_word = max_word.max(cur);
+                                cur = 0.0;
+                            } else {
+                                cur += f64::from(cluster.advance());
+                            }
+                        }
+                    }
+                    // A line break is a word boundary too.
+                    max_word = max_word.max(cur);
+                    cur = 0.0;
                 }
+                max_word = max_word.max(cur);
                 Some(if max_word > 0.0 { max_word } else { natural })
             }
             // The height the paragraph takes when wrapped at `cross_extent`.

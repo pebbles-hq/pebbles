@@ -15,6 +15,8 @@ thread_local! {
     static PAINTED_NODES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static CULLED_NODES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
     static GLYPH_RUNS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static FRAG_ENCODED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static FRAG_REUSED: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 /// Zero all frame counters (call at frame start, before layout).
@@ -26,6 +28,8 @@ pub fn reset_frame() {
         PAINTED_NODES.with(|c| c.set(0));
         CULLED_NODES.with(|c| c.set(0));
         GLYPH_RUNS.with(|c| c.set(0));
+        FRAG_ENCODED.with(|c| c.set(0));
+        FRAG_REUSED.with(|c| c.set(0));
     }
 }
 
@@ -55,3 +59,5 @@ counter!(LAYOUT_SKIPS, bump_layout_skip, layout_skips);
 counter!(PAINTED_NODES, bump_painted, painted_nodes);
 counter!(CULLED_NODES, bump_culled, culled_nodes);
 counter!(GLYPH_RUNS, bump_glyph_run, glyph_runs);
+counter!(FRAG_ENCODED, bump_fragment_encode, fragments_encoded);
+counter!(FRAG_REUSED, bump_fragment_reuse, fragments_reused);

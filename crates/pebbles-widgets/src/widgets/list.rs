@@ -693,7 +693,9 @@ fn render_list(p: &Props) -> ListViewport {
 
     let mut items: Vec<AnyWidget> = Vec::new();
     for i in first..last {
-        let item = (p.builder)(i);
+        // Every item is its own repaint boundary: a clean item re-appends its
+        // retained fragment each frame instead of re-encoding glyphs/paths.
+        let item = crate::widgets::repaint_boundary((p.builder)(i));
         // Auto mode: probe the item so its real extent lands in the cache.
         let item: AnyWidget = if auto {
             MeasureProbe {
