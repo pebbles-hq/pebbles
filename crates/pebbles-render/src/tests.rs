@@ -381,3 +381,50 @@ fn shadow_bleeding_into_view_survives_culling() {
     assert_eq!(crate::stats::painted_nodes(), 4, "the offscreen shadowed card still paints");
     assert_eq!(crate::stats::culled_nodes(), 2, "the far-away card culls at its wrapper");
 }
+
+#[test]
+fn scrolling_repositions_without_relayout() {
+    use crate::objects::RenderScroll;
+    let mut text = TextEnv::new();
+    let mut tree = RenderTree::new();
+    let scroll = tree.insert(Box::new(RenderScroll::new(Axis::Vertical)));
+    let col = tree.insert(Box::new(RenderFlex::new(
+        Axis::Vertical,
+        MainAxisAlignment::Start,
+        CrossAxisAlignment::Stretch,
+        MainAxisSize::Min,
+        0.0,
+        VerticalDirection::Down,
+        TextBaseline::Alphabetic,
+    )));
+    tree.insert_child(scroll, col, 0);
+    for i in 0..100 {
+        let p = tree
+            .insert(Box::new(RenderParagraph::new(format!("row {i}"), ParagraphStyle::default())));
+        tree.insert_child(col, p, i);
+    }
+    tree.root = Some(scroll);
+    tree.layout(&mut text, tight(300.0, 200.0));
+
+    // A scroll tick: mutate the offset and re-position the clipped child the way
+    // dispatch does — WITHOUT marking layout.
+    {
+        let s = tree.object_mut(scroll).downcast_mut::<RenderScroll>().unwrap();
+        s.offset = 600.0;
+        s.target = 600.0;
+    }
+    tree.set_scrolled_child_offset(scroll, pebbles_foundation::Offset::new(0.0, -600.0));
+
+    // The next frame's layout is a no-op: nothing is dirty, constraints unchanged.
+    crate::stats::reset_frame();
+    tree.layout(&mut text, tight(300.0, 200.0));
+    assert_eq!(crate::stats::layout_calls(), 0, "a scroll frame runs zero layout");
+
+    // Paint sees the moved window: early rows cull, a mid-document band paints.
+    let mut scene = vello::Scene::new();
+    tree.paint(&mut scene);
+    let painted = crate::stats::painted_nodes();
+    let culled = crate::stats::culled_nodes();
+    assert!(painted < 30, "mid-scroll paint window stays bounded (painted {painted})");
+    assert!(culled > 0, "rows on both sides culled ({culled})");
+}

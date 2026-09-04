@@ -138,13 +138,25 @@ impl RenderParagraph {
         }
     }
 
-    /// A cheap key over everything that affects the shaped layout. `ParagraphStyle`'s
-    /// `Debug` is deterministic for equal styles and far cheaper than a re-shape.
+    /// A cheap key over everything that affects the shaped layout — field-by-field
+    /// bit hashing. (Never a `Debug` format: that heap-allocated a string per
+    /// paragraph per layout pass, which at document scale was an allocation storm.)
     fn shape_hash(&self, max_advance: Option<f32>) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
         self.text.hash(&mut h);
-        format!("{:?}", self.style).hash(&mut h);
+        let s = &self.style;
+        s.font_size.to_bits().hash(&mut h);
+        for c in s.color.components {
+            c.to_bits().hash(&mut h);
+        }
+        s.line_height.to_bits().hash(&mut h);
+        s.weight.to_bits().hash(&mut h);
+        (s.align as u8).hash(&mut h);
+        s.letter_spacing.to_bits().hash(&mut h);
+        (s.italic, s.underline, s.strikethrough, s.soft_wrap, s.ellipsis).hash(&mut h);
+        s.max_lines.hash(&mut h);
+        s.font_family.hash(&mut h);
         max_advance.map(f32::to_bits).hash(&mut h);
         // D2: ambient direction affects Start/End alignment, so it's part of the key.
         (crate::direction::text_direction() == TextDirection::Rtl).hash(&mut h);

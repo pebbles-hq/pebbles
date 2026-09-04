@@ -54,6 +54,10 @@ pub struct RenderNode {
     /// layout pass; the paint-time viewport culling tests against it, so a
     /// shadow that bleeds outside a tight wrapper still gets painted.
     pub paint_rect: Rect,
+    /// The constraints of this node's last layout — the layout-skip key: a clean
+    /// node re-laid-out under identical constraints returns its stored size
+    /// without running `layout` (Flutter's clean-subtree early-out).
+    pub last_constraints: Option<BoxConstraints>,
     pub needs_layout: bool,
     pub needs_paint: bool,
 }
@@ -70,6 +74,7 @@ impl RenderNode {
             source: None,
             semantics: None,
             paint_rect: Rect::new(0.0, 0.0, 0.0, 0.0),
+            last_constraints: None,
             needs_layout: true,
             needs_paint: true,
         }
@@ -452,6 +457,19 @@ impl RenderTree {
         }
     }
 
+    /// Re-position a scroll viewport's (single, clipped) content child without a
+    /// layout pass — the paint-time half of "scrolling is paint, not layout".
+    /// The child keeps its laid-out size; only its offset inside the clipping
+    /// viewport moves, which is exactly what paint and hit-testing read.
+    pub fn set_scrolled_child_offset(&mut self, viewport: RenderId, offset: Offset) {
+        let Some(&child) = self.nodes.get(viewport).and_then(|n| n.children.first()) else {
+            return;
+        };
+        if let Some(node) = self.nodes.get_mut(child) {
+            node.offset = offset;
+        }
+    }
+
     /// Run a layout pass from the root under `root_constraints`.
     ///
     /// Skips entirely when the tree is clean (`root.needs_layout == false`, which
@@ -578,6 +596,17 @@ impl LayoutCx<'_> {
     /// This is the re-entrant call: `child`'s object is lifted out of the arena
     /// for the duration so the recursion holds a hole-free `&mut RenderTree`.
     pub fn layout_child(&mut self, child: RenderId, constraints: BoxConstraints) -> Size {
+        // Clean-subtree early-out: nothing below this node is dirty (dirt marks
+        // propagate to the root) and the constraints are byte-identical to the
+        // last pass — the stored size is still the answer. This is what makes a
+        // local change O(dirty path) instead of O(tree).
+        {
+            let node = &self.tree.nodes[child];
+            if !node.needs_layout && node.last_constraints == Some(constraints) {
+                crate::stats::bump_layout_skip();
+                return node.size;
+            }
+        }
         crate::stats::bump_layout();
         let mut object =
             self.tree.nodes[child].object.take().expect("child object present during layout");
@@ -612,6 +641,7 @@ impl LayoutCx<'_> {
         node.object = Some(object);
         node.size = size;
         node.needs_layout = false;
+        node.last_constraints = Some(constraints);
         size
     }
 

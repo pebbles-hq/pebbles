@@ -285,7 +285,7 @@ impl Ui {
             return false;
         };
         if moved {
-            self.render.mark_needs_layout(rid);
+            self.scroll_moved(rid);
         }
         moved
     }
@@ -310,7 +310,7 @@ impl Ui {
             .unwrap_or(false);
         if ended {
             self.scroll_anim.insert(rid);
-            self.render.mark_needs_layout(rid);
+            self.scroll_moved(rid);
         }
         ended
     }
@@ -497,7 +497,7 @@ impl Ui {
                     .is_some_and(|s| s.scroll_by(delta));
                 if moved {
                     self.scroll_anim.insert(rid);
-                    self.render.mark_needs_layout(rid);
+                    self.scroll_moved(rid);
                 }
                 return moved;
             }
@@ -510,6 +510,28 @@ impl Ui {
             }
         }
         false
+    }
+
+    /// A scroll offset changed: re-position the clipped content (a paint-time
+    /// concern) and request paint. Scrolling NEVER relayouts the content — layout
+    /// runs only when the viewport or the content itself changes. The content
+    /// child keeps the size/offsets of its last layout; only its offset within
+    /// the (clipping) viewport moves.
+    fn scroll_moved(&mut self, rid: RenderId) {
+        let Some((axis, off)) = self
+            .render
+            .try_object_mut(rid)
+            .and_then(|o| o.downcast_mut::<RenderScroll>())
+            .map(|s| (s.axis, s.offset))
+        else {
+            return;
+        };
+        let child_offset = match axis {
+            Axis::Vertical => Offset::new(0.0, -off),
+            Axis::Horizontal => Offset::new(-off, 0.0),
+        };
+        self.render.set_scrolled_child_offset(rid, child_offset);
+        self.render.mark_needs_paint(rid);
     }
 
     /// Advance every animating scroll spring by `dt`. Returns whether any are still
@@ -528,7 +550,7 @@ impl Ui {
                 .map(|s| s.tick(dt));
             match still {
                 Some(still) => {
-                    self.render.mark_needs_layout(rid);
+                    self.scroll_moved(rid);
                     if !still {
                         self.scroll_anim.remove(&rid);
                     }
@@ -574,7 +596,7 @@ impl Ui {
                     let to = if end { s.max_offset } else { 0.0 };
                     s.scroll_to(to);
                     self.scroll_anim.insert(rid);
-                    self.render.mark_needs_layout(rid);
+                    self.scroll_moved(rid);
                 }
                 return true;
             }
@@ -628,7 +650,7 @@ impl Ui {
         if let Some(s) = self.render.object_mut(rid).downcast_mut::<RenderScroll>() {
             let changed = s.set_offset_from_point(local, size);
             if changed {
-                self.render.mark_needs_layout(rid);
+                self.scroll_moved(rid);
             }
             return changed;
         }
