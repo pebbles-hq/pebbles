@@ -20,6 +20,36 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use slotmap::{SlotMap, new_key_type};
+use smallvec::SmallVec;
+
+/// Effect subscribers of a signal — narrow fan-out (a signal is usually read by
+/// 0-2 effects), so an inline `SmallVec` beats a `HashSet`: no heap for the common
+/// case, no hashing. `component_subs` stays a `HashSet` because a few signals (the
+/// theme) are read by hundreds of components, where `HashSet`'s O(1) removal wins.
+type EffectSubs = SmallVec<[EffectId; 2]>;
+/// Memo subscribers of a signal — likewise narrow fan-out. Uniqueness is
+/// maintained by the recompute source-diff, so no dedup structure is needed.
+type MemoSubs = SmallVec<[MemoId; 2]>;
+
+/// Push `id` if absent (dedup for a narrow inline list).
+fn push_unique<A: smallvec::Array>(v: &mut SmallVec<A>, id: A::Item)
+where
+    A::Item: PartialEq + Copy,
+{
+    if !v.contains(&id) {
+        v.push(id);
+    }
+}
+
+/// Remove `id` (swap-remove; order does not matter for a subscriber list).
+fn remove_first<A: smallvec::Array>(v: &mut SmallVec<A>, id: A::Item)
+where
+    A::Item: PartialEq + Copy,
+{
+    if let Some(i) = v.iter().position(|&x| x == id) {
+        v.swap_remove(i);
+    }
+}
 
 use crate::element::ElementId;
 
@@ -66,10 +96,10 @@ enum Observer {
 struct SignalSlot {
     value: Box<dyn Any>,
     component_subs: HashSet<CompKey>,
-    effect_subs: HashSet<EffectId>,
+    effect_subs: EffectSubs,
     /// Memos that read this signal (they re-subscribe when they recompute, so this
-    /// is NOT drained on write — only the memo's own recompute manages it).
-    memo_subs: HashSet<MemoId>,
+    /// is NOT drained on write — only the memo's own recompute-diff manages it).
+    memo_subs: MemoSubs,
     /// If this signal IS a memo's output, its backing memo — reading the signal
     /// pulls the memo first (lazy evaluation).
     memo: Option<MemoId>,
@@ -84,8 +114,8 @@ impl SignalSlot {
         SignalSlot {
             value,
             component_subs: HashSet::new(),
-            effect_subs: HashSet::new(),
-            memo_subs: HashSet::new(),
+            effect_subs: SmallVec::new(),
+            memo_subs: SmallVec::new(),
             memo: None,
             wv: 0,
         }
@@ -311,7 +341,7 @@ fn dispose_signal(rt: &mut Runtime, sid: SignalId) {
         if let Some(node) = rt.memos.remove(mid) {
             for src in node.sources {
                 if let Some(s) = rt.signals.get_mut(src) {
-                    s.memo_subs.remove(&mid);
+                    remove_first(&mut s.memo_subs, mid);
                 }
             }
         }
@@ -343,7 +373,7 @@ impl<T: 'static + Clone> Signal<T> {
                         rt.subs_of.entry(key).or_default().insert(self.id);
                     }
                     Observer::Effect(id) => {
-                        rt.signals[self.id].effect_subs.insert(id);
+                        push_unique(&mut rt.signals[self.id].effect_subs, id);
                     }
                     Observer::Memo(_mid) => {
                         // A recomputing memo COLLECTS this signal into its source
@@ -520,7 +550,7 @@ fn schedule_leaf_subscribers(rt: &mut Runtime, id: SignalId) {
     let mut effs = std::mem::take(&mut rt.scratch_effects);
     let (cap_c, cap_e) = (comps.capacity(), effs.capacity());
     comps.extend(rt.signals[id].component_subs.drain());
-    effs.extend(rt.signals[id].effect_subs.drain());
+    effs.extend(rt.signals[id].effect_subs.drain(..));
     if comps.capacity() > cap_c || effs.capacity() > cap_e {
         crate::reactive_stats::bump_vec_alloc();
     }
@@ -817,14 +847,14 @@ fn recompute_memo(mid: MemoId) {
                 if !new_sources.contains(sid)
                     && let Some(s) = rt.signals.get_mut(*sid)
                 {
-                    s.memo_subs.remove(&mid);
+                    remove_first(&mut s.memo_subs, mid);
                 }
             }
             for sid in &new_sources {
                 if !old_sources.contains(sid)
                     && let Some(s) = rt.signals.get_mut(*sid)
                 {
-                    s.memo_subs.insert(mid);
+                    push_unique(&mut s.memo_subs, mid);
                 }
             }
             if let Some(n) = rt.memos.get_mut(mid) {
