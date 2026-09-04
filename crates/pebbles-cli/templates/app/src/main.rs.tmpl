@@ -1,0 +1,31 @@
+use pebbles::prelude::*;
+
+/// A component is a plain function; local state is a signal; a handler is a
+/// closure. Widgets are built with lowercase constructor functions —
+/// `column(..)`, `text(..)`, `button(..)` — never `Type::new()`.
+fn app() -> impl IntoWidget {
+    let count = create_signal(0);
+
+    center(column(children![
+        text("Welcome to Pebbles").size(22.0).color(palette::zinc::S600),
+        gap_h(16.0),
+        text(format!("{}", count.get())).size(72.0).color(palette::zinc::S900),
+        gap_h(24.0),
+        row(children![
+            button("−")
+                .variant(ButtonVariant::Outline)
+                .on_pressed(move || count.update(|c| *c -= 1)),
+            gap_w(16.0),
+            button("+").on_pressed(move || count.update(|c| *c += 1)),
+        ])
+        .main_axis_size(MainAxisSize::Min),
+    ]))
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    App::new(component(app))
+        .title("{{name}}")
+        .size(480, 420)
+        .background(palette::zinc::S50)
+        .run()
+}

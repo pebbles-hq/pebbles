@@ -1,0 +1,36 @@
+//! A runnable showcase for this widget package — every package should ship one,
+//! so the widget can be seen without wiring it into an app first.
+//!
+//! ```sh
+//! cargo run --example demo
+//! ```
+
+use pebbles::prelude::*;
+use {{name_snake}}::{CalloutKind, callout};
+
+fn app() -> impl IntoWidget {
+    container().padding(EdgeInsets::all(20.0)).child(
+        column(children![
+            text("{{name}}").size(20.0).semibold(),
+            gap_h(4.0),
+            text("A widget package for Pebbles.").size(13.0).color(theme().colors.muted_foreground),
+            gap_h(20.0),
+            callout("Info", "The default kind — picks up the theme's primary colour."),
+            gap_h(10.0),
+            callout("Success", "It worked.").kind(CalloutKind::Success),
+            gap_h(10.0),
+            callout("Warning", "Something needs a look.").kind(CalloutKind::Warning),
+            gap_h(10.0),
+            callout("Danger", "Something is wrong.").kind(CalloutKind::Danger),
+            gap_h(20.0),
+            button("Toggle theme").variant(ButtonVariant::Outline).on_pressed(|| toggle_theme()),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Stretch)
+        .main_axis_size(MainAxisSize::Min),
+    )
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    Theme::light().make_current();
+    App::new(component(app)).title("{{name}} — demo").size(620, 560).run()
+}

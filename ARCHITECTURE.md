@@ -102,6 +102,7 @@ umbrella crate: `native-menus`, `global-hotkeys` (shell), `image-view`
 | add a hook | define it next to what it drives, then index it in `crates/pebbles/src/hooks.rs` **and** the prelude |
 | add a public API | re-export it from `pebbles::prelude` (`crates/pebbles/src/lib.rs`) |
 | change the test frame pipeline | `crates/pebbles-testing/` only — tests must not re-derive it |
+| add/edit a project template | `crates/pebbles-cli/templates/<kind>/` (real files, `include_str!`-embedded) + a `Template` entry in `crates/pebbles-cli/src/template.rs` |
 
 ## Testing model
 

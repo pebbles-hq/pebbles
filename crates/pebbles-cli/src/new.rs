@@ -1,33 +1,65 @@
-//! `pebbles new <name>` — scaffold a runnable Pebbles app.
+//! `pebbles create <name>` — scaffold a Pebbles project from a template.
+//!
+//! The templates themselves (and the placeholder renderer) live in
+//! [`crate::template`]; this module is only argument parsing and file writing.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use crate::pebbles_repo_root;
+use crate::template::{self, GIT_URL, Source, Template};
 use crate::term;
 
 pub fn run(args: &[String]) -> ExitCode {
     let mut name: Option<&str> = None;
-    let mut path_dep = true; // default: point at the local pebbles checkout
-    for a in args {
+    let mut kind = "app";
+    let mut source = Source::Git; // portable by default
+    let mut list = false;
+
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
         match a.as_str() {
-            "--git" => path_dep = false,
+            "--list" => list = true,
+            // Point the generated project at a local Pebbles checkout instead of
+            // git — for working ON the framework.
+            "--path" => source = Source::Path,
+            // Explicit opt-in to the default, so scripts can be unambiguous.
+            "--git" => source = Source::Git,
+            "-t" | "--template" => match it.next() {
+                Some(t) => kind = t.as_str(),
+                None => {
+                    term::error("`--template` needs a value");
+                    return ExitCode::FAILURE;
+                }
+            },
+            s if s.starts_with("--template=") => {
+                kind = &s["--template=".len()..];
+            }
             s if s.starts_with('-') => {
-                term::error(&format!("unknown option `{s}` for `pebbles new`"));
+                term::error(&format!("unknown option `{s}` for `pebbles create`"));
                 return ExitCode::FAILURE;
             }
             s => name = Some(s),
         }
     }
-    let Some(name) = name else {
-        term::error("usage: pebbles new <name>");
+
+    if list {
+        print_templates();
+        return ExitCode::SUCCESS;
+    }
+
+    let Some(template) = template::find(kind) else {
+        term::error(&format!("unknown template `{kind}` (available: {})", template::names()));
         return ExitCode::FAILURE;
     };
-    if !is_valid_crate_name(name) {
-        term::error(&format!(
-            "`{name}` isn't a valid crate name (use letters, digits, `_`, `-`; start with a letter)"
-        ));
+
+    let Some(name) = name else {
+        term::error("usage: pebbles create [--template <kind>] <name>");
+        return ExitCode::FAILURE;
+    };
+    if let Err(why) = validate_crate_name(name) {
+        term::error(&format!("`{name}` isn't a usable crate name: {why}"));
         return ExitCode::FAILURE;
     }
 
@@ -37,143 +69,145 @@ pub fn run(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    term::banner(&format!("Creating Pebbles app `{name}`"));
-
-    // The dependency line: a path to the local checkout (default — builds
-    // immediately) or a git dep (with `--git`, portable off this machine).
-    let dep_line = if path_dep {
-        // The umbrella `pebbles` crate lives at <repo>/crates/pebbles.
-        let pkg = pebbles_repo_root().join("crates").join("pebbles");
-        format!("pebbles = {{ path = {:?} }}", pkg.display().to_string())
-    } else {
-        "pebbles = { git = \"https://github.com/pebbles-hq/pebbles\" }".to_string()
+    // Resolve the dependency source ONCE, up front, so a missing local checkout
+    // fails before any file is written rather than half-way through.
+    let root = match source {
+        Source::Path => match local_crates_dir() {
+            Ok(p) => Some(p),
+            Err(why) => {
+                term::error(&why);
+                return ExitCode::FAILURE;
+            }
+        },
+        Source::Git => None,
+    };
+    let dep = move |crate_name: &str| match &root {
+        Some(crates) => {
+            let p = crates.join(crate_name);
+            format!("{crate_name} = {{ path = {:?} }}", p.display().to_string())
+        }
+        None => format!("{crate_name} = {{ git = {GIT_URL:?} }}"),
     };
 
-    let files: &[(&str, String)] = &[
-        ("Cargo.toml", cargo_toml(name, &dep_line)),
-        ("src/main.rs", MAIN_RS.to_string()),
-        (".gitignore", GITIGNORE.to_string()),
-        ("pebbles.toml", pebbles_toml(name)),
-        ("README.md", readme(name)),
-    ];
+    term::banner(&format!("Creating Pebbles {} `{name}`", template.name));
 
-    for (rel, contents) in files {
-        let path = dir.join(rel);
-        if let Some(parent) = path.parent()
-            && let Err(e) = fs::create_dir_all(parent)
-        {
-            term::error(&format!("could not create {}: {e}", parent.display()));
-            return ExitCode::FAILURE;
-        }
-        if let Err(e) = fs::write(&path, contents) {
-            term::error(&format!("could not write {}: {e}", path.display()));
-            return ExitCode::FAILURE;
-        }
-        term::step(&format!("created {name}/{rel}"));
+    if let Err(code) = write_template(template, dir, name, &dep) {
+        // Best-effort cleanup: a half-written project is worse than none.
+        let _ = fs::remove_dir_all(dir);
+        return code;
     }
 
     term::ok(&format!("`{name}` is ready."));
     println!();
     println!("  Next:");
-    println!("    cd {name}");
-    println!("    pebbles run");
+    for step in template.next_steps {
+        println!("    {}", step.replace("{{name}}", name));
+    }
     println!();
     ExitCode::SUCCESS
 }
 
-fn is_valid_crate_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    matches!(chars.next(), Some(c) if c.is_ascii_alphabetic())
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+fn write_template(
+    template: &Template,
+    dir: &Path,
+    name: &str,
+    dep: &dyn Fn(&str) -> String,
+) -> Result<(), ExitCode> {
+    for file in template.files {
+        let path = dir.join(file.path);
+        if let Some(parent) = path.parent()
+            && let Err(e) = fs::create_dir_all(parent)
+        {
+            term::error(&format!("could not create {}: {e}", parent.display()));
+            return Err(ExitCode::FAILURE);
+        }
+        let contents = template::render(file.contents, name, dep);
+        if let Err(e) = fs::write(&path, contents) {
+            term::error(&format!("could not write {}: {e}", path.display()));
+            return Err(ExitCode::FAILURE);
+        }
+        term::step(&format!("created {name}/{}", file.path));
+    }
+    Ok(())
 }
 
-fn cargo_toml(name: &str, dep_line: &str) -> String {
-    format!(
-        "\
-[package]
-name = \"{name}\"
-version = \"0.1.0\"
-edition = \"2024\"
-publish = false
-
-[dependencies]
-{dep_line}
-"
-    )
+fn print_templates() {
+    use term::{BOLD, CYAN, DIM, RESET};
+    println!("{BOLD}TEMPLATES{RESET}");
+    for t in template::ALL {
+        println!("    {CYAN}{:<8}{RESET} {DIM}{}{RESET}", t.name, t.summary);
+    }
+    println!();
+    println!("    pebbles create --template widget my-widget");
 }
 
-fn pebbles_toml(name: &str) -> String {
-    format!(
-        "\
-# Pebbles project config, read by `pebbles run`.
-[app]
-name = \"{name}\"
-
-[dev]
-# Log level the dev runner starts the app at (trace|debug|info|warn|error).
-log = \"debug\"
-# Directories watched for hot-restart (relative to this file).
-watch = [\"src\"]
-"
-    )
+/// The `crates/` directory of the Pebbles checkout this CLI was built from.
+///
+/// `--path` is only meaningful when that checkout is still present — a CLI
+/// installed with `cargo install` on another machine has a build-time path that
+/// no longer exists, and a generated project would fail to resolve its
+/// dependencies with a confusing cargo error. Check it here and say so plainly.
+fn local_crates_dir() -> Result<PathBuf, String> {
+    let crates = pebbles_repo_root().join("crates");
+    if !crates.join("pebbles").join("Cargo.toml").exists() {
+        return Err(format!(
+            "`--path` needs the Pebbles checkout this CLI was built from, but {} is gone.\n         \
+             Re-run without `--path` to depend on {GIT_URL} instead.",
+            crates.display()
+        ));
+    }
+    Ok(crates)
 }
 
-fn readme(name: &str) -> String {
-    format!(
-        "\
-# {name}
-
-A desktop app built with [Pebbles](https://github.com/pebbles-hq/pebbles).
-
-## Develop
-
-```sh
-pebbles run          # build + run with rich logs; hot-restarts on save
-pebbles run --log trace
-```
-
-## Release
-
-```sh
-pebbles run --release
-# or a plain cargo build:
-cargo build --release
-```
-"
-    )
+/// Cargo's rules, plus the ones that only bite later: a name that is a Rust
+/// keyword makes `use <name>::…` unusable in the generated example and tests.
+fn validate_crate_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("it is empty".into());
+    }
+    if !name.starts_with(|c: char| c.is_ascii_alphabetic()) {
+        return Err("it must start with a letter".into());
+    }
+    if let Some(bad) = name.chars().find(|c| !c.is_ascii_alphanumeric() && *c != '_' && *c != '-') {
+        return Err(format!("`{bad}` is not allowed (use letters, digits, `_`, `-`)"));
+    }
+    // The crate name becomes a Rust path (`{{name_snake}}`) in the generated
+    // example and tests, so a keyword would produce code that cannot compile.
+    const KEYWORDS: &[&str] = &[
+        "as", "async", "await", "box", "break", "const", "continue", "crate", "dyn", "else", "enum",
+        "extern", "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut",
+        "pub", "ref", "return", "self", "static", "struct", "super", "trait", "true", "type", "union",
+        "unsafe", "use", "where", "while", "yield", "test", "gen", "try", "macro", "override", "priv",
+        "typeof", "unsized", "virtual", "become", "abstract", "do", "final",
+    ];
+    let snake = name.replace('-', "_");
+    if KEYWORDS.contains(&snake.as_str()) {
+        return Err(format!("`{snake}` is a Rust keyword, so `use {snake}::…` would not compile"));
+    }
+    Ok(())
 }
 
-const GITIGNORE: &str = "/target\n**/*.rs.bk\nCargo.lock\n.pebbles/\n";
+#[cfg(test)]
+mod tests {
+    use super::validate_crate_name;
 
-/// The starter app — a counter, mirroring the Pebbles house style: a component is
-/// a function, state is a signal, handlers are plain closures.
-const MAIN_RS: &str = "\
-use pebbles::prelude::*;
+    #[test]
+    fn accepts_ordinary_names() {
+        for n in ["hello", "my-widget", "app2", "a_b-c"] {
+            assert!(validate_crate_name(n).is_ok(), "{n} should be accepted");
+        }
+    }
 
-fn app() -> impl IntoWidget {
-    let count = create_signal(0);
-
-    center(column(children![
-        text(\"Welcome to Pebbles\").size(22.0).color(palette::zinc::S600),
-        gap_h(16.0),
-        text(format!(\"{}\", count.get())).size(72.0).color(palette::zinc::S900),
-        gap_h(24.0),
-        row(children![
-            button(\"\u{2212}\")
-                .variant(ButtonVariant::Outline)
-                .on_pressed(move || count.update(|c| *c -= 1)),
-            gap_w(16.0),
-            button(\"+\").on_pressed(move || count.update(|c| *c += 1)),
-        ])
-        .main_axis_size(MainAxisSize::Min),
-    ]))
+    #[test]
+    fn rejects_the_shapes_that_break_later() {
+        // Cargo-level rules…
+        assert!(validate_crate_name("").is_err());
+        assert!(validate_crate_name("2fast").is_err(), "must start with a letter");
+        assert!(validate_crate_name("my widget").is_err(), "no spaces");
+        assert!(validate_crate_name("my.widget").is_err(), "no dots");
+        // …and the one that only bites when the generated code is compiled.
+        assert!(validate_crate_name("type").is_err(), "keyword");
+        assert!(validate_crate_name("my-type").is_ok(), "keyword only matters whole");
+        assert!(validate_crate_name("impl").is_err(), "keyword");
+    }
 }
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    App::new(component(app))
-        .title(\"Pebbles App\")
-        .size(480, 420)
-        .background(palette::zinc::S50)
-        .run()
-}
-";

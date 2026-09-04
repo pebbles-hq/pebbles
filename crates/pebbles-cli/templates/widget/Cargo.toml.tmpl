@@ -1,0 +1,29 @@
+[package]
+name = "{{name}}"
+version = "0.1.0"
+edition = "2024"
+description = "A widget for the Pebbles GUI framework."
+# Pick a license before publishing; Pebbles itself is Apache-2.0.
+# license = "Apache-2.0"
+publish = false
+
+# A widget package depends on Pebbles' PUBLIC API only — the catalog + theme to
+# compose with, the runtime for the widget/reactive contract, and the render and
+# foundation primitives. It must never reach into framework internals: if you
+# find yourself needing to, that is a framework gap worth reporting upstream.
+[dependencies]
+{{dep.pebbles-core}}
+{{dep.pebbles-foundation}}
+{{dep.pebbles-render}}
+{{dep.pebbles-widgets}}
+
+[dev-dependencies]
+# The umbrella crate gives the example the prelude + the `App` runner.
+{{dep.pebbles}}
+# The headless harness — mount, frame, click, query. Never re-derive the frame
+# pipeline in a test.
+{{dep.pebbles-testing}}
+
+[[example]]
+name = "demo"
+path = "examples/demo.rs"

@@ -1,0 +1,24 @@
+# {{name}}
+
+A desktop app built with [Pebbles](https://github.com/pebbles-hq/pebbles).
+
+## Develop
+
+```sh
+pebbles run                 # build + run with rich logs; hot-restarts on save
+pebbles run --log trace     # more detail
+```
+
+## Release
+
+```sh
+pebbles run --release
+# or a plain cargo build:
+cargo build --release
+```
+
+## Where to look next
+
+- `src/main.rs` — the whole app: a component function, a signal, a handler.
+- [Pebbles README](https://github.com/pebbles-hq/pebbles) — the programming
+  model, the widget catalog, and the platform-support matrix.

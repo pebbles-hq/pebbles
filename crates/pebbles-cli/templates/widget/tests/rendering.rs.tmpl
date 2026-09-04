@@ -1,0 +1,32 @@
+//! Headless tests through `pebbles-testing`. The harness owns the frame
+//! lifecycle, so a change to the framework's pipeline never edits this file.
+
+use pebbles_core::IntoWidget;
+use pebbles_testing::Harness;
+use {{name_snake}}::{CalloutKind, callout};
+
+fn info() -> impl IntoWidget {
+    callout("Title", "Body text.")
+}
+
+fn danger() -> impl IntoWidget {
+    callout("Title", "Body text.").kind(CalloutKind::Danger)
+}
+
+#[test]
+fn it_mounts_and_paints() {
+    let mut h = Harness::new().window(420.0, 200.0);
+    h.mount(info);
+    h.draw(); // reconcile -> layout -> paint, settled
+    assert!(h.element_count() > 0, "the callout produced a tree");
+    assert!(h.render_node_count() > 0, "and render nodes to paint");
+}
+
+#[test]
+fn every_kind_renders() {
+    // A variant that picks a different theme colour must still lay out.
+    let mut h = Harness::new().window(420.0, 200.0);
+    h.mount(danger);
+    h.draw();
+    assert!(h.render_node_count() > 0);
+}

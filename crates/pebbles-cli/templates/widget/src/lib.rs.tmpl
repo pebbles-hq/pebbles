@@ -1,0 +1,120 @@
+//! # {{name}}
+//!
+//! A widget package for [Pebbles](https://github.com/pebbles-hq/pebbles).
+//!
+//! It depends only on Pebbles' *public* API and composes the built-in catalog
+//! into a new widget — the same thing any ecosystem package does. Drop
+//! [`callout`] into a Pebbles tree exactly like a built-in widget.
+//!
+//! ```ignore
+//! use {{name_snake}}::{callout, CalloutKind};
+//!
+//! callout("Heads up", "This ships as its own crate.")
+//!     .kind(CalloutKind::Warning)
+//! ```
+
+use pebbles_core::widget::{AnyWidget, IntoWidget};
+use pebbles_core::{children, component_props};
+use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, IconData, IconKind};
+use pebbles_widgets::theme::theme;
+use pebbles_widgets::{column, container, expanded, gap_h, gap_w, icon, row, text};
+
+/// What a [`callout`] is telling the reader. Each kind picks its own accent
+/// colour from the live theme, so a callout follows light/dark automatically.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum CalloutKind {
+    #[default]
+    Info,
+    Success,
+    Warning,
+    Danger,
+}
+
+impl CalloutKind {
+    fn accent(self) -> Color {
+        let c = theme().colors;
+        match self {
+            CalloutKind::Info => c.primary,
+            CalloutKind::Success => c.success,
+            CalloutKind::Warning => c.warning,
+            CalloutKind::Danger => c.destructive,
+        }
+    }
+
+    fn glyph(self) -> IconData {
+        match self {
+            CalloutKind::Info => IconKind::Info.into(),
+            CalloutKind::Success => IconKind::Check.into(),
+            CalloutKind::Warning | CalloutKind::Danger => IconKind::Warning.into(),
+        }
+    }
+}
+
+/// A titled callout box — an accent bar, an icon, a bold title and a body.
+///
+/// Built with the lowercase constructor [`callout`], per the Pebbles call-site
+/// convention: functions build widgets, PascalCase names are types.
+#[derive(Clone)]
+pub struct Callout {
+    title: String,
+    body: String,
+    kind: CalloutKind,
+}
+
+/// Create a [`Callout`] with a `title` and a `body`.
+pub fn callout(title: impl Into<String>, body: impl Into<String>) -> Callout {
+    Callout { title: title.into(), body: body.into(), kind: CalloutKind::default() }
+}
+
+impl Callout {
+    /// Set the kind (default [`CalloutKind::Info`]).
+    pub fn kind(mut self, kind: CalloutKind) -> Self {
+        self.kind = kind;
+        self
+    }
+}
+
+struct Props {
+    title: String,
+    body: String,
+    kind: CalloutKind,
+}
+
+impl IntoWidget for Callout {
+    fn into_widget(self) -> AnyWidget {
+        component_props(render, Props { title: self.title, body: self.body, kind: self.kind })
+            .into_widget()
+    }
+}
+
+fn render(p: &Props) -> AnyWidget {
+    let c = theme().colors;
+    let accent = p.kind.accent();
+    container()
+        .decoration(
+            BoxDecoration::new()
+                .color(c.muted)
+                .radius(BorderRadius::all(8.0))
+                .border(Border::new(accent, 1.0)),
+        )
+        .padding(EdgeInsets::all(12.0))
+        .child(
+            row(children![
+                icon(p.kind.glyph()).size(16.0).color(accent),
+                gap_w(10.0),
+                expanded(
+                    column(children![
+                        text(p.title.clone()).size(14.0).semibold().color(c.foreground),
+                        gap_h(4.0),
+                        text(p.body.clone()).size(13.0).color(c.muted_foreground),
+                    ])
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .main_axis_size(MainAxisSize::Min),
+                ),
+            ])
+            .cross_axis_alignment(CrossAxisAlignment::Start)
+            .main_axis_size(MainAxisSize::Min),
+        )
+        .into_widget()
+}

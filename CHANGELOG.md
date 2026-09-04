@@ -6,6 +6,30 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — `pebbles create` templates
+The CLI's scaffolding is now template-driven, matching how Flutter organizes
+`flutter create`: templates are real files under
+`crates/pebbles-cli/templates/<kind>/`, embedded with `include_str!` (so the CLI
+keeps its deliberate zero-dependency property) and rendered through a small
+`{{name}}` / `{{name_snake}}` / `{{dep.<crate>}}` substituter.
+
+- `pebbles create --template app` (default) — a runnable desktop app.
+- `pebbles create --template widget` — a reusable **widget package**: library +
+  runnable example + headless `pebbles-testing` tests, in the shape
+  `pebbles-markdown` established. It also teaches the conventions by example:
+  lowercase constructor functions, public-API-only dependencies, theme-driven
+  colors.
+- `pebbles create --list` shows the templates.
+- `new` remains an alias for `create`.
+
+### Fixed — generated projects are portable
+`pebbles create` defaulted to a `path` dependency pointing at the CLI author's
+own Pebbles checkout, so a generated project only built on that machine. It now
+defaults to the git dependency; `--path` is the opt-in for framework
+development, and it fails up front with a clear message if that checkout is
+gone (rather than emitting a manifest cargo cannot resolve).
+
+
 ### Changed — workspace organization pass
 Structural only; no behavior change and the public API is unchanged (verified by
 building the external `pebbles-markdown` consumer against it untouched).

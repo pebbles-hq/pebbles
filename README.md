@@ -51,6 +51,30 @@ cargo run -p counter     # the example above
 cargo run -p gallery     # the full widget showcase / documentation
 ```
 
+## The `pebbles` command
+
+Optional but recommended — install the CLI once and it scaffolds projects and
+runs them with hot-restart:
+
+```bash
+cargo install --path crates/pebbles-cli   # or: cargo install --git <this repo> pebbles-cli
+
+pebbles create hello                      # a runnable desktop app
+pebbles create --template widget my-thing # a reusable widget package
+pebbles create --list                     # the available templates
+
+cd hello && pebbles run                   # rich logs; hot-restarts on save
+pebbles doctor                            # check the toolchain/environment
+```
+
+Generated projects depend on Pebbles by git, so they build on any machine. Pass
+`--path` instead to point at a local checkout — that is for working *on* the
+framework, where edits should be picked up without publishing.
+
+The CLI is a separate crate that does **not** depend on the framework (it only
+shells out to cargo), so it neither bloats an app build nor forces you to use
+it: `cargo run` works exactly as well.
+
 Optional integrations are opt-in cargo features on the `pebbles` crate:
 `image-view` (`ImageView` + image decoding), `file-dialogs` (`pick_folder`),
 `native-menus` (OS menu bar), `global-hotkeys`, and `tokio` (`create_resource`
@@ -61,7 +85,8 @@ Widgets can also ship as **separate packages** that depend on Pebbles — the
 ecosystem model. The Obsidian-style GFM reader/editor lives in its own crate,
 [`pebbles-markdown`](https://github.com/pebbles-hq/pebbles-markdown); add it to
 your app alongside `pebbles`. It is the reference example for building your own
-Pebbles widget package.
+Pebbles widget package — and `pebbles create --template widget` scaffolds exactly
+that shape (library + example + headless tests).
 
 ## Platform support
 
@@ -169,6 +194,7 @@ Layered so the GPU stack is quarantined and the core compiles in seconds:
 | [`pebbles-shell`](crates/pebbles-shell) | winit window + wgpu surface + Vello GPU renderer + event loop + AccessKit bridge |
 | [`pebbles-testing`](crates/pebbles-testing) | the headless test harness: mount, frame/draw, input, queries |
 | [`pebbles`](crates/pebbles) | umbrella crate + `prelude` + the [`hooks`](crates/pebbles/src/hooks.rs) index |
+| [`pebbles-cli`](crates/pebbles-cli) | the `pebbles` command: scaffold, dev-run with hot-restart, doctor |
 
 `vello`'s GPU deps are optional, so `pebbles-render` uses the CPU-side `vello::Scene`
 encoder with **no** wgpu — keeping layout/paint logic unit-testable headlessly. Only

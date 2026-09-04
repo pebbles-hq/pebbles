@@ -1,0 +1,49 @@
+# {{name}}
+
+A widget package for the [Pebbles](https://github.com/pebbles-hq/pebbles) GUI
+framework.
+
+```rust
+use pebbles::prelude::*;
+use {{name_snake}}::{callout, CalloutKind};
+
+fn screen() -> impl IntoWidget {
+    column(children![
+        callout("Heads up", "This widget ships as its own crate."),
+        callout("Careful", "Something needs a look.").kind(CalloutKind::Warning),
+    ])
+}
+```
+
+See it run:
+
+```sh
+cargo run --example demo
+cargo test
+```
+
+## Conventions this package follows
+
+Worth keeping as you extend it — they are what make a widget package feel
+built-in rather than bolted on:
+
+1. **Lowercase constructor functions.** `callout(..)` builds the widget;
+   `Callout` is only a type name. Never expose `Type::new()` as the documented
+   way to build something.
+2. **Public API only.** Depend on `pebbles-widgets` (catalog + theme),
+   `pebbles-core` (the widget/reactive contract) and
+   `pebbles-render`/`pebbles-foundation` (primitives). Never reach into
+   framework internals — if you need to, that is a framework gap to report.
+3. **Theme, don't hardcode.** Read `theme().colors` so the widget follows
+   light/dark automatically.
+4. **Test with `pebbles-testing`.** `Harness` owns mount/frame/draw/input, so a
+   framework pipeline change does not touch your tests.
+5. **Ship an example.** `examples/demo.rs` is how people evaluate the widget.
+
+For a fully worked reference package, see
+[`pebbles-markdown`](https://github.com/pebbles-hq/pebbles-markdown).
+
+## License
+
+Pick one before publishing — Pebbles itself is Apache-2.0. Then uncomment the
+`license` field in `Cargo.toml`.
