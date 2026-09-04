@@ -68,26 +68,31 @@ jobs:
       - run: cargo check --workspace --all-features
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Mobile / web readiness probe. `cargo check` does not link, so a target only
-  # needs its std installed — enough to prove whether the dependency graph is
-  # even portable. Informational BY DESIGN: these targets are not supported
-  # (see the support matrix in README.md); this job measures the distance
-  # instead of gating. Read its log before claiming a port.
+  # Cross-platform COMPILE gate. The whole stack — framework AND shell — compiles
+  # for web, Android and iOS, and this keeps it that way: a change that breaks a
+  # target's build fails CI. `cargo check` does not link, so this verifies
+  # portability of the source + dependency graph (Android's cdylib/APK, the web
+  # bundle, and the iOS .app are the separate build+run steps that need an
+  # NDK / browser / Mac — see documentations/<platform>-support.md). Android uses
+  # NativeActivity here because GameActivity's build script compiles C++ and needs
+  # the NDK; a production Android build enables `android-game-activity`.
   # ───────────────────────────────────────────────────────────────────────────
-  platform-probe:
-    name: Platform probe (${{ matrix.target }})
+  cross-platform:
+    name: Compile (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
         include:
-          - target: aarch64-apple-ios
-            runner: macos-latest
-          - target: aarch64-linux-android
-            runner: ubuntu-latest
           - target: wasm32-unknown-unknown
             runner: ubuntu-latest
+            shell_args: ""
+          - target: aarch64-linux-android
+            runner: ubuntu-latest
+            shell_args: "--features android-native-activity"
+          - target: aarch64-apple-ios
+            runner: macos-latest
+            shell_args: ""
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: System deps (Linux)
@@ -99,19 +104,19 @@ jobs:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          key: probe-${{ matrix.target }}
-      # The layered crates in dependency order, so the log shows exactly HOW FAR
-      # up the stack the target gets before the platform layer stops it.
-      - name: Probe foundation → render → core → widgets
+          key: xplatform-${{ matrix.target }}
+      # The framework layer, in dependency order (so a break names the crate).
+      - name: Framework compiles (foundation → render → core → widgets)
         run: |
           for c in pebbles-foundation pebbles-render pebbles-core pebbles-widgets; do
             echo "::group::$c"
-            cargo check -p "$c" --target ${{ matrix.target }} || echo "FAILED: $c"
+            cargo check -p "$c" --target ${{ matrix.target }}
             echo "::endgroup::"
           done
-      - name: Probe the shell (window + GPU + clipboard + a11y)
-        run: |
-          cargo check -p pebbles-shell --target ${{ matrix.target }} || echo "FAILED: pebbles-shell"
+      # The shell — window + GPU + clipboard + a11y + touch. This is the gate the
+      # cross-platform port earned: it compiles for all three today.
+      - name: Shell compiles (window / GPU / input)
+        run: cargo check -p pebbles-shell --target ${{ matrix.target }} ${{ matrix.shell_args }}
 
   clippy:
     name: Clippy

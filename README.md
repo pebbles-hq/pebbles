@@ -99,20 +99,21 @@ claim — the platform builds and passes the headless test suites in
 | **Linux** (X11 + Wayland) | ✅ Supported | The primary development platform: built, tested and run daily, including GPU device-loss recovery and long input-storm soaks. |
 | **Windows** | ✅ Supported | Builds and passes the full suite on `windows-latest` in CI. Native window menu behind `native-menus`. Less interactive polish than Linux — visual/input reports welcome. |
 | **macOS** | ✅ Supported | Builds and passes the full suite on `macos-latest` in CI. Has the most platform-specific code (global menu bar, `Mod`→⌘ shortcut mapping). Same interactive-polish caveat as Windows. |
-| **iOS** | 🟡 Compiles, not usable | The whole stack — *including* the shell (winit + wgpu + clipboard + accessibility) — compiles for `aarch64-apple-ios` in CI. What is missing is the app itself: no touch or gesture input, no application-lifecycle integration, and it has never been run on a device or simulator. Closer than it looks, but not usable. |
-| **Android** | ⛔ Not supported | Everything up to and including the widget catalog compiles for `aarch64-linux-android`; the shell does not — `arboard` (clipboard) has no Android backend. Beyond that it needs `android-activity` lifecycle integration plus the same touch/gesture work as iOS. |
-| **Web** (wasm) | ⛔ Out of scope | A decision record, not an omission. Foundation through widgets compile for `wasm32-unknown-unknown`; the shell does not — `arboard` again, and the renderer initializes the GPU by blocking (`pollster::block_on`), which the web main thread forbids. Supporting it means a second, async shell backend. |
+| **Web** (wasm) | 🟡 Compiles (WebGPU) | The whole stack — framework **and shell** — compiles for `wasm32-unknown-unknown`, gated in CI. Requires **WebGPU** (Vello uses compute shaders; no WebGL2 fallback) — Chrome/Edge/Safari-26, Firefox where enabled. Not yet *runnable*: the GPU init must become async (it currently blocks, which the web main thread forbids) and a canvas entry point is needed. Buildable from Linux with `trunk`. |
+| **Android** | 🟡 Compiles | Framework **and shell** compile for `aarch64-linux-android` (NativeActivity, NDK-free), gated in CI. **Touch input works** (mapped onto the pointer model). Requires **Vulkan** (universal on Android 7+). Not yet a running APK: needs the `android_main` entry, surface suspend/resume, and — for the build — the NDK + Gradle + a device. AccessKit ships an Android adapter, so TalkBack is reachable. |
+| **iOS** | 🟡 Compiles | Framework **and shell** compile for `aarch64-apple-ios` (Metal — no GPU caveat), gated on the CI macOS runner. **Touch input works** (shared with Android). Not yet a running app: needs the app-bundle entry and the on-device build, which **requires a Mac + Xcode** (Apple's constraint — no Linux/Windows path). |
 
-Legend: ✅ built + tested in CI · 🟡 compiles in CI but not usable · ⛔ not
+Legend: ✅ built + tested in CI · 🟡 compiles in CI, not yet runnable · ⛔ not
 supported.
 
-The desktop rows are produced by the CI matrix on every push, so this table
-cannot silently drift. The non-desktop rows come from the
-[`platform-probe`](.github/workflows/ci.yml) job, which `cargo check`s each
-crate in dependency order so the blocker is named rather than guessed — note
-that in every case the framework proper is portable and only `pebbles-shell`
-is not. A compiling dependency graph is still not support: mobile status
-changes when the input and lifecycle work exists.
+The desktop rows are produced by the CI matrix, and the web/Android/iOS
+**compile** status by the [`cross-platform`](.github/workflows/ci.yml) gate, on
+every push — so this table cannot silently drift. "Compiles" is an honest,
+narrower claim than "supported": the source + dependency graph build for the
+target and touch input is wired, but a *running* app still needs the per-
+platform entry point + async GPU init (web), and a build toolchain this project
+doesn't bundle (an NDK + device for Android, a Mac for iOS). The remaining work
+is tracked in full, honest checklists in the project's platform design docs.
 
 ## Programming model
 
