@@ -10,9 +10,9 @@ use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor};
 
 use crate::theme::{mix, theme};
 use crate::widgets::{Container, GestureDetector, Opacity, gap_w, row, text};
+use pebbles_core::focus::create_focus;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{KeyInput, animated, clipboard, component_props, create_signal};
-use pebbles_core::focus::create_focus;
 
 /// A one-time-code input. Build with [`input_otp`].
 pub struct InputOtp {
@@ -154,7 +154,9 @@ fn render_otp(p: &Props) -> AnyWidget {
                 if let Some(cb) = &on_changed {
                     cb(&s);
                 }
-                if n == len && let Some(cb) = &on_complete {
+                if n == len
+                    && let Some(cb) = &on_complete
+                {
                     cb(&s);
                 }
             }
@@ -207,10 +209,7 @@ fn render_otp(p: &Props) -> AnyWidget {
     let field: AnyWidget = if p.disabled {
         Opacity::new(0.55, field).into_widget()
     } else {
-        GestureDetector::new(field)
-            .cursor(Cursor::Text)
-            .on_tap(move || focus.request_focus())
-            .into_widget()
+        GestureDetector::new(field).cursor(Cursor::Text).on_tap(move || focus.request_focus()).into_widget()
     };
     field
 }

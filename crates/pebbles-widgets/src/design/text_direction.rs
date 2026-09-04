@@ -1,4 +1,4 @@
-//! Reactive ambient [`TextDirection`] (D2) — mirrors [`theme`](crate::theme). Apps read
+//! Reactive ambient [`TextDirection`] (D2) — mirrors [`theme`](fn@crate::theme). Apps read
 //! [`text_direction`] (subscribing) to re-render on a direction change; the setter also
 //! updates the render-layer global ([`pebbles_render::set_text_direction`]) that layout
 //! consults so Rows flip and paragraphs pick the right bidi base.

@@ -121,13 +121,17 @@ jobs:
   # the program, so it cannot run GPU/windowing code) and to the reactive
   # runtime in particular.
   #
-  # Non-blocking on introduction: miri under a full dependency graph can trip on
-  # third-party internals we do not control. Flip `continue-on-error` off once a
-  # green baseline is confirmed, so real UB regressions gate merges.
+  # Runs on the SCHEDULE and on demand, not on every push/PR: the baseline has
+  # not been confirmed green yet (miri interprets the whole dependency graph and
+  # can trip on third-party internals we do not control), and a job that is
+  # always red teaches people to ignore the tab. Once a scheduled run is green,
+  # add push/pull_request back and drop `continue-on-error` so real UB
+  # regressions gate merges.
   # ───────────────────────────────────────────────────────────────────────────
   miri:
-    name: Miri (unsafe / UB, non-blocking)
+    name: Miri (unsafe / UB)
     runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -146,4 +150,7 @@ jobs:
           # thread_local runtime uses; Tree Borrows is the model those patterns
           # are actually checked against upstream.
           MIRIFLAGS: "-Zmiri-tree-borrows -Zmiri-disable-isolation"
-        run: cargo miri test -p pebbles-core --lib
+        # `+nightly` explicitly: rust-toolchain.toml pins stable and OVERRIDES
+        # `rustup default nightly`, so without it cargo resolves to stable —
+        # where miri is not installed — and the job dies before running a test.
+        run: cargo +nightly miri test -p pebbles-core --lib

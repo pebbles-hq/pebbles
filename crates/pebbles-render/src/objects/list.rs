@@ -178,9 +178,21 @@ impl RenderObject for RenderList {
                 )
             }
         };
-        cx.scene.fill(Fill::NonZero, Affine::IDENTITY, sb.track_color, None, &RoundedRect::from_rect(track, sb.radius));
+        cx.scene.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            sb.track_color,
+            None,
+            &RoundedRect::from_rect(track, sb.radius),
+        );
         if self.scrollable() {
-            cx.scene.fill(Fill::NonZero, Affine::IDENTITY, sb.thumb_color, None, &RoundedRect::from_rect(thumb, sb.radius));
+            cx.scene.fill(
+                Fill::NonZero,
+                Affine::IDENTITY,
+                sb.thumb_color,
+                None,
+                &RoundedRect::from_rect(thumb, sb.radius),
+            );
         }
     }
 

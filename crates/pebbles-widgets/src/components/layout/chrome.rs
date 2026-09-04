@@ -8,15 +8,20 @@
 use std::rc::Rc;
 
 use pebbles_core::IntoCallback;
-use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, palette};
+use pebbles_foundation::{
+    Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, palette,
+};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconData, IconKind};
 
+use crate::theme::{mix, theme};
+use crate::widgets::{
+    Container, Expanded, GestureDetector, Padding, SingleChildScrollView, center, column, gap_h, gap_w, row,
+    spacer, text,
+};
 use pebbles_core::children;
 use pebbles_core::context::Callback;
-use pebbles_core::{animated, component_props, consume_context, create_signal, provide_context};
-use crate::theme::{mix, theme};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{Container, Expanded, GestureDetector, Padding, SingleChildScrollView, center, column, gap_h, gap_w, row, spacer, text};
+use pebbles_core::{animated, component_props, consume_context, create_signal, provide_context};
 
 use crate::Side;
 use crate::components::{icon, tooltip};
@@ -63,7 +68,6 @@ impl Scaffold {
         self
     }
 }
-
 
 impl IntoWidget for Scaffold {
     fn into_widget(mut self) -> AnyWidget {
@@ -124,7 +128,6 @@ impl TopPanel {
     }
 }
 
-
 impl IntoWidget for TopPanel {
     fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
@@ -133,7 +136,9 @@ impl IntoWidget for TopPanel {
             items.push(leading);
             items.push(gap_w(12.0).into_widget());
         }
-        items.push(text(std::mem::take(&mut self.title)).size(16.0).semibold().color(c.foreground).into_widget());
+        items.push(
+            text(std::mem::take(&mut self.title)).size(16.0).semibold().color(c.foreground).into_widget(),
+        );
         items.push(spacer().into_widget());
         for action in std::mem::take(&mut self.actions) {
             items.push(action);
@@ -239,11 +244,7 @@ fn render_nav_item(w: &NavItem) -> AnyWidget {
     let row_widget = gesture.into_widget();
 
     // Collapsed rows surface their label as a right-side tooltip (C5 + C2).
-    if collapsed {
-        tooltip(w.label.clone(), row_widget).side(Side::Right).into_widget()
-    } else {
-        row_widget
-    }
+    if collapsed { tooltip(w.label.clone(), row_widget).side(Side::Right).into_widget() } else { row_widget }
 }
 
 // ===========================================================================
@@ -440,8 +441,7 @@ fn render_bottom_nav_item(w: &BottomNavItem) -> AnyWidget {
     .cross_axis_alignment(CrossAxisAlignment::Center)
     .main_axis_size(MainAxisSize::Min);
 
-    let container =
-        Container::new().padding(EdgeInsets::symmetric(16.0, 8.0)).child(center(content));
+    let container = Container::new().padding(EdgeInsets::symmetric(16.0, 8.0)).child(center(content));
     let mut gesture = GestureDetector::new(container)
         .cursor(Cursor::Pointer)
         .on_hover_enter(move || hovered.set(true))
@@ -475,14 +475,11 @@ impl BottomNav {
     }
 }
 
-
 impl IntoWidget for BottomNav {
     fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
-        let items: Vec<AnyWidget> = std::mem::take(&mut self.items)
-            .into_iter()
-            .map(|it| Expanded::new(it).into_widget())
-            .collect();
+        let items: Vec<AnyWidget> =
+            std::mem::take(&mut self.items).into_iter().map(|it| Expanded::new(it).into_widget()).collect();
         Container::new()
             .decoration(BoxDecoration::new().color(c.background).border(Border::new(c.border, 1.0)))
             .height(self.height)

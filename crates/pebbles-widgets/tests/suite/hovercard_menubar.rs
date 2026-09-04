@@ -5,8 +5,8 @@
 use pebbles_core::{IntoWidget, Ui, animation, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{container, hover_card, menu_item, menubar, overlay, OverlayHost, text, tooltip, View};
-use pebbles_testing::{draw_frame as frame};
+use pebbles_testing::draw_frame as frame;
+use pebbles_widgets::{OverlayHost, View, container, hover_card, menu_item, menubar, overlay, text, tooltip};
 
 fn hc_root() -> impl IntoWidget {
     OverlayHost::wrap(

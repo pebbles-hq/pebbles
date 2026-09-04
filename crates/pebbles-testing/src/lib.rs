@@ -114,13 +114,7 @@ impl Harness {
         init_services();
         let ui = Ui::new();
         ui_make_current(&ui);
-        Harness {
-            ui,
-            env: TextEnv::new(),
-            window: DEFAULT_WINDOW,
-            background: palette::WHITE,
-            now: 0.0,
-        }
+        Harness { ui, env: TextEnv::new(), window: DEFAULT_WINDOW, background: palette::WHITE, now: 0.0 }
     }
 
     /// Set the window size (builder form).

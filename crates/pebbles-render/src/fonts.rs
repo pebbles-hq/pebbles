@@ -102,21 +102,13 @@ pub fn available_families() -> Vec<String> {
 pub fn builtin_families() -> Vec<String> {
     registry()
         .read()
-        .map(|r| {
-            r.iter()
-                .filter(|f| BUILTIN_FAMILIES.contains(&f.as_str()))
-                .cloned()
-                .collect()
-        })
+        .map(|r| r.iter().filter(|f| BUILTIN_FAMILIES.contains(&f.as_str())).cloned().collect())
         .unwrap_or_default()
 }
 
 /// Whether `name` is a known family (built-in or system), case-insensitive.
 pub fn has_family(name: &str) -> bool {
-    registry()
-        .read()
-        .map(|r| r.iter().any(|f| f.eq_ignore_ascii_case(name)))
-        .unwrap_or(false)
+    registry().read().map(|r| r.iter().any(|f| f.eq_ignore_ascii_case(name))).unwrap_or(false)
 }
 
 /// Whether `name` is one of the bundled families, case-insensitive.

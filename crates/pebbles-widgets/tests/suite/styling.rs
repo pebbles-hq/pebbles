@@ -4,8 +4,10 @@
 
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
-use pebbles_render::{BoxDecoration, Cursor, RenderConstrainedBox, RenderDecoratedBox, RenderParagraph, TextEnv};
-use pebbles_widgets::{card, container, style, StyleExt, styles, text, text_field, View};
+use pebbles_render::{
+    BoxDecoration, Cursor, RenderConstrainedBox, RenderDecoratedBox, RenderParagraph, TextEnv,
+};
+use pebbles_widgets::{StyleExt, View, card, container, style, styles, text, text_field};
 
 #[test]
 fn merge_precedence_and_shadow_replacement() {
@@ -71,7 +73,11 @@ fn styled_cursor_applies() {
     ui.layout(&mut env, Size::new(300.0, 300.0));
     let mut scene = pebbles_render::Scene::new();
     ui.paint(&mut env, &mut scene);
-    assert_eq!(ui.cursor_at(Offset::new(40.0, 30.0)), Some(Cursor::Pointer), "style cursor wraps a GestureDetector");
+    assert_eq!(
+        ui.cursor_at(Offset::new(40.0, 30.0)),
+        Some(Cursor::Pointer),
+        "style cursor wraps a GestureDetector"
+    );
 }
 
 fn styled_text() -> impl IntoWidget {
@@ -116,7 +122,11 @@ fn component_style_adoption_builds_and_paints() {
     pebbles_core::focus::init();
     pebbles_widgets::overlay::init();
     ui2.mount_root(
-        View::new(palette::WHITE, component(|| text_field().style(style().background(palette::BLUE)).width(200.0))).into_widget(),
+        View::new(
+            palette::WHITE,
+            component(|| text_field().style(style().background(palette::BLUE)).width(200.0)),
+        )
+        .into_widget(),
     );
     ui2.layout(&mut env, Size::new(400.0, 120.0));
     let mut scene2 = pebbles_render::Scene::new();
@@ -196,7 +206,6 @@ fn max_lines_ellipsis_clamps_to_one_line() {
     assert!(tree.size_of(t).height < 30.0, "clamped to one line (got {})", tree.size_of(t).height);
 }
 
-
 /// A childless decorated Container fills the constraints it is given
 /// (Flutter's childless `Container(color: ...)` behavior) — the primitive
 /// that lets flex/stretch children and Positioned::fill render a real box.
@@ -223,5 +232,9 @@ fn childless_decorated_container_fills() {
     ui.layout(&mut env, win);
     let tree = ui.render_tree();
     let rid = tree.find::<RenderDecoratedBox>().expect("the decorated box");
-    assert_eq!(tree.size_of(rid), Size::new(120.0, 60.0), "childless decorated container must fill its constraints");
+    assert_eq!(
+        tree.size_of(rid),
+        Size::new(120.0, 60.0),
+        "childless decorated container must fill its constraints"
+    );
 }

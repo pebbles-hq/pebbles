@@ -8,13 +8,11 @@ use std::rc::Rc;
 use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
 use pebbles_render::IconKind;
 
+use crate::theme::{mix, theme};
+use crate::widgets::{Container, GestureDetector, Padding, Transform, column, gap_h, row, spacer, text};
 use pebbles_core::children;
 use pebbles_core::context::action;
-use crate::theme::{mix, theme};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{
-    Container, GestureDetector, Padding, Transform, column, gap_h, row, spacer, text,
-};
 use pebbles_core::{animated, component_props, create_signal};
 
 use crate::components::icon;
@@ -123,19 +121,18 @@ fn render_section(p: &SectionProps) -> AnyWidget {
     // accordion (one clean card), never each header (per-header borders read
     // fragmented).
     let header = GestureDetector::new(
-        Container::new()
-            .color(mix(p.hover_base, c.muted, 0.5 * hv as f32))
-            .child(
-                Padding::new(
-                    EdgeInsets::symmetric(4.0, 12.0),
-                    row(children![
-                        text(p.title.clone()).size(p.title_size).weight(p.title_weight).color(p.title_color),
-                        spacer(),
-                        Transform::rotate(rot * std::f64::consts::PI, icon(IconKind::ChevronDown).size(18.0).color(c.muted_foreground)),
-                    ])
-                    .main_axis_alignment(MainAxisAlignment::SpaceBetween),
+        Container::new().color(mix(p.hover_base, c.muted, 0.5 * hv as f32)).child(Padding::new(
+            EdgeInsets::symmetric(4.0, 12.0),
+            row(children![
+                text(p.title.clone()).size(p.title_size).weight(p.title_weight).color(p.title_color),
+                spacer(),
+                Transform::rotate(
+                    rot * std::f64::consts::PI,
+                    icon(IconKind::ChevronDown).size(18.0).color(c.muted_foreground)
                 ),
-            ),
+            ])
+            .main_axis_alignment(MainAxisAlignment::SpaceBetween),
+        )),
     )
     .cursor(pebbles_render::Cursor::Pointer)
     .on_hover_enter(move || hovered.set(true))
@@ -146,7 +143,10 @@ fn render_section(p: &SectionProps) -> AnyWidget {
     if is_open {
         items.push(Padding::new(EdgeInsets::only(4.0, 0.0, 4.0, 12.0), p.content.clone()).into_widget());
     }
-    column(items).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()
+    column(items)
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min)
+        .into_widget()
 }
 
 impl IntoWidget for Accordion {
@@ -222,11 +222,7 @@ pub struct Collapsible {
 
 /// Create a [`Collapsible`] with a title and content (closed by default).
 pub fn collapsible(title: impl Into<String>, content: impl IntoWidget) -> Collapsible {
-    Collapsible {
-        title: title.into(),
-        content: Some(content.into_widget()),
-        ..Default::default()
-    }
+    Collapsible { title: title.into(), content: Some(content.into_widget()), ..Default::default() }
 }
 
 impl Collapsible {
@@ -299,13 +295,14 @@ fn render_collapsible(p: &CollapsibleProps) -> AnyWidget {
         )
         .into_widget(),
     };
-    let header = GestureDetector::new(header_inner)
-        .cursor(pebbles_render::Cursor::Pointer)
-        .on_tap(toggle);
+    let header = GestureDetector::new(header_inner).cursor(pebbles_render::Cursor::Pointer).on_tap(toggle);
 
     let mut items: Vec<AnyWidget> = vec![header.into_widget()];
     if is_open {
         items.push(Padding::new(EdgeInsets::only(4.0, 0.0, 4.0, 12.0), p.content.clone()).into_widget());
     }
-    column(items).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()
+    column(items)
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min)
+        .into_widget()
 }

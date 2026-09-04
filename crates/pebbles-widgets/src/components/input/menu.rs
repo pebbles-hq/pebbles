@@ -32,10 +32,17 @@ pub enum MenuEntry {
     /// A hairline divider between groups.
     Separator,
     /// A toggleable item that shows a check when on.
-    Check { label: String, checked: bool, on_toggle: Rc<dyn Fn(bool)> },
+    Check {
+        label: String,
+        checked: bool,
+        on_toggle: Rc<dyn Fn(bool)>,
+    },
     /// A submenu: hovering the row opens a second panel to the right with
     /// `entries` (one level deep — nested submenus render as plain rows).
-    Sub { label: String, entries: Vec<MenuEntry> },
+    Sub {
+        label: String,
+        entries: Vec<MenuEntry>,
+    },
 }
 
 /// A single actionable menu item. Build with [`menu_item`].
@@ -184,7 +191,12 @@ impl DropdownMenu {
         self
     }
     /// Append a checkbox item.
-    pub fn check(mut self, label: impl Into<String>, checked: bool, on_toggle: impl Fn(bool) + 'static) -> Self {
+    pub fn check(
+        mut self,
+        label: impl Into<String>,
+        checked: bool,
+        on_toggle: impl Fn(bool) + 'static,
+    ) -> Self {
         self.entries.push(menu_check(label, checked, on_toggle));
         self
     }
@@ -294,11 +306,7 @@ fn render_dropdown(p: &Props) -> AnyWidget {
     let actions = blueprint.actions();
     let navigable = blueprint.navigable();
     let sub_rows = blueprint.sub_rows();
-    let handles = SubMenuHandles {
-        nav: child_nav,
-        ctx: child_ctx,
-        subs: Rc::new(sub_rows.clone()),
-    };
+    let handles = SubMenuHandles { nav: child_nav, ctx: child_ctx, subs: Rc::new(sub_rows.clone()) };
     node.register(Rc::new(|| {}), None, false);
     {
         let actions = actions.clone();
@@ -323,9 +331,7 @@ fn render_dropdown(p: &Props) -> AnyWidget {
             // check drops a stale context after a pick closed the whole overlay.)
             if child_ctx.peek().is_some() && crate::overlay::child_is_open() {
                 match k {
-                    KeyInput::Move { motion: Motion::Left, .. } => {
-                        close_sub_child(child_nav, child_ctx)
-                    }
+                    KeyInput::Move { motion: Motion::Left, .. } => close_sub_child(child_nav, child_ctx),
                     KeyInput::Escape => hide_overlay(),
                     _ => {
                         if let Some(ctx) = child_ctx.peek() {
@@ -372,9 +378,7 @@ fn render_dropdown(p: &Props) -> AnyWidget {
                     handles: handles.clone(),
                 },
             );
-            show_overlay_guarded(menu.into_widget(), left, top, width, menu_h, move || {
-                nav.is_alive()
-            });
+            show_overlay_guarded(menu.into_widget(), left, top, width, menu_h, move || nav.is_alive());
             node.request_focus();
         }
     };
@@ -462,12 +466,7 @@ fn open_sub_child(
     child_ctx.set(Some(ctx.clone()));
     let panel = component_props(
         render_sub_menu,
-        SubMenuProps {
-            bp: bp.clone(),
-            nav: child_nav,
-            actions: ctx.actions.clone(),
-            hover,
-        },
+        SubMenuProps { bp: bp.clone(), nav: child_nav, actions: ctx.actions.clone(), hover },
     );
     crate::overlay::set_child(panel.into_widget(), left, top, SUB_WIDTH, panel_h);
 }
@@ -598,13 +597,9 @@ struct SubMenuProps {
 
 fn render_sub_menu(p: &SubMenuProps) -> AnyWidget {
     let active = p.nav.active();
-    let empty_handles = SubMenuHandles {
-        nav: list_nav(),
-        ctx: create_signal(None),
-        subs: Rc::new(Vec::new()),
-    };
-    let mut g =
-        GestureDetector::new(p.bp.build_rows(SUB_WIDTH, active, &p.actions, &empty_handles));
+    let empty_handles =
+        SubMenuHandles { nav: list_nav(), ctx: create_signal(None), subs: Rc::new(Vec::new()) };
+    let mut g = GestureDetector::new(p.bp.build_rows(SUB_WIDTH, active, &p.actions, &empty_handles));
     if let Some((enter, exit)) = &p.hover {
         let enter = enter.clone();
         let exit = exit.clone();
@@ -625,8 +620,7 @@ struct DdMenuProps {
 }
 
 fn render_dd_menu(p: &DdMenuProps) -> AnyWidget {
-    p.blueprint
-        .build_rows(p.width, p.nav.active(), &p.actions, &p.handles)
+    p.blueprint.build_rows(p.width, p.nav.active(), &p.actions, &p.handles)
 }
 
 // A cloneable blueprint of the entries so the menu can be rebuilt each open (the
@@ -650,8 +644,15 @@ enum BpEntry {
     },
     Label(String),
     Separator,
-    Check { label: String, checked: bool, on_toggle: Rc<dyn Fn(bool)> },
-    Sub { label: String, entries: Vec<BpEntry> },
+    Check {
+        label: String,
+        checked: bool,
+        on_toggle: Rc<dyn Fn(bool)>,
+    },
+    Sub {
+        label: String,
+        entries: Vec<BpEntry>,
+    },
 }
 
 /// Move-free clone of one entry: entries hold `Rc` callbacks, so this shallow-copies
@@ -782,9 +783,10 @@ impl RebuildableMenu {
         let inner = width - 8.0;
         // If any row carries an icon or is a checkbox, reserve the leading gutter on
         // every row so labels line up.
-        let reserve = self.entries.iter().any(|e| {
-            matches!(e, BpEntry::Item { icon: Some(_), .. } | BpEntry::Check { .. })
-        });
+        let reserve = self
+            .entries
+            .iter()
+            .any(|e| matches!(e, BpEntry::Item { icon: Some(_), .. } | BpEntry::Check { .. }));
         let mut kids: Vec<AnyWidget> = Vec::new();
         let mut row_idx = 0usize;
         let mut sub_idx = 0usize;
@@ -898,11 +900,15 @@ impl RebuildableMenu {
                     let highlighted = active == Some(row_idx);
                     row_idx += 1;
                     y += 32.0;
-                    let (bp, _) = handles
-                        .subs
-                        .get(sub_idx)
-                        .cloned()
-                        .unwrap_or_else(|| (Rc::new(RebuildableMenu { entries: (*entries).clone(), height: bp_height(entries).min(300.0) }), row_top));
+                    let (bp, _) = handles.subs.get(sub_idx).cloned().unwrap_or_else(|| {
+                        (
+                            Rc::new(RebuildableMenu {
+                                entries: (*entries).clone(),
+                                height: bp_height(entries).min(300.0),
+                            }),
+                            row_top,
+                        )
+                    });
                     sub_idx += 1;
                     component_props(
                         render_sub_row,
@@ -981,7 +987,9 @@ fn render_action_row(p: &ActionRowProps) -> AnyWidget {
 
     let mut rowkids: Vec<AnyWidget> = Vec::new();
     if show_gutter {
-        rowkids.push(Container::new().width(24.0).alignment(Alignment::CENTER_LEFT).child(leading).into_widget());
+        rowkids.push(
+            Container::new().width(24.0).alignment(Alignment::CENTER_LEFT).child(leading).into_widget(),
+        );
     }
     rowkids.push(text(p.label.clone()).size(14.0).color(fg).into_widget());
     rowkids.push(spacer().into_widget());

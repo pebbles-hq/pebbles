@@ -10,10 +10,10 @@
 use pebbles_foundation::{Color, EdgeInsets};
 use pebbles_render::BorderRadius;
 
-use pebbles_core::{Curve, animated_with, component_props, create_signal, animate_to_with};
-use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::theme::mix;
 use crate::widgets::{Container, Opacity};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
+use pebbles_core::{Curve, animate_to_with, animated_with, component_props, create_signal};
 
 /// A container whose box properties animate implicitly on change.
 #[derive(Clone, Default)]
@@ -182,9 +182,5 @@ fn render_animated_container(b: &AnimatedContainer) -> pebbles_core::Element {
         container = container.child(child.clone());
     }
     let boxed: AnyWidget = container.into_widget();
-    if opacity < 1.0 - 1e-9 {
-        Opacity::new(opacity as f32, boxed).into_widget()
-    } else {
-        boxed
-    }
+    if opacity < 1.0 - 1e-9 { Opacity::new(opacity as f32, boxed).into_widget() } else { boxed }
 }

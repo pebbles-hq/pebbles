@@ -4,25 +4,17 @@ use crate::ui::{doc, gap_h, screen};
 
 /// A labelled date field demonstrating one caption layout.
 fn caption_demo(label: &str, layout: CaptionLayout) -> impl IntoWidget {
-    column(children![
-        muted(label),
-        gap_h(6.0),
-        date_field().caption(layout).width(210.0)
-    ])
-    .cross_axis_alignment(CrossAxisAlignment::Start)
-    .main_axis_size(MainAxisSize::Min)
-    .spacing(0.0)
+    column(children![muted(label), gap_h(6.0), date_field().caption(layout).width(210.0)])
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min)
+        .spacing(0.0)
 }
 
 /// A labelled date field demonstrating one date format.
 fn caption_fmt(label: &str, fmt: DateFormat) -> impl IntoWidget {
-    column(children![
-        muted(label),
-        gap_h(6.0),
-        date_field().format(fmt).width(200.0)
-    ])
-    .cross_axis_alignment(CrossAxisAlignment::Start)
-    .main_axis_size(MainAxisSize::Min)
+    column(children![muted(label), gap_h(6.0), date_field().format(fmt).width(200.0)])
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min)
 }
 
 /// A labelled time field.
@@ -35,8 +27,8 @@ fn caption_time(label: &str, field: TimeField) -> impl IntoWidget {
 pub fn date_picker() -> Element {
     let picked = create_signal(String::new());
     let range_note = create_signal(String::from("—"));
-    let inline = calendar(move |y, m, d| picked.set(format!("{m:02}/{d:02}/{y:04}")))
-        .caption(CaptionLayout::Dropdown);
+    let inline =
+        calendar(move |y, m, d| picked.set(format!("{m:02}/{d:02}/{y:04}"))).caption(CaptionLayout::Dropdown);
 
     screen("Date Picker")
 

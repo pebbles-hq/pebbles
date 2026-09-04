@@ -70,8 +70,8 @@ fn vertical() -> impl IntoWidget {
 
 fn disabled_slider() -> impl IntoWidget {
     doc("Disabled")
-        .description("Non-interactive and dimmed via .disabled(true) — no drag, no keyboard, not-allowed cursor.")
-        .body(
-        slider(320.0).value(40.0).disabled(true),
-    )
+        .description(
+            "Non-interactive and dimmed via .disabled(true) — no drag, no keyboard, not-allowed cursor.",
+        )
+        .body(slider(320.0).value(40.0).disabled(true))
 }

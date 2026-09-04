@@ -22,8 +22,7 @@ use crate::components::icon;
 use crate::overlay::{hide_overlay, show_overlay_guarded, window_size};
 use crate::theme::{mix, theme};
 use crate::widgets::{
-    Container, GestureDetector, Opacity, SingleChildScrollView, column, gap_h, gap_w, row, spacer,
-    text,
+    Container, GestureDetector, Opacity, SingleChildScrollView, column, gap_h, gap_w, row, spacer, text,
 };
 use pebbles_core::focus::create_focus;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
@@ -290,12 +289,7 @@ fn render_select_menu(p: &MenuProps) -> AnyWidget {
                 .color(c.popover)
                 .border(Border::new(c.border, 1.0))
                 .radius(BorderRadius::all(theme().radius))
-                .shadow(BoxShadow::new(
-                    Color::from_rgba8(0, 0, 0, 45),
-                    Offset::new(0.0, 8.0),
-                    22.0,
-                    -4.0,
-                )),
+                .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 45), Offset::new(0.0, 8.0), 22.0, -4.0)),
         )
         .padding(EdgeInsets::all(4.0))
         .child(body)
@@ -325,11 +319,8 @@ fn menu_item(
     active: bool,
     pick: Rc<dyn Fn()>,
 ) -> AnyWidget {
-    component_props(
-        render_menu_item,
-        MenuItemProps { label, icon, selected, width, disabled, active, pick },
-    )
-    .into_widget()
+    component_props(render_menu_item, MenuItemProps { label, icon, selected, width, disabled, active, pick })
+        .into_widget()
 }
 
 fn render_menu_item(p: &MenuItemProps) -> AnyWidget {
@@ -350,9 +341,8 @@ fn render_menu_item(p: &MenuItemProps) -> AnyWidget {
     } else {
         gap_h(0.0).into_widget()
     };
-    let mut kids: Vec<AnyWidget> = vec![
-        Container::new().width(22.0).alignment(Alignment::CENTER_LEFT).child(check).into_widget(),
-    ];
+    let mut kids: Vec<AnyWidget> =
+        vec![Container::new().width(22.0).alignment(Alignment::CENTER_LEFT).child(check).into_widget()];
     if let Some(ic) = p.icon {
         kids.push(icon(ic).size(16.0).color(fg).into_widget());
         kids.push(gap_w(8.0).into_widget());
@@ -366,9 +356,7 @@ fn render_menu_item(p: &MenuItemProps) -> AnyWidget {
         .child(row(kids));
 
     if p.disabled {
-        return GestureDetector::new(Opacity::new(0.55, body))
-            .cursor(Cursor::NotAllowed)
-            .into_widget();
+        return GestureDetector::new(Opacity::new(0.55, body)).cursor(Cursor::NotAllowed).into_widget();
     }
 
     let pick = p.pick.clone();
@@ -426,10 +414,9 @@ fn render_select(p: &Props) -> AnyWidget {
 
     // Trigger content: the selected option's label + icon (or the placeholder).
     let (label, sel_icon) = match selected.get() {
-        Some(i) => options
-            .get(i)
-            .map(|o| (o.label.clone(), o.icon))
-            .unwrap_or_else(|| (p.placeholder.clone(), None)),
+        Some(i) => {
+            options.get(i).map(|o| (o.label.clone(), o.icon)).unwrap_or_else(|| (p.placeholder.clone(), None))
+        }
         None => (p.placeholder.clone(), None),
     };
     let has_value = selected.get().is_some();
@@ -446,18 +433,16 @@ fn render_select(p: &Props) -> AnyWidget {
     if p.clearable && has_value {
         let on_cleared = p.on_cleared.clone();
         trigger_kids.push(
-            GestureDetector::new(
-                icon(IconKind::Close).size(15.0).color(c.muted_foreground),
-            )
-            .cursor(Cursor::Pointer)
-            .on_tap(move || {
-                selected.set(None);
-                nav.set_active(None);
-                if let Some(f) = &on_cleared {
-                    f();
-                }
-            })
-            .into_widget(),
+            GestureDetector::new(icon(IconKind::Close).size(15.0).color(c.muted_foreground))
+                .cursor(Cursor::Pointer)
+                .on_tap(move || {
+                    selected.set(None);
+                    nav.set_active(None);
+                    if let Some(f) = &on_cleared {
+                        f();
+                    }
+                })
+                .into_widget(),
         );
     } else {
         let trail = p.trailing.unwrap_or_else(|| IconKind::ChevronDown.into());
@@ -479,8 +464,8 @@ fn render_select(p: &Props) -> AnyWidget {
         .alignment(Alignment::CENTER_LEFT)
         .child(row(trigger_kids));
 
-    let control = GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(
-        move |e: PointerEvent| {
+    let control =
+        GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(move |e: PointerEvent| {
             // The trigger's window-space rect = click global − click local.
             let trigger_left = e.global.x - e.position.x;
             let trigger_top = e.global.y - e.position.y;
@@ -496,17 +481,9 @@ fn render_select(p: &Props) -> AnyWidget {
             // Flip up when there isn't room below and there is room above.
             let below = trigger_top + trigger_h + 6.0;
             let above = trigger_top - menu_h - 6.0;
-            let top = if wh > 0.0 && below + menu_h > wh - 8.0 && above >= 8.0 {
-                above
-            } else {
-                below
-            };
+            let top = if wh > 0.0 && below + menu_h > wh - 8.0 && above >= 8.0 { above } else { below };
             // Shift horizontally to stay on-screen.
-            let left = if ww > 0.0 {
-                trigger_left.min(ww - width - 8.0).max(8.0)
-            } else {
-                trigger_left
-            };
+            let left = if ww > 0.0 { trigger_left.min(ww - width - 8.0).max(8.0) } else { trigger_left };
 
             let menu = component_props(
                 render_select_menu,
@@ -520,12 +497,9 @@ fn render_select(p: &Props) -> AnyWidget {
                 },
             );
             // Guarded: tear the menu down if this select unmounts while open.
-            show_overlay_guarded(menu.into_widget(), left, top, width, menu_h, move || {
-                selected.alive()
-            });
+            show_overlay_guarded(menu.into_widget(), left, top, width, menu_h, move || selected.alive());
             node.request_focus();
-        },
-    ));
+        }));
 
     // Accessibility: a combo box announcing its name + current value.
     let name = label.clone();

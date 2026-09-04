@@ -14,9 +14,9 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use muda::MenuEvent;
 use muda::accelerator::Accelerator;
 use muda::{CheckMenuItem, IsMenuItem, Menu, MenuId, MenuItem, PredefinedMenuItem, Submenu};
-use muda::MenuEvent;
 
 use pebbles_widgets::{MenuBar, NativeEntry, NativeMenu};
 
@@ -87,8 +87,7 @@ impl NativeMenus {
                     let accel = accelerator.as_deref().and_then(parse_accelerator);
                     let item = CheckMenuItem::with_id(id.clone(), label, *enabled, *checked, accel);
                     append(parent, &item);
-                    self.callbacks
-                        .insert(id, Action::Toggle(on_toggle.clone(), item.clone()));
+                    self.callbacks.insert(id, Action::Toggle(on_toggle.clone(), item.clone()));
                 }
                 NativeEntry::Submenu { label, entries } => {
                     let sub = Submenu::new(label, true);

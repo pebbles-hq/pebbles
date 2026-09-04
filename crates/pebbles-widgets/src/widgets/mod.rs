@@ -27,9 +27,11 @@ mod text;
 mod view;
 
 mod transform;
-pub use transform::{Transform, transform};
 pub use animated::{AnimatedContainer, animated_container};
-pub use boxes::{Align, ColoredBox, ConstrainedBox, Padding, SizedBox, align, center, colored_box, constrained_box, gap_h, gap_w, padding, sized_box};
+pub use boxes::{
+    Align, ColoredBox, ConstrainedBox, Padding, SizedBox, align, center, colored_box, constrained_box, gap_h,
+    gap_w, padding, sized_box,
+};
 pub use canvas::{CanvasWidget, canvas};
 pub use container::{Container, container};
 pub use decorated::DecoratedBox;
@@ -41,16 +43,16 @@ pub use focus_scope::focus_scope;
 pub use gesture::{GestureDetector, gesture_detector};
 pub use layout::{AspectRatio, Wrap, aspect_ratio, wrap};
 pub use list::{GridView, ListView, ScrollController, use_scroll_controller};
+pub use pebbles_render::{ScrollbarPolicy, ScrollbarStyle, SemanticsProps, SemanticsRole};
 pub use probe::{ExtentProbe, extent_probe};
 pub use scroll::{ScrollExt, SingleChildScrollView, list_view, scroll_view};
 pub use semantics::{Semantics, SemanticsExt, semantics};
-pub use pebbles_render::{ScrollbarPolicy, ScrollbarStyle, SemanticsProps, SemanticsRole};
 pub use sizing::{
-    FittedBox, FractionallySizedBox, IntrinsicHeight, IntrinsicWidth, LimitedBox, OverflowBox,
-    fitted_box, fractionally_sized_box, intrinsic_height, intrinsic_width, limited_box,
-    overflow_box,
+    FittedBox, FractionallySizedBox, IntrinsicHeight, IntrinsicWidth, LimitedBox, OverflowBox, fitted_box,
+    fractionally_sized_box, intrinsic_height, intrinsic_width, limited_box, overflow_box,
 };
 pub use spinner::{Spinner, spinner};
 pub use stack::{Positioned, Stack, positioned, stack};
 pub use text::{RichText, Text, TextSpan, span, text, text_rich, text_signal};
+pub use transform::{Transform, transform};
 pub use view::View;

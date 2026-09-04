@@ -99,10 +99,8 @@ fn multiline_up_down_preserve_the_column() {
             palette::WHITE,
             component(|| {
                 OverlayHost::wrap(
-                    column(vec![
-                        text_area(4).bind(bound()).autofocus().width(300.0).into_widget(),
-                    ])
-                    .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start),
+                    column(vec![text_area(4).bind(bound()).autofocus().width(300.0).into_widget()])
+                        .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start),
                 )
             }),
         )

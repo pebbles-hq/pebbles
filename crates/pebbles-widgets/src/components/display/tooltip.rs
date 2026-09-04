@@ -245,8 +245,12 @@ fn render_tooltip(p: &Props) -> AnyWidget {
     GestureDetector::new(p.child.clone())
         .on_hover_enter(action_event(move |e: PointerEvent| {
             // Anchor to the trigger edge when the rect is known, else to the pointer.
-            let (ax, ay, gap) =
-                if anchored { let (x, y) = side_anchor(side, own); (x, y, 8.0) } else { (e.global.x, e.global.y, 12.0) };
+            let (ax, ay, gap) = if anchored {
+                let (x, y) = side_anchor(side, own);
+                (x, y, 8.0)
+            } else {
+                (e.global.x, e.global.y, 12.0)
+            };
             let build = build_props.clone();
             animation::set_timeout(key, delay, move || {
                 let props = build();

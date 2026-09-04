@@ -18,9 +18,7 @@ pub fn counter_window() -> impl IntoWidget {
             row(children![
                 text(format!("Shared counter: {}", count.get())).size(15.0),
                 gap_w(14.0),
-                button("+1")
-                    .size(ButtonSize::Sm)
-                    .on_pressed(move || count.update(|c| *c += 1)),
+                button("+1").size(ButtonSize::Sm).on_pressed(move || count.update(|c| *c += 1)),
             ])
             .main_axis_size(MainAxisSize::Min),
             gap_h(16.0),

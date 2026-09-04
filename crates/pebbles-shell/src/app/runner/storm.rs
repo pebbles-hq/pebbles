@@ -91,10 +91,8 @@ impl Runner {
         let (rw, rh) = ((rx1 - rx0).max(1.0), (ry1 - ry0).max(1.0));
         for _ in 0..6 {
             storm.steps += 1;
-            let p = Offset::new(
-                rx0 + (storm.next() % rw as u64) as f64,
-                ry0 + (storm.next() % rh as u64) as f64,
-            );
+            let p =
+                Offset::new(rx0 + (storm.next() % rw as u64) as f64, ry0 + (storm.next() % rh as u64) as f64);
             match storm.next() % 12 {
                 // Hover sweep — the highest-volume real-world input.
                 0..=3 => {
@@ -166,10 +164,7 @@ impl Runner {
                     if let Some(t) = self.ui.long_press_target_at(p) {
                         self.ui.dispatch_long_press_down(t, p);
                         let _ = self.ui.dispatch_long_press_begin(t, p);
-                        let q = Offset::new(
-                            (p.x + 24.0).min(rx1),
-                            (p.y + 12.0).min(ry1),
-                        );
+                        let q = Offset::new((p.x + 24.0).min(rx1), (p.y + 12.0).min(ry1));
                         let _ = self.ui.dispatch_long_press_move(t, q);
                         self.ui.dispatch_long_press_end(t, q);
                     }
@@ -193,12 +188,8 @@ impl Runner {
                     };
                     let handled = cmd.is_some_and(|ki| self.ui.dispatch_key(ki));
                     if !handled {
-                        let mods = pebbles_core::Mods {
-                            shift: roll == 9,
-                            ctrl: false,
-                            alt: false,
-                            meta: false,
-                        };
+                        let mods =
+                            pebbles_core::Mods { shift: roll == 9, ctrl: false, alt: false, meta: false };
                         let sk = match roll {
                             9 => SK::ArrowDown,
                             10 => SK::ArrowUp,

@@ -15,12 +15,10 @@ use pebbles_foundation::Axis;
 use pebbles_render::{RenderList, RenderMeasureProbe, RenderObject, ScrollbarStyle, scroll_metrics};
 
 use crate::widgets::{Positioned, stack};
+use pebbles_core::reactive::request_frame;
 use pebbles_core::scroll::{self, ScrollTo};
 use pebbles_core::widget::{AnyWidget, IntoWidget, RenderWidget};
-use pebbles_core::reactive::request_frame;
-use pebbles_core::{
-    Signal, animate_to, component_props, create_cleanup, create_signal, owner_id,
-};
+use pebbles_core::{Signal, animate_to, component_props, create_cleanup, create_signal, owner_id};
 
 /// How many extra items to build above/below the viewport (smooths fast flings).
 const OVERSCAN: isize = 3;
@@ -55,9 +53,7 @@ impl ExtentCache {
             .get(i)
             .copied()
             .flatten()
-            .unwrap_or_else(|| {
-                self.estimates.as_ref().map(|f| f(i)).unwrap_or(self.estimate)
-            })
+            .unwrap_or_else(|| self.estimates.as_ref().map(|f| f(i)).unwrap_or(self.estimate))
             .max(1.0)
     }
 
@@ -110,9 +106,7 @@ impl ExtentCache {
             None => true,
         };
         if changed {
-            let was = old.unwrap_or_else(|| {
-                self.estimates.as_ref().map(|f| f(i)).unwrap_or(self.estimate)
-            });
+            let was = old.unwrap_or_else(|| self.estimates.as_ref().map(|f| f(i)).unwrap_or(self.estimate));
             self.measured[i] = Some(v);
             self.dirty = true;
             Some(v - was)
@@ -357,10 +351,7 @@ impl ListView {
     /// fixed [`builder`](ListView::builder) when they can. Items with local
     /// state must be their own components (the builder re-runs per rebuild
     /// window).
-    pub fn builder_auto<W: IntoWidget>(
-        count: usize,
-        builder: impl Fn(usize) -> W + 'static,
-    ) -> Self {
+    pub fn builder_auto<W: IntoWidget>(count: usize, builder: impl Fn(usize) -> W + 'static) -> Self {
         ListView {
             count,
             item_extent: 1.0,
@@ -669,7 +660,11 @@ fn render_list(p: &Props) -> ListViewport {
         let lo = (o - ce).max(0.0);
         let hi = (o + viewport + ce).max(0.0);
         let first = prefix.partition_point(|&top| top < lo).saturating_sub(OVERSCAN as usize);
-        let last = prefix.partition_point(|&top| top <= hi).min(p.count).saturating_add(OVERSCAN as usize).min(p.count);
+        let last = prefix
+            .partition_point(|&top| top <= hi)
+            .min(p.count)
+            .saturating_add(OVERSCAN as usize)
+            .min(p.count);
         (first, last)
     } else {
         let first = ((((o - ce) / unit).floor() as isize) - OVERSCAN).max(0) as usize;
@@ -717,45 +712,35 @@ fn render_list(p: &Props) -> ListViewport {
         // extent on the scroll axis (the cached extent only decides the top).
         let placed = if auto {
             match p.axis {
-                Axis::Vertical => Positioned::new(item)
-                    .top(at)
-                    .left(pad.left)
-                    .right(pad.right),
-                Axis::Horizontal => Positioned::new(item)
-                    .left(at)
-                    .top(pad.top)
-                    .bottom(pad.bottom),
+                Axis::Vertical => Positioned::new(item).top(at).left(pad.left).right(pad.right),
+                Axis::Horizontal => Positioned::new(item).left(at).top(pad.top).bottom(pad.bottom),
             }
         } else {
             match p.axis {
-                Axis::Vertical => Positioned::new(item)
-                    .top(at)
-                    .left(pad.left)
-                    .right(pad.right)
-                    .height(item_ext),
-                Axis::Horizontal => Positioned::new(item)
-                    .left(at)
-                    .top(pad.top)
-                    .bottom(pad.bottom)
-                    .width(item_ext),
+                Axis::Vertical => {
+                    Positioned::new(item).top(at).left(pad.left).right(pad.right).height(item_ext)
+                }
+                Axis::Horizontal => {
+                    Positioned::new(item).left(at).top(pad.top).bottom(pad.bottom).width(item_ext)
+                }
             }
         };
         items.push(placed.into_widget());
         if let Some((se, sep_builder)) = &p.separator {
             if i + 1 < p.count {
                 let sep_widget = (sep_builder)(i);
-                let sep_at = if p.reverse { padded_extent - (at - pad_lead) - item_ext - *se + pad_lead } else { at + item_ext };
+                let sep_at = if p.reverse {
+                    padded_extent - (at - pad_lead) - item_ext - *se + pad_lead
+                } else {
+                    at + item_ext
+                };
                 let placed_sep = match p.axis {
-                    Axis::Vertical => Positioned::new(sep_widget)
-                        .top(sep_at)
-                        .left(pad.left)
-                        .right(pad.right)
-                        .height(*se),
-                    Axis::Horizontal => Positioned::new(sep_widget)
-                        .left(sep_at)
-                        .top(pad.top)
-                        .bottom(pad.bottom)
-                        .width(*se),
+                    Axis::Vertical => {
+                        Positioned::new(sep_widget).top(sep_at).left(pad.left).right(pad.right).height(*se)
+                    }
+                    Axis::Horizontal => {
+                        Positioned::new(sep_widget).left(sep_at).top(pad.top).bottom(pad.bottom).width(*se)
+                    }
                 };
                 items.push(placed_sep.into_widget());
             }
@@ -914,7 +899,11 @@ type Placement = (usize, usize, u32, u32);
 /// Pack `count` items with their spans into a `cols`-column grid (the
 /// CSS-grid packing: fill left-to-right, top-to-bottom, wrapping when a span
 /// doesn't fit). Returns the placements and the number of rows used.
-pub(crate) fn pack_grid(count: usize, cols: usize, spans: &dyn Fn(usize) -> (u32, u32)) -> (Vec<Placement>, usize) {
+pub(crate) fn pack_grid(
+    count: usize,
+    cols: usize,
+    spans: &dyn Fn(usize) -> (u32, u32),
+) -> (Vec<Placement>, usize) {
     let cols = cols.max(1);
     let mut occupied: Vec<u8> = Vec::new();
     let mut placements: Vec<Placement> = Vec::with_capacity(count);
@@ -996,19 +985,13 @@ fn render_grid(p: &GridProps) -> ListViewport {
         Some(spans) => pack_grid(p.count, cols, spans.as_ref()),
         None => {
             let rows = p.count.div_ceil(cols);
-            let placements = (0..p.count)
-                .map(|i| (i / cols, i % cols, 1u32, 1u32))
-                .collect();
+            let placements = (0..p.count).map(|i| (i / cols, i % cols, 1u32, 1u32)).collect();
             (placements, rows)
         }
     };
     let stride = row_h + gap;
     let cell_stride = cell_w + gap;
-    let content_extent = if rows_used == 0 {
-        0.0
-    } else {
-        rows_used as f64 * stride - gap
-    };
+    let content_extent = if rows_used == 0 { 0.0 } else { rows_used as f64 * stride - gap };
     let pad = p.padding.unwrap_or(pebbles_foundation::EdgeInsets::ZERO);
     let padded_extent = content_extent + pad.top + pad.bottom;
 

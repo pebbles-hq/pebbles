@@ -36,11 +36,7 @@ fn basic() -> impl IntoWidget {
 }
 
 fn deletable() -> impl IntoWidget {
-    let tags = create_signal(vec![
-        "Filters".to_string(),
-        "Backlog".to_string(),
-        "In Review".to_string(),
-    ]);
+    let tags = create_signal(vec!["Filters".to_string(), "Backlog".to_string(), "In Review".to_string()]);
     doc("Deletable")
         .description(".deletable(true).on_deleted(..) adds the ✕ affordance; the chip does NOT remove itself — the owner drops it from its list (controlled, like every value).")
         .body({
@@ -73,7 +69,9 @@ fn deletable() -> impl IntoWidget {
 
 fn icons() -> impl IntoWidget {
     doc("Icons")
-        .description(".icon(..) adds a leading glyph — avatars of contact chips, category markers on filter chips.")
+        .description(
+            ".icon(..) adds a leading glyph — avatars of contact chips, category markers on filter chips.",
+        )
         .body(
             row(children![
                 chip("Work").icon(lucide::BRIEFCASE),

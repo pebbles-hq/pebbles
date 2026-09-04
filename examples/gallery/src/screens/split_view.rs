@@ -57,13 +57,11 @@ pub fn split_views() -> Element {
 fn split_sample(ratio: f64, first: &str, second: &str) -> impl IntoWidget {
     container()
         .width(460.0)
-        .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
-        .height(120.0)
-        .child(
-            split_view(
-                panel(first, body(first)),
-                panel(second, body(second)),
-            )
-            .ratio(ratio),
+        .decoration(
+            BoxDecoration::new()
+                .border(Border::new(theme().colors.border, 1.0))
+                .radius(BorderRadius::all(theme().radius)),
         )
+        .height(120.0)
+        .child(split_view(panel(first, body(first)), panel(second, body(second))).ratio(ratio))
 }

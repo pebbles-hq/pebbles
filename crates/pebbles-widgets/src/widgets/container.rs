@@ -6,8 +6,8 @@
 use pebbles_foundation::{Alignment, Color, EdgeInsets};
 use pebbles_render::{Affine, Border, BorderRadius, BoxConstraints, BoxDecoration, BoxShadow};
 
-use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Align, ClipRRect, ConstrainedBox, DecoratedBox, Padding, SizedBox, gap_h, transform};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// A convenience box combining decoration, padding, margin, sizing, constraints,
 /// alignment and clipping — Flutter's `Container`.
@@ -123,8 +123,7 @@ impl IntoWidget for Container {
         // Childless containers with a decoration fill the constraints they are
         // given (Flutter parity: a childless `Container(color: ...)` expands).
         let childless = self.child.is_none();
-        let mut current: AnyWidget =
-            self.child.take().unwrap_or_else(|| gap_h(0.0).into_widget());
+        let mut current: AnyWidget = self.child.take().unwrap_or_else(|| gap_h(0.0).into_widget());
 
         if let Some(alignment) = self.alignment {
             current = Align::new(alignment, current).into_widget();

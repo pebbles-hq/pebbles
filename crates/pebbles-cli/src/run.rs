@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitCode, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -135,9 +135,7 @@ pub fn run(args: &[String]) -> ExitCode {
     if let Some(p) = &o.log_file
         && p.is_empty()
     {
-        o.log_file = Some(
-            std::env::temp_dir().join(format!("pebbles-{bin}.log")).display().to_string(),
-        );
+        o.log_file = Some(std::env::temp_dir().join(format!("pebbles-{bin}.log")).display().to_string());
     }
 
     term::banner(&format!(
@@ -353,10 +351,7 @@ fn walk(dir: &Path, map: &mut BTreeMap<PathBuf, SystemTime>) {
     }
 }
 
-fn first_change(
-    old: &BTreeMap<PathBuf, SystemTime>,
-    new: &BTreeMap<PathBuf, SystemTime>,
-) -> Option<PathBuf> {
+fn first_change(old: &BTreeMap<PathBuf, SystemTime>, new: &BTreeMap<PathBuf, SystemTime>) -> Option<PathBuf> {
     for (p, m) in new {
         match old.get(p) {
             Some(prev) if prev == m => {}
@@ -395,7 +390,8 @@ fn package_name_from(text: &str) -> Option<String> {
             in_package = t == "[package]";
             continue;
         }
-        if in_package && t.starts_with("name")
+        if in_package
+            && t.starts_with("name")
             && let Some(v) = t.split('=').nth(1)
         {
             return Some(v.trim().trim_matches('"').to_string());
@@ -435,9 +431,7 @@ fn find_workspace_root(start: &Path) -> Option<PathBuf> {
     let mut dir = Some(start);
     while let Some(d) = dir {
         let manifest = d.join("Cargo.toml");
-        if manifest.is_file()
-            && std::fs::read_to_string(&manifest).is_ok_and(|t| has_workspace_table(&t))
-        {
+        if manifest.is_file() && std::fs::read_to_string(&manifest).is_ok_and(|t| has_workspace_table(&t)) {
             return Some(d.to_path_buf());
         }
         dir = d.parent();

@@ -4,8 +4,8 @@
 
 use pebbles_widgets::window::{self, WindowCommand};
 use pebbles_widgets::{
-    focus_window, minimize_window, set_window_maximized, set_window_position,
-    set_window_resizable, set_window_title, text,
+    focus_window, minimize_window, set_window_maximized, set_window_position, set_window_resizable,
+    set_window_title, text,
 };
 
 #[test]

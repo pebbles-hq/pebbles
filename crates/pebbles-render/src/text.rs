@@ -105,7 +105,11 @@ impl TextEnv {
     /// Registers font bytes (one or more faces) and refreshes discovery.
     /// Returns the number of faces registered.
     pub fn register_font(&mut self, bytes: Vec<u8>) -> usize {
-        let n = self.fonts.collection.register_fonts(crate::fonts::FontBlob::new(std::sync::Arc::new(bytes)), None).len();
+        let n = self
+            .fonts
+            .collection
+            .register_fonts(crate::fonts::FontBlob::new(std::sync::Arc::new(bytes)), None)
+            .len();
         crate::fonts::refresh_families(&mut self.fonts);
         n
     }

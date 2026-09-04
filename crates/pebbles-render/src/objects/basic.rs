@@ -105,14 +105,9 @@ impl RenderObject for RenderPadding {
             Axis::Horizontal => (insets.horizontal(), insets.horizontal()),
             Axis::Vertical => (insets.vertical(), insets.vertical()),
         };
-        let cross = if cross_extent.is_finite() {
-            (cross_extent - deflate_cross).max(0.0)
-        } else {
-            cross_extent
-        };
-        only_child_intrinsic(cx)
-            .and_then(|child| cx.child_intrinsic(child, axis, cross))
-            .map(|v| v + add)
+        let cross =
+            if cross_extent.is_finite() { (cross_extent - deflate_cross).max(0.0) } else { cross_extent };
+        only_child_intrinsic(cx).and_then(|child| cx.child_intrinsic(child, axis, cross)).map(|v| v + add)
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
@@ -154,11 +149,8 @@ impl RenderObject for RenderAlign {
                 let child_size = cx.layout_child(child, constraints.loosen());
                 let width =
                     if constraints.has_bounded_width() { constraints.max_width } else { child_size.width };
-                let height = if constraints.has_bounded_height() {
-                    constraints.max_height
-                } else {
-                    child_size.height
-                };
+                let height =
+                    if constraints.has_bounded_height() { constraints.max_height } else { child_size.height };
                 let size = constraints.constrain(Size::new(width, height));
                 cx.set_child_offset(child, alignment.inscribe(child_size, size));
                 size
@@ -169,8 +161,7 @@ impl RenderObject for RenderAlign {
 
     fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         // Alignment is placement, not size — pass the child's intrinsic through.
-        only_child_intrinsic(cx)
-            .and_then(|child| cx.child_intrinsic(child, axis, cross_extent))
+        only_child_intrinsic(cx).and_then(|child| cx.child_intrinsic(child, axis, cross_extent))
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
@@ -220,8 +211,8 @@ impl RenderObject for RenderConstrainedBox {
     fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         // A constrained box clamps the child's intrinsic extent to the additional
         // constraints (a tight SizedBox's intrinsic is exactly its size).
-        let from_child = only_child_intrinsic(cx)
-            .and_then(|child| cx.child_intrinsic(child, axis, cross_extent));
+        let from_child =
+            only_child_intrinsic(cx).and_then(|child| cx.child_intrinsic(child, axis, cross_extent));
         match from_child {
             Some(v) => Some(match axis {
                 Axis::Horizontal => self.additional.constrain_width(v),
@@ -230,12 +221,8 @@ impl RenderObject for RenderConstrainedBox {
             // Tight additional constraints on this axis are an intrinsic even when
             // the child has none of its own.
             None => match axis {
-                Axis::Horizontal if self.additional.has_tight_width() => {
-                    Some(self.additional.min_width)
-                }
-                Axis::Vertical if self.additional.has_tight_height() => {
-                    Some(self.additional.min_height)
-                }
+                Axis::Horizontal if self.additional.has_tight_width() => Some(self.additional.min_width),
+                Axis::Vertical if self.additional.has_tight_height() => Some(self.additional.min_height),
                 _ => None,
             },
         }

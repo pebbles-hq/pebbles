@@ -79,8 +79,7 @@ impl IconData {
     /// from disk. The strings are **leaked** to `'static`, so this is intended
     /// for a bounded, register-once set (not a per-frame call).
     pub fn leak_svg_paths(view: f64, fill: bool, paths: impl IntoIterator<Item = String>) -> Self {
-        let prims: Vec<IconPrim> =
-            paths.into_iter().map(|d| IconPrim::Path(String::leak(d))).collect();
+        let prims: Vec<IconPrim> = paths.into_iter().map(|d| IconPrim::Path(String::leak(d))).collect();
         let prims: &'static [IconPrim] = Vec::leak(prims);
         IconData { view, fill, stroke_width: if fill { 0.0 } else { 2.0 }, prims }
     }

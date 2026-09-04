@@ -82,16 +82,14 @@ where
     request_frame();
     let mut on_done = Some(on_done);
     PENDING.with(|p| {
-        p.borrow_mut().push(Box::new(move || {
-            match slot.lock().ok().and_then(|mut s| s.take()) {
-                Some(v) => {
-                    if let Some(cb) = on_done.take() {
-                        cb(v);
-                    }
-                    true
+        p.borrow_mut().push(Box::new(move || match slot.lock().ok().and_then(|mut s| s.take()) {
+            Some(v) => {
+                if let Some(cb) = on_done.take() {
+                    cb(v);
                 }
-                None => false,
+                true
             }
+            None => false,
         }));
     });
 }
@@ -132,10 +130,7 @@ mod tokio_support {
     fn runtime() -> &'static tokio::runtime::Runtime {
         static RT: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
         RT.get_or_init(|| {
-            tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .expect("build tokio runtime")
+            tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("build tokio runtime")
         })
     }
 
@@ -159,16 +154,14 @@ mod tokio_support {
         request_frame();
         let mut on_done = Some(on_done);
         PENDING.with(|p| {
-            p.borrow_mut().push(Box::new(move || {
-                match slot.lock().ok().and_then(|mut s| s.take()) {
-                    Some(v) => {
-                        if let Some(cb) = on_done.take() {
-                            cb(v);
-                        }
-                        true
+            p.borrow_mut().push(Box::new(move || match slot.lock().ok().and_then(|mut s| s.take()) {
+                Some(v) => {
+                    if let Some(cb) = on_done.take() {
+                        cb(v);
                     }
-                    None => false,
+                    true
                 }
+                None => false,
             }));
         });
     }

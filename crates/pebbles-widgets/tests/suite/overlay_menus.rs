@@ -41,10 +41,7 @@ fn dropdown_trigger_is_bounded_width() {
         View::new(
             palette::WHITE,
             column(vec![
-                dropdown_menu("Open menu")
-                    .width(220.0)
-                    .item(menu_item("A").on_select(|| {}))
-                    .into_widget(),
+                dropdown_menu("Open menu").width(220.0).item(menu_item("A").on_select(|| {})).into_widget(),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Start),
         )

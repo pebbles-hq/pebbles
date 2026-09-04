@@ -6,9 +6,9 @@
 use pebbles_foundation::{Color, EdgeInsets, Offset};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, PointerEvent};
 
+use crate::overlay::{show_overlay_guarded, window_size};
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector};
-use crate::overlay::{show_overlay_guarded, window_size};
 use pebbles_core::context::action_event;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
@@ -23,12 +23,7 @@ pub(crate) fn popover_surface(width: f64, pad: f64, child: AnyWidget) -> AnyWidg
                 .color(c.popover)
                 .border(Border::new(c.border, 1.0))
                 .radius(BorderRadius::all(theme().radius))
-                .shadow(BoxShadow::new(
-                    Color::from_rgba8(0, 0, 0, 45),
-                    Offset::new(0.0, 8.0),
-                    22.0,
-                    -4.0,
-                )),
+                .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 45), Offset::new(0.0, 8.0), 22.0, -4.0)),
         )
         .padding(EdgeInsets::all(pad))
         .child(child)
@@ -130,8 +125,7 @@ impl IntoWidget for Popover {
     fn into_widget(mut self) -> AnyWidget {
         let content = self.content.take().unwrap_or_else(|| Container::new().into_widget());
         let trigger = self.trigger.take().unwrap_or_else(|| Container::new().into_widget());
-        let (width, height, trigger_height, pad) =
-            (self.width, self.height, self.trigger_height, self.pad);
+        let (width, height, trigger_height, pad) = (self.width, self.height, self.trigger_height, self.pad);
         let user_style = self.style.take();
         // Owner token: created during the parent component's render, so it dies
         // with the parent — the probe that GCs an orphaned panel.
@@ -149,10 +143,7 @@ impl IntoWidget for Popover {
                         // Merge onto the default surface look; keep the fixed width.
                         let merged = popover_base().width(width).merge(st.clone());
                         crate::style::styled(
-                            crate::widgets::Padding::new(
-                                EdgeInsets::all(pad),
-                                content.clone(),
-                            ),
+                            crate::widgets::Padding::new(EdgeInsets::all(pad), content.clone()),
                             merged,
                         )
                     }

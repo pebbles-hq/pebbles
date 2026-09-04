@@ -19,10 +19,8 @@ thread_local! {
 
 fn gallery() -> impl IntoWidget {
     let _ = create_signal(0i32);
-    let people: Vec<Avatar> = ["RS", "AK", "JB", "CV", "MK"]
-        .into_iter()
-        .map(|i| avatar(i).color(palette::BLUE))
-        .collect();
+    let people: Vec<Avatar> =
+        ["RS", "AK", "JB", "CV", "MK"].into_iter().map(|i| avatar(i).color(palette::BLUE)).collect();
 
     column(vec![
         collapsible("Toggle details", body("hidden content"))

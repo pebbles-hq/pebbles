@@ -7,8 +7,8 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, Ui, animation, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::{RenderMeasureProbe, TextEnv};
-use pebbles_widgets::{container, list_view, ListView, ScrollController, text, use_scroll_controller, View};
-use pebbles_testing::{frame};
+use pebbles_testing::frame;
+use pebbles_widgets::{ListView, ScrollController, View, container, list_view, text, use_scroll_controller};
 
 thread_local! {
     static CTL: RefCell<Option<ScrollController>> = const { RefCell::new(None) };
@@ -19,9 +19,7 @@ fn shrinking_root() -> impl IntoWidget {
     let count = COUNT.with(|c| c.borrow().expect("COUNT set before mount"));
     let controller = use_scroll_controller();
     CTL.with(|c| *c.borrow_mut() = Some(controller));
-    ListView::builder_auto(count.get(), row)
-        .estimated_extent(40.0)
-        .controller(controller)
+    ListView::builder_auto(count.get(), row).estimated_extent(40.0).controller(controller)
 }
 
 /// `i % 3 → 40/64/96` tall rows (the classic mixed-feed probe).
@@ -41,9 +39,7 @@ fn row(i: usize) -> impl IntoWidget {
 fn auto_root(count: usize) -> impl IntoWidget {
     let controller = use_scroll_controller();
     CTL.with(|c| *c.borrow_mut() = Some(controller));
-    ListView::builder_auto(count, row)
-        .estimated_extent(40.0)
-        .controller(controller)
+    ListView::builder_auto(count, row).estimated_extent(40.0).controller(controller)
 }
 
 /// Run one frame: fold dirty components into the tree and lay out.
@@ -116,10 +112,7 @@ fn auto_list_deep_jump_then_scroll_to_index_auto() {
     assert!(tops.len() >= 5, "window rebuilt around the jump");
     // Some row straddles the viewport top (its top sits within one row height
     // above 0) — anchoring keeps the jumped-to content in place.
-    assert!(
-        tops.iter().any(|(_, t)| *t > -97.0 && *t <= 1.0),
-        "a row straddles the viewport top: {tops:?}"
-    );
+    assert!(tops.iter().any(|(_, t)| *t > -97.0 && *t <= 1.0), "a row straddles the viewport top: {tops:?}");
 
     // scroll_to_index_auto(500): the offset animates to the cache's prefix sum —
     // rows 0..6 measured (sum 400), rows 7..499 at the 40px estimate → 400 + 493×40.

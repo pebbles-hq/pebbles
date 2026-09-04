@@ -47,7 +47,12 @@ impl ContextMenu {
         self
     }
     /// A checkable row.
-    pub fn check(mut self, label: impl Into<String>, checked: bool, on_toggle: impl Fn(bool) + 'static) -> Self {
+    pub fn check(
+        mut self,
+        label: impl Into<String>,
+        checked: bool,
+        on_toggle: impl Fn(bool) + 'static,
+    ) -> Self {
         self.entries.push(MenuEntry::Check { label: label.into(), checked, on_toggle: Rc::new(on_toggle) });
         self
     }
@@ -84,7 +89,12 @@ impl IntoWidget for ContextMenu {
         let child = self.child.take().unwrap_or_else(|| crate::widgets::Container::new().into_widget());
         component_props(
             render_context,
-            CtxProps { child, width: self.width, entries: std::mem::take(&mut self.entries), on_open: self.on_open.take() },
+            CtxProps {
+                child,
+                width: self.width,
+                entries: std::mem::take(&mut self.entries),
+                on_open: self.on_open.take(),
+            },
         )
         .into_widget()
     }
@@ -94,11 +104,7 @@ fn render_context(p: &CtxProps) -> AnyWidget {
     let child_nav = list_nav();
     let child_ctx = create_signal::<Option<Rc<ChildCtx>>>(None);
     let blueprint = Rc::new(RebuildableMenu::from(&p.entries));
-    let handles = SubMenuHandles {
-        nav: child_nav,
-        ctx: child_ctx,
-        subs: Rc::new(blueprint.sub_rows()),
-    };
+    let handles = SubMenuHandles { nav: child_nav, ctx: child_ctx, subs: Rc::new(blueprint.sub_rows()) };
     let width = p.width;
     let menu_h = estimate_height(&p.entries);
     let on_open = p.on_open.clone();

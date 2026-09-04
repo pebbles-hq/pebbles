@@ -46,46 +46,46 @@ pub use pebbles_widgets as widgets;
 pub mod prelude {
     // foundation
     pub use pebbles_foundation::{
-        Alignment, Axis, BoxFit, Color, CrossAxisAlignment, EdgeInsets, FlexFit,
-        MainAxisAlignment, MainAxisSize, Offset, Rect, Size, TextAlign, TextBaseline,
-        TextDirection, VerticalDirection, WrapAlignment, palette,
+        Alignment, Axis, BoxFit, Color, CrossAxisAlignment, EdgeInsets, FlexFit, MainAxisAlignment,
+        MainAxisSize, Offset, Rect, Size, TextAlign, TextBaseline, TextDirection, VerticalDirection,
+        WrapAlignment, palette,
     };
 
     // render-level styling primitives (for advanced/custom decoration) + events
     pub use pebbles_render::{
-        Affine, BlendMode, Border, BorderRadius, BorderSide, BoxConstraints, BoxDecoration, BoxShadow, BoxShape,
-        Cursor, Gradient, IconData, IconKind, IconPrim, Image, ImageFit, PointerButton, PointerEvent,
-        RefreshState, ScrollPhysics, StackFit, lucide,
+        Affine, BlendMode, Border, BorderRadius, BorderSide, BoxConstraints, BoxDecoration, BoxShadow,
+        BoxShape, Cursor, Gradient, IconData, IconKind, IconPrim, Image, ImageFit, PointerButton,
+        PointerEvent, RefreshState, ScrollPhysics, StackFit, lucide,
     };
 
     // runtime (pebbles-core): reactivity (SolidJS-style) + function components + focus
     pub use pebbles_core::{
-        Channel, Component, Curve, Element, FocusNode, KeyInput, Motion, Resource, ScopeTag,
-        Signal, Spring, Store, Transition, action, action_event, animate_spring, animate_to,
-        animate_to_with, animated, animated_spring, animated_with, channel, component,
-        component_props, consume_context, create_effect, create_focus, create_focus_scope,
-        create_memo, create_resource, create_shortcut, create_shortcut_if, create_signal, create_store, create_timeout,
-        provide_context, spawn, transition, untrack, use_bounds,
+        Channel, Component, Curve, Element, FocusNode, KeyInput, Motion, Resource, ScopeTag, Signal, Spring,
+        Store, Transition, action, action_event, animate_spring, animate_to, animate_to_with, animated,
+        animated_spring, animated_with, channel, component, component_props, consume_context, create_effect,
+        create_focus, create_focus_scope, create_memo, create_resource, create_shortcut, create_shortcut_if,
+        create_signal, create_store, create_timeout, provide_context, spawn, transition, untrack, use_bounds,
     };
     // The rest of the hook surface (was reachable only via `pebbles::core::…`).
-    pub use pebbles_core::{
-        create_cleanup, create_loop, create_loop_while, create_memo_with, create_root_signal, on,
-        on_defer,
-    };
     #[cfg(feature = "tokio")]
     pub use pebbles_core::create_resource_future;
+    pub use pebbles_core::{
+        create_cleanup, create_loop, create_loop_while, create_memo_with, create_root_signal, on, on_defer,
+    };
 
     // runtime (pebbles-core): the widget contract + reconciler handles
     pub use pebbles_core::{
-        AnyWidget, Callback, ElementId, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget,
-        Ui, Widget,
+        AnyWidget, Callback, ElementId, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget, Ui, Widget,
     };
 
     // font discovery: bundled families + everything installed on the host
     pub use pebbles_widgets::{builtins, families, has, is_builtin};
 
     // theming + the general style system (RN/CSS-like, apply anywhere)
-    pub use pebbles_widgets::{Colors, ModifierExt, Style, StyleExt, Theme, set_text_direction, set_theme, style, styled, styles, text_direction, theme, theme_override, toggle_theme};
+    pub use pebbles_widgets::{
+        Colors, ModifierExt, Style, StyleExt, Theme, set_text_direction, set_theme, style, styled, styles,
+        text_direction, theme, theme_override, toggle_theme,
+    };
     #[cfg(feature = "image-view")]
     pub use pebbles_widgets::{ImageView, image_from_bytes, image_from_path};
 
@@ -95,21 +95,21 @@ pub mod prelude {
     // the global overlay layer (dropdowns / menus / popovers) + the passive layer
     // (tooltips / hover cards) + toasts
     pub use pebbles_widgets::{
-        OverlayHost, Toast, ToastId, ToastVariant, dismiss_toast, hide_overlay, hide_passive,
-        show_overlay, show_passive, toast,
+        OverlayHost, Toast, ToastId, ToastVariant, dismiss_toast, hide_overlay, hide_passive, show_overlay,
+        show_passive, toast,
     };
 
     // the global right-click menu (the fallback when nothing claims a right-click)
     pub use pebbles_widgets::{
-        block_context_menu, global_menu_on, is_global_menu_enabled, on_context_menu,
-        reset_global_menu, set_global_menu, set_global_menu_enabled, set_global_menu_style,
-        set_global_menu_width, show_global_menu_here,
+        block_context_menu, global_menu_on, is_global_menu_enabled, on_context_menu, reset_global_menu,
+        set_global_menu, set_global_menu_enabled, set_global_menu_style, set_global_menu_width,
+        show_global_menu_here,
     };
 
     // modal dialogs (main-window overlay) + the AlertDialog preset + Sheet/Drawer
     pub use pebbles_widgets::{
-        AlertDialog, Dialog, DialogId, Sheet, SheetId, Side, alert_dialog, close_dialog,
-        close_sheet, dialog, sheet,
+        AlertDialog, Dialog, DialogId, Sheet, SheetId, Side, alert_dialog, close_dialog, close_sheet, dialog,
+        sheet,
     };
 
     // secondary OS windows (share the runtime; talk via signals / Channel) + monitors
@@ -121,18 +121,16 @@ pub mod prelude {
     // widgets: layout primitives + constructors
     pub use pebbles_widgets::{
         Align, AnimatedContainer, AspectRatio, Canvas, CanvasWidget, ClipRRect, ColoredBox, Column,
-        ConstrainedBox, Container, DecoratedBox,
-        EditableText, Expanded, FittedBox, Flexible, FractionallySizedBox, GestureDetector,
-        GridView, IntrinsicHeight, IntrinsicWidth, LimitedBox, ListView, Opacity, OverflowBox,
-        Padding, Positioned, RepaintBoundary, RichText, Row, ScrollController, ScrollExt,
-        ScrollbarPolicy, ScrollbarStyle, SingleChildScrollView, SizedBox, Spinner, Stack, Text,
-        TextSpan, Transform, View, Wrap,
-        align, animated_container, aspect_ratio, canvas, center, clip_rrect, colored_box, column,
-        constrained_box, container, editable, expanded, fitted_box, flexible, focus_scope,
-        fractionally_sized_box, gap_h, gap_w, gesture_detector, intrinsic_height, intrinsic_width,
-        limited_box, list_view, opacity, overflow_box, padding, positioned, repaint_boundary, row,
-        scroll_view, sized_box, spacer, span, spinner, stack, text, text_rich, text_signal,
-        transform, use_carousel_controller, use_scroll_controller, wrap,
+        ConstrainedBox, Container, DecoratedBox, EditableText, Expanded, FittedBox, Flexible,
+        FractionallySizedBox, GestureDetector, GridView, IntrinsicHeight, IntrinsicWidth, LimitedBox,
+        ListView, Opacity, OverflowBox, Padding, Positioned, RepaintBoundary, RichText, Row,
+        ScrollController, ScrollExt, ScrollbarPolicy, ScrollbarStyle, SingleChildScrollView, SizedBox,
+        Spinner, Stack, Text, TextSpan, Transform, View, Wrap, align, animated_container, aspect_ratio,
+        canvas, center, clip_rrect, colored_box, column, constrained_box, container, editable, expanded,
+        fitted_box, flexible, focus_scope, fractionally_sized_box, gap_h, gap_w, gesture_detector,
+        intrinsic_height, intrinsic_width, limited_box, list_view, opacity, overflow_box, padding,
+        positioned, repaint_boundary, row, scroll_view, sized_box, spacer, span, spinner, stack, text,
+        text_rich, text_signal, transform, use_carousel_controller, use_scroll_controller, wrap,
     };
 
     // the shadcn-style component catalog

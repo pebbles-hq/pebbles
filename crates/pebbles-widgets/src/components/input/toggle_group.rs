@@ -8,8 +8,8 @@
 //!     .on_changed(move |sel| set_align(sel[0]))
 //! ```
 
+use pebbles_foundation::MainAxisSize;
 use std::rc::Rc;
-use pebbles_foundation::{MainAxisSize};
 
 use pebbles_foundation::CrossAxisAlignment;
 use pebbles_render::{Border, BorderRadius, BoxDecoration};
@@ -167,9 +167,7 @@ impl IntoWidget for ToggleGroup {
             )
             .clip()
             .child(
-                row(kids)
-                    .cross_axis_alignment(CrossAxisAlignment::Stretch)
-                    .main_axis_size(MainAxisSize::Min),
+                row(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
             )
             .into_widget()
     }

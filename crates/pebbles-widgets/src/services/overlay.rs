@@ -86,9 +86,7 @@ pub fn init() {
 /// The current window's overlay signal (reactive), created on first access.
 pub fn overlay_signal() -> Signal<Option<OverlayEntry>> {
     let window = current_window();
-    OVERLAY.with(|cell| {
-        *cell.borrow_mut().entry(window).or_insert_with(|| create_root_signal(None))
-    })
+    OVERLAY.with(|cell| *cell.borrow_mut().entry(window).or_insert_with(|| create_root_signal(None)))
 }
 
 /// Show `content` at window position `(left, top)`, replacing any current overlay.
@@ -101,15 +99,7 @@ pub fn show_overlay(content: AnyWidget, left: f64, top: f64, width: f64, height:
             format!("overlay opened {width:.0}×{height:.0} @ {left:.0},{top:.0}"),
         );
     }
-    overlay_signal().set(Some(OverlayEntry {
-        content,
-        left,
-        top,
-        width,
-        height,
-        child: None,
-        alive: None,
-    }));
+    overlay_signal().set(Some(OverlayEntry { content, left, top, width, height, child: None, alive: None }));
 }
 
 /// [`show_overlay`] with an aliveness probe. Widgets whose overlay content captures
@@ -219,15 +209,12 @@ pub fn shift(dx: f64, dy: f64) {
 /// its child panel — so the shell scrolls the popover's own content instead of
 /// following the page.
 pub fn over_panel(x: f64, y: f64) -> bool {
-    let in_rect = |left: f64, top: f64, w: f64, h: f64| {
-        x >= left && x <= left + w && y >= top && y <= top + h
-    };
+    let in_rect =
+        |left: f64, top: f64, w: f64, h: f64| x >= left && x <= left + w && y >= top && y <= top + h;
     match overlay_signal().peek() {
         Some(e) => {
             in_rect(e.left, e.top, e.width, e.height)
-                || e.child
-                    .as_ref()
-                    .is_some_and(|c| in_rect(c.left, c.top, c.width, c.height))
+                || e.child.as_ref().is_some_and(|c| in_rect(c.left, c.top, c.width, c.height))
         }
         None => false,
     }
@@ -254,9 +241,7 @@ thread_local! {
 
 fn passive_signal() -> Signal<Option<PassiveEntry>> {
     let window = current_window();
-    PASSIVE.with(|cell| {
-        *cell.borrow_mut().entry(window).or_insert_with(|| create_root_signal(None))
-    })
+    PASSIVE.with(|cell| *cell.borrow_mut().entry(window).or_insert_with(|| create_root_signal(None)))
 }
 
 /// Show click-through `content` at window position `(left, top)` in the current
@@ -343,18 +328,18 @@ fn render_host(p: &Props) -> crate::widgets::Stack {
     // ordering; this check is the mid-pass half of the same guard.
     if let Some(entry) = overlay_signal().get().filter(|e| e.alive.as_ref().is_none_or(|f| f())) {
         // Full-window scrim: an outside click dismisses.
-        let scrim = Positioned::fill(
-            GestureDetector::new(Container::new()).on_tap(hide_overlay),
-        )
-        .into_widget();
+        let scrim =
+            Positioned::fill(GestureDetector::new(Container::new()).on_tap(hide_overlay)).into_widget();
         // The probe travels INTO a guard component around the panel content: the
         // host can pass its own check and the opener still unmount later in the
         // SAME rebuild pass, before the panel child inflates — the guard re-checks
         // at that exact moment and inflates nothing instead of reading disposed
         // signals. (The filter above + the shell's frame gc_dead handle the other
         // two orderings.)
-        let panel =
-            Positioned::new(guarded(entry.content, entry.alive.clone())).left(entry.left).top(entry.top).into_widget();
+        let panel = Positioned::new(guarded(entry.content, entry.alive.clone()))
+            .left(entry.left)
+            .top(entry.top)
+            .into_widget();
         kids.push(scrim);
         kids.push(panel);
         if let Some(child) = &entry.child {

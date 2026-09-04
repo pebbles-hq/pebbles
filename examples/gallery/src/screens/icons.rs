@@ -11,20 +11,14 @@ pub fn icons() -> Element {
     let query = create_signal(String::new());
     let q = query.get().to_lowercase();
     let matches: Rc<Vec<(&'static str, IconData)>> = Rc::new(
-        lucide::ALL
-            .iter()
-            .filter(|(name, _)| q.is_empty() || name.contains(q.as_str()))
-            .copied()
-            .collect(),
+        lucide::ALL.iter().filter(|(name, _)| q.is_empty() || name.contains(q.as_str())).copied().collect(),
     );
     let count = matches.len();
 
     let grid_items = matches.clone();
     let grid = container()
         .decoration(
-            BoxDecoration::new()
-                .border(Border::new(c.border, 1.0))
-                .radius(BorderRadius::all(theme().radius)),
+            BoxDecoration::new().border(Border::new(c.border, 1.0)).radius(BorderRadius::all(theme().radius)),
         )
         .height(420.0)
         .child(GridView::builder(count, 6, 82.0, move |i| {
@@ -98,7 +92,5 @@ pub fn icons() -> Element {
 // A custom, non-Lucide icon defined entirely in user code — a filled heart.
 const HEART: IconData = IconData::filled(
     24.0,
-    &[IconPrim::Path(
-        "M12 21c-1-.7-8-5.5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 5.5-7 10.3-8 11z",
-    )],
+    &[IconPrim::Path("M12 21c-1-.7-8-5.5-8-11a4.5 4.5 0 0 1 8-2.8A4.5 4.5 0 0 1 20 10c0 5.5-7 10.3-8 11z")],
 );

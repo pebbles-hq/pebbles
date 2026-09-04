@@ -160,11 +160,7 @@ impl RenderTree {
 
     /// The render object's `debug_name` (for the F2 inspector / diagnostics).
     pub fn debug_name(&self, id: RenderId) -> &'static str {
-        self.nodes
-            .get(id)
-            .and_then(|n| n.object.as_ref())
-            .map(|o| o.debug_name())
-            .unwrap_or("<taken>")
+        self.nodes.get(id).and_then(|n| n.object.as_ref()).map(|o| o.debug_name()).unwrap_or("<taken>")
     }
 
     /// Find the first render node whose object is of type `T`. Handy for tests and
@@ -198,9 +194,8 @@ impl RenderTree {
         // Focus on non-finite SIZE (an ∞ dimension is the root; NaN offsets are
         // just downstream fallout of positioning against ∞). The SOURCE is the
         // deepest node with a bad size whose children all have finite size.
-        let size_bad = |id: RenderId| {
-            self.nodes.get(id).is_some_and(|n| bad(n.size.width) || bad(n.size.height))
-        };
+        let size_bad =
+            |id: RenderId| self.nodes.get(id).is_some_and(|n| bad(n.size.width) || bad(n.size.height));
         for (_id, node) in self.nodes.iter() {
             if !(bad(node.size.width) || bad(node.size.height)) {
                 continue;
@@ -378,12 +373,7 @@ impl RenderTree {
         out
     }
 
-    fn collect_semantics(
-        &self,
-        id: RenderId,
-        out: &mut Vec<crate::SemanticsNode>,
-        synth: &mut u64,
-    ) {
+    fn collect_semantics(&self, id: RenderId, out: &mut Vec<crate::SemanticsNode>, synth: &mut u64) {
         let node = &self.nodes[id];
         if let Some(props) = &node.semantics {
             let origin = self.absolute_offset(id);
@@ -396,10 +386,7 @@ impl RenderTree {
             out.push(crate::SemanticsNode {
                 id: nid,
                 props: props.clone(),
-                bounds: Rect::from_origin_size(
-                    (origin.x, origin.y),
-                    (node.size.width, node.size.height),
-                ),
+                bounds: Rect::from_origin_size((origin.x, origin.y), (node.size.width, node.size.height)),
             });
         }
         for &child in &node.children {
@@ -443,10 +430,8 @@ impl RenderTree {
             // A repaint boundary on the dirty path must re-encode its fragment.
             // (Ancestors above an already-dirty node were flagged when IT was
             // first marked, so the early break below stays sound.)
-            if let Some(b) = node
-                .object
-                .as_deref_mut()
-                .and_then(|o| o.downcast_mut::<crate::objects::RenderBoundary>())
+            if let Some(b) =
+                node.object.as_deref_mut().and_then(|o| o.downcast_mut::<crate::objects::RenderBoundary>())
             {
                 b.mark_dirty();
             }
@@ -469,10 +454,8 @@ impl RenderTree {
         while let Some(c) = cur {
             let Some(node) = self.nodes.get_mut(c) else { return };
             node.needs_paint = true;
-            if let Some(b) = node
-                .object
-                .as_deref_mut()
-                .and_then(|o| o.downcast_mut::<crate::objects::RenderBoundary>())
+            if let Some(b) =
+                node.object.as_deref_mut().and_then(|o| o.downcast_mut::<crate::objects::RenderBoundary>())
             {
                 b.mark_dirty();
                 return; // contained: outer composition re-appends fragments anyway
@@ -559,11 +542,7 @@ impl RenderTree {
     /// requested a **corrective relayout** (a lazy measurement changed a size the
     /// last layout pass estimated) — the caller marks them dirty and schedules
     /// one more frame, the ListView estimate-then-measure pattern.
-    pub fn paint(
-        &self,
-        text: &mut TextEnv,
-        scene: &mut vello::Scene,
-    ) -> SmallVec<[RenderId; 2]> {
+    pub fn paint(&self, text: &mut TextEnv, scene: &mut vello::Scene) -> SmallVec<[RenderId; 2]> {
         let Some(root) = self.root else { return SmallVec::new() };
         let relayout = std::cell::RefCell::new(SmallVec::new());
         let visible = Rect::from_origin_size((0.0, 0.0), self.nodes[root].size);
@@ -644,8 +623,7 @@ impl LayoutCx<'_> {
             }
         }
         crate::stats::bump_layout();
-        let mut object =
-            self.tree.nodes[child].object.take().expect("child object present during layout");
+        let mut object = self.tree.nodes[child].object.take().expect("child object present during layout");
         let size = {
             let mut cx = LayoutCx { tree: &mut *self.tree, current: child, text: &mut *self.text };
             object.layout(&mut cx, constraints)
@@ -685,18 +663,11 @@ impl LayoutCx<'_> {
     /// [`RenderObject::intrinsic`]), with `cross_extent` fixed on the perpendicular
     /// axis. The intrinsic-objects ([`crate::objects::RenderIntrinsicWidth`]) drive layout from
     /// this; ordinary parents rarely need it.
-    pub fn child_intrinsic(
-        &mut self,
-        child: RenderId,
-        axis: Axis,
-        cross_extent: f64,
-    ) -> Option<f64> {
-        let object = self.tree.nodes[child].object.take().expect(
-            "child object present during intrinsic measurement",
-        );
+    pub fn child_intrinsic(&mut self, child: RenderId, axis: Axis, cross_extent: f64) -> Option<f64> {
+        let object =
+            self.tree.nodes[child].object.take().expect("child object present during intrinsic measurement");
         let result = {
-            let mut cx =
-                IntrinsicCx { tree: &mut *self.tree, current: child, text: &mut *self.text };
+            let mut cx = IntrinsicCx { tree: &mut *self.tree, current: child, text: &mut *self.text };
             object.intrinsic(&mut cx, axis, cross_extent)
         };
         let node = &mut self.tree.nodes[child];
@@ -754,17 +725,10 @@ impl IntrinsicCx<'_> {
     /// Ask `child` for its intrinsic extent on `axis`, given `cross_extent` fixed
     /// on the perpendicular axis (infinite when unconstrained). `None` when the
     /// child has no intrinsic notion.
-    pub fn child_intrinsic(
-        &mut self,
-        child: RenderId,
-        axis: Axis,
-        cross_extent: f64,
-    ) -> Option<f64> {
-        let object =
-            self.tree.nodes[child].object.take().expect("child object present during intrinsics");
+    pub fn child_intrinsic(&mut self, child: RenderId, axis: Axis, cross_extent: f64) -> Option<f64> {
+        let object = self.tree.nodes[child].object.take().expect("child object present during intrinsics");
         let result = {
-            let mut cx =
-                IntrinsicCx { tree: &mut *self.tree, current: child, text: &mut *self.text };
+            let mut cx = IntrinsicCx { tree: &mut *self.tree, current: child, text: &mut *self.text };
             object.intrinsic(&mut cx, axis, cross_extent)
         };
         let node = &mut self.tree.nodes[child];
@@ -847,8 +811,7 @@ impl PaintCx<'_> {
             Some(t) if is_translation(t) => {
                 let c = t.as_coeffs();
                 let at = absolute_offset + Offset::new(c[4], c[5]);
-                let world =
-                    Rect::new(local.x0 + at.x, local.y0 + at.y, local.x1 + at.x, local.y1 + at.y);
+                let world = Rect::new(local.x0 + at.x, local.y0 + at.y, local.x1 + at.x, local.y1 + at.y);
                 if !overlaps(world, self.visible) {
                     crate::stats::bump_culled();
                     return;
@@ -865,8 +828,7 @@ impl PaintCx<'_> {
                 object.paint(&mut sub, at);
             }
             Some(local_t) => {
-                let placement =
-                    Affine::translate((absolute_offset.x, absolute_offset.y)) * local_t;
+                let placement = Affine::translate((absolute_offset.x, absolute_offset.y)) * local_t;
                 if !overlaps(placement.transform_rect_bbox(local), self.visible) {
                     crate::stats::bump_culled();
                     return;

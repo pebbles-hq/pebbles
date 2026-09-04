@@ -4,14 +4,16 @@
 use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, Offset};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, IconKind};
 
-use pebbles_core::children;
-use pebbles_core::{component_props, create_loop};
-use crate::theme::{mix, theme};
-use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{ClipRRect, Container, Positioned, center, column, gap_h, gap_w, row, spacer, stack, text};
-use crate::style::{Style, style, styled};
 #[cfg(feature = "image-view")]
 use crate::ImageView;
+use crate::style::{Style, style, styled};
+use crate::theme::{mix, theme};
+use crate::widgets::{
+    ClipRRect, Container, Positioned, center, column, gap_h, gap_w, row, spacer, stack, text,
+};
+use pebbles_core::children;
+use pebbles_core::widget::{AnyWidget, IntoWidget};
+use pebbles_core::{component_props, create_loop};
 
 use crate::components::icon;
 
@@ -76,7 +78,6 @@ impl Card {
     }
 }
 
-
 impl IntoWidget for Card {
     fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
@@ -94,8 +95,9 @@ impl IntoWidget for Card {
                 }
                 head_texts.push(text(d).size(13.5).line_height(1.4).color(c.muted_foreground).into_widget());
             }
-            let head_col =
-                column(head_texts).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min);
+            let head_col = column(head_texts)
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min);
             let header: AnyWidget = match self.action.take() {
                 Some(action) => row(children![head_col.into_widget(), spacer(), action])
                     .cross_axis_alignment(CrossAxisAlignment::Start)
@@ -118,7 +120,10 @@ impl IntoWidget for Card {
         let body: AnyWidget = if kids.len() == 1 {
             kids.pop().unwrap()
         } else {
-            column(kids).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()
+            column(kids)
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min)
+                .into_widget()
         };
 
         // Base presentation as a Style; the user's `.style(..)` merges on top (wins).
@@ -170,7 +175,6 @@ impl Badge {
         self
     }
 }
-
 
 impl IntoWidget for Badge {
     fn into_widget(mut self) -> AnyWidget {
@@ -238,7 +242,6 @@ impl Alert {
     }
 }
 
-
 impl IntoWidget for Alert {
     fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
@@ -259,19 +262,19 @@ impl IntoWidget for Alert {
         if !self.description.is_empty() {
             texts.push(gap_h(2.0).into_widget());
             texts.push(
-                text(std::mem::take(&mut self.description)).size(13.0).color(c.muted_foreground).into_widget(),
+                text(std::mem::take(&mut self.description))
+                    .size(13.0)
+                    .color(c.muted_foreground)
+                    .into_widget(),
             );
         }
-        let body =
-                row(children![
-                    icon(kind).size(18.0).color(accent),
-                    gap_w(12.0),
-                    column(texts)
-                    .cross_axis_alignment(CrossAxisAlignment::Start)
-                    .main_axis_size(MainAxisSize::Min),
-                ])
-                .cross_axis_alignment(CrossAxisAlignment::Start)
-                .main_axis_size(MainAxisSize::Min);
+        let body = row(children![
+            icon(kind).size(18.0).color(accent),
+            gap_w(12.0),
+            column(texts).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min);
         styled(body, base.merge(self.style.take().unwrap_or_default()))
     }
 }
@@ -355,7 +358,6 @@ fn initials_face(initials: String, bg: Color, fg: Color, size: f64, radius: f64)
     .into_widget()
 }
 
-
 impl IntoWidget for Avatar {
     fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
@@ -397,10 +399,7 @@ impl IntoWidget for Avatar {
                 Container::new()
                     .width(size)
                     .height(size)
-                    .child(stack(children![
-                        face,
-                        Positioned::new(dot).left(size - d).top(size - d),
-                    ]))
+                    .child(stack(children![face, Positioned::new(dot).left(size - d).top(size - d),]))
                     .into_widget()
             }
         }
@@ -437,7 +436,6 @@ impl AvatarGroup {
     }
 }
 
-
 impl IntoWidget for AvatarGroup {
     fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
@@ -468,13 +466,7 @@ impl IntoWidget for AvatarGroup {
             left += step;
         }
         if overflow > 0 {
-            let bubble = initials_face(
-                format!("+{overflow}"),
-                c.muted,
-                c.muted_foreground,
-                size,
-                size / 2.0,
-            );
+            let bubble = initials_face(format!("+{overflow}"), c.muted, c.muted_foreground, size, size / 2.0);
             items.push(Positioned::new(ringed(bubble)).left(left).top(0.0).into_widget());
             left += step;
         }
@@ -524,7 +516,6 @@ impl Separator {
         self
     }
 }
-
 
 impl IntoWidget for Separator {
     fn into_widget(self) -> AnyWidget {
@@ -591,6 +582,5 @@ fn render_skeleton(s: &Skeleton) -> AnyWidget {
         .decoration(BoxDecoration::new().color(mix(c.muted, c.background, 0.6)).radius(radius))
         .width(band_w)
         .height(s.height);
-    base.child(ClipRRect::new(radius, stack(children![Positioned::new(band).left(x).top(0.0)])))
-        .into_widget()
+    base.child(ClipRRect::new(radius, stack(children![Positioned::new(band).left(x).top(0.0)]))).into_widget()
 }

@@ -19,9 +19,7 @@ fn huge_source() -> String {
 }
 
 fn root() -> impl IntoWidget {
-    container()
-        .height(600.0)
-        .child(scroll_view(text_area(LINES as u32).value(huge_source()).width(500.0)))
+    container().height(600.0).child(scroll_view(text_area(LINES as u32).value(huge_source()).width(500.0)))
 }
 
 /// One settled frame: rebuild + layout + paint, looping the corrective
@@ -57,10 +55,7 @@ fn huge_text_area_cold_mounts_windowed_and_scrolls_lazily() {
     eprintln!("[perf field-lazy] cold mount: {cold:?}, shaped {cold_shapes} of {LINES} lines");
     // The cold mount shaped the caret window + the visible window — never the
     // whole document (pre-P5.2: all 6000 lines shaped up front).
-    assert!(
-        cold_shapes < 400,
-        "cold mount shapes O(window), not O(document) ({cold_shapes} of {LINES})"
-    );
+    assert!(cold_shapes < 400, "cold mount shapes O(window), not O(document) ({cold_shapes} of {LINES})");
 
     // Scroll deep into never-shaped territory: the visible window materializes
     // at paint, geometry settles, nothing panics, and the tail STAYS estimates.

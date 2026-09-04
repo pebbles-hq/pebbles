@@ -147,8 +147,7 @@ fn render_tile(p: &TileProps) -> AnyWidget {
     let c = theme().colors;
     let hovered = create_signal(false);
     let interactive = p.on_tap.is_some() && !p.disabled;
-    let hv =
-        if interactive { animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12) } else { 0.0 };
+    let hv = if interactive { animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12) } else { 0.0 };
 
     // Surface: tile color → selected tint → the user Style (wins) → hover tint
     // (computed after everything, per the styling contract).
@@ -156,14 +155,9 @@ fn render_tile(p: &TileProps) -> AnyWidget {
     if p.selected {
         bg = mix(bg, p.selected_color.unwrap_or(c.accent), 0.14);
     }
-    let default_pad = if p.dense {
-        EdgeInsets::symmetric(12.0, 6.0)
-    } else {
-        EdgeInsets::symmetric(12.0, 10.0)
-    };
-    let base = crate::style::style()
-        .background(bg)
-        .padding(p.content_padding.unwrap_or(default_pad));
+    let default_pad =
+        if p.dense { EdgeInsets::symmetric(12.0, 6.0) } else { EdgeInsets::symmetric(12.0, 10.0) };
+    let base = crate::style::style().background(bg).padding(p.content_padding.unwrap_or(default_pad));
     let merged = base.merge(p.style.clone().unwrap_or_default());
     // Read the Style's text props first (merged is consumed to build the surface).
     let title_color = if p.disabled { c.muted_foreground } else { merged.color.unwrap_or(c.foreground) };
@@ -172,13 +166,8 @@ fn render_tile(p: &TileProps) -> AnyWidget {
     let final_bg = mix(merged.background.unwrap_or(c.background), c.foreground, 0.05 * hv as f32);
     let surface = merged.background(final_bg);
 
-    let mut title_col: Vec<AnyWidget> = vec![
-        text(p.title.clone())
-            .size(title_size)
-            .weight(title_weight)
-            .color(title_color)
-            .into_widget(),
-    ];
+    let mut title_col: Vec<AnyWidget> =
+        vec![text(p.title.clone()).size(title_size).weight(title_weight).color(title_color).into_widget()];
     if let Some(sub) = &p.subtitle {
         title_col.push(gap_h(2.0).into_widget());
         title_col.push(text(sub.clone()).size(12.0).color(c.muted_foreground).into_widget());
@@ -191,7 +180,9 @@ fn render_tile(p: &TileProps) -> AnyWidget {
     }
     items.push(
         Expanded::new(
-            column(title_col).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min),
+            column(title_col)
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
         )
         .into_widget(),
     );
@@ -217,12 +208,8 @@ fn render_tile(p: &TileProps) -> AnyWidget {
     }
     if !interactive {
         // C7: a plain (non-clickable) row is a ListItem.
-        return crate::widgets::semantics(
-            crate::widgets::SemanticsRole::ListItem,
-            p.title.clone(),
-            out,
-        )
-        .into_widget();
+        return crate::widgets::semantics(crate::widgets::SemanticsRole::ListItem, p.title.clone(), out)
+            .into_widget();
     }
 
     let on_tap = p.on_tap.clone();

@@ -4,7 +4,9 @@
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{RenderScroll, ScrollPhysics, TextEnv};
-use pebbles_widgets::{column, container, gap_h, gesture_detector, scroll_view, SingleChildScrollView, text, View};
+use pebbles_widgets::{
+    SingleChildScrollView, View, column, container, gap_h, gesture_detector, scroll_view, text,
+};
 
 /// A tall (scrollable) column inside a drag-scroll viewport with the given physics.
 fn tall(overscroll: bool) -> SingleChildScrollView {
@@ -28,9 +30,7 @@ fn scroll_of(ui: &Ui) -> (f64, f64) {
 fn content_drag_moves_the_offset_one_to_one() {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
-    ui.mount_root(
-        View::new(palette::WHITE, component(|| tall(false))).into_widget(),
-    );
+    ui.mount_root(View::new(palette::WHITE, component(|| tall(false))).into_widget());
     ui.layout(&mut env, Size::new(300.0, 200.0));
     assert!(ui.render_tree().find::<RenderScroll>().is_some_and(|_| true));
 
@@ -52,9 +52,7 @@ fn rubber_band_overscroll_resists_and_springs_back() {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
     ui.set_test_clock(Some(0.0));
-    ui.mount_root(
-        View::new(palette::WHITE, component(|| tall(true))).into_widget(),
-    );
+    ui.mount_root(View::new(palette::WHITE, component(|| tall(true))).into_widget());
     ui.layout(&mut env, Size::new(300.0, 200.0));
 
     // Drag down 90px from the top: the finger moves 90px, but the offset only
@@ -84,9 +82,7 @@ fn release_with_velocity_flings_then_decays() {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
     ui.set_test_clock(Some(0.0));
-    ui.mount_root(
-        View::new(palette::WHITE, component(|| tall(true))).into_widget(),
-    );
+    ui.mount_root(View::new(palette::WHITE, component(|| tall(true))).into_widget());
     ui.layout(&mut env, Size::new(300.0, 200.0));
 
     // Drag up 200px over 0.2s → velocity ≈ 1000 px/s at release.
@@ -115,9 +111,7 @@ fn release_with_velocity_flings_then_decays() {
 fn wheel_stays_hard_clamped_at_the_edges() {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
-    ui.mount_root(
-        View::new(palette::WHITE, component(|| tall(true))).into_widget(),
-    );
+    ui.mount_root(View::new(palette::WHITE, component(|| tall(true))).into_widget());
     ui.layout(&mut env, Size::new(300.0, 200.0));
     // Wheel past the top: the offset never goes negative.
     ui.dispatch_scroll(Offset::new(150.0, 100.0), -200.0);
@@ -135,14 +129,16 @@ fn child_pan_target_wins_over_drag_scroll() {
         View::new(
             palette::WHITE,
             component(|| {
-                scroll_view(column(vec![
-                    gesture_detector(text("slider-ish"))
-                        .on_pan_start(|| {})
-                        .on_pan_update(|| {})
-                        .on_pan_end(|| {})
-                        .into_widget(),
-                ])
-                .main_axis_size(pebbles_foundation::MainAxisSize::Min))
+                scroll_view(
+                    column(vec![
+                        gesture_detector(text("slider-ish"))
+                            .on_pan_start(|| {})
+                            .on_pan_update(|| {})
+                            .on_pan_end(|| {})
+                            .into_widget(),
+                    ])
+                    .main_axis_size(pebbles_foundation::MainAxisSize::Min),
+                )
                 .drag_scroll(true)
                 .physics(ScrollPhysics { overscroll: true, ..Default::default() })
             }),
@@ -166,9 +162,8 @@ thread_local! {
 }
 
 fn feed() -> impl IntoWidget {
-    let kids: Vec<pebbles_core::AnyWidget> = (0..20)
-        .map(|i| text(format!("feed row {i}")).into_widget())
-        .collect();
+    let kids: Vec<pebbles_core::AnyWidget> =
+        (0..20).map(|i| text(format!("feed row {i}")).into_widget()).collect();
     pebbles_widgets::refresh_indicator(column(kids).main_axis_size(pebbles_foundation::MainAxisSize::Min))
         .threshold(64.0)
         .on_refresh(|done| {
@@ -195,7 +190,10 @@ fn pull_to_refresh_arms_fires_once_and_finishes() {
     assert_eq!(REFRESHES.with(|r| r.get()), 1, "armed release fires on_refresh once");
     ui.rebuild_if_dirty();
     ui.layout(&mut env, Size::new(300.0, 200.0));
-    assert!(ui.render_tree().find::<pebbles_render::RenderSpinner>().is_some(), "spinner holds while refreshing");
+    assert!(
+        ui.render_tree().find::<pebbles_render::RenderSpinner>().is_some(),
+        "spinner holds while refreshing"
+    );
 
     // A second pull while refreshing is ignored (v1 contract).
     assert!(ui.begin_content_drag(Offset::new(150.0, 30.0)));
@@ -207,7 +205,10 @@ fn pull_to_refresh_arms_fires_once_and_finishes() {
     DONE.with(|d| d.borrow().as_ref().expect("done handle delivered").finish());
     ui.rebuild_if_dirty();
     ui.layout(&mut env, Size::new(300.0, 200.0));
-    assert!(ui.render_tree().find::<pebbles_render::RenderSpinner>().is_none(), "finish collapses the spinner");
+    assert!(
+        ui.render_tree().find::<pebbles_render::RenderSpinner>().is_none(),
+        "finish collapses the spinner"
+    );
     DONE.with(|d| *d.borrow_mut() = None);
 }
 
@@ -233,7 +234,7 @@ fn pull_without_reaching_the_threshold_does_not_fire() {
 /// strip at the top is the nav button (mirrors the navigation.rs harness).
 fn scroll_nav_root() -> impl IntoWidget {
     use pebbles_core::{action, create_signal};
-    
+
     let route = create_signal(0i32);
     let content = if route.get() == 0 {
         // Bounded viewport (30..330 in the window) so the content overflows it.

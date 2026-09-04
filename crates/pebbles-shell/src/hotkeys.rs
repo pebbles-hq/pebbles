@@ -42,19 +42,16 @@ mod imp {
 
     pub(super) fn register(binding: &str, on_fire: impl Fn() + 'static) -> Result<HotkeyId, String> {
         let accel = pebbles_core::shortcuts::to_accelerator(binding)?;
-        let hotkey = HotKey::from_str(&accel)
-            .map_err(|e| format!("unsupported hotkey {binding:?}: {e}"))?;
+        let hotkey = HotKey::from_str(&accel).map_err(|e| format!("unsupported hotkey {binding:?}: {e}"))?;
         MANAGER.with(|m| -> Result<(), String> {
             let mut m = m.borrow_mut();
             if m.is_none() {
-                *m = Some(GlobalHotKeyManager::new().map_err(|e| {
-                    format!("global hotkeys unavailable (Wayland/permissions): {e}")
-                })?);
+                *m = Some(
+                    GlobalHotKeyManager::new()
+                        .map_err(|e| format!("global hotkeys unavailable (Wayland/permissions): {e}"))?,
+                );
             }
-            m.as_ref()
-                .unwrap()
-                .register(hotkey)
-                .map_err(|e| format!("could not register {binding:?}: {e}"))
+            m.as_ref().unwrap().register(hotkey).map_err(|e| format!("could not register {binding:?}: {e}"))
         })?;
         let id = hotkey.id();
         CALLBACKS.with(|c| c.borrow_mut().insert(id, Rc::new(on_fire)));
@@ -70,8 +67,7 @@ mod imp {
         if let Some(hotkey) = hotkey {
             MANAGER.with(|m| -> Result<(), String> {
                 if let Some(mgr) = m.borrow().as_ref() {
-                    mgr.unregister(hotkey)
-                        .map_err(|e| format!("could not unregister hotkey: {e}"))?;
+                    mgr.unregister(hotkey).map_err(|e| format!("could not unregister hotkey: {e}"))?;
                 }
                 Ok(())
             })?;
@@ -103,10 +99,7 @@ mod imp {
 /// Returns `Err` (never panics) when the `global-hotkeys` feature is off, when the
 /// binding is unparseable, or when the OS refuses registration (Wayland, missing
 /// macOS Accessibility permission, a combo already taken by another app).
-pub fn register_global_hotkey(
-    binding: &str,
-    on_fire: impl Fn() + 'static,
-) -> Result<HotkeyId, String> {
+pub fn register_global_hotkey(binding: &str, on_fire: impl Fn() + 'static) -> Result<HotkeyId, String> {
     #[cfg(feature = "global-hotkeys")]
     {
         imp::register(binding, on_fire)

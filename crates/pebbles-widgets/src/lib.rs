@@ -37,23 +37,22 @@ mod services;
 
 // The grouped modules, re-exported flat so the public API is unchanged by the
 // internal organization.
+#[cfg(feature = "image-view")]
+pub use components::display::image_view;
 pub use design::{fonts, modifiers, style, text_direction, theme};
 pub use platform::{native_menu, window};
 pub use services::{dialog, global_menu, overlay, sheet, toast};
-#[cfg(feature = "image-view")]
-pub use components::display::image_view;
 
 pub use dialog::{AlertDialog, Dialog, DialogId, alert_dialog, close_dialog, dialog};
 pub use fonts::{builtins, families, has, is_builtin};
 pub use global_menu::{
-    block_context_menu, global_menu_on, is_global_menu_enabled, on_context_menu,
-    reset_global_menu, set_global_menu, set_global_menu_enabled, set_global_menu_style,
-    set_global_menu_width, show_here as show_global_menu_here,
+    block_context_menu, global_menu_on, is_global_menu_enabled, on_context_menu, reset_global_menu,
+    set_global_menu, set_global_menu_enabled, set_global_menu_style, set_global_menu_width,
+    show_here as show_global_menu_here,
 };
 pub use window::{
-    MonitorInfo, Window, WindowId, close_window, focus_window, minimize_window, monitors,
-    set_monitors, set_window_maximized, set_window_position, set_window_resizable,
-    set_window_title, window,
+    MonitorInfo, Window, WindowId, close_window, focus_window, minimize_window, monitors, set_monitors,
+    set_window_maximized, set_window_position, set_window_resizable, set_window_title, window,
 };
 // `window::set_window_size` (OS resize) is intentionally NOT re-exported at the crate
 // root to avoid colliding with `overlay::set_window_size` (popover sizing); reach it as
@@ -63,27 +62,25 @@ pub use image_view::ImageView;
 pub use modifiers::ModifierExt;
 pub use native_menu::{MenuBar, NativeEntry, NativeMenu, menu, menu_bar};
 pub use overlay::{OverlayHost, hide_overlay, hide_passive, show_overlay, show_passive};
-pub use side::Side;
 pub use sheet::{Sheet, SheetId, close_sheet, sheet};
-pub use text_direction::{set_text_direction, text_direction};
-pub use toast::{Toast, ToastId, ToastVariant, dismiss_toast, toast};
+pub use side::Side;
 pub use style::{Style, StyleExt, style, styled, styles};
 #[cfg(feature = "image-view")]
 pub use style::{image_from_bytes, image_from_path};
+pub use text_direction::{set_text_direction, text_direction};
 pub use theme::{Colors, Theme, set_theme, theme, theme_override, toggle_theme};
+pub use toast::{Toast, ToastId, ToastVariant, dismiss_toast, toast};
 pub use widgets::{
     Align, AnimatedContainer, AspectRatio, CanvasWidget, ClipRRect, ColoredBox, Column, ConstrainedBox,
-    Container, DecoratedBox,
-    EditableText, Expanded, FittedBox, Flexible, FractionallySizedBox, GestureDetector, GridView,
-    IntrinsicHeight, IntrinsicWidth, LimitedBox, ListView, Opacity, OverflowBox, Padding,
-    Positioned, RepaintBoundary, RichText, Row, ScrollController, ScrollExt, ScrollbarPolicy,
-    ScrollbarStyle, Semantics, SemanticsExt, SemanticsProps, SemanticsRole, SingleChildScrollView,
-    SizedBox, Spinner, Stack, Text, TextSpan, Transform, View, Wrap,
-    align, animated_container, aspect_ratio, canvas, center, clip_rrect, colored_box, column,
-    constrained_box, container, editable, expanded, fitted_box, flexible, focus_scope,
-    fractionally_sized_box, gap_h, gap_w, gesture_detector, intrinsic_height, intrinsic_width,
-    limited_box, list_view, opacity, overflow_box, padding, positioned, repaint_boundary, row,
-    scroll_view, semantics, sized_box, spacer, span, spinner, stack, text, text_rich, text_signal,
+    Container, DecoratedBox, EditableText, Expanded, FittedBox, Flexible, FractionallySizedBox,
+    GestureDetector, GridView, IntrinsicHeight, IntrinsicWidth, LimitedBox, ListView, Opacity, OverflowBox,
+    Padding, Positioned, RepaintBoundary, RichText, Row, ScrollController, ScrollExt, ScrollbarPolicy,
+    ScrollbarStyle, Semantics, SemanticsExt, SemanticsProps, SemanticsRole, SingleChildScrollView, SizedBox,
+    Spinner, Stack, Text, TextSpan, Transform, View, Wrap, align, animated_container, aspect_ratio, canvas,
+    center, clip_rrect, colored_box, column, constrained_box, container, editable, expanded, fitted_box,
+    flexible, focus_scope, fractionally_sized_box, gap_h, gap_w, gesture_detector, intrinsic_height,
+    intrinsic_width, limited_box, list_view, opacity, overflow_box, padding, positioned, repaint_boundary,
+    row, scroll_view, semantics, sized_box, spacer, span, spinner, stack, text, text_rich, text_signal,
     transform, use_scroll_controller, wrap,
 };
 // The immediate-mode drawing surface (H2) a `canvas(..)` painter receives.

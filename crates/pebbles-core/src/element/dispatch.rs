@@ -113,11 +113,7 @@ impl Ui {
         let hits = self.render.hit_test(point);
         hits.iter().rev().find_map(|&rid| {
             let l = self.render.object_ref(rid).downcast_ref::<RenderPointerListener>()?;
-            if l.on_tap.is_empty() && l.on_double_tap.is_empty() {
-                None
-            } else {
-                self.render.source_of(rid)
-            }
+            if l.on_tap.is_empty() && l.on_double_tap.is_empty() { None } else { self.render.source_of(rid) }
         })
     }
 
@@ -205,7 +201,7 @@ impl Ui {
     }
 
     /// The source id of the topmost axis-drag listener under `point` (the
-    /// mutually-exclusive alternative to [`pan_target_at`]).
+    /// mutually-exclusive alternative to [`Ui::pan_target_at`](crate::Ui::pan_target_at)).
     pub fn axis_pan_target_at(&self, point: Offset) -> Option<u64> {
         let hits = self.render.hit_test(point);
         hits.iter().rev().find_map(|&rid| {
@@ -270,11 +266,8 @@ impl Ui {
         let now = self.clock_now();
         // The scroll view may have unmounted mid-drag (navigation, overlay close)
         // — drop the stale drag instead of indexing a freed node.
-        let Some(moved) = self
-            .render
-            .try_object_mut(rid)
-            .and_then(|o| o.downcast_mut::<RenderScroll>())
-            .map(|s| {
+        let Some(moved) =
+            self.render.try_object_mut(rid).and_then(|o| o.downcast_mut::<RenderScroll>()).map(|s| {
                 let at = drag_axis_pos(s.axis, point);
                 let moved = s.drag_move(at, now);
                 s.refresh_update();
@@ -355,12 +348,7 @@ impl Ui {
             return false;
         }
         let local = point - self.render.absolute_offset(rid);
-        let event = PointerEvent {
-            position: local,
-            global: point,
-            button: PointerButton::Primary,
-            delta,
-        };
+        let event = PointerEvent { position: local, global: point, button: PointerButton::Primary, delta };
         for invoke in invokes {
             self.run_invoke(invoke, event);
         }
@@ -424,8 +412,12 @@ impl Ui {
             return false; // still over the same widget
         }
 
-        let hover_event =
-            PointerEvent { position: point, global: point, button: PointerButton::Primary, delta: Offset::ZERO };
+        let hover_event = PointerEvent {
+            position: point,
+            global: point,
+            button: PointerButton::Primary,
+            delta: Offset::ZERO,
+        };
         let mut fired = false;
         if let Some(old) = self.hovered.take() {
             // Only fire the previously-hovered widget's exit handlers if its element
@@ -454,9 +446,9 @@ impl Ui {
     /// The cursor icon the topmost hover-listener under `point` requests, if any.
     pub fn cursor_at(&self, point: Offset) -> Option<pebbles_render::Cursor> {
         let hits = self.render.hit_test(point);
-        hits.iter().rev().find_map(|&rid| {
-            self.render.object_ref(rid).downcast_ref::<RenderPointerListener>()?.cursor
-        })
+        hits.iter()
+            .rev()
+            .find_map(|&rid| self.render.object_ref(rid).downcast_ref::<RenderPointerListener>()?.cursor)
     }
 
     /// Activate the focused widget (Enter/Space). Returns whether handled.
@@ -671,5 +663,4 @@ impl Ui {
     pub fn scrollbar_dragging(&self) -> bool {
         self.scrollbar_drag.is_some()
     }
-
 }

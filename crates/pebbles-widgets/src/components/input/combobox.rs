@@ -57,11 +57,8 @@ fn search_menu(
     is_selected: Rc<dyn Fn(usize) -> bool>,
     on_pick: Rc<dyn Fn(usize)>,
 ) -> AnyWidget {
-    component_props(
-        render_search_menu,
-        MenuProps { options, width, search_ph, empty, is_selected, on_pick },
-    )
-    .into_widget()
+    component_props(render_search_menu, MenuProps { options, width, search_ph, empty, is_selected, on_pick })
+        .into_widget()
 }
 
 struct MenuProps {
@@ -272,30 +269,35 @@ fn render_combobox(p: &ComboProps) -> AnyWidget {
     let trigger = trigger_box(label, selected.get().is_some(), width, p.style.clone());
 
     let menu_options = options.clone();
-    GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(move |e: PointerEvent| {
-        let trigger_left = e.global.x - e.position.x;
-        let trigger_top = e.global.y - e.position.y;
-        let est = (menu_options.len().min(6) as f64) * 34.0 + 60.0;
-        let (left, top) = anchor_below(trigger_left, trigger_top, TRIGGER_H, width, est);
+    GestureDetector::new(trigger)
+        .cursor(Cursor::Pointer)
+        .on_tap(action_event(move |e: PointerEvent| {
+            let trigger_left = e.global.x - e.position.x;
+            let trigger_top = e.global.y - e.position.y;
+            let est = (menu_options.len().min(6) as f64) * 34.0 + 60.0;
+            let (left, top) = anchor_below(trigger_left, trigger_top, TRIGGER_H, width, est);
 
-        let opts = menu_options.clone();
-        let is_selected: Rc<dyn Fn(usize) -> bool> = Rc::new(move |i| selected.peek() == Some(i));
-        let oc = on_changed.clone();
-        let picked_opts = opts.clone();
-        let on_pick: Rc<dyn Fn(usize)> = Rc::new(move |i| {
-            selected.set(Some(i));
-            if let Some(cb) = &oc {
-                cb(i, picked_opts.get(i).map(String::as_str).unwrap_or(""));
-            }
-            hide_overlay();
-        });
-        show_overlay_guarded(
-            search_menu(opts, width, search_ph.clone(), empty.clone(), is_selected, on_pick),
-            left, top, width, est,
-            move || selected.alive(),
-        );
-    }))
-    .into_widget()
+            let opts = menu_options.clone();
+            let is_selected: Rc<dyn Fn(usize) -> bool> = Rc::new(move |i| selected.peek() == Some(i));
+            let oc = on_changed.clone();
+            let picked_opts = opts.clone();
+            let on_pick: Rc<dyn Fn(usize)> = Rc::new(move |i| {
+                selected.set(Some(i));
+                if let Some(cb) = &oc {
+                    cb(i, picked_opts.get(i).map(String::as_str).unwrap_or(""));
+                }
+                hide_overlay();
+            });
+            show_overlay_guarded(
+                search_menu(opts, width, search_ph.clone(), empty.clone(), is_selected, on_pick),
+                left,
+                top,
+                width,
+                est,
+                move || selected.alive(),
+            );
+        }))
+        .into_widget()
 }
 
 // ---------------------------------------------------------------------------
@@ -413,33 +415,38 @@ fn render_multi(p: &MultiProps) -> AnyWidget {
     let trigger = trigger_box(label, !sel.is_empty(), width, p.style.clone());
 
     let menu_options = options.clone();
-    GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(move |e: PointerEvent| {
-        let trigger_left = e.global.x - e.position.x;
-        let trigger_top = e.global.y - e.position.y;
-        let est = (menu_options.len().min(6) as f64) * 34.0 + 60.0;
-        let (left, top) = anchor_below(trigger_left, trigger_top, TRIGGER_H, width, est);
+    GestureDetector::new(trigger)
+        .cursor(Cursor::Pointer)
+        .on_tap(action_event(move |e: PointerEvent| {
+            let trigger_left = e.global.x - e.position.x;
+            let trigger_top = e.global.y - e.position.y;
+            let est = (menu_options.len().min(6) as f64) * 34.0 + 60.0;
+            let (left, top) = anchor_below(trigger_left, trigger_top, TRIGGER_H, width, est);
 
-        let opts = menu_options.clone();
-        let is_selected: Rc<dyn Fn(usize) -> bool> = Rc::new(move |i| selected.get().contains(&i));
-        let oc = on_changed.clone();
-        let on_pick: Rc<dyn Fn(usize)> = Rc::new(move |i| {
-            selected.update(|v| {
-                if let Some(pos) = v.iter().position(|&x| x == i) {
-                    v.remove(pos);
-                } else {
-                    v.push(i);
+            let opts = menu_options.clone();
+            let is_selected: Rc<dyn Fn(usize) -> bool> = Rc::new(move |i| selected.get().contains(&i));
+            let oc = on_changed.clone();
+            let on_pick: Rc<dyn Fn(usize)> = Rc::new(move |i| {
+                selected.update(|v| {
+                    if let Some(pos) = v.iter().position(|&x| x == i) {
+                        v.remove(pos);
+                    } else {
+                        v.push(i);
+                    }
+                });
+                if let Some(cb) = &oc {
+                    cb(&selected.peek());
                 }
+                // Stays open — no hide_overlay.
             });
-            if let Some(cb) = &oc {
-                cb(&selected.peek());
-            }
-            // Stays open — no hide_overlay.
-        });
-        show_overlay_guarded(
-            search_menu(opts, width, search_ph.clone(), empty.clone(), is_selected, on_pick),
-            left, top, width, est,
-            move || selected.alive(),
-        );
-    }))
-    .into_widget()
+            show_overlay_guarded(
+                search_menu(opts, width, search_ph.clone(), empty.clone(), is_selected, on_pick),
+                left,
+                top,
+                width,
+                est,
+                move || selected.alive(),
+            );
+        }))
+        .into_widget()
 }

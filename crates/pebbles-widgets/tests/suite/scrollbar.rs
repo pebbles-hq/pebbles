@@ -5,7 +5,9 @@
 use pebbles_core::{IntoWidget, Ui};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{column, container, gap_h, hide_overlay, OverlayHost, scroll_view, show_overlay, text, View};
+use pebbles_widgets::{
+    OverlayHost, View, column, container, gap_h, hide_overlay, scroll_view, show_overlay, text,
+};
 
 #[test]
 fn scrollbar_drag_survives_scroll_view_unmount() {
@@ -20,10 +22,7 @@ fn scrollbar_drag_survives_scroll_view_unmount() {
 
     // Show an overlay with a tall, scrollable box (like the time-picker dropdown).
     let rows: Vec<_> = (0..40).map(|_| gap_h(30.0).into_widget()).collect();
-    let scroller = container()
-        .width(250.0)
-        .height(200.0)
-        .child(scroll_view(column(rows)));
+    let scroller = container().width(250.0).height(200.0).child(scroll_view(column(rows)));
     show_overlay(scroller.into_widget(), 0.0, 0.0, 260.0, 200.0);
     ui.rebuild_if_dirty();
     ui.layout(&mut env, window);

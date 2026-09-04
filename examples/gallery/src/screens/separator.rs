@@ -12,9 +12,7 @@ pub fn separators() -> Element {
 
 fn horizontal() -> impl IntoWidget {
     doc("Horizontal")
-        .description(
-            "separator() fills the available width; a horizontal rule between stacked content.",
-        )
+        .description("separator() fills the available width; a horizontal rule between stacked content.")
         .body(
             container().width(360.0).child(
                 column(children![
@@ -33,54 +31,52 @@ fn horizontal() -> impl IntoWidget {
 
 fn vertical_sep() -> impl IntoWidget {
     doc("Vertical")
-        .description("Separator::vertical() divides items in a row — give it a length or place it in a bounded row.")
+        .description(
+            "Separator::vertical() divides items in a row — give it a length or place it in a bounded row.",
+        )
         .body(
-        row(children![
-            text("Docs").size(14.0),
-            Separator::vertical().length(16.0),
-            text("API").size(14.0),
-            Separator::vertical().length(16.0),
-            text("Source").size(14.0),
-        ])
-        .main_axis_size(MainAxisSize::Min)
-        .spacing(14.0),
-    )
+            row(children![
+                text("Docs").size(14.0),
+                Separator::vertical().length(16.0),
+                text("API").size(14.0),
+                Separator::vertical().length(16.0),
+                text("Source").size(14.0),
+            ])
+            .main_axis_size(MainAxisSize::Min)
+            .spacing(14.0),
+        )
 }
 
 fn thickness() -> impl IntoWidget {
-    doc("Thickness")
-        .description("Thicken the rule with .thickness().")
-        .body(
-            container().width(360.0).child(
-                column(children![
-                    separator().thickness(1.0),
-                    gap_h(16.0),
-                    separator().thickness(2.0),
-                    gap_h(16.0),
-                    separator().thickness(4.0),
-                ])
-                .cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .main_axis_size(MainAxisSize::Min),
-            ),
-        )
+    doc("Thickness").description("Thicken the rule with .thickness().").body(
+        container().width(360.0).child(
+            column(children![
+                separator().thickness(1.0),
+                gap_h(16.0),
+                separator().thickness(2.0),
+                gap_h(16.0),
+                separator().thickness(4.0),
+            ])
+            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .main_axis_size(MainAxisSize::Min),
+        ),
+    )
 }
 
 fn colors() -> impl IntoWidget {
-    doc("Color")
-        .description("Recolor with .color() — defaults to the theme border.")
-        .body(
-            container().width(360.0).child(
-                column(children![
-                    separator().thickness(2.0).color(palette::emerald::S500),
-                    gap_h(16.0),
-                    separator().thickness(2.0).color(palette::blue::S500),
-                    gap_h(16.0),
-                    separator().thickness(2.0).color(palette::rose::S500),
-                ])
-                .cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .main_axis_size(MainAxisSize::Min),
-            ),
-        )
+    doc("Color").description("Recolor with .color() — defaults to the theme border.").body(
+        container().width(360.0).child(
+            column(children![
+                separator().thickness(2.0).color(palette::emerald::S500),
+                gap_h(16.0),
+                separator().thickness(2.0).color(palette::blue::S500),
+                gap_h(16.0),
+                separator().thickness(2.0).color(palette::rose::S500),
+            ])
+            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .main_axis_size(MainAxisSize::Min),
+        ),
+    )
 }
 
 fn labeled() -> impl IntoWidget {

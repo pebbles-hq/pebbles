@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, Ui, component, create_signal};
 use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets, Offset, Size, palette};
 use pebbles_render::{Border, RenderDecoratedBox, TextEnv};
-use pebbles_widgets::{avatar, badge, cell, column, empty, muted, SortDir, style, table, text, View};
+use pebbles_widgets::{SortDir, View, avatar, badge, cell, column, empty, muted, style, table, text};
 
 thread_local! {
     static SORT_EVENTS: RefCell<Vec<(usize, SortDir)>> = const { RefCell::new(Vec::new()) };
@@ -54,8 +54,7 @@ fn setup<W: IntoWidget + 'static>(view: fn() -> W) -> (Ui, TextEnv, Size) {
     ui.mount_root(
         View::new(
             palette::WHITE,
-            column(vec![component(view).into_widget()])
-                .cross_axis_alignment(CrossAxisAlignment::Stretch),
+            column(vec![component(view).into_widget()]).cross_axis_alignment(CrossAxisAlignment::Stretch),
         )
         .into_widget(),
     );
@@ -91,11 +90,7 @@ fn sortable_headers_cycle_and_report() {
 
     tap(&mut ui, 83.0, 17.0);
     frame(&mut ui);
-    assert_eq!(
-        events(),
-        vec![(0, SortDir::Asc), (0, SortDir::Desc)],
-        "second click flips to descending"
-    );
+    assert_eq!(events(), vec![(0, SortDir::Asc), (0, SortDir::Desc)], "second click flips to descending");
 
     tap(&mut ui, 83.0, 17.0);
     frame(&mut ui);
@@ -201,7 +196,11 @@ fn surface_style_lands_on_the_table() {
     let rid = tree.find::<RenderDecoratedBox>().expect("a decorated surface");
     let deco = tree.object_ref(rid).downcast_ref::<RenderDecoratedBox>().expect("decorated box");
     assert_eq!(deco.decoration.color, Some(palette::BLUE), "style background lands on the table");
-    assert_eq!(deco.decoration.radius, pebbles_render::BorderRadius::all(0.0), "sharp radius lands on the table");
+    assert_eq!(
+        deco.decoration.radius,
+        pebbles_render::BorderRadius::all(0.0),
+        "sharp radius lands on the table"
+    );
 }
 
 #[test]

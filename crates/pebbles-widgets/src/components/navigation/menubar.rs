@@ -16,8 +16,8 @@ use crate::components::input::popover::anchor_below;
 use crate::overlay::{hide_overlay, is_open, show_overlay_guarded};
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, row, text};
-use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::context::action_event;
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{component_props, create_signal};
 
 /// One top-level menu in a [`Menubar`]: a label + its entries.
@@ -33,11 +33,7 @@ where
     I: IntoIterator<Item = E>,
     E: Into<MenuEntry>,
 {
-    MenubarMenu {
-        label: label.into(),
-        entries: entries.into_iter().map(Into::into).collect(),
-        width: 220.0,
-    }
+    MenubarMenu { label: label.into(), entries: entries.into_iter().map(Into::into).collect(), width: 220.0 }
 }
 
 impl MenubarMenu {
@@ -127,14 +123,8 @@ fn render_menubar(p: &Props) -> AnyWidget {
                 let left = e.global.x - e.position.x;
                 let top = e.global.y - e.position.y;
                 let (l, t) = anchor_below(left, top, TRIGGER_H, width, menu_h);
-                let handles = SubMenuHandles {
-                    nav: child_nav,
-                    ctx: child_ctx,
-                    subs: Rc::new(bp.sub_rows()),
-                };
-                show_overlay_guarded(bp.build(width, &handles), l, t, width, menu_h, move || {
-                    open.alive()
-                });
+                let handles = SubMenuHandles { nav: child_nav, ctx: child_ctx, subs: Rc::new(bp.sub_rows()) };
+                show_overlay_guarded(bp.build(width, &handles), l, t, width, menu_h, move || open.alive());
                 open.set(Some(i));
             }
         };
@@ -167,11 +157,7 @@ fn render_menubar(p: &Props) -> AnyWidget {
         triggers.push(g.into_widget());
     }
 
-    crate::style::styled(
-        row(triggers).spacing(2.0).main_axis_size(MainAxisSize::Min),
-        merged,
-    )
-    .into_widget()
+    crate::style::styled(row(triggers).spacing(2.0).main_axis_size(MainAxisSize::Min), merged).into_widget()
 }
 
 fn palette_transparent() -> pebbles_foundation::Color {

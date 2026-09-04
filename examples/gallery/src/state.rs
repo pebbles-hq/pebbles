@@ -51,8 +51,7 @@ pub fn route() -> Signal<String> {
         let mut cell = cell.borrow_mut();
         if cell.is_none() {
             // Dev hook: GALLERY_ROUTE=<route-id> opens straight on a screen.
-            let initial =
-                std::env::var("GALLERY_ROUTE").unwrap_or_else(|_| String::from("overview"));
+            let initial = std::env::var("GALLERY_ROUTE").unwrap_or_else(|_| String::from("overview"));
             *cell = Some(create_signal(initial));
         }
         cell.unwrap()

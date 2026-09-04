@@ -1,6 +1,6 @@
 //! [`toast`] — transient, non-blocking notifications (Sonner-style), stacked in the
 //! bottom-right corner and auto-dismissed after a duration. An app service like
-//! [`dialog`](crate::dialog): call `toast("Saved").show()` from anywhere; the
+//! [`dialog`](fn@crate::dialog): call `toast("Saved").show()` from anywhere; the
 //! [`OverlayHost`](crate::overlay::OverlayHost) renders the current window's stack
 //! topmost. Per-window (namespaced like the overlay/dialog signals).
 
@@ -12,12 +12,11 @@ use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, Of
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, IconKind};
 
 use crate::components::icon;
+use crate::overlay::window_size;
 use crate::theme::theme;
 use crate::widgets::{
-    Container, GestureDetector, Opacity, Positioned, Transform, column, gap_h, gap_w, row, spacer,
-    text,
+    Container, GestureDetector, Opacity, Positioned, Transform, column, gap_h, gap_w, row, spacer, text,
 };
-use crate::overlay::window_size;
 use pebbles_core::reactive::current_window;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, animation, component_props, create_root_signal, create_signal};
@@ -88,7 +87,7 @@ pub fn any_open() -> bool {
 
 /// Begin dismissing a toast: cancels its auto-dismiss timer, flags it `leaving` (so
 /// the card animates out), and removes it for real once the exit tween ends
-/// ([`MOTION_SECS`]). Idempotent — calling it again while a toast is already leaving
+/// (one motion cycle). Idempotent — calling it again while a toast is already leaving
 /// does nothing (Escape/scrim/action can all land during the exit window).
 pub fn dismiss_toast(id: ToastId) {
     let state = stack_signal().peek().iter().find(|t| t.id == id).map(|t| t.leaving);
@@ -233,7 +232,10 @@ fn toast_card_inner(e: &ToastEntry) -> AnyWidget {
         textcol.push(text(d.clone()).size(12.5).color(c.muted_foreground).into_widget());
     }
     left.push(
-        column(textcol).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget(),
+        column(textcol)
+            .cross_axis_alignment(CrossAxisAlignment::Start)
+            .main_axis_size(MainAxisSize::Min)
+            .into_widget(),
     );
 
     let mut r: Vec<AnyWidget> =

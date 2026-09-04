@@ -106,9 +106,7 @@ pub fn parse(binding: &str) -> Result<Binding, String> {
             key => {
                 let key = key_token(key)?;
                 if !tail.is_empty() {
-                    return Err(format!(
-                        "binding {binding:?} has trailing tokens after the key"
-                    ));
+                    return Err(format!("binding {binding:?} has trailing tokens after the key"));
                 }
                 return Ok((mods, key));
             }
@@ -290,11 +288,7 @@ pub fn accelerator_string(mods: Mods, key: ShortcutKey) -> String {
         parts.push("Super");
     }
     let code = key_code(key);
-    if parts.is_empty() {
-        code
-    } else {
-        format!("{}+{}", parts.join("+"), code)
-    }
+    if parts.is_empty() { code } else { format!("{}+{}", parts.join("+"), code) }
 }
 
 /// Parse a binding string and render it as an [`accelerator_string`] in one step

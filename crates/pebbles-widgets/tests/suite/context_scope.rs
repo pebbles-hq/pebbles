@@ -67,11 +67,10 @@ fn theme_override_nested_row_paints() {
             component(|| {
                 column(vec![
                     badge("a").variant(BadgeVariant::Secondary).into_widget(),
-                    row(vec![theme_override(
-                        Theme::dark(),
-                        badge("b").variant(BadgeVariant::Secondary),
-                    )
-                    .into_widget()])
+                    row(vec![
+                        theme_override(Theme::dark(), badge("b").variant(BadgeVariant::Secondary))
+                            .into_widget(),
+                    ])
                     .into_widget(),
                 ])
             }),

@@ -84,8 +84,8 @@ pub(super) fn install_error_handler(device: &wgpu::Device) {
             // invalid" while the frame STILL renders correctly (proven: no Pebbles
             // draw produces it, and frames complete through it). Explain it ONCE and
             // then suppress entirely — it is not a Pebbles bug and not actionable.
-            let benign_atlas = text.contains("Validation")
-                && (text.contains("create_view") || text.contains("Texture"));
+            let benign_atlas =
+                text.contains("Validation") && (text.contains("create_view") || text.contains("Texture"));
             if benign_atlas {
                 if n == 1 {
                     pebbles_core::log::warn(
@@ -541,12 +541,7 @@ impl ApplicationHandler for Runner {
         self.install_native_menu();
     }
 
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        window_id: WindowId,
-        event: WindowEvent,
-    ) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
         // Route events for a secondary window to its own handler.
         if self.windows.contains_key(&window_id) {
             self.secondary_event(window_id, event);
@@ -642,10 +637,7 @@ impl ApplicationHandler for Runner {
                 if pebbles_core::log::dev_mode() {
                     pebbles_core::log::trace(
                         pebbles_core::log::Cat::Input,
-                        format!(
-                            "wheel dy={dy:.0} at {:.0},{:.0} → scrolled={scrolled}",
-                            cursor.x, cursor.y
-                        ),
+                        format!("wheel dy={dy:.0} at {:.0},{:.0} → scrolled={scrolled}", cursor.x, cursor.y),
                     );
                 }
                 if scrolled {
@@ -671,10 +663,7 @@ impl ApplicationHandler for Runner {
                     );
                 }
                 // F2: in inspect mode a click prints the render chain instead of hitting the UI.
-                if self.inspect_mode
-                    && button == MouseButton::Left
-                    && state == ElementState::Pressed
-                {
+                if self.inspect_mode && button == MouseButton::Left && state == ElementState::Pressed {
                     let chain = pebbles_render::inspect_at(self.ui.render_tree(), cursor);
                     eprint!("{}", pebbles_render::format_chain(&chain));
                     return;
@@ -912,9 +901,7 @@ impl ApplicationHandler for Runner {
         // Dev monkey-tester: hammer the UI with synthetic input and keep the loop hot.
         if self.storm.is_some() && self.mounted {
             self.storm_tick();
-            event_loop.set_control_flow(ControlFlow::WaitUntil(
-                Instant::now() + Duration::from_millis(10),
-            ));
+            event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(10)));
         }
     }
 }

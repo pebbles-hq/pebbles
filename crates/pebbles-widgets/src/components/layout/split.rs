@@ -4,10 +4,10 @@
 
 use pebbles_foundation::{Axis, CrossAxisAlignment};
 
-use pebbles_core::children;
 use crate::theme::theme;
-use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Container, Expanded, column, row};
+use pebbles_core::children;
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// A two-pane split.
 #[derive(Clone)]
@@ -45,7 +45,6 @@ impl SplitView {
     }
 }
 
-
 impl IntoWidget for SplitView {
     fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
@@ -58,23 +57,15 @@ impl IntoWidget for SplitView {
         match self.axis {
             Axis::Horizontal => {
                 let divider = Container::new().color(c.border).width(1.0);
-                row(children![
-                    Expanded::new(first).flex(a),
-                    divider,
-                    Expanded::new(second).flex(b),
-                ])
-                .cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .into_widget()
+                row(children![Expanded::new(first).flex(a), divider, Expanded::new(second).flex(b),])
+                    .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .into_widget()
             }
             Axis::Vertical => {
                 let divider = Container::new().color(c.border).height(1.0);
-                column(children![
-                    Expanded::new(first).flex(a),
-                    divider,
-                    Expanded::new(second).flex(b),
-                ])
-                .cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .into_widget()
+                column(children![Expanded::new(first).flex(a), divider, Expanded::new(second).flex(b),])
+                    .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .into_widget()
             }
         }
     }

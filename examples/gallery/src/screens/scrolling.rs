@@ -96,13 +96,15 @@ fn carousel_demo() -> impl IntoWidget {
 }
 
 fn slide(title: &'static str, sub: &'static str, color: Color) -> impl IntoWidget {
-    center(column(children![
-        text(title).size(20.0).bold().color(palette::WHITE),
-        gap_h(4.0),
-        muted(sub).size(12.0).color(Color::from_rgba8(255, 255, 255, 200)),
-    ])
-    .cross_axis_alignment(CrossAxisAlignment::Center)
-    .main_axis_size(MainAxisSize::Min))
+    center(
+        column(children![
+            text(title).size(20.0).bold().color(palette::WHITE),
+            gap_h(4.0),
+            muted(sub).size(12.0).color(Color::from_rgba8(255, 255, 255, 200)),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Center)
+        .main_axis_size(MainAxisSize::Min),
+    )
     .styled(style().background(color))
 }
 
@@ -128,13 +130,7 @@ fn sticky_headers() -> impl IntoWidget {
 fn rows(labels: &[&str]) -> Vec<AnyWidget> {
     labels
         .iter()
-        .map(|l| {
-            padding(
-                EdgeInsets::symmetric(16.0, 10.0),
-                muted(*l).into_widget(),
-            )
-            .into_widget()
-        })
+        .map(|l| padding(EdgeInsets::symmetric(16.0, 10.0), muted(*l).into_widget()).into_widget())
         .collect()
 }
 

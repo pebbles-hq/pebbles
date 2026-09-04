@@ -5,7 +5,7 @@
 use pebbles_core::{IntoWidget, Ui, action};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{gesture_detector, SizedBox, Transform, View};
+use pebbles_widgets::{SizedBox, Transform, View, gesture_detector};
 
 fn hit(tapped: &std::rc::Rc<std::cell::Cell<bool>>) -> impl IntoWidget {
     let t = tapped.clone();

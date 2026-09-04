@@ -8,10 +8,8 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_testing::{draw_frame as frame};
-use pebbles_widgets::{
-    PaginationVariant, View, column, pagination,
-};
+use pebbles_testing::draw_frame as frame;
+use pebbles_widgets::{PaginationVariant, View, column, pagination};
 
 thread_local! {
     static WENT: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
@@ -84,10 +82,7 @@ fn long_ranges_collapse_to_ellipses_and_paint() {
             palette::WHITE,
             component(|| {
                 column(vec![
-                    pagination(10, 20)
-                        .variant(PaginationVariant::Numbers)
-                        .max_buttons(7)
-                        .into_widget(),
+                    pagination(10, 20).variant(PaginationVariant::Numbers).max_buttons(7).into_widget(),
                     pagination(5, 8).variant(PaginationVariant::Simple).into_widget(),
                     pagination(7, 20).variant(PaginationVariant::Arrows).into_widget(),
                 ])

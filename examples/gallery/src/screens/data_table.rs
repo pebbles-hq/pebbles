@@ -33,11 +33,7 @@ pub fn data_tables() -> Element {
                 _ => row.2.to_lowercase(),
             };
             let ord = key(a).cmp(&key(b));
-            if dir == SortDir::Desc {
-                ord.reverse()
-            } else {
-                ord
-            }
+            if dir == SortDir::Desc { ord.reverse() } else { ord }
         });
         rows
     };

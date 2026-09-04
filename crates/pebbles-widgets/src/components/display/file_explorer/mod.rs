@@ -58,8 +58,8 @@
 
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::rc::Rc;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BoxDecoration, Cursor, IconData, IconKind, lucide};
@@ -75,13 +75,12 @@ use pebbles_core::{Signal, animated, component_props, create_shortcut_if, create
 mod node;
 mod tree;
 
-pub use tree::{FileTree, FsKind, FsNode};
 #[cfg(feature = "file-dialogs")]
 pub use tree::pick_folder;
+pub use tree::{FileTree, FsKind, FsNode};
 
 use node::{NodeProps, render_node};
 use tree::{copy_path, read_dir, unique_name};
-
 
 // ---------------------------------------------------------------------------
 // The explorer controller
@@ -191,10 +190,7 @@ impl FileExplorer {
     ///     _ => None,
     /// });
     /// ```
-    pub fn set_icon_theme(
-        &self,
-        f: impl Fn(&FsNode, bool) -> Option<(IconData, Option<Color>)> + 'static,
-    ) {
+    pub fn set_icon_theme(&self, f: impl Fn(&FsNode, bool) -> Option<(IconData, Option<Color>)> + 'static) {
         self.icon_theme.set(Some(Rc::new(f)));
     }
 
@@ -321,11 +317,7 @@ impl FileExplorer {
         if self.fs_root.get().is_none() {
             return;
         }
-        let needs = self
-            .tree
-            .peek()
-            .node(id)
-            .is_some_and(|n| n.kind == FsKind::Folder && !n.loaded);
+        let needs = self.tree.peek().node(id).is_some_and(|n| n.kind == FsKind::Folder && !n.loaded);
         if !needs {
             return;
         }
@@ -405,11 +397,8 @@ impl FileExplorer {
             if self.fs_root.get().is_some() {
                 if let Some(path) = self.path_of(*id) {
                     let is_dir = self.tree.peek().node(*id).is_some_and(|n| n.kind == FsKind::Folder);
-                    let res = if is_dir {
-                        std::fs::remove_dir_all(&path)
-                    } else {
-                        std::fs::remove_file(&path)
-                    };
+                    let res =
+                        if is_dir { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
                     if let Err(e) = res {
                         self.last_error.set(Some(format!("Could not delete {}: {e}", path.display())));
                         continue;
@@ -964,16 +953,14 @@ impl FileExplorer {
             );
         }
         if kids.is_empty() {
-            let hint =
-                if q.is_empty() { "Empty — add a file or folder." } else { "No matches." };
+            let hint = if q.is_empty() { "Empty — add a file or folder." } else { "No matches." };
             kids.push(Padding::new(EdgeInsets::all(12.0), muted(hint)).into_widget());
         }
         // Fill the parent's height when it gives one (a panel), shrink-wrap
         // otherwise — the empty space stays part of the explorer (right-click
         // there = New File/New Folder; drop there = move to root).
-        let body = column(kids)
-            .cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .main_axis_size(MainAxisSize::Max);
+        let body =
+            column(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Max);
 
         // Empty-space right-click → New File / New Folder; empty-space drop
         // (while dragging) → move to the root.
@@ -985,9 +972,7 @@ impl FileExplorer {
                     }
                 }
             })
-            .on_hover_exit({
-                move || self.root_drop.set(false)
-            });
+            .on_hover_exit(move || self.root_drop.set(false));
         context_menu(root_gesture)
             .item(menu_item("New File").on_select(self.new_file()))
             .item(menu_item("New Folder").on_select(self.new_folder()))

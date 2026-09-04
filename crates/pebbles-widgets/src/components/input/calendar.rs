@@ -31,7 +31,13 @@ fn is_leap(y: i32) -> bool {
 
 fn days_in_month(y: i32, m: u32) -> u32 {
     match m {
-        2 => if is_leap(y) { 29 } else { 28 },
+        2 => {
+            if is_leap(y) {
+                29
+            } else {
+                28
+            }
+        }
         4 | 6 | 9 | 11 => 30,
         _ => 31,
     }
@@ -46,8 +52,7 @@ fn day_of_week(y: i32, m: u32, d: u32) -> u32 {
 
 /// Today's `(year, month, day)` from the system clock (Howard Hinnant's algorithm).
 fn today() -> (i32, u32, u32) {
-    let secs =
-        SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) as i64;
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0) as i64;
     civil_from_days(secs / 86_400)
 }
 
@@ -66,8 +71,18 @@ fn civil_from_days(z: i64) -> (i32, u32, u32) {
 
 fn month_name(m: u32) -> &'static str {
     [
-        "January", "February", "March", "April", "May", "June", "July", "August", "September",
-        "October", "November", "December",
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
     ][(m.clamp(1, 12) - 1) as usize]
 }
 
@@ -328,12 +343,8 @@ fn render_day_cell(p: &DayCellProps) -> AnyWidget {
     if p.endpoint {
         label = label.semibold();
     }
-    let cell = Container::new()
-        .width(CELL)
-        .height(CELL)
-        .alignment(Alignment::CENTER)
-        .decoration(deco)
-        .child(label);
+    let cell =
+        Container::new().width(CELL).height(CELL).alignment(Alignment::CENTER).decoration(deco).child(label);
 
     if p.disabled {
         return GestureDetector::new(Opacity::new(0.4, cell)).cursor(Cursor::NotAllowed).into_widget();
@@ -363,10 +374,7 @@ fn choice_cell(label: String, current: bool, on_tap: impl Fn() + 'static) -> Any
         .alignment(Alignment::CENTER)
         .decoration(deco)
         .child(text(label).size(13.0).color(fg));
-    GestureDetector::new(cell)
-        .cursor(Cursor::Pointer)
-        .on_tap(on_tap)
-        .into_widget()
+    GestureDetector::new(cell).cursor(Cursor::Pointer).on_tap(on_tap).into_widget()
 }
 
 // --- panels ---
@@ -421,41 +429,27 @@ fn days_panel(disp: Signal<(i32, u32)>, view: Signal<View>, ctx: DayGridCtx) -> 
     let month_chip = || caption_chip(month_name(m).to_string(), move || view.set(View::Months));
     let year_chip = || caption_chip(format!("{y}"), move || view.set(View::Years));
     let caption_w: AnyWidget = match caption {
-        CaptionLayout::Label => text(format!("{} {}", month_name(m), y))
-            .size(14.0)
-            .semibold()
-            .color(c.foreground)
+        CaptionLayout::Label => {
+            text(format!("{} {}", month_name(m), y)).size(14.0).semibold().color(c.foreground).into_widget()
+        }
+        CaptionLayout::Dropdown => row(vec![month_chip(), gap_w(6.0).into_widget(), year_chip()])
+            .main_axis_size(MainAxisSize::Min)
             .into_widget(),
-        CaptionLayout::Dropdown => {
-            row(vec![month_chip(), gap_w(6.0).into_widget(), year_chip()])
+        CaptionLayout::DropdownMonths => {
+            row(vec![month_chip(), gap_w(8.0).into_widget(), year_lbl().into_widget()])
                 .main_axis_size(MainAxisSize::Min)
+                .cross_axis_alignment(CrossAxisAlignment::Center)
                 .into_widget()
         }
-        CaptionLayout::DropdownMonths => row(vec![
-            month_chip(),
-            gap_w(8.0).into_widget(),
-            year_lbl().into_widget(),
-        ])
-        .main_axis_size(MainAxisSize::Min)
-        .cross_axis_alignment(CrossAxisAlignment::Center)
-        .into_widget(),
-        CaptionLayout::DropdownYears => row(vec![
-            month_lbl().into_widget(),
-            gap_w(8.0).into_widget(),
-            year_chip(),
-        ])
-        .main_axis_size(MainAxisSize::Min)
-        .cross_axis_alignment(CrossAxisAlignment::Center)
-        .into_widget(),
+        CaptionLayout::DropdownYears => {
+            row(vec![month_lbl().into_widget(), gap_w(8.0).into_widget(), year_chip()])
+                .main_axis_size(MainAxisSize::Min)
+                .cross_axis_alignment(CrossAxisAlignment::Center)
+                .into_widget()
+        }
     };
 
-    let header = row(vec![
-        prev,
-        spacer().into_widget(),
-        caption_w,
-        spacer().into_widget(),
-        next,
-    ]);
+    let header = row(vec![prev, spacer().into_widget(), caption_w, spacer().into_widget(), next]);
 
     // Weekday header.
     let weekdays: Vec<AnyWidget> = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]
@@ -551,10 +545,8 @@ fn years_panel(disp: Signal<(i32, u32)>, view: Signal<View>) -> AnyWidget {
 
     let prev = nav_arrow(IconKind::ChevronLeft, false, move || disp.update(|(yy, _)| *yy -= 12));
     let next = nav_arrow(IconKind::ChevronRight, false, move || disp.update(|(yy, _)| *yy += 12));
-    let title =
-        text(format!("{} – {}", block, block + 11)).size(14.0).semibold().color(c.foreground);
-    let header =
-        row(vec![prev, spacer().into_widget(), title.into_widget(), spacer().into_widget(), next]);
+    let title = text(format!("{} – {}", block, block + 11)).size(14.0).semibold().color(c.foreground);
+    let header = row(vec![prev, spacer().into_widget(), title.into_widget(), spacer().into_widget(), next]);
 
     let cells: Vec<AnyWidget> = (0..12i32)
         .map(|i| {
@@ -634,12 +626,7 @@ fn render_calendar(p: &Props) -> AnyWidget {
         .border(s.border.unwrap_or(Border::new(c.border, 1.0)))
         .radius(s.radius.unwrap_or(BorderRadius::all(theme().radius)));
     if s.shadows.is_empty() {
-        deco = deco.shadow(BoxShadow::new(
-            Color::from_rgba8(0, 0, 0, 45),
-            Offset::new(0.0, 8.0),
-            22.0,
-            -4.0,
-        ));
+        deco = deco.shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 45), Offset::new(0.0, 8.0), 22.0, -4.0));
     } else {
         for sh in &s.shadows {
             deco = deco.shadow(*sh);

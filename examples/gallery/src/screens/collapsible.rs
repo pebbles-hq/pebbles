@@ -11,55 +11,38 @@ pub fn collapsibles() -> Element {
 }
 
 fn panel(child: impl IntoWidget) -> impl IntoWidget {
-    container()
-        .width(380.0)
-        .child(card().child(child).padding(EdgeInsets::all(6.0)))
+    container().width(380.0).child(card().child(child).padding(EdgeInsets::all(6.0)))
 }
 
 fn basic() -> impl IntoWidget {
-    doc("Basic")
-        .description("collapsible(title, content) starts closed and toggles itself on tap.")
-        .body(panel(collapsible(
+    doc("Basic").description("collapsible(title, content) starts closed and toggles itself on tap.").body(
+        panel(collapsible(
             "Toggle details",
             body("Here are the details that were hidden until you opened this section."),
-        )))
+        )),
+    )
 }
 
 fn open_default() -> impl IntoWidget {
-    doc("Open by default")
-        .description("Seed the initial state with .open(true).")
-        .body(panel(
-            collapsible(
-                "What's included",
-                muted("Everything in Pro, plus priority support and SSO."),
-            )
-            .open(true),
-        ))
+    doc("Open by default").description("Seed the initial state with .open(true).").body(panel(
+        collapsible("What's included", muted("Everything in Pro, plus priority support and SSO.")).open(true),
+    ))
 }
 
 fn with_callback() -> impl IntoWidget {
     let note = create_signal(String::from("closed"));
-    doc("On toggle")
-        .description("React to open/close with .on_toggle(|open| …).")
-        .body(
-            column(children![
-                panel(
-                    collapsible(
-                        "Advanced settings",
-                        body("Flags, experiments and other advanced options.")
-                    )
-                    .on_toggle(move |open| note.set(if open {
-                        "open".into()
-                    } else {
-                        "closed".into()
-                    })),
-                ),
-                gap_h(8.0),
-                muted(format!("state: {}", note.get())),
-            ])
-            .cross_axis_alignment(CrossAxisAlignment::Start)
-            .main_axis_size(MainAxisSize::Min),
-        )
+    doc("On toggle").description("React to open/close with .on_toggle(|open| …).").body(
+        column(children![
+            panel(
+                collapsible("Advanced settings", body("Flags, experiments and other advanced options."))
+                    .on_toggle(move |open| note.set(if open { "open".into() } else { "closed".into() })),
+            ),
+            gap_h(8.0),
+            muted(format!("state: {}", note.get())),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min),
+    )
 }
 
 fn custom_trigger() -> impl IntoWidget {
@@ -102,11 +85,7 @@ fn repo_row(name: &str) -> impl IntoWidget {
         )
         .padding(EdgeInsets::symmetric(12.0, 10.0))
         .child(
-            row(children![
-                icon(IconKind::Circle).size(14.0),
-                gap_w(10.0),
-                text(name.to_string()).size(13.5)
-            ])
-            .main_axis_size(MainAxisSize::Min),
+            row(children![icon(IconKind::Circle).size(14.0), gap_w(10.0), text(name.to_string()).size(13.5)])
+                .main_axis_size(MainAxisSize::Min),
         )
 }

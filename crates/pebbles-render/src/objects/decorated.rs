@@ -57,10 +57,7 @@ impl RenderObject for RenderDecoratedBox {
 
     fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         // Decoration paints around the child, not beside it — pass through.
-        cx.children()
-            .first()
-            .copied()
-            .and_then(|child| cx.child_intrinsic(child, axis, cross_extent))
+        cx.children().first().copied().and_then(|child| cx.child_intrinsic(child, axis, cross_extent))
     }
 
     fn baseline(&self, cx: &mut LayoutCx<'_>) -> Option<f64> {
@@ -100,7 +97,12 @@ impl RenderObject for RenderDecoratedBox {
             if pebbles_foundation::log::dev_mode() {
                 pebbles_foundation::log::trace(
                     pebbles_foundation::log::Cat::Gpu,
-                    format!("paint shadow blur {:.0}×{:.0} r={:.1}", shadow_rect.width(), shadow_rect.height(), shadow.blur),
+                    format!(
+                        "paint shadow blur {:.0}×{:.0} r={:.1}",
+                        shadow_rect.width(),
+                        shadow_rect.height(),
+                        shadow.blur
+                    ),
                 );
             }
             cx.scene.draw_blurred_rounded_rect(
@@ -145,9 +147,7 @@ fn outline(d: &BoxDecoration, size: Size, rect: Rect) -> (BezPath, f64) {
             let center = Point::new(rect.x0 + size.width / 2.0, rect.y0 + size.height / 2.0);
             (Circle::new(center, r).to_path(0.1), r)
         }
-        BoxShape::Rectangle => {
-            (rect.to_rounded_rect(d.radius.to_radii()).to_path(0.1), d.radius.max())
-        }
+        BoxShape::Rectangle => (rect.to_rounded_rect(d.radius.to_radii()).to_path(0.1), d.radius.max()),
     }
 }
 
@@ -163,7 +163,10 @@ fn fill_surface(cx: &mut PaintCx<'_>, rect: Rect, size: Size, path: &BezPath, d:
             if pebbles_foundation::log::dev_mode() {
                 pebbles_foundation::log::trace(
                     pebbles_foundation::log::Cat::Gpu,
-                    format!("paint gradient fill {:.0}×{:.0} @ {:.0},{:.0}", size.width, size.height, rect.x0, rect.y0),
+                    format!(
+                        "paint gradient fill {:.0}×{:.0} @ {:.0},{:.0}",
+                        size.width, size.height, rect.x0, rect.y0
+                    ),
                 );
             }
             let brush = gradient_brush(gradient, rect);
@@ -217,20 +220,37 @@ fn border_surface(cx: &mut PaintCx<'_>, rect: Rect, path: &BezPath, d: &BoxDecor
                 cx.scene.stroke(&Stroke::new(side.width), Affine::IDENTITY, side.color, None, path);
             }
         } else {
-            paint_side(cx, border.top, (rect.x0, rect.y0 + border.top.width / 2.0), (rect.x1, rect.y0 + border.top.width / 2.0));
-            paint_side(cx, border.bottom, (rect.x0, rect.y1 - border.bottom.width / 2.0), (rect.x1, rect.y1 - border.bottom.width / 2.0));
-            paint_side(cx, border.left, (rect.x0 + border.left.width / 2.0, rect.y0), (rect.x0 + border.left.width / 2.0, rect.y1));
-            paint_side(cx, border.right, (rect.x1 - border.right.width / 2.0, rect.y0), (rect.x1 - border.right.width / 2.0, rect.y1));
+            paint_side(
+                cx,
+                border.top,
+                (rect.x0, rect.y0 + border.top.width / 2.0),
+                (rect.x1, rect.y0 + border.top.width / 2.0),
+            );
+            paint_side(
+                cx,
+                border.bottom,
+                (rect.x0, rect.y1 - border.bottom.width / 2.0),
+                (rect.x1, rect.y1 - border.bottom.width / 2.0),
+            );
+            paint_side(
+                cx,
+                border.left,
+                (rect.x0 + border.left.width / 2.0, rect.y0),
+                (rect.x0 + border.left.width / 2.0, rect.y1),
+            );
+            paint_side(
+                cx,
+                border.right,
+                (rect.x1 - border.right.width / 2.0, rect.y0),
+                (rect.x1 - border.right.width / 2.0, rect.y1),
+            );
         }
     }
 }
 
 /// Map an alignment (`-1..1` in each axis) to an absolute point within `rect`.
 fn point_in(rect: Rect, a: Alignment) -> Point {
-    Point::new(
-        rect.x0 + (a.x + 1.0) / 2.0 * rect.width(),
-        rect.y0 + (a.y + 1.0) / 2.0 * rect.height(),
-    )
+    Point::new(rect.x0 + (a.x + 1.0) / 2.0 * rect.width(), rect.y0 + (a.y + 1.0) / 2.0 * rect.height())
 }
 
 /// Build a peniko gradient positioned within `rect` from a [`Gradient`] spec.
@@ -248,8 +268,7 @@ fn gradient_brush(g: &Gradient, rect: Rect) -> peniko::Gradient {
             // `center` offsets the pivot within the box (`-1..1` per axis); angles
             // are radians clockwise from the positive X axis.
             let pivot = point_in(rect, *center);
-            PGrad::new_sweep(pivot, *start_angle as f32, *end_angle as f32)
-                .with_stops(&colors[..])
+            PGrad::new_sweep(pivot, *start_angle as f32, *end_angle as f32).with_stops(&colors[..])
         }
     }
 }

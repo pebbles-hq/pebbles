@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 use pebbles_core::{IntoWidget, Ui, animation, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_testing::{frame};
+use pebbles_testing::frame;
 use pebbles_widgets::{
     CarouselController, StyleExt, View, carousel, center, style, text, use_carousel_controller,
 };

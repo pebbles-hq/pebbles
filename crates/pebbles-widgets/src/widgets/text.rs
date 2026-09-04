@@ -356,8 +356,7 @@ pebbles_core::render_widget!(RichTextLeaf);
 
 impl RenderWidget for RichTextLeaf {
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        let mut p =
-            RenderParagraph::with_spans(self.text.clone(), self.style.clone(), self.spans.clone());
+        let mut p = RenderParagraph::with_spans(self.text.clone(), self.style.clone(), self.spans.clone());
         p.link_boxes = self.boxes.clone();
         Box::new(p)
     }
@@ -398,8 +397,7 @@ impl pebbles_core::IntoWidget for RichText {
         }
         let boxes = (self.on_link.is_some() && !urls.is_empty())
             .then(|| std::rc::Rc::new(std::cell::RefCell::new(Vec::new())));
-        let leaf =
-            RichTextLeaf { text, style: self.base, spans: rspans, boxes: boxes.clone() };
+        let leaf = RichTextLeaf { text, style: self.base, spans: rspans, boxes: boxes.clone() };
         match (self.on_link, boxes) {
             (Some(f), Some(boxes)) => {
                 // The tap handler resolves the LOCAL hit point against the link

@@ -67,10 +67,6 @@ pub fn badges() -> Element {
 }
 
 fn status_row(build: &str, pill: impl IntoWidget) -> impl IntoWidget {
-    row(children![
-        text(build.to_string()).size(14.0).weight(500.0),
-        gap_w(8.0),
-        pill,
-    ])
-    .main_axis_size(MainAxisSize::Min)
+    row(children![text(build.to_string()).size(14.0).weight(500.0), gap_w(8.0), pill,])
+        .main_axis_size(MainAxisSize::Min)
 }

@@ -4,9 +4,7 @@
 
 use std::cell::{Cell, RefCell};
 
-use pebbles_core::{
-    Element, IntoWidget, Signal, Ui, component, create_memo, create_signal,
-};
+use pebbles_core::{Element, IntoWidget, Signal, Ui, component, create_memo, create_signal};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{SizedBox, View};

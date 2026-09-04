@@ -5,12 +5,12 @@ mod chip;
 mod data;
 mod empty;
 mod file_explorer;
+mod hover_card;
+mod icon;
 #[cfg(feature = "image-view")]
 pub mod image_view;
-mod list_tile;
-mod hover_card;
 mod kbd;
-mod icon;
+mod list_tile;
 mod progress;
 mod surfaces;
 mod tooltip;
@@ -20,20 +20,20 @@ mod typography;
 pub use carousel::{Carousel, CarouselController, carousel, use_carousel_controller};
 pub use chip::{Chip, chip};
 pub use data::{Cell, SortDir, Table, cell, table};
-pub use list_tile::{ListTile, list_tile};
-pub use hover_card::{HoverCard, hover_card};
 pub use empty::{Empty, empty};
-pub use file_explorer::{FileExplorer, FileTree, FsKind, FsNode, file_explorer};
 #[cfg(feature = "file-dialogs")]
 pub use file_explorer::pick_folder;
+pub use file_explorer::{FileExplorer, FileTree, FsKind, FsNode, file_explorer};
+pub use hover_card::{HoverCard, hover_card};
+pub use icon::{Icon, icon};
 #[cfg(feature = "image-view")]
 pub use image_view::ImageView;
 pub use kbd::{Kbd, kbd};
-pub use icon::{Icon, icon};
+pub use list_tile::{ListTile, list_tile};
 pub use progress::{Progress, progress};
 pub use surfaces::{
-    Alert, AlertVariant, Avatar, AvatarGroup, AvatarShape, Badge, BadgeVariant, Card, Separator,
-    Skeleton, alert, avatar, avatar_group, badge, card, separator, skeleton,
+    Alert, AlertVariant, Avatar, AvatarGroup, AvatarShape, Badge, BadgeVariant, Card, Separator, Skeleton,
+    alert, avatar, avatar_group, badge, card, separator, skeleton,
 };
 pub use tooltip::{Tooltip, tooltip};
 pub use tree::{TreeNode, TreeView, tree_node, tree_view};

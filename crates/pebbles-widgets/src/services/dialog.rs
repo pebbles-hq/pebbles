@@ -1,6 +1,6 @@
 //! [`Dialog`] — a modal rendered in the app's overlay layer: a dimmed full-window
 //! scrim over the app, with a centered surface holding your content. This is
-//! shadcn's Dialog. It runs on the **single** app [`Ui`], so it composes safely with
+//! shadcn's Dialog. It runs on the **single** app [`Ui`](pebbles_core::Ui), so it composes safely with
 //! the reactive runtime (unlike a separate OS window, which would need a per-`Ui`
 //! reactive runtime the engine doesn't have yet).
 //!
@@ -63,9 +63,7 @@ pub(crate) fn drop_window(window: u32) {
 /// The current window's modal signal (reactive), created on first access.
 fn modal_signal() -> Signal<Option<DialogEntry>> {
     let window = current_window();
-    MODAL.with(|cell| {
-        *cell.borrow_mut().entry(window).or_insert_with(|| create_root_signal(None))
-    })
+    MODAL.with(|cell| *cell.borrow_mut().entry(window).or_insert_with(|| create_root_signal(None)))
 }
 
 /// Whether a dialog is currently open in the current window.
@@ -254,14 +252,11 @@ impl AlertDialog {
                 }
             });
 
-        let mut kids: Vec<AnyWidget> = vec![
-            text(self.title.clone()).size(18.0).weight(600.0).color(c.foreground).into_widget(),
-        ];
+        let mut kids: Vec<AnyWidget> =
+            vec![text(self.title.clone()).size(18.0).weight(600.0).color(c.foreground).into_widget()];
         if !self.description.is_empty() {
             kids.push(gap_h(8.0).into_widget());
-            kids.push(
-                text(self.description.clone()).size(14.0).color(c.muted_foreground).into_widget(),
-            );
+            kids.push(text(self.description.clone()).size(14.0).color(c.muted_foreground).into_widget());
         }
         kids.push(gap_h(22.0).into_widget());
         kids.push(
@@ -288,8 +283,7 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
 
     // Dimming scrim; an outside click dismisses (if dismissible).
     let scrim = Positioned::fill(
-        GestureDetector::new(Container::new().color(Color::new([0.0, 0.0, 0.0, 0.45])))
-            .on_tap(dismiss_top),
+        GestureDetector::new(Container::new().color(Color::new([0.0, 0.0, 0.0, 0.45]))).on_tap(dismiss_top),
     )
     .into_widget();
 
@@ -301,12 +295,7 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
                 .color(entry.background.unwrap_or(c.popover))
                 .border(Border::new(c.border, 1.0))
                 .radius(BorderRadius::all(theme().radius + 4.0))
-                .shadow(BoxShadow::new(
-                    Color::from_rgba8(0, 0, 0, 90),
-                    Offset::new(0.0, 18.0),
-                    40.0,
-                    -8.0,
-                )),
+                .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 90), Offset::new(0.0, 18.0), 40.0, -8.0)),
         )
         .child(entry.content);
     // C7: announce the surface as a Dialog (label = title) to assistive tech.

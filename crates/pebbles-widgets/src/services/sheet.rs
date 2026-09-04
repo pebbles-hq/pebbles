@@ -1,6 +1,6 @@
 //! [`sheet`] — an edge-anchored modal panel (shadcn Sheet / Drawer): a full-height
 //! (left/right) or full-width (top/bottom) surface over a dimmed scrim. An app service
-//! like [`dialog`](crate::dialog); per-window, one at a time. `Side::Bottom` is the
+//! like [`dialog`](fn@crate::dialog); per-window, one at a time. `Side::Bottom` is the
 //! "drawer" pattern.
 
 use std::cell::{Cell, RefCell};
@@ -10,9 +10,9 @@ use std::rc::Rc;
 use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BoxDecoration};
 
+use crate::overlay::window_size;
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, Opacity, Positioned, Transform, column, gap_h, text};
-use crate::overlay::window_size;
 use pebbles_core::reactive::current_window;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, animation, create_root_signal};
@@ -88,7 +88,7 @@ pub fn is_open() -> bool {
 }
 
 /// Begin closing the sheet matching `id` (or any open one when `id == 0`): fires
-/// `on_close`, slides the panel out, and removes it after the exit tween ([`MOTION_SECS`]).
+/// `on_close`, slides the panel out, and removes it after the exit tween.
 /// Idempotent — a second call while it's already closing does nothing (so an Escape or
 /// scrim tap during the exit is a no-op).
 pub fn close_sheet(id: SheetId) {
@@ -227,8 +227,7 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
 
     let scrim = Positioned::fill(Opacity::new(
         t as f32,
-        GestureDetector::new(Container::new().color(Color::new([0.0, 0.0, 0.0, 0.4])))
-            .on_tap(dismiss_top),
+        GestureDetector::new(Container::new().color(Color::new([0.0, 0.0, 0.0, 0.4]))).on_tap(dismiss_top),
     ))
     .into_widget();
 
@@ -248,10 +247,8 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
         .background(e.background.unwrap_or(c.background))
         .border(Border::new(c.border, 1.0))
         .radius_all(0.0);
-    let deco = base
-        .merge(e.style.clone().unwrap_or_default())
-        .decoration()
-        .unwrap_or_else(BoxDecoration::new);
+    let deco =
+        base.merge(e.style.clone().unwrap_or_default()).decoration().unwrap_or_else(BoxDecoration::new);
     let mut surface = Container::new().decoration(deco).padding(EdgeInsets::all(22.0)).child(body);
     if horizontal {
         surface = surface.width(e.size);

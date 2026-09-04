@@ -36,7 +36,9 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use parley::{Affinity, Alignment, AlignmentOptions, Cursor, FontWeight, Layout, LineHeight, Selection, StyleProperty};
+use parley::{
+    Affinity, Alignment, AlignmentOptions, Cursor, FontWeight, Layout, LineHeight, Selection, StyleProperty,
+};
 use vello::kurbo::Rect;
 use vello::peniko::Brush;
 
@@ -248,9 +250,11 @@ impl LineTable {
     pub(crate) fn caret_x(&self, i: usize, local: usize) -> f64 {
         let l = &self.lines[i];
         match &*l.layout.borrow() {
-            Some(layout) => Cursor::from_byte_index(layout, local.min(l.len), Affinity::Downstream)
-                .geometry(layout, 1.0)
-                .x0,
+            Some(layout) => {
+                Cursor::from_byte_index(layout, local.min(l.len), Affinity::Downstream)
+                    .geometry(layout, 1.0)
+                    .x0
+            }
             None => 0.0,
         }
     }
@@ -561,12 +565,13 @@ fn lines_vertical(t: &LineTable, a: usize, f: usize, extend: bool, up: bool) -> 
     // counts only if the caret actually changed VISUAL line (its y moved):
     // parley clamps to the line's start/end at the layout's boundary lines,
     // which must fall through to the source-line hop instead.
-    if !l.empty && let Some(layout) = l.layout() {
+    if !l.empty
+        && let Some(layout) = l.layout()
+    {
         let y_before =
             Cursor::from_byte_index(&layout, local, Affinity::Downstream).geometry(&layout, 1.0).y0;
         let sel = selection(&layout, local, local);
-        let moved =
-            if up { sel.previous_line(&layout, false) } else { sel.next_line(&layout, false) };
+        let moved = if up { sel.previous_line(&layout, false) } else { sel.next_line(&layout, false) };
         let y_after = moved.focus().geometry(&layout, 1.0).y0;
         let crossed = if up { y_after < y_before - 0.5 } else { y_after > y_before + 0.5 };
         if crossed {

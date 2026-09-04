@@ -5,8 +5,7 @@ use crate::ui::{doc, gap_h, gap_w, screen};
 fn chip(color: Color, w: f64, h: f64) -> Container {
     // A zero dimension means "fill": the container omits that SizedBox, and a
     // childless decorated container expands to its constraints (Flutter parity).
-    let mut c = container()
-        .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)));
+    let mut c = container().decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)));
     if w > 0.0 {
         c = c.width(w);
     }
@@ -53,7 +52,8 @@ pub fn columns() -> Element {
 fn any_count() -> impl IntoWidget {
     let count = create_signal(4usize);
     let n = count.get();
-    let colors = [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
+    let colors =
+        [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
     doc("Any number of children")
         .description("Columns stack as many children as you like — here up to 48, in a fixed-height stage with a scrollbar, so nothing overflows. Drag the slider to grow the list live.")
         .body(
@@ -87,7 +87,8 @@ fn any_count() -> impl IntoWidget {
 }
 
 fn many_items() -> impl IntoWidget {
-    let colors = [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
+    let colors =
+        [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
     doc("Many items, live")
         .description("A static 24-item column inside a fixed-height scroll area — long lists are just Columns, and the scrollbar keeps everything reachable.")
         .body(

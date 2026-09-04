@@ -175,11 +175,8 @@ impl RenderObject for RenderFlex {
         let n = children.len();
         let total_gap = if n > 1 { self.spacing * (n - 1) as f64 } else { 0.0 };
 
-        let (cross_min_child, cross_max_child) = if stretch && cross_bounded {
-            (cross_max, cross_max)
-        } else {
-            (0.0, cross_max)
-        };
+        let (cross_min_child, cross_max_child) =
+            if stretch && cross_bounded { (cross_max, cross_max) } else { (0.0, cross_max) };
 
         // Pass 1: inflexible children take their natural main size.
         let mut allocated_main = 0.0_f64;
@@ -210,8 +207,7 @@ impl RenderObject for RenderFlex {
                     FlexFit::Tight => (extent, extent),
                     FlexFit::Loose => (0.0, extent),
                 };
-                let c =
-                    self.child_constraints(main_min, main_max_c, cross_min_child, cross_max_child);
+                let c = self.child_constraints(main_min, main_max_c, cross_min_child, cross_max_child);
                 let size = cx.layout_child(child, c);
                 allocated_main += self.main_of(size);
                 max_cross = max_cross.max(self.cross_of(size));
@@ -273,7 +269,11 @@ impl RenderObject for RenderFlex {
             MainAxisAlignment::End => (free, 0.0),
             MainAxisAlignment::Center => (free / 2.0, 0.0),
             MainAxisAlignment::SpaceBetween => {
-                if n > 1 { (0.0, free / (n - 1) as f64) } else { (0.0, 0.0) }
+                if n > 1 {
+                    (0.0, free / (n - 1) as f64)
+                } else {
+                    (0.0, 0.0)
+                }
             }
             MainAxisAlignment::SpaceAround => {
                 let b = if n > 0 { free / n as f64 } else { 0.0 };
@@ -286,8 +286,8 @@ impl RenderObject for RenderFlex {
         };
 
         // Baseline alignment: children sit on the tallest baseline among them.
-        let baseline = self.axis == Axis::Horizontal
-            && self.cross_axis_alignment == CrossAxisAlignment::Baseline;
+        let baseline =
+            self.axis == Axis::Horizontal && self.cross_axis_alignment == CrossAxisAlignment::Baseline;
         let max_baseline = if baseline {
             children.iter().filter_map(|&(c, _)| cx.child_baseline(c)).fold(0.0_f64, f64::max)
         } else {
@@ -309,10 +309,18 @@ impl RenderObject for RenderFlex {
             } else {
                 match self.cross_axis_alignment {
                     CrossAxisAlignment::Start | CrossAxisAlignment::Stretch => {
-                        if self.cross_reversed() { final_cross - child_cross } else { 0.0 }
+                        if self.cross_reversed() {
+                            final_cross - child_cross
+                        } else {
+                            0.0
+                        }
                     }
                     CrossAxisAlignment::End => {
-                        if self.cross_reversed() { 0.0 } else { final_cross - child_cross }
+                        if self.cross_reversed() {
+                            0.0
+                        } else {
+                            final_cross - child_cross
+                        }
                     }
                     CrossAxisAlignment::Center | CrossAxisAlignment::Baseline => {
                         (final_cross - child_cross) / 2.0

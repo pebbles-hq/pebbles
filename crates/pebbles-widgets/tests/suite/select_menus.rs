@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui, animation, component};
 use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_testing::{draw_frame as frame};
+use pebbles_testing::draw_frame as frame;
 use pebbles_widgets::{
     OverlayHost, View, column, dropdown_menu, menu_item, menu_sub, overlay, select, select_item,
 };
@@ -32,14 +32,10 @@ fn tap(ui: &mut Ui, p: Offset) {
 fn select_root() -> impl IntoWidget {
     OverlayHost::wrap(
         column(vec![
-            select([
-                select_item("Apple"),
-                select_item("Banana").disabled(true),
-                select_item("Cherry"),
-            ])
-            .width(220.0)
-            .on_changed(|i, l| PICKED.with(|p| *p.borrow_mut() = Some((i, l.to_string()))))
-            .into_widget(),
+            select([select_item("Apple"), select_item("Banana").disabled(true), select_item("Cherry")])
+                .width(220.0)
+                .on_changed(|i, l| PICKED.with(|p| *p.borrow_mut() = Some((i, l.to_string()))))
+                .into_widget(),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Stretch),
     )
@@ -144,10 +140,19 @@ fn dd_root() -> impl IntoWidget {
         column(vec![
             dropdown_menu("Open")
                 .label("My Account")
-                .item(menu_item("Profile").on_select(|| ACTION.with(|a| *a.borrow_mut() = Some("Profile".into()))))
-                .item(menu_item("Billing").on_select(|| ACTION.with(|a| *a.borrow_mut() = Some("Billing".into()))))
+                .item(
+                    menu_item("Profile")
+                        .on_select(|| ACTION.with(|a| *a.borrow_mut() = Some("Profile".into()))),
+                )
+                .item(
+                    menu_item("Billing")
+                        .on_select(|| ACTION.with(|a| *a.borrow_mut() = Some("Billing".into()))),
+                )
                 .separator()
-                .item(menu_item("Log out").on_select(|| ACTION.with(|a| *a.borrow_mut() = Some("Log out".into()))))
+                .item(
+                    menu_item("Log out")
+                        .on_select(|| ACTION.with(|a| *a.borrow_mut() = Some("Log out".into()))),
+                )
                 .into_widget(),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Stretch),
@@ -165,8 +170,10 @@ fn sub_root() -> impl IntoWidget {
                 .item(menu_sub(
                     "Share",
                     [
-                        menu_item("Copy link").on_select(|| ACTION.with(|a| *a.borrow_mut() = Some("Copied link".into()))),
-                        menu_item("Invite teammates").on_select(|| ACTION.with(|a| *a.borrow_mut() = Some("Invite sent".into()))),
+                        menu_item("Copy link")
+                            .on_select(|| ACTION.with(|a| *a.borrow_mut() = Some("Copied link".into()))),
+                        menu_item("Invite teammates")
+                            .on_select(|| ACTION.with(|a| *a.borrow_mut() = Some("Invite sent".into()))),
                     ],
                 ))
                 .into_widget(),

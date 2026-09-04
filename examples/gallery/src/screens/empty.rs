@@ -60,11 +60,10 @@ fn mini_empty(glyph: IconData, title: &str) -> impl IntoWidget {
     container()
         .width(180.0)
         .height(150.0)
-        .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
-        .child(
-            empty()
-                .icon(glyph)
-                .title(title.to_string())
-                .description("A short hint lives here."),
+        .decoration(
+            BoxDecoration::new()
+                .border(Border::new(theme().colors.border, 1.0))
+                .radius(BorderRadius::all(theme().radius)),
         )
+        .child(empty().icon(glyph).title(title.to_string()).description("A short hint lives here."))
 }

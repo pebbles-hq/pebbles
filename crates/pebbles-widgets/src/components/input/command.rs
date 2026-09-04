@@ -250,7 +250,8 @@ fn render_command(p: &Props) -> AnyWidget {
             .child(text(p.empty.clone()).size(13.0).color(c.muted_foreground))
             .into_widget()
     } else {
-        let col = column(body).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min);
+        let col =
+            column(body).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min);
         if row > 7 {
             Container::new()
                 .height(320.0)
@@ -264,10 +265,9 @@ fn render_command(p: &Props) -> AnyWidget {
     // Inline command draws its own bordered surface; the palette gets the dialog's.
     let content = column(pebbles_core::children![
         search,
-        Container::new()
-            .width(inner)
-            .padding(EdgeInsets::symmetric(0.0, 8.0))
-            .child(Container::new().width(inner).height(1.0).decoration(BoxDecoration::new().color(c.border))),
+        Container::new().width(inner).padding(EdgeInsets::symmetric(0.0, 8.0)).child(
+            Container::new().width(inner).height(1.0).decoration(BoxDecoration::new().color(c.border))
+        ),
         list,
     ])
     .cross_axis_alignment(CrossAxisAlignment::Start)

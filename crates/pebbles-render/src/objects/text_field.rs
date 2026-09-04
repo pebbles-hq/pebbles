@@ -7,11 +7,11 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Color, Offset, Size};
 use parley::{
-    Affinity, Alignment, AlignmentOptions, Cursor, FontWeight, Layout, LineHeight,
-    PositionedLayoutItem, Selection, StyleProperty,
+    Affinity, Alignment, AlignmentOptions, Cursor, FontWeight, Layout, LineHeight, PositionedLayoutItem,
+    Selection, StyleProperty,
 };
+use pebbles_foundation::{Color, Offset, Size};
 use vello::Glyph;
 use vello::kurbo::{Affine, Rect};
 use vello::peniko::{Brush, Fill};
@@ -180,12 +180,7 @@ impl RenderTextField {
         }
         let f = self.focus.min(self.text.len());
         if self.preedit.is_empty() {
-            return Composed {
-                text: self.text.clone(),
-                color: self.style.color,
-                preedit: None,
-                caret: f,
-            };
+            return Composed { text: self.text.clone(), color: self.style.color, preedit: None, caret: f };
         }
         // Composing: splice the preedit in at the caret; caret sits at its end.
         let mut s = String::with_capacity(self.text.len() + self.preedit.len());
@@ -193,12 +188,7 @@ impl RenderTextField {
         s.push_str(&self.preedit);
         s.push_str(&self.text[f..]);
         let end = f + self.preedit.len();
-        Composed {
-            text: s,
-            color: self.style.color,
-            preedit: Some((f, end)),
-            caret: end,
-        }
+        Composed { text: s, color: self.style.color, preedit: Some((f, end)), caret: end }
     }
 }
 
@@ -257,8 +247,7 @@ impl RenderObject for RenderTextField {
         let layout: Rc<Layout<Brush>> = match cx.text.cached_layout(key) {
             Some((rc, _, _)) => rc,
             None => {
-                let mut builder =
-                    cx.text.layout.ranged_builder(&mut cx.text.fonts, display, 1.0, true);
+                let mut builder = cx.text.layout.ranged_builder(&mut cx.text.fonts, display, 1.0, true);
                 builder.push_default(StyleProperty::FontSize(self.style.font_size));
                 builder.push_default(StyleProperty::FontWeight(FontWeight::new(self.style.weight)));
                 builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
@@ -312,12 +301,7 @@ impl RenderObject for RenderTextField {
             );
             let visible = cx.visible();
             for (bb, _) in sel.geometry(layout) {
-                let rect = Rect::new(
-                    offset.x + bb.x0,
-                    offset.y + bb.y0,
-                    offset.x + bb.x1,
-                    offset.y + bb.y1,
-                );
+                let rect = Rect::new(offset.x + bb.x0, offset.y + bb.y0, offset.x + bb.x1, offset.y + bb.y1);
                 if rect.y1 < visible.y0 || rect.y0 > visible.y1 {
                     continue;
                 }
@@ -348,9 +332,8 @@ impl RenderObject for RenderTextField {
                 crate::stats::bump_glyph_run();
                 let run = glyph_run.run();
                 let synthesis = run.synthesis();
-                let glyph_transform = synthesis
-                    .skew()
-                    .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
+                let glyph_transform =
+                    synthesis.skew().map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
                 cx.scene
                     .draw_glyphs(run.font())
                     .brush(&glyph_run.style().brush)
@@ -454,11 +437,14 @@ impl RenderTextField {
                     t.lines
                         .iter()
                         .map(|l| {
-                            (l.key, Carry {
-                                layout: l.layout.borrow().clone(),
-                                height: l.height.get(),
-                                measured: l.measured.get(),
-                            })
+                            (
+                                l.key,
+                                Carry {
+                                    layout: l.layout.borrow().clone(),
+                                    height: l.height.get(),
+                                    measured: l.measured.get(),
+                                },
+                            )
                         })
                         .collect()
                 })
@@ -591,8 +577,7 @@ impl RenderTextField {
         // 1. Selection highlight (display offsets == text offsets: not obscured,
         // and skipped while composing, exactly like the single path).
         if has_text && !composing && self.anchor != self.focus {
-            let (s0, s1) =
-                (self.anchor.min(self.focus), self.anchor.max(self.focus));
+            let (s0, s1) = (self.anchor.min(self.focus), self.anchor.max(self.focus));
             for l in window {
                 let top = offset.y + l.y.get();
                 if top + l.height.get() < visible.y0 {
@@ -608,13 +593,7 @@ impl RenderTextField {
                 if l.empty {
                     // A fully-selected empty line shows a thin stub.
                     let r = Rect::new(offset.x, top, offset.x + 6.0, top + l.height.get());
-                    cx.scene.fill(
-                        Fill::NonZero,
-                        Affine::IDENTITY,
-                        self.style.selection_color,
-                        None,
-                        &r,
-                    );
+                    cx.scene.fill(Fill::NonZero, Affine::IDENTITY, self.style.selection_color, None, &r);
                     continue;
                 }
                 let la = s0.saturating_sub(l.start).min(l.len);
@@ -628,19 +607,8 @@ impl RenderTextField {
                     Cursor::from_byte_index(&layout, lf, Affinity::Downstream),
                 );
                 for (bb, _) in sel.geometry(&layout) {
-                    let rect = Rect::new(
-                        offset.x + bb.x0,
-                        top + bb.y0,
-                        offset.x + bb.x1,
-                        top + bb.y1,
-                    );
-                    cx.scene.fill(
-                        Fill::NonZero,
-                        Affine::IDENTITY,
-                        self.style.selection_color,
-                        None,
-                        &rect,
-                    );
+                    let rect = Rect::new(offset.x + bb.x0, top + bb.y0, offset.x + bb.x1, top + bb.y1);
+                    cx.scene.fill(Fill::NonZero, Affine::IDENTITY, self.style.selection_color, None, &rect);
                 }
             }
         }
@@ -665,16 +633,14 @@ impl RenderTextField {
                         continue;
                     };
                     let run_x0 = offset.x + f64::from(glyph_run.offset());
-                    if run_x0 + f64::from(glyph_run.advance()) < visible.x0 || run_x0 > visible.x1
-                    {
+                    if run_x0 + f64::from(glyph_run.advance()) < visible.x0 || run_x0 > visible.x1 {
                         continue;
                     }
                     crate::stats::bump_glyph_run();
                     let run = glyph_run.run();
                     let synthesis = run.synthesis();
-                    let glyph_transform = synthesis
-                        .skew()
-                        .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
+                    let glyph_transform =
+                        synthesis.skew().map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
                     cx.scene
                         .draw_glyphs(run.font())
                         .brush(&glyph_run.style().brush)
@@ -684,9 +650,7 @@ impl RenderTextField {
                         .normalized_coords(run.normalized_coords())
                         .draw(
                             Fill::NonZero,
-                            glyph_run
-                                .positioned_glyphs()
-                                .map(|g| Glyph { id: g.id, x: g.x, y: g.y }),
+                            glyph_run.positioned_glyphs().map(|g| Glyph { id: g.id, x: g.x, y: g.y }),
                         );
                 }
             }
@@ -714,19 +678,9 @@ impl RenderTextField {
                     Cursor::from_byte_index(&layout, lf, Affinity::Downstream),
                 );
                 for (bb, _) in sel.geometry(&layout) {
-                    let rect = Rect::new(
-                        offset.x + bb.x0,
-                        top + bb.y1 - 1.5,
-                        offset.x + bb.x1,
-                        top + bb.y1 - 0.5,
-                    );
-                    cx.scene.fill(
-                        Fill::NonZero,
-                        Affine::IDENTITY,
-                        self.style.caret_color,
-                        None,
-                        &rect,
-                    );
+                    let rect =
+                        Rect::new(offset.x + bb.x0, top + bb.y1 - 1.5, offset.x + bb.x1, top + bb.y1 - 0.5);
+                    cx.scene.fill(Fill::NonZero, Affine::IDENTITY, self.style.caret_color, None, &rect);
                 }
             }
         }

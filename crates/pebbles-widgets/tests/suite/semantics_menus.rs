@@ -6,8 +6,8 @@
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
 use pebbles_render::{SemanticsRole, TextEnv};
+use pebbles_testing::draw_frame as frame;
 use pebbles_widgets::{OverlayHost, View, column, dropdown_menu, menu_item, overlay};
-use pebbles_testing::{draw_frame as frame};
 
 fn tap(ui: &mut Ui, p: Offset) {
     ui.dispatch_pointer_down(p);
@@ -52,9 +52,6 @@ fn open_dropdown_announces_menu_and_menuitems() {
     assert!(items.iter().any(|n| n.props.label == "Profile"), "Profile row is a MenuItem");
     assert!(items.iter().any(|n| n.props.label == "Billing"), "Billing row is a MenuItem");
 
-    let wrap = items
-        .iter()
-        .find(|n| n.props.label == "Word Wrap")
-        .expect("the check row is a MenuItem");
+    let wrap = items.iter().find(|n| n.props.label == "Word Wrap").expect("the check row is a MenuItem");
     assert_eq!(wrap.props.checked, Some(true), "a checkable row reports its checked state");
 }

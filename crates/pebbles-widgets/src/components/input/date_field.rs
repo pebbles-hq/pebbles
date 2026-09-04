@@ -14,8 +14,8 @@ use super::calendar::{CaptionLayout, Date, calendar};
 use super::text_field::text_field;
 use super::{ButtonVariant, icon_button};
 use crate::overlay::{hide_overlay, show_overlay_guarded, window_size};
-use crate::widgets::{gap_w, row};
 use crate::style::{Style, styled};
+use crate::widgets::{gap_w, row};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{action_event, component_props, create_signal};
 
@@ -99,11 +99,7 @@ impl DateFormat {
         let m: u32 = ms.parse().ok()?;
         let d: u32 = ds.parse().ok()?;
         let y: i32 = ys.parse().ok()?;
-        if (1..=12).contains(&m) && (1..=31).contains(&d) && ys.len() == 4 {
-            Some((y, m, d))
-        } else {
-            None
-        }
+        if (1..=12).contains(&m) && (1..=31).contains(&d) && ys.len() == 4 { Some((y, m, d)) } else { None }
     }
 
     /// Format `(year, month, day)` into a string.
@@ -297,9 +293,7 @@ fn render_date(p: &DateProps) -> AnyWidget {
                 // Range calendar: both ends picked in the popover, then reported
                 // and written into the (read-only) input display.
                 let on_range = on_range_changed.clone();
-                let mut cal = calendar(move |_, _, _| {})
-                    .caption(caption)
-                    .range(true);
+                let mut cal = calendar(move |_, _, _| {}).caption(caption).range(true);
                 if let Some((s, e2)) = range_initial {
                     cal = cal.range_value(s, e2);
                 }
@@ -361,19 +355,14 @@ fn render_date(p: &DateProps) -> AnyWidget {
             };
             let max_left = if ww > 0.0 { ww - pop_w - 8.0 } else { 8.0 };
             let left = input_left.clamp(8.0, max_left.max(8.0));
-            show_overlay_guarded(content, left, button_top + 42.0, pop_w, 340.0, move || {
-                text.alive()
-            });
+            show_overlay_guarded(content, left, button_top + 42.0, pop_w, 340.0, move || text.alive());
         }),
     );
 
-    let ph = p.placeholder.clone().unwrap_or_else(|| {
-        if range_mode {
-            "Pick a range".to_string()
-        } else {
-            fmt.hint()
-        }
-    });
+    let ph = p
+        .placeholder
+        .clone()
+        .unwrap_or_else(|| if range_mode { "Pick a range".to_string() } else { fmt.hint() });
     let mut tf = text_field().placeholder(ph).bind(text);
     if clearable && !text.get().is_empty() {
         // ✕ resets to the placeholder; the calendar button stays to the right.
@@ -390,9 +379,7 @@ fn render_date(p: &DateProps) -> AnyWidget {
         // and any edit (incl. deletions) is reverted to the current display.
         tf = tf.filter(|_c| false).format(move |_s| text.peek());
     } else {
-        tf = tf
-            .format(move |s| fmt.mask(s))
-            .filter(move |c| fmt.allows(c));
+        tf = tf.format(move |s| fmt.mask(s)).filter(move |c| fmt.allows(c));
     }
     if let Some(w) = width {
         tf = tf.width(w);
@@ -410,8 +397,18 @@ fn joined(_fmt: &DateFormat, s: Date, e: Date) -> String {
 }
 
 const MONTHS: [&str; 12] = [
-    "January", "February", "March", "April", "May", "June", "July", "August", "September",
-    "October", "November", "December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
 ];
 
 /// `Jan 5, 2026`.

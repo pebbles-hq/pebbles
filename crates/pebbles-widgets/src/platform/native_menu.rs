@@ -64,30 +64,20 @@ fn to_native(entry: MenuEntry) -> NativeEntry {
     match entry {
         MenuEntry::Item(item) => native_item(item),
         MenuEntry::Separator => NativeEntry::Separator,
-        MenuEntry::Label(label) => NativeEntry::Item {
-            label,
-            accelerator: None,
-            enabled: false,
-            on_select: None,
-        },
-        MenuEntry::Check { label, checked, on_toggle } => NativeEntry::Check {
-            label,
-            checked,
-            accelerator: None,
-            enabled: true,
-            on_toggle,
-        },
-        MenuEntry::Sub { label, entries } => NativeEntry::Submenu {
-            label,
-            entries: entries.into_iter().map(to_native).collect(),
-        },
+        MenuEntry::Label(label) => {
+            NativeEntry::Item { label, accelerator: None, enabled: false, on_select: None }
+        }
+        MenuEntry::Check { label, checked, on_toggle } => {
+            NativeEntry::Check { label, checked, accelerator: None, enabled: true, on_toggle }
+        }
+        MenuEntry::Sub { label, entries } => {
+            NativeEntry::Submenu { label, entries: entries.into_iter().map(to_native).collect() }
+        }
     }
 }
 
 fn native_item(item: MenuItem) -> NativeEntry {
-    let accelerator = item
-        .shortcut_str()
-        .and_then(|s| pebbles_core::shortcuts::to_accelerator(s).ok());
+    let accelerator = item.shortcut_str().and_then(|s| pebbles_core::shortcuts::to_accelerator(s).ok());
     NativeEntry::Item {
         label: item.label_str().to_string(),
         accelerator,
@@ -107,10 +97,7 @@ fn native_item(item: MenuItem) -> NativeEntry {
 /// ])
 /// ```
 pub fn menu<I: IntoIterator<Item = MenuEntry>>(label: impl Into<String>, entries: I) -> NativeMenu {
-    NativeMenu {
-        label: label.into(),
-        entries: entries.into_iter().map(to_native).collect(),
-    }
+    NativeMenu { label: label.into(), entries: entries.into_iter().map(to_native).collect() }
 }
 
 /// Assemble top-level menus into a bar for `App::menu`.

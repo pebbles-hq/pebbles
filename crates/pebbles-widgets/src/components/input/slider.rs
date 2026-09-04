@@ -249,9 +249,7 @@ fn render_slider(p: &SliderProps) -> AnyWidget {
         Positioned::new(rounded(fill_len, TRACK, c.primary)).left(lo_f * len).top(cross_off(TRACK))
     } else {
         // vertical fill grows from the bottom (top = max)
-        Positioned::new(rounded(TRACK, fill_len, c.primary))
-            .left(cross_off(TRACK))
-            .top(len * (1.0 - hi_f))
+        Positioned::new(rounded(TRACK, fill_len, c.primary)).left(cross_off(TRACK)).top(len * (1.0 - hi_f))
     };
 
     // Thumbs.
@@ -267,9 +265,7 @@ fn render_slider(p: &SliderProps) -> AnyWidget {
         };
         let t = mk_thumb(c.background, c.primary, ring);
         let pos = if horiz {
-            Positioned::new(t)
-                .left((f * len - THUMB / 2.0).clamp(0.0, len - THUMB))
-                .top(cross_off(THUMB))
+            Positioned::new(t).left((f * len - THUMB / 2.0).clamp(0.0, len - THUMB)).top(cross_off(THUMB))
         } else {
             Positioned::new(t)
                 .left(cross_off(THUMB))
@@ -309,12 +305,7 @@ fn render_slider(p: &SliderProps) -> AnyWidget {
 
     // Accessibility: the slider announces its name + current values.
     let name = p.label.clone().unwrap_or_else(|| "Slider".to_string());
-    let value = vals
-        .get()
-        .iter()
-        .map(|v| format!("{v:.0}"))
-        .collect::<Vec<_>>()
-        .join(", ");
+    let value = vals.get().iter().map(|v| format!("{v:.0}")).collect::<Vec<_>>().join(", ");
     crate::widgets::semantics(pebbles_render::SemanticsRole::Slider, name, control)
         .value(value)
         .disabled(p.disabled)

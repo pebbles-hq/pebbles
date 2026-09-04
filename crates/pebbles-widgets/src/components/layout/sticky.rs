@@ -8,14 +8,14 @@ use std::rc::Rc;
 
 use pebbles_foundation::{CrossAxisAlignment, MainAxisSize};
 
-use pebbles_core::children;
-use pebbles_core::component_props;
-use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::components::heading;
 use crate::theme::theme;
 use crate::widgets::{
     ListView, Padding, Positioned, ScrollController, SizedBox, stack, transform, use_scroll_controller,
 };
+use pebbles_core::children;
+use pebbles_core::component_props;
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 // ---------------------------------------------------------------------------
 // StickyList
@@ -56,12 +56,7 @@ pub struct StickyList {
 
 /// Create an empty [`StickyList`] and add sections with [`section`](StickyList::section).
 pub fn sticky_list() -> StickyList {
-    StickyList {
-        sections: Vec::new(),
-        header_extent: 40.0,
-        row_extent: 48.0,
-        controller: None,
-    }
+    StickyList { sections: Vec::new(), header_extent: 40.0, row_extent: 48.0, controller: None }
 }
 
 impl StickyList {
@@ -140,8 +135,8 @@ fn render_sticky(p: &StickyProps) -> pebbles_core::Element {
     let count = slots.len();
     let slots = Rc::new(slots);
     let extents = Rc::new(extents);
-    let list = ListView::variable(count, move |i| extents[i], move |i| slots[i].clone())
-        .controller(controller);
+    let list =
+        ListView::variable(count, move |i| extents[i], move |i| slots[i].clone()).controller(controller);
 
     // The active section: the last one whose top is at/above the viewport top.
     let offset = controller.offset_signal().get();
@@ -152,19 +147,14 @@ fn render_sticky(p: &StickyProps) -> pebbles_core::Element {
     // Push-off: as the NEXT header approaches the top, the pinned one slides up
     // with it (translate = remaining gap − header extent).
     let next_top = section_tops.get(active + 1).copied();
-    let push = next_top
-        .map(|nt| (he - (nt - offset)).clamp(0.0, he))
-        .unwrap_or(0.0);
+    let push = next_top.map(|nt| (he - (nt - offset)).clamp(0.0, he)).unwrap_or(0.0);
     let pinned = transform(
         pebbles_render::Affine::translate((0.0, -push)),
         SizedBox::new(None, Some(he), Some(pinned_header)),
     );
 
-    stack(children![
-        list.into_widget(),
-        Positioned::new(pinned).top(0.0).left(0.0).right(0.0).into_widget(),
-    ])
-    .into_widget()
+    stack(children![list.into_widget(), Positioned::new(pinned).top(0.0).left(0.0).right(0.0).into_widget(),])
+        .into_widget()
 }
 
 // ---------------------------------------------------------------------------
@@ -203,9 +193,7 @@ impl CollapsingHeader {
     /// The scrollable content under the hero (scrolled with the header pinned
     /// on top).
     pub fn content(mut self, content: impl pebbles_core::IntoChildren) -> Self {
-        self.content = Some(
-            column_content(content.into_children()),
-        );
+        self.content = Some(column_content(content.into_children()));
         self
     }
     /// Drive the scroll programmatically.

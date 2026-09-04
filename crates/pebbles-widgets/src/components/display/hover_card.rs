@@ -4,7 +4,6 @@
 //! trigger + card, with a short close delay so moving between them doesn't flicker).
 //! Rendered in the passive overlay layer (click-through). Mirrors shadcn's Hover Card.
 
-
 use pebbles_foundation::{Color, EdgeInsets, Offset};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, PointerEvent};
 

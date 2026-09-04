@@ -128,22 +128,20 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features
 
   fmt:
-    name: Rustfmt (non-blocking)
+    name: Rustfmt
     runs-on: ubuntu-latest
-    # The tree predates rustfmt.toml and is not yet fmt-clean; this reports
-    # drift without gating. Flip to blocking after the one-time reformat.
-    continue-on-error: true
+    # Blocking: the one-time reformat has landed, so the tree is fmt-clean and
+    # stays that way. `cargo fmt --all` before pushing.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: cargo fmt --all --check
 
   docs:
-    name: Rustdoc (non-blocking)
+    name: Rustdoc
     runs-on: ubuntu-latest
-    # Broken/ambiguous intra-doc links are pre-existing debt. Reported, not
-    # gated — flip `continue-on-error` off once the tree documents clean, since
-    # module moves silently rot doc links otherwise.
-    continue-on-error: true
+    # Blocking: every intra-doc link resolves. This is the gate that catches the
+    # doc rot module moves and renames cause — a link to a moved item is a
+    # broken link, not a warning to skim past.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev

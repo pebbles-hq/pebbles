@@ -25,8 +25,8 @@ impl Clone for Box<dyn Widget> {
 }
 
 /// The base trait every widget implements. Concrete widgets normally get this via
-/// the [`render_widget!`] or [`parent_data_widget!`] macro rather than by hand;
-/// composite UI is authored as [`component`](crate::component) function components.
+/// the [`render_widget!`](crate::render_widget) or [`parent_data_widget!`](crate::parent_data_widget) macro rather than by hand;
+/// composite UI is authored as [`component`](fn@crate::component) function components.
 pub trait Widget: 'static {
     /// A name for diagnostics and tree dumps.
     fn debug_name(&self) -> &'static str;
@@ -99,7 +99,7 @@ impl IntoWidget for AnyWidget {
 /// A list of child widgets for `row`/`column`/`wrap`/`stack` (and any other
 /// children-taking API). **One syntax** (see the UI syntax guide):
 ///
-/// * literal children — the [`children!`] list: `column(children![text("a"), button("b")])`
+/// * literal children — the [`children!`](crate::children) list: `column(children![text("a"), button("b")])`
 /// * computed children — a `Vec`: `column(items.iter().map(row_for).collect::<Vec<_>>())`
 ///
 /// Both are the same thing — `children![..]` builds the `Vec` while boxing each

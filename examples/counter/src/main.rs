@@ -13,9 +13,7 @@ fn counter() -> impl IntoWidget {
         text(format!("{}", count.get())).size(72.0).color(palette::zinc::S900),
         gap_h(24.0),
         row(children![
-            button("−")
-                .variant(ButtonVariant::Outline)
-                .on_pressed(move || count.update(|c| *c -= 1)),
+            button("−").variant(ButtonVariant::Outline).on_pressed(move || count.update(|c| *c -= 1)),
             gap_w(16.0),
             button("+").on_pressed(move || count.update(|c| *c += 1)),
         ])

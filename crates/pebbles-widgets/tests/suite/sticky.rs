@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Point, Size, palette};
 use pebbles_render::{RenderParagraph, RenderTransform, TextEnv};
-use pebbles_testing::{frame};
+use pebbles_testing::frame;
 use pebbles_widgets::{
     ScrollController, View, collapsing_header, list_tile, section_header, sticky_list, text,
     use_scroll_controller,
@@ -17,10 +17,7 @@ thread_local! {
 }
 
 fn rows(labels: &[&str]) -> Vec<pebbles_core::AnyWidget> {
-    labels
-        .iter()
-        .map(|l| list_tile(*l).into_widget())
-        .collect()
+    labels.iter().map(|l| list_tile(*l).into_widget()).collect()
 }
 
 fn sticky_root() -> impl IntoWidget {
@@ -71,18 +68,14 @@ fn sticky_header_pins_the_active_section() {
     let t = ui.render_tree().find::<RenderTransform>().unwrap();
     let tr = ui.render_tree().object_ref(t).downcast_ref::<RenderTransform>().unwrap();
     let p = tr.matrix * Point::new(0.0, 0.0);
-    assert!(
-        (p.y + 30.0).abs() < 1e-6,
-        "push-off translates the pinned header by the gap: {p:?}"
-    );
+    assert!((p.y + 30.0).abs() < 1e-6, "push-off translates the pinned header by the gap: {p:?}");
 }
 
 fn collapse_root() -> impl IntoWidget {
     let controller = use_scroll_controller();
     CTL.with(|c| *c.borrow_mut() = Some(controller));
-    let rows: Vec<pebbles_core::AnyWidget> = (1..=12)
-        .map(|i| text(format!("content row {i}")).into_widget())
-        .collect();
+    let rows: Vec<pebbles_core::AnyWidget> =
+        (1..=12).map(|i| text(format!("content row {i}")).into_widget()).collect();
     collapsing_header(240.0, 64.0, |t| text(format!("t={t:.2}")).size(16.0))
         .content(rows)
         .controller(controller)

@@ -178,12 +178,7 @@ fn radio_section() -> impl IntoWidget {
     let plans: Vec<_> = ["Free", "Pro", "Enterprise"]
         .into_iter()
         .enumerate()
-        .map(|(i, name)| {
-            radio(plan.get() == i)
-                .label(name)
-                .on_selected(move || plan.set(i))
-                .into_widget()
-        })
+        .map(|(i, name)| radio(plan.get() == i).label(name).on_selected(move || plan.set(i)).into_widget())
         .collect();
 
     doc("Radio")

@@ -19,7 +19,10 @@ use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconKind};
 
 use crate::components::icon;
 use crate::theme::{mix, theme};
-use crate::widgets::{ClipRRect, Container, GestureDetector, Opacity, Positioned, center, column, gap_h, gap_w, row, stack, text};
+use crate::widgets::{
+    ClipRRect, Container, GestureDetector, Opacity, Positioned, center, column, gap_h, gap_w, row, stack,
+    text,
+};
 use pebbles_core::context::Callback;
 use pebbles_core::focus::{FocusNode, create_focus};
 use pebbles_core::reactive::{Signal, create_signal};
@@ -109,11 +112,10 @@ fn labeled(
         if !lines.is_empty() {
             lines.push(gap_h(2.0).into_widget());
         }
-        lines.push(
-            text(d).size(size.font() - 1.0).line_height(1.35).color(c.muted_foreground).into_widget(),
-        );
+        lines.push(text(d).size(size.font() - 1.0).line_height(1.35).color(c.muted_foreground).into_widget());
     }
-    let block = column(lines).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min);
+    let block =
+        column(lines).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min);
     let cross = if has_desc { CrossAxisAlignment::Start } else { CrossAxisAlignment::Center };
     row(children![control, gap_w(size.gap()), block])
         .cross_axis_alignment(cross)
@@ -244,27 +246,25 @@ fn render_checkbox(p: &Checkbox) -> AnyWidget {
     border = mix(border, c.foreground, 0.22 * hv as f32 * (1.0 - t as f32));
 
     let mut deco = BoxDecoration::new().color(bg).radius(BorderRadius::all(4.0));
-    deco = if focused {
-        deco.border(Border::new(c.ring, 2.0))
-    } else {
-        deco.border(Border::new(border, 1.5))
-    };
+    deco =
+        if focused { deco.border(Border::new(c.ring, 2.0)) } else { deco.border(Border::new(border, 1.5)) };
     let box_ = Container::new()
         .decoration(deco)
         .width(dim)
         .height(dim)
         .alignment(Alignment::CENTER)
-        .child(center(Opacity::new(
-            t as f32,
-            icon(glyph).size(dim * 0.72).color(c.primary_foreground),
-        )));
+        .child(center(Opacity::new(t as f32, icon(glyph).size(dim * 0.72).color(c.primary_foreground))));
 
     let body = labeled(box_.into_widget(), p.size, p.label.clone(), p.description.clone(), p.disabled);
     let out = wire(body, p.disabled, &p.on_changed, hovered, node, p.autofocus);
-    crate::widgets::semantics(crate::widgets::SemanticsRole::Checkbox, p.label.clone().unwrap_or_default(), out)
-        .checked(p.value)
-        .disabled(p.disabled)
-        .into_widget()
+    crate::widgets::semantics(
+        crate::widgets::SemanticsRole::Checkbox,
+        p.label.clone().unwrap_or_default(),
+        out,
+    )
+    .checked(p.value)
+    .disabled(p.disabled)
+    .into_widget()
 }
 
 // ---------------------------------------------------------------------------
@@ -440,11 +440,8 @@ fn render_radio(p: &Radio) -> AnyWidget {
             .height(dim * 0.5),
     );
     let mut deco = BoxDecoration::new().color(c.background).radius(BorderRadius::all(999.0));
-    deco = if focused {
-        deco.border(Border::new(c.ring, 2.0))
-    } else {
-        deco.border(Border::new(border, 1.5))
-    };
+    deco =
+        if focused { deco.border(Border::new(c.ring, 2.0)) } else { deco.border(Border::new(border, 1.5)) };
     let ring = Container::new()
         .decoration(deco)
         .width(dim)
@@ -454,10 +451,14 @@ fn render_radio(p: &Radio) -> AnyWidget {
 
     let body = labeled(ring.into_widget(), p.size, p.label.clone(), p.description.clone(), p.disabled);
     let out = wire(body, p.disabled, &p.on_selected, hovered, node, p.autofocus);
-    crate::widgets::semantics(crate::widgets::SemanticsRole::RadioButton, p.label.clone().unwrap_or_default(), out)
-        .checked(p.selected)
-        .disabled(p.disabled)
-        .into_widget()
+    crate::widgets::semantics(
+        crate::widgets::SemanticsRole::RadioButton,
+        p.label.clone().unwrap_or_default(),
+        out,
+    )
+    .checked(p.selected)
+    .disabled(p.disabled)
+    .into_widget()
 }
 
 // ---------------------------------------------------------------------------
@@ -573,9 +574,8 @@ fn render_toggle(p: &ToggleProps) -> AnyWidget {
     let hover_bg = mix(c.background, c.accent, 0.6 * hv as f32);
     let bg = mix(hover_bg, active, t as f32);
 
-    let mut deco = BoxDecoration::new()
-        .color(bg)
-        .radius(BorderRadius::all(p.radius.unwrap_or(theme().radius)));
+    let mut deco =
+        BoxDecoration::new().color(bg).radius(BorderRadius::all(p.radius.unwrap_or(theme().radius)));
     if focused {
         deco = deco.border(Border::new(c.ring, 2.0));
     } else if p.variant == ToggleVariant::Outline {

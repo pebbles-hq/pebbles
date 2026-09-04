@@ -24,10 +24,7 @@ fn menu_bar_translates_entries_and_accelerators() {
         ),
         menu(
             "Edit",
-            [
-                menu_item("Undo").shortcut("Mod+Z").into(),
-                menu_item("Unavailable").disabled(true).into(),
-            ],
+            [menu_item("Undo").shortcut("Mod+Z").into(), menu_item("Unavailable").disabled(true).into()],
         ),
     ]);
 

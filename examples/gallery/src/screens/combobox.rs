@@ -2,18 +2,8 @@ use pebbles::prelude::*;
 
 use crate::ui::{doc, screen};
 
-const FRAMEWORKS: [&str; 10] = [
-    "Next.js",
-    "SvelteKit",
-    "Nuxt",
-    "Remix",
-    "Astro",
-    "Angular",
-    "Vue",
-    "Solid",
-    "Qwik",
-    "Ember",
-];
+const FRAMEWORKS: [&str; 10] =
+    ["Next.js", "SvelteKit", "Nuxt", "Remix", "Astro", "Angular", "Vue", "Solid", "Qwik", "Ember"];
 
 pub fn combobox_screen() -> Element {
     screen("Combobox")
@@ -48,10 +38,10 @@ fn basic() -> impl IntoWidget {
 
 fn preselected() -> impl IntoWidget {
     doc("Preselected value")
-        .description("Seed the current choice with .value(index) — the trigger shows it and the menu checks it.")
-        .body(
-        combobox(FRAMEWORKS).width(260.0).value(2).placeholder("Select framework…"),
-    )
+        .description(
+            "Seed the current choice with .value(index) — the trigger shows it and the menu checks it.",
+        )
+        .body(combobox(FRAMEWORKS).width(260.0).value(2).placeholder("Select framework…"))
 }
 
 fn multi() -> impl IntoWidget {
@@ -78,15 +68,11 @@ fn multi() -> impl IntoWidget {
 }
 
 fn narrow() -> impl IntoWidget {
-    doc("Any width")
-        .description("The trigger and popover share a width — set it with .width().")
-        .body(
-            column(children![
-                combobox(["Low", "Medium", "High", "Critical"])
-                    .width(160.0)
-                    .placeholder("Priority…"),
-            ])
-            .cross_axis_alignment(CrossAxisAlignment::Start)
-            .main_axis_size(MainAxisSize::Min),
-        )
+    doc("Any width").description("The trigger and popover share a width — set it with .width().").body(
+        column(children![
+            combobox(["Low", "Medium", "High", "Critical"]).width(160.0).placeholder("Priority…"),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min),
+    )
 }

@@ -6,8 +6,8 @@ mod calendar;
 mod combobox;
 mod command;
 mod context_menu;
-mod field;
 mod date_field;
+mod field;
 mod input_otp;
 pub(crate) mod list_nav;
 pub(crate) mod menu;
@@ -27,21 +27,21 @@ pub use command::{
     Command, CommandGroup, CommandItem, command, command_group, command_item, command_palette,
 };
 pub use context_menu::{ContextMenu, context_menu};
-pub use field::{Field, field};
 pub use date_field::{DateField, DateFormat, DateOrder, date_field};
+pub use field::{Field, field};
 pub use input_otp::{InputOtp, input_otp};
 pub use list_nav::{ListNav, list_nav};
 pub use menu::{
-    DropdownMenu, MenuEntry, MenuItem, dropdown_menu, menu_check, menu_item, menu_label,
-    menu_separator, menu_sub,
+    DropdownMenu, MenuEntry, MenuItem, dropdown_menu, menu_check, menu_item, menu_label, menu_separator,
+    menu_sub,
 };
 pub use popover::{Popover, popover};
 pub use select::{Select, SelectItem, select, select_group, select_item};
 pub use slider::{Slider, slider};
 pub use text_field::{InputKind, TextField, text_area, text_field};
-pub use toggle_group::{ToggleGroup, toggle_group, toggle_group_labels};
 pub use time_field::{TimeField, time_field};
+pub use toggle_group::{ToggleGroup, toggle_group, toggle_group_labels};
 pub use toggles::{
-    Checkbox, Radio, RadioGroup, Switch, Toggle, ToggleSize, ToggleVariant, checkbox, radio,
-    radio_group, switch, toggle,
+    Checkbox, Radio, RadioGroup, Switch, Toggle, ToggleSize, ToggleVariant, checkbox, radio, radio_group,
+    switch, toggle,
 };

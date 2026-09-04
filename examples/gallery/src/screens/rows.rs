@@ -6,8 +6,7 @@ use crate::ui::{doc, gap_h, gap_w, screen};
 fn chip(color: Color, w: f64, h: f64) -> Container {
     // A zero dimension means "fill": the container omits that SizedBox, and a
     // childless decorated container expands to its constraints (Flutter parity).
-    let mut c = container()
-        .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)));
+    let mut c = container().decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)));
     if w > 0.0 {
         c = c.width(w);
     }
@@ -55,7 +54,8 @@ pub fn rows() -> Element {
 fn any_count() -> impl IntoWidget {
     let count = create_signal(3usize);
     let n = count.get();
-    let colors = [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
+    let colors =
+        [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
     doc("Any number of children")
         .description("Rows take as many children as you like — drag the slider to grow the row live. Shown twice: SpaceBetween (children pinned to the edges, gaps flex) and Start with fixed spacing.")
         .body(
@@ -99,7 +99,8 @@ fn any_count() -> impl IntoWidget {
 }
 
 fn many_items() -> impl IntoWidget {
-    let colors = [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
+    let colors =
+        [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
     doc("Many items, live")
         .description("A static look at 16 children in one row: top with .spacing(4) so every chip is visible, bottom with SpaceBetween so the edges pin and the gaps flex. No item limit — only your width.")
         .body(

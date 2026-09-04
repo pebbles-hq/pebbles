@@ -24,10 +24,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::components::input::menu::{RebuildableMenu, SubMenuHandles, estimate_height};
-use crate::components::input::list_nav::list_nav;
-use crate::components::menu_item;
 use crate::components::MenuEntry;
+use crate::components::input::list_nav::list_nav;
+use crate::components::input::menu::{RebuildableMenu, SubMenuHandles, estimate_height};
+use crate::components::menu_item;
 use crate::overlay::{show_overlay, window_size};
 use crate::style::Style;
 use crate::widgets::GestureDetector;
@@ -111,19 +111,35 @@ pub fn global_menu_on(child: impl IntoWidget) -> GestureDetector {
 fn standard_entries() -> Vec<MenuEntry> {
     let editor = editor_is_focused();
     vec![
-        menu_item("Cut").shortcut("⌘X").disabled(!editor).on_select(move || {
-            focus::dispatch_key(KeyInput::Cut);
-        }).into(),
-        menu_item("Copy").shortcut("⌘C").disabled(!editor).on_select(move || {
-            focus::dispatch_key(KeyInput::Copy);
-        }).into(),
-        menu_item("Paste").shortcut("⌘V").disabled(!editor).on_select(move || {
-            focus::dispatch_key(KeyInput::Paste);
-        }).into(),
+        menu_item("Cut")
+            .shortcut("⌘X")
+            .disabled(!editor)
+            .on_select(move || {
+                focus::dispatch_key(KeyInput::Cut);
+            })
+            .into(),
+        menu_item("Copy")
+            .shortcut("⌘C")
+            .disabled(!editor)
+            .on_select(move || {
+                focus::dispatch_key(KeyInput::Copy);
+            })
+            .into(),
+        menu_item("Paste")
+            .shortcut("⌘V")
+            .disabled(!editor)
+            .on_select(move || {
+                focus::dispatch_key(KeyInput::Paste);
+            })
+            .into(),
         crate::components::menu_separator(),
-        menu_item("Select All").shortcut("⌘A").disabled(!editor).on_select(move || {
-            focus::dispatch_key(KeyInput::SelectAll);
-        }).into(),
+        menu_item("Select All")
+            .shortcut("⌘A")
+            .disabled(!editor)
+            .on_select(move || {
+                focus::dispatch_key(KeyInput::SelectAll);
+            })
+            .into(),
     ]
 }
 
@@ -169,11 +185,8 @@ fn show_inner(x: f64, y: f64, entries: &[MenuEntry], style: Option<Style>, width
     let handles = HANDLES.with(|h| {
         let mut h = h.borrow_mut();
         if h.is_none() {
-            *h = Some(SubMenuHandles {
-                nav: list_nav(),
-                ctx: create_signal(None),
-                subs: Rc::new(Vec::new()),
-            });
+            *h =
+                Some(SubMenuHandles { nav: list_nav(), ctx: create_signal(None), subs: Rc::new(Vec::new()) });
         }
         h.clone().expect("handles")
     });

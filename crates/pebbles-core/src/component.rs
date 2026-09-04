@@ -42,10 +42,7 @@ pub fn component<W: IntoWidget + 'static>(func: fn() -> W) -> Component {
 /// Wrap a component `fn(&P) -> impl IntoWidget` with its props. All instances of the
 /// same component function share identity (so their element/state is reused
 /// positionally).
-pub fn component_props<P: 'static, W: IntoWidget + 'static>(
-    func: fn(&P) -> W,
-    props: P,
-) -> Component {
+pub fn component_props<P: 'static, W: IntoWidget + 'static>(func: fn(&P) -> W, props: P) -> Component {
     Component { id: func as usize, render: Rc::new(move || func(&props).into_widget()) }
 }
 

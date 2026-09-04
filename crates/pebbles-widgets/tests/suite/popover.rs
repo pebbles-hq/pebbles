@@ -4,7 +4,7 @@
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{container, context_menu, menu_item, overlay, OverlayHost, popover, text, View};
+use pebbles_widgets::{OverlayHost, View, container, context_menu, menu_item, overlay, popover, text};
 
 fn root() -> impl IntoWidget {
     // A fixed-size trigger at the top-left so we know where to tap.

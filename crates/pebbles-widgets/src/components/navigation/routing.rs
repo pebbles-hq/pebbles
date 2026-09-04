@@ -15,8 +15,8 @@
 //!     .route("settings", || component(settings_page))
 //! ```
 
+use crate::widgets::gap_h;
 use std::rc::Rc;
-use crate::widgets::{gap_h};
 
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
@@ -111,7 +111,6 @@ impl RouteView {
         self
     }
 }
-
 
 impl IntoWidget for RouteView {
     fn into_widget(self) -> AnyWidget {

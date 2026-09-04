@@ -63,7 +63,11 @@ impl Runner {
         }
     }
 
-    pub(super) fn open_window(&mut self, event_loop: &ActiveEventLoop, spec: pebbles_widgets::window::WindowSpec) {
+    pub(super) fn open_window(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        spec: pebbles_widgets::window::WindowSpec,
+    ) {
         let mut attrs = WindowAttributes::default()
             .with_title(spec.title.clone())
             .with_inner_size(LogicalSize::new(spec.width, spec.height))
@@ -196,8 +200,7 @@ impl Runner {
                         // A drag-scroll viewport claims the drag first (A4); a
                         // pan-hungry descendant under the pointer wins instead.
                         let claimed = w.ui.begin_content_drag(cursor);
-                        w.pan_target =
-                            if claimed { None } else { w.ui.pan_target_at(cursor) };
+                        w.pan_target = if claimed { None } else { w.ui.pan_target_at(cursor) };
                         let panned = w.pan_target.is_some_and(|t| w.ui.dispatch_pan_start(t, cursor));
                         w.ui.dispatch_pointer_down(cursor) || panned || claimed
                     }
@@ -238,8 +241,7 @@ impl Runner {
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == ElementState::Pressed {
                     // Escape closes this window's open (dismissible) modal dialog first.
-                    if event.logical_key == Key::Named(NamedKey::Escape)
-                        && pebbles_widgets::dialog::is_open()
+                    if event.logical_key == Key::Named(NamedKey::Escape) && pebbles_widgets::dialog::is_open()
                     {
                         pebbles_widgets::dialog::dismiss_top();
                         w.window.request_redraw();

@@ -27,9 +27,7 @@ fn component_macro_builds_a_working_ctor() {
     let mut ui = Ui::new();
     let mut env = TextEnv::new();
     // The generated ctor takes the args by value and returns an `Element`.
-    ui.mount_root(
-        View::new(palette::WHITE, labelled_box(40.0, "hi".to_string())).into_widget(),
-    );
+    ui.mount_root(View::new(palette::WHITE, labelled_box(40.0, "hi".to_string())).into_widget());
     ui.layout(&mut env, Size::new(200.0, 200.0));
 
     assert_eq!(RENDERED.with(Cell::get), 1, "the macro component rendered once");

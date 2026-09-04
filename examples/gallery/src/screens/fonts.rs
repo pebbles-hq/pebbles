@@ -93,10 +93,7 @@ fn family_card(name: &str, builtin: bool) -> impl IntoWidget {
         .child(
             column(children![
                 row(children![
-                    text(name.to_string())
-                        .font_family(name.to_string())
-                        .size(17.0)
-                        .semibold(),
+                    text(name.to_string()).font_family(name.to_string()).size(17.0).semibold(),
                     gap_w(8.0),
                     if builtin {
                         badge("bundled").variant(BadgeVariant::Secondary).into_widget()
@@ -106,10 +103,7 @@ fn family_card(name: &str, builtin: bool) -> impl IntoWidget {
                 ])
                 .main_axis_size(MainAxisSize::Min),
                 gap_h(6.0),
-                text(PANGRAM.to_string())
-                    .font_family(name.to_string())
-                    .size(15.0)
-                    .line_height(1.35),
+                text(PANGRAM.to_string()).font_family(name.to_string()).size(15.0).line_height(1.35),
                 text(SPECIMEN.to_string())
                     .font_family(name.to_string())
                     .size(13.0)
@@ -130,4 +124,3 @@ fn family_card(name: &str, builtin: bool) -> impl IntoWidget {
             .main_axis_size(MainAxisSize::Min),
         )
 }
-

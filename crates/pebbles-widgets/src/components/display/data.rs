@@ -11,8 +11,7 @@ use crate::components::{checkbox, icon};
 use crate::style::{Style, styled};
 use crate::theme::{mix, theme};
 use crate::widgets::{
-    Align, Container, Expanded, GestureDetector, Padding, SizedBox, center, column, gap_w, row,
-    spacer, text,
+    Align, Container, Expanded, GestureDetector, Padding, SizedBox, center, column, gap_w, row, spacer, text,
 };
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{animated, component_props, create_signal};
@@ -321,9 +320,7 @@ fn render_sort_header(p: &SortHeaderProps) -> AnyWidget {
 
     let inner = Padding::new(
         p.pad,
-        row(items)
-            .cross_axis_alignment(CrossAxisAlignment::Center)
-            .main_axis_size(MainAxisSize::Max),
+        row(items).cross_axis_alignment(CrossAxisAlignment::Center).main_axis_size(MainAxisSize::Max),
     );
     let mut g = GestureDetector::new(Container::new().color(bg).child(inner))
         .cursor(Cursor::Pointer)
@@ -360,8 +357,12 @@ fn render_table_row(p: &TableRowProps) -> AnyWidget {
     let mut cells: Vec<AnyWidget> = Vec::new();
     if let Some((checked, toggle)) = p.checkbox.clone() {
         cells.push(
-            SizedBox::new(Some(p.checkbox_width), None, Some(center(checkbox(checked).on_changed(move || toggle())).into_widget()))
-                .into_widget(),
+            SizedBox::new(
+                Some(p.checkbox_width),
+                None,
+                Some(center(checkbox(checked).on_changed(move || toggle())).into_widget()),
+            )
+            .into_widget(),
         );
     }
     for (i, cell) in p.cells.iter().enumerate() {
@@ -370,9 +371,7 @@ fn render_table_row(p: &TableRowProps) -> AnyWidget {
             Cell::Widget(w) => w.clone(),
         };
         let alignment = p.align.get(i).copied().flatten().unwrap_or(Alignment::CENTER_LEFT);
-        cells.push(
-            Expanded::new(Padding::new(p.cell_padding, Align::new(alignment, content))).into_widget(),
-        );
+        cells.push(Expanded::new(Padding::new(p.cell_padding, Align::new(alignment, content))).into_widget());
     }
 
     let mut g = GestureDetector::new(
@@ -396,10 +395,7 @@ impl IntoWidget for Table {
         // Surface style: transparent base, user wins; its text props drive cells.
         let base = crate::style::style();
         let merged = base.merge(self.style.clone().unwrap_or_default());
-        let cell_color = merged
-            .color
-            .or(self.cell_color)
-            .unwrap_or(th.colors.foreground);
+        let cell_color = merged.color.or(self.cell_color).unwrap_or(th.colors.foreground);
         let cell_size = merged.font_size.unwrap_or(self.cell_size);
 
         // Header style: muted base; user's box + text props win.
@@ -497,10 +493,7 @@ impl IntoWidget for Table {
         if rows.is_empty() {
             if let Some(empty_state) = self.empty_state.take() {
                 body.push(
-                    Container::new()
-                        .padding(EdgeInsets::all(24.0))
-                        .child(center(empty_state))
-                        .into_widget(),
+                    Container::new().padding(EdgeInsets::all(24.0)).child(center(empty_state)).into_widget(),
                 );
             }
         } else {
@@ -514,8 +507,7 @@ impl IntoWidget for Table {
                     let i = idx;
                     let toggle: Rc<dyn Fn()> = Rc::new(move || {
                         if let Some(f) = on_selection.clone() {
-                            let mut next: Vec<usize> =
-                                current.iter().copied().filter(|&v| v != i).collect();
+                            let mut next: Vec<usize> = current.iter().copied().filter(|&v| v != i).collect();
                             if !current.contains(&i) {
                                 next.push(i);
                                 next.sort_unstable();
@@ -551,9 +543,8 @@ impl IntoWidget for Table {
             body.push(footer);
         }
 
-        let content = column(body)
-            .cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .main_axis_size(MainAxisSize::Min);
+        let content =
+            column(body).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min);
         styled(content, merged).into_widget()
     }
 }

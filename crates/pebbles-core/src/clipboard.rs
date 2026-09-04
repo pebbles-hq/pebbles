@@ -3,7 +3,7 @@
 //! The core has no OS bindings, so it holds a **backend** the shell installs at
 //! startup ([`install`]) — normally an `arboard`-backed reader/writer for the real
 //! system clipboard. Until (or unless) one is installed, an in-process fallback
-//! string keeps copy/paste working within the app. Editors call [`read`]/[`write`].
+//! string keeps copy/paste working within the app. Editors call [`read`]/[`write`](fn@write).
 
 use std::cell::RefCell;
 

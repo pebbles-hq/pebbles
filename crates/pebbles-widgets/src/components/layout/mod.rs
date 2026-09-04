@@ -11,8 +11,8 @@ mod split;
 mod sticky;
 
 pub use chrome::{
-    BottomNav, BottomNavItem, NavItem, Scaffold, SideNav, TopPanel, bottom_nav, bottom_nav_item,
-    nav_item, scaffold, side_nav, top_panel,
+    BottomNav, BottomNavItem, NavItem, Scaffold, SideNav, TopPanel, bottom_nav, bottom_nav_item, nav_item,
+    scaffold, side_nav, top_panel,
 };
 pub use disclosure::{Accordion, Collapsible, accordion, collapsible};
 pub use panel::{Panel, panel};

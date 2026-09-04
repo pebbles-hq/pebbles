@@ -7,7 +7,7 @@ use std::cell::Cell;
 use pebbles_core::{Element, IntoWidget, Ui, action, component, create_effect, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{RenderConstrainedBox, TextEnv};
-use pebbles_widgets::{center, gesture_detector, SizedBox, View};
+use pebbles_widgets::{SizedBox, View, center, gesture_detector};
 
 /// A component whose visible width encodes how many times it was tapped.
 fn probe() -> Element {
@@ -93,11 +93,7 @@ fn component_effect_is_created_once_and_does_not_spin() {
     assert!(rebuilds < 1000, "reconciliation never converged — effect is spinning");
 
     // The effect ran exactly once despite the re-render its own write triggered.
-    assert_eq!(
-        EFFECT_RUNS.with(Cell::get),
-        1,
-        "a component effect must be created once, not per render"
-    );
+    assert_eq!(EFFECT_RUNS.with(Cell::get), 1, "a component effect must be created once, not per render");
 }
 
 thread_local! {

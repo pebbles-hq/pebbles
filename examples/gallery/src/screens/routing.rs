@@ -17,9 +17,8 @@ pub fn routing_screen() -> Element {
              constructed. NavStack is a Clone + Default history kept in a signal.",
         )
         .body(children![
-            doc("RouteView")
-                .description("Switch the visible page — only the matching route builds.")
-                .body(column(children![
+            doc("RouteView").description("Switch the visible page — only the matching route builds.").body(
+                column(children![
                     row(children![
                         button("Inbox").on_pressed(move || stack.update(|s| s.replace("inbox"))),
                         gap_w(8.0),
@@ -32,10 +31,10 @@ pub fn routing_screen() -> Element {
                             .route("sent", || text("Sent — 128 messages").size(15.0).into_widget())
                             .fallback(|| text("Not found").into_widget()),
                     ),
-                ])),
-            doc("NavStack")
-                .description("A push/pop history with a live depth and a Back button.")
-                .body(column(children![
+                ])
+            ),
+            doc("NavStack").description("A push/pop history with a live depth and a Back button.").body(
+                column(children![
                     text(format!("current: {cur} · depth {depth}")).size(14.0),
                     gap_h(10.0),
                     row(children![
@@ -47,6 +46,7 @@ pub fn routing_screen() -> Element {
                             })
                         }),
                     ]),
-                ])),
+                ])
+            ),
         ])
 }

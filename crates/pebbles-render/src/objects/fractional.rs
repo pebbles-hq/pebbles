@@ -20,17 +20,8 @@ pub struct RenderFractionallySizedBox {
 }
 
 impl RenderFractionallySizedBox {
-    pub fn new(
-        width_factor: Option<f64>,
-        height_factor: Option<f64>,
-        alignment: Alignment,
-    ) -> Self {
-        RenderFractionallySizedBox {
-            width_factor,
-            height_factor,
-            alignment,
-            position: Offset::ZERO,
-        }
+    pub fn new(width_factor: Option<f64>, height_factor: Option<f64>, alignment: Alignment) -> Self {
+        RenderFractionallySizedBox { width_factor, height_factor, alignment, position: Offset::ZERO }
     }
 }
 
@@ -45,8 +36,14 @@ impl RenderObject for RenderFractionallySizedBox {
         let child_constraints = BoxConstraints {
             min_width: self.width_factor.map(|f| constraints.max_width * f).unwrap_or(constraints.min_width),
             max_width: self.width_factor.map(|f| constraints.max_width * f).unwrap_or(constraints.max_width),
-            min_height: self.height_factor.map(|f| constraints.max_height * f).unwrap_or(constraints.min_height),
-            max_height: self.height_factor.map(|f| constraints.max_height * f).unwrap_or(constraints.max_height),
+            min_height: self
+                .height_factor
+                .map(|f| constraints.max_height * f)
+                .unwrap_or(constraints.min_height),
+            max_height: self
+                .height_factor
+                .map(|f| constraints.max_height * f)
+                .unwrap_or(constraints.max_height),
         }
         .enforce(constraints);
         let child_size = cx.layout_child(child, child_constraints);
@@ -55,10 +52,7 @@ impl RenderObject for RenderFractionallySizedBox {
         let size = constraints.constrain(constraints.biggest());
         let dw = size.width - child_size.width;
         let dh = size.height - child_size.height;
-        self.position = Offset::new(
-            dw * (self.alignment.x + 1.0) / 2.0,
-            dh * (self.alignment.y + 1.0) / 2.0,
-        );
+        self.position = Offset::new(dw * (self.alignment.x + 1.0) / 2.0, dh * (self.alignment.y + 1.0) / 2.0);
         cx.set_child_offset(child, Offset::ZERO);
         size
     }
@@ -71,11 +65,7 @@ impl RenderObject for RenderFractionallySizedBox {
 
     fn transform(&self, _size: Size) -> Option<Affine> {
         let pos = self.position;
-        if pos == Offset::ZERO {
-            None
-        } else {
-            Some(Affine::translate((pos.x, pos.y)))
-        }
+        if pos == Offset::ZERO { None } else { Some(Affine::translate((pos.x, pos.y))) }
     }
 
     fn debug_name(&self) -> &'static str {

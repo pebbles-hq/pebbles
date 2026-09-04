@@ -151,10 +151,7 @@ fn gated_layer() -> impl IntoWidget {
 }
 
 fn layered_root() -> impl IntoWidget {
-    pebbles_widgets::column(pebbles_core::children![
-        component(page_layer),
-        component(gated_layer),
-    ])
+    pebbles_widgets::column(pebbles_core::children![component(page_layer), component(gated_layer),])
 }
 
 #[test]

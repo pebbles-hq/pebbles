@@ -27,65 +27,49 @@ fn default() -> impl IntoWidget {
 fn fallback() -> impl IntoWidget {
     doc("Initials fallback")
         .description("With no image, an avatar renders initials on a colored background.")
-        .body(
-            wrap(children![
-                avatar("RS"),
-                avatar("AK"),
-                avatar("JB"),
-                avatar("CV")
-            ])
-            .spacing(14.0),
-        )
+        .body(wrap(children![avatar("RS"), avatar("AK"), avatar("JB"), avatar("CV")]).spacing(14.0))
 }
 
 fn sizes() -> impl IntoWidget {
-    doc("Sizes")
-        .description("Scale with .size(); the initials scale with it.")
-        .body(
-            wrap(children![
-                avatar("SM").size(28.0),
-                avatar("MD").size(40.0),
-                avatar("LG").size(56.0),
-                avatar("XL").size(72.0),
-            ])
-            .spacing(14.0),
-        )
+    doc("Sizes").description("Scale with .size(); the initials scale with it.").body(
+        wrap(children![
+            avatar("SM").size(28.0),
+            avatar("MD").size(40.0),
+            avatar("LG").size(56.0),
+            avatar("XL").size(72.0),
+        ])
+        .spacing(14.0),
+    )
 }
 
 fn shapes() -> impl IntoWidget {
-    doc("Shapes")
-        .description("Circle (default), rounded-square, or square via .shape().")
-        .body(
-            wrap(children![
-                avatar("CI").shape(AvatarShape::Circle),
-                avatar("RO").shape(AvatarShape::Rounded),
-                avatar("SQ").shape(AvatarShape::Square),
-                avatar("CN").src(IMG).shape(AvatarShape::Rounded),
-            ])
-            .spacing(14.0),
-        )
+    doc("Shapes").description("Circle (default), rounded-square, or square via .shape().").body(
+        wrap(children![
+            avatar("CI").shape(AvatarShape::Circle),
+            avatar("RO").shape(AvatarShape::Rounded),
+            avatar("SQ").shape(AvatarShape::Square),
+            avatar("CN").src(IMG).shape(AvatarShape::Rounded),
+        ])
+        .spacing(14.0),
+    )
 }
 
 fn colors() -> impl IntoWidget {
-    doc("Colors")
-        .description("Tint the fallback background with .color().")
-        .body(
-            wrap(children![
-                avatar("EM").color(palette::emerald::S600),
-                avatar("BL").color(palette::blue::S600),
-                avatar("RO").color(palette::rose::S600),
-                avatar("VI").color(palette::violet::S600),
-                avatar("AM").color(palette::amber::S500),
-            ])
-            .spacing(14.0),
-        )
+    doc("Colors").description("Tint the fallback background with .color().").body(
+        wrap(children![
+            avatar("EM").color(palette::emerald::S600),
+            avatar("BL").color(palette::blue::S600),
+            avatar("RO").color(palette::rose::S600),
+            avatar("VI").color(palette::violet::S600),
+            avatar("AM").color(palette::amber::S500),
+        ])
+        .spacing(14.0),
+    )
 }
 
 fn status_dots() -> impl IntoWidget {
     doc("Status")
-        .description(
-            "A small dot at the bottom-right via .status(color) — online, away, busy, offline.",
-        )
+        .description("A small dot at the bottom-right via .status(color) — online, away, busy, offline.")
         .body(
             wrap(children![
                 avatar("ON").status(palette::emerald::S500),
@@ -137,27 +121,29 @@ fn hover_card_demo() -> impl IntoWidget {
 
 fn group() -> impl IntoWidget {
     doc("Group")
-        .description("Overlap several avatars and cap the rest into a “+N” bubble with avatar_group(...).max(n).")
+        .description(
+            "Overlap several avatars and cap the rest into a “+N” bubble with avatar_group(...).max(n).",
+        )
         .body(
-        column(children![
-            avatar_group(vec![
-                avatar("RS").color(palette::emerald::S600),
-                avatar("AK").color(palette::blue::S600),
-                avatar("JB").color(palette::rose::S600),
-                avatar("CN").src(IMG),
-            ]),
-            gap_h(18.0),
-            avatar_group(vec![
-                avatar("RS").color(palette::emerald::S600),
-                avatar("AK").color(palette::blue::S600),
-                avatar("JB").color(palette::rose::S600),
-                avatar("CV").color(palette::violet::S600),
-                avatar("MK").color(palette::amber::S500),
-                avatar("TL").color(palette::teal::S600),
+            column(children![
+                avatar_group(vec![
+                    avatar("RS").color(palette::emerald::S600),
+                    avatar("AK").color(palette::blue::S600),
+                    avatar("JB").color(palette::rose::S600),
+                    avatar("CN").src(IMG),
+                ]),
+                gap_h(18.0),
+                avatar_group(vec![
+                    avatar("RS").color(palette::emerald::S600),
+                    avatar("AK").color(palette::blue::S600),
+                    avatar("JB").color(palette::rose::S600),
+                    avatar("CV").color(palette::violet::S600),
+                    avatar("MK").color(palette::amber::S500),
+                    avatar("TL").color(palette::teal::S600),
+                ])
+                .max(3),
             ])
-            .max(3),
-        ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_size(MainAxisSize::Min),
-    )
+            .cross_axis_alignment(CrossAxisAlignment::Start)
+            .main_axis_size(MainAxisSize::Min),
+        )
 }

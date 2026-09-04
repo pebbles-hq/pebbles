@@ -133,9 +133,7 @@ impl RenderPointerListener {
 
     /// Whether this listener participates in drag/pan tracking.
     pub fn wants_pan(&self) -> bool {
-        !self.on_pan_start.is_empty()
-            || !self.on_pan_update.is_empty()
-            || !self.on_pan_end.is_empty()
+        !self.on_pan_start.is_empty() || !self.on_pan_update.is_empty() || !self.on_pan_end.is_empty()
     }
 
     /// Whether this listener participates in axis-recognized drag tracking (the

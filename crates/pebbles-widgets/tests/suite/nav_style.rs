@@ -5,8 +5,8 @@
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::{IconKind, RenderDecoratedBox, TextEnv};
-use pebbles_widgets::{View, accordion, breadcrumb, column, menubar, menu_item, style, tabs, text};
-use pebbles_testing::{draw_frame as frame};
+use pebbles_testing::draw_frame as frame;
+use pebbles_widgets::{View, accordion, breadcrumb, column, menu_item, menubar, style, tabs, text};
 
 #[test]
 fn tabs_style_lands_on_the_strip() {
@@ -91,11 +91,9 @@ fn breadcrumb_separator_and_style_paint() {
                         .separator(IconKind::Dot)
                         .style(style().color(palette::BLUE).font_size(16.0))
                         .into_widget(),
-                    breadcrumb(
-                        ["a", "b", "c", "d", "e", "f"].into_iter().map(String::from).collect(),
-                    )
-                    .max_visible(3)
-                    .into_widget(),
+                    breadcrumb(["a", "b", "c", "d", "e", "f"].into_iter().map(String::from).collect())
+                        .max_visible(3)
+                        .into_widget(),
                 ])
                 .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
             }),

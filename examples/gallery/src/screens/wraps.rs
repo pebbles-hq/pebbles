@@ -24,7 +24,9 @@ fn tags() -> Vec<Badge> {
 
 fn chips() -> impl IntoWidget {
     doc("Chips")
-        .description("The classic chip filter bar — .spacing(8) between chips, .run_spacing(8) between lines.")
+        .description(
+            "The classic chip filter bar — .spacing(8) between chips, .run_spacing(8) between lines.",
+        )
         .body(wrap(tags()).spacing(8.0).run_spacing(8.0))
 }
 
@@ -98,14 +100,23 @@ fn avatars() -> impl IntoWidget {
     let th = theme();
     let names = ["RK", "Ana", "Bo", "Li", "Zoe", "Kim", "Max", "Sam", "Ivy", "Noe", "Gus", "Uma"];
     doc("Avatar rail")
-        .description("Circles flow and wrap the same way — an avatar rail that stays tidy at any panel width.")
+        .description(
+            "Circles flow and wrap the same way — an avatar rail that stays tidy at any panel width.",
+        )
         .body(
             wrap(
                 names
                     .into_iter()
                     .enumerate()
                     .map(|(i, n)| {
-                        let colors = [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
+                        let colors = [
+                            palette::BLUE,
+                            palette::GREEN,
+                            palette::AMBER,
+                            palette::PURPLE,
+                            palette::TEAL,
+                            palette::INDIGO,
+                        ];
                         container()
                             .width(36.0)
                             .height(36.0)

@@ -7,7 +7,7 @@
 //! .on_close(..).open()` returns a [`WindowId`]; [`close_window`] closes it. `winit`
 //! stays hidden — the shell drains these requests and manages the windows.
 //!
-//! The first (main) window is created by [`App::run`](pebbles_shell). Popovers and
+//! The first (main) window is created by `App::run` in the shell crate. Popovers and
 //! modal dialogs currently target the **main** window only; secondary windows host
 //! the core widget set.
 
@@ -283,9 +283,7 @@ thread_local! {
 }
 
 fn monitors_signal() -> pebbles_core::Signal<Vec<MonitorInfo>> {
-    MONITORS.with(|c| {
-        *c.borrow_mut().get_or_insert_with(|| pebbles_core::create_root_signal(Vec::new()))
-    })
+    MONITORS.with(|c| *c.borrow_mut().get_or_insert_with(|| pebbles_core::create_root_signal(Vec::new())))
 }
 
 /// The connected monitors (reactive — reading it subscribes the caller, so a component

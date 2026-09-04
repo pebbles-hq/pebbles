@@ -7,7 +7,9 @@ use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::{SemanticsRole, TextEnv};
 use pebbles_widgets::components::{TabsVariant, list_tile, progress, tabs};
-use pebbles_widgets::{button, checkbox, column, container, ListView, select, semantics, slider, switch, text, text_field, View};
+use pebbles_widgets::{
+    ListView, View, button, checkbox, column, container, select, semantics, slider, switch, text, text_field,
+};
 
 fn root() -> impl IntoWidget {
     column(vec![
@@ -90,9 +92,8 @@ fn long_tail_roles_reach_the_tree() {
     ui.layout(&mut env, Size::new(400.0, 400.0));
 
     let tree = ui.render_tree().semantics_tree();
-    let has = |r: SemanticsRole, label: &str| {
-        tree.iter().any(|n| n.props.role == r && n.props.label == label)
-    };
+    let has =
+        |r: SemanticsRole, label: &str| tree.iter().any(|n| n.props.role == r && n.props.label == label);
     assert!(has(SemanticsRole::MenuItem, "Copy"));
     assert!(has(SemanticsRole::Menu, "menu"));
     assert!(has(SemanticsRole::Dialog, "Settings"));
@@ -116,10 +117,7 @@ fn progress_reports_a_progressbar_with_percent() {
     ui.layout(&mut env, Size::new(300.0, 100.0));
 
     let tree = ui.render_tree().semantics_tree();
-    let pb = tree
-        .iter()
-        .find(|n| n.props.role == SemanticsRole::ProgressBar)
-        .expect("progressbar node");
+    let pb = tree.iter().find(|n| n.props.role == SemanticsRole::ProgressBar).expect("progressbar node");
     assert_eq!(pb.props.value.as_deref(), Some("50%"));
 }
 
@@ -142,8 +140,7 @@ fn tabs_report_tablist_and_the_selected_tab() {
 
     let tree = ui.render_tree().semantics_tree();
     assert!(tree.iter().any(|n| n.props.role == SemanticsRole::TabList), "tablist present");
-    let tab_nodes: Vec<_> =
-        tree.iter().filter(|n| n.props.role == SemanticsRole::Tab).collect();
+    let tab_nodes: Vec<_> = tree.iter().filter(|n| n.props.role == SemanticsRole::Tab).collect();
     assert_eq!(tab_nodes.len(), 2, "two tab nodes");
     let account = tab_nodes.iter().find(|n| n.props.label == "Account").expect("Account tab");
     assert_eq!(account.props.value.as_deref(), Some("selected"), "selected tab carries the flag");
@@ -152,9 +149,7 @@ fn tabs_report_tablist_and_the_selected_tab() {
 }
 
 fn list_root() -> impl IntoWidget {
-    container()
-        .height(300.0)
-        .child(ListView::builder(3, 44.0, |i| list_tile(format!("Item {i}"))))
+    container().height(300.0).child(ListView::builder(3, 44.0, |i| list_tile(format!("Item {i}"))))
 }
 
 #[test]
@@ -169,8 +164,7 @@ fn list_view_reports_a_list_of_listitems() {
 
     let tree = ui.render_tree().semantics_tree();
     assert!(tree.iter().any(|n| n.props.role == SemanticsRole::List), "list container present");
-    let items: Vec<_> =
-        tree.iter().filter(|n| n.props.role == SemanticsRole::ListItem).collect();
+    let items: Vec<_> = tree.iter().filter(|n| n.props.role == SemanticsRole::ListItem).collect();
     assert!(items.len() >= 3, "each visible non-interactive tile is a ListItem (got {})", items.len());
     assert!(items.iter().any(|n| n.props.label == "Item 0"), "tile title is the ListItem label");
 }

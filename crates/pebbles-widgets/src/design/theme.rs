@@ -196,12 +196,7 @@ pub fn theme_override(t: Theme, child: impl pebbles_core::IntoWidget) -> pebbles
 /// keeping alpha. Used for hover/pressed state shading.
 pub fn shade(color: Color, factor: f32) -> Color {
     let [r, g, b, a] = color.components;
-    Color::new([
-        (r * factor).clamp(0.0, 1.0),
-        (g * factor).clamp(0.0, 1.0),
-        (b * factor).clamp(0.0, 1.0),
-        a,
-    ])
+    Color::new([(r * factor).clamp(0.0, 1.0), (g * factor).clamp(0.0, 1.0), (b * factor).clamp(0.0, 1.0), a])
 }
 
 /// Linearly interpolate between two colors (`t` in `0.0..=1.0`). Used for hover/

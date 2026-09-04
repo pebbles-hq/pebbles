@@ -107,8 +107,7 @@ impl Gpu {
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
-        let mut enc =
-            self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         enc.copy_texture_to_buffer(
             TexelCopyTextureInfo {
                 texture: &texture,
@@ -193,24 +192,32 @@ pub fn run(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     let bg = theme().colors.background;
     let mut main = Ui::new();
     main.make_current();
-    main.mount_root(
-        View::new(bg, OverlayHost::wrap(component(windows).into_widget())).into_widget(),
-    );
+    main.mount_root(View::new(bg, OverlayHost::wrap(component(windows).into_widget())).into_widget());
     let mut side = Ui::new();
     side.make_current();
-    side.mount_root(
-        View::new(bg, OverlayHost::wrap(component(counter_window).into_widget())).into_widget(),
-    );
+    side.mount_root(View::new(bg, OverlayHost::wrap(component(counter_window).into_widget())).into_widget());
 
     // The script: increment the shared counter, send typed messages — the beats
     // that show live cross-window sync.
     let beats = [
         Beat { caption: "A second OS window opens, sharing the runtime", act: || {} },
         Beat { caption: "+1 in the main window", act: || state::counter().update(|c| *c += 1) },
-        Beat { caption: "+1 again — the other window already agrees", act: || state::counter().update(|c| *c += 1) },
-        Beat { caption: "A typed message crosses the channel", act: || state::ping().send("Hello from the main window".into()) },
-        Beat { caption: "+1 — no serialization, just a shared signal", act: || state::counter().update(|c| *c += 1) },
-        Beat { caption: "Another message, delivered instantly", act: || state::ping().send("State syncs live across windows".into()) },
+        Beat {
+            caption: "+1 again — the other window already agrees",
+            act: || state::counter().update(|c| *c += 1),
+        },
+        Beat {
+            caption: "A typed message crosses the channel",
+            act: || state::ping().send("Hello from the main window".into()),
+        },
+        Beat {
+            caption: "+1 — no serialization, just a shared signal",
+            act: || state::counter().update(|c| *c += 1),
+        },
+        Beat {
+            caption: "Another message, delivered instantly",
+            act: || state::ping().send("State syncs live across windows".into()),
+        },
         Beat { caption: "+1 — both windows in lockstep", act: || state::counter().update(|c| *c += 1) },
     ];
 

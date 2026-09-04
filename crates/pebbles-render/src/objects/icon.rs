@@ -70,8 +70,7 @@ impl RenderObject for RenderIcon {
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let scale = self.size / self.data.view;
         let t = Affine::translate((offset.x, offset.y)) * Affine::scale(scale);
-        let stroke =
-            Stroke::new(self.data.stroke_width).with_caps(Cap::Round).with_join(Join::Round);
+        let stroke = Stroke::new(self.data.stroke_width).with_caps(Cap::Round).with_join(Join::Round);
 
         for prim in self.data.prims {
             let path = prim_path(prim);

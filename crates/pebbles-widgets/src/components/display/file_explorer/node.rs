@@ -24,20 +24,19 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     let is_folder = node.kind == FsKind::Folder;
     let q = explorer.filter.get().trim().to_lowercase();
     let filtering = !q.is_empty();
-    let expanded =
-        is_folder && (explorer.expanded.get().contains(&node.id) || filtering);
+    let expanded = is_folder && (explorer.expanded.get().contains(&node.id) || filtering);
     let sel = explorer.selected.get();
     let selected = sel.contains(&node.id);
     // The FOCUS row gets the ring — driven by the focus signal (Mod+↑/↓ walks
     // it without selecting), falling back to the selection's active end.
-    let active =
-        explorer.active.get().or_else(|| sel.last().copied()) == Some(node.id);
+    let active = explorer.active.get().or_else(|| sel.last().copied()) == Some(node.id);
     let renaming = explorer.renaming.get() == Some(node.id);
     let dragging = explorer.dragging.get();
     let dragged = dragging && selected;
     let drop_target = dragging && explorer.drop_target.get() == Some(node.id);
     // A cut-pending row renders dimmed (like VSCode) until pasted or cancelled.
-    let cut_pending = matches!(explorer.clipboard.get(), Some((ref ids, ClipMode::Cut)) if ids.contains(&node.id));
+    let cut_pending =
+        matches!(explorer.clipboard.get(), Some((ref ids, ClipMode::Cut)) if ids.contains(&node.id));
     let hovered = create_signal(false);
 
     // Row background: FULL accent for selection (a subtle mix reads as "nothing
@@ -209,12 +208,7 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
             )
             .separator()
             .item(menu_item("Rename").shortcut("F2").on_select(explorer.rename_selected()))
-            .item(
-                menu_item("Delete")
-                    .shortcut("Del")
-                    .destructive()
-                    .on_select(explorer.delete_selected()),
-            )
+            .item(menu_item("Delete").shortcut("Del").destructive().on_select(explorer.delete_selected()))
             .into_widget()
     };
 

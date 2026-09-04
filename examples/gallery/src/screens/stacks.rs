@@ -5,8 +5,7 @@ use crate::ui::{doc, gap_h, gap_w, screen};
 fn chip(color: Color, w: f64, h: f64) -> Container {
     // A zero dimension means "fill": the container omits that SizedBox, and a
     // childless decorated container expands to its constraints (Flutter parity).
-    let mut c = container()
-        .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)));
+    let mut c = container().decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)));
     if w > 0.0 {
         c = c.width(w);
     }
@@ -107,12 +106,8 @@ fn positioned_section() -> impl IntoWidget {
 }
 
 fn _label(container: Container, text: &str) -> impl IntoWidget {
-    column(children![
-        container.into_widget(),
-        gap_h(6.0),
-        muted(text.to_string()).size(11.0).into_widget(),
-    ])
-    .main_axis_size(MainAxisSize::Min)
+    column(children![container.into_widget(), gap_h(6.0), muted(text.to_string()).size(11.0).into_widget(),])
+        .main_axis_size(MainAxisSize::Min)
 }
 
 fn fit_and_zorder() -> impl IntoWidget {

@@ -93,13 +93,9 @@ fn profile_row(shimmer: bool) -> impl IntoWidget {
     row(children![
         avatar_block,
         gap_w(10.0),
-        column(children![
-            skeleton(140.0, 13.0).shimmer(),
-            gap_h(6.0),
-            skeleton(90.0, 11.0),
-        ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_size(MainAxisSize::Min),
+        column(children![skeleton(140.0, 13.0).shimmer(), gap_h(6.0), skeleton(90.0, 11.0),])
+            .cross_axis_alignment(CrossAxisAlignment::Start)
+            .main_axis_size(MainAxisSize::Min),
     ])
     .main_axis_size(MainAxisSize::Min)
 }

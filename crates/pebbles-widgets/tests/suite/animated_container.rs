@@ -3,8 +3,8 @@
 
 use std::cell::{Cell, RefCell};
 
-use pebbles_core::{Signal, Ui, animation, component, create_signal};
 use pebbles_core::IntoWidget;
+use pebbles_core::{Signal, Ui, animation, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{RenderConstrainedBox, RenderPointerListener, TextEnv};
 use pebbles_widgets::{View, animated_container, chip, column, gap_h};
@@ -18,11 +18,13 @@ fn anim_shell() -> impl IntoWidget {
     let wide = WIDE.with(|c| c.borrow().expect("WIDE set before mount"));
     // A Column gives loose cross-axis constraints, so the animated width is free
     // to tween (under the View directly, the tight parent would override it).
-    column(vec![animated_container()
-        .width(if wide.get() { 300.0 } else { 100.0 })
-        .height(60.0)
-        .duration(0.2)
-        .into_widget()])
+    column(vec![
+        animated_container()
+            .width(if wide.get() { 300.0 } else { 100.0 })
+            .height(60.0)
+            .duration(0.2)
+            .into_widget(),
+    ])
 }
 
 #[test]

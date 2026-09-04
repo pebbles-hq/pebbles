@@ -11,8 +11,8 @@
 
 use std::time::Instant;
 
-use crate::reactive::{create_effect, create_memo, create_signal, flush_effects};
 use crate::reactive::stats;
+use crate::reactive::{create_effect, create_memo, create_signal, flush_effects};
 
 /// Flush the pending effect queue (what the shell does each frame via
 /// `rebuild_if_dirty`), so a headless write settles its graph.
@@ -97,11 +97,7 @@ fn shape_deep_chain_unread_is_wasted_work_baseline() {
     flush();
     eprintln!("[reactive deep-unread K={K}] {}", stats::summary());
     // T2 WIN: an unread memo chain recomputes NOTHING — a write only flips flags.
-    assert_eq!(
-        stats::memo_recomputes(),
-        0,
-        "lazy: unread memos do not recompute (was {K} eager)"
-    );
+    assert_eq!(stats::memo_recomputes(), 0, "lazy: unread memos do not recompute (was {K} eager)");
 }
 
 #[test]
@@ -143,11 +139,7 @@ fn shape_diamond_no_double_render_and_equal_cut() {
     flush();
     eprintln!("[reactive diamond equal-cut] {} leaf_renders={}", stats::summary(), leaf_renders());
     assert_eq!(stats::memo_recomputes(), 2, "both memos recompute (eager)");
-    assert_eq!(
-        leaf_renders(),
-        0,
-        "the leaf does NOT render — the equality cut stopped the cascade"
-    );
+    assert_eq!(leaf_renders(), 0, "the leaf does NOT render — the equality cut stopped the cascade");
 }
 
 #[test]

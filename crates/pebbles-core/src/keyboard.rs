@@ -45,7 +45,10 @@ pub enum KeyInput {
     /// Delete to the next word boundary (Ctrl+Delete).
     DeleteWordForward,
     /// Move (or, with `extend`, grow the selection by) one motion.
-    Move { motion: Motion, extend: bool },
+    Move {
+        motion: Motion,
+        extend: bool,
+    },
     /// Select the whole field (Ctrl+A).
     SelectAll,
     /// Copy the selection to the clipboard (Ctrl+C).

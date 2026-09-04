@@ -133,9 +133,8 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
     let node = create_focus();
     let n = p.tabs.len();
     let selected = p.selected;
-    let merged = crate::style::style()
-        .background(th.colors.background)
-        .merge(p.style.clone().unwrap_or_default());
+    let merged =
+        crate::style::style().background(th.colors.background).merge(p.style.clone().unwrap_or_default());
     let label_color = merged.color.unwrap_or(th.colors.foreground);
     let label_size = merged.font_size.unwrap_or(14.0);
     let label_weight = merged.font_weight.unwrap_or(500.0);
@@ -204,9 +203,9 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
     // underline overlaps it); Pills is plain; Solid is a muted rounded trough.
     let (strip_deco, strip_pad): (BoxDecoration, Option<EdgeInsets>) = match p.variant {
         TabsVariant::Underline => {
-            let base = crate::style::style().background(th.colors.background).border_bottom(
-                pebbles_render::BorderSide::new(th.colors.border, 1.0),
-            );
+            let base = crate::style::style()
+                .background(th.colors.background)
+                .border_bottom(pebbles_render::BorderSide::new(th.colors.border, 1.0));
             let m = base.merge(p.style.clone().unwrap_or_default());
             let mut deco = m.decoration().unwrap_or_else(BoxDecoration::new);
             if node.is_focused() {
@@ -233,9 +232,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
             (deco, Some(EdgeInsets::all(4.0)))
         }
     };
-    let mut strip = Container::new()
-        .decoration(strip_deco)
-        .child(row(bar).main_axis_size(MainAxisSize::Min));
+    let mut strip = Container::new().decoration(strip_deco).child(row(bar).main_axis_size(MainAxisSize::Min));
     if let Some(pad) = strip_pad {
         strip = strip.padding(pad);
     }
@@ -245,8 +242,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
     // --- content (cross-faded on switch) ------------------------------------
     let content = selected_content
         .map(|w| {
-            component_props(render_fade_swap, FadeSwapProps { index: selected, content: w })
-                .into_widget()
+            component_props(render_fade_swap, FadeSwapProps { index: selected, content: w }).into_widget()
         })
         .unwrap_or_else(|| gap_h(0.0).into_widget());
 
@@ -278,13 +274,8 @@ struct TabButtonProps {
 fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
     let c = theme().colors;
     let hovered = create_signal(false);
-    let hv =
-        if p.disabled { 0.0 } else { animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12) };
-    let label_color = if p.selected {
-        p.color
-    } else {
-        mix(c.muted_foreground, p.color, 0.3 * hv as f32)
-    };
+    let hv = if p.disabled { 0.0 } else { animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12) };
+    let label_color = if p.selected { p.color } else { mix(c.muted_foreground, p.color, 0.3 * hv as f32) };
 
     let cell: AnyWidget = match p.variant {
         TabsVariant::Underline => {
@@ -296,9 +287,7 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
             // the row's unbounded cross constraints).
             let underline_color = if p.selected { p.active_color } else { palette::TRANSPARENT };
             let underline = Container::new()
-                .decoration(
-                    BoxDecoration::new().color(underline_color).radius(BorderRadius::all(999.0)),
-                )
+                .decoration(BoxDecoration::new().color(underline_color).radius(BorderRadius::all(999.0)))
                 .height(3.0);
             stack(children![
                 Padding::new(
@@ -310,11 +299,7 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
             .into_widget()
         }
         TabsVariant::Pills => {
-            let bg = if p.selected {
-                mix(c.background, p.active_color, 0.14)
-            } else {
-                palette::TRANSPARENT
-            };
+            let bg = if p.selected { mix(c.background, p.active_color, 0.14) } else { palette::TRANSPARENT };
             Container::new()
                 .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(999.0)))
                 .child(Padding::new(

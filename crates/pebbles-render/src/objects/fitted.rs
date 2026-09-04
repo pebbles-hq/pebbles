@@ -103,15 +103,14 @@ impl RenderObject for RenderFittedBox {
         let (sx, sy) = self.scale_for(constraints, child_size);
         // The box wants to be the scaled child, kept inside the constraints while
         // preserving the child's aspect (Flutter semantics).
-        let size =
-            Self::constrain_preserving_aspect(constraints, Size::new(child_size.width * sx, child_size.height * sy));
+        let size = Self::constrain_preserving_aspect(
+            constraints,
+            Size::new(child_size.width * sx, child_size.height * sy),
+        );
         // Where the scaled child's top-left lands within the box (alignment -1..1).
         let dw = size.width - child_size.width * sx;
         let dh = size.height - child_size.height * sy;
-        self.position = Offset::new(
-            dw * (self.alignment.x + 1.0) / 2.0,
-            dh * (self.alignment.y + 1.0) / 2.0,
-        );
+        self.position = Offset::new(dw * (self.alignment.x + 1.0) / 2.0, dh * (self.alignment.y + 1.0) / 2.0);
         self.scale = (sx, sy);
         cx.set_child_offset(child, Offset::ZERO);
         size
@@ -136,10 +135,7 @@ impl RenderObject for RenderFittedBox {
     fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         // A fitted box's intrinsic extent is its child's — scaling is a paint-time
         // concern, not an intrinsic one.
-        cx.children()
-            .first()
-            .copied()
-            .and_then(|child| cx.child_intrinsic(child, axis, cross_extent))
+        cx.children().first().copied().and_then(|child| cx.child_intrinsic(child, axis, cross_extent))
     }
 
     fn debug_name(&self) -> &'static str {

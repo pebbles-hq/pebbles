@@ -25,9 +25,7 @@ fn bound() -> Signal<String> {
 }
 
 fn root() -> impl IntoWidget {
-    OverlayHost::wrap(column(vec![
-        text_field().bind(bound()).autofocus().width(240.0).into_widget(),
-    ]))
+    OverlayHost::wrap(column(vec![text_field().bind(bound()).autofocus().width(240.0).into_widget()]))
 }
 
 #[test]

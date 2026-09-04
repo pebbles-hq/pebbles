@@ -14,7 +14,9 @@ pub fn popovers() -> Element {
 
 fn form() -> impl IntoWidget {
     doc("Form popover")
-        .description("The canonical settings flyout — a titled panel with live inputs, anchored to its trigger.")
+        .description(
+            "The canonical settings flyout — a titled panel with live inputs, anchored to its trigger.",
+        )
         .body(
             row(children![
                 popover(
@@ -29,7 +31,10 @@ fn form() -> impl IntoWidget {
                         gap_w(10.0),
                         row(children![
                             button("Apply").size(ButtonSize::Sm).on_click(|| {}),
-                            button("Cancel").size(ButtonSize::Sm).variant(ButtonVariant::Ghost).on_click(|| {}),
+                            button("Cancel")
+                                .size(ButtonSize::Sm)
+                                .variant(ButtonVariant::Ghost)
+                                .on_click(|| {}),
                         ])
                         .main_axis_size(MainAxisSize::Min)
                         .spacing(6.0),

@@ -8,9 +8,7 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
 use pebbles_render::{RenderDecoratedBox, TextEnv};
-use pebbles_widgets::{
-    OverlayHost, View, column, list_tile, style, text,
-};
+use pebbles_widgets::{OverlayHost, View, column, list_tile, style, text};
 
 thread_local! {
     static TAPPED: RefCell<usize> = const { RefCell::new(0) };

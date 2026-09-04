@@ -2,8 +2,8 @@
 //! specific time (masked `HH:MM`), or open the dropdown and pick a slot. Supports
 //! 24-hour or 12-hour (AM/PM) and a configurable step. Styleable like any input.
 
+use pebbles_foundation::MainAxisSize;
 use std::rc::Rc;
-use pebbles_foundation::{MainAxisSize};
 
 use pebbles_render::{IconKind, PointerEvent, lucide};
 
@@ -166,7 +166,10 @@ fn render_time(p: &Props) -> AnyWidget {
                 .collect();
             let list = Container::new()
                 .height(260.0)
-                .child(SingleChildScrollView::vertical(column(items).main_axis_size(MainAxisSize::Min)).scrollbar_thickness(6.0))
+                .child(
+                    SingleChildScrollView::vertical(column(items).main_axis_size(MainAxisSize::Min))
+                        .scrollbar_thickness(6.0),
+                )
                 .into_widget();
             let menu = popover_surface(width, 4.0, list);
 
@@ -181,16 +184,14 @@ fn render_time(p: &Props) -> AnyWidget {
 
     let ph = p.placeholder.clone().unwrap_or_else(|| if hour12 { "hh:mm AM".into() } else { "HH:MM".into() });
     let oc_edit = oc.clone();
-    let mut tf = text_field()
-        .leading(lucide::CLOCK)
-        .placeholder(ph)
-        .bind(text)
-        .trailing(open_btn)
-        .on_changed(move |s| {
-            if let Some(cb) = &oc_edit {
-                cb(s);
-            }
-        });
+    let mut tf =
+        text_field().leading(lucide::CLOCK).placeholder(ph).bind(text).trailing(open_btn).on_changed(
+            move |s| {
+                if let Some(cb) = &oc_edit {
+                    cb(s);
+                }
+            },
+        );
     // 24-hour typing is masked to HH:MM; 12-hour allows the AM/PM suffix.
     if hour12 {
         tf = tf.filter(|c| c.is_ascii_digit() || c == ':' || c == ' ' || c.is_ascii_alphabetic());

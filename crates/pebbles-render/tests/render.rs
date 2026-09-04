@@ -3,10 +3,15 @@
 //! An integration test (it drives the crate through its public API), kept out of
 //! `src/` so the library source is implementation only.
 
-use pebbles_foundation::{Alignment, Axis, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, Size, TextBaseline, VerticalDirection};
+use pebbles_foundation::{
+    Alignment, Axis, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, Size, TextBaseline,
+    VerticalDirection,
+};
 
 use pebbles_render::constraints::BoxConstraints;
-use pebbles_render::objects::{RenderColoredBox, RenderConstrainedBox, RenderFlex, RenderPadding, RenderParagraph, ParagraphStyle};
+use pebbles_render::objects::{
+    ParagraphStyle, RenderColoredBox, RenderConstrainedBox, RenderFlex, RenderPadding, RenderParagraph,
+};
 use pebbles_render::text::TextEnv;
 use pebbles_render::tree::RenderTree;
 
@@ -46,7 +51,10 @@ fn alignment_inscribes_child() {
 fn builtin_fonts_register_list_and_shape() {
     let mut text = TextEnv::new();
     let fams = pebbles_render::fonts::available_families();
-    assert_eq!(&fams[..pebbles_render::fonts::BUILTIN_FAMILIES.len()], pebbles_render::fonts::BUILTIN_FAMILIES);
+    assert_eq!(
+        &fams[..pebbles_render::fonts::BUILTIN_FAMILIES.len()],
+        pebbles_render::fonts::BUILTIN_FAMILIES
+    );
     assert!(pebbles_render::fonts::has_family("inter")); // case-insensitive
     assert!(pebbles_render::fonts::is_builtin("SPACE GROTESK"));
 
@@ -89,9 +97,8 @@ fn padding_grows_and_offsets_child() {
     let mut tree = RenderTree::new();
     let mut text = TextEnv::new();
     let pad = tree.insert(Box::new(RenderPadding::new(EdgeInsets::all(10.0))));
-    let child = tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(
-        30.0, 30.0,
-    )))));
+    let child =
+        tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(30.0, 30.0)))));
     tree.insert_child(pad, child, 0);
     tree.root = Some(pad);
     tree.layout(&mut text, BoxConstraints::UNBOUNDED);
@@ -124,8 +131,8 @@ fn all_lucide_paths_parse() {
 /// space to the flex child.
 #[test]
 fn flex_distributes_remaining_space() {
-    use pebbles_render::objects::FlexParentData;
     use pebbles_foundation::FlexFit;
+    use pebbles_render::objects::FlexParentData;
 
     let mut tree = RenderTree::new();
     let mut text = TextEnv::new();
@@ -139,9 +146,8 @@ fn flex_distributes_remaining_space() {
         TextBaseline::Alphabetic,
     )));
     // Fixed 40px-wide child.
-    let fixed = tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(
-        40.0, 20.0,
-    )))));
+    let fixed =
+        tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(40.0, 20.0)))));
     // Flexible child (fills the rest).
     let flexible = tree.insert(Box::new(RenderColoredBox::new(pebbles_foundation::palette::BLUE)));
     tree.insert_child(flex, fixed, 0);
@@ -172,10 +178,8 @@ fn flex_spacing_reserves_and_positions() {
         VerticalDirection::Down,
         TextBaseline::Alphabetic,
     )));
-    let a =
-        tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(40.0, 20.0)))));
-    let b =
-        tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(40.0, 20.0)))));
+    let a = tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(40.0, 20.0)))));
+    let b = tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(40.0, 20.0)))));
     tree.insert_child(flex, a, 0);
     tree.insert_child(flex, b, 1);
     tree.root = Some(flex);
@@ -235,7 +239,8 @@ fn inspect_returns_the_hit_chain_deepest_last() {
         VerticalDirection::Down,
         TextBaseline::Alphabetic,
     )));
-    let child = tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(40.0, 20.0)))));
+    let child =
+        tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(40.0, 20.0)))));
     tree.insert_child(flex, child, 0);
     tree.root = Some(flex);
     tree.layout(&mut text, BoxConstraints::UNBOUNDED);
@@ -297,8 +302,7 @@ fn scroll_viewport_culls_offscreen_subtrees() {
     )));
     tree.insert_child(scroll, col, 0);
     for i in 0..100 {
-        let p = tree
-            .insert(Box::new(RenderParagraph::new(format!("row {i}"), ParagraphStyle::default())));
+        let p = tree.insert(Box::new(RenderParagraph::new(format!("row {i}"), ParagraphStyle::default())));
         tree.insert_child(col, p, i);
     }
     tree.root = Some(scroll);
@@ -329,9 +333,9 @@ fn scroll_viewport_culls_offscreen_subtrees() {
 
 #[test]
 fn shadow_bleeding_into_view_survives_culling() {
+    use pebbles_foundation::{Color, Offset};
     use pebbles_render::decoration::{BoxDecoration, BoxShadow};
     use pebbles_render::objects::RenderDecoratedBox;
-    use pebbles_foundation::{Color, Offset};
 
     // The window is 300×200. A shadowed card sits fully BELOW it (y 220..260),
     // wrapped in a plain tight box whose own rect is offscreen — its blur reaches
@@ -359,15 +363,13 @@ fn shadow_bleeding_into_view_survives_culling() {
     let push = |tree: &mut RenderTree, node: pebbles_render::RenderId, idx: usize| {
         tree.insert_child(col, node, idx);
     };
-    let spacer1 = tree
-        .insert(Box::new(RenderConstrainedBox::new(tight(300.0, 220.0))));
+    let spacer1 = tree.insert(Box::new(RenderConstrainedBox::new(tight(300.0, 220.0))));
     push(&mut tree, spacer1, 0);
     let wrap1 = tree.insert(Box::new(RenderConstrainedBox::new(tight(300.0, 40.0))));
     let card1 = tree.insert(Box::new(RenderDecoratedBox::new(shadow())));
     tree.insert_child(wrap1, card1, 0);
     push(&mut tree, wrap1, 1);
-    let spacer2 = tree
-        .insert(Box::new(RenderConstrainedBox::new(tight(300.0, 300.0))));
+    let spacer2 = tree.insert(Box::new(RenderConstrainedBox::new(tight(300.0, 300.0))));
     push(&mut tree, spacer2, 2);
     let wrap2 = tree.insert(Box::new(RenderConstrainedBox::new(tight(300.0, 40.0))));
     let card2 = tree.insert(Box::new(RenderDecoratedBox::new(shadow())));
@@ -402,8 +404,7 @@ fn scrolling_repositions_without_relayout() {
     )));
     tree.insert_child(scroll, col, 0);
     for i in 0..100 {
-        let p = tree
-            .insert(Box::new(RenderParagraph::new(format!("row {i}"), ParagraphStyle::default())));
+        let p = tree.insert(Box::new(RenderParagraph::new(format!("row {i}"), ParagraphStyle::default())));
         tree.insert_child(col, p, i);
     }
     tree.root = Some(scroll);
@@ -591,11 +592,7 @@ fn text_field_paint_is_windowed_like_paragraphs() {
     tree.layout(&mut text, tight(400.0, 240.0));
     let took = t0.elapsed();
     eprintln!("[perf field] keystroke relayout on 3000 lines: {took:?}");
-    assert_eq!(
-        text.shape_cache_len(),
-        before + 1,
-        "a keystroke shapes exactly ONE line of 3000"
-    );
+    assert_eq!(text.shape_cache_len(), before + 1, "a keystroke shapes exactly ONE line of 3000");
     pebbles_render::text_edit::clear(4243);
 }
 
@@ -639,10 +636,7 @@ fn text_field_lazy_estimates_settle_via_corrective_relayout() {
     let line_px = f64::from(style.font_size) * f64::from(style.line_height);
     {
         let table = pebbles_render::text_edit::get_lines(4245).expect("published");
-        assert!(
-            (table.line_height(300) - line_px * 8.0).abs() > 0.0,
-            "sanity: slot exists"
-        );
+        assert!((table.line_height(300) - line_px * 8.0).abs() > 0.0, "sanity: slot exists");
         assert!(!table.line_is_materialized(300), "the wrapped band starts unmaterialized");
         // Scroll the band into view (estimated position is close enough) — the
         // live wheel path: mutate the object's offset AND re-position the child

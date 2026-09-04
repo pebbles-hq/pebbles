@@ -5,7 +5,7 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{Color, Offset, Rect, Size};
-use vello::kurbo::{Affine, BezPath, Circle, Line, Point, RoundedRect, Rect as KRect, Stroke};
+use vello::kurbo::{Affine, BezPath, Circle, Line, Point, Rect as KRect, RoundedRect, Stroke};
 use vello::peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;

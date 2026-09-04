@@ -58,12 +58,7 @@ impl BorderRadius {
     }
 
     pub(crate) fn to_radii(self) -> kurbo::RoundedRectRadii {
-        kurbo::RoundedRectRadii::new(
-            self.top_left,
-            self.top_right,
-            self.bottom_right,
-            self.bottom_left,
-        )
+        kurbo::RoundedRectRadii::new(self.top_left, self.top_right, self.bottom_right, self.bottom_left)
     }
 }
 
@@ -160,11 +155,7 @@ pub enum Gradient {
 
 impl Gradient {
     /// A linear gradient. `linear-gradient(begin → end, colors…)`.
-    pub fn linear(
-        begin: Alignment,
-        end: Alignment,
-        colors: impl IntoIterator<Item = Color>,
-    ) -> Self {
+    pub fn linear(begin: Alignment, end: Alignment, colors: impl IntoIterator<Item = Color>) -> Self {
         Gradient::Linear { begin, end, colors: colors.into_iter().collect() }
     }
     /// A top-to-bottom linear gradient.
@@ -192,11 +183,7 @@ impl Gradient {
     /// A conic gradient with an explicit arc. `start_angle`/`end_angle` are radians
     /// clockwise from the positive X axis; a full-circle sweep must close the loop
     /// with matching first/last colors to avoid a hard seam.
-    pub fn sweep_arc(
-        start_angle: f64,
-        end_angle: f64,
-        colors: impl IntoIterator<Item = Color>,
-    ) -> Self {
+    pub fn sweep_arc(start_angle: f64, end_angle: f64, colors: impl IntoIterator<Item = Color>) -> Self {
         Gradient::Sweep {
             center: Alignment::CENTER,
             start_angle,

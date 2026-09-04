@@ -56,7 +56,9 @@ fn with_action() -> impl IntoWidget {
 
 fn stacked() -> impl IntoWidget {
     doc("Stacked")
-        .description("Show several at once — they queue bottom-right in order and pop one by one as they expire.")
+        .description(
+            "Show several at once — they queue bottom-right in order and pop one by one as they expire.",
+        )
         .body(
             row(children![
                 button("Stack three").variant(ButtonVariant::Outline).on_pressed(|| {

@@ -3,14 +3,14 @@
 //! rebuilds the tree from their own state.
 
 use pebbles_core::IntoCallback;
-use pebbles_foundation::palette;
 use pebbles_foundation::MainAxisSize;
+use pebbles_foundation::palette;
 use pebbles_render::{IconData, IconKind};
 
-use pebbles_core::context::Callback;
 use crate::theme::theme;
-use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Container, GestureDetector, Padding, column, gap_w, row, text};
+use pebbles_core::context::Callback;
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 use crate::components::icon;
 
@@ -103,10 +103,7 @@ fn emit(node: TreeNode, depth: f64, indent: f64, out: &mut Vec<AnyWidget>) {
 
     // Row is left-packed but fills the width (default MainAxisSize::Max) so the
     // selection highlight spans the whole row.
-    let content = Padding::new(
-        pebbles_foundation::EdgeInsets::symmetric(6.0, 5.0),
-        row(cells),
-    );
+    let content = Padding::new(pebbles_foundation::EdgeInsets::symmetric(6.0, 5.0), row(cells));
     let bg = if node.selected { c.accent } else { palette::TRANSPARENT };
     let mut gesture = GestureDetector::new(Container::new().color(bg).child(content));
     if has_children {
@@ -124,7 +121,6 @@ fn emit(node: TreeNode, depth: f64, indent: f64, out: &mut Vec<AnyWidget>) {
         }
     }
 }
-
 
 impl IntoWidget for TreeView {
     fn into_widget(mut self) -> AnyWidget {

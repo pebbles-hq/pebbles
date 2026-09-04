@@ -42,7 +42,11 @@ fn distribute(free: f64, n: usize, alignment: WrapAlignment) -> (f64, f64) {
         WrapAlignment::End => (free, 0.0),
         WrapAlignment::Center => (free / 2.0, 0.0),
         WrapAlignment::SpaceBetween => {
-            if n > 1 { (0.0, free / (n - 1) as f64) } else { (0.0, 0.0) }
+            if n > 1 {
+                (0.0, free / (n - 1) as f64)
+            } else {
+                (0.0, 0.0)
+            }
         }
         WrapAlignment::SpaceAround => {
             let b = if n > 0 { free / n as f64 } else { 0.0 };

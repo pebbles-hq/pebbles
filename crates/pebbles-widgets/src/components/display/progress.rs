@@ -77,13 +77,10 @@ fn render_progress(p: &Progress) -> AnyWidget {
             .decoration(BoxDecoration::new().color(color).radius(radius))
             .width(seg)
             .height(p.thickness);
-        let bar = track().child(ClipRRect::new(
-            radius,
-            stack(children![Positioned::new(bar).left(x).top(0.0)]),
-        ));
+        let bar =
+            track().child(ClipRRect::new(radius, stack(children![Positioned::new(bar).left(x).top(0.0)])));
         // C7: an indeterminate ProgressBar (no value).
-        return crate::widgets::semantics(pebbles_render::SemanticsRole::ProgressBar, "", bar)
-            .into_widget();
+        return crate::widgets::semantics(pebbles_render::SemanticsRole::ProgressBar, "", bar).into_widget();
     }
 
     let frac = (p.value / p.max).clamp(0.0, 1.0);

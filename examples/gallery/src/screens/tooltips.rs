@@ -56,7 +56,9 @@ fn delayed_rich() -> impl IntoWidget {
 
 fn styled() -> impl IntoWidget {
     doc("Styled")
-        .description(".style(..) restyles the bubble — colors, border, radius — while keeping the hover behavior.")
+        .description(
+            ".style(..) restyles the bubble — colors, border, radius — while keeping the hover behavior.",
+        )
         .body(
             row(children![
                 tooltip("Accent styled", button("Accent").variant(ButtonVariant::Outline)).style(

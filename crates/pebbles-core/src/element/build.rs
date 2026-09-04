@@ -107,8 +107,8 @@ impl Ui {
     /// and, for function components, the same component function.
     fn can_update(&self, old: ElementId, new_widget: &dyn Widget) -> bool {
         let existing = &self.elements[old].widget;
-        let same_type = (existing.as_any() as &dyn Any).type_id()
-            == (new_widget.as_any() as &dyn Any).type_id();
+        let same_type =
+            (existing.as_any() as &dyn Any).type_id() == (new_widget.as_any() as &dyn Any).type_id();
         if !same_type || existing.key() != new_widget.key() {
             return false;
         }
@@ -177,10 +177,8 @@ impl Ui {
             matches!(self.elements[id].kind, ElementKind::Function),
             "a dirty element must be a function component"
         );
-        let (_, render) = self.elements[id]
-            .widget
-            .as_component()
-            .expect("a dirty element must be a function component");
+        let (_, render) =
+            self.elements[id].widget.as_component().expect("a dirty element must be a function component");
         let old_child = self.elements[id].children.first().copied();
         // Guard spans the child reconcile (render-time contexts stay visible to the
         // subtree — same discipline as `update`/`inflate`).

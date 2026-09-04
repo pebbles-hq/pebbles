@@ -87,10 +87,7 @@ impl RenderObject for RenderOverflowBox {
         let size = constraints.constrain(child_size);
         let dw = size.width - child_size.width;
         let dh = size.height - child_size.height;
-        self.position = Offset::new(
-            dw * (self.alignment.x + 1.0) / 2.0,
-            dh * (self.alignment.y + 1.0) / 2.0,
-        );
+        self.position = Offset::new(dw * (self.alignment.x + 1.0) / 2.0, dh * (self.alignment.y + 1.0) / 2.0);
         cx.set_child_offset(child, Offset::ZERO);
         size
     }
@@ -103,11 +100,7 @@ impl RenderObject for RenderOverflowBox {
 
     fn transform(&self, _size: Size) -> Option<kurbo::Affine> {
         let pos = self.position;
-        if pos == Offset::ZERO {
-            None
-        } else {
-            Some(kurbo::Affine::translate((pos.x, pos.y)))
-        }
+        if pos == Offset::ZERO { None } else { Some(kurbo::Affine::translate((pos.x, pos.y))) }
     }
 
     fn debug_name(&self) -> &'static str {

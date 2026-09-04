@@ -24,11 +24,9 @@ fn value() -> f64 {
 fn root() -> impl IntoWidget {
     // Fixed 200-wide, 0..=100 step-1 slider, pinned top-left so window x maps to it.
     let _ = create_signal(0i32); // give the component an owner scope
-    column(vec![
-        slider(200.0).min(0.0).max(100.0).step(1.0).value(0.0).on_changed(record).into_widget(),
-    ])
-    .cross_axis_alignment(CrossAxisAlignment::Start)
-    .into_widget()
+    column(vec![slider(200.0).min(0.0).max(100.0).step(1.0).value(0.0).on_changed(record).into_widget()])
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .into_widget()
 }
 
 #[test]

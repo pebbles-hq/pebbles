@@ -627,4 +627,3 @@ pub const PURPLE: Color = purple::S500;
 pub const FUCHSIA: Color = fuchsia::S500;
 pub const PINK: Color = pink::S500;
 pub const ROSE: Color = rose::S500;
-

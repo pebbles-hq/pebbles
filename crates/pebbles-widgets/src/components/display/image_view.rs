@@ -12,9 +12,7 @@ use std::time::Duration;
 
 use base64::Engine;
 use pebbles_foundation::{Alignment, EdgeInsets};
-use pebbles_render::{
-    BorderRadius, BoxDecoration, Image, ImageFit, image_from_rgba8,
-};
+use pebbles_render::{BorderRadius, BoxDecoration, Image, ImageFit, image_from_rgba8};
 
 use crate::theme::theme;
 use crate::widgets::{Container, spinner, text};
@@ -43,17 +41,14 @@ fn decode(bytes: &[u8]) -> Result<Image, String> {
 /// Decode base64 (optionally a `data:...;base64,` URI) into an [`Image`].
 fn decode_base64(data: &str) -> Result<Image, String> {
     let payload = data.rsplit_once("base64,").map(|(_, b)| b).unwrap_or(data);
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(payload.trim())
-        .map_err(|e| e.to_string())?;
+    let bytes =
+        base64::engine::general_purpose::STANDARD.decode(payload.trim()).map_err(|e| e.to_string())?;
     decode(&bytes)
 }
 
 /// Fetch a URL and decode it (runs on a background thread).
 fn fetch(url: &str) -> Result<Image, String> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(15))
-        .build();
+    let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(15)).build();
     let resp = agent.get(url).call().map_err(|e| e.to_string())?;
     let mut bytes = Vec::new();
     resp.into_reader()
@@ -124,9 +119,7 @@ fn make(source: Source) -> ImageView {
 impl ImageView {
     /// An image decoded from a file on disk.
     pub fn asset(path: impl AsRef<std::path::Path>) -> Self {
-        let result = std::fs::read(path)
-            .map_err(|e| e.to_string())
-            .and_then(|bytes| decode(&bytes));
+        let result = std::fs::read(path).map_err(|e| e.to_string()).and_then(|bytes| decode(&bytes));
         make(Source::Ready(result))
     }
     /// An image fetched from a URL (loads on a background thread).
@@ -236,11 +229,7 @@ fn filler(p: &Props, child: AnyWidget) -> AnyWidget {
     if let Some(r) = p.radius {
         deco = deco.radius(r);
     }
-    sized(
-        Container::new().decoration(deco).alignment(Alignment::CENTER).child(child),
-        p,
-    )
-    .into_widget()
+    sized(Container::new().decoration(deco).alignment(Alignment::CENTER).child(child), p).into_widget()
 }
 
 fn placeholder_box(p: &Props) -> AnyWidget {

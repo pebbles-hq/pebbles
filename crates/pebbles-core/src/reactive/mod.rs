@@ -418,9 +418,7 @@ impl<T: 'static + Clone> Signal<T> {
     /// after dispose).
     pub fn try_peek(&self) -> Option<T> {
         self.pull_if_memo();
-        with_rt(|rt| {
-            rt.signals.get(self.id).map(|s| s.value.downcast_ref::<T>().unwrap().clone())
-        })
+        with_rt(|rt| rt.signals.get(self.id).map(|s| s.value.downcast_ref::<T>().unwrap().clone()))
     }
 
     /// If this signal backs a memo, bring it up to date (Reactively's
@@ -467,9 +465,8 @@ impl<T: 'static + Clone> Signal<T> {
         // OTHER signals, as before), then put the SAME box back. No clone of `T`,
         // no re-box. If `f` unmounts this signal's owner, the slot is gone on the
         // way back and we simply drop the box (the no-op-after-dispose contract).
-        let taken: Option<Box<dyn Any>> = with_rt(|rt| {
-            rt.signals.get_mut(self.id).map(|s| std::mem::replace(&mut s.value, Box::new(())))
-        });
+        let taken: Option<Box<dyn Any>> =
+            with_rt(|rt| rt.signals.get_mut(self.id).map(|s| std::mem::replace(&mut s.value, Box::new(()))));
         let Some(mut boxed) = taken else { return };
         stats::bump_write();
         f(boxed.downcast_mut::<T>().expect("Signal<T> slot always holds a T"));
@@ -836,8 +833,7 @@ fn recompute_memo(mid: MemoId) {
     with_rt(|rt| {
         rt.observer = prev;
         let mut new_sources = rt.source_stack.pop().unwrap_or_default();
-        let old_sources =
-            rt.memos.get_mut(mid).map(|n| std::mem::take(&mut n.sources)).unwrap_or_default();
+        let old_sources = rt.memos.get_mut(mid).map(|n| std::mem::take(&mut n.sources)).unwrap_or_default();
         if old_sources == new_sources {
             // Stable dependencies: no edge changes at all. Keep old, recycle new.
             if let Some(n) = rt.memos.get_mut(mid) {
@@ -972,10 +968,7 @@ impl<S: 'static + Clone> Store<S> {
     /// ```ignore
     /// let name = store.select_memo(|s| s.user.name.clone()); // re-renders only when the name changes
     /// ```
-    pub fn select_memo<R: 'static + Clone + PartialEq>(
-        &self,
-        f: impl Fn(&S) -> R + 'static,
-    ) -> Signal<R> {
+    pub fn select_memo<R: 'static + Clone + PartialEq>(&self, f: impl Fn(&S) -> R + 'static) -> Signal<R> {
         let signal = self.signal;
         create_memo(move || signal.with(&f))
     }
@@ -1170,12 +1163,7 @@ pub fn provide_context<T: 'static>(value: T) {
 /// render-time equivalent of React context / Flutter's `Theme.of`). Returns `None`
 /// outside a component subtree that provides `T`.
 pub fn consume_context<T: 'static + Clone>() -> Option<T> {
-    with_rt(|rt| {
-        rt.contexts
-            .iter()
-            .rev()
-            .find_map(|e| e.value.downcast_ref::<T>().cloned())
-    })
+    with_rt(|rt| rt.contexts.iter().rev().find_map(|e| e.value.downcast_ref::<T>().cloned()))
 }
 
 /// Drain the components of `window` scheduled to re-render (each `Ui` drains only

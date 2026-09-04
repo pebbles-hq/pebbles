@@ -49,21 +49,20 @@
 //! `z_index` (paint order = tree order) · `text_transform` (do it in app code) · text
 //! cascade/inheritance (a `Style`'s text props affect only the `Text` they're on) ·
 //! `blur`/`backdrop` (no cheap vello primitive today). Ambient values come from
-//! [`theme()`](crate::theme), never a style cascade.
+//! [`theme()`](fn@crate::theme), never a style cascade.
 
 use pebbles_foundation::{Alignment, Color, EdgeInsets, TextAlign};
-use pebbles_render::{
-    Affine, BlendMode, Border, BorderRadius, BorderSide, BoxConstraints, BoxDecoration, BoxShadow,
-    BoxShape, Cursor, Gradient, Image, ImageFit,
-};
 #[cfg(feature = "image-view")]
 use pebbles_render::image_from_rgba8;
-
-use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{
-    Align, ConstrainedBox, DecoratedBox, GestureDetector, Opacity, Padding, SizedBox, aspect_ratio,
-    transform,
+use pebbles_render::{
+    Affine, BlendMode, Border, BorderRadius, BorderSide, BoxConstraints, BoxDecoration, BoxShadow, BoxShape,
+    Cursor, Gradient, Image, ImageFit,
 };
+
+use crate::widgets::{
+    Align, ConstrainedBox, DecoratedBox, GestureDetector, Opacity, Padding, SizedBox, aspect_ratio, transform,
+};
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// A general style value (CSS-like). Every field is optional; unset fields are
 /// inherited from a merged base or simply not applied. Not `Copy` — it can own a
@@ -466,8 +465,7 @@ pub fn styled(child: impl IntoWidget, s: Style) -> AnyWidget {
         w = DecoratedBox::new(d, w).into_widget();
     }
     // Min/max constraints slot between decoration and the fixed size.
-    if s.min_width.is_some() || s.min_height.is_some() || s.max_width.is_some() || s.max_height.is_some()
-    {
+    if s.min_width.is_some() || s.min_height.is_some() || s.max_width.is_some() || s.max_height.is_some() {
         let c = BoxConstraints {
             min_width: s.min_width.unwrap_or(0.0),
             min_height: s.min_height.unwrap_or(0.0),

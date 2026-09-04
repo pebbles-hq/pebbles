@@ -5,7 +5,7 @@
 use pebbles_core::{IntoWidget, Ui, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{RenderConstrainedBox, TextEnv};
-use pebbles_widgets::{center, gesture_detector, SizedBox, View};
+use pebbles_widgets::{SizedBox, View, center, gesture_detector};
 
 /// A probe component whose visible size encodes how many times it has been tapped,
 /// so the test can observe the full signal-write → rebuild → relayout loop by reading

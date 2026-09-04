@@ -16,36 +16,39 @@
 pub mod constraints;
 pub mod decoration;
 pub mod direction;
+pub mod fonts;
 pub mod inspect;
 pub mod object;
 pub mod objects;
 pub mod scroll_metrics;
-pub mod fonts;
 pub mod stats;
 pub mod text;
 pub mod text_edit;
 pub mod tree;
 
-
 pub use constraints::BoxConstraints;
+pub use decoration::{
+    BlendMode, Border, BorderRadius, BorderSide, BoxDecoration, BoxShadow, BoxShape, Gradient, Image,
+    ImageFit, image_from_rgba8,
+};
 pub use direction::{set_text_direction, text_direction};
 pub use inspect::{InspectNode, format_chain, inspect_at};
-pub use decoration::{BlendMode, Border, BorderRadius, BorderSide, BoxDecoration, BoxShadow, BoxShape, Gradient, Image, ImageFit, image_from_rgba8};
 // (Image = peniko ImageBrush)
+pub use fonts::{
+    BUILTIN_FAMILIES, available_families, builtin_families, builtin_fonts, has_family, is_builtin,
+    register_user_font,
+};
 pub use object::RenderObject;
 pub use objects::{
     Canvas, Cursor, FlexParentData, IconData, IconKind, IconPrim, ParagraphStyle, PointerButton,
-    PointerEvent, RenderAlign,
-    RenderAspectRatio, RenderCanvas,
-    RenderBoundary, RenderClipRRect, RenderColoredBox, RenderConstrainedBox, RenderDecoratedBox, RenderFlex,
-    RenderFittedBox, RenderFractionallySizedBox, RenderIcon, RenderIntrinsicHeight,
-    RenderIntrinsicWidth, RenderLimitedBox, RenderMeasureProbe, RenderOpacity, RenderOverflowBox, RenderPadding,
-    RenderParagraph, RenderPointerListener, RenderScroll,
-    RenderList, RenderSpinner, RenderTransform, RenderStack, RenderTextField, RenderView, RenderWrap, TextSpanStyle,
-    RefreshState, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps, SemanticsRole, StackFit,
-    StackParentData, TapCallback, TextFieldStyle, lucide,
+    PointerEvent, RefreshState, RenderAlign, RenderAspectRatio, RenderBoundary, RenderCanvas,
+    RenderClipRRect, RenderColoredBox, RenderConstrainedBox, RenderDecoratedBox, RenderFittedBox, RenderFlex,
+    RenderFractionallySizedBox, RenderIcon, RenderIntrinsicHeight, RenderIntrinsicWidth, RenderLimitedBox,
+    RenderList, RenderMeasureProbe, RenderOpacity, RenderOverflowBox, RenderPadding, RenderParagraph,
+    RenderPointerListener, RenderScroll, RenderSpinner, RenderStack, RenderTextField, RenderTransform,
+    RenderView, RenderWrap, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps,
+    SemanticsRole, StackFit, StackParentData, TapCallback, TextFieldStyle, TextSpanStyle, lucide,
 };
-pub use fonts::{available_families, builtin_families, builtin_fonts, has_family, is_builtin, register_user_font, BUILTIN_FAMILIES};
 pub use text::TextEnv;
 pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};
 

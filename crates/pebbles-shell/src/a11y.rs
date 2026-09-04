@@ -13,8 +13,8 @@
 use std::sync::Mutex;
 
 use accesskit::{
-    Action, ActionHandler, ActionRequest, ActivationHandler, DeactivationHandler, Node, NodeId,
-    Rect, Role, Toggled, TreeId, TreeInfo, TreeUpdate,
+    Action, ActionHandler, ActionRequest, ActivationHandler, DeactivationHandler, Node, NodeId, Rect, Role,
+    Toggled, TreeId, TreeInfo, TreeUpdate,
 };
 use accesskit_winit::Adapter;
 use pebbles_core::Ui;
@@ -72,10 +72,7 @@ pub(crate) fn drain_actions(ui: &mut Ui, window: u32) -> bool {
             }
             AtAction::Click => {
                 if let Some(b) = nodes.iter().find(|n| n.id == node).map(|n| n.bounds) {
-                    let center = pebbles_foundation::Offset::new(
-                        (b.x0 + b.x1) / 2.0,
-                        (b.y0 + b.y1) / 2.0,
-                    );
+                    let center = pebbles_foundation::Offset::new((b.x0 + b.x1) / 2.0, (b.y0 + b.y1) / 2.0);
                     // Mirror a real tap: down → tap → up (the shell's own sequence).
                     ui.dispatch_pointer_down(center);
                     ui.dispatch_tap(center);
@@ -125,13 +122,8 @@ pub struct Bridge {
 impl Bridge {
     /// Create the bridge for `window`. Must be called before the window is shown.
     pub fn new(event_loop: &ActiveEventLoop, window: &Window) -> Self {
-        let adapter = Adapter::with_direct_handlers(
-            event_loop,
-            window,
-            NoActivation,
-            QueueAction,
-            NoDeactivation,
-        );
+        let adapter =
+            Adapter::with_direct_handlers(event_loop, window, NoActivation, QueueAction, NoDeactivation);
         Bridge { adapter }
     }
 
@@ -202,10 +194,7 @@ fn build_update(nodes: &[SemanticsNode], focus: Option<u64>) -> TreeUpdate {
     }
 
     // Focus must always be a valid node; fall back to the root window.
-    let focus = focus
-        .filter(|id| nodes.iter().any(|n| n.id == *id))
-        .map(NodeId)
-        .unwrap_or(ROOT);
+    let focus = focus.filter(|id| nodes.iter().any(|n| n.id == *id)).map(NodeId).unwrap_or(ROOT);
 
     TreeUpdate { nodes: out, tree: Some(TreeInfo::new(ROOT)), tree_id: TreeId::ROOT, focus }
 }
@@ -246,10 +235,7 @@ mod tests {
         // The button's semantics node id (what an AT would target).
         let node = {
             let tree = ui.render_tree().semantics_tree();
-            tree.iter()
-                .find(|n| n.props.role == SemanticsRole::Button)
-                .expect("button node")
-                .id
+            tree.iter().find(|n| n.props.role == SemanticsRole::Button).expect("button node").id
         };
 
         // Fabricate an AT "click" and drain it directly — no live adapter needed.

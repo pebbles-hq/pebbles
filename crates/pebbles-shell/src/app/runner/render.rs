@@ -13,9 +13,7 @@ use vello::peniko::Brush;
 fn frame_stats_enabled() -> bool {
     use std::sync::OnceLock;
     static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| {
-        std::env::var("PEBBLES_FRAME_STATS").is_ok_and(|v| v == "1" || v == "true")
-    })
+    *ENABLED.get_or_init(|| std::env::var("PEBBLES_FRAME_STATS").is_ok_and(|v| v == "1" || v == "true"))
 }
 
 /// X.6 — synthetic device-loss injection: `PEBBLES_SYNTH_GPU_LOSS=N` poisons the
@@ -222,13 +220,7 @@ impl Runner {
             && let Some(r) = self.inspect_rect
         {
             let accent = Color::from_rgba8(56, 189, 248, 255); // sky-400
-            self.scene.stroke(
-                &Stroke::new(1.0),
-                Affine::IDENTITY,
-                &Brush::Solid(accent),
-                None,
-                &r,
-            );
+            self.scene.stroke(&Stroke::new(1.0), Affine::IDENTITY, &Brush::Solid(accent), None, &r);
         }
         self.frame.reset();
         self.frame.append(&self.scene, Some(Affine::scale(scale)));
@@ -316,18 +308,11 @@ impl Runner {
             // Timeout / occluded / outdated / lost — skip this frame and try again.
             _ => return,
         };
-        let mut encoder =
-            device_handle.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("pebbles.blit"),
-            });
-        let target_view =
-            surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        surface.blitter.copy(
-            &device_handle.device,
-            &mut encoder,
-            &surface.target_view,
-            &target_view,
-        );
+        let mut encoder = device_handle
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.blit") });
+        let target_view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        surface.blitter.copy(&device_handle.device, &mut encoder, &surface.target_view, &target_view);
         device_handle.queue.submit([encoder.finish()]);
         active.window.pre_present_notify();
         surface_texture.present();
@@ -467,8 +452,7 @@ impl Runner {
         let mut encoder = device_handle
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.window.blit") });
-        let target_view =
-            surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let target_view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
         surface.blitter.copy(&device_handle.device, &mut encoder, &surface.target_view, &target_view);
         device_handle.queue.submit([encoder.finish()]);
         w.window.pre_present_notify();

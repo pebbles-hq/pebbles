@@ -12,18 +12,18 @@ use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets, MainAxisSize};
 use pebbles_render::text_edit as edit;
-use pebbles_render::{
-    BoxDecoration, Cursor, IconData, IconKind, PointerEvent, TextFieldStyle, lucide,
-};
+use pebbles_render::{BoxDecoration, Cursor, IconData, IconKind, PointerEvent, TextFieldStyle, lucide};
 
 use super::{ButtonVariant, icon_button};
 use crate::components::icon;
 use crate::theme::{mix, theme};
-use crate::widgets::{Container, Expanded, GestureDetector, Opacity, column, editable, gap_h, gap_w, row, text};
+use crate::widgets::{
+    Container, Expanded, GestureDetector, Opacity, column, editable, gap_h, gap_w, row, text,
+};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{
-    KeyInput, Motion, Signal, action_event, animated, clipboard, component_props,
-    create_cleanup, create_focus, create_loop_while, create_signal, keyboard,
+    KeyInput, Motion, Signal, action_event, animated, clipboard, component_props, create_cleanup,
+    create_focus, create_loop_while, create_signal, keyboard,
 };
 
 /// One undo/redo snapshot: text + selection.
@@ -551,8 +551,7 @@ impl Editor {
                     t = t.chars().filter(|ch| keep(*ch)).collect();
                 }
                 if let Some(max) = max_length {
-                    let remaining = max
-                        .saturating_sub(v.chars().count() - v[s0..s1].chars().count());
+                    let remaining = max.saturating_sub(v.chars().count() - v[s0..s1].chars().count());
                     t = t.chars().take(remaining).collect();
                 }
                 if t.is_empty() {
@@ -778,13 +777,9 @@ fn render_field(p: &Props) -> AnyWidget {
     let eff_filter = p.char_filter.clone().or_else(|| kind_filter(kind));
     let eff_format = p.format.clone().or_else(|| kind_format(kind));
     let eff_leading = p.leading.or_else(|| kind_leading(kind));
-    let eff_placeholder = if p.placeholder.is_empty() {
-        kind_placeholder(kind).to_string()
-    } else {
-        p.placeholder.clone()
-    };
-    let eff_obscure =
-        if kind == InputKind::Password { (!visible.get()).then_some('•') } else { p.obscure };
+    let eff_placeholder =
+        if p.placeholder.is_empty() { kind_placeholder(kind).to_string() } else { p.placeholder.clone() };
+    let eff_obscure = if kind == InputKind::Password { (!visible.get()).then_some('•') } else { p.obscure };
 
     // Only a live (enabled) field is focusable + edits.
     if !disabled {
@@ -803,8 +798,7 @@ fn render_field(p: &Props) -> AnyWidget {
             {
                 return;
             }
-            let (changed, submit) =
-                ed.apply(k, filter.as_deref(), max_length, format.as_deref());
+            let (changed, submit) = ed.apply(k, filter.as_deref(), max_length, format.as_deref());
             if changed {
                 blink_stamp.set(blink_loop.peek());
                 if let Some(cb) = &on_changed {
@@ -932,12 +926,8 @@ fn render_field(p: &Props) -> AnyWidget {
         .radius_all(theme().radius);
     let merged = base.merge(p.style.clone().unwrap_or_default());
     let deco = merged.decoration().unwrap_or_else(BoxDecoration::new);
-    let mut field = Container::new()
-        .decoration(deco)
-        .padding(padding)
-        .height(height)
-        .alignment(align)
-        .child(content);
+    let mut field =
+        Container::new().decoration(deco).padding(padding).height(height).alignment(align).child(content);
     if let Some(w) = merged.width.or(p.width) {
         field = field.width(w);
     }
@@ -960,8 +950,7 @@ fn render_field(p: &Props) -> AnyWidget {
             .on_pan_update(action_event(move |e: PointerEvent| {
                 let (tx, ty) = (e.position.x - cl, e.position.y - ct);
                 let v = ed.value.peek();
-                let (pa, pf) =
-                    (snap_boundary(&v, ed.anchor.peek()), snap_boundary(&v, ed.focus.peek()));
+                let (pa, pf) = (snap_boundary(&v, ed.anchor.peek()), snap_boundary(&v, ed.focus.peek()));
                 if let Some((a, f)) = edit::extend_to(ed.id, pa, pf, tx, ty) {
                     ed.anchor.set(a);
                     ed.focus.set(f);
@@ -982,14 +971,10 @@ fn render_field(p: &Props) -> AnyWidget {
     // Accessibility: a text input announcing its name (label, else placeholder), its
     // current value and disabled state.
     let a11y_name = p.label.clone().unwrap_or_else(|| eff_placeholder.clone());
-    let field_box = crate::widgets::semantics(
-        crate::widgets::SemanticsRole::TextInput,
-        a11y_name,
-        field_box,
-    )
-    .value(ed.value.peek())
-    .disabled(disabled)
-    .into_widget();
+    let field_box = crate::widgets::semantics(crate::widgets::SemanticsRole::TextInput, a11y_name, field_box)
+        .value(ed.value.peek())
+        .disabled(disabled)
+        .into_widget();
 
     // Wrap with an optional label above and helper/error below (shadcn form field).
     if p.label.is_none() && p.helper.is_none() && p.error.is_none() {
@@ -1008,7 +993,10 @@ fn render_field(p: &Props) -> AnyWidget {
         col.push(gap_h(6.0).into_widget());
         col.push(text(help.clone()).size(12.5).color(c.muted_foreground).into_widget());
     }
-    column(col).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min).into_widget()
+    column(col)
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min)
+        .into_widget()
 }
 
 /// Place the caret from a pointer press. With `extend`, keep the anchor (Shift-click).

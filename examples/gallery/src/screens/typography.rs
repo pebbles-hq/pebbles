@@ -25,21 +25,19 @@ pub fn typography() -> Element {
 }
 
 fn presets() -> impl IntoWidget {
-    doc("Presets")
-        .description("The themed helpers: heading / title / subtitle / body / label / muted.")
-        .body(
-            column(children![
-                heading("Heading — 30 bold"),
-                title("Title — 18 semibold"),
-                subtitle("Subtitle — 14 muted"),
-                body("Body — the quick brown fox jumps over the lazy dog."),
-                label("Label — 13 medium"),
-                muted("Muted — secondary text"),
-            ])
-            .cross_axis_alignment(CrossAxisAlignment::Start)
-            .main_axis_size(MainAxisSize::Min)
-            .spacing(8.0),
-        )
+    doc("Presets").description("The themed helpers: heading / title / subtitle / body / label / muted.").body(
+        column(children![
+            heading("Heading — 30 bold"),
+            title("Title — 18 semibold"),
+            subtitle("Subtitle — 14 muted"),
+            body("Body — the quick brown fox jumps over the lazy dog."),
+            label("Label — 13 medium"),
+            muted("Muted — secondary text"),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min)
+        .spacing(8.0),
+    )
 }
 
 fn scale_row(label: &'static str, sample: impl IntoWidget) -> impl IntoWidget {

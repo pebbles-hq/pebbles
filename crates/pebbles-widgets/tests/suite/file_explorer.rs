@@ -8,8 +8,8 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, KeyInput, Ui, component, create_signal};
 use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{button, column, container, file_explorer, FileTree, FsKind, OverlayHost, View};
-use pebbles_testing::{draw_frame as frame};
+use pebbles_testing::draw_frame as frame;
+use pebbles_widgets::{FileTree, FsKind, OverlayHost, View, button, column, container, file_explorer};
 
 // ---------------------------------------------------------------------------
 // Model
@@ -89,10 +89,7 @@ fn root() -> impl IntoWidget {
             button("New file").on_pressed(ex.new_file()).into_widget(),
             button("Delete").on_pressed(ex.delete_selected()).into_widget(),
             // A tall panel so the explorer has empty space (right-click there).
-            container()
-                .height(220.0)
-                .child(ex.tree())
-                .into_widget(),
+            container().height(220.0).child(ex.tree()).into_widget(),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Stretch),
     )
@@ -196,10 +193,7 @@ fn drag_onto_folder_moves() {
 
     let t = tree_sig().peek();
     let src = t.root.iter().find(|n| n.name == "src").expect("src folder");
-    assert!(
-        src.children.iter().any(|n| n.name == "README.md"),
-        "README.md moved into src"
-    );
+    assert!(src.children.iter().any(|n| n.name == "README.md"), "README.md moved into src");
     assert!(!t.root.iter().any(|n| n.name == "README.md"), "and left the root");
 }
 
@@ -388,7 +382,15 @@ fn filesystem_mode_reads_creates_renames_deletes_and_moves_on_disk() {
 
     // Create a real file on disk (via the public action).
     ex.new_file()();
-    let fid = tree.peek().node(docs).unwrap().children.iter().find(|c| c.name == "new_file.txt").expect("new file").id;
+    let fid = tree
+        .peek()
+        .node(docs)
+        .unwrap()
+        .children
+        .iter()
+        .find(|c| c.name == "new_file.txt")
+        .expect("new file")
+        .id;
     assert!(root.join("docs/new_file.txt").exists(), "created on disk");
 
     // Rename it on disk.
@@ -625,7 +627,10 @@ fn clipboard_copy_cut_paste_and_the_remaining_common_shortcuts() {
     let t = tree_sig().peek();
     let src = t.root.iter().find(|n| n.name == "src").expect("src");
     let kids: Vec<&str> = src.children.iter().map(|n| n.name.as_str()).collect();
-    assert!(kids.contains(&"main.rs") && kids.contains(&"main 2.rs"), "copy duplicated with a deduped name: {kids:?}");
+    assert!(
+        kids.contains(&"main.rs") && kids.contains(&"main 2.rs"),
+        "copy duplicated with a deduped name: {kids:?}"
+    );
 
     // CUT: move README.md into src (select the folder as the paste target).
     ex().select_only(2);

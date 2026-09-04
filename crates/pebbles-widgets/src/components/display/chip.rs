@@ -5,13 +5,13 @@
 
 use pebbles_render::{IconData, IconKind};
 
-use pebbles_core::context::Callback;
-use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::components::input::icon_button;
 use crate::components::icon;
+use crate::components::input::icon_button;
 use crate::style::{Style, style, styled};
 use crate::theme::theme;
 use crate::widgets::{gap_w, row, text};
+use pebbles_core::context::Callback;
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// A small pill with a label, an optional icon, and an optional ✕ delete button.
 #[derive(Clone, Default)]
@@ -79,16 +79,10 @@ impl IntoWidget for Chip {
             row_items.push(icon(kind).size(14.0).color(fg).into_widget());
             row_items.push(gap_w(6.0).into_widget());
         }
-        row_items.push(
-            text(std::mem::take(&mut self.label))
-                .size(12.5)
-                .weight(500.0)
-                .color(fg)
-                .into_widget(),
-        );
-        let mut body: AnyWidget = row(row_items)
-            .main_axis_size(pebbles_foundation::MainAxisSize::Min)
-            .into_widget();
+        row_items
+            .push(text(std::mem::take(&mut self.label)).size(12.5).weight(500.0).color(fg).into_widget());
+        let mut body: AnyWidget =
+            row(row_items).main_axis_size(pebbles_foundation::MainAxisSize::Min).into_widget();
         if self.deletable && !self.disabled {
             if let Some(on_deleted) = self.on_deleted.take() {
                 let close = icon_button(IconKind::Close).size(12.0).on_pressed(on_deleted);

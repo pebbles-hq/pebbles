@@ -16,8 +16,7 @@ use std::rc::Rc;
 use crate::element::ElementId;
 use crate::keyboard::KeyInput;
 use crate::reactive::{
-    Signal, consume_context, create_root_signal, current_owner, current_window, instance_id,
-    provide_context,
+    Signal, consume_context, create_root_signal, current_owner, current_window, instance_id, provide_context,
 };
 
 /// A focus node's identity: `(window, element id)`.
@@ -123,9 +122,8 @@ pub fn set_focus(next: Option<FocusKey>) {
 /// was found and focused. Used by the shell to honor an AT-driven `Focus` action (D1).
 pub fn focus_by_source(window: u32, source: u64) -> bool {
     use slotmap::Key;
-    let key = with_mgr(|m| {
-        m.order.iter().copied().find(|(w, e)| *w == window && e.data().as_ffi() == source)
-    });
+    let key =
+        with_mgr(|m| m.order.iter().copied().find(|(w, e)| *w == window && e.data().as_ffi() == source));
     match key {
         Some(k) => {
             set_focus(Some(k));
@@ -159,8 +157,7 @@ pub fn create_focus() -> FocusNode {
 /// on unmount the scope and any surviving member entries are removed.
 pub fn create_focus_scope() -> ScopeTag {
     let window = current_window();
-    let element =
-        current_owner().expect("create_focus_scope must be called inside a component");
+    let element = current_owner().expect("create_focus_scope must be called inside a component");
     let id = instance_id(window, element);
     provide_context(ScopeTag(id));
     crate::reactive::create_cleanup(move || {
@@ -214,12 +211,7 @@ impl FocusNode {
 
     /// Register this node's keyboard-activation + focus-change handlers (called each
     /// render; idempotent). `autofocus` grabs focus if nothing is focused yet.
-    pub fn register(
-        &self,
-        activation: Rc<dyn Fn()>,
-        on_change: Option<Rc<dyn Fn(bool)>>,
-        autofocus: bool,
-    ) {
+    pub fn register(&self, activation: Rc<dyn Fn()>, on_change: Option<Rc<dyn Fn(bool)>>, autofocus: bool) {
         let key = self.key();
         let should_autofocus = with_mgr(|m| {
             if !m.order.contains(&key) {
@@ -240,11 +232,7 @@ impl FocusNode {
             // One-shot: mark autofocus consumed on the first render regardless, and only
             // actually grab focus if nothing else holds it right now. After this the node
             // never auto-grabs again, so an explicit blur sticks.
-            if autofocus && m.autofocused.insert(key) {
-                m.focus.peek().is_none()
-            } else {
-                false
-            }
+            if autofocus && m.autofocused.insert(key) { m.focus.peek().is_none() } else { false }
         });
         if should_autofocus {
             self.request_focus();
@@ -340,16 +328,9 @@ pub fn focus_move(window: u32, forward: bool) -> bool {
         }
         // The scope we may not leave: the focused node's, or the root scope when
         // nothing is focused yet.
-        let scope = m
-            .focus
-            .peek()
-            .and_then(|k| m.scope_of.get(&k).copied())
-            .unwrap_or(0);
-        let candidates: Vec<FocusKey> = nodes
-            .iter()
-            .copied()
-            .filter(|k| m.scope_of.get(k).copied().unwrap_or(0) == scope)
-            .collect();
+        let scope = m.focus.peek().and_then(|k| m.scope_of.get(&k).copied()).unwrap_or(0);
+        let candidates: Vec<FocusKey> =
+            nodes.iter().copied().filter(|k| m.scope_of.get(k).copied().unwrap_or(0) == scope).collect();
         // A scope with no members (unmounted mid-cycle) falls back to the root set.
         let pool = if candidates.is_empty() && scope != 0 { nodes } else { candidates };
         if pool.is_empty() {

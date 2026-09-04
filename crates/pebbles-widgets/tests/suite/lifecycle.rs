@@ -34,8 +34,7 @@ fn caret_blink_ticks_only_while_focused() {
     let mut env_i = TextEnv::new();
     idle.make_current();
     idle.mount_root(
-        View::new(palette::WHITE, component(|| OverlayHost::wrap(text_field().width(200.0))))
-            .into_widget(),
+        View::new(palette::WHITE, component(|| OverlayHost::wrap(text_field().width(200.0)))).into_widget(),
     );
     idle.layout(&mut env_i, Size::new(400.0, 300.0));
     assert!(!frame(&mut idle, &mut env_i, 0.1), "unfocused field keeps the driver idle");
@@ -45,11 +44,8 @@ fn caret_blink_ticks_only_while_focused() {
     let mut env_f = TextEnv::new();
     focused.make_current();
     focused.mount_root(
-        View::new(
-            palette::WHITE,
-            component(|| OverlayHost::wrap(text_field().autofocus().width(200.0))),
-        )
-        .into_widget(),
+        View::new(palette::WHITE, component(|| OverlayHost::wrap(text_field().autofocus().width(200.0))))
+            .into_widget(),
     );
     focused.layout(&mut env_f, Size::new(400.0, 300.0));
     frame(&mut focused, &mut env_f, 0.2); // autofocus lands → re-render with focus
@@ -83,18 +79,14 @@ fn disposed_window_leaves_the_runtime() {
     let mut main = Ui::new();
     let mut env_m = TextEnv::new();
     main.make_current();
-    main.mount_root(
-        View::new(palette::WHITE, component(|| OverlayHost::wrap(text("main")))).into_widget(),
-    );
+    main.mount_root(View::new(palette::WHITE, component(|| OverlayHost::wrap(text("main")))).into_widget());
     main.layout(&mut env_m, Size::new(300.0, 200.0));
 
     // A secondary window whose content animates forever.
     let mut win = Ui::new();
     let mut env_w = TextEnv::new();
     win.make_current();
-    win.mount_root(
-        View::new(palette::WHITE, component(|| OverlayHost::wrap(spinner(24.0)))).into_widget(),
-    );
+    win.mount_root(View::new(palette::WHITE, component(|| OverlayHost::wrap(spinner(24.0)))).into_widget());
     win.layout(&mut env_w, Size::new(300.0, 200.0));
     assert!(frame(&mut win, &mut env_w, 0.1), "spinner loop is running");
 
@@ -119,8 +111,7 @@ fn drop_window_state_clears_per_window_services() {
     let mut env = TextEnv::new();
     win.make_current();
     win.mount_root(
-        View::new(palette::WHITE, component(|| OverlayHost::wrap(text("secondary"))))
-            .into_widget(),
+        View::new(palette::WHITE, component(|| OverlayHost::wrap(text("secondary")))).into_widget(),
     );
     win.layout(&mut env, Size::new(300.0, 200.0));
 

@@ -4,10 +4,10 @@
 use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
 use pebbles_render::{Border, BorderRadius, BoxDecoration};
 
-use pebbles_core::children;
 use crate::theme::theme;
-use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Container, Expanded, column, row, text};
+use pebbles_core::children;
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// A titled panel: a header bar over a bordered content area.
 #[derive(Clone)]
@@ -30,13 +30,16 @@ impl Panel {
     }
 }
 
-
 impl IntoWidget for Panel {
     fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
 
         let mut header_row: Vec<AnyWidget> = vec![
-            text(std::mem::take(&mut self.title)).size(12.0).semibold().color(c.muted_foreground).into_widget(),
+            text(std::mem::take(&mut self.title))
+                .size(12.0)
+                .semibold()
+                .color(c.muted_foreground)
+                .into_widget(),
         ];
         if let Some(actions) = self.actions.take() {
             header_row.push(Expanded::new(crate::widgets::gap_h(0.0)).into_widget());
@@ -47,10 +50,8 @@ impl IntoWidget for Panel {
             .padding(EdgeInsets::symmetric(12.0, 8.0))
             .child(row(header_row).main_axis_alignment(MainAxisAlignment::SpaceBetween));
 
-        let body = Container::new()
-            .color(c.card)
-            .padding(EdgeInsets::all(12.0))
-            .child(self.child.take().unwrap());
+        let body =
+            Container::new().color(c.card).padding(EdgeInsets::all(12.0)).child(self.child.take().unwrap());
 
         Container::new()
             .decoration(
@@ -59,13 +60,9 @@ impl IntoWidget for Panel {
                     .radius(BorderRadius::all(theme().radius)),
             )
             .child(
-                column(children![
-                    header,
-                    Container::new().color(c.border).height(1.0),
-                    body,
-                ])
-                .cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .main_axis_size(MainAxisSize::Min),
+                column(children![header, Container::new().color(c.border).height(1.0), body,])
+                    .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .main_axis_size(MainAxisSize::Min),
             )
             .into_widget()
     }

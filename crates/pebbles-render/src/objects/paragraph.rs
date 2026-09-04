@@ -11,11 +11,11 @@ use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
 
-use pebbles_foundation::{Axis, Color, Offset, Rect, Size, TextAlign, TextDirection};
 use parley::{
     Alignment, AlignmentOptions, FontStyle, FontWeight, Layout, LineHeight, PositionedLayoutItem,
     StyleProperty,
 };
+use pebbles_foundation::{Axis, Color, Offset, Rect, Size, TextAlign, TextDirection};
 use vello::Glyph;
 use vello::kurbo::Affine;
 use vello::peniko::{Brush, Fill};
@@ -201,11 +201,7 @@ impl RenderParagraph {
     }
 
     /// A rich paragraph: one shaped layout with per-range style overrides.
-    pub fn with_spans(
-        text: impl Into<String>,
-        style: ParagraphStyle,
-        spans: Vec<TextSpanStyle>,
-    ) -> Self {
+    pub fn with_spans(text: impl Into<String>, style: ParagraphStyle, spans: Vec<TextSpanStyle>) -> Self {
         let mut p = Self::new(text, style);
         p.spans = spans;
         p
@@ -259,9 +255,7 @@ impl RenderParagraph {
         let mut builder = text_env.layout.ranged_builder(&mut text_env.fonts, s, 1.0, true);
         builder.push_default(StyleProperty::FontSize(self.style.font_size));
         builder.push_default(StyleProperty::FontWeight(FontWeight::new(self.style.weight)));
-        builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
-            self.style.line_height,
-        )));
+        builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(self.style.line_height)));
         builder.push_default(StyleProperty::Brush(Brush::Solid(self.style.color)));
         if self.style.letter_spacing != 0.0 {
             builder.push_default(StyleProperty::LetterSpacing(self.style.letter_spacing));
@@ -341,12 +335,7 @@ impl RenderParagraph {
                 }
             }
             if let Some(x0) = x0 {
-                out.push(Rect::new(
-                    x0,
-                    f64::from(lm.block_min_coord),
-                    x1,
-                    f64::from(lm.block_max_coord),
-                ));
+                out.push(Rect::new(x0, f64::from(lm.block_min_coord), x1, f64::from(lm.block_max_coord)));
             }
         }
     }
@@ -358,8 +347,7 @@ impl RenderParagraph {
     fn refresh_span_geometry(&mut self) {
         let Some(layout) = &self.cached else { return };
         let needs_chips = self.spans.iter().any(|s| s.chip.is_some());
-        let needs_links =
-            self.link_boxes.is_some() && self.spans.iter().any(|s| s.link.is_some());
+        let needs_links = self.link_boxes.is_some() && self.spans.iter().any(|s| s.link.is_some());
         if !needs_chips && !needs_links {
             return;
         }
@@ -470,13 +458,7 @@ impl RenderObject for RenderParagraph {
             if world.y1 < visible.y0 || world.y0 > visible.y1 {
                 continue;
             }
-            cx.scene.fill(
-                Fill::NonZero,
-                Affine::IDENTITY,
-                *color,
-                None,
-                &world.to_rounded_rect(4.0),
-            );
+            cx.scene.fill(Fill::NonZero, Affine::IDENTITY, *color, None, &world.to_rounded_rect(4.0));
         }
 
         // Line-level culling: a single huge paragraph must not encode glyphs the
@@ -505,9 +487,8 @@ impl RenderObject for RenderParagraph {
                 crate::stats::bump_glyph_run();
                 let run = glyph_run.run();
                 let synthesis = run.synthesis();
-                let glyph_transform = synthesis
-                    .skew()
-                    .map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
+                let glyph_transform =
+                    synthesis.skew().map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
 
                 cx.scene
                     .draw_glyphs(run.font())
@@ -540,8 +521,7 @@ impl RenderObject for RenderParagraph {
                         );
                     }
                     if let Some(dec) = &style_ref.strikethrough {
-                        let top =
-                            baseline - f64::from(dec.offset.unwrap_or(rm.strikethrough_offset));
+                        let top = baseline - f64::from(dec.offset.unwrap_or(rm.strikethrough_offset));
                         let size_v = f64::from(dec.size.unwrap_or(rm.strikethrough_size));
                         cx.scene.fill(
                             Fill::NonZero,
@@ -587,11 +567,8 @@ impl RenderObject for RenderParagraph {
             }
             // The height the paragraph takes when wrapped at `cross_extent`.
             Axis::Vertical => {
-                let max_advance = if cross_extent.is_finite() {
-                    Some(cross_extent.max(0.0) as f32)
-                } else {
-                    None
-                };
+                let max_advance =
+                    if cross_extent.is_finite() { Some(cross_extent.max(0.0) as f32) } else { None };
                 Some(self.build(&mut *cx.text, &self.text, max_advance).height() as f64)
             }
         }

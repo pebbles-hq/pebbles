@@ -46,12 +46,7 @@ impl BoxConstraints {
 
     /// Constraints from zero up to `size` on each axis.
     pub fn loose(size: Size) -> Self {
-        BoxConstraints {
-            min_width: 0.0,
-            max_width: size.width,
-            min_height: 0.0,
-            max_height: size.height,
-        }
+        BoxConstraints { min_width: 0.0, max_width: size.width, min_height: 0.0, max_height: size.height }
     }
 
     /// Loosens `self` by setting both minimums to zero, keeping the maximums.

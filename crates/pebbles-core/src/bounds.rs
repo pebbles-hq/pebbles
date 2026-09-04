@@ -12,7 +12,9 @@ use std::collections::HashMap;
 
 use pebbles_foundation::Rect;
 
-use crate::reactive::{Signal, create_cleanup, create_root_signal, current_window, dispose_root_signal, owner_id};
+use crate::reactive::{
+    Signal, create_cleanup, create_root_signal, current_window, dispose_root_signal, owner_id,
+};
 
 thread_local! {
     static BOUNDS: RefCell<HashMap<(u32, u64), Signal<Rect>>> = RefCell::new(HashMap::new());
@@ -47,9 +49,8 @@ pub fn use_bounds() -> Rect {
     };
     // A stable root signal per (window, element) — not a positional hook, so calling
     // `use_bounds` conditionally is still safe.
-    let sig = BOUNDS.with(|b| {
-        *b.borrow_mut().entry((window, id)).or_insert_with(|| create_root_signal(Rect::ZERO))
-    });
+    let sig = BOUNDS
+        .with(|b| *b.borrow_mut().entry((window, id)).or_insert_with(|| create_root_signal(Rect::ZERO)));
     // Free the registry entry AND its root signal when this component unmounts.
     // Root signals live outside the hook arena, so without this every remount
     // minted a fresh immortal signal (the E6c lifecycle-soak tripwire).

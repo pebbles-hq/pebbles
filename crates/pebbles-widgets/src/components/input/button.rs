@@ -9,14 +9,14 @@ use std::rc::Rc;
 use pebbles_foundation::{Color, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, IconData};
 
+use crate::theme::{mix, theme};
+use crate::widgets::{Container, GestureDetector, Opacity, center, gap_w, row, spinner, text};
+use pebbles_core::animated;
 use pebbles_core::component::{Element, component_props};
 use pebbles_core::context::Callback;
 use pebbles_core::focus::create_focus;
-use pebbles_core::animated;
 use pebbles_core::reactive::create_signal;
-use crate::theme::{mix, theme};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use crate::widgets::{Container, GestureDetector, Opacity, center, gap_w, row, spinner, text};
 
 use crate::components::icon;
 
@@ -290,7 +290,6 @@ impl Button {
             ButtonSize::Lg => 15.0,
         }
     }
-
 }
 
 impl IntoWidget for Button {
@@ -376,16 +375,13 @@ fn render_button(b: &Button) -> Element {
     // While loading, prepend a spinner (keeps the label so the button doesn't jump).
     let content: AnyWidget = if b.loading {
         let sp = spinner(b.font_size() as f64 + 3.0).color(fg);
-        row(pebbles_core::children![sp, gap_w(8.0), content])
-            .main_axis_size(MainAxisSize::Min)
-            .into_widget()
+        row(pebbles_core::children![sp, gap_w(8.0), content]).main_axis_size(MainAxisSize::Min).into_widget()
     } else {
         content
     };
     let inner: AnyWidget = if b.full_width { center(content).into_widget() } else { content };
 
-    let mut decoration =
-        BoxDecoration::new().radius(BorderRadius::all(b.radius.unwrap_or(th.radius)));
+    let mut decoration = BoxDecoration::new().radius(BorderRadius::all(b.radius.unwrap_or(th.radius)));
     if let Some(shadow) = b.shadow {
         decoration = decoration.shadow(shadow);
     }
@@ -401,8 +397,7 @@ fn render_button(b: &Button) -> Element {
     }
     // The button shrink-wraps its content (+ padding) — shadcn-style. `full_width`
     // opts into filling the parent (handled above via `center`).
-    let container =
-        Container::new().decoration(decoration).padding(b.resolved_padding()).child(inner);
+    let container = Container::new().decoration(decoration).padding(b.resolved_padding()).child(inner);
 
     // Accessibility wrapper — applied at every exit so disabled/loading buttons are
     // announced too (with their disabled state).
@@ -413,9 +408,7 @@ fn render_button(b: &Button) -> Element {
     };
     if b.disabled {
         return a11y(
-            GestureDetector::new(Opacity::new(0.55, container))
-                .cursor(Cursor::NotAllowed)
-                .into_widget(),
+            GestureDetector::new(Opacity::new(0.55, container)).cursor(Cursor::NotAllowed).into_widget(),
             true,
         );
     }
@@ -610,9 +603,7 @@ fn render_icon_button(b: &IconButton) -> Element {
         .child(icon(b.kind).size(b.icon_size).color(fg));
 
     if b.disabled {
-        return GestureDetector::new(Opacity::new(0.55, container))
-            .cursor(Cursor::NotAllowed)
-            .into_widget();
+        return GestureDetector::new(Opacity::new(0.55, container)).cursor(Cursor::NotAllowed).into_widget();
     }
 
     let mut gesture = GestureDetector::new(container)

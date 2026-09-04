@@ -40,12 +40,7 @@ enum TrackMode {
     },
     /// A damped harmonic oscillator integrated per frame — velocity-preserving on
     /// retarget. `last` is the previous tick time (per-track dt).
-    Spring {
-        stiffness: f64,
-        damping: f64,
-        velocity: f64,
-        last: Option<f64>,
-    },
+    Spring { stiffness: f64, damping: f64, velocity: f64, last: Option<f64> },
 }
 
 /// A physical spring for [`animated_spring`]. Defaults are a snappy UI spring.
@@ -275,12 +270,7 @@ pub fn clear_timeout(id: u64) {
 /// when the next timer is due — otherwise hover timers (tooltips, hover cards)
 /// would sleep until the next unrelated event.
 pub fn next_deadline(now: f64) -> Option<f64> {
-    TIMEOUTS.with(|t| {
-        t.borrow()
-            .values()
-            .map(|to| to.at.unwrap_or(now + to.delay))
-            .min_by(f64::total_cmp)
-    })
+    TIMEOUTS.with(|t| t.borrow().values().map(|to| to.at.unwrap_or(now + to.delay)).min_by(f64::total_cmp))
 }
 
 /// A component hook: returns a value that cycles `0.0..1.0` every `period` seconds,

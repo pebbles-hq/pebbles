@@ -3,8 +3,8 @@
 
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{FlexFit, Size, palette};
-use pebbles_render::{BorderRadius, BoxDecoration, Border, RenderParagraph, TextEnv};
-use pebbles_widgets::{column, container, flexible, row, SizedBox, text, View};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, RenderParagraph, TextEnv};
+use pebbles_widgets::{SizedBox, View, column, container, flexible, row, text};
 
 #[test]
 fn flexible_fit_tight_forces_the_child_to_fill_its_share() {
@@ -17,10 +17,7 @@ fn flexible_fit_tight_forces_the_child_to_fill_its_share() {
                 SizedBox::exact(
                     200.0,
                     40.0,
-                    row(vec![flexible(text("hi".to_string()))
-                        .flex(1)
-                        .fit(FlexFit::Tight)
-                        .into_widget()]),
+                    row(vec![flexible(text("hi".to_string())).flex(1).fit(FlexFit::Tight).into_widget()]),
                 )
             }),
         )
@@ -42,10 +39,7 @@ fn flexible_fit_tight_forces_the_child_to_fill_its_share() {
                 SizedBox::exact(
                     200.0,
                     40.0,
-                    row(vec![flexible(text("hi".to_string()))
-                        .flex(1)
-                        .fit(FlexFit::Loose)
-                        .into_widget()]),
+                    row(vec![flexible(text("hi".to_string())).flex(1).fit(FlexFit::Loose).into_widget()]),
                 )
             }),
         )
@@ -113,7 +107,10 @@ fn text_soft_wrap_false_shapes_a_single_unbroken_line() {
         .map(|id| nowrap.render_tree().size_of(id).height)
         .unwrap();
 
-    assert!(h_nowrap < h_wrapped, "soft_wrap(false) is one line ({h_nowrap}), wrapped is taller ({h_wrapped})");
+    assert!(
+        h_nowrap < h_wrapped,
+        "soft_wrap(false) is one line ({h_nowrap}), wrapped is taller ({h_wrapped})"
+    );
 }
 
 #[test]

@@ -6,7 +6,9 @@
 use pebbles_core::{IntoWidget, KeyInput, Ui, action, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{checkbox, column, container, gap_h, gesture_detector, radio, scroll_view, switch, text, text_field, View};
+use pebbles_widgets::{
+    View, checkbox, column, container, gap_h, gesture_detector, radio, scroll_view, switch, text, text_field,
+};
 
 fn toggles_page() -> impl IntoWidget {
     let a = create_signal(true);
@@ -58,8 +60,7 @@ fn navigating_between_screens_never_crashes() {
 
     let nav = Offset::new(70.0, 15.0);
     let input_pt = Offset::new(60.0, 50.0); // the text field, just below the nav bar
-    let toggle_pts =
-        [Offset::new(20.0, 80.0), Offset::new(20.0, 105.0), Offset::new(20.0, 130.0)];
+    let toggle_pts = [Offset::new(20.0, 80.0), Offset::new(20.0, 105.0), Offset::new(20.0, 130.0)];
 
     let mut now = 0.0_f64;
     // A frame does what the shell does every tick, in the shell's order: advance

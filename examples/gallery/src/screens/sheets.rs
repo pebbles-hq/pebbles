@@ -43,70 +43,58 @@ fn right() -> impl IntoWidget {
 
 fn bottom() -> impl IntoWidget {
     doc("Bottom drawer")
-        .description("Slides up from the bottom edge — the mobile-style drawer for details, actions and quick inputs.")
+        .description(
+            "Slides up from the bottom edge — the mobile-style drawer for details, actions and quick inputs.",
+        )
         .body(
-            row(children![
-                button("Open bottom drawer").variant(ButtonVariant::Outline).on_pressed(|| {
-                    sheet(
-                        column(children![
-                            muted("A drawer slides up from the bottom edge.").size(12.5),
-                            gap_w(12.0),
-                            text_field().placeholder("Quick note…").width(320.0),
-                        ])
-                        .cross_axis_alignment(CrossAxisAlignment::Start)
-                        .main_axis_size(MainAxisSize::Min),
-                    )
-                    .side(Side::Bottom)
-                    .size(200.0)
-                    .title("Details")
-                    .open();
-                }),
-            ])
+            row(children![button("Open bottom drawer").variant(ButtonVariant::Outline).on_pressed(|| {
+                sheet(
+                    column(children![
+                        muted("A drawer slides up from the bottom edge.").size(12.5),
+                        gap_w(12.0),
+                        text_field().placeholder("Quick note…").width(320.0),
+                    ])
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .main_axis_size(MainAxisSize::Min),
+                )
+                .side(Side::Bottom)
+                .size(200.0)
+                .title("Details")
+                .open();
+            }),])
             .main_axis_size(MainAxisSize::Min),
         )
 }
 
 fn left() -> impl IntoWidget {
-    doc("Left sheet")
-        .description("The navigation drawer side — same panel contract, mirrored edge.")
-        .body(
-            row(children![
-                button("Open left sheet").variant(ButtonVariant::Outline).on_pressed(|| {
-                    sheet(
-                        column(children![
-                            muted("Navigation lives here in many apps.").size(12.5),
-                            gap_w(10.0),
-                            row(children![
-                                icon(IconKind::User).size(16.0),
-                                gap_w(10.0),
-                                text("Profile").size(13.5),
-                            ])
-                            .main_axis_size(MainAxisSize::Min),
-                            row(children![
-                                icon(IconKind::Star).size(16.0),
-                                gap_w(10.0),
-                                text("Starred").size(13.5),
-                            ])
-                            .main_axis_size(MainAxisSize::Min),
-                            row(children![
-                                icon(IconKind::Folder).size(16.0),
-                                gap_w(10.0),
-                                text("Projects").size(13.5),
-                            ])
-                            .main_axis_size(MainAxisSize::Min),
-                        ])
-                        .cross_axis_alignment(CrossAxisAlignment::Start)
-                        .main_axis_size(MainAxisSize::Min)
-                        .spacing(8.0),
-                    )
-                    .side(Side::Left)
-                    .size(260.0)
-                    .title("Menu")
-                    .open();
-                }),
-            ])
-            .main_axis_size(MainAxisSize::Min),
-        )
+    doc("Left sheet").description("The navigation drawer side — same panel contract, mirrored edge.").body(
+        row(children![button("Open left sheet").variant(ButtonVariant::Outline).on_pressed(|| {
+            sheet(
+                column(children![
+                    muted("Navigation lives here in many apps.").size(12.5),
+                    gap_w(10.0),
+                    row(children![icon(IconKind::User).size(16.0), gap_w(10.0), text("Profile").size(13.5),])
+                        .main_axis_size(MainAxisSize::Min),
+                    row(children![icon(IconKind::Star).size(16.0), gap_w(10.0), text("Starred").size(13.5),])
+                        .main_axis_size(MainAxisSize::Min),
+                    row(children![
+                        icon(IconKind::Folder).size(16.0),
+                        gap_w(10.0),
+                        text("Projects").size(13.5),
+                    ])
+                    .main_axis_size(MainAxisSize::Min),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min)
+                .spacing(8.0),
+            )
+            .side(Side::Left)
+            .size(260.0)
+            .title("Menu")
+            .open();
+        }),])
+        .main_axis_size(MainAxisSize::Min),
+    )
 }
 
 fn top() -> impl IntoWidget {

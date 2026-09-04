@@ -183,8 +183,7 @@ fn choice_row(index: usize, label: &str, current: usize, pick: impl Fn() + 'stat
 }
 
 fn member_row(initials: &str, name: &str, role: &str, status: BadgeVariant) -> impl IntoWidget {
-    list_tile(name)
-        .leading(avatar(initials.to_string()).color(palette::BLUE))
-        .subtitle(role)
-        .trailing(badge(if matches!(status, BadgeVariant::Destructive) { "Away" } else { "Active" }).variant(status))
+    list_tile(name).leading(avatar(initials.to_string()).color(palette::BLUE)).subtitle(role).trailing(
+        badge(if matches!(status, BadgeVariant::Destructive) { "Away" } else { "Active" }).variant(status),
+    )
 }

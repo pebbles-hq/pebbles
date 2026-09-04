@@ -47,11 +47,8 @@ impl RenderObject for RenderAspectRatio {
 
     fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         // From the child if it reports one, else from the aspect ratio itself.
-        let from_child = cx
-            .children()
-            .first()
-            .copied()
-            .and_then(|child| cx.child_intrinsic(child, axis, cross_extent));
+        let from_child =
+            cx.children().first().copied().and_then(|child| cx.child_intrinsic(child, axis, cross_extent));
         match from_child {
             Some(v) => Some(v),
             None => match axis {

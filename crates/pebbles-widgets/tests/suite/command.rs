@@ -7,10 +7,8 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_testing::{draw_frame as frame};
-use pebbles_widgets::{
-    OverlayHost, View, combobox, command, command_group, command_item, dialog,
-};
+use pebbles_testing::draw_frame as frame;
+use pebbles_widgets::{OverlayHost, View, combobox, command, command_group, command_item, dialog};
 
 thread_local! {
     static PICKED: RefCell<Option<String>> = const { RefCell::new(None) };
@@ -27,16 +25,18 @@ fn cmd_root() -> impl IntoWidget {
             command_group(
                 "Suggestions",
                 [
-                    command_item("New File").on_select(|| PICKED.with(|p| *p.borrow_mut() = Some("New File".into()))),
-                    command_item("New Folder").on_select(|| PICKED.with(|p| *p.borrow_mut() = Some("New Folder".into()))),
-                    command_item("Open Recent").on_select(|| PICKED.with(|p| *p.borrow_mut() = Some("Open Recent".into()))),
+                    command_item("New File")
+                        .on_select(|| PICKED.with(|p| *p.borrow_mut() = Some("New File".into()))),
+                    command_item("New Folder")
+                        .on_select(|| PICKED.with(|p| *p.borrow_mut() = Some("New Folder".into()))),
+                    command_item("Open Recent")
+                        .on_select(|| PICKED.with(|p| *p.borrow_mut() = Some("Open Recent".into()))),
                 ],
             ),
             command_group(
                 "Settings",
-                [
-                    command_item("Toggle Theme").on_select(|| PICKED.with(|p| *p.borrow_mut() = Some("Toggle Theme".into()))),
-                ],
+                [command_item("Toggle Theme")
+                    .on_select(|| PICKED.with(|p| *p.borrow_mut() = Some("Toggle Theme".into())))],
             ),
         ])
         .width(420.0),

@@ -20,11 +20,7 @@ pub struct Stack {
 /// Create a [`Stack`] overlaying `children`. Accepts a tuple `(a, b)`, `children![…]`,
 /// a `Vec`, an array, or an `Option`.
 pub fn stack(children: impl pebbles_core::widget::IntoChildren) -> Stack {
-    Stack {
-        children: children.into_children(),
-        alignment: Alignment::TOP_LEFT,
-        fit: StackFit::Loose,
-    }
+    Stack { children: children.into_children(), alignment: Alignment::TOP_LEFT, fit: StackFit::Loose }
 }
 
 impl Stack {

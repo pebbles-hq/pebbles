@@ -12,9 +12,7 @@
 use std::cell::RefCell;
 use std::time::Instant;
 
-use pebbles_core::{
-    AnyWidget, IntoWidget, Signal, Ui, component, component_props, create_signal,
-};
+use pebbles_core::{AnyWidget, IntoWidget, Signal, Ui, component, component_props, create_signal};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{SizedBox, View, column};
@@ -87,7 +85,10 @@ fn thousand_components_schedule_and_drain_in_isolation() {
         let r = r.borrow();
         // 42 rendered 3× (mount + single write + all-write); everyone else 2×.
         assert_eq!(r[42], 3);
-        assert!(r.iter().enumerate().all(|(i, &c)| c == if i == 42 { 3 } else { 2 }), "each re-rendered once");
+        assert!(
+            r.iter().enumerate().all(|(i, &c)| c == if i == 42 { 3 } else { 2 }),
+            "each re-rendered once"
+        );
     });
     assert!(elapsed.as_secs() < 5, "schedule+drain of {N} components took {elapsed:?} (regression?)");
 }

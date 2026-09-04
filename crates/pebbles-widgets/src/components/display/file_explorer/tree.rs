@@ -273,8 +273,7 @@ impl FileTree {
                 if id == new_parent {
                     return false;
                 }
-                let target_is_folder =
-                    matches!(self.node(new_parent), Some(n) if n.kind == FsKind::Folder);
+                let target_is_folder = matches!(self.node(new_parent), Some(n) if n.kind == FsKind::Folder);
                 if !target_is_folder || self.is_descendant(id, new_parent) {
                     return false;
                 }
@@ -349,10 +348,7 @@ pub fn pick_folder(on_picked: impl Fn(Option<PathBuf>) + 'static) {
         on_picked(None);
         return;
     }
-    pebbles_core::spawn(
-        || rfd::FileDialog::new().pick_folder(),
-        on_picked,
-    );
+    pebbles_core::spawn(|| rfd::FileDialog::new().pick_folder(), on_picked);
 }
 
 /// Recursively copy a file or a whole directory (filesystem-mode paste).

@@ -3,8 +3,7 @@
 
 use pebbles_foundation::{Alignment, Color, EdgeInsets};
 use pebbles_render::{
-    BoxConstraints, RenderAlign, RenderColoredBox, RenderConstrainedBox, RenderObject,
-    RenderPadding,
+    BoxConstraints, RenderAlign, RenderColoredBox, RenderConstrainedBox, RenderObject, RenderPadding,
 };
 
 use pebbles_core::widget::{AnyWidget, RenderWidget};
@@ -261,9 +260,6 @@ pub fn align(alignment: Alignment, child: impl pebbles_core::IntoWidget) -> Alig
 }
 
 /// Impose additional `constraints` on `child`.
-pub fn constrained_box(
-    constraints: BoxConstraints,
-    child: impl pebbles_core::IntoWidget,
-) -> ConstrainedBox {
+pub fn constrained_box(constraints: BoxConstraints, child: impl pebbles_core::IntoWidget) -> ConstrainedBox {
     ConstrainedBox::new(constraints, child)
 }

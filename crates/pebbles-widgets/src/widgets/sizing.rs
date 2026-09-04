@@ -109,11 +109,7 @@ pebbles_core::render_widget!(FractionallySizedBox);
 
 impl RenderWidget for FractionallySizedBox {
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(RenderFractionallySizedBox::new(
-            self.width_factor,
-            self.height_factor,
-            self.alignment,
-        ))
+        Box::new(RenderFractionallySizedBox::new(self.width_factor, self.height_factor, self.alignment))
     }
     fn update_render_object(&self, object: &mut dyn RenderObject) {
         if let Some(r) = object.downcast_mut::<RenderFractionallySizedBox>() {

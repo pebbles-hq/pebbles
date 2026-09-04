@@ -4,21 +4,11 @@ use crate::ui::{doc, gap_h, gap_w, screen};
 
 /// A medium drop shadow (shadcn `shadow-md`).
 fn shadow_md() -> BoxShadow {
-    BoxShadow::new(
-        Color::from_rgba8(0, 0, 0, 66),
-        Offset::new(0.0, 4.0),
-        7.0,
-        -1.0,
-    )
+    BoxShadow::new(Color::from_rgba8(0, 0, 0, 66), Offset::new(0.0, 4.0), 7.0, -1.0)
 }
 /// A larger, floating shadow (shadcn `shadow-lg`).
 fn shadow_lg() -> BoxShadow {
-    BoxShadow::new(
-        Color::from_rgba8(0, 0, 0, 74),
-        Offset::new(0.0, 9.0),
-        13.0,
-        -3.0,
-    )
+    BoxShadow::new(Color::from_rgba8(0, 0, 0, 74), Offset::new(0.0, 9.0), 13.0, -3.0)
 }
 
 pub fn buttons() -> Element {

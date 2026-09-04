@@ -8,10 +8,10 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, KeyInput, Ui, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_testing::{draw_frame as frame};
+use pebbles_testing::draw_frame as frame;
 use pebbles_widgets::{
-    OverlayHost, View, block_context_menu, column, menu_item, overlay, reset_global_menu,
-    set_global_menu, set_global_menu_enabled, set_global_menu_style, style, text, text_field,
+    OverlayHost, View, block_context_menu, column, menu_item, overlay, reset_global_menu, set_global_menu,
+    set_global_menu_enabled, set_global_menu_style, style, text, text_field,
 };
 
 thread_local! {
@@ -34,7 +34,8 @@ fn show_opens_and_custom_options_replace() {
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(
-        View::new(palette::WHITE, component(|| OverlayHost::wrap(column(vec![text("x").into_widget()])))).into_widget(),
+        View::new(palette::WHITE, component(|| OverlayHost::wrap(column(vec![text("x").into_widget()]))))
+            .into_widget(),
     );
     ui.layout(&mut env, win);
     overlay::set_window_size(400.0, 300.0);
@@ -134,10 +135,8 @@ fn block_context_menu_consumes_right_clicks() {
             palette::WHITE,
             component(|| {
                 OverlayHost::wrap(
-                    column(vec![
-                        block_context_menu(text("blocked")).into_widget(),
-                    ])
-                    .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start),
+                    column(vec![block_context_menu(text("blocked")).into_widget()])
+                        .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start),
                 )
             }),
         )
@@ -164,7 +163,8 @@ fn styled_surface_paints() {
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(
-        View::new(palette::WHITE, component(|| OverlayHost::wrap(column(vec![text("x").into_widget()])))).into_widget(),
+        View::new(palette::WHITE, component(|| OverlayHost::wrap(column(vec![text("x").into_widget()]))))
+            .into_widget(),
     );
     ui.layout(&mut env, win);
     overlay::set_window_size(400.0, 300.0);

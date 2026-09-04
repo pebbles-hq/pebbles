@@ -20,13 +20,19 @@ pub mod palette;
 
 pub use color::Color;
 pub use geometry::{
-    Alignment, EdgeInsets, Offset, Rect, Size,
     // kurbo re-exports
-    Affine, Point, Vec2,
+    Affine,
+    Alignment,
+    EdgeInsets,
+    Offset,
+    Point,
+    Rect,
+    Size,
+    Vec2,
 };
 pub use layout::{
-    Axis, BoxFit, CrossAxisAlignment, FlexFit, MainAxisAlignment, MainAxisSize, TextAlign,
-    TextBaseline, TextDirection, VerticalDirection, WrapAlignment,
+    Axis, BoxFit, CrossAxisAlignment, FlexFit, MainAxisAlignment, MainAxisSize, TextAlign, TextBaseline,
+    TextDirection, VerticalDirection, WrapAlignment,
 };
 
 /// Re-export of the underlying 2D geometry crate so downstream code can reach the full API.

@@ -4,9 +4,7 @@
 use std::cell::{Cell, RefCell};
 
 use pebbles_core::animation;
-use pebbles_core::{
-    AnyWidget, IntoWidget, Signal, Ui, component, create_signal, create_timeout,
-};
+use pebbles_core::{AnyWidget, IntoWidget, Signal, Ui, component, create_signal, create_timeout};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{View, column, dialog, text};
@@ -25,11 +23,8 @@ fn timer_root() -> impl IntoWidget {
 /// false unmounts the timer through normal reconciliation.
 fn toggle_shell() -> impl IntoWidget {
     let show = SHOW.with(|c| c.borrow().expect("SHOW set before mount"));
-    let kids: Vec<AnyWidget> = if show.get() {
-        vec![component(timer_root).into_widget()]
-    } else {
-        vec![text("gone").into_widget()]
-    };
+    let kids: Vec<AnyWidget> =
+        if show.get() { vec![component(timer_root).into_widget()] } else { vec![text("gone").into_widget()] };
     column(kids)
 }
 

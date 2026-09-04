@@ -1,5 +1,5 @@
 //! The root app component: a `Scaffold` with a `SideNav` and a `RouteView` body.
-//! The current route is a **global signal** ([`state::route`]) read here and written
+//! The current route is a **global signal** (`state::route`) read here and written
 //! by the nav items — no prop-drilling.
 
 use pebbles::prelude::*;
@@ -21,7 +21,7 @@ fn nav_section(label: &str) -> impl IntoWidget {
     .main_axis_size(MainAxisSize::Min)
 }
 
-/// GALLERY_TOUR=<ms>: hop to the next screen every <ms>, forever — the
+/// `GALLERY_TOUR=<ms>`: hop to the next screen every `<ms>`, forever — the
 /// burn-in / demo tour (exercises every screen's mount, render, unmount).
 fn install_tour() {
     // ONCE per process — app() re-renders on every navigation, and re-installing
@@ -48,13 +48,8 @@ fn install_tour() {
     // GALLERY_TOUR_ROUTES="overview,typography" pins the tour to just those
     // screens (screen-focused burn-in); default = every NAV route.
     let all: Vec<String> = match std::env::var("GALLERY_TOUR_ROUTES") {
-        Ok(list) if !list.trim().is_empty() => {
-            list.split(',').map(|s| s.trim().to_string()).collect()
-        }
-        _ => NAV
-            .iter()
-            .flat_map(|g| g.routes.iter().map(|(r, _, _)| (*r).to_string()))
-            .collect(),
+        Ok(list) if !list.trim().is_empty() => list.split(',').map(|s| s.trim().to_string()).collect(),
+        _ => NAV.iter().flat_map(|g| g.routes.iter().map(|(r, _, _)| (*r).to_string())).collect(),
     };
     // A fixed caller-owned timer key (set_timeout ids are a caller namespace).
     let key = u64::from_le_bytes(*b"gal-tour");
@@ -85,12 +80,8 @@ pub fn app() -> impl IntoWidget {
         for (r, ic, label) in group.routes {
             let route_id = *r;
             let selected = current.as_str() == route_id;
-            side = side.item(
-                nav_item(*label)
-                    .icon(*ic)
-                    .selected(selected)
-                    .on_select(move || navigate(route_id)),
-            );
+            side = side
+                .item(nav_item(*label).icon(*ic).selected(selected).on_select(move || navigate(route_id)));
         }
     }
 

@@ -22,9 +22,7 @@ pub fn command_screen() -> Element {
             command_group(
                 "Settings",
                 [
-                    command_item("Toggle Theme")
-                        .icon(lucide::MOON)
-                        .on_select(toggle_theme),
+                    command_item("Toggle Theme").icon(lucide::MOON).on_select(toggle_theme),
                     command_item("Toggle Fullscreen")
                         .icon(lucide::MAXIMIZE)
                         .on_select(move || picked.set("Picked: Toggle Fullscreen".into())),

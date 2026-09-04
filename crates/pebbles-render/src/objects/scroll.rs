@@ -240,7 +240,9 @@ impl RenderScroll {
         let delta = at - self.drag_last; // positive = content moves with the pointer
         self.drag_last = at;
         self.drag_real -= delta;
-        self.offset = if self.physics.overscroll { self.band(self.drag_real) } else {
+        self.offset = if self.physics.overscroll {
+            self.band(self.drag_real)
+        } else {
             self.drag_real.clamp(0.0, self.max_offset)
         };
         self.target = self.offset;
@@ -273,11 +275,8 @@ impl RenderScroll {
     pub fn refresh_end(&mut self) {
         if let Some(r) = &mut self.refresh {
             if r.fired_arm {
-                let cb = if self.offset <= -r.threshold {
-                    r.on_arm_release.clone()
-                } else {
-                    r.on_release.clone()
-                };
+                let cb =
+                    if self.offset <= -r.threshold { r.on_arm_release.clone() } else { r.on_release.clone() };
                 if let Some(cb) = cb {
                     cb();
                 }
@@ -302,15 +301,13 @@ impl RenderScroll {
         self.velocity = 0.0; // the spring starts from rest at the release point
         // Fling velocity from the oldest still-recorded sample.
         if !past_start && !past_end {
-            let (t0, o0) = self.fling_samples
-                [(self.fling_cursor + 4 - self.fling_samples_len) % 4];
+            let (t0, o0) = self.fling_samples[(self.fling_cursor + 4 - self.fling_samples_len) % 4];
             let dt = now - t0;
             let v = if dt > 1e-4 { (self.offset - o0) / dt } else { 0.0 };
             self.fling_velocity = if self.physics.overscroll { v } else { v.clamp(-4000.0, 4000.0) };
             if self.snap > 0.0 && self.fling_velocity.abs() < 200.0 {
                 // Weak flings settle on the nearest snap point immediately.
-                self.target = ((self.target / self.snap).round() * self.snap)
-                    .clamp(0.0, self.max_offset);
+                self.target = ((self.target / self.snap).round() * self.snap).clamp(0.0, self.max_offset);
                 self.fling_velocity = 0.0;
             }
             self.flinging = self.fling_velocity.abs() >= 0.5;
@@ -333,14 +330,12 @@ impl RenderScroll {
         if self.flinging {
             let decay = (1.0 - self.physics.friction).powf(dt * 60.0);
             self.fling_velocity *= decay;
-            self.target =
-                (self.target + self.fling_velocity * dt).clamp(0.0, self.max_offset);
+            self.target = (self.target + self.fling_velocity * dt).clamp(0.0, self.max_offset);
             if self.fling_velocity.abs() < 0.5 {
                 self.flinging = false;
                 self.fling_velocity = 0.0;
                 if self.snap > 0.0 {
-                    self.target = ((self.target / self.snap).round() * self.snap)
-                        .clamp(0.0, self.max_offset);
+                    self.target = ((self.target / self.snap).round() * self.snap).clamp(0.0, self.max_offset);
                 }
             }
         }
@@ -377,11 +372,7 @@ impl RenderScroll {
     /// Thumb start position along the axis for the current offset.
     fn thumb_pos(&self) -> f64 {
         let travel = (self.viewport_extent - self.thumb_len()).max(0.0);
-        if self.max_offset <= 0.0 {
-            0.0
-        } else {
-            travel * (self.offset / self.max_offset)
-        }
+        if self.max_offset <= 0.0 { 0.0 } else { travel * (self.offset / self.max_offset) }
     }
 
     /// Whether a local point (relative to this object's origin) lands on the
@@ -533,4 +524,3 @@ impl RenderObject for RenderScroll {
         "RenderScroll"
     }
 }
-

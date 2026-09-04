@@ -159,8 +159,14 @@ fn render_resizable(p: &Props) -> AnyWidget {
     }
 
     if horiz {
-        row(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min).into_widget()
+        row(kids)
+            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .main_axis_size(MainAxisSize::Min)
+            .into_widget()
     } else {
-        column(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min).into_widget()
+        column(kids)
+            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .main_axis_size(MainAxisSize::Min)
+            .into_widget()
     }
 }

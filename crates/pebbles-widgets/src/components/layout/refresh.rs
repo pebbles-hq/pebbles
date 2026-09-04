@@ -7,15 +7,13 @@ use std::rc::Rc;
 use pebbles_foundation::MainAxisSize;
 use pebbles_render::RefreshState;
 
+use crate::style::{style, styled};
+use crate::theme::theme;
+use crate::widgets::{Positioned, SingleChildScrollView, center, gap_w, row, spinner, stack, text};
 use pebbles_core::children;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, component_props, create_signal};
 use pebbles_render::ScrollPhysics;
-use crate::style::{style, styled};
-use crate::theme::theme;
-use crate::widgets::{
-    Positioned, SingleChildScrollView, center, gap_w, row, spinner, stack, text,
-};
 
 /// A call-once handle handed to `on_refresh`: call [`finish`](RefreshDone::finish)
 /// when the async work completes and the indicator row collapses.
@@ -41,11 +39,7 @@ pub struct RefreshIndicator {
 
 /// Wrap `child` (usually a scrollable column) in a pull-to-refresh indicator.
 pub fn refresh_indicator(child: impl IntoWidget) -> RefreshIndicator {
-    RefreshIndicator {
-        child: Some(child.into_widget()),
-        on_refresh: None,
-        threshold: 64.0,
-    }
+    RefreshIndicator { child: Some(child.into_widget()), on_refresh: None, threshold: 64.0 }
 }
 
 impl RefreshIndicator {

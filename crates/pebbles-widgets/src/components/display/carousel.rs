@@ -8,17 +8,15 @@ use std::rc::Rc;
 use pebbles_foundation::{Axis, MainAxisSize};
 use pebbles_render::ScrollbarStyle;
 
-use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{
-    Signal, children, component_props, create_effect, create_loop_while, create_signal,
-};
 use crate::components::input::icon_button;
 use crate::style::{style, styled};
 use crate::theme::theme;
 use crate::widgets::{
-    GestureDetector, ListView, Positioned, ScrollController, SizedBox, center, column, extent_probe,
-    gap_w, row, stack, text,
+    GestureDetector, ListView, Positioned, ScrollController, SizedBox, center, column, extent_probe, gap_w,
+    row, stack, text,
 };
+use pebbles_core::widget::{AnyWidget, IntoWidget};
+use pebbles_core::{Signal, children, component_props, create_effect, create_loop_while, create_signal};
 
 /// Programmatic control of a carousel's current page. Create one with
 /// [`use_carousel_controller`] and pass it to [`Carousel::controller`].
@@ -220,10 +218,7 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
     let list = ListView::builder(count, page_w, move |i| pages[i].clone())
         .horizontal()
         .snap(page_w)
-        .scrollbar(ScrollbarStyle {
-            policy: pebbles_render::ScrollbarPolicy::Hidden,
-            ..Default::default()
-        })
+        .scrollbar(ScrollbarStyle { policy: pebbles_render::ScrollbarPolicy::Hidden, ..Default::default() })
         .controller(ScrollController::from_parts(id, offset));
     let list: AnyWidget = list.into_widget();
 
@@ -245,10 +240,11 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
             let active = i == page_idx;
             let dot = styled(
                 center(text("").size(0.0)),
-                style()
-                    .size(if active { 18.0 } else { 6.0 }, 6.0)
-                    .radius_all(999.0)
-                    .background(if active { c.primary } else { c.muted_foreground }),
+                style().size(if active { 18.0 } else { 6.0 }, 6.0).radius_all(999.0).background(if active {
+                    c.primary
+                } else {
+                    c.muted_foreground
+                }),
             );
             dots.push(dot.into_widget());
             if i + 1 < count {
@@ -267,37 +263,28 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
         let at_first = page_idx == 0;
         let at_last = page_idx + 1 >= count;
         if !at_first {
-            let prev = icon_button(pebbles_render::IconKind::ChevronLeft)
-                .size(20.0)
-                .on_pressed({
-                    let offset = offset;
-                    let width = width;
-                    move || {
-                        let w = width.peek().max(1.0);
-                        let page =
-                            ((offset.peek() / w).round().max(0.0) as usize).saturating_sub(1);
-                        offset.set(page as f64 * w);
-                    }
-                });
-            overlay.push(
-                Positioned::new(prev).left(8.0).top(0.0).bottom(0.0).into_widget(),
-            );
+            let prev = icon_button(pebbles_render::IconKind::ChevronLeft).size(20.0).on_pressed({
+                let offset = offset;
+                let width = width;
+                move || {
+                    let w = width.peek().max(1.0);
+                    let page = ((offset.peek() / w).round().max(0.0) as usize).saturating_sub(1);
+                    offset.set(page as f64 * w);
+                }
+            });
+            overlay.push(Positioned::new(prev).left(8.0).top(0.0).bottom(0.0).into_widget());
         }
         if !at_last {
-            let next = icon_button(pebbles_render::IconKind::ChevronRight)
-                .size(20.0)
-                .on_pressed({
-                    let offset = offset;
-                    let width = width;
-                    move || {
-                        let w = width.peek().max(1.0);
-                        let page = (offset.peek() / w).round().max(0.0) as usize + 1;
-                        offset.set(page as f64 * w);
-                    }
-                });
-            overlay.push(
-                Positioned::new(next).right(8.0).top(0.0).bottom(0.0).into_widget(),
-            );
+            let next = icon_button(pebbles_render::IconKind::ChevronRight).size(20.0).on_pressed({
+                let offset = offset;
+                let width = width;
+                move || {
+                    let w = width.peek().max(1.0);
+                    let page = (offset.peek() / w).round().max(0.0) as usize + 1;
+                    offset.set(page as f64 * w);
+                }
+            });
+            overlay.push(Positioned::new(next).right(8.0).top(0.0).bottom(0.0).into_widget());
         }
     }
 

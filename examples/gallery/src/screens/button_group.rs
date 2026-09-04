@@ -23,22 +23,14 @@ fn segmented() -> impl IntoWidget {
 }
 
 fn icons() -> impl IntoWidget {
-    doc("Icon toolbar")
-        .description("Icon-only buttons read as a tight toolbar when joined.")
-        .body(button_group(vec![
-            button("")
-                .variant(ButtonVariant::Ghost)
-                .leading(IconKind::ChevronLeft),
-            button("")
-                .variant(ButtonVariant::Ghost)
-                .leading(IconKind::ChevronRight),
-            button("")
-                .variant(ButtonVariant::Ghost)
-                .leading(IconKind::Plus),
-            button("")
-                .variant(ButtonVariant::Ghost)
-                .leading(IconKind::Search),
-        ]))
+    doc("Icon toolbar").description("Icon-only buttons read as a tight toolbar when joined.").body(
+        button_group(vec![
+            button("").variant(ButtonVariant::Ghost).leading(IconKind::ChevronLeft),
+            button("").variant(ButtonVariant::Ghost).leading(IconKind::ChevronRight),
+            button("").variant(ButtonVariant::Ghost).leading(IconKind::Plus),
+            button("").variant(ButtonVariant::Ghost).leading(IconKind::Search),
+        ]),
+    )
 }
 
 fn vertical() -> impl IntoWidget {
@@ -46,15 +38,9 @@ fn vertical() -> impl IntoWidget {
         .description("Stack them with .orientation(Axis::Vertical) — dividers run horizontally.")
         .body(
             button_group(vec![
-                button("Profile")
-                    .variant(ButtonVariant::Ghost)
-                    .leading(IconKind::User),
-                button("Mail")
-                    .variant(ButtonVariant::Ghost)
-                    .leading(IconKind::Mail),
-                button("Settings")
-                    .variant(ButtonVariant::Ghost)
-                    .leading(IconKind::Menu),
+                button("Profile").variant(ButtonVariant::Ghost).leading(IconKind::User),
+                button("Mail").variant(ButtonVariant::Ghost).leading(IconKind::Mail),
+                button("Settings").variant(ButtonVariant::Ghost).leading(IconKind::Menu),
             ])
             .orientation(Axis::Vertical),
         )
@@ -62,14 +48,10 @@ fn vertical() -> impl IntoWidget {
 
 fn split() -> impl IntoWidget {
     doc("Split button")
-        .description(
-            "A primary action joined to a dropdown affordance — the common split-button pattern.",
-        )
+        .description("A primary action joined to a dropdown affordance — the common split-button pattern.")
         .body(button_group(vec![
             button("Save").variant(ButtonVariant::Secondary),
-            button("")
-                .variant(ButtonVariant::Secondary)
-                .leading(IconKind::ChevronDown),
+            button("").variant(ButtonVariant::Secondary).leading(IconKind::ChevronDown),
         ]))
 }
 

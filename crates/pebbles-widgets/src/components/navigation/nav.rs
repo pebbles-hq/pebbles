@@ -7,12 +7,12 @@ use pebbles_core::IntoCallback;
 use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
 use pebbles_render::{Border, BoxDecoration, IconKind};
 
-use pebbles_core::children;
-use pebbles_core::context::Callback;
 use crate::style::{Style, styled};
 use crate::theme::theme;
-use pebbles_core::widget::{AnyWidget, IntoWidget};
 use crate::widgets::{Container, Padding, gap_w, row, text};
+use pebbles_core::children;
+use pebbles_core::context::Callback;
+use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 use crate::components::icon;
 use crate::components::{ButtonSize, ButtonVariant, button, dropdown_menu, icon_button, menu_item};
@@ -30,12 +30,7 @@ pub struct Breadcrumb {
 
 /// Create a [`Breadcrumb`] from path segments.
 pub fn breadcrumb(segments: Vec<String>) -> Breadcrumb {
-    Breadcrumb {
-        segments,
-        max_visible: usize::MAX,
-        separator: IconKind::ChevronRight.into(),
-        style: None,
-    }
+    Breadcrumb { segments, max_visible: usize::MAX, separator: IconKind::ChevronRight.into(), style: None }
 }
 
 impl Breadcrumb {
@@ -70,16 +65,9 @@ impl IntoWidget for Breadcrumb {
         let seg_size = merged.font_size.unwrap_or(13.0);
 
         // Split into [first] + [hidden middle] + [trailing n-2] when overflowing.
-        let hidden: Vec<String> = if len <= n {
-            Vec::new()
-        } else {
-            segments[1..len - (n - 2)].to_vec()
-        };
-        let trailing: Vec<String> = if len <= n {
-            segments[1..].to_vec()
-        } else {
-            segments[len - (n - 2)..].to_vec()
-        };
+        let hidden: Vec<String> = if len <= n { Vec::new() } else { segments[1..len - (n - 2)].to_vec() };
+        let trailing: Vec<String> =
+            if len <= n { segments[1..].to_vec() } else { segments[len - (n - 2)..].to_vec() };
 
         let mut items: Vec<AnyWidget> = Vec::new();
         let mut slots: Vec<String> = Vec::new();
@@ -91,8 +79,7 @@ impl IntoWidget for Breadcrumb {
         let last = slots.len().saturating_sub(1);
         for (i, seg) in slots.into_iter().enumerate() {
             if seg.is_empty() {
-                let menu = dropdown_menu("…")
-                    .trigger(text("…").size(13.0).color(th.colors.muted_foreground));
+                let menu = dropdown_menu("…").trigger(text("…").size(13.0).color(th.colors.muted_foreground));
                 let mut menu = menu;
                 for h in &hidden {
                     menu = menu.item(menu_item(h.clone()).disabled(true));
@@ -104,9 +91,7 @@ impl IntoWidget for Breadcrumb {
             }
             if i != last {
                 items.push(gap_w(6.0).into_widget());
-                items.push(
-                    icon(self.separator).size(14.0).color(th.colors.muted_foreground).into_widget(),
-                );
+                items.push(icon(self.separator).size(14.0).color(th.colors.muted_foreground).into_widget());
                 items.push(gap_w(6.0).into_widget());
             }
         }
@@ -124,7 +109,6 @@ pub struct Toolbar {
 pub fn toolbar(children: Vec<AnyWidget>) -> Toolbar {
     Toolbar { children }
 }
-
 
 impl IntoWidget for Toolbar {
     fn into_widget(mut self) -> AnyWidget {
@@ -150,7 +134,6 @@ pub fn status_bar(text: impl Into<String>) -> StatusBar {
     StatusBar { text: text.into() }
 }
 
-
 impl IntoWidget for StatusBar {
     fn into_widget(mut self) -> AnyWidget {
         let th = theme();
@@ -158,8 +141,10 @@ impl IntoWidget for StatusBar {
             .decoration(BoxDecoration::new().color(th.colors.muted))
             .padding(EdgeInsets::symmetric(12.0, 5.0))
             .child(
-                row(children![text(std::mem::take(&mut self.text)).size(12.0).color(th.colors.muted_foreground)])
-                    .main_axis_alignment(MainAxisAlignment::Start),
+                row(children![
+                    text(std::mem::take(&mut self.text)).size(12.0).color(th.colors.muted_foreground)
+                ])
+                .main_axis_alignment(MainAxisAlignment::Start),
             )
             .into_widget()
     }
@@ -314,9 +299,11 @@ impl IntoWidget for Pagination {
                     match item {
                         PageItem::Page(p) => {
                             let active = p == page;
-                            let mut b = button(format!("{p}")).size(ButtonSize::Sm).variant(
-                                if active { ButtonVariant::Primary } else { ButtonVariant::Outline },
-                            );
+                            let mut b = button(format!("{p}")).size(ButtonSize::Sm).variant(if active {
+                                ButtonVariant::Primary
+                            } else {
+                                ButtonVariant::Outline
+                            });
                             let go = go.clone();
                             b = b.on_pressed(move || go(p));
                             kids.push(b.into_widget());

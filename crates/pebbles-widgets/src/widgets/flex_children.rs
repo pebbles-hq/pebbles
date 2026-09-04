@@ -1,8 +1,8 @@
 //! [`Expanded`] and [`Flexible`] — `ParentDataWidget`s that give a `Row`/`Column`
 //! child a flex factor, plus [`spacer`], a flexible empty gap.
 
+use crate::widgets::gap_h;
 use std::any::Any;
-use crate::widgets::{gap_h};
 
 use pebbles_foundation::FlexFit;
 use pebbles_render::FlexParentData;

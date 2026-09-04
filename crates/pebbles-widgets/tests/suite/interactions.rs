@@ -7,7 +7,7 @@ use std::rc::Rc;
 use pebbles_core::{IntoWidget, Signal, Ui, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{column, container, OverlayHost, radio_group, resizable, text, View};
+use pebbles_widgets::{OverlayHost, View, column, container, radio_group, resizable, text};
 
 // ---------------------------------------------------------------------------
 // RadioGroup
@@ -268,15 +268,13 @@ thread_local! {
 fn themed_probe() -> impl IntoWidget {
     let dark = pebbles_widgets::theme().dark;
     PAINTED_DARK.with(|c| c.set(Some(dark)));
-    container()
-        .color(pebbles_widgets::theme().colors.background)
-        .into_widget()
+    container().color(pebbles_widgets::theme().colors.background).into_widget()
 }
 
 #[test]
 fn toggle_theme_rerenders_subscribers() {
-    use pebbles_widgets::{set_theme, theme, toggle_theme};
     use pebbles_widgets::Theme;
+    use pebbles_widgets::{set_theme, theme, toggle_theme};
     pebbles_widgets::overlay::init();
     pebbles_core::focus::init();
     theme::init(); // create the global theme signal at app scope
