@@ -63,20 +63,23 @@ claim — the platform builds and passes the headless test suites in
 
 | Platform | Status | Notes |
 |---|---|---|
-| **Linux** (X11 + Wayland) | ✅ Supported | The primary development platform. Built, tested and run daily, including GPU device-loss recovery and long input-storm soaks. |
-| **Windows** | 🟡 In verification | Every dependency supports it and there is Windows-specific code (native window menu behind `native-menus`), but it had never been built in CI until now. The matrix job above is the verification; this row becomes ✅ once it is green. |
-| **macOS** | 🟡 In verification | As Windows. Has the most platform-specific code (global menu bar, `Mod`→⌘ shortcut mapping), so it is expected to work — but expected is not verified. |
-| **iOS** | ⛔ Not supported | No touch input, gesture model, or app-lifecycle integration exists, and the platform layer's clipboard (`arboard`) and accessibility (`accesskit_winit`) dependencies are desktop-only. `winit`/`wgpu` themselves do support iOS, so this is a real port, not a rewrite — the CI `platform-probe` job measures how far the stack currently compiles. |
-| **Android** | ⛔ Not supported | As iOS, plus it needs `android-activity` lifecycle integration. Tracked by the same probe job. |
-| **Web** (wasm) | ⛔ Out of scope | A deliberate decision record, not an omission: the shell blocks on the GPU device (`pollster::block_on`) and assumes native windowing, threads and fonts. Revisiting would mean a second, async shell backend. |
+| **Linux** (X11 + Wayland) | ✅ Supported | The primary development platform: built, tested and run daily, including GPU device-loss recovery and long input-storm soaks. |
+| **Windows** | ✅ Supported | Builds and passes the full suite on `windows-latest` in CI. Native window menu behind `native-menus`. Less interactive polish than Linux — visual/input reports welcome. |
+| **macOS** | ✅ Supported | Builds and passes the full suite on `macos-latest` in CI. Has the most platform-specific code (global menu bar, `Mod`→⌘ shortcut mapping). Same interactive-polish caveat as Windows. |
+| **iOS** | 🟡 Compiles, not usable | The whole stack — *including* the shell (winit + wgpu + clipboard + accessibility) — compiles for `aarch64-apple-ios` in CI. What is missing is the app itself: no touch or gesture input, no application-lifecycle integration, and it has never been run on a device or simulator. Closer than it looks, but not usable. |
+| **Android** | ⛔ Not supported | Everything up to and including the widget catalog compiles for `aarch64-linux-android`; the shell does not — `arboard` (clipboard) has no Android backend. Beyond that it needs `android-activity` lifecycle integration plus the same touch/gesture work as iOS. |
+| **Web** (wasm) | ⛔ Out of scope | A decision record, not an omission. Foundation through widgets compile for `wasm32-unknown-unknown`; the shell does not — `arboard` again, and the renderer initializes the GPU by blocking (`pollster::block_on`), which the web main thread forbids. Supporting it means a second, async shell backend. |
 
-Legend: ✅ built + tested in CI · 🟡 expected to work, verification in progress ·
-⛔ not supported.
+Legend: ✅ built + tested in CI · 🟡 compiles in CI but not usable · ⛔ not
+supported.
 
-The desktop row statuses are produced by the CI matrix on every push, so this
-table cannot silently drift from reality. Mobile/web status changes only when
-the probe job turns green **and** the input + lifecycle work exists — a
-compiling dependency graph is not support.
+The desktop rows are produced by the CI matrix on every push, so this table
+cannot silently drift. The non-desktop rows come from the
+[`platform-probe`](.github/workflows/ci.yml) job, which `cargo check`s each
+crate in dependency order so the blocker is named rather than guessed — note
+that in every case the framework proper is portable and only `pebbles-shell`
+is not. A compiling dependency graph is still not support: mobile status
+changes when the input and lifecycle work exists.
 
 ## Programming model
 
