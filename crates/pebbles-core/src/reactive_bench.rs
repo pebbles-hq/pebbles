@@ -39,17 +39,22 @@ fn shape_wide_one_signal_many_readers() {
             let _ = s.get();
         });
     }
+    // Warm-up write: grows the scheduler scratch to its peak so the MEASURED write
+    // below reflects steady-state cost (T1 makes it allocation-free).
+    s.set(1);
+    flush();
     stats::reset();
     let t = Instant::now();
-    s.set(1);
+    s.set(2);
     flush();
     let dt = t.elapsed();
     eprintln!("[reactive wide N={N}] {} ({dt:?})", stats::summary());
     assert_eq!(stats::notifies(), N as u64, "a write notifies exactly its readers");
     assert_eq!(stats::effect_runs(), N as u64, "all N readers re-run");
-    // Baseline cost this tier kills: one box alloc + one scratch Vec per write.
-    assert_eq!(stats::box_allocs(), 1);
-    assert_eq!(stats::vec_allocs(), 1);
+    // T1: a steady-state write allocates NOTHING — the box is reused, the scratch
+    // buffers are recycled (was 1 box + 1 Vec per write at the R0 baseline).
+    assert_eq!(stats::box_allocs(), 0, "the value box is reused, not re-allocated");
+    assert_eq!(stats::vec_allocs(), 0, "the scheduler scratch is recycled");
 }
 
 #[test]

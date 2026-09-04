@@ -114,6 +114,14 @@ struct Runtime {
     pending_components_set: HashSet<CompKey>,
     /// Effects scheduled to re-run.
     pending_effects: Vec<EffectId>,
+    /// O(1) membership guard mirroring `pending_effects` (T1.4) — parity with the
+    /// component set; replaces the linear `contains` on every schedule.
+    pending_effects_set: HashSet<EffectId>,
+    /// Reusable scratch buffers for the subscriber drain in `schedule_subscribers`
+    /// (T1.5): a write moves the subscriber snapshot through these instead of
+    /// allocating a fresh `Vec` each time. Kept at peak capacity, cleared not dropped.
+    scratch_comps: Vec<CompKey>,
+    scratch_effects: Vec<EffectId>,
     /// Set when a write happened; the shell polls this to request a frame.
     frame_requested: bool,
 }
@@ -294,27 +302,36 @@ impl<T: 'static + Clone> Signal<T> {
     /// disposed (e.g. a lingering animation writing to an unmounted component).
     pub fn set(&self, value: T) {
         with_rt(|rt| {
-            if rt.signals.contains_key(self.id) {
+            if let Some(slot) = rt.signals.get_mut(self.id) {
                 crate::reactive_stats::bump_write();
-                crate::reactive_stats::bump_box_alloc();
-                rt.signals[self.id].value = Box::new(value);
+                write_value(slot, value);
                 schedule_subscribers(rt, self.id);
             }
         });
     }
 
     /// Mutate the value in place and schedule dependents. The closure must not touch
-    /// the runtime (don't read/write other signals inside it). A no-op if the signal
+    /// the runtime (don't read/write *this* signal inside it). A no-op if the signal
     /// was already disposed (mirrors [`set`](Self::set)), so a lingering handler on an
     /// unmounted component can never use-after-free.
     pub fn update(&self, f: impl FnOnce(&mut T)) {
-        if !self.alive() {
-            return;
-        }
-        // Clone out → run f outside the borrow → set back (avoids re-entrancy).
-        let mut value = self.peek();
-        f(&mut value);
-        self.set(value);
+        // Take the value box OUT — replaced by a zero-sized placeholder that never
+        // allocates — run `f` OUTSIDE the runtime borrow (so it may still touch
+        // OTHER signals, as before), then put the SAME box back. No clone of `T`,
+        // no re-box. If `f` unmounts this signal's owner, the slot is gone on the
+        // way back and we simply drop the box (the no-op-after-dispose contract).
+        let taken: Option<Box<dyn Any>> = with_rt(|rt| {
+            rt.signals.get_mut(self.id).map(|s| std::mem::replace(&mut s.value, Box::new(())))
+        });
+        let Some(mut boxed) = taken else { return };
+        crate::reactive_stats::bump_write();
+        f(boxed.downcast_mut::<T>().expect("Signal<T> slot always holds a T"));
+        with_rt(|rt| {
+            if let Some(s) = rt.signals.get_mut(self.id) {
+                s.value = boxed;
+                schedule_subscribers(rt, self.id);
+            }
+        });
     }
 
     /// Read via a borrow, subscribing.
@@ -338,19 +355,39 @@ impl<T: 'static + Clone + PartialEq> Signal<T> {
                 return false; // unchanged — no write, no reschedule
             }
             crate::reactive_stats::bump_write();
-            crate::reactive_stats::bump_box_alloc();
-            rt.signals[self.id].value = Box::new(value);
+            write_value(&mut rt.signals[self.id], value);
             schedule_subscribers(rt, self.id);
             true
         })
     }
 }
 
+/// Overwrite a signal slot's value, reusing the existing `Box` when the concrete
+/// type matches (T1.2) — which it always does for a well-typed `Signal<T>`, so no
+/// heap allocation. The re-box branch is defensive and never fires in practice.
+fn write_value<T: 'static>(slot: &mut SignalSlot, value: T) {
+    if let Some(existing) = slot.value.downcast_mut::<T>() {
+        *existing = value; // reuse the allocation
+    } else {
+        crate::reactive_stats::bump_box_alloc();
+        slot.value = Box::new(value);
+    }
+}
+
 fn schedule_subscribers(rt: &mut Runtime, id: SignalId) {
-    crate::reactive_stats::bump_vec_alloc(); // the two drain Vecs below (T1 kills these)
-    let components: Vec<CompKey> = rt.signals[id].component_subs.drain().collect();
-    let effects: Vec<EffectId> = rt.signals[id].effect_subs.drain().collect();
-    for c in components {
+    // Move the subscriber snapshot through reusable scratch buffers (T1.5) instead
+    // of allocating a fresh `Vec` per write. `HashSet::drain` keeps the set's own
+    // capacity, and the scratch buffers keep theirs — steady-state zero-alloc.
+    let mut comps = std::mem::take(&mut rt.scratch_comps);
+    let mut effs = std::mem::take(&mut rt.scratch_effects);
+    let (cap_c, cap_e) = (comps.capacity(), effs.capacity());
+    comps.extend(rt.signals[id].component_subs.drain());
+    effs.extend(rt.signals[id].effect_subs.drain());
+    // Count a scheduler heap allocation only when a scratch buffer actually grew.
+    if comps.capacity() > cap_c || effs.capacity() > cap_e {
+        crate::reactive_stats::bump_vec_alloc();
+    }
+    for c in comps.drain(..) {
         crate::reactive_stats::bump_notify();
         // O(1) dedup (E1): the set insert reports novelty; the Vec keeps drain order.
         if rt.pending_components_set.insert(c) {
@@ -358,12 +395,14 @@ fn schedule_subscribers(rt: &mut Runtime, id: SignalId) {
             rt.pending_components.push(c);
         }
     }
-    for e in effects {
+    for e in effs.drain(..) {
         crate::reactive_stats::bump_notify();
-        if !rt.pending_effects.contains(&e) {
+        if rt.pending_effects_set.insert(e) {
             rt.pending_effects.push(e);
         }
     }
+    rt.scratch_comps = comps; // hand the (now-empty, capacity-retaining) buffers back
+    rt.scratch_effects = effs;
     rt.frame_requested = true;
 }
 
@@ -732,7 +771,10 @@ pub(crate) fn take_pending_components(window: u32) -> Vec<ElementId> {
 /// Run any scheduled effects (called before re-rendering components).
 pub(crate) fn flush_effects() {
     loop {
-        let pending = with_rt(|rt| std::mem::take(&mut rt.pending_effects));
+        let pending = with_rt(|rt| {
+            rt.pending_effects_set.clear(); // in lockstep with the Vec (T1.4)
+            std::mem::take(&mut rt.pending_effects)
+        });
         if pending.is_empty() {
             break;
         }
