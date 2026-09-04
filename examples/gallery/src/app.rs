@@ -45,7 +45,7 @@ fn install_tour() {
             hop(all.clone(), i + 1, key, secs);
         });
     }
-    // GALLERY_TOUR_ROUTES="overview,markdown" pins the tour to just those
+    // GALLERY_TOUR_ROUTES="overview,typography" pins the tour to just those
     // screens (screen-focused burn-in); default = every NAV route.
     let all: Vec<String> = match std::env::var("GALLERY_TOUR_ROUTES") {
         Ok(list) if !list.trim().is_empty() => {
@@ -148,7 +148,6 @@ pub fn app() -> impl IntoWidget {
         .route("list", || component(screens::list::lists))
         .route("data-table", || component(screens::data_table::data_tables))
         .route("file-explorer", || component(screens::file_explorer::file_explorer_screen))
-        .route("markdown", || component(screens::markdown::markdown_screen))
         .route("split-view", || component(screens::split_view::split_views))
         .route("list-view", || component(screens::list_view::list_view))
         .route("grid-view", || component(screens::grid_view::grid_view))

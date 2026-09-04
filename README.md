@@ -46,9 +46,14 @@ cargo run -p gallery     # the full widget showcase / documentation
 
 Optional integrations are opt-in cargo features on the `pebbles` crate:
 `image-view` (`ImageView` + image decoding), `file-dialogs` (`pick_folder`),
-`markdown` (the GFM reader/editor), `native-menus` (OS menu bar),
-`global-hotkeys`. A default build links none of them — no image codecs, no
-HTTP client, no async runtime, no parser.
+`native-menus` (OS menu bar), `global-hotkeys`. A default build links none of
+them — no image codecs, no HTTP client, no async runtime.
+
+Widgets can also ship as **separate packages** that depend on Pebbles — the
+ecosystem model. The Obsidian-style GFM reader/editor lives in its own crate,
+[`pebbles-markdown`](https://github.com/pebbles-hq/pebbles-markdown); add it to
+your app alongside `pebbles`. It is the reference example for building your own
+Pebbles widget package.
 
 ## Programming model
 

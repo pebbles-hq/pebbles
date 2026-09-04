@@ -5,8 +5,6 @@ mod chip;
 mod data;
 mod empty;
 mod file_explorer;
-#[cfg(feature = "markdown")]
-mod markdown;
 mod list_tile;
 mod hover_card;
 mod kbd;
@@ -26,11 +24,6 @@ pub use empty::{Empty, empty};
 pub use file_explorer::{FileExplorer, FileTree, FsKind, FsNode, file_explorer};
 #[cfg(feature = "file-dialogs")]
 pub use file_explorer::pick_folder;
-#[cfg(feature = "markdown")]
-pub use markdown::{
-    Markdown, MarkdownEditor, MarkdownMode, MarkdownStyle, SyntaxColors, markdown, markdown_editor,
-    toggle_task,
-};
 pub use kbd::{Kbd, kbd};
 pub use icon::{Icon, icon};
 pub use progress::{Progress, progress};

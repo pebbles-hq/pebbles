@@ -6,6 +6,25 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — Markdown moved to its own package (the ecosystem model)
+The Obsidian-style Markdown reader/editor left the catalog and now ships as a
+separate crate, [`pebbles-markdown`](https://github.com/pebbles-hq/pebbles-markdown)
+— the reference example of a **third-party Pebbles widget package**. It depends
+on the catalog through Pebbles' public API only; the catalog does not depend on
+it (the Flutter `flutter_markdown` model). Removed from this repo: the
+`markdown` feature on `pebbles-widgets` and `pebbles` (and the optional
+`pulldown-cmark` dep), the `markdown`/`markdown_editor`/`MarkdownStyle`/… exports,
+the gallery's Markdown screen + nav route, and the markdown test suites (they
+moved to the new crate intact). Apps that want Markdown add `pebbles-markdown`
+alongside `pebbles`.
+
+This makes the ecosystem story concrete: a widget can live and be maintained
+outside the framework as an ordinary crate. The public API supports both
+composite widgets (compose the catalog, as markdown does) and genuinely new
+low-level widgets (implement `pebbles_render::RenderObject` + `render_widget!`) —
+all reachable from `pebbles::prelude`.
+
+
 ### Fixed — the Markdown reader survives any input (no more freeze on non-ASCII code)
 A fenced code block containing ANY non-ASCII character — an accented identifier
 (`let café = 1`), an em-dash, an arrow, a smart quote, an emoji, CJK — froze the

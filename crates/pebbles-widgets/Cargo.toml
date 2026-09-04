@@ -16,9 +16,10 @@ default = []
 image-view = ["dep:image", "dep:ureq", "dep:base64"]
 # `pick_folder` — the native OS folder picker (pulls in rfd + an async runtime on Linux).
 file-dialogs = ["dep:rfd"]
-# The Markdown reader/editor (`markdown`, `markdown_editor`) — pulls in the
-# pulldown-cmark GFM parser (the one behind rustdoc/mdbook).
-markdown = ["dep:pulldown-cmark"]
+# NOTE: the Markdown reader/editor now lives in its OWN package,
+# `pebbles-markdown` (github.com/pebbles-hq/pebbles-markdown) — the reference
+# third-party Pebbles widget crate. It depends on this catalog; the catalog does
+# NOT depend on it (the Flutter `flutter_markdown` model).
 
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"], optional = true }
@@ -27,7 +28,6 @@ base64 = { version = "0.22", optional = true }
 pebbles-core.workspace = true
 pebbles-foundation.workspace = true
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"], optional = true }
-pulldown-cmark = { version = "0.13", default-features = false, optional = true }
 pebbles-render.workspace = true
 
 [lints]

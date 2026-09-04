@@ -5,7 +5,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-pebbles = { workspace = true, features = ["image-view", "file-dialogs", "markdown"] }
+pebbles = { workspace = true, features = ["image-view", "file-dialogs"] }
 
 # Headless demo capture (GALLERY_CAPTURE=<dir>): vello WITH default features for
 # the GPU `Renderer` + `util::RenderContext`, wgpu for the texture readback.

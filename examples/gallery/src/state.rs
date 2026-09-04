@@ -112,7 +112,6 @@ pub const NAV: &[NavGroup] = &[
             ("list", lucide::LIST, "List"),
             ("data-table", lucide::TABLE, "Data Table"),
             ("file-explorer", lucide::FOLDER_TREE, "File Explorer"),
-            ("markdown", lucide::FILE_TEXT, "Markdown"),
             ("typography", lucide::TYPE, "Typography"),
             ("fonts", lucide::PILCROW, "Fonts"),
             ("icons", lucide::SHAPES, "Icons"),
