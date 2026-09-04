@@ -53,9 +53,15 @@ jobs:
         check: [advisories, bans, licenses, sources]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+      # Installed onto the runner rather than using the containerized action:
+      # that container is musl-based and cannot resolve this repo's
+      # rust-toolchain.toml, which made every run log a toolchain override
+      # error. Running it here means CI and `cargo deny` locally behave
+      # identically.
+      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
         with:
-          command: check ${{ matrix.check }}
+          tool: cargo-deny
+      - run: cargo deny check ${{ matrix.check }}
 
   # ───────────────────────────────────────────────────────────────────────────
   # Gitleaks — secrets/credentials committed anywhere in git HISTORY, not just

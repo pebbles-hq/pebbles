@@ -20,6 +20,32 @@ targets = [
 [advisories]
 version = 2
 yanked = "deny"
+# `unmaintained` advisories on TRANSITIVE dependencies we do not control. None
+# is a vulnerability (cargo-audit, which gates on vulnerabilities, passes) — they
+# are maintenance notices, and gating merges on them would train people to
+# ignore the job. Listed explicitly so each stays visible and reviewable rather
+# than being blanket-disabled.
+ignore = [
+    # The gtk-rs GTK3 stack, reached only via `muda` (the `native-menus`
+    # feature). `muda` is target-gated to macOS/Windows, where it uses the
+    # native menu APIs — so this code is not built on ANY supported platform.
+    # It disappears entirely when muda upstreams a GTK4/no-GTK Linux path.
+    "RUSTSEC-2024-0412",
+    "RUSTSEC-2024-0413",
+    "RUSTSEC-2024-0415",
+    "RUSTSEC-2024-0416",
+    "RUSTSEC-2024-0418",
+    "RUSTSEC-2024-0419",
+    "RUSTSEC-2024-0420",
+    # proc-macro-error, a build-time proc-macro dep of glib-macros in that same
+    # GTK chain. Build-time only; never linked into a shipped binary.
+    "RUSTSEC-2024-0370",
+    # ttf-parser, via ab_glyph <- sctk-adwaita <- winit (Wayland client-side
+    # decorations). This one IS built on Linux. Font PARSING of untrusted files
+    # would matter, but this path only renders winit's own title-bar text, and
+    # the fix belongs upstream in winit's decoration stack.
+    "RUSTSEC-2026-0192",
+]
 
 [licenses]
 version = 2
@@ -37,6 +63,7 @@ allow = [
     "Unicode-3.0",
     "MPL-2.0",       # option groups in the wgpu/winit graph
     "BSL-1.0",       # error-code, via arboard's Windows clipboard backend
+    "CDLA-Permissive-2.0", # webpki-roots — Mozilla's CA bundle, via ureq
     "CC0-1.0",
     "OFL-1.1",       # bundled fonts
     "Ubuntu-font-1.0",

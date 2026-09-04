@@ -19,30 +19,27 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        with:
+          tool: cargo-deny
+
       # The allow-list lives in deny.toml, so the policy is reviewable in-tree
       # rather than encoded in this workflow. Apache-2.0 project: strong
       # copyleft (AGPL/GPL/LGPL) must not enter the graph.
       - name: Check the license allow-list
-        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
-        with:
-          command: check licenses
+        run: cargo deny check licenses
 
-      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
-        with:
-          tool: cargo-about
-
-      # Attribution for what we ship. Generated, not committed: it is derived
-      # from Cargo.lock and would rot the moment a dependency moves.
+      # Attribution for what we ship, as a build artifact. Generated rather than
+      # committed: it derives from Cargo.lock and would rot the moment a
+      # dependency moves.
       - name: Generate third-party notices
         run: |
-          cargo about init --overwrite 2>/dev/null || true
-          cargo about generate --output-file THIRD_PARTY_NOTICES.html about.hbs 2>/dev/null \
-            || cargo about generate --output-file THIRD_PARTY_NOTICES.html --format json \
-            || echo "cargo-about produced no report (template missing); see NOTICE"
+          cargo deny list --layout crate --format tsv > THIRD_PARTY_NOTICES.tsv
+          wc -l THIRD_PARTY_NOTICES.tsv
 
       - name: Upload third-party notices
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: third-party-notices
-          path: THIRD_PARTY_NOTICES.html
+          path: THIRD_PARTY_NOTICES.tsv
           if-no-files-found: warn
