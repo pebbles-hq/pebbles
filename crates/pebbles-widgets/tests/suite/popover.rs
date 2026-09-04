@@ -4,12 +4,12 @@
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{Container, OverlayHost, View, context_menu, menu_item, overlay, popover, text};
+use pebbles_widgets::{container, context_menu, menu_item, overlay, OverlayHost, popover, text, View};
 
 fn root() -> impl IntoWidget {
     // A fixed-size trigger at the top-left so we know where to tap.
     OverlayHost::wrap(
-        popover(text("panel body"), Container::new().width(120.0).height(40.0).child(text("Open")))
+        popover(text("panel body"), container().width(120.0).height(40.0).child(text("Open")))
             .width(200.0)
             .height(120.0),
     )
@@ -56,7 +56,7 @@ fn popover_opens_on_trigger_click_and_dismisses_outside() {
 
 fn ctx_root() -> impl IntoWidget {
     OverlayHost::wrap(
-        context_menu(Container::new().width(160.0).height(90.0).child(text("right-click")))
+        context_menu(container().width(160.0).height(90.0).child(text("right-click")))
             .item(menu_item("Copy"))
             .item(menu_item("Paste"))
             .separator()

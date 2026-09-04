@@ -29,20 +29,20 @@ mod view;
 mod transform;
 pub use transform::{Transform, transform};
 pub use animated::{AnimatedContainer, animated_container};
-pub use boxes::{Align, ColoredBox, ConstrainedBox, Padding, SizedBox, center, gap_h, gap_w, sized_box};
+pub use boxes::{Align, ColoredBox, ConstrainedBox, Padding, SizedBox, align, center, colored_box, constrained_box, gap_h, gap_w, padding, sized_box};
 pub use canvas::{CanvasWidget, canvas};
-pub use container::Container;
+pub use container::{Container, container};
 pub use decorated::DecoratedBox;
 pub use editable::{EditableText, editable};
-pub use effects::{ClipRRect, Opacity, RepaintBoundary, repaint_boundary};
+pub use effects::{ClipRRect, Opacity, RepaintBoundary, clip_rrect, opacity, repaint_boundary};
 pub use flex::{Column, Row, column, row};
-pub use flex_children::{Expanded, Flexible, spacer};
+pub use flex_children::{Expanded, Flexible, expanded, flexible, spacer};
 pub use focus_scope::focus_scope;
-pub use gesture::GestureDetector;
+pub use gesture::{GestureDetector, gesture_detector};
 pub use layout::{AspectRatio, Wrap, aspect_ratio, wrap};
 pub use list::{GridView, ListView, ScrollController, use_scroll_controller};
 pub use probe::{ExtentProbe, extent_probe};
-pub use scroll::{ScrollExt, SingleChildScrollView, list_view};
+pub use scroll::{ScrollExt, SingleChildScrollView, list_view, scroll_view};
 pub use semantics::{Semantics, SemanticsExt, semantics};
 pub use pebbles_render::{ScrollbarPolicy, ScrollbarStyle, SemanticsProps, SemanticsRole};
 pub use sizing::{
@@ -51,6 +51,6 @@ pub use sizing::{
     overflow_box,
 };
 pub use spinner::{Spinner, spinner};
-pub use stack::{Positioned, Stack, stack};
+pub use stack::{Positioned, Stack, positioned, stack};
 pub use text::{RichText, Text, TextSpan, span, text, text_rich, text_signal};
 pub use view::View;

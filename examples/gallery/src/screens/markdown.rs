@@ -203,7 +203,7 @@ pub fn markdown_screen() -> Element {
                         gap_h(10.0),
                         row(children![
                             // The vault pane: the stock explorer, filter bound on top.
-                            Container::new()
+                            container()
                                 .width(250.0)
                                 .decoration(
                                     BoxDecoration::new()
@@ -218,13 +218,13 @@ pub fn markdown_screen() -> Element {
                                             .leading(lucide::SEARCH)
                                             .bind(explorer.filter()),
                                         gap_h(4.0),
-                                        Container::new().height(430.0).child(explorer.tree()),
+                                        container().height(430.0).child(explorer.tree()),
                                     ])
                                     .cross_axis_alignment(CrossAxisAlignment::Stretch)
                                     .main_axis_size(MainAxisSize::Min),
                                 ),
                             gap_w(12.0),
-                            Expanded::new({
+                            expanded({
                                 // Huge sources read through the VIRTUALIZED reader
                                 // (bounded box; only line-of-sight blocks build).
                                 // Normal sizes keep the editor workbench.
@@ -239,7 +239,7 @@ pub fn markdown_screen() -> Element {
                                         2 => md.style(compact_style()),
                                         _ => md,
                                     };
-                                    Container::new().height(560.0).child(md).into_widget()
+                                    container().height(560.0).child(md).into_widget()
                                 } else {
                                     let mut ed = markdown_editor(source)
                                         .mode_signal(mode)
@@ -265,7 +265,7 @@ pub fn markdown_screen() -> Element {
             doc("Reader — drop it anywhere")
                 .description("markdown(text) renders a fixed string (docs panels, changelogs, chat messages, tooltips). This one uses the Compact theme.")
                 .body(
-                    Container::new()
+                    container()
                         .decoration(
                             BoxDecoration::new()
                                 .border(Border::new(theme().colors.border, 1.0))

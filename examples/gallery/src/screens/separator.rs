@@ -16,7 +16,7 @@ fn horizontal() -> impl IntoWidget {
             "separator() fills the available width; a horizontal rule between stacked content.",
         )
         .body(
-            Container::new().width(360.0).child(
+            container().width(360.0).child(
                 column(children![
                     text("Pebbles").size(15.0).semibold(),
                     muted("A Flutter-style Rust GUI framework."),
@@ -51,7 +51,7 @@ fn thickness() -> impl IntoWidget {
     doc("Thickness")
         .description("Thicken the rule with .thickness().")
         .body(
-            Container::new().width(360.0).child(
+            container().width(360.0).child(
                 column(children![
                     separator().thickness(1.0),
                     gap_h(16.0),
@@ -69,7 +69,7 @@ fn colors() -> impl IntoWidget {
     doc("Color")
         .description("Recolor with .color() — defaults to the theme border.")
         .body(
-            Container::new().width(360.0).child(
+            container().width(360.0).child(
                 column(children![
                     separator().thickness(2.0).color(palette::emerald::S500),
                     gap_h(16.0),
@@ -87,13 +87,13 @@ fn labeled() -> impl IntoWidget {
     doc("With a label")
         .description("Compose a labeled divider — a separator on each side of centered text.")
         .body(
-            Container::new().width(360.0).child(
+            container().width(360.0).child(
                 row(children![
-                    Expanded::new(separator()),
+                    expanded(separator()),
                     gap_w(12.0),
                     muted("OR"),
                     gap_w(12.0),
-                    Expanded::new(separator()),
+                    expanded(separator()),
                 ])
                 .cross_axis_alignment(CrossAxisAlignment::Center),
             ),

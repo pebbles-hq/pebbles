@@ -5,7 +5,7 @@ use crate::ui::{doc, gap_h, gap_w, screen};
 fn chip(color: Color, w: f64, h: f64) -> Container {
     // A zero dimension means "fill": the container omits that SizedBox, and a
     // childless decorated container expands to its constraints (Flutter parity).
-    let mut c = Container::new()
+    let mut c = container()
         .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)));
     if w > 0.0 {
         c = c.width(w);
@@ -17,7 +17,7 @@ fn chip(color: Color, w: f64, h: f64) -> Container {
 }
 
 fn stage(w: f64, h: f64, child: impl IntoWidget) -> Container {
-    Container::new()
+    container()
         .width(w)
         .height(h)
         .padding(EdgeInsets::all(6.0))
@@ -36,7 +36,7 @@ pub fn stacks() -> Element {
         )
         .body(children![
             alignment_grid(),
-            positioned(),
+            positioned_section(),
             fit_and_zorder(),
             real_world(),
         ])
@@ -82,7 +82,7 @@ fn alignment_grid() -> impl IntoWidget {
         )
 }
 
-fn positioned() -> impl IntoWidget {
+fn positioned_section() -> impl IntoWidget {
     doc("Positioned")
         .description("Exact placement: edge pins (left/top, right/bottom), a full-size fill, a width-only span pinned left, and a vertical span pinned right — every combination the Flutter Positioned supports.")
         .body(
@@ -91,11 +91,11 @@ fn positioned() -> impl IntoWidget {
                 220.0,
                 stack(children![
                     Positioned::fill(chip(palette::INDIGO, 0.0, 0.0)),
-                    Positioned::new(chip(palette::BLUE, 90.0, 60.0)).left(8.0).top(8.0),
-                    Positioned::new(chip(palette::GREEN, 90.0, 60.0)).right(8.0).bottom(8.0),
-                    Positioned::new(chip(palette::AMBER, 120.0, 40.0)).left(200.0).top(60.0),
-                    Positioned::new(chip(palette::PURPLE, 80.0, 60.0)).right(140.0).top(20.0),
-                    Positioned::new(center(text("center").color(palette::WHITE).semibold()))
+                    positioned(chip(palette::BLUE, 90.0, 60.0)).left(8.0).top(8.0),
+                    positioned(chip(palette::GREEN, 90.0, 60.0)).right(8.0).bottom(8.0),
+                    positioned(chip(palette::AMBER, 120.0, 40.0)).left(200.0).top(60.0),
+                    positioned(chip(palette::PURPLE, 80.0, 60.0)).right(140.0).top(20.0),
+                    positioned(center(text("center").color(palette::WHITE).semibold()))
                         .left(180.0)
                         .top(8.0)
                         .width(120.0)
@@ -150,9 +150,9 @@ fn fit_and_zorder() -> impl IntoWidget {
                         150.0,
                         110.0,
                         stack(children![
-                            Positioned::new(chip(palette::BLUE, 80.0, 40.0)).left(8.0).top(10.0),
-                            Positioned::new(chip(palette::GREEN, 80.0, 40.0)).left(26.0).top(26.0),
-                            Positioned::new(chip(palette::AMBER, 80.0, 40.0)).left(44.0).top(42.0),
+                            positioned(chip(palette::BLUE, 80.0, 40.0)).left(8.0).top(10.0),
+                            positioned(chip(palette::GREEN, 80.0, 40.0)).left(26.0).top(26.0),
+                            positioned(chip(palette::AMBER, 80.0, 40.0)).left(44.0).top(42.0),
                         ]),
                     ),
                     "later children paint on top",
@@ -171,7 +171,7 @@ fn real_world() -> impl IntoWidget {
             row(children![
                 column(children![
                     stack(children![
-                        Container::new()
+                        container()
                             .width(72.0)
                             .height(72.0)
                             .decoration(
@@ -180,8 +180,8 @@ fn real_world() -> impl IntoWidget {
                                     .shape(BoxShape::Circle),
                             )
                             .child(center(text("RK").color(palette::WHITE).semibold().size(20.0))),
-                        Positioned::new(
-                            Container::new()
+                        positioned(
+                            container()
                                 .width(16.0)
                                 .height(16.0)
                                 .decoration(
@@ -201,7 +201,7 @@ fn real_world() -> impl IntoWidget {
                 .main_axis_size(MainAxisSize::Min),
                 gap_w(18.0),
                 column(children![
-                    Container::new()
+                    container()
                         .width(220.0)
                         .height(110.0)
                         .decoration(
@@ -215,13 +215,13 @@ fn real_world() -> impl IntoWidget {
                         )
                         .child(
                             stack(children![
-                                Positioned::new(text("Dunes & Light").color(palette::WHITE).size(15.0).semibold())
+                                positioned(text("Dunes & Light").color(palette::WHITE).size(15.0).semibold())
                                     .left(12.0)
                                     .bottom(30.0),
-                                Positioned::new(text("Issue 04 · Field notes").color(palette::WHITE).size(11.0))
+                                positioned(text("Issue 04 · Field notes").color(palette::WHITE).size(11.0))
                                     .left(12.0)
                                     .bottom(12.0),
-                                Positioned::new(badge("new").variant(BadgeVariant::Secondary))
+                                positioned(badge("new").variant(BadgeVariant::Secondary))
                                     .right(12.0)
                                     .top(12.0),
                             ]),
@@ -233,7 +233,7 @@ fn real_world() -> impl IntoWidget {
                 .main_axis_size(MainAxisSize::Min),
                 gap_w(18.0),
                 column(children![
-                    Container::new()
+                    container()
                         .width(180.0)
                         .height(110.0)
                         .decoration(
@@ -249,8 +249,8 @@ fn real_world() -> impl IntoWidget {
                                     muted("corner tag").size(11.5),
                                 ])
                                 .main_axis_size(MainAxisSize::Min)),
-                                Positioned::new(
-                                    Container::new()
+                                positioned(
+                                    container()
                                         .width(64.0)
                                         .height(22.0)
                                         .decoration(

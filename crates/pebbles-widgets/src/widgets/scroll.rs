@@ -161,3 +161,10 @@ pub trait ScrollExt: pebbles_core::IntoWidget + Sized {
 }
 
 impl<T: pebbles_core::IntoWidget + Sized> ScrollExt for T {}
+
+/// A vertically-scrolling viewport around `child` — the dominant case, as a
+/// constructor fn (D10). Horizontal stays the named variant
+/// `SingleChildScrollView::horizontal(..)`, like `ListView::builder`.
+pub fn scroll_view(child: impl pebbles_core::IntoWidget) -> SingleChildScrollView {
+    SingleChildScrollView::vertical(child)
+}

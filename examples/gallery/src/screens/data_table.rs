@@ -62,7 +62,7 @@ pub fn data_tables() -> Element {
                                 .striped(true)
                                 .selection(selected.get())
                                 .footer(
-                                    Padding::new(
+                                    padding(
                                         EdgeInsets::symmetric(12.0, 8.0),
                                         row(children![
                                             muted(format!("{} of {} rows", per_page, shown.len())),

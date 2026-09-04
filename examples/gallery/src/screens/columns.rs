@@ -5,7 +5,7 @@ use crate::ui::{doc, gap_h, gap_w, screen};
 fn chip(color: Color, w: f64, h: f64) -> Container {
     // A zero dimension means "fill": the container omits that SizedBox, and a
     // childless decorated container expands to its constraints (Flutter parity).
-    let mut c = Container::new()
+    let mut c = container()
         .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)));
     if w > 0.0 {
         c = c.width(w);
@@ -17,7 +17,7 @@ fn chip(color: Color, w: f64, h: f64) -> Container {
 }
 
 fn stage(h: f64, child: impl IntoWidget) -> Container {
-    Container::new()
+    container()
         .height(h)
         .padding(EdgeInsets::all(6.0))
         .decoration(
@@ -45,7 +45,7 @@ pub fn columns() -> Element {
             baseline(),
             spacing(),
             axis_size(),
-            expanded(),
+            expanded_section(),
             patterns(),
         ])
 }
@@ -175,7 +175,7 @@ fn cross_axis() -> impl IntoWidget {
                     let stretched = matches!(alignment, CrossAxisAlignment::Stretch);
                     items.push(
                         column(children![
-                            Container::new()
+                            container()
                                 .width(150.0)
                                 .height(116.0)
                                 .padding(EdgeInsets::all(6.0))
@@ -267,7 +267,7 @@ fn axis_size() -> impl IntoWidget {
         .body(
             row(children![
                 column(children![
-                    Container::new()
+                    container()
                         .padding(EdgeInsets::all(6.0))
                         .decoration(
                             BoxDecoration::new()
@@ -309,7 +309,7 @@ fn axis_size() -> impl IntoWidget {
         )
 }
 
-fn expanded() -> impl IntoWidget {
+fn expanded_section() -> impl IntoWidget {
     let (a, b, c) = (palette3()[0], palette3()[1], palette3()[2]);
     doc("Expanded")
         .description("Vertical flex factors split leftover height: header gets 2, body 1, footer 1 — the same flex math as Row, rotated.")
@@ -318,11 +318,11 @@ fn expanded() -> impl IntoWidget {
                 stage(
                     160.0,
                     column(children![
-                        Expanded::new(chip(a, 0.0, 0.0)).flex(2),
+                        expanded(chip(a, 0.0, 0.0)).flex(2),
                         gap_h(8.0),
-                        Expanded::new(chip(b, 0.0, 0.0)).flex(1),
+                        expanded(chip(b, 0.0, 0.0)).flex(1),
                         gap_h(8.0),
-                        Expanded::new(chip(c, 0.0, 0.0)).flex(1),
+                        expanded(chip(c, 0.0, 0.0)).flex(1),
                     ]),
                 )
                 .into_widget(),
@@ -338,7 +338,7 @@ fn patterns() -> impl IntoWidget {
     doc("Chat panel pattern")
         .description("A header, an Expanded scrollable body, and a footer — the canonical app-panel skeleton, built entirely from Column + Expanded.")
         .body(
-            Container::new()
+            container()
                 .height(300.0)
                 .decoration(
                     BoxDecoration::new()
@@ -348,7 +348,7 @@ fn patterns() -> impl IntoWidget {
                 )
                 .child(
                     column(children![
-                        Container::new()
+                        container()
                             .padding(EdgeInsets::symmetric(12.0, 14.0))
                             .decoration(BoxDecoration::new().border(Border::only(BorderSide::NONE, BorderSide::NONE, BorderSide::new(th.colors.border, 1.0), BorderSide::NONE)))
                             .child(
@@ -361,7 +361,7 @@ fn patterns() -> impl IntoWidget {
                                 ]),
                             )
                             .into_widget(),
-                        Expanded::new(
+                        expanded(
                             scroll_area(
                                 column({
                                     let mut items: Vec<AnyWidget> = Vec::new();
@@ -378,7 +378,7 @@ fn patterns() -> impl IntoWidget {
                                         items.push(
                                             column(children![
                                                 muted(if mine { "you" } else { author }).size(11.0),
-                                                Container::new()
+                                                container()
                                                     .padding(EdgeInsets::symmetric(6.0, 10.0))
                                                     .decoration(
                                                         BoxDecoration::new()
@@ -402,12 +402,12 @@ fn patterns() -> impl IntoWidget {
                             .padding(EdgeInsets::all(14.0)),
                         )
                         .into_widget(),
-                        Container::new()
+                        container()
                             .padding(EdgeInsets::all(10.0))
                             .decoration(BoxDecoration::new().border(Border::only(BorderSide::new(th.colors.border, 1.0), BorderSide::NONE, BorderSide::NONE, BorderSide::NONE)))
                             .child(
                                 row(children![
-                                    Expanded::new(text_field().placeholder("Type a message…")),
+                                    expanded(text_field().placeholder("Type a message…")),
                                     gap_w(8.0),
                                     button("Send"),
                                 ]),

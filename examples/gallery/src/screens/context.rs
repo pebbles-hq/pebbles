@@ -57,7 +57,7 @@ fn focus_scope_demo() -> impl IntoWidget {
                 .main_axis_size(MainAxisSize::Min),
                 gap_h(14.0),
                 focus_scope(
-                    Container::new()
+                    container()
                         .width(360.0)
                         .padding(EdgeInsets::all(14.0))
                         .decoration(

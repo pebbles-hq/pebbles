@@ -50,14 +50,14 @@ fn global_switch() -> impl IntoWidget {
                 gap_h(14.0),
                 wrap(children![
                     demo_box("Right-click this box", "global_menu_on(..) — the default menu on THIS widget, even while global is off", global_menu_on(
-                        Container::new()
+                        container()
                             .height(90.0)
                             .decoration(BoxDecoration::new().color(theme().colors.secondary).radius(BorderRadius::all(theme().radius)))
                             .alignment(Alignment::CENTER)
                             .child(muted("global_menu_on(..)")),
                     )),
                     demo_box("Right-click this box", "block_context_menu(..) — suppressed here, always", block_context_menu(
-                        Container::new()
+                        container()
                             .height(90.0)
                             .decoration(BoxDecoration::new().color(theme().colors.secondary).radius(BorderRadius::all(theme().radius)))
                             .alignment(Alignment::CENTER)

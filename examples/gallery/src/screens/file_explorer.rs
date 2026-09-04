@@ -130,7 +130,7 @@ pub fn file_explorer_screen() -> Element {
                         ])
                         .spacing(6.0),
                         gap_h(10.0),
-                        Container::new()
+                        container()
                             .decoration(
                                 BoxDecoration::new()
                                     .border(Border::new(theme().colors.border, 1.0))

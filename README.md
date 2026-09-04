@@ -53,7 +53,7 @@ HTTP client, no async runtime, no parser.
 ## Programming model
 
 - **UI syntax is Flutter.** `column(children![a, b, c])` mirrors `Column(children: [...])`,
-  `Container::new().color(..).padding(..)`, `Row`/`Expanded`/`Stack`, the constraints-down /
+  `container().color(..).padding(..)`, `Row`/`Expanded`/`Stack`, the constraints-down /
   sizes-up box layout — a Flutter developer is immediately at home. **One children syntax:**
   the `children![…]` list literal for fixed children, a `Vec` (`.map(..).collect()`) for
   computed ones — same as Dart's list literal vs `.toList()`.

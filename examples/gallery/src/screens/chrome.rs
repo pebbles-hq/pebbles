@@ -21,7 +21,7 @@ pub fn chrome_screen() -> Element {
                      bar. The nav selection and collapsed state are controlled signals.",
                 )
                 .body(
-                    Container::new().height(380.0).child(
+                    container().height(380.0).child(
                         scaffold(center(text("Body content").size(16.0)))
                             .top(top_panel("Dashboard").action(button("Action")))
                             .side(

@@ -78,3 +78,18 @@ impl ParentDataWidget for Flexible {
 pub fn spacer() -> Expanded {
     Expanded::new(gap_h(0.0))
 }
+
+// ---------------------------------------------------------------------------
+// Lowercase constructor fns (D10)
+// ---------------------------------------------------------------------------
+
+/// Make `child` fill the remaining main-axis space of its row/column.
+pub fn expanded(child: impl pebbles_core::IntoWidget) -> Expanded {
+    Expanded::new(child)
+}
+
+/// Let `child` share remaining space by its `.flex(..)` factor without forcing
+/// it to fill.
+pub fn flexible(child: impl pebbles_core::IntoWidget) -> Flexible {
+    Flexible::new(child)
+}

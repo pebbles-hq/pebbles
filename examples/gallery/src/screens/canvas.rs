@@ -45,7 +45,7 @@ pub fn canvas_screen() -> Element {
             doc("Fills its constraints")
                 .description("Omit width/height and the canvas fills the space its parent gives it.")
                 .body(
-                    Container::new().width(340.0).height(72.0).child(canvas(move |c: &mut Canvas<'_>| {
+                    container().width(340.0).height(72.0).child(canvas(move |c: &mut Canvas<'_>| {
                         let s = c.size();
                         c.fill_rrect(Rect::new(0.0, 0.0, s.width, s.height), 8.0, colors.card);
                         c.fill_rrect(Rect::new(0.0, 0.0, s.width * 0.66, s.height), 8.0, colors.primary);

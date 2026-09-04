@@ -42,8 +42,8 @@ impl Screen {
         }
         items.push(gap_h(24.0).into_widget());
         items.extend(body.into_children());
-        SingleChildScrollView::vertical(
-            Container::new().padding(EdgeInsets::all(30.0)).child(
+        scroll_view(
+            container().padding(EdgeInsets::all(30.0)).child(
                 column(items)
                     .cross_axis_alignment(CrossAxisAlignment::Stretch)
                     .main_axis_size(MainAxisSize::Min),
@@ -151,7 +151,7 @@ fn render_stat_card(p: &StatCardProps) -> Card {
     card().child(
         column(children![
             row(children![
-                Container::new()
+                container()
                     .decoration(
                         BoxDecoration::new()
                             .color(p.tint)

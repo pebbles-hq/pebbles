@@ -7,7 +7,7 @@ use crate::ui::{doc, gap_w, screen};
 
 /// A padded dialog panel: title, description, body, then a right-aligned footer.
 fn panel(title: &str, desc: &str, body_w: impl IntoWidget, footer: impl IntoWidget) -> AnyWidget {
-    Container::new()
+    container()
         .padding(EdgeInsets::all(22.0))
         .child(
             column(children![

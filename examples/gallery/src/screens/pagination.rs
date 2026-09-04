@@ -104,7 +104,7 @@ pub fn paginations() -> Element {
                         .row(vec!["Andres", "Engineer"])
                         .row(vec!["Joseph", "Engineer"])
                         .footer(
-                            Padding::new(
+                            padding(
                                 EdgeInsets::symmetric(12.0, 8.0),
                                 row(children![
                                     muted("3 of 20 rows"),

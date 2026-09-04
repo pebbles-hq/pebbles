@@ -6,6 +6,19 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### API — one call-site convention: lowercase constructor fns (D10)
+Every widget is now constructed by a snake_case function; PascalCase names appear
+only in type positions. Added `container()`, `padding(..)`, `expanded(..)`,
+`flexible(..)`, `opacity(..)`, `clip_rrect(..)`, `positioned(..)`, `align(..)`,
+`gesture_detector(..)`, `scroll_view(..)`, `constrained_box(..)`,
+`colored_box(..)` — one-line wrappers over the (still public) `Type::new` core
+layer — and swept the gallery, tests, README, and WIDGETS.md examples to the fn
+forms. Named-variant constructors stay on their types (`ListView::builder`,
+`SingleChildScrollView::horizontal`, `ImageView::asset/network`,
+`Positioned::fill`), mirroring Flutter's named constructors. Also fixed:
+`RichText`/`TextSpan`/`span`/`text_rich`/`RepaintBoundary` are now exported from
+the crate root and the prelude. Purely additive — no behavior change.
+
 ### Performance — top-notch reactivity (lazy memos + allocation-free writes)
 The signal runtime keeps its best-in-class handle (a `Copy` slotmap id — no
 `Arc`, no borrow footgun) and glitch-free two-phase flush, and sharpens the rest:

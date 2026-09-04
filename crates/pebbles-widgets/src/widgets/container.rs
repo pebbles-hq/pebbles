@@ -169,3 +169,10 @@ impl IntoWidget for Container {
         current
     }
 }
+
+/// An empty [`Container`] — chain the fluent setters (`.color`, `.padding`,
+/// `.child`, …). The lowercase constructor form (D10): call sites use fns,
+/// PascalCase names appear only in type positions.
+pub fn container() -> Container {
+    Container::new()
+}

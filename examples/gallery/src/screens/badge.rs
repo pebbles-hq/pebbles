@@ -49,7 +49,7 @@ pub fn badges() -> Element {
                         badge("12"),
                         badge("3").variant(BadgeVariant::Outline),
                         badge("99+").variant(BadgeVariant::Destructive),
-                        Container::new()
+                        container()
                             .decoration(BoxDecoration::new().color(theme().colors.secondary).radius(BorderRadius::all(999.0)))
                             .padding(EdgeInsets::symmetric(8.0, 2.0))
                             .child(

@@ -5,7 +5,7 @@
 use pebbles_core::{IntoWidget, Ui, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{RenderConstrainedBox, TextEnv};
-use pebbles_widgets::{GestureDetector, SizedBox, View, center};
+use pebbles_widgets::{center, gesture_detector, SizedBox, View};
 
 /// A probe component whose visible size encodes how many times it has been tapped,
 /// so the test can observe the full signal-write → rebuild → relayout loop by reading
@@ -14,7 +14,7 @@ fn probe() -> impl IntoWidget {
     let taps = create_signal(0i64);
     // `center` fills the window (so a tap anywhere hits the detector); the inner
     // childless SizedBox's width == 10 + taps*10 is what we assert on.
-    GestureDetector::new(center(SizedBox::new(Some(10.0 + taps.get() as f64 * 10.0), Some(10.0), None)))
+    gesture_detector(center(SizedBox::new(Some(10.0 + taps.get() as f64 * 10.0), Some(10.0), None)))
         .on_tap(move || taps.update(|t| *t += 1))
 }
 

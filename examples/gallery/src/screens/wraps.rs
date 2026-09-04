@@ -38,7 +38,7 @@ fn tag_cloud() -> impl IntoWidget {
                 badge("widgets & layout").variant(BadgeVariant::Secondary).into_widget(),
                 button("reactive").size(ButtonSize::Sm).into_widget(),
                 badge("vello gpu renderer").variant(BadgeVariant::Secondary).into_widget(),
-                Container::new()
+                container()
                     .padding(EdgeInsets::symmetric(4.0, 10.0))
                     .decoration(BoxDecoration::new().color(th.colors.secondary).radius(BorderRadius::all(999.0)))
                     .child(text("composable").size(12.5).weight(500.0))
@@ -59,7 +59,7 @@ fn reflow() -> impl IntoWidget {
         .body(
             row(children![
                 column(children![
-                    Container::new()
+                    container()
                         .width(180.0)
                         .padding(EdgeInsets::all(6.0))
                         .decoration(
@@ -73,9 +73,9 @@ fn reflow() -> impl IntoWidget {
                     muted("width 180").size(11.0).into_widget(),
                 ])
                 .main_axis_size(MainAxisSize::Min),
-                Container::new().width(24.0).into_widget(),
+                container().width(24.0).into_widget(),
                 column(children![
-                    Container::new()
+                    container()
                         .width(420.0)
                         .padding(EdgeInsets::all(6.0))
                         .decoration(
@@ -106,7 +106,7 @@ fn avatars() -> impl IntoWidget {
                     .enumerate()
                     .map(|(i, n)| {
                         let colors = [palette::BLUE, palette::GREEN, palette::AMBER, palette::PURPLE, palette::TEAL, palette::INDIGO];
-                        Container::new()
+                        container()
                             .width(36.0)
                             .height(36.0)
                             .decoration(

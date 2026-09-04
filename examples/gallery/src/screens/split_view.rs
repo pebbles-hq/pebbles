@@ -9,7 +9,7 @@ pub fn split_views() -> Element {
             doc("Explorer + editor")
                 .description("The app-shell split: a tree on the left, an editor on the right.")
                 .body(
-                    Container::new()
+                    container()
                         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                         .height(220.0)
                         .child(
@@ -40,7 +40,7 @@ pub fn split_views() -> Element {
             doc("Vertical")
                 .description("split_view::vertical(..) stacks the panes — a console under an editor.")
                 .body(
-                    Container::new()
+                    container()
                         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                         .height(240.0)
                         .child(
@@ -55,7 +55,7 @@ pub fn split_views() -> Element {
 }
 
 fn split_sample(ratio: f64, first: &str, second: &str) -> impl IntoWidget {
-    Container::new()
+    container()
         .width(460.0)
         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
         .height(120.0)

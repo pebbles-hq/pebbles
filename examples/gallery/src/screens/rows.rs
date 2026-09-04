@@ -6,7 +6,7 @@ use crate::ui::{doc, gap_h, gap_w, screen};
 fn chip(color: Color, w: f64, h: f64) -> Container {
     // A zero dimension means "fill": the container omits that SizedBox, and a
     // childless decorated container expands to its constraints (Flutter parity).
-    let mut c = Container::new()
+    let mut c = container()
         .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)));
     if w > 0.0 {
         c = c.width(w);
@@ -19,7 +19,7 @@ fn chip(color: Color, w: f64, h: f64) -> Container {
 
 /// A bordered stage that constrains its child, so alignment effects are visible.
 fn stage(h: f64, child: impl IntoWidget) -> Container {
-    Container::new()
+    container()
         .height(h)
         .padding(EdgeInsets::all(6.0))
         .decoration(
@@ -282,7 +282,7 @@ fn axis_size() -> impl IntoWidget {
                 column(children![
                     muted("MainAxisSize::Min — shrink-wrapped").size(11.5),
                     gap_h(4.0),
-                    Container::new()
+                    container()
                         .padding(EdgeInsets::all(6.0))
                         .decoration(
                             BoxDecoration::new()
@@ -335,11 +335,11 @@ fn expanded_flexible() -> impl IntoWidget {
                     stage(
                         44.0,
                         row(children![
-                            Expanded::new(chip(a, 0.0, 0.0)).flex(2),
+                            expanded(chip(a, 0.0, 0.0)).flex(2),
                             gap_w(8.0),
-                            Expanded::new(chip(b, 0.0, 0.0)).flex(1),
+                            expanded(chip(b, 0.0, 0.0)).flex(1),
                             gap_w(8.0),
-                            Expanded::new(chip(c, 0.0, 0.0)).flex(1),
+                            expanded(chip(c, 0.0, 0.0)).flex(1),
                         ]),
                     )
                     .into_widget(),
@@ -354,7 +354,7 @@ fn expanded_flexible() -> impl IntoWidget {
                         row(children![
                             chip(a, 100.0, 28.0),
                             gap_w(8.0),
-                            Flexible::new(chip(b, 60.0, 28.0)),
+                            flexible(chip(b, 60.0, 28.0)),
                         ]),
                     )
                     .into_widget(),
@@ -372,7 +372,7 @@ fn patterns() -> impl IntoWidget {
         .description("The pieces compose into everyday app chrome: a toolbar with spacer() pushing trailing actions right, and a card header with a trailing badge.")
         .body(
             column(children![
-                Container::new()
+                container()
                     .padding(EdgeInsets::symmetric(10.0, 12.0))
                     .decoration(
                         BoxDecoration::new()
@@ -393,7 +393,7 @@ fn patterns() -> impl IntoWidget {
                     )
                     .into_widget(),
                 gap_h(10.0),
-                Container::new()
+                container()
                     .padding(EdgeInsets::all(12.0))
                     .decoration(
                         BoxDecoration::new()

@@ -80,10 +80,10 @@ fn combo(keys: &[&str]) -> impl IntoWidget {
 }
 
 fn shortcut_row(label: &str, keys: &str) -> impl IntoWidget {
-    Padding::new(
+    padding(
         EdgeInsets::symmetric(12.0, 10.0),
         row(children![
-            Expanded::new(text(label.to_string()).size(14.0)),
+            expanded(text(label.to_string()).size(14.0)),
             kbd(keys.to_string()),
         ]),
     )

@@ -85,7 +85,7 @@ fn hover_cards() -> impl IntoWidget {
                 hover_card(
                     column(children![
                         row(children![
-                            Container::new()
+                            container()
                                 .width(36.0)
                                 .height(36.0)
                                 .decoration(

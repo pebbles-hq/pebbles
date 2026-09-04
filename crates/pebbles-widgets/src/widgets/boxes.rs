@@ -239,3 +239,31 @@ impl RenderWidget for ConstrainedBox {
         self.child.take().into_iter().collect()
     }
 }
+
+// ---------------------------------------------------------------------------
+// Lowercase constructor fns (D10) — call sites construct via fns; the types
+// remain the plain-Rust core layer.
+// ---------------------------------------------------------------------------
+
+/// Paint a solid `color` behind `child`.
+pub fn colored_box(color: Color, child: impl pebbles_core::IntoWidget) -> ColoredBox {
+    ColoredBox::new(color, child)
+}
+
+/// Inset `child` by `insets` (payload first, child last — D5).
+pub fn padding(insets: EdgeInsets, child: impl pebbles_core::IntoWidget) -> Padding {
+    Padding::new(insets, child)
+}
+
+/// Place `child` within the available space per `alignment` (see also [`center`]).
+pub fn align(alignment: Alignment, child: impl pebbles_core::IntoWidget) -> Align {
+    Align::new(alignment, child)
+}
+
+/// Impose additional `constraints` on `child`.
+pub fn constrained_box(
+    constraints: BoxConstraints,
+    child: impl pebbles_core::IntoWidget,
+) -> ConstrainedBox {
+    ConstrainedBox::new(constraints, child)
+}

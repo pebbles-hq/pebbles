@@ -61,12 +61,15 @@ pub use widgets::{
     Container, DecoratedBox,
     EditableText, Expanded, FittedBox, Flexible, FractionallySizedBox, GestureDetector, GridView,
     IntrinsicHeight, IntrinsicWidth, LimitedBox, ListView, Opacity, OverflowBox, Padding,
-    Positioned, Row, ScrollController, ScrollExt, ScrollbarPolicy, ScrollbarStyle, Semantics,
-    SemanticsExt, SemanticsProps, SemanticsRole, SingleChildScrollView, SizedBox, Transform, Spinner,
-    Stack, Text, View, Wrap, animated_container, aspect_ratio, canvas, center,
-    column, editable, fitted_box, focus_scope, fractionally_sized_box, gap_h, gap_w, intrinsic_height,
-    intrinsic_width, limited_box, list_view, overflow_box, row, semantics, sized_box, spacer, spinner, stack,
-    text, text_signal, transform, use_scroll_controller, wrap,
+    Positioned, RepaintBoundary, RichText, Row, ScrollController, ScrollExt, ScrollbarPolicy,
+    ScrollbarStyle, Semantics, SemanticsExt, SemanticsProps, SemanticsRole, SingleChildScrollView,
+    SizedBox, Spinner, Stack, Text, TextSpan, Transform, View, Wrap,
+    align, animated_container, aspect_ratio, canvas, center, clip_rrect, colored_box, column,
+    constrained_box, container, editable, expanded, fitted_box, flexible, focus_scope,
+    fractionally_sized_box, gap_h, gap_w, gesture_detector, intrinsic_height, intrinsic_width,
+    limited_box, list_view, opacity, overflow_box, padding, positioned, repaint_boundary, row,
+    scroll_view, semantics, sized_box, spacer, span, spinner, stack, text, text_rich, text_signal,
+    transform, use_scroll_controller, wrap,
 };
 // The immediate-mode drawing surface (H2) a `canvas(..)` painter receives.
 pub use pebbles_render::Canvas;

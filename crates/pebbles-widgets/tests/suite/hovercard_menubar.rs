@@ -5,9 +5,7 @@
 use pebbles_core::{IntoWidget, Ui, animation, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{
-    Container, OverlayHost, View, hover_card, menu_item, menubar, overlay, text, tooltip,
-};
+use pebbles_widgets::{container, hover_card, menu_item, menubar, overlay, OverlayHost, text, tooltip, View};
 
 fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
     ui.rebuild_if_dirty();
@@ -19,9 +17,9 @@ fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
 fn hc_root() -> impl IntoWidget {
     OverlayHost::wrap(
         pebbles_widgets::column(pebbles_core::children![
-            hover_card(text("rich card body"), Container::new().width(90.0).height(28.0).child(text("@user")))
+            hover_card(text("rich card body"), container().width(90.0).height(28.0).child(text("@user")))
                 .delay(0.2),
-            Container::new().width(300.0).height(240.0), // empty area to hover off onto
+            container().width(300.0).height(240.0), // empty area to hover off onto
         ])
         .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
         .main_axis_size(pebbles_foundation::MainAxisSize::Min),
@@ -63,8 +61,8 @@ fn hover_card_shows_after_delay_and_hides_after_exit() {
 fn tooltip_root() -> impl IntoWidget {
     OverlayHost::wrap(
         pebbles_widgets::column(pebbles_core::children![
-            tooltip("Saved to disk", Container::new().width(90.0).height(28.0)).delay(0.2),
-            Container::new().width(300.0).height(240.0), // empty area to hover off onto
+            tooltip("Saved to disk", container().width(90.0).height(28.0)).delay(0.2),
+            container().width(300.0).height(240.0), // empty area to hover off onto
         ])
         .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
         .main_axis_size(pebbles_foundation::MainAxisSize::Min),
@@ -108,7 +106,7 @@ fn mb_root() -> impl IntoWidget {
             menubar()
                 .menu("File", [menu_item("New"), menu_item("Open")])
                 .menu("Edit", [menu_item("Undo"), menu_item("Redo")]),
-            Container::new().width(400.0).height(300.0), // page body
+            container().width(400.0).height(300.0), // page body
         ])
         .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
         .main_axis_size(pebbles_foundation::MainAxisSize::Min),

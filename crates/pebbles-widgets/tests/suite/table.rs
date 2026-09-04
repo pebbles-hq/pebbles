@@ -7,9 +7,7 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, Ui, component, create_signal};
 use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets, Offset, Size, palette};
 use pebbles_render::{Border, RenderDecoratedBox, TextEnv};
-use pebbles_widgets::{
-    SortDir, View, avatar, badge, cell, column, empty, muted, style, table, text,
-};
+use pebbles_widgets::{avatar, badge, cell, column, empty, muted, SortDir, style, table, text, View};
 
 thread_local! {
     static SORT_EVENTS: RefCell<Vec<(usize, SortDir)>> = const { RefCell::new(Vec::new()) };

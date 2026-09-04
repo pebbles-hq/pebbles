@@ -8,9 +8,7 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, KeyInput, Ui, component, create_signal};
 use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{
-    Container, FileTree, FsKind, OverlayHost, View, button, column, file_explorer,
-};
+use pebbles_widgets::{button, column, container, file_explorer, FileTree, FsKind, OverlayHost, View};
 
 // ---------------------------------------------------------------------------
 // Model
@@ -90,7 +88,7 @@ fn root() -> impl IntoWidget {
             button("New file").on_pressed(ex.new_file()).into_widget(),
             button("Delete").on_pressed(ex.delete_selected()).into_widget(),
             // A tall panel so the explorer has empty space (right-click there).
-            Container::new()
+            container()
                 .height(220.0)
                 .child(ex.tree())
                 .into_widget(),

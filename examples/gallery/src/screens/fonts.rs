@@ -83,7 +83,7 @@ fn filter_button(label: &'static str, which: usize, active: Signal<usize>) -> im
 
 fn family_card(name: &str, builtin: bool) -> impl IntoWidget {
     let th = theme();
-    Container::new()
+    container()
         .decoration(
             BoxDecoration::new()
                 .border(Border::new(th.colors.border, 1.0))

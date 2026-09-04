@@ -24,12 +24,12 @@ pub fn list_view() -> Element {
                         ])
                         .main_axis_size(MainAxisSize::Min),
                         gap_h(10.0),
-                        Container::new()
+                        container()
                             .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                             .height(280.0)
                             .child(ListView::builder(5000, 44.0, |i| {
                                 let c = theme().colors;
-                                Container::new()
+                                container()
                                     .height(44.0)
                                     .padding(EdgeInsets::symmetric(14.0, 0.0))
                                     .alignment(Alignment::CENTER_LEFT)
@@ -50,7 +50,7 @@ pub fn list_view() -> Element {
             doc("Separated")
                 .description("ListView::separated(..) — items AND separators virtualized with their own extents (Flutter's ListView.separated): great for settings rows with hairlines.")
                 .body(
-                    Container::new()
+                    container()
                         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                         .height(240.0)
                         .child(ListView::separated(
@@ -58,7 +58,7 @@ pub fn list_view() -> Element {
                             44.0,
                             1.0,
                             |i| {
-                                Padding::new(
+                                padding(
                                     EdgeInsets::symmetric(14.0, 0.0),
                                     row(children![
                                         icon(IconKind::Dot).size(16.0).color(theme().colors.muted_foreground),
@@ -68,16 +68,16 @@ pub fn list_view() -> Element {
                                     .main_axis_size(MainAxisSize::Min),
                                 )
                             },
-                            |_| Container::new().height(1.0).color(theme().colors.border),
+                            |_| container().height(1.0).color(theme().colors.border),
                         )),
                 ),
             doc("Horizontal")
                 .description(".horizontal() flips the axis — a strip of chips, galleries, timelines.")
                 .body(
-                    Container::new()
+                    container()
                         .height(56.0)
                         .child(ListView::builder(12, 92.0, |i| {
-                            Container::new()
+                            container()
                                 .margin(EdgeInsets::symmetric(4.0, 0.0))
                                 .decoration(BoxDecoration::new().color(theme().colors.secondary).radius(BorderRadius::all(999.0)))
                                 .alignment(Alignment::CENTER)
@@ -88,16 +88,16 @@ pub fn list_view() -> Element {
             doc("Rich items")
                 .description("Items are widgets — avatars, badges, buttons; the list only handles the scrolling.")
                 .body(
-                    Container::new()
+                    container()
                         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                         .height(220.0)
                         .child(ListView::builder(8, 56.0, |i| {
-                            Padding::new(
+                            padding(
                                 EdgeInsets::symmetric(12.0, 6.0),
                                 row(children![
                                     avatar(["RS", "AK", "JB", "MK"][i % 4]).size(32.0),
                                     gap_w(10.0),
-                                    Expanded::new(column(children![
+                                    expanded(column(children![
                                         text(format!("Member {i}")).size(14.0).weight(500.0),
                                         muted(if i % 2 == 0 { "Online" } else { "Away" }),
                                     ])
@@ -113,14 +113,14 @@ pub fn list_view() -> Element {
             doc("Variable extents")
                 .description("ListView::variable(..) — each item declares its OWN extent (Flutter's variable-extent delegate, Rust-style): a feed of mixed card heights. Virtualized by prefix sums.")
                 .body(
-                    Container::new()
+                    container()
                         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                         .height(240.0)
                         .child(ListView::variable(
                             20,
                             |i| if i % 3 == 0 { 72.0 } else if i % 2 == 0 { 48.0 } else { 56.0 },
                             |i| {
-                                Container::new()
+                                container()
                                     .margin(EdgeInsets::symmetric(8.0, 4.0))
                                     .decoration(BoxDecoration::new().color(theme().colors.secondary).radius(BorderRadius::all(theme().radius)))
                                     .padding(EdgeInsets::all(12.0))
@@ -131,12 +131,12 @@ pub fn list_view() -> Element {
             doc("Feed — auto-measured (5,000 rows)")
                 .description("ListView::builder_auto(..) — no extent argument at all: rows MEASURE themselves as they scroll into view (heights 40/64/96) and the virtualization learns their real extents. Scroll deep — only the visible rows ever build.")
                 .body(
-                    Container::new()
+                    container()
                         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                         .height(240.0)
                         .child(ListView::builder_auto(5_000, |i| {
                             let h = match i % 3 { 0 => 40.0, 1 => 64.0, _ => 96.0 };
-                            Container::new()
+                            container()
                                 .height(h)
                                 .decoration(BoxDecoration::new().color(if i % 6 == 0 { theme().colors.secondary } else { theme().colors.background }).border(Border::new(theme().colors.border, 1.0)))
                                 .padding(EdgeInsets::symmetric(14.0, 0.0))
@@ -147,11 +147,11 @@ pub fn list_view() -> Element {
             doc("Reversed")
                 .description(".reverse() — item 0 sits at the END and the list starts scrolled there (chat logs, consoles, terminals).")
                 .body(
-                    Container::new()
+                    container()
                         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                         .height(200.0)
                         .child(ListView::builder(40, 36.0, |i| {
-                            Padding::new(
+                            padding(
                                 EdgeInsets::symmetric(14.0, 9.0),
                                 row(children![
                                     muted(format!("{i:02}:")),
@@ -166,11 +166,11 @@ pub fn list_view() -> Element {
             doc("Padded")
                 .description(".padding(EdgeInsets) — outer padding that scrolls with the content, so the first/last items never hug the edges.")
                 .body(
-                    Container::new()
+                    container()
                         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                         .height(160.0)
                         .child(ListView::builder(20, 44.0, |i| {
-                            Container::new()
+                            container()
                                 .decoration(BoxDecoration::new().color(theme().colors.secondary).radius(BorderRadius::all(theme().radius)))
                                 .alignment(Alignment::CENTER)
                                 .child(text(format!("Row {i}")).size(13.0))
@@ -181,22 +181,22 @@ pub fn list_view() -> Element {
                 .description(".scrollbar(..) — hidden, overlay, or always-visible with a thickness.")
                 .body(
                     column(children![
-                        Container::new()
+                        container()
                             .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                             .height(120.0)
                             .child(
                                 ListView::builder(30, 40.0, |i| {
-                                    Padding::new(EdgeInsets::symmetric(12.0, 10.0), text(format!("Row {i}")).size(13.0))
+                                    padding(EdgeInsets::symmetric(12.0, 10.0), text(format!("Row {i}")).size(13.0))
                                 })
                                 .scrollbar(ScrollbarStyle { policy: ScrollbarPolicy::Always, thickness: 6.0, ..ScrollbarStyle::default() }),
                             ),
                         gap_h(10.0),
-                        Container::new()
+                        container()
                             .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                             .height(120.0)
                             .child(
                                 ListView::builder(30, 40.0, |i| {
-                                    Padding::new(EdgeInsets::symmetric(12.0, 10.0), text(format!("Row {i}")).size(13.0))
+                                    padding(EdgeInsets::symmetric(12.0, 10.0), text(format!("Row {i}")).size(13.0))
                                 })
                                 .scrollbar(ScrollbarStyle { policy: ScrollbarPolicy::Hidden, ..ScrollbarStyle::default() }),
                             ),

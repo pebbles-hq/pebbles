@@ -259,3 +259,8 @@ impl RenderWidget for GestureDetector {
         self.child.take().into_iter().collect()
     }
 }
+
+/// Make `child` interactive — chain the `on_*` handlers (D10 constructor fn).
+pub fn gesture_detector(child: impl pebbles_core::IntoWidget) -> GestureDetector {
+    GestureDetector::new(child)
+}

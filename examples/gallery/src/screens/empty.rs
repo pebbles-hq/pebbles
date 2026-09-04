@@ -9,7 +9,7 @@ pub fn empty_screen() -> Element {
             doc("Full state")
                 .description("Icon + title + description + action — the complete 'nothing here, here's what to do' block.")
                 .body(
-                    Container::new()
+                    container()
                         .height(240.0)
                         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                         .child(
@@ -23,7 +23,7 @@ pub fn empty_screen() -> Element {
             doc("Minimal")
                 .description("Just a title — the other parts hide themselves.")
                 .body(
-                    Container::new()
+                    container()
                         .height(160.0)
                         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                         .child(empty().title("Nothing here")),
@@ -42,7 +42,7 @@ pub fn empty_screen() -> Element {
             doc("With an action")
                 .description("Point the user at the next step with a button.")
                 .body(
-                    Container::new()
+                    container()
                         .height(240.0)
                         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                         .child(
@@ -57,7 +57,7 @@ pub fn empty_screen() -> Element {
 }
 
 fn mini_empty(glyph: IconData, title: &str) -> impl IntoWidget {
-    Container::new()
+    container()
         .width(180.0)
         .height(150.0)
         .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))

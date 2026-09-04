@@ -7,10 +7,7 @@ use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::{SemanticsRole, TextEnv};
 use pebbles_widgets::components::{TabsVariant, list_tile, progress, tabs};
-use pebbles_widgets::{
-    Container, ListView, View, button, checkbox, column, select, semantics, slider, switch, text,
-    text_field,
-};
+use pebbles_widgets::{button, checkbox, column, container, ListView, select, semantics, slider, switch, text, text_field, View};
 
 fn root() -> impl IntoWidget {
     column(vec![
@@ -155,7 +152,7 @@ fn tabs_report_tablist_and_the_selected_tab() {
 }
 
 fn list_root() -> impl IntoWidget {
-    Container::new()
+    container()
         .height(300.0)
         .child(ListView::builder(3, 44.0, |i| list_tile(format!("Item {i}"))))
 }

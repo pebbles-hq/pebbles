@@ -6,7 +6,7 @@ use pebbles_core::animation;
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{CrossAxisAlignment, MainAxisSize, Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{Container, OverlayHost, View, column, overlay, text, toast, tooltip};
+use pebbles_widgets::{column, container, overlay, OverlayHost, text, toast, tooltip, View};
 
 fn host() -> impl IntoWidget {
     OverlayHost::wrap(text("app"))
@@ -86,9 +86,9 @@ fn tip_root() -> impl IntoWidget {
     // off it then genuinely leaves it.
     OverlayHost::wrap(
         column(pebbles_core::children![
-            tooltip("Saved to disk", Container::new().width(80.0).height(30.0).child(text("hover me")))
+            tooltip("Saved to disk", container().width(80.0).height(30.0).child(text("hover me")))
                 .delay(0.2),
-            Container::new().width(240.0).height(220.0),
+            container().width(240.0).height(220.0),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Start)
         .main_axis_size(MainAxisSize::Min),

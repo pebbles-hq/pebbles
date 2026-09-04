@@ -7,13 +7,13 @@ use std::cell::Cell;
 use pebbles_core::{Element, IntoWidget, Ui, action, component, create_effect, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{RenderConstrainedBox, TextEnv};
-use pebbles_widgets::{GestureDetector, SizedBox, View, center};
+use pebbles_widgets::{center, gesture_detector, SizedBox, View};
 
 /// A component whose visible width encodes how many times it was tapped.
 fn probe() -> Element {
     let taps = create_signal(0);
     let bump = action(move || taps.update(|t| *t += 1));
-    GestureDetector::new(center(SizedBox::new(Some(10.0 + taps.get() as f64 * 10.0), Some(10.0), None)))
+    gesture_detector(center(SizedBox::new(Some(10.0 + taps.get() as f64 * 10.0), Some(10.0), None)))
         .on_tap(bump)
         .into_widget()
 }

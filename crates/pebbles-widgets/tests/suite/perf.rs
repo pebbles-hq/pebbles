@@ -153,7 +153,7 @@ fn huge_markdown_document_headless_pipeline() {
 // ---------------------------------------------------------------------------
 
 fn virtual_root() -> impl IntoWidget {
-    pebbles_widgets::Container::new()
+    pebbles_widgets::container()
         .height(680.0)
         .child(markdown(DOC.with(|d| d.borrow().clone())).virtualized())
 }

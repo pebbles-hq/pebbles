@@ -9,10 +9,7 @@ use pebbles_render::{
     RenderIntrinsicHeight, RenderIntrinsicWidth, RenderLimitedBox, RenderOverflowBox,
     RenderParagraph, TextEnv,
 };
-use pebbles_widgets::{
-    Container, SizedBox, View, column, fitted_box, fractionally_sized_box, intrinsic_height,
-    intrinsic_width, limited_box, overflow_box, row, text,
-};
+use pebbles_widgets::{column, container, fitted_box, fractionally_sized_box, intrinsic_height, intrinsic_width, limited_box, overflow_box, row, SizedBox, text, View};
 
 fn probe_size<T: pebbles_render::RenderObject>(ui: &Ui) -> Size {
     let id = ui.render_tree().find::<T>().expect("render object present");
@@ -121,7 +118,7 @@ fn fractionally_sized_box_takes_a_fraction_and_aligns() {
             component(|| {
                 // Loose constraints so the fractions take effect (under a tight
                 // parent, `enforce` correctly overrides them — Flutter parity).
-                column(vec![pebbles_widgets::ConstrainedBox::new(
+                column(vec![pebbles_widgets::constrained_box(
                     pebbles_render::BoxConstraints::loose(Size::new(200.0, 100.0)),
                     fractionally_sized_box(text("x".to_string()))
                         .width_factor(0.5)
@@ -179,8 +176,8 @@ fn intrinsic_height_is_the_tallest_sibling() {
             component(|| {
                 column(vec![intrinsic_height(
                     row(vec![
-                        SizedBox::square(40.0, Container::new()).into_widget(),
-                        SizedBox::exact(40.0, 90.0, Container::new()).into_widget(),
+                        SizedBox::square(40.0, container()).into_widget(),
+                        SizedBox::exact(40.0, 90.0, container()).into_widget(),
                     ])
                     .main_axis_size(pebbles_foundation::MainAxisSize::Min),
                 )
@@ -202,7 +199,7 @@ fn limited_box_caps_only_the_unbounded_axis() {
             palette::WHITE,
             component(|| {
                 // A Row gives its children unbounded width; the LimitedBox caps it.
-                row(vec![limited_box(SizedBox::exact(400.0, 30.0, Container::new()))
+                row(vec![limited_box(SizedBox::exact(400.0, 30.0, container()))
                     .max_width(160.0)
                     .into_widget()])
             }),
@@ -224,7 +221,7 @@ fn overflow_box_lets_the_child_exceed_the_box() {
                 column(vec![SizedBox::exact(
                     100.0,
                     100.0,
-                    overflow_box(SizedBox::exact(200.0, 60.0, Container::new()))
+                    overflow_box(SizedBox::exact(200.0, 60.0, container()))
                         .alignment(Alignment::CENTER),
                 )
                 .into_widget()])
@@ -252,7 +249,7 @@ fn sweep_gradient_paints_without_panic() {
                 SizedBox::exact(
                     120.0,
                     120.0,
-                    Container::new().decoration(
+                    container().decoration(
                         BoxDecoration::new()
                             .gradient(Gradient::sweep([
                                 palette::red::S400, palette::amber::S400, palette::blue::S400,

@@ -11,7 +11,7 @@ pub fn collapsibles() -> Element {
 }
 
 fn panel(child: impl IntoWidget) -> impl IntoWidget {
-    Container::new()
+    container()
         .width(380.0)
         .child(card().child(child).padding(EdgeInsets::all(6.0)))
 }
@@ -81,7 +81,7 @@ fn custom_trigger() -> impl IntoWidget {
             collapsible("", repos)
                 .open(true)
                 .trigger(
-                    Container::new().padding(EdgeInsets::symmetric(8.0, 6.0)).child(
+                    container().padding(EdgeInsets::symmetric(8.0, 6.0)).child(
                         row(children![
                             text("★ 3 starred repositories").size(14.0).weight(500.0),
                             spacer(),
@@ -94,7 +94,7 @@ fn custom_trigger() -> impl IntoWidget {
 }
 
 fn repo_row(name: &str) -> impl IntoWidget {
-    Container::new()
+    container()
         .decoration(
             BoxDecoration::new()
                 .border(Border::new(theme().colors.border, 1.0))

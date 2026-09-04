@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use pebbles_core::{IntoWidget, Ui, animation, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::{RenderMeasureProbe, TextEnv};
-use pebbles_widgets::{Container, ListView, ScrollController, View, list_view, text, use_scroll_controller};
+use pebbles_widgets::{container, list_view, ListView, ScrollController, text, use_scroll_controller, View};
 
 thread_local! {
     static CTL: RefCell<Option<ScrollController>> = const { RefCell::new(None) };
@@ -34,7 +34,7 @@ fn height_of(i: usize) -> f64 {
 
 fn row(i: usize) -> impl IntoWidget {
     let h = height_of(i);
-    Container::new().height(h).child(text(format!("row {i}")).size(14.0))
+    container().height(h).child(text(format!("row {i}")).size(14.0))
 }
 
 fn auto_root(count: usize) -> impl IntoWidget {

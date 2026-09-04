@@ -88,3 +88,17 @@ impl RenderWidget for RepaintBoundary {
         self.child.take().into_iter().collect()
     }
 }
+
+// ---------------------------------------------------------------------------
+// Lowercase constructor fns (D10)
+// ---------------------------------------------------------------------------
+
+/// Render `child` at `opacity` (0.0 transparent … 1.0 opaque).
+pub fn opacity(opacity: f32, child: impl pebbles_core::IntoWidget) -> Opacity {
+    Opacity::new(opacity, child)
+}
+
+/// Clip `child` to a rounded rectangle of `radius`.
+pub fn clip_rrect(radius: BorderRadius, child: impl pebbles_core::IntoWidget) -> ClipRRect {
+    ClipRRect::new(radius, child)
+}

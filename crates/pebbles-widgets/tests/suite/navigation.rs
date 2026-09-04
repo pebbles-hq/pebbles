@@ -6,7 +6,7 @@
 use pebbles_core::{IntoWidget, KeyInput, Ui, action, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{Container, GestureDetector, SingleChildScrollView, View, checkbox, column, gap_h, radio, switch, text, text_field};
+use pebbles_widgets::{checkbox, column, container, gap_h, gesture_detector, radio, scroll_view, switch, text, text_field, View};
 
 fn toggles_page() -> impl IntoWidget {
     let a = create_signal(true);
@@ -26,7 +26,7 @@ fn toggles_page() -> impl IntoWidget {
         kids.push(gap_h(30.0).into_widget());
     }
     // Every gallery screen is wrapped in a SingleChildScrollView.
-    SingleChildScrollView::vertical(column(kids).spacing(10.0))
+    scroll_view(column(kids).spacing(10.0))
 }
 
 fn nav_root() -> impl IntoWidget {
@@ -38,7 +38,7 @@ fn nav_root() -> impl IntoWidget {
     };
     column(vec![
         // A nav "button" at the top: tapping it switches screens.
-        GestureDetector::new(Container::new().width(140.0).height(30.0).color(palette::BLUE))
+        gesture_detector(container().width(140.0).height(30.0).color(palette::BLUE))
             .on_tap(action(move || route.update(|r| *r = 1 - *r)))
             .into_widget(),
         content,

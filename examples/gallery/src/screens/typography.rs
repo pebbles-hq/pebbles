@@ -44,7 +44,7 @@ fn presets() -> impl IntoWidget {
 
 fn scale_row(label: &'static str, sample: impl IntoWidget) -> impl IntoWidget {
     row(children![
-        Container::new()
+        container()
             .width(110.0)
             .alignment(Alignment::CENTER_RIGHT)
             .padding(EdgeInsets::only(0.0, 0.0, 16.0, 0.0))
@@ -106,7 +106,7 @@ fn emphasis() -> impl IntoWidget {
         .body(
             column(children![
                 row(children![
-                    Container::new()
+                    container()
                         .width(150.0)
                         .child(muted("italic"))
                         .into_widget(),
@@ -114,7 +114,7 @@ fn emphasis() -> impl IntoWidget {
                 ])
                 .main_axis_size(MainAxisSize::Min),
                 row(children![
-                    Container::new()
+                    container()
                         .width(150.0)
                         .child(muted("underline"))
                         .into_widget(),
@@ -122,7 +122,7 @@ fn emphasis() -> impl IntoWidget {
                 ])
                 .main_axis_size(MainAxisSize::Min),
                 row(children![
-                    Container::new()
+                    container()
                         .width(150.0)
                         .child(muted("strikethrough"))
                         .into_widget(),
@@ -130,7 +130,7 @@ fn emphasis() -> impl IntoWidget {
                 ])
                 .main_axis_size(MainAxisSize::Min),
                 row(children![
-                    Container::new()
+                    container()
                         .width(150.0)
                         .child(muted("letter-spacing"))
                         .into_widget(),
@@ -138,11 +138,11 @@ fn emphasis() -> impl IntoWidget {
                 ])
                 .main_axis_size(MainAxisSize::Min),
                 row(children![
-                    Container::new()
+                    container()
                         .width(150.0)
                         .child(muted("highlight"))
                         .into_widget(),
-                    Container::new()
+                    container()
                         .padding(EdgeInsets::symmetric(2.0, 6.0))
                         .decoration(BoxDecoration::new().color(th.colors.secondary).radius(BorderRadius::all(4.0)))
                         .child(text("marked passage").size(13.0))
@@ -150,7 +150,7 @@ fn emphasis() -> impl IntoWidget {
                 ])
                 .main_axis_size(MainAxisSize::Min),
                 row(children![
-                    Container::new()
+                    container()
                         .width(150.0)
                         .child(muted("italic + bold"))
                         .into_widget(),
@@ -187,7 +187,7 @@ fn alignment_playground(align: Signal<usize>) -> impl IntoWidget {
                 ])
                 .main_axis_size(MainAxisSize::Min),
                 gap_h(10.0),
-                Container::new()
+                container()
                     .width(480.0)
                     .padding(EdgeInsets::all(16.0))
                     .decoration(
@@ -224,7 +224,7 @@ fn line_height() -> impl IntoWidget {
                 for lh in [1.0f32, 1.2, 1.4, 1.6] {
                     items.push(
                         column(children![
-                            Container::new()
+                            container()
                                 .width(130.0)
                                 .padding(EdgeInsets::all(10.0))
                                 .decoration(
@@ -262,7 +262,7 @@ fn truncation() -> impl IntoWidget {
                 for (n, w) in [(1u32, 150.0), (2, 220.0), (3, 300.0)] {
                     items.push(
                         column(children![
-                            Container::new()
+                            container()
                                 .width(w)
                                 .padding(EdgeInsets::all(10.0))
                                 .decoration(
@@ -298,7 +298,7 @@ fn no_wrap() -> impl IntoWidget {
         .description(".soft_wrap(false) shapes a single unbounded line that clips to its box — pair with .ellipsis() for the classic one-line label. The default (soft_wrap true) wraps to fit.")
         .body(
             row(children![
-                Container::new()
+                container()
                     .width(150.0)
                     .padding(EdgeInsets::all(10.0))
                     .decoration(
@@ -325,7 +325,7 @@ fn families() -> impl IntoWidget {
                 for name in builtins() {
                     items.push(
                         row(children![
-                            Container::new()
+                            container()
                                 .width(130.0)
                                 .child(text(name.to_string()).size(13.0).semibold())
                                 .into_widget(),

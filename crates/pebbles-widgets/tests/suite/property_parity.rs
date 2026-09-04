@@ -4,7 +4,7 @@
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{FlexFit, Size, palette};
 use pebbles_render::{BorderRadius, BoxDecoration, Border, RenderParagraph, TextEnv};
-use pebbles_widgets::{Container, Flexible, SizedBox, View, column, row, text};
+use pebbles_widgets::{column, container, flexible, row, SizedBox, text, View};
 
 #[test]
 fn flexible_fit_tight_forces_the_child_to_fill_its_share() {
@@ -17,7 +17,7 @@ fn flexible_fit_tight_forces_the_child_to_fill_its_share() {
                 SizedBox::exact(
                     200.0,
                     40.0,
-                    row(vec![Flexible::new(text("hi".to_string()))
+                    row(vec![flexible(text("hi".to_string()))
                         .flex(1)
                         .fit(FlexFit::Tight)
                         .into_widget()]),
@@ -42,7 +42,7 @@ fn flexible_fit_tight_forces_the_child_to_fill_its_share() {
                 SizedBox::exact(
                     200.0,
                     40.0,
-                    row(vec![Flexible::new(text("hi".to_string()))
+                    row(vec![flexible(text("hi".to_string()))
                         .flex(1)
                         .fit(FlexFit::Loose)
                         .into_widget()]),
@@ -72,7 +72,7 @@ fn text_soft_wrap_false_shapes_a_single_unbroken_line() {
             palette::WHITE,
             component(|| {
                 column(vec![
-                    pebbles_widgets::ConstrainedBox::new(
+                    pebbles_widgets::constrained_box(
                         pebbles_render::BoxConstraints::loose(Size::new(120.0, f64::INFINITY)),
                         text(LONG.to_string()),
                     )
@@ -96,7 +96,7 @@ fn text_soft_wrap_false_shapes_a_single_unbroken_line() {
             palette::WHITE,
             component(|| {
                 column(vec![
-                    pebbles_widgets::ConstrainedBox::new(
+                    pebbles_widgets::constrained_box(
                         pebbles_render::BoxConstraints::loose(Size::new(120.0, f64::INFINITY)),
                         text(LONG.to_string()).soft_wrap(false),
                     )
@@ -127,7 +127,7 @@ fn foreground_decoration_paints_over_the_child_without_panic() {
                 SizedBox::exact(
                     120.0,
                     80.0,
-                    Container::new()
+                    container()
                         .color(palette::BLUE)
                         .radius(BorderRadius::all(12.0))
                         .foreground_decoration(

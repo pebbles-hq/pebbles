@@ -5,7 +5,7 @@
 use pebbles_core::{IntoWidget, Ui, action};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{GestureDetector, SizedBox, Transform, View};
+use pebbles_widgets::{gesture_detector, SizedBox, Transform, View};
 
 fn hit(tapped: &std::rc::Rc<std::cell::Cell<bool>>) -> impl IntoWidget {
     let t = tapped.clone();
@@ -13,7 +13,7 @@ fn hit(tapped: &std::rc::Rc<std::cell::Cell<bool>>) -> impl IntoWidget {
     Transform::translate(
         100.0,
         0.0,
-        GestureDetector::new(SizedBox::new(Some(40.0), Some(40.0), None)).on_tap(action(move || t.set(true))),
+        gesture_detector(SizedBox::new(Some(40.0), Some(40.0), None)).on_tap(action(move || t.set(true))),
     )
     .alignment(pebbles_foundation::Alignment::TOP_LEFT)
 }

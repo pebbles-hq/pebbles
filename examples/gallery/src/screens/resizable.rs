@@ -3,7 +3,7 @@ use pebbles::prelude::*;
 use crate::ui::{doc, screen};
 
 fn pane(label: &str, color: Color) -> AnyWidget {
-    Container::new()
+    container()
         .decoration(BoxDecoration::new().color(color))
         .alignment(Alignment::CENTER)
         .child(center(
@@ -17,7 +17,7 @@ fn pane(label: &str, color: Color) -> AnyWidget {
 
 /// Bound the group's cross-axis (height for horizontal, width handled inline).
 fn region(height: f64, child: impl IntoWidget) -> impl IntoWidget {
-    Container::new()
+    container()
         .height(height)
         .decoration(
             BoxDecoration::new()
@@ -72,7 +72,7 @@ fn vertical() -> impl IntoWidget {
             "Stack the panels with .orientation(Axis::Vertical) — the handle runs horizontally.",
         )
         .body(
-            Container::new().width(360.0).child(region(
+            container().width(360.0).child(region(
                 300.0,
                 resizable(vec![
                     pane("Top", palette::rose::S600),

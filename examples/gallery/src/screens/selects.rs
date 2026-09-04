@@ -120,7 +120,7 @@ pub fn selects() -> Element {
                 .description("Right-click (secondary tap) opens the same menu blueprint at the cursor, clamped on-screen. Left-click elsewhere or Escape dismisses.")
                 .body(
                 context_menu(
-                    Container::new()
+                    container()
                         .decoration(
                             BoxDecoration::new()
                                 .color(theme().colors.secondary)

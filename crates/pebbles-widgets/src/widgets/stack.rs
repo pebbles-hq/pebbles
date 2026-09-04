@@ -109,3 +109,9 @@ impl ParentDataWidget for Positioned {
         Box::new(self.data)
     }
 }
+
+/// Position `child` within a [`Stack`] — chain `.left/.top/.right/.bottom`
+/// (the fill-the-stack form stays `Positioned::fill`, a named variant).
+pub fn positioned(child: impl pebbles_core::IntoWidget) -> Positioned {
+    Positioned::new(child)
+}

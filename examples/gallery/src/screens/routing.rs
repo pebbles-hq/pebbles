@@ -26,7 +26,7 @@ pub fn routing_screen() -> Element {
                         button("Sent").on_pressed(move || stack.update(|s| s.replace("sent"))),
                     ]),
                     gap_h(12.0),
-                    Container::new().height(60.0).child(
+                    container().height(60.0).child(
                         route_view(cur.clone())
                             .route("inbox", || text("Inbox — 3 unread").size(15.0).into_widget())
                             .route("sent", || text("Sent — 128 messages").size(15.0).into_widget())

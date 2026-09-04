@@ -4,7 +4,7 @@
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{RenderScroll, ScrollPhysics, TextEnv};
-use pebbles_widgets::{SingleChildScrollView, View, column, gap_h, text};
+use pebbles_widgets::{column, container, gap_h, gesture_detector, scroll_view, SingleChildScrollView, text, View};
 
 /// A tall (scrollable) column inside a drag-scroll viewport with the given physics.
 fn tall(overscroll: bool) -> SingleChildScrollView {
@@ -13,7 +13,7 @@ fn tall(overscroll: bool) -> SingleChildScrollView {
         kids.push(text(format!("row {i}")).into_widget());
         kids.push(gap_h(40.0).into_widget());
     }
-    SingleChildScrollView::vertical(column(kids).main_axis_size(pebbles_foundation::MainAxisSize::Min))
+    scroll_view(column(kids).main_axis_size(pebbles_foundation::MainAxisSize::Min))
         .drag_scroll(true)
         .physics(ScrollPhysics { overscroll, ..Default::default() })
 }
@@ -135,8 +135,8 @@ fn child_pan_target_wins_over_drag_scroll() {
         View::new(
             palette::WHITE,
             component(|| {
-                SingleChildScrollView::vertical(column(vec![
-                    pebbles_widgets::GestureDetector::new(text("slider-ish"))
+                scroll_view(column(vec![
+                    gesture_detector(text("slider-ish"))
                         .on_pan_start(|| {})
                         .on_pan_update(|| {})
                         .on_pan_end(|| {})
@@ -233,16 +233,16 @@ fn pull_without_reaching_the_threshold_does_not_fire() {
 /// strip at the top is the nav button (mirrors the navigation.rs harness).
 fn scroll_nav_root() -> impl IntoWidget {
     use pebbles_core::{action, create_signal};
-    use pebbles_widgets::{Container, GestureDetector};
+    
     let route = create_signal(0i32);
     let content = if route.get() == 0 {
         // Bounded viewport (30..330 in the window) so the content overflows it.
-        Container::new().height(300.0).child(tall(false)).into_widget()
+        container().height(300.0).child(tall(false)).into_widget()
     } else {
         text("elsewhere").into_widget()
     };
     column(vec![
-        GestureDetector::new(Container::new().width(140.0).height(30.0).color(palette::BLUE))
+        gesture_detector(container().width(140.0).height(30.0).color(palette::BLUE))
             .on_tap(action(move || route.update(|r| *r = 1 - *r)))
             .into_widget(),
         content,

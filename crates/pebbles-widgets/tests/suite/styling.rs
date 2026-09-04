@@ -5,7 +5,7 @@
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{BoxDecoration, Cursor, RenderConstrainedBox, RenderDecoratedBox, RenderParagraph, TextEnv};
-use pebbles_widgets::{Container, StyleExt, View, card, style, styles, text, text_field};
+use pebbles_widgets::{card, container, style, StyleExt, styles, text, text_field, View};
 
 #[test]
 fn merge_precedence_and_shadow_replacement() {
@@ -59,7 +59,7 @@ fn styled_min_constraints_apply() {
 }
 
 fn cursor_box() -> impl IntoWidget {
-    Container::new().width(120.0).height(80.0).styled(style().cursor(Cursor::Pointer))
+    container().width(120.0).height(80.0).styled(style().cursor(Cursor::Pointer))
 }
 
 #[test]
@@ -214,7 +214,7 @@ fn childless_decorated_container_fills() {
             pebbles_widgets::center(pebbles_widgets::widgets::SizedBox::exact(
                 120.0,
                 60.0,
-                Container::new().decoration(BoxDecoration::new().color(palette::BLUE)),
+                container().decoration(BoxDecoration::new().color(palette::BLUE)),
             )),
         )
         .into_widget(),

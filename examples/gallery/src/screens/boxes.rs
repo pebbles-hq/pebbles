@@ -3,14 +3,14 @@ use pebbles::prelude::*;
 use crate::ui::{doc, gap_h, gap_w, screen};
 
 fn chip(color: Color, w: f64, h: f64) -> Container {
-    Container::new()
+    container()
         .width(w)
         .height(h)
         .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(6.0)))
 }
 
 fn stage(w: f64, h: f64, child: impl IntoWidget) -> Container {
-    Container::new()
+    container()
         .width(w)
         .height(h)
         .padding(EdgeInsets::all(6.0))
@@ -26,7 +26,7 @@ fn stage(w: f64, h: f64, child: impl IntoWidget) -> Container {
 /// Like [`stage`], but no inner padding — for widgets whose whole point is to
 /// reach the box's edges (FittedBox's `Fill`/`Cover` must touch the border).
 fn stage_tight(w: f64, h: f64, child: impl IntoWidget) -> Container {
-    Container::new()
+    container()
         .width(w)
         .height(h)
         .decoration(
@@ -46,8 +46,8 @@ pub fn boxes() -> Element {
         .body(children![
             aspect(),
             sized_box(),
-            padding(),
-            align(),
+            padding_section(),
+            align_section(),
             constrained(),
             transforms(),
             fitted(),
@@ -71,7 +71,7 @@ fn aspect() -> impl IntoWidget {
                 ] {
                     items.push(
                         column(children![
-                            Container::new()
+                            container()
                                 .width(150.0)
                                 .child(
                                     aspect_ratio(
@@ -112,26 +112,26 @@ fn sized_box() -> impl IntoWidget {
         )
 }
 
-fn padding() -> impl IntoWidget {
+fn padding_section() -> impl IntoWidget {
     let th = theme();
     let inner = chip(palette::TEAL, 0.0, 0.0);
     doc("Padding")
         .description("EdgeInsets around a child — .all(), .symmetric() and .only() cover every inset pattern; the bordered boxes show exactly where the space goes.")
         .body(
             row(children![
-                Container::new()
+                container()
                     .padding(EdgeInsets::all(14.0))
                     .decoration(BoxDecoration::new().border(Border::new(th.colors.border, 1.0)))
                     .child(inner.clone().width(60.0).height(40.0))
                     .into_widget(),
                 gap_w(12.0),
-                Container::new()
+                container()
                     .padding(EdgeInsets::symmetric(26.0, 8.0))
                     .decoration(BoxDecoration::new().border(Border::new(th.colors.border, 1.0)))
                     .child(inner.clone().width(60.0).height(40.0))
                     .into_widget(),
                 gap_w(12.0),
-                Container::new()
+                container()
                     .padding(EdgeInsets::only(6.0, 4.0, 24.0, 20.0))
                     .decoration(BoxDecoration::new().border(Border::new(th.colors.border, 1.0)))
                     .child(inner.clone().width(60.0).height(40.0))
@@ -143,7 +143,7 @@ fn padding() -> impl IntoWidget {
         )
 }
 
-fn align() -> impl IntoWidget {
+fn align_section() -> impl IntoWidget {
     doc("Align & Center")
         .description("Align places a single child at one of the nine anchors; center() is the most common one. Unlike Stack, there's no overlap — this is about positioning within leftover space.")
         .body(
@@ -154,7 +154,7 @@ fn align() -> impl IntoWidget {
                         stage(
                             84.0,
                             84.0,
-                            Align::new(alignment, chip(palette::PINK, 24.0, 24.0)),
+                            align(alignment, chip(palette::PINK, 24.0, 24.0)),
                         )
                         .into_widget()
                     })
@@ -173,7 +173,7 @@ fn constrained() -> impl IntoWidget {
                 stage(
                     220.0,
                     120.0,
-                    ConstrainedBox::new(
+                    constrained_box(
                         BoxConstraints { min_width: 0.0, max_width: 140.0, min_height: 0.0, max_height: f64::INFINITY },
                         text("This paragraph is constrained to 140px wide, so it wraps early even though the stage is wider.".to_string())
                             .size(12.5)
@@ -185,9 +185,9 @@ fn constrained() -> impl IntoWidget {
                 stage(
                     220.0,
                     120.0,
-                    ConstrainedBox::new(
+                    constrained_box(
                         BoxConstraints { min_width: 180.0, max_width: f64::INFINITY, min_height: 0.0, max_height: f64::INFINITY },
-                        Container::new()
+                        container()
                             .width(40.0)
                             .height(30.0)
                             .decoration(BoxDecoration::new().color(palette::INDIGO).radius(BorderRadius::all(6.0))),
@@ -244,7 +244,7 @@ fn fitted() -> impl IntoWidget {
                             150.0,
                             90.0,
                             fitted_box(
-                                Container::new()
+                                container()
                                     .width(170.0)
                                     .height(64.0)
                                     .decoration(BoxDecoration::new()
@@ -362,7 +362,7 @@ fn overflow_boxes() -> impl IntoWidget {
                 )
                 .into_widget(),
                 gap_w(12.0),
-                Container::new()
+                container()
                     .width(120.0)
                     .height(110.0)
                     .padding(EdgeInsets::all(10.0))

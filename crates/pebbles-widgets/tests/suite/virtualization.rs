@@ -6,7 +6,7 @@
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{Container, ListView, View, column, text};
+use pebbles_widgets::{column, container, ListView, text, View};
 
 #[test]
 fn variable_reversed_and_padded_paint() {
@@ -21,18 +21,18 @@ fn variable_reversed_and_padded_paint() {
             palette::WHITE,
             component(|| {
                 column(vec![
-                    Container::new()
+                    container()
                         .height(120.0)
                         .child(
                             ListView::variable(20, |i| if i % 2 == 0 { 60.0 } else { 32.0 }, |i| text(format!("v{i}")))
                                 .padding(pebbles_foundation::EdgeInsets::all(8.0)),
                         )
                         .into_widget(),
-                    Container::new()
+                    container()
                         .height(120.0)
                         .child(ListView::builder(20, 32.0, |i| text(format!("r{i}"))).reverse())
                         .into_widget(),
-                    Container::new()
+                    container()
                         .height(120.0)
                         .child(
                             pebbles_widgets::GridView::builder(10, 3, 60.0, |i| text(format!("g{i}")))
@@ -65,17 +65,17 @@ fn separated_list_and_spanned_grid_paint() {
             palette::WHITE,
             component(|| {
                 column(vec![
-                    Container::new()
+                    container()
                         .height(140.0)
                         .child(ListView::separated(
                             40,
                             36.0,
                             1.0,
                             |i| text(format!("item {i}")),
-                            |_| Container::new().height(1.0).color(palette::BLUE),
+                            |_| container().height(1.0).color(palette::BLUE),
                         ))
                         .into_widget(),
-                    Container::new()
+                    container()
                         .height(140.0)
                         .child(pebbles_widgets::GridView::builder(12, 4, 80.0, |i| text(format!("#{i}")))
                             .spans(|i| if i == 0 { (2, 2) } else { (1, 1) }))

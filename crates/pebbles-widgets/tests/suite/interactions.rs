@@ -7,7 +7,7 @@ use std::rc::Rc;
 use pebbles_core::{IntoWidget, Signal, Ui, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{Container, OverlayHost, View, column, radio_group, resizable, text};
+use pebbles_widgets::{column, container, OverlayHost, radio_group, resizable, text, View};
 
 // ---------------------------------------------------------------------------
 // RadioGroup
@@ -63,12 +63,12 @@ fn radio_group_selects_on_tap() {
 fn resizable_root() -> impl IntoWidget {
     let _ = create_signal(0i32);
     column(vec![
-        Container::new()
+        container()
             .height(100.0)
             .child(
                 resizable(vec![
-                    Container::new().color(palette::BLUE).into_widget(),
-                    Container::new().color(palette::GREEN).into_widget(),
+                    container().color(palette::BLUE).into_widget(),
+                    container().color(palette::GREEN).into_widget(),
                 ])
                 .length(400.0)
                 .min(50.0),
@@ -240,7 +240,7 @@ fn modifier_ext_chains_and_renders() {
 fn into_children_is_one_syntax() {
     use pebbles_core::widget::IntoChildren;
     // The ONE literal form: children![..] — heterogeneous, boxed, any length.
-    let lit = pebbles_core::children![text("a"), Container::new(), text("b")];
+    let lit = pebbles_core::children![text("a"), container(), text("b")];
     assert_eq!(lit.into_children().len(), 3, "children![..] literal");
     let empty: Vec<pebbles_core::AnyWidget> = pebbles_core::children![];
     assert_eq!(empty.into_children().len(), 0, "empty children![]");
@@ -250,7 +250,7 @@ fn into_children_is_one_syntax() {
     // Conditional recipe: build the list, push conditionally.
     let mut kids = pebbles_core::children![text("always")];
     if 1 + 1 == 2 {
-        kids.push(Container::new().into_widget());
+        kids.push(container().into_widget());
     }
     assert_eq!(kids.into_children().len(), 2, "conditional push recipe");
 }
@@ -268,7 +268,7 @@ thread_local! {
 fn themed_probe() -> impl IntoWidget {
     let dark = pebbles_widgets::theme().dark;
     PAINTED_DARK.with(|c| c.set(Some(dark)));
-    Container::new()
+    container()
         .color(pebbles_widgets::theme().colors.background)
         .into_widget()
 }

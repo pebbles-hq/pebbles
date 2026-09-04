@@ -20,13 +20,13 @@ fn drag_scroll() -> impl IntoWidget {
     doc("Drag & fling")
         .description(".drag_scroll(true) turns the viewport into a pan-to-scroll surface: drag the rows 1:1, fling to glide, and (with .physics(overscroll)) pull past the edges — they rubber-band and spring back. Wheel input stays hard-clamped.")
         .body(
-            Container::new()
+            container()
                 .height(200.0)
                 .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                 .child(
-                    SingleChildScrollView::vertical(
+                    scroll_view(
                         column((0..40).map(|i| {
-                            Padding::new(
+                            padding(
                                 EdgeInsets::symmetric(12.0, 8.0),
                                 muted(format!("row {i} — drag me")).into_widget(),
                             )
@@ -45,12 +45,12 @@ fn pull_to_refresh() -> impl IntoWidget {
     doc("Pull-to-refresh")
         .description("refresh_indicator(child).on_refresh(..) — drag the list down past 64px (the threshold) and release: the spinner row holds until the app finishes the refresh. Try it with the mouse: press, pull down, let go.")
         .body(
-            Container::new()
+            container()
                 .height(200.0)
                 .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                 .child(refresh_indicator(
                     column((0..30).map(|i| {
-                        Padding::new(
+                        padding(
                             EdgeInsets::symmetric(12.0, 8.0),
                             muted(format!("item {i}")).into_widget(),
                         )
@@ -110,7 +110,7 @@ fn sticky_headers() -> impl IntoWidget {
     doc("Sticky headers")
         .description("sticky_list() — each section's header pins to the top while its rows are visible, then slides away as the next header pushes it off. v1: headers share one extent, rows share one.")
         .body(
-            Container::new()
+            container()
                 .height(220.0)
                 .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                 .child(
@@ -129,7 +129,7 @@ fn rows(labels: &[&str]) -> Vec<AnyWidget> {
     labels
         .iter()
         .map(|l| {
-            Padding::new(
+            padding(
                 EdgeInsets::symmetric(16.0, 10.0),
                 muted(*l).into_widget(),
             )
@@ -142,7 +142,7 @@ fn collapsing_demo() -> impl IntoWidget {
     doc("Collapsing header")
         .description("collapsing_header(expanded, collapsed, |t| hero(t)) — the pinned hero shrinks from 240px to 64px as you scroll; the builder receives the progress t (0..1) and can fade/scale its contents.")
         .body(
-            Container::new()
+            container()
                 .height(220.0)
                 .decoration(BoxDecoration::new().border(Border::new(theme().colors.border, 1.0)).radius(BorderRadius::all(theme().radius)))
                 .child(
@@ -151,14 +151,14 @@ fn collapsing_demo() -> impl IntoWidget {
                         center(column(children![
                             text("A collapsing profile").size(18.0).bold().color(palette::WHITE),
                             gap_h(4.0),
-                            Opacity::new(t as f32, muted(format!("scroll progress {t:.2}")).size(11.0).color(Color::from_rgba8(255, 255, 255, 220))),
+                            opacity(t as f32, muted(format!("scroll progress {t:.2}")).size(11.0).color(Color::from_rgba8(255, 255, 255, 220))),
                         ])
                         .cross_axis_alignment(CrossAxisAlignment::Center)
                         .main_axis_size(MainAxisSize::Min))
                         .styled(style().background(c.primary))
                     })
                     .content((0..20).map(|i| {
-                        Padding::new(
+                        padding(
                             EdgeInsets::symmetric(16.0, 10.0),
                             muted(format!("profile row {i}")).into_widget(),
                         )

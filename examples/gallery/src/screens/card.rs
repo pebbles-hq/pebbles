@@ -15,7 +15,7 @@ fn simple() -> impl IntoWidget {
         .description(
             "Card::new(child) wraps any content with the surface, border, radius and shadow.",
         )
-        .body(Container::new().width(360.0).child(card().child(body(
+        .body(container().width(360.0).child(card().child(body(
             "A plain card. Drop any widget inside and it gets the elevated surface.",
         ))))
 }
@@ -24,7 +24,7 @@ fn with_header() -> impl IntoWidget {
     doc("Header")
         .description("Add a .title() and .description(); the content body sits below with the right spacing.")
         .body(
-        Container::new().width(360.0).child(
+        container().width(360.0).child(
             card()
                 .title("Create project")
                 .description("Deploy your new project in one click.")
@@ -39,7 +39,7 @@ fn with_footer() -> impl IntoWidget {
             "A .footer() row under the content — the classic form card with cancel / confirm.",
         )
         .body(
-            Container::new().width(360.0).child(
+            container().width(360.0).child(
                 card()
                     .title("Delete account")
                     .description("This action is permanent and cannot be undone.")
@@ -59,7 +59,7 @@ fn with_action() -> impl IntoWidget {
     doc("Header action")
         .description("Pin a widget to the top-right of the header with .action() — a menu button, a badge, anything.")
         .body(
-        Container::new().width(360.0).child(
+        container().width(360.0).child(
             card()
                 .title("Team")
                 .description("Manage who has access.")
@@ -73,7 +73,7 @@ fn composed() -> impl IntoWidget {
     doc("Composed")
         .description("Cards are just surfaces — compose avatars, badges, text and buttons freely.")
         .body(
-        Container::new().width(360.0).child(
+        container().width(360.0).child(
             card()
                 .action(badge("New").variant(BadgeVariant::Success))
                 .child(

@@ -116,7 +116,7 @@ pub fn buttons() -> Element {
             doc("Full width")
                 .description("Fills the width of its container with .full_width() — ideal for forms and mobile-style layouts.")
                 .body(
-                Container::new().width(340.0).child(button("Sign in").full_width().leading(IconKind::Check)),
+                container().width(340.0).child(button("Sign in").full_width().leading(IconKind::Check)),
             ),
             // -------------------------------------------------------------- disabled
             doc("Disabled")

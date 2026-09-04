@@ -9,7 +9,7 @@ use crate::ui::{doc, gap_w, screen};
 fn counter_window() -> impl IntoWidget {
     let count = state::counter();
     let msg = state::ping().latest().unwrap_or_else(|| "—".into());
-    Container::new().padding(EdgeInsets::all(22.0)).child(
+    container().padding(EdgeInsets::all(22.0)).child(
         column(children![
             text("Counter window").size(18.0).semibold(),
             muted("A separate OS window sharing the app's reactive runtime."),

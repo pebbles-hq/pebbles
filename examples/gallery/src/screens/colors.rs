@@ -9,7 +9,7 @@ use crate::ui::{gap_h, screen, section};
 /// One color chip with its shade number underneath.
 fn swatch(color: Color, shade: &str) -> impl IntoWidget {
     column(children![
-        Container::new()
+        container()
             .decoration(
                 BoxDecoration::new()
                     .color(color)

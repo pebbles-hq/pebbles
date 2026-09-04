@@ -12,7 +12,7 @@ fn nav_section(label: &str) -> impl IntoWidget {
     let c = theme().colors;
     column(children![
         gap_h(12.0),
-        Padding::new(
+        padding(
             EdgeInsets::symmetric(8.0, 2.0),
             text(label).size(11.0).semibold().color(c.muted_foreground),
         ),
@@ -67,7 +67,7 @@ pub fn app() -> impl IntoWidget {
     let current = route().get();
 
     // ----- side navigation -----
-    let brand = Padding::new(
+    let brand = padding(
         EdgeInsets::symmetric(6.0, 10.0),
         row(children![
             icon(lucide::GEM).size(20.0).color(c.primary),
@@ -79,7 +79,7 @@ pub fn app() -> impl IntoWidget {
     let mut side = side_nav()
         .width(232.0)
         .header(brand)
-        .footer(Padding::new(EdgeInsets::all(6.0), muted("v0.0.1 · Solid-style on Vello")));
+        .footer(padding(EdgeInsets::all(6.0), muted("v0.0.1 · Solid-style on Vello")));
     for group in NAV {
         side = side.item(nav_section(group.label));
         for (r, ic, label) in group.routes {

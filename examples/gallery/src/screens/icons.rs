@@ -20,7 +20,7 @@ pub fn icons() -> Element {
     let count = matches.len();
 
     let grid_items = matches.clone();
-    let grid = Container::new()
+    let grid = container()
         .decoration(
             BoxDecoration::new()
                 .border(Border::new(c.border, 1.0))
@@ -30,8 +30,8 @@ pub fn icons() -> Element {
         .child(GridView::builder(count, 6, 82.0, move |i| {
             let cc = theme().colors;
             let (name, data) = grid_items[i];
-            Container::new().padding(EdgeInsets::all(4.0)).child(
-                Container::new()
+            container().padding(EdgeInsets::all(4.0)).child(
+                container()
                     .decoration(BoxDecoration::new().radius(BorderRadius::all(8.0)))
                     .padding(EdgeInsets::symmetric(6.0, 8.0))
                     .child(
