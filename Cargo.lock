@@ -2611,6 +2611,7 @@ dependencies = [
  "pebbles-foundation",
  "pebbles-render",
  "slotmap",
+ "smallvec",
  "tokio",
 ]
 

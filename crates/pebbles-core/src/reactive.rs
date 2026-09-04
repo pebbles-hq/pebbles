@@ -295,6 +295,8 @@ impl<T: 'static + Clone> Signal<T> {
     pub fn set(&self, value: T) {
         with_rt(|rt| {
             if rt.signals.contains_key(self.id) {
+                crate::reactive_stats::bump_write();
+                crate::reactive_stats::bump_box_alloc();
                 rt.signals[self.id].value = Box::new(value);
                 schedule_subscribers(rt, self.id);
             }
@@ -335,6 +337,8 @@ impl<T: 'static + Clone + PartialEq> Signal<T> {
             if rt.signals[self.id].value.downcast_ref::<T>().unwrap() == &value {
                 return false; // unchanged — no write, no reschedule
             }
+            crate::reactive_stats::bump_write();
+            crate::reactive_stats::bump_box_alloc();
             rt.signals[self.id].value = Box::new(value);
             schedule_subscribers(rt, self.id);
             true
@@ -343,15 +347,19 @@ impl<T: 'static + Clone + PartialEq> Signal<T> {
 }
 
 fn schedule_subscribers(rt: &mut Runtime, id: SignalId) {
+    crate::reactive_stats::bump_vec_alloc(); // the two drain Vecs below (T1 kills these)
     let components: Vec<CompKey> = rt.signals[id].component_subs.drain().collect();
     let effects: Vec<EffectId> = rt.signals[id].effect_subs.drain().collect();
     for c in components {
+        crate::reactive_stats::bump_notify();
         // O(1) dedup (E1): the set insert reports novelty; the Vec keeps drain order.
         if rt.pending_components_set.insert(c) {
+            crate::reactive_stats::bump_component_schedule();
             rt.pending_components.push(c);
         }
     }
     for e in effects {
+        crate::reactive_stats::bump_notify();
         if !rt.pending_effects.contains(&e) {
             rt.pending_effects.push(e);
         }
@@ -404,6 +412,7 @@ pub fn create_effect(f: impl Fn() + 'static) {
 fn run_effect(id: EffectId) {
     let func = with_rt(|rt| rt.effects.get(id).map(|e| e.func.clone()));
     let Some(func) = func else { return };
+    crate::reactive_stats::bump_effect_run();
     let prev = with_rt(|rt| {
         let p = rt.observer;
         rt.observer = Some(Observer::Effect(id));
@@ -426,6 +435,7 @@ pub fn create_memo<T: 'static + Clone + PartialEq>(f: impl Fn() -> T + 'static) 
     // write would then re-render it, defeating the memo's dedup entirely.
     let signal = create_signal(untrack(&f));
     create_effect(move || {
+        crate::reactive_stats::bump_memo_recompute();
         let value = f();
         signal.set_if_changed(value);
     });

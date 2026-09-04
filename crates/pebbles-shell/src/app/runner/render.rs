@@ -100,6 +100,7 @@ impl Runner {
         let fno = self.frame_no;
         log::trace(log::Cat::Frame, format!("frame {fno} begin"));
         pebbles_render::stats::reset_frame();
+        pebbles_core::reactive_stats::reset();
         if self.recover_gpu_if_poisoned() {
             // Render fresh state this same frame; also repaint secondary windows.
             for w in self.windows.values() {
@@ -238,6 +239,10 @@ impl Runner {
                 stats::culled_nodes(),
                 stats::glyph_runs(),
             );
+        }
+        // Reactive-runtime counters (opt-in): what this frame's writes actually cost.
+        if std::env::var("PEBBLES_REACTIVE_STATS").is_ok_and(|v| v == "1" || v == "true") {
+            eprintln!("[pebbles reactive] {}", pebbles_core::reactive_stats::summary());
         }
 
         // 4. Render to the offscreen target and blit to the surface.

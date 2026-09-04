@@ -33,6 +33,9 @@ pub mod keyboard;
 /// stream. `pebbles_core::log` stays a valid path.
 pub use pebbles_foundation::log;
 pub mod reactive;
+#[cfg(test)]
+mod reactive_bench;
+pub mod reactive_stats;
 pub mod scroll;
 pub mod shortcuts;
 pub mod task;
