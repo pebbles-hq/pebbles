@@ -30,6 +30,23 @@ new_key_type! {
 new_key_type! {
     struct EffectId;
 }
+new_key_type! {
+    /// A derived (memo) node — lazy, three-color. Its value lives in a
+    /// [`SignalSlot`] (so it reuses the read API + subscriber sets); the node
+    /// carries the compute closure, its state, and the sources it read.
+    struct MemoId;
+}
+
+/// The three-color state of a lazy memo (Reactively/Leptos/Svelte model):
+/// `Clean` = value is current; `Dirty` = a source definitely changed, must
+/// recompute; `Check` = a source *might* have changed — pull the sources on read
+/// and recompute only if one actually did. `Ord` so `mark` never downgrades.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+enum NodeState {
+    Clean = 0,
+    Check = 1,
+    Dirty = 2,
+}
 
 /// A component instance's identity across the runtime: which **window** (`Ui`) it
 /// lives in, plus its element id. Each window has an independent element arena, so
@@ -37,17 +54,58 @@ new_key_type! {
 /// single-window case is simply window `0`.
 pub(crate) type CompKey = (u32, ElementId);
 
-/// Whatever is currently "reading" signals: a component instance, or an effect.
+/// Whatever is currently "reading" signals: a component instance, an effect, or a
+/// memo recomputing (which tracks the sources it reads).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Observer {
     Component(CompKey),
     Effect(EffectId),
+    Memo(MemoId),
 }
 
 struct SignalSlot {
     value: Box<dyn Any>,
     component_subs: HashSet<CompKey>,
     effect_subs: HashSet<EffectId>,
+    /// Memos that read this signal (they re-subscribe when they recompute, so this
+    /// is NOT drained on write — only the memo's own recompute manages it).
+    memo_subs: HashSet<MemoId>,
+    /// If this signal IS a memo's output, its backing memo — reading the signal
+    /// pulls the memo first (lazy evaluation).
+    memo: Option<MemoId>,
+    /// Write-version this value last actually changed at — the Check-resolution
+    /// test is `source.wv > memo.wv` (Svelte 5's `wv`; cheaper than a per-edge
+    /// changed-handshake and trivially correct across diamonds).
+    wv: u64,
+}
+
+impl SignalSlot {
+    fn new(value: Box<dyn Any>) -> Self {
+        SignalSlot {
+            value,
+            component_subs: HashSet::new(),
+            effect_subs: HashSet::new(),
+            memo_subs: HashSet::new(),
+            memo: None,
+            wv: 0,
+        }
+    }
+}
+
+/// A lazy derived node. The value lives in `output`'s [`SignalSlot`]; this carries
+/// the compute closure, the current state, the sources it read (to walk on a
+/// `Check` pull), and the write-version its value last changed at.
+struct MemoNode {
+    /// Recomputes under `observer = Memo(id)`: runs the user fn (rebuilding
+    /// `sources` + the sources' `memo_subs`), compares to the stored value, writes
+    /// it back only if changed, and returns whether it changed. Runs OUTSIDE any
+    /// runtime borrow (it does its own reads), exactly like an effect.
+    recompute: Rc<dyn Fn(MemoId) -> bool>,
+    /// The signal holding this memo's value; its `wv` IS the memo's write-version
+    /// (single source of truth), so a recompute bumps exactly one place.
+    output: SignalId,
+    state: NodeState,
+    sources: HashSet<SignalId>,
 }
 
 /// One entry on the render-time context stack — a value provided by a component
@@ -67,6 +125,17 @@ struct EffectSlot {
 struct Runtime {
     signals: SlotMap<SignalId, SignalSlot>,
     effects: SlotMap<EffectId, EffectSlot>,
+    /// Lazy derived nodes (memos). Their values live in `signals`; these carry the
+    /// compute + dependency state.
+    memos: SlotMap<MemoId, MemoNode>,
+    /// Global write-version, bumped on every value change (signal set or memo
+    /// recompute-that-changed) and stamped onto the changed signal's `wv`.
+    write_version: u64,
+    /// Demanded memos (a component/effect reads them) that went non-clean and must
+    /// be settled BEFORE render so the equality cut can decide whether to schedule
+    /// their readers. Undemanded/intermediate memos stay lazy (never queued).
+    pending_memos: Vec<MemoId>,
+    pending_memos_set: HashSet<MemoId>,
     /// The observer currently running (for auto-subscription).
     observer: Option<Observer>,
     /// The component currently rendering (owns the local signals it creates).
@@ -186,21 +255,13 @@ pub fn create_signal<T: 'static + Clone>(value: T) -> Signal<T> {
                 }
                 return Signal { id: existing, _marker: PhantomData };
             }
-            let id = rt.signals.insert(SignalSlot {
-                value: Box::new(value),
-                component_subs: HashSet::new(),
-                effect_subs: HashSet::new(),
-            });
+            let id = rt.signals.insert(SignalSlot::new(Box::new(value)));
             rt.hooks.entry(owner).or_default().push(id);
             #[cfg(debug_assertions)]
             rt.hook_types.entry(owner).or_default().push(std::any::TypeId::of::<T>());
             Signal { id, _marker: PhantomData }
         } else {
-            let id = rt.signals.insert(SignalSlot {
-                value: Box::new(value),
-                component_subs: HashSet::new(),
-                effect_subs: HashSet::new(),
-            });
+            let id = rt.signals.insert(SignalSlot::new(Box::new(value)));
             Signal { id, _marker: PhantomData }
         }
     })
@@ -216,11 +277,7 @@ pub fn create_signal<T: 'static + Clone>(value: T) -> Signal<T> {
 /// the global to a component (the hooks-order footgun). Never counts against hooks.
 pub fn create_root_signal<T: 'static + Clone>(value: T) -> Signal<T> {
     with_rt(|rt| {
-        let id = rt.signals.insert(SignalSlot {
-            value: Box::new(value),
-            component_subs: HashSet::new(),
-            effect_subs: HashSet::new(),
-        });
+        let id = rt.signals.insert(SignalSlot::new(Box::new(value)));
         Signal { id, _marker: PhantomData }
     })
 }
@@ -231,14 +288,33 @@ pub fn create_root_signal<T: 'static + Clone>(value: T) -> Signal<T> {
 /// primitives (e.g. `use_bounds`) use this to return to baseline on unmount
 /// instead of leaking one root signal per remount.
 pub fn dispose_root_signal<T: 'static + Clone>(sig: Signal<T>) {
-    with_rt(|rt| {
-        rt.signals.remove(sig.id);
-    });
+    with_rt(|rt| dispose_signal(rt, sig.id));
+}
+
+/// Remove a signal slot and, if it backs a memo, the memo node too — detaching
+/// that memo from every source it subscribed to and from the pending-settle queue.
+fn dispose_signal(rt: &mut Runtime, sid: SignalId) {
+    if let Some(mid) = rt.signals.get(sid).and_then(|s| s.memo) {
+        if let Some(node) = rt.memos.remove(mid) {
+            for src in node.sources {
+                if let Some(s) = rt.signals.get_mut(src) {
+                    s.memo_subs.remove(&mid);
+                }
+            }
+        }
+        if rt.pending_memos_set.remove(&mid) {
+            rt.pending_memos.retain(|&m| m != mid);
+        }
+    }
+    rt.signals.remove(sid);
 }
 
 impl<T: 'static + Clone> Signal<T> {
-    /// Read the value, subscribing the current component/effect to changes.
+    /// Read the value, subscribing the current component/effect/memo to changes.
     pub fn get(&self) -> T {
+        // If this signal is a memo's output, PULL it first (lazy evaluation) —
+        // done outside the read borrow, since a recompute runs user code.
+        self.pull_if_memo();
         with_rt(|rt| {
             assert!(
                 rt.signals.contains_key(self.id),
@@ -256,14 +332,24 @@ impl<T: 'static + Clone> Signal<T> {
                     Observer::Effect(id) => {
                         rt.signals[self.id].effect_subs.insert(id);
                     }
+                    Observer::Memo(mid) => {
+                        // A recomputing memo tracks this signal as a source (both
+                        // directions, so a write can find + a recompute can clear).
+                        rt.signals[self.id].memo_subs.insert(mid);
+                        if let Some(node) = rt.memos.get_mut(mid) {
+                            node.sources.insert(self.id);
+                        }
+                    }
                 }
             }
             rt.signals[self.id].value.downcast_ref::<T>().unwrap().clone()
         })
     }
 
-    /// Read without subscribing.
+    /// Read without subscribing (but still pulls a stale memo so the value is
+    /// current).
     pub fn peek(&self) -> T {
+        self.pull_if_memo();
         with_rt(|rt| {
             let slot = rt.signals.get(self.id).unwrap_or_else(|| {
                 panic!(
@@ -280,9 +366,19 @@ impl<T: 'static + Clone> Signal<T> {
     /// component (mirrors how [`set`](Self::set)/[`update`](Self::update) no-op
     /// after dispose).
     pub fn try_peek(&self) -> Option<T> {
+        self.pull_if_memo();
         with_rt(|rt| {
             rt.signals.get(self.id).map(|s| s.value.downcast_ref::<T>().unwrap().clone())
         })
+    }
+
+    /// If this signal backs a memo, bring it up to date (Reactively's
+    /// `updateIfNecessary`) BEFORE any read borrow — a no-op for a plain signal.
+    fn pull_if_memo(&self) {
+        let memo = with_rt(|rt| rt.signals.get(self.id).and_then(|s| s.memo));
+        if let Some(mid) = memo {
+            update_if_necessary(mid);
+        }
     }
 
     /// This signal's stable id as a `u64` — for keying per-signal registries (e.g. a
@@ -305,7 +401,7 @@ impl<T: 'static + Clone> Signal<T> {
             if let Some(slot) = rt.signals.get_mut(self.id) {
                 crate::reactive_stats::bump_write();
                 write_value(slot, value);
-                schedule_subscribers(rt, self.id);
+                mark_written(rt, self.id);
             }
         });
     }
@@ -329,7 +425,7 @@ impl<T: 'static + Clone> Signal<T> {
         with_rt(|rt| {
             if let Some(s) = rt.signals.get_mut(self.id) {
                 s.value = boxed;
-                schedule_subscribers(rt, self.id);
+                mark_written(rt, self.id);
             }
         });
     }
@@ -356,7 +452,7 @@ impl<T: 'static + Clone + PartialEq> Signal<T> {
             }
             crate::reactive_stats::bump_write();
             write_value(&mut rt.signals[self.id], value);
-            schedule_subscribers(rt, self.id);
+            mark_written(rt, self.id);
             true
         })
     }
@@ -374,7 +470,32 @@ fn write_value<T: 'static>(slot: &mut SignalSlot, value: T) {
     }
 }
 
+/// A signal's value changed: stamp the write-version, then notify subscribers.
+fn mark_written(rt: &mut Runtime, id: SignalId) {
+    rt.write_version += 1;
+    let wv = rt.write_version;
+    rt.signals[id].wv = wv;
+    schedule_subscribers(rt, id);
+}
+
+/// Notify every kind of subscriber of a changed signal: schedule its leaf readers
+/// (components/effects) and mark its memo readers stale (they're pulled lazily).
 fn schedule_subscribers(rt: &mut Runtime, id: SignalId) {
+    schedule_leaf_subscribers(rt, id);
+    // Memo subscribers: a DIRECT source changed, so they are definitely Dirty. The
+    // mark recurses to *their* memo readers as Check and queues any demanded memo.
+    // (Not drained — memos re-subscribe when they recompute, not per render.)
+    let memo_subs: Vec<MemoId> = rt.signals[id].memo_subs.iter().copied().collect();
+    for m in memo_subs {
+        mark_memo(rt, m, NodeState::Dirty);
+    }
+    rt.frame_requested = true;
+}
+
+/// Schedule only the LEAF readers (components/effects) of a signal — the settle
+/// phase uses this to wake the readers of a memo that actually changed, without
+/// re-marking the memo graph. Drains the sub sets (leaves re-subscribe on render).
+fn schedule_leaf_subscribers(rt: &mut Runtime, id: SignalId) {
     // Move the subscriber snapshot through reusable scratch buffers (T1.5) instead
     // of allocating a fresh `Vec` per write. `HashSet::drain` keeps the set's own
     // capacity, and the scratch buffers keep theirs — steady-state zero-alloc.
@@ -383,13 +504,11 @@ fn schedule_subscribers(rt: &mut Runtime, id: SignalId) {
     let (cap_c, cap_e) = (comps.capacity(), effs.capacity());
     comps.extend(rt.signals[id].component_subs.drain());
     effs.extend(rt.signals[id].effect_subs.drain());
-    // Count a scheduler heap allocation only when a scratch buffer actually grew.
     if comps.capacity() > cap_c || effs.capacity() > cap_e {
         crate::reactive_stats::bump_vec_alloc();
     }
     for c in comps.drain(..) {
         crate::reactive_stats::bump_notify();
-        // O(1) dedup (E1): the set insert reports novelty; the Vec keeps drain order.
         if rt.pending_components_set.insert(c) {
             crate::reactive_stats::bump_component_schedule();
             rt.pending_components.push(c);
@@ -401,9 +520,37 @@ fn schedule_subscribers(rt: &mut Runtime, id: SignalId) {
             rt.pending_effects.push(e);
         }
     }
-    rt.scratch_comps = comps; // hand the (now-empty, capacity-retaining) buffers back
+    rt.scratch_comps = comps;
     rt.scratch_effects = effs;
-    rt.frame_requested = true;
+}
+
+/// Mark a memo non-clean and propagate (Reactively's `stale`): a direct source
+/// change marks the memo `Dirty`, transitive changes mark `Check`. The
+/// `if node.state >= state` guard makes the mark idempotent so it never revisits
+/// a subgraph. NO computation happens here — this is pure flag-flipping. A memo
+/// whose value has a leaf reader (a demanded memo) is queued for the settle phase,
+/// which pulls it before render so the equality cut can decide whether to wake
+/// that reader; undemanded/intermediate memos stay lazy (pulled on read).
+fn mark_memo(rt: &mut Runtime, mid: MemoId, state: NodeState) {
+    let Some(node) = rt.memos.get_mut(mid) else { return };
+    if node.state >= state {
+        return; // already at least this stale — its subscribers were already marked
+    }
+    node.state = state;
+    let output = node.output;
+    // Demanded (a component/effect reads it) → settle before render.
+    let demanded = {
+        let out = &rt.signals[output];
+        !out.component_subs.is_empty() || !out.effect_subs.is_empty()
+    };
+    if demanded && rt.pending_memos_set.insert(mid) {
+        rt.pending_memos.push(mid);
+    }
+    // Recurse to downstream memos as Check (they *might* change).
+    let downstream: Vec<MemoId> = rt.signals[output].memo_subs.iter().copied().collect();
+    for d in downstream {
+        mark_memo(rt, d, NodeState::Check);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -461,24 +608,170 @@ fn run_effect(id: EffectId) {
     with_rt(|rt| rt.observer = prev);
 }
 
-/// A cached derived value: recomputes when its inputs change, and — because `T:
-/// PartialEq` — only wakes *its own* dependents when the recomputed value actually
-/// differs (Solid's memo dedup). A memo over a coarse projection (say `count % 2`)
-/// therefore re-renders downstream only when the projection flips, not on every input
-/// change. Create it once, at a stable position (app scope or the top of a component),
-/// like any signal.
+/// A cached derived value — **lazy** (push-pull, three-color): a write to an input
+/// marks the memo stale (a flag flip, no computation); the memo recomputes only
+/// when something that is actually rendered pulls it. Because `T: PartialEq`, a
+/// recompute that lands on the same value does NOT wake the memo's readers (the
+/// equality-cut firewall), and a memo that nothing reads this frame does not
+/// recompute at all. Create it once, at a stable position (app scope or the top of
+/// a component, like any signal). Reads (`get`/`peek`) go through the returned
+/// `Signal<T>` exactly as before — the laziness is invisible at the call site.
 pub fn create_memo<T: 'static + Clone + PartialEq>(f: impl Fn() -> T + 'static) -> Signal<T> {
-    // The initial compute runs UNTRACKED: the memo's effect (below) owns the
-    // input subscriptions. Computing it under the calling component's observer
-    // would subscribe the component to the memo's raw inputs — every input
-    // write would then re-render it, defeating the memo's dedup entirely.
+    // The output value lives in an ordinary signal (reusing the read API + the
+    // subscriber sets). The initial value is computed UNTRACKED; the tracked
+    // recompute below wires the sources. Position-stable inside a component: the
+    // output signal persists by hook order, and the memo node is created only on
+    // the first render (when the signal isn't yet linked to a memo).
     let signal = create_signal(untrack(&f));
-    create_effect(move || {
+    let already_linked = with_rt(|rt| rt.signals[signal.id].memo.is_some());
+    if already_linked {
+        return signal; // re-render: the memo node already exists
+    }
+
+    let output = signal.id;
+    // The type-erased recompute: runs the user fn under `observer = Memo(id)`
+    // (set by the caller), compares to the stored value, writes it back and bumps
+    // the write-version only when it changed, and reports whether it changed.
+    let recompute: Rc<dyn Fn(MemoId) -> bool> = Rc::new(move |_mid| {
         crate::reactive_stats::bump_memo_recompute();
-        let value = f();
-        signal.set_if_changed(value);
+        let value = f(); // reads its inputs (observer is Memo(mid)); done outside any borrow
+        with_rt(|rt| {
+            let Some(slot) = rt.signals.get_mut(output) else { return false };
+            let changed = slot.value.downcast_ref::<T>().is_none_or(|old| old != &value);
+            if changed {
+                write_value(slot, value);
+                rt.write_version += 1;
+                let wv = rt.write_version;
+                rt.signals[output].wv = wv;
+            }
+            changed
+        })
     });
+
+    let mid = with_rt(|rt| {
+        let mid = rt.memos.insert(MemoNode {
+            recompute,
+            output,
+            // Born Dirty with the initial value already stored: the first pull below
+            // wires the sources (a tracked run) and settles to Clean without waking
+            // anyone (the value equals the untracked initial).
+            state: NodeState::Dirty,
+            sources: HashSet::new(),
+        });
+        rt.signals[output].memo = Some(mid);
+        mid
+    });
+    // Wire the source subscriptions now (a tracked recompute) so a later input
+    // write can find this memo. The value is unchanged, so no one is scheduled.
+    update_if_necessary(mid);
     signal
+}
+
+/// Bring a memo up to date if a source might have changed (Reactively's
+/// `updateIfNecessary`). Runs OUTSIDE any runtime borrow (a recompute runs user
+/// code). Clean → nothing; Dirty → recompute; Check → pull each source (recursing
+/// into source memos), recompute only if a source's write-version moved past ours.
+fn update_if_necessary(mid: MemoId) {
+    let state = with_rt(|rt| rt.memos.get(mid).map(|n| n.state));
+    match state {
+        None | Some(NodeState::Clean) => {}
+        Some(NodeState::Dirty) => {
+            recompute_memo(mid);
+        }
+        Some(NodeState::Check) => {
+            // Pull sources; a source whose value changed past our last-seen version
+            // makes us Dirty. Early-out on the first such source (Reactively's break).
+            // Our version IS our output signal's `wv`.
+            let (sources, my_wv) = with_rt(|rt| {
+                let node = &rt.memos[mid];
+                let wv = rt.signals.get(node.output).map(|s| s.wv).unwrap_or(0);
+                (node.sources.iter().copied().collect::<Vec<_>>(), wv)
+            });
+            let mut dirty = false;
+            for src in sources {
+                // If the source is itself a memo, settle it first (recursive pull).
+                let inner = with_rt(|rt| rt.signals.get(src).and_then(|s| s.memo));
+                if let Some(inner) = inner {
+                    update_if_necessary(inner);
+                }
+                let src_wv = with_rt(|rt| rt.signals.get(src).map(|s| s.wv).unwrap_or(0));
+                if src_wv > my_wv {
+                    dirty = true;
+                    break;
+                }
+            }
+            if dirty {
+                recompute_memo(mid);
+            } else {
+                with_rt(|rt| {
+                    if let Some(n) = rt.memos.get_mut(mid) {
+                        n.state = NodeState::Clean;
+                    }
+                });
+            }
+        }
+    }
+}
+
+/// Recompute a memo: clear its old source edges, run the compute under
+/// `observer = Memo(id)` (which rebuilds the edges), then mark Clean.
+fn recompute_memo(mid: MemoId) {
+    let recompute = with_rt(|rt| {
+        let node = rt.memos.get(mid)?;
+        let f = node.recompute.clone();
+        // Clear old sources (both directions) so the tracked run rebuilds them —
+        // an input no longer read must stop waking this memo.
+        let old: Vec<SignalId> = node.sources.iter().copied().collect();
+        for src in old {
+            if let Some(s) = rt.signals.get_mut(src) {
+                s.memo_subs.remove(&mid);
+            }
+        }
+        rt.memos[mid].sources.clear();
+        Some(f)
+    });
+    let Some(recompute) = recompute else { return };
+    let prev = with_rt(|rt| {
+        let p = rt.observer;
+        rt.observer = Some(Observer::Memo(mid));
+        p
+    });
+    recompute(mid); // reads rebuild sources + memo_subs; writes the value + bumps wv if changed
+    with_rt(|rt| {
+        rt.observer = prev;
+        if let Some(n) = rt.memos.get_mut(mid) {
+            n.state = NodeState::Clean;
+        }
+    });
+}
+
+/// Settle every demanded memo before render (the equality-cut phase): pull each,
+/// and if its value actually changed, wake its leaf readers (components/effects).
+/// Undemanded memos are never queued, so they never recompute here — that is the
+/// lazy win. Loops because waking effects can, in turn, dirty more demanded memos.
+fn settle_memos() {
+    loop {
+        let pending = with_rt(|rt| {
+            rt.pending_memos_set.clear();
+            std::mem::take(&mut rt.pending_memos)
+        });
+        if pending.is_empty() {
+            break;
+        }
+        for mid in pending {
+            // The memo's version is its output signal's `wv`. Snapshot it, pull, and
+            // if it moved the value changed → wake exactly its leaf readers (its memo
+            // readers were already marked Check during the write and pulled if demanded).
+            let output = with_rt(|rt| rt.memos.get(mid).map(|n| n.output));
+            let Some(output) = output else { continue };
+            let before = with_rt(|rt| rt.signals.get(output).map(|s| s.wv).unwrap_or(0));
+            update_if_necessary(mid);
+            let after = with_rt(|rt| rt.signals.get(output).map(|s| s.wv).unwrap_or(0));
+            if after != before {
+                with_rt(|rt| schedule_leaf_subscribers(rt, output));
+            }
+        }
+    }
 }
 
 /// Run `f` with dependency tracking suspended: signal reads inside do NOT
@@ -655,7 +948,7 @@ pub(crate) fn dispose_component(id: ElementId) {
     with_rt(|rt| {
         if let Some(ids) = rt.hooks.remove(&key) {
             for sid in ids {
-                rt.signals.remove(sid);
+                dispose_signal(rt, sid);
             }
         }
         rt.hook_types.remove(&key);
@@ -768,9 +1061,16 @@ pub(crate) fn take_pending_components(window: u32) -> Vec<ElementId> {
     })
 }
 
-/// Run any scheduled effects (called before re-rendering components).
+/// Settle the reactive graph before render: pull demanded memos (waking readers of
+/// those that changed), then run scheduled effects — repeating because an effect
+/// can dirty more memos. Called by `rebuild_if_dirty` each frame, before it renders
+/// the scheduled components (which then read already-settled memos). Named
+/// `flush_effects` for continuity with the shell's call site.
 pub(crate) fn flush_effects() {
     loop {
+        // Settle demanded memos first, so the equality cut has already decided which
+        // components/effects to wake before we run/render anything.
+        settle_memos();
         let pending = with_rt(|rt| {
             rt.pending_effects_set.clear(); // in lockstep with the Vec (T1.4)
             std::mem::take(&mut rt.pending_effects)
