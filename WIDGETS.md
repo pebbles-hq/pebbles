@@ -41,7 +41,8 @@ remote-URL images) and their per-platform status live in
 | `ColorFiltered` · `ShaderMask` | ✅ | blend a color over a child (`.blend(mode)`, default multiply) · mask a child by a gradient's luminance (fade/vignette) |
 | `Canvas` / `canvas` (`CustomPaint`) | ✅ | immediate-mode vector drawing surface |
 | `Transform` (`rotate`/`scale`/`translate`, also via `Style`) | ✅ | |
-| `Text` | ✅ | ellipsis ✅; `soft_wrap(false)` ✅ |
+| `Text` | ✅ | ellipsis ✅; `soft_wrap(false)` ✅; inherits from an ancestor `default_text_style` (each unset property) |
+| `default_text_style` · `animated_default_text_style` (DefaultTextStyle) | ✅ | ambient subtree text style; descendant `Text` inherits each property it didn't set, nested providers compose; the animated variant eases size/weight/line-height/letter-spacing/color |
 | `RichText` / `text_rich` + `TextSpan`/`span` | ✅ | ONE shaped layout, per-range styles (weight/italic/underline/strike/color/family/size), inline-code chips, geometry-resolved links (`.on_link`) |
 | `RepaintBoundary` / `repaint_boundary` | ✅ | retained scene fragment, re-encoded only when the subtree changes; automatic on ListView items |
 | `EditableText` / `editable` | ✅ | low-level editor under TextField |

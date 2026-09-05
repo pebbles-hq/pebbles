@@ -10,6 +10,7 @@ mod boxes;
 mod canvas;
 mod container;
 mod decorated;
+mod default_text_style;
 mod dnd;
 mod editable;
 mod effects;
@@ -47,6 +48,7 @@ pub use boxes::{
 pub use canvas::{CanvasWidget, canvas};
 pub use container::{Container, container};
 pub use decorated::DecoratedBox;
+pub use default_text_style::{DefaultTextStyle, animated_default_text_style, default_text_style};
 pub use dnd::{DragTarget, Draggable, drag_target, draggable, long_press_draggable};
 pub use editable::{EditableText, editable};
 pub use effects::{ClipRRect, Opacity, RepaintBoundary, clip_rrect, opacity, repaint_boundary};

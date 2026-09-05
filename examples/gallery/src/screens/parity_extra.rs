@@ -1,10 +1,54 @@
 //! Buildable-now Flutter-parity widgets: scroll notifications, `ListBody`,
-//! the selection-control list tiles, `DraggableScrollableSheet`, and the Scaffold
-//! drawer / persistent-bottom-sheet slots.
+//! the selection-control list tiles, `DraggableScrollableSheet`, the Scaffold
+//! drawer / persistent-bottom-sheet slots, and `DefaultTextStyle`.
 
 use pebbles::prelude::*;
 
 use crate::ui::{doc, gap_h, gap_w, screen};
+
+// ===========================================================================
+// DefaultTextStyle
+// ===========================================================================
+
+pub fn default_text_style_screen() -> Element {
+    let animated = create_signal(false);
+    let c = theme().colors;
+
+    screen("Default Text Style")
+        .description("Flutter's DefaultTextStyle: set an ambient text style for a subtree. Descendant Text widgets inherit each property they didn't set explicitly; nested providers compose. animated_default_text_style eases the transition.")
+        .body(children![
+            doc("default_text_style(child).size(..).color(..)")
+                .description("All three lines inherit size + color from the provider; the middle one overrides the weight, the last overrides the color.")
+                .body(default_text_style(column(children![
+                    text("Inherits size and color"),
+                    text("Overrides weight only").bold(),
+                    text("Overrides color only").color(c.primary),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min))
+                .size(18.0)
+                .color(c.muted_foreground)),
+            doc("animated_default_text_style(child).duration(..)")
+                .description("Toggle to ease the whole subtree between two styles (size + color + weight).")
+                .body(column(children![
+                    button(if animated.get() { "Shrink / mute" } else { "Grow / emphasize" })
+                        .on_pressed(move || animated.update(|v| *v = !*v)),
+                    gap_h(14.0),
+                    animated_default_text_style(column(children![
+                        text("The quick brown fox"),
+                        text("jumps over the lazy dog"),
+                    ])
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .main_axis_size(MainAxisSize::Min))
+                    .duration(0.25)
+                    .size(if animated.get() { 26.0 } else { 15.0 })
+                    .weight(if animated.get() { 700.0 } else { 400.0 })
+                    .color(if animated.get() { c.primary } else { c.muted_foreground }),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min)),
+        ])
+}
 
 /// A bordered, clipped frame around a fixed-size demo area.
 fn framed(w: f64, h: f64, child: impl IntoWidget) -> impl IntoWidget {

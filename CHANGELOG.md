@@ -25,6 +25,12 @@ A batch of buildable-now Flutter-parity widgets:
   non-modal panel above the bottom bar).
 - **`fade_in_image`** (FadeInImage) — shows a placeholder, then cross-fades in the
   loaded network image; `.fade(secs)` (`image-view` feature).
+- **`default_text_style` / `animated_default_text_style`** (DefaultTextStyle) — an
+  ambient text style for a subtree. A descendant `Text` inherits each property it
+  didn't set explicitly; nested providers compose; the animated variant eases font
+  size / line height / weight / letter spacing / color toward the target. (`Text`
+  now resolves its style against the inherited one in `create_render_object` —
+  render-time contexts are live there.)
 
 ### Added — `pebbles create` templates
 The CLI's scaffolding is now template-driven, matching how Flutter organizes
