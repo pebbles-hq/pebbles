@@ -63,6 +63,7 @@ remote-URL images) and their per-platform status live in
 | `AnimatedSwitcher` · `AnimatedCrossFade` | ✅ | cross-fade on key-change / between two children |
 | `Dismissible` | ✅ | swipe-to-dismiss (drag + touch) → `on_dismissed` |
 | `Align` width/height-factor | ✅ | `.width_factor()`/`.height_factor()` (shrink-wrap scaled) |
+| `keyed` / `Keyed` (KeyedSubtree) | ✅ | attach a reconciliation key to any child; the reconciler now matches keyed children BY KEY across positions (insert/remove/reorder preserves element state) — prerequisite for AnimatedList + reorderable lists |
 | `FocusScope` (focus trap) | ✅ | scoped Tab-cycling; dialogs/sheets contain focus |
 | `View` | ✅ | window root background |
 

@@ -15,6 +15,7 @@ mod flex;
 mod flex_children;
 mod focus_scope;
 mod gesture;
+mod keyed;
 mod layout;
 mod list;
 mod motion;
@@ -42,6 +43,7 @@ pub use flex::{Column, Row, column, row};
 pub use flex_children::{Expanded, Flexible, expanded, flexible, spacer};
 pub use focus_scope::focus_scope;
 pub use gesture::{GestureDetector, gesture_detector};
+pub use keyed::{Keyed, keyed};
 pub use layout::{AspectRatio, Wrap, aspect_ratio, wrap};
 pub use list::{GridView, ListView, ScrollController, use_scroll_controller};
 pub use motion::{

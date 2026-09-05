@@ -153,19 +153,65 @@ impl Ui {
         }
     }
 
-    /// Reconcile a render element's child list against `new_widgets`, matched by
-    /// index (keyed reordering is a later refinement).
+    /// Reconcile a render element's child list against `new_widgets`.
+    ///
+    /// Children **without keys** match by position (the common, cheap case — kept
+    /// byte-for-byte). When any child (old or new) carries a [`Key`](crate::key::Key),
+    /// keyed children match by key **across positions** instead: an inserted,
+    /// removed, or reordered keyed child keeps its element (and all its state and
+    /// animations) instead of being rebuilt in place. This is what `keyed(..)`,
+    /// `AnimatedList`, and reorderable lists rely on.
     fn reconcile_children(&mut self, parent: ElementId, new_widgets: Vec<AnyWidget>) {
         let old_children = self.elements[parent].children.clone();
-        let mut incoming: Vec<Option<AnyWidget>> = new_widgets.into_iter().map(Some).collect();
-        let count = old_children.len().max(incoming.len());
-        let mut result = Vec::with_capacity(count);
-        for i in 0..count {
-            let old = old_children.get(i).copied();
-            let new_widget = incoming.get_mut(i).and_then(|slot| slot.take());
-            if let Some(el) = self.update_child(parent, old, new_widget) {
+
+        // Fast path: no keys anywhere → position matching (unchanged behavior).
+        let keyed = new_widgets.iter().any(|w| w.key().is_some())
+            || old_children.iter().any(|&c| self.elements[c].widget.key().is_some());
+        if !keyed {
+            let mut incoming: Vec<Option<AnyWidget>> = new_widgets.into_iter().map(Some).collect();
+            let count = old_children.len().max(incoming.len());
+            let mut result = Vec::with_capacity(count);
+            for i in 0..count {
+                let old = old_children.get(i).copied();
+                let new_widget = incoming.get_mut(i).and_then(|slot| slot.take());
+                if let Some(el) = self.update_child(parent, old, new_widget) {
+                    result.push(el);
+                }
+            }
+            self.elements[parent].children = result;
+            return;
+        }
+
+        // Keyed path: index old children by key; unkeyed old fall back to position.
+        let mut old_by_key: std::collections::HashMap<crate::key::Key, ElementId> =
+            std::collections::HashMap::new();
+        let mut old_unkeyed: std::collections::VecDeque<ElementId> = std::collections::VecDeque::new();
+        for &old in &old_children {
+            match self.elements[old].widget.key() {
+                Some(k) => {
+                    old_by_key.insert(k, old);
+                }
+                None => old_unkeyed.push_back(old),
+            }
+        }
+        let mut result = Vec::with_capacity(new_widgets.len());
+        for w in new_widgets {
+            // A keyed widget reuses the old element with the SAME key (anywhere);
+            // an unkeyed one takes the next positional unkeyed old.
+            let matched = match w.key() {
+                Some(k) => old_by_key.remove(&k),
+                None => old_unkeyed.pop_front(),
+            };
+            if let Some(el) = self.update_child(parent, matched, Some(w)) {
                 result.push(el);
             }
+        }
+        // Anything not reused (a removed key, or surplus unkeyed) is unmounted.
+        for (_k, old) in old_by_key.drain() {
+            self.update_child(parent, Some(old), None);
+        }
+        for old in old_unkeyed.drain(..) {
+            self.update_child(parent, Some(old), None);
         }
         self.elements[parent].children = result;
     }

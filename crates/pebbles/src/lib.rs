@@ -138,13 +138,13 @@ pub mod prelude {
     pub use pebbles_widgets::{
         Align, AnimatedContainer, AspectRatio, Canvas, CanvasWidget, ClipRRect, ColoredBox, Column,
         ConstrainedBox, Container, DecoratedBox, EditableText, Expanded, FittedBox, Flexible,
-        FractionallySizedBox, GestureDetector, GridView, IntrinsicHeight, IntrinsicWidth, LimitedBox,
+        FractionallySizedBox, GestureDetector, GridView, IntrinsicHeight, IntrinsicWidth, Keyed, LimitedBox,
         ListView, Opacity, OverflowBox, Padding, Positioned, RepaintBoundary, RichText, Row,
         ScrollController, ScrollExt, ScrollbarPolicy, ScrollbarStyle, SingleChildScrollView, SizedBox,
         Spinner, Stack, Text, TextSpan, Transform, View, Wrap, align, animated_container, aspect_ratio,
         canvas, center, clip_rrect, colored_box, column, constrained_box, container, editable, expanded,
         fitted_box, flexible, focus_scope, fractionally_sized_box, gap_h, gap_w, gesture_detector,
-        intrinsic_height, intrinsic_width, limited_box, list_view, opacity, overflow_box, padding,
+        intrinsic_height, intrinsic_width, keyed, limited_box, list_view, opacity, overflow_box, padding,
         positioned, repaint_boundary, row, scroll_view, sized_box, spacer, span, spinner, stack, text,
         text_rich, text_signal, transform, use_carousel_controller, use_scroll_controller, wrap,
     };
