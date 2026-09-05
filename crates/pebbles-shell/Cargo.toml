@@ -73,5 +73,15 @@ arboard = { version = "3", default-features = false }
 accesskit = "0.25"
 accesskit_winit = "0.34.0"
 
+# Web (wasm) runtime deps. The web GPU device request is inherently async and must
+# not block the main thread, so the surface is built off an async task and handed
+# back into the winit loop via an `EventLoopProxy` (see app/runner). `spawn_local`
+# drives that task; `console_error_panic_hook` makes a Rust panic show a readable
+# message + stack in the browser console instead of an opaque "unreachable". See
+# documentations/web-support.md §4.1 / §4.6.
+[target.'cfg(target_family = "wasm")'.dependencies]
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+
 [lints]
 workspace = true

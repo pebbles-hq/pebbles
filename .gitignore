@@ -2,3 +2,8 @@
 **/*.rs.bk
 Cargo.lock.orig
 .DS_Store
+
+# `pebbles run -d web` scratch: the managed Trunk index page + the wasm bundle
+# it serves (regenerated each run; never source of truth).
+.pebbles/
+dist/

@@ -91,16 +91,16 @@ impl Runner {
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
         window.set_ime_allowed(true); // enable IME composition on secondary windows too
         let physical = window.inner_size();
-        let surface = pollster::block_on(self.context.create_surface(
+        let surface = pollster::block_on(self.context.as_mut().unwrap().create_surface(
             window.clone(),
             physical.width.max(1),
             physical.height.max(1),
             wgpu::PresentMode::AutoVsync,
         ))
         .expect("create surface");
-        self.renderers.resize_with(self.context.devices.len(), || None);
-        install_error_handler(&self.context.devices[surface.dev_id].device);
-        let dh = &self.context.devices[surface.dev_id];
+        self.renderers.resize_with(self.context.as_ref().unwrap().devices.len(), || None);
+        install_error_handler(&self.context.as_ref().unwrap().devices[surface.dev_id].device);
+        let dh = &self.context.as_ref().unwrap().devices[surface.dev_id];
         self.renderers[surface.dev_id].get_or_insert_with(|| new_renderer(&dh.device, &dh.queue));
         // A fresh Ui → a fresh window_id in the shared runtime. Wrap the root in an
         // OverlayHost so this window has its own popover/menu/dialog layer (the overlay
@@ -155,7 +155,7 @@ impl Runner {
             }
             WindowEvent::Resized(size) => {
                 if size.width > 0 && size.height > 0 {
-                    self.context.resize_surface(&mut w.surface, size.width, size.height);
+                    self.context.as_mut().unwrap().resize_surface(&mut w.surface, size.width, size.height);
                     w.window.request_redraw();
                 }
             }

@@ -22,6 +22,8 @@ use vello::{AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene}
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
+#[cfg(target_family = "wasm")]
+use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{CursorIcon, Window, WindowAttributes, WindowId};
@@ -167,6 +169,21 @@ fn install_clipboard() {
 #[cfg(any(target_family = "wasm", target_os = "android"))]
 fn install_clipboard() {}
 
+/// A user event delivered into the winit loop from off the event-callback stack.
+///
+/// The only carrier today is **web GPU bring-up**: requesting the wgpu adapter +
+/// device is inherently async and must not block the browser main thread, so on
+/// wasm the surface is built on a `spawn_local` task and the finished
+/// [`RenderContext`] + [`RenderSurface`] are handed back here (via an
+/// [`EventLoopProxy`]) to be installed on the UI turn (see
+/// [`Runner::user_event`]). Desktop builds the surface synchronously and never
+/// sends one — the variant is dead there.
+#[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
+pub(super) enum PebblesUserEvent {
+    /// The async GPU init finished: install the context + first surface.
+    SurfaceReady { context: RenderContext, surface: RenderSurface<'static>, window: Arc<Window> },
+}
+
 /// The live window + its GPU surface.
 struct ActiveWindow {
     window: Arc<Window>,
@@ -221,7 +238,20 @@ pub(super) struct Runner {
     native_menu: Option<crate::native_menu::NativeMenus>,
 
     // gpu
-    context: RenderContext,
+    /// The vello GPU context. `Option` because on web it is briefly moved OUT into
+    /// the async surface-creation task and handed back via [`PebblesUserEvent`]; on
+    /// desktop it is always `Some` (the surface is built synchronously in `resumed`).
+    /// Access with `self.context.as_ref()/as_mut().unwrap()` — it is only `None`
+    /// during that async gap, when no frame renders (see the `active`-None guard).
+    context: Option<RenderContext>,
+    /// (web) The proxy used by the async GPU-init task to deliver the finished
+    /// surface back into the loop. `None` on desktop — set in `App::run` on wasm.
+    #[cfg(target_family = "wasm")]
+    proxy: Option<EventLoopProxy<PebblesUserEvent>>,
+    /// (web) A surface request is in flight — don't start a second one if `resumed`
+    /// fires again before it lands.
+    #[cfg(target_family = "wasm")]
+    gpu_pending: bool,
     renderers: Vec<Option<Renderer>>,
     /// The [`GPU_ERRORS`] count already recovered from (see `recover_gpu_if_poisoned`).
     gpu_errors_seen: u64,
@@ -301,7 +331,11 @@ impl Runner {
             inspect_rect: None,
             #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
             native_menu: None,
-            context: RenderContext::new(),
+            context: Some(RenderContext::new()),
+            #[cfg(target_family = "wasm")]
+            proxy: None,
+            #[cfg(target_family = "wasm")]
+            gpu_pending: false,
             renderers: Vec::new(),
             gpu_errors_seen: 0,
             last_gpu_reset: None,
@@ -340,6 +374,86 @@ impl Runner {
         if let Some(active) = self.active.as_ref() {
             active.window.request_redraw();
         }
+    }
+
+    /// (web) Store the proxy the async GPU-init task uses to hand the finished
+    /// surface back into the loop. Called once by [`App::run`](super::App::run)
+    /// before `spawn_app`.
+    #[cfg(target_family = "wasm")]
+    pub(super) fn set_proxy(&mut self, proxy: EventLoopProxy<PebblesUserEvent>) {
+        self.proxy = Some(proxy);
+    }
+
+    /// Build the OS window (or, on web, the canvas) from the app config. Desktop
+    /// creates it hidden so the AccessKit adapter can attach before it is shown;
+    /// web appends a `<canvas>` to the document body (there is no OS window).
+    fn create_window(&self, event_loop: &ActiveEventLoop) -> Arc<Window> {
+        let mut attrs = WindowAttributes::default()
+            .with_title(self.title.clone())
+            .with_inner_size(LogicalSize::new(self.size.0, self.size.1))
+            .with_resizable(self.resizable)
+            .with_maximized(self.maximized)
+            .with_decorations(self.decorations);
+        if let Some((w, h)) = self.min_size {
+            attrs = attrs.with_min_inner_size(LogicalSize::new(w, h));
+        }
+        if let Some((w, h)) = self.max_size {
+            attrs = attrs.with_max_inner_size(LogicalSize::new(w, h));
+        }
+        if let Some((x, y)) = self.position {
+            attrs = attrs.with_position(winit::dpi::LogicalPosition::new(x, y));
+        }
+        // Desktop: create hidden so the AccessKit adapter can attach before the
+        // window is shown (it panics if the window is already visible).
+        #[cfg(not(target_family = "wasm"))]
+        {
+            attrs = attrs.with_visible(false);
+        }
+        // Web: append the winit-owned canvas to the document body. The Trunk
+        // `index.html` sizes it to the viewport with CSS.
+        #[cfg(target_family = "wasm")]
+        {
+            use winit::platform::web::WindowAttributesExtWebSys;
+            attrs = attrs.with_append(true);
+        }
+        Arc::new(event_loop.create_window(attrs).expect("create window"))
+    }
+
+    /// Install the GPU state for the first window and mount the widget tree — the
+    /// tail shared by the synchronous desktop path (`resumed`) and the async web
+    /// path ([`user_event`](Self::user_event)). `self.context` must be `Some` here.
+    fn on_gpu_ready(&mut self, window: Arc<Window>, surface: RenderSurface<'static>) {
+        #[cfg(target_family = "wasm")]
+        {
+            self.gpu_pending = false;
+        }
+        // Ensure a renderer exists for this surface's device.
+        self.renderers.resize_with(self.context.as_ref().unwrap().devices.len(), || None);
+        install_error_handler(&self.context.as_ref().unwrap().devices[surface.dev_id].device);
+        let dh = &self.context.as_ref().unwrap().devices[surface.dev_id];
+        self.renderers[surface.dev_id].get_or_insert_with(|| new_renderer(&dh.device, &dh.queue));
+
+        // Mount the widget tree once, wrapped in the root View.
+        if !self.mounted {
+            pebbles_core::focus::init(); // create the global focus signal (before any component)
+            pebbles_widgets::overlay::init(); // create the global overlay signal too
+            pebbles_widgets::dialog::init(); // and the global modal-dialog signal
+            pebbles_widgets::sheet::init(); // and the global sheet/drawer signal
+            pebbles_widgets::theme::init(); // and the global reactive theme signal
+            pebbles_widgets::text_direction::init(); // D2: the reactive direction signal
+            pebbles_widgets::set_text_direction(self.text_direction); // apply the app's direction
+            install_clipboard(); // wire the system clipboard for Ctrl+C/X/V
+            let root = self.pending_root.take().expect("root widget");
+            self.ui.mount_root(View::new(self.background, root).into_widget());
+            self.mounted = true;
+        }
+
+        window.request_redraw();
+        self.active = Some(ActiveWindow { window, surface });
+
+        // B3: build + attach the native menu bar now that the window exists.
+        #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
+        self.install_native_menu();
     }
 
     /// B3 — build the native menu from the spec (once) and attach it to the window.
@@ -487,70 +601,69 @@ impl Runner {
     }
 }
 
-impl ApplicationHandler for Runner {
+impl ApplicationHandler<PebblesUserEvent> for Runner {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.active.is_some() {
             return;
         }
-        let mut attrs = WindowAttributes::default()
-            .with_title(self.title.clone())
-            .with_inner_size(LogicalSize::new(self.size.0, self.size.1))
-            .with_resizable(self.resizable)
-            .with_maximized(self.maximized)
-            .with_decorations(self.decorations);
-        if let Some((w, h)) = self.min_size {
-            attrs = attrs.with_min_inner_size(LogicalSize::new(w, h));
+        // (web) A surface request is already in flight from a prior `resumed` —
+        // don't kick off a second one.
+        #[cfg(target_family = "wasm")]
+        if self.gpu_pending {
+            return;
         }
-        if let Some((w, h)) = self.max_size {
-            attrs = attrs.with_max_inner_size(LogicalSize::new(w, h));
-        }
-        if let Some((x, y)) = self.position {
-            attrs = attrs.with_position(winit::dpi::LogicalPosition::new(x, y));
-        }
-        // Create hidden so the AccessKit adapter can attach before the window is shown
-        // (the adapter panics if the window is already visible).
-        attrs = attrs.with_visible(false);
-        let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
+
+        let window = self.create_window(event_loop);
         window.set_ime_allowed(true); // enable IME composition (CJK, dead keys, etc.)
         self.a11y = Some(crate::a11y::Bridge::new(event_loop, &window));
+        #[cfg(not(target_family = "wasm"))]
         window.set_visible(true);
 
         let physical = window.inner_size();
-        let surface = pollster::block_on(self.context.create_surface(
-            window.clone(),
-            physical.width.max(1),
-            physical.height.max(1),
-            wgpu::PresentMode::AutoVsync,
-        ))
-        .expect("create surface");
+        let (w, h) = (physical.width.max(1), physical.height.max(1));
 
-        // Ensure a renderer exists for this surface's device.
-        self.renderers.resize_with(self.context.devices.len(), || None);
-        install_error_handler(&self.context.devices[surface.dev_id].device);
-        let dh = &self.context.devices[surface.dev_id];
-        self.renderers[surface.dev_id].get_or_insert_with(|| new_renderer(&dh.device, &dh.queue));
-
-        // Mount the widget tree once, wrapped in the root View.
-        if !self.mounted {
-            pebbles_core::focus::init(); // create the global focus signal (before any component)
-            pebbles_widgets::overlay::init(); // create the global overlay signal too
-            pebbles_widgets::dialog::init(); // and the global modal-dialog signal
-            pebbles_widgets::sheet::init(); // and the global sheet/drawer signal
-            pebbles_widgets::theme::init(); // and the global reactive theme signal
-            pebbles_widgets::text_direction::init(); // D2: the reactive direction signal
-            pebbles_widgets::set_text_direction(self.text_direction); // apply the app's direction
-            install_clipboard(); // wire the system clipboard for Ctrl+C/X/V
-            let root = self.pending_root.take().expect("root widget");
-            self.ui.mount_root(View::new(self.background, root).into_widget());
-            self.mounted = true;
+        // Desktop: the adapter/device request resolves instantly, so block on it and
+        // install the surface right here — behavior identical to before.
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let surface = pollster::block_on(self.context.as_mut().unwrap().create_surface(
+                window.clone(),
+                w,
+                h,
+                wgpu::PresentMode::AutoVsync,
+            ))
+            .expect("create surface");
+            self.on_gpu_ready(window, surface);
         }
 
-        window.request_redraw();
-        self.active = Some(ActiveWindow { window, surface });
+        // Web: the GPU device request is async and MUST NOT block the browser main
+        // thread. Move the context into a `spawn_local` task; when the surface is
+        // ready, hand context + surface back via the proxy — `user_event` installs
+        // them on the next UI turn. See documentations/web-support.md §4.1.
+        #[cfg(target_family = "wasm")]
+        {
+            self.gpu_pending = true;
+            let mut context = self.context.take().expect("render context");
+            let proxy = self.proxy.clone().expect("event loop proxy set in App::run");
+            wasm_bindgen_futures::spawn_local(async move {
+                let surface = context
+                    .create_surface(window.clone(), w, h, wgpu::PresentMode::AutoVsync)
+                    .await
+                    .expect("create surface");
+                let _ = proxy.send_event(PebblesUserEvent::SurfaceReady { context, surface, window });
+            });
+        }
+    }
 
-        // B3: build + attach the native menu bar now that the window exists.
-        #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
-        self.install_native_menu();
+    /// Deliver an off-stack event. Today the only one is web GPU bring-up finishing
+    /// (see [`PebblesUserEvent`]); desktop never sends one.
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: PebblesUserEvent) {
+        match event {
+            PebblesUserEvent::SurfaceReady { context, surface, window } => {
+                self.context = Some(context);
+                self.on_gpu_ready(window, surface);
+            }
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
@@ -579,7 +692,11 @@ impl ApplicationHandler for Runner {
                     && size.width > 0
                     && size.height > 0
                 {
-                    self.context.resize_surface(&mut active.surface, size.width, size.height);
+                    self.context.as_mut().unwrap().resize_surface(
+                        &mut active.surface,
+                        size.width,
+                        size.height,
+                    );
                     active.window.request_redraw();
                 }
             }

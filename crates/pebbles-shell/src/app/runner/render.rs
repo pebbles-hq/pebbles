@@ -54,21 +54,21 @@ impl Runner {
         eprintln!("pebbles: resetting the GPU stack (device + surfaces + renderers)…");
 
         // A fresh instance/adapter/device pool; the old one may be lost.
-        self.context = RenderContext::new();
+        self.context = Some(RenderContext::new());
         self.renderers = Vec::new();
 
         // Recreate the main window's surface + renderer on the new device.
         if let Some(active) = self.active.as_mut() {
             let phys = active.window.inner_size();
-            match pollster::block_on(self.context.create_surface(
+            match pollster::block_on(self.context.as_mut().unwrap().create_surface(
                 active.window.clone(),
                 phys.width.max(1),
                 phys.height.max(1),
                 wgpu::PresentMode::AutoVsync,
             )) {
                 Ok(surface) => {
-                    self.renderers.resize_with(self.context.devices.len(), || None);
-                    let dh = &self.context.devices[surface.dev_id];
+                    self.renderers.resize_with(self.context.as_ref().unwrap().devices.len(), || None);
+                    let dh = &self.context.as_ref().unwrap().devices[surface.dev_id];
                     install_error_handler(&dh.device);
                     self.renderers[surface.dev_id] = Some(new_renderer(&dh.device, &dh.queue));
                     active.surface = surface;
@@ -79,15 +79,15 @@ impl Runner {
         // And every secondary window's surface.
         for w in self.windows.values_mut() {
             let phys = w.window.inner_size();
-            match pollster::block_on(self.context.create_surface(
+            match pollster::block_on(self.context.as_mut().unwrap().create_surface(
                 w.window.clone(),
                 phys.width.max(1),
                 phys.height.max(1),
                 wgpu::PresentMode::AutoVsync,
             )) {
                 Ok(surface) => {
-                    self.renderers.resize_with(self.context.devices.len(), || None);
-                    let dh = &self.context.devices[surface.dev_id];
+                    self.renderers.resize_with(self.context.as_ref().unwrap().devices.len(), || None);
+                    let dh = &self.context.as_ref().unwrap().devices[surface.dev_id];
                     install_error_handler(&dh.device);
                     if self.renderers[surface.dev_id].is_none() {
                         self.renderers[surface.dev_id] = Some(new_renderer(&dh.device, &dh.queue));
@@ -260,7 +260,7 @@ impl Runner {
         // driver hiccup. On failure: log, bump GPU_ERRORS (the recovery reset
         // picks it up next frame), and skip THIS frame.
         let surface = &active.surface;
-        let device_handle = &self.context.devices[surface.dev_id];
+        let device_handle = &self.context.as_ref().unwrap().devices[surface.dev_id];
         let renderer = match self.renderers[surface.dev_id].as_mut() {
             Some(r) => r,
             None => self.renderers[surface.dev_id]
@@ -377,14 +377,14 @@ impl Runner {
         // here cannot refresh its surface in the map — recreate it directly.
         if self.recover_gpu_if_poisoned() {
             let phys = w.window.inner_size();
-            if let Ok(surface) = pollster::block_on(self.context.create_surface(
+            if let Ok(surface) = pollster::block_on(self.context.as_mut().unwrap().create_surface(
                 w.window.clone(),
                 phys.width.max(1),
                 phys.height.max(1),
                 wgpu::PresentMode::AutoVsync,
             )) {
-                self.renderers.resize_with(self.context.devices.len(), || None);
-                let dh = &self.context.devices[surface.dev_id];
+                self.renderers.resize_with(self.context.as_ref().unwrap().devices.len(), || None);
+                let dh = &self.context.as_ref().unwrap().devices[surface.dev_id];
                 if self.renderers[surface.dev_id].is_none() {
                     self.renderers[surface.dev_id] = Some(new_renderer(&dh.device, &dh.queue));
                 }
@@ -418,7 +418,7 @@ impl Runner {
         self.text.finish_frame();
 
         let surface = &w.surface;
-        let device_handle = &self.context.devices[surface.dev_id];
+        let device_handle = &self.context.as_ref().unwrap().devices[surface.dev_id];
         // Same no-panic policy as render(): recreate a missing renderer, skip the
         // frame (and schedule the GPU reset) on a render failure.
         let renderer = match self.renderers[surface.dev_id].as_mut() {

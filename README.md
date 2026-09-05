@@ -99,21 +99,23 @@ claim — the platform builds and passes the headless test suites in
 | **Linux** (X11 + Wayland) | ✅ Supported | The primary development platform: built, tested and run daily, including GPU device-loss recovery and long input-storm soaks. |
 | **Windows** | ✅ Supported | Builds and passes the full suite on `windows-latest` in CI. Native window menu behind `native-menus`. Less interactive polish than Linux — visual/input reports welcome. |
 | **macOS** | ✅ Supported | Builds and passes the full suite on `macos-latest` in CI. Has the most platform-specific code (global menu bar, `Mod`→⌘ shortcut mapping). Same interactive-polish caveat as Windows. |
-| **Web** (wasm) | 🟡 Compiles (WebGPU) | The whole stack — framework **and shell** — compiles for `wasm32-unknown-unknown`, gated in CI. Requires **WebGPU** (Vello uses compute shaders; no WebGL2 fallback) — Chrome/Edge/Safari-26, Firefox where enabled. Not yet *runnable*: the GPU init must become async (it currently blocks, which the web main thread forbids) and a canvas entry point is needed. Buildable from Linux with `trunk`. |
+| **Web** (wasm) | 🟢 Runs (WebGPU) | `pebbles run -d web` builds the wasm bundle, serves it, and opens the browser — GPU init is async (no main-thread block), the canvas entry uses winit `spawn_app`, and touch/pointer input works. Requires a **WebGPU** browser (Vello uses compute shaders; no WebGL2 fallback) — Chrome/Edge, Safari 26+, or Firefox with WebGPU. Fully buildable from Linux. |
 | **Android** | 🟡 Compiles | Framework **and shell** compile for `aarch64-linux-android` (NativeActivity, NDK-free), gated in CI. **Touch input works** (mapped onto the pointer model). Requires **Vulkan** (universal on Android 7+). Not yet a running APK: needs the `android_main` entry, surface suspend/resume, and — for the build — the NDK + Gradle + a device. AccessKit ships an Android adapter, so TalkBack is reachable. |
 | **iOS** | 🟡 Compiles | Framework **and shell** compile for `aarch64-apple-ios` (Metal — no GPU caveat), gated on the CI macOS runner. **Touch input works** (shared with Android). Not yet a running app: needs the app-bundle entry and the on-device build, which **requires a Mac + Xcode** (Apple's constraint — no Linux/Windows path). |
 
-Legend: ✅ built + tested in CI · 🟡 compiles in CI, not yet runnable · ⛔ not
-supported.
+Legend: ✅ built + tested in CI · 🟢 runs (WebGPU browser) · 🟡 compiles in CI,
+not yet runnable · ⛔ not supported.
 
-The desktop rows are produced by the CI matrix, and the web/Android/iOS
+Run on any target with Flutter-style `-d`: `pebbles run` (desktop, the default),
+`pebbles run -d web` (needs [Trunk](https://trunkrs.dev): `cargo install --locked
+trunk`). The desktop rows are produced by the CI matrix, and the web/Android/iOS
 **compile** status by the [`cross-platform`](.github/workflows/ci.yml) gate, on
-every push — so this table cannot silently drift. "Compiles" is an honest,
-narrower claim than "supported": the source + dependency graph build for the
-target and touch input is wired, but a *running* app still needs the per-
-platform entry point + async GPU init (web), and a build toolchain this project
-doesn't bundle (an NDK + device for Android, a Mac for iOS). The remaining work
-is tracked in full, honest checklists in the project's platform design docs.
+every push — so this table cannot silently drift. Android and iOS say "compiles"
+rather than "runs" honestly: the source + dependency graph build and touch input
+is wired, but a *running* app still needs each one's entry point and a build
+toolchain this project doesn't bundle (an NDK + device for Android, a Mac for
+iOS). The remaining work is tracked in full, honest checklists in the project's
+platform design docs.
 
 ## Programming model
 

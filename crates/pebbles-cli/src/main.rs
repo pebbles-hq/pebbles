@@ -79,12 +79,16 @@ fn print_help() {
                       for developing the framework itself
 
 {BOLD}pebbles run OPTIONS{RESET}
+    -d, --device <t>  Target platform: desktop (default) | web | android | ios
+                      (aliases: chrome/safari/firefox = web; linux/macos/windows
+                      = desktop). Web serves a WebGPU build with live reload.
+    --port <n>        Dev-server port for -d web (default: 8080)
     -p, --package <n> Run a specific workspace member / sample by name
                       (aliases: --example, --bin)
     --watch <dir>     Also watch <dir> for hot-restart (repeatable) — e.g. the
                       framework crates while iterating on a sample
     --release         Build/run optimized (no dev diagnostics)
-    --no-reload       Disable hot-restart (build + run once)
+    --no-reload       Disable hot-restart (build + run once; desktop only)
     -q, --quiet       Only app logs at warn+ (default: debug)
     --log <level>     trace | debug | info | warn | error  (default: debug)
     --log-file [path] Also write the COMPLETE trace to a file (all levels);
@@ -95,6 +99,8 @@ fn print_help() {
     pebbles create hello && cd hello && pebbles run
     pebbles create --template widget my-widget   {DIM}# a reusable widget package{RESET}
     pebbles run -p gallery          {DIM}# run a sample from the workspace root{RESET}
+    pebbles run -d web              {DIM}# build to wasm + open in a WebGPU browser{RESET}
+    pebbles run -p counter -d web   {DIM}# run a specific sample on the web{RESET}
     pebbles run -p gallery --watch crates   {DIM}# also hot-restart on framework edits{RESET}
     cd examples/counter && pebbles run
     pebbles run --log trace

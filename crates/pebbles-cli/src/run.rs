@@ -20,6 +20,35 @@ struct Opts {
     package: Option<String>,
     extra_watch: Vec<String>,
     app_args: Vec<String>,
+    platform: Platform,
+    port: u16,
+}
+
+/// The target Pebbles runs on — Flutter's `-d`. Default is the host desktop.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Platform {
+    /// The host OS (Linux / macOS / Windows) — a native window. Default.
+    Desktop,
+    /// A WebGPU browser (Chrome / Edge / Safari / Firefox), served by Trunk.
+    Web,
+    Android,
+    Ios,
+}
+
+impl Platform {
+    /// Map a `-d` value to a platform. Accepts Flutter-ish synonyms (`chrome` = web,
+    /// `linux`/`macos`/`windows` = desktop). Returns `None` for an unknown value.
+    fn parse(s: &str) -> Option<Platform> {
+        match s.to_ascii_lowercase().as_str() {
+            "desktop" | "native" | "host" | "linux" | "macos" | "mac" | "osx" | "windows" | "win" => {
+                Some(Platform::Desktop)
+            }
+            "web" | "chrome" | "safari" | "firefox" | "browser" | "wasm" => Some(Platform::Web),
+            "android" => Some(Platform::Android),
+            "ios" | "iphone" | "ipad" => Some(Platform::Ios),
+            _ => None,
+        }
+    }
 }
 
 pub fn run(args: &[String]) -> ExitCode {
@@ -31,12 +60,38 @@ pub fn run(args: &[String]) -> ExitCode {
         package: None,
         extra_watch: vec![],
         app_args: vec![],
+        platform: Platform::Desktop,
+        port: 8080,
     };
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--release" => o.release = true,
             "--no-reload" => o.reload = false,
+            // Flutter-style target selection: `pebbles run -d web` (default: desktop).
+            "-d" | "--device" | "--platform" => {
+                let Some(v) = it.next() else {
+                    term::error("`-d` needs a target: desktop | web | android | ios");
+                    return ExitCode::FAILURE;
+                };
+                match Platform::parse(v) {
+                    Some(p) => o.platform = p,
+                    None => {
+                        term::error(&format!(
+                            "unknown target `{v}` — use one of: desktop | web | android | ios"
+                        ));
+                        return ExitCode::FAILURE;
+                    }
+                }
+            }
+            // The port for the web dev server (`-d web`).
+            "--port" => {
+                if let Some(v) = it.next()
+                    && let Ok(p) = v.parse::<u16>()
+                {
+                    o.port = p;
+                }
+            }
             "-q" | "--quiet" => o.log = "warn".into(),
             "--log" => {
                 if let Some(l) = it.next() {
@@ -116,6 +171,14 @@ pub fn run(args: &[String]) -> ExitCode {
             }
         }
     };
+
+    // Flutter-style target dispatch. Desktop falls through to the native
+    // build+watch+run loop below; the others have their own runtimes.
+    match o.platform {
+        Platform::Desktop => {}
+        Platform::Web => return run_web(&member_dir, &bin, &o),
+        Platform::Android | Platform::Ios => return run_mobile(o.platform),
+    }
 
     // Where the binary lands: the workspace target if in a workspace, else the
     // package's own target (a standalone `pebbles new` project).
@@ -218,6 +281,151 @@ enum Outcome {
     Changed(PathBuf),
     Exited,
     Interrupted,
+}
+
+// --- web (`-d web`) ----------------------------------------------------------
+
+/// Build the app to WebAssembly and serve it in a WebGPU browser, with live
+/// rebuild-on-save. Delegates the wasm toolchain to **Trunk** (the standard
+/// bundler for winit/wgpu web apps): it runs `cargo build --target
+/// wasm32-unknown-unknown`, wasm-bindgen, serves over HTTP, and reloads the tab
+/// on a source change — so Pebbles doesn't reimplement any of that.
+///
+/// Pebbles targets **WebGPU** browsers (Chrome/Edge, Safari, Firefox) — there is
+/// no WebGL2 fallback, by design (Vello is a compute-shader renderer).
+fn run_web(member_dir: &Path, bin: &str, o: &Opts) -> ExitCode {
+    term::banner(&format!("pebbles run — {bin} (web, {})", if o.release { "release" } else { "dev" }));
+
+    // 1. The wasm target must be installed (`cargo build --target wasm32…`).
+    if !wasm_target_installed() {
+        term::step("installing the wasm32-unknown-unknown target…");
+        let ok = Command::new("rustup")
+            .args(["target", "add", "wasm32-unknown-unknown"])
+            .status()
+            .is_ok_and(|s| s.success());
+        if !ok {
+            term::error("could not add the wasm target — run: rustup target add wasm32-unknown-unknown");
+            return ExitCode::FAILURE;
+        }
+    }
+
+    // 2. Trunk drives the wasm build + dev server. It is a one-time install.
+    if !tool_available("trunk") {
+        term::error("Trunk is required to run on the web but was not found.");
+        println!("  install it once with:  cargo install --locked trunk");
+        println!("  (Trunk builds the wasm bundle, runs wasm-bindgen, and serves with live reload.)");
+        return ExitCode::FAILURE;
+    }
+
+    // 3. An index.html for Trunk. Respect the project's own if present; otherwise
+    //    generate a managed one under `.pebbles/web/` (kept out of the source tree).
+    let index = match ensure_index_html(member_dir, bin) {
+        Ok(p) => p,
+        Err(e) => {
+            term::error(&format!("could not prepare the web entry page: {e}"));
+            return ExitCode::FAILURE;
+        }
+    };
+
+    // 4. `trunk serve` — builds, serves, opens the browser, and live-reloads on save.
+    let mut cmd = Command::new("trunk");
+    cmd.arg("serve").arg(&index).arg("--open").arg("--port").arg(o.port.to_string());
+    if o.release {
+        cmd.arg("--release");
+    }
+    cmd.current_dir(member_dir);
+    term::hot(&format!("serving on http://localhost:{} — Ctrl+C to stop", o.port));
+    term::step("Pebbles on web needs a WebGPU browser (Chrome/Edge, Safari 26+, or Firefox with WebGPU).");
+    cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    match cmd.status() {
+        Ok(s) if s.success() => ExitCode::SUCCESS,
+        Ok(_) => ExitCode::FAILURE,
+        Err(e) => {
+            term::error(&format!("could not launch trunk: {e}"));
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn wasm_target_installed() -> bool {
+    Command::new("rustup")
+        .args(["target", "list", "--installed"])
+        .output()
+        .ok()
+        .map(|out| String::from_utf8_lossy(&out.stdout).contains("wasm32-unknown-unknown"))
+        .unwrap_or(false)
+}
+
+fn tool_available(tool: &str) -> bool {
+    Command::new(tool)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Return the index.html Trunk should build. If the project ships its own
+/// `index.html`, use it untouched. Otherwise write a managed full-viewport page
+/// to `<member>/.pebbles/web/index.html` (regenerated each run) that mounts the
+/// app's `<bin>` crate onto a canvas.
+fn ensure_index_html(member_dir: &Path, bin: &str) -> std::io::Result<PathBuf> {
+    let project_index = member_dir.join("index.html");
+    if project_index.is_file() {
+        return Ok(project_index);
+    }
+    let web_dir = member_dir.join(".pebbles").join("web");
+    std::fs::create_dir_all(&web_dir)?;
+    // href is relative to this index.html → back up to the crate's Cargo.toml.
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>{bin} — Pebbles</title>
+  <style>
+    html, body {{ margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #ffffff; }}
+    canvas {{ display: block; width: 100vw; height: 100vh; outline: none; touch-action: none; }}
+  </style>
+  <!-- Build this workspace crate to wasm. Trunk runs cargo + wasm-bindgen. -->
+  <link data-trunk rel="rust" href="../../Cargo.toml" data-bin="{bin}" data-wasm-opt="0" />
+</head>
+<body></body>
+</html>
+"#
+    );
+    let index = web_dir.join("index.html");
+    std::fs::write(&index, html)?;
+    Ok(index)
+}
+
+// --- mobile (`-d android` / `-d ios`) ----------------------------------------
+
+/// Android and iOS compile today but are not yet one-command runnable: each needs
+/// a device toolchain this CLI does not bundle (an Android SDK/NDK + device, or a
+/// Mac + Xcode). Point the engineer at the exact next steps rather than pretending.
+fn run_mobile(platform: Platform) -> ExitCode {
+    match platform {
+        Platform::Android => {
+            term::banner("pebbles run — android");
+            term::warn("Android compiles for aarch64-linux-android, but a runnable APK needs the NDK.");
+            println!("  next steps (see documentations/android-support.md):");
+            println!("    1. install the Android SDK + NDK, then: cargo install cargo-ndk");
+            println!("    2. add the target:  rustup target add aarch64-linux-android");
+            println!("    3. build + run on a device/emulator via cargo-ndk + Gradle");
+        }
+        Platform::Ios => {
+            term::banner("pebbles run — ios");
+            term::warn("iOS compiles for aarch64-apple-ios, but building/running an app requires a Mac.");
+            println!("  next steps (see documentations/ios-support.md):");
+            println!("    1. on macOS: cargo install cargo-mobile2");
+            println!("    2. cargo mobile init  (generates the Xcode project)");
+            println!("    3. cargo apple run    (Simulator or a signed device)");
+        }
+        _ => {}
+    }
+    ExitCode::SUCCESS
 }
 
 fn cargo_build(run_dir: &Path, package: &str, release: bool) -> bool {

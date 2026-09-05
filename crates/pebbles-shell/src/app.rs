@@ -9,7 +9,7 @@ use winit::event_loop::EventLoop;
 
 mod runner;
 
-use runner::Runner;
+use runner::{PebblesUserEvent, Runner};
 
 /// A Pebbles desktop application. Configure it fluently, then [`run`](App::run).
 ///
@@ -145,18 +145,36 @@ impl App {
     }
 
     /// Open the window and run the event loop until the window closes.
+    ///
+    /// One entry point, two runtimes. On **desktop** this blocks in
+    /// [`run_app`](EventLoop::run_app) until the window closes. On **web** the
+    /// browser owns the loop, so it hands the runner to winit's
+    /// [`spawn_app`](winit::platform::web::EventLoopExtWebSys::spawn_app) and
+    /// returns immediately — the app keeps running under the browser's animation
+    /// frames. App code (`App::new(root).run()`) is identical on both.
     pub fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         use pebbles_core::log;
+
+        // Web: send Rust panics to the browser console with a readable message +
+        // stack (otherwise a panic is an opaque wasm "unreachable").
+        #[cfg(target_family = "wasm")]
+        console_error_panic_hook::set_once();
+
         log::init();
-        // A panic anywhere in the UI dumps the whole event log first, so we always
-        // see what the UI was doing in the run-up to the crash — then the normal
-        // panic message/backtrace.
-        let prev = std::panic::take_hook();
-        std::panic::set_hook(Box::new(move |info| {
-            log::error(log::Cat::General, format!("PANIC: {info}"));
-            log::dump("panic");
-            prev(info);
-        }));
+
+        // Desktop: a panic anywhere in the UI dumps the whole event log first, so we
+        // always see what the UI was doing in the run-up to the crash — then the
+        // normal panic message/backtrace. (On web the console hook above covers it.)
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let prev = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |info| {
+                log::error(log::Cat::General, format!("PANIC: {info}"));
+                log::dump("panic");
+                prev(info);
+            }));
+        }
+
         log::info(log::Cat::General, "pebbles app starting");
         if log::dev_mode() {
             log::info(
@@ -164,10 +182,26 @@ impl App {
                 "dev mode — devtools: Mod+Shift+I inspect widget · Mod+Shift+D dump render tree + logs",
             );
         }
-        let event_loop = EventLoop::new()?;
-        let mut runner = Runner::new(self);
-        event_loop.run_app(&mut runner)?;
-        log::info(log::Cat::General, "pebbles app exited cleanly");
-        Ok(())
+
+        // A user-event loop on both targets: web uses it to deliver the async GPU
+        // bring-up back into the loop; desktop never sends one.
+        let event_loop = EventLoop::<PebblesUserEvent>::with_user_event().build()?;
+
+        #[cfg(target_family = "wasm")]
+        {
+            let mut runner = Runner::new(self);
+            runner.set_proxy(event_loop.create_proxy());
+            use winit::platform::web::EventLoopExtWebSys;
+            event_loop.spawn_app(runner);
+            Ok(())
+        }
+
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let mut runner = Runner::new(self);
+            event_loop.run_app(&mut runner)?;
+            log::info(log::Cat::General, "pebbles app exited cleanly");
+            Ok(())
+        }
     }
 }
