@@ -127,5 +127,24 @@ rustdoc, so the restriction is visible at the call site too:
 `window()`, `App::menu`, `register_global_hotkey`, `pick_folder`,
 `ImageView::network`. Run `cargo doc --open` to browse them.
 
+## Troubleshooting the web build
+
+**Blank white page.** Pebbles is **WebGPU-only** (Vello is a compute-shader
+renderer — there is no WebGL2 fallback). A blank canvas almost always means the
+browser could not provide a WebGPU adapter, so enable it:
+
+- **Chrome/Edge:** `chrome://flags` → **Unsafe WebGPU Support** = Enabled; on
+  **Linux** also enable **Vulkan** — then relaunch. Verify at `chrome://gpu`
+  (look for “WebGPU: Hardware accelerated”). Quick one-off test:
+  `chromium --enable-unsafe-webgpu --enable-features=Vulkan http://localhost:8080`.
+- **Firefox:** `about:config` → `dom.webgpu.enabled = true` (Nightly / recent).
+- **Safari:** 26+ ships WebGPU on by default.
+
+If WebGPU is on and it is still blank, open DevTools → Console: Pebbles installs a
+panic hook, so a Rust panic prints there with a readable message.
+
+**Slow first load.** The dev (debug) wasm is large; `pebbles run -d web --release`
+produces a much smaller, faster bundle.
+
 See also: [`WIDGETS.md`](WIDGETS.md) (the full catalog) and the platform runtime
 matrix in [`README.md`](README.md#platform-support).

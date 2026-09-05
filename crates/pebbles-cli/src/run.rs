@@ -335,7 +335,20 @@ fn run_web(member_dir: &Path, bin: &str, o: &Opts) -> ExitCode {
     }
     cmd.current_dir(member_dir);
     term::hot(&format!("serving on http://localhost:{} — Ctrl+C to stop", o.port));
-    term::step("Pebbles on web needs a WebGPU browser (Chrome/Edge, Safari 26+, or Firefox with WebGPU).");
+    // A blank page almost always means WebGPU is off in the browser (Pebbles is
+    // WebGPU-only — no WebGL2 fallback). Spell out the fix, since a silent white
+    // canvas is the most common first-run surprise, especially on Linux.
+    term::step("needs a WebGPU browser. If the page is BLANK, WebGPU is disabled — enable it:");
+    println!(
+        "    • Chrome/Edge:  chrome://flags → \"Unsafe WebGPU Support\" = Enabled (Linux: also \"Vulkan\"), relaunch"
+    );
+    println!("    •   check with: chrome://gpu  →  \"WebGPU: Hardware accelerated\"");
+    println!("    • Firefox:      about:config → dom.webgpu.enabled = true (Nightly/128+)");
+    println!("    • Safari 26+:   on by default");
+    println!(
+        "    • quick test:   chromium --enable-unsafe-webgpu --enable-features=Vulkan http://localhost:{}",
+        o.port
+    );
     cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
     match cmd.status() {
         Ok(s) if s.success() => ExitCode::SUCCESS,
