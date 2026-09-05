@@ -226,6 +226,15 @@ pub const NAV: &[NavGroup] = &[
         ],
     },
     NavGroup {
+        label: "SCAFFOLD & MOBILE",
+        routes: &[
+            ("media-query", lucide::INFO, "Media Query"),
+            ("safe-area", lucide::BOX, "Safe Area"),
+            ("orientation-builder", lucide::COLUMNS_2, "Orientation Builder"),
+            ("scaffold-slots", lucide::LAYOUT_GRID, "Scaffold Slots"),
+        ],
+    },
+    NavGroup {
         label: "NAVIGATION",
         routes: &[
             ("tabs", lucide::SQUARE_STACK, "Tabs"),

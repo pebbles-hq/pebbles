@@ -169,6 +169,11 @@ pub fn app() -> impl IntoWidget {
         // Async & accessibility long-tail.
         .route("stream-builder", || component(screens::async_a11y::stream_builder_screen))
         .route("semantics-combinators", || component(screens::async_a11y::semantics_combinators_screen))
+        // Scaffold slots + mobile-specific.
+        .route("media-query", || component(screens::mobile::media_query_screen))
+        .route("safe-area", || component(screens::mobile::safe_area_screen))
+        .route("orientation-builder", || component(screens::mobile::orientation_builder_screen))
+        .route("scaffold-slots", || component(screens::mobile::scaffold_slots_screen))
         .route("canvas", || component(screens::canvas::canvas_screen))
         .route("resizable", || component(screens::resizable::resizables))
         .route("badge", || component(screens::badge::badges))

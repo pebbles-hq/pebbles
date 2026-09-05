@@ -144,7 +144,10 @@ remote-URL images) and their per-platform status live in
 |--------|--------|-------|
 | `Panel` · `ScrollArea` · `Resizable` · `SplitView` | ✅ | live drag-resize |
 | `Accordion` · `Collapsible` | ✅ | single/multiple, default-open, events |
-| `Scaffold` · `TopPanel` · `SideNav` · `BottomNav` | ✅ 🔶C5/C8g | top/side/body/bottom + a `.fab()` slot (bottom-right FAB overlay); SideNav rail-collapse (C5) open; dedicated chrome gallery screen (C8g) open |
+| `Scaffold` · `TopPanel` · `SideNav` · `BottomNav` | ✅ 🔶C5/C8g | top/side/body/bottom + a `.fab()` slot (bottom-right FAB overlay) + a `.persistent_footer()` slot (pinned action row above the bottom bar); SideNav rail-collapse (C5) open; dedicated chrome gallery screen (C8g) open |
+| `media_query` (`MediaQueryData`) | ✅ | window metrics — size / orientation / safe-area `padding` / keyboard `view_insets` / dpr / text scale; mobile insets fill in with the mobile shell (zero on desktop) |
+| `safe_area` (SafeArea) | ✅ | inset past notch/status-bar/home-indicator (`.top/.bottom/.left/.right`); a no-op on desktop (zero insets), real with the mobile shell |
+| `orientation_builder` (OrientationBuilder) | ✅ | rebuild Portrait/Landscape from the box it's given (reactive to its bounds) |
 | `Tabs` | ✅ | design variants, disabled tabs, keyboard, focus ring |
 | `Breadcrumb` | ✅ | `.max_visible` middle-collapse |
 | `Pagination` | ✅ | Numbers/Simple/Arrows designs; full control — first/last jump (double-chevrons, `.edges(true)` default), prev/next arrows, numbered pills with ellipses; every control is a bordered button, disables at the bounds; unified `on_page` |

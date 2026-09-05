@@ -43,6 +43,7 @@ pub struct Scaffold {
     side: Option<AnyWidget>,
     bottom: Option<AnyWidget>,
     fab: Option<AnyWidget>,
+    persistent_footer: Option<AnyWidget>,
     background: Option<Color>,
 }
 
@@ -54,6 +55,7 @@ pub fn scaffold(body: impl IntoWidget) -> Scaffold {
         side: None,
         bottom: None,
         fab: None,
+        persistent_footer: None,
         background: None,
     }
 }
@@ -75,6 +77,12 @@ impl Scaffold {
     /// the body (Flutter's `Scaffold.floatingActionButton`).
     pub fn fab(mut self, fab: impl IntoWidget) -> Self {
         self.fab = Some(fab.into_widget());
+        self
+    }
+    /// A row of persistent action buttons pinned directly above the bottom bar, with a
+    /// top divider (Flutter's `Scaffold.persistentFooterButtons`).
+    pub fn persistent_footer(mut self, footer: impl IntoWidget) -> Self {
+        self.persistent_footer = Some(footer.into_widget());
         self
     }
     pub fn background(mut self, color: Color) -> Self {
@@ -106,6 +114,17 @@ impl IntoWidget for Scaffold {
             col.push(top);
         }
         col.push(Expanded::new(middle).into_widget());
+        // Persistent footer buttons sit above the bottom bar, with a top divider.
+        if let Some(footer) = self.persistent_footer.take() {
+            let c = theme().colors;
+            col.push(
+                Container::new()
+                    .decoration(BoxDecoration::new().color(c.background).border(Border::new(c.border, 1.0)))
+                    .padding(EdgeInsets::symmetric(12.0, 8.0))
+                    .child(footer)
+                    .into_widget(),
+            );
+        }
         if let Some(bottom) = self.bottom.take() {
             col.push(bottom);
         }

@@ -38,6 +38,7 @@ pub mod list;
 pub mod list_view;
 pub mod material;
 pub mod menubar;
+pub mod mobile;
 pub mod motion;
 pub mod overview;
 pub mod pagination;

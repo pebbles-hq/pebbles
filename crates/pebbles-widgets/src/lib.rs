@@ -106,6 +106,10 @@ pub use widgets::{
     ClipOval, ClipPath, ColorFiltered, ShaderMask, clip_oval, clip_path, clip_rect, color_filtered,
     shader_mask,
 };
+// window metrics + mobile widgets (Flutter's MediaQuery / SafeArea / OrientationBuilder)
+pub use widgets::{
+    MediaQueryData, Orientation, OrientationBuilder, SafeArea, media_query, orientation_builder, safe_area,
+};
 // layout (the long-tail Flutter layout widgets)
 pub use widgets::{
     Baseline, CustomMultiChildLayout, CustomSingleChildLayout, Flow, FractionalTranslation, LayoutBuilder,

@@ -23,6 +23,7 @@ mod keyed;
 mod layout;
 mod layout_extra;
 mod list;
+mod media;
 mod motion;
 mod pointer_control;
 mod probe;
@@ -67,6 +68,9 @@ pub use layout_extra::{
     offstage, rotated_box, sized_overflow_box, unconstrained_box, visibility,
 };
 pub use list::{GridView, ListView, ScrollController, use_scroll_controller};
+pub use media::{
+    MediaQueryData, Orientation, OrientationBuilder, SafeArea, media_query, orientation_builder, safe_area,
+};
 pub use motion::{
     AnimatedAlign, AnimatedCrossFade, AnimatedOpacity, AnimatedPadding, AnimatedPositioned, AnimatedRotation,
     AnimatedScale, AnimatedSlide, AnimatedSwitcher, DecoratedBoxTransition, Dismissible, FadeTransition,
