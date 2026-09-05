@@ -9,6 +9,12 @@ All notable changes to Pebbles are documented here. The format follows
 ### Added — Flutter parity: scroll notifications, list body, list tiles, sheets
 A batch of buildable-now Flutter-parity widgets:
 
+- **`pressable` / `ink_well` / `ink_response` / `ink`** (Flutter's InkWell /
+  InkResponse / Ink) — one engine that makes any widget a tappable region with
+  hover/press tint, focus ring, pointer cursor, keyboard activation and Button
+  semantics. `ink_well` is the rectangular alias, `ink_response` a circular
+  highlight, `ink` the decorated surface the tint draws over. The Material
+  **ripple** stays decided-out — feedback is a shadcn state tint, not a splash.
 - **`nested_scroll_view`** (NestedScrollView) — a header over a scrolling body:
   scroll-away (header + body share one scroll position) or `.pinned(true)` (fixed
   header, body scrolls beneath). The sliver-style collapse-then-scroll stays

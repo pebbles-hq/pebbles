@@ -7,6 +7,55 @@ use pebbles::prelude::*;
 use crate::ui::{doc, gap_h, gap_w, screen};
 
 // ===========================================================================
+// Pressable / InkWell / InkResponse / Ink
+// ===========================================================================
+
+pub fn pressable_screen() -> Element {
+    let taps = create_signal(0_u32);
+    let c = theme().colors;
+
+    screen("Pressable / Ink")
+        .description("Pebbles' answer to Flutter's InkWell / InkResponse / Ink — a tappable region with hover + press tint, focus ring, pointer cursor and keyboard activation, minus the Material ripple (decided-out). One engine backs all three names.")
+        .body(children![
+            doc("pressable(child).on_tap(..)  ·  ink_well(..)")
+                .description("Wrap any widget to make it a bounded, rectangular tap region with feedback. ink_well is the Flutter-named alias.")
+                .body(row(children![
+                    pressable(
+                        ink(container().padding(EdgeInsets::symmetric(18.0, 12.0)).child(text("Tap me")))
+                            .color(c.card)
+                            .radius(10.0),
+                    )
+                    .radius(10.0)
+                    .label("Tap me")
+                    .on_tap(move || taps.update(|n| *n += 1)),
+                    gap_w(16.0),
+                    text(format!("taps: {}", taps.get())).color(c.muted_foreground),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Center)),
+            doc("ink_response(child)  ·  InkShape::Circle")
+                .description("A circular highlight — the icon-button / avatar tap idiom (Flutter's InkResponse).")
+                .body(row(children![
+                    ink_response(container().padding(EdgeInsets::all(14.0)).child(icon(IconKind::Search).size(20.0)))
+                        .on_tap(|| {}),
+                    gap_w(16.0),
+                    ink_response(container().padding(EdgeInsets::all(14.0)).child(icon(IconKind::Mail).size(20.0)))
+                        .hover_tint(c.primary)
+                        .on_tap(|| {}),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Center)),
+            doc("ink(child).color(..).radius(..)")
+                .description("A decorated surface the tap tint draws OVER (Flutter's Ink) — place it as the child of a pressable so the background sits beneath the highlight.")
+                .body(pressable(
+                    ink(container().padding(EdgeInsets::all(16.0)).child(text("Card row").weight(600.0)))
+                        .color(c.secondary)
+                        .radius(12.0),
+                )
+                .radius(12.0)
+                .on_tap(|| {})),
+        ])
+}
+
+// ===========================================================================
 // NestedScrollView
 // ===========================================================================
 

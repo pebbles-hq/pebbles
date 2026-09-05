@@ -185,6 +185,7 @@ pub fn app() -> impl IntoWidget {
         .route("default-text-style", || component(screens::parity_extra::default_text_style_screen))
         .route("mobile-runtime", || component(screens::parity_extra::mobile_runtime_screen))
         .route("nested-scroll", || component(screens::parity_extra::nested_scroll_screen))
+        .route("pressable", || component(screens::parity_extra::pressable_screen))
         .route("canvas", || component(screens::canvas::canvas_screen))
         .route("resizable", || component(screens::resizable::resizables))
         .route("badge", || component(screens::badge::badges))

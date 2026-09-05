@@ -247,6 +247,7 @@ pub const NAV: &[NavGroup] = &[
             ("default-text-style", lucide::TYPE, "Default Text Style"),
             ("mobile-runtime", lucide::SMARTPHONE, "Mobile Runtime"),
             ("nested-scroll", lucide::MOVE_VERTICAL, "Nested Scroll View"),
+            ("pressable", lucide::MOUSE_POINTER_CLICK, "Pressable / Ink"),
         ],
     },
     NavGroup {

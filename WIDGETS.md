@@ -49,6 +49,7 @@ remote-URL images) and their per-platform status live in
 | `Icon` (lucide set) | ✅ | |
 | `Spinner` | ✅ | indeterminate arc |
 | `GestureDetector` | ✅ | tap/double/secondary/down/up/hover/cursor/pan + long-press lifecycle + vertical/horizontal axis-drag trios |
+| `pressable` / `ink_well` / `ink_response` / `ink` (InkWell/InkResponse/Ink) | ✅ | make any widget a tappable region with hover/press tint + focus ring + keyboard activation + Button semantics; `ink_response` = circular highlight, `ink` = the decorated surface the tint draws over. shadcn state feedback, **no Material ripple** (§10) |
 | `Semantics` (+ `SemanticsRole`) | ✅ 🔶C7 | long-tail roles (Menu/Tab/Dialog/…) open (C7) |
 | `merge_semantics` · `exclude_semantics` · `block_semantics` | ✅ | a11y combinators: collapse a subtree into one announcement · hide a subtree from AT · modal barrier that blocks lower layers from AT |
 | `stream_builder` | ✅ | rebuild on each `Channel` emission (Flutter's StreamBuilder) — `stream_builder(channel, builder)` passes the latest value; a thin reactive builder over the existing `Channel` |

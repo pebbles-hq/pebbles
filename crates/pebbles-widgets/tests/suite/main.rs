@@ -48,6 +48,7 @@ mod pagination;
 mod parity_extra;
 mod per_window_overlay;
 mod popover;
+mod pressable;
 mod property_parity;
 mod reactive;
 mod scroll_notification;

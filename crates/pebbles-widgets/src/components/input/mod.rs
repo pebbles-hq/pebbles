@@ -14,6 +14,7 @@ pub(crate) mod list_nav;
 mod list_tiles;
 pub(crate) mod menu;
 pub(crate) mod popover;
+mod pressable;
 mod select;
 mod slider;
 mod text_field;
@@ -42,6 +43,7 @@ pub use menu::{
     menu_sub,
 };
 pub use popover::{Popover, popover};
+pub use pressable::{Ink, InkShape, Pressable, ink, ink_response, ink_well, pressable};
 pub use select::{Select, SelectItem, select, select_group, select_item};
 pub use slider::{Slider, slider};
 pub use text_field::{InputKind, TextField, selectable_text, text_area, text_field};
