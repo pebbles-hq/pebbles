@@ -298,6 +298,9 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
                 .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 90), Offset::new(0.0, 18.0), 40.0, -8.0)),
         )
         .child(entry.content);
+    // Consume taps on the surface so they don't fall through to the dismiss scrim
+    // behind it (a tap OUTSIDE the surface still reaches the scrim and dismisses).
+    let surface = GestureDetector::new(surface).on_tap(|| {});
     // C7: announce the surface as a Dialog (label = title) to assistive tech.
     let labelled =
         crate::widgets::semantics(pebbles_render::SemanticsRole::Dialog, entry.title.clone(), surface);

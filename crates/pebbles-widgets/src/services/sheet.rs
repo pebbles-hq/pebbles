@@ -270,7 +270,13 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
         Side::Top => (0.0, -off),
         Side::Bottom => (0.0, off),
     };
-    let slid = Transform::translate(dx, dy, surface);
+    // Consume taps on the panel so they don't fall through to the dismiss scrim
+    // behind it — the shell fires a tap on the topmost listener under the point, and
+    // the scrim (a full-window GestureDetector) sits behind the panel. Without this,
+    // tapping the panel (e.g. focusing a text field, which only handles pointer-down)
+    // would reach the scrim and close the sheet. The catcher wraps the Transform so
+    // it's the panel's outermost hit layer. Flutter's modal content absorbs the same.
+    let slid = GestureDetector::new(Transform::translate(dx, dy, surface)).on_tap(|| {});
 
     let mut panel = Positioned::new(slid);
     panel = match e.side {

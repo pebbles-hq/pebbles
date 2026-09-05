@@ -6,6 +6,14 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — tapping inside a sheet/dialog dismissed it
+A tap inside a `sheet` or `dialog` panel (e.g. focusing a text field) fell through
+to the dismiss **scrim** behind it and closed the modal — the shell fires a tap on
+the topmost listener under the point, and the panel didn't consume it. The panel
+now wraps its surface in a tap-consuming `GestureDetector` (Flutter's modal content
+absorbs pointer events); only a tap on the scrim *outside* the panel dismisses.
+Regression-tested (`tests/suite/sheet_dismiss.rs`).
+
 ### Added — `mobile` is now a full social app
 The `mobile` example grew from a layout sketch into a **fully functional** social
 app, driven entirely by in-memory state (no server — the illusion is all
