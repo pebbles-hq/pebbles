@@ -75,14 +75,14 @@ pub use widgets::{
     Column, ConstrainedBox, Container, DecoratedBox, EditableText, Expanded, FittedBox, Flexible,
     FractionallySizedBox, GestureDetector, GridView, IntrinsicHeight, IntrinsicWidth, Keyed, LimitedBox,
     ListView, Opacity, OverflowBox, Padding, Positioned, RepaintBoundary, RichText, Row, ScrollController,
-    ScrollExt, ScrollbarPolicy, ScrollbarStyle, Semantics, SemanticsExt, SemanticsProps, SemanticsRole,
-    SingleChildScrollView, SizedBox, Spinner, Stack, Text, TextSpan, Transform, View, Wrap, align,
-    animated_container, animated_grid, animated_list, aspect_ratio, canvas, center, clip_rrect, colored_box,
-    column, constrained_box, container, editable, expanded, fitted_box, flexible, focus_scope,
-    fractionally_sized_box, gap_h, gap_w, gesture_detector, intrinsic_height, intrinsic_width, keyed,
-    limited_box, list_view, opacity, overflow_box, padding, positioned, repaint_boundary, row, scroll_view,
-    semantics, sized_box, spacer, span, spinner, stack, text, text_rich, text_signal, transform,
-    use_scroll_controller, wrap,
+    ScrollExt, ScrollbarPolicy, ScrollbarStyle, Semantics, SemanticsBoundary, SemanticsExt, SemanticsProps,
+    SemanticsRole, SingleChildScrollView, SizedBox, Spinner, Stack, Text, TextSpan, Transform, View, Wrap,
+    align, animated_container, animated_grid, animated_list, aspect_ratio, block_semantics, canvas, center,
+    clip_rrect, colored_box, column, constrained_box, container, editable, exclude_semantics, expanded,
+    fitted_box, flexible, focus_scope, fractionally_sized_box, gap_h, gap_w, gesture_detector,
+    intrinsic_height, intrinsic_width, keyed, limited_box, list_view, merge_semantics, opacity, overflow_box,
+    padding, positioned, repaint_boundary, row, scroll_view, semantics, sized_box, spacer, span, spinner,
+    stack, text, text_rich, text_signal, transform, use_scroll_controller, wrap,
 };
 pub use widgets::{
     AnimatedAlign, AnimatedCrossFade, AnimatedOpacity, AnimatedPadding, AnimatedPositioned, AnimatedRotation,
@@ -93,6 +93,8 @@ pub use widgets::{
     dismissible, fade_transition, positioned_transition, rotation_transition, scale_transition,
     size_transition, slide_transition,
 };
+// async builder (Flutter's StreamBuilder, over the reactive Channel)
+pub use widgets::{StreamBuilder, stream_builder};
 // drag & drop / pointer control (Flutter's Draggable / DragTarget / Ignore/AbsorbPointer
 // / ReorderableListView / InteractiveViewer)
 pub use widgets::{

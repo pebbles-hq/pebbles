@@ -97,7 +97,13 @@ pub mod prelude {
     pub use pebbles_widgets::{ImageView, image_from_bytes, image_from_path};
 
     // accessibility semantics (screen-reader roles/labels/state)
-    pub use pebbles_widgets::{Semantics, SemanticsExt, SemanticsProps, SemanticsRole, semantics};
+    pub use pebbles_widgets::{
+        Semantics, SemanticsBoundary, SemanticsExt, SemanticsProps, SemanticsRole, block_semantics,
+        exclude_semantics, merge_semantics, semantics,
+    };
+
+    // async builder (Flutter's StreamBuilder, over the reactive Channel)
+    pub use pebbles_widgets::{StreamBuilder, stream_builder};
 
     // the global overlay layer (dropdowns / menus / popovers) + the passive layer
     // (tooltips / hover cards) + toasts

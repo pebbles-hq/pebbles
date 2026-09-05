@@ -3,6 +3,7 @@
 pub mod accordion;
 pub mod alert;
 pub mod animated_container;
+pub mod async_a11y;
 pub mod avatar;
 pub mod badge;
 pub mod boxes;

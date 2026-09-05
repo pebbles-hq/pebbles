@@ -54,6 +54,7 @@ mod sizing_boxes;
 mod slider;
 mod sticky;
 mod store_select;
+mod stream_builder;
 mod stress;
 mod styling;
 mod table;

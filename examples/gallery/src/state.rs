@@ -219,6 +219,13 @@ pub const NAV: &[NavGroup] = &[
         ],
     },
     NavGroup {
+        label: "ASYNC & A11Y",
+        routes: &[
+            ("stream-builder", lucide::WAND, "Stream Builder"),
+            ("semantics-combinators", lucide::INFO, "Semantics Combinators"),
+        ],
+    },
+    NavGroup {
         label: "NAVIGATION",
         routes: &[
             ("tabs", lucide::SQUARE_STACK, "Tabs"),

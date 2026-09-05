@@ -30,6 +30,20 @@ pub enum HitBehavior {
     Absorb,
 }
 
+/// How an object shapes the accessibility (semantics) walk — the render-level backing
+/// for `MergeSemantics` / `ExcludeSemantics` / `BlockSemantics`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SemanticsFlag {
+    /// Collapse the subtree's semantics into ONE node (labels joined) — a screen
+    /// reader announces the group as a single item.
+    Merge,
+    /// Drop the subtree's semantics entirely (invisible to a screen reader).
+    Exclude,
+    /// Drop the semantics of everything painted BEFORE this node's subtree in the same
+    /// parent (earlier siblings / lower layers) — a modal barrier.
+    Block,
+}
+
 /// A node in the render tree: it computes its own [`Size`] under a set of
 /// [`BoxConstraints`] and paints itself into a scene.
 ///
@@ -99,6 +113,13 @@ pub trait RenderObject: Any {
     /// `IgnorePointer` / `AbsorbPointer`.
     fn hit_behavior(&self) -> HitBehavior {
         HitBehavior::Normal
+    }
+
+    /// How this object shapes the semantics walk (default `None` = ordinary).
+    /// [`RenderSemanticsBoundary`](crate::RenderSemanticsBoundary) overrides this to
+    /// back `MergeSemantics` / `ExcludeSemantics` / `BlockSemantics`.
+    fn semantics_flag(&self) -> Option<SemanticsFlag> {
+        None
     }
 
     /// A human-readable name for diagnostics and tree dumps.

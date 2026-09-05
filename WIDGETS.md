@@ -49,6 +49,8 @@ remote-URL images) and their per-platform status live in
 | `Spinner` | ✅ | indeterminate arc |
 | `GestureDetector` | ✅ 🔶G7 | tap/double/secondary/down/up/hover/cursor/pan; axis-drag trios (G7) open |
 | `Semantics` (+ `SemanticsRole`) | ✅ 🔶C7 | long-tail roles (Menu/Tab/Dialog/…) open (C7) |
+| `merge_semantics` · `exclude_semantics` · `block_semantics` | ✅ | a11y combinators: collapse a subtree into one announcement · hide a subtree from AT · modal barrier that blocks lower layers from AT |
+| `stream_builder` | ✅ | rebuild on each `Channel` emission (Flutter's StreamBuilder) — `stream_builder(channel, builder)` passes the latest value; a thin reactive builder over the existing `Channel` |
 | `SingleChildScrollView` | ✅ | wheel/scrollbar/keys/snap/spring + `.drag_scroll(true)` pan-to-scroll with fling, `.physics(ScrollPhysics)` knobs and rubber-band overscroll (A4 ✅) |
 | `ListView::builder` (fixed extent) | ✅ | virtualized, `.horizontal/.reverse/.padding/.scrollbar/.controller` |
 | `ListView::variable` (per-item extents) | ✅ | caller-supplied extents; virtualized by prefix sums |

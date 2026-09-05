@@ -6,7 +6,7 @@ use vello::kurbo::Affine;
 use vello::peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;
-use crate::object::{HitBehavior, RenderObject};
+use crate::object::{HitBehavior, RenderObject, SemanticsFlag};
 use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 
 /// Convenience: the single (first) child of the object being laid out/painted.
@@ -255,6 +255,54 @@ impl RenderObject for RenderPointerBarrier {
 
     fn debug_name(&self) -> &'static str {
         "RenderPointerBarrier"
+    }
+}
+
+/// A transparent single-child box that only shapes the accessibility (semantics) walk
+/// — the render backing for `MergeSemantics` / `ExcludeSemantics` / `BlockSemantics`.
+/// Layout and paint pass straight through.
+pub struct RenderSemanticsBoundary {
+    pub flag: SemanticsFlag,
+}
+
+impl RenderSemanticsBoundary {
+    pub fn new(flag: SemanticsFlag) -> Self {
+        RenderSemanticsBoundary { flag }
+    }
+}
+
+impl RenderObject for RenderSemanticsBoundary {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
+        match only_child_layout(cx) {
+            Some(child) => {
+                let size = cx.layout_child(child, constraints);
+                cx.set_child_offset(child, Offset::ZERO);
+                size
+            }
+            None => constraints.constrain(Size::ZERO),
+        }
+    }
+
+    fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
+        only_child_intrinsic(cx).and_then(|child| cx.child_intrinsic(child, axis, cross_extent))
+    }
+
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
+        if let Some(child) = only_child_paint(cx) {
+            cx.paint_child(child, offset + cx.child_offset(child));
+        }
+    }
+
+    fn baseline(&self, cx: &mut LayoutCx<'_>) -> Option<f64> {
+        only_child_layout(cx).and_then(|child| cx.child_baseline(child))
+    }
+
+    fn semantics_flag(&self) -> Option<SemanticsFlag> {
+        Some(self.flag)
+    }
+
+    fn debug_name(&self) -> &'static str {
+        "RenderSemanticsBoundary"
     }
 }
 

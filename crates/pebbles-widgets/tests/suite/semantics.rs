@@ -8,7 +8,8 @@ use pebbles_foundation::{Size, palette};
 use pebbles_render::{SemanticsRole, TextEnv};
 use pebbles_widgets::components::{TabsVariant, list_tile, progress, tabs};
 use pebbles_widgets::{
-    ListView, View, button, checkbox, column, container, select, semantics, slider, switch, text, text_field,
+    ListView, View, block_semantics, button, checkbox, column, container, exclude_semantics, merge_semantics,
+    select, semantics, slider, stack, switch, text, text_field,
 };
 
 fn root() -> impl IntoWidget {
@@ -187,4 +188,86 @@ fn disabled_state_is_reported() {
     let btn = tree.iter().find(|n| n.props.role == SemanticsRole::Button).expect("button");
     assert_eq!(btn.props.label, "Locked");
     assert!(btn.props.disabled, "a disabled button reports disabled to a11y");
+}
+
+// --- Semantics combinators: Merge / Exclude / Block -------------------------
+
+#[test]
+fn exclude_semantics_hides_its_subtree() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            component(|| {
+                column(vec![exclude_semantics(button("Hidden")).into_widget(), button("Shown").into_widget()])
+                    .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
+            }),
+        )
+        .into_widget(),
+    );
+    ui.layout(&mut env, Size::new(400.0, 200.0));
+
+    let tree = ui.render_tree().semantics_tree();
+    assert!(tree.iter().any(|n| n.props.label == "Shown"), "the sibling is still announced");
+    assert!(!tree.iter().any(|n| n.props.label == "Hidden"), "the excluded subtree is gone");
+}
+
+#[test]
+fn merge_semantics_collapses_to_one_group_node() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            component(|| {
+                merge_semantics(
+                    column(vec![button("First").into_widget(), button("Second").into_widget()])
+                        .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start),
+                )
+            }),
+        )
+        .into_widget(),
+    );
+    ui.layout(&mut env, Size::new(400.0, 200.0));
+
+    let tree = ui.render_tree().semantics_tree();
+    let groups: Vec<_> = tree.iter().filter(|n| n.props.role == SemanticsRole::Group).collect();
+    assert_eq!(groups.len(), 1, "the subtree merged into one node");
+    assert!(
+        groups[0].props.label.contains("First") && groups[0].props.label.contains("Second"),
+        "both labels are joined: {:?}",
+        groups[0].props.label
+    );
+    assert!(
+        !tree.iter().any(|n| n.props.role == SemanticsRole::Button),
+        "the individual buttons no longer appear"
+    );
+}
+
+#[test]
+fn block_semantics_drops_the_lower_layers() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            component(|| {
+                // A behind layer, then a barrier on top (like a modal over its scrim).
+                stack(vec![button("Behind").into_widget(), block_semantics(button("Front")).into_widget()])
+            }),
+        )
+        .into_widget(),
+    );
+    ui.layout(&mut env, Size::new(400.0, 200.0));
+
+    let tree = ui.render_tree().semantics_tree();
+    assert!(tree.iter().any(|n| n.props.label == "Front"), "the barrier's own content is announced");
+    assert!(!tree.iter().any(|n| n.props.label == "Behind"), "the layer below is blocked");
 }

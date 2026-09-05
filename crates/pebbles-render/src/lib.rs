@@ -38,7 +38,7 @@ pub use fonts::{
     BUILTIN_FAMILIES, available_families, builtin_families, builtin_fonts, has_family, is_builtin,
     register_user_font,
 };
-pub use object::{HitBehavior, RenderObject};
+pub use object::{HitBehavior, RenderObject, SemanticsFlag};
 pub use objects::{
     Canvas, Cursor, FlexParentData, IconData, IconKind, IconPrim, ParagraphStyle, PointerButton,
     PointerEvent, RefreshState, RenderAlign, RenderAspectRatio, RenderBaseline, RenderBoundary, RenderCanvas,
@@ -47,11 +47,11 @@ pub use objects::{
     RenderFittedBox, RenderFlex, RenderFlow, RenderFractionalTranslation, RenderFractionallySizedBox,
     RenderIcon, RenderIntrinsicHeight, RenderIntrinsicWidth, RenderLimitedBox, RenderList,
     RenderMeasureProbe, RenderOffstage, RenderOpacity, RenderOverflowBox, RenderPadding, RenderParagraph,
-    RenderPointerBarrier, RenderPointerListener, RenderRotatedBox, RenderScroll, RenderShaderMask,
-    RenderSizedOverflowBox, RenderSpinner, RenderStack, RenderTable, RenderTextField, RenderTransform,
-    RenderView, RenderWrap, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps,
-    SemanticsRole, SizeFn, StackFit, StackParentData, TableColumnWidth, TapCallback, TextFieldStyle,
-    TextSpanStyle, lucide,
+    RenderPointerBarrier, RenderPointerListener, RenderRotatedBox, RenderScroll, RenderSemanticsBoundary,
+    RenderShaderMask, RenderSizedOverflowBox, RenderSpinner, RenderStack, RenderTable, RenderTextField,
+    RenderTransform, RenderView, RenderWrap, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode,
+    SemanticsProps, SemanticsRole, SizeFn, StackFit, StackParentData, TableColumnWidth, TapCallback,
+    TextFieldStyle, TextSpanStyle, lucide,
 };
 pub use text::TextEnv;
 pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};

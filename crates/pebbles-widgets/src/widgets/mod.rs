@@ -32,6 +32,7 @@ mod semantics;
 mod sizing;
 mod spinner;
 mod stack;
+mod stream_builder;
 mod text;
 mod view;
 
@@ -81,13 +82,17 @@ pub use pointer_control::{PointerControl, absorb_pointer, ignore_pointer};
 pub use probe::{ExtentProbe, extent_probe};
 pub use reorderable::{ReorderableListView, reorderable_list_view};
 pub use scroll::{ScrollExt, SingleChildScrollView, list_view, scroll_view};
-pub use semantics::{Semantics, SemanticsExt, semantics};
+pub use semantics::{
+    Semantics, SemanticsBoundary, SemanticsExt, block_semantics, exclude_semantics, merge_semantics,
+    semantics,
+};
 pub use sizing::{
     FittedBox, FractionallySizedBox, IntrinsicHeight, IntrinsicWidth, LimitedBox, OverflowBox, fitted_box,
     fractionally_sized_box, intrinsic_height, intrinsic_width, limited_box, overflow_box,
 };
 pub use spinner::{Spinner, spinner};
 pub use stack::{Positioned, Stack, positioned, stack};
+pub use stream_builder::{StreamBuilder, stream_builder};
 pub use text::{RichText, Text, TextSpan, span, text, text_rich, text_signal};
 pub use transform::{Transform, transform};
 pub use view::View;

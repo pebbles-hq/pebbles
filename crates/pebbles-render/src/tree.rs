@@ -19,7 +19,7 @@ use smallvec::SmallVec;
 use vello::kurbo::Affine;
 
 use crate::constraints::BoxConstraints;
-use crate::object::{HitBehavior, RenderObject};
+use crate::object::{HitBehavior, RenderObject, SemanticsFlag};
 use crate::text::TextEnv;
 
 new_key_type! {
@@ -382,24 +382,109 @@ impl RenderTree {
         out
     }
 
+    fn semantics_flag_of(&self, id: RenderId) -> Option<SemanticsFlag> {
+        self.nodes[id].object.as_deref().and_then(|o| o.semantics_flag())
+    }
+
+    /// A synthesized id for a semantics node with no owning element (`u64::MAX` down).
+    fn synth_id(synth: &mut u64) -> u64 {
+        *synth += 1;
+        u64::MAX - *synth
+    }
+
     fn collect_semantics(&self, id: RenderId, out: &mut Vec<crate::SemanticsNode>, synth: &mut u64) {
+        // Accessibility combinators (Merge / Exclude / Block) shape the walk.
+        match self.semantics_flag_of(id) {
+            // The subtree is invisible to a screen reader.
+            Some(SemanticsFlag::Exclude) => return,
+            // Collapse the whole subtree into one node (labels joined).
+            Some(SemanticsFlag::Merge) => {
+                if let Some(merged) = self.merged_semantics(id, synth) {
+                    out.push(merged);
+                }
+                return;
+            }
+            // Block is handled by the PARENT's child loop below; here it's ordinary.
+            _ => {}
+        }
+
         let node = &self.nodes[id];
         if let Some(props) = &node.semantics {
             let origin = self.absolute_offset(id);
-            let nid = node.source.unwrap_or_else(|| {
-                *synth += 1;
-                // Synthesized ids live above any real element id space (fits usize::MAX
-                // element ids in the low bits); fine for untagged decorative nodes.
-                u64::MAX - *synth
-            });
+            let nid = node.source.unwrap_or_else(|| Self::synth_id(synth));
             out.push(crate::SemanticsNode {
                 id: nid,
                 props: props.clone(),
                 bounds: Rect::from_origin_size((origin.x, origin.y), (node.size.width, node.size.height)),
             });
         }
+        // A `Block` child drops the semantics of everything collected from EARLIER
+        // siblings in this parent (lower layers) — the modal-barrier behavior.
+        let after_self = out.len();
         for &child in &node.children {
+            if self.semantics_flag_of(child) == Some(SemanticsFlag::Block) {
+                out.truncate(after_self);
+            }
             self.collect_semantics(child, out, synth);
+        }
+    }
+
+    /// Collapse a subtree's semantics into a single [`Group`](crate::SemanticsRole::Group)
+    /// node — labels joined in paint order, first value/checked kept, disabled if any is.
+    fn merged_semantics(&self, id: RenderId, synth: &mut u64) -> Option<crate::SemanticsNode> {
+        let mut labels: Vec<String> = Vec::new();
+        let mut value: Option<String> = None;
+        let mut checked: Option<bool> = None;
+        let mut disabled = false;
+        self.gather_semantics(id, &mut labels, &mut value, &mut checked, &mut disabled);
+        if labels.is_empty() && value.is_none() {
+            return None;
+        }
+        let node = &self.nodes[id];
+        let origin = self.absolute_offset(id);
+        let nid = node.source.unwrap_or_else(|| Self::synth_id(synth));
+        Some(crate::SemanticsNode {
+            id: nid,
+            props: crate::SemanticsProps {
+                role: crate::SemanticsRole::Group,
+                label: labels.join(" "),
+                value,
+                checked,
+                disabled,
+            },
+            bounds: Rect::from_origin_size((origin.x, origin.y), (node.size.width, node.size.height)),
+        })
+    }
+
+    fn gather_semantics(
+        &self,
+        id: RenderId,
+        labels: &mut Vec<String>,
+        value: &mut Option<String>,
+        checked: &mut Option<bool>,
+        disabled: &mut bool,
+    ) {
+        // A nested Exclude inside a Merge still hides its subtree.
+        if self.semantics_flag_of(id) == Some(SemanticsFlag::Exclude) {
+            return;
+        }
+        let node = &self.nodes[id];
+        if let Some(p) = &node.semantics {
+            if !p.label.is_empty() {
+                labels.push(p.label.clone());
+            }
+            if value.is_none() {
+                *value = p.value.clone();
+            }
+            if checked.is_none() {
+                *checked = p.checked;
+            }
+            if p.disabled {
+                *disabled = true;
+            }
+        }
+        for &child in &node.children {
+            self.gather_semantics(child, labels, value, checked, disabled);
         }
     }
 
