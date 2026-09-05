@@ -1,17 +1,40 @@
-# Pebbles
+<div align="center">
 
-[![CI](https://github.com/pebbles-hq/pebbles/actions/workflows/ci.yml/badge.svg)](https://github.com/pebbles-hq/pebbles/actions/workflows/ci.yml)
-[![Security](https://github.com/pebbles-hq/pebbles/actions/workflows/security.yml/badge.svg)](https://github.com/pebbles-hq/pebbles/actions/workflows/security.yml)
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/pebbles-hq/pebbles/badge)](https://scorecard.dev/viewer/?uri=github.com/pebbles-hq/pebbles)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![MSRV](https://img.shields.io/badge/rustc-1.90+-orange.svg)](rust-toolchain.toml)
-[![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-informational.svg)](#platform-support)
+<img src="assets/pebbles-transparent.png" alt="Pebbles logo" width="200" />
 
-A **Flutter-style, desktop-first GUI framework** for Rust, built on
-[Vello](https://vello.dev) (GPU 2D rendering) and the Linebender stack
-(kurbo · peniko · parley).
+<h1>Pebbles</h1>
 
-Pebbles keeps Flutter's **UI-building syntax** — `Row`/`Column`/`Container`/`Text`,
+<strong>A Flutter-style, desktop-first GUI framework for Rust.</strong>
+
+<em>Vello-powered GPU rendering · SolidJS-style reactivity · a shadcn-styled widget catalog.</em>
+
+<br /><br />
+
+<a href="https://github.com/pebbles-hq/pebbles/actions/workflows/ci.yml"><img src="https://github.com/pebbles-hq/pebbles/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+<a href="https://github.com/pebbles-hq/pebbles/actions/workflows/security.yml"><img src="https://github.com/pebbles-hq/pebbles/actions/workflows/security.yml/badge.svg" alt="Security" /></a>
+<a href="https://scorecard.dev/viewer/?uri=github.com/pebbles-hq/pebbles"><img src="https://api.scorecard.dev/projects/github.com/pebbles-hq/pebbles/badge" alt="OpenSSF Scorecard" /></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0" /></a>
+<a href="rust-toolchain.toml"><img src="https://img.shields.io/badge/rustc-1.90+-orange.svg" alt="MSRV 1.90+" /></a>
+<a href="#platform-support"><img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-informational.svg" alt="Platforms: Linux | Windows | macOS" /></a>
+
+<br /><br />
+
+<a href="#the-pebbles-command"><b>Install</b></a> ·
+<a href="#programming-model"><b>Programming model</b></a> ·
+<a href="#architecture"><b>Architecture</b></a> ·
+<a href="#whats-in-the-box"><b>Widgets</b></a> ·
+<a href="#platform-support"><b>Platforms</b></a> ·
+<a href="#documentation"><b>Docs</b></a>
+
+</div>
+
+---
+
+Pebbles renders on [Vello](https://vello.dev) (GPU 2D) and the rest of the
+Linebender stack (kurbo · peniko · parley) — a modern, compute-shader graphics
+pipeline rather than a retained widget toolkit.
+
+It keeps Flutter's **UI-building syntax** — `Row`/`Column`/`Container`/`Text`,
 the box layout protocol, a rich themed widget catalog — but swaps Flutter's
 `StatefulWidget`/`setState` boilerplate for **SolidJS-style reactivity**: signals,
 memos, effects, and plain **function components**. The result is Flutter's
