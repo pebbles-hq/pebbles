@@ -58,6 +58,11 @@ remote-URL images) and their per-platform status live in
 | `IntrinsicWidth` · `IntrinsicHeight` | ✅ | shrink-wrap to child's intrinsic extent |
 | `LimitedBox` · `OverflowBox` | ✅ | unbounded-axis cap · unclipped overflow |
 | `AnimatedContainer` | ✅ | implicit tween on width/height/color/radius/padding/margin/opacity |
+| Implicit `Animated*` (`AnimatedOpacity`/`Scale`/`Rotation`/`Slide`/`Align`/`Padding`) | ✅ | one-property implicit tweens (siblings of `AnimatedContainer`) |
+| Explicit `*Transition` (`Fade`/`Scale`/`Rotation`/`Slide`/`Size`) | ✅ | `Signal`-driven (controller-style); `SizeTransition` via `Align` height/width-factor |
+| `AnimatedSwitcher` · `AnimatedCrossFade` | ✅ | cross-fade on key-change / between two children |
+| `Dismissible` | ✅ | swipe-to-dismiss (drag + touch) → `on_dismissed` |
+| `Align` width/height-factor | ✅ | `.width_factor()`/`.height_factor()` (shrink-wrap scaled) |
 | `FocusScope` (focus trap) | ✅ | scoped Tab-cycling; dialogs/sheets contain focus |
 | `View` | ✅ | window root background |
 

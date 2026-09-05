@@ -133,11 +133,16 @@ impl RenderObject for RenderPadding {
 /// allowed size on each bounded axis and shrink-wraps the child on unbounded axes.
 pub struct RenderAlign {
     pub alignment: Alignment,
+    /// When set, size to `factor × child` on that axis instead of filling the
+    /// constraints (Flutter's `Align.widthFactor`/`heightFactor`). A `height_factor`
+    /// tween + a clip is exactly how `SizeTransition` reveals its child.
+    pub width_factor: Option<f64>,
+    pub height_factor: Option<f64>,
 }
 
 impl RenderAlign {
     pub fn new(alignment: Alignment) -> Self {
-        RenderAlign { alignment }
+        RenderAlign { alignment, width_factor: None, height_factor: None }
     }
 }
 
@@ -147,10 +152,20 @@ impl RenderObject for RenderAlign {
         match only_child_layout(cx) {
             Some(child) => {
                 let child_size = cx.layout_child(child, constraints.loosen());
-                let width =
-                    if constraints.has_bounded_width() { constraints.max_width } else { child_size.width };
-                let height =
-                    if constraints.has_bounded_height() { constraints.max_height } else { child_size.height };
+                let width = if let Some(f) = self.width_factor {
+                    child_size.width * f.max(0.0)
+                } else if constraints.has_bounded_width() {
+                    constraints.max_width
+                } else {
+                    child_size.width
+                };
+                let height = if let Some(f) = self.height_factor {
+                    child_size.height * f.max(0.0)
+                } else if constraints.has_bounded_height() {
+                    constraints.max_height
+                } else {
+                    child_size.height
+                };
                 let size = constraints.constrain(Size::new(width, height));
                 cx.set_child_offset(child, alignment.inscribe(child_size, size));
                 size

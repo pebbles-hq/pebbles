@@ -83,6 +83,13 @@ pub use widgets::{
     row, scroll_view, semantics, sized_box, spacer, span, spinner, stack, text, text_rich, text_signal,
     transform, use_scroll_controller, wrap,
 };
+pub use widgets::{
+    AnimatedAlign, AnimatedCrossFade, AnimatedOpacity, AnimatedPadding, AnimatedRotation, AnimatedScale,
+    AnimatedSlide, AnimatedSwitcher, Dismissible, FadeTransition, RotationTransition, ScaleTransition,
+    SizeTransition, SlideTransition, animated_align, animated_cross_fade, animated_opacity, animated_padding,
+    animated_rotation, animated_scale, animated_slide, animated_switcher, dismissible, fade_transition,
+    rotation_transition, scale_transition, size_transition, slide_transition,
+};
 // The immediate-mode drawing surface (H2) a `canvas(..)` painter receives.
 pub use pebbles_render::Canvas;
 

@@ -86,12 +86,26 @@ impl RenderWidget for Padding {
 #[derive(Clone)]
 pub struct Align {
     pub alignment: Alignment,
+    /// Size to `factor × child` on that axis instead of filling the space (Flutter's
+    /// `Align.widthFactor`/`heightFactor`). `None` = fill as before.
+    width_factor: Option<f64>,
+    height_factor: Option<f64>,
     child: Option<AnyWidget>,
 }
 
 impl Align {
     pub fn new(alignment: Alignment, child: impl pebbles_core::IntoWidget) -> Self {
-        Align { alignment, child: Some(child.into_widget()) }
+        Align { alignment, width_factor: None, height_factor: None, child: Some(child.into_widget()) }
+    }
+    /// Size this box to `factor × child width` (shrink-wrap scaled on the x axis).
+    pub fn width_factor(mut self, factor: f64) -> Self {
+        self.width_factor = Some(factor.max(0.0));
+        self
+    }
+    /// Size this box to `factor × child height` (the basis of `SizeTransition`).
+    pub fn height_factor(mut self, factor: f64) -> Self {
+        self.height_factor = Some(factor.max(0.0));
+        self
     }
 }
 
@@ -104,11 +118,16 @@ pebbles_core::render_widget!(Align);
 
 impl RenderWidget for Align {
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(RenderAlign::new(self.alignment))
+        let mut r = RenderAlign::new(self.alignment);
+        r.width_factor = self.width_factor;
+        r.height_factor = self.height_factor;
+        Box::new(r)
     }
     fn update_render_object(&self, object: &mut dyn RenderObject) {
         if let Some(r) = object.downcast_mut::<RenderAlign>() {
             r.alignment = self.alignment;
+            r.width_factor = self.width_factor;
+            r.height_factor = self.height_factor;
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {
