@@ -1,178 +1,325 @@
-//! A **desktop-structured** app at desktop size (1240×820) — the classic app shell:
-//! a left `SideNav` (collapsible rail), a top bar, and a content area. This is the
-//! shape a real desktop app (dashboard, admin, IDE) takes.
+//! **Northwind** — a complete, offline inventory / sales desktop app built to show
+//! what Pebbles can do on the desktop: a collapsible/hideable side nav, a top bar with
+//! a center command-search and a notifications popover, rich data tables (search,
+//! filters, sorting, status badges, pagination), right-hand detail sheets, and a
+//! comprehensive settings form — all backed by a local SQLite database, fully offline,
+//! with an optional cloud sync.
+
+mod db;
+mod model;
+mod net;
+mod screens;
+mod sheets;
+mod store;
+mod ui;
 
 use pebbles::prelude::*;
 
-fn app() -> impl IntoWidget {
-    let section = create_signal(0_usize);
-    let collapsed = create_signal(false);
-    let titles = ["Dashboard", "Analytics", "Customers", "Settings"];
-    let c = theme().colors;
+use sheets::{open_customer_detail, open_order_detail, open_product_detail};
+use store::{NotifKind, Section};
 
-    scaffold(content(section.get()))
-        .side(
-            side_nav()
-                .width(230.0)
-                .collapsible(true)
-                .collapsed(collapsed.get())
-                .on_collapse_changed(move |v| collapsed.set(v))
-                .header(brand())
-                .item(nav(lucide::LAYOUT_DASHBOARD, "Dashboard", 0, section))
-                .item(nav(lucide::TRENDING_UP, "Analytics", 1, section))
-                .item(nav(lucide::USERS, "Customers", 2, section))
-                .item(nav(lucide::SETTINGS, "Settings", 3, section))
-                .footer(
-                    row(children![
-                        avatar("RS").color(palette::violet::S500),
-                        gap_w(10.0),
-                        column(children![
-                            text("Reyco").size(13.5).semibold().color(c.foreground),
-                            text("Pro plan").size(12.0).color(c.muted_foreground),
-                        ])
-                        .cross_axis_alignment(CrossAxisAlignment::Start)
-                        .main_axis_size(MainAxisSize::Min),
+fn app() -> impl IntoWidget {
+    // Open the DB + load everything, once, on mount.
+    create_effect(store::init);
+
+    let c = theme().colors;
+    let section = store::section();
+
+    let mut shell = scaffold(content(section)).top(top_bar(section)).background(c.background);
+    if store::nav_visible() {
+        shell = shell.side(side_panel(section));
+    }
+    shell
+}
+
+fn content(section: Section) -> AnyWidget {
+    match section {
+        Section::Dashboard => screens::dashboard().into_widget(),
+        Section::Products => screens::products().into_widget(),
+        Section::Orders => screens::orders().into_widget(),
+        Section::Customers => screens::customers().into_widget(),
+        Section::Settings => screens::settings().into_widget(),
+    }
+}
+
+// ===========================================================================
+// Top bar — hamburger · title · center search · sync · notifications · avatar
+// ===========================================================================
+
+fn top_bar(section: Section) -> AnyWidget {
+    let c = theme().colors;
+    let bar = container().color(c.card).height(58.0).padding(EdgeInsets::symmetric(14.0, 0.0)).child(
+        row(children![
+            icon_button(lucide::PANEL_LEFT).variant(ButtonVariant::Ghost).on_pressed(store::toggle_nav),
+            gap_w(8.0),
+            text(section.title()).size(16.0).weight(700.0).color(c.foreground),
+            Expanded::new(center(search_box())),
+            sync_button(),
+            gap_w(8.0),
+            notif_bell(),
+            gap_w(12.0),
+            avatar("RS").color(palette::violet::S500),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Center),
+    );
+    column(children![bar, container().color(c.border).height(1.0)])
+        .cross_axis_alignment(CrossAxisAlignment::Stretch)
+        .main_axis_size(MainAxisSize::Min)
+        .into_widget()
+}
+
+/// The center search field — looks like an input, opens the ⌘K command palette.
+fn search_box() -> impl IntoWidget {
+    let c = theme().colors;
+    pressable(
+        container()
+            .decoration(
+                BoxDecoration::new()
+                    .color(c.background)
+                    .border(Border::new(c.border, 1.0))
+                    .radius(BorderRadius::all(10.0)),
+            )
+            .width(440.0)
+            .padding(EdgeInsets::symmetric(12.0, 8.0))
+            .child(
+                row(children![
+                    icon(lucide::SEARCH).size(16.0).color(c.muted_foreground),
+                    gap_w(8.0),
+                    text("Search products, orders, customers…").size(13.0).color(c.muted_foreground),
+                    spacer(),
+                    kbd_hint("⌘K"),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Center),
+            ),
+    )
+    .radius(10.0)
+    .on_tap(open_search)
+}
+
+fn kbd_hint(s: &str) -> impl IntoWidget {
+    let c = theme().colors;
+    container()
+        .decoration(BoxDecoration::new().color(c.secondary).radius(BorderRadius::all(6.0)))
+        .padding(EdgeInsets::symmetric(6.0, 2.0))
+        .child(text(s.to_string()).size(11.0).color(c.muted_foreground))
+}
+
+/// Build a command palette over every product / order / customer and open it.
+fn open_search() {
+    let products: Vec<CommandItem> = store::products()
+        .iter()
+        .take(80)
+        .map(|p| {
+            let id = p.id;
+            command_item(format!("{} · {}", p.name, p.sku)).icon(lucide::PACKAGE).on_select(move || {
+                store::go_to(Section::Products);
+                open_product_detail(id);
+            })
+        })
+        .collect();
+    let orders: Vec<CommandItem> = store::orders()
+        .iter()
+        .take(80)
+        .map(|o| {
+            let id = o.id;
+            let name = store::customer(o.customer_id).map(|c| c.name).unwrap_or_default();
+            command_item(format!("{} · {}", o.code, name)).icon(lucide::SHOPPING_CART).on_select(move || {
+                store::go_to(Section::Orders);
+                open_order_detail(id);
+            })
+        })
+        .collect();
+    let customers: Vec<CommandItem> = store::customers()
+        .iter()
+        .map(|cu| {
+            let id = cu.id;
+            command_item(format!("{} · {}", cu.name, cu.company)).icon(lucide::USERS).on_select(move || {
+                store::go_to(Section::Customers);
+                open_customer_detail(id);
+            })
+        })
+        .collect();
+
+    command_palette(vec![
+        command_group("Products", products),
+        command_group("Orders", orders),
+        command_group("Customers", customers),
+    ])
+    .placeholder("Search products, orders, customers…")
+    .width(620.0)
+    .open();
+}
+
+fn sync_button() -> AnyWidget {
+    let c = theme().colors;
+    if store::syncing() {
+        container()
+            .padding(EdgeInsets::symmetric(10.0, 6.0))
+            .child(
+                row(children![
+                    spinner(15.0).color(c.muted_foreground),
+                    gap_w(7.0),
+                    text("Syncing…").size(13.0).color(c.muted_foreground),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Center)
+                .main_axis_size(MainAxisSize::Min),
+            )
+            .into_widget()
+    } else {
+        button("Sync")
+            .variant(ButtonVariant::Secondary)
+            .leading(lucide::CLOUD_DOWNLOAD)
+            .on_pressed(store::sync_from_cloud)
+            .into_widget()
+    }
+}
+
+// ===========================================================================
+// Notifications popover
+// ===========================================================================
+
+fn notif_bell() -> AnyWidget {
+    let c = theme().colors;
+    let unread = store::unread_notifs();
+    let glyph: AnyWidget = if unread > 0 {
+        stack(children![
+            icon(lucide::BELL).size(20.0).color(c.foreground),
+            positioned(
+                container()
+                    .decoration(BoxDecoration::new().color(palette::rose::S500).shape(BoxShape::Circle))
+                    .width(8.0)
+                    .height(8.0),
+            )
+            .right(0.0)
+            .top(0.0),
+        ])
+        .into_widget()
+    } else {
+        icon(lucide::BELL).size(20.0).color(c.foreground).into_widget()
+    };
+    let trigger = container().padding(EdgeInsets::all(8.0)).child(glyph);
+    popover(notif_panel(), trigger).width(340.0).height(380.0).trigger_height(38.0).into_widget()
+}
+
+fn notif_panel() -> AnyWidget {
+    let c = theme().colors;
+    let notifs = store::notifications();
+    let rows: Vec<AnyWidget> = notifs.iter().map(notif_row).collect();
+
+    let header = row(children![
+        text("Notifications").size(14.0).weight(700.0).color(c.foreground),
+        spacer(),
+        button("Mark all read").variant(ButtonVariant::Ghost).on_pressed(store::mark_notifs_read),
+    ])
+    .cross_axis_alignment(CrossAxisAlignment::Center);
+
+    column(children![
+        header,
+        gap_h(6.0),
+        container().color(c.border).height(1.0),
+        gap_h(4.0),
+        container().height(300.0).child(scroll_view(
+            column(rows).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
+        )),
+    ])
+    .cross_axis_alignment(CrossAxisAlignment::Stretch)
+    .main_axis_size(MainAxisSize::Min)
+    .into_widget()
+}
+
+fn notif_row(n: &store::Notif) -> AnyWidget {
+    let c = theme().colors;
+    let (ic, color) = match n.kind {
+        NotifKind::LowStock => (lucide::PACKAGE, palette::amber::S500),
+        NotifKind::Order => (lucide::SHOPPING_CART, palette::sky::S500),
+        NotifKind::Sync => (lucide::CLOUD_DOWNLOAD, palette::emerald::S500),
+        NotifKind::Info => (lucide::BELL, palette::violet::S500),
+    };
+    let bg = if n.read { palette::TRANSPARENT } else { ui::mix(c.card, c.accent, 0.5) };
+    container()
+        .color(bg)
+        .padding(EdgeInsets::symmetric(8.0, 9.0))
+        .child(
+            row(children![
+                container()
+                    .decoration(
+                        BoxDecoration::new()
+                            .color(ui::mix(c.card, color, 0.16))
+                            .radius(BorderRadius::all(8.0))
+                    )
+                    .padding(EdgeInsets::all(7.0))
+                    .child(icon(ic).size(15.0).color(color)),
+                gap_w(10.0),
+                Expanded::new(
+                    column(children![
+                        text(n.title.clone()).size(13.0).weight(600.0).color(c.foreground),
+                        gap_h(1.0),
+                        text(n.body.clone()).size(12.0).line_height(1.35).color(c.muted_foreground),
                     ])
-                    .cross_axis_alignment(CrossAxisAlignment::Center),
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .main_axis_size(MainAxisSize::Min),
                 ),
+                gap_w(8.0),
+                text(n.time.clone()).size(11.0).color(c.muted_foreground),
+            ])
+            .cross_axis_alignment(CrossAxisAlignment::Start),
         )
-        .top(
-            top_panel(titles[section.get().min(3)])
-                .action(icon_button(lucide::SEARCH).variant(ButtonVariant::Ghost))
-                .action(icon_button(lucide::BELL).variant(ButtonVariant::Ghost))
-                .action(button("New").leading(lucide::PLUS)),
-        )
-        .background(c.background)
+        .into_widget()
+}
+
+// ===========================================================================
+// Side navigation
+// ===========================================================================
+
+fn side_panel(section: Section) -> AnyWidget {
+    side_nav()
+        .width(238.0)
+        .collapsible(true)
+        .collapsed(store::nav_collapsed())
+        .on_collapse_changed(store::set_nav_collapsed)
+        .header(brand())
+        .item(nav(lucide::LAYOUT_DASHBOARD, "Dashboard", Section::Dashboard, section))
+        .item(nav(lucide::PACKAGE, "Products", Section::Products, section))
+        .item(nav(lucide::SHOPPING_CART, "Orders", Section::Orders, section))
+        .item(nav(lucide::USERS, "Customers", Section::Customers, section))
+        .item(nav(lucide::SETTINGS, "Settings", Section::Settings, section))
+        .footer(profile())
+        .into_widget()
+}
+
+fn nav(ic: IconData, label: &str, target: Section, current: Section) -> NavItem {
+    nav_item(label).icon(ic).selected(current == target).on_select(move || store::go_to(target))
 }
 
 fn brand() -> impl IntoWidget {
+    let c = theme().colors;
     row(children![
         container()
-            .decoration(BoxDecoration::new().color(theme().colors.primary).radius(BorderRadius::all(8.0)))
+            .decoration(BoxDecoration::new().color(c.primary).radius(BorderRadius::all(8.0)))
             .padding(EdgeInsets::all(6.0))
-            .child(icon(lucide::LAYERS).size(18.0).color(theme().colors.primary_foreground)),
+            .child(icon(lucide::BOXES).size(18.0).color(c.primary_foreground)),
         gap_w(10.0),
-        text("Pebbles").size(16.0).weight(700.0).color(theme().colors.foreground),
+        text("Northwind").size(16.0).weight(700.0).color(c.foreground),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center)
 }
 
-fn nav(icon: IconData, label: &str, index: usize, section: Signal<usize>) -> NavItem {
-    nav_item(label).icon(icon).selected(section.get() == index).on_select(move || section.set(index))
-}
-
-fn content(section: usize) -> AnyWidget {
-    match section {
-        0 => dashboard().into_widget(),
-        _ => placeholder(["Dashboard", "Analytics", "Customers", "Settings"][section.min(3)]).into_widget(),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Dashboard — a row of stat cards + a recent-activity card
-// ---------------------------------------------------------------------------
-
-fn dashboard() -> impl IntoWidget {
-    let stats = [
-        ("Revenue", "$48.2k", "+12.5%", lucide::TRENDING_UP, palette::emerald::S500),
-        ("Users", "2,340", "+4.1%", lucide::USERS, palette::sky::S500),
-        ("Orders", "1,204", "-2.3%", lucide::INBOX, palette::amber::S500),
-        ("Uptime", "99.98%", "stable", lucide::ACTIVITY, palette::violet::S500),
-    ];
-    let cards: Vec<AnyWidget> =
-        stats.iter().map(|&s| stat_card(s.0, s.1, s.2, s.3, s.4).into_widget()).collect();
-
-    let activity = card().title("Recent activity").description("The last few things that happened").child(
-        column(
-            [
-                ("Deployed v0.2.0 to production", "2m ago", palette::emerald::S500),
-                ("New customer: Acme Corp", "18m ago", palette::sky::S500),
-                ("Invoice #1042 paid", "1h ago", palette::violet::S500),
-                ("Nightly backup completed", "3h ago", palette::zinc::S400),
-            ]
-            .iter()
-            .map(|&(what, when, color)| activity_row(what, when, color).into_widget())
-            .collect::<Vec<_>>(),
-        )
-        .cross_axis_alignment(CrossAxisAlignment::Stretch)
-        .main_axis_size(MainAxisSize::Min),
-    );
-
-    scroll_view(
-        container().padding(EdgeInsets::all(24.0)).child(
-            column(children![wrap(cards).spacing(16.0).run_spacing(16.0), gap_h(20.0), activity,])
-                .cross_axis_alignment(CrossAxisAlignment::Stretch)
-                .main_axis_size(MainAxisSize::Min),
-        ),
-    )
-}
-
-fn stat_card(label: &str, value: &str, delta: &str, ic: IconData, color: Color) -> impl IntoWidget {
+fn profile() -> impl IntoWidget {
     let c = theme().colors;
-    let up = !delta.starts_with('-');
-    container()
-        .decoration(
-            BoxDecoration::new()
-                .color(c.card)
-                .border(Border::new(c.border, 1.0))
-                .radius(BorderRadius::all(14.0)),
-        )
-        .padding(EdgeInsets::all(18.0))
-        .width(230.0)
-        .child(
-            column(children![
-                row(children![
-                    text(label.to_string()).size(13.0).color(c.muted_foreground),
-                    spacer(),
-                    icon(ic).size(18.0).color(color),
-                ])
-                .cross_axis_alignment(CrossAxisAlignment::Center),
-                gap_h(10.0),
-                text(value.to_string()).size(26.0).weight(700.0).color(c.foreground),
-                gap_h(4.0),
-                text(delta.to_string()).size(12.5).color(if up {
-                    palette::emerald::S600
-                } else {
-                    palette::rose::S500
-                }),
-            ])
-            .cross_axis_alignment(CrossAxisAlignment::Start)
-            .main_axis_size(MainAxisSize::Min),
-        )
-}
-
-fn activity_row(what: &str, when: &str, color: Color) -> impl IntoWidget {
-    let c = theme().colors;
-    container().padding(EdgeInsets::symmetric(0.0, 10.0)).child(
-        row(children![
-            container()
-                .decoration(BoxDecoration::new().color(color).shape(BoxShape::Circle))
-                .width(8.0)
-                .height(8.0),
-            gap_w(12.0),
-            text(what.to_string()).size(14.0).color(c.foreground),
-            spacer(),
-            text(when.to_string()).size(12.5).color(c.muted_foreground),
-        ])
-        .cross_axis_alignment(CrossAxisAlignment::Center),
-    )
-}
-
-fn placeholder(title: &str) -> impl IntoWidget {
-    let c = theme().colors;
-    center(
+    row(children![
+        avatar("RS").color(palette::violet::S500),
+        gap_w(10.0),
         column(children![
-            icon(lucide::LAYERS).size(40.0).color(c.muted_foreground),
-            gap_h(12.0),
-            text(title.to_string()).size(20.0).semibold().color(c.foreground),
-            text("This section is a placeholder in the sample.").size(13.5).color(c.muted_foreground),
+            text("Reyco").size(13.5).semibold().color(c.foreground),
+            text("Administrator").size(12.0).color(c.muted_foreground),
         ])
-        .cross_axis_alignment(CrossAxisAlignment::Center)
+        .cross_axis_alignment(CrossAxisAlignment::Start)
         .main_axis_size(MainAxisSize::Min),
-    )
+    ])
+    .cross_axis_alignment(CrossAxisAlignment::Center)
 }
 
 #[pebbles::main]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    App::new(component(app)).title("Pebbles — Desktop").size(1240, 820).run()
+    App::new(component(app)).title("Northwind — Inventory").size(1280, 840).run()
 }
