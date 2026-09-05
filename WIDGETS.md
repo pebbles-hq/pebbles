@@ -48,7 +48,7 @@ remote-URL images) and their per-platform status live in
 | `EditableText` / `editable` | ✅ | low-level editor under TextField |
 | `Icon` (lucide set) | ✅ | |
 | `Spinner` | ✅ | indeterminate arc |
-| `GestureDetector` | ✅ 🔶G7 | tap/double/secondary/down/up/hover/cursor/pan; axis-drag trios (G7) open |
+| `GestureDetector` | ✅ | tap/double/secondary/down/up/hover/cursor/pan + long-press lifecycle + vertical/horizontal axis-drag trios |
 | `Semantics` (+ `SemanticsRole`) | ✅ 🔶C7 | long-tail roles (Menu/Tab/Dialog/…) open (C7) |
 | `merge_semantics` · `exclude_semantics` · `block_semantics` | ✅ | a11y combinators: collapse a subtree into one announcement · hide a subtree from AT · modal barrier that blocks lower layers from AT |
 | `stream_builder` | ✅ | rebuild on each `Channel` emission (Flutter's StreamBuilder) — `stream_builder(channel, builder)` passes the latest value; a thin reactive builder over the existing `Channel` |
@@ -151,7 +151,7 @@ remote-URL images) and their per-platform status live in
 |--------|--------|-------|
 | `Panel` · `ScrollArea` · `Resizable` · `SplitView` | ✅ | live drag-resize |
 | `Accordion` · `Collapsible` | ✅ | single/multiple, default-open, events |
-| `Scaffold` · `TopPanel` · `SideNav` · `BottomNav` | ✅ 🔶C5/C8g | top/side/body/bottom + a `.fab()` slot (bottom-right FAB overlay) + a `.persistent_footer()` slot (pinned action row above the bottom bar); SideNav rail-collapse (C5) open; dedicated chrome gallery screen (C8g) open |
+| `Scaffold` · `TopPanel` · `SideNav` · `BottomNav` | ✅ 🔶C8g | top/side/body/bottom + `.fab()` + `.persistent_footer()` + `.drawer()`/`.end_drawer()` + `.bottom_sheet()` + `.resize_to_avoid_bottom_inset()`; SideNav rail-collapse (`.collapsible()`) done; dedicated chrome gallery screen (C8g) open |
 | `Scaffold::drawer` / `end_drawer` · `Scaffold::bottom_sheet` | ✅ | left/right drawer slots opened by `open_drawer()`/`open_end_drawer()` or the `drawer_button()` hamburger (slide in as a sheet); a persistent non-modal `bottom_sheet` panel above the bottom bar |
 | `Scaffold::resize_to_avoid_bottom_inset` | ✅ | lifts the shell above the soft keyboard by `MediaQuery.view_insets.bottom` (reactive; default on). Zero on desktop; driven by `set_view_insets` |
 | `draggable_scrollable_sheet` | ✅ | a bottom-anchored panel sized as a fraction of the available space; drag the top handle to resize between `.min`/`.max` (snapping to `.snap` stops); the body scrolls when it overflows |
@@ -175,7 +175,7 @@ remote-URL images) and their per-platform status live in
 | Service | Status | Notes |
 |---------|--------|-------|
 | `dialog` / `alert_dialog` | ✅ | per-window modal; alert preset non-dismissible by default |
-| `sheet` (Drawer) | ✅ 🔶C3 | `Side::{Left,Right,Top,Bottom}`; slide/scrim motion (C3) open |
+| `sheet` (Drawer) | ✅ | `Side::{Left,Right,Top,Bottom}` + slide/scrim motion + deferred-removal exit tween |
 | `refresh_indicator` | ✅ | pull-to-refresh over drag-scroll + rubber-band (A5 ✅); `RefreshDone.finish()` contract |
 | `toast` | ✅ 🔶C1 | variants/duration/action/dismiss, max-3 stack; hover-pause + motion (C1) open |
 | overlay (`show_overlay`/`show_passive`/`OverlayHost`) | ✅ 🔶C6 | anchor+flip+scroll-follow; secondary-window scroll-follow (C6) open |
