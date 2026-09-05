@@ -64,6 +64,7 @@ remote-URL images) and their per-platform status live in
 | `IndexedStack` | ✅ | show one child, keep ALL children mounted (state preserved) |
 | `layout_table` (`LayoutTable`) | ✅ | column-negotiating grid (`Fixed`/`Fraction`/`Intrinsic`/`Flex`); Flutter's layout `Table` (renamed to avoid the data-table `table`) |
 | `CustomSingleChildLayout` · `CustomMultiChildLayout` | ✅ | offset-based custom layout via `.size()`/`.child_constraints()`/`.position()` delegates |
+| `Flow` | ✅ | per-child affine-transform delegate (`.transform(..)` returns an `Affine` per child); rotation/scale flows paint AND hit-test correctly |
 | `LayoutBuilder` | ✅ | build against the available size (reads the previous frame's bounds — one frame behind on resize) |
 | `AnimatedContainer` | ✅ | implicit tween on width/height/color/radius/padding/margin/opacity |
 | Implicit `Animated*` (`AnimatedOpacity`/`Scale`/`Rotation`/`Slide`/`Align`/`Padding`) | ✅ | one-property implicit tweens (siblings of `AnimatedContainer`) |

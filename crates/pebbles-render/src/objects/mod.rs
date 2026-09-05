@@ -39,7 +39,7 @@ pub use fractional::RenderFractionallySizedBox;
 pub use icon::{IconData, IconKind, IconPrim, RenderIcon, lucide};
 pub use intrinsic::{RenderIntrinsicHeight, RenderIntrinsicWidth};
 pub use layout_extra::{
-    RenderBaseline, RenderCustomMultiChild, RenderCustomSingleChild, RenderFractionalTranslation,
+    RenderBaseline, RenderCustomMultiChild, RenderCustomSingleChild, RenderFlow, RenderFractionalTranslation,
     RenderOffstage, RenderRotatedBox, RenderSizedOverflowBox, RenderTable, SizeFn, TableColumnWidth,
 };
 pub use list::RenderList;

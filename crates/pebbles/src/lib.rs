@@ -146,11 +146,11 @@ pub mod prelude {
 
     // layout (the long-tail Flutter layout widgets)
     pub use pebbles_widgets::{
-        Baseline, CustomMultiChildLayout, CustomSingleChildLayout, FractionalTranslation, LayoutBuilder,
-        LayoutTable, Offstage, RotatedBox, SizedOverflowBox, TableColumnWidth, Visibility, baseline,
-        custom_multi_child_layout, custom_single_child_layout, fractional_translation, indexed_stack,
-        layout_builder, layout_table, offstage, rotated_box, sized_overflow_box, unconstrained_box,
-        visibility,
+        Baseline, CustomMultiChildLayout, CustomSingleChildLayout, Flow, FractionalTranslation,
+        LayoutBuilder, LayoutTable, Offstage, RotatedBox, SizedOverflowBox, TableColumnWidth, Visibility,
+        baseline, custom_multi_child_layout, custom_single_child_layout, flow, fractional_translation,
+        indexed_stack, layout_builder, layout_table, offstage, rotated_box, sized_overflow_box,
+        unconstrained_box, visibility,
     };
 
     // widgets: layout primitives + constructors

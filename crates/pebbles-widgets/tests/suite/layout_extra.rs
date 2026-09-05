@@ -2,10 +2,14 @@
 //! zero, `RotatedBox` swaps its extent on an odd turn, and `Table` negotiates column
 //! widths (fixed + flex).
 
+use std::cell::Cell;
+
 use pebbles_core::{AnyWidget, IntoWidget, Ui};
-use pebbles_foundation::{Size, palette};
-use pebbles_render::{RenderConstrainedBox, RenderOffstage, RenderRotatedBox, TextEnv};
-use pebbles_widgets::{SizedBox, TableColumnWidth, View, center, layout_table, offstage, rotated_box};
+use pebbles_foundation::{Offset, Size, palette};
+use pebbles_render::{Affine, RenderConstrainedBox, RenderOffstage, RenderRotatedBox, TextEnv};
+use pebbles_widgets::{
+    SizedBox, TableColumnWidth, View, center, flow, gesture_detector, layout_table, offstage, rotated_box,
+};
 
 fn mount(root: impl IntoWidget) -> (Ui, TextEnv) {
     let mut ui = Ui::new();
@@ -54,4 +58,33 @@ fn table_negotiates_fixed_and_flex_columns() {
     widths.sort_by(f64::total_cmp);
     // In a 200-wide table: fixed column = 50 (×2 rows), flex column = 150 (×2 rows).
     assert_eq!(widths, vec![50.0, 50.0, 150.0, 150.0]);
+}
+
+thread_local! {
+    static FLOW_HIT: Cell<i64> = const { Cell::new(0) };
+}
+
+#[test]
+fn flow_child_hit_tests_at_its_transformed_position() {
+    FLOW_HIT.with(|c| c.set(0));
+    // A single 40×40 tappable child, flowed to (100, 100) by an affine transform.
+    let child = gesture_detector(SizedBox::new(Some(40.0), Some(40.0), None))
+        .on_tap(|| FLOW_HIT.with(|c| c.set(c.get() + 1)))
+        .into_widget();
+    let flowed =
+        flow(vec![child]).size(|c| c.biggest()).transform(|_, _, _| Affine::translate((100.0, 100.0)));
+
+    let mut ui = Ui::new();
+    let mut text = TextEnv::new();
+    ui.mount_root(View::new(palette::WHITE, flowed).into_widget());
+    ui.layout(&mut text, Size::new(200.0, 200.0));
+
+    // Miss: the child's LAYOUT position (0,0) is empty — the transform moved it.
+    assert!(!ui.dispatch_tap(Offset::new(20.0, 20.0)), "nothing at the untransformed origin");
+    assert_eq!(FLOW_HIT.with(Cell::get), 0);
+
+    // Hit: the child lives at its TRANSFORMED position (100..140), proving the
+    // parent-applied per-child transform flows into hit-testing.
+    assert!(ui.dispatch_tap(Offset::new(120.0, 120.0)), "the flowed child is hittable where it paints");
+    assert_eq!(FLOW_HIT.with(Cell::get), 1);
 }

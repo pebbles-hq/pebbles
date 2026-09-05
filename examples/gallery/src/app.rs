@@ -149,6 +149,7 @@ pub fn app() -> impl IntoWidget {
         .route("table-layout", || component(screens::layout_extra::table_screen))
         .route("custom-single-child", || component(screens::layout_extra::custom_single_child_layout_screen))
         .route("custom-multi-child", || component(screens::layout_extra::custom_multi_child_layout_screen))
+        .route("flow", || component(screens::layout_extra::flow_screen))
         .route("layout-builder", || component(screens::layout_extra::layout_builder_screen))
         .route("canvas", || component(screens::canvas::canvas_screen))
         .route("resizable", || component(screens::resizable::resizables))

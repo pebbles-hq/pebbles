@@ -466,3 +466,43 @@ impl RenderObject for RenderCustomMultiChild {
         "RenderCustomMultiChild"
     }
 }
+
+// ===========================================================================
+// Flow — delegate-driven per-child affine transforms (paint + hit-test)
+// ===========================================================================
+
+/// A container that positions each child by an arbitrary affine **transform** from a
+/// delegate (Flutter's `Flow`). Unlike the offset-based custom layouts, each child's
+/// transform is set with [`LayoutCx::set_child_transform`], so rotation/scale flows
+/// paint AND hit-test correctly.
+pub struct RenderFlow {
+    pub size_fn: SizeFn,
+    pub child_constraints_fn: std::rc::Rc<dyn Fn(usize, BoxConstraints) -> BoxConstraints>,
+    pub transform_fn: std::rc::Rc<dyn Fn(usize, Size, Size) -> Affine>,
+}
+
+impl RenderObject for RenderFlow {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
+        let size = constraints.constrain((self.size_fn)(constraints));
+        let children: Vec<RenderId> = cx.children().to_vec();
+        for (i, &child) in children.iter().enumerate() {
+            let cc = (self.child_constraints_fn)(i, constraints);
+            let child_size = cx.layout_child(child, cc);
+            cx.set_child_offset(child, Offset::ZERO);
+            cx.set_child_transform(child, (self.transform_fn)(i, size, child_size));
+        }
+        size
+    }
+
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
+        // Each child's transform is carried on its node, so a plain paint_child at the
+        // child's (zero) offset applies it.
+        for child in cx.children() {
+            cx.paint_child(child, offset + cx.child_offset(child));
+        }
+    }
+
+    fn debug_name(&self) -> &'static str {
+        "RenderFlow"
+    }
+}

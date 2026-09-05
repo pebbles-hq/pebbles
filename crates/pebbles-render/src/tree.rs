@@ -39,6 +39,12 @@ pub struct RenderNode {
     pub children: SmallVec<[RenderId; 4]>,
     /// Position relative to the parent's origin, assigned by the parent's layout.
     pub offset: Offset,
+    /// An optional affine the PARENT applies to this child's whole subtree (paint +
+    /// hit-test), composed on top of the child's own [`RenderObject::transform`]. It
+    /// is the affine generalization of [`offset`](Self::offset) — the parent sets it
+    /// with [`LayoutCx::set_child_transform`], and it is cleared before each layout so
+    /// only a parent that opts in carries one. Backs `Flow`'s per-child transforms.
+    pub layout_transform: Option<Affine>,
     /// Size computed by the most recent layout pass.
     pub size: Size,
     /// Layout-time data the parent attaches to this child (e.g. flex factor).
@@ -69,6 +75,7 @@ impl RenderNode {
             parent: None,
             children: SmallVec::new(),
             offset: Offset::ZERO,
+            layout_transform: None,
             size: Size::ZERO,
             parent_data: None,
             source: None,
@@ -525,7 +532,7 @@ impl RenderTree {
                 continue; // children paint inside this node's own bounds anyway
             }
             let cnode = &self.nodes[child];
-            let r = match cnode.object.as_deref().and_then(|o| o.transform(cnode.size)) {
+            let r = match node_transform(cnode) {
                 Some(t) => t.transform_rect_bbox(r),
                 None => r,
             };
@@ -587,9 +594,9 @@ impl RenderTree {
         absorbed: &mut Option<Vec<RenderId>>,
     ) {
         let node = &self.nodes[id];
-        // This node's local frame, then its own paint transform (rotate/scale).
+        // This node's local frame, then its transform (parent-applied ∘ own).
         let mut frame = to_window * Affine::translate((node.offset.x, node.offset.y));
-        if let Some(t) = node.object.as_deref().and_then(|o| o.transform(node.size)) {
+        if let Some(t) = node_transform(node) {
             frame *= t;
         }
         if frame.determinant().abs() < 1e-9 {
@@ -653,6 +660,9 @@ impl LayoutCx<'_> {
             }
         }
         crate::stats::bump_layout();
+        // Clear any parent-applied transform; a parent that wants one re-sets it with
+        // `set_child_transform` after this call (so stale transforms never linger).
+        self.tree.nodes[child].layout_transform = None;
         let mut object = self.tree.nodes[child].object.take().expect("child object present during layout");
         let size = {
             let mut cx = LayoutCx { tree: &mut *self.tree, current: child, text: &mut *self.text };
@@ -708,6 +718,14 @@ impl LayoutCx<'_> {
     /// Position an already-laid-out `child` relative to the current object's origin.
     pub fn set_child_offset(&mut self, child: RenderId, offset: Offset) {
         self.tree.nodes[child].offset = offset;
+    }
+
+    /// Apply an affine to `child`'s whole subtree (paint + hit-test), on top of the
+    /// child's own [`RenderObject::transform`] — the affine generalization of
+    /// [`set_child_offset`](Self::set_child_offset). Cleared before each layout, so
+    /// re-set it every pass. Backs `Flow`'s per-child transforms.
+    pub fn set_child_transform(&mut self, child: RenderId, transform: Affine) {
+        self.tree.nodes[child].layout_transform = Some(transform);
     }
 
     pub fn child_size(&self, child: RenderId) -> Size {
@@ -797,6 +815,18 @@ fn is_translation(t: Affine) -> bool {
     c[0] == 1.0 && c[1] == 0.0 && c[2] == 0.0 && c[3] == 1.0
 }
 
+/// The affine to apply to a node's subtree in its own local space: the parent-set
+/// [`RenderNode::layout_transform`] composed with the object's own
+/// [`RenderObject::transform`]. `None` (the common case) means an ordinary box.
+fn node_transform(node: &RenderNode) -> Option<Affine> {
+    let own = node.object.as_deref().and_then(|o| o.transform(node.size));
+    match (node.layout_transform, own) {
+        (None, own) => own,
+        (Some(lt), None) => Some(lt),
+        (Some(lt), Some(own)) => Some(lt * own),
+    }
+}
+
 impl PaintCx<'_> {
     /// The size of the object currently painting (computed during layout).
     pub fn size(&self) -> Size {
@@ -836,7 +866,7 @@ impl PaintCx<'_> {
         let node = &self.tree.nodes[child];
         let Some(object) = node.object.as_deref() else { return };
         let local = node.paint_rect;
-        match object.transform(node.size) {
+        match node_transform(node) {
             // Pure translation: no sub-scene, no bbox math — fold into the offset.
             Some(t) if is_translation(t) => {
                 let c = t.as_coeffs();

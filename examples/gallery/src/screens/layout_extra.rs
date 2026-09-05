@@ -1,7 +1,7 @@
 //! The long-tail layout widgets — one screen per widget: `IndexedStack`, `Offstage`,
 //! `Visibility`, `Baseline`, `RotatedBox`, `UnconstrainedBox`, `SizedOverflowBox`,
 //! `FractionalTranslation`, the layout `Table`, `CustomSingleChildLayout`,
-//! `CustomMultiChildLayout`, and `LayoutBuilder`.
+//! `CustomMultiChildLayout`, `Flow`, and `LayoutBuilder`.
 
 use pebbles::prelude::*;
 
@@ -340,6 +340,42 @@ pub fn custom_multi_child_layout_screen() -> Element {
                     custom_multi_child_layout(kids)
                         .size(|c| c.biggest())
                         .position(|i, _self, _child| Offset::new(i as f64 * 40.0, i as f64 * 40.0)),
+                ))
+        ])
+}
+
+// ===========================================================================
+// Flow
+// ===========================================================================
+
+pub fn flow_screen() -> Element {
+    let colors = [
+        theme().colors.primary,
+        palette::green::S500,
+        palette::violet::S500,
+        palette::amber::S500,
+        palette::pink::S500,
+    ];
+    let cards: Vec<AnyWidget> =
+        (0..5).map(|i| tile(&format!("{}", i + 1), colors[i], 70.0, 100.0).into_widget()).collect();
+
+    screen("Flow")
+        .description("Positions each child by an arbitrary affine transform from a delegate. Flutter's Flow. (Rotation/scale flows paint AND hit-test correctly — each child's transform lives on its node.)")
+        .body(children![
+            doc("flow(children).transform(|i, self, child| ..)")
+                .description("Five cards fanned from the bottom-center by a per-card rotation — a transform delegate, not just offsets.")
+                .body(frame(
+                    360.0,
+                    220.0,
+                    flow(cards).size(|c| c.biggest()).transform(|i, self_size, child| {
+                        let angle = (i as f64 - 2.0) * 0.28; // -0.56..0.56 rad
+                        let pivot_x = self_size.width / 2.0;
+                        let pivot_y = self_size.height - 10.0;
+                        // Place each card's bottom-center at the pivot, then rotate about it.
+                        Affine::translate((pivot_x, pivot_y))
+                            * Affine::rotate(angle)
+                            * Affine::translate((-child.width / 2.0, -child.height))
+                    }),
                 ))
         ])
 }

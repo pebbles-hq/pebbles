@@ -187,6 +187,7 @@ pub const NAV: &[NavGroup] = &[
             ("table-layout", lucide::LAYOUT_GRID, "Table (layout)"),
             ("custom-single-child", lucide::BOX, "Custom Single Child"),
             ("custom-multi-child", lucide::LAYOUT_GRID, "Custom Multi Child"),
+            ("flow", lucide::WAND, "Flow"),
             ("layout-builder", lucide::COLUMNS_2, "Layout Builder"),
         ],
     },

@@ -13,9 +13,9 @@ use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, Offset, Size};
 use pebbles_render::{
-    BorderRadius, BoxConstraints, RenderBaseline, RenderCustomMultiChild, RenderCustomSingleChild,
-    RenderFractionalTranslation, RenderObject, RenderOffstage, RenderRotatedBox, RenderSizedOverflowBox,
-    RenderTable, SizeFn, TableColumnWidth,
+    Affine, BorderRadius, BoxConstraints, RenderBaseline, RenderCustomMultiChild, RenderCustomSingleChild,
+    RenderFlow, RenderFractionalTranslation, RenderObject, RenderOffstage, RenderRotatedBox,
+    RenderSizedOverflowBox, RenderTable, SizeFn, TableColumnWidth,
 };
 
 use crate::widgets::{Opacity, SizedBox, clip_rrect, ignore_pointer, overflow_box, stack};
@@ -483,6 +483,75 @@ impl RenderWidget for CustomMultiChildLayout {
             o.size_fn = self.size_fn.clone();
             o.child_constraints_fn = self.child_constraints_fn.clone();
             o.position_fn = self.position_fn.clone();
+        }
+    }
+    fn take_children(&mut self) -> Vec<AnyWidget> {
+        std::mem::take(&mut self.children)
+    }
+}
+
+// ===========================================================================
+// Flow — per-child affine transforms from a delegate
+// ===========================================================================
+
+/// Positions each child by an arbitrary affine **transform** from a delegate.
+/// Flutter's `Flow`. Because the transform is applied on the child's node (not just an
+/// offset), rotation/scale flows both paint AND hit-test correctly.
+#[derive(Clone)]
+pub struct Flow {
+    children: Vec<AnyWidget>,
+    size_fn: SizeFn,
+    child_constraints_fn: Rc<dyn Fn(usize, BoxConstraints) -> BoxConstraints>,
+    transform_fn: Rc<dyn Fn(usize, Size, Size) -> Affine>,
+}
+
+/// See [`Flow`]. Defaults: box fills the constraints, each child gets loosened
+/// constraints and the identity transform — set [`Flow::transform`] to place them.
+pub fn flow(children: Vec<AnyWidget>) -> Flow {
+    Flow {
+        children,
+        size_fn: Rc::new(|c: BoxConstraints| c.biggest()),
+        child_constraints_fn: Rc::new(|_, c: BoxConstraints| c.loosen()),
+        transform_fn: Rc::new(|_, _, _| Affine::IDENTITY),
+    }
+}
+
+impl Flow {
+    /// This box's own size, from the incoming constraints.
+    pub fn size(mut self, f: impl Fn(BoxConstraints) -> Size + 'static) -> Self {
+        self.size_fn = Rc::new(f);
+        self
+    }
+    /// The constraints handed to child `index`.
+    pub fn child_constraints(
+        mut self,
+        f: impl Fn(usize, BoxConstraints) -> BoxConstraints + 'static,
+    ) -> Self {
+        self.child_constraints_fn = Rc::new(f);
+        self
+    }
+    /// The affine transform for child `index`, given `(index, this_size, child_size)`.
+    pub fn transform(mut self, f: impl Fn(usize, Size, Size) -> Affine + 'static) -> Self {
+        self.transform_fn = Rc::new(f);
+        self
+    }
+}
+
+pebbles_core::render_widget!(Flow);
+
+impl RenderWidget for Flow {
+    fn create_render_object(&self) -> Box<dyn RenderObject> {
+        Box::new(RenderFlow {
+            size_fn: self.size_fn.clone(),
+            child_constraints_fn: self.child_constraints_fn.clone(),
+            transform_fn: self.transform_fn.clone(),
+        })
+    }
+    fn update_render_object(&self, object: &mut dyn RenderObject) {
+        if let Some(o) = object.downcast_mut::<RenderFlow>() {
+            o.size_fn = self.size_fn.clone();
+            o.child_constraints_fn = self.child_constraints_fn.clone();
+            o.transform_fn = self.transform_fn.clone();
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {

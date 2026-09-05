@@ -55,9 +55,9 @@ pub use interactive_viewer::{InteractiveViewer, interactive_viewer};
 pub use keyed::{Keyed, keyed};
 pub use layout::{AspectRatio, Wrap, aspect_ratio, wrap};
 pub use layout_extra::{
-    Baseline, CustomMultiChildLayout, CustomSingleChildLayout, FractionalTranslation, LayoutBuilder,
+    Baseline, CustomMultiChildLayout, CustomSingleChildLayout, Flow, FractionalTranslation, LayoutBuilder,
     LayoutTable, Offstage, RotatedBox, SizedOverflowBox, Visibility, baseline, custom_multi_child_layout,
-    custom_single_child_layout, fractional_translation, indexed_stack, layout_builder, layout_table,
+    custom_single_child_layout, flow, fractional_translation, indexed_stack, layout_builder, layout_table,
     offstage, rotated_box, sized_overflow_box, unconstrained_box, visibility,
 };
 pub use list::{GridView, ListView, ScrollController, use_scroll_controller};
