@@ -68,8 +68,7 @@ impl Tooltip {
         self
     }
     /// Whether the tooltip also shows when the trigger gains keyboard focus (default
-    /// `true`, the a11y win). Reserved: focus-driven show needs shell-level geometry
-    /// (see the module note) and is not yet wired.
+    /// `true`, the a11y win) — driven by `focus_bounds` against the trigger's rect.
     pub fn show_on_focus(mut self, yes: bool) -> Self {
         self.show_on_focus = yes;
         self
@@ -242,28 +241,50 @@ fn render_tooltip(p: &Props) -> AnyWidget {
         }
     }
 
+    // Show the chip immediately, anchored — shared by hover-timer fire and long-press.
+    let show_chip = {
+        let build_props = build_props.clone();
+        move |ax: f64, ay: f64, gap: f64| {
+            let props = build_props();
+            let (cw, ch) = estimate_chip_size(&props);
+            let (ww, wh) = window_size();
+            let (left, top) = chip_anchor(side, ax, ay, cw, ch, gap, ww, wh);
+            show_passive(chip(&props), left, top);
+        }
+    };
+
     GestureDetector::new(p.child.clone())
-        .on_hover_enter(action_event(move |e: PointerEvent| {
-            // Anchor to the trigger edge when the rect is known, else to the pointer.
+        .on_hover_enter(action_event({
+            let show_chip = show_chip.clone();
+            move |e: PointerEvent| {
+                // Anchor to the trigger edge when the rect is known, else to the pointer.
+                let (ax, ay, gap) = if anchored {
+                    let (x, y) = side_anchor(side, own);
+                    (x, y, 8.0)
+                } else {
+                    (e.global.x, e.global.y, 12.0)
+                };
+                let show_chip = show_chip.clone();
+                animation::set_timeout(key, delay, move || show_chip(ax, ay, gap));
+            }
+        }))
+        .on_hover_exit(move || {
+            animation::clear_timeout(key);
+            hide_passive();
+        })
+        // Touch: a long-press shows the tooltip (no hover on touch devices), and
+        // lifting the finger (or the press ending) hides it.
+        .on_long_press_start(action_event(move |e: PointerEvent| {
             let (ax, ay, gap) = if anchored {
                 let (x, y) = side_anchor(side, own);
                 (x, y, 8.0)
             } else {
                 (e.global.x, e.global.y, 12.0)
             };
-            let build = build_props.clone();
-            animation::set_timeout(key, delay, move || {
-                let props = build();
-                let (cw, ch) = estimate_chip_size(&props);
-                let (ww, wh) = window_size();
-                let (left, top) = chip_anchor(side, ax, ay, cw, ch, gap, ww, wh);
-                show_passive(chip(&props), left, top);
-            });
+            show_chip(ax, ay, gap);
         }))
-        .on_hover_exit(move || {
-            animation::clear_timeout(key);
-            hide_passive();
-        })
+        .on_long_press_up(hide_passive)
+        .on_long_press_end(hide_passive)
         .into_widget()
 }
 

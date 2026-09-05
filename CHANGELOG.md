@@ -9,6 +9,13 @@ All notable changes to Pebbles are documented here. The format follows
 ### Added — Flutter parity: scroll notifications, list body, list tiles, sheets
 A batch of buildable-now Flutter-parity widgets:
 
+- **`nested_scroll_view`** (NestedScrollView) — a header over a scrolling body:
+  scroll-away (header + body share one scroll position) or `.pinned(true)` (fixed
+  header, body scrolls beneath). The sliver-style collapse-then-scroll stays
+  `CollapsingHeader`/`StickyList`.
+- **`Tooltip` long-press on touch** — a long-press shows the tooltip on touch
+  devices (no hover); lifting or ending the press hides it.
+
 - **`ScrollNotification` + `scroll_view(..).on_scroll(cb)`** — a scroll view's
   notification callback carrying live `ScrollMetrics` (pixels / max / viewport /
   fraction) and Start/Update/End/Overscroll events. Pebbles' direct, reactive

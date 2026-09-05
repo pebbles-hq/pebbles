@@ -7,6 +7,54 @@ use pebbles::prelude::*;
 use crate::ui::{doc, gap_h, gap_w, screen};
 
 // ===========================================================================
+// NestedScrollView
+// ===========================================================================
+
+pub fn nested_scroll_screen() -> Element {
+    let pinned = create_signal(false);
+    let c = theme().colors;
+
+    let header = container()
+        .decoration(BoxDecoration::new().color(c.primary))
+        .padding(EdgeInsets::all(20.0))
+        .child(text("Header").size(22.0).weight(700.0).color(c.primary_foreground));
+
+    let mut rows: Vec<AnyWidget> = Vec::new();
+    for i in 0..30 {
+        rows.push(
+            container()
+                .padding(EdgeInsets::symmetric(16.0, 12.0))
+                .child(text(format!("Item {i}")))
+                .into_widget(),
+        );
+    }
+    let body =
+        column(rows).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min);
+
+    screen("Nested Scroll View")
+        .description("Flutter's NestedScrollView (non-sliver case): a header above a scrolling body. Scroll-away shares one scroll position (the header moves off the top, then the body); pinned keeps the header fixed while the body scrolls beneath it.")
+        .body(children![
+            doc("nested_scroll_view(header, body).pinned(..)")
+                .description("Toggle to compare a shared-scroll (header scrolls away) vs a pinned header.")
+                .body(column(children![
+                    row(children![
+                        switch(pinned.get()).on_changed(move || pinned.update(|v| *v = !*v)),
+                        gap_w(10.0),
+                        text(if pinned.get() { "Pinned header" } else { "Scroll-away header" }),
+                    ])
+                    .cross_axis_alignment(CrossAxisAlignment::Center),
+                    gap_h(12.0),
+                    SizedBox::exact(300.0, 260.0, container()
+                        .decoration(BoxDecoration::new().border(Border::new(c.border, 1.0)).radius(BorderRadius::all(12.0)))
+                        .clip()
+                        .child(nested_scroll_view(header.clone(), body.clone()).pinned(pinned.get()))),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min))
+        ])
+}
+
+// ===========================================================================
 // Mobile runtime: PopScope + SystemChrome
 // ===========================================================================
 

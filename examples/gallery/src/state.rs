@@ -246,6 +246,7 @@ pub const NAV: &[NavGroup] = &[
             ("scaffold-drawer", lucide::PANEL_LEFT, "Scaffold Drawer"),
             ("default-text-style", lucide::TYPE, "Default Text Style"),
             ("mobile-runtime", lucide::SMARTPHONE, "Mobile Runtime"),
+            ("nested-scroll", lucide::MOVE_VERTICAL, "Nested Scroll View"),
         ],
     },
     NavGroup {

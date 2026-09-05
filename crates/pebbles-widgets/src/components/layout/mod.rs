@@ -4,6 +4,7 @@
 mod chrome;
 mod disclosure;
 mod draggable_sheet;
+mod nested_scroll;
 mod panel;
 mod refresh;
 mod resizable;
@@ -17,6 +18,7 @@ pub use chrome::{
 };
 pub use disclosure::{Accordion, Collapsible, accordion, collapsible};
 pub use draggable_sheet::{DraggableScrollableSheet, draggable_scrollable_sheet};
+pub use nested_scroll::{NestedScrollView, nested_scroll_view};
 pub use panel::{Panel, panel};
 pub use refresh::{RefreshDone, RefreshIndicator, refresh_indicator};
 pub use resizable::{Resizable, resizable};

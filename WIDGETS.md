@@ -31,9 +31,9 @@ remote-URL images) and their per-platform status live in
 | Widget | Status | Notes |
 |--------|--------|-------|
 | `Container` | ✅ | full BoxDecoration + `foreground_decoration` |
-| `Row` / `Column` (+ `Expanded`, `Flexible`, `spacer`, `gap_h`/`gap_w`) | ✅ 🔶G1 | `Flexible.fit` ✅; `vertical_direction` + real baseline alignment (G1) open |
-| `Stack` / `Positioned` | ✅ 🔶G2 | `.fit(StackFit)` to replace `.expand()` (G2) open |
-| `Wrap` | ✅ 🔶G3 | `alignment`/`run_alignment` (G3) open |
+| `Row` / `Column` (+ `Expanded`, `Flexible`, `spacer`, `gap_h`/`gap_w`) | ✅ 🔶G1 | `Flexible.fit` ✅; `.vertical_direction()` ✅; real baseline-alignment rendering (G1) open |
+| `Stack` / `Positioned` | ✅ | `.fit(StackFit::Loose/Expand)` done; alignment; `Positioned` (all edges + fill) |
+| `Wrap` | ✅ | `.spacing`/`.run_spacing`/`.alignment`/`.run_alignment` (WrapAlignment) all done |
 | `AspectRatio` · `Padding` · `Align`/`center` · `SizedBox` · `ConstrainedBox` | ✅ | |
 | `ColoredBox` / `DecoratedBox` | ✅ | |
 | `Opacity` · `ClipRRect` | ✅ | |
@@ -133,7 +133,7 @@ remote-URL images) and their per-platform status live in
 | `banner` (MaterialBanner) | ✅ | full-width message bar: leading icon + trailing actions + bottom divider; persistent/inline (unlike a toast) |
 | `placeholder` | ✅ | Canvas-backed dev box (border + diagonal X); `.size()`/`.color()`/`.stroke_width()` — the "not built yet" marker |
 | `Progress` | ✅ | determinate bar; indeterminate = `Spinner` |
-| `Tooltip` | ✅ 🔶C2 | delay/rich/style ✅; `.side()` + flip + show-on-focus (C2) open |
+| `Tooltip` | ✅ | delay/rich/style, `.side()` + flip + lateral clamp, show-on-focus (a11y), and long-press-to-show on touch |
 | `HoverCard` | ✅ | delay + stays-open-over-card grace |
 | `Table` (data table) | ✅ | sort (multi, configurable glyph), selection + select-all, striped, hover, empty state |
 | `ListTile` | ✅ | style/tap/selected/dense |
@@ -166,6 +166,7 @@ remote-URL images) and their per-platform status live in
 | `Pagination` | ✅ | Numbers/Simple/Arrows designs; full control — first/last jump (double-chevrons, `.edges(true)` default), prev/next arrows, numbered pills with ellipses; every control is a bordered button, disables at the bounds; unified `on_page` |
 | `Menubar` / `menubar_menu` | ✅ | hover-switch between open menus, submenus |
 | `StickyList` / `sticky_section` · `CollapsingHeader` | ✅ | pinned section headers with push-off; collapsing hero driven by scroll progress `t` (A3 ✅) |
+| `nested_scroll_view` (NestedScrollView) | ✅ | header over a scrolling body — scroll-away (shared scroll position) or `.pinned(true)` (fixed header, body scrolls beneath) |
 | `Toolbar` · `StatusBar` | ✅ 🔶C8f | work; dedicated gallery screen (C8f) open |
 | `NavStack` / `RouteView` | ✅ 🔶C8h | push/replace/pop, fallback; dedicated gallery screen (C8h) open |
 
