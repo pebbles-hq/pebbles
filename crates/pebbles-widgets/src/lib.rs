@@ -93,6 +93,12 @@ pub use widgets::{
     dismissible, fade_transition, positioned_transition, rotation_transition, scale_transition,
     size_transition, slide_transition,
 };
+// drag & drop / pointer control (Flutter's Draggable / DragTarget / Ignore/AbsorbPointer
+// / ReorderableListView / InteractiveViewer)
+pub use widgets::{
+    DragTarget, Draggable, InteractiveViewer, PointerControl, ReorderableListView, absorb_pointer,
+    drag_target, draggable, ignore_pointer, interactive_viewer, long_press_draggable, reorderable_list_view,
+};
 // The immediate-mode drawing surface (H2) a `canvas(..)` painter receives.
 pub use pebbles_render::Canvas;
 

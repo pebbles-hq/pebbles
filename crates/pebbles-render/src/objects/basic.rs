@@ -6,7 +6,7 @@ use vello::kurbo::Affine;
 use vello::peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;
-use crate::object::RenderObject;
+use crate::object::{HitBehavior, RenderObject};
 use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 
 /// Convenience: the single (first) child of the object being laid out/painted.
@@ -207,6 +207,54 @@ pub struct RenderConstrainedBox {
 impl RenderConstrainedBox {
     pub fn new(additional: BoxConstraints) -> Self {
         RenderConstrainedBox { additional }
+    }
+}
+
+/// A transparent single-child box that only changes how its subtree is hit-tested
+/// — the render backing for `IgnorePointer` / `AbsorbPointer`. Layout and paint
+/// pass straight through to the child.
+pub struct RenderPointerBarrier {
+    pub behavior: HitBehavior,
+}
+
+impl RenderPointerBarrier {
+    pub fn new(behavior: HitBehavior) -> Self {
+        RenderPointerBarrier { behavior }
+    }
+}
+
+impl RenderObject for RenderPointerBarrier {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
+        match only_child_layout(cx) {
+            Some(child) => {
+                let size = cx.layout_child(child, constraints);
+                cx.set_child_offset(child, Offset::ZERO);
+                size
+            }
+            None => constraints.constrain(Size::ZERO),
+        }
+    }
+
+    fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
+        only_child_intrinsic(cx).and_then(|child| cx.child_intrinsic(child, axis, cross_extent))
+    }
+
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
+        if let Some(child) = only_child_paint(cx) {
+            cx.paint_child(child, offset + cx.child_offset(child));
+        }
+    }
+
+    fn baseline(&self, cx: &mut LayoutCx<'_>) -> Option<f64> {
+        only_child_layout(cx).and_then(|child| cx.child_baseline(child))
+    }
+
+    fn hit_behavior(&self) -> HitBehavior {
+        self.behavior
+    }
+
+    fn debug_name(&self) -> &'static str {
+        "RenderPointerBarrier"
     }
 }
 

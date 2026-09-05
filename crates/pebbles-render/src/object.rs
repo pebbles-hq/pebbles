@@ -14,6 +14,22 @@ use vello::kurbo::Affine;
 use crate::constraints::BoxConstraints;
 use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 
+/// How an object participates in hit testing — the render-level backing for
+/// `IgnorePointer` / `AbsorbPointer`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum HitBehavior {
+    /// Ordinary: the object and its subtree are hit-tested normally.
+    #[default]
+    Normal,
+    /// The object AND its whole subtree are transparent to the pointer — hit
+    /// testing skips them entirely, so events fall through to whatever is behind.
+    Ignore,
+    /// The object absorbs the pointer: its subtree is not hit-tested, and the hit
+    /// stops here (nothing painted behind it at this point receives the event).
+    /// Its own ancestors still do — the event bubbles up as usual.
+    Absorb,
+}
+
 /// A node in the render tree: it computes its own [`Size`] under a set of
 /// [`BoxConstraints`] and paints itself into a scene.
 ///
@@ -76,6 +92,13 @@ pub trait RenderObject: Any {
     /// objects with no baseline notion.
     fn baseline(&self, _cx: &mut LayoutCx<'_>) -> Option<f64> {
         None
+    }
+
+    /// How this object participates in hit testing (default [`HitBehavior::Normal`]).
+    /// [`RenderPointerBarrier`](crate::RenderPointerBarrier) overrides this to back
+    /// `IgnorePointer` / `AbsorbPointer`.
+    fn hit_behavior(&self) -> HitBehavior {
+        HitBehavior::Normal
     }
 
     /// A human-readable name for diagnostics and tree dumps.

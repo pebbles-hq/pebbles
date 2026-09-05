@@ -5,7 +5,7 @@
 use pebbles_core::{IntoWidget, Ui, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{RenderConstrainedBox, TextEnv};
-use pebbles_widgets::{SizedBox, View, center, gesture_detector};
+use pebbles_widgets::{SizedBox, View, absorb_pointer, center, gesture_detector, ignore_pointer, stack};
 
 /// A probe component whose visible size encodes how many times it has been tapped,
 /// so the test can observe the full signal-write → rebuild → relayout loop by reading
@@ -201,4 +201,55 @@ fn animated_list_enters_holds_exit_then_drops() {
     frame(&mut ui, 1.0);
     frame(&mut ui, 1.3);
     assert!(has(&ui, 300.0), "a newly added item appears");
+}
+
+// Pointer control: `ignore_pointer` makes a subtree transparent so taps fall through
+// to the layer behind it; `absorb_pointer` swallows the tap so nothing behind fires.
+use std::cell::Cell;
+
+thread_local! {
+    static BOTTOM_TAPS: Cell<i64> = const { Cell::new(0) };
+    static TOP_TAPS: Cell<i64> = const { Cell::new(0) };
+}
+
+/// Two fully-overlapping full-window tap layers, the top one wrapped in an
+/// absorb/ignore barrier. Each layer counts its own taps.
+fn two_layer_barrier(absorb: bool) -> pebbles_core::AnyWidget {
+    let full = || SizedBox::new(Some(200.0), Some(200.0), None);
+    let bottom = gesture_detector(full()).on_tap(|| BOTTOM_TAPS.with(|c| c.set(c.get() + 1))).into_widget();
+    let top_inner = gesture_detector(full()).on_tap(|| TOP_TAPS.with(|c| c.set(c.get() + 1)));
+    let top = if absorb {
+        absorb_pointer(top_inner).into_widget()
+    } else {
+        ignore_pointer(top_inner).into_widget()
+    };
+    View::new(palette::WHITE, stack(vec![bottom, top])).into_widget()
+}
+
+#[test]
+fn ignore_pointer_lets_taps_fall_through_to_the_layer_behind() {
+    BOTTOM_TAPS.with(|c| c.set(0));
+    TOP_TAPS.with(|c| c.set(0));
+    let mut ui = Ui::new();
+    let mut text = TextEnv::new();
+    ui.mount_root(two_layer_barrier(false));
+    ui.layout(&mut text, Size::new(200.0, 200.0));
+
+    assert!(ui.dispatch_tap(Offset::new(100.0, 100.0)), "the tap is handled — by the layer behind");
+    assert_eq!(TOP_TAPS.with(Cell::get), 0, "the ignored top layer receives nothing");
+    assert_eq!(BOTTOM_TAPS.with(Cell::get), 1, "the tap fell through to the bottom layer");
+}
+
+#[test]
+fn absorb_pointer_swallows_the_tap() {
+    BOTTOM_TAPS.with(|c| c.set(0));
+    TOP_TAPS.with(|c| c.set(0));
+    let mut ui = Ui::new();
+    let mut text = TextEnv::new();
+    ui.mount_root(two_layer_barrier(true));
+    ui.layout(&mut text, Size::new(200.0, 200.0));
+
+    assert!(!ui.dispatch_tap(Offset::new(100.0, 100.0)), "absorb: nothing handles the tap");
+    assert_eq!(TOP_TAPS.with(Cell::get), 0, "the absorbed top subtree receives nothing");
+    assert_eq!(BOTTOM_TAPS.with(Cell::get), 0, "and the layer behind is blocked too");
 }

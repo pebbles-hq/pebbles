@@ -10,17 +10,21 @@ mod boxes;
 mod canvas;
 mod container;
 mod decorated;
+mod dnd;
 mod editable;
 mod effects;
 mod flex;
 mod flex_children;
 mod focus_scope;
 mod gesture;
+mod interactive_viewer;
 mod keyed;
 mod layout;
 mod list;
 mod motion;
+mod pointer_control;
 mod probe;
+mod reorderable;
 mod scroll;
 mod semantics;
 mod sizing;
@@ -39,12 +43,14 @@ pub use boxes::{
 pub use canvas::{CanvasWidget, canvas};
 pub use container::{Container, container};
 pub use decorated::DecoratedBox;
+pub use dnd::{DragTarget, Draggable, drag_target, draggable, long_press_draggable};
 pub use editable::{EditableText, editable};
 pub use effects::{ClipRRect, Opacity, RepaintBoundary, clip_rrect, opacity, repaint_boundary};
 pub use flex::{Column, Row, column, row};
 pub use flex_children::{Expanded, Flexible, expanded, flexible, spacer};
 pub use focus_scope::focus_scope;
 pub use gesture::{GestureDetector, gesture_detector};
+pub use interactive_viewer::{InteractiveViewer, interactive_viewer};
 pub use keyed::{Keyed, keyed};
 pub use layout::{AspectRatio, Wrap, aspect_ratio, wrap};
 pub use list::{GridView, ListView, ScrollController, use_scroll_controller};
@@ -58,7 +64,9 @@ pub use motion::{
     size_transition, slide_transition,
 };
 pub use pebbles_render::{ScrollbarPolicy, ScrollbarStyle, SemanticsProps, SemanticsRole};
+pub use pointer_control::{PointerControl, absorb_pointer, ignore_pointer};
 pub use probe::{ExtentProbe, extent_probe};
+pub use reorderable::{ReorderableListView, reorderable_list_view};
 pub use scroll::{ScrollExt, SingleChildScrollView, list_view, scroll_view};
 pub use semantics::{Semantics, SemanticsExt, semantics};
 pub use sizing::{

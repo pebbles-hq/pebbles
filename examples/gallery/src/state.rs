@@ -162,6 +162,18 @@ pub const NAV: &[NavGroup] = &[
         ],
     },
     NavGroup {
+        label: "DRAG & DROP / POINTER",
+        routes: &[
+            ("draggable", lucide::MOVE_VERTICAL, "Draggable"),
+            ("drag-target", lucide::INBOX, "Drag Target"),
+            ("long-press-draggable", lucide::MOVE_VERTICAL, "Long Press Draggable"),
+            ("ignore-pointer", lucide::BOX, "Ignore Pointer"),
+            ("absorb-pointer", lucide::BOX, "Absorb Pointer"),
+            ("interactive-viewer", lucide::LAYOUT_GRID, "Interactive Viewer"),
+            ("reorderable-list-view", lucide::LIST_ORDERED, "Reorderable List View"),
+        ],
+    },
+    NavGroup {
         label: "NAVIGATION",
         routes: &[
             ("tabs", lucide::SQUARE_STACK, "Tabs"),

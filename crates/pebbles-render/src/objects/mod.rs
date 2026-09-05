@@ -27,7 +27,7 @@ mod view;
 mod wrap;
 
 pub use aspect::RenderAspectRatio;
-pub use basic::{RenderAlign, RenderColoredBox, RenderConstrainedBox, RenderPadding};
+pub use basic::{RenderAlign, RenderColoredBox, RenderConstrainedBox, RenderPadding, RenderPointerBarrier};
 pub use boundary::RenderBoundary;
 pub use canvas::{Canvas, RenderCanvas};
 pub use decorated::RenderDecoratedBox;

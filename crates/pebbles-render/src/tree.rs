@@ -19,7 +19,7 @@ use smallvec::SmallVec;
 use vello::kurbo::Affine;
 
 use crate::constraints::BoxConstraints;
-use crate::object::RenderObject;
+use crate::object::{HitBehavior, RenderObject};
 use crate::text::TextEnv;
 
 new_key_type! {
@@ -558,17 +558,34 @@ impl RenderTree {
     /// so hit testing is a generic rectangle walk rather than a per-object method.
     pub fn hit_test(&self, point: Offset) -> Vec<RenderId> {
         let mut hits = Vec::new();
+        let mut path = Vec::new();
+        // Set to the ancestor chain (ending at the barrier) of the topmost
+        // `AbsorbPointer` under `point`, if any — it replaces `hits`, dropping the
+        // barrier's subtree and everything painted behind it at this point.
+        let mut absorbed: Option<Vec<RenderId>> = None;
         if let Some(root) = self.root {
-            self.hit_test_node(root, point, Affine::IDENTITY, &mut hits);
+            self.hit_test_node(root, point, Affine::IDENTITY, &mut hits, &mut path, &mut absorbed);
         }
-        hits
+        absorbed.unwrap_or(hits)
     }
 
     /// `to_window` maps this node's parent's local space to window space. We carry a
     /// full affine (not just an offset) so a transformed ancestor inverts correctly:
     /// the window `point` is mapped into each node's own local space before the
     /// rectangle test. For untransformed trees this is exactly the old offset walk.
-    fn hit_test_node(&self, id: RenderId, point: Offset, to_window: Affine, out: &mut Vec<RenderId>) {
+    ///
+    /// `path` is the ancestor chain currently on the recursion stack; `absorbed`
+    /// captures it (plus self) when an [`HitBehavior::Absorb`] node is reached, so
+    /// the topmost absorber wins (it is written last in paint order).
+    fn hit_test_node(
+        &self,
+        id: RenderId,
+        point: Offset,
+        to_window: Affine,
+        out: &mut Vec<RenderId>,
+        path: &mut Vec<RenderId>,
+        absorbed: &mut Option<Vec<RenderId>>,
+    ) {
         let node = &self.nodes[id];
         // This node's local frame, then its own paint transform (rotate/scale).
         let mut frame = to_window * Affine::translate((node.offset.x, node.offset.y));
@@ -582,10 +599,21 @@ impl RenderTree {
         if !Rect::from_origin_size((0.0, 0.0), node.size).contains(local) {
             return;
         }
-        out.push(id);
-        for &child in &node.children {
-            self.hit_test_node(child, point, frame, out);
+        let behavior = node.object.as_deref().map(|o| o.hit_behavior()).unwrap_or_default();
+        if behavior == HitBehavior::Ignore {
+            return; // self + subtree transparent to the pointer
         }
+        out.push(id);
+        path.push(id);
+        if behavior == HitBehavior::Absorb {
+            *absorbed = Some(path.clone()); // ancestors + self; subtree skipped
+            path.pop();
+            return;
+        }
+        for &child in &node.children {
+            self.hit_test_node(child, point, frame, out, path, absorbed);
+        }
+        path.pop();
     }
 }
 

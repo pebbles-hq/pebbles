@@ -38,16 +38,17 @@ pub use fonts::{
     BUILTIN_FAMILIES, available_families, builtin_families, builtin_fonts, has_family, is_builtin,
     register_user_font,
 };
-pub use object::RenderObject;
+pub use object::{HitBehavior, RenderObject};
 pub use objects::{
     Canvas, Cursor, FlexParentData, IconData, IconKind, IconPrim, ParagraphStyle, PointerButton,
     PointerEvent, RefreshState, RenderAlign, RenderAspectRatio, RenderBoundary, RenderCanvas,
     RenderClipRRect, RenderColoredBox, RenderConstrainedBox, RenderDecoratedBox, RenderFittedBox, RenderFlex,
     RenderFractionallySizedBox, RenderIcon, RenderIntrinsicHeight, RenderIntrinsicWidth, RenderLimitedBox,
     RenderList, RenderMeasureProbe, RenderOpacity, RenderOverflowBox, RenderPadding, RenderParagraph,
-    RenderPointerListener, RenderScroll, RenderSpinner, RenderStack, RenderTextField, RenderTransform,
-    RenderView, RenderWrap, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps,
-    SemanticsRole, StackFit, StackParentData, TapCallback, TextFieldStyle, TextSpanStyle, lucide,
+    RenderPointerBarrier, RenderPointerListener, RenderScroll, RenderSpinner, RenderStack, RenderTextField,
+    RenderTransform, RenderView, RenderWrap, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode,
+    SemanticsProps, SemanticsRole, StackFit, StackParentData, TapCallback, TextFieldStyle, TextSpanStyle,
+    lucide,
 };
 pub use text::TextEnv;
 pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};

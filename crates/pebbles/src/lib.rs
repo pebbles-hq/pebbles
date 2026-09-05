@@ -136,6 +136,14 @@ pub mod prelude {
         rotation_transition, scale_transition, size_transition, slide_transition,
     };
 
+    // drag & drop / pointer control (Flutter's Draggable / DragTarget / Ignore/AbsorbPointer
+    // / ReorderableListView / InteractiveViewer)
+    pub use pebbles_widgets::{
+        DragTarget, Draggable, InteractiveViewer, PointerControl, ReorderableListView, absorb_pointer,
+        drag_target, draggable, ignore_pointer, interactive_viewer, long_press_draggable,
+        reorderable_list_view,
+    };
+
     // widgets: layout primitives + constructors
     pub use pebbles_widgets::{
         Align, AnimatedContainer, AnimatedGrid, AnimatedList, AspectRatio, Canvas, CanvasWidget, ClipRRect,
