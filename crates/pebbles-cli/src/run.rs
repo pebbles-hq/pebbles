@@ -399,7 +399,13 @@ fn ensure_index_html(member_dir: &Path, bin: &str) -> std::io::Result<PathBuf> {
   <title>{bin} — Pebbles</title>
   <style>
     html, body {{ margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #ffffff; }}
-    canvas {{ display: block; width: 100vw; height: 100vh; outline: none; touch-action: none; }}
+    /* Fill the viewport and beat any inline size winit sets on the canvas, so the
+       surface tracks the window (Flutter-style: canvas = viewport, buffer = size*dpr). */
+    canvas {{
+      position: fixed; inset: 0;
+      width: 100% !important; height: 100% !important;
+      display: block; outline: none; touch-action: none;
+    }}
   </style>
   <!-- Build this workspace crate to wasm. Trunk runs cargo + wasm-bindgen. -->
   <link data-trunk rel="rust" href="../../Cargo.toml" data-bin="{bin}" data-wasm-opt="0" />

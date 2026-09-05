@@ -161,6 +161,16 @@ impl Runner {
         if phys.width == 0 || phys.height == 0 {
             return;
         }
+        // Web: the true canvas size only arrives AFTER creation (winit reports 0×0
+        // right after `create_window`), and the `Resized` carrying it fires during
+        // the async GPU-init gap while `self.active` is still `None`, so that event
+        // is dropped. Self-heal — make the surface match the window before drawing,
+        // so we never render into a stale 1×1 target (which shows as a grey box).
+        // Only on size change, to avoid the known wasm dpr resize feedback loop.
+        #[cfg(target_family = "wasm")]
+        if active.surface.config.width != phys.width || active.surface.config.height != phys.height {
+            self.context.as_mut().unwrap().resize_surface(&mut active.surface, phys.width, phys.height);
+        }
         let logical = Size::new(phys.width as f64 / scale, phys.height as f64 / scale);
         pebbles_widgets::overlay::set_window_size(logical.width, logical.height);
         let t = Instant::now();
