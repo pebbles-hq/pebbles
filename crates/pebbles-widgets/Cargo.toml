@@ -27,6 +27,8 @@ base64 = { version = "0.22", optional = true }
 pebbles-core.workspace = true
 pebbles-foundation.workspace = true
 pebbles-render.workspace = true
+# wasm-safe clock for the calendar's "today" (std::time::SystemTime panics on wasm).
+web-time.workspace = true
 
 # Native-only optional deps behind `image-view` / `file-dialogs`. `ureq` is a
 # blocking HTTP client and `rfd` (xdg-portal + async-std) is a desktop dialog — on

@@ -646,10 +646,16 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             let mut context = self.context.take().expect("render context");
             let proxy = self.proxy.clone().expect("event loop proxy set in App::run");
             wasm_bindgen_futures::spawn_local(async move {
-                let surface = context
-                    .create_surface(window.clone(), w, h, wgpu::PresentMode::AutoVsync)
-                    .await
-                    .expect("create surface");
+                // A failure here is almost always "no WebGPU adapter" — spell out the
+                // fix rather than panicking with a cryptic `NoCompatibleDevice`, since
+                // this is THE first-run web blocker. console_error_panic_hook surfaces it.
+                let surface =
+                    context.create_surface(window.clone(), w, h, wgpu::PresentMode::AutoVsync).await.expect(
+                        "Pebbles could not get a WebGPU device. Enable WebGPU in your browser: \
+                         chrome://flags → \"Unsafe WebGPU Support\" (on Linux also \"Vulkan\"), then \
+                         relaunch and check chrome://gpu. Firefox: about:config dom.webgpu.enabled. \
+                         Pebbles is WebGPU-only — see PLATFORMS.md",
+                    );
                 let _ = proxy.send_event(PebblesUserEvent::SurfaceReady { context, surface, window });
             });
         }

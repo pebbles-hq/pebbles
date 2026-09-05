@@ -315,8 +315,9 @@ impl Ui {
         if let Some(t) = self.clock_override {
             t
         } else {
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
+            // web_time, not std::time: SystemTime::now() panics on wasm.
+            web_time::SystemTime::now()
+                .duration_since(web_time::UNIX_EPOCH)
                 .map(|d| d.as_secs_f64())
                 .unwrap_or(0.0)
         }

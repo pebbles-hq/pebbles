@@ -11,6 +11,8 @@ description = "Foundation layer for Pebbles: geometry, layout enums, and color p
 [dependencies]
 kurbo.workspace = true
 peniko.workspace = true
+# wasm-safe clock for the log timestamp (std::time::Instant panics on wasm).
+web-time.workspace = true
 
 [lints]
 workspace = true

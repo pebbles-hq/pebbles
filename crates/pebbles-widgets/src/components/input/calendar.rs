@@ -9,7 +9,8 @@
 //! (all in-panel — no nested overlay).
 
 use std::rc::Rc;
-use std::time::{SystemTime, UNIX_EPOCH};
+// web_time, not std::time: SystemTime::now() panics on wasm.
+use web_time::{SystemTime, UNIX_EPOCH};
 
 use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, Offset};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, IconKind};

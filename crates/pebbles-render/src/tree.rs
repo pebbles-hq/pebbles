@@ -94,7 +94,9 @@ impl RenderNode {
 fn clamp_should_log(name: &'static str) -> bool {
     use std::cell::RefCell;
     use std::collections::HashMap;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
+
+    use web_time::Instant; // std::time::Instant panics on wasm
     thread_local! {
         static SEEN: RefCell<HashMap<&'static str, Instant>> = RefCell::new(HashMap::new());
     }

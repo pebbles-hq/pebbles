@@ -11,6 +11,8 @@ description = "The render layer for Pebbles: box constraints, the render tree, l
 [dependencies]
 pebbles-foundation.workspace = true
 pebbles-icons.workspace = true
+# wasm-safe clock for dev-log throttles (std::time::Instant panics on wasm).
+web-time.workspace = true
 # vello WITHOUT default features → the CPU-side `Scene` encoder, no wgpu/GPU pulled in.
 vello.workspace = true
 peniko.workspace = true

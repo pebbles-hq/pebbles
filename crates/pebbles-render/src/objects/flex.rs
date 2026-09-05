@@ -18,7 +18,9 @@ use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 fn overflow_should_log(sig: (&'static str, i64, usize)) -> bool {
     use std::cell::RefCell;
     use std::collections::HashMap;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
+
+    use web_time::Instant; // std::time::Instant panics on wasm
     thread_local! {
         static SEEN: RefCell<HashMap<(&'static str, i64, usize), Instant>> =
             RefCell::new(HashMap::new());

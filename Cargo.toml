@@ -56,6 +56,11 @@ wgpu = "29"
 winit = "0.30"
 raw-window-handle = "0.6"
 pollster = "1"
+# A std::time drop-in that also works on wasm: on native it IS std::time (zero
+# cost); on wasm `Instant`/`SystemTime` use `performance.now()`/`Date.now()`
+# instead of panicking ("time not implemented on this platform"). Every crate that
+# times anything at runtime uses THIS, never `std::time::{Instant,SystemTime}`.
+web-time = "1.1"
 
 # --- data structures / util ---
 slotmap = "1"

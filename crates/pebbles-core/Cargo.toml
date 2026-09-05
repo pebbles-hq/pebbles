@@ -13,6 +13,8 @@ pebbles-foundation.workspace = true
 pebbles-render.workspace = true
 slotmap.workspace = true
 smallvec.workspace = true
+# wasm-safe clock for scroll/fling timing (std::time::SystemTime panics on wasm).
+web-time.workspace = true
 # F3 — optional async: a lazy multi-thread tokio runtime behind the `tokio` feature
 # (default off). Same pump-based UI-thread result delivery as the std-thread `spawn`.
 tokio = { version = "1", optional = true, features = ["rt", "rt-multi-thread"] }

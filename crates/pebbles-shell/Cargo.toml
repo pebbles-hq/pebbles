@@ -22,7 +22,7 @@ pollster.workspace = true
 # A std::time drop-in that works on wasm too: on native it IS std::time (zero
 # cost); on wasm `Instant` uses `performance.now()` instead of panicking. winit
 # already uses it for `ControlFlow::WaitUntil`.
-web-time = "1.1"
+web-time.workspace = true
 peniko.workspace = true
 kurbo.workspace = true
 # System clipboard + AccessKit are declared per-target below: arboard has no

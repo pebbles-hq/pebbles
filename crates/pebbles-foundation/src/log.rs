@@ -30,7 +30,11 @@ use std::fs::File;
 use std::io::Write;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::time::Instant;
+
+// `web_time::Instant` IS `std::time::Instant` on native (zero cost) but uses
+// `performance.now()` on wasm — `std::time::Instant::now()` panics there
+// ("time not implemented on this platform"), which crashed `log::init` on web.
+use web_time::Instant;
 
 /// Severity. Lower = noisier.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
