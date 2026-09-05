@@ -27,6 +27,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .title("Pebbles — Widget Gallery")
         .size(1180, 820)
         .background(theme().colors.background)
+        // Web-only: the hidden-input IME bridge (CJK composition + mobile soft
+        // keyboard) for the gallery's text fields. No-op on desktop.
+        .web_ime(true)
         // B3: a native OS menu bar. Takes effect on macOS/Windows when built with
         // `--features pebbles/native-menus`; a no-op otherwise (the in-window
         // menubar(..) demo stays the cross-platform form). Clicks print to stderr so

@@ -2687,6 +2687,7 @@ dependencies = [
  "pollster 1.0.1",
  "raw-window-handle",
  "vello",
+ "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
  "web-time",

@@ -7,7 +7,7 @@ use pebbles_foundation::{Color, TextDirection, palette};
 use pebbles_widgets::MenuBar;
 use winit::event_loop::EventLoop;
 
-mod runner;
+pub(crate) mod runner;
 
 use runner::{PebblesUserEvent, Runner};
 
@@ -35,6 +35,10 @@ pub struct App {
     menu: Option<MenuBar>,
     /// D2 global text direction, applied at mount (default LTR).
     text_direction: TextDirection,
+    /// Web-only: enable the hidden-input IME bridge (CJK composition + mobile soft
+    /// keyboard). Off by default; no effect off wasm (read only in the wasm runner).
+    #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
+    web_ime: bool,
 }
 
 impl App {
@@ -55,6 +59,7 @@ impl App {
             root: Some(pebbles_widgets::OverlayHost::wrap(root).into_widget()),
             menu: None,
             text_direction: TextDirection::Ltr,
+            web_ime: false,
         }
     }
 
@@ -137,6 +142,17 @@ impl App {
     /// toggle at runtime with [`pebbles_widgets::set_text_direction`].
     pub fn text_direction(mut self, dir: TextDirection) -> Self {
         self.text_direction = dir;
+        self
+    }
+
+    /// Enable the **web IME bridge** (opt-in, web-only): a hidden `<input>` that
+    /// captures CJK/dead-key composition and raises the mobile soft keyboard, then
+    /// forwards it to the focused text editor. winit can't do IME on a `<canvas>`
+    /// (winit#4424), so this is the standard workaround. Off by default — plain
+    /// physical-keyboard typing on desktop browsers works without it. No effect off
+    /// wasm. See `documentations/web-support.md` §4.7.
+    pub fn web_ime(mut self, on: bool) -> Self {
+        self.web_ime = on;
         self
     }
 

@@ -80,10 +80,16 @@ accesskit_winit = "0.34.0"
 # message + stack in the browser console instead of an opaque "unreachable". See
 # documentations/web-support.md §4.1 / §4.6.
 [target.'cfg(target_family = "wasm")'.dependencies]
+wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 console_error_panic_hook = "0.1"
-# `navigator.clipboard.writeText` so Pebbles copies reach the OS clipboard.
-web-sys = { version = "0.3", features = ["Window", "Navigator", "Clipboard"] }
+# `navigator.clipboard.writeText` (copy-out) + the hidden-input IME bridge
+# (App::web_ime): a hidden <input> hosting composition/typed text/editing keys.
+web-sys = { version = "0.3", features = [
+    "Window", "Navigator", "Clipboard",
+    "Document", "Element", "Node", "HtmlElement", "HtmlInputElement", "EventTarget",
+    "Event", "InputEvent", "CompositionEvent", "KeyboardEvent",
+] }
 
 [lints]
 workspace = true

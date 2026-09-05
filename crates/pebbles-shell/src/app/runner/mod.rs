@@ -202,9 +202,14 @@ fn install_clipboard() {
 /// [`Runner::user_event`]). Desktop builds the surface synchronously and never
 /// sends one — the variant is dead there.
 #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
-pub(super) enum PebblesUserEvent {
+// One transient event in flight at a time (a startup handoff / an IME wake), never
+// stored in bulk — boxing the big variant would just add an allocation per frame.
+#[allow(clippy::large_enum_variant)]
+pub(crate) enum PebblesUserEvent {
     /// The async GPU init finished: install the context + first surface.
     SurfaceReady { context: RenderContext, surface: RenderSurface<'static>, window: Arc<Window> },
+    /// (web) The hidden-input IME bridge queued edit intents — wake to drain them.
+    WebImeInput,
 }
 
 /// The live window + its GPU surface.
@@ -275,6 +280,9 @@ pub(super) struct Runner {
     /// fires again before it lands.
     #[cfg(target_family = "wasm")]
     gpu_pending: bool,
+    /// (web) Whether the opt-in hidden-input IME bridge is on (`App::web_ime`).
+    #[cfg(target_family = "wasm")]
+    web_ime: bool,
     renderers: Vec<Option<Renderer>>,
     /// The [`GPU_ERRORS`] count already recovered from (see `recover_gpu_if_poisoned`).
     gpu_errors_seen: u64,
@@ -359,6 +367,8 @@ impl Runner {
             proxy: None,
             #[cfg(target_family = "wasm")]
             gpu_pending: false,
+            #[cfg(target_family = "wasm")]
+            web_ime: app.web_ime,
             renderers: Vec::new(),
             gpu_errors_seen: 0,
             last_gpu_reset: None,
@@ -449,6 +459,12 @@ impl Runner {
         #[cfg(target_family = "wasm")]
         {
             self.gpu_pending = false;
+            // Install the opt-in hidden-input IME bridge now that the loop is live.
+            if self.web_ime
+                && let Some(proxy) = self.proxy.clone()
+            {
+                crate::web_ime::enable(proxy);
+            }
         }
         // Ensure a renderer exists for this surface's device.
         self.renderers.resize_with(self.context.as_ref().unwrap().devices.len(), || None);
@@ -692,6 +708,21 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 self.context = Some(context);
                 self.on_gpu_ready(window, surface);
             }
+            // (web) The hidden-input IME bridge queued edit intents; drain them into
+            // the focused editor. Never sent off wasm.
+            PebblesUserEvent::WebImeInput => {
+                #[cfg(target_family = "wasm")]
+                {
+                    self.ui.make_current();
+                    let mut handled = false;
+                    for key in crate::web_ime::drain() {
+                        handled |= self.ui.dispatch_key(key);
+                    }
+                    if handled {
+                        self.request_redraw();
+                    }
+                }
+            }
         }
     }
 
@@ -890,6 +921,13 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             }
 
             WindowEvent::KeyboardInput { event, .. } => {
+                // (web) When the IME bridge is on and a text editor is focused, the
+                // hidden <input> owns keystrokes — skip winit's handling to avoid
+                // double entry. Non-editor keys (nothing focused) still flow here.
+                #[cfg(target_family = "wasm")]
+                if self.web_ime && pebbles_core::focus::focused_is_editor() {
+                    return;
+                }
                 if event.state == ElementState::Pressed {
                     // F2: Mod+Shift+I toggles the widget inspector (devtools v1).
                     if (self.ctrl_down || self.meta_down)
@@ -1004,6 +1042,12 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // (web) Raise/lower the hidden IME input to match whether a text editor is
+        // focused (soft keyboard + composition appear exactly when editing).
+        #[cfg(target_family = "wasm")]
+        if self.web_ime {
+            crate::web_ime::sync_focus();
+        }
         // B3: deliver native-menu clicks on the UI thread (make_current so callback
         // signal writes mark the right components dirty), then repaint if anything ran.
         #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
