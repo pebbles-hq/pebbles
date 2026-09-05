@@ -172,6 +172,8 @@ impl LineTable {
                 builder.push_default(StyleProperty::FontWeight(FontWeight::new(s.weight)));
                 builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(s.line_height)));
                 builder.push_default(StyleProperty::Brush(s.brush.clone()));
+                // Bundled default font, or text is blank on web/mobile (see fonts::DEFAULT_FAMILY).
+                builder.push_default(StyleProperty::FontFamily(crate::fonts::DEFAULT_FAMILY.into()));
                 let mut layout: Layout<Brush> = builder.build(text);
                 layout.break_all_lines(Some(s.width as f32));
                 layout.align(Alignment::Start, AlignmentOptions::default());

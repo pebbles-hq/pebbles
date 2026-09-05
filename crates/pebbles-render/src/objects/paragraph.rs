@@ -269,9 +269,11 @@ impl RenderParagraph {
         if self.style.strikethrough {
             builder.push_default(StyleProperty::Strikethrough(true));
         }
-        if let Some(family) = &self.style.font_family {
-            builder.push_default(StyleProperty::FontFamily(family.as_str().into()));
-        }
+        // Always set a family. Default to a BUNDLED font (Inter) rather than parley's
+        // generic default, which resolves via system fonts — empty on web/mobile, so
+        // an unset family renders no glyphs there. See fonts::DEFAULT_FAMILY.
+        let family = self.style.font_family.as_deref().unwrap_or(crate::fonts::DEFAULT_FAMILY);
+        builder.push_default(StyleProperty::FontFamily(family.into()));
         // Ranged overrides (rich text): each span pushes only the properties it
         // changes, over its byte range — one shaped layout for the whole block.
         for span in &self.spans {

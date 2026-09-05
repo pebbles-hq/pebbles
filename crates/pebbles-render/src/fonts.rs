@@ -15,6 +15,13 @@ use parley::fontique::{Blob, FontInfoOverride};
 /// precedence over same-named system fonts.
 pub const BUILTIN_FAMILIES: &[&str] = &["Inter", "JetBrains Mono", "Space Grotesk", "Lora"];
 
+/// The default UI font when text specifies no family. It MUST be a bundled family
+/// (not a generic like "sans-serif") so text renders on every platform — on web
+/// and mobile there is no system-font fallback, so an unresolved generic family
+/// produces NO glyphs (the "icons render but text is missing" web bug). This is
+/// the same choice Flutter makes by bundling a default font.
+pub const DEFAULT_FAMILY: &str = "Inter";
+
 /// Built-in font files: `(family name, bytes)`.
 pub fn builtin_fonts() -> &'static [(&'static str, &'static [u8])] {
     &[
