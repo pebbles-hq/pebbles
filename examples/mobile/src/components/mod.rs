@@ -5,5 +5,6 @@ pub mod bits;
 pub mod comments;
 pub mod compose;
 mod post_card;
+pub mod post_menu;
 
 pub use post_card::post_card;

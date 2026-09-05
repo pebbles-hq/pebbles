@@ -188,6 +188,16 @@ pub fn add_comment(id: u64, text: &str) {
     edit_post(id, |p| p.comments.push(Comment { author: ME, text: text.to_string() }));
 }
 
+/// Delete one of the current user's own posts (guards against deleting others').
+pub fn delete_post(id: u64) {
+    let mine = post(id).is_some_and(|p| p.author == ME);
+    if !mine {
+        return;
+    }
+    posts().update(|v| v.retain(|p| p.id != id));
+    toast("Post deleted").show();
+}
+
 /// Follow / unfollow another user (updates their follower count + our button).
 pub fn toggle_follow(id: u64) {
     if id == ME {
@@ -382,5 +392,138 @@ fn seed_notifs() -> Vec<Notif> {
         Notif { kind: NotifKind::Comment, actor: 4, read: false, time: "1h".into() },
         Notif { kind: NotifKind::Like, actor: 5, read: true, time: "3h".into() },
         Notif { kind: NotifKind::Follow, actor: 4, read: true, time: "1d".into() },
+    ]
+}
+
+// ===========================================================================
+// Messaging — conversations + a tiny full-screen router
+// ===========================================================================
+
+#[derive(Clone)]
+pub struct Message {
+    pub from: u64,
+    pub text: String,
+    pub time: String,
+}
+
+#[derive(Clone)]
+pub struct Conversation {
+    pub id: u64,
+    pub user: u64, // the other participant
+    pub messages: Vec<Message>,
+    pub unread: u32,
+}
+
+/// The messaging surface's route — a full-screen takeover with two levels.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum MsgView {
+    Closed,
+    List,
+    Thread(u64),
+}
+
+thread_local! {
+    static CONVOS: RefCell<Option<Signal<Vec<Conversation>>>> = const { RefCell::new(None) };
+    static MSG_VIEW: RefCell<Option<Signal<MsgView>>> = const { RefCell::new(None) };
+}
+
+pub fn convos() -> Signal<Vec<Conversation>> {
+    CONVOS.with(|c| *c.borrow_mut().get_or_insert_with(|| create_root_signal(seed_convos())))
+}
+fn msg_view() -> Signal<MsgView> {
+    MSG_VIEW.with(|c| *c.borrow_mut().get_or_insert_with(|| create_root_signal(MsgView::Closed)))
+}
+
+// --- reads ------------------------------------------------------------------
+
+pub fn messages_view() -> MsgView {
+    msg_view().get()
+}
+pub fn messages_open() -> bool {
+    messages_view() != MsgView::Closed
+}
+pub fn conversations() -> Vec<Conversation> {
+    convos().get()
+}
+pub fn convo(id: u64) -> Option<Conversation> {
+    convos().get().into_iter().find(|c| c.id == id)
+}
+/// Total unread messages (drives the top-bar badge).
+pub fn unread_messages() -> usize {
+    convos().get().iter().map(|c| c.unread as usize).sum()
+}
+
+// --- navigation actions -----------------------------------------------------
+
+pub fn open_messages() {
+    msg_view().set(MsgView::List);
+}
+pub fn open_thread(id: u64) {
+    // Opening a thread clears its unread count.
+    convos().update(|v| {
+        if let Some(c) = v.iter_mut().find(|c| c.id == id) {
+            c.unread = 0;
+        }
+    });
+    msg_view().set(MsgView::Thread(id));
+}
+/// Back: a thread returns to the list; the list closes messaging.
+pub fn messages_back() {
+    match messages_view() {
+        MsgView::Thread(_) => msg_view().set(MsgView::List),
+        _ => msg_view().set(MsgView::Closed),
+    }
+}
+
+/// Send a message in a conversation, then fake a friendly reply (the illusion).
+pub fn send_message(id: u64, text: &str) {
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    let reply = {
+        const REPLIES: [&str; 5] =
+            ["Nice! 🙌", "Haha for real", "Let's ship it 🚀", "Agreed 💯", "On it — talk soon!"];
+        let n = convo(id).map(|c| c.messages.len()).unwrap_or(0);
+        REPLIES[n % REPLIES.len()]
+    };
+    convos().update(|v| {
+        if let Some(c) = v.iter_mut().find(|c| c.id == id) {
+            c.messages.push(Message { from: ME, text: text.to_string(), time: "now".into() });
+            c.messages.push(Message { from: c.user, text: reply.into(), time: "now".into() });
+        }
+    });
+}
+
+fn seed_convos() -> Vec<Conversation> {
+    vec![
+        Conversation {
+            id: 1,
+            user: 2,
+            unread: 2,
+            messages: vec![
+                Message { from: 2, text: "Did you try the new sheet fix?".into(), time: "10:02".into() },
+                Message { from: 1, text: "Yeah, taps stay put now 🎉".into(), time: "10:03".into() },
+                Message { from: 2, text: "Perfect. Ship it.".into(), time: "10:04".into() },
+                Message {
+                    from: 2, text: "Also — the dog logo looks great 🐶".into(), time: "10:05".into()
+                },
+            ],
+        },
+        Conversation {
+            id: 2,
+            user: 3,
+            unread: 0,
+            messages: vec![
+                Message { from: 1, text: "Compiler question for you 👀".into(), time: "Mon".into() },
+                Message { from: 3, text: "Always. Fire away.".into(), time: "Mon".into() },
+            ],
+        },
+        Conversation {
+            id: 3,
+            user: 5,
+            unread: 1,
+            messages: vec![Message { from: 5, text: "Loved your last post!".into(), time: "Sun".into() }],
+        },
     ]
 }

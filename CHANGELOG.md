@@ -14,6 +14,14 @@ now wraps its surface in a tap-consuming `GestureDetector` (Flutter's modal cont
 absorbs pointer events); only a tap on the scrim *outside* the panel dismisses.
 Regression-tested (`tests/suite/sheet_dismiss.rs`).
 
+### Added — `mobile`: direct messaging + delete-your-post
+Grew the social sample further: a **direct-messaging** surface (a full-screen
+takeover with a conversation list + threads, chat bubbles, an input bar, a faked
+reply, and an unread badge on a **top-right messages button**), a **dog logo** on
+the top bar's leading edge, and **delete-your-own-post** via the `⋯` menu → an
+alert-dialog confirm. More `store.rs` state + `screens/messages.rs` +
+`components/post_menu.rs`.
+
 ### Added — `mobile` is now a full social app
 The `mobile` example grew from a layout sketch into a **fully functional** social
 app, driven entirely by in-memory state (no server — the illusion is all

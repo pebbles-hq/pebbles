@@ -6,6 +6,7 @@ use pebbles::prelude::*;
 
 use super::bits::avatar;
 use super::comments::open_comments;
+use super::post_menu::open_post_menu;
 use crate::store::{self, Post};
 
 pub fn post_card(post: &Post) -> impl IntoWidget {
@@ -23,7 +24,7 @@ pub fn post_card(post: &Post) -> impl IntoWidget {
         .cross_axis_alignment(CrossAxisAlignment::Start)
         .main_axis_size(MainAxisSize::Min),
         spacer(),
-        follow_or_menu(&author),
+        follow_or_menu(&author, post.id),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center);
 
@@ -64,9 +65,13 @@ pub fn post_card(post: &Post) -> impl IntoWidget {
         )
 }
 
-fn follow_or_menu(author: &store::User) -> AnyWidget {
+fn follow_or_menu(author: &store::User, post_id: u64) -> AnyWidget {
     if author.id == store::ME {
-        icon_button(lucide::ELLIPSIS).variant(ButtonVariant::Ghost).into_widget()
+        // Your own post: a ⋯ menu (delete, etc.).
+        icon_button(lucide::ELLIPSIS)
+            .variant(ButtonVariant::Ghost)
+            .on_pressed(move || open_post_menu(post_id))
+            .into_widget()
     } else {
         let id = author.id;
         super::bits::pill(if author.i_follow { "Following" } else { "Follow" }, !author.i_follow, move || {
