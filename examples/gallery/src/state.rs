@@ -174,6 +174,23 @@ pub const NAV: &[NavGroup] = &[
         ],
     },
     NavGroup {
+        label: "LAYOUT (LONG-TAIL)",
+        routes: &[
+            ("indexed-stack", lucide::LAYERS, "Indexed Stack"),
+            ("offstage", lucide::BOX, "Offstage"),
+            ("visibility", lucide::BOX, "Visibility"),
+            ("baseline", lucide::COLUMNS_2, "Baseline"),
+            ("rotated-box", lucide::WAND, "Rotated Box"),
+            ("unconstrained-box", lucide::BOX, "Unconstrained Box"),
+            ("sized-overflow-box", lucide::BOX, "Sized Overflow Box"),
+            ("fractional-translation", lucide::MOVE_VERTICAL, "Fractional Translation"),
+            ("table-layout", lucide::LAYOUT_GRID, "Table (layout)"),
+            ("custom-single-child", lucide::BOX, "Custom Single Child"),
+            ("custom-multi-child", lucide::LAYOUT_GRID, "Custom Multi Child"),
+            ("layout-builder", lucide::COLUMNS_2, "Layout Builder"),
+        ],
+    },
+    NavGroup {
         label: "NAVIGATION",
         routes: &[
             ("tabs", lucide::SQUARE_STACK, "Tabs"),

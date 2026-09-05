@@ -26,6 +26,7 @@ mod global_menu;
 mod hovercard_menubar;
 mod ime;
 mod interactions;
+mod layout_extra;
 mod lifecycle;
 mod list_auto;
 mod list_tile;

@@ -41,14 +41,15 @@ pub use fonts::{
 pub use object::{HitBehavior, RenderObject};
 pub use objects::{
     Canvas, Cursor, FlexParentData, IconData, IconKind, IconPrim, ParagraphStyle, PointerButton,
-    PointerEvent, RefreshState, RenderAlign, RenderAspectRatio, RenderBoundary, RenderCanvas,
-    RenderClipRRect, RenderColoredBox, RenderConstrainedBox, RenderDecoratedBox, RenderFittedBox, RenderFlex,
-    RenderFractionallySizedBox, RenderIcon, RenderIntrinsicHeight, RenderIntrinsicWidth, RenderLimitedBox,
-    RenderList, RenderMeasureProbe, RenderOpacity, RenderOverflowBox, RenderPadding, RenderParagraph,
-    RenderPointerBarrier, RenderPointerListener, RenderScroll, RenderSpinner, RenderStack, RenderTextField,
-    RenderTransform, RenderView, RenderWrap, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode,
-    SemanticsProps, SemanticsRole, StackFit, StackParentData, TapCallback, TextFieldStyle, TextSpanStyle,
-    lucide,
+    PointerEvent, RefreshState, RenderAlign, RenderAspectRatio, RenderBaseline, RenderBoundary, RenderCanvas,
+    RenderClipRRect, RenderColoredBox, RenderConstrainedBox, RenderCustomMultiChild, RenderCustomSingleChild,
+    RenderDecoratedBox, RenderFittedBox, RenderFlex, RenderFractionalTranslation, RenderFractionallySizedBox,
+    RenderIcon, RenderIntrinsicHeight, RenderIntrinsicWidth, RenderLimitedBox, RenderList,
+    RenderMeasureProbe, RenderOffstage, RenderOpacity, RenderOverflowBox, RenderPadding, RenderParagraph,
+    RenderPointerBarrier, RenderPointerListener, RenderRotatedBox, RenderScroll, RenderSizedOverflowBox,
+    RenderSpinner, RenderStack, RenderTable, RenderTextField, RenderTransform, RenderView, RenderWrap,
+    ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps, SemanticsRole, SizeFn,
+    StackFit, StackParentData, TableColumnWidth, TapCallback, TextFieldStyle, TextSpanStyle, lucide,
 };
 pub use text::TextEnv;
 pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};

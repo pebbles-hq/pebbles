@@ -20,6 +20,7 @@ mod gesture;
 mod interactive_viewer;
 mod keyed;
 mod layout;
+mod layout_extra;
 mod list;
 mod motion;
 mod pointer_control;
@@ -53,6 +54,12 @@ pub use gesture::{GestureDetector, gesture_detector};
 pub use interactive_viewer::{InteractiveViewer, interactive_viewer};
 pub use keyed::{Keyed, keyed};
 pub use layout::{AspectRatio, Wrap, aspect_ratio, wrap};
+pub use layout_extra::{
+    Baseline, CustomMultiChildLayout, CustomSingleChildLayout, FractionalTranslation, LayoutBuilder,
+    LayoutTable, Offstage, RotatedBox, SizedOverflowBox, Visibility, baseline, custom_multi_child_layout,
+    custom_single_child_layout, fractional_translation, indexed_stack, layout_builder, layout_table,
+    offstage, rotated_box, sized_overflow_box, unconstrained_box, visibility,
+};
 pub use list::{GridView, ListView, ScrollController, use_scroll_controller};
 pub use motion::{
     AnimatedAlign, AnimatedCrossFade, AnimatedOpacity, AnimatedPadding, AnimatedPositioned, AnimatedRotation,
@@ -63,6 +70,7 @@ pub use motion::{
     dismissible, fade_transition, positioned_transition, rotation_transition, scale_transition,
     size_transition, slide_transition,
 };
+pub use pebbles_render::TableColumnWidth;
 pub use pebbles_render::{ScrollbarPolicy, ScrollbarStyle, SemanticsProps, SemanticsRole};
 pub use pointer_control::{PointerControl, absorb_pointer, ignore_pointer};
 pub use probe::{ExtentProbe, extent_probe};

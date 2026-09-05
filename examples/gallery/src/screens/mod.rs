@@ -31,6 +31,7 @@ pub mod grid_view;
 pub mod icons;
 pub mod images;
 pub mod kbd;
+pub mod layout_extra;
 pub mod list;
 pub mod list_view;
 pub mod menubar;

@@ -57,6 +57,14 @@ remote-URL images) and their per-platform status live in
 | `FittedBox` · `FractionallySizedBox` | ✅ | BoxFit scale-to-fit · fraction-of-constraints sizing |
 | `IntrinsicWidth` · `IntrinsicHeight` | ✅ | shrink-wrap to child's intrinsic extent |
 | `LimitedBox` · `OverflowBox` | ✅ | unbounded-axis cap · unclipped overflow |
+| `UnconstrainedBox` · `SizedOverflowBox` | ✅ | size-to-child (clipped) · fixed size with child overflow |
+| `FractionalTranslation` · `RotatedBox` | ✅ | offset by a fraction of child size · quarter-turn that also rotates the layout box |
+| `Baseline` | ✅ | pin a child's text baseline a fixed distance below the top |
+| `Offstage` · `Visibility` | ✅ | collapse to zero (mounted, not painted/hit) · show/hide with `maintain_size`/`maintain_state`/`replacement` |
+| `IndexedStack` | ✅ | show one child, keep ALL children mounted (state preserved) |
+| `layout_table` (`LayoutTable`) | ✅ | column-negotiating grid (`Fixed`/`Fraction`/`Intrinsic`/`Flex`); Flutter's layout `Table` (renamed to avoid the data-table `table`) |
+| `CustomSingleChildLayout` · `CustomMultiChildLayout` | ✅ | offset-based custom layout via `.size()`/`.child_constraints()`/`.position()` delegates |
+| `LayoutBuilder` | ✅ | build against the available size (reads the previous frame's bounds — one frame behind on resize) |
 | `AnimatedContainer` | ✅ | implicit tween on width/height/color/radius/padding/margin/opacity |
 | Implicit `Animated*` (`AnimatedOpacity`/`Scale`/`Rotation`/`Slide`/`Align`/`Padding`) | ✅ | one-property implicit tweens (siblings of `AnimatedContainer`) |
 | Explicit `*Transition` (`Fade`/`Scale`/`Rotation`/`Slide`/`Size`/`Positioned`/`DecoratedBox`) | ✅ | `Signal`-driven (controller-style); `SizeTransition` via `Align` height/width-factor; `PositionedTransition` tracks a `Signal<Rect>`; `DecoratedBoxTransition` lerps a `BoxDecoration` (color/radius/border/shadow) by a `Signal<f64>` |
