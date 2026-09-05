@@ -202,6 +202,15 @@ pub const NAV: &[NavGroup] = &[
         ],
     },
     NavGroup {
+        label: "INPUT & FORMS (MORE)",
+        routes: &[
+            ("choice-chip", lucide::INBOX, "Choice Chip"),
+            ("filter-chip", lucide::INBOX, "Filter Chip"),
+            ("action-chip", lucide::INBOX, "Action Chip"),
+            ("stepper", lucide::LIST_ORDERED, "Stepper"),
+        ],
+    },
+    NavGroup {
         label: "NAVIGATION",
         routes: &[
             ("tabs", lucide::SQUARE_STACK, "Tabs"),

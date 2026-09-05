@@ -96,7 +96,7 @@ remote-URL images) and their per-platform status live in
 | `Radio` / `RadioGroup` | ✅ | |
 | `Switch` · `Toggle` | ✅ | |
 | `ToggleGroup` | ✅ | single/multi, joined segmented strip (C4 ✅) |
-| `Slider` | ✅ | drag + keyboard |
+| `Slider` | ✅ | drag + keyboard; single-thumb, or `.range(lo, hi)` for a two-thumb RangeSlider |
 | `TextField` / `text_area` | ✅ | 10 `InputKind`s (Text/Number/Integer/Decimal/Email/Url/Phone/Currency/Password/Search), bind/filter/format/max_length/obscured/leading/trailing/label/helper/error, IME preedit |
 | `InputOtp` | ✅ | groups, paste, `on_complete` |
 | `Field` | ✅ | generic label/description/error wrapper |
@@ -117,7 +117,8 @@ remote-URL images) and their per-platform status live in
 |--------|--------|-------|
 | typography (`heading`/`title`/`subtitle`/`body`/`label`/`muted`) | ✅ | full spec screen in gallery |
 | `Card` · `Badge` (5 variants) · `Alert` (4 variants) | ✅ | |
-| `Chip` | ✅ | deletable tag: icon + label + ✕ `on_deleted`, disabled |
+| `Chip` (+ `choice_chip` · `filter_chip` · `action_chip`) | ✅ | deletable tag (icon + label + ✕ `on_deleted`) = InputChip; plus `.selected()`/`.on_pressed()` for single-select (ChoiceChip), multi-select toggle with a check (FilterChip), and tappable (ActionChip) |
+| `Stepper` | ✅ | numbered step flow (vertical or `.horizontal()`); completed steps show a check, the current reveals its content; tappable headers via `.on_step_tapped()` |
 | `Avatar` / `AvatarGroup` | ✅ | shapes; initials |
 | `Separator` · `Kbd` · `Empty` | ✅ | |
 | `Skeleton` | ✅ | + shimmer |

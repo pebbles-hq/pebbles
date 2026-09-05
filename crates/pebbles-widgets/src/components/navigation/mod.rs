@@ -4,6 +4,7 @@ mod hero;
 mod menubar;
 mod nav;
 mod routing;
+mod stepper;
 mod tabs;
 
 pub use hero::{Hero, fly_heroes, hero, hero_rect};
@@ -13,4 +14,5 @@ pub use nav::{
     toolbar,
 };
 pub use routing::{NavStack, RouteView, route_view};
+pub use stepper::{Step, Stepper, step, stepper};
 pub use tabs::{Tabs, TabsVariant, tabs};

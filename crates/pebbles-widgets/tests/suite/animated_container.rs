@@ -7,11 +7,12 @@ use pebbles_core::IntoWidget;
 use pebbles_core::{Signal, Ui, animation, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{RenderConstrainedBox, RenderPointerListener, TextEnv};
-use pebbles_widgets::{View, animated_container, chip, column, gap_h};
+use pebbles_widgets::{View, animated_container, center, chip, choice_chip, column, gap_h};
 
 thread_local! {
     static WIDE: RefCell<Option<Signal<bool>>> = const { RefCell::new(None) };
     static DELETED: Cell<u32> = const { Cell::new(0) };
+    static CHOSEN: Cell<u32> = const { Cell::new(0) };
 }
 
 fn anim_shell() -> impl IntoWidget {
@@ -166,4 +167,21 @@ fn chip_paints_with_and_without_delete() {
     ui.layout(&mut env, Size::new(300.0, 200.0));
     let mut scene = pebbles_render::Scene::new();
     ui.paint(&mut env, &mut scene);
+}
+
+fn choice_chip_root() -> impl IntoWidget {
+    center(choice_chip("Medium").selected(true).on_pressed(|| CHOSEN.with(|c| c.set(c.get() + 1))))
+}
+
+#[test]
+fn choice_chip_fires_on_pressed_when_tapped() {
+    CHOSEN.with(|c| c.set(0));
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(View::new(palette::WHITE, component(choice_chip_root)).into_widget());
+    ui.layout(&mut env, Size::new(200.0, 120.0));
+
+    // The chip is centered; its tap gesture covers the pill. Tapping the middle fires.
+    assert!(ui.dispatch_tap(Offset::new(100.0, 60.0)), "the chip body is tappable");
+    assert_eq!(CHOSEN.with(Cell::get), 1, "on_pressed fired once");
 }

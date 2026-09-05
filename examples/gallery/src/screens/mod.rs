@@ -30,6 +30,7 @@ pub mod fonts;
 pub mod grid_view;
 pub mod icons;
 pub mod images;
+pub mod inputs_extra;
 pub mod kbd;
 pub mod layout_extra;
 pub mod list;

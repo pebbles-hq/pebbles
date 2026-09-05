@@ -157,6 +157,11 @@ pub fn app() -> impl IntoWidget {
         .route("clip-path", || component(screens::painting::clip_path_screen))
         .route("color-filtered", || component(screens::painting::color_filtered_screen))
         .route("shader-mask", || component(screens::painting::shader_mask_screen))
+        // Input & forms — additions (the base input set has its own screens).
+        .route("choice-chip", || component(screens::inputs_extra::choice_chip_screen))
+        .route("filter-chip", || component(screens::inputs_extra::filter_chip_screen))
+        .route("action-chip", || component(screens::inputs_extra::action_chip_screen))
+        .route("stepper", || component(screens::inputs_extra::stepper_screen))
         .route("canvas", || component(screens::canvas::canvas_screen))
         .route("resizable", || component(screens::resizable::resizables))
         .route("badge", || component(screens::badge::badges))

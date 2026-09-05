@@ -20,13 +20,34 @@ pub struct Chip {
     icon_kind: Option<IconData>,
     deletable: bool,
     disabled: bool,
+    selected: bool,
+    show_check: bool,
     on_deleted: Option<Callback>,
+    on_pressed: Option<Callback>,
     style: Option<Style>,
 }
 
-/// Create a [`Chip`] with a text label.
+/// Create a [`Chip`] with a text label (Flutter's deletable/input chip).
 pub fn chip(label: impl Into<String>) -> Chip {
     Chip { label: label.into(), ..Default::default() }
+}
+
+/// A single-select chip: give it a `selected` state and an `on_pressed` that selects
+/// it (the owner enforces one-at-a-time). Flutter's `ChoiceChip`.
+pub fn choice_chip(label: impl Into<String>) -> Chip {
+    chip(label)
+}
+
+/// A multi-select toggle chip that shows a leading check when selected. Flutter's
+/// `FilterChip` — wire `on_pressed` to flip its `selected` in your set.
+pub fn filter_chip(label: impl Into<String>) -> Chip {
+    chip(label).show_check(true)
+}
+
+/// A tappable action chip (no selected state). Flutter's `ActionChip` — attach
+/// `on_pressed`.
+pub fn action_chip(label: impl Into<String>) -> Chip {
+    chip(label)
 }
 
 impl Chip {
@@ -43,6 +64,23 @@ impl Chip {
     /// Disable the chip (muted presentation, no delete affordance).
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+    /// Selected state — a filled (primary) presentation, plus a leading check when
+    /// [`show_check`](Self::show_check) is set. Drives `ChoiceChip`/`FilterChip`.
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+    /// Show a leading check when selected (the `FilterChip` look). Default `false`.
+    pub fn show_check(mut self, show: bool) -> Self {
+        self.show_check = show;
+        self
+    }
+    /// Called when the chip body is tapped (selection or an action). Independent of
+    /// the ✕ delete affordance.
+    pub fn on_pressed(mut self, cb: impl Fn() + 'static) -> Self {
+        self.on_pressed = Some(pebbles_core::action(cb));
         self
     }
     /// Called when the ✕ is pressed. The chip itself is NOT removed from the tree
@@ -64,6 +102,8 @@ impl IntoWidget for Chip {
         let c = theme().colors;
         let (bg, fg, border) = if self.disabled {
             (Some(c.muted), c.muted_foreground, false)
+        } else if self.selected {
+            (Some(c.primary), c.primary_foreground, false)
         } else {
             (Some(c.secondary), c.secondary_foreground, true)
         };
@@ -75,6 +115,11 @@ impl IntoWidget for Chip {
             base = base.border(pebbles_render::Border::new(c.border, 1.0));
         }
         let mut row_items: Vec<AnyWidget> = Vec::new();
+        // A leading check for a selected FilterChip.
+        if self.selected && self.show_check && !self.disabled {
+            row_items.push(icon(IconKind::Check).size(14.0).color(fg).into_widget());
+            row_items.push(gap_w(6.0).into_widget());
+        }
         if let Some(kind) = self.icon_kind.take() {
             row_items.push(icon(kind).size(14.0).color(fg).into_widget());
             row_items.push(gap_w(6.0).into_widget());
@@ -92,6 +137,14 @@ impl IntoWidget for Chip {
                     .into_widget();
             }
         }
-        styled(body, base.merge(self.style.take().unwrap_or_default()))
+        let pill = styled(body, base.merge(self.style.take().unwrap_or_default()));
+        // Tappable (choice / filter / action chips): wrap in a gesture with a pointer.
+        match self.on_pressed.take() {
+            Some(on_pressed) if !self.disabled => crate::widgets::GestureDetector::new(pill)
+                .on_tap(on_pressed)
+                .cursor(pebbles_render::Cursor::Pointer)
+                .into_widget(),
+            _ => pill.into_widget(),
+        }
     }
 }
