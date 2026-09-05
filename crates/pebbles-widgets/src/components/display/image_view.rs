@@ -17,9 +17,9 @@ use pebbles_foundation::{Alignment, EdgeInsets};
 use pebbles_render::{BorderRadius, BoxDecoration, Image, ImageFit, image_from_rgba8};
 
 use crate::theme::theme;
-use crate::widgets::{Container, spinner, text};
+use crate::widgets::{Container, Opacity, spinner, stack, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Signal, component_props, create_effect, create_signal, spawn};
+use pebbles_core::{Signal, animated, component_props, create_effect, create_signal, spawn};
 
 // ---------------------------------------------------------------------------
 // Async network loader
@@ -292,4 +292,150 @@ fn render_image_view(p: &Props) -> AnyWidget {
             ImageState::Failed(_) => error_box(p),
         },
     }
+}
+
+// ---------------------------------------------------------------------------
+// FadeInImage — a placeholder that cross-fades to a network image on load
+// ---------------------------------------------------------------------------
+
+/// A network image that **fades in over a placeholder** once it decodes — Flutter's
+/// `FadeInImage`. The placeholder (any widget: a low-res asset [`ImageView`], a
+/// solid box, a shimmer) shows immediately; the loaded image cross-fades on top.
+/// Build with [`fade_in_image`].
+pub struct FadeInImage {
+    url: String,
+    placeholder: Option<AnyWidget>,
+    fit: ImageFit,
+    width: Option<f64>,
+    height: Option<f64>,
+    radius: Option<BorderRadius>,
+    fade_secs: f64,
+}
+
+/// A [`FadeInImage`] that loads `url` from the network (native only — see
+/// [`ImageView::network`]).
+pub fn fade_in_image(url: impl Into<String>) -> FadeInImage {
+    FadeInImage {
+        url: url.into(),
+        placeholder: None,
+        fit: ImageFit::Cover,
+        width: None,
+        height: None,
+        radius: None,
+        fade_secs: 0.4,
+    }
+}
+
+impl FadeInImage {
+    /// The widget shown until (and behind) the loaded image.
+    pub fn placeholder(mut self, widget: impl IntoWidget) -> Self {
+        self.placeholder = Some(widget.into_widget());
+        self
+    }
+    pub fn fit(mut self, fit: ImageFit) -> Self {
+        self.fit = fit;
+        self
+    }
+    pub fn width(mut self, width: f64) -> Self {
+        self.width = Some(width);
+        self
+    }
+    pub fn height(mut self, height: f64) -> Self {
+        self.height = Some(height);
+        self
+    }
+    pub fn size(self, width: f64, height: f64) -> Self {
+        self.width(width).height(height)
+    }
+    pub fn radius(mut self, radius: BorderRadius) -> Self {
+        self.radius = Some(radius);
+        self
+    }
+    /// The cross-fade duration in seconds (default `0.4`).
+    pub fn fade(mut self, secs: f64) -> Self {
+        self.fade_secs = secs.max(0.0);
+        self
+    }
+}
+
+struct FadeProps {
+    url: String,
+    placeholder: Option<AnyWidget>,
+    fit: ImageFit,
+    width: Option<f64>,
+    height: Option<f64>,
+    radius: Option<BorderRadius>,
+    fade_secs: f64,
+}
+
+impl IntoWidget for FadeInImage {
+    fn into_widget(self) -> AnyWidget {
+        component_props(
+            render_fade_in_image,
+            FadeProps {
+                url: self.url,
+                placeholder: self.placeholder,
+                fit: self.fit,
+                width: self.width,
+                height: self.height,
+                radius: self.radius,
+                fade_secs: self.fade_secs,
+            },
+        )
+        .into_widget()
+    }
+}
+
+fn fade_sized(mut c: Container, p: &FadeProps) -> Container {
+    if let Some(w) = p.width {
+        c = c.width(w);
+    }
+    if let Some(h) = p.height {
+        c = c.height(h);
+    }
+    c
+}
+
+fn fade_image_box(img: &Image, p: &FadeProps) -> AnyWidget {
+    let mut deco = BoxDecoration::new().image(img.clone()).image_fit(p.fit);
+    if let Some(r) = p.radius {
+        deco = deco.radius(r);
+    }
+    let mut c = Container::new().decoration(deco);
+    if p.radius.is_some() {
+        c = c.clip();
+    }
+    fade_sized(c, p).into_widget()
+}
+
+fn fade_placeholder(p: &FadeProps) -> AnyWidget {
+    match &p.placeholder {
+        Some(w) => w.clone(),
+        None => {
+            let mut deco = BoxDecoration::new().color(theme().colors.secondary);
+            if let Some(r) = p.radius {
+                deco = deco.radius(r);
+            }
+            fade_sized(Container::new().decoration(deco), p).into_widget()
+        }
+    }
+}
+
+fn render_fade_in_image(p: &FadeProps) -> AnyWidget {
+    let net_url = create_signal(String::new());
+    if net_url.peek() != p.url {
+        net_url.set(p.url.clone());
+    }
+    let loaded = match use_network(net_url).get() {
+        ImageState::Loaded(img) => Some(img),
+        _ => None, // loading or failed → the placeholder holds
+    };
+    // Animate opacity 0 → 1 once the image is available (the cross-fade).
+    let opacity = animated(if loaded.is_some() { 1.0 } else { 0.0 }, p.fade_secs) as f32;
+
+    let mut layers: Vec<AnyWidget> = vec![fade_placeholder(p)];
+    if let Some(img) = loaded {
+        layers.push(Opacity::new(opacity, fade_image_box(&img, p)).into_widget());
+    }
+    stack(layers).into_widget()
 }

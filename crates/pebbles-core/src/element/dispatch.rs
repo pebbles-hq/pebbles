@@ -657,6 +657,12 @@ impl Ui {
 
     /// End any active scrollbar drag.
     pub fn end_scrollbar_drag(&mut self) {
+        if let Some(rid) = self.scrollbar_drag
+            && self.render.contains(rid)
+            && let Some(s) = self.render.object_mut(rid).downcast_mut::<RenderScroll>()
+        {
+            s.end_scroll_activity(); // fire the closing ScrollEvent::End
+        }
         self.scrollbar_drag = None;
     }
 

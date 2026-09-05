@@ -44,6 +44,9 @@ pub struct Scaffold {
     bottom: Option<AnyWidget>,
     fab: Option<AnyWidget>,
     persistent_footer: Option<AnyWidget>,
+    bottom_sheet: Option<AnyWidget>,
+    drawer: Option<AnyWidget>,
+    end_drawer: Option<AnyWidget>,
     background: Option<Color>,
 }
 
@@ -56,6 +59,9 @@ pub fn scaffold(body: impl IntoWidget) -> Scaffold {
         bottom: None,
         fab: None,
         persistent_footer: None,
+        bottom_sheet: None,
+        drawer: None,
+        end_drawer: None,
         background: None,
     }
 }
@@ -85,16 +91,89 @@ impl Scaffold {
         self.persistent_footer = Some(footer.into_widget());
         self
     }
+    /// A **persistent** (non-modal) bottom sheet pinned above the bottom bar — always
+    /// visible, part of the layout, with a top divider (Flutter's `Scaffold.bottomSheet`).
+    /// For a dismissible, scrim-backed sheet use the [`sheet`](crate::sheet) service.
+    pub fn bottom_sheet(mut self, sheet: impl IntoWidget) -> Self {
+        self.bottom_sheet = Some(sheet.into_widget());
+        self
+    }
+    /// A left drawer opened by [`open_drawer`] (or [`drawer_button`]) — Flutter's
+    /// `Scaffold.drawer`. Registered per-window on build; it slides in as a
+    /// [`sheet`](crate::sheet) from the left.
+    pub fn drawer(mut self, drawer: impl IntoWidget) -> Self {
+        self.drawer = Some(drawer.into_widget());
+        self
+    }
+    /// A right (end) drawer opened by [`open_end_drawer`] — Flutter's
+    /// `Scaffold.endDrawer`. Slides in as a [`sheet`](crate::sheet) from the right.
+    pub fn end_drawer(mut self, drawer: impl IntoWidget) -> Self {
+        self.end_drawer = Some(drawer.into_widget());
+        self
+    }
     pub fn background(mut self, color: Color) -> Self {
         self.background = Some(color);
         self
     }
 }
 
+// ---------------------------------------------------------------------------
+// Drawer registry — Scaffold registers its (end-)drawer content per window so the
+// free `open_drawer`/`open_end_drawer` functions can present it via the sheet
+// service. Presentation lives in the conversation/app layer, not inside a render.
+// ---------------------------------------------------------------------------
+
+/// A window's registered `(drawer, end_drawer)` content.
+type DrawerSlots = (Option<AnyWidget>, Option<AnyWidget>);
+
+thread_local! {
+    static DRAWERS: std::cell::RefCell<std::collections::HashMap<u32, DrawerSlots>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// The drawer width used by [`open_drawer`]/[`open_end_drawer`] (logical px).
+const DRAWER_WIDTH: f64 = 300.0;
+
+fn register_drawers(drawer: Option<AnyWidget>, end_drawer: Option<AnyWidget>) {
+    let window = pebbles_core::reactive::current_window();
+    DRAWERS.with(|d| {
+        d.borrow_mut().insert(window, (drawer, end_drawer));
+    });
+}
+
+/// Open the current window's [`Scaffold::drawer`] as a left sheet. No-op if the
+/// scaffold declared no drawer.
+pub fn open_drawer() {
+    let window = pebbles_core::reactive::current_window();
+    let content = DRAWERS.with(|d| d.borrow().get(&window).and_then(|(l, _)| l.clone()));
+    if let Some(content) = content {
+        crate::sheet(content).side(Side::Left).size(DRAWER_WIDTH).open();
+    }
+}
+
+/// Open the current window's [`Scaffold::end_drawer`] as a right sheet. No-op if the
+/// scaffold declared no end drawer.
+pub fn open_end_drawer() {
+    let window = pebbles_core::reactive::current_window();
+    let content = DRAWERS.with(|d| d.borrow().get(&window).and_then(|(_, r)| r.clone()));
+    if let Some(content) = content {
+        crate::sheet(content).side(Side::Right).size(DRAWER_WIDTH).open();
+    }
+}
+
+/// A hamburger button that opens the [`Scaffold::drawer`] — drop it in a
+/// [`TopPanel::leading`] slot (Flutter auto-inserts this; Pebbles keeps it explicit).
+pub fn drawer_button() -> AnyWidget {
+    crate::components::icon_button(pebbles_render::lucide::MENU).on_pressed(open_drawer).into_widget()
+}
+
 impl IntoWidget for Scaffold {
     fn into_widget(mut self) -> AnyWidget {
         let bg = self.background.unwrap_or(theme().colors.background);
         let body = self.body.take().unwrap_or_else(|| gap_h(0.0).into_widget());
+
+        // Register (end-)drawer content so open_drawer/open_end_drawer can present it.
+        register_drawers(self.drawer.take(), self.end_drawer.take());
 
         // side (fixed) + body (fills)
         let mut middle: AnyWidget = match self.side.take() {
@@ -122,6 +201,18 @@ impl IntoWidget for Scaffold {
                     .decoration(BoxDecoration::new().color(c.background).border(Border::new(c.border, 1.0)))
                     .padding(EdgeInsets::symmetric(12.0, 8.0))
                     .child(footer)
+                    .into_widget(),
+            );
+        }
+        // A persistent (non-modal) bottom sheet sits above the bottom bar: a card
+        // surface with a top divider, always part of the layout.
+        if let Some(sheet) = self.bottom_sheet.take() {
+            let c = theme().colors;
+            col.push(
+                Container::new()
+                    .decoration(BoxDecoration::new().color(c.card).border(Border::new(c.border, 1.0)))
+                    .padding(EdgeInsets::all(16.0))
+                    .child(sheet)
                     .into_widget(),
             );
         }

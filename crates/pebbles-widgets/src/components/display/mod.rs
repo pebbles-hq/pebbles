@@ -30,7 +30,7 @@ pub use grid_tile::{GridTile, GridTileBar, grid_tile, grid_tile_bar};
 pub use hover_card::{HoverCard, hover_card};
 pub use icon::{Icon, icon};
 #[cfg(feature = "image-view")]
-pub use image_view::ImageView;
+pub use image_view::{FadeInImage, ImageView, fade_in_image};
 pub use kbd::{Kbd, kbd};
 pub use list_tile::{ListTile, list_tile};
 pub use placeholder::{Placeholder, placeholder};

@@ -11,14 +11,14 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, Offset, Size};
+use pebbles_foundation::{Alignment, Axis, CrossAxisAlignment, MainAxisSize, Offset, Size};
 use pebbles_render::{
     Affine, BorderRadius, BoxConstraints, RenderBaseline, RenderCustomMultiChild, RenderCustomSingleChild,
     RenderFlow, RenderFractionalTranslation, RenderObject, RenderOffstage, RenderRotatedBox,
     RenderSizedOverflowBox, RenderTable, SizeFn, TableColumnWidth,
 };
 
-use crate::widgets::{Opacity, SizedBox, clip_rrect, ignore_pointer, overflow_box, stack};
+use crate::widgets::{Opacity, SizedBox, clip_rrect, column, ignore_pointer, overflow_box, row, stack};
 use pebbles_core::widget::{AnyWidget, IntoWidget, RenderWidget};
 use pebbles_core::{Element, component_props, use_bounds};
 
@@ -225,6 +225,62 @@ pub fn indexed_stack(index: usize, children: Vec<AnyWidget>) -> impl IntoWidget 
         })
         .collect();
     stack(kids)
+}
+
+// ===========================================================================
+// ListBody — sequential children along an axis, each at its natural extent
+// ===========================================================================
+
+/// Lays `children` out sequentially along one axis, each taking its full extent
+/// on the main axis and stretched on the cross axis — Flutter's `ListBody`. It's
+/// the non-scrolling body you drop *inside* a scroll view (it imposes no viewport
+/// and does no flex): a `Column`/`Row` sized to the sum of its children.
+#[derive(Clone)]
+pub struct ListBody {
+    children: Vec<AnyWidget>,
+    axis: Axis,
+    reverse: bool,
+}
+
+/// Create a vertical [`ListBody`] from `children`.
+pub fn list_body(children: Vec<AnyWidget>) -> ListBody {
+    ListBody { children, axis: Axis::Vertical, reverse: false }
+}
+
+impl ListBody {
+    /// Lay the children out along `axis` (default `Vertical`).
+    pub fn axis(mut self, axis: Axis) -> Self {
+        self.axis = axis;
+        self
+    }
+    /// Lay the children out horizontally (shorthand for `.axis(Axis::Horizontal)`).
+    pub fn horizontal(mut self) -> Self {
+        self.axis = Axis::Horizontal;
+        self
+    }
+    /// Order the children from the trailing edge back (Flutter's `reverse`).
+    pub fn reverse(mut self, reverse: bool) -> Self {
+        self.reverse = reverse;
+        self
+    }
+}
+
+impl IntoWidget for ListBody {
+    fn into_widget(mut self) -> AnyWidget {
+        if self.reverse {
+            self.children.reverse();
+        }
+        match self.axis {
+            Axis::Vertical => column(self.children)
+                .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .main_axis_size(MainAxisSize::Min)
+                .into_widget(),
+            Axis::Horizontal => row(self.children)
+                .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .main_axis_size(MainAxisSize::Min)
+                .into_widget(),
+        }
+    }
 }
 
 // ===========================================================================

@@ -54,7 +54,10 @@ pub use paragraph::{ParagraphStyle, RenderParagraph, TextSpanStyle};
 #[cfg(debug_assertions)]
 pub use paragraph::{reset_shape_count, shape_count};
 pub use pointer::{Cursor, PointerButton, PointerEvent, RenderPointerListener, TapCallback};
-pub use scroll::{RefreshState, RenderScroll, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle};
+pub use scroll::{
+    RefreshState, RenderScroll, ScrollEvent, ScrollMetrics, ScrollNotification, ScrollPhysics,
+    ScrollbarPolicy, ScrollbarStyle,
+};
 pub use semantics::{SemanticsNode, SemanticsProps, SemanticsRole};
 pub use spinner::RenderSpinner;
 pub use stack::{RenderStack, StackFit, StackParentData};

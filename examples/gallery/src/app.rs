@@ -177,6 +177,11 @@ pub fn app() -> impl IntoWidget {
         // Long-tail.
         .route("placeholder", || component(screens::longtail::placeholder_screen))
         .route("banner", || component(screens::longtail::banner_screen))
+        .route("scroll-notification", || component(screens::parity_extra::scroll_notification_screen))
+        .route("list-body", || component(screens::parity_extra::list_body_screen))
+        .route("list-tiles", || component(screens::parity_extra::list_tiles_screen))
+        .route("draggable-sheet", || component(screens::parity_extra::draggable_sheet_screen))
+        .route("scaffold-drawer", || component(screens::parity_extra::scaffold_drawer_screen))
         .route("canvas", || component(screens::canvas::canvas_screen))
         .route("resizable", || component(screens::resizable::resizables))
         .route("badge", || component(screens::badge::badges))

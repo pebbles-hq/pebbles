@@ -236,7 +236,15 @@ pub const NAV: &[NavGroup] = &[
     },
     NavGroup {
         label: "LONG-TAIL",
-        routes: &[("placeholder", lucide::BOX, "Placeholder"), ("banner", lucide::INFO, "Banner")],
+        routes: &[
+            ("placeholder", lucide::BOX, "Placeholder"),
+            ("banner", lucide::INFO, "Banner"),
+            ("scroll-notification", lucide::MOVE_VERTICAL, "Scroll Notification"),
+            ("list-body", lucide::LIST, "List Body"),
+            ("list-tiles", lucide::LIST_CHECKS, "List Tiles"),
+            ("draggable-sheet", lucide::PANEL_BOTTOM, "Draggable Sheet"),
+            ("scaffold-drawer", lucide::PANEL_LEFT, "Scaffold Drawer"),
+        ],
     },
     NavGroup {
         label: "NAVIGATION",

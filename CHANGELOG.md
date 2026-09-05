@@ -6,6 +6,26 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — Flutter parity: scroll notifications, list body, list tiles, sheets
+A batch of buildable-now Flutter-parity widgets:
+
+- **`ScrollNotification` + `scroll_view(..).on_scroll(cb)`** — a scroll view's
+  notification callback carrying live `ScrollMetrics` (pixels / max / viewport /
+  fraction) and Start/Update/End/Overscroll events. Pebbles' direct, reactive
+  equivalent of Flutter's `NotificationListener<ScrollNotification>`.
+- **`list_body`** (ListBody) — sequential children along an axis, each at its
+  natural extent, stretched on the cross axis; `.horizontal()`/`.reverse()`.
+- **`checkbox_list_tile` / `radio_list_tile` / `switch_list_tile`** — a ListTile
+  with a trailing selection control where the whole row is the tap target.
+- **`draggable_scrollable_sheet`** — a bottom-anchored panel sized as a fraction
+  of the available space; drag the top handle to resize between `.min`/`.max`
+  (snapping to `.snap` stops), with a scrollable body.
+- **`Scaffold::drawer` / `end_drawer`** (+ `open_drawer`/`open_end_drawer` and the
+  `drawer_button()` hamburger) and **`Scaffold::bottom_sheet`** (a persistent,
+  non-modal panel above the bottom bar).
+- **`fade_in_image`** (FadeInImage) — shows a placeholder, then cross-fades in the
+  loaded network image; `.fade(secs)` (`image-view` feature).
+
 ### Added — `pebbles create` templates
 The CLI's scaffolding is now template-driven, matching how Flutter organizes
 `flutter create`: templates are real files under

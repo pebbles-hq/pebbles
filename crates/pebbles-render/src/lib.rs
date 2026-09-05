@@ -49,9 +49,9 @@ pub use objects::{
     RenderMeasureProbe, RenderOffstage, RenderOpacity, RenderOverflowBox, RenderPadding, RenderParagraph,
     RenderPointerBarrier, RenderPointerListener, RenderRotatedBox, RenderScroll, RenderSemanticsBoundary,
     RenderShaderMask, RenderSizedOverflowBox, RenderSpinner, RenderStack, RenderTable, RenderTextField,
-    RenderTransform, RenderView, RenderWrap, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode,
-    SemanticsProps, SemanticsRole, SizeFn, StackFit, StackParentData, TableColumnWidth, TapCallback,
-    TextFieldStyle, TextSpanStyle, lucide,
+    RenderTransform, RenderView, RenderWrap, ScrollEvent, ScrollMetrics, ScrollNotification, ScrollPhysics,
+    ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps, SemanticsRole, SizeFn, StackFit,
+    StackParentData, TableColumnWidth, TapCallback, TextFieldStyle, TextSpanStyle, lucide,
 };
 pub use text::TextEnv;
 pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};

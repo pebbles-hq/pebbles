@@ -11,6 +11,7 @@ mod fab;
 mod field;
 mod input_otp;
 pub(crate) mod list_nav;
+mod list_tiles;
 pub(crate) mod menu;
 pub(crate) mod popover;
 mod select;
@@ -33,6 +34,9 @@ pub use fab::{Fab, fab};
 pub use field::{Field, field};
 pub use input_otp::{InputOtp, input_otp};
 pub use list_nav::{ListNav, list_nav};
+pub use list_tiles::{
+    CheckboxListTile, RadioListTile, SwitchListTile, checkbox_list_tile, radio_list_tile, switch_list_tile,
+};
 pub use menu::{
     DropdownMenu, MenuEntry, MenuItem, dropdown_menu, menu_check, menu_item, menu_label, menu_separator,
     menu_sub,

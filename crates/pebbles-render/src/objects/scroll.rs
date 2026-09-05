@@ -3,6 +3,8 @@
 //! imperatively (wheel events + scrollbar drag, routed from the shell) and clamped
 //! to the content extent during layout.
 
+use std::rc::Rc;
+
 use pebbles_foundation::{Axis, Color, Offset, Rect, Size};
 use vello::kurbo::{Affine, RoundedRect};
 use vello::peniko::{Fill, Mix};
@@ -10,6 +12,77 @@ use vello::peniko::{Fill, Mix};
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;
 use crate::tree::{LayoutCx, PaintCx};
+
+/// A snapshot of a scroll view's position at the instant a [`ScrollNotification`]
+/// fires — Flutter's `ScrollMetrics`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScrollMetrics {
+    /// The scroll axis.
+    pub axis: Axis,
+    /// The current offset in px (Flutter's `pixels`).
+    pub pixels: f64,
+    /// The minimum offset — always `0` here (Flutter's `minScrollExtent`).
+    pub min: f64,
+    /// The maximum scrollable offset, `content − viewport` (Flutter's `maxScrollExtent`).
+    pub max: f64,
+    /// The viewport extent along the axis (Flutter's `viewportDimension`).
+    pub viewport: f64,
+}
+
+impl ScrollMetrics {
+    /// Px already scrolled past the leading edge (Flutter's `extentBefore`).
+    pub fn extent_before(&self) -> f64 {
+        (self.pixels - self.min).max(0.0)
+    }
+    /// Px still scrollable past the trailing edge (Flutter's `extentAfter`).
+    pub fn extent_after(&self) -> f64 {
+        (self.max - self.pixels).max(0.0)
+    }
+    /// Whether the offset is pinned at the start.
+    pub fn at_start(&self) -> bool {
+        self.pixels <= self.min + 0.5
+    }
+    /// Whether the offset is pinned at the end.
+    pub fn at_end(&self) -> bool {
+        self.pixels >= self.max - 0.5
+    }
+    /// Progress through the scrollable range, `0.0..=1.0` (0 when not scrollable).
+    pub fn fraction(&self) -> f64 {
+        if self.max <= self.min {
+            0.0
+        } else {
+            ((self.pixels - self.min) / (self.max - self.min)).clamp(0.0, 1.0)
+        }
+    }
+}
+
+/// What happened to a scroll view — Pebbles' flattened `ScrollNotification` kind
+/// (Flutter dispatches these as distinct notification subclasses).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ScrollEvent {
+    /// A scroll activity began (drag, wheel, fling, or programmatic move).
+    Start,
+    /// The offset moved by `delta` px this frame.
+    Update {
+        /// Signed change in `pixels` (positive = toward the end).
+        delta: f64,
+    },
+    /// The scroll activity settled.
+    End,
+    /// A drag pulled `overscroll` px past an edge (overscroll physics only).
+    Overscroll {
+        /// Px past the edge (positive past the end, negative past the start).
+        overscroll: f64,
+    },
+}
+
+/// A scroll notification: the [`metrics`](Self::metrics) at the moment plus what
+/// [`event`](Self::event) fired. Delivered to a scroll view's `on_scroll` callback.
+#[derive(Clone, Copy, Debug)]
+pub struct ScrollNotification {
+    pub metrics: ScrollMetrics,
+    pub event: ScrollEvent,
+}
 
 /// When the scrollbar is shown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -78,12 +151,12 @@ pub struct RefreshState {
     /// Pull distance (negative offset) that arms the indicator.
     pub threshold: f64,
     /// Fired once when the pull crosses `threshold` (the spinner rotates in).
-    pub on_arm: Option<std::rc::Rc<dyn Fn()>>,
+    pub on_arm: Option<Rc<dyn Fn()>>,
     /// Fired once when an ARMED pull is released — the app's `on_refresh`.
-    pub on_arm_release: Option<std::rc::Rc<dyn Fn()>>,
+    pub on_arm_release: Option<Rc<dyn Fn()>>,
     /// Fired once when a pull is released without ever arming (clears the
     /// half-rotated spinner state).
-    pub on_release: Option<std::rc::Rc<dyn Fn()>>,
+    pub on_release: Option<Rc<dyn Fn()>>,
     /// Whether the arm threshold has been crossed in the current drag.
     pub fired_arm: bool,
 }
@@ -142,6 +215,11 @@ pub struct RenderScroll {
     fling_samples: [(f64, f64); 4],
     fling_samples_len: usize,
     fling_cursor: usize,
+    /// Scroll-notification sink (Flutter's `ScrollNotification` / `NotificationListener`).
+    /// Fired on Start/Update/End/Overscroll as the offset moves.
+    pub on_scroll: Option<Rc<dyn Fn(ScrollNotification)>>,
+    /// True while a scroll activity is live — gates one Start and one End per activity.
+    was_moving: bool,
 }
 
 impl RenderScroll {
@@ -166,6 +244,34 @@ impl RenderScroll {
             fling_samples: [(0.0, 0.0); 4],
             fling_samples_len: 0,
             fling_cursor: 0,
+            on_scroll: None,
+            was_moving: false,
+        }
+    }
+
+    /// Current position snapshot for a notification.
+    fn metrics(&self) -> ScrollMetrics {
+        ScrollMetrics {
+            axis: self.axis,
+            pixels: self.offset,
+            min: 0.0,
+            max: self.max_offset,
+            viewport: self.viewport_extent,
+        }
+    }
+
+    /// Fire a scroll notification (no-op when nothing is listening).
+    fn emit(&self, event: ScrollEvent) {
+        if let Some(cb) = &self.on_scroll {
+            cb(ScrollNotification { metrics: self.metrics(), event });
+        }
+    }
+
+    /// Mark a scroll activity as started, firing exactly one [`ScrollEvent::Start`].
+    fn begin_activity(&mut self) {
+        if !self.was_moving {
+            self.was_moving = true;
+            self.emit(ScrollEvent::Start);
         }
     }
 
@@ -182,6 +288,11 @@ impl RenderScroll {
         }
         let changed = (next - self.target).abs() > f64::EPSILON;
         self.target = next;
+        if changed {
+            // Wheel/keyboard move the target; the spring animates `offset` there,
+            // so Update/End are emitted from `tick` — this just opens the activity.
+            self.begin_activity();
+        }
         changed
     }
 
@@ -228,6 +339,7 @@ impl RenderScroll {
         self.fling_samples_len = 0;
         self.fling_cursor = 0;
         self._sample(now);
+        self.begin_activity();
         true
     }
 
@@ -239,6 +351,7 @@ impl RenderScroll {
         }
         let delta = at - self.drag_last; // positive = content moves with the pointer
         self.drag_last = at;
+        let before = self.offset;
         self.drag_real -= delta;
         self.offset = if self.physics.overscroll {
             self.band(self.drag_real)
@@ -247,6 +360,21 @@ impl RenderScroll {
         };
         self.target = self.offset;
         self._sample(now);
+        let moved = self.offset - before;
+        if moved.abs() > f64::EPSILON {
+            self.emit(ScrollEvent::Update { delta: moved });
+        }
+        // Rubber-banded past an edge → an overscroll notification (Flutter parity).
+        let over = if self.offset < 0.0 {
+            self.offset
+        } else if self.offset > self.max_offset {
+            self.offset - self.max_offset
+        } else {
+            0.0
+        };
+        if over != 0.0 {
+            self.emit(ScrollEvent::Overscroll { overscroll: over });
+        }
         true
     }
 
@@ -325,6 +453,7 @@ impl RenderScroll {
         if self.dragging {
             return false; // the pointer drives the offset; nothing to animate
         }
+        let before = self.offset;
         let dt = dt.clamp(0.0, 0.05); // guard against long stalls
         // Fling: the target keeps moving while the fling velocity decays.
         if self.flinging {
@@ -345,13 +474,26 @@ impl RenderScroll {
         let accel = -stiffness * x - damping * self.velocity;
         self.velocity += accel * dt;
         self.offset += self.velocity * dt;
-        if x.abs() < 0.1 && self.velocity.abs() < 0.5 {
+        let moving = if x.abs() < 0.1 && self.velocity.abs() < 0.5 {
             self.offset = self.target;
             self.velocity = 0.0;
             false
         } else {
             true
+        };
+
+        // Emit Update on real movement (opening the activity if a programmatic
+        // `scroll_to` started it), and End exactly once when it settles.
+        let delta = self.offset - before;
+        if delta.abs() > 1e-9 {
+            self.begin_activity();
+            self.emit(ScrollEvent::Update { delta });
         }
+        if !moving && self.was_moving {
+            self.was_moving = false;
+            self.emit(ScrollEvent::End);
+        }
+        moving
     }
 
     /// Whether a scrollbar thumb is currently drawn (content overflows).
@@ -399,11 +541,25 @@ impl RenderScroll {
         let travel = (self.viewport_extent - thumb).max(1.0);
         let frac = ((pos - thumb / 2.0) / travel).clamp(0.0, 1.0);
         let next = frac * self.max_offset;
-        let changed = (next - self.offset).abs() > f64::EPSILON;
+        let delta = next - self.offset;
+        let changed = delta.abs() > f64::EPSILON;
         self.offset = next;
         self.target = next;
         self.velocity = 0.0;
+        if changed {
+            self.begin_activity(); // scrollbar drag: End fires from `end_scroll_activity`
+            self.emit(ScrollEvent::Update { delta });
+        }
         changed
+    }
+
+    /// Close an in-progress scroll activity (scrollbar-drag release), firing a
+    /// final [`ScrollEvent::End`] if one is open. Idempotent.
+    pub fn end_scroll_activity(&mut self) {
+        if self.was_moving {
+            self.was_moving = false;
+            self.emit(ScrollEvent::End);
+        }
     }
 }
 

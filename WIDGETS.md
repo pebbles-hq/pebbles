@@ -51,7 +51,8 @@ remote-URL images) and their per-platform status live in
 | `Semantics` (+ `SemanticsRole`) | ✅ 🔶C7 | long-tail roles (Menu/Tab/Dialog/…) open (C7) |
 | `merge_semantics` · `exclude_semantics` · `block_semantics` | ✅ | a11y combinators: collapse a subtree into one announcement · hide a subtree from AT · modal barrier that blocks lower layers from AT |
 | `stream_builder` | ✅ | rebuild on each `Channel` emission (Flutter's StreamBuilder) — `stream_builder(channel, builder)` passes the latest value; a thin reactive builder over the existing `Channel` |
-| `SingleChildScrollView` | ✅ | wheel/scrollbar/keys/snap/spring + `.drag_scroll(true)` pan-to-scroll with fling, `.physics(ScrollPhysics)` knobs and rubber-band overscroll (A4 ✅) |
+| `SingleChildScrollView` | ✅ | wheel/scrollbar/keys/snap/spring + `.drag_scroll(true)` pan-to-scroll with fling, `.physics(ScrollPhysics)` knobs and rubber-band overscroll (A4 ✅); `.on_scroll(cb)` scroll notifications |
+| `.on_scroll(cb)` (ScrollNotification) | ✅ | a scroll view's notification callback — `ScrollNotification` = `ScrollMetrics` (pixels/max/viewport/fraction) + Start/Update/End/Overscroll; the direct equivalent of Flutter's `NotificationListener<ScrollNotification>` |
 | `ListView::builder` (fixed extent) | ✅ | virtualized, `.horizontal/.reverse/.padding/.scrollbar/.controller` |
 | `ListView::variable` (per-item extents) | ✅ | caller-supplied extents; virtualized by prefix sums |
 | `ListView::builder_auto` (auto-measured) | ✅ | items measure themselves as they scroll in (A1 ✅); `.estimated_extent(..)`, `.estimated_extent_of(i)` per-kind guesses, `scroll_to_index_auto`, anchor-stable corrections |
@@ -67,6 +68,7 @@ remote-URL images) and their per-platform status live in
 | `Baseline` | ✅ | pin a child's text baseline a fixed distance below the top |
 | `Offstage` · `Visibility` | ✅ | collapse to zero (mounted, not painted/hit) · show/hide with `maintain_size`/`maintain_state`/`replacement` |
 | `IndexedStack` | ✅ | show one child, keep ALL children mounted (state preserved) |
+| `list_body` (ListBody) | ✅ | sequential children along an axis, each at its natural extent, stretched on the cross axis; `.horizontal()`/`.reverse()` — the non-scrolling body for inside a scroll view |
 | `layout_table` (`LayoutTable`) | ✅ | column-negotiating grid (`Fixed`/`Fraction`/`Intrinsic`/`Flex`); Flutter's layout `Table` (renamed to avoid the data-table `table`) |
 | `CustomSingleChildLayout` · `CustomMultiChildLayout` | ✅ | offset-based custom layout via `.size()`/`.child_constraints()`/`.position()` delegates |
 | `Flow` | ✅ | per-child affine-transform delegate (`.transform(..)` returns an `Affine` per child); rotation/scale flows paint AND hit-test correctly |
@@ -134,9 +136,11 @@ remote-URL images) and their per-platform status live in
 | `HoverCard` | ✅ | delay + stays-open-over-card grace |
 | `Table` (data table) | ✅ | sort (multi, configurable glyph), selection + select-all, striped, hover, empty state |
 | `ListTile` | ✅ | style/tap/selected/dense |
+| `checkbox_list_tile` · `radio_list_tile` · `switch_list_tile` | ✅ | a ListTile with a trailing selection control; the whole row is the tap target (Flutter's CheckboxListTile / RadioListTile / SwitchListTile) |
 | `TreeView` / `TreeNode` | ✅ | multi-select, drag |
 | `FileExplorer` / `FileTree` (+ `pick_folder`) | ✅ | real disk: native picker (`pick_folder` needs the `file-dialogs` feature), lazy loading, mutations, multi-select/-drag, icon themes (set_icon_theme resolver over ~1800 lucide glyphs) + per-node icon/color, full row-state set (hover/selected/focus-ring/cut-dim/drop), VSCode keyboard set (↑/↓/←/→ + Shift-extend, Mod+↑/↓ focus walk + Mod+Space one-by-one toggle, Home/End, F2 prefilled-stem rename, Delete, Mod+A, Mod+C/X/V clipboard), external control surface (bindable filter(), active_row(), reveal, expand_all), built-in right-click menus (independent of the global switch) |
 | `ImageView` | ✅ | `asset`/`network`/`memory`/`base64`/`image` + `ImageFit`; reactive source (`image-view` feature) |
+| `fade_in_image` (FadeInImage) | ✅ | shows a placeholder, then cross-fades in the loaded network image; `.fade(secs)` (`image-view` feature) |
 | `markdown` / `markdown_editor` | ✅ 📦 | Obsidian-style GFM reader + editor — now a **separate package**, [`pebbles-markdown`](https://github.com/pebbles-hq/pebbles-markdown): tables, task lists with source-rewriting checkboxes, code (JetBrains Mono), links, quotes, images; Edit/Split/Read via an app-owned mode signal; themable `MarkdownStyle`. The reference third-party widget crate — add it alongside `pebbles`. |
 | `Carousel` | ✅ | snap-paged slides, dots, arrows (hidden at ends), autoplay w/ hover-pause, `CarouselController` (A6 ✅) |
 
@@ -147,6 +151,8 @@ remote-URL images) and their per-platform status live in
 | `Panel` · `ScrollArea` · `Resizable` · `SplitView` | ✅ | live drag-resize |
 | `Accordion` · `Collapsible` | ✅ | single/multiple, default-open, events |
 | `Scaffold` · `TopPanel` · `SideNav` · `BottomNav` | ✅ 🔶C5/C8g | top/side/body/bottom + a `.fab()` slot (bottom-right FAB overlay) + a `.persistent_footer()` slot (pinned action row above the bottom bar); SideNav rail-collapse (C5) open; dedicated chrome gallery screen (C8g) open |
+| `Scaffold::drawer` / `end_drawer` · `Scaffold::bottom_sheet` | ✅ | left/right drawer slots opened by `open_drawer()`/`open_end_drawer()` or the `drawer_button()` hamburger (slide in as a sheet); a persistent non-modal `bottom_sheet` panel above the bottom bar |
+| `draggable_scrollable_sheet` | ✅ | a bottom-anchored panel sized as a fraction of the available space; drag the top handle to resize between `.min`/`.max` (snapping to `.snap` stops); the body scrolls when it overflows |
 | `media_query` (`MediaQueryData`) | ✅ | window metrics — size / orientation / safe-area `padding` / keyboard `view_insets` / dpr / text scale; mobile insets fill in with the mobile shell (zero on desktop) |
 | `safe_area` (SafeArea) | ✅ | inset past notch/status-bar/home-indicator (`.top/.bottom/.left/.right`); a no-op on desktop (zero insets), real with the mobile shell |
 | `orientation_builder` (OrientationBuilder) | ✅ | rebuild Portrait/Landscape from the box it's given (reactive to its bounds) |

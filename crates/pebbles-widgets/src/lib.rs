@@ -75,14 +75,15 @@ pub use widgets::{
     Column, ConstrainedBox, Container, DecoratedBox, EditableText, Expanded, FittedBox, Flexible,
     FractionallySizedBox, GestureDetector, GridView, IntrinsicHeight, IntrinsicWidth, Keyed, LimitedBox,
     ListView, Opacity, OverflowBox, Padding, Positioned, RepaintBoundary, RichText, Row, ScrollController,
-    ScrollExt, ScrollbarPolicy, ScrollbarStyle, Semantics, SemanticsBoundary, SemanticsExt, SemanticsProps,
-    SemanticsRole, SingleChildScrollView, SizedBox, Spinner, Stack, Text, TextSpan, Transform, View, Wrap,
-    align, animated_container, animated_grid, animated_list, aspect_ratio, block_semantics, canvas, center,
-    clip_rrect, colored_box, column, constrained_box, container, editable, exclude_semantics, expanded,
-    fitted_box, flexible, focus_scope, fractionally_sized_box, gap_h, gap_w, gesture_detector,
-    intrinsic_height, intrinsic_width, keyed, limited_box, list_view, merge_semantics, opacity, overflow_box,
-    padding, positioned, repaint_boundary, row, scroll_view, semantics, sized_box, spacer, span, spinner,
-    stack, text, text_rich, text_signal, transform, use_scroll_controller, wrap,
+    ScrollEvent, ScrollExt, ScrollMetrics, ScrollNotification, ScrollbarPolicy, ScrollbarStyle, Semantics,
+    SemanticsBoundary, SemanticsExt, SemanticsProps, SemanticsRole, SingleChildScrollView, SizedBox, Spinner,
+    Stack, Text, TextSpan, Transform, View, Wrap, align, animated_container, animated_grid, animated_list,
+    aspect_ratio, block_semantics, canvas, center, clip_rrect, colored_box, column, constrained_box,
+    container, editable, exclude_semantics, expanded, fitted_box, flexible, focus_scope,
+    fractionally_sized_box, gap_h, gap_w, gesture_detector, intrinsic_height, intrinsic_width, keyed,
+    limited_box, list_view, merge_semantics, opacity, overflow_box, padding, positioned, repaint_boundary,
+    row, scroll_view, semantics, sized_box, spacer, span, spinner, stack, text, text_rich, text_signal,
+    transform, use_scroll_controller, wrap,
 };
 pub use widgets::{
     AnimatedAlign, AnimatedCrossFade, AnimatedOpacity, AnimatedPadding, AnimatedPositioned, AnimatedRotation,
@@ -113,9 +114,10 @@ pub use widgets::{
 // layout (the long-tail Flutter layout widgets)
 pub use widgets::{
     Baseline, CustomMultiChildLayout, CustomSingleChildLayout, Flow, FractionalTranslation, LayoutBuilder,
-    LayoutTable, Offstage, RotatedBox, SizedOverflowBox, TableColumnWidth, Visibility, baseline,
+    LayoutTable, ListBody, Offstage, RotatedBox, SizedOverflowBox, TableColumnWidth, Visibility, baseline,
     custom_multi_child_layout, custom_single_child_layout, flow, fractional_translation, indexed_stack,
-    layout_builder, layout_table, offstage, rotated_box, sized_overflow_box, unconstrained_box, visibility,
+    layout_builder, layout_table, list_body, offstage, rotated_box, sized_overflow_box, unconstrained_box,
+    visibility,
 };
 // The immediate-mode drawing surface (H2) a `canvas(..)` painter receives.
 pub use pebbles_render::Canvas;

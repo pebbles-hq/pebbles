@@ -63,9 +63,10 @@ pub use keyed::{Keyed, keyed};
 pub use layout::{AspectRatio, Wrap, aspect_ratio, wrap};
 pub use layout_extra::{
     Baseline, CustomMultiChildLayout, CustomSingleChildLayout, Flow, FractionalTranslation, LayoutBuilder,
-    LayoutTable, Offstage, RotatedBox, SizedOverflowBox, Visibility, baseline, custom_multi_child_layout,
-    custom_single_child_layout, flow, fractional_translation, indexed_stack, layout_builder, layout_table,
-    offstage, rotated_box, sized_overflow_box, unconstrained_box, visibility,
+    LayoutTable, ListBody, Offstage, RotatedBox, SizedOverflowBox, Visibility, baseline,
+    custom_multi_child_layout, custom_single_child_layout, flow, fractional_translation, indexed_stack,
+    layout_builder, layout_table, list_body, offstage, rotated_box, sized_overflow_box, unconstrained_box,
+    visibility,
 };
 pub use list::{GridView, ListView, ScrollController, use_scroll_controller};
 pub use media::{
@@ -81,7 +82,10 @@ pub use motion::{
     size_transition, slide_transition,
 };
 pub use pebbles_render::TableColumnWidth;
-pub use pebbles_render::{ScrollbarPolicy, ScrollbarStyle, SemanticsProps, SemanticsRole};
+pub use pebbles_render::{
+    ScrollEvent, ScrollMetrics, ScrollNotification, ScrollbarPolicy, ScrollbarStyle, SemanticsProps,
+    SemanticsRole,
+};
 pub use pointer_control::{PointerControl, absorb_pointer, ignore_pointer};
 pub use probe::{ExtentProbe, extent_probe};
 pub use reorderable::{ReorderableListView, reorderable_list_view};

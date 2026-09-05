@@ -6,9 +6,12 @@
 //! [`Ui::dispatch_scroll`](pebbles_core::Ui::dispatch_scroll) and scrollbar drags to
 //! [`Ui::begin_scrollbar_drag`](pebbles_core::Ui::begin_scrollbar_drag).
 
+use std::rc::Rc;
+
 use pebbles_foundation::{Axis, Color, MainAxisSize};
 use pebbles_render::{
-    RefreshState, RenderObject, RenderScroll, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle,
+    RefreshState, RenderObject, RenderScroll, ScrollNotification, ScrollPhysics, ScrollbarPolicy,
+    ScrollbarStyle,
 };
 
 use crate::widgets::column;
@@ -24,6 +27,7 @@ pub struct SingleChildScrollView {
     drag_scroll: bool,
     physics: ScrollPhysics,
     refresh: Option<RefreshState>,
+    on_scroll: Option<Rc<dyn Fn(ScrollNotification)>>,
     child: Option<AnyWidget>,
 }
 
@@ -37,6 +41,7 @@ impl SingleChildScrollView {
             drag_scroll: false,
             physics: ScrollPhysics::default(),
             refresh: None,
+            on_scroll: None,
             child: Some(child.into_widget()),
         }
     }
@@ -49,6 +54,7 @@ impl SingleChildScrollView {
             drag_scroll: false,
             physics: ScrollPhysics::default(),
             refresh: None,
+            on_scroll: None,
             child: Some(child.into_widget()),
         }
     }
@@ -80,6 +86,15 @@ impl SingleChildScrollView {
     /// `refresh_indicator` component builds this for you.
     pub fn refresh(mut self, refresh: RefreshState) -> Self {
         self.refresh = Some(refresh);
+        self
+    }
+
+    /// Listen for scroll activity — Pebbles' direct equivalent of Flutter's
+    /// `NotificationListener<ScrollNotification>`. The callback fires with the live
+    /// [`ScrollNotification`] (metrics + Start/Update/End/Overscroll) as the
+    /// viewport moves under wheel, drag, fling, scrollbar, or programmatic scroll.
+    pub fn on_scroll(mut self, f: impl Fn(ScrollNotification) + 'static) -> Self {
+        self.on_scroll = Some(Rc::new(f));
         self
     }
 
@@ -117,6 +132,7 @@ impl SingleChildScrollView {
         r.drag_scroll = self.drag_scroll;
         r.physics = self.physics;
         r.refresh = self.refresh.clone();
+        r.on_scroll = self.on_scroll.clone();
         r
     }
 }
@@ -135,6 +151,7 @@ impl RenderWidget for SingleChildScrollView {
             s.drag_scroll = self.drag_scroll;
             s.physics = self.physics;
             s.refresh = self.refresh.clone();
+            s.on_scroll = self.on_scroll.clone();
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {
