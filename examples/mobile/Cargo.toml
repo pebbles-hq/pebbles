@@ -5,7 +5,9 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-pebbles = { workspace = true }
+# `image-view` for the network feed media + avatars (loads via the native HTTP
+# client — desktop-run, which is how we run the "mobile" app for now).
+pebbles = { workspace = true, features = ["image-view"] }
 
 [lints]
 workspace = true

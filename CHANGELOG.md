@@ -6,6 +6,22 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — `mobile` is now a full social app
+The `mobile` example grew from a layout sketch into a **fully functional** social
+app, driven entirely by in-memory state (no server — the illusion is all
+`store.rs`). It's the reference for a real, multi-file Pebbles app + a stress test
+of the state manager and the catalog (sheets, toasts, network images):
+
+- **Feed** with network media (Lorem Picsum) + avatars (pravatar); **like**,
+  **bookmark**, **follow**, and a **comment** bottom sheet — all update live.
+- **Compose** a post from a bottom sheet (text + an attachable photo) → prepends
+  to the feed + a toast.
+- **Notifications** tab with an unread **badge** on the nav item + "Mark all read".
+- **Profile**: editable name/bio (bottom sheet), stats, the user's own posts, and
+  a **live dark-mode toggle** (`toggle_theme`).
+- Organized into `store.rs` (state manager) + `screens/` (feed/notifications/
+  profile) + `components/` (post card, compose, comments), heavily commented.
+
 ### Fixed / Changed — starter examples reworked
 The starter examples (`counter`, `todo`, `temperature`, `stopwatch`) were made
 actually-working, prettier (themed cards), and reorganized as teaching codebases:
