@@ -116,6 +116,11 @@ impl App {
     /// and the in-window [`menubar`](pebbles_widgets::components::menubar) stays the
     /// cross-platform form).
     ///
+    /// # Platform support
+    /// **macOS and Windows only.** On Linux, web, and mobile there is no native OS
+    /// menu bar — use the cross-platform in-window
+    /// [`menubar`](pebbles_widgets::components::menubar) instead. See `PLATFORMS.md`.
+    ///
     /// ```ignore
     /// use pebbles_widgets::{menu, menu_bar};
     /// App::new(root).menu(menu_bar([

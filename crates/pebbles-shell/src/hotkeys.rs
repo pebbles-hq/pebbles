@@ -99,6 +99,10 @@ mod imp {
 /// Returns `Err` (never panics) when the `global-hotkeys` feature is off, when the
 /// binding is unparseable, or when the OS refuses registration (Wayland, missing
 /// macOS Accessibility permission, a combo already taken by another app).
+///
+/// # Platform support
+/// **Desktop only.** macOS/Windows and Linux/X11 are supported; Linux/Wayland
+/// returns `Err`. Not available on web or mobile (also `Err`). See `PLATFORMS.md`.
 pub fn register_global_hotkey(binding: &str, on_fire: impl Fn() + 'static) -> Result<HotkeyId, String> {
     #[cfg(feature = "global-hotkeys")]
     {

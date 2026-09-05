@@ -90,6 +90,11 @@ pub struct Window {
 }
 
 /// Create a [`Window`] hosting `content` (opens ~640×480 by default).
+///
+/// # Platform support
+/// **Desktop only** (Linux/macOS/Windows). Web has a single canvas and mobile a
+/// single scene, so opening a secondary window is ignored there (a warning is
+/// logged) — the app keeps running. See `PLATFORMS.md`.
 pub fn window(content: impl IntoWidget) -> Window {
     Window {
         root: content.into_widget(),

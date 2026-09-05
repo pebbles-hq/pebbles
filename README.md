@@ -108,7 +108,9 @@ not yet runnable · ⛔ not supported.
 
 Run on any target with Flutter-style `-d`: `pebbles run` (desktop, the default),
 `pebbles run -d web` (needs [Trunk](https://trunkrs.dev): `cargo install --locked
-trunk`). The desktop rows are produced by the CI matrix, and the web/Android/iOS
+trunk`). **Per-capability compatibility** (which widgets/features run where, and
+how to detect the platform in code) is documented in
+[`PLATFORMS.md`](PLATFORMS.md). The desktop rows are produced by the CI matrix, and the web/Android/iOS
 **compile** status by the [`cross-platform`](.github/workflows/ci.yml) gate, on
 every push — so this table cannot silently drift. Android and iOS say "compiles"
 rather than "runs" honestly: the source + dependency graph build and touch input

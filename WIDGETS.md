@@ -17,6 +17,13 @@ ratified · **🚫 decided OUT** (p2 §J — do not "helpfully" add).
 
 Run `cargo run -p gallery` — ~50 dedicated screens, one per component family.
 
+**Platform support:** every widget here works on all six platforms (Linux, macOS,
+Windows, web, Android, iOS) — the catalog is universal. The few OS-specific
+capabilities (multi-window, native menu bar, global hotkeys, native folder picker,
+remote-URL images) and their per-platform status live in
+[`PLATFORMS.md`](PLATFORMS.md), and you can branch on the target in code with
+`platform::is_web()` / `platform::current()`.
+
 ---
 
 ## 1. Layout & primitives (`crates/pebbles-widgets/src/widgets/`)

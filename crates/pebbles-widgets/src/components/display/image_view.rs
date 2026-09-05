@@ -138,6 +138,12 @@ impl ImageView {
         make(Source::Ready(result))
     }
     /// An image fetched from a URL (loads on a background thread).
+    ///
+    /// # Platform support
+    /// Native (desktop/mobile) only for now. On **web** a remote URL renders the
+    /// `error` widget until the browser `fetch` backend lands — use
+    /// [`asset`](Self::asset)/[`memory`](Self::memory)/[`base64`](Self::base64) or
+    /// a `data:` URI, which work on every platform. See `PLATFORMS.md`.
     pub fn network(url: impl Into<String>) -> Self {
         make(Source::Network(url.into()))
     }

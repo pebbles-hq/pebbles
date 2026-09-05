@@ -50,6 +50,9 @@ pub mod prelude {
         MainAxisSize, Offset, Rect, Size, TextAlign, TextBaseline, TextDirection, VerticalDirection,
         WrapAlignment, palette,
     };
+    // Compile-time platform detection: `platform::is_web()`, `Platform::current()`, etc.
+    // Branch before calling a platform-specific API (see PLATFORMS.md).
+    pub use pebbles_foundation::platform::{self, Platform};
 
     // render-level styling primitives (for advanced/custom decoration) + events
     pub use pebbles_render::{

@@ -68,6 +68,33 @@ impl Runner {
         event_loop: &ActiveEventLoop,
         spec: pebbles_widgets::window::WindowSpec,
     ) {
+        // Secondary OS windows are desktop-only: web has a single canvas and mobile
+        // a single activity/scene, and the surface bring-up here blocks (which the
+        // browser main thread forbids). Degrade to a logged no-op rather than hang —
+        // see PLATFORMS.md.
+        #[cfg(target_family = "wasm")]
+        {
+            let _ = (event_loop, spec);
+            pebbles_core::log::warn(
+                pebbles_core::log::Cat::General,
+                "window() (secondary windows) is desktop-only — ignored on web".to_string(),
+            );
+            return;
+        }
+
+        #[cfg(not(target_family = "wasm"))]
+        {
+            self.open_window_native(event_loop, spec);
+        }
+    }
+
+    /// The real secondary-window bring-up (desktop only; see [`open_window`]).
+    #[cfg(not(target_family = "wasm"))]
+    fn open_window_native(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        spec: pebbles_widgets::window::WindowSpec,
+    ) {
         let mut attrs = WindowAttributes::default()
             .with_title(spec.title.clone())
             .with_inner_size(LogicalSize::new(spec.width, spec.height))

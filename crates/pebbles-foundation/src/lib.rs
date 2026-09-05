@@ -17,6 +17,7 @@ pub mod geometry;
 pub mod layout;
 pub mod log;
 pub mod palette;
+pub mod platform;
 
 pub use color::Color;
 pub use geometry::{
