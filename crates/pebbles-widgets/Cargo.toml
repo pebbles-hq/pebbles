@@ -23,12 +23,19 @@ file-dialogs = ["dep:rfd"]
 
 [dependencies]
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"], optional = true }
-ureq = { version = "2", optional = true }
 base64 = { version = "0.22", optional = true }
 pebbles-core.workspace = true
 pebbles-foundation.workspace = true
-rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"], optional = true }
 pebbles-render.workspace = true
+
+# Native-only optional deps behind `image-view` / `file-dialogs`. `ureq` is a
+# blocking HTTP client and `rfd` (xdg-portal + async-std) is a desktop dialog — on
+# the web neither applies: network image loads go through the browser's fetch (a
+# follow-up backend) and a folder picker is an `<input type=file>`. Gating them
+# here keeps `ring`/`getrandom`/GTK off the wasm build entirely.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+ureq = { version = "2", optional = true }
+rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"], optional = true }
 
 [lints]
 workspace = true

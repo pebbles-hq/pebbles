@@ -342,13 +342,22 @@ pub(super) fn read_dir(path: &Path) -> std::io::Result<Vec<FsNode>> {
 /// `file-dialogs` feature.
 #[cfg(feature = "file-dialogs")]
 pub fn pick_folder(on_picked: impl Fn(Option<PathBuf>) + 'static) {
-    // Under the synthetic-input monkey (PEBBLES_INPUT_STORM) never open a real
-    // OS dialog — resolve as "cancelled" so burn-in runs stay unattended.
-    if std::env::var("PEBBLES_INPUT_STORM").is_ok_and(|v| !v.is_empty() && v != "0") {
-        on_picked(None);
-        return;
+    // Web has no native folder picker (rfd/xdg/GTK don't apply); a browser
+    // `<input type=file>`-backed picker is a follow-up. Resolve as "cancelled" so
+    // the symbol exists and callers still link and behave sanely.
+    #[cfg(target_family = "wasm")]
+    return on_picked(None);
+
+    #[cfg(not(target_family = "wasm"))]
+    {
+        // Under the synthetic-input monkey (PEBBLES_INPUT_STORM) never open a real
+        // OS dialog — resolve as "cancelled" so burn-in runs stay unattended.
+        if std::env::var("PEBBLES_INPUT_STORM").is_ok_and(|v| !v.is_empty() && v != "0") {
+            on_picked(None);
+            return;
+        }
+        pebbles_core::spawn(|| rfd::FileDialog::new().pick_folder(), on_picked);
     }
-    pebbles_core::spawn(|| rfd::FileDialog::new().pick_folder(), on_picked);
 }
 
 /// Recursively copy a file or a whole directory (filesystem-mode paste).

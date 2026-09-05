@@ -7,7 +7,9 @@
 //! the decoded result is delivered back on the UI thread (drained by the shared task
 //! pump once per frame) into the result signal, so the view re-renders.
 
+#[cfg(not(target_family = "wasm"))]
 use std::io::Read;
+#[cfg(not(target_family = "wasm"))]
 use std::time::Duration;
 
 use base64::Engine;
@@ -46,7 +48,9 @@ fn decode_base64(data: &str) -> Result<Image, String> {
     decode(&bytes)
 }
 
-/// Fetch a URL and decode it (runs on a background thread).
+/// Fetch a URL and decode it (runs on a background thread). Native uses the
+/// blocking `ureq` client; the 32 MB cap guards against a runaway response.
+#[cfg(not(target_family = "wasm"))]
 fn fetch(url: &str) -> Result<Image, String> {
     let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(15)).build();
     let resp = agent.get(url).call().map_err(|e| e.to_string())?;
@@ -56,6 +60,17 @@ fn fetch(url: &str) -> Result<Image, String> {
         .read_to_end(&mut bytes)
         .map_err(|e| e.to_string())?;
     decode(&bytes)
+}
+
+/// On the web a blocking HTTP client can't run (and `ureq`/`ring` don't build for
+/// wasm), so `ImageView::network` degrades to its `error` widget until the browser
+/// `fetch`-based backend lands. Asset/memory/base64/`data:` images work fully on
+/// web — only remote-URL loading is affected. See documentations/web-support.md.
+#[cfg(target_family = "wasm")]
+fn fetch(_url: &str) -> Result<Image, String> {
+    Err("network image loading isn't wired on web yet (use asset/memory/base64, \
+         or a data: URI); the browser fetch backend is a follow-up"
+        .to_string())
 }
 
 /// The network load state: the load effect is position-stable, so the URL is a
