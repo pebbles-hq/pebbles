@@ -7,6 +7,66 @@ use pebbles::prelude::*;
 use crate::ui::{doc, gap_h, gap_w, screen};
 
 // ===========================================================================
+// Mobile runtime: PopScope + SystemChrome
+// ===========================================================================
+
+pub fn mobile_runtime_screen() -> Element {
+    let blocking = create_signal(true);
+    let last = create_signal(String::from("—"));
+    let dark_icons = create_signal(false);
+
+    screen("Mobile Runtime")
+        .description("Shell-driven hooks, built as reactive desktop-testable APIs (the mobile shell drives them on-device): PopScope (Android back button), SystemChrome (status/nav-bar styling), and Scaffold.resize_to_avoid_bottom_inset (soft keyboard).")
+        .body(children![
+            doc("pop_scope(child).blocking(..).on_pop(..)")
+                .description("Intercept the hardware back button. Toggle blocking, then simulate a back press — the shell calls dispatch_back().")
+                .body(pop_scope(column(children![
+                    row(children![
+                        switch(blocking.get()).on_changed(move || blocking.update(|v| *v = !*v)),
+                        gap_w(10.0),
+                        text(if blocking.get() { "Blocking (back is intercepted)" } else { "Transparent (system pops)" }),
+                    ])
+                    .cross_axis_alignment(CrossAxisAlignment::Center),
+                    gap_h(12.0),
+                    button("Simulate back press").on_pressed(move || {
+                        let consumed = dispatch_back();
+                        last.set(if consumed { "consumed by pop_scope".into() } else { "no handler — would exit".into() });
+                    }),
+                    gap_h(8.0),
+                    text(format!("Result: {}", last.get())).color(theme().colors.muted_foreground),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min))
+                .blocking(blocking.get())
+                .on_pop(|| {})),
+            doc("set_system_ui_overlay_style(..)")
+                .description("Request status/navigation-bar styling (a no-op on desktop; the mobile shell applies it). The requested value round-trips through system_ui_overlay_style().")
+                .body(column(children![
+                    row(children![
+                        switch(dark_icons.get()).on_changed(move || {
+                            dark_icons.update(|v| *v = !*v);
+                            set_system_ui_overlay_style(SystemUiOverlayStyle {
+                                status_bar_dark_icons: dark_icons.peek(),
+                                ..Default::default()
+                            });
+                        }),
+                        gap_w(10.0),
+                        text("Dark status-bar icons"),
+                    ])
+                    .cross_axis_alignment(CrossAxisAlignment::Center),
+                    gap_h(8.0),
+                    text(format!("requested dark icons = {}", system_ui_overlay_style().status_bar_dark_icons))
+                        .color(theme().colors.muted_foreground),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min)),
+            doc("scaffold(..).resize_to_avoid_bottom_inset(true)")
+                .description("The Scaffold lifts its shell above the soft keyboard by MediaQuery.view_insets.bottom (reported by the mobile shell via set_view_insets). On desktop the insets are zero, so it's a no-op — not simulated here to avoid insetting the gallery's own shell.")
+                .body(text("Driven by the mobile shell's keyboard-height reports.").color(theme().colors.muted_foreground)),
+        ])
+}
+
+// ===========================================================================
 // DefaultTextStyle
 // ===========================================================================
 

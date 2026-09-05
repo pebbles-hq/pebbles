@@ -108,9 +108,13 @@ pub use widgets::{
     ClipOval, ClipPath, ColorFiltered, ShaderMask, clip_oval, clip_path, clip_rect, color_filtered,
     shader_mask,
 };
-// window metrics + mobile widgets (Flutter's MediaQuery / SafeArea / OrientationBuilder)
+// window metrics + mobile widgets (Flutter's MediaQuery / SafeArea / OrientationBuilder /
+// PopScope / SystemChrome). The `set_*` metrics are driven by the mobile shell.
 pub use widgets::{
-    MediaQueryData, Orientation, OrientationBuilder, SafeArea, media_query, orientation_builder, safe_area,
+    MediaQueryData, Orientation, OrientationBuilder, PopScope, SafeArea, SystemUiOverlayStyle,
+    back_is_blocked, dispatch_back, drop_window_metrics, media_query, orientation_builder, pop_scope,
+    safe_area, set_device_pixel_ratio, set_safe_area_padding, set_system_ui_overlay_style, set_text_scale,
+    set_view_insets, system_ui_overlay_style,
 };
 // layout (the long-tail Flutter layout widgets)
 pub use widgets::{

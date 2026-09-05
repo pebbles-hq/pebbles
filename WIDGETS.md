@@ -153,10 +153,14 @@ remote-URL images) and their per-platform status live in
 | `Accordion` · `Collapsible` | ✅ | single/multiple, default-open, events |
 | `Scaffold` · `TopPanel` · `SideNav` · `BottomNav` | ✅ 🔶C5/C8g | top/side/body/bottom + a `.fab()` slot (bottom-right FAB overlay) + a `.persistent_footer()` slot (pinned action row above the bottom bar); SideNav rail-collapse (C5) open; dedicated chrome gallery screen (C8g) open |
 | `Scaffold::drawer` / `end_drawer` · `Scaffold::bottom_sheet` | ✅ | left/right drawer slots opened by `open_drawer()`/`open_end_drawer()` or the `drawer_button()` hamburger (slide in as a sheet); a persistent non-modal `bottom_sheet` panel above the bottom bar |
+| `Scaffold::resize_to_avoid_bottom_inset` | ✅ | lifts the shell above the soft keyboard by `MediaQuery.view_insets.bottom` (reactive; default on). Zero on desktop; driven by `set_view_insets` |
 | `draggable_scrollable_sheet` | ✅ | a bottom-anchored panel sized as a fraction of the available space; drag the top handle to resize between `.min`/`.max` (snapping to `.snap` stops); the body scrolls when it overflows |
 | `media_query` (`MediaQueryData`) | ✅ | window metrics — size / orientation / safe-area `padding` / keyboard `view_insets` / dpr / text scale; mobile insets fill in with the mobile shell (zero on desktop) |
 | `safe_area` (SafeArea) | ✅ | inset past notch/status-bar/home-indicator (`.top/.bottom/.left/.right`); a no-op on desktop (zero insets), real with the mobile shell |
 | `orientation_builder` (OrientationBuilder) | ✅ | rebuild Portrait/Landscape from the box it's given (reactive to its bounds) |
+| `pop_scope` (PopScope) + `dispatch_back` | ✅ | intercept the Android hardware back button; `.blocking()`/`.on_pop()`; the shell calls `dispatch_back()` (consumed when a `pop_scope` is blocking) |
+| `set_system_ui_overlay_style` (SystemChrome) | ✅ | request status/nav-bar styling (`SystemUiOverlayStyle`); the mobile shell applies it, desktop no-op |
+| `set_view_insets` / `set_safe_area_padding` / `set_device_pixel_ratio` / `set_text_scale` | ✅ | the mobile shell reports metrics into the reactive `MediaQuery` (drives `SafeArea` / `resize_to_avoid_bottom_inset`) |
 | `Tabs` | ✅ | design variants, disabled tabs, keyboard, focus ring |
 | `Breadcrumb` | ✅ | `.max_visible` middle-collapse |
 | `Pagination` | ✅ | Numbers/Simple/Arrows designs; full control — first/last jump (double-chevrons, `.edges(true)` default), prev/next arrows, numbered pills with ellipses; every control is a bordered button, disables at the bounds; unified `on_page` |

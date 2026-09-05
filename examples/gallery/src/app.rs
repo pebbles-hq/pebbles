@@ -183,6 +183,7 @@ pub fn app() -> impl IntoWidget {
         .route("draggable-sheet", || component(screens::parity_extra::draggable_sheet_screen))
         .route("scaffold-drawer", || component(screens::parity_extra::scaffold_drawer_screen))
         .route("default-text-style", || component(screens::parity_extra::default_text_style_screen))
+        .route("mobile-runtime", || component(screens::parity_extra::mobile_runtime_screen))
         .route("canvas", || component(screens::canvas::canvas_screen))
         .route("resizable", || component(screens::resizable::resizables))
         .route("badge", || component(screens::badge::badges))

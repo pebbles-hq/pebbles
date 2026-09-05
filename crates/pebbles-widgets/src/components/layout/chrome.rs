@@ -47,6 +47,7 @@ pub struct Scaffold {
     bottom_sheet: Option<AnyWidget>,
     drawer: Option<AnyWidget>,
     end_drawer: Option<AnyWidget>,
+    resize_to_avoid_bottom_inset: bool,
     background: Option<Color>,
 }
 
@@ -62,6 +63,7 @@ pub fn scaffold(body: impl IntoWidget) -> Scaffold {
         bottom_sheet: None,
         drawer: None,
         end_drawer: None,
+        resize_to_avoid_bottom_inset: true,
         background: None,
     }
 }
@@ -109,6 +111,14 @@ impl Scaffold {
     /// `Scaffold.endDrawer`. Slides in as a [`sheet`](crate::sheet) from the right.
     pub fn end_drawer(mut self, drawer: impl IntoWidget) -> Self {
         self.end_drawer = Some(drawer.into_widget());
+        self
+    }
+    /// Shrink the shell above the soft keyboard by the [`MediaQuery`](crate::media_query)
+    /// `view_insets.bottom` (Flutter's `resizeToAvoidBottomInset`, default `true`). A
+    /// no-op on desktop (zero insets); real once the mobile shell reports the keyboard
+    /// height via [`set_view_insets`](crate::set_view_insets).
+    pub fn resize_to_avoid_bottom_inset(mut self, resize: bool) -> Self {
+        self.resize_to_avoid_bottom_inset = resize;
         self
     }
     pub fn background(mut self, color: Color) -> Self {
@@ -220,7 +230,17 @@ impl IntoWidget for Scaffold {
             col.push(bottom);
         }
 
-        column(col).cross_axis_alignment(CrossAxisAlignment::Stretch).into_widget()
+        let shell = column(col).cross_axis_alignment(CrossAxisAlignment::Stretch);
+
+        // resizeToAvoidBottomInset: lift the whole shell above the soft keyboard.
+        // Reactive — media_query() subscribes this render, so set_view_insets rebuilds.
+        if self.resize_to_avoid_bottom_inset {
+            let inset = crate::widgets::media_query().view_insets.bottom;
+            if inset > 0.0 {
+                return Padding::new(EdgeInsets::only(0.0, 0.0, 0.0, inset), shell).into_widget();
+            }
+        }
+        shell.into_widget()
     }
 }
 

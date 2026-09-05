@@ -25,6 +25,7 @@ mod layout;
 mod layout_extra;
 mod list;
 mod media;
+mod mobile_runtime;
 mod motion;
 mod pointer_control;
 mod probe;
@@ -72,7 +73,13 @@ pub use layout_extra::{
 };
 pub use list::{GridView, ListView, ScrollController, use_scroll_controller};
 pub use media::{
-    MediaQueryData, Orientation, OrientationBuilder, SafeArea, media_query, orientation_builder, safe_area,
+    MediaQueryData, Orientation, OrientationBuilder, SafeArea, drop_window_metrics, media_query,
+    orientation_builder, safe_area, set_device_pixel_ratio, set_safe_area_padding, set_text_scale,
+    set_view_insets,
+};
+pub use mobile_runtime::{
+    PopScope, SystemUiOverlayStyle, back_is_blocked, dispatch_back, pop_scope, set_system_ui_overlay_style,
+    system_ui_overlay_style,
 };
 pub use motion::{
     AnimatedAlign, AnimatedCrossFade, AnimatedOpacity, AnimatedPadding, AnimatedPositioned, AnimatedRotation,

@@ -25,6 +25,14 @@ A batch of buildable-now Flutter-parity widgets:
   non-modal panel above the bottom bar).
 - **`fade_in_image`** (FadeInImage) — shows a placeholder, then cross-fades in the
   loaded network image; `.fade(secs)` (`image-view` feature).
+- **Mobile-runtime hooks** (framework side; the mobile shell drives them on-device):
+  `Scaffold::resize_to_avoid_bottom_inset` lifts the shell above the soft keyboard by
+  a now-reactive `MediaQuery.view_insets` (`set_view_insets`/`set_safe_area_padding`/
+  `set_device_pixel_ratio`/`set_text_scale`); `pop_scope` + `dispatch_back` intercept
+  the Android back button (Flutter's `PopScope`); `set_system_ui_overlay_style`
+  (`SystemUiOverlayStyle`) requests status/nav-bar styling (Flutter's `SystemChrome`).
+  All desktop-tested; on-device wiring (keyboard height, back button, chrome apply) is
+  the mobile shell's remaining step.
 - **`default_text_style` / `animated_default_text_style`** (DefaultTextStyle) — an
   ambient text style for a subtree. A descendant `Text` inherits each property it
   didn't set explicitly; nested providers compose; the animated variant eases font

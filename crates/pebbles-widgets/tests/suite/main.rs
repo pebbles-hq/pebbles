@@ -34,6 +34,7 @@ mod list_tile;
 mod longtail;
 mod media;
 mod memo;
+mod mobile_runtime;
 mod monitors;
 mod multi_window;
 mod native_menu;

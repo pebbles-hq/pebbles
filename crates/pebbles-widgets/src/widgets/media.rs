@@ -9,14 +9,86 @@
 //! non-reactive metric it isn't guaranteed to rebuild on resize — for a resize-reactive
 //! layout use [`orientation_builder`] (which reads its allotted bounds).
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use pebbles_foundation::{EdgeInsets, Size};
 
 use crate::overlay::window_size;
 use crate::widgets::padding;
+use pebbles_core::reactive::current_window;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Element, component_props, use_bounds};
+use pebbles_core::{Element, Signal, component_props, create_root_signal, use_bounds};
+
+// ---------------------------------------------------------------------------
+// Runtime metrics — the mutable, shell-reported slice of MediaQueryData.
+// ---------------------------------------------------------------------------
+
+/// The mutable window metrics the shell (or a test) reports — everything in
+/// [`MediaQueryData`] except `size` (which tracks the live window). Reactive:
+/// setting any field re-renders the components that read `media_query()`.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct MediaMetrics {
+    padding: EdgeInsets,
+    view_insets: EdgeInsets,
+    device_pixel_ratio: f64,
+    text_scale: f64,
+}
+
+impl Default for MediaMetrics {
+    fn default() -> Self {
+        // Desktop/web defaults: no insets, unit dpr + text scale.
+        MediaMetrics {
+            padding: EdgeInsets::ZERO,
+            view_insets: EdgeInsets::ZERO,
+            device_pixel_ratio: 1.0,
+            text_scale: 1.0,
+        }
+    }
+}
+
+thread_local! {
+    static METRICS: RefCell<HashMap<u32, Signal<MediaMetrics>>> = RefCell::new(HashMap::new());
+}
+
+/// The current window's metrics signal (created once, reused).
+fn metrics_signal() -> Signal<MediaMetrics> {
+    let window = current_window();
+    METRICS.with(|cell| {
+        *cell.borrow_mut().entry(window).or_insert_with(|| create_root_signal(MediaMetrics::default()))
+    })
+}
+
+/// Report the soft-keyboard insets for the current window (Flutter's
+/// `viewInsets`). The mobile shell calls this as the keyboard shows/hides; it
+/// drives [`Scaffold::resize_to_avoid_bottom_inset`](crate::Scaffold::resize_to_avoid_bottom_inset).
+pub fn set_view_insets(insets: EdgeInsets) {
+    metrics_signal().update(|m| m.view_insets = insets);
+}
+
+/// Report the safe-area insets (notch / status bar / home indicator) — drives
+/// [`safe_area`].
+pub fn set_safe_area_padding(padding: EdgeInsets) {
+    metrics_signal().update(|m| m.padding = padding);
+}
+
+/// Report the device pixel ratio (physical px per logical px).
+pub fn set_device_pixel_ratio(dpr: f64) {
+    metrics_signal().update(|m| m.device_pixel_ratio = dpr.max(0.1));
+}
+
+/// Report the user text-scale factor.
+pub fn set_text_scale(scale: f64) {
+    metrics_signal().update(|m| m.text_scale = scale.max(0.1));
+}
+
+/// Forget a closed window's metrics (the shell calls this on window close).
+pub fn drop_window_metrics(window: u32) {
+    METRICS.with(|cell| {
+        cell.borrow_mut().remove(&window);
+    });
+}
 
 /// Portrait (taller than wide) or landscape (wider than tall).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -49,17 +121,20 @@ impl MediaQueryData {
     }
 }
 
-/// The current window's [`MediaQueryData`]. See the module docs for the desktop/mobile
-/// split of each field.
+/// The current window's [`MediaQueryData`]. Reactive in the shell-reported fields
+/// (padding / view insets / dpr / text scale) — reading it subscribes the calling
+/// component, so a `set_view_insets` re-renders it. See the module docs for the
+/// desktop/mobile split of each field.
 pub fn media_query() -> MediaQueryData {
     let (w, h) = window_size();
+    let m = metrics_signal().get();
     MediaQueryData {
         size: Size::new(w, h),
-        padding: EdgeInsets::ZERO,
-        view_insets: EdgeInsets::ZERO,
+        padding: m.padding,
+        view_insets: m.view_insets,
         orientation: if h >= w { Orientation::Portrait } else { Orientation::Landscape },
-        device_pixel_ratio: 1.0,
-        text_scale: 1.0,
+        device_pixel_ratio: m.device_pixel_ratio,
+        text_scale: m.text_scale,
     }
 }
 

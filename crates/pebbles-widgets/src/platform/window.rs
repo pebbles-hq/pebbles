@@ -211,6 +211,7 @@ pub fn drop_window_state(window: u32) {
     crate::dialog::drop_window(window);
     crate::sheet::drop_window(window);
     crate::toast::drop_window(window);
+    crate::widgets::drop_window_metrics(window);
 }
 
 /// Request that the window with `id` be closed.

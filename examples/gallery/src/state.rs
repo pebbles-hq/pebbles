@@ -245,6 +245,7 @@ pub const NAV: &[NavGroup] = &[
             ("draggable-sheet", lucide::PANEL_BOTTOM, "Draggable Sheet"),
             ("scaffold-drawer", lucide::PANEL_LEFT, "Scaffold Drawer"),
             ("default-text-style", lucide::TYPE, "Default Text Style"),
+            ("mobile-runtime", lucide::SMARTPHONE, "Mobile Runtime"),
         ],
     },
     NavGroup {
