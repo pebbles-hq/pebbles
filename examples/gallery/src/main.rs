@@ -14,6 +14,7 @@ mod soak;
 
 use pebbles::prelude::*;
 
+#[pebbles::main]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     Theme::light().make_current();
     state::init(); // create the global route signal before any component runs

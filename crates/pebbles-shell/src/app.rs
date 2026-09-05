@@ -188,12 +188,11 @@ impl App {
             );
         }
 
-        // A user-event loop on both targets: web uses it to deliver the async GPU
-        // bring-up back into the loop; desktop never sends one.
-        let event_loop = EventLoop::<PebblesUserEvent>::with_user_event().build()?;
-
+        // Web: hand the runner to winit's `spawn_app` (the browser owns the loop);
+        // the proxy delivers the async GPU bring-up back in.
         #[cfg(target_family = "wasm")]
         {
+            let event_loop = EventLoop::<PebblesUserEvent>::with_user_event().build()?;
             let mut runner = Runner::new(self);
             runner.set_proxy(event_loop.create_proxy());
             use winit::platform::web::EventLoopExtWebSys;
@@ -201,8 +200,25 @@ impl App {
             Ok(())
         }
 
-        #[cfg(not(target_family = "wasm"))]
+        // Android: build the event loop from the AndroidApp that `android_main`
+        // stashed (see `#[pebbles::main]`); otherwise it's the desktop path (blocking
+        // `run_app`, synchronous surface).
+        #[cfg(all(not(target_family = "wasm"), target_os = "android"))]
         {
+            use winit::platform::android::EventLoopBuilderExtAndroid;
+            let event_loop = EventLoop::<PebblesUserEvent>::with_user_event()
+                .with_android_app(crate::android_entry::android_app())
+                .build()?;
+            let mut runner = Runner::new(self);
+            event_loop.run_app(&mut runner)?;
+            log::info(log::Cat::General, "pebbles app exited cleanly");
+            Ok(())
+        }
+
+        // Desktop (Linux/macOS/Windows): block in `run_app` until the window closes.
+        #[cfg(all(not(target_family = "wasm"), not(target_os = "android")))]
+        {
+            let event_loop = EventLoop::<PebblesUserEvent>::with_user_event().build()?;
             let mut runner = Runner::new(self);
             event_loop.run_app(&mut runner)?;
             log::info(log::Cat::General, "pebbles app exited cleanly");

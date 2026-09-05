@@ -21,6 +21,9 @@ fn counter() -> impl IntoWidget {
     ]))
 }
 
+// `#[pebbles::main]` makes this the entry on every target: a plain `fn main` on
+// desktop/web, plus the generated `android_main` on Android. No-op off Android.
+#[pebbles::main]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     App::new(component(counter))
         .title("Pebbles — Counter")

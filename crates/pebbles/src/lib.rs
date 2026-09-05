@@ -42,6 +42,10 @@ pub use pebbles_render as render;
 pub use pebbles_shell as shell;
 pub use pebbles_widgets as widgets;
 
+/// The cross-platform entry-point attribute — `#[pebbles::main]` (see the macro
+/// docs). Re-exported at the crate root so the path form resolves.
+pub use pebbles_macros::main;
+
 /// Everything you need to build a Pebbles app, in one glob import.
 pub mod prelude {
     // foundation

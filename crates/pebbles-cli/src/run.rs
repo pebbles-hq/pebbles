@@ -177,7 +177,8 @@ pub fn run(args: &[String]) -> ExitCode {
     match o.platform {
         Platform::Desktop => {}
         Platform::Web => return run_web(&member_dir, &bin, &o),
-        Platform::Android | Platform::Ios => return run_mobile(o.platform),
+        Platform::Android => return run_android(&member_dir, &bin, &o),
+        Platform::Ios => return run_ios(),
     }
 
     // Where the binary lands: the workspace target if in a workspace, else the
@@ -297,7 +298,7 @@ fn run_web(member_dir: &Path, bin: &str, o: &Opts) -> ExitCode {
     term::banner(&format!("pebbles run — {bin} (web, {})", if o.release { "release" } else { "dev" }));
 
     // 1. The wasm target must be installed (`cargo build --target wasm32…`).
-    if !wasm_target_installed() {
+    if !rustup_target_installed("wasm32-unknown-unknown") {
         term::step("installing the wasm32-unknown-unknown target…");
         let ok = Command::new("rustup")
             .args(["target", "add", "wasm32-unknown-unknown"])
@@ -360,12 +361,12 @@ fn run_web(member_dir: &Path, bin: &str, o: &Opts) -> ExitCode {
     }
 }
 
-fn wasm_target_installed() -> bool {
+fn rustup_target_installed(target: &str) -> bool {
     Command::new("rustup")
         .args(["target", "list", "--installed"])
         .output()
         .ok()
-        .map(|out| String::from_utf8_lossy(&out.stdout).contains("wasm32-unknown-unknown"))
+        .map(|out| String::from_utf8_lossy(&out.stdout).lines().any(|l| l.trim() == target))
         .unwrap_or(false)
 }
 
@@ -421,30 +422,134 @@ fn ensure_index_html(member_dir: &Path, bin: &str) -> std::io::Result<PathBuf> {
 
 // --- mobile (`-d android` / `-d ios`) ----------------------------------------
 
-/// Android and iOS compile today but are not yet one-command runnable: each needs
-/// a device toolchain this CLI does not bundle (an Android SDK/NDK + device, or a
-/// Mac + Xcode). Point the engineer at the exact next steps rather than pretending.
-fn run_mobile(platform: Platform) -> ExitCode {
-    match platform {
-        Platform::Android => {
-            term::banner("pebbles run — android");
-            term::warn("Android compiles for aarch64-linux-android, but a runnable APK needs the NDK.");
-            println!("  next steps (see documentations/android-support.md):");
-            println!("    1. install the Android SDK + NDK, then: cargo install cargo-ndk");
-            println!("    2. add the target:  rustup target add aarch64-linux-android");
-            println!("    3. build + run on a device/emulator via cargo-ndk + Gradle");
+/// Build the app to an APK and run it on a device/emulator via **cargo-apk2** (the
+/// NDK-driven, Gradle-free NativeActivity path — the one-command analog to Trunk).
+/// The app crate must be `crate-type = ["cdylib"]` with `#[pebbles::main]` (which
+/// `pebbles new` scaffolds), so `android_main` is exported into the `.so`.
+fn run_android(member_dir: &Path, bin: &str, o: &Opts) -> ExitCode {
+    term::banner(&format!("pebbles run — {bin} (android, {})", if o.release { "release" } else { "dev" }));
+
+    // 1. The Android rustup target.
+    if !rustup_target_installed("aarch64-linux-android") {
+        term::step("adding the aarch64-linux-android target…");
+        let ok = Command::new("rustup")
+            .args(["target", "add", "aarch64-linux-android"])
+            .status()
+            .is_ok_and(|s| s.success());
+        if !ok {
+            term::error("could not add the android target — run: rustup target add aarch64-linux-android");
+            return ExitCode::FAILURE;
         }
-        Platform::Ios => {
-            term::banner("pebbles run — ios");
-            term::warn("iOS compiles for aarch64-apple-ios, but building/running an app requires a Mac.");
-            println!("  next steps (see documentations/ios-support.md):");
-            println!("    1. on macOS: cargo install cargo-mobile2");
-            println!("    2. cargo mobile init  (generates the Xcode project)");
-            println!("    3. cargo apple run    (Simulator or a signed device)");
+    }
+
+    // 2. The NDK (cargo-apk2 compiles native code, so it's required — no `check` shortcut).
+    if find_android_ndk().is_none() {
+        term::error("Android NDK not found — a device build needs it.");
+        println!(
+            "  install it (Android Studio → SDK Manager → NDK), then set ANDROID_NDK_HOME (or ANDROID_HOME)."
+        );
+        println!("  run `pebbles doctor` to check your whole Android setup.");
+        return ExitCode::FAILURE;
+    }
+
+    // 3. cargo-apk2 (its subcommand is `apk2`, or `apk` on the older cargo-apk).
+    let Some(sub) = cargo_apk_subcommand() else {
+        term::error("cargo-apk2 is required to build + run the APK but was not found.");
+        println!("  install it once with:  cargo install cargo-apk2");
+        println!("  (builds the APK via the NDK and installs/launches it — NativeActivity path.)");
+        return ExitCode::FAILURE;
+    };
+
+    // 4. Build + install + run on the connected device/emulator. winit needs an
+    //    Android base class; use NativeActivity (NDK-only, no Gradle/AAR).
+    let mut cmd = Command::new("cargo");
+    cmd.arg(sub)
+        .arg("run")
+        .arg("-p")
+        .arg(bin)
+        .arg("--features")
+        .arg("pebbles/android-native-activity")
+        .current_dir(member_dir);
+    if o.release {
+        cmd.arg("--release");
+    }
+    term::hot("building the APK and launching on your device/emulator (Ctrl+C to stop)…");
+    term::step(
+        "Android uses NativeActivity here (no soft keyboard yet) and needs Vulkan (Android 7+). \
+         The crate must be crate-type=[\"cdylib\"] + #[pebbles::main] — see documentations/android-support.md.",
+    );
+    cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
+    match cmd.status() {
+        Ok(s) if s.success() => ExitCode::SUCCESS,
+        Ok(_) => ExitCode::FAILURE,
+        Err(e) => {
+            term::error(&format!("could not launch cargo {sub}: {e}"));
+            ExitCode::FAILURE
         }
-        _ => {}
+    }
+}
+
+/// iOS can only be built on macOS (Apple's constraint). Point at the exact steps.
+fn run_ios() -> ExitCode {
+    term::banner("pebbles run — ios");
+    if cfg!(target_os = "macos") {
+        term::step("iOS run is driven by cargo-mobile2 (see documentations/ios-support.md):");
+        println!("    1. cargo install cargo-mobile2");
+        println!("    2. cargo mobile init      (generates the Xcode project)");
+        println!("    3. cargo apple run        (Simulator, or a signed device)");
+    } else {
+        term::warn("iOS can only be built on a Mac — no Linux/Windows path (Apple's constraint).");
+        println!(
+            "  the whole stack already compiles for aarch64-apple-ios in CI; the on-device build needs macOS + Xcode."
+        );
     }
     ExitCode::SUCCESS
+}
+
+/// Locate the Android NDK: env first, then the newest `<sdk>/ndk/<version>`.
+fn find_android_ndk() -> Option<PathBuf> {
+    for var in ["ANDROID_NDK_HOME", "ANDROID_NDK_ROOT", "NDK_HOME"] {
+        if let Some(p) = std::env::var_os(var) {
+            let p = PathBuf::from(p);
+            if p.is_dir() {
+                return Some(p);
+            }
+        }
+    }
+    let sdk = ["ANDROID_HOME", "ANDROID_SDK_ROOT"]
+        .into_iter()
+        .find_map(|v| std::env::var_os(v).map(PathBuf::from).filter(|p| p.is_dir()))
+        .or_else(|| {
+            let home =
+                std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from)?;
+            [
+                home.join("Android/Sdk"),
+                home.join("Library/Android/sdk"),
+                home.join("AppData/Local/Android/Sdk"),
+            ]
+            .into_iter()
+            .find(|p| p.is_dir())
+        })?;
+    let mut versions: Vec<PathBuf> =
+        std::fs::read_dir(sdk.join("ndk")).ok()?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    versions.sort();
+    versions.pop()
+}
+
+/// The available cargo APK subcommand: `apk2` (cargo-apk2) or `apk` (cargo-apk).
+fn cargo_apk_subcommand() -> Option<&'static str> {
+    for sub in ["apk2", "apk"] {
+        let ok = Command::new("cargo")
+            .args([sub, "--version"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success());
+        if ok {
+            return Some(sub);
+        }
+    }
+    None
 }
 
 fn cargo_build(run_dir: &Path, package: &str, release: bool) -> bool {

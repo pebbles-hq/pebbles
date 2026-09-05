@@ -75,6 +75,53 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
+/// Mark the app entry point so it runs on every platform — Flutter's `void main()`.
+///
+/// It leaves your function **exactly as written** (so it's the ordinary `fn main`
+/// on desktop/web, or a `pub fn run` your desktop bin calls) and *additionally*, on
+/// **Android**, generates the `android_main(app: AndroidApp)` the OS calls there:
+/// it stashes the `AndroidApp` so [`App::run`] can build the winit event loop with
+/// it, then invokes your function.
+///
+/// Desktop/web — one file:
+/// ```ignore
+/// #[pebbles::main]
+/// fn main() -> Result<(), Box<dyn std::error::Error>> { App::new(component(app)).run() }
+/// ```
+///
+/// Cross-platform incl. Android — put it on `run()` in `lib.rs` (a `cdylib`), with a
+/// thin `main.rs` calling `my_app::run()` for desktop (see documentations/android-support.md):
+/// ```ignore
+/// #[pebbles::main]
+/// pub fn run() -> Result<(), Box<dyn std::error::Error>> { App::new(component(app)).run() }
+/// ```
+///
+/// Adding it changes nothing off Android.
+#[proc_macro_attribute]
+pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let func = parse_macro_input!(item as ItemFn);
+    if !func.sig.generics.params.is_empty() {
+        return err(&func.sig.generics, "#[pebbles::main] does not support generics");
+    }
+    let entry = &func.sig.ident; // the fn to call from android_main (usually `main` or `run`)
+
+    quote! {
+        // Your function, verbatim — the desktop/web entry (if named `main`) or a
+        // `run()` your desktop bin calls.
+        #func
+
+        // Android: the OS calls `android_main`, not your fn. Stash the AndroidApp for
+        // `App::run` to build the event loop with, then invoke your fn.
+        #[cfg(target_os = "android")]
+        #[unsafe(no_mangle)]
+        extern "C" fn android_main(app: ::pebbles::shell::AndroidApp) {
+            ::pebbles::shell::__set_android_app(app);
+            let _ = #entry();
+        }
+    }
+    .into()
+}
+
 fn err(tokens: impl quote::ToTokens, msg: &str) -> TokenStream {
     syn::Error::new_spanned(tokens, msg).to_compile_error().into()
 }

@@ -28,6 +28,11 @@ file-dialogs = ["pebbles-widgets/file-dialogs"]
 # Forward the runtime's optional tokio integration (`create_resource_future`,
 # `spawn_future`) — the README advertises it, so the umbrella must expose it.
 tokio = ["pebbles-core/tokio"]
+# Forward the Android base-class selection (winit needs exactly one on Android).
+# `pebbles run -d android` passes native-activity (NDK-only, no Gradle); GameActivity
+# is the production step-up (soft keyboard, needs the AAR). See android-support.md.
+android-native-activity = ["pebbles-shell/android-native-activity"]
+android-game-activity = ["pebbles-shell/android-game-activity"]
 # NOTE: Markdown moved to its own package, `pebbles-markdown` — add it alongside
 # `pebbles` in your app's deps (it depends on this catalog, not the reverse).
 
