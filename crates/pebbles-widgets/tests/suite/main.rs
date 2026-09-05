@@ -30,6 +30,7 @@ mod layout_extra;
 mod lifecycle;
 mod list_auto;
 mod list_tile;
+mod longtail;
 mod media;
 mod memo;
 mod monitors;

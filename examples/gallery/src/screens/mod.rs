@@ -36,6 +36,7 @@ pub mod kbd;
 pub mod layout_extra;
 pub mod list;
 pub mod list_view;
+pub mod longtail;
 pub mod material;
 pub mod menubar;
 pub mod mobile;

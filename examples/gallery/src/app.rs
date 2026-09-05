@@ -174,6 +174,9 @@ pub fn app() -> impl IntoWidget {
         .route("safe-area", || component(screens::mobile::safe_area_screen))
         .route("orientation-builder", || component(screens::mobile::orientation_builder_screen))
         .route("scaffold-slots", || component(screens::mobile::scaffold_slots_screen))
+        // Long-tail.
+        .route("placeholder", || component(screens::longtail::placeholder_screen))
+        .route("banner", || component(screens::longtail::banner_screen))
         .route("canvas", || component(screens::canvas::canvas_screen))
         .route("resizable", || component(screens::resizable::resizables))
         .route("badge", || component(screens::badge::badges))

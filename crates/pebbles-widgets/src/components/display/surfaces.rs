@@ -2,7 +2,7 @@
 //! [`Separator`] and [`Skeleton`].
 
 use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, Offset};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, IconKind};
+use pebbles_render::{Border, BorderRadius, BorderSide, BoxDecoration, BoxShadow, IconData, IconKind};
 
 #[cfg(feature = "image-view")]
 use crate::ImageView;
@@ -276,6 +276,70 @@ impl IntoWidget for Alert {
         .cross_axis_alignment(CrossAxisAlignment::Start)
         .main_axis_size(MainAxisSize::Min);
         styled(body, base.merge(self.style.take().unwrap_or_default()))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Banner (MaterialBanner)
+// ---------------------------------------------------------------------------
+
+/// A full-width message bar with an optional leading icon and trailing actions, and a
+/// bottom divider — Flutter's `MaterialBanner`. Persistent and inline (unlike a toast),
+/// it sits at the top of content to carry a prominent message.
+#[derive(Clone, Default)]
+pub struct Banner {
+    message: String,
+    icon: Option<IconData>,
+    actions: Vec<AnyWidget>,
+}
+
+/// Create a [`Banner`] with a `message`. Add a leading [`icon`](Banner::icon) and
+/// trailing [`action`](Banner::action)s.
+pub fn banner(message: impl Into<String>) -> Banner {
+    Banner { message: message.into(), ..Default::default() }
+}
+
+impl Banner {
+    /// A leading icon.
+    pub fn icon(mut self, kind: impl Into<IconData>) -> Self {
+        self.icon = Some(kind.into());
+        self
+    }
+    /// A trailing action (usually a `Button`). Multiple are laid out in order.
+    pub fn action(mut self, w: impl IntoWidget) -> Self {
+        self.actions.push(w.into_widget());
+        self
+    }
+}
+
+impl IntoWidget for Banner {
+    fn into_widget(mut self) -> AnyWidget {
+        let c = theme().colors;
+        let mut items: Vec<AnyWidget> = Vec::new();
+        if let Some(kind) = self.icon.take() {
+            items.push(icon(kind).size(18.0).color(c.foreground).into_widget());
+            items.push(gap_w(12.0).into_widget());
+        }
+        items.push(text(std::mem::take(&mut self.message)).size(13.5).color(c.foreground).into_widget());
+        items.push(spacer().into_widget());
+        for (i, action) in std::mem::take(&mut self.actions).into_iter().enumerate() {
+            if i > 0 {
+                items.push(gap_w(6.0).into_widget());
+            }
+            items.push(action);
+        }
+        // A full-width bar with a bottom divider (a banner, not a card).
+        let bottom = Border {
+            top: BorderSide::new(c.border, 0.0),
+            right: BorderSide::new(c.border, 0.0),
+            bottom: BorderSide::new(c.border, 1.0),
+            left: BorderSide::new(c.border, 0.0),
+        };
+        Container::new()
+            .decoration(BoxDecoration::new().color(c.card).border(bottom))
+            .padding(EdgeInsets::symmetric(16.0, 12.0))
+            .child(row(items).cross_axis_alignment(CrossAxisAlignment::Center))
+            .into_widget()
     }
 }
 

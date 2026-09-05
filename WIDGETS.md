@@ -127,6 +127,8 @@ remote-URL images) and their per-platform status live in
 | `Avatar` / `AvatarGroup` | ✅ | shapes; initials |
 | `Separator` · `Kbd` · `Empty` | ✅ | |
 | `Skeleton` | ✅ | + shimmer |
+| `banner` (MaterialBanner) | ✅ | full-width message bar: leading icon + trailing actions + bottom divider; persistent/inline (unlike a toast) |
+| `placeholder` | ✅ | Canvas-backed dev box (border + diagonal X); `.size()`/`.color()`/`.stroke_width()` — the "not built yet" marker |
 | `Progress` | ✅ | determinate bar; indeterminate = `Spinner` |
 | `Tooltip` | ✅ 🔶C2 | delay/rich/style ✅; `.side()` + flip + show-on-focus (C2) open |
 | `HoverCard` | ✅ | delay + stays-open-over-card grace |

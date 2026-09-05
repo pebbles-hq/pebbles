@@ -235,6 +235,10 @@ pub const NAV: &[NavGroup] = &[
         ],
     },
     NavGroup {
+        label: "LONG-TAIL",
+        routes: &[("placeholder", lucide::BOX, "Placeholder"), ("banner", lucide::INFO, "Banner")],
+    },
+    NavGroup {
         label: "NAVIGATION",
         routes: &[
             ("tabs", lucide::SQUARE_STACK, "Tabs"),

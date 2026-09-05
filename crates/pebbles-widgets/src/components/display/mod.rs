@@ -12,6 +12,7 @@ mod icon;
 pub mod image_view;
 mod kbd;
 mod list_tile;
+mod placeholder;
 mod progress;
 mod surfaces;
 mod tooltip;
@@ -32,10 +33,11 @@ pub use icon::{Icon, icon};
 pub use image_view::ImageView;
 pub use kbd::{Kbd, kbd};
 pub use list_tile::{ListTile, list_tile};
+pub use placeholder::{Placeholder, placeholder};
 pub use progress::{Progress, progress};
 pub use surfaces::{
-    Alert, AlertVariant, Avatar, AvatarGroup, AvatarShape, Badge, BadgeVariant, Card, Separator, Skeleton,
-    alert, avatar, avatar_group, badge, card, separator, skeleton,
+    Alert, AlertVariant, Avatar, AvatarGroup, AvatarShape, Badge, BadgeVariant, Banner, Card, Separator,
+    Skeleton, alert, avatar, avatar_group, badge, banner, card, separator, skeleton,
 };
 pub use tooltip::{Tooltip, tooltip};
 pub use tree::{TreeNode, TreeView, tree_node, tree_view};
