@@ -19,7 +19,9 @@ use pebbles_render::BorderRadius;
 
 use std::rc::Rc;
 
-use crate::widgets::{Align, Container, GestureDetector, Opacity, Transform, clip_rrect, padding, stack};
+use crate::widgets::{
+    Align, Container, GestureDetector, Opacity, Transform, clip_rrect, padding, positioned, stack,
+};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{
     Curve, Element, Signal, action_event, animate_to, animated_with, component_props, create_signal,
@@ -435,6 +437,106 @@ fn render_switcher(b: &AnimatedSwitcher) -> Element {
     }
     layers.push(Opacity::new(t as f32, cur.get()).into_widget());
     stack(layers).into_widget()
+}
+
+// ===========================================================================
+// AnimatedPositioned — a Stack child whose position/size animate on change
+// ===========================================================================
+
+/// A [`Stack`](crate::widgets::Stack) child whose `left`/`top`/`right`/`bottom`/
+/// `width`/`height` animate implicitly on change (Flutter `AnimatedPositioned`).
+/// Use inside a `Stack`, like `positioned`.
+#[derive(Clone, Default)]
+pub struct AnimatedPositioned {
+    left: Option<f64>,
+    top: Option<f64>,
+    right: Option<f64>,
+    bottom: Option<f64>,
+    width: Option<f64>,
+    height: Option<f64>,
+    duration: f64,
+    curve: Curve,
+    child: Option<AnyWidget>,
+}
+/// A `Stack` child that animates to its target edges/size whenever they change.
+pub fn animated_positioned(child: impl IntoWidget) -> AnimatedPositioned {
+    AnimatedPositioned {
+        duration: DEFAULT_SECS,
+        curve: Curve::EaseOutCubic,
+        child: Some(child.into_widget()),
+        ..Default::default()
+    }
+}
+impl AnimatedPositioned {
+    /// Animated distance from the stack's left edge.
+    pub fn left(mut self, v: f64) -> Self {
+        self.left = Some(v);
+        self
+    }
+    /// Animated distance from the stack's top edge.
+    pub fn top(mut self, v: f64) -> Self {
+        self.top = Some(v);
+        self
+    }
+    /// Animated distance from the stack's right edge.
+    pub fn right(mut self, v: f64) -> Self {
+        self.right = Some(v);
+        self
+    }
+    /// Animated distance from the stack's bottom edge.
+    pub fn bottom(mut self, v: f64) -> Self {
+        self.bottom = Some(v);
+        self
+    }
+    /// Animated width.
+    pub fn width(mut self, v: f64) -> Self {
+        self.width = Some(v);
+        self
+    }
+    /// Animated height.
+    pub fn height(mut self, v: f64) -> Self {
+        self.height = Some(v);
+        self
+    }
+    /// Transition duration in seconds.
+    pub fn duration(mut self, secs: f64) -> Self {
+        self.duration = secs.max(0.0);
+        self
+    }
+    /// Easing curve.
+    pub fn curve(mut self, curve: Curve) -> Self {
+        self.curve = curve;
+        self
+    }
+}
+impl IntoWidget for AnimatedPositioned {
+    fn into_widget(self) -> AnyWidget {
+        component_props(render_animated_positioned, self).into_widget()
+    }
+}
+fn render_animated_positioned(b: &AnimatedPositioned) -> Element {
+    let (d, c) = (b.duration, b.curve);
+    let child = b.child.clone().unwrap_or_else(|| Container::new().into_widget());
+    let mut p = positioned(child);
+    if let Some(v) = b.left {
+        p = p.left(animated_with(v, d, c));
+    }
+    if let Some(v) = b.top {
+        p = p.top(animated_with(v, d, c));
+    }
+    if let Some(v) = b.right {
+        p = p.right(animated_with(v, d, c));
+    }
+    if let Some(v) = b.bottom {
+        p = p.bottom(animated_with(v, d, c));
+    }
+    if let Some(v) = b.width {
+        p = p.width(animated_with(v, d, c));
+    }
+    if let Some(v) = b.height {
+        p = p.height(animated_with(v, d, c));
+    }
+    p.into_widget()
 }
 
 // ===========================================================================

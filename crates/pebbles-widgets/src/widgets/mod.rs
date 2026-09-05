@@ -49,11 +49,12 @@ pub use keyed::{Keyed, keyed};
 pub use layout::{AspectRatio, Wrap, aspect_ratio, wrap};
 pub use list::{GridView, ListView, ScrollController, use_scroll_controller};
 pub use motion::{
-    AnimatedAlign, AnimatedCrossFade, AnimatedOpacity, AnimatedPadding, AnimatedRotation, AnimatedScale,
-    AnimatedSlide, AnimatedSwitcher, Dismissible, FadeTransition, RotationTransition, ScaleTransition,
-    SizeTransition, SlideTransition, animated_align, animated_cross_fade, animated_opacity, animated_padding,
-    animated_rotation, animated_scale, animated_slide, animated_switcher, dismissible, fade_transition,
-    rotation_transition, scale_transition, size_transition, slide_transition,
+    AnimatedAlign, AnimatedCrossFade, AnimatedOpacity, AnimatedPadding, AnimatedPositioned, AnimatedRotation,
+    AnimatedScale, AnimatedSlide, AnimatedSwitcher, Dismissible, FadeTransition, RotationTransition,
+    ScaleTransition, SizeTransition, SlideTransition, animated_align, animated_cross_fade, animated_opacity,
+    animated_padding, animated_positioned, animated_rotation, animated_scale, animated_slide,
+    animated_switcher, dismissible, fade_transition, rotation_transition, scale_transition, size_transition,
+    slide_transition,
 };
 pub use pebbles_render::{ScrollbarPolicy, ScrollbarStyle, SemanticsProps, SemanticsRole};
 pub use probe::{ExtentProbe, extent_probe};

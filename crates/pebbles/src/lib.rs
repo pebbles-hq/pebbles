@@ -127,11 +127,12 @@ pub mod prelude {
 
     // motion & transitions (Flutter's animation widget family)
     pub use pebbles_widgets::{
-        AnimatedAlign, AnimatedCrossFade, AnimatedOpacity, AnimatedPadding, AnimatedRotation, AnimatedScale,
-        AnimatedSlide, AnimatedSwitcher, Dismissible, FadeTransition, RotationTransition, ScaleTransition,
-        SizeTransition, SlideTransition, animated_align, animated_cross_fade, animated_opacity,
-        animated_padding, animated_rotation, animated_scale, animated_slide, animated_switcher, dismissible,
-        fade_transition, rotation_transition, scale_transition, size_transition, slide_transition,
+        AnimatedAlign, AnimatedCrossFade, AnimatedOpacity, AnimatedPadding, AnimatedPositioned,
+        AnimatedRotation, AnimatedScale, AnimatedSlide, AnimatedSwitcher, Dismissible, FadeTransition,
+        RotationTransition, ScaleTransition, SizeTransition, SlideTransition, animated_align,
+        animated_cross_fade, animated_opacity, animated_padding, animated_positioned, animated_rotation,
+        animated_scale, animated_slide, animated_switcher, dismissible, fade_transition, rotation_transition,
+        scale_transition, size_transition, slide_transition,
     };
 
     // widgets: layout primitives + constructors
