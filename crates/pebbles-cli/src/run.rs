@@ -407,9 +407,26 @@ fn ensure_index_html(member_dir: &Path, bin: &str) -> std::io::Result<PathBuf> {
       width: 100% !important; height: 100% !important;
       display: block; outline: none; touch-action: none;
     }}
+    #pebbles-no-webgpu {{
+      font: 15px/1.5 system-ui, sans-serif; color: #334155; max-width: 34rem;
+      margin: 12vh auto; padding: 0 1.5rem; text-align: center;
+    }}
   </style>
-  <!-- Build this workspace crate to wasm. Trunk runs cargo + wasm-bindgen. -->
-  <link data-trunk rel="rust" href="../../Cargo.toml" data-bin="{bin}" data-wasm-opt="0" />
+  <!-- Friendly message instead of a wasm panic when the browser lacks WebGPU
+       (Pebbles is WebGPU-only — no WebGL2 fallback). -->
+  <script>
+    if (!navigator.gpu) {{
+      addEventListener('DOMContentLoaded', function () {{
+        document.body.innerHTML =
+          '<div id="pebbles-no-webgpu"><h2>This app needs WebGPU</h2>' +
+          '<p>Open it in Chrome/Edge, Safari&nbsp;26+, or Firefox with WebGPU enabled. ' +
+          'On Linux Chrome you may need <code>chrome://flags</code> → Unsafe WebGPU + Vulkan.</p></div>';
+      }});
+    }}
+  </script>
+  <!-- Build this workspace crate to wasm. Trunk runs cargo + wasm-bindgen, and
+       wasm-opt on --release (skipped in dev for fast rebuilds). -->
+  <link data-trunk rel="rust" href="../../Cargo.toml" data-bin="{bin}" />
 </head>
 <body></body>
 </html>

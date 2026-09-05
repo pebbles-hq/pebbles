@@ -2627,6 +2627,7 @@ dependencies = [
  "slotmap",
  "smallvec",
  "tokio",
+ "wasm-bindgen-futures",
  "web-time",
 ]
 
@@ -2687,6 +2688,7 @@ dependencies = [
  "raw-window-handle",
  "vello",
  "wasm-bindgen-futures",
+ "web-sys",
  "web-time",
  "wgpu",
  "winit",

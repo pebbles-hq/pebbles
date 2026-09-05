@@ -164,10 +164,33 @@ fn install_clipboard() {
     }
 }
 
-/// No `arboard` backend on wasm/Android yet — the core's in-process fallback
-/// keeps intra-app copy/paste working.
-#[cfg(any(target_family = "wasm", target_os = "android"))]
+/// Android: no `arboard` backend yet — the core's in-process fallback keeps
+/// intra-app copy/paste working (a JNI backend is a follow-up).
+#[cfg(all(target_os = "android", not(target_family = "wasm")))]
 fn install_clipboard() {}
+
+/// Web: writes go to the system clipboard via the async `navigator.clipboard`
+/// (so text copied in Pebbles pastes into other apps); reads return the last value
+/// Pebbles set — a synchronous read of the OS clipboard isn't possible on the web
+/// (`readText` is async + permission-gated), so cross-app *paste into* Pebbles is a
+/// follow-up. Intra-app copy/paste works fully. See documentations/web-support.md §4.2.
+#[cfg(target_family = "wasm")]
+fn install_clipboard() {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let last = Rc::new(RefCell::new(String::new()));
+    let reader = last.clone();
+    pebbles_core::clipboard::install(
+        move || reader.borrow().clone(),
+        move |text| {
+            *last.borrow_mut() = text.to_string();
+            // Best-effort push to the OS clipboard (async Promise, fire-and-forget).
+            if let Some(win) = web_sys::window() {
+                let _ = win.navigator().clipboard().write_text(text);
+            }
+        },
+    );
+}
 
 /// A user event delivered into the winit loop from off the event-callback stack.
 ///

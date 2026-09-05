@@ -120,9 +120,13 @@ impl TextEnv {
         Ok(())
     }
     /// Reloads the OS font set (e.g. after the user installs a font) and
-    /// refreshes discovery.
+    /// refreshes discovery. No-op on the web, which has no system-font discovery —
+    /// the bundled families (+ any `App::font`) are the guaranteed set there.
     pub fn register_system_fonts(&mut self) {
-        self.fonts.collection.load_system_fonts();
-        crate::fonts::refresh_families(&mut self.fonts);
+        #[cfg(not(target_family = "wasm"))]
+        {
+            self.fonts.collection.load_system_fonts();
+            crate::fonts::refresh_families(&mut self.fonts);
+        }
     }
 }

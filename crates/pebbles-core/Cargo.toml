@@ -19,6 +19,10 @@ web-time.workspace = true
 # (default off). Same pump-based UI-thread result delivery as the std-thread `spawn`.
 tokio = { version = "1", optional = true, features = ["rt", "rt-multi-thread"] }
 
+# Web: `spawn` runs background work on the microtask queue (no OS threads on wasm).
+[target.'cfg(target_family = "wasm")'.dependencies]
+wasm-bindgen-futures = "0.4"
+
 [features]
 default = []
 tokio = ["dep:tokio"]
