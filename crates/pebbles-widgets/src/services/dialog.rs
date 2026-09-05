@@ -256,7 +256,13 @@ impl AlertDialog {
             vec![text(self.title.clone()).size(18.0).weight(600.0).color(c.foreground).into_widget()];
         if !self.description.is_empty() {
             kids.push(gap_h(8.0).into_widget());
-            kids.push(text(self.description.clone()).size(14.0).color(c.muted_foreground).into_widget());
+            kids.push(
+                text(self.description.clone())
+                    .size(14.0)
+                    .line_height(1.45)
+                    .color(c.muted_foreground)
+                    .into_widget(),
+            );
         }
         kids.push(gap_h(22.0).into_widget());
         kids.push(
@@ -265,9 +271,14 @@ impl AlertDialog {
                 .into_widget(),
         );
 
-        let content = column(kids)
-            .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
-            .main_axis_size(MainAxisSize::Min);
+        // The base dialog surface has no inner padding, so the alert supplies its own.
+        let content = Container::new()
+            .padding(pebbles_foundation::EdgeInsets::symmetric(24.0, 22.0))
+            .child(
+                column(kids)
+                    .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
+                    .main_axis_size(MainAxisSize::Min),
+            );
 
         dialog(content).width(440.0).dismissible(self.dismissible).open()
     }
@@ -287,9 +298,12 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
     )
     .into_widget();
 
-    // Centered surface holding the content.
+    // Centered surface holding the content. Cap the width to the window so a wide
+    // dialog (the 440px default) still fits a phone-sized window, with a 20px margin.
+    let ww = crate::overlay::window_size().0;
+    let width = if ww > 40.0 { entry.width.min(ww - 40.0) } else { entry.width };
     let surface = Container::new()
-        .width(entry.width)
+        .width(width)
         .decoration(
             BoxDecoration::new()
                 .color(entry.background.unwrap_or(c.popover))
