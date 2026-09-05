@@ -6,6 +6,21 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed / Changed — starter examples reworked
+The starter examples (`counter`, `todo`, `temperature`, `stopwatch`) were made
+actually-working, prettier (themed cards), and reorganized as teaching codebases:
+
+- **Bug fixes:** text inputs now use the **controlled** `.bind(signal)` (the old
+  `.value()` is initial-text-only, so the todo couldn't clear and the temperature
+  fields didn't sync); the stopwatch now measures real elapsed time via
+  `animation::now()` (`create_loop` returns a `0..1` animation phase, not a
+  clock — the old one just jittered).
+- **Structure:** `counter` demonstrates a **global state manager** (a `state`
+  module: app-scoped signal + actions); `todo` is a **multi-file** app with a
+  `store` (state manager) and a `components/` folder (input / item / list / toolbar),
+  including filter tabs; `temperature`/`stopwatch` are clean, componentized
+  single-files. All heavily commented so the codebase reads as a how-to.
+
 ### Added — showcase sample apps
 Three larger structural samples alongside the starters (counter/todo/temperature/
 stopwatch), each a single-file `examples/` app:
