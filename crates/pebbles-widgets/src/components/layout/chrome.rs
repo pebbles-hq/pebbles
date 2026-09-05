@@ -8,9 +8,7 @@
 use std::rc::Rc;
 
 use pebbles_core::IntoCallback;
-use pebbles_foundation::{
-    Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, palette,
-};
+use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, palette};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconData, IconKind};
 
 use crate::theme::{mix, theme};
@@ -496,34 +494,43 @@ fn render_side_nav(p: &SideNav) -> AnyWidget {
     ))
     .scrollbar_thickness(6.0);
 
+    // The collapse toggle lives in the header row (top), not floating at the bottom:
+    // beside the brand when expanded, centered in the rail when collapsed.
+    let toggle: Option<AnyWidget> = p.collapsible.then(|| {
+        CollapseToggle { collapsed, next: !collapsed, on_change: p.on_collapse_changed.clone() }.into_widget()
+    });
+
     let mut col: Vec<AnyWidget> = Vec::new();
-    if let Some(header) = &p.header {
-        if !collapsed {
-            col.push(Padding::new(EdgeInsets::only(10.0, 10.0, 10.0, 6.0), header.clone()).into_widget());
+    if collapsed {
+        // Collapsed rail: the brand/footer are hidden; the toggle sits centered at top.
+        if let Some(toggle) = toggle {
+            col.push(Padding::new(EdgeInsets::only(0.0, 12.0, 0.0, 8.0), center(toggle)).into_widget());
         }
+    } else if p.header.is_some() || toggle.is_some() {
+        // Expanded: brand on the left, toggle pinned to the right of the same row.
+        let mut bar: Vec<AnyWidget> = Vec::new();
+        match &p.header {
+            Some(header) => bar.push(Expanded::new(header.clone()).into_widget()),
+            None => bar.push(spacer().into_widget()),
+        }
+        if let Some(toggle) = toggle {
+            bar.push(toggle);
+        }
+        col.push(
+            Padding::new(
+                EdgeInsets::only(10.0, 10.0, 8.0, 6.0),
+                row(bar).cross_axis_alignment(CrossAxisAlignment::Center),
+            )
+            .into_widget(),
+        );
     }
+
     col.push(Expanded::new(scroller).into_widget());
-    if let Some(footer) = &p.footer {
-        if !collapsed {
-            col.push(Padding::new(EdgeInsets::only(10.0, 6.0, 10.0, 10.0), footer.clone()).into_widget());
-        }
-    }
-    // The collapse chevron, pinned to the bottom.
-    if p.collapsible {
-        let on_change = p.on_collapse_changed.clone();
-        let next = !collapsed;
-        let glyph = if collapsed { IconKind::ChevronRight } else { IconKind::ChevronLeft };
-        let mut toggle = GestureDetector::new(
-            Container::new()
-                .alignment(Alignment::CENTER)
-                .padding(EdgeInsets::symmetric(0.0, 10.0))
-                .child(icon(glyph).size(18.0).color(c.muted_foreground)),
-        )
-        .cursor(Cursor::Pointer);
-        if let Some(cb) = on_change {
-            toggle = toggle.on_tap(move || cb(next));
-        }
-        col.push(toggle.into_widget());
+    // The footer (e.g. a profile card) sits at the bottom, only when expanded.
+    if let Some(footer) = &p.footer
+        && !collapsed
+    {
+        col.push(Padding::new(EdgeInsets::only(10.0, 6.0, 10.0, 10.0), footer.clone()).into_widget());
     }
 
     let content = Container::new()
@@ -535,6 +542,47 @@ fn render_side_nav(p: &SideNav) -> AnyWidget {
     row(children![content, Container::new().color(c.border).width(1.0)])
         .cross_axis_alignment(CrossAxisAlignment::Stretch)
         .into_widget()
+}
+
+/// The rail's collapse/expand control — a rounded, hover-tinted chevron button that
+/// matches the [`NavItem`] styling. Its own component so hovering it re-renders only
+/// the button, not the whole nav.
+#[derive(Clone)]
+struct CollapseToggle {
+    collapsed: bool,
+    next: bool,
+    on_change: Option<Rc<dyn Fn(bool)>>,
+}
+
+impl IntoWidget for CollapseToggle {
+    fn into_widget(self) -> AnyWidget {
+        component_props(render_collapse_toggle, self).into_widget()
+    }
+}
+
+fn render_collapse_toggle(t: &CollapseToggle) -> AnyWidget {
+    let c = theme().colors;
+    let hovered = create_signal(false);
+    let bg = if hovered.get() { mix(c.background, c.accent, 0.6) } else { palette::TRANSPARENT };
+    let glyph = if t.collapsed { IconKind::ChevronRight } else { IconKind::ChevronLeft };
+
+    let mut gesture = GestureDetector::new(
+        Container::new()
+            .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius)))
+            .padding(EdgeInsets::all(7.0))
+            .child(icon(glyph).size(18.0).color(c.muted_foreground)),
+    )
+    .cursor(Cursor::Pointer)
+    .on_hover_enter(move || hovered.set(true))
+    .on_hover_exit(move || hovered.set(false));
+    if let Some(cb) = t.on_change.clone() {
+        let next = t.next;
+        gesture = gesture.on_tap(move || cb(next));
+    }
+
+    // Collapsed rail: label the control with a right-side tooltip, like the nav items.
+    let button = gesture.into_widget();
+    if t.collapsed { tooltip("Expand", button).side(Side::Right).into_widget() } else { button }
 }
 
 // ===========================================================================
