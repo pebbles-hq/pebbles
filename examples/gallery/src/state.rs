@@ -212,6 +212,13 @@ pub const NAV: &[NavGroup] = &[
         ],
     },
     NavGroup {
+        label: "MATERIAL STAPLES",
+        routes: &[
+            ("fab", lucide::PLUS, "Floating Action Button"),
+            ("grid-tile", lucide::LAYOUT_GRID, "Grid Tile"),
+        ],
+    },
+    NavGroup {
         label: "NAVIGATION",
         routes: &[
             ("tabs", lucide::SQUARE_STACK, "Tabs"),

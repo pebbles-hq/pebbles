@@ -7,6 +7,7 @@ mod combobox;
 mod command;
 mod context_menu;
 mod date_field;
+mod fab;
 mod field;
 mod input_otp;
 pub(crate) mod list_nav;
@@ -28,6 +29,7 @@ pub use command::{
 };
 pub use context_menu::{ContextMenu, context_menu};
 pub use date_field::{DateField, DateFormat, DateOrder, date_field};
+pub use fab::{Fab, fab};
 pub use field::{Field, field};
 pub use input_otp::{InputOtp, input_otp};
 pub use list_nav::{ListNav, list_nav};

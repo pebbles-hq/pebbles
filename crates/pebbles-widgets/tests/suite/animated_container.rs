@@ -6,13 +6,14 @@ use std::cell::{Cell, RefCell};
 use pebbles_core::IntoWidget;
 use pebbles_core::{Signal, Ui, animation, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
-use pebbles_render::{RenderConstrainedBox, RenderPointerListener, TextEnv};
-use pebbles_widgets::{View, animated_container, center, chip, choice_chip, column, gap_h};
+use pebbles_render::{IconKind, RenderConstrainedBox, RenderPointerListener, TextEnv};
+use pebbles_widgets::{View, animated_container, center, chip, choice_chip, column, fab, gap_h};
 
 thread_local! {
     static WIDE: RefCell<Option<Signal<bool>>> = const { RefCell::new(None) };
     static DELETED: Cell<u32> = const { Cell::new(0) };
     static CHOSEN: Cell<u32> = const { Cell::new(0) };
+    static FAB_TAPS: Cell<u32> = const { Cell::new(0) };
 }
 
 fn anim_shell() -> impl IntoWidget {
@@ -184,4 +185,21 @@ fn choice_chip_fires_on_pressed_when_tapped() {
     // The chip is centered; its tap gesture covers the pill. Tapping the middle fires.
     assert!(ui.dispatch_tap(Offset::new(100.0, 60.0)), "the chip body is tappable");
     assert_eq!(CHOSEN.with(Cell::get), 1, "on_pressed fired once");
+}
+
+fn fab_root() -> impl IntoWidget {
+    center(fab(IconKind::Mail).on_pressed(|| FAB_TAPS.with(|c| c.set(c.get() + 1))))
+}
+
+#[test]
+fn fab_fires_on_pressed_when_tapped() {
+    FAB_TAPS.with(|c| c.set(0));
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(View::new(palette::WHITE, component(fab_root)).into_widget());
+    ui.layout(&mut env, Size::new(200.0, 200.0));
+
+    // The 56px FAB is centered; tapping the middle fires its action.
+    assert!(ui.dispatch_tap(Offset::new(100.0, 100.0)), "the FAB is tappable");
+    assert_eq!(FAB_TAPS.with(Cell::get), 1, "on_pressed fired once");
 }

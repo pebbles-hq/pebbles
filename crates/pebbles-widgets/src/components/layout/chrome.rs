@@ -15,8 +15,8 @@ use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconData, Icon
 
 use crate::theme::{mix, theme};
 use crate::widgets::{
-    Container, Expanded, GestureDetector, Padding, SingleChildScrollView, center, column, gap_h, gap_w, row,
-    spacer, text,
+    Container, Expanded, GestureDetector, Padding, SingleChildScrollView, center, column, gap_h, gap_w,
+    positioned, row, spacer, stack, text,
 };
 use pebbles_core::children;
 use pebbles_core::context::Callback;
@@ -42,12 +42,20 @@ pub struct Scaffold {
     top: Option<AnyWidget>,
     side: Option<AnyWidget>,
     bottom: Option<AnyWidget>,
+    fab: Option<AnyWidget>,
     background: Option<Color>,
 }
 
 /// Create a [`Scaffold`] with a `body`. Attach chrome with `.top()/.side()/.bottom()`.
 pub fn scaffold(body: impl IntoWidget) -> Scaffold {
-    Scaffold { body: Some(body.into_widget()), top: None, side: None, bottom: None, background: None }
+    Scaffold {
+        body: Some(body.into_widget()),
+        top: None,
+        side: None,
+        bottom: None,
+        fab: None,
+        background: None,
+    }
 }
 
 impl Scaffold {
@@ -63,6 +71,12 @@ impl Scaffold {
         self.bottom = Some(bottom.into_widget());
         self
     }
+    /// A floating action button ([`fab`](crate::fab)), overlaid at the bottom-right of
+    /// the body (Flutter's `Scaffold.floatingActionButton`).
+    pub fn fab(mut self, fab: impl IntoWidget) -> Self {
+        self.fab = Some(fab.into_widget());
+        self
+    }
     pub fn background(mut self, color: Color) -> Self {
         self.background = Some(color);
         self
@@ -75,12 +89,17 @@ impl IntoWidget for Scaffold {
         let body = self.body.take().unwrap_or_else(|| gap_h(0.0).into_widget());
 
         // side (fixed) + body (fills)
-        let middle: AnyWidget = match self.side.take() {
+        let mut middle: AnyWidget = match self.side.take() {
             Some(side) => row(children![side, Expanded::new(Container::new().color(bg).child(body))])
                 .cross_axis_alignment(CrossAxisAlignment::Stretch)
                 .into_widget(),
             None => Container::new().color(bg).child(body).into_widget(),
         };
+
+        // A floating action button overlays the body, pinned bottom-right.
+        if let Some(fab) = self.fab.take() {
+            middle = stack(children![middle, positioned(fab).right(16.0).bottom(16.0)]).into_widget();
+        }
 
         let mut col: Vec<AnyWidget> = Vec::new();
         if let Some(top) = self.top.take() {

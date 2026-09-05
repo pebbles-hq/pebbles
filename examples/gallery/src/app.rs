@@ -163,6 +163,9 @@ pub fn app() -> impl IntoWidget {
         .route("action-chip", || component(screens::inputs_extra::action_chip_screen))
         .route("stepper", || component(screens::inputs_extra::stepper_screen))
         .route("selectable-text", || component(screens::inputs_extra::selectable_text_screen))
+        // Material staples — one screen per widget.
+        .route("fab", || component(screens::material::fab_screen))
+        .route("grid-tile", || component(screens::material::grid_tile_screen))
         .route("canvas", || component(screens::canvas::canvas_screen))
         .route("resizable", || component(screens::resizable::resizables))
         .route("badge", || component(screens::badge::badges))

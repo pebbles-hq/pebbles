@@ -5,6 +5,7 @@ mod chip;
 mod data;
 mod empty;
 mod file_explorer;
+mod grid_tile;
 mod hover_card;
 mod icon;
 #[cfg(feature = "image-view")]
@@ -24,6 +25,7 @@ pub use empty::{Empty, empty};
 #[cfg(feature = "file-dialogs")]
 pub use file_explorer::pick_folder;
 pub use file_explorer::{FileExplorer, FileTree, FsKind, FsNode, file_explorer};
+pub use grid_tile::{GridTile, GridTileBar, grid_tile, grid_tile_bar};
 pub use hover_card::{HoverCard, hover_card};
 pub use icon::{Icon, icon};
 #[cfg(feature = "image-view")]

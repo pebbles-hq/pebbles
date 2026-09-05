@@ -91,6 +91,7 @@ remote-URL images) and their per-platform status live in
 | Widget | Status | Notes |
 |--------|--------|-------|
 | `Button` / `IconButton` | ✅ | variants, sizes, hover/press/disabled/focus ring |
+| `fab` (FloatingActionButton) | ✅ | circular elevated action button; `.mini()`, `.label()` (extended pill), `.color()`; canonical placement via `Scaffold::fab()` (bottom-right), or standalone in a Stack |
 | `ButtonGroup` | ✅ | joined strip geometry |
 | `Checkbox` | ✅ | + `.indeterminate` tri-state |
 | `Radio` / `RadioGroup` | ✅ | |
@@ -120,6 +121,7 @@ remote-URL images) and their per-platform status live in
 | `Card` · `Badge` (5 variants) · `Alert` (4 variants) | ✅ | |
 | `Chip` (+ `choice_chip` · `filter_chip` · `action_chip`) | ✅ | deletable tag (icon + label + ✕ `on_deleted`) = InputChip; plus `.selected()`/`.on_pressed()` for single-select (ChoiceChip), multi-select toggle with a check (FilterChip), and tappable (ActionChip) |
 | `Stepper` | ✅ | numbered step flow (vertical or `.horizontal()`); completed steps show a check, the current reveals its content; tappable headers via `.on_step_tapped()` |
+| `grid_tile` (+ `grid_tile_bar`) | ✅ | a grid cell with a caption bar overlaid on its top/bottom edge (`.header()`/`.footer()`); the bar has title/subtitle/leading/trailing — the photo-grid tile |
 | `Avatar` / `AvatarGroup` | ✅ | shapes; initials |
 | `Separator` · `Kbd` · `Empty` | ✅ | |
 | `Skeleton` | ✅ | + shimmer |
@@ -140,7 +142,7 @@ remote-URL images) and their per-platform status live in
 |--------|--------|-------|
 | `Panel` · `ScrollArea` · `Resizable` · `SplitView` | ✅ | live drag-resize |
 | `Accordion` · `Collapsible` | ✅ | single/multiple, default-open, events |
-| `Scaffold` · `TopPanel` · `SideNav` · `BottomNav` | ✅ 🔶C5/C8g | SideNav rail-collapse (C5) open; dedicated chrome gallery screen (C8g) open |
+| `Scaffold` · `TopPanel` · `SideNav` · `BottomNav` | ✅ 🔶C5/C8g | top/side/body/bottom + a `.fab()` slot (bottom-right FAB overlay); SideNav rail-collapse (C5) open; dedicated chrome gallery screen (C8g) open |
 | `Tabs` | ✅ | design variants, disabled tabs, keyboard, focus ring |
 | `Breadcrumb` | ✅ | `.max_visible` middle-collapse |
 | `Pagination` | ✅ | Numbers/Simple/Arrows designs, unified `on_page` |
