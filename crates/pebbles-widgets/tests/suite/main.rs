@@ -29,6 +29,7 @@ mod ime;
 mod interactions;
 mod layout_extra;
 mod lifecycle;
+mod lifecycle_soak;
 mod list_auto;
 mod list_tile;
 mod longtail;

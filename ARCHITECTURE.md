@@ -32,7 +32,7 @@ pebbles-macros       the #[component] proc-macro
 pebbles              the umbrella crate: re-exports + `pebbles::prelude`
 ```
 
-`examples/*` (counter, gallery) are workspace members that consume only the umbrella
+`examples/*` (counter, todo, temperature, stopwatch) are workspace members that consume only the umbrella
 crate — they are the consumer-facing API check.
 
 ## The three trees

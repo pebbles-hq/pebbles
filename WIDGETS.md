@@ -15,7 +15,7 @@ Legend: **✅ built** (themed, interactive, tested) · **🔶 built, tracked rem
 **⬜ open, tracked** (→ p2 ID) · **🆕 open, NOT yet tracked** — promote to a p2 item when
 ratified · **🚫 decided OUT** (p2 §J — do not "helpfully" add).
 
-Run `cargo run -p gallery` — ~50 dedicated screens, one per component family.
+The interactive gallery (~50 screens, one per component family) lives in its own repo, [pebbles-hq/pebbles-landing](https://github.com/pebbles-hq/pebbles-landing).
 
 **Platform support:** every widget here works on all six platforms (Linux, macOS,
 Windows, web, Android, iOS) — the catalog is universal. The few OS-specific
@@ -208,7 +208,7 @@ remote-URL images) and their per-platform status live in
 | Accessibility (AccessKit: read + focus announce) | ✅ 🔶D1/C7 | AT-driven actions (D1), long-tail roles (C7) open |
 | RTL / `TextDirection` threading | ⬜D2 | enum exists, unused |
 | Custom drawing (`canvas`) | ⬜H2 | prerequisite for Charts (H3) |
-| Lifecycle & memory hygiene | ✅ | teardown verified 2026-09-01 (screens fully unmount; zero frames/timers after navigation — `performance-standards.md` §0-1). E6 ✅ DONE 2026-09-02: `text_edit` leak fixed, `scroll_metrics` audited clean, census accessors + navigation-soak tripwire (`gallery/src/soak.rs`) green |
+| Lifecycle & memory hygiene | ✅ | teardown verified 2026-09-01 (screens fully unmount; zero frames/timers after navigation — `performance-standards.md` §0-1). E6 ✅ DONE 2026-09-02: `text_edit` leak fixed, `scroll_metrics` audited clean, census accessors + a slim in-repo lifecycle leak-soak (`tests/suite/lifecycle_soak.rs`); the full route-hopping soak moved to the pebbles-landing gallery |
 
 ## 8. Open items — add-to-track (🆕 not in the p2 roadmap yet)
 

@@ -6,6 +6,17 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — the gallery moved to its own repo
+The full interactive **gallery / showcase** (every widget, live) moved out of
+`examples/gallery` into [`pebbles-hq/pebbles-landing`](https://github.com/pebbles-hq/pebbles-landing),
+which backs the landing site's learn/docs section. The framework repo now keeps
+only small starter examples — `counter`, `todo`, `temperature`, `stopwatch` — the
+quick "how easy is it" set. The gallery depends on `pebbles` by git, so it builds
+standalone. The full route-hopping navigation soak went with it; a **slim in-repo
+lifecycle leak-soak** (`crates/pebbles-widgets/tests/suite/lifecycle_soak.rs`)
+keeps the leak tripwire in this repo's CI (mounts/unmounts a representative widget
+set + overlay/passive layers, asserts every registry returns to baseline).
+
 ### Added — Flutter parity: scroll notifications, list body, list tiles, sheets
 A batch of buildable-now Flutter-parity widgets:
 

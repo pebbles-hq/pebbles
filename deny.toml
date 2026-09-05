@@ -49,7 +49,7 @@ ignore = [
 
 [licenses]
 version = 2
-# The example crates (counter, gallery) are `publish = false` and carry no
+# The example crates (counter, todo, temperature, stopwatch) are `publish = false` and carry no
 # license field; they are not distributed, so do not gate on them.
 private = { ignore = true }
 allow = [

@@ -1,0 +1,11 @@
+[package]
+name = "temperature"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+pebbles = { workspace = true }
+
+[lints]
+workspace = true

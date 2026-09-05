@@ -1,0 +1,11 @@
+[package]
+name = "todo"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+pebbles = { workspace = true }
+
+[lints]
+workspace = true

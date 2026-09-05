@@ -42,7 +42,7 @@ familiarity with a fraction of the ceremony, in idiomatic Rust.
 
 > Status: early but broad. Catalog, reactivity, layout, text editing (incl. **IME/CJK**),
 > scrolling, theming (**live light/dark**), **multi-window + IPC**, **async data**, and an
-> **AccessKit accessibility** layer are all real and demonstrated in the gallery. It's a
+> **AccessKit accessibility** layer are all real and demonstrated in the [gallery](https://github.com/pebbles-hq/pebbles-landing). It's a
 > personal project and the foundation for **Gravel**, an IDE built on top of it — but it
 > stands on its own.
 
@@ -70,9 +70,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 ```bash
-cargo run -p counter     # the example above
-cargo run -p gallery     # the full widget showcase / documentation
+cargo run -p counter        # the example above
+cargo run -p todo           # add / toggle / remove — a reactive Vec
+cargo run -p temperature    # two-way binding (°C ↔ °F)
+cargo run -p stopwatch      # start / stop / reset — a ticking loop
 ```
+
+Those `examples/` are the small "how easy is it" starters. The **full widget
+showcase / documentation** (every widget, live) is its own app in
+[`pebbles-hq/pebbles-landing`](https://github.com/pebbles-hq/pebbles-landing) —
+the gallery that backs the landing site's learn/docs section.
 
 ## The `pebbles` command
 
@@ -162,7 +169,7 @@ platform design docs.
 ### View-function rules (the top-3 FAQ)
 
 1. **A view is a plain `fn` returning its root widget — there is no `widget()`/`view()`
-   wrapper and there never should be.** Helpers like the gallery's `screen()` are optional
+   wrapper and there never should be.** Helpers like an app's own `screen()` are optional
    app vocabulary, not required chrome.
 2. **No local state → plain fn, call it directly. Local state
    (`create_signal`/`animated`/`create_focus`) → it's a component: mount it via
@@ -230,7 +237,7 @@ encoder with **no** wgpu — keeping layout/paint logic unit-testable headlessly
 
 ## What's in the box
 
-Everything below is built and shown in `cargo run -p gallery`, styled to **shadcn**.
+Everything below is built and shown live in the [gallery](https://github.com/pebbles-hq/pebbles-landing), styled to **shadcn**.
 
 - **Layout & primitives** — `Text`, `Container`, `Row`/`Column` (Flutter's
   `.main_axis_alignment()/.cross_axis_alignment()/.main_axis_size()/.spacing()`),
@@ -363,9 +370,11 @@ one window and the other updates instantly, with no serialization (unlike
 Electron's `postMessage`). The still strip is [`demo/windows-ipc-strip.png`](demo/windows-ipc-strip.png).
 
 Both assets are rendered straight from the gallery, headless and reproducibly —
-`GALLERY_CAPTURE=<dir> cargo run -p gallery --release` rasterizes each window
-through vello off-screen, then `python3 demo/build_demo.py <dir> demo` composites
-the strip and GIF. No screenshot tool or display server required.
+the capture tooling lives with the gallery in
+[`pebbles-landing`](https://github.com/pebbles-hq/pebbles-landing)
+(`GALLERY_CAPTURE=<dir> cargo run --release` rasterizes each window through vello
+off-screen, then `build_demo.py` composites the strip and GIF). No screenshot tool
+or display server required.
 
 ## Roadmap
 
