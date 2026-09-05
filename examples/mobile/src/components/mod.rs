@@ -1,8 +1,7 @@
 //! Reusable pieces. `bits` are shared atoms; `post_card` renders a feed post;
-//! `compose` and `comments` are bottom-sheet flows opened from the UI.
+//! `compose` is the new-post bottom sheet; `post_menu` is the ⋯ action sheet.
 
 pub mod bits;
-pub mod comments;
 pub mod compose;
 mod post_card;
 pub mod post_menu;

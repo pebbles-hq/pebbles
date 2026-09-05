@@ -11,6 +11,7 @@
 //!                     right, with a badge), bottom nav + the compose FAB
 
 mod components;
+mod net;
 mod screens;
 mod store;
 
@@ -21,7 +22,11 @@ use components::compose::open_composer;
 fn app() -> AnyWidget {
     let tab = create_signal(0_usize); // hook first, unconditionally
 
-    // Messaging is a full-screen takeover over the tabbed shell.
+    // Two full-screen takeovers sit over the tabbed shell: an open post's detail
+    // view, and messaging. Either one, when active, replaces the whole screen.
+    if let Some(post_id) = store::post_open() {
+        return screens::post_detail(post_id);
+    }
     if store::messages_open() {
         return screens::messages();
     }

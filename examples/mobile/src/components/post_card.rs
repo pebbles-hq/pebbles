@@ -1,44 +1,59 @@
 //! A single feed post — author, text, optional media, and the like / comment /
-//! bookmark action bar. Every action calls a store action; the card re-renders when
-//! the post's state changes.
+//! bookmark action bar. Tapping the post body opens its full detail view; every
+//! action calls a store action, and the card re-renders when the post's state changes.
 
 use pebbles::prelude::*;
 
 use super::bits::avatar;
-use super::comments::open_comments;
 use super::post_menu::open_post_menu;
 use crate::store::{self, Post};
 
 pub fn post_card(post: &Post) -> impl IntoWidget {
     let c = theme().colors;
+    let id = post.id;
     let author = store::user(post.author);
 
-    // Header: avatar, name/handle, time, follow (for others) or a ⋯ menu.
+    // Subtitle: "@handle · 2h", or just "@handle" for API posts that carry no time.
+    let subtitle = if post.time.is_empty() {
+        format!("@{}", author.handle)
+    } else {
+        format!("@{} · {}", author.handle, post.time)
+    };
+
+    // Header: avatar, name/handle, follow (for others) or a ⋯ menu (for your own).
     let header = row(children![
         avatar(&author.avatar, 42.0),
         gap_w(10.0),
         column(children![
             text(author.name.clone()).size(14.5).semibold().color(c.foreground),
-            text(format!("@{} · {}", author.handle, post.time)).size(12.5).color(c.muted_foreground),
+            text(subtitle).size(12.5).color(c.muted_foreground),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Start)
         .main_axis_size(MainAxisSize::Min),
         spacer(),
-        follow_or_menu(&author, post.id),
+        follow_or_menu(&author, id),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center);
 
     // Body text (skipped when empty).
-    let mut kids: Vec<AnyWidget> = vec![header.into_widget()];
+    let mut body: Vec<AnyWidget> = vec![header.into_widget()];
     if !post.text.is_empty() {
-        kids.push(gap_h(10.0).into_widget());
-        kids.push(text(post.text.clone()).size(14.5).line_height(1.45).color(c.foreground).into_widget());
+        body.push(gap_h(10.0).into_widget());
+        body.push(
+            text(post.text.clone())
+                .size(14.5)
+                .line_height(1.45)
+                .max_lines(6)
+                .ellipsis()
+                .color(c.foreground)
+                .into_widget(),
+        );
     }
 
     // Media (network image), rounded + clipped.
     if let Some(url) = &post.media {
-        kids.push(gap_h(12.0).into_widget());
-        kids.push(
+        body.push(gap_h(12.0).into_widget());
+        body.push(
             container()
                 .decoration(BoxDecoration::new().color(c.secondary).radius(BorderRadius::all(14.0)))
                 .clip()
@@ -48,8 +63,12 @@ pub fn post_card(post: &Post) -> impl IntoWidget {
         );
     }
 
-    kids.push(gap_h(12.0).into_widget());
-    kids.push(actions(post).into_widget());
+    // Tapping the header/text/media opens the post; the action row below stays its
+    // own set of buttons (they're inner listeners, so they win their own taps).
+    let tappable = GestureDetector::new(
+        column(body).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
+    )
+    .on_tap(move || store::open_post(id));
 
     container()
         .decoration(
@@ -61,7 +80,9 @@ pub fn post_card(post: &Post) -> impl IntoWidget {
         .padding(EdgeInsets::all(14.0))
         .margin(EdgeInsets::only(14.0, 14.0, 14.0, 0.0))
         .child(
-            column(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
+            column(children![tappable, gap_h(12.0), actions(post)])
+                .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .main_axis_size(MainAxisSize::Min),
         )
 }
 
@@ -89,8 +110,9 @@ fn actions(post: &Post) -> impl IntoWidget {
     row(children![
         action(lucide::HEART, heart, Some(post.likes), move || store::toggle_like(id)),
         gap_w(18.0),
-        action(lucide::MESSAGE_CIRCLE, c.muted_foreground, Some(post.comments.len() as u32), move || {
-            open_comments(id)
+        // The comment icon opens the full post + its thread.
+        action(lucide::MESSAGE_CIRCLE, c.muted_foreground, post.comment_count, move || {
+            store::open_post(id)
         }),
         spacer(),
         action(
