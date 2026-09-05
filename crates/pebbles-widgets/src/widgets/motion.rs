@@ -14,13 +14,15 @@
 
 use std::f64::consts::TAU;
 
-use pebbles_foundation::{Alignment, Axis, EdgeInsets, Offset};
-use pebbles_render::BorderRadius;
+use pebbles_foundation::{Alignment, Axis, EdgeInsets, Offset, Rect};
+use pebbles_render::{Border, BorderRadius, BorderSide, BoxDecoration, BoxShadow};
 
 use std::rc::Rc;
 
+use crate::theme::mix;
 use crate::widgets::{
-    Align, Container, GestureDetector, Opacity, Transform, clip_rrect, padding, positioned, stack,
+    Align, Container, DecoratedBox, GestureDetector, Opacity, Transform, clip_rrect, padding, positioned,
+    stack,
 };
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{
@@ -314,6 +316,128 @@ fn render_size_transition(b: &SizeTransition) -> Element {
         Axis::Horizontal => Align::new(Alignment::CENTER, child).width_factor(f),
     };
     clip_rrect(BorderRadius::ZERO, aligned).into_widget()
+}
+
+/// Position + size a Stack child by an externally-driven `rect` signal, in window/
+/// stack coordinates (Flutter `PositionedTransition`; `Rect` = left/top → right/bottom).
+#[derive(Clone)]
+pub struct PositionedTransition {
+    value: Signal<Rect>,
+    child: Option<AnyWidget>,
+}
+/// Drive a `Stack` child's rect from a `Signal<Rect>` you animate.
+pub fn positioned_transition(rect: Signal<Rect>, child: impl IntoWidget) -> PositionedTransition {
+    PositionedTransition { value: rect, child: Some(child.into_widget()) }
+}
+impl IntoWidget for PositionedTransition {
+    fn into_widget(self) -> AnyWidget {
+        component_props(
+            |b: &PositionedTransition| {
+                let r = b.value.get();
+                let child = b.child.clone().unwrap_or_else(|| Container::new().into_widget());
+                positioned(child)
+                    .left(r.x0)
+                    .top(r.y0)
+                    .width(r.width().max(0.0))
+                    .height(r.height().max(0.0))
+                    .into_widget()
+            },
+            self,
+        )
+        .into_widget()
+    }
+}
+
+/// Cross-fade a child's `BoxDecoration` from `from` to `to` by an externally-driven
+/// `t` signal (Flutter `DecoratedBoxTransition`). Color, radius, border and shadows
+/// interpolate; gradient/image/shape/blend snap at the midpoint.
+#[derive(Clone)]
+pub struct DecoratedBoxTransition {
+    from: BoxDecoration,
+    to: BoxDecoration,
+    value: Signal<f64>,
+    child: Option<AnyWidget>,
+}
+/// Animate `child`'s decoration between `from` and `to` by `t` (a `Signal<f64>`, `0..=1`).
+pub fn decorated_box_transition(
+    from: BoxDecoration,
+    to: BoxDecoration,
+    t: Signal<f64>,
+    child: impl IntoWidget,
+) -> DecoratedBoxTransition {
+    DecoratedBoxTransition { from, to, value: t, child: Some(child.into_widget()) }
+}
+impl IntoWidget for DecoratedBoxTransition {
+    fn into_widget(self) -> AnyWidget {
+        component_props(render_decorated_box_transition, self).into_widget()
+    }
+}
+fn render_decorated_box_transition(b: &DecoratedBoxTransition) -> Element {
+    let t = b.value.get().clamp(0.0, 1.0);
+    let dec = lerp_decoration(&b.from, &b.to, t);
+    let child = b.child.clone().unwrap_or_else(|| Container::new().into_widget());
+    DecoratedBox::new(dec, child).into_widget()
+}
+
+fn lerp_f64(a: f64, b: f64, t: f64) -> f64 {
+    a + (b - a) * t
+}
+fn lerp_color(
+    a: pebbles_foundation::Color,
+    b: pebbles_foundation::Color,
+    t: f64,
+) -> pebbles_foundation::Color {
+    mix(a, b, t as f32)
+}
+fn lerp_radius(a: BorderRadius, b: BorderRadius, t: f64) -> BorderRadius {
+    BorderRadius {
+        top_left: lerp_f64(a.top_left, b.top_left, t),
+        top_right: lerp_f64(a.top_right, b.top_right, t),
+        bottom_right: lerp_f64(a.bottom_right, b.bottom_right, t),
+        bottom_left: lerp_f64(a.bottom_left, b.bottom_left, t),
+    }
+}
+fn lerp_side(a: BorderSide, b: BorderSide, t: f64) -> BorderSide {
+    BorderSide { color: lerp_color(a.color, b.color, t), width: lerp_f64(a.width, b.width, t) }
+}
+fn lerp_shadow(a: &BoxShadow, b: &BoxShadow, t: f64) -> BoxShadow {
+    BoxShadow {
+        color: lerp_color(a.color, b.color, t),
+        offset: Offset::new(lerp_f64(a.offset.x, b.offset.x, t), lerp_f64(a.offset.y, b.offset.y, t)),
+        blur: lerp_f64(a.blur, b.blur, t),
+        spread: lerp_f64(a.spread, b.spread, t),
+    }
+}
+/// Interpolate the animatable parts of a decoration; snap the rest at the midpoint.
+fn lerp_decoration(a: &BoxDecoration, b: &BoxDecoration, t: f64) -> BoxDecoration {
+    let snap = if t < 0.5 { a } else { b };
+    BoxDecoration {
+        color: match (a.color, b.color) {
+            (Some(x), Some(y)) => Some(lerp_color(x, y, t)),
+            (x, y) => y.or(x),
+        },
+        radius: lerp_radius(a.radius, b.radius, t),
+        border: match (a.border, b.border) {
+            (Some(x), Some(y)) => Some(Border {
+                top: lerp_side(x.top, y.top, t),
+                right: lerp_side(x.right, y.right, t),
+                bottom: lerp_side(x.bottom, y.bottom, t),
+                left: lerp_side(x.left, y.left, t),
+            }),
+            (x, y) => y.or(x),
+        },
+        shadows: if a.shadows.len() == b.shadows.len() {
+            a.shadows.iter().zip(&b.shadows).map(|(x, y)| lerp_shadow(x, y, t)).collect()
+        } else {
+            snap.shadows.clone()
+        },
+        // Non-scalar / rare fields: snap at the midpoint.
+        gradient: snap.gradient.clone(),
+        shape: snap.shape,
+        image: snap.image.clone(),
+        image_fit: snap.image_fit,
+        blend: snap.blend,
+    }
 }
 
 // ===========================================================================

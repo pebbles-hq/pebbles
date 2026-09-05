@@ -33,6 +33,7 @@ pub mod kbd;
 pub mod list;
 pub mod list_view;
 pub mod menubar;
+pub mod motion;
 pub mod overview;
 pub mod pagination;
 pub mod popovers;

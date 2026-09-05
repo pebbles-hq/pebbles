@@ -71,14 +71,14 @@ pub use text_direction::{set_text_direction, text_direction};
 pub use theme::{Colors, Theme, set_theme, theme, theme_override, toggle_theme};
 pub use toast::{Toast, ToastId, ToastVariant, dismiss_toast, toast};
 pub use widgets::{
-    Align, AnimatedContainer, AnimatedList, AspectRatio, CanvasWidget, ClipRRect, ColoredBox, Column,
-    ConstrainedBox, Container, DecoratedBox, EditableText, Expanded, FittedBox, Flexible,
+    Align, AnimatedContainer, AnimatedGrid, AnimatedList, AspectRatio, CanvasWidget, ClipRRect, ColoredBox,
+    Column, ConstrainedBox, Container, DecoratedBox, EditableText, Expanded, FittedBox, Flexible,
     FractionallySizedBox, GestureDetector, GridView, IntrinsicHeight, IntrinsicWidth, Keyed, LimitedBox,
     ListView, Opacity, OverflowBox, Padding, Positioned, RepaintBoundary, RichText, Row, ScrollController,
     ScrollExt, ScrollbarPolicy, ScrollbarStyle, Semantics, SemanticsExt, SemanticsProps, SemanticsRole,
     SingleChildScrollView, SizedBox, Spinner, Stack, Text, TextSpan, Transform, View, Wrap, align,
-    animated_container, animated_list, aspect_ratio, canvas, center, clip_rrect, colored_box, column,
-    constrained_box, container, editable, expanded, fitted_box, flexible, focus_scope,
+    animated_container, animated_grid, animated_list, aspect_ratio, canvas, center, clip_rrect, colored_box,
+    column, constrained_box, container, editable, expanded, fitted_box, flexible, focus_scope,
     fractionally_sized_box, gap_h, gap_w, gesture_detector, intrinsic_height, intrinsic_width, keyed,
     limited_box, list_view, opacity, overflow_box, padding, positioned, repaint_boundary, row, scroll_view,
     semantics, sized_box, spacer, span, spinner, stack, text, text_rich, text_signal, transform,
@@ -86,11 +86,12 @@ pub use widgets::{
 };
 pub use widgets::{
     AnimatedAlign, AnimatedCrossFade, AnimatedOpacity, AnimatedPadding, AnimatedPositioned, AnimatedRotation,
-    AnimatedScale, AnimatedSlide, AnimatedSwitcher, Dismissible, FadeTransition, RotationTransition,
-    ScaleTransition, SizeTransition, SlideTransition, animated_align, animated_cross_fade, animated_opacity,
-    animated_padding, animated_positioned, animated_rotation, animated_scale, animated_slide,
-    animated_switcher, dismissible, fade_transition, rotation_transition, scale_transition, size_transition,
-    slide_transition,
+    AnimatedScale, AnimatedSlide, AnimatedSwitcher, DecoratedBoxTransition, Dismissible, FadeTransition,
+    PositionedTransition, RotationTransition, ScaleTransition, SizeTransition, SlideTransition,
+    animated_align, animated_cross_fade, animated_opacity, animated_padding, animated_positioned,
+    animated_rotation, animated_scale, animated_slide, animated_switcher, decorated_box_transition,
+    dismissible, fade_transition, positioned_transition, rotation_transition, scale_transition,
+    size_transition, slide_transition,
 };
 // The immediate-mode drawing surface (H2) a `canvas(..)` painter receives.
 pub use pebbles_render::Canvas;

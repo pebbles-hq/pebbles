@@ -59,12 +59,12 @@ remote-URL images) and their per-platform status live in
 | `LimitedBox` · `OverflowBox` | ✅ | unbounded-axis cap · unclipped overflow |
 | `AnimatedContainer` | ✅ | implicit tween on width/height/color/radius/padding/margin/opacity |
 | Implicit `Animated*` (`AnimatedOpacity`/`Scale`/`Rotation`/`Slide`/`Align`/`Padding`) | ✅ | one-property implicit tweens (siblings of `AnimatedContainer`) |
-| Explicit `*Transition` (`Fade`/`Scale`/`Rotation`/`Slide`/`Size`) | ✅ | `Signal`-driven (controller-style); `SizeTransition` via `Align` height/width-factor |
+| Explicit `*Transition` (`Fade`/`Scale`/`Rotation`/`Slide`/`Size`/`Positioned`/`DecoratedBox`) | ✅ | `Signal`-driven (controller-style); `SizeTransition` via `Align` height/width-factor; `PositionedTransition` tracks a `Signal<Rect>`; `DecoratedBoxTransition` lerps a `BoxDecoration` (color/radius/border/shadow) by a `Signal<f64>` |
 | `AnimatedSwitcher` · `AnimatedCrossFade` | ✅ | cross-fade on key-change / between two children |
 | `Dismissible` | ✅ | swipe-to-dismiss (drag + touch) → `on_dismissed` |
 | `Align` width/height-factor | ✅ | `.width_factor()`/`.height_factor()` (shrink-wrap scaled) |
 | `keyed` / `Keyed` (KeyedSubtree) | ✅ | attach a reconciliation key to any child; the reconciler now matches keyed children BY KEY across positions (insert/remove/reorder preserves element state) — prerequisite for AnimatedList + reorderable lists |
-| `AnimatedList` | ✅ | items animate in on add / out on remove (`animated_list((u64,child) pairs)`); removed items kept for one exit tween then dropped. `AnimatedGrid` pending a variable-height grid |
+| `AnimatedList` · `AnimatedGrid` | ✅ | items animate in on add / out on remove (`animated_list`/`animated_grid`, `(u64,child)` pairs); removed items kept for one exit tween then dropped. List = size+fade (column); grid = scale+fade (flowing `Wrap`) |
 | `AnimatedPositioned` | ✅ | Stack child that eases to target left/top/right/bottom/width/height on change |
 | `Hero` / `fly_heroes` | ✅ | shared-element route transition: `hero(tag, child)` + `fly_heroes(dur, navigate)` flies matching tags between screens via an overlay (RouteView swaps instantly, so it's a hero-only transition; full route cross-fade is a follow-up) |
 | `FocusScope` (focus trap) | ✅ | scoped Tab-cycling; dialogs/sheets contain focus |
