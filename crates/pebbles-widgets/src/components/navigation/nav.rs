@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use pebbles_core::IntoCallback;
 use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
-use pebbles_render::{Border, BoxDecoration, IconKind};
+use pebbles_render::{Border, BoxDecoration, IconData, IconKind, lucide};
 
 use crate::style::{Style, styled};
 use crate::theme::theme;
@@ -170,15 +170,17 @@ pub struct Pagination {
     total: usize,
     variant: PaginationVariant,
     max_buttons: usize,
+    edges: bool,
     on_page: Option<Rc<dyn Fn(usize)>>,
     on_prev: Option<Callback>,
     on_next: Option<Callback>,
     style: Option<Style>,
 }
 
-/// Create a [`Pagination`] control (1-based `page`).
+/// Create a [`Pagination`] control (1-based `page`). Shows first/last jump buttons
+/// (double chevrons) by default — turn them off with [`Pagination::edges`]`(false)`.
 pub fn pagination(page: usize, total: usize) -> Pagination {
-    Pagination { page, total, max_buttons: 7, ..Default::default() }
+    Pagination { page, total, max_buttons: 7, edges: true, ..Default::default() }
 }
 
 impl Pagination {
@@ -191,6 +193,12 @@ impl Pagination {
     /// (default 7; minimum 5).
     pub fn max_buttons(mut self, n: usize) -> Self {
         self.max_buttons = n.max(5);
+        self
+    }
+    /// Show the first/last jump buttons — the double-chevron controls that go straight
+    /// to page 1 or the last page (default `true`).
+    pub fn edges(mut self, on: bool) -> Self {
+        self.edges = on;
         self
     }
     /// Reports EVERY page change (number pills, prev and next) as the target
@@ -257,6 +265,7 @@ impl IntoWidget for Pagination {
         let th = theme();
         let total = self.total.max(1);
         let page = self.page.clamp(1, total);
+        let edges = self.edges;
         let on_page = self.on_page.take();
         let on_prev = self.on_prev.take();
         let on_next = self.on_next.take();
@@ -265,35 +274,43 @@ impl IntoWidget for Pagination {
         let go: Rc<dyn Fn(usize)> = Rc::new(move |p| {
             if let Some(f) = &on_page {
                 f(p);
-            } else if p < page {
-                if let Some(cb) = &on_prev {
-                    invoke(cb);
-                }
-            } else if p > page {
-                if let Some(cb) = &on_next {
-                    invoke(cb);
-                }
+            } else if p < page
+                && let Some(cb) = &on_prev
+            {
+                invoke(cb);
+            } else if p > page
+                && let Some(cb) = &on_next
+            {
+                invoke(cb);
             }
         });
 
-        let mut prev = icon_button(IconKind::ChevronLeft).variant(ButtonVariant::Ghost).size(15.0);
-        if page > 1 {
-            let go = go.clone();
-            prev = prev.on_pressed(move || go(page - 1));
-        } else {
-            prev = prev.disabled(true);
-        }
-        let mut next = icon_button(IconKind::ChevronRight).variant(ButtonVariant::Ghost).size(15.0);
-        if page < total {
-            let go = go.clone();
-            next = next.on_pressed(move || go(page + 1));
-        } else {
-            next = next.disabled(true);
-        }
+        // A bordered (Outline) arrow control — clearly a button, disabled at the bounds.
+        let arrow = |ic: IconData, enabled: bool, target: usize, go: &Rc<dyn Fn(usize)>| -> AnyWidget {
+            let mut b = icon_button(ic).variant(ButtonVariant::Outline).size(15.0);
+            if enabled {
+                let go = go.clone();
+                b = b.on_pressed(move || go(target));
+            } else {
+                b = b.disabled(true);
+            }
+            b.into_widget()
+        };
+        let at_start = page <= 1;
+        let at_end = page >= total;
+        let first = arrow(lucide::CHEVRONS_LEFT, !at_start, 1, &go);
+        let prev = arrow(IconKind::ChevronLeft.into(), !at_start, page.saturating_sub(1).max(1), &go);
+        let next = arrow(IconKind::ChevronRight.into(), !at_end, (page + 1).min(total), &go);
+        let last = arrow(lucide::CHEVRONS_RIGHT, !at_end, total, &go);
 
         let line: AnyWidget = match self.variant {
             PaginationVariant::Numbers => {
-                let mut kids: Vec<AnyWidget> = vec![prev.into_widget()];
+                let mut kids: Vec<AnyWidget> = Vec::new();
+                if edges {
+                    kids.push(first);
+                    kids.push(gap_w(4.0).into_widget());
+                }
+                kids.push(prev);
                 for item in page_window(page, total, self.max_buttons) {
                     kids.push(gap_w(4.0).into_widget());
                     match item {
@@ -318,7 +335,11 @@ impl IntoWidget for Pagination {
                     }
                 }
                 kids.push(gap_w(4.0).into_widget());
-                kids.push(next.into_widget());
+                kids.push(next);
+                if edges {
+                    kids.push(gap_w(4.0).into_widget());
+                    kids.push(last);
+                }
                 row(kids)
                     .cross_axis_alignment(CrossAxisAlignment::Center)
                     .main_axis_size(MainAxisSize::Min)
@@ -330,16 +351,24 @@ impl IntoWidget for Pagination {
                 } else {
                     format!("{page} / {total}")
                 };
-                row(children![
-                    prev,
-                    gap_w(10.0),
-                    text(label).size(13.0).color(th.colors.muted_foreground),
-                    gap_w(10.0),
-                    next,
-                ])
-                .cross_axis_alignment(CrossAxisAlignment::Center)
-                .main_axis_size(MainAxisSize::Min)
-                .into_widget()
+                let mut kids: Vec<AnyWidget> = Vec::new();
+                if edges {
+                    kids.push(first);
+                    kids.push(gap_w(6.0).into_widget());
+                }
+                kids.push(prev);
+                kids.push(gap_w(10.0).into_widget());
+                kids.push(text(label).size(13.0).color(th.colors.muted_foreground).into_widget());
+                kids.push(gap_w(10.0).into_widget());
+                kids.push(next);
+                if edges {
+                    kids.push(gap_w(6.0).into_widget());
+                    kids.push(last);
+                }
+                row(kids)
+                    .cross_axis_alignment(CrossAxisAlignment::Center)
+                    .main_axis_size(MainAxisSize::Min)
+                    .into_widget()
             }
         };
         styled(line, self.style.unwrap_or_default()).into_widget()

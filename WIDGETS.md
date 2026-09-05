@@ -145,7 +145,7 @@ remote-URL images) and their per-platform status live in
 | `Scaffold` · `TopPanel` · `SideNav` · `BottomNav` | ✅ 🔶C5/C8g | top/side/body/bottom + a `.fab()` slot (bottom-right FAB overlay); SideNav rail-collapse (C5) open; dedicated chrome gallery screen (C8g) open |
 | `Tabs` | ✅ | design variants, disabled tabs, keyboard, focus ring |
 | `Breadcrumb` | ✅ | `.max_visible` middle-collapse |
-| `Pagination` | ✅ | Numbers/Simple/Arrows designs, unified `on_page` |
+| `Pagination` | ✅ | Numbers/Simple/Arrows designs; full control — first/last jump (double-chevrons, `.edges(true)` default), prev/next arrows, numbered pills with ellipses; every control is a bordered button, disables at the bounds; unified `on_page` |
 | `Menubar` / `menubar_menu` | ✅ | hover-switch between open menus, submenus |
 | `StickyList` / `sticky_section` · `CollapsingHeader` | ✅ | pinned section headers with push-off; collapsing hero driven by scroll progress `t` (A3 ✅) |
 | `Toolbar` · `StatusBar` | ✅ 🔶C8f | work; dedicated gallery screen (C8f) open |

@@ -6,10 +6,10 @@ pub fn paginations() -> Element {
     let page = create_signal(5usize);
 
     screen("Pagination")
-        .description("Page navigation — three designs, one component: numbered pills with ellipses, chevrons around a label, or the compact X / Y. Every change reports through .on_page(..).")
+        .description("Page navigation — the full control: first/last jump (double chevrons), prev/next arrows, and numbered pills with ellipses. Three designs, one component. Every change reports through .on_page(..).")
         .body(children![
-            doc("Numbers — the shadcn classic")
-                .description("Numbered pills, ellipses for long ranges, chevrons at the ends; the active page is filled. Chevrons disable at the bounds.")
+            doc("The full control")
+                .description("Left → right: first (««), prev (‹), the numbered pills (active is filled), next (›), last (»»). The double-chevrons jump straight to page 1 or the last page; every control is a bordered button and disables at the bounds.")
                 .body(
                     column(children![
                         pagination(page.get(), 20)
@@ -21,12 +21,21 @@ pub fn paginations() -> Element {
                     .cross_axis_alignment(CrossAxisAlignment::Start)
                     .main_axis_size(MainAxisSize::Min),
                 ),
-            doc("Short ranges — no ellipses")
-                .description("With few pages every pill shows; the window is exact.")
+            doc(".edges(false) — no first/last jump")
+                .description("Drop the double-chevron jumps for a leaner prev/pills/next control. Short ranges also skip the ellipses.")
                 .body(
-                    pagination(2, 5)
-                        .variant(PaginationVariant::Numbers)
-                        .on_page(|_| {}),
+                    column(children![
+                        pagination(page.get(), 20)
+                            .variant(PaginationVariant::Numbers)
+                            .edges(false)
+                            .on_page(move |p| page.set(p)),
+                        gap_h(16.0),
+                        muted("short range (2 of 5)"),
+                        gap_h(8.0),
+                        pagination(2, 5).variant(PaginationVariant::Numbers).on_page(|_| {}),
+                    ])
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .main_axis_size(MainAxisSize::Min),
                 ),
             doc("max_buttons")
                 .description(".max_buttons(n) sizes the pill window before it collapses to ellipses (default 7, minimum 5) — wide or tight.")
