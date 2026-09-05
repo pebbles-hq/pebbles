@@ -97,7 +97,8 @@ remote-URL images) and their per-platform status live in
 | `Switch` · `Toggle` | ✅ | |
 | `ToggleGroup` | ✅ | single/multi, joined segmented strip (C4 ✅) |
 | `Slider` | ✅ | drag + keyboard; single-thumb, or `.range(lo, hi)` for a two-thumb RangeSlider |
-| `TextField` / `text_area` | ✅ | 10 `InputKind`s (Text/Number/Integer/Decimal/Email/Url/Phone/Currency/Password/Search), bind/filter/format/max_length/obscured/leading/trailing/label/helper/error, IME preedit |
+| `TextField` / `text_area` | ✅ | 10 `InputKind`s (Text/Number/Integer/Decimal/Email/Url/Phone/Currency/Password/Search), bind/filter/format/max_length/obscured/leading/trailing/label/helper/error, IME preedit; `.read_only()` (selectable + copyable, not editable) and `.bare()` (no chrome) |
+| `selectable_text` (SelectableText) | ✅ | read-only selectable/copyable text (drag/double-click/Shift-click to select, Ctrl+A/Ctrl+C); a bare read-only `TextField` preset |
 | `InputOtp` | ✅ | groups, paste, `on_complete` |
 | `Field` | ✅ | generic label/description/error wrapper |
 | `DateField` | ✅ | single + range (B6 ✅), formats, clearable, min/max/disabled dates |

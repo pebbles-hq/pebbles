@@ -162,6 +162,7 @@ pub fn app() -> impl IntoWidget {
         .route("filter-chip", || component(screens::inputs_extra::filter_chip_screen))
         .route("action-chip", || component(screens::inputs_extra::action_chip_screen))
         .route("stepper", || component(screens::inputs_extra::stepper_screen))
+        .route("selectable-text", || component(screens::inputs_extra::selectable_text_screen))
         .route("canvas", || component(screens::canvas::canvas_screen))
         .route("resizable", || component(screens::resizable::resizables))
         .route("badge", || component(screens::badge::badges))

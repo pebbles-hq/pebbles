@@ -4,10 +4,10 @@
 
 use std::cell::RefCell;
 
-use pebbles_core::{IntoWidget, Ui, component};
+use pebbles_core::{IntoWidget, KeyInput, Signal, Ui, component, create_signal};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{OverlayHost, View, field, text_field, toggle_group_labels};
+use pebbles_widgets::{OverlayHost, View, column, field, text_field, toggle_group_labels};
 
 #[test]
 fn field_paints_label_control_and_error() {
@@ -85,4 +85,46 @@ fn toggle_group_single_select_picks_one() {
         vec![1],
         "the former gap position is cell 2 — the strip is joined with no gaps"
     );
+}
+
+thread_local! {
+    static RO: RefCell<Option<Signal<String>>> = const { RefCell::new(None) };
+}
+fn ro_bound() -> Signal<String> {
+    RO.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.is_none() {
+            *c = Some(create_signal("locked".to_string()));
+        }
+        c.unwrap()
+    })
+}
+fn ro_root() -> impl IntoWidget {
+    OverlayHost::wrap(column(vec![
+        text_field().bind(ro_bound()).read_only(true).autofocus().width(220.0).into_widget(),
+    ]))
+}
+
+#[test]
+fn read_only_field_receives_keys_but_ignores_edits() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    RO.with(|c| *c.borrow_mut() = None);
+    let _ = ro_bound();
+
+    let mut ui = Ui::new();
+    let mut text = TextEnv::new();
+    let window = Size::new(300.0, 150.0);
+    ui.mount_root(View::new(palette::WHITE, component(ro_root)).into_widget());
+    ui.layout(&mut text, window);
+    ui.rebuild_if_dirty();
+    ui.layout(&mut text, window); // autofocus() focuses the field
+
+    // The read-only field IS focused (keys are delivered), but every mutation is
+    // dropped — typing and deletion leave the value untouched.
+    assert!(ui.dispatch_key(KeyInput::Insert("x".to_string())), "read-only field is focusable");
+    assert!(ui.dispatch_key(KeyInput::Backspace), "and still receives keys");
+    ui.rebuild_if_dirty();
+    ui.layout(&mut text, window);
+    assert_eq!(ro_bound().peek(), "locked", "typing/deletion are ignored in read-only mode");
 }

@@ -166,6 +166,8 @@ pub struct TextField {
     error: Option<String>,
     disabled: bool,
     autofocus: bool,
+    read_only: bool,
+    bare: bool,
     on_changed: Option<Rc<dyn Fn(&str)>>,
     on_submit: Option<Rc<dyn Fn(&str)>>,
     on_editing_complete: Option<Rc<dyn Fn()>>,
@@ -183,6 +185,13 @@ pub fn text_field() -> TextField {
 /// A multiline text input (textarea), `lines` rows tall.
 pub fn text_area(lines: u32) -> TextField {
     TextField { multiline: true, lines: lines.max(2), ..text_field() }
+}
+
+/// Selectable **read-only** text (Flutter's `SelectableText`): plain text the user can
+/// select with the mouse (drag / double-click a word / Shift-click) and copy (Ctrl+C /
+/// Ctrl+A), but never edit. A bare, read-only, multiline [`TextField`] preset.
+pub fn selectable_text(content: impl Into<String>) -> TextField {
+    TextField { initial: content.into(), read_only: true, bare: true, multiline: true, ..text_field() }
 }
 
 impl TextField {
@@ -283,6 +292,21 @@ impl TextField {
         self.disabled = on;
         self
     }
+    /// Read-only: still focusable, selectable and copyable (arrows/Home/End, Ctrl+A,
+    /// Ctrl+C), but every mutating key (typing, Backspace/Delete, Paste/Cut, IME,
+    /// undo/redo) is ignored and no caret blinks. Unlike [`disabled`](Self::disabled),
+    /// which blocks all interaction.
+    pub fn read_only(mut self, on: bool) -> Self {
+        self.read_only = on;
+        self
+    }
+    /// Drop the field chrome (border / background / padding / label / helper) and paint
+    /// the text bare — the basis for [`selectable_text`]. Selection + pointer behavior
+    /// are unchanged.
+    pub fn bare(mut self, on: bool) -> Self {
+        self.bare = on;
+        self
+    }
     /// Grab keyboard focus on mount.
     pub fn autofocus(mut self) -> Self {
         self.autofocus = true;
@@ -352,6 +376,8 @@ struct Props {
     error: Option<String>,
     disabled: bool,
     autofocus: bool,
+    read_only: bool,
+    bare: bool,
     select_range: Option<(usize, usize)>,
     on_changed: Option<Rc<dyn Fn(&str)>>,
     on_submit: Option<Rc<dyn Fn(&str)>>,
@@ -385,6 +411,8 @@ impl IntoWidget for TextField {
                 error: self.error,
                 disabled: self.disabled,
                 autofocus: self.autofocus,
+                read_only: self.read_only,
+                bare: self.bare,
                 select_range: self.select_range,
                 on_changed: self.on_changed,
                 on_submit: self.on_submit,
@@ -781,7 +809,8 @@ fn render_field(p: &Props) -> AnyWidget {
         if p.placeholder.is_empty() { kind_placeholder(kind).to_string() } else { p.placeholder.clone() };
     let eff_obscure = if kind == InputKind::Password { (!visible.get()).then_some('•') } else { p.obscure };
 
-    // Only a live (enabled) field is focusable + edits.
+    // Only a live (enabled) field is focusable + edits. A read-only field is still
+    // focusable (so it can be selected + copied); it just drops every mutating key.
     if !disabled {
         focus.register(Rc::new(|| {}), p.on_focus_change.clone(), p.autofocus);
         let on_changed = p.on_changed.clone();
@@ -791,10 +820,20 @@ fn render_field(p: &Props) -> AnyWidget {
         let max_length = p.max_length;
         let format = eff_format.clone();
         let on_nav = p.on_nav.clone();
+        let read_only = p.read_only;
         focus.register_editor(Rc::new(move |k: KeyInput| {
             // A consumer (list navigation) gets first refusal on each key.
             if let Some(nav) = &on_nav
                 && nav(k.clone())
+            {
+                return;
+            }
+            // Read-only: allow only selection/copy keys; ignore anything that mutates.
+            if read_only
+                && !matches!(
+                    k,
+                    KeyInput::Move { .. } | KeyInput::SelectAll | KeyInput::Copy | KeyInput::Escape
+                )
             {
                 return;
             }
@@ -832,14 +871,14 @@ fn render_field(p: &Props) -> AnyWidget {
 
     let val = ed.value.get();
     let (sel_a, sel_f) = (snap_boundary(&val, ed.anchor.get()), snap_boundary(&val, ed.focus.get()));
-    let caret_visible = if focused {
+    let caret_visible = if focused && !p.read_only {
         if ed.preedit.peek().is_empty() {
             (blink_loop.get() - blink_stamp.get()).rem_euclid(1.0) < 0.5
         } else {
             true // solid while composing
         }
     } else {
-        false
+        false // read-only shows a selection but never an edit caret
     };
     let inner = editable(val)
         .placeholder(eff_placeholder.clone())
@@ -904,33 +943,48 @@ fn render_field(p: &Props) -> AnyWidget {
         inner.into_widget()
     };
 
-    // Border: destructive when in error, else input→ring cross-fade on focus.
-    let fr = animated(if focused { 1.0 } else { 0.0 }, 0.14);
-    let (border_color, border_w) =
-        if has_error { (c.destructive, 1.5) } else { (mix(c.input, c.ring, fr as f32), 1.0 + fr) };
-    let bg = if disabled { c.muted } else { c.background };
-
-    let (height, padding, align) = if p.multiline {
-        (p.lines as f64 * 20.0 + 20.0, EdgeInsets::all(10.0), Alignment::TOP_LEFT)
-    } else {
-        (38.0, EdgeInsets::symmetric(12.0, 0.0), Alignment::CENTER_LEFT)
-    };
     let lead_off = if eff_leading.is_some() { 24.0 } else { 0.0 };
-    let (cl, ct) = if p.multiline { (11.0, 11.0) } else { (13.0 + lead_off, 10.0) };
+    // Bare (SelectableText) has no padding, so the content starts at the gesture origin.
+    let (cl, ct) = if p.bare {
+        (0.0, 0.0)
+    } else if p.multiline {
+        (11.0, 11.0)
+    } else {
+        (13.0 + lead_off, 10.0)
+    };
 
-    // The field box's presentation as a base Style; the user's `.style(..)` merges on
-    // top (bg / border / radius / shadow overrides), user wins.
-    let base = crate::style::style()
-        .background(bg)
-        .border(pebbles_render::Border::new(border_color, border_w))
-        .radius_all(theme().radius);
-    let merged = base.merge(p.style.clone().unwrap_or_default());
-    let deco = merged.decoration().unwrap_or_else(BoxDecoration::new);
-    let mut field =
-        Container::new().decoration(deco).padding(padding).height(height).alignment(align).child(content);
-    if let Some(w) = merged.width.or(p.width) {
-        field = field.width(w);
-    }
+    let field: AnyWidget = if p.bare {
+        // Plain selectable text: no border / background / padding.
+        match p.width {
+            Some(w) => Container::new().width(w).child(content).into_widget(),
+            None => content,
+        }
+    } else {
+        // Border: destructive when in error, else input→ring cross-fade on focus.
+        let fr = animated(if focused { 1.0 } else { 0.0 }, 0.14);
+        let (border_color, border_w) =
+            if has_error { (c.destructive, 1.5) } else { (mix(c.input, c.ring, fr as f32), 1.0 + fr) };
+        let bg = if disabled { c.muted } else { c.background };
+        let (height, padding, align) = if p.multiline {
+            (p.lines as f64 * 20.0 + 20.0, EdgeInsets::all(10.0), Alignment::TOP_LEFT)
+        } else {
+            (38.0, EdgeInsets::symmetric(12.0, 0.0), Alignment::CENTER_LEFT)
+        };
+        // The field box's presentation as a base Style; the user's `.style(..)` merges
+        // on top (bg / border / radius / shadow overrides), user wins.
+        let base = crate::style::style()
+            .background(bg)
+            .border(pebbles_render::Border::new(border_color, border_w))
+            .radius_all(theme().radius);
+        let merged = base.merge(p.style.clone().unwrap_or_default());
+        let deco = merged.decoration().unwrap_or_else(BoxDecoration::new);
+        let mut field =
+            Container::new().decoration(deco).padding(padding).height(height).alignment(align).child(content);
+        if let Some(w) = merged.width.or(p.width) {
+            field = field.width(w);
+        }
+        field.into_widget()
+    };
 
     // The interactive (or disabled) field box.
     let field_box: AnyWidget = if disabled {
@@ -977,7 +1031,8 @@ fn render_field(p: &Props) -> AnyWidget {
         .into_widget();
 
     // Wrap with an optional label above and helper/error below (shadcn form field).
-    if p.label.is_none() && p.helper.is_none() && p.error.is_none() {
+    // Bare (selectable text) has no chrome, so it returns the plain box.
+    if p.bare || (p.label.is_none() && p.helper.is_none() && p.error.is_none()) {
         return field_box;
     }
     let mut col: Vec<AnyWidget> = Vec::new();

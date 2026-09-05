@@ -208,6 +208,7 @@ pub const NAV: &[NavGroup] = &[
             ("filter-chip", lucide::INBOX, "Filter Chip"),
             ("action-chip", lucide::INBOX, "Action Chip"),
             ("stepper", lucide::LIST_ORDERED, "Stepper"),
+            ("selectable-text", lucide::SEARCH, "Selectable Text"),
         ],
     },
     NavGroup {

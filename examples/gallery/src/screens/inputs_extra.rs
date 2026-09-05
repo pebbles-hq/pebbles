@@ -1,8 +1,8 @@
 //! Input & forms additions — one screen per new widget: `ChoiceChip`, `FilterChip`,
-//! `ActionChip`, and `Stepper`. (Pebbles already ships the rest of the input set:
-//! TextField, Checkbox, Radio, Switch, Slider — incl. two-thumb `.range()` — Select,
-//! Combobox, ToggleGroup, DateField/Calendar/TimeField, Command, and `field(..)` for
-//! labelled/validated fields.)
+//! `ActionChip`, `Stepper`, and `SelectableText`. (Pebbles already ships the rest of
+//! the input set: TextField, Checkbox, Radio, Switch, Slider — incl. two-thumb
+//! `.range()` — Select, Combobox, ToggleGroup, DateField/Calendar/TimeField, Command,
+//! and `field(..)` for labelled/validated fields.)
 
 use std::collections::HashSet;
 
@@ -178,5 +178,26 @@ pub fn stepper_screen() -> Element {
                 ])
                 .cross_axis_alignment(CrossAxisAlignment::Start)
                 .main_axis_size(MainAxisSize::Min))
+        ])
+}
+
+// ===========================================================================
+// SelectableText
+// ===========================================================================
+
+pub fn selectable_text_screen() -> Element {
+    screen("Selectable Text")
+        .description("Read-only text you can select with the mouse and copy — but never edit. Flutter's SelectableText. (Built as a bare, read-only TextField, reusing its selection/copy machinery.)")
+        .body(children![
+            doc("selectable_text(content)")
+                .description("Drag to select, double-click a word, Shift-click to extend, Ctrl+A to select all, Ctrl+C to copy. Typing does nothing.")
+                .body(Container::new().width(460.0).child(selectable_text(
+                    "Pebbles is a Flutter-style, desktop-first GUI framework built on Vello. \
+                     This paragraph is read-only: select any part of it and copy it, but you \
+                     cannot change it — every editing key is ignored, and no caret blinks."
+                ))),
+            doc("text_field().read_only(true)")
+                .description("Read-only also works on a full field — chrome intact, still selectable/copyable, just not editable.")
+                .body(text_field().value("read-only-value@example.com").read_only(true).width(320.0)),
         ])
 }
