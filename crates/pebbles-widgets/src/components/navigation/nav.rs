@@ -24,7 +24,7 @@ use crate::components::{ButtonSize, ButtonVariant, button, dropdown_menu, icon_b
 pub struct Breadcrumb {
     segments: Vec<String>,
     max_visible: usize,
-    separator: pebbles_render::IconData,
+    separator: IconData,
     style: Option<Style>,
 }
 
@@ -41,7 +41,7 @@ impl Breadcrumb {
         self
     }
     /// The glyph between segments (default `ChevronRight`).
-    pub fn separator(mut self, glyph: impl Into<pebbles_render::IconData>) -> Self {
+    pub fn separator(mut self, glyph: impl Into<IconData>) -> Self {
         self.separator = glyph.into();
         self
     }
