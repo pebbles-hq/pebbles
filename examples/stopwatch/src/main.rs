@@ -1,42 +1,60 @@
-//! A stopwatch — start / stop / reset, with real elapsed time.
+//! A stopwatch — start / stop / reset, counting **real** elapsed time.
 //!
-//! Two ideas:
-//! - **`animation::now()`** is the framework's monotonic clock (seconds), fed by the
-//!   shell — cross-platform (no `std::time::Instant`, which panics on web).
-//! - **`create_loop_while(running, ..)`** re-renders this component every frame while
-//!   running, so the readout ticks up; when stopped it stops re-rendering (and stops
-//!   drawing frames — no idle cost). We ignore the loop's *value* and read the clock.
+//! It's also a tour of two reactivity primitives:
+//! - **`create_effect`** (SolidJS `createEffect`) — a side effect that re-runs when a
+//!   signal it reads changes. Here it runs once per frame *while running* and
+//!   accumulates the real time delta into `elapsed`. Because a Pebbles effect is
+//!   created ONCE and re-runs only on its tracked signals (not on every render), it
+//!   can safely write a signal the view reads without looping.
+//! - **`create_memo`** (SolidJS `createMemo`) — a cached derived value. `clock`
+//!   derives the display string from `elapsed`.
+//!
+//! Time comes from `animation::now()` — the framework's monotonic clock, fed by the
+//! shell (cross-platform; no `std::time::Instant`, which panics on web).
 
 use pebbles::prelude::*;
 
-/// Seconds since the framework started (the shell-driven monotonic clock).
+/// Seconds since startup, from the shell-driven monotonic clock.
 fn now() -> f64 {
     pebbles::core::animation::now()
 }
 
 fn stopwatch() -> impl IntoWidget {
     let running = create_signal(false);
-    // Elapsed = time banked from previous runs + (running ? time since last start : 0).
-    let banked = create_signal(0.0_f64);
-    let started_at = create_signal(0.0_f64);
+    let elapsed = create_signal(0.0_f64); // accumulated seconds
+    let last = create_signal(0.0_f64); // now() at the last counted frame; 0 = "start fresh"
 
-    // While running, re-render every frame so the clock updates live.
-    let _frame = create_loop_while(running.get(), 0.016);
+    // A frame ticker: `create_loop_while` bumps a signal every ~16ms while `running`.
+    let ticker = create_loop_while(running.get(), 0.016);
 
-    let elapsed = banked.get() + if running.get() { now() - started_at.get() } else { 0.0 };
+    // The effect runs on every ticker change (≈ every frame while running) and adds
+    // the real time delta. It reads `running`/`last`/`elapsed` with `peek` (no
+    // subscribe), so writing them never re-triggers it — it only re-runs on `ticker`.
+    create_effect(move || {
+        ticker.get(); // the one tracked read → wakes this effect each frame
+        if !running.peek() {
+            return;
+        }
+        let (t, prev) = (now(), last.peek());
+        if prev <= 0.0 {
+            last.set(t); // first frame of a run: record the (fresh) start, no delta yet
+        } else {
+            elapsed.update(|e| *e += (t - prev).max(0.0));
+            last.set(t);
+        }
+    });
+
+    // A memo: the formatted clock string, derived from `elapsed` and cached.
+    let clock = create_memo(move || format_clock(elapsed.get()));
 
     let toggle = move || {
-        if running.peek() {
-            banked.update(|b| *b += now() - started_at.peek()); // stop: bank the run
-            running.set(false);
-        } else {
-            started_at.set(now()); // start: mark the new start point
-            running.set(true);
-        }
+        running.update(|r| *r = !*r);
+        last.set(0.0); // next run re-captures its start on the first frame
     };
     let reset = move || {
         running.set(false);
-        banked.set(0.0);
+        elapsed.set(0.0);
+        last.set(0.0);
     };
 
     let c = theme().colors;
@@ -50,25 +68,25 @@ fn stopwatch() -> impl IntoWidget {
             )
             .padding(EdgeInsets::symmetric(48.0, 36.0))
             .child(
-                column(children![clock(elapsed), gap_h(28.0), controls(running.get(), toggle, reset)])
-                    .cross_axis_alignment(CrossAxisAlignment::Center)
-                    .main_axis_size(MainAxisSize::Min),
+                column(children![
+                    text(clock.get()).size(66.0).weight(700.0).font_family("monospace").color(c.foreground),
+                    gap_h(28.0),
+                    controls(running.get(), toggle, reset),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Center)
+                .main_axis_size(MainAxisSize::Min),
             ),
     )
 }
 
-/// The MM:SS.t readout.
-fn clock(elapsed: f64) -> impl IntoWidget {
+/// Format seconds as `MM:SS.t`.
+fn format_clock(elapsed: f64) -> String {
     let secs = elapsed as u64;
     let tenths = ((elapsed * 10.0) as u64) % 10;
-    text(format!("{:02}:{:02}.{}", secs / 60, secs % 60, tenths))
-        .size(66.0)
-        .weight(700.0)
-        .font_family("monospace")
-        .color(theme().colors.foreground)
+    format!("{:02}:{:02}.{}", secs / 60, secs % 60, tenths)
 }
 
-/// Start/Stop + Reset. Pure UI — it just calls the two closures.
+/// Start/Stop + Reset — pure UI over the two closures.
 fn controls(running: bool, toggle: impl Fn() + 'static, reset: impl Fn() + 'static) -> impl IntoWidget {
     row(children![
         button(if running { "Stop" } else { "Start" }).size(ButtonSize::Lg).on_pressed(toggle),

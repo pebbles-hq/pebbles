@@ -12,9 +12,15 @@ actually-working, prettier (themed cards), and reorganized as teaching codebases
 
 - **Bug fixes:** text inputs now use the **controlled** `.bind(signal)` (the old
   `.value()` is initial-text-only, so the todo couldn't clear and the temperature
-  fields didn't sync); the stopwatch now measures real elapsed time via
-  `animation::now()` (`create_loop` returns a `0..1` animation phase, not a
-  clock — the old one just jittered).
+  fields didn't sync); the stopwatch now counts **real** elapsed time — a
+  `create_effect` subscribed to a frame ticker accumulates `animation::now()`
+  deltas into `elapsed` (the old one read `create_loop`'s `0..1` phase — not a
+  clock — and never even subscribed, so it stayed frozen).
+- **Reactivity toolkit demonstrated (Solid-inspired):** the counter now shows a
+  `create_memo` (cached derived) and a `create_effect` (side effect), with a
+  `createSignal`/`createMemo`/`createEffect`/`onCleanup`/`createStore`/`untrack`
+  → Pebbles mapping in its module doc; the stopwatch shows `create_effect` +
+  `create_memo` in anger.
 - **Structure:** `counter` demonstrates a **global state manager** (a `state`
   module: app-scoped signal + actions); `todo` is a **multi-file** app with a
   `store` (state manager) and a `components/` folder (input / item / list / toolbar),
