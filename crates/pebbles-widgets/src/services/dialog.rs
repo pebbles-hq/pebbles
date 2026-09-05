@@ -272,13 +272,11 @@ impl AlertDialog {
         );
 
         // The base dialog surface has no inner padding, so the alert supplies its own.
-        let content = Container::new()
-            .padding(pebbles_foundation::EdgeInsets::symmetric(24.0, 22.0))
-            .child(
-                column(kids)
-                    .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
-                    .main_axis_size(MainAxisSize::Min),
-            );
+        let content = Container::new().padding(pebbles_foundation::EdgeInsets::symmetric(24.0, 22.0)).child(
+            column(kids)
+                .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
+        );
 
         dialog(content).width(440.0).dismissible(self.dismissible).open()
     }
