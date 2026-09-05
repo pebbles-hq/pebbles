@@ -70,14 +70,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 ```bash
+# starters — the "how easy is it" set
 cargo run -p counter        # the example above
 cargo run -p todo           # add / toggle / remove — a reactive Vec
 cargo run -p temperature    # two-way binding (°C ↔ °F)
 cargo run -p stopwatch      # start / stop / reset — a ticking loop
+
+# showcase layouts — how real apps are structured
+cargo run -p mobile         # a mobile app shell (phone size): top bar + bottom nav + FAB
+cargo run -p desktop        # a desktop dashboard: side rail + top bar + content
+cargo run -p landing        # a scrolling landing page (hero / features / code / footer)
 ```
 
-Those `examples/` are the small "how easy is it" starters. The **full widget
-showcase / documentation** (every widget, live) is its own app in
+Those `examples/` are the small "how easy is it" starters plus a few
+larger structural showcases. The **full widget showcase / documentation**
+(every widget, live) is its own app in
 [`pebbles-hq/pebbles-landing`](https://github.com/pebbles-hq/pebbles-landing) —
 the gallery that backs the landing site's learn/docs section.
 

@@ -6,6 +6,19 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — showcase sample apps
+Three larger structural samples alongside the starters (counter/todo/temperature/
+stopwatch), each a single-file `examples/` app:
+
+- **`mobile`** — a mobile app shell at phone size (390×844): a `Scaffold` with a top
+  app bar, **bottom navigation** switching per-tab screens (a like-toggling feed, a
+  discover grid, a profile), and a FAB. How a mobile app is normally structured
+  (desktop-run for now — only the window size differs).
+- **`desktop`** — a desktop dashboard: a collapsible `SideNav` rail + top bar +
+  content (stat cards, recent-activity list).
+- **`landing`** — a scrolling marketing landing page (hero / features / code /
+  footer) — a preview of building a site *in Pebbles*.
+
 ### Changed — the gallery moved to its own repo
 The full interactive **gallery / showcase** (every widget, live) moved out of
 `examples/gallery` into [`pebbles-hq/pebbles-landing`](https://github.com/pebbles-hq/pebbles-landing),

@@ -8,9 +8,8 @@ fn converter() -> impl IntoWidget {
     let celsius = create_signal(String::new());
     let fahrenheit = create_signal(String::new());
 
-    let field =
-        |label: &str, unit: &str, value: Signal<String>, on: Box<dyn Fn(&str)>| {
-            row(children![
+    let field = |label: &str, unit: &str, value: Signal<String>, on: Box<dyn Fn(&str)>| {
+        row(children![
                 text(label.to_string()).size(15.0).color(palette::zinc::S600),
                 gap_w(12.0),
                 Expanded::new(
@@ -20,7 +19,7 @@ fn converter() -> impl IntoWidget {
                 text(unit.to_string()).size(15.0).color(palette::zinc::S400),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Center)
-        };
+    };
 
     center(
         container().width(360.0).child(

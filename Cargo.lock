@@ -812,6 +812,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
+name = "desktop"
+version = "0.0.1"
+dependencies = [
+ "pebbles",
+]
+
+[[package]]
 name = "dispatch"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1894,6 +1901,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "landing"
+version = "0.0.1"
+dependencies = [
+ "pebbles",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2033,6 +2047,13 @@ checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
  "simd-adler32",
+]
+
+[[package]]
+name = "mobile"
+version = "0.0.1"
+dependencies = [
+ "pebbles",
 ]
 
 [[package]]
