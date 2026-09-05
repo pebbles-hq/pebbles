@@ -52,7 +52,7 @@ kurbo = "0.13"
 parley = "0.11"
 
 # --- windowing / gpu (shell only) ---
-wgpu = "29"
+wgpu = "30"
 winit = "0.30"
 raw-window-handle = "0.6"
 pollster = "1"
