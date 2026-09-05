@@ -135,3 +135,70 @@ fn keyed_children_preserve_state_across_reorder() {
     assert!(wide_slot_y(&ui).is_finite(), "the grown item still exists (state preserved)");
     assert_eq!(wide_slot_y(&ui), 10.0, "the grown item followed its key to the bottom slot");
 }
+
+// AnimatedList keeps a removed item alive through its exit tween, then drops it —
+// and new items appear. Driven headlessly with the animation clock + timeout firing.
+#[test]
+fn animated_list_enters_holds_exit_then_drops() {
+    use std::cell::RefCell;
+
+    use pebbles_core::{AnyWidget, Signal, animation, create_signal};
+    use pebbles_widgets::{SizedBox, animated_list};
+
+    thread_local! {
+        static KEYS: RefCell<Option<Signal<Vec<u64>>>> = const { RefCell::new(None) };
+    }
+
+    // key k → a k*100-wide, 20-tall box, so each item is identifiable by width.
+    fn shell() -> impl IntoWidget {
+        let keys = KEYS.with(|c| c.borrow().expect("KEYS set"));
+        let items: Vec<(u64, AnyWidget)> = keys
+            .get()
+            .iter()
+            .map(|&k| (k, SizedBox::new(Some(k as f64 * 100.0), Some(20.0), None).into_widget()))
+            .collect();
+        animated_list(items).duration(0.2)
+    }
+
+    KEYS.with(|c| *c.borrow_mut() = None);
+    let keys = create_signal(vec![1u64, 2u64]);
+    KEYS.with(|c| *c.borrow_mut() = Some(keys));
+
+    let mut ui = Ui::new();
+    let mut text = TextEnv::new();
+    let win = Size::new(400.0, 400.0);
+    ui.mount_root(View::new(palette::WHITE, component(shell)).into_widget());
+    ui.layout(&mut text, win);
+
+    let has = |ui: &Ui, w: f64| {
+        let t = ui.render_tree();
+        t.find_all::<RenderConstrainedBox>().into_iter().any(|id| (t.size_of(id).width - w).abs() < 0.5)
+    };
+    let mut frame = |ui: &mut Ui, now: f64| {
+        animation::tick(now);
+        ui.rebuild_if_dirty();
+        ui.layout(&mut text, win);
+    };
+
+    // Both items entered.
+    frame(&mut ui, 0.1);
+    frame(&mut ui, 0.3);
+    assert!(has(&ui, 100.0) && has(&ui, 200.0), "both items present after enter");
+
+    // Remove key 2 → it must stay for its exit tween (not vanish instantly).
+    keys.set(vec![1]);
+    frame(&mut ui, 0.35);
+    assert!(has(&ui, 200.0), "the removed item stays alive during its exit tween");
+
+    // Past the exit duration the removal timeout fires → item 2 is dropped.
+    frame(&mut ui, 0.7);
+    frame(&mut ui, 0.9);
+    assert!(!has(&ui, 200.0), "the removed item is gone after its exit");
+    assert!(has(&ui, 100.0), "the surviving item remains");
+
+    // Add a new key 3 → it appears (enters).
+    keys.set(vec![1, 3]);
+    frame(&mut ui, 1.0);
+    frame(&mut ui, 1.3);
+    assert!(has(&ui, 300.0), "a newly added item appears");
+}

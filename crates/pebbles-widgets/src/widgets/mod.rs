@@ -5,6 +5,7 @@
 //! `column(children![...])`, `Container::new().color(..).padding(..)`.
 
 mod animated;
+mod animated_list;
 mod boxes;
 mod canvas;
 mod container;
@@ -30,6 +31,7 @@ mod view;
 
 mod transform;
 pub use animated::{AnimatedContainer, animated_container};
+pub use animated_list::{AnimatedList, animated_list};
 pub use boxes::{
     Align, ColoredBox, ConstrainedBox, Padding, SizedBox, align, center, colored_box, constrained_box, gap_h,
     gap_w, padding, sized_box,

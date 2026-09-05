@@ -64,6 +64,7 @@ remote-URL images) and their per-platform status live in
 | `Dismissible` | ✅ | swipe-to-dismiss (drag + touch) → `on_dismissed` |
 | `Align` width/height-factor | ✅ | `.width_factor()`/`.height_factor()` (shrink-wrap scaled) |
 | `keyed` / `Keyed` (KeyedSubtree) | ✅ | attach a reconciliation key to any child; the reconciler now matches keyed children BY KEY across positions (insert/remove/reorder preserves element state) — prerequisite for AnimatedList + reorderable lists |
+| `AnimatedList` | ✅ | items animate in on add / out on remove (`animated_list((u64,child) pairs)`); removed items kept for one exit tween then dropped. `AnimatedGrid` pending a variable-height grid |
 | `FocusScope` (focus trap) | ✅ | scoped Tab-cycling; dialogs/sheets contain focus |
 | `View` | ✅ | window root background |
 
