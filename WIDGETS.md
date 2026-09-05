@@ -37,6 +37,9 @@ remote-URL images) and their per-platform status live in
 | `AspectRatio` · `Padding` · `Align`/`center` · `SizedBox` · `ConstrainedBox` | ✅ | |
 | `ColoredBox` / `DecoratedBox` | ✅ | |
 | `Opacity` · `ClipRRect` | ✅ | |
+| `clip_rect` · `ClipOval` · `ClipPath` | ✅ | rect clip (thin convenience over `clip_rrect`) · ellipse/circle clip · arbitrary path clip from a size-to-`BezPath` delegate |
+| `ColorFiltered` · `ShaderMask` | ✅ | blend a color over a child (`.blend(mode)`, default multiply) · mask a child by a gradient's luminance (fade/vignette) |
+| `Canvas` / `canvas` (`CustomPaint`) | ✅ | immediate-mode vector drawing surface |
 | `Transform` (`rotate`/`scale`/`translate`, also via `Style`) | ✅ | |
 | `Text` | ✅ | ellipsis ✅; `soft_wrap(false)` ✅ |
 | `RichText` / `text_rich` + `TextSpan`/`span` | ✅ | ONE shaped layout, per-range styles (weight/italic/underline/strike/color/family/size), inline-code chips, geometry-resolved links (`.on_link`) |

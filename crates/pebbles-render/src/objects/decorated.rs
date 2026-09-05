@@ -254,7 +254,7 @@ fn point_in(rect: Rect, a: Alignment) -> Point {
 }
 
 /// Build a peniko gradient positioned within `rect` from a [`Gradient`] spec.
-fn gradient_brush(g: &Gradient, rect: Rect) -> peniko::Gradient {
+pub(crate) fn gradient_brush(g: &Gradient, rect: Rect) -> peniko::Gradient {
     use vello::peniko::Gradient as PGrad;
     match g {
         Gradient::Linear { begin, end, colors } => {

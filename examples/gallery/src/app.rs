@@ -151,6 +151,12 @@ pub fn app() -> impl IntoWidget {
         .route("custom-multi-child", || component(screens::layout_extra::custom_multi_child_layout_screen))
         .route("flow", || component(screens::layout_extra::flow_screen))
         .route("layout-builder", || component(screens::layout_extra::layout_builder_screen))
+        // Painting & effects — one screen per widget.
+        .route("clip-rect", || component(screens::painting::clip_rect_screen))
+        .route("clip-oval", || component(screens::painting::clip_oval_screen))
+        .route("clip-path", || component(screens::painting::clip_path_screen))
+        .route("color-filtered", || component(screens::painting::color_filtered_screen))
+        .route("shader-mask", || component(screens::painting::shader_mask_screen))
         .route("canvas", || component(screens::canvas::canvas_screen))
         .route("resizable", || component(screens::resizable::resizables))
         .route("badge", || component(screens::badge::badges))

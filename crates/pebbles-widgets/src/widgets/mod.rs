@@ -13,6 +13,7 @@ mod decorated;
 mod dnd;
 mod editable;
 mod effects;
+mod effects_extra;
 mod flex;
 mod flex_children;
 mod focus_scope;
@@ -47,6 +48,10 @@ pub use decorated::DecoratedBox;
 pub use dnd::{DragTarget, Draggable, drag_target, draggable, long_press_draggable};
 pub use editable::{EditableText, editable};
 pub use effects::{ClipRRect, Opacity, RepaintBoundary, clip_rrect, opacity, repaint_boundary};
+pub use effects_extra::{
+    ClipOval, ClipPath, ColorFiltered, ShaderMask, clip_oval, clip_path, clip_rect, color_filtered,
+    shader_mask,
+};
 pub use flex::{Column, Row, column, row};
 pub use flex_children::{Expanded, Flexible, expanded, flexible, spacer};
 pub use focus_scope::focus_scope;

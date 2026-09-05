@@ -192,6 +192,16 @@ pub const NAV: &[NavGroup] = &[
         ],
     },
     NavGroup {
+        label: "PAINTING & EFFECTS",
+        routes: &[
+            ("clip-rect", lucide::BOX, "Clip Rect"),
+            ("clip-oval", lucide::BOX, "Clip Oval"),
+            ("clip-path", lucide::PAINTBRUSH, "Clip Path"),
+            ("color-filtered", lucide::PAINTBRUSH, "Color Filtered"),
+            ("shader-mask", lucide::PAINTBRUSH, "Shader Mask"),
+        ],
+    },
+    NavGroup {
         label: "NAVIGATION",
         routes: &[
             ("tabs", lucide::SQUARE_STACK, "Tabs"),

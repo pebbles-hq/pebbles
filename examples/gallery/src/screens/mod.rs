@@ -38,6 +38,7 @@ pub mod menubar;
 pub mod motion;
 pub mod overview;
 pub mod pagination;
+pub mod painting;
 pub mod popovers;
 pub mod progress;
 pub mod radiogroup;

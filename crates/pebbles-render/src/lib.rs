@@ -42,11 +42,12 @@ pub use object::{HitBehavior, RenderObject};
 pub use objects::{
     Canvas, Cursor, FlexParentData, IconData, IconKind, IconPrim, ParagraphStyle, PointerButton,
     PointerEvent, RefreshState, RenderAlign, RenderAspectRatio, RenderBaseline, RenderBoundary, RenderCanvas,
-    RenderClipRRect, RenderColoredBox, RenderConstrainedBox, RenderCustomMultiChild, RenderCustomSingleChild,
-    RenderDecoratedBox, RenderFittedBox, RenderFlex, RenderFlow, RenderFractionalTranslation,
-    RenderFractionallySizedBox, RenderIcon, RenderIntrinsicHeight, RenderIntrinsicWidth, RenderLimitedBox,
-    RenderList, RenderMeasureProbe, RenderOffstage, RenderOpacity, RenderOverflowBox, RenderPadding,
-    RenderParagraph, RenderPointerBarrier, RenderPointerListener, RenderRotatedBox, RenderScroll,
+    RenderClipOval, RenderClipPath, RenderClipRRect, RenderColorFilter, RenderColoredBox,
+    RenderConstrainedBox, RenderCustomMultiChild, RenderCustomSingleChild, RenderDecoratedBox,
+    RenderFittedBox, RenderFlex, RenderFlow, RenderFractionalTranslation, RenderFractionallySizedBox,
+    RenderIcon, RenderIntrinsicHeight, RenderIntrinsicWidth, RenderLimitedBox, RenderList,
+    RenderMeasureProbe, RenderOffstage, RenderOpacity, RenderOverflowBox, RenderPadding, RenderParagraph,
+    RenderPointerBarrier, RenderPointerListener, RenderRotatedBox, RenderScroll, RenderShaderMask,
     RenderSizedOverflowBox, RenderSpinner, RenderStack, RenderTable, RenderTextField, RenderTransform,
     RenderView, RenderWrap, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps,
     SemanticsRole, SizeFn, StackFit, StackParentData, TableColumnWidth, TapCallback, TextFieldStyle,
@@ -59,3 +60,5 @@ pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree}
 pub use vello::Scene;
 /// Re-export the 2D affine transform used by [`RenderTransform`].
 pub use vello::kurbo::Affine;
+/// Re-export the Bézier path type used by `ClipPath` clip delegates.
+pub use vello::kurbo::BezPath;

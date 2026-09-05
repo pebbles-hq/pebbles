@@ -60,8 +60,8 @@ pub mod prelude {
 
     // render-level styling primitives (for advanced/custom decoration) + events
     pub use pebbles_render::{
-        Affine, BlendMode, Border, BorderRadius, BorderSide, BoxConstraints, BoxDecoration, BoxShadow,
-        BoxShape, Cursor, Gradient, IconData, IconKind, IconPrim, Image, ImageFit, PointerButton,
+        Affine, BezPath, BlendMode, Border, BorderRadius, BorderSide, BoxConstraints, BoxDecoration,
+        BoxShadow, BoxShape, Cursor, Gradient, IconData, IconKind, IconPrim, Image, ImageFit, PointerButton,
         PointerEvent, RefreshState, ScrollPhysics, StackFit, lucide,
     };
 
@@ -142,6 +142,12 @@ pub mod prelude {
         DragTarget, Draggable, InteractiveViewer, PointerControl, ReorderableListView, absorb_pointer,
         drag_target, draggable, ignore_pointer, interactive_viewer, long_press_draggable,
         reorderable_list_view,
+    };
+
+    // painting & effects (siblings of clip_rrect / opacity)
+    pub use pebbles_widgets::{
+        ClipOval, ClipPath, ColorFiltered, ShaderMask, clip_oval, clip_path, clip_rect, color_filtered,
+        shader_mask,
     };
 
     // layout (the long-tail Flutter layout widgets)

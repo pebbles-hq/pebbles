@@ -99,6 +99,11 @@ pub use widgets::{
     DragTarget, Draggable, InteractiveViewer, PointerControl, ReorderableListView, absorb_pointer,
     drag_target, draggable, ignore_pointer, interactive_viewer, long_press_draggable, reorderable_list_view,
 };
+// painting & effects (siblings of clip_rrect / opacity)
+pub use widgets::{
+    ClipOval, ClipPath, ColorFiltered, ShaderMask, clip_oval, clip_path, clip_rect, color_filtered,
+    shader_mask,
+};
 // layout (the long-tail Flutter layout widgets)
 pub use widgets::{
     Baseline, CustomMultiChildLayout, CustomSingleChildLayout, Flow, FractionalTranslation, LayoutBuilder,
