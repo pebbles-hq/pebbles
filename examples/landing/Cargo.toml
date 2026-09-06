@@ -5,7 +5,12 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-pebbles = { workspace = true }
+# `image-view` pulls product / lifestyle photos over the network (placeholders offline).
+pebbles = { workspace = true, features = ["image-view"] }
+
+[dev-dependencies]
+pebbles-testing.workspace = true
+pebbles-render.workspace = true
 
 [lints]
 workspace = true
