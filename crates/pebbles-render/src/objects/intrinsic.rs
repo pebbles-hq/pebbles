@@ -14,6 +14,12 @@ use crate::tree::{LayoutCx, PaintCx};
 /// height), then lays it out with that width fixed.
 pub struct RenderIntrinsicWidth;
 
+impl Default for RenderIntrinsicWidth {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RenderIntrinsicWidth {
     pub fn new() -> Self {
         RenderIntrinsicWidth
@@ -23,6 +29,12 @@ impl RenderIntrinsicWidth {
 /// Sizes its child's **height** to the child's intrinsic height (given the incoming
 /// width), then lays it out with that height fixed.
 pub struct RenderIntrinsicHeight;
+
+impl Default for RenderIntrinsicHeight {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl RenderIntrinsicHeight {
     pub fn new() -> Self {

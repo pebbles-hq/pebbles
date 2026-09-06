@@ -17,6 +17,8 @@ use crate::widgets::{
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, animated, component_props, create_signal};
 
+type SelectionCb = Rc<dyn Fn(&[usize])>;
+
 // ---------------------------------------------------------------------------
 // Table
 // ---------------------------------------------------------------------------
@@ -116,7 +118,7 @@ pub struct Table {
     on_sort: Option<Rc<dyn Fn(usize, SortDir)>>,
     selectable: bool,
     selection: Vec<usize>,
-    on_selection: Option<Rc<dyn Fn(&[usize])>>,
+    on_selection: Option<SelectionCb>,
     striped: bool,
     empty_state: Option<AnyWidget>,
     footer: Option<AnyWidget>,

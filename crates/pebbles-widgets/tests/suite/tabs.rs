@@ -67,7 +67,7 @@ fn keyboard_cycles_enabled_tabs_and_wraps() {
     };
     frame(&mut ui);
 
-    let sel = || SEL.with(|s| s.borrow().clone());
+    let sel = || SEL.with(|s| *s.borrow());
 
     // Right from 0 skips the disabled tab 1 and lands on 2.
     ui.dispatch_key(right());
@@ -124,7 +124,7 @@ fn taps_switch_and_both_variants_paint() {
     // (a silently dead tap would leave the selection at 2 and fail here).
     ui.dispatch_key(right());
     frame(&mut ui);
-    assert_eq!(SEL.with(|s| s.borrow().clone()), 2, "precondition: keyboard moved to tab 2");
+    assert_eq!(SEL.with(|s| *s.borrow()), 2, "precondition: keyboard moved to tab 2");
 
     // Tab 0's strip button: first cell of the row (y ≈ 8..40), center ≈ (29, 17).
     let tap = |ui: &mut Ui, p: Offset| {
@@ -134,5 +134,5 @@ fn taps_switch_and_both_variants_paint() {
     };
     tap(&mut ui, Offset::new(29.0, 17.0));
     frame(&mut ui);
-    assert_eq!(SEL.with(|s| s.borrow().clone()), 0, "tapping tab 0 reports selection 0");
+    assert_eq!(SEL.with(|s| *s.borrow()), 0, "tapping tab 0 reports selection 0");
 }

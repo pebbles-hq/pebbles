@@ -21,8 +21,8 @@
 //! }
 //! ```
 //!
-//! **Why a crate.** Every test used to hand-roll `Ui::new()` + `TextEnv::new()`
-//! + the service `init()` calls + a private `fn frame(..)`, so a change to the
+//! **Why a crate.** Every test used to hand-roll `Ui::new()` + `TextEnv::new()` +
+//! the service `init()` calls + a private `fn frame(..)`, so a change to the
 //! frame pipeline meant editing every test file. The lifecycle lives here once:
 //! [`Harness::draw`] also runs the **corrective-relayout settle loop** (a lazy
 //! paint-time measurement can invalidate the geometry layout just computed), so

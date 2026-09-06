@@ -20,6 +20,8 @@ use pebbles_core::reactive::Signal;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{action_event, animated, children, component_props, create_signal};
 
+type HoverCbs = (Rc<dyn Fn()>, Rc<dyn Fn()>);
+
 // ---------------------------------------------------------------------------
 // Entries
 // ---------------------------------------------------------------------------
@@ -254,7 +256,7 @@ fn default_trigger(label: &str, width: f64, hovered: bool, user: Option<crate::s
         .radius_all(theme().radius)
         .merge(user.unwrap_or_default())
         .decoration()
-        .unwrap_or_else(BoxDecoration::new);
+        .unwrap_or_default();
     Container::new()
         .width(width)
         .height(38.0)
@@ -443,7 +445,7 @@ fn open_sub_child(
     top_offset: f64,
     child_nav: ListNav,
     child_ctx: Signal<Option<Rc<ChildCtx>>>,
-    hover: Option<(Rc<dyn Fn()>, Rc<dyn Fn()>)>,
+    hover: Option<HoverCbs>,
 ) {
     let (parent_left, parent_top, parent_w) = match crate::overlay::overlay_signal().peek() {
         Some(e) => (e.left, e.top, e.width),
@@ -509,7 +511,6 @@ fn render_sub_row(p: &SubRowProps) -> AnyWidget {
     let child_ctx = p.child_ctx;
 
     let schedule_close: Rc<dyn Fn()> = Rc::new({
-        let over = over;
         move || {
             pebbles_core::animation::set_timeout(close_key, SUB_CLOSE_DELAY, move || {
                 // Owner unmounted while pending → the submenu must not stay open.
@@ -547,14 +548,12 @@ fn render_sub_row(p: &SubRowProps) -> AnyWidget {
             // Open after a short hover delay (cancelled on exit), hover-tracked
             // so moving onto the panel keeps it open.
             let panel_enter: Rc<dyn Fn()> = Rc::new({
-                let over = over;
                 move || {
                     over.update(|n| *n += 1);
                     pebbles_core::animation::clear_timeout(close_key);
                 }
             });
             let panel_exit: Rc<dyn Fn()> = Rc::new({
-                let over = over;
                 let schedule_close = enter_close.clone();
                 move || {
                     over.update(|n| *n -= 1);
@@ -592,7 +591,7 @@ struct SubMenuProps {
     bp: Rc<RebuildableMenu>,
     nav: ListNav,
     actions: Vec<Rc<dyn Fn()>>,
-    hover: Option<(Rc<dyn Fn()>, Rc<dyn Fn()>)>,
+    hover: Option<HoverCbs>,
 }
 
 fn render_sub_menu(p: &SubMenuProps) -> AnyWidget {

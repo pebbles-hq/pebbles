@@ -42,7 +42,7 @@ fn tapping_inside_a_bottom_sheet_keeps_it_open() {
     let (mut ui, mut env, win) = mount();
 
     // A 300px-tall bottom sheet → the panel occupies y ∈ [300, 600].
-    sheet::sheet(text("sheet content")).side(Side::Bottom).size(300.0).open();
+    sheet(text("sheet content")).side(Side::Bottom).size(300.0).open();
     settle(&mut ui, &mut env, win);
     assert!(sheet::is_open(), "sheet opened");
 
@@ -61,7 +61,7 @@ fn a_sized_bottom_sheet_is_centered_on_the_cross_axis() {
 
     // A 200×100 bottom sheet in a 400×600 window → not full-width, so it centers
     // horizontally: the panel occupies x ∈ [100, 300], y ∈ [500, 600].
-    sheet::sheet(text("mini")).side(Side::Bottom).width(200.0).height(100.0).open();
+    sheet(text("mini")).side(Side::Bottom).width(200.0).height(100.0).open();
     settle(&mut ui, &mut env, win);
     assert!(sheet::is_open(), "sheet opened");
 
@@ -79,7 +79,7 @@ fn a_sized_bottom_sheet_is_centered_on_the_cross_axis() {
 fn tapping_inside_a_dialog_keeps_it_open() {
     let (mut ui, mut env, win) = mount();
 
-    dialog::dialog(text("dialog content")).width(300.0).open();
+    dialog(text("dialog content")).width(300.0).open();
     settle(&mut ui, &mut env, win);
     assert!(dialog::is_open(), "dialog opened");
 

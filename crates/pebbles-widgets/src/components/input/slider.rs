@@ -288,14 +288,8 @@ fn render_slider(p: &SliderProps) -> AnyWidget {
         let a_move = move_to.clone();
         GestureDetector::new(body)
             .cursor(Cursor::Pointer)
-            .on_hover_enter({
-                let hovered = hovered;
-                move || hovered.set(true)
-            })
-            .on_hover_exit({
-                let hovered = hovered;
-                move || hovered.set(false)
-            })
+            .on_hover_enter(move || hovered.set(true))
+            .on_hover_exit(move || hovered.set(false))
             .on_pan_start(action_event(move |e| a_start(e.position.x, e.position.y)))
             .on_pan_update(action_event(move |e| a_move(e.position.x, e.position.y)))
             // Sliders consume right-clicks by default.

@@ -285,6 +285,9 @@ impl Runner {
                         alt: self.alt_down,
                         meta: self.meta_down,
                     };
+                    // Ordered precedence: each branch's condition has an essential side
+                    // effect (dispatch), so the identical `true` arms must stay separate.
+                    #[allow(clippy::if_same_then_else)]
                     let handled = if intent.is_some_and(|ki| w.ui.dispatch_key(ki)) {
                         true
                     } else if to_shortcut_key(&event)

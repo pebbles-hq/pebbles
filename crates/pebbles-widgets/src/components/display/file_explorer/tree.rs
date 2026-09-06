@@ -331,8 +331,8 @@ pub(super) fn read_dir(path: &Path) -> std::io::Result<Vec<FsNode>> {
             });
         }
     }
-    folders.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    folders.sort_by_key(|a| a.name.to_lowercase());
+    files.sort_by_key(|a| a.name.to_lowercase());
     folders.extend(files);
     Ok(folders)
 }

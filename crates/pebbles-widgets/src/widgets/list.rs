@@ -20,6 +20,9 @@ use pebbles_core::scroll::{self, ScrollTo};
 use pebbles_core::widget::{AnyWidget, IntoWidget, RenderWidget};
 use pebbles_core::{Signal, animate_to, component_props, create_cleanup, create_signal, owner_id};
 
+type SepBuilder = Rc<dyn Fn(usize) -> AnyWidget>;
+type SpanFn = Rc<dyn Fn(usize) -> (u32, u32)>;
+
 /// How many extra items to build above/below the viewport (smooths fast flings).
 const OVERSCAN: isize = 3;
 
@@ -298,7 +301,7 @@ pub struct ListView {
     controller: Option<ScrollController>,
     builder: Rc<dyn Fn(usize) -> AnyWidget>,
     /// `(separator extent, builder)` when built with [`separated`](ListView::separated).
-    separator: Option<(f64, Rc<dyn Fn(usize) -> AnyWidget>)>,
+    separator: Option<(f64, SepBuilder)>,
     /// Per-item extents when built with [`variable`](ListView::variable).
     extents: Option<Rc<dyn Fn(usize) -> f64>>,
     /// Auto-MEASURED extents when built with [`builder_auto`](ListView::builder_auto).
@@ -491,7 +494,7 @@ struct Props {
     scrollbar: ScrollbarStyle,
     controller: Option<ScrollController>,
     builder: Rc<dyn Fn(usize) -> AnyWidget>,
-    separator: Option<(f64, Rc<dyn Fn(usize) -> AnyWidget>)>,
+    separator: Option<(f64, SepBuilder)>,
     extents: Option<Rc<dyn Fn(usize) -> f64>>,
     auto: bool,
     estimate: f64,
@@ -726,24 +729,24 @@ fn render_list(p: &Props) -> ListViewport {
             }
         };
         items.push(placed.into_widget());
-        if let Some((se, sep_builder)) = &p.separator {
-            if i + 1 < p.count {
-                let sep_widget = (sep_builder)(i);
-                let sep_at = if p.reverse {
-                    padded_extent - (at - pad_lead) - item_ext - *se + pad_lead
-                } else {
-                    at + item_ext
-                };
-                let placed_sep = match p.axis {
-                    Axis::Vertical => {
-                        Positioned::new(sep_widget).top(sep_at).left(pad.left).right(pad.right).height(*se)
-                    }
-                    Axis::Horizontal => {
-                        Positioned::new(sep_widget).left(sep_at).top(pad.top).bottom(pad.bottom).width(*se)
-                    }
-                };
-                items.push(placed_sep.into_widget());
-            }
+        if let Some((se, sep_builder)) = &p.separator
+            && i + 1 < p.count
+        {
+            let sep_widget = (sep_builder)(i);
+            let sep_at = if p.reverse {
+                padded_extent - (at - pad_lead) - item_ext - *se + pad_lead
+            } else {
+                at + item_ext
+            };
+            let placed_sep = match p.axis {
+                Axis::Vertical => {
+                    Positioned::new(sep_widget).top(sep_at).left(pad.left).right(pad.right).height(*se)
+                }
+                Axis::Horizontal => {
+                    Positioned::new(sep_widget).left(sep_at).top(pad.top).bottom(pad.bottom).width(*se)
+                }
+            };
+            items.push(placed_sep.into_widget());
         }
     }
 
@@ -772,7 +775,7 @@ pub struct GridView {
     row_extent: f64,
     scrollbar: ScrollbarStyle,
     builder: Rc<dyn Fn(usize) -> AnyWidget>,
-    spans: Option<Rc<dyn Fn(usize) -> (u32, u32)>>,
+    spans: Option<SpanFn>,
     spacing: f64,
     aspect_ratio: Option<f64>,
     max_extent: Option<f64>,
@@ -861,7 +864,7 @@ struct GridProps {
     row_extent: f64,
     scrollbar: ScrollbarStyle,
     builder: Rc<dyn Fn(usize) -> AnyWidget>,
-    spans: Option<Rc<dyn Fn(usize) -> (u32, u32)>>,
+    spans: Option<SpanFn>,
     spacing: f64,
     aspect_ratio: Option<f64>,
     max_extent: Option<f64>,

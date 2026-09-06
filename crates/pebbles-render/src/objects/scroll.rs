@@ -394,12 +394,13 @@ impl RenderScroll {
     /// After a drag update: fire the pull-to-refresh arm callback once the pull
     /// crosses the threshold (A5).
     pub fn refresh_update(&mut self) {
-        if let Some(r) = &mut self.refresh {
-            if self.offset <= -r.threshold && !r.fired_arm {
-                r.fired_arm = true;
-                if let Some(cb) = r.on_arm.clone() {
-                    cb();
-                }
+        if let Some(r) = &mut self.refresh
+            && self.offset <= -r.threshold
+            && !r.fired_arm
+        {
+            r.fired_arm = true;
+            if let Some(cb) = r.on_arm.clone() {
+                cb();
             }
         }
     }

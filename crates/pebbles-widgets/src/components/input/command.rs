@@ -187,7 +187,7 @@ fn render_command(p: &Props) -> AnyWidget {
     let nav_handler = {
         let run = run.clone();
         let dismiss = dismiss.clone();
-        nav.handler(actions.len(), move |row| run(row), move || dismiss())
+        nav.handler(actions.len(), run, move || dismiss())
     };
 
     let search = text_field()
@@ -287,7 +287,7 @@ fn render_command(p: &Props) -> AnyWidget {
                     .border(pebbles_render::Border::new(c.border, 1.0))
                     .radius_all(theme().radius)
                     .decoration()
-                    .unwrap_or_else(BoxDecoration::new),
+                    .unwrap_or_default(),
             )
             .child(content)
             .into_widget()

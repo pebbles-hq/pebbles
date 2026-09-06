@@ -147,6 +147,7 @@ fn estimate_chip_size(p: &Props) -> (f64, f64) {
 /// point, `(cw, ch)` the chip size, `gap` the offset from the anchor, `(ww, wh)` the
 /// window (a non-positive dimension disables the corresponding flip/clamp — headless).
 /// Pure — the C2 geometry under test.
+#[allow(clippy::too_many_arguments)] // geometry helper: 8 scalar inputs read clearer than a struct
 pub(crate) fn chip_anchor(
     side: Side,
     ax: f64,

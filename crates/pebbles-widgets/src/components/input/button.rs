@@ -432,10 +432,10 @@ fn render_button(b: &Button) -> Element {
         .cursor(Cursor::Pointer)
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || {
-            if pressed.peek() {
-                if let Some(h) = &hi_exit {
-                    h(false);
-                }
+            if pressed.peek()
+                && let Some(h) = &hi_exit
+            {
+                h(false);
             }
             hovered.set(false);
             pressed.set(false);

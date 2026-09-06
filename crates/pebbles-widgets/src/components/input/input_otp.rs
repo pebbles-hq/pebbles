@@ -14,6 +14,8 @@ use pebbles_core::focus::create_focus;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{KeyInput, animated, clipboard, component_props, create_signal};
 
+type StrCb = Rc<dyn Fn(&str)>;
+
 /// A one-time-code input. Build with [`input_otp`].
 pub struct InputOtp {
     len: usize,
@@ -21,8 +23,8 @@ pub struct InputOtp {
     obscured: bool,
     disabled: bool,
     autofocus: bool,
-    on_changed: Option<Rc<dyn Fn(&str)>>,
-    on_complete: Option<Rc<dyn Fn(&str)>>,
+    on_changed: Option<StrCb>,
+    on_complete: Option<StrCb>,
 }
 
 /// Create an [`InputOtp`] with `len` cells (e.g. `input_otp(6)`).
@@ -75,8 +77,8 @@ struct Props {
     obscured: bool,
     disabled: bool,
     autofocus: bool,
-    on_changed: Option<Rc<dyn Fn(&str)>>,
-    on_complete: Option<Rc<dyn Fn(&str)>>,
+    on_changed: Option<StrCb>,
+    on_complete: Option<StrCb>,
 }
 
 impl IntoWidget for InputOtp {

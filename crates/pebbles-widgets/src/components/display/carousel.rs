@@ -162,10 +162,7 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
     let width = create_signal(0.0_f64);
     let offset = match &p.controller {
         Some(c) => c.offset,
-        None => {
-            let offset = create_signal(0.0_f64);
-            offset
-        }
+        None => create_signal(0.0_f64),
     };
     let id = match &p.controller {
         Some(_) => offset.raw_id(),
@@ -174,7 +171,6 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
     // Keep the controller's width mirror in sync with the measurement.
     if let Some(c) = &p.controller {
         let w = c.width;
-        let width = width;
         create_effect(move || w.set(width.get()));
     }
 
@@ -197,9 +193,6 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
     if let Some(secs) = p.autoplay {
         let looped = create_loop_while(!hovered.get(), secs);
         let prev_phase = create_signal(looped.get());
-        let offset = offset;
-        let width = width;
-        let count = count;
         create_effect(move || {
             let v = looped.get();
             if v < prev_phase.peek() {
@@ -223,14 +216,7 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
     let list: AnyWidget = list.into_widget();
 
     // Measure the viewport width through a probe; the report keeps `width` live.
-    let probed = extent_probe(
-        Axis::Horizontal,
-        {
-            let width = width;
-            move |w: f64| width.set(w)
-        },
-        list,
-    );
+    let probed = extent_probe(Axis::Horizontal, move |w: f64| width.set(w), list);
 
     // Dots + arrows overlaid on the pages.
     let mut overlay: Vec<AnyWidget> = Vec::new();
@@ -264,8 +250,6 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
         let at_last = page_idx + 1 >= count;
         if !at_first {
             let prev = icon_button(pebbles_render::IconKind::ChevronLeft).size(20.0).on_pressed({
-                let offset = offset;
-                let width = width;
                 move || {
                     let w = width.peek().max(1.0);
                     let page = ((offset.peek() / w).round().max(0.0) as usize).saturating_sub(1);
@@ -276,8 +260,6 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
         }
         if !at_last {
             let next = icon_button(pebbles_render::IconKind::ChevronRight).size(20.0).on_pressed({
-                let offset = offset;
-                let width = width;
                 move || {
                     let w = width.peek().max(1.0);
                     let page = (offset.peek() / w).round().max(0.0) as usize + 1;

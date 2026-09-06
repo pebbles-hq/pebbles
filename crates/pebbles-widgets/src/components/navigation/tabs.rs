@@ -207,7 +207,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
                 .background(th.colors.background)
                 .border_bottom(pebbles_render::BorderSide::new(th.colors.border, 1.0));
             let m = base.merge(p.style.clone().unwrap_or_default());
-            let mut deco = m.decoration().unwrap_or_else(BoxDecoration::new);
+            let mut deco = m.decoration().unwrap_or_default();
             if node.is_focused() {
                 deco = deco.border(Border::new(th.colors.ring, 2.0));
             }
@@ -216,7 +216,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
         TabsVariant::Pills => {
             let base = crate::style::style().background(th.colors.background);
             let m = base.merge(p.style.clone().unwrap_or_default());
-            let mut deco = m.decoration().unwrap_or_else(BoxDecoration::new);
+            let mut deco = m.decoration().unwrap_or_default();
             if node.is_focused() {
                 deco = deco.border(Border::new(th.colors.ring, 2.0));
             }
@@ -225,7 +225,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
         TabsVariant::Solid => {
             let base = crate::style::style().background(th.colors.muted).radius_all(th.radius);
             let m = base.merge(p.style.clone().unwrap_or_default());
-            let mut deco = m.decoration().unwrap_or_else(BoxDecoration::new);
+            let mut deco = m.decoration().unwrap_or_default();
             if node.is_focused() {
                 deco = deco.border(Border::new(th.colors.ring, 2.0));
             }

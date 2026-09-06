@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
-use pebbles_render::{Border, BoxDecoration};
+use pebbles_render::Border;
 
 use crate::overlay::window_size;
 use crate::theme::theme;
@@ -281,8 +281,7 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
         .background(e.background.unwrap_or(c.background))
         .border(Border::new(c.border, 1.0))
         .radius_all(0.0);
-    let deco =
-        base.merge(e.style.clone().unwrap_or_default()).decoration().unwrap_or_else(BoxDecoration::new);
+    let deco = base.merge(e.style.clone().unwrap_or_default()).decoration().unwrap_or_default();
     let pad = e.padding.unwrap_or(EdgeInsets::all(22.0));
     let mut surface = Container::new().decoration(deco).padding(pad).child(body);
     // Resolve each dimension: an explicit width/height wins; otherwise the main axis is

@@ -108,10 +108,7 @@ impl IntoWidget for StickyList {
 fn render_sticky(p: &StickyProps) -> pebbles_core::Element {
     let controller = match &p.controller {
         Some(c) => *c,
-        None => {
-            let c = use_scroll_controller();
-            c
-        }
+        None => use_scroll_controller(),
     };
     let he = p.header_extent;
     let re = p.row_extent;

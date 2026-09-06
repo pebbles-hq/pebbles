@@ -518,7 +518,7 @@ fn line_table_motion_moves_the_caret_across_lines() {
     assert_eq!(f, 11, "down into the empty line sits at its start");
     // Down again into "gamma delta words", up returns to the empty line.
     let (_, f2) = edit::line_down(4244, f, f, false).expect("down");
-    assert!(f2 >= 12 && f2 <= 29, "down lands inside line 2 ({f2})");
+    assert!((12..=29).contains(&f2), "down lands inside line 2 ({f2})");
     let (_, f3) = edit::line_up(4244, f2, f2, false).expect("up");
     assert_eq!(f3, 11);
     // Word motion crosses the boundary at a line start.
@@ -708,7 +708,7 @@ fn text_field_lazy_motion_fallbacks_are_char_safe() {
     let start: usize = full.split('\n').take(400).map(|l| l.len() + 1).sum();
     let hline = "héllo wörld ε—дом";
     assert_eq!(&full[start..start + hline.len()], hline, "target line located");
-    assert_eq!(table.materialized_count() < 100, true, "tail never materialized");
+    assert!(table.materialized_count() < 100, "tail never materialized");
 
     // One step right from the line start crosses the 2-byte 'h'? No — 'h' is
     // ASCII; step from 'h' onto 'é' (2 bytes) and back, plus word/line motion.

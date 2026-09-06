@@ -56,11 +56,11 @@ fn tap_fires_and_disabled_never_does() {
     };
     tap(&mut ui, Offset::new(100.0, 18.0));
     frame(&mut ui);
-    assert_eq!(TAPPED.with(|t| t.borrow().clone()), 1, "on_tap fires on the clickable row");
+    assert_eq!(TAPPED.with(|t| *t.borrow()), 1, "on_tap fires on the clickable row");
 
     tap(&mut ui, Offset::new(100.0, 55.0));
     frame(&mut ui);
-    assert_eq!(TAPPED.with(|t| t.borrow().clone()), 1, "a disabled row never fires on_tap");
+    assert_eq!(TAPPED.with(|t| *t.borrow()), 1, "a disabled row never fires on_tap");
 }
 
 fn styled_root() -> impl IntoWidget {

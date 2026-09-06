@@ -104,14 +104,8 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     } else {
         let g = GestureDetector::new(body)
             .cursor(Cursor::Pointer)
-            .on_hover_enter({
-                let hovered = hovered;
-                move || hovered.set(true)
-            })
-            .on_hover_exit({
-                let hovered = hovered;
-                move || hovered.set(false)
-            })
+            .on_hover_enter(move || hovered.set(true))
+            .on_hover_exit(move || hovered.set(false))
             .on_hover_enter({
                 move || {
                     // Hovering a folder while dragging marks it as the drop

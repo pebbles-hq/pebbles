@@ -423,7 +423,7 @@ impl<T: 'static + Clone> Signal<T> {
 
     /// If this signal backs a memo, bring it up to date (Reactively's
     /// `updateIfNecessary`) BEFORE any read borrow — a no-op for a plain signal.
-    fn pull_if_memo(&self) {
+    fn pull_if_memo(self) {
         let memo = with_rt(|rt| rt.signals.get(self.id).and_then(|s| s.memo));
         if let Some(mid) = memo {
             update_if_necessary(mid);

@@ -25,6 +25,8 @@ use crate::object::RenderObject;
 use crate::text::TextEnv;
 use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 
+type LinkBoxes = Rc<RefCell<Vec<(Rect, usize)>>>;
+
 /// Styling for a paragraph of text.
 #[derive(Clone, Debug)]
 pub struct ParagraphStyle {
@@ -170,7 +172,7 @@ pub struct RenderParagraph {
     pub spans: Vec<TextSpanStyle>,
     /// Where the paragraph publishes each link span's laid-out boxes
     /// `(rect in local space, link index)` — shared with the widget's tap handler.
-    pub link_boxes: Option<Rc<RefCell<Vec<(Rect, usize)>>>>,
+    pub link_boxes: Option<LinkBoxes>,
     /// Chip (inline-code) backgrounds computed from the shaped layout, local space.
     chips: Vec<(Rect, Color)>,
     /// Shaped layout, produced in [`RenderObject::layout`] and consumed in paint.

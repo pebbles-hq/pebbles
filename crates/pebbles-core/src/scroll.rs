@@ -10,6 +10,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+type ScrollHandler = Rc<dyn Fn(ScrollTo)>;
+type IndexFn = Rc<dyn Fn(usize) -> f64>;
+
 /// How to move a controlled viewport.
 #[derive(Clone, Copy, Debug)]
 pub enum ScrollTo {
@@ -20,14 +23,14 @@ pub enum ScrollTo {
 }
 
 thread_local! {
-    static HANDLERS: RefCell<HashMap<u64, Rc<dyn Fn(ScrollTo)>>> = RefCell::new(HashMap::new());
+    static HANDLERS: RefCell<HashMap<u64, ScrollHandler>> = RefCell::new(HashMap::new());
     /// Per-viewport index→offset functions (auto-measured lists) so
     /// `scroll_to_index` resolves through the live extent cache.
-    static INDEX_FNS: RefCell<HashMap<u64, Rc<dyn Fn(usize) -> f64>>> = RefCell::new(HashMap::new());
+    static INDEX_FNS: RefCell<HashMap<u64, IndexFn>> = RefCell::new(HashMap::new());
 }
 
 /// Install (or replace) the scroll handler for viewport `id`.
-pub fn install(id: u64, handler: Rc<dyn Fn(ScrollTo)>) {
+pub fn install(id: u64, handler: ScrollHandler) {
     HANDLERS.with(|h| {
         h.borrow_mut().insert(id, handler);
     });
@@ -35,7 +38,7 @@ pub fn install(id: u64, handler: Rc<dyn Fn(ScrollTo)>) {
 
 /// Install (or replace) the index→offset function for viewport `id` — the
 /// auto-measured list path of `ScrollController::scroll_to_index_auto`.
-pub fn install_index(id: u64, f: Rc<dyn Fn(usize) -> f64>) {
+pub fn install_index(id: u64, f: IndexFn) {
     INDEX_FNS.with(|h| {
         h.borrow_mut().insert(id, f);
     });

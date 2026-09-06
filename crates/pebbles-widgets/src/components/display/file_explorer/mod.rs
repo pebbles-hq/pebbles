@@ -404,7 +404,7 @@ impl FileExplorer {
                         continue;
                     }
                 } else {
-                    self.last_error.set(Some(format!("Could not resolve a path for a node")));
+                    self.last_error.set(Some("Could not resolve a path for a node".to_string()));
                     continue;
                 }
             }

@@ -45,12 +45,12 @@ struct Config {
 }
 
 thread_local! {
-    static CONFIG: RefCell<Config> = RefCell::new(Config {
+    static CONFIG: RefCell<Config> = const { RefCell::new(Config {
         enabled: false,
         entries: None,
         style: None,
         width: 220.0,
-    });
+    }) };
 }
 
 /// Enable or disable the global right-click menu (default: DISABLED — opt in).

@@ -19,7 +19,7 @@ fn ch() -> Channel<u32> {
         if c.is_none() {
             *c = Some(channel::<u32>());
         }
-        c.as_ref().unwrap().clone()
+        *c.as_ref().unwrap()
     })
 }
 

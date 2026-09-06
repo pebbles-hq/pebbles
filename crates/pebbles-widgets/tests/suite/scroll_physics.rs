@@ -64,7 +64,7 @@ fn rubber_band_overscroll_resists_and_springs_back() {
 
     // Release: the offset springs back to 0.
     assert!(ui.end_content_drag(Offset::new(150.0, 130.0)));
-    assert!(ui.content_drag_active() == false);
+    assert!(!ui.content_drag_active());
     let mut settled = false;
     for _ in 0..300 {
         if !ui.tick_scrolls(1.0 / 60.0) {

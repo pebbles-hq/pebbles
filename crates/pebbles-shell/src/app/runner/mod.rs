@@ -573,10 +573,10 @@ impl Runner {
                         self.ui.dispatch_long_press_end(t, cursor);
                     }
                     self.lp_active = false;
-                } else if self.press_deadline.is_some() {
-                    if let Some(t) = self.lp_target.take() {
-                        self.ui.dispatch_long_press_cancel(t);
-                    }
+                } else if self.press_deadline.is_some()
+                    && let Some(t) = self.lp_target.take()
+                {
+                    self.ui.dispatch_long_press_cancel(t);
                 }
                 self.press_deadline = None;
                 let up = self.ui.dispatch_pointer_up(cursor);

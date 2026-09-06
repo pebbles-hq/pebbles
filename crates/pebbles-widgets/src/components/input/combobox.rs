@@ -6,7 +6,7 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, EdgeInsets, MainAxisSize};
-use pebbles_render::{Border, BoxDecoration, Cursor, IconKind, PointerEvent};
+use pebbles_render::{Border, Cursor, IconKind, PointerEvent};
 
 use super::list_nav::list_nav;
 use super::menu::{ActionRowProps, action_row};
@@ -18,6 +18,9 @@ use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, SingleChildScrollView, column, gap_h, row, spacer, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, action_event, children, component_props, create_signal};
+
+type ChangedCb = Rc<dyn Fn(usize, &str)>;
+type SelectionCb = Rc<dyn Fn(&[usize])>;
 
 const TRIGGER_H: f64 = 38.0;
 
@@ -32,7 +35,7 @@ fn trigger_box(label: String, filled: bool, width: f64, user: Option<crate::styl
         .radius_all(theme().radius)
         .merge(user.unwrap_or_default())
         .decoration()
-        .unwrap_or_else(BoxDecoration::new);
+        .unwrap_or_default();
     Container::new()
         .width(width)
         .height(TRIGGER_H)
@@ -172,7 +175,7 @@ pub struct Combobox {
     search_placeholder: String,
     empty: String,
     width: f64,
-    on_changed: Option<Rc<dyn Fn(usize, &str)>>,
+    on_changed: Option<ChangedCb>,
     style: Option<crate::style::Style>,
 }
 
@@ -231,7 +234,7 @@ struct ComboProps {
     search_placeholder: String,
     empty: String,
     width: f64,
-    on_changed: Option<Rc<dyn Fn(usize, &str)>>,
+    on_changed: Option<ChangedCb>,
     style: Option<crate::style::Style>,
 }
 
@@ -313,7 +316,7 @@ pub struct MultiSelect {
     search_placeholder: String,
     empty: String,
     width: f64,
-    on_changed: Option<Rc<dyn Fn(&[usize])>>,
+    on_changed: Option<SelectionCb>,
     style: Option<crate::style::Style>,
 }
 
@@ -372,7 +375,7 @@ struct MultiProps {
     search_placeholder: String,
     empty: String,
     width: f64,
-    on_changed: Option<Rc<dyn Fn(&[usize])>>,
+    on_changed: Option<SelectionCb>,
     style: Option<crate::style::Style>,
 }
 

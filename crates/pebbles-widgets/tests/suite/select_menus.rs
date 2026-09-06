@@ -131,7 +131,7 @@ fn select_clearable_x_resets_without_opening() {
     // 12) while a value is selected.
     tap(&mut ui, Offset::new(200.0, 19.0));
     frame(&mut ui, &mut env, win);
-    assert!(CLEARED.with(|c| c.borrow().clone()), "tapping the ✕ fires on_cleared");
+    assert!(CLEARED.with(|c| *c.borrow()), "tapping the ✕ fires on_cleared");
     assert!(!overlay::is_open(), "the ✕ tap must not open the menu");
 }
 

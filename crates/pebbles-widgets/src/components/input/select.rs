@@ -28,6 +28,8 @@ use pebbles_core::focus::create_focus;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, action_event, animated, component_props, create_signal};
 
+type ChangedCb = Rc<dyn Fn(usize, &str)>;
+
 // ---------------------------------------------------------------------------
 // Options
 // ---------------------------------------------------------------------------
@@ -108,7 +110,7 @@ pub struct Select {
     leading: Option<IconData>,
     trailing: Option<IconData>,
     clearable: bool,
-    on_changed: Option<Rc<dyn Fn(usize, &str)>>,
+    on_changed: Option<ChangedCb>,
     on_cleared: Option<Rc<dyn Fn()>>,
     style: Option<crate::style::Style>,
 }
@@ -182,7 +184,7 @@ struct Props {
     leading: Option<IconData>,
     trailing: Option<IconData>,
     clearable: bool,
-    on_changed: Option<Rc<dyn Fn(usize, &str)>>,
+    on_changed: Option<ChangedCb>,
     on_cleared: Option<Rc<dyn Fn()>>,
     style: Option<crate::style::Style>,
 }
@@ -214,7 +216,7 @@ struct MenuProps {
     options: Rc<Vec<SelectItem>>,
     width: f64,
     selected: Signal<Option<usize>>,
-    on_changed: Option<Rc<dyn Fn(usize, &str)>>,
+    on_changed: Option<ChangedCb>,
     max_height: Option<f64>,
     nav: super::list_nav::ListNav,
 }
@@ -455,7 +457,7 @@ fn render_select(p: &Props) -> AnyWidget {
         .radius_all(theme().radius)
         .merge(p.style.clone().unwrap_or_default())
         .decoration()
-        .unwrap_or_else(BoxDecoration::new);
+        .unwrap_or_default();
     let trigger = Container::new()
         .width(width)
         .height(38.0)

@@ -73,7 +73,7 @@ fn range_field_picks_and_reports_ordered_endpoints() {
     frame(&mut ui);
 
     assert_eq!(
-        RANGE.with(|r| r.borrow().clone()),
+        RANGE.with(|r| *r.borrow()),
         Some(((2026, 1, 1), (2026, 1, 3))),
         "on_range_changed reports the ordered range regardless of tap order"
     );

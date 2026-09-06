@@ -86,16 +86,12 @@ fn render_refresh(p: &Props) -> pebbles_core::Element {
     // threshold and releases.
     let mut refresh = RefreshState::new(p.threshold);
     {
-        let pulling = pulling.clone();
         refresh.on_arm = Some(Rc::new(move || pulling.set(true)));
     }
     {
-        let pulling = pulling.clone();
         refresh.on_release = Some(Rc::new(move || pulling.set(false)));
     }
     {
-        let refreshing = refreshing.clone();
-        let pulling = pulling.clone();
         let on_refresh = p.on_refresh.clone();
         refresh.on_arm_release = Some(Rc::new(move || {
             pulling.set(false);
@@ -106,7 +102,7 @@ fn render_refresh(p: &Props) -> pebbles_core::Element {
             }
             if let Some(cb) = &on_refresh {
                 refreshing.set(true);
-                cb(RefreshDone { signal: refreshing.clone() });
+                cb(RefreshDone { signal: refreshing });
             }
         }));
     }

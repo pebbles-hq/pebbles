@@ -55,7 +55,7 @@ fn probe_tops(ui: &Ui) -> Vec<(usize, f64)> {
         .map(|id| ui.render_tree().absolute_offset(id).y)
         .collect();
     tops.sort_by(f64::total_cmp);
-    tops.into_iter().enumerate().map(|(i, t)| (i, t)).collect()
+    tops.into_iter().enumerate().collect()
 }
 
 #[test]
@@ -86,7 +86,7 @@ fn auto_list_measures_visible_items_and_grows_the_content_extent() {
     for (idx, (_, top)) in tops.iter().enumerate().skip(1) {
         let prev = tops[idx - 1].1;
         let gap = top - prev;
-        assert!(gap >= 40.0 - 0.5 && gap <= 96.0 + 0.5, "sane row gap: {gap}");
+        assert!((40.0 - 0.5..=96.0 + 0.5).contains(&gap), "sane row gap: {gap}");
     }
 }
 

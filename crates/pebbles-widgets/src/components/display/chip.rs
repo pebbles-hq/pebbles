@@ -128,14 +128,15 @@ impl IntoWidget for Chip {
             .push(text(std::mem::take(&mut self.label)).size(12.5).weight(500.0).color(fg).into_widget());
         let mut body: AnyWidget =
             row(row_items).main_axis_size(pebbles_foundation::MainAxisSize::Min).into_widget();
-        if self.deletable && !self.disabled {
-            if let Some(on_deleted) = self.on_deleted.take() {
-                let close = icon_button(IconKind::Close).size(12.0).on_pressed(on_deleted);
-                let close_styled = styled(close, style().padding_all(2.0).radius_all(999.0));
-                body = row(vec![body, gap_w(6.0).into_widget(), close_styled.into_widget()])
-                    .main_axis_size(pebbles_foundation::MainAxisSize::Min)
-                    .into_widget();
-            }
+        if self.deletable
+            && !self.disabled
+            && let Some(on_deleted) = self.on_deleted.take()
+        {
+            let close = icon_button(IconKind::Close).size(12.0).on_pressed(on_deleted);
+            let close_styled = styled(close, style().padding_all(2.0).radius_all(999.0));
+            body = row(vec![body, gap_w(6.0).into_widget(), close_styled.into_widget()])
+                .main_axis_size(pebbles_foundation::MainAxisSize::Min)
+                .into_widget();
         }
         let pill = styled(body, base.merge(self.style.take().unwrap_or_default()));
         // Tappable (choice / filter / action chips): wrap in a gesture with a pointer.

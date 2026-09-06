@@ -6,6 +6,9 @@ use pebbles_render::{ParagraphStyle, RenderObject, RenderParagraph};
 
 use pebbles_core::widget::{AnyWidget, RenderWidget};
 
+type LinkCb = std::rc::Rc<dyn Fn(&str)>;
+type LinkBoxes = std::rc::Rc<std::cell::RefCell<Vec<(pebbles_foundation::Rect, usize)>>>;
+
 /// Which text properties a [`Text`] set **explicitly** — the ones that win over an
 /// inherited [`default_text_style`](crate::default_text_style). Unset properties fall
 /// through to the ancestor's style (Flutter's `DefaultTextStyle` inheritance).
@@ -414,7 +417,7 @@ impl TextSpan {
 pub struct RichText {
     base: ParagraphStyle,
     spans: Vec<TextSpan>,
-    on_link: Option<std::rc::Rc<dyn Fn(&str)>>,
+    on_link: Option<LinkCb>,
 }
 
 /// Build a rich paragraph from spans. Base style via the setters.
@@ -474,7 +477,7 @@ struct RichTextLeaf {
     text: String,
     style: ParagraphStyle,
     spans: Vec<pebbles_render::TextSpanStyle>,
-    boxes: Option<std::rc::Rc<std::cell::RefCell<Vec<(pebbles_foundation::Rect, usize)>>>>,
+    boxes: Option<LinkBoxes>,
 }
 
 pebbles_core::render_widget!(RichTextLeaf);

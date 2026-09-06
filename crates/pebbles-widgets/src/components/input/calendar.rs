@@ -24,6 +24,8 @@ use crate::widgets::{
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, component_props, create_signal};
 
+type DisabledPred = Rc<dyn Fn(i32, u32, u32) -> bool>;
+
 // --- date math ---
 
 fn is_leap(y: i32) -> bool {
@@ -132,7 +134,7 @@ pub struct Calendar {
     on_range_changed: Option<Rc<dyn Fn(Date, Date)>>,
     min: Option<Date>,
     max: Option<Date>,
-    disabled_pred: Option<Rc<dyn Fn(i32, u32, u32) -> bool>>,
+    disabled_pred: Option<DisabledPred>,
     style: Option<Style>,
 }
 
@@ -226,7 +228,7 @@ struct Props {
     on_range_changed: Option<Rc<dyn Fn(Date, Date)>>,
     min: Option<Date>,
     max: Option<Date>,
-    disabled_pred: Option<Rc<dyn Fn(i32, u32, u32) -> bool>>,
+    disabled_pred: Option<DisabledPred>,
     style: Option<Style>,
 }
 
@@ -323,6 +325,8 @@ fn render_day_cell(p: &DayCellProps) -> AnyWidget {
     let (y, m, d) = (p.y, p.m, p.d);
 
     let mut deco = BoxDecoration::new().radius(BorderRadius::all(6.0));
+    // `in_range` and `today` are distinct states that happen to share styling today.
+    #[allow(clippy::if_same_then_else)]
     let fg = if p.disabled {
         c.muted_foreground
     } else if p.endpoint {
@@ -389,7 +393,7 @@ struct DayGridCtx {
     range_end: Option<Date>,
     min: Option<Date>,
     max: Option<Date>,
-    pred: Option<Rc<dyn Fn(i32, u32, u32) -> bool>>,
+    pred: Option<DisabledPred>,
     on_pick: Rc<dyn Fn(i32, u32, u32)>,
 }
 
@@ -469,7 +473,7 @@ fn days_panel(disp: Signal<(i32, u32)>, view: Signal<View>, ctx: DayGridCtx) -> 
     let dim = days_in_month(y, m);
     let mut slots: Vec<Option<u32>> = vec![None; first as usize];
     slots.extend((1..=dim).map(Some));
-    while slots.len() % 7 != 0 {
+    while !slots.len().is_multiple_of(7) {
         slots.push(None);
     }
     let mut weeks: Vec<AnyWidget> = Vec::new();

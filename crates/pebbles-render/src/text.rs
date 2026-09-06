@@ -68,7 +68,7 @@ impl TextEnv {
         // Sweep only occasionally: a huge document legitimately holds thousands
         // of per-line entries whose owners (the field's line table) keep them
         // useful between rebuilds — scanning them every frame is wasted work.
-        if self.cache.map.len() > SHAPE_CACHE_PRESSURE && self.cache.generation % 256 == 0 {
+        if self.cache.map.len() > SHAPE_CACHE_PRESSURE && self.cache.generation.is_multiple_of(256) {
             let current = self.cache.generation;
             self.cache.map.retain(|_, e| current.wrapping_sub(e.last_used) <= SHAPE_CACHE_STALE);
         }

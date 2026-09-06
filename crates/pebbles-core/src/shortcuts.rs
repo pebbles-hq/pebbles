@@ -123,10 +123,10 @@ fn key_token(token: &str) -> Result<ShortcutKey, String> {
     let upper = token.to_ascii_uppercase();
     // F1..F12
     if upper.len() >= 2 && upper.starts_with('F') {
-        if let Ok(n) = upper[1..].parse::<u8>() {
-            if (1..=12).contains(&n) {
-                return Ok(ShortcutKey::F(n));
-            }
+        if let Ok(n) = upper[1..].parse::<u8>()
+            && (1..=12).contains(&n)
+        {
+            return Ok(ShortcutKey::F(n));
         }
         return Err(format!("unsupported function key {token:?}"));
     }

@@ -113,7 +113,7 @@ impl Runner {
         pebbles_core::reactive_stats::reset();
         // X.6: inject a synthetic device loss on schedule (soak tool; no-op unset).
         let synth = synth_gpu_loss_every();
-        if synth > 0 && self.frame_no % synth == 0 {
+        if synth > 0 && self.frame_no.is_multiple_of(synth) {
             eprintln!("pebbles: SYNTH device loss injected (frame {fno})");
             GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }

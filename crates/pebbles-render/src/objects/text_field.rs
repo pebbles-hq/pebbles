@@ -415,7 +415,7 @@ impl RenderTextField {
 
         let table_key = {
             let mut h = std::collections::hash_map::DefaultHasher::new();
-            0xF1E1D_11E5_u64.hash(&mut h);
+            0x000F_1E1D_11E5_u64.hash(&mut h);
             display.hash(&mut h);
             style_h.hash(&mut h);
             width.to_bits().hash(&mut h);
@@ -465,7 +465,7 @@ impl RenderTextField {
                 let shaped: &str = if empty { " " } else { seg };
                 let line_key = {
                     let mut h = std::collections::hash_map::DefaultHasher::new();
-                    0xF1E1D_11E5_u64.hash(&mut h);
+                    0x000F_1E1D_11E5_u64.hash(&mut h);
                     shaped.hash(&mut h);
                     style_h.hash(&mut h);
                     width.to_bits().hash(&mut h);

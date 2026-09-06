@@ -351,9 +351,7 @@ impl RenderObject for RenderFlex {
         let gaps = if main && count > 1.0 { (count - 1.0) * self.spacing.max(0.0) } else { 0.0 };
         let mut acc = 0.0_f64;
         for child in children {
-            let Some(v) = cx.child_intrinsic(child, axis, cross_extent) else {
-                return None;
-            };
+            let v = cx.child_intrinsic(child, axis, cross_extent)?;
             if main {
                 acc += v;
             } else {

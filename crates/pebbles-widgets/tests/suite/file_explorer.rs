@@ -1,6 +1,6 @@
 //! [`FileExplorer`]: the model mutates correctly (insert/rename/delete/move with
-//! the descendant + file-target guards), and the UI drives it — New File creates
-//! + starts the inline rename, custom buttons delete, and drag-pan onto a folder
+//! the descendant + file-target guards), and the UI drives it — New File creates +
+//! starts the inline rename, custom buttons delete, and drag-pan onto a folder
 //! moves the node.
 
 use std::cell::RefCell;

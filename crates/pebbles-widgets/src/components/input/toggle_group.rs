@@ -19,6 +19,8 @@ use crate::theme::theme;
 use crate::widgets::{Container, row, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
+type SelectionCb = Rc<dyn Fn(&[usize])>;
+
 /// A joined set of toggle cells. Build with [`toggle_group`] / [`toggle_group_labels`].
 pub struct ToggleGroup {
     cells: Vec<AnyWidget>,
@@ -28,7 +30,7 @@ pub struct ToggleGroup {
     variant: ToggleVariant,
     size: ToggleSize,
     disabled: bool,
-    on_changed: Option<Rc<dyn Fn(&[usize])>>,
+    on_changed: Option<SelectionCb>,
 }
 
 fn make(cells: Vec<AnyWidget>) -> ToggleGroup {

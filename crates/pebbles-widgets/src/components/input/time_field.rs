@@ -17,6 +17,8 @@ use crate::widgets::{Container, SingleChildScrollView, column};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{action_event, component_props, create_signal};
 
+type StrCb = Rc<dyn Fn(&str)>;
+
 /// Reformat digits as `HH:MM` (first 4 digits, colon after the hour).
 fn mask_time(s: &str) -> String {
     let digits: String = s.chars().filter(char::is_ascii_digit).take(4).collect();
@@ -61,7 +63,7 @@ pub struct TimeField {
     hour12: bool,
     step: u32,
     style: Option<Style>,
-    on_changed: Option<Rc<dyn Fn(&str)>>,
+    on_changed: Option<StrCb>,
 }
 
 /// Create a [`TimeField`] (24-hour, 30-minute slots by default).
@@ -106,7 +108,7 @@ struct Props {
     hour12: bool,
     step: u32,
     style: Option<Style>,
-    on_changed: Option<Rc<dyn Fn(&str)>>,
+    on_changed: Option<StrCb>,
 }
 
 impl IntoWidget for TimeField {

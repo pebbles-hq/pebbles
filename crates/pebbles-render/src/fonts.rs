@@ -85,7 +85,7 @@ pub(crate) fn refresh_families(fonts: &mut parley::FontContext) {
         }
         others.push(name.to_string());
     }
-    others.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    others.sort_by_key(|a| a.to_lowercase());
     let mut all: Vec<String> = BUILTIN_FAMILIES
         .iter()
         .filter(|b| fonts.collection.family_by_name(b).is_some())

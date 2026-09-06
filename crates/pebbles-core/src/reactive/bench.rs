@@ -253,7 +253,7 @@ fn memo_with_reference_policy_cuts_on_pointer_identity() {
             let _ = s.get(); // depends on s, but always returns the same Rc
             shared2.clone()
         },
-        |a, b| std::rc::Rc::ptr_eq(a, b),
+        std::rc::Rc::ptr_eq,
     );
     let runs = std::rc::Rc::new(std::cell::Cell::new(0u32));
     let r2 = runs.clone();

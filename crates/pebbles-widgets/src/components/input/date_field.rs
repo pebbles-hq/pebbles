@@ -19,6 +19,8 @@ use crate::widgets::{gap_w, row};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{action_event, component_props, create_signal};
 
+type DisabledPred = Rc<dyn Fn(i32, u32, u32) -> bool>;
+
 // ---------------------------------------------------------------------------
 // Date format
 // ---------------------------------------------------------------------------
@@ -63,7 +65,7 @@ impl DateFormat {
     }
 
     /// Field widths in display order (the 4-digit year varies position).
-    fn widths(&self) -> [usize; 3] {
+    fn widths(self) -> [usize; 3] {
         match self.order {
             DateOrder::Ymd => [4, 2, 2],
             _ => [2, 2, 4],
@@ -71,7 +73,7 @@ impl DateFormat {
     }
 
     /// Reformat raw input to the masked pattern, inserting separators.
-    fn mask(&self, s: &str) -> String {
+    fn mask(self, s: &str) -> String {
         let w = self.widths();
         let sep_after = [w[0], w[0] + w[1]];
         let digits: String = s.chars().filter(|c| c.is_ascii_digit()).take(8).collect();
@@ -86,7 +88,7 @@ impl DateFormat {
     }
 
     /// Parse a complete formatted date into `(year, month, day)`.
-    fn parse(&self, s: &str) -> Option<(i32, u32, u32)> {
+    fn parse(self, s: &str) -> Option<(i32, u32, u32)> {
         let parts: Vec<&str> = s.split(self.separator).collect();
         if parts.len() != 3 {
             return None;
@@ -103,7 +105,7 @@ impl DateFormat {
     }
 
     /// Format `(year, month, day)` into a string.
-    fn format(&self, y: i32, m: u32, d: u32) -> String {
+    fn format(self, y: i32, m: u32, d: u32) -> String {
         let s = self.separator;
         match self.order {
             DateOrder::Mdy => format!("{m:02}{s}{d:02}{s}{y:04}"),
@@ -113,7 +115,7 @@ impl DateFormat {
     }
 
     /// The placeholder pattern (e.g. `MM/DD/YYYY`).
-    fn hint(&self) -> String {
+    fn hint(self) -> String {
         let s = self.separator;
         match self.order {
             DateOrder::Mdy => format!("MM{s}DD{s}YYYY"),
@@ -122,7 +124,7 @@ impl DateFormat {
         }
     }
 
-    fn allows(&self, c: char) -> bool {
+    fn allows(self, c: char) -> bool {
         c.is_ascii_digit() || c == self.separator
     }
 }
@@ -149,7 +151,7 @@ pub struct DateField {
     clearable: bool,
     min: Option<Date>,
     max: Option<Date>,
-    disabled_pred: Option<Rc<dyn Fn(i32, u32, u32) -> bool>>,
+    disabled_pred: Option<DisabledPred>,
 }
 
 /// Create a [`DateField`].
@@ -239,7 +241,7 @@ struct DateProps {
     clearable: bool,
     min: Option<Date>,
     max: Option<Date>,
-    disabled_pred: Option<Rc<dyn Fn(i32, u32, u32) -> bool>>,
+    disabled_pred: Option<DisabledPred>,
 }
 
 impl IntoWidget for DateField {
@@ -272,7 +274,7 @@ const POP_W: f64 = 7.0 * 40.0 + 24.0;
 fn render_date(p: &DateProps) -> AnyWidget {
     // Range mode seeds the display from the initial range (else starts empty).
     let text = create_signal(if p.range {
-        p.range_value.map(|(s, e)| joined(&p.format, s, e)).unwrap_or_default()
+        p.range_value.map(|(s, e)| joined(p.format, s, e)).unwrap_or_default()
     } else {
         String::new()
     });
@@ -308,7 +310,7 @@ fn render_date(p: &DateProps) -> AnyWidget {
                     cal = cal.disabled_dates(move |y, m, d| pred(y, m, d));
                 }
                 cal = cal.on_range_changed(move |s, e2| {
-                    text.set(joined(&fmt, s, e2));
+                    text.set(joined(fmt, s, e2));
                     if let Some(cb) = &on_range {
                         cb(s, e2);
                     }
@@ -392,7 +394,7 @@ fn render_date(p: &DateProps) -> AnyWidget {
 }
 
 /// The range display: `Jan 5, 2026 – Feb 2, 2026`.
-fn joined(_fmt: &DateFormat, s: Date, e: Date) -> String {
+fn joined(_fmt: DateFormat, s: Date, e: Date) -> String {
     format!("{} – {}", readable(s), readable(e))
 }
 

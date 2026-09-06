@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets, MainAxisSize};
 use pebbles_render::text_edit as edit;
-use pebbles_render::{BoxDecoration, Cursor, IconData, IconKind, PointerEvent, TextFieldStyle, lucide};
+use pebbles_render::{Cursor, IconData, IconKind, PointerEvent, TextFieldStyle, lucide};
 
 use super::{ButtonVariant, icon_button};
 use crate::components::icon;
@@ -25,6 +25,9 @@ use pebbles_core::{
     KeyInput, Motion, Signal, action_event, animated, clipboard, component_props, create_cleanup,
     create_focus, create_loop_while, create_signal, keyboard,
 };
+
+type StrFmt = Rc<dyn Fn(&str) -> String>;
+type StrCb = Rc<dyn Fn(&str)>;
 
 /// One undo/redo snapshot: text + selection.
 type Snap = (String, usize, usize);
@@ -102,7 +105,7 @@ fn kind_placeholder(kind: InputKind) -> &'static str {
 }
 
 /// The input mask a kind applies (before any explicit `.format()`).
-fn kind_format(kind: InputKind) -> Option<Rc<dyn Fn(&str) -> String>> {
+fn kind_format(kind: InputKind) -> Option<StrFmt> {
     match kind {
         InputKind::Currency => Some(Rc::new(format_currency)),
         _ => None,
@@ -115,7 +118,7 @@ fn group_thousands(digits: &str) -> String {
     let n = d.len();
     let mut out = String::with_capacity(n + n / 3);
     for (i, ch) in d.chars().enumerate() {
-        if i > 0 && (n - i) % 3 == 0 {
+        if i > 0 && (n - i).is_multiple_of(3) {
             out.push(',');
         }
         out.push(ch);
@@ -160,7 +163,7 @@ pub struct TextField {
     char_filter: Option<Rc<dyn Fn(char) -> bool>>,
     max_length: Option<usize>,
     bind: Option<Signal<String>>,
-    format: Option<Rc<dyn Fn(&str) -> String>>,
+    format: Option<StrFmt>,
     label: Option<String>,
     helper: Option<String>,
     error: Option<String>,
@@ -168,8 +171,8 @@ pub struct TextField {
     autofocus: bool,
     read_only: bool,
     bare: bool,
-    on_changed: Option<Rc<dyn Fn(&str)>>,
-    on_submit: Option<Rc<dyn Fn(&str)>>,
+    on_changed: Option<StrCb>,
+    on_submit: Option<StrCb>,
     on_editing_complete: Option<Rc<dyn Fn()>>,
     on_tap: Option<Rc<dyn Fn()>>,
     on_focus_change: Option<Rc<dyn Fn(bool)>>,
@@ -370,7 +373,7 @@ struct Props {
     char_filter: Option<Rc<dyn Fn(char) -> bool>>,
     max_length: Option<usize>,
     bind: Option<Signal<String>>,
-    format: Option<Rc<dyn Fn(&str) -> String>>,
+    format: Option<StrFmt>,
     label: Option<String>,
     helper: Option<String>,
     error: Option<String>,
@@ -379,8 +382,8 @@ struct Props {
     read_only: bool,
     bare: bool,
     select_range: Option<(usize, usize)>,
-    on_changed: Option<Rc<dyn Fn(&str)>>,
-    on_submit: Option<Rc<dyn Fn(&str)>>,
+    on_changed: Option<StrCb>,
+    on_submit: Option<StrCb>,
     on_editing_complete: Option<Rc<dyn Fn()>>,
     on_tap: Option<Rc<dyn Fn()>>,
     on_focus_change: Option<Rc<dyn Fn(bool)>>,
@@ -977,7 +980,7 @@ fn render_field(p: &Props) -> AnyWidget {
             .border(pebbles_render::Border::new(border_color, border_w))
             .radius_all(theme().radius);
         let merged = base.merge(p.style.clone().unwrap_or_default());
-        let deco = merged.decoration().unwrap_or_else(BoxDecoration::new);
+        let deco = merged.decoration().unwrap_or_default();
         let mut field =
             Container::new().decoration(deco).padding(padding).height(height).alignment(align).child(content);
         if let Some(w) = merged.width.or(p.width) {
