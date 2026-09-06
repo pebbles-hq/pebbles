@@ -336,17 +336,16 @@ impl RenderObject for RenderTextField {
                 let synthesis = run.synthesis();
                 let glyph_transform =
                     synthesis.skew().map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
-                cx.scene
-                    .draw_glyphs(run.font())
-                    .brush(&glyph_run.style().brush)
-                    .transform(transform)
-                    .glyph_transform(glyph_transform)
-                    .font_size(run.font_size())
-                    .normalized_coords(run.normalized_coords())
-                    .draw(
-                        Fill::NonZero,
-                        glyph_run.positioned_glyphs().map(|g| Glyph { id: g.id, x: g.x, y: g.y }),
-                    );
+                cx.scene.draw_glyphs(
+                    run.font(),
+                    run.font_size(),
+                    run.normalized_coords(),
+                    &glyph_run.style().brush,
+                    transform,
+                    glyph_transform,
+                    Fill::NonZero,
+                    glyph_run.positioned_glyphs().map(|g| Glyph { id: g.id, x: g.x, y: g.y }),
+                );
             }
         }
 
@@ -643,17 +642,16 @@ impl RenderTextField {
                     let synthesis = run.synthesis();
                     let glyph_transform =
                         synthesis.skew().map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
-                    cx.scene
-                        .draw_glyphs(run.font())
-                        .brush(&glyph_run.style().brush)
-                        .transform(transform)
-                        .glyph_transform(glyph_transform)
-                        .font_size(run.font_size())
-                        .normalized_coords(run.normalized_coords())
-                        .draw(
-                            Fill::NonZero,
-                            glyph_run.positioned_glyphs().map(|g| Glyph { id: g.id, x: g.x, y: g.y }),
-                        );
+                    cx.scene.draw_glyphs(
+                        run.font(),
+                        run.font_size(),
+                        run.normalized_coords(),
+                        &glyph_run.style().brush,
+                        transform,
+                        glyph_transform,
+                        Fill::NonZero,
+                        glyph_run.positioned_glyphs().map(|g| Glyph { id: g.id, x: g.x, y: g.y }),
+                    );
                 }
             }
         }

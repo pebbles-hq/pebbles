@@ -17,7 +17,7 @@ use crate::tree::{LayoutCx, PaintCx};
 /// (`(0,0)` = the widget's top-left). Every shape is translated to the widget's paint
 /// origin for you. Keep painters allocation-light — they run on every paint.
 pub struct Canvas<'a> {
-    scene: &'a mut vello::Scene,
+    scene: crate::paint::Painter<'a>,
     origin: Offset,
     size: Size,
 }
@@ -96,7 +96,7 @@ impl RenderObject for RenderCanvas {
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let size = cx.size();
-        let mut canvas = Canvas { scene: &mut *cx.scene, origin: offset, size };
+        let mut canvas = Canvas { scene: cx.scene.reborrow(), origin: offset, size };
         (self.painter)(&mut canvas);
     }
 

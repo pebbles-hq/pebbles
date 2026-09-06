@@ -2,7 +2,7 @@
 //!
 //! A render object knows how to (a) size itself within [`BoxConstraints`] while
 //! laying out and positioning its children, and (b) paint itself and its children
-//! into a [`vello::Scene`]. Render objects live in the [`RenderTree`](crate::RenderTree)
+//! through a [`Painter`](crate::paint::Painter). Render objects live in the [`RenderTree`](crate::RenderTree)
 //! arena and refer to their children by [`RenderId`](crate::RenderId); all tree
 //! traversal goes through the [`LayoutCx`] / [`PaintCx`] passed to these methods.
 

@@ -636,11 +636,18 @@ impl RenderTree {
     /// requested a **corrective relayout** (a lazy measurement changed a size the
     /// last layout pass estimated) — the caller marks them dirty and schedules
     /// one more frame, the ListView estimate-then-measure pattern.
-    pub fn paint(&self, text: &mut TextEnv, scene: &mut vello::Scene) -> SmallVec<[RenderId; 2]> {
+    pub fn paint(&self, text: &mut TextEnv, scene: &mut crate::paint::Scene) -> SmallVec<[RenderId; 2]> {
         let Some(root) = self.root else { return SmallVec::new() };
         let relayout = std::cell::RefCell::new(SmallVec::new());
         let visible = Rect::from_origin_size((0.0, 0.0), self.nodes[root].size);
-        let mut cx = PaintCx { scene, text, tree: self, current: root, visible, relayout: &relayout };
+        let mut cx = PaintCx {
+            scene: crate::paint::Painter::new(scene),
+            text,
+            tree: self,
+            current: root,
+            visible,
+            relayout: &relayout,
+        };
         cx.paint_child(root, Offset::ZERO);
         relayout.into_inner()
     }
@@ -874,7 +881,10 @@ impl IntrinsicCx<'_> {
 /// [`vello::Scene`] being built, a shared borrow of the tree, and the id of the
 /// object currently painting (so it can read its own size and children).
 pub struct PaintCx<'a> {
-    pub scene: &'a mut vello::Scene,
+    /// The backend-agnostic drawing surface (see [`crate::paint`]). RenderObjects call
+    /// its verbs (`fill`, `stroke`, `push_layer`, `draw_glyphs`, …) and never name a
+    /// concrete GPU scene, so the rasterizer is swappable.
+    pub scene: crate::paint::Painter<'a>,
     /// Font/layout contexts + the window's shape cache (P5.2): paint-time
     /// shaping access, so lazily materialized text (a huge field's line table)
     /// shapes lines the moment they scroll into view.
@@ -963,7 +973,7 @@ impl PaintCx<'_> {
                 }
                 crate::stats::bump_painted();
                 let mut sub = PaintCx {
-                    scene: &mut *self.scene,
+                    scene: self.scene.reborrow(),
                     text: &mut *self.text,
                     tree: self.tree,
                     current: child,
@@ -987,9 +997,9 @@ impl PaintCx<'_> {
                 } else {
                     Rect::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::INFINITY)
                 };
-                let mut sub_scene = vello::Scene::new();
+                let mut sub_scene = crate::paint::scene();
                 let mut sub = PaintCx {
-                    scene: &mut sub_scene,
+                    scene: crate::paint::Painter::new(&mut sub_scene),
                     text: &mut *self.text,
                     tree: self.tree,
                     current: child,
@@ -1012,7 +1022,7 @@ impl PaintCx<'_> {
                 }
                 crate::stats::bump_painted();
                 let mut sub = PaintCx {
-                    scene: &mut *self.scene,
+                    scene: self.scene.reborrow(),
                     text: &mut *self.text,
                     tree: self.tree,
                     current: child,
@@ -1043,10 +1053,10 @@ impl PaintCx<'_> {
     /// Encode `child`'s subtree into `fragment` at the LOCAL origin with an
     /// unbounded visible window. Repaint boundaries call this: fragments must be
     /// viewport-INDEPENDENT so re-appending them at any scroll offset is sound.
-    pub fn encode_fragment(&mut self, child: RenderId, fragment: &mut vello::Scene) {
+    pub fn encode_fragment(&mut self, child: RenderId, fragment: &mut crate::paint::Scene) {
         fragment.reset();
         let mut sub = PaintCx {
-            scene: fragment,
+            scene: crate::paint::Painter::new(fragment),
             text: &mut *self.text,
             tree: self.tree,
             current: child,

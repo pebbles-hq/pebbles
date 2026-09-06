@@ -21,7 +21,7 @@ use crate::tree::{LayoutCx, PaintCx};
 
 /// A single-child repaint boundary with a retained scene fragment.
 pub struct RenderBoundary {
-    fragment: RefCell<vello::Scene>,
+    fragment: RefCell<crate::paint::Scene>,
     dirty: Cell<bool>,
 }
 
@@ -33,7 +33,7 @@ impl Default for RenderBoundary {
 
 impl RenderBoundary {
     pub fn new() -> Self {
-        RenderBoundary { fragment: RefCell::new(vello::Scene::new()), dirty: Cell::new(true) }
+        RenderBoundary { fragment: RefCell::new(crate::paint::scene()), dirty: Cell::new(true) }
     }
 
     /// Invalidate the retained fragment (a dirty mark reached this boundary).

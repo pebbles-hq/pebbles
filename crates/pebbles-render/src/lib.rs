@@ -20,6 +20,7 @@ pub mod fonts;
 pub mod inspect;
 pub mod object;
 pub mod objects;
+pub mod paint;
 pub mod scroll_metrics;
 pub mod stats;
 pub mod text;
