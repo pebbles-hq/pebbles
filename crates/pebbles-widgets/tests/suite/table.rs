@@ -236,6 +236,15 @@ fn fixed_column_wraps_or_ellipsizes() {
 }
 
 #[test]
+fn content_that_fits_fills_the_parent_width() {
+    // Short content: the columns size to it, but the grid still fills 100% of the 500px
+    // parent — the leftover width is distributed across the columns.
+    let (ui, _e, _w) = setup(|| table(vec!["A".into(), "B".into()]).row(vec!["x", "y"]).row(vec!["p", "q"]));
+    let grid = table_size(&ui);
+    assert!((grid.width - 500.0).abs() < 1.0, "the table fills the 500px parent (w={})", grid.width);
+}
+
+#[test]
 fn surface_style_lands_on_the_table() {
     pebbles_widgets::overlay::init();
     pebbles_core::focus::init();

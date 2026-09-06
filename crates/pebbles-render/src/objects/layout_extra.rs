@@ -307,6 +307,10 @@ pub struct RenderTable {
     /// i.e. under the header and between rows (`(color, thickness)`). Used by the data
     /// `Table` for row separators. Default `None`.
     pub divider: Option<(Color, f64)>,
+    /// When there's no flex column, distribute any leftover width across the Intrinsic
+    /// columns so the grid fills 100% of the available width (like `table-layout:auto;
+    /// width:100%`). Default `false`.
+    pub fill_width: bool,
     /// Layout cache for painting dividers: each row's top y, and the grid width.
     row_tops: Vec<f64>,
     content_width: f64,
@@ -319,6 +323,7 @@ impl RenderTable {
             column_count,
             stretch_rows: false,
             divider: None,
+            fill_width: false,
             row_tops: Vec::new(),
             content_width: 0.0,
         }
@@ -373,6 +378,27 @@ impl RenderObject for RenderTable {
             for (c, w) in widths.iter_mut().enumerate() {
                 if let TableColumnWidth::Flex(weight) = self.column_spec(c) {
                     *w = leftover * (weight.max(0.0) / flex_total);
+                }
+            }
+        } else if self.fill_width && leftover > 0.0 && available.is_finite() {
+            // No flex column, but asked to fill: spread the leftover width across the
+            // Intrinsic (content-sized) columns proportionally, so the grid reaches
+            // 100% of the available width. If there are none, spread it equally.
+            let intrinsic_total: f64 = (0..cols)
+                .filter(|&c| matches!(self.column_spec(c), TableColumnWidth::Intrinsic))
+                .map(|c| widths[c])
+                .sum();
+            if intrinsic_total > 0.0 {
+                #[allow(clippy::needless_range_loop)] // `c` indexes widths + checks the column spec
+                for c in 0..cols {
+                    if matches!(self.column_spec(c), TableColumnWidth::Intrinsic) {
+                        widths[c] += leftover * (widths[c] / intrinsic_total);
+                    }
+                }
+            } else {
+                let add = leftover / cols as f64;
+                for w in widths.iter_mut() {
+                    *w += add;
                 }
             }
         }

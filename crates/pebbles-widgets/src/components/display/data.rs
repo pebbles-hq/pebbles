@@ -639,12 +639,21 @@ fn render_data_table(t: &Table) -> AnyWidget {
         grid_rows.push(drow);
     }
 
-    let grid = layout_table(grid_rows).column_widths(specs).stretch_rows(true).divider(c.border, 1.0);
+    let grid = layout_table(grid_rows)
+        .column_widths(specs)
+        .stretch_rows(true)
+        .divider(c.border, 1.0)
+        .fill_width(true);
 
-    // Content-sized columns scroll horizontally when they don't fit; a Flex/Fraction
-    // column instead fills the available width, so no horizontal scroll.
-    let grid_widget: AnyWidget =
-        if any_flex { grid.into_widget() } else { SingleChildScrollView::horizontal(grid).into_widget() };
+    let grid_widget: AnyWidget = if any_flex {
+        // A Flex/Fraction column already fills the bounded width — no scroll needed.
+        grid.into_widget()
+    } else {
+        // Content-sized columns: `fill_viewport` makes the grid at least the viewport
+        // width, so `fill_width` distributes the slack to fill 100%; when the columns
+        // are together wider than the viewport, the scroll view carries the overflow.
+        SingleChildScrollView::horizontal(grid).fill_viewport(true).into_widget()
+    };
 
     let mut body: Vec<AnyWidget> = vec![grid_widget];
     if n_rows == 0

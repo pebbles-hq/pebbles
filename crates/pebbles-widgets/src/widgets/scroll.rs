@@ -25,6 +25,7 @@ pub struct SingleChildScrollView {
     scrollbar: ScrollbarStyle,
     snap: f64,
     drag_scroll: bool,
+    fill_viewport: bool,
     physics: ScrollPhysics,
     refresh: Option<RefreshState>,
     on_scroll: Option<Rc<dyn Fn(ScrollNotification)>>,
@@ -39,6 +40,7 @@ impl SingleChildScrollView {
             scrollbar: ScrollbarStyle::default(),
             snap: 0.0,
             drag_scroll: false,
+            fill_viewport: false,
             physics: ScrollPhysics::default(),
             refresh: None,
             on_scroll: None,
@@ -52,6 +54,7 @@ impl SingleChildScrollView {
             scrollbar: ScrollbarStyle::default(),
             snap: 0.0,
             drag_scroll: false,
+            fill_viewport: false,
             physics: ScrollPhysics::default(),
             refresh: None,
             on_scroll: None,
@@ -71,6 +74,14 @@ impl SingleChildScrollView {
     /// wins — the viewport only claims drags nothing else wants.
     pub fn drag_scroll(mut self, enabled: bool) -> Self {
         self.drag_scroll = enabled;
+        self
+    }
+
+    /// Force the content to be at least the viewport size along the scroll axis: it
+    /// fills the viewport when smaller and scrolls when larger. Default `false` (the
+    /// content sizes to itself, leaving empty space when smaller than the viewport).
+    pub fn fill_viewport(mut self, fill: bool) -> Self {
+        self.fill_viewport = fill;
         self
     }
 
@@ -130,6 +141,7 @@ impl SingleChildScrollView {
         r.scrollbar = self.scrollbar;
         r.snap = self.snap;
         r.drag_scroll = self.drag_scroll;
+        r.fill_viewport = self.fill_viewport;
         r.physics = self.physics;
         r.refresh = self.refresh.clone();
         r.on_scroll = self.on_scroll.clone();
@@ -149,6 +161,7 @@ impl RenderWidget for SingleChildScrollView {
             s.scrollbar = self.scrollbar;
             s.snap = self.snap;
             s.drag_scroll = self.drag_scroll;
+            s.fill_viewport = self.fill_viewport;
             s.physics = self.physics;
             s.refresh = self.refresh.clone();
             s.on_scroll = self.on_scroll.clone();

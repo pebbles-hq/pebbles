@@ -200,6 +200,11 @@ pub struct RenderScroll {
     /// Opt-in pan-to-scroll: when set, a pointer drag over this viewport moves the
     /// content 1:1 (the shell arbitrates against draggable descendants).
     pub drag_scroll: bool,
+    /// Force the child to be at least the viewport size along the scroll axis, so it
+    /// fills the viewport when smaller and overflows (scrolls) when larger. Default
+    /// `false` (the child sizes to its content). Used by the data `Table` so a
+    /// content-sized grid still fills 100% of the width.
+    pub fill_viewport: bool,
     /// Spring stiffness, fling friction and overscroll behavior.
     pub physics: ScrollPhysics,
     /// Pull-to-refresh trigger, when the owning widget installed one.
@@ -234,6 +239,7 @@ impl RenderScroll {
             viewport_extent: 0.0,
             scrollbar: ScrollbarStyle::default(),
             drag_scroll: false,
+            fill_viewport: false,
             physics: ScrollPhysics::default(),
             refresh: None,
             dragging: false,
@@ -576,15 +582,17 @@ impl RenderObject for RenderScroll {
         // collapse or explode the box).
         let w_bounded = constraints.has_bounded_width();
         let h_bounded = constraints.has_bounded_height();
+        // With `fill_viewport`, the child is at least the viewport size along the scroll
+        // axis (fills when smaller, overflows/scrolls when larger).
         let child_constraints = match self.axis {
             Axis::Vertical => BoxConstraints {
                 min_width: if w_bounded { viewport.width } else { 0.0 },
                 max_width: if w_bounded { viewport.width } else { f64::INFINITY },
-                min_height: 0.0,
+                min_height: if self.fill_viewport { viewport.height } else { 0.0 },
                 max_height: f64::INFINITY,
             },
             Axis::Horizontal => BoxConstraints {
-                min_width: 0.0,
+                min_width: if self.fill_viewport { viewport.width } else { 0.0 },
                 max_width: f64::INFINITY,
                 min_height: if h_bounded { viewport.height } else { 0.0 },
                 max_height: if h_bounded { viewport.height } else { f64::INFINITY },

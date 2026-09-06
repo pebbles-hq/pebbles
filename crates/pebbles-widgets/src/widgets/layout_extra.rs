@@ -366,6 +366,7 @@ pub struct LayoutTable {
     columns: Vec<TableColumnWidth>,
     stretch_rows: bool,
     divider: Option<(Color, f64)>,
+    fill_width: bool,
 }
 
 /// A [`LayoutTable`] from `rows` of cells. Short rows are padded with empty cells so the
@@ -386,6 +387,7 @@ pub fn layout_table(rows: Vec<Vec<AnyWidget>>) -> LayoutTable {
         columns: vec![TableColumnWidth::Flex(1.0); column_count],
         stretch_rows: false,
         divider: None,
+        fill_width: false,
     }
 }
 
@@ -407,6 +409,12 @@ impl LayoutTable {
         self.divider = Some((color, thickness));
         self
     }
+    /// Distribute leftover width across the Intrinsic columns so the grid fills the
+    /// available width (needs a bounded width — e.g. a `constrained_box` min-width).
+    pub fn fill_width(mut self, fill: bool) -> Self {
+        self.fill_width = fill;
+        self
+    }
 }
 
 pebbles_core::render_widget!(LayoutTable);
@@ -416,6 +424,7 @@ impl RenderWidget for LayoutTable {
         let mut t = RenderTable::new(self.columns.clone(), self.column_count);
         t.stretch_rows = self.stretch_rows;
         t.divider = self.divider;
+        t.fill_width = self.fill_width;
         Box::new(t)
     }
     fn update_render_object(&self, object: &mut dyn RenderObject) {
@@ -424,6 +433,7 @@ impl RenderWidget for LayoutTable {
             t.column_count = self.column_count;
             t.stretch_rows = self.stretch_rows;
             t.divider = self.divider;
+            t.fill_width = self.fill_width;
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {
