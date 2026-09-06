@@ -3120,12 +3120,16 @@ version = "0.0.1"
 dependencies = [
  "base64",
  "image",
+ "js-sys",
  "pebbles-core",
  "pebbles-foundation",
  "pebbles-render",
  "pebbles-testing",
  "rfd",
  "ureq",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "web-time",
 ]
 

@@ -7,16 +7,20 @@ publish = false
 [dependencies]
 # `image-view` renders product thumbnails/galleries over the native HTTP client.
 pebbles = { workspace = true, features = ["image-view"] }
-
-# Local, offline persistence: a real embedded SQLite database (bundled — no system
-# SQLite needed). See `db.rs`.
-rusqlite = { version = "0.31", features = ["bundled"] }
-
-# Optional "Sync from cloud" pull of fresh products from a public test API, off the
-# UI thread — same stack the mobile sample uses. See `net.rs`.
-ureq = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Native-only backends. `rusqlite` (bundled SQLite) and `ureq` (blocking HTTP) don't
+# build for `wasm32` — so they're desktop/native-only, and on the web build the app
+# cfg's to an in-memory store + a disabled "Sync" (see src/db/ and src/net.rs). The
+# UI is identical; only local persistence and cloud sync are native-only.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+# Local, offline persistence: a real embedded SQLite database (bundled — no system
+# SQLite needed). See `src/db/`.
+rusqlite = { version = "0.31", features = ["bundled"] }
+# Optional "Sync from cloud" pull of fresh products from a public test API, off the
+# UI thread — same stack the mobile sample uses. See `src/net.rs`.
+ureq = "2"
 
 [dev-dependencies]
 # Headless mount/settle/inspect harness for the sample's smoke tests.

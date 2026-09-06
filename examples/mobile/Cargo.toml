@@ -8,13 +8,15 @@ publish = false
 # `image-view` for the network feed media + avatars (loads via the native HTTP
 # client — desktop-run, which is how we run the "mobile" app for now).
 pebbles = { workspace = true, features = ["image-view"] }
-
-# The feed loads real posts/comments/users from a public test API (dummyjson.com)
-# over HTTP, off the UI thread — see `net.rs`. `ureq` is the same blocking client
-# `ImageView` uses; `serde`/`serde_json` decode the JSON into typed structs.
-ureq = "2"
+# `serde`/`serde_json` decode the API JSON into typed structs (both build on wasm).
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# The feed loads real posts/comments/users from a public test API (dummyjson.com) over
+# HTTP via `ureq` — the same blocking client `ImageView` uses. Native-only: it doesn't
+# build/run on wasm, so on the web build `net.rs` returns "offline" and the feed is empty.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+ureq = "2"
 
 [features]
 # Render backend, forwarded to the pebbles umbrella. `vello-hybrid` (low-power) is the

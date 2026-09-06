@@ -19,7 +19,9 @@ use pebbles_render::{BorderRadius, BoxDecoration, Image, ImageFit, image_from_rg
 use crate::theme::theme;
 use crate::widgets::{Container, Opacity, spinner, stack, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Signal, animated, component_props, create_effect, create_signal, spawn};
+use pebbles_core::{Signal, animated, component_props, create_effect, create_signal};
+#[cfg(not(target_family = "wasm"))]
+use pebbles_core::spawn;
 
 // ---------------------------------------------------------------------------
 // Async network loader
@@ -62,15 +64,29 @@ fn fetch(url: &str) -> Result<Image, String> {
     decode(&bytes)
 }
 
-/// On the web a blocking HTTP client can't run (and `ureq`/`ring` don't build for
-/// wasm), so `ImageView::network` degrades to its `error` widget until the browser
-/// `fetch`-based backend lands. Asset/memory/base64/`data:` images work fully on
-/// web — only remote-URL loading is affected. See documentations/web-support.md.
+/// On the web there is no blocking HTTP client (`ureq`/`ring` don't build for wasm), so
+/// remote images load via the browser's own `fetch`: GET the URL, read the response as an
+/// ArrayBuffer, and decode with the same pure-Rust `image` codecs. Async (returns a
+/// future) — the caller drives it with `spawn_local_future` so the result lands via the
+/// normal task pump. Cross-origin URLs must send CORS headers, as for any web fetch.
 #[cfg(target_family = "wasm")]
-fn fetch(_url: &str) -> Result<Image, String> {
-    Err("network image loading isn't wired on web yet (use asset/memory/base64, \
-         or a data: URI); the browser fetch backend is a follow-up"
-        .to_string())
+async fn fetch(url: String) -> Result<Image, String> {
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+
+    let window = web_sys::window().ok_or_else(|| "no browser window".to_string())?;
+    let resp_value =
+        JsFuture::from(window.fetch_with_str(&url)).await.map_err(|e| format!("fetch failed: {e:?}"))?;
+    let resp: web_sys::Response =
+        resp_value.dyn_into().map_err(|_| "fetch did not return a Response".to_string())?;
+    if !resp.ok() {
+        return Err(format!("HTTP {} for {url}", resp.status()));
+    }
+    let buffer = JsFuture::from(resp.array_buffer().map_err(|e| format!("no body: {e:?}"))?)
+        .await
+        .map_err(|e| format!("reading body failed: {e:?}"))?;
+    let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
+    decode(&bytes)
 }
 
 /// The network load state: the load effect is position-stable, so the URL is a
@@ -85,15 +101,33 @@ fn use_network(url: Signal<String>) -> Signal<ImageState> {
             return;
         }
         state.set(ImageState::Loading);
-        spawn(
-            move || match fetch(&url) {
-                Ok(img) => ImageState::Loaded(img),
-                Err(e) => ImageState::Failed(e),
-            },
-            move |result| state.set(result), // UI thread; a no-op if the view unmounted
-        );
+        load(url, state);
     });
     state
+}
+
+/// Kick off the URL load and deliver the result into `state` on the UI thread. Native
+/// runs the blocking `fetch` on a background thread via [`spawn`]; the web drives the
+/// async browser `fetch` via `spawn_local_future` — both land through the same task pump.
+#[cfg(not(target_family = "wasm"))]
+fn load(url: String, state: Signal<ImageState>) {
+    spawn(
+        move || match fetch(&url) {
+            Ok(img) => ImageState::Loaded(img),
+            Err(e) => ImageState::Failed(e),
+        },
+        move |result| state.set(result), // UI thread; a no-op if the view unmounted
+    );
+}
+
+#[cfg(target_family = "wasm")]
+fn load(url: String, state: Signal<ImageState>) {
+    pebbles_core::spawn_local_future(fetch(url), move |result| {
+        state.set(match result {
+            Ok(img) => ImageState::Loaded(img),
+            Err(e) => ImageState::Failed(e),
+        });
+    });
 }
 
 // ---------------------------------------------------------------------------

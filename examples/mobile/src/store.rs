@@ -110,9 +110,12 @@ const PAGE: u32 = 8;
 // Free image helpers (no API key; load over the native HTTP client)
 // ---------------------------------------------------------------------------
 
-/// A free avatar from pravatar (deterministic by `n`, 1..=70).
+/// A free, deterministic avatar (by `n`). We use DiceBear because it returns PNG **and**
+/// sends `Access-Control-Allow-Origin: *`, so the avatars load on the web build too — a
+/// browser can only read back (to decode) images whose host allows CORS, which some avatar
+/// CDNs (e.g. pravatar) don't. Picsum photos below are CORS-enabled for the same reason.
 fn avatar(n: u32) -> String {
-    format!("https://i.pravatar.cc/150?img={n}")
+    format!("https://api.dicebear.com/9.x/avataaars/png?size=150&seed=user{n}")
 }
 
 /// A free photo from Lorem Picsum (deterministic by `seed`).

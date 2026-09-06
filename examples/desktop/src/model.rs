@@ -136,6 +136,9 @@ impl OrderStatus {
             OrderStatus::Cancelled,
         ]
     }
+    // Parses the status back from its stored SQLite label — used only by the native DB
+    // (`db::native`); the web build keeps typed `Order`s in memory, so it's dead there.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub fn from_label(s: &str) -> OrderStatus {
         match s {
             "Paid" => OrderStatus::Paid,

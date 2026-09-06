@@ -1,5 +1,5 @@
-//! **Local persistence** — a real embedded SQLite database (bundled, no system deps),
-//! living in the user's data dir. This is what makes the app stateful and fully
+//! **Local persistence (native)** — a real embedded SQLite database (bundled, no system
+//! deps), living in the user's data dir. This is what makes the app stateful and fully
 //! offline: the store loads everything from here on startup and writes every change
 //! back.
 //!
@@ -8,6 +8,8 @@
 //! `spawn` delivers back onto the UI thread). If the database can't be opened for any
 //! reason, every function degrades to a no-op / empty result and the app runs purely
 //! in memory — it never panics on a storage hiccup.
+//!
+//! This module is native-only; the web build uses the in-memory [`super::web`] twin.
 
 use std::cell::RefCell;
 use std::path::PathBuf;

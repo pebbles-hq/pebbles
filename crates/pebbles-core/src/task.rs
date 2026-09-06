@@ -108,6 +108,41 @@ where
     });
 }
 
+/// Web-only async counterpart of [`spawn`]: drive `fut` on the browser microtask queue
+/// (`wasm_bindgen_futures::spawn_local`) and deliver its output to `on_done` on the UI
+/// thread through the same [`pump`] — so an async browser `fetch` can write signals and
+/// re-render exactly like a background thread does on native. No tokio, no OS threads
+/// (wasm has neither); the reactive runtime is single-threaded, so an `Rc` slot suffices.
+#[cfg(target_family = "wasm")]
+pub fn spawn_local_future<T, Fut, D>(fut: Fut, on_done: D)
+where
+    T: 'static,
+    Fut: Future<Output = T> + 'static,
+    D: FnOnce(T) + 'static,
+{
+    let slot: std::rc::Rc<RefCell<Option<T>>> = std::rc::Rc::new(RefCell::new(None));
+    let write = slot.clone();
+    wasm_bindgen_futures::spawn_local(async move {
+        let result = fut.await;
+        *write.borrow_mut() = Some(result);
+        // Wake the shell so `pump` runs and delivers even if the loop had gone idle.
+        request_frame();
+    });
+    request_frame();
+    let mut on_done = Some(on_done);
+    PENDING.with(|p| {
+        p.borrow_mut().push(Box::new(move || match slot.borrow_mut().take() {
+            Some(v) => {
+                if let Some(cb) = on_done.take() {
+                    cb(v);
+                }
+                true
+            }
+            None => false,
+        }));
+    });
+}
+
 /// Kick off `fetcher` on a background thread **once** and return a signal that tracks
 /// its state — [`Loading`](Resource::Loading) until it resolves, then
 /// [`Ready`](Resource::Ready). Reading the signal in a component subscribes it, so the
