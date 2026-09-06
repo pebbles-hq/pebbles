@@ -11,7 +11,7 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, Axis, CrossAxisAlignment, MainAxisSize, Offset, Size};
+use pebbles_foundation::{Alignment, Axis, Color, CrossAxisAlignment, MainAxisSize, Offset, Size};
 use pebbles_render::{
     Affine, BorderRadius, BoxConstraints, RenderBaseline, RenderCustomMultiChild, RenderCustomSingleChild,
     RenderFlow, RenderFractionalTranslation, RenderObject, RenderOffstage, RenderRotatedBox,
@@ -364,6 +364,8 @@ pub struct LayoutTable {
     cells: Vec<AnyWidget>,
     column_count: usize,
     columns: Vec<TableColumnWidth>,
+    stretch_rows: bool,
+    divider: Option<(Color, f64)>,
 }
 
 /// A [`LayoutTable`] from `rows` of cells. Short rows are padded with empty cells so the
@@ -378,7 +380,13 @@ pub fn layout_table(rows: Vec<Vec<AnyWidget>>) -> LayoutTable {
         }
         cells.extend(row);
     }
-    LayoutTable { cells, column_count, columns: vec![TableColumnWidth::Flex(1.0); column_count] }
+    LayoutTable {
+        cells,
+        column_count,
+        columns: vec![TableColumnWidth::Flex(1.0); column_count],
+        stretch_rows: false,
+        divider: None,
+    }
 }
 
 impl LayoutTable {
@@ -388,18 +396,34 @@ impl LayoutTable {
         self.columns = columns;
         self
     }
+    /// Stretch every cell to fill its full row height (so a cell's own background
+    /// fills the row). Default `false`.
+    pub fn stretch_rows(mut self, stretch: bool) -> Self {
+        self.stretch_rows = stretch;
+        self
+    }
+    /// Paint a hairline above every row but the first (under the header, between rows).
+    pub fn divider(mut self, color: Color, thickness: f64) -> Self {
+        self.divider = Some((color, thickness));
+        self
+    }
 }
 
 pebbles_core::render_widget!(LayoutTable);
 
 impl RenderWidget for LayoutTable {
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(RenderTable::new(self.columns.clone(), self.column_count))
+        let mut t = RenderTable::new(self.columns.clone(), self.column_count);
+        t.stretch_rows = self.stretch_rows;
+        t.divider = self.divider;
+        Box::new(t)
     }
     fn update_render_object(&self, object: &mut dyn RenderObject) {
         if let Some(t) = object.downcast_mut::<RenderTable>() {
             t.columns = self.columns.clone();
             t.column_count = self.column_count;
+            t.stretch_rows = self.stretch_rows;
+            t.divider = self.divider;
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {

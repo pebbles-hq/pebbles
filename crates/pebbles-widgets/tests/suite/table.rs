@@ -8,7 +8,7 @@ use pebbles_core::{IntoWidget, Ui, component, create_signal};
 use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets, Offset, Size, palette};
 use pebbles_render::{Border, RenderClipRRect, RenderDecoratedBox, TextEnv};
 use pebbles_widgets::{
-    CellOverflow, SortDir, View, avatar, badge, cell, column, empty, muted, style, table, text,
+    CellOverflow, ColumnWidth, SortDir, View, avatar, badge, cell, column, empty, muted, style, table, text,
 };
 
 thread_local! {
@@ -21,6 +21,7 @@ fn sortable_view() -> impl IntoWidget {
     let mut t = table(vec!["Name".into(), "Role".into(), "Status".into()])
         .row(vec!["Andres", "Engineer", "Away"])
         .row(vec!["Reyco", "Lead", "Active"])
+        .column_width_all(ColumnWidth::Flex(1.0)) // equal columns for stable tap coords
         .sortable(0)
         .sortable(1)
         .sortable(2);
@@ -39,6 +40,7 @@ fn selectable_view() -> impl IntoWidget {
         .row(vec!["Andres", "Engineer"])
         .row(vec!["Reyco", "Lead"])
         .row(vec!["Joseph", "Engineer"])
+        .column_width_all(ColumnWidth::Flex(1.0)) // equal columns for stable tap coords
         .selectable()
         .selection(selected.get())
         .on_selection(move |s| {
@@ -60,6 +62,7 @@ fn setup<W: IntoWidget + 'static>(view: fn() -> W) -> (Ui, TextEnv, Size) {
         )
         .into_widget(),
     );
+    ui.rebuild_if_dirty(); // the table is now a component — build it before layout
     ui.layout(&mut text_env, window);
     (ui, text_env, window)
 }
@@ -167,43 +170,64 @@ fn empty_state_and_striped_paint() {
     ui.paint(&mut text_env, &mut scene);
 }
 
-// A long single value that must wrap over several lines in a ~250px column.
+// A long single value that must wrap over several lines in a narrow (fixed) column.
 const LONG: &str = "This is an intentionally very long product description that must wrap across several lines \
      when the column is narrow instead of overflowing into the next column.";
 
-fn wrap_view() -> impl IntoWidget {
-    table(vec!["Desc".into(), "N".into()]).row(vec![LONG, "1"]).style(style().background(palette::WHITE))
-}
-
-fn ellipsis_view() -> impl IntoWidget {
-    table(vec!["Desc".into(), "N".into()])
-        .row(vec![LONG, "1"])
-        .overflow(0, CellOverflow::Ellipsis)
-        .style(style().background(palette::WHITE))
-}
-
-fn surface_height(ui: &Ui) -> f64 {
+fn table_size(ui: &Ui) -> Size {
     let tree = ui.render_tree();
-    // The surface style wraps the whole table and mounts first, so it's the first
-    // decorated box (see `surface_style_lands_on_the_table`).
-    let rid = tree.find::<RenderDecoratedBox>().expect("surface");
-    tree.size_of(rid).height
+    let rid = tree.find::<pebbles_render::RenderTable>().expect("a table grid");
+    tree.size_of(rid)
 }
 
 #[test]
-fn long_cells_wrap_and_are_clipped_not_overlapping() {
-    // Default (Wrap): a long value wraps → each cell is clipped to its column, and the
-    // row grows taller to show every line.
-    let (ui, _e, _w) = setup(wrap_view);
+fn columns_size_to_content_and_overflow_scrolls() {
+    // All-`Auto` columns size to their own content — a wide value makes its column
+    // wide while a short one stays narrow (not equal-width). When the columns together
+    // exceed the viewport, the grid is wider than the window and gets a scroll view.
+    let (ui, _e, _w) = setup(|| table(vec!["Desc".into(), "N".into()]).row(vec![LONG, "1"]));
+    let grid = table_size(&ui);
+    assert!(grid.width > 500.0, "content-sized columns overflow the 500px window (w={})", grid.width);
+    assert!(
+        ui.render_tree().find::<pebbles_render::RenderScroll>().is_some(),
+        "an overflowing table is wrapped in a horizontal scroll view",
+    );
     assert!(
         ui.render_tree().find::<RenderClipRRect>().is_some(),
-        "every cell is wrapped in a clip, so content can't bleed into the next column",
+        "every cell is clipped to its column, so content can't bleed into a neighbor",
     );
-    let wrap_h = surface_height(&ui);
+}
 
-    // Same content with Ellipsis: one line, so the table is much shorter.
-    let (ui2, _e2, _w2) = setup(ellipsis_view);
-    let ellipsis_h = surface_height(&ui2);
+#[test]
+fn flex_column_fills_width_without_scrolling() {
+    // A `Flex` column makes the grid fill the available width instead of scrolling.
+    let (ui, _e, _w) = setup(|| {
+        table(vec!["Desc".into(), "N".into()]).row(vec![LONG, "1"]).column_width(0, ColumnWidth::Flex(1.0))
+    });
+    assert!(
+        ui.render_tree().find::<pebbles_render::RenderScroll>().is_none(),
+        "a flex column fills the width, so there's no horizontal scroll",
+    );
+    let grid = table_size(&ui);
+    assert!((grid.width - 500.0).abs() < 1.0, "the grid fills the 500px window (w={})", grid.width);
+}
+
+#[test]
+fn fixed_column_wraps_or_ellipsizes() {
+    // A fixed-width column forces the long value to lay out inside 200px: `Wrap` grows
+    // the row over several lines; `Ellipsis` keeps it to one.
+    let (ui_wrap, _e, _w) = setup(|| {
+        table(vec!["Desc".into(), "N".into()]).row(vec![LONG, "1"]).column_width(0, ColumnWidth::Fixed(200.0))
+    });
+    let wrap_h = table_size(&ui_wrap).height;
+
+    let (ui_ellipsis, _e2, _w2) = setup(|| {
+        table(vec!["Desc".into(), "N".into()])
+            .row(vec![LONG, "1"])
+            .column_width(0, ColumnWidth::Fixed(200.0))
+            .overflow(0, CellOverflow::Ellipsis)
+    });
+    let ellipsis_h = table_size(&ui_ellipsis).height;
 
     assert!(
         wrap_h > ellipsis_h + 40.0,

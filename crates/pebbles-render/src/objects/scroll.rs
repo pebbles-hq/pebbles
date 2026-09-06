@@ -570,26 +570,37 @@ impl RenderObject for RenderScroll {
             return constraints.constrain(viewport);
         };
 
-        // Unbounded along the scroll axis, tight on the cross axis.
+        // The cross axis is tight to the viewport when it's bounded, but shrink-wraps
+        // the content when it isn't (e.g. a horizontal scroll inside a vertical page
+        // scroll, where the incoming height is unbounded — tightening to it would
+        // collapse or explode the box).
+        let w_bounded = constraints.has_bounded_width();
+        let h_bounded = constraints.has_bounded_height();
         let child_constraints = match self.axis {
             Axis::Vertical => BoxConstraints {
-                min_width: viewport.width,
-                max_width: viewport.width,
+                min_width: if w_bounded { viewport.width } else { 0.0 },
+                max_width: if w_bounded { viewport.width } else { f64::INFINITY },
                 min_height: 0.0,
                 max_height: f64::INFINITY,
             },
             Axis::Horizontal => BoxConstraints {
                 min_width: 0.0,
                 max_width: f64::INFINITY,
-                min_height: viewport.height,
-                max_height: viewport.height,
+                min_height: if h_bounded { viewport.height } else { 0.0 },
+                max_height: if h_bounded { viewport.height } else { f64::INFINITY },
             },
         };
         let content = cx.layout_child(child, child_constraints);
 
-        let (viewport_extent, content_extent) = match self.axis {
-            Axis::Vertical => (viewport.height, content.height),
-            Axis::Horizontal => (viewport.width, content.width),
+        // Along the scroll axis the viewport is the available extent; on the cross axis
+        // it's the bounded viewport size, or the content size when unbounded.
+        let (viewport_extent, content_extent, cross) = match self.axis {
+            Axis::Vertical => {
+                (viewport.height, content.height, if w_bounded { viewport.width } else { content.width })
+            }
+            Axis::Horizontal => {
+                (viewport.width, content.width, if h_bounded { viewport.height } else { content.height })
+            }
         };
         self.viewport_extent = viewport_extent;
         self.max_offset = (content_extent - viewport_extent).max(0.0);
@@ -607,7 +618,11 @@ impl RenderObject for RenderScroll {
         };
         cx.set_child_offset(child, child_offset);
 
-        constraints.constrain(viewport)
+        let own = match self.axis {
+            Axis::Vertical => Size::new(cross, viewport_extent),
+            Axis::Horizontal => Size::new(viewport_extent, cross),
+        };
+        constraints.constrain(own)
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {

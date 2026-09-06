@@ -21,7 +21,7 @@ mod typography;
 
 pub use carousel::{Carousel, CarouselController, carousel, use_carousel_controller};
 pub use chip::{Chip, action_chip, chip, choice_chip, filter_chip};
-pub use data::{Cell, CellOverflow, SortDir, Table, cell, table};
+pub use data::{Cell, CellOverflow, ColumnWidth, SortDir, Table, cell, table};
 pub use empty::{Empty, empty};
 #[cfg(feature = "file-dialogs")]
 pub use file_explorer::pick_folder;

@@ -7,8 +7,9 @@
 
 use std::f64::consts::FRAC_PI_2;
 
-use pebbles_foundation::{Alignment, Offset, Size};
+use pebbles_foundation::{Alignment, Color, Offset, Rect, Size};
 use vello::kurbo::Affine;
+use vello::peniko::{Brush, Fill};
 
 use crate::RenderId;
 use crate::constraints::BoxConstraints;
@@ -297,11 +298,30 @@ pub enum TableColumnWidth {
 pub struct RenderTable {
     pub columns: Vec<TableColumnWidth>,
     pub column_count: usize,
+    /// Stretch every cell to fill its full row height (tight height = row height)
+    /// instead of leaving it at its natural height top-aligned. Lets a cell's own
+    /// background fill the whole row — used by the data `Table` for striping. Default
+    /// `false` (Flutter-`Table` behavior).
+    pub stretch_rows: bool,
+    /// Optional horizontal hairline painted above every row **except the first** —
+    /// i.e. under the header and between rows (`(color, thickness)`). Used by the data
+    /// `Table` for row separators. Default `None`.
+    pub divider: Option<(Color, f64)>,
+    /// Layout cache for painting dividers: each row's top y, and the grid width.
+    row_tops: Vec<f64>,
+    content_width: f64,
 }
 
 impl RenderTable {
     pub fn new(columns: Vec<TableColumnWidth>, column_count: usize) -> Self {
-        RenderTable { columns, column_count }
+        RenderTable {
+            columns,
+            column_count,
+            stretch_rows: false,
+            divider: None,
+            row_tops: Vec::new(),
+            content_width: 0.0,
+        }
     }
 
     fn column_spec(&self, col: usize) -> TableColumnWidth {
@@ -358,10 +378,19 @@ impl RenderObject for RenderTable {
         }
 
         // --- Row heights = tallest cell, then place ------------------------
+        // Tight width (the column), but a LOOSE height so cells report their natural
+        // height (a tight INF height would force flexible content — text, Align — to
+        // collapse). The stretch pass below then fills each cell to the row height.
         let mut row_heights = vec![0.0_f64; rows];
         for (i, &cell) in children.iter().enumerate() {
             let (r, c) = (i / cols, i % cols);
-            let size = cx.layout_child(cell, BoxConstraints::tight_for(widths[c], f64::INFINITY));
+            let cc = BoxConstraints {
+                min_width: widths[c],
+                max_width: widths[c],
+                min_height: 0.0,
+                max_height: f64::INFINITY,
+            };
+            let size = cx.layout_child(cell, cc);
             row_heights[r] = row_heights[r].max(size.height);
         }
         let col_x: Vec<f64> = (0..cols)
@@ -380,15 +409,31 @@ impl RenderObject for RenderTable {
             .collect();
         for (i, &cell) in children.iter().enumerate() {
             let (r, c) = (i / cols, i % cols);
+            // Optionally re-layout the cell tight to its full slot so its own
+            // background fills the row (striping); otherwise keep the natural height.
+            if self.stretch_rows {
+                cx.layout_child(cell, BoxConstraints::tight_for(widths[c], row_heights[r]));
+            }
             cx.set_child_offset(cell, Offset::new(col_x[c], row_y[r]));
         }
 
         let total_w: f64 = widths.iter().sum();
         let total_h: f64 = row_heights.iter().sum();
+        self.row_tops = row_y;
+        self.content_width = total_w;
         constraints.constrain(Size::new(total_w, total_h))
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
+        // Row separators: a hairline above every row but the first (→ under the header
+        // and between rows).
+        if let Some((color, thickness)) = self.divider {
+            for &top in self.row_tops.iter().skip(1) {
+                let origin = Offset::new(offset.x, offset.y + top).to_point();
+                let rect = Rect::from_origin_size(origin, Size::new(self.content_width, thickness));
+                cx.scene.fill(Fill::NonZero, Affine::IDENTITY, &Brush::Solid(color), None, &rect);
+            }
+        }
         for child in cx.children() {
             cx.paint_child(child, offset + cx.child_offset(child));
         }

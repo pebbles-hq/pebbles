@@ -4,18 +4,18 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets, MainAxisSize};
-use pebbles_render::{BoxDecoration, Cursor, IconKind};
+use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
+use pebbles_render::{Border, BoxConstraints, BoxDecoration, Cursor, IconKind, TableColumnWidth};
 
 use crate::components::{checkbox, icon};
 use crate::style::{Style, styled};
 use crate::theme::{mix, theme};
 use crate::widgets::{
-    Align, Container, Expanded, GestureDetector, Padding, SizedBox, center, clip_rect, column, gap_w, row,
-    spacer, text,
+    Align, Container, GestureDetector, Padding, SingleChildScrollView, center, clip_rect, column,
+    constrained_box, gap_w, layout_table, row, spacer, text,
 };
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{animated, component_props, create_signal};
+use pebbles_core::{Signal, animated, component_props, create_signal};
 
 // ---------------------------------------------------------------------------
 // Table
@@ -46,6 +46,24 @@ pub enum CellOverflow {
     Ellipsis,
     /// Keep to a single line, hard-clipped at the column edge (no ellipsis).
     Clip,
+}
+
+/// How a column is sized. By default (`Auto`) every column sizes to its own widest
+/// content — no fixed/equal widths — and the table scrolls horizontally when the
+/// columns together don't fit. Set a width per column with [`Table::column_width`]
+/// (or all at once with [`Table::column_widths`]); the same choices HTML/Flutter give.
+#[derive(Clone, Copy, PartialEq, Default)]
+pub enum ColumnWidth {
+    /// Size to the column's widest content (default). No wrapping unless capped.
+    #[default]
+    Auto,
+    /// Exactly this many logical pixels (content wraps/ellipsizes to fit).
+    Fixed(f64),
+    /// Size to content, but never wider than this — content wraps/ellipsizes past it.
+    Max(f64),
+    /// Take a weighted share of the width left over after the sized columns, filling
+    /// the table. Any `Flex` column disables horizontal scrolling (the grid fits).
+    Flex(f64),
 }
 
 /// One table cell: plain text, or any widget (avatars, badges, buttons, icons…).
@@ -102,9 +120,11 @@ pub struct Table {
     align: Vec<Option<Alignment>>,
     overflow: Vec<Option<CellOverflow>>,
     overflow_default: CellOverflow,
+    columns: Vec<Option<ColumnWidth>>,
+    column_default: ColumnWidth,
     cell_padding: EdgeInsets,
     cell_size: f32,
-    cell_color: Option<pebbles_foundation::Color>,
+    cell_color: Option<Color>,
     header_style: Option<Style>,
     selection_column_width: f64,
     row_hover: bool,
@@ -112,7 +132,7 @@ pub struct Table {
     sort_desc_icon: pebbles_render::IconData,
     sort_idle_icon: pebbles_render::IconData,
     sort_idle_visible: bool,
-    sort_icon_color: Option<pebbles_foundation::Color>,
+    sort_icon_color: Option<Color>,
     sort_icon_size: f64,
     style: Option<Style>,
 }
@@ -139,6 +159,8 @@ pub fn table(headers: Vec<String>) -> Table {
         align: Vec::new(),
         overflow: Vec::new(),
         overflow_default: CellOverflow::Wrap,
+        columns: Vec::new(),
+        column_default: ColumnWidth::Auto,
         cell_color: None,
         header_style: None,
         sortable: Vec::new(),
@@ -222,6 +244,27 @@ impl Table {
         self.align[col] = Some(alignment);
         self
     }
+    /// How column `col` is sized ([`ColumnWidth`]). Columns default to
+    /// [`ColumnWidth::Auto`] (fit content); no column has a fixed/equal width unless
+    /// you set one here.
+    pub fn column_width(mut self, col: usize, width: ColumnWidth) -> Self {
+        if self.columns.len() <= col {
+            self.columns.resize(col + 1, None);
+        }
+        self.columns[col] = Some(width);
+        self
+    }
+    /// Set every column's [`ColumnWidth`] at once (index = column).
+    pub fn column_widths(mut self, widths: Vec<ColumnWidth>) -> Self {
+        self.columns = widths.into_iter().map(Some).collect();
+        self
+    }
+    /// The default [`ColumnWidth`] for columns that don't set their own
+    /// (default [`ColumnWidth::Auto`]).
+    pub fn column_width_all(mut self, width: ColumnWidth) -> Self {
+        self.column_default = width;
+        self
+    }
     /// How column `col`'s cells behave when content is wider than the column
     /// (wrap / ellipsis / clip). Every cell is clipped to its column regardless, so
     /// content never overlaps a neighbor — this just chooses the layout. Defaults to
@@ -251,7 +294,7 @@ impl Table {
     }
     /// The cell text color (defaults to the foreground; a [`style`](Table::style)'s
     /// text color wins over this).
-    pub fn cell_color(mut self, color: pebbles_foundation::Color) -> Self {
+    pub fn cell_color(mut self, color: Color) -> Self {
         self.cell_color = Some(color);
         self
     }
@@ -301,7 +344,7 @@ impl Table {
         self
     }
     /// The active sort glyph's color (defaults to the header label color).
-    pub fn sort_icon_color(mut self, color: pebbles_foundation::Color) -> Self {
+    pub fn sort_icon_color(mut self, color: Color) -> Self {
         self.sort_icon_color = Some(color);
         self
     }
@@ -317,7 +360,7 @@ struct SortHeaderProps {
     label: String,
     dir: Option<SortDir>,
     on_tap: Option<Rc<dyn Fn()>>,
-    color: pebbles_foundation::Color,
+    color: Color,
     size: f32,
     weight: f32,
     pad: EdgeInsets,
@@ -326,7 +369,7 @@ struct SortHeaderProps {
     desc_icon: pebbles_render::IconData,
     idle_icon: pebbles_render::IconData,
     idle_visible: bool,
-    icon_color: Option<pebbles_foundation::Color>,
+    icon_color: Option<Color>,
     icon_size: f64,
 }
 
@@ -372,239 +415,249 @@ fn render_sort_header(p: &SortHeaderProps) -> AnyWidget {
     crate::widgets::semantics(crate::widgets::SemanticsRole::Button, p.label.clone(), g).into_widget()
 }
 
-/// Props for one data row.
-struct TableRowProps {
-    cells: Vec<Cell>,
+impl IntoWidget for Table {
+    fn into_widget(self) -> AnyWidget {
+        // Rendered in a component so its hover state re-renders only the table.
+        component_props(render_data_table, self).into_widget()
+    }
+}
+
+/// Map a [`ColumnWidth`] to a grid column spec + an optional max-width cap (`Max`).
+fn map_col(w: ColumnWidth) -> (TableColumnWidth, Option<f64>) {
+    match w {
+        ColumnWidth::Auto => (TableColumnWidth::Intrinsic, None),
+        ColumnWidth::Fixed(px) => (TableColumnWidth::Fixed(px.max(0.0)), None),
+        ColumnWidth::Max(px) => (TableColumnWidth::Intrinsic, Some(px.max(0.0))),
+        ColumnWidth::Flex(weight) => (TableColumnWidth::Flex(weight.max(0.0)), None),
+    }
+}
+
+/// A header cell surface: the header background (+ optional border) filling the slot.
+fn header_slot(bg: Color, border: Option<Border>, child: AnyWidget) -> AnyWidget {
+    let mut deco = BoxDecoration::new().color(bg);
+    if let Some(b) = border {
+        deco = deco.border(b);
+    }
+    Container::new().decoration(deco).child(child).into_widget()
+}
+
+/// A data cell surface: its striped/hover background filling the row slot, wired for
+/// row hover.
+fn data_slot(
+    row_idx: usize,
     striped: bool,
     row_hover: bool,
-    checkbox: Option<(bool, Rc<dyn Fn()>)>,
-    checkbox_width: f64,
-    cell_padding: EdgeInsets,
-    cell_size: f32,
-    cell_color: pebbles_foundation::Color,
-    align: Rc<Vec<Option<Alignment>>>,
-    overflow: Rc<Vec<Option<CellOverflow>>>,
-    overflow_default: CellOverflow,
-}
-
-/// A data row: optional leading checkbox plus one expanded cell per column, with
-/// hover feedback and optional zebra striping.
-fn render_table_row(p: &TableRowProps) -> AnyWidget {
+    hovered: Signal<Option<usize>>,
+    child: AnyWidget,
+) -> AnyWidget {
     let c = theme().colors;
-    let hovered = create_signal(false);
-    let hv = if p.row_hover { animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12) } else { 0.0 };
-    let base = if p.striped { mix(c.background, c.muted, 0.5) } else { c.background };
-    let bg = mix(base, c.foreground, 0.05 * hv as f32);
-
-    let mut cells: Vec<AnyWidget> = Vec::new();
-    if let Some((checked, toggle)) = p.checkbox.clone() {
-        cells.push(
-            SizedBox::new(
-                Some(p.checkbox_width),
-                None,
-                Some(center(checkbox(checked).on_changed(move || toggle())).into_widget()),
-            )
-            .into_widget(),
-        );
-    }
-    for (i, cell) in p.cells.iter().enumerate() {
-        let mode = p.overflow.get(i).copied().flatten().unwrap_or(p.overflow_default);
-        let content: AnyWidget = match cell {
-            Cell::Text(s) => {
-                let t = text(s.clone()).size(p.cell_size).color(p.cell_color);
-                // Text honors the column's overflow mode; widget cells are just clipped.
-                match mode {
-                    CellOverflow::Wrap => t,
-                    CellOverflow::Ellipsis => t.max_lines(1).ellipsis().soft_wrap(false),
-                    CellOverflow::Clip => t.max_lines(1).soft_wrap(false),
+    let base = if striped { mix(c.background, c.muted, 0.5) } else { c.background };
+    let bg = if row_hover && hovered.get() == Some(row_idx) { mix(base, c.foreground, 0.05) } else { base };
+    let container = Container::new().color(bg).child(child);
+    if row_hover {
+        GestureDetector::new(container)
+            .on_hover_enter(move || hovered.set(Some(row_idx)))
+            .on_hover_exit(move || {
+                if hovered.peek() == Some(row_idx) {
+                    hovered.set(None);
                 }
-                .into_widget()
-            }
-            Cell::Widget(w) => w.clone(),
-        };
-        let alignment = p.align.get(i).copied().flatten().unwrap_or(Alignment::CENTER_LEFT);
-        // Clip every cell to its column so long content can never bleed into the next
-        // column (the overlap bug); the mode above decides how the text lays out first.
-        cells.push(
-            Expanded::new(clip_rect(Padding::new(p.cell_padding, Align::new(alignment, content))))
-                .into_widget(),
-        );
+            })
+            .into_widget()
+    } else {
+        container.into_widget()
     }
-
-    let mut g = GestureDetector::new(
-        Container::new().color(bg).child(row(cells).cross_axis_alignment(CrossAxisAlignment::Center)),
-    );
-    if p.row_hover {
-        g = g.on_hover_enter(move || hovered.set(true)).on_hover_exit(move || hovered.set(false));
-    }
-    g.into_widget()
 }
 
-impl IntoWidget for Table {
-    fn into_widget(mut self) -> AnyWidget {
-        let th = theme();
-        let headers = std::mem::take(&mut self.headers);
-        let rows = std::mem::take(&mut self.rows);
-        let n_rows = rows.len();
-        let all_selected = n_rows > 0 && self.selection.len() == n_rows;
-        let some_selected = !self.selection.is_empty() && !all_selected;
+/// Build the whole data table as a single column-negotiating grid: columns size by
+/// [`ColumnWidth`] (content by default), rows share those widths, and the grid scrolls
+/// horizontally when content-sized columns don't fit.
+fn render_data_table(t: &Table) -> AnyWidget {
+    let c = theme().colors;
 
-        // Surface style: transparent base, user wins; its text props drive cells.
-        let base = crate::style::style();
-        let merged = base.merge(self.style.clone().unwrap_or_default());
-        let cell_color = merged.color.or(self.cell_color).unwrap_or(th.colors.foreground);
-        let cell_size = merged.font_size.unwrap_or(self.cell_size);
+    // Surface + cell styles (transparent base; user's style wins; text props drive cells).
+    let merged = crate::style::style().merge(t.style.clone().unwrap_or_default());
+    let cell_color = merged.color.or(t.cell_color).unwrap_or(c.foreground);
+    let cell_size = merged.font_size.unwrap_or(t.cell_size);
 
-        // Header style: muted base; user's box + text props win.
-        let hbase = crate::style::style()
-            .background(th.colors.muted)
-            .color(th.colors.muted_foreground)
-            .font_size(12.0)
-            .font_weight(600.0);
-        let hstyle = hbase.merge(self.header_style.clone().unwrap_or_default());
-        let header_bg = hstyle.background.unwrap_or(th.colors.muted);
-        let header_color = hstyle.color.unwrap_or(th.colors.muted_foreground);
-        let header_size = hstyle.font_size.unwrap_or(12.0);
-        let header_weight = hstyle.font_weight.unwrap_or(600.0);
+    // Header style: muted base; user's box + text props win.
+    let hstyle = crate::style::style()
+        .background(c.muted)
+        .color(c.muted_foreground)
+        .font_size(12.0)
+        .font_weight(600.0)
+        .merge(t.header_style.clone().unwrap_or_default());
+    let header_bg = hstyle.background.unwrap_or(c.muted);
+    let header_color = hstyle.color.unwrap_or(c.muted_foreground);
+    let header_size = hstyle.font_size.unwrap_or(12.0);
+    let header_weight = hstyle.font_weight.unwrap_or(600.0);
+    let header_border = hstyle.border;
 
-        let mut body: Vec<AnyWidget> = Vec::new();
+    let hovered = create_signal(Option::<usize>::None);
 
-        // --- header row ---------------------------------------------------
-        let mut header_cells: Vec<AnyWidget> = Vec::new();
-        if self.selectable {
-            let on_selection = self.on_selection.clone();
-            let n = n_rows;
-            let all = all_selected;
-            let mut cb = checkbox(all).indeterminate(some_selected);
-            if let Some(f) = on_selection {
-                cb = cb.on_changed(move || {
-                    let next: Vec<usize> = if all { Vec::new() } else { (0..n).collect() };
-                    f(&next);
-                });
-            }
-            header_cells.push(
-                SizedBox::new(Some(self.selection_column_width), None, Some(center(cb).into_widget()))
-                    .into_widget(),
-            );
-        }
-        for (i, h) in headers.into_iter().enumerate() {
-            let alignment = self.align.get(i).copied().flatten().unwrap_or(Alignment::CENTER_LEFT);
-            let sortable = self.sortable.contains(&i);
-            if sortable {
-                let dir = self.sort.and_then(|(c, d)| if c == i { Some(d) } else { None });
-                let on_tap: Option<Rc<dyn Fn()>> = self.on_sort.clone().map(|f| {
-                    let next = match self.sort {
-                        Some((c, SortDir::Asc)) if c == i => SortDir::Desc,
-                        _ => SortDir::Asc,
-                    };
-                    let cb: Rc<dyn Fn()> = Rc::new(move || f(i, next));
-                    cb
-                });
-                header_cells.push(
-                    Expanded::new(clip_rect(component_props(
-                        render_sort_header,
-                        SortHeaderProps {
-                            label: h,
-                            dir,
-                            on_tap,
-                            color: header_color,
-                            size: header_size,
-                            weight: header_weight,
-                            pad: self.cell_padding,
-                            align: alignment,
-                            asc_icon: self.sort_asc_icon,
-                            desc_icon: self.sort_desc_icon,
-                            idle_icon: self.sort_idle_icon,
-                            idle_visible: self.sort_idle_visible,
-                            icon_color: self.sort_icon_color,
-                            icon_size: self.sort_icon_size,
-                        },
-                    )))
-                    .into_widget(),
-                );
-            } else {
-                header_cells.push(
-                    Expanded::new(clip_rect(Padding::new(
-                        self.cell_padding,
-                        Align::new(
-                            alignment,
-                            text(h).size(header_size).weight(header_weight).color(header_color),
-                        ),
-                    )))
-                    .into_widget(),
-                );
-            }
-        }
-        let mut header_deco = BoxDecoration::new().color(header_bg);
-        if let Some(border) = hstyle.border {
-            header_deco = header_deco.border(border);
-        }
-        body.push(
-            Container::new()
-                .decoration(header_deco)
-                .child(row(header_cells).cross_axis_alignment(CrossAxisAlignment::Center))
-                .into_widget(),
-        );
+    let n_user = t.headers.len();
+    let sel = t.selectable;
+    let n_rows = t.rows.len();
+    let all_selected = n_rows > 0 && t.selection.len() == n_rows;
+    let some_selected = !t.selection.is_empty() && !all_selected;
 
-        // --- data rows ----------------------------------------------------
-        if rows.is_empty() {
-            if let Some(empty_state) = self.empty_state.take() {
-                body.push(
-                    Container::new().padding(EdgeInsets::all(24.0)).child(center(empty_state)).into_widget(),
-                );
-            }
-        } else {
-            let align = Rc::new(self.align.clone());
-            let overflow = Rc::new(self.overflow.clone());
-            for (idx, cells) in rows.into_iter().enumerate() {
-                body.push(Container::new().color(th.colors.border).height(1.0).into_widget());
-                let checkbox_col = self.selectable.then(|| {
-                    let current = Rc::new(self.selection.clone());
-                    let checked = current.contains(&idx);
-                    let on_selection = self.on_selection.clone();
-                    let i = idx;
-                    let toggle: Rc<dyn Fn()> = Rc::new(move || {
-                        if let Some(f) = on_selection.clone() {
-                            let mut next: Vec<usize> = current.iter().copied().filter(|&v| v != i).collect();
-                            if !current.contains(&i) {
-                                next.push(i);
-                                next.sort_unstable();
-                            }
-                            f(&next);
-                        }
-                    });
-                    (checked, toggle)
-                });
-                body.push(
-                    component_props(
-                        render_table_row,
-                        TableRowProps {
-                            cells,
-                            striped: self.striped && idx % 2 == 1,
-                            row_hover: self.row_hover,
-                            checkbox: checkbox_col,
-                            checkbox_width: self.selection_column_width,
-                            cell_padding: self.cell_padding,
-                            cell_size,
-                            cell_color,
-                            align: align.clone(),
-                            overflow: overflow.clone(),
-                            overflow_default: self.overflow_default,
-                        },
-                    )
-                    .into_widget(),
-                );
-            }
-        }
-
-        // --- footer --------------------------------------------------------
-        if let Some(footer) = self.footer.take() {
-            body.push(Container::new().color(th.colors.border).height(1.0).into_widget());
-            body.push(footer);
-        }
-
-        let content =
-            column(body).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min);
-        styled(content, merged).into_widget()
+    // Column specs (+ max-width caps for `Max`), preceded by a fixed checkbox column.
+    let mut specs: Vec<TableColumnWidth> = Vec::new();
+    if sel {
+        specs.push(TableColumnWidth::Fixed(t.selection_column_width));
     }
+    let mut caps: Vec<Option<f64>> = Vec::with_capacity(n_user);
+    let mut any_flex = false;
+    for i in 0..n_user {
+        let cw = t.columns.get(i).copied().flatten().unwrap_or(t.column_default);
+        let (spec, cap) = map_col(cw);
+        any_flex |= matches!(spec, TableColumnWidth::Flex(_) | TableColumnWidth::Fraction(_));
+        specs.push(spec);
+        caps.push(cap);
+    }
+
+    let mut grid_rows: Vec<Vec<AnyWidget>> = Vec::new();
+
+    // --- header row -------------------------------------------------------
+    let mut hrow: Vec<AnyWidget> = Vec::new();
+    if sel {
+        let on_selection = t.on_selection.clone();
+        let n = n_rows;
+        let all = all_selected;
+        let mut cb = checkbox(all).indeterminate(some_selected);
+        if let Some(f) = on_selection {
+            cb = cb.on_changed(move || {
+                let next: Vec<usize> = if all { Vec::new() } else { (0..n).collect() };
+                f(&next);
+            });
+        }
+        hrow.push(header_slot(header_bg, header_border, center(cb).into_widget()));
+    }
+    for (i, h) in t.headers.iter().enumerate() {
+        let alignment = t.align.get(i).copied().flatten().unwrap_or(Alignment::CENTER_LEFT);
+        if t.sortable.contains(&i) {
+            let dir = t.sort.and_then(|(cc, d)| if cc == i { Some(d) } else { None });
+            let on_tap: Option<Rc<dyn Fn()>> = t.on_sort.clone().map(|f| {
+                let next = match t.sort {
+                    Some((cc, SortDir::Asc)) if cc == i => SortDir::Desc,
+                    _ => SortDir::Asc,
+                };
+                let cb: Rc<dyn Fn()> = Rc::new(move || f(i, next));
+                cb
+            });
+            // The sortable header brings its own background + hover; just clip it.
+            hrow.push(
+                clip_rect(component_props(
+                    render_sort_header,
+                    SortHeaderProps {
+                        label: h.clone(),
+                        dir,
+                        on_tap,
+                        color: header_color,
+                        size: header_size,
+                        weight: header_weight,
+                        pad: t.cell_padding,
+                        align: alignment,
+                        asc_icon: t.sort_asc_icon,
+                        desc_icon: t.sort_desc_icon,
+                        idle_icon: t.sort_idle_icon,
+                        idle_visible: t.sort_idle_visible,
+                        icon_color: t.sort_icon_color,
+                        icon_size: t.sort_icon_size,
+                    },
+                ))
+                .into_widget(),
+            );
+        } else {
+            let label = Padding::new(
+                t.cell_padding,
+                Align::new(
+                    alignment,
+                    text(h.clone()).size(header_size).weight(header_weight).color(header_color),
+                ),
+            );
+            hrow.push(header_slot(header_bg, header_border, clip_rect(label).into_widget()));
+        }
+    }
+    grid_rows.push(hrow);
+
+    // --- data rows --------------------------------------------------------
+    for (r, cells) in t.rows.iter().enumerate() {
+        let striped = t.striped && r % 2 == 1;
+        let mut drow: Vec<AnyWidget> = Vec::new();
+        if sel {
+            let checked = t.selection.contains(&r);
+            let selection = t.selection.clone();
+            let on_selection = t.on_selection.clone();
+            let toggle: Rc<dyn Fn()> = Rc::new(move || {
+                if let Some(f) = on_selection.clone() {
+                    let mut next: Vec<usize> = selection.iter().copied().filter(|&v| v != r).collect();
+                    if !selection.contains(&r) {
+                        next.push(r);
+                        next.sort_unstable();
+                    }
+                    f(&next);
+                }
+            });
+            let cb = center(checkbox(checked).on_changed(move || toggle())).into_widget();
+            drow.push(data_slot(r, striped, t.row_hover, hovered, cb));
+        }
+        // `i` indexes align/overflow/cells/caps together, so a range loop is clearest.
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..n_user {
+            let alignment = t.align.get(i).copied().flatten().unwrap_or(Alignment::CENTER_LEFT);
+            let mode = t.overflow.get(i).copied().flatten().unwrap_or(t.overflow_default);
+            let content: AnyWidget = match cells.get(i) {
+                Some(Cell::Text(s)) => {
+                    let txt = text(s.clone()).size(cell_size).color(cell_color);
+                    match mode {
+                        CellOverflow::Wrap => txt,
+                        CellOverflow::Ellipsis => txt.max_lines(1).ellipsis().soft_wrap(false),
+                        CellOverflow::Clip => txt.max_lines(1).soft_wrap(false),
+                    }
+                    .into_widget()
+                }
+                Some(Cell::Widget(w)) => w.clone(),
+                None => gap_w(0.0).into_widget(),
+            };
+            // A `Max` column caps its content width so its intrinsic width is bounded.
+            let content = match caps[i] {
+                Some(px) => constrained_box(
+                    BoxConstraints {
+                        min_width: 0.0,
+                        max_width: px,
+                        min_height: 0.0,
+                        max_height: f64::INFINITY,
+                    },
+                    content,
+                )
+                .into_widget(),
+                None => content,
+            };
+            let inner = clip_rect(Padding::new(t.cell_padding, Align::new(alignment, content))).into_widget();
+            drow.push(data_slot(r, striped, t.row_hover, hovered, inner));
+        }
+        grid_rows.push(drow);
+    }
+
+    let grid = layout_table(grid_rows).column_widths(specs).stretch_rows(true).divider(c.border, 1.0);
+
+    // Content-sized columns scroll horizontally when they don't fit; a Flex/Fraction
+    // column instead fills the available width, so no horizontal scroll.
+    let grid_widget: AnyWidget =
+        if any_flex { grid.into_widget() } else { SingleChildScrollView::horizontal(grid).into_widget() };
+
+    let mut body: Vec<AnyWidget> = vec![grid_widget];
+    if n_rows == 0
+        && let Some(es) = t.empty_state.clone()
+    {
+        body.push(Container::new().padding(EdgeInsets::all(24.0)).child(center(es)).into_widget());
+    }
+    if let Some(footer) = t.footer.clone() {
+        body.push(Container::new().color(c.border).height(1.0).into_widget());
+        body.push(footer);
+    }
+
+    let content =
+        column(body).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min);
+    styled(content, merged).into_widget()
 }
