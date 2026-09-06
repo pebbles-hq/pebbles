@@ -11,6 +11,33 @@ pub fn price(cents: i64) -> String {
     model::money_sym(cents, &store::symbol())
 }
 
+/// The card radius and inner padding shared by the table cards.
+const CARD_RADIUS: f64 = 14.0;
+const CARD_PADDING: f64 = 6.0;
+
+/// Wrap a **raw** table in the app's card: a bordered, rounded surface with padding,
+/// plus an inner rounded clip whose radius is the card's minus the padding
+/// (`14 - 6 = 8`) — so the table's header-top and last-row-bottom corners round
+/// concentrically with the card. Styling lives here, on the developer side; the table
+/// widget itself stays unstyled.
+pub fn table_card(table: impl IntoWidget) -> impl IntoWidget {
+    let c = theme().colors;
+    container()
+        .decoration(
+            BoxDecoration::new()
+                .color(c.card)
+                .border(Border::new(c.border, 1.0))
+                .radius(BorderRadius::all(CARD_RADIUS)),
+        )
+        .padding(EdgeInsets::all(CARD_PADDING))
+        .child(
+            container()
+                .decoration(BoxDecoration::new().radius(BorderRadius::all(CARD_RADIUS - CARD_PADDING)))
+                .clip()
+                .child(table),
+        )
+}
+
 // ---------------------------------------------------------------------------
 // Status pills
 // ---------------------------------------------------------------------------

@@ -81,16 +81,7 @@ fn customers_view() -> impl IntoWidget {
             .on_page(move |p| page.set(p - 1)),
     );
 
-    let card = container()
-        .decoration(
-            BoxDecoration::new()
-                .color(c.card)
-                .border(Border::new(c.border, 1.0))
-                .radius(BorderRadius::all(14.0)),
-        )
-        .clip()
-        .padding(EdgeInsets::all(6.0))
-        .child(t);
+    let card = ui::table_card(t);
 
     scroll_view(
         container().padding(EdgeInsets::all(24.0)).child(
