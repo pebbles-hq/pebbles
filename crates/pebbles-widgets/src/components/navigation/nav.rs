@@ -9,13 +9,13 @@ use pebbles_render::{Border, BoxDecoration, IconData, IconKind, lucide};
 
 use crate::style::{Style, styled};
 use crate::theme::theme;
-use crate::widgets::{Container, Padding, gap_w, row, text};
+use crate::widgets::{Container, Padding, gap_w, row, spacer, text};
 use pebbles_core::children;
 use pebbles_core::context::Callback;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 use crate::components::icon;
-use crate::components::{ButtonSize, ButtonVariant, button, dropdown_menu, icon_button, menu_item};
+use crate::components::{ButtonSize, ButtonVariant, button, dropdown_menu, icon_button, menu_item, select};
 
 /// A breadcrumb trail of path segments. When there are more than
 /// [`max_visible`](Breadcrumb::max_visible) segments, the middle ones collapse
@@ -161,6 +161,10 @@ pub enum PaginationVariant {
     Simple,
     /// Chevron arrows around a compact "X / Y" label.
     Arrows,
+    /// Just first / prev / next / last icon buttons, no label — the shadcn data-table
+    /// nav (pair it with [`rows_per_page`](Pagination::rows_per_page) +
+    /// [`total_items`](Pagination::total_items) for the full table footer).
+    Compact,
 }
 
 /// Prev/next pagination with numbered pages. Build with [`pagination`].
@@ -174,13 +178,26 @@ pub struct Pagination {
     on_page: Option<Rc<dyn Fn(usize)>>,
     on_prev: Option<Callback>,
     on_next: Option<Callback>,
+    // --- table-footer extras (all optional; a bar layout appears when any is set) ---
+    page_size: Option<usize>,
+    page_size_options: Vec<usize>,
+    on_page_size: Option<Rc<dyn Fn(usize)>>,
+    rows_per_page_label: String,
+    total_items: Option<usize>,
     style: Option<Style>,
 }
 
 /// Create a [`Pagination`] control (1-based `page`). Shows first/last jump buttons
 /// (double chevrons) by default — turn them off with [`Pagination::edges`]`(false)`.
 pub fn pagination(page: usize, total: usize) -> Pagination {
-    Pagination { page, total, max_buttons: 7, edges: true, ..Default::default() }
+    Pagination {
+        page,
+        total,
+        max_buttons: 7,
+        edges: true,
+        rows_per_page_label: "Rows per page".to_string(),
+        ..Default::default()
+    }
 }
 
 impl Pagination {
@@ -218,6 +235,33 @@ impl Pagination {
     /// is unset).
     pub fn on_next(mut self, cb: impl IntoCallback) -> Self {
         self.on_next = Some(cb.into_callback());
+        self
+    }
+    /// Add a **rows-per-page** selector on the left of the control (shadcn's data-table
+    /// footer): `current` is the active page size, `options` the choices (e.g.
+    /// `[10, 20, 30, 50]`), and `on_change` fires with the newly chosen size. Turns the
+    /// control into a full-width bar (size selector + results on the left, nav on the right).
+    pub fn rows_per_page(
+        mut self,
+        current: usize,
+        options: impl Into<Vec<usize>>,
+        on_change: impl Fn(usize) + 'static,
+    ) -> Self {
+        self.page_size = Some(current);
+        self.page_size_options = options.into();
+        self.on_page_size = Some(Rc::new(on_change));
+        self
+    }
+    /// The label before the rows-per-page selector (default `"Rows per page"`).
+    pub fn rows_per_page_label(mut self, label: impl Into<String>) -> Self {
+        self.rows_per_page_label = label.into();
+        self
+    }
+    /// The total number of items, for a "start–end of N results" summary on the left.
+    /// With [`rows_per_page`](Pagination::rows_per_page) it shows the exact range;
+    /// without a page size it shows "N results".
+    pub fn total_items(mut self, n: usize) -> Self {
+        self.total_items = Some(n);
         self
     }
     /// Merge a [`Style`](crate::Style) over the control's surface (background,
@@ -370,7 +414,84 @@ impl IntoWidget for Pagination {
                     .main_axis_size(MainAxisSize::Min)
                     .into_widget()
             }
+            PaginationVariant::Compact => {
+                // Just the first/prev/next/last icon buttons — no label, no numbers.
+                let mut kids: Vec<AnyWidget> = Vec::new();
+                if edges {
+                    kids.push(first);
+                    kids.push(gap_w(6.0).into_widget());
+                }
+                kids.push(prev);
+                kids.push(gap_w(6.0).into_widget());
+                kids.push(next);
+                if edges {
+                    kids.push(gap_w(6.0).into_widget());
+                    kids.push(last);
+                }
+                row(kids)
+                    .cross_axis_alignment(CrossAxisAlignment::Center)
+                    .main_axis_size(MainAxisSize::Min)
+                    .into_widget()
+            }
         };
-        styled(line, self.style.unwrap_or_default()).into_widget()
+
+        // Optional table-footer bar: rows-per-page + results on the left, nav on the
+        // right. Appears only when a page size and/or total-item count is configured;
+        // otherwise the control is just the nav (backwards-compatible).
+        let mut left: Vec<AnyWidget> = Vec::new();
+        if let Some(size) = self.page_size
+            && !self.page_size_options.is_empty()
+        {
+            let opts = self.page_size_options.clone();
+            let labels: Vec<String> = opts.iter().map(usize::to_string).collect();
+            let cur = opts.iter().position(|&o| o == size).unwrap_or(0);
+            let on_size = self.on_page_size.clone();
+            left.push(
+                text(self.rows_per_page_label.clone())
+                    .size(13.0)
+                    .color(th.colors.muted_foreground)
+                    .into_widget(),
+            );
+            left.push(gap_w(8.0).into_widget());
+            left.push(
+                select(labels)
+                    .value(cur)
+                    .width(74.0)
+                    .on_changed(move |i, _| {
+                        if let (Some(f), Some(&v)) = (&on_size, opts.get(i)) {
+                            f(v);
+                        }
+                    })
+                    .into_widget(),
+            );
+        }
+        if let Some(items) = self.total_items {
+            let txt = if items == 0 {
+                "No results".to_string()
+            } else if let Some(size) = self.page_size {
+                let start = (page - 1) * size + 1;
+                let end = (page * size).min(items);
+                format!("{start}-{end} of {items} results")
+            } else {
+                format!("{items} results")
+            };
+            if !left.is_empty() {
+                left.push(gap_w(16.0).into_widget());
+            }
+            left.push(text(txt).size(13.0).color(th.colors.muted_foreground).into_widget());
+        }
+
+        let content: AnyWidget = if left.is_empty() {
+            line
+        } else {
+            row(children![
+                row(left).cross_axis_alignment(CrossAxisAlignment::Center).main_axis_size(MainAxisSize::Min),
+                spacer(),
+                line,
+            ])
+            .cross_axis_alignment(CrossAxisAlignment::Center)
+            .into_widget()
+        };
+        styled(content, self.style.unwrap_or_default()).into_widget()
     }
 }

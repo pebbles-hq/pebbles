@@ -163,6 +163,75 @@ fn long_ranges_collapse_to_ellipses_and_paint() {
 }
 
 #[test]
+fn compact_variant_fires_first_prev_next_last() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    WENT.with(|w| w.borrow_mut().clear());
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(500.0, 120.0);
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            component(|| {
+                column(vec![
+                    pagination(5, 20)
+                        .variant(PaginationVariant::Compact)
+                        .on_page(|p| WENT.with(|w| w.borrow_mut().push(p)))
+                        .into_widget(),
+                ])
+                .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
+            }),
+        )
+        .into_widget(),
+    );
+    frame(&mut ui, &mut env, win);
+
+    // Compact is exactly four controls: first / prev / next / last.
+    let c = controls(&ui);
+    assert_eq!(c.len(), 4, "compact = first/prev/next/last only");
+    for p in &c {
+        tap(&mut ui, *p);
+        frame(&mut ui, &mut env, win);
+    }
+    assert_eq!(
+        WENT.with(|w| w.borrow().clone()),
+        vec![1, 4, 6, 20],
+        "first→1, prev→4, next→6, last→20 from page 5 of 20"
+    );
+}
+
+#[test]
+fn table_footer_bar_with_rows_per_page_paints() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(640.0, 160.0);
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            component(|| {
+                column(vec![
+                    // The full shadcn footer: rows-per-page + "1-10 of 42 results" on the
+                    // left, compact nav on the right. Just needs to lay out + paint.
+                    pagination(1, 5)
+                        .variant(PaginationVariant::Compact)
+                        .rows_per_page(10, vec![10, 20, 30, 50], |_| {})
+                        .total_items(42)
+                        .into_widget(),
+                ])
+                .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Stretch)
+            }),
+        )
+        .into_widget(),
+    );
+    frame(&mut ui, &mut env, win);
+}
+
+#[test]
 fn legacy_callbacks_still_work() {
     pebbles_widgets::overlay::init();
     pebbles_core::focus::init();
