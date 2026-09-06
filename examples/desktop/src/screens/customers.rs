@@ -8,8 +8,6 @@ use crate::sheets::open_customer_detail;
 use crate::store;
 use crate::ui;
 
-const PER_PAGE: usize = 9;
-
 pub fn customers() -> impl IntoWidget {
     component(customers_view)
 }
@@ -18,6 +16,7 @@ fn customers_view() -> impl IntoWidget {
     let c = theme().colors;
     let search = create_signal(String::new());
     let page = create_signal(0_usize);
+    let per_page = create_signal(10_usize); // rows per page (user-adjustable)
 
     let q = search.get().to_lowercase();
     let rows: Vec<Customer> = store::customers()
@@ -31,13 +30,13 @@ fn customers_view() -> impl IntoWidget {
         .collect();
 
     let total = rows.len();
-    let total_pages = total.div_ceil(PER_PAGE).max(1);
+    let size = per_page.get();
+    let total_pages = total.div_ceil(size).max(1);
     let cur = page.get().min(total_pages - 1);
-    let slice: Vec<Customer> = rows.into_iter().skip(cur * PER_PAGE).take(PER_PAGE).collect();
+    let slice: Vec<Customer> = rows.into_iter().skip(cur * size).take(size).collect();
 
     let headers =
         ["Customer", "Email", "Orders", "Spent", ""].iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    // Email addresses can be long → keep them to one line with an ellipsis.
     // Columns size to their content (full values, no truncation); the table scrolls
     // horizontally if they don't all fit.
     let mut t = table(headers).striped(true).row_hover(true).empty(empty_state());
@@ -65,17 +64,17 @@ fn customers_view() -> impl IntoWidget {
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center);
 
-    let pager: AnyWidget = if total_pages > 1 {
-        container()
-            .padding(EdgeInsets::only(0.0, 14.0, 0.0, 0.0))
-            .child(
-                row(children![spacer(), pagination(cur + 1, total_pages).on_page(move |p| page.set(p - 1))])
-                    .cross_axis_alignment(CrossAxisAlignment::Center),
-            )
-            .into_widget()
-    } else {
-        gap_h(0.0).into_widget()
-    };
+    // Rows-per-page + results on the left, nav on the right (shadcn table footer).
+    let pager = container().padding(EdgeInsets::only(0.0, 14.0, 0.0, 0.0)).child(
+        pagination(cur + 1, total_pages)
+            .variant(PaginationVariant::Compact)
+            .rows_per_page(size, vec![10, 20, 30, 50], move |s| {
+                per_page.set(s);
+                page.set(0);
+            })
+            .total_items(total)
+            .on_page(move |p| page.set(p - 1)),
+    );
 
     let card = container()
         .decoration(

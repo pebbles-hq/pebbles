@@ -8,8 +8,6 @@ use crate::sheets::open_order_detail;
 use crate::store;
 use crate::ui;
 
-const PER_PAGE: usize = 9;
-
 pub fn orders() -> impl IntoWidget {
     component(orders_view)
 }
@@ -19,6 +17,7 @@ fn orders_view() -> impl IntoWidget {
     let search = create_signal(String::new());
     let status = create_signal(0_usize); // 0 = All
     let page = create_signal(0_usize);
+    let per_page = create_signal(10_usize); // rows per page (user-adjustable)
 
     let q = search.get().to_lowercase();
     let status_sel = status.get();
@@ -37,9 +36,10 @@ fn orders_view() -> impl IntoWidget {
     rows.sort_by_key(|o| std::cmp::Reverse(o.id)); // newest first
 
     let total = rows.len();
-    let total_pages = total.div_ceil(PER_PAGE).max(1);
+    let size = per_page.get();
+    let total_pages = total.div_ceil(size).max(1);
     let cur = page.get().min(total_pages - 1);
-    let slice: Vec<Order> = rows.into_iter().skip(cur * PER_PAGE).take(PER_PAGE).collect();
+    let slice: Vec<Order> = rows.into_iter().skip(cur * size).take(size).collect();
 
     let headers = ["Order", "Customer", "Date", "Items", "Total", "Status", ""]
         .iter()
@@ -85,17 +85,17 @@ fn orders_view() -> impl IntoWidget {
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center);
 
-    let pager: AnyWidget = if total_pages > 1 {
-        container()
-            .padding(EdgeInsets::only(0.0, 14.0, 0.0, 0.0))
-            .child(
-                row(children![spacer(), pagination(cur + 1, total_pages).on_page(move |p| page.set(p - 1))])
-                    .cross_axis_alignment(CrossAxisAlignment::Center),
-            )
-            .into_widget()
-    } else {
-        gap_h(0.0).into_widget()
-    };
+    // Rows-per-page + results on the left, nav on the right (shadcn table footer).
+    let pager = container().padding(EdgeInsets::only(0.0, 14.0, 0.0, 0.0)).child(
+        pagination(cur + 1, total_pages)
+            .variant(PaginationVariant::Compact)
+            .rows_per_page(size, vec![10, 20, 30, 50], move |s| {
+                per_page.set(s);
+                page.set(0);
+            })
+            .total_items(total)
+            .on_page(move |p| page.set(p - 1)),
+    );
 
     let card = container()
         .decoration(

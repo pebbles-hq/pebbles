@@ -10,8 +10,6 @@ use crate::sheets::open_product_detail;
 use crate::store;
 use crate::ui;
 
-const PER_PAGE: usize = 8;
-
 pub fn products() -> impl IntoWidget {
     component(products_view)
 }
@@ -24,6 +22,7 @@ fn products_view() -> impl IntoWidget {
     let sort_col = create_signal(0_usize);
     let sort_dir = create_signal(SortDir::Asc);
     let page = create_signal(0_usize);
+    let per_page = create_signal(10_usize); // rows per page (user-adjustable)
 
     let all = store::products();
 
@@ -65,9 +64,10 @@ fn products_view() -> impl IntoWidget {
 
     // --- paginate -----------------------------------------------------------
     let total = rows.len();
-    let total_pages = total.div_ceil(PER_PAGE).max(1);
+    let size = per_page.get();
+    let total_pages = total.div_ceil(size).max(1);
     let cur = page.get().min(total_pages - 1);
-    let slice: Vec<Product> = rows.into_iter().skip(cur * PER_PAGE).take(PER_PAGE).collect();
+    let slice: Vec<Product> = rows.into_iter().skip(cur * size).take(size).collect();
 
     // --- table --------------------------------------------------------------
     let headers = ["Product", "SKU", "Category", "Price", "Stock", "Status", ""]
@@ -122,18 +122,17 @@ fn products_view() -> impl IntoWidget {
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center);
 
-    // --- pagination ---------------------------------------------------------
-    let pager: AnyWidget = if total_pages > 1 {
-        container()
-            .padding(EdgeInsets::only(0.0, 14.0, 0.0, 0.0))
-            .child(
-                row(children![spacer(), pagination(cur + 1, total_pages).on_page(move |p| page.set(p - 1)),])
-                    .cross_axis_alignment(CrossAxisAlignment::Center),
-            )
-            .into_widget()
-    } else {
-        gap_h(0.0).into_widget()
-    };
+    // --- pagination: rows-per-page + results on the left, nav on the right ---
+    let pager = container().padding(EdgeInsets::only(0.0, 14.0, 0.0, 0.0)).child(
+        pagination(cur + 1, total_pages)
+            .variant(PaginationVariant::Compact)
+            .rows_per_page(size, vec![10, 20, 30, 50], move |s| {
+                per_page.set(s);
+                page.set(0);
+            })
+            .total_items(total)
+            .on_page(move |p| page.set(p - 1)),
+    );
 
     let card = container()
         .decoration(
