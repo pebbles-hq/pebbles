@@ -475,11 +475,26 @@ impl Ui {
 
     /// Scroll the topmost scrollable under `point` by `delta` (logical px). Returns
     /// `true` if an offset actually changed (caller should relayout + redraw).
+    ///
+    /// The wheel arrives as a vertical delta, so a vertical scrollable is preferred:
+    /// we bubble PAST an axis-mismatched scrollable (e.g. a horizontal carousel) rather
+    /// than let it steal a vertical wheel. Only if no vertical scrollable takes it do we
+    /// fall back to any axis, so a lone horizontal list still wheels when it's the only
+    /// option.
     pub fn dispatch_scroll(&mut self, point: Offset, delta: f64) -> bool {
+        self.scroll_pass(point, delta, Some(Axis::Vertical)) || self.scroll_pass(point, delta, None)
+    }
+
+    /// One hit-test walk (leaf → root) applying `delta` to the first scrollable that
+    /// matches `want` (any axis when `None`) and isn't already pinned at its edge.
+    fn scroll_pass(&mut self, point: Offset, delta: f64, want: Option<Axis>) -> bool {
         let hits = self.render.hit_test(point);
         for &rid in hits.iter().rev() {
             // Imperative scroll view: nudge its spring target directly.
             if let Some(s) = self.render.object_ref(rid).downcast_ref::<RenderScroll>() {
+                if want.is_some_and(|a| a != s.axis) {
+                    continue; // wrong axis for this wheel — let a matching ancestor take it
+                }
                 if s.at_edge(delta) {
                     continue; // bubble to an ancestor scroll view
                 }
@@ -496,6 +511,9 @@ impl Ui {
             }
             // Controlled (virtualized) list: route to its offset signal.
             if let Some(list) = self.render.object_ref(rid).downcast_ref::<RenderList>() {
+                if want.is_some_and(|a| a != list.axis) {
+                    continue;
+                }
                 if list.at_edge(delta) {
                     continue;
                 }

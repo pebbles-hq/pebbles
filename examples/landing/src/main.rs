@@ -23,6 +23,8 @@ fn page() -> impl IntoWidget {
         .main_axis_size(MainAxisSize::Min),
     )
     .drag_scroll(true)
+    // Keep the scrollbar always visible so it's easy to grab and drag.
+    .always_scrollbar()
 }
 
 #[pebbles::main]
@@ -74,6 +76,33 @@ mod tests {
         assert!(
             (center_x - 600.0).abs() < 40.0,
             "hero headline should be centered (~600 in a 1200px window), got center {center_x} (w {width})"
+        );
+    }
+
+    /// A vertical wheel while the pointer is over the hero *carousel* (a horizontal
+    /// scrollable) must scroll the PAGE, not get eaten by the carousel — a regression
+    /// guard for the axis-aware wheel dispatch fix.
+    #[test]
+    fn vertical_wheel_over_the_hero_scrolls_the_page() {
+        let mut h = Harness::new().window(1200.0, 860.0);
+        h.mount(page);
+        h.settle();
+        h.draw();
+
+        let page_scroll = h
+            .find_all::<pebbles_render::RenderScroll>()
+            .into_iter()
+            .find(|&id| h.object::<pebbles_render::RenderScroll>(id).axis == Axis::Vertical)
+            .expect("a vertical page scroll viewport");
+        let before = h.object::<pebbles_render::RenderScroll>(page_scroll).target;
+
+        // Wheel down with the cursor over the hero (y within the 660px carousel).
+        h.scroll(Offset::new(600.0, 300.0), 300.0);
+
+        let after = h.object::<pebbles_render::RenderScroll>(page_scroll).target;
+        assert!(
+            after > before + 100.0,
+            "a vertical wheel over the hero carousel must scroll the page (target {before} → {after})"
         );
     }
 }

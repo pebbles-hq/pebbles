@@ -188,22 +188,47 @@ fn category_tile(label: &str, count: &str, seed: &str) -> AnyWidget {
 // ---------------------------------------------------------------------------
 
 pub fn products() -> AnyWidget {
-    let cards: Vec<AnyWidget> = data::PRODUCTS.iter().map(product_card).collect();
+    // A responsive grid: 4 columns on desktop, 3 on tablet, 2 on mobile. Cards are
+    // `Expanded` so each row fills the width exactly (no ragged right edge).
+    let cols = breakpoint().select(2usize, 3, 4);
+    let n = data::PRODUCTS.len();
+
+    let mut body: Vec<AnyWidget> = vec![
+        row(children![
+            Expanded::new(section_head("Featured pieces", "The atelier edit", ui::ink())),
+            gap_w(10.0),
+            text("View all  →").size(14.0).weight(600.0).color(ui::accent()),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::End)
+        .into_widget(),
+        gap_h(28.0).into_widget(),
+    ];
+
+    let mut i = 0;
+    while i < n {
+        let mut cells: Vec<AnyWidget> = Vec::new();
+        for j in 0..cols {
+            if j > 0 {
+                cells.push(gap_w(22.0).into_widget());
+            }
+            if i + j < n {
+                cells.push(Expanded::new(product_card(&data::PRODUCTS[i + j])).into_widget());
+            } else {
+                // Empty flex cell keeps the last row's cards the same width as full rows.
+                cells.push(Expanded::new(gap_h(0.0)).into_widget());
+            }
+        }
+        body.push(row(cells).cross_axis_alignment(CrossAxisAlignment::Start).into_widget());
+        i += cols;
+        if i < n {
+            body.push(gap_h(30.0).into_widget());
+        }
+    }
+
     ui::section(
         ui::paper_dim(),
         66.0,
-        column(children![
-            row(children![
-                Expanded::new(section_head("Featured pieces", "The atelier edit", ui::ink())),
-                gap_w(10.0),
-                text("View all  →").size(14.0).weight(600.0).color(ui::accent()),
-            ])
-            .cross_axis_alignment(CrossAxisAlignment::End),
-            gap_h(28.0),
-            wrap(cards).spacing(20.0).run_spacing(30.0).alignment(WrapAlignment::Start),
-        ])
-        .cross_axis_alignment(CrossAxisAlignment::Stretch)
-        .main_axis_size(MainAxisSize::Min),
+        column(body).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
     )
 }
 
@@ -232,30 +257,28 @@ fn product_card(p: &Product) -> AnyWidget {
         .height(330.0)
         .child(stack(children![Positioned::fill(ui::image_fill(img(p.seed, 520, 680))), tag, add,]));
 
-    container()
-        .width(263.0)
-        .child(
-            column(children![
-                media,
-                gap_h(14.0),
-                row(children![
-                    Expanded::new(
-                        column(children![
-                            text(p.name.to_string()).size(15.0).semibold().color(ui::ink()),
-                            gap_h(3.0),
-                            text(p.category.to_string()).size(12.5).color(ui::ink_muted()),
-                        ])
-                        .cross_axis_alignment(CrossAxisAlignment::Start)
-                        .main_axis_size(MainAxisSize::Min),
-                    ),
-                    text(p.price.to_string()).size(15.0).weight(700.0).color(ui::ink()),
+    // No fixed width — the grid's `Expanded` cell sizes each card to fill its column.
+    column(children![
+        media,
+        gap_h(14.0),
+        row(children![
+            Expanded::new(
+                column(children![
+                    text(p.name.to_string()).size(15.0).semibold().max_lines(1).ellipsis().color(ui::ink()),
+                    gap_h(3.0),
+                    text(p.category.to_string()).size(12.5).color(ui::ink_muted()),
                 ])
-                .cross_axis_alignment(CrossAxisAlignment::Start),
-            ])
-            .cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .main_axis_size(MainAxisSize::Min),
-        )
-        .into_widget()
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
+            ),
+            gap_w(8.0),
+            text(p.price.to_string()).size(15.0).weight(700.0).color(ui::ink()),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Start),
+    ])
+    .cross_axis_alignment(CrossAxisAlignment::Stretch)
+    .main_axis_size(MainAxisSize::Min)
+    .into_widget()
 }
 
 // ---------------------------------------------------------------------------
