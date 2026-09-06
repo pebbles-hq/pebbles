@@ -54,38 +54,47 @@ pub fn order_badge(status: OrderStatus) -> AnyWidget {
 // KPI card
 // ---------------------------------------------------------------------------
 
-/// A **responsive grid**: lay `cards` out in as many equal-width columns as fit at
-/// `min_width` px each, every card stretching to fill its column, wrapping to new rows
-/// as the window narrows (CSS `repeat(auto-fit, minmax(min_width, 1fr))`). Reflows AND
-/// resizes — `layout_builder` gives us the available width, `Expanded` shares it.
-pub fn responsive_grid(min_width: f64, spacing: f64, cards: Vec<AnyWidget>) -> impl IntoWidget {
-    layout_builder(move |size| {
-        let n = cards.len().max(1);
-        let avail = size.width.max(1.0);
-        // As many columns as fit, but never more than we have cards (so a few cards on a
-        // wide screen stretch to fill rather than leaving empty tracks).
-        let cols = (((avail + spacing) / (min_width + spacing)).floor() as usize).clamp(1, n);
-        let mut rows: Vec<AnyWidget> = Vec::new();
-        for (ri, chunk_start) in (0..n).step_by(cols).enumerate() {
-            if ri > 0 {
-                rows.push(gap_h(spacing).into_widget());
-            }
-            let mut cells: Vec<AnyWidget> = Vec::new();
-            for col in 0..cols {
-                if col > 0 {
-                    cells.push(gap_w(spacing).into_widget());
-                }
-                match cards.get(chunk_start + col) {
-                    // Each card fills an equal share of the row width.
-                    Some(card) => cells.push(Expanded::new(card.clone()).into_widget()),
-                    // Empty slots on the last row keep the card widths consistent.
-                    None => cells.push(Expanded::new(gap_h(0.0)).into_widget()),
-                }
-            }
-            rows.push(row(cells).cross_axis_alignment(CrossAxisAlignment::Stretch).into_widget());
+/// A **responsive grid**: lay `cards` out in `desktop` / `tablet` / `mobile` columns
+/// depending on the window's [`Breakpoint`], each card stretching to fill its column
+/// and wrapping to new rows. Reads `breakpoint()` (reactive on the window size), so it
+/// re-flows the moment the window crosses a breakpoint — no polling, no frame lag.
+pub fn responsive_grid(
+    spacing: f64,
+    mobile: usize,
+    tablet: usize,
+    desktop: usize,
+    cards: Vec<AnyWidget>,
+) -> impl IntoWidget {
+    let n = cards.len().max(1);
+    let cols = breakpoint().select(mobile, tablet, desktop).clamp(1, n);
+
+    let mut rows: Vec<AnyWidget> = Vec::new();
+    let mut it = cards.into_iter();
+    let mut remaining = n;
+    let mut first = true;
+    while remaining > 0 {
+        if !first {
+            rows.push(gap_h(spacing).into_widget());
         }
-        column(rows).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min)
-    })
+        first = false;
+        let take = cols.min(remaining);
+        let mut cells: Vec<AnyWidget> = Vec::new();
+        for col in 0..cols {
+            if col > 0 {
+                cells.push(gap_w(spacing).into_widget());
+            }
+            if col < take {
+                // Each card fills an equal share of the row width.
+                cells.push(Expanded::new(it.next().unwrap()).into_widget());
+            } else {
+                // Empty slots on the last row keep the card widths consistent.
+                cells.push(Expanded::new(gap_h(0.0)).into_widget());
+            }
+        }
+        remaining -= take;
+        rows.push(row(cells).cross_axis_alignment(CrossAxisAlignment::Stretch).into_widget());
+    }
+    column(rows).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min)
 }
 
 /// A dashboard metric: label + big value + a colored icon chip, with an optional
