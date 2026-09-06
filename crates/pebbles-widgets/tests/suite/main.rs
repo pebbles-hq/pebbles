@@ -8,6 +8,7 @@
 mod accordion;
 mod animated_container;
 mod breadcrumb;
+mod button;
 mod calendar;
 mod canvas;
 mod caret;

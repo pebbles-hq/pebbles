@@ -6,11 +6,11 @@
 use pebbles_core::IntoCallback;
 use std::rc::Rc;
 
-use pebbles_foundation::{Color, EdgeInsets, MainAxisSize};
+use pebbles_foundation::{Alignment, Color, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, IconData};
 
 use crate::theme::{mix, theme};
-use crate::widgets::{Container, GestureDetector, Opacity, center, gap_w, row, spinner, text};
+use crate::widgets::{Align, Container, GestureDetector, Opacity, center, gap_w, row, spinner, text};
 use pebbles_core::animated;
 use pebbles_core::component::{Element, component_props};
 use pebbles_core::context::Callback;
@@ -379,7 +379,16 @@ fn render_button(b: &Button) -> Element {
     } else {
         content
     };
-    let inner: AnyWidget = if b.full_width { center(content).into_widget() } else { content };
+    // Center the label/icon within the button. `full_width` fills the parent and
+    // centers; otherwise the button shrink-wraps to its content BUT still centers it
+    // when a parent stretches the button wider/taller than the content (e.g. a button
+    // in a `CrossAxisAlignment::Stretch` column). `width_factor`/`height_factor` = 1.0
+    // keep the shrink-wrap; the centering only bites once the box is forced larger.
+    let inner: AnyWidget = if b.full_width {
+        center(content).into_widget()
+    } else {
+        Align::new(Alignment::CENTER, content).width_factor(1.0).height_factor(1.0).into_widget()
+    };
 
     let mut decoration = BoxDecoration::new().radius(BorderRadius::all(b.radius.unwrap_or(th.radius)));
     if let Some(shadow) = b.shadow {
