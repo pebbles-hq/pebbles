@@ -14,8 +14,12 @@
 //!
 //! * `{{name}}` — the project name as given (`my-widget`)
 //! * `{{name_snake}}` — the same, underscored, for Rust paths (`my_widget`)
+//! * `{{renderer}}` — the chosen default render backend feature
+//!   (`vello-hybrid` | `vello`)
 //! * `{{dep.<crate>}}` — a Cargo dependency line for a Pebbles crate, resolved
 //!   to either a git or a path source (see [`Source`])
+//! * `{{dep_nodefault.<crate>}}` — the same, but with `default-features = false`
+//!   (so the app's own `default`/`vello`/`vello-hybrid` features drive the backend)
 //!
 //! An unknown placeholder is left untouched rather than silently blanked, so a
 //! typo shows up in the generated file instead of vanishing.
@@ -102,9 +106,11 @@ pub fn names() -> String {
 
 /// Substitute the placeholders in `src`.
 ///
-/// `dep` resolves `{{dep.<crate>}}`; it takes the crate name and returns the
-/// full dependency line. Unknown placeholders are left verbatim.
-pub fn render(src: &str, name: &str, dep: &dyn Fn(&str) -> String) -> String {
+/// `renderer` fills `{{renderer}}` (the default backend feature). `dep` resolves
+/// `{{dep.<crate>}}` / `{{dep_nodefault.<crate>}}`; it takes the crate name and a
+/// `no_default` flag and returns the full dependency line. Unknown placeholders are
+/// left verbatim.
+pub fn render(src: &str, name: &str, renderer: &str, dep: &dyn Fn(&str, bool) -> String) -> String {
     let snake = name.replace('-', "_");
     let mut out = String::with_capacity(src.len() + 64);
     let mut rest = src;
@@ -120,7 +126,11 @@ pub fn render(src: &str, name: &str, dep: &dyn Fn(&str) -> String) -> String {
         match key {
             "name" => out.push_str(name),
             "name_snake" => out.push_str(&snake),
-            k if k.starts_with("dep.") => out.push_str(&dep(&k["dep.".len()..])),
+            "renderer" => out.push_str(renderer),
+            k if k.starts_with("dep_nodefault.") => {
+                out.push_str(&dep(&k["dep_nodefault.".len()..], true));
+            }
+            k if k.starts_with("dep.") => out.push_str(&dep(&k["dep.".len()..], false)),
             _ => {
                 // Unknown key: keep it literal so the mistake is visible.
                 out.push_str("{{");
@@ -138,31 +148,41 @@ pub fn render(src: &str, name: &str, dep: &dyn Fn(&str) -> String) -> String {
 mod tests {
     use super::*;
 
-    fn dep(c: &str) -> String {
-        format!("{c} = {{ git = \"{GIT_URL}\" }}")
+    fn dep(c: &str, no_default: bool) -> String {
+        if no_default {
+            format!("{c} = {{ git = \"{GIT_URL}\", default-features = false }}")
+        } else {
+            format!("{c} = {{ git = \"{GIT_URL}\" }}")
+        }
     }
 
     #[test]
     fn substitutes_the_known_placeholders() {
-        let out = render("{{name}} / {{name_snake}}", "my-widget", &dep);
-        assert_eq!(out, "my-widget / my_widget");
+        let out = render("{{name}} / {{name_snake}} / {{renderer}}", "my-widget", "vello", &dep);
+        assert_eq!(out, "my-widget / my_widget / vello");
     }
 
     #[test]
     fn resolves_dependency_lines() {
-        let out = render("{{dep.pebbles-core}}", "x", &dep);
+        let out = render("{{dep.pebbles-core}}", "x", "vello-hybrid", &dep);
         assert_eq!(out, format!("pebbles-core = {{ git = \"{GIT_URL}\" }}"));
+    }
+
+    #[test]
+    fn resolves_no_default_dependency_lines() {
+        let out = render("{{dep_nodefault.pebbles}}", "x", "vello-hybrid", &dep);
+        assert_eq!(out, format!("pebbles = {{ git = \"{GIT_URL}\", default-features = false }}"));
     }
 
     #[test]
     fn leaves_unknown_placeholders_visible() {
         // Silently blanking a typo would ship a broken file that looks fine.
-        assert_eq!(render("a {{nope}} b", "x", &dep), "a {{nope}} b");
+        assert_eq!(render("a {{nope}} b", "x", "vello-hybrid", &dep), "a {{nope}} b");
     }
 
     #[test]
     fn survives_an_unterminated_placeholder() {
-        assert_eq!(render("head {{name", "x", &dep), "head {{name");
+        assert_eq!(render("head {{name", "x", "vello-hybrid", &dep), "head {{name");
     }
 
     #[test]
@@ -174,7 +194,7 @@ mod tests {
                 assert!(!f.contents.is_empty(), "{}/{} is not empty", t.name, f.path);
                 // Every placeholder in every template must be one the renderer
                 // knows — otherwise it reaches the generated project verbatim.
-                let rendered = render(f.contents, "demo-name", &dep);
+                let rendered = render(f.contents, "demo-name", "vello-hybrid", &dep);
                 assert!(
                     !rendered.contains("{{"),
                     "{}/{} has an unresolved placeholder:\n{rendered}",

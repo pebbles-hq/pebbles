@@ -6,7 +6,7 @@
 
 <strong>A Flutter-style, desktop-first GUI framework for Rust.</strong>
 
-<em>Vello-powered GPU rendering · SolidJS-style reactivity · a shadcn-styled widget catalog.</em>
+<em>Pure-Rust GPU rendering (Vello) · SolidJS-style reactivity · a shadcn-styled widget catalog.</em>
 
 <br /><br />
 
@@ -21,6 +21,7 @@
 
 <a href="#the-pebbles-command"><b>Install</b></a> ·
 <a href="#programming-model"><b>Programming model</b></a> ·
+<a href="#render-backends"><b>Backends</b></a> ·
 <a href="#architecture"><b>Architecture</b></a> ·
 <a href="#whats-in-the-box"><b>Widgets</b></a> ·
 <a href="#platform-support"><b>Platforms</b></a> ·
@@ -30,9 +31,12 @@
 
 ---
 
-Pebbles renders on [Vello](https://vello.dev) (GPU 2D) and the rest of the
-Linebender stack (kurbo · peniko · parley) — a modern, compute-shader graphics
-pipeline rather than a retained widget toolkit.
+Pebbles rasterizes with the [Vello](https://vello.dev) family of pure-Rust,
+`wgpu`-based GPU renderers, on the rest of the Linebender stack (kurbo · peniko ·
+parley) — a modern, GPU-accelerated graphics pipeline rather than a retained widget
+toolkit. It ships **two interchangeable backends**: a low-power **Vello Hybrid**
+default and a GPU-compute **Vello** opt-in for vector-heavy work
+(see [Render backends](#render-backends)).
 
 It keeps Flutter's **UI-building syntax** — `Row`/`Column`/`Container`/`Text`,
 the box layout protocol, a rich themed widget catalog — but swaps Flutter's
@@ -98,9 +102,12 @@ cargo install --path crates/pebbles-cli   # or: cargo install --git <this repo> 
 
 pebbles create hello                      # a runnable desktop app
 pebbles create --template widget my-thing # a reusable widget package
+pebbles create hello --renderer vello     # default the app to the Vello backend
 pebbles create --list                     # the available templates
 
 cd hello && pebbles run                   # rich logs; hot-restarts on save
+pebbles run --renderer vello              # run on the Vello (GPU-compute) backend
+pebbles run -d web                        # build to wasm + open a WebGPU browser
 pebbles doctor                            # check the toolchain/environment
 ```
 
@@ -125,6 +132,47 @@ your app alongside `pebbles`. It is the reference example for building your own
 Pebbles widget package — and `pebbles create --template widget` scaffolds exactly
 that shape (library + example + headless tests).
 
+## Render backends
+
+Pebbles rasterizes through the [Vello](https://vello.dev) family — pure-Rust,
+`wgpu`-based 2D renderers — and ships **two**, selected by a Cargo feature. Exactly
+one is compiled at a time.
+
+| Backend | Feature | Technique | Best for |
+|---------|---------|-----------|----------|
+| **Vello Hybrid** *(default)* | `vello-hybrid` | Hybrid CPU-preprocess + GPU raster ("sparse strips") | Every normal app; battery-sensitive and mobile targets |
+| **Vello** *(opt-in)* | `vello` | GPU-compute rasterization | Vector-heavy, continuously animated surfaces — design tools, node/graph canvases |
+
+**Vello Hybrid is the default** — it's the lower-power path and the right choice for
+typical UIs. Reach for **Vello** when a screen is dominated by large, dynamic vector
+content. Both are pure Rust and share the same paint API, so switching is a build-time
+flag — no code changes.
+
+### Selecting a backend
+
+With the CLI — the selection applies on **desktop, web, and Android**:
+
+```bash
+pebbles run                              # Vello Hybrid (default)
+pebbles run --renderer vello             # Vello (GPU compute)
+pebbles run -d web --renderer vello      # …on the web (served via Trunk)
+pebbles run --release --renderer vello   # optimized release build
+
+pebbles create myapp                     # scaffold defaulting to Vello Hybrid
+pebbles create myapp --renderer vello    # scaffold defaulting to Vello
+```
+
+Or directly with Cargo — the backend is a feature on your app crate, so turn the
+default off and pick one (enabling both at once is a compile error, by design):
+
+```bash
+cargo run                                          # Vello Hybrid (default)
+cargo run --no-default-features --features vello   # Vello
+```
+
+`pebbles create` wires both features into the generated `Cargo.toml` and defaults to
+your chosen backend, so an app can switch at any time with the flag above.
+
 ## Platform support
 
 Pebbles is **desktop-first by design**. "Supported" here means a concrete
@@ -136,7 +184,7 @@ claim — the platform builds and passes the headless test suites in
 | **Linux** (X11 + Wayland) | ✅ Supported | The primary development platform: built, tested and run daily, including GPU device-loss recovery and long input-storm soaks. |
 | **Windows** | ✅ Supported | Builds and passes the full suite on `windows-latest` in CI. Native window menu behind `native-menus`. Less interactive polish than Linux — visual/input reports welcome. |
 | **macOS** | ✅ Supported | Builds and passes the full suite on `macos-latest` in CI. Has the most platform-specific code (global menu bar, `Mod`→⌘ shortcut mapping). Same interactive-polish caveat as Windows. |
-| **Web** (wasm) | 🟢 Runs (WebGPU) | `pebbles run -d web` builds the wasm bundle, serves it, and opens the browser — GPU init is async (no main-thread block), the canvas entry uses winit `spawn_app`, and touch/pointer input works. Requires a **WebGPU** browser (Vello uses compute shaders; no WebGL2 fallback) — Chrome/Edge, Safari 26+, or Firefox with WebGPU. Fully buildable from Linux. |
+| **Web** (wasm) | 🟢 Runs (WebGPU) | `pebbles run -d web` builds the wasm bundle, serves it (via Trunk), and opens the browser — GPU init is async (no main-thread block), the canvas entry uses winit `spawn_app`, and touch/pointer input works. `--renderer` selects the backend here too. Requires a **WebGPU** browser (the Vello renderers target WebGPU; no WebGL2 fallback) — Chrome/Edge, Safari 26+, or Firefox with WebGPU. Fully buildable from Linux. |
 | **Android** | 🟡 Compiles (entry + runner ready) | Framework **and shell** compile for `aarch64-linux-android` (CI-gated). The `android_main` entry (`#[pebbles::main]`), touch input, and a one-command runner (`pebbles run -d android`, via cargo-apk2) are in place. Requires **Vulkan** (universal on Android 7+). The on-device APK build/run needs the NDK + a device (check `pebbles doctor`); surface suspend/resume + soft keyboard are follow-ups. AccessKit ships an Android adapter, so TalkBack is reachable. |
 | **iOS** | 🟡 Compiles | Framework **and shell** compile for `aarch64-apple-ios` (Metal — no GPU caveat), gated on the CI macOS runner. **Touch input works** (shared with Android). Not yet a running app: needs the app-bundle entry and the on-device build, which **requires a Mac + Xcode** (Apple's constraint — no Linux/Windows path). |
 
@@ -195,8 +243,8 @@ Widget       (immutable config, rebuilt freely)
   │  reconcile
 Element      (retained; the reactive owner)   ← arena: SlotMap<ElementId, …>
   │  create / update
-RenderObject (layout + paint into a vello::Scene) ← arena: SlotMap<RenderId, …>
-  │  vello + wgpu
+RenderObject (layout + paint into a backend scene) ← arena: SlotMap<RenderId, …>
+  │  Vello / Vello Hybrid + wgpu
 GPU surface  (winit window)
 ```
 
@@ -233,14 +281,15 @@ Layered so the GPU stack is quarantined and the core compiles in seconds:
 | [`pebbles-render`](crates/pebbles-render) | `BoxConstraints`, render tree, layout/paint, text (parley), icons, accessibility nodes |
 | [`pebbles-core`](crates/pebbles-core) | the runtime: `Widget`/`Element`, reconciler, reactivity, focus, keyboard, animation, async tasks, IPC, clipboard |
 | [`pebbles-widgets`](crates/pebbles-widgets) | the catalog: primitives + shadcn-style components, theme, styling, overlays, dialogs, windows |
-| [`pebbles-shell`](crates/pebbles-shell) | winit window + wgpu surface + Vello GPU renderer + event loop + AccessKit bridge |
+| [`pebbles-shell`](crates/pebbles-shell) | winit window + wgpu surface + the Vello / Vello Hybrid GPU renderer + event loop + AccessKit bridge |
 | [`pebbles-testing`](crates/pebbles-testing) | the headless test harness: mount, frame/draw, input, queries |
 | [`pebbles`](crates/pebbles) | umbrella crate + `prelude` + the [`hooks`](crates/pebbles/src/hooks.rs) index |
 | [`pebbles-cli`](crates/pebbles-cli) | the `pebbles` command: scaffold, dev-run with hot-restart, doctor |
 
-`vello`'s GPU deps are optional, so `pebbles-render` uses the CPU-side `vello::Scene`
-encoder with **no** wgpu — keeping layout/paint logic unit-testable headlessly. Only
-`pebbles-shell` links the GPU renderer.
+`pebbles-render` is **backend-selectable** (Vello Hybrid by default, Vello opt-in) and
+stays **GPU-free** — it records paint into a CPU-side scene, keeping layout/paint logic
+unit-testable headlessly. Only `pebbles-shell` links the GPU renderer and the `wgpu`
+surface. See [Render backends](#render-backends).
 
 ## What's in the box
 

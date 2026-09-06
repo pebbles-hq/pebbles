@@ -2,8 +2,8 @@
 //! border, rounded corners) behind and around its child.
 
 use pebbles_foundation::{Alignment, Axis, Offset, Rect, Size};
-use vello::kurbo::{Affine, BezPath, Circle, Point, Shape, Stroke};
-use vello::peniko::Fill;
+use kurbo::{Affine, BezPath, Circle, Point, Shape, Stroke};
+use peniko::Fill;
 
 use crate::constraints::BoxConstraints;
 use crate::decoration::{BlendMode, BorderSide, BoxDecoration, BoxShape, Gradient, ImageFit};
@@ -255,7 +255,7 @@ fn point_in(rect: Rect, a: Alignment) -> Point {
 
 /// Build a peniko gradient positioned within `rect` from a [`Gradient`] spec.
 pub(crate) fn gradient_brush(g: &Gradient, rect: Rect) -> peniko::Gradient {
-    use vello::peniko::Gradient as PGrad;
+    use peniko::Gradient as PGrad;
     match g {
         Gradient::Linear { begin, end, colors } => {
             PGrad::new_linear(point_in(rect, *begin), point_in(rect, *end)).with_stops(&colors[..])

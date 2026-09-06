@@ -16,5 +16,12 @@ ureq = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+[features]
+# Render backend, forwarded to the pebbles umbrella. `vello-hybrid` (low-power) is the
+# default; build classic vello with `--no-default-features --features vello`.
+default = ["vello-hybrid"]
+vello = ["pebbles/vello"]
+vello-hybrid = ["pebbles/vello-hybrid"]
+
 [lints]
 workspace = true

@@ -16,6 +16,9 @@ pub fn run(args: &[String]) -> ExitCode {
     let mut kind = "app";
     let mut source = Source::Git; // portable by default
     let mut list = false;
+    // The app's DEFAULT render backend feature. Both are always wired; this only
+    // picks which one a plain `pebbles run` / `cargo run` uses.
+    let mut renderer = "vello-hybrid";
 
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -36,6 +39,26 @@ pub fn run(args: &[String]) -> ExitCode {
             s if s.starts_with("--template=") => {
                 kind = &s["--template=".len()..];
             }
+            "-r" | "--renderer" | "--backend" => match it.next() {
+                Some(v) => match parse_renderer(v) {
+                    Some(r) => renderer = r,
+                    None => {
+                        term::error(&format!("unknown renderer `{v}` — use: hybrid | vello"));
+                        return ExitCode::FAILURE;
+                    }
+                },
+                None => {
+                    term::error("`--renderer` needs a value: hybrid | vello");
+                    return ExitCode::FAILURE;
+                }
+            },
+            s if s.starts_with("--renderer=") => match parse_renderer(&s["--renderer=".len()..]) {
+                Some(r) => renderer = r,
+                None => {
+                    term::error("unknown renderer — use: hybrid | vello");
+                    return ExitCode::FAILURE;
+                }
+            },
             s if s.starts_with('-') => {
                 term::error(&format!("unknown option `{s}` for `pebbles create`"));
                 return ExitCode::FAILURE;
@@ -81,17 +104,20 @@ pub fn run(args: &[String]) -> ExitCode {
         },
         Source::Git => None,
     };
-    let dep = move |crate_name: &str| match &root {
-        Some(crates) => {
-            let p = crates.join(crate_name);
-            format!("{crate_name} = {{ path = {:?} }}", p.display().to_string())
+    let dep = move |crate_name: &str, no_default: bool| {
+        let nd = if no_default { ", default-features = false" } else { "" };
+        match &root {
+            Some(crates) => {
+                let p = crates.join(crate_name);
+                format!("{crate_name} = {{ path = {:?}{nd} }}", p.display().to_string())
+            }
+            None => format!("{crate_name} = {{ git = {GIT_URL:?}{nd} }}"),
         }
-        None => format!("{crate_name} = {{ git = {GIT_URL:?} }}"),
     };
 
-    term::banner(&format!("Creating Pebbles {} `{name}`", template.name));
+    term::banner(&format!("Creating Pebbles {} `{name}` ({renderer})", template.name));
 
-    if let Err(code) = write_template(template, dir, name, &dep) {
+    if let Err(code) = write_template(template, dir, name, renderer, &dep) {
         // Best-effort cleanup: a half-written project is worse than none.
         let _ = fs::remove_dir_all(dir);
         return code;
@@ -111,7 +137,8 @@ fn write_template(
     template: &Template,
     dir: &Path,
     name: &str,
-    dep: &dyn Fn(&str) -> String,
+    renderer: &str,
+    dep: &dyn Fn(&str, bool) -> String,
 ) -> Result<(), ExitCode> {
     for file in template.files {
         let path = dir.join(file.path);
@@ -121,7 +148,7 @@ fn write_template(
             term::error(&format!("could not create {}: {e}", parent.display()));
             return Err(ExitCode::FAILURE);
         }
-        let contents = template::render(file.contents, name, dep);
+        let contents = template::render(file.contents, name, renderer, dep);
         if let Err(e) = fs::write(&path, contents) {
             term::error(&format!("could not write {}: {e}", path.display()));
             return Err(ExitCode::FAILURE);
@@ -157,6 +184,16 @@ fn local_crates_dir() -> Result<PathBuf, String> {
         ));
     }
     Ok(crates)
+}
+
+/// Map a `--renderer` value to the cargo feature the app should default to.
+/// Accepts friendly synonyms; returns `None` for anything unknown.
+fn parse_renderer(s: &str) -> Option<&'static str> {
+    match s.to_ascii_lowercase().as_str() {
+        "hybrid" | "vello-hybrid" | "vello_hybrid" | "default" => Some("vello-hybrid"),
+        "vello" | "compute" | "classic" => Some("vello"),
+        _ => None,
+    }
 }
 
 /// Cargo's rules, plus the ones that only bite later: a name that is a Rust

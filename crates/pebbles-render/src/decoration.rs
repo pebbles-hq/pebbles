@@ -4,13 +4,13 @@
 
 use pebbles_foundation::{Alignment, Color, Offset};
 /// A ready-to-paint background image (peniko's image brush).
-pub use vello::peniko::ImageBrush as Image;
-pub use vello::peniko::Mix as BlendMode;
+pub use peniko::ImageBrush as Image;
+pub use peniko::Mix as BlendMode;
 
 /// Build a paintable [`Image`] from raw, straight-alpha RGBA8 pixels
 /// (`width * height * 4` bytes, row-major). Decoders (PNG/JPEG) go through this.
 pub fn image_from_rgba8(width: u32, height: u32, rgba: Vec<u8>) -> Image {
-    use vello::peniko::{Blob, ImageAlphaType, ImageBrush, ImageData, ImageFormat};
+    use peniko::{Blob, ImageAlphaType, ImageBrush, ImageData, ImageFormat};
     let data = ImageData {
         data: Blob::from(rgba),
         format: ImageFormat::Rgba8,

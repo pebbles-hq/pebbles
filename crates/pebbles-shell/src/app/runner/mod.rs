@@ -15,10 +15,10 @@ use web_time::Instant;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
 use pebbles_foundation::{Color, Offset, Size, TextDirection};
 use pebbles_widgets::{MenuBar, View};
-use vello::kurbo::Affine;
-use vello::util::{RenderContext, RenderSurface};
-use vello::wgpu;
-use vello::{AaConfig, AaSupport, RenderParams, Renderer, RendererOptions, Scene};
+use kurbo::Affine;
+use crate::gpu::{
+    new_renderer, AaConfig, RenderContext, RenderParams, RenderSurface, Renderer, Scene,
+};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
@@ -110,31 +110,6 @@ pub(super) fn install_error_handler(device: &wgpu::Device) {
             eprintln!("{}", std::backtrace::Backtrace::force_capture());
         }
     }));
-}
-
-/// Build a vello renderer for `device` (initial setup and error recovery).
-/// `PEBBLES_CPU_RENDER=1` forces vello's CPU pipeline — a workaround for GPU
-/// drivers whose glyph-atlas path is broken (seen on some Intel/Vulkan setups
-/// where the GPU renderer emits `Texture … is invalid` and text fails to draw).
-pub(super) fn new_renderer(device: &wgpu::Device, _queue: &wgpu::Queue) -> Renderer {
-    let use_cpu = std::env::var("PEBBLES_CPU_RENDER").is_ok_and(|v| v == "1" || v == "true");
-    if use_cpu {
-        pebbles_core::log::warn(
-            pebbles_core::log::Cat::Gpu,
-            "PEBBLES_CPU_RENDER — using vello's CPU pipeline (slower, but avoids GPU driver bugs)"
-                .to_string(),
-        );
-    }
-    Renderer::new(
-        device,
-        RendererOptions {
-            use_cpu,
-            antialiasing_support: AaSupport::all(),
-            num_init_threads: None,
-            pipeline_cache: None,
-        },
-    )
-    .expect("create vello renderer")
 }
 
 /// Wire the OS clipboard into `pebbles_core::clipboard`. Falls back to the core's

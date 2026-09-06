@@ -7,3 +7,8 @@ Cargo.lock.orig
 # it serves (regenerated each run; never source of truth).
 .pebbles/
 dist/
+
+# spikes/ are throwaway harnesses with their own detached workspace: keep the
+# source, ignore their build output and captured PNGs.
+/spikes/*/target/
+/spikes/**/*.png

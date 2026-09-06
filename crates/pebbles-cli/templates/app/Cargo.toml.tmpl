@@ -5,4 +5,15 @@ edition = "2024"
 publish = false
 
 [dependencies]
-{{dep.pebbles}}
+# default-features = false so THIS app's features (below) choose the render backend.
+{{dep_nodefault.pebbles}}
+
+[features]
+# Render backend. `vello-hybrid` (low-power, hybrid CPU+GPU raster) is Pebbles' default;
+# `vello` (GPU compute) is the opt-in for heavy vector work (design tools / node canvases).
+# Both are wired here — switch at run time without editing this file:
+#   pebbles run                    # uses `default` below
+#   pebbles run --renderer vello   # force the compute backend
+default = ["{{renderer}}"]
+vello = ["pebbles/vello"]
+vello-hybrid = ["pebbles/vello-hybrid"]

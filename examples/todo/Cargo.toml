@@ -7,5 +7,12 @@ publish = false
 [dependencies]
 pebbles = { workspace = true }
 
+[features]
+# Render backend, forwarded to the pebbles umbrella. `vello-hybrid` (low-power) is the
+# default; build classic vello with `--no-default-features --features vello`.
+default = ["vello-hybrid"]
+vello = ["pebbles/vello"]
+vello-hybrid = ["pebbles/vello-hybrid"]
+
 [lints]
 workspace = true

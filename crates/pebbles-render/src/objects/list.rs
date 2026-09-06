@@ -3,8 +3,8 @@
 //! imperative sibling is [`RenderScroll`](super::scroll::RenderScroll).
 
 use pebbles_foundation::{Axis, Offset, Rect, Size};
-use vello::kurbo::{Affine, RoundedRect};
-use vello::peniko::{Fill, Mix};
+use kurbo::{Affine, RoundedRect};
+use peniko::{Fill, Mix};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;

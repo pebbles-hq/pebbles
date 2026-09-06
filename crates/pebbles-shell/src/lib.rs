@@ -11,6 +11,10 @@
 //! use pebbles_shell::App;
 //! App::new(my_root()).title("Hello").size(480, 320).run()?;
 //! ```
+//!
+//! The render backend is chosen by a feature that forwards to `pebbles-render`
+//! (`vello` default, `vello-hybrid` opt-in). The GPU host for each lives in [`mod@gpu`];
+//! the runner's frame loop is backend-agnostic.
 
 // AccessKit has no web adapter yet, so wasm gets a no-op bridge with the same
 // public surface (so the runner needs no per-call-site cfg). See
@@ -21,6 +25,8 @@ mod a11y;
 #[path = "a11y_stub.rs"]
 mod a11y;
 mod app;
+// The GPU host seam (wgpu context/surface/renderer) — one impl per render backend.
+mod gpu;
 mod hotkeys;
 #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
 mod native_menu;

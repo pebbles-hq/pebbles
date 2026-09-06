@@ -6,8 +6,8 @@
 pub use pebbles_icons::{IconData, IconKind, IconPrim, lucide};
 
 use pebbles_foundation::{Color, Offset, Size};
-use vello::kurbo::{Affine, BezPath, Cap, Circle, Ellipse, Join, RoundedRect, Shape, Stroke};
-use vello::peniko::Fill;
+use kurbo::{Affine, BezPath, Cap, Circle, Ellipse, Join, RoundedRect, Shape, Stroke};
+use peniko::Fill;
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;

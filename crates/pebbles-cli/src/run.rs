@@ -22,6 +22,45 @@ struct Opts {
     app_args: Vec<String>,
     platform: Platform,
     port: u16,
+    renderer: Option<Renderer>,
+}
+
+/// The render backend to build with. `None` uses the crate's own default
+/// (`vello-hybrid` — the low-power path). `Some(_)` pins it explicitly, passing
+/// `--no-default-features --features <feature>` to cargo so exactly one backend is on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Renderer {
+    /// `vello_hybrid` — hybrid CPU+GPU raster, low power. Pebbles' default.
+    Hybrid,
+    /// `vello` — GPU compute raster; the opt-in for heavy vector (design tools).
+    Vello,
+}
+
+impl Renderer {
+    fn parse(s: &str) -> Option<Renderer> {
+        match s.to_ascii_lowercase().as_str() {
+            "hybrid" | "vello-hybrid" | "vello_hybrid" | "default" => Some(Renderer::Hybrid),
+            "vello" | "compute" | "classic" => Some(Renderer::Vello),
+            _ => None,
+        }
+    }
+
+    /// The cargo feature that selects this backend.
+    fn feature(self) -> &'static str {
+        match self {
+            Renderer::Hybrid => "vello-hybrid",
+            Renderer::Vello => "vello",
+        }
+    }
+}
+
+/// Human label for the banner. `None` = the crate default (hybrid).
+fn renderer_label(r: Option<Renderer>) -> &'static str {
+    match r {
+        None => "hybrid (default)",
+        Some(Renderer::Hybrid) => "hybrid",
+        Some(Renderer::Vello) => "vello",
+    }
 }
 
 /// The target Pebbles runs on — Flutter's `-d`. Default is the host desktop.
@@ -62,12 +101,34 @@ pub fn run(args: &[String]) -> ExitCode {
         app_args: vec![],
         platform: Platform::Desktop,
         port: 8080,
+        renderer: None,
     };
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--release" => o.release = true,
             "--no-reload" => o.reload = false,
+            // Pin the render backend: `--renderer vello` | `hybrid` (default: hybrid).
+            "-r" | "--renderer" | "--backend" => {
+                let Some(v) = it.next() else {
+                    term::error("`--renderer` needs a value: hybrid | vello");
+                    return ExitCode::FAILURE;
+                };
+                match Renderer::parse(v) {
+                    Some(r) => o.renderer = Some(r),
+                    None => {
+                        term::error(&format!("unknown renderer `{v}` — use: hybrid | vello"));
+                        return ExitCode::FAILURE;
+                    }
+                }
+            }
+            s if s.starts_with("--renderer=") => match Renderer::parse(&s["--renderer=".len()..]) {
+                Some(r) => o.renderer = Some(r),
+                None => {
+                    term::error("unknown renderer — use: hybrid | vello");
+                    return ExitCode::FAILURE;
+                }
+            },
             // Flutter-style target selection: `pebbles run -d web` (default: desktop).
             "-d" | "--device" | "--platform" => {
                 let Some(v) = it.next() else {
@@ -203,8 +264,9 @@ pub fn run(args: &[String]) -> ExitCode {
     }
 
     term::banner(&format!(
-        "pebbles run — {bin} ({}, {})",
+        "pebbles run — {bin} ({}, {}, {})",
         if o.release { "release" } else { "dev" },
+        renderer_label(o.renderer),
         if o.reload { "hot-restart on" } else { "hot-restart off" }
     ));
     if let Some(p) = &o.log_file {
@@ -225,7 +287,7 @@ pub fn run(args: &[String]) -> ExitCode {
         // 1. Build.
         let t = Instant::now();
         term::step("building…");
-        if !cargo_build(&target_root, &bin, o.release) {
+        if !cargo_build(&target_root, &bin, o.release, o.renderer) {
             term::error("build failed — fix the errors above; waiting for a change…");
             if !o.reload || !wait_for_change(&member_dir, &watch_dirs, &running) {
                 return ExitCode::FAILURE;
@@ -333,6 +395,10 @@ fn run_web(member_dir: &Path, bin: &str, o: &Opts) -> ExitCode {
     cmd.arg("serve").arg(&index).arg("--open").arg("--port").arg(o.port.to_string());
     if o.release {
         cmd.arg("--release");
+    }
+    // Trunk passes these through to cargo, so `--renderer` selects the backend on web too.
+    if let Some(r) = o.renderer {
+        cmd.arg("--no-default-features").arg("--features").arg(r.feature());
     }
     cmd.current_dir(member_dir);
     term::hot(&format!("serving on http://localhost:{} — Ctrl+C to stop", o.port));
@@ -480,13 +546,17 @@ fn run_android(member_dir: &Path, bin: &str, o: &Opts) -> ExitCode {
     // 4. Build + install + run on the connected device/emulator. winit needs an
     //    Android base class; use NativeActivity (NDK-only, no Gradle/AAR).
     let mut cmd = Command::new("cargo");
-    cmd.arg(sub)
-        .arg("run")
-        .arg("-p")
-        .arg(bin)
-        .arg("--features")
-        .arg("pebbles/android-native-activity")
-        .current_dir(member_dir);
+    cmd.arg(sub).arg("run").arg("-p").arg(bin);
+    // The Android base class is always needed; `--renderer` adds the backend feature and
+    // turns off the app's default so exactly one backend is on.
+    if let Some(r) = o.renderer {
+        cmd.arg("--no-default-features")
+            .arg("--features")
+            .arg(format!("pebbles/android-native-activity,{}", r.feature()));
+    } else {
+        cmd.arg("--features").arg("pebbles/android-native-activity");
+    }
+    cmd.current_dir(member_dir);
     if o.release {
         cmd.arg("--release");
     }
@@ -569,13 +639,17 @@ fn cargo_apk_subcommand() -> Option<&'static str> {
     None
 }
 
-fn cargo_build(run_dir: &Path, package: &str, release: bool) -> bool {
+fn cargo_build(run_dir: &Path, package: &str, release: bool, renderer: Option<Renderer>) -> bool {
     // `-p <package>` works whether `run_dir` is a workspace root or a standalone
     // package, so a sample builds the same way as a scaffolded app.
     let mut cmd = Command::new("cargo");
     cmd.arg("build").arg("-p").arg(package).current_dir(run_dir);
     if release {
         cmd.arg("--release");
+    }
+    // Pin the backend when asked; otherwise the crate's own default (hybrid) stands.
+    if let Some(r) = renderer {
+        cmd.arg("--no-default-features").arg("--features").arg(r.feature());
     }
     cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
     matches!(cmd.status(), Ok(s) if s.success())

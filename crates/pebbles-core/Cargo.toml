@@ -24,7 +24,12 @@ tokio = { version = "1", optional = true, features = ["rt", "rt-multi-thread"] }
 wasm-bindgen-futures = "0.4"
 
 [features]
-default = []
+# Render backend, forwarded to pebbles-render. `vello-hybrid` is the default.
+# `vello-hybrid` (low-power) is default; `vello` opt-in. (Core has no backend-specific
+# code — it just needs pebbles-render to have one selected.)
+default = ["vello-hybrid"]
+vello = ["pebbles-render/vello"]
+vello-hybrid = ["pebbles-render/vello-hybrid"]
 tokio = ["dep:tokio"]
 
 [lints]

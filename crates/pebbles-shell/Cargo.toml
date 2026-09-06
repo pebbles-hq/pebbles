@@ -13,8 +13,13 @@ pebbles-foundation.workspace = true
 pebbles-render.workspace = true
 pebbles-core.workspace = true
 pebbles-widgets.workspace = true
-# vello WITH default features here → pulls in the wgpu-backed GPU `Renderer`.
+# vello WITH default features here → pulls in the wgpu-backed GPU `Renderer`. Kept a
+# dependency under BOTH backends: the hybrid host (gpu/hybrid_host.rs) reuses
+# `vello::util`'s backend-agnostic surface/blit plumbing and swaps only the renderer.
 vello = { workspace = true, default-features = true }
+# The Vello Hybrid GPU renderer, enabled by the `vello-hybrid` feature. `wgpu` gives the
+# GPU `Renderer`; `text` gives glyph runs (the flush resolves glyphs against its atlas).
+vello_hybrid = { workspace = true, optional = true, features = ["wgpu", "text"] }
 wgpu.workspace = true
 winit.workspace = true
 raw-window-handle.workspace = true
@@ -37,7 +42,17 @@ kurbo.workspace = true
 global-hotkey = { version = "0.8", optional = true }
 
 [features]
-default = []
+# `vello-hybrid` (low-power) is the default backend; `vello` (GPU compute) is opt-in.
+# Both forward the selection to pebbles-render/-core/-widgets. The hybrid GPU host lives
+# in gpu/hybrid_host.rs. See renderer-backend-plan.md.
+default = ["vello-hybrid"]
+vello = ["pebbles-render/vello", "pebbles-core/vello", "pebbles-widgets/vello"]
+vello-hybrid = [
+    "pebbles-render/vello-hybrid",
+    "pebbles-core/vello-hybrid",
+    "pebbles-widgets/vello-hybrid",
+    "dep:vello_hybrid",
+]
 # Wire an `App::menu(menu_bar([...]))` native bar via `muda` (B3).
 native-menus = ["dep:muda"]
 # Enable `register_global_hotkey(..)` via `global-hotkey` (B4).

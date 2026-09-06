@@ -1,0 +1,27 @@
+# Phase-1 de-risk spike (DETACHED from the pebbles workspace — its own [workspace]
+# so vello_hybrid's beta deps never touch the framework). Throwaway; measures whether
+# Vello Hybrid renders Pebbles' feature set and how it compares to full Vello.
+[workspace]
+
+[package]
+name = "renderer-bench"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+vello = { version = "0.10", features = ["wgpu"] }
+vello_hybrid = "0.2"
+# vello_common is the shared paint/geometry crate both backends sit on (Mask, Pixmap,
+# PaintType live here). Pulled in directly so the harness can name the Mask type for the
+# luminance-mask coverage probe. Version-locked to what both renderers resolve.
+vello_common = "0.2"
+wgpu = "29"
+pollster = "0.4"
+kurbo = "0.13"
+peniko = "0.6"
+png = "0.17"
+bytemuck = "1"
+# The real framework render crate on the hybrid backend — so the spike can record a
+# scene through the actual `Painter`, `flush` it, and render it (Phase-4 verification).
+pebbles-render = { path = "../../crates/pebbles-render", default-features = false, features = ["vello-hybrid"] }

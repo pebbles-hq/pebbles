@@ -6,8 +6,8 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{Axis, Color, Offset, Rect, Size};
-use vello::kurbo::{Affine, RoundedRect};
-use vello::peniko::{Fill, Mix};
+use kurbo::{Affine, RoundedRect};
+use peniko::{Fill, Mix};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;

@@ -13,13 +13,32 @@ pebbles-foundation.workspace = true
 pebbles-icons.workspace = true
 # wasm-safe clock for dev-log throttles (std::time::Instant panics on wasm).
 web-time.workspace = true
-# vello WITHOUT default features → the CPU-side `Scene` encoder, no wgpu/GPU pulled in.
-vello.workspace = true
+# The two swappable rasterizer backends, selected by the features below. Both are
+# optional; the paint seam (`paint.rs`) compiles exactly one. The geometry/brush
+# vocabulary (`kurbo`/`peniko`) is backend-neutral and always present, so the widget
+# layer imports it directly and never names a backend.
+#  · vello WITHOUT default features → the CPU-side `Scene` encoder, no wgpu/GPU.
+vello = { workspace = true, optional = true }
+#  · vello_hybrid + vello_common → the hybrid backend's retained op-list records
+#    against these, and `Scene::flush` walks it into a live `vello_hybrid::Scene`
+#    (the shell then rasterizes that on the GPU). `text` pulls in glyph runs;
+#    `glifo` is named directly for the `Glyph` type the flush feeds `fill_glyphs`.
+vello_hybrid = { workspace = true, optional = true }
+vello_common = { workspace = true, optional = true }
+glifo = { version = "0.3", optional = true }
 peniko.workspace = true
 kurbo.workspace = true
 parley.workspace = true
 slotmap.workspace = true
 smallvec = { workspace = true, features = ["union"] }
+
+[features]
+# Exactly ONE backend must be on. `vello-hybrid` is the default (low-power); `vello`
+# (GPU compute) is the opt-in for heavy vector work. `paint.rs` emits a compile_error!
+# if both or neither are enabled. See docs/renderer-backend-plan.md.
+default = ["vello-hybrid"]
+vello = ["dep:vello"]
+vello-hybrid = ["dep:vello_hybrid", "vello_hybrid/text", "dep:vello_common", "dep:glifo"]
 
 [lints]
 workspace = true

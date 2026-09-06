@@ -5,7 +5,7 @@
 //! `Transform` / `Container.transform`).
 
 use pebbles_foundation::{Alignment, Offset, Size};
-use vello::kurbo::Affine;
+use kurbo::Affine;
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;

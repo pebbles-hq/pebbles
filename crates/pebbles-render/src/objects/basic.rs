@@ -2,8 +2,8 @@
 //! Each takes at most one child (the first entry in its child list).
 
 use pebbles_foundation::{Alignment, Axis, Color, EdgeInsets, Offset, Rect, Size};
-use vello::kurbo::Affine;
-use vello::peniko::{Brush, Fill};
+use kurbo::Affine;
+use peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;
 use crate::object::{HitBehavior, RenderObject, SemanticsFlag};

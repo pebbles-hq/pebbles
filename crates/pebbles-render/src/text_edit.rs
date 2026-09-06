@@ -39,8 +39,8 @@ use std::rc::Rc;
 use parley::{
     Affinity, Alignment, AlignmentOptions, Cursor, FontWeight, Layout, LineHeight, Selection, StyleProperty,
 };
-use vello::kurbo::Rect;
-use vello::peniko::Brush;
+use kurbo::Rect;
+use peniko::Brush;
 
 // ---------------------------------------------------------------------------
 // The line table (P5)

@@ -2,8 +2,8 @@
 //! single child and push a vello layer around it.
 
 use pebbles_foundation::{Offset, Rect, Size};
-use vello::kurbo::Affine;
-use vello::peniko::{Fill, Mix};
+use kurbo::Affine;
+use peniko::{Fill, Mix};
 
 use crate::constraints::BoxConstraints;
 use crate::decoration::BorderRadius;

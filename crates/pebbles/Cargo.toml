@@ -17,7 +17,22 @@ pebbles-shell.workspace = true
 pebbles-macros.workspace = true
 
 [features]
-default = []
+# Render backend, forwarded through the whole graph. `vello-hybrid` (low-power) is the
+# default; build on classic `vello` (GPU compute, heavy vector) with
+# `--no-default-features --features vello`. See documentations/renderer-backend-plan.md.
+default = ["vello-hybrid"]
+vello = [
+    "pebbles-render/vello",
+    "pebbles-core/vello",
+    "pebbles-widgets/vello",
+    "pebbles-shell/vello",
+]
+vello-hybrid = [
+    "pebbles-render/vello-hybrid",
+    "pebbles-core/vello-hybrid",
+    "pebbles-widgets/vello-hybrid",
+    "pebbles-shell/vello-hybrid",
+]
 # Forward the shell's optional integrations so apps can opt in via the umbrella,
 # e.g. `cargo run -p todo --features pebbles/native-menus`.
 native-menus = ["pebbles-shell/native-menus"]

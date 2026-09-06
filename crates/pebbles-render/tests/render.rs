@@ -113,7 +113,7 @@ fn padding_grows_and_offsets_child() {
 #[test]
 fn all_lucide_paths_parse() {
     use pebbles_render::objects::{IconPrim, lucide};
-    use vello::kurbo::BezPath;
+    use pebbles_render::BezPath;
 
     let mut checked = 0usize;
     for (name, data) in lucide::ALL {
@@ -309,7 +309,7 @@ fn scroll_viewport_culls_offscreen_subtrees() {
     tree.layout(&mut text, tight(300.0, 200.0));
 
     pebbles_render::stats::reset_frame();
-    let mut scene = vello::Scene::new();
+    let mut scene = pebbles_render::Scene::new();
     tree.paint(&mut text, &mut scene);
     let painted = pebbles_render::stats::painted_nodes();
     let culled = pebbles_render::stats::culled_nodes();
@@ -325,7 +325,7 @@ fn scroll_viewport_culls_offscreen_subtrees() {
     tree.mark_needs_layout(scroll);
     tree.layout(&mut text, tight(300.0, 200.0));
     pebbles_render::stats::reset_frame();
-    let mut scene = vello::Scene::new();
+    let mut scene = pebbles_render::Scene::new();
     tree.paint(&mut text, &mut scene);
     let painted = pebbles_render::stats::painted_nodes();
     assert!(painted < 30, "mid-scroll window stays bounded (painted {painted})");
@@ -379,7 +379,7 @@ fn shadow_bleeding_into_view_survives_culling() {
     tree.root = Some(col);
     tree.layout(&mut text, tight(300.0, 200.0));
     pebbles_render::stats::reset_frame();
-    let mut scene = vello::Scene::new();
+    let mut scene = pebbles_render::Scene::new();
     tree.paint(&mut text, &mut scene);
     // Painted: col + spacer1 + wrap1 + card1 (the shadow reaches into view).
     // Culled: spacer2 + wrap2 (card2 never visited — its parent culled).
@@ -425,7 +425,7 @@ fn scrolling_repositions_without_relayout() {
     assert_eq!(pebbles_render::stats::layout_calls(), 0, "a scroll frame runs zero layout");
 
     // Paint sees the moved window: early rows cull, a mid-document band paints.
-    let mut scene = vello::Scene::new();
+    let mut scene = pebbles_render::Scene::new();
     tree.paint(&mut text, &mut scene);
     let painted = pebbles_render::stats::painted_nodes();
     let culled = pebbles_render::stats::culled_nodes();
@@ -563,7 +563,7 @@ fn text_field_paint_is_windowed_like_paragraphs() {
     assert!(cold < 200, "a cold 3000-line mount shapes O(window), not O(document) ({cold})");
 
     pebbles_render::stats::reset_frame();
-    let mut scene = vello::Scene::new();
+    let mut scene = pebbles_render::Scene::new();
     tree.paint(&mut text, &mut scene);
     let runs = pebbles_render::stats::glyph_runs();
     assert!(runs < 200, "a 3000-line field encodes only the window ({runs} runs)");
@@ -649,7 +649,7 @@ fn text_field_lazy_estimates_settle_via_corrective_relayout() {
     }
     tree.mark_needs_paint(scroll);
 
-    let mut scene = vello::Scene::new();
+    let mut scene = pebbles_render::Scene::new();
     let mut passes = 0;
     loop {
         let pending = tree.paint(&mut text, &mut scene);

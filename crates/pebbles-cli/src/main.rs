@@ -74,6 +74,9 @@ fn print_help() {
 
 {BOLD}pebbles create OPTIONS{RESET}
     -t, --template <k> app | widget      (default: app)
+    -r, --renderer <r> hybrid | vello    (default: hybrid) — the app's default
+                      render backend (hybrid = low-power; vello = GPU compute).
+                      Both are wired either way, switchable at run time.
     --list            List the templates and exit
     --path            Depend on the local Pebbles checkout instead of git —
                       for developing the framework itself
@@ -82,6 +85,8 @@ fn print_help() {
     -d, --device <t>  Target platform: desktop (default) | web | android | ios
                       (aliases: chrome/safari/firefox = web; linux/macos/windows
                       = desktop). Web serves a WebGPU build with live reload.
+    -r, --renderer <r> Render backend: hybrid (default, low-power) | vello (GPU
+                      compute, for heavy vector). Pins it via cargo features.
     --port <n>        Dev-server port for -d web (default: 8080)
     -p, --package <n> Run a specific workspace member / sample by name
                       (aliases: --example, --bin)
@@ -102,6 +107,9 @@ fn print_help() {
     pebbles run -d web              {DIM}# build to wasm + open in a WebGPU browser{RESET}
     pebbles run -p counter -d web   {DIM}# run a specific sample on the web{RESET}
     pebbles run -p gallery --watch crates   {DIM}# also hot-restart on framework edits{RESET}
+    pebbles run --renderer vello    {DIM}# run on the GPU-compute backend{RESET}
+    pebbles run --release --renderer vello   {DIM}# optimized release on vello{RESET}
+    pebbles create app2 --renderer vello     {DIM}# scaffold defaulting to vello{RESET}
     cd examples/counter && pebbles run
     pebbles run --log trace
     pebbles doctor

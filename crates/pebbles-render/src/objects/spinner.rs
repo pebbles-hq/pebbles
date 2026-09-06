@@ -3,7 +3,7 @@
 //! looping animation (`create_loop`), so the arc spins.
 
 use pebbles_foundation::{Color, Offset, Size};
-use vello::kurbo::{Affine, Arc, Cap, Point, Shape, Stroke, Vec2};
+use kurbo::{Affine, Arc, Cap, Point, Shape, Stroke, Vec2};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;

@@ -35,18 +35,30 @@ trivially_copy_pass_by_ref = "warn"
 # --- internal crates (bottom-up: foundation → render → core → widgets → shell → umbrella) ---
 pebbles-foundation = { path = "crates/pebbles-foundation", version = "0.0.1" }
 pebbles-icons = { path = "crates/pebbles-icons", version = "0.0.1" }
-pebbles-render = { path = "crates/pebbles-render", version = "0.0.1" }
-pebbles-core = { path = "crates/pebbles-core", version = "0.0.1" }
-pebbles-widgets = { path = "crates/pebbles-widgets", version = "0.0.1" }
-pebbles-shell = { path = "crates/pebbles-shell", version = "0.0.1" }
+# The render-backend-selectable crates carry `default-features = false` so the chosen
+# backend (`vello` / `vello-hybrid`) is forwarded DOWN from whichever crate the app builds
+# (each crate re-enables `vello` in its own `default`, so a plain build is unchanged).
+pebbles-render = { path = "crates/pebbles-render", version = "0.0.1", default-features = false }
+pebbles-core = { path = "crates/pebbles-core", version = "0.0.1", default-features = false }
+pebbles-widgets = { path = "crates/pebbles-widgets", version = "0.0.1", default-features = false }
+pebbles-shell = { path = "crates/pebbles-shell", version = "0.0.1", default-features = false }
 pebbles-macros = { path = "crates/pebbles-macros", version = "0.0.1" }
-pebbles = { path = "crates/pebbles", version = "0.0.1" }
-pebbles-testing = { path = "crates/pebbles-testing", version = "0.0.1" }
+pebbles = { path = "crates/pebbles", version = "0.0.1", default-features = false }
+pebbles-testing = { path = "crates/pebbles-testing", version = "0.0.1", default-features = false }
 
 # --- Linebender 2D stack ---
-# vello without default features gives the CPU-side `Scene` encoder with NO wgpu/gpu deps.
-# The shell crate re-enables the `wgpu` feature to get the GPU `Renderer`.
+# Two swappable rasterizer backends, both pure-Rust Vello-family, picked by a
+# `pebbles-render` feature (see docs/renderer-backend-plan.md):
+#  · `vello`        — GPU-compute raster. Heavy per frame; the opt-in for complex
+#                     zoomable vector (design tools / node canvases). Without default
+#                     features it's the CPU-side `Scene` encoder (no wgpu); the shell
+#                     re-enables `wgpu` for the GPU `Renderer`.
+#  · `vello_hybrid` — hybrid CPU-preprocess + GPU-raster ("sparse strips"). Low-power;
+#                     the battery-first default candidate. `vello_common` is its shared
+#                     paint/geometry crate (both backends sit on the same kurbo/peniko).
 vello = { version = "0.10", default-features = false }
+vello_hybrid = { version = "0.2", default-features = false }
+vello_common = { version = "0.2", default-features = false }
 peniko = "0.6"
 kurbo = "0.13"
 parley = "0.11"

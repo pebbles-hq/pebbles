@@ -16,9 +16,9 @@ use parley::{
     StyleProperty,
 };
 use pebbles_foundation::{Axis, Color, Offset, Rect, Size, TextAlign, TextDirection};
-use vello::Glyph;
-use vello::kurbo::Affine;
-use vello::peniko::{Brush, Fill};
+use crate::paint::Glyph;
+use kurbo::Affine;
+use peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;

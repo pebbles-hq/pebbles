@@ -57,9 +57,9 @@ pub use objects::{
 pub use text::TextEnv;
 pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};
 
-/// Re-export the vello scene type the paint layer targets.
-pub use vello::Scene;
+/// Re-export the active backend's retained scene type the paint layer targets.
+pub use crate::paint::Scene;
 /// Re-export the 2D affine transform used by [`RenderTransform`].
-pub use vello::kurbo::Affine;
+pub use kurbo::Affine;
 /// Re-export the Bézier path type used by `ClipPath` clip delegates.
-pub use vello::kurbo::BezPath;
+pub use kurbo::BezPath;

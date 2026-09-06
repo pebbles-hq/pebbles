@@ -9,7 +9,11 @@ repository.workspace = true
 description = "The Pebbles catalog: Flutter-style widgets, shadcn-style components, theme and styling."
 
 [features]
-default = []
+# Render backend, forwarded to pebbles-render + pebbles-core. `vello-hybrid` is the
+# default; `vello` (GPU compute) is opt-in.
+default = ["vello-hybrid"]
+vello = ["pebbles-render/vello", "pebbles-core/vello"]
+vello-hybrid = ["pebbles-render/vello-hybrid", "pebbles-core/vello-hybrid"]
 # `ImageView` + `image_from_bytes`/`image_from_path` (pulls in the image codecs and,
 # for `ImageView::network`, a blocking HTTP client). Avatar `src` URLs degrade to the
 # initials face without it.

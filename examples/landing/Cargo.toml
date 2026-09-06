@@ -12,5 +12,12 @@ pebbles = { workspace = true, features = ["image-view"] }
 pebbles-testing.workspace = true
 pebbles-render.workspace = true
 
+[features]
+# Render backend, forwarded to the umbrella + test-harness crates. `vello-hybrid` is default;
+# build/test classic vello with `--no-default-features --features vello`.
+default = ["vello-hybrid"]
+vello = ["pebbles/vello", "pebbles-testing/vello", "pebbles-render/vello"]
+vello-hybrid = ["pebbles/vello-hybrid", "pebbles-testing/vello-hybrid", "pebbles-render/vello-hybrid"]
+
 [lints]
 workspace = true

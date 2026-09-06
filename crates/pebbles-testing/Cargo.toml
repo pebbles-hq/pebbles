@@ -14,5 +14,15 @@ pebbles-foundation.workspace = true
 pebbles-render.workspace = true
 pebbles-widgets.workspace = true
 
+[features]
+# Render backend, forwarded to the backend-selectable crates. `vello-hybrid` is default.
+default = ["vello-hybrid"]
+vello = ["pebbles-render/vello", "pebbles-core/vello", "pebbles-widgets/vello"]
+vello-hybrid = [
+    "pebbles-render/vello-hybrid",
+    "pebbles-core/vello-hybrid",
+    "pebbles-widgets/vello-hybrid",
+]
+
 [lints]
 workspace = true

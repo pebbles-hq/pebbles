@@ -16,7 +16,7 @@ use std::any::Any;
 use pebbles_foundation::{Axis, Offset, Rect, Size};
 use slotmap::{SlotMap, new_key_type};
 use smallvec::SmallVec;
-use vello::kurbo::Affine;
+use kurbo::Affine;
 
 use crate::constraints::BoxConstraints;
 use crate::object::{HitBehavior, RenderObject, SemanticsFlag};

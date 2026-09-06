@@ -8,8 +8,8 @@
 use std::f64::consts::FRAC_PI_2;
 
 use pebbles_foundation::{Alignment, Color, Offset, Rect, Size};
-use vello::kurbo::Affine;
-use vello::peniko::{Brush, Fill};
+use kurbo::Affine;
+use peniko::{Brush, Fill};
 
 use crate::RenderId;
 use crate::constraints::BoxConstraints;

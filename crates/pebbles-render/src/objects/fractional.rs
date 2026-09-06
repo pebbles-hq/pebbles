@@ -2,7 +2,7 @@
 //! constraints (Flutter's `FractionallySizedBox`), aligning it within the box.
 
 use pebbles_foundation::{Alignment, Offset, Size};
-use vello::kurbo::Affine;
+use kurbo::Affine;
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;

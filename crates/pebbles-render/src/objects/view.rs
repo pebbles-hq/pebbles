@@ -2,8 +2,8 @@
 //! background color and forces its single child to the window size.
 
 use pebbles_foundation::{Color, Offset, Rect, Size};
-use vello::kurbo::Affine;
-use vello::peniko::{Brush, Fill};
+use kurbo::Affine;
+use peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;

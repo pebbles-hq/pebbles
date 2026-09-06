@@ -9,7 +9,7 @@
 use std::any::Any;
 
 use pebbles_foundation::{Axis, Offset, Rect, Size};
-use vello::kurbo::Affine;
+use kurbo::Affine;
 
 use crate::constraints::BoxConstraints;
 use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};

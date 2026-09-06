@@ -5,8 +5,8 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-use vello::kurbo::Stroke;
-use vello::peniko::Brush;
+use kurbo::Stroke;
+use peniko::Brush;
 
 /// E2: whether `PEBBLES_FRAME_STATS=1` (or `true`) is set — checked once. Gates the
 /// opt-in per-frame timing print in `render()`.
@@ -230,7 +230,15 @@ impl Runner {
             && let Some(r) = self.inspect_rect
         {
             let accent = Color::from_rgba8(56, 189, 248, 255); // sky-400
-            self.scene.stroke(&Stroke::new(1.0), Affine::IDENTITY, &Brush::Solid(accent), None, &r);
+            // Draw through a Painter so this works on both backends (the op-list Scene
+            // has no direct `stroke`; only the seam's Painter does).
+            pebbles_render::paint::Painter::new(&mut self.scene).stroke(
+                &Stroke::new(1.0),
+                Affine::IDENTITY,
+                &Brush::Solid(accent),
+                None,
+                &r,
+            );
         }
         self.frame.reset();
         self.frame.append(&self.scene, Some(Affine::scale(scale)));

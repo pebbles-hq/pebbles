@@ -12,9 +12,9 @@ use parley::{
     Selection, StyleProperty,
 };
 use pebbles_foundation::{Color, Offset, Size};
-use vello::Glyph;
-use vello::kurbo::{Affine, Rect};
-use vello::peniko::{Brush, Fill};
+use crate::paint::Glyph;
+use kurbo::{Affine, Rect};
+use peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;
