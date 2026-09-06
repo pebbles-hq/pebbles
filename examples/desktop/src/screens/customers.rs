@@ -89,6 +89,7 @@ fn customers_view() -> impl IntoWidget {
                 .radius(BorderRadius::all(14.0)),
         )
         .clip()
+        .padding(EdgeInsets::all(6.0))
         .child(t);
 
     scroll_view(
