@@ -69,6 +69,30 @@ fn carousel_arrows_page_and_report() {
 }
 
 #[test]
+fn carousel_dots_are_centered_and_clickable() {
+    CTL.with(|c| *c.borrow_mut() = None);
+    PAGE_EVENTS.with(|p| p.set(0));
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(320.0, 160.0);
+    ui.mount_root(View::new(palette::WHITE, component(carousel_root)).into_widget());
+    frame(&mut ui, &mut env, win);
+    frame(&mut ui, &mut env, win); // width probe → real page width
+    let ctl = CTL.with(|c| c.borrow().expect("controller captured"));
+    assert_eq!(ctl.page(), 0, "starts on the first page");
+
+    // The indicator dots are centered along the strip (they were bottom-LEFT and
+    // non-interactive before the fix). In a 320px viewport the three dots span x
+    // 133..187 (centered on 160); tapping the right one jumps to its page — proving
+    // both the centering and the click-to-jump.
+    let third_dot = Offset::new(180.0, 60.0);
+    assert!(ui.dispatch_tap(third_dot), "a centered dot is tappable");
+    frame(&mut ui, &mut env, win);
+    frame(&mut ui, &mut env, win);
+    assert!(ctl.page() > 0, "tapping a centered dot jumped to a later page (got {})", ctl.page());
+}
+
+#[test]
 fn carousel_autoplay_advances_and_pauses_on_hover() {
     CTL.with(|c| *c.borrow_mut() = None);
     let mut ui = Ui::new();

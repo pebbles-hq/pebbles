@@ -4,7 +4,7 @@
 
 use pebbles::prelude::*;
 
-use crate::data::{self, Product, img};
+use crate::data::{self, img};
 use crate::ui;
 
 // ---------------------------------------------------------------------------
@@ -12,9 +12,6 @@ use crate::ui;
 // ---------------------------------------------------------------------------
 
 pub fn nav_bar() -> AnyWidget {
-    let link = |s: &str| {
-        text(s.to_string()).size(13.5).weight(500.0).color(ui::with_alpha(ui::white(), 0.86)).into_widget()
-    };
     container()
         .padding(EdgeInsets::symmetric(30.0, 22.0))
         .child(
@@ -31,25 +28,25 @@ pub fn nav_bar() -> AnyWidget {
                 .main_axis_size(MainAxisSize::Min),
                 spacer(),
                 row(children![
-                    link("New In"),
+                    nav_link("New In"),
                     gap_w(26.0),
-                    link("Women"),
+                    nav_link("Women"),
                     gap_w(26.0),
-                    link("Men"),
+                    nav_link("Men"),
                     gap_w(26.0),
-                    link("Collections"),
+                    nav_link("Collections"),
                     gap_w(26.0),
-                    link("Journal"),
+                    nav_link("Journal"),
                 ])
                 .cross_axis_alignment(CrossAxisAlignment::Center)
                 .main_axis_size(MainAxisSize::Min),
                 spacer(),
                 row(children![
-                    icon(lucide::SEARCH).size(18.0).color(ui::white()),
-                    gap_w(18.0),
-                    icon(lucide::USER).size(18.0).color(ui::white()),
-                    gap_w(16.0),
-                    ui::glass(
+                    nav_icon(lucide::SEARCH),
+                    gap_w(8.0),
+                    nav_icon(lucide::USER),
+                    gap_w(10.0),
+                    pressable(ui::glass(
                         999.0,
                         container().padding(EdgeInsets::symmetric(14.0, 8.0)).child(
                             row(children![
@@ -60,13 +57,52 @@ pub fn nav_bar() -> AnyWidget {
                             .cross_axis_alignment(CrossAxisAlignment::Center)
                             .main_axis_size(MainAxisSize::Min),
                         ),
-                    ),
+                    ))
+                    .radius(999.0),
                 ])
                 .cross_axis_alignment(CrossAxisAlignment::Center)
                 .main_axis_size(MainAxisSize::Min),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Center),
         )
+        .into_widget()
+}
+
+/// A top-nav link that brightens and grows an underline on hover (pointer cursor).
+fn nav_link(label: &'static str) -> AnyWidget {
+    component_props(nav_link_view, label).into_widget()
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn nav_link_view(label: &&'static str) -> AnyWidget {
+    let hovered = create_signal(false);
+    let t = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.16);
+    GestureDetector::new(
+        column(children![
+            text(label.to_string())
+                .size(13.5)
+                .weight(500.0)
+                .color(ui::with_alpha(ui::white(), 0.7 + 0.3 * t as f32)),
+            gap_h(5.0),
+            container()
+                .height(1.5)
+                .width(20.0 * t)
+                .decoration(BoxDecoration::new().color(ui::white()).radius(BorderRadius::all(999.0))),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Center)
+        .main_axis_size(MainAxisSize::Min),
+    )
+    .cursor(Cursor::Pointer)
+    .on_tap(|| {})
+    .on_hover_enter(move || hovered.set(true))
+    .on_hover_exit(move || hovered.set(false))
+    .into_widget()
+}
+
+/// A tappable top-nav icon (pointer cursor + a subtle hover fade).
+fn nav_icon(kind: IconData) -> AnyWidget {
+    pressable(container().padding(EdgeInsets::all(8.0)).child(icon(kind).size(18.0).color(ui::white())))
+        .radius(999.0)
         .into_widget()
 }
 
@@ -80,7 +116,12 @@ pub fn hero() -> AnyWidget {
     container()
         .height(660.0)
         .child(stack(children![
-            carousel(pages).height(660.0).autoplay(6.0).indicator(true).arrows(false),
+            carousel(pages)
+                .height(660.0)
+                .autoplay(6.0)
+                .indicator(true)
+                .arrows(false)
+                .active_color(ui::white()),
             positioned(nav_bar()).left(0.0).right(0.0).top(0.0),
         ]))
         .into_widget()
@@ -140,11 +181,11 @@ fn hero_slide(eyebrow: &str, headline: &str, seed: &str) -> AnyWidget {
 
 pub fn categories() -> AnyWidget {
     let mut tiles: Vec<AnyWidget> = Vec::new();
-    for (i, &(label, count, seed)) in data::CATEGORIES.iter().enumerate() {
+    for i in 0..data::CATEGORIES.len() {
         if i > 0 {
             tiles.push(gap_w(18.0).into_widget());
         }
-        tiles.push(Expanded::new(category_tile(label, count, seed)).into_widget());
+        tiles.push(Expanded::new(category_tile(i)).into_widget());
     }
     ui::section(
         ui::paper(),
@@ -159,27 +200,42 @@ pub fn categories() -> AnyWidget {
     )
 }
 
-fn category_tile(label: &str, count: &str, seed: &str) -> AnyWidget {
-    container()
+fn category_tile(idx: usize) -> AnyWidget {
+    component_props(cat_view, idx).into_widget()
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn cat_view(idx: &usize) -> AnyWidget {
+    let (label, count, seed) = data::CATEGORIES[*idx];
+    let hovered = create_signal(false);
+    let t = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.22);
+    let tile = container()
         .decoration(BoxDecoration::new().radius(BorderRadius::all(16.0)))
         .clip()
         .height(340.0)
         .child(stack(children![
-            Positioned::fill(ui::image_fill(img(seed, 520, 680))),
+            // The photo slowly zooms on hover (center pivot); the clip hides the bleed.
+            Positioned::fill(Transform::scale(1.0 + 0.08 * t, ui::image_fill(img(seed, 520, 680)))),
             Positioned::fill(ui::scrim(ui::with_alpha(ui::ink(), 0.0), ui::with_alpha(ui::ink(), 0.78))),
             positioned(
                 column(children![
                     text(label.to_string()).size(21.0).weight(700.0).color(ui::white()),
                     gap_h(3.0),
-                    text(count.to_string()).size(12.5).color(ui::with_alpha(ui::white(), 0.82)),
+                    text(count.to_string()).size(12.5).color(ui::with_alpha(ui::white(), 0.85)),
                 ])
                 .cross_axis_alignment(CrossAxisAlignment::Start)
                 .main_axis_size(MainAxisSize::Min),
             )
             .left(18.0)
             .right(18.0)
-            .bottom(18.0),
-        ]))
+            // The label rises a little as you hover.
+            .bottom(18.0 + 6.0 * t),
+        ]));
+    GestureDetector::new(tile)
+        .cursor(Cursor::Pointer)
+        .on_tap(|| {})
+        .on_hover_enter(move || hovered.set(true))
+        .on_hover_exit(move || hovered.set(false))
         .into_widget()
 }
 
@@ -212,7 +268,7 @@ pub fn products() -> AnyWidget {
                 cells.push(gap_w(22.0).into_widget());
             }
             if i + j < n {
-                cells.push(Expanded::new(product_card(&data::PRODUCTS[i + j])).into_widget());
+                cells.push(Expanded::new(product_card(i + j)).into_widget());
             } else {
                 // Empty flex cell keeps the last row's cards the same width as full rows.
                 cells.push(Expanded::new(gap_h(0.0)).into_widget());
@@ -232,9 +288,21 @@ pub fn products() -> AnyWidget {
     )
 }
 
-fn product_card(p: &Product) -> AnyWidget {
+/// A product card with a hover "lift + glow" and a slow image zoom — a small showcase
+/// of Pebbles' animated, layered effects. Each card is its own component so it carries
+/// its own hover state.
+fn product_card(idx: usize) -> AnyWidget {
+    component_props(card_view, idx).into_widget()
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn card_view(idx: &usize) -> AnyWidget {
+    let p = &data::PRODUCTS[*idx];
+    let hovered = create_signal(false);
+    let t = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.18); // 0→1, eased
+
     let tag: AnyWidget = match p.tag {
-        Some(t) => positioned(ui::pill(t, ui::white(), ui::ink())).left(12.0).top(12.0).into_widget(),
+        Some(tg) => positioned(ui::pill(tg, ui::white(), ui::ink())).left(12.0).top(12.0).into_widget(),
         None => gap_h(0.0).into_widget(),
     };
     let add = positioned(
@@ -251,14 +319,24 @@ fn product_card(p: &Product) -> AnyWidget {
     .right(12.0)
     .bottom(12.0);
 
-    let media = container()
+    // The image scales up a touch on hover (pivots at center); the clip hides the bleed.
+    let clipped = container()
         .decoration(BoxDecoration::new().radius(BorderRadius::all(14.0)))
         .clip()
         .height(330.0)
-        .child(stack(children![Positioned::fill(ui::image_fill(img(p.seed, 520, 680))), tag, add,]));
+        .child(stack(children![
+            Positioned::fill(Transform::scale(1.0 + 0.07 * t, ui::image_fill(img(p.seed, 520, 680)))),
+            tag,
+            add,
+        ]));
+    // The glow lives on an UNclipped wrapper so the accent shadow can bleed outside.
+    let glow =
+        BoxShadow::new(ui::with_alpha(ui::accent(), 0.30 * t as f32), Offset::new(0.0, 16.0), 38.0, -8.0);
+    let media = container()
+        .decoration(BoxDecoration::new().radius(BorderRadius::all(14.0)).shadow(glow))
+        .child(clipped);
 
-    // No fixed width — the grid's `Expanded` cell sizes each card to fill its column.
-    column(children![
+    let card = column(children![
         media,
         gap_h(14.0),
         row(children![
@@ -277,8 +355,15 @@ fn product_card(p: &Product) -> AnyWidget {
         .cross_axis_alignment(CrossAxisAlignment::Start),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Stretch)
-    .main_axis_size(MainAxisSize::Min)
-    .into_widget()
+    .main_axis_size(MainAxisSize::Min);
+
+    // Float the whole card up on hover, and show a pointer cursor.
+    GestureDetector::new(Transform::translate(0.0, -10.0 * t, card))
+        .cursor(Cursor::Pointer)
+        .on_tap(|| {})
+        .on_hover_enter(move || hovered.set(true))
+        .on_hover_exit(move || hovered.set(false))
+        .into_widget()
 }
 
 // ---------------------------------------------------------------------------

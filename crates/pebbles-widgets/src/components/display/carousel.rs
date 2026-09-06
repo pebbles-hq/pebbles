@@ -5,14 +5,14 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Axis, MainAxisSize};
-use pebbles_render::ScrollbarStyle;
+use pebbles_foundation::{Axis, Color, EdgeInsets, MainAxisSize};
+use pebbles_render::{Cursor, ScrollbarStyle};
 
 use crate::components::input::icon_button;
 use crate::style::{style, styled};
 use crate::theme::theme;
 use crate::widgets::{
-    GestureDetector, ListView, Positioned, ScrollController, SizedBox, center, column, extent_probe, gap_w,
+    GestureDetector, ListView, Padding, Positioned, ScrollController, SizedBox, center, column, extent_probe,
     row, stack, text,
 };
 use pebbles_core::widget::{AnyWidget, IntoWidget};
@@ -74,6 +74,7 @@ pub struct Carousel {
     indicator: bool,
     arrows: bool,
     autoplay: Option<f64>,
+    active_color: Option<Color>,
     on_page_changed: Option<Rc<dyn Fn(usize)>>,
     controller: Option<CarouselController>,
 }
@@ -86,6 +87,7 @@ pub fn carousel(pages: impl pebbles_core::IntoChildren) -> Carousel {
         indicator: true,
         arrows: true,
         autoplay: None,
+        active_color: None,
         on_page_changed: None,
         controller: None,
     }
@@ -113,6 +115,12 @@ impl Carousel {
         self.autoplay = Some(secs.max(0.5));
         self
     }
+    /// The active dot's color (default: theme primary). Inactive dots use a faded
+    /// version — handy for overlaying the indicators on dark imagery (e.g. white).
+    pub fn active_color(mut self, color: Color) -> Self {
+        self.active_color = Some(color);
+        self
+    }
     /// Fired whenever the settled page changes.
     pub fn on_page_changed(mut self, cb: impl Fn(usize) + 'static) -> Self {
         self.on_page_changed = Some(Rc::new(cb));
@@ -132,6 +140,7 @@ struct Props {
     indicator: bool,
     arrows: bool,
     autoplay: Option<f64>,
+    active_color: Option<Color>,
     on_page_changed: Option<Rc<dyn Fn(usize)>>,
     controller: Option<CarouselController>,
 }
@@ -146,6 +155,7 @@ impl IntoWidget for Carousel {
                 indicator: self.indicator,
                 arrows: self.arrows,
                 autoplay: self.autoplay,
+                active_color: self.active_color,
                 on_page_changed: self.on_page_changed,
                 controller: self.controller,
             },
@@ -221,24 +231,33 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
     // Dots + arrows overlaid on the pages.
     let mut overlay: Vec<AnyWidget> = Vec::new();
     if p.indicator && count > 1 {
+        let active_c = p.active_color.unwrap_or(c.primary);
+        let inactive_c = p.active_color.map_or(c.muted_foreground, |col| {
+            let [r, g, b, _] = col.components;
+            Color::new([r, g, b, 0.5])
+        });
         let mut dots: Vec<AnyWidget> = Vec::new();
         for i in 0..count {
             let active = i == page_idx;
             let dot = styled(
                 center(text("").size(0.0)),
                 style().size(if active { 18.0 } else { 6.0 }, 6.0).radius_all(999.0).background(if active {
-                    c.primary
+                    active_c
                 } else {
-                    c.muted_foreground
+                    inactive_c
                 }),
             );
+            // Clickable: tap a dot to jump to its page. The padding is a comfortable
+            // hit target around the tiny dot, and also spaces the row.
+            let dot = GestureDetector::new(Padding::new(EdgeInsets::symmetric(4.0, 9.0), dot))
+                .cursor(Cursor::Pointer)
+                .on_tap(move || offset.set(i as f64 * width.peek().max(1.0)));
             dots.push(dot.into_widget());
-            if i + 1 < count {
-                dots.push(gap_w(6.0).into_widget());
-            }
         }
+        // `center` fills the positioned strip and centers the (shrink-wrapped) dot row —
+        // otherwise the row sits at the strip's left edge.
         overlay.push(
-            Positioned::new(row(dots).main_axis_size(MainAxisSize::Min))
+            Positioned::new(center(row(dots).main_axis_size(MainAxisSize::Min)))
                 .bottom(10.0)
                 .left(0.0)
                 .right(0.0)
