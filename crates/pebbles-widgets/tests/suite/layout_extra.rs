@@ -60,6 +60,30 @@ fn table_negotiates_fixed_and_flex_columns() {
     assert_eq!(widths, vec![50.0, 50.0, 150.0, 150.0]);
 }
 
+#[test]
+fn fill_width_grows_only_plain_intrinsic_columns() {
+    // 200-wide table, one row of 100-wide cells: Fixed(50) | IntrinsicMax(40) |
+    // Intrinsic. `fill_width` must give ALL the leftover to the plain Intrinsic column
+    // — the Fixed and the capped column keep their widths.
+    let cell = || SizedBox::new(Some(100.0), Some(20.0), None).into_widget();
+    let rows: Vec<Vec<AnyWidget>> = vec![vec![cell(), cell(), cell()]];
+    let (ui, _t) = mount(
+        layout_table(rows)
+            .column_widths(vec![
+                TableColumnWidth::Fixed(50.0),
+                TableColumnWidth::IntrinsicMax(40.0),
+                TableColumnWidth::Intrinsic,
+            ])
+            .fill_width(true),
+    );
+    let t = ui.render_tree();
+    let mut widths: Vec<f64> =
+        t.find_all::<RenderConstrainedBox>().into_iter().map(|id| t.size_of(id).width).collect();
+    widths.sort_by(f64::total_cmp);
+    // Fixed = 50, IntrinsicMax capped at 40, Intrinsic = 200 − 50 − 40 = 110.
+    assert_eq!(widths, vec![40.0, 50.0, 110.0]);
+}
+
 thread_local! {
     static FLOW_HIT: Cell<i64> = const { Cell::new(0) };
 }

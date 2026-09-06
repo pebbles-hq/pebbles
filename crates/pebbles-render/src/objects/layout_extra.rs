@@ -287,8 +287,12 @@ pub enum TableColumnWidth {
     Fixed(f64),
     /// A fraction (`0..1`) of the table's available width.
     Fraction(f64),
-    /// The widest natural (unconstrained) content in the column.
+    /// The widest natural (unconstrained) content in the column. Grows to help fill
+    /// the table when [`RenderTable::fill_width`] is set.
     Intrinsic,
+    /// The widest natural content, but never wider than `px`. Rigid — it is **not**
+    /// grown by `fill_width` (a capped column keeps its cap).
+    IntrinsicMax(f64),
     /// A weighted share of the width left after fixed/fraction/intrinsic columns.
     Flex(f64),
 }
@@ -370,6 +374,17 @@ impl RenderObject for RenderTable {
                     *w = max_w;
                     used += *w;
                 }
+                TableColumnWidth::IntrinsicMax(max) => {
+                    // Widest natural cell, clamped to the cap (content wraps past it).
+                    let mut max_w = 0.0_f64;
+                    for r in 0..rows {
+                        if let Some(&cell) = children.get(r * cols + c) {
+                            max_w = max_w.max(cx.layout_child(cell, BoxConstraints::UNBOUNDED).width);
+                        }
+                    }
+                    *w = max_w.min(max.max(0.0));
+                    used += *w;
+                }
                 TableColumnWidth::Flex(weight) => flex_total += weight.max(0.0),
             }
         }
@@ -382,8 +397,9 @@ impl RenderObject for RenderTable {
             }
         } else if self.fill_width && leftover > 0.0 && available.is_finite() {
             // No flex column, but asked to fill: spread the leftover width across the
-            // Intrinsic (content-sized) columns proportionally, so the grid reaches
-            // 100% of the available width. If there are none, spread it equally.
+            // plain Intrinsic columns proportionally, so the grid reaches 100% of the
+            // available width. Fixed / Fraction / IntrinsicMax columns are rigid and
+            // never grow, so if there are no plain Intrinsic columns nothing fills.
             let intrinsic_total: f64 = (0..cols)
                 .filter(|&c| matches!(self.column_spec(c), TableColumnWidth::Intrinsic))
                 .map(|c| widths[c])
@@ -394,11 +410,6 @@ impl RenderObject for RenderTable {
                     if matches!(self.column_spec(c), TableColumnWidth::Intrinsic) {
                         widths[c] += leftover * (widths[c] / intrinsic_total);
                     }
-                }
-            } else {
-                let add = leftover / cols as f64;
-                for w in widths.iter_mut() {
-                    *w += add;
                 }
             }
         }

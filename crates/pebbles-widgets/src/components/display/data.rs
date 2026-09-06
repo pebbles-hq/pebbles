@@ -5,14 +5,14 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
-use pebbles_render::{Border, BoxConstraints, BoxDecoration, Cursor, IconKind, TableColumnWidth};
+use pebbles_render::{Border, BoxDecoration, Cursor, IconKind, TableColumnWidth};
 
 use crate::components::{checkbox, icon};
 use crate::style::{Style, styled};
 use crate::theme::{mix, theme};
 use crate::widgets::{
-    Align, Container, GestureDetector, Padding, SingleChildScrollView, center, clip_rect, column,
-    constrained_box, gap_w, layout_table, row, spacer, text,
+    Align, Container, GestureDetector, Padding, SingleChildScrollView, center, clip_rect, column, gap_w,
+    layout_table, row, spacer, text,
 };
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, animated, component_props, create_signal};
@@ -59,10 +59,13 @@ pub enum ColumnWidth {
     Auto,
     /// Exactly this many logical pixels (content wraps/ellipsizes to fit).
     Fixed(f64),
+    /// A fraction (`0.0..=1.0`) of the table's width — e.g. `Fraction(0.25)` = 25%.
+    Fraction(f64),
     /// Size to content, but never wider than this — content wraps/ellipsizes past it.
+    /// Rigid: it keeps its cap and is not stretched to fill.
     Max(f64),
     /// Take a weighted share of the width left over after the sized columns, filling
-    /// the table. Any `Flex` column disables horizontal scrolling (the grid fits).
+    /// the table. Any `Flex`/`Fraction` column disables horizontal scrolling (the grid fits).
     Flex(f64),
 }
 
@@ -422,13 +425,14 @@ impl IntoWidget for Table {
     }
 }
 
-/// Map a [`ColumnWidth`] to a grid column spec + an optional max-width cap (`Max`).
-fn map_col(w: ColumnWidth) -> (TableColumnWidth, Option<f64>) {
+/// Map a [`ColumnWidth`] to the grid's column spec.
+fn map_col(w: ColumnWidth) -> TableColumnWidth {
     match w {
-        ColumnWidth::Auto => (TableColumnWidth::Intrinsic, None),
-        ColumnWidth::Fixed(px) => (TableColumnWidth::Fixed(px.max(0.0)), None),
-        ColumnWidth::Max(px) => (TableColumnWidth::Intrinsic, Some(px.max(0.0))),
-        ColumnWidth::Flex(weight) => (TableColumnWidth::Flex(weight.max(0.0)), None),
+        ColumnWidth::Auto => TableColumnWidth::Intrinsic,
+        ColumnWidth::Fixed(px) => TableColumnWidth::Fixed(px.max(0.0)),
+        ColumnWidth::Fraction(f) => TableColumnWidth::Fraction(f.clamp(0.0, 1.0)),
+        ColumnWidth::Max(px) => TableColumnWidth::IntrinsicMax(px.max(0.0)),
+        ColumnWidth::Flex(weight) => TableColumnWidth::Flex(weight.max(0.0)),
     }
 }
 
@@ -505,14 +509,13 @@ fn render_data_table(t: &Table) -> AnyWidget {
     if sel {
         specs.push(TableColumnWidth::Fixed(t.selection_column_width));
     }
-    let mut caps: Vec<Option<f64>> = Vec::with_capacity(n_user);
     let mut any_flex = false;
     for i in 0..n_user {
         let cw = t.columns.get(i).copied().flatten().unwrap_or(t.column_default);
-        let (spec, cap) = map_col(cw);
+        let spec = map_col(cw);
+        // Flex/Fraction columns need a bounded width, so they fit the parent (no scroll).
         any_flex |= matches!(spec, TableColumnWidth::Flex(_) | TableColumnWidth::Fraction(_));
         specs.push(spec);
-        caps.push(cap);
     }
 
     let mut grid_rows: Vec<Vec<AnyWidget>> = Vec::new();
@@ -618,20 +621,6 @@ fn render_data_table(t: &Table) -> AnyWidget {
                 }
                 Some(Cell::Widget(w)) => w.clone(),
                 None => gap_w(0.0).into_widget(),
-            };
-            // A `Max` column caps its content width so its intrinsic width is bounded.
-            let content = match caps[i] {
-                Some(px) => constrained_box(
-                    BoxConstraints {
-                        min_width: 0.0,
-                        max_width: px,
-                        min_height: 0.0,
-                        max_height: f64::INFINITY,
-                    },
-                    content,
-                )
-                .into_widget(),
-                None => content,
             };
             let inner = clip_rect(Padding::new(t.cell_padding, Align::new(alignment, content))).into_widget();
             drow.push(data_slot(r, striped, t.row_hover, hovered, inner));
