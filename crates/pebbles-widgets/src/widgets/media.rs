@@ -119,6 +119,51 @@ impl MediaQueryData {
     pub fn is_portrait(&self) -> bool {
         self.orientation == Orientation::Portrait
     }
+    /// The responsive [`Breakpoint`] for the current window width.
+    pub fn breakpoint(&self) -> Breakpoint {
+        Breakpoint::for_width(self.size.width)
+    }
+}
+
+/// A responsive size class derived from the window width — the basis for
+/// breakpoint-driven layouts (like CSS media queries). Thresholds:
+/// `Mobile < 700 ≤ Tablet < 1200 ≤ Desktop`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Breakpoint {
+    /// Phones and narrow windows (`< 700` logical px).
+    Mobile,
+    /// Tablets and split-screen windows (`700..1200`).
+    Tablet,
+    /// Full desktop windows (`≥ 1200`).
+    Desktop,
+}
+
+impl Breakpoint {
+    /// The breakpoint for a given logical window width.
+    pub fn for_width(width: f64) -> Breakpoint {
+        if width < 700.0 {
+            Breakpoint::Mobile
+        } else if width < 1200.0 {
+            Breakpoint::Tablet
+        } else {
+            Breakpoint::Desktop
+        }
+    }
+    /// Pick a value per breakpoint (`mobile` / `tablet` / `desktop`).
+    pub fn select<T>(self, mobile: T, tablet: T, desktop: T) -> T {
+        match self {
+            Breakpoint::Mobile => mobile,
+            Breakpoint::Tablet => tablet,
+            Breakpoint::Desktop => desktop,
+        }
+    }
+}
+
+/// The current window's responsive [`Breakpoint`] — **reactive**, so a component that
+/// reads it re-renders when the window crosses a breakpoint. The one call most
+/// responsive layouts need.
+pub fn breakpoint() -> Breakpoint {
+    Breakpoint::for_width(window_size().0)
 }
 
 /// The current window's [`MediaQueryData`]. Reactive in the shell-reported fields

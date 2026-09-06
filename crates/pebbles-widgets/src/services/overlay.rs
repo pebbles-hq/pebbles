@@ -21,20 +21,33 @@ use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, component_props, create_root_signal};
 
 thread_local! {
-    /// Each window's logical size, published by the shell each frame so popovers can
-    /// flip/shift to stay on-screen. Keyed by window id.
-    static WINDOW: RefCell<HashMap<u32, (f64, f64)>> = RefCell::new(HashMap::new());
+    /// Each window's logical size as a **reactive** signal, published by the shell each
+    /// frame so popovers flip/shift to stay on-screen and layouts respond to resizes.
+    /// Keyed by window id.
+    static WINDOW: RefCell<HashMap<u32, Signal<(f64, f64)>>> = RefCell::new(HashMap::new());
 }
 
-/// Record the current window's logical size (called by the shell).
+/// The current window's size signal, created on first access.
+fn window_signal() -> Signal<(f64, f64)> {
+    let window = current_window();
+    WINDOW.with(|m| *m.borrow_mut().entry(window).or_insert_with(|| create_root_signal((0.0, 0.0))))
+}
+
+/// Record the current window's logical size (called by the shell each frame). Only
+/// writes on an actual change, so the per-frame call doesn't thrash subscribers —
+/// reactive readers ([`window_size`], [`media_query`](crate::media_query)) re-render
+/// only when the window really resizes.
 pub fn set_window_size(width: f64, height: f64) {
-    WINDOW.with(|w| w.borrow_mut().insert(current_window(), (width, height)));
+    let sig = window_signal();
+    if sig.peek() != (width, height) {
+        sig.set((width, height));
+    }
 }
 
 /// The current window's logical size `(width, height)`, or `(0, 0)` before its first
-/// frame.
+/// frame. **Reactive** — reading it in a component re-renders on resize.
 pub fn window_size() -> (f64, f64) {
-    WINDOW.with(|w| w.borrow().get(&current_window()).copied().unwrap_or((0.0, 0.0)))
+    window_signal().get()
 }
 
 /// Whether an overlay is currently open in the current window.
@@ -185,9 +198,9 @@ pub(crate) fn drop_window(window: u32) {
     if let Some(sig) = PASSIVE.with(|m| m.borrow_mut().remove(&window)) {
         sig.set(None);
     }
-    WINDOW.with(|m| {
-        m.borrow_mut().remove(&window);
-    });
+    if let Some(sig) = WINDOW.with(|m| m.borrow_mut().remove(&window)) {
+        sig.set((0.0, 0.0));
+    }
 }
 
 /// Nudge the open overlay (and its child panel) by `(dx, dy)` — used to keep it

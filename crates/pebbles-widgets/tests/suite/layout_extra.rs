@@ -8,7 +8,8 @@ use pebbles_core::{AnyWidget, IntoWidget, Ui};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{Affine, RenderConstrainedBox, RenderOffstage, RenderRotatedBox, TextEnv};
 use pebbles_widgets::{
-    SizedBox, TableColumnWidth, View, center, flow, gesture_detector, layout_table, offstage, rotated_box,
+    Breakpoint, SizedBox, TableColumnWidth, View, center, flow, gesture_detector, layout_table, offstage,
+    rotated_box,
 };
 
 fn mount(root: impl IntoWidget) -> (Ui, TextEnv) {
@@ -58,6 +59,21 @@ fn table_negotiates_fixed_and_flex_columns() {
     widths.sort_by(f64::total_cmp);
     // In a 200-wide table: fixed column = 50 (×2 rows), flex column = 150 (×2 rows).
     assert_eq!(widths, vec![50.0, 50.0, 150.0, 150.0]);
+}
+
+#[test]
+fn breakpoint_thresholds_and_select() {
+    // Mobile < 700 ≤ Tablet < 1200 ≤ Desktop.
+    assert_eq!(Breakpoint::for_width(390.0), Breakpoint::Mobile);
+    assert_eq!(Breakpoint::for_width(699.9), Breakpoint::Mobile);
+    assert_eq!(Breakpoint::for_width(700.0), Breakpoint::Tablet);
+    assert_eq!(Breakpoint::for_width(1199.9), Breakpoint::Tablet);
+    assert_eq!(Breakpoint::for_width(1200.0), Breakpoint::Desktop);
+    assert_eq!(Breakpoint::for_width(1920.0), Breakpoint::Desktop);
+    // `select` picks the per-breakpoint value (mobile, tablet, desktop).
+    assert_eq!(Breakpoint::Mobile.select(1, 2, 4), 1);
+    assert_eq!(Breakpoint::Tablet.select(1, 2, 4), 2);
+    assert_eq!(Breakpoint::Desktop.select(1, 2, 4), 4);
 }
 
 #[test]
