@@ -54,6 +54,40 @@ pub fn order_badge(status: OrderStatus) -> AnyWidget {
 // KPI card
 // ---------------------------------------------------------------------------
 
+/// A **responsive grid**: lay `cards` out in as many equal-width columns as fit at
+/// `min_width` px each, every card stretching to fill its column, wrapping to new rows
+/// as the window narrows (CSS `repeat(auto-fit, minmax(min_width, 1fr))`). Reflows AND
+/// resizes — `layout_builder` gives us the available width, `Expanded` shares it.
+pub fn responsive_grid(min_width: f64, spacing: f64, cards: Vec<AnyWidget>) -> impl IntoWidget {
+    layout_builder(move |size| {
+        let n = cards.len().max(1);
+        let avail = size.width.max(1.0);
+        // As many columns as fit, but never more than we have cards (so a few cards on a
+        // wide screen stretch to fill rather than leaving empty tracks).
+        let cols = (((avail + spacing) / (min_width + spacing)).floor() as usize).clamp(1, n);
+        let mut rows: Vec<AnyWidget> = Vec::new();
+        for (ri, chunk_start) in (0..n).step_by(cols).enumerate() {
+            if ri > 0 {
+                rows.push(gap_h(spacing).into_widget());
+            }
+            let mut cells: Vec<AnyWidget> = Vec::new();
+            for col in 0..cols {
+                if col > 0 {
+                    cells.push(gap_w(spacing).into_widget());
+                }
+                match cards.get(chunk_start + col) {
+                    // Each card fills an equal share of the row width.
+                    Some(card) => cells.push(Expanded::new(card.clone()).into_widget()),
+                    // Empty slots on the last row keep the card widths consistent.
+                    None => cells.push(Expanded::new(gap_h(0.0)).into_widget()),
+                }
+            }
+            rows.push(row(cells).cross_axis_alignment(CrossAxisAlignment::Stretch).into_widget());
+        }
+        column(rows).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min)
+    })
+}
+
 /// A dashboard metric: label + big value + a colored icon chip, with an optional
 /// sub-line.
 pub fn kpi_card(label: &str, value: &str, sub: &str, ic: IconData, color: Color) -> impl IntoWidget {
@@ -66,7 +100,7 @@ pub fn kpi_card(label: &str, value: &str, sub: &str, ic: IconData, color: Color)
                 .radius(BorderRadius::all(14.0)),
         )
         .padding(EdgeInsets::all(18.0))
-        .width(236.0)
+        // No fixed width — the card fills its cell in the responsive grid.
         .child(
             column(children![
                 row(children![

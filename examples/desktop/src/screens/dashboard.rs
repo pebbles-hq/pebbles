@@ -45,10 +45,12 @@ pub fn dashboard() -> impl IntoWidget {
     scroll_view(
         container().padding(EdgeInsets::all(24.0)).child(
             column(children![
-                wrap(cards).spacing(16.0).run_spacing(16.0),
+                // KPI cards: as many columns as fit (~230px each), each card stretching
+                // to fill — reflows and resizes with the window.
+                ui::responsive_grid(230.0, 16.0, cards),
                 gap_h(20.0),
-                row(children![Expanded::new(low_card), gap_w(20.0), Expanded::new(orders_card),])
-                    .cross_axis_alignment(CrossAxisAlignment::Start),
+                // The two panels sit side by side on wide windows and stack when narrow.
+                ui::responsive_grid(360.0, 20.0, vec![low_card, orders_card]),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Stretch)
             .main_axis_size(MainAxisSize::Min),
