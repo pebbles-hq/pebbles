@@ -45,7 +45,9 @@ fn orders_view() -> impl IntoWidget {
         .iter()
         .map(|s| s.to_string())
         .collect::<Vec<_>>();
-    let mut t = table(headers).striped(true).row_hover(true).empty(empty_state());
+    // The customer name can be long → one line with an ellipsis.
+    let mut t =
+        table(headers).striped(true).row_hover(true).overflow(1, CellOverflow::Ellipsis).empty(empty_state());
     for o in &slice {
         let id = o.id;
         let customer = store::customer(o.customer_id).map(|cu| cu.name).unwrap_or_else(|| "—".into());

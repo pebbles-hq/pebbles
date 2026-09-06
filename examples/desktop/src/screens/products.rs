@@ -165,7 +165,8 @@ fn field_search(search: Signal<String>, page: Signal<usize>) -> impl IntoWidget 
     )
 }
 
-/// The first column: thumbnail + name (tap to open) + brand.
+/// The first column: thumbnail + name (tap to open) + brand. The name/brand column is
+/// `Expanded` so long names ellipsize within the cell rather than being hard-clipped.
 fn name_cell(p: &Product) -> AnyWidget {
     let c = theme().colors;
     let id = p.id;
@@ -173,12 +174,25 @@ fn name_cell(p: &Product) -> AnyWidget {
         row(children![
             ui::thumb(p, 34.0),
             gap_w(10.0),
-            column(children![
-                text(p.name.clone()).size(13.5).weight(600.0).color(c.foreground),
-                text(p.brand.clone()).size(12.0).color(c.muted_foreground),
-            ])
-            .cross_axis_alignment(CrossAxisAlignment::Start)
-            .main_axis_size(MainAxisSize::Min),
+            Expanded::new(
+                column(children![
+                    text(p.name.clone())
+                        .size(13.5)
+                        .weight(600.0)
+                        .max_lines(1)
+                        .ellipsis()
+                        .soft_wrap(false)
+                        .color(c.foreground),
+                    text(p.brand.clone())
+                        .size(12.0)
+                        .max_lines(1)
+                        .ellipsis()
+                        .soft_wrap(false)
+                        .color(c.muted_foreground),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
+            ),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Center),
     )
