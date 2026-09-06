@@ -256,20 +256,86 @@ pub fn set_nav_collapsed(collapsed: bool) {
 // Product actions
 // ---------------------------------------------------------------------------
 
+/// The descriptive, pricing and stock-rule fields edited on the product sheet's form
+/// (everything persisted together on **Save**; stock and images are separate live
+/// quick-actions). Money is in integer cents.
+#[derive(Clone)]
+pub struct ProductEdits {
+    pub name: String,
+    pub sku: String,
+    pub brand: String,
+    pub category: String,
+    pub description: String,
+    pub price_cents: i64,
+    pub cost_cents: i64,
+    pub reorder_level: i64,
+}
+
+/// The distinct product categories in the catalogue, sorted — the category picker's
+/// options on the product form.
+pub fn categories() -> Vec<String> {
+    let mut cats: Vec<String> = Vec::new();
+    for p in products_sig().get() {
+        if !cats.contains(&p.category) {
+            cats.push(p.category);
+        }
+    }
+    cats.sort();
+    cats
+}
+
 /// Adjust a product's stock by `delta` (clamped at 0), persisting the change.
 pub fn adjust_stock(id: i64, delta: i64) {
     edit_product(id, |p| p.stock = (p.stock + delta).max(0));
 }
 
-/// Overwrite a product's editable fields (from the detail sheet), persisting.
-pub fn update_product(id: i64, name: &str, price_cents: i64, stock: i64, reorder_level: i64) {
+/// Persist the product form's editable fields (name/SKU/brand/category/description/
+/// pricing/reorder level). Stock and images are managed by their own live actions, so
+/// they're left untouched here. Empty name/SKU are ignored (they're required).
+pub fn save_product(id: i64, e: ProductEdits) {
     edit_product(id, |p| {
-        if !name.trim().is_empty() {
-            p.name = name.trim().to_string();
+        if !e.name.trim().is_empty() {
+            p.name = e.name.trim().to_string();
         }
-        p.price_cents = price_cents.max(0);
-        p.stock = stock.max(0);
-        p.reorder_level = reorder_level.max(0);
+        if !e.sku.trim().is_empty() {
+            p.sku = e.sku.trim().to_string();
+        }
+        p.brand = e.brand.trim().to_string();
+        if !e.category.trim().is_empty() {
+            p.category = e.category.trim().to_string();
+        }
+        p.description = e.description.trim().to_string();
+        p.price_cents = e.price_cents.max(0);
+        p.cost_cents = e.cost_cents.max(0);
+        p.reorder_level = e.reorder_level.max(0);
+    });
+    toast("Product saved").show();
+}
+
+/// Append a gallery image URL to a product, persisting.
+pub fn add_product_image(id: i64, url: String) {
+    let url = url.trim().to_string();
+    if url.is_empty() {
+        return;
+    }
+    edit_product(id, |p| p.images.push(url.clone()));
+}
+
+/// Remove the gallery image at `index`, persisting.
+pub fn remove_product_image(id: i64, index: usize) {
+    edit_product(id, |p| {
+        if index < p.images.len() {
+            p.images.remove(index);
+        }
+    });
+}
+
+/// Promote the image at `index` to the cover (slot 0), persisting.
+pub fn set_cover_image(id: i64, index: usize) {
+    edit_product(id, |p| {
+        if index < p.images.len() {
+            p.images.swap(0, index);
+        }
     });
 }
 
