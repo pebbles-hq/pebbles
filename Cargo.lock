@@ -816,6 +816,8 @@ name = "desktop"
 version = "0.0.1"
 dependencies = [
  "pebbles",
+ "pebbles-render",
+ "pebbles-testing",
  "rusqlite",
  "serde",
  "serde_json",

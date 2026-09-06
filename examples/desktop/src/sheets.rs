@@ -322,11 +322,7 @@ fn product_view(id: &i64) -> AnyWidget {
         gap_h(12.0).into_widget(),
     ];
 
-    scroll_view(
-        column(body).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
-    )
-    .drag_scroll(true)
-    .into_widget()
+    sheet_body(body)
 }
 
 /// Live margin readout (amount + %) that recomputes as the price/cost fields change.
@@ -507,11 +503,7 @@ fn order_view(id: &i64) -> AnyWidget {
         gap_h(16.0).into_widget(),
     ];
 
-    scroll_view(
-        column(body).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
-    )
-    .drag_scroll(true)
-    .into_widget()
+    sheet_body(body)
 }
 
 fn set_status(id: i64, index: usize) {
@@ -656,16 +648,39 @@ fn customer_view(id: &i64) -> AnyWidget {
         gap_h(16.0).into_widget(),
     ];
 
-    scroll_view(
-        column(body).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
-    )
-    .drag_scroll(true)
-    .into_widget()
+    sheet_body(body)
 }
 
 // ===========================================================================
 // Shared bits
 // ===========================================================================
+
+/// Wrap a sheet's children in a scroll view that actually fills the panel's height.
+///
+/// The sheet host lays its content into a `MainAxisSize::Min` column that measures the
+/// content's *intrinsic* height (an unbounded height constraint), so a bare
+/// `scroll_view` — which has no intrinsic height along its scroll axis — collapses to
+/// **zero height**: the content is built but clipped away, an empty-looking sheet. The
+/// right sheet is full window height, so we give the scroll an explicit height (window
+/// height minus the host's padding + title chrome). Reading `window_size()` is reactive,
+/// so the sheet re-sizes when the window does.
+fn sheet_body(children: Vec<AnyWidget>) -> AnyWidget {
+    // Sheet chrome above/below the scroll: 22px top + 22px bottom padding, plus the
+    // ~34px title row (17px text + 14px gap). Leave a little slack so nothing clips.
+    let wh = media_query().size.height;
+    let avail = (wh - 82.0).max(240.0);
+    container()
+        .height(avail)
+        .child(
+            scroll_view(
+                column(children)
+                    .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                    .main_axis_size(MainAxisSize::Min),
+            )
+            .drag_scroll(true),
+        )
+        .into_widget()
+}
 
 fn metric(label: &str, value: &str) -> AnyWidget {
     let c = theme().colors;
@@ -731,4 +746,57 @@ fn dollars(cents: i64) -> String {
 fn parse_dollars(s: &str) -> i64 {
     let v: f64 = s.trim().trim_start_matches('$').parse().unwrap_or(0.0);
     (v * 100.0).round() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pebbles_testing::Harness;
+
+    fn shell() -> impl IntoWidget {
+        container()
+    }
+
+    /// The tallest scroll viewport in the tree (a detail sheet's content region).
+    fn max_scroll_height(h: &Harness) -> f64 {
+        h.find_all::<pebbles_render::RenderScroll>()
+            .into_iter()
+            .map(|id| h.size_of(id).height)
+            .fold(0.0_f64, f64::max)
+    }
+
+    /// A detail sheet must render content into a non-zero-height scroll viewport.
+    /// Guards the "sheet is empty" bug, where the content was built but clipped away
+    /// by a zero-height scroll (regression across all three sheets).
+    fn assert_sheet_shows_content(open: impl FnOnce(i64), label: &str) {
+        let mut h = Harness::new().window(1000.0, 900.0);
+        store::init(); // seed the embedded catalogue into the store signals
+        h.mount(shell);
+        h.settle();
+        let base = h.element_count();
+
+        open(1);
+        h.settle();
+        h.draw();
+
+        let added = h.element_count().saturating_sub(base);
+        let scroll_h = max_scroll_height(&h);
+        assert!(added > 20, "{label} sheet rendered little content (added {added} elements)");
+        assert!(scroll_h > 100.0, "{label} sheet scroll viewport collapsed (height {scroll_h})");
+    }
+
+    #[test]
+    fn product_sheet_shows_content() {
+        assert_sheet_shows_content(open_product_detail, "product");
+    }
+
+    #[test]
+    fn order_sheet_shows_content() {
+        assert_sheet_shows_content(open_order_detail, "order");
+    }
+
+    #[test]
+    fn customer_sheet_shows_content() {
+        assert_sheet_shows_content(open_customer_detail, "customer");
+    }
 }

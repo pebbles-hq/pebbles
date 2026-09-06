@@ -18,5 +18,10 @@ ureq = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+[dev-dependencies]
+# Headless mount/settle/inspect harness for the sample's smoke tests.
+pebbles-testing.workspace = true
+pebbles-render.workspace = true
+
 [lints]
 workspace = true
