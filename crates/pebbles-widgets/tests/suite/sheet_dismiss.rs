@@ -56,6 +56,26 @@ fn tapping_inside_a_bottom_sheet_keeps_it_open() {
 }
 
 #[test]
+fn a_sized_bottom_sheet_is_centered_on_the_cross_axis() {
+    let (mut ui, mut env, win) = mount();
+
+    // A 200×100 bottom sheet in a 400×600 window → not full-width, so it centers
+    // horizontally: the panel occupies x ∈ [100, 300], y ∈ [500, 600].
+    sheet::sheet(text("mini")).side(Side::Bottom).width(200.0).height(100.0).open();
+    settle(&mut ui, &mut env, win);
+    assert!(sheet::is_open(), "sheet opened");
+
+    // A tap inside the centered panel keeps it open.
+    ui.dispatch_tap(Offset::new(200.0, 550.0));
+    assert!(sheet::is_open(), "tap inside the sized, centered panel keeps it open");
+
+    // A tap at the same height but in the left gap (x = 50 < 100) is on the scrim →
+    // dismiss. This only holds if the panel is 200 wide and centered (not full-width).
+    ui.dispatch_tap(Offset::new(50.0, 550.0));
+    assert!(!sheet::is_open(), "tap beside the centered panel dismisses it");
+}
+
+#[test]
 fn tapping_inside_a_dialog_keeps_it_open() {
     let (mut ui, mut env, win) = mount();
 

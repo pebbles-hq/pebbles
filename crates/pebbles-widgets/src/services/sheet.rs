@@ -31,6 +31,9 @@ struct SheetEntry {
     id: SheetId,
     side: Side,
     size: f64,
+    width: Option<f64>,
+    height: Option<f64>,
+    padding: Option<EdgeInsets>,
     title: String,
     background: Option<Color>,
     style: Option<crate::style::Style>,
@@ -133,6 +136,9 @@ pub struct Sheet {
     content: AnyWidget,
     side: Side,
     size: f64,
+    width: Option<f64>,
+    height: Option<f64>,
+    padding: Option<EdgeInsets>,
     title: String,
     background: Option<Color>,
     style: Option<crate::style::Style>,
@@ -146,6 +152,9 @@ pub fn sheet(content: impl IntoWidget) -> Sheet {
         content: content.into_widget(),
         side: Side::Right,
         size: 360.0,
+        width: None,
+        height: None,
+        padding: None,
         title: String::new(),
         background: None,
         style: None,
@@ -160,9 +169,31 @@ impl Sheet {
         self.side = side;
         self
     }
-    /// The panel's width (left/right) or height (top/bottom), in logical px.
+    /// The panel's extent along its edge — width for left/right, height for top/bottom
+    /// (logical px). The convenient default; the cross axis fills the window. For full
+    /// control set [`width`](Sheet::width) / [`height`](Sheet::height) explicitly.
     pub fn size(mut self, size: f64) -> Self {
         self.size = size;
+        self
+    }
+    /// An explicit panel width (overrides the cross-axis fill for top/bottom, and the
+    /// [`size`](Sheet::size) for left/right). When narrower than the window the panel is
+    /// centered horizontally.
+    pub fn width(mut self, width: f64) -> Self {
+        self.width = Some(width);
+        self
+    }
+    /// An explicit panel height (overrides the cross-axis fill for left/right, and the
+    /// [`size`](Sheet::size) for top/bottom). When shorter than the window the panel is
+    /// centered vertically.
+    pub fn height(mut self, height: f64) -> Self {
+        self.height = Some(height);
+        self
+    }
+    /// The panel's inner padding (default `22` on all sides). Pass
+    /// `EdgeInsets::ZERO` for edge-to-edge content.
+    pub fn padding(mut self, insets: EdgeInsets) -> Self {
+        self.padding = Some(insets);
         self
     }
     /// A header title rendered above the content.
@@ -199,6 +230,9 @@ impl Sheet {
             id,
             side: self.side,
             size: self.size,
+            width: self.width,
+            height: self.height,
+            padding: self.padding,
             title: self.title,
             background: self.background,
             style: self.style,
@@ -249,21 +283,28 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
         .radius_all(0.0);
     let deco =
         base.merge(e.style.clone().unwrap_or_default()).decoration().unwrap_or_else(BoxDecoration::new);
-    let mut surface = Container::new().decoration(deco).padding(EdgeInsets::all(22.0)).child(body);
-    if horizontal {
+    let pad = e.padding.unwrap_or(EdgeInsets::all(22.0));
+    let mut surface = Container::new().decoration(deco).padding(pad).child(body);
+    // Resolve each dimension: an explicit width/height wins; otherwise the main axis is
+    // `size` and the cross axis fills the window (when its size is known yet).
+    if let Some(w) = e.width {
+        surface = surface.width(w);
+    } else if horizontal {
         surface = surface.width(e.size);
-        if wh > 0.0 {
-            surface = surface.height(wh);
-        }
-    } else {
+    } else if ww > 0.0 {
+        surface = surface.width(ww);
+    }
+    if let Some(h) = e.height {
+        surface = surface.height(h);
+    } else if !horizontal {
         surface = surface.height(e.size);
-        if ww > 0.0 {
-            surface = surface.width(ww);
-        }
+    } else if wh > 0.0 {
+        surface = surface.height(wh);
     }
 
-    // C3: slide the panel in from its edge — off by (1-t)·size, easing to 0.
-    let off = (1.0 - t) * e.size;
+    // C3: slide the panel fully in from its edge — off by (1-t)·(main-axis extent).
+    let main_extent = if horizontal { e.width.unwrap_or(e.size) } else { e.height.unwrap_or(e.size) };
+    let off = (1.0 - t) * main_extent;
     let (dx, dy) = match e.side {
         Side::Left => (-off, 0.0),
         Side::Right => (off, 0.0),
@@ -278,12 +319,19 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
     // it's the panel's outermost hit layer. Flutter's modal content absorbs the same.
     let slid = GestureDetector::new(Transform::translate(dx, dy, surface)).on_tap(|| {});
 
+    // Anchor to the sheet's edge on the main axis; center on the cross axis when the
+    // panel is smaller than the window there (a partial-width bottom sheet, say).
+    let panel_w = e.width.unwrap_or(if horizontal { e.size } else { ww });
+    let panel_h = e.height.unwrap_or(if horizontal { wh } else { e.size });
+    let left_center = if ww > 0.0 && panel_w < ww { ((ww - panel_w) / 2.0).max(0.0) } else { 0.0 };
+    let top_center = if wh > 0.0 && panel_h < wh { ((wh - panel_h) / 2.0).max(0.0) } else { 0.0 };
+
     let mut panel = Positioned::new(slid);
     panel = match e.side {
-        Side::Left => panel.left(0.0).top(0.0),
-        Side::Right => panel.right(0.0).top(0.0),
-        Side::Top => panel.left(0.0).top(0.0),
-        Side::Bottom => panel.left(0.0).bottom(0.0),
+        Side::Left => panel.left(0.0).top(top_center),
+        Side::Right => panel.right(0.0).top(top_center),
+        Side::Top => panel.top(0.0).left(left_center),
+        Side::Bottom => panel.bottom(0.0).left(left_center),
     };
 
     vec![scrim, panel.into_widget()]
