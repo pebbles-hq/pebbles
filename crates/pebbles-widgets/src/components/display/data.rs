@@ -11,7 +11,8 @@ use crate::components::{checkbox, icon};
 use crate::style::{Style, styled};
 use crate::theme::{mix, theme};
 use crate::widgets::{
-    Align, Container, Expanded, GestureDetector, Padding, SizedBox, center, column, gap_w, row, spacer, text,
+    Align, Container, Expanded, GestureDetector, Padding, SizedBox, center, clip_rect, column, gap_w, row,
+    spacer, text,
 };
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{animated, component_props, create_signal};
@@ -27,6 +28,24 @@ pub enum SortDir {
     Asc,
     /// Largest first (the header chevron points down).
     Desc,
+}
+
+/// How a column's cell content behaves when it's wider than the column — the same
+/// choices HTML/Flutter give you. Every cell is clipped to its column either way, so
+/// content **never** overlaps a neighbor; this only picks how the text is laid out.
+/// Set it per column with [`Table::overflow`] (or all columns with
+/// [`Table::overflow_all`]). Applies to text cells; widget cells are always clipped.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum CellOverflow {
+    /// Wrap onto as many lines as needed, breaking a long word if it can't fit; the
+    /// row grows taller to show all of it (HTML's default). This is the default.
+    #[default]
+    Wrap,
+    /// Keep to a single line, truncated with a trailing "…" (CSS `text-overflow:
+    /// ellipsis`).
+    Ellipsis,
+    /// Keep to a single line, hard-clipped at the column edge (no ellipsis).
+    Clip,
 }
 
 /// One table cell: plain text, or any widget (avatars, badges, buttons, icons…).
@@ -81,6 +100,8 @@ pub struct Table {
     empty_state: Option<AnyWidget>,
     footer: Option<AnyWidget>,
     align: Vec<Option<Alignment>>,
+    overflow: Vec<Option<CellOverflow>>,
+    overflow_default: CellOverflow,
     cell_padding: EdgeInsets,
     cell_size: f32,
     cell_color: Option<pebbles_foundation::Color>,
@@ -116,6 +137,8 @@ pub fn table(headers: Vec<String>) -> Table {
         empty_state: None,
         footer: None,
         align: Vec::new(),
+        overflow: Vec::new(),
+        overflow_default: CellOverflow::Wrap,
         cell_color: None,
         header_style: None,
         sortable: Vec::new(),
@@ -197,6 +220,23 @@ impl Table {
             self.align.resize(col + 1, None);
         }
         self.align[col] = Some(alignment);
+        self
+    }
+    /// How column `col`'s cells behave when content is wider than the column
+    /// (wrap / ellipsis / clip). Every cell is clipped to its column regardless, so
+    /// content never overlaps a neighbor — this just chooses the layout. Defaults to
+    /// [`CellOverflow::Wrap`]; change the table-wide default with [`overflow_all`](Self::overflow_all).
+    pub fn overflow(mut self, col: usize, mode: CellOverflow) -> Self {
+        if self.overflow.len() <= col {
+            self.overflow.resize(col + 1, None);
+        }
+        self.overflow[col] = Some(mode);
+        self
+    }
+    /// The overflow mode for every column that doesn't set its own (default
+    /// [`CellOverflow::Wrap`]).
+    pub fn overflow_all(mut self, mode: CellOverflow) -> Self {
+        self.overflow_default = mode;
         self
     }
     /// The cells' padding (default `(12, 10)` — horizontal 12, vertical 10).
@@ -343,6 +383,8 @@ struct TableRowProps {
     cell_size: f32,
     cell_color: pebbles_foundation::Color,
     align: Rc<Vec<Option<Alignment>>>,
+    overflow: Rc<Vec<Option<CellOverflow>>>,
+    overflow_default: CellOverflow,
 }
 
 /// A data row: optional leading checkbox plus one expanded cell per column, with
@@ -366,12 +408,27 @@ fn render_table_row(p: &TableRowProps) -> AnyWidget {
         );
     }
     for (i, cell) in p.cells.iter().enumerate() {
+        let mode = p.overflow.get(i).copied().flatten().unwrap_or(p.overflow_default);
         let content: AnyWidget = match cell {
-            Cell::Text(s) => text(s.clone()).size(p.cell_size).color(p.cell_color).into_widget(),
+            Cell::Text(s) => {
+                let t = text(s.clone()).size(p.cell_size).color(p.cell_color);
+                // Text honors the column's overflow mode; widget cells are just clipped.
+                match mode {
+                    CellOverflow::Wrap => t,
+                    CellOverflow::Ellipsis => t.max_lines(1).ellipsis().soft_wrap(false),
+                    CellOverflow::Clip => t.max_lines(1).soft_wrap(false),
+                }
+                .into_widget()
+            }
             Cell::Widget(w) => w.clone(),
         };
         let alignment = p.align.get(i).copied().flatten().unwrap_or(Alignment::CENTER_LEFT);
-        cells.push(Expanded::new(Padding::new(p.cell_padding, Align::new(alignment, content))).into_widget());
+        // Clip every cell to its column so long content can never bleed into the next
+        // column (the overlap bug); the mode above decides how the text lays out first.
+        cells.push(
+            Expanded::new(clip_rect(Padding::new(p.cell_padding, Align::new(alignment, content))))
+                .into_widget(),
+        );
     }
 
     let mut g = GestureDetector::new(
@@ -444,7 +501,7 @@ impl IntoWidget for Table {
                     cb
                 });
                 header_cells.push(
-                    Expanded::new(component_props(
+                    Expanded::new(clip_rect(component_props(
                         render_sort_header,
                         SortHeaderProps {
                             label: h,
@@ -462,18 +519,18 @@ impl IntoWidget for Table {
                             icon_color: self.sort_icon_color,
                             icon_size: self.sort_icon_size,
                         },
-                    ))
+                    )))
                     .into_widget(),
                 );
             } else {
                 header_cells.push(
-                    Expanded::new(Padding::new(
+                    Expanded::new(clip_rect(Padding::new(
                         self.cell_padding,
                         Align::new(
                             alignment,
                             text(h).size(header_size).weight(header_weight).color(header_color),
                         ),
-                    ))
+                    )))
                     .into_widget(),
                 );
             }
@@ -498,6 +555,7 @@ impl IntoWidget for Table {
             }
         } else {
             let align = Rc::new(self.align.clone());
+            let overflow = Rc::new(self.overflow.clone());
             for (idx, cells) in rows.into_iter().enumerate() {
                 body.push(Container::new().color(th.colors.border).height(1.0).into_widget());
                 let checkbox_col = self.selectable.then(|| {
@@ -530,6 +588,8 @@ impl IntoWidget for Table {
                             cell_size,
                             cell_color,
                             align: align.clone(),
+                            overflow: overflow.clone(),
+                            overflow_default: self.overflow_default,
                         },
                     )
                     .into_widget(),

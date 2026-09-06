@@ -6,8 +6,10 @@ use std::cell::RefCell;
 
 use pebbles_core::{IntoWidget, Ui, component, create_signal};
 use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets, Offset, Size, palette};
-use pebbles_render::{Border, RenderDecoratedBox, TextEnv};
-use pebbles_widgets::{SortDir, View, avatar, badge, cell, column, empty, muted, style, table, text};
+use pebbles_render::{Border, RenderClipRRect, RenderDecoratedBox, TextEnv};
+use pebbles_widgets::{
+    CellOverflow, SortDir, View, avatar, badge, cell, column, empty, muted, style, table, text,
+};
 
 thread_local! {
     static SORT_EVENTS: RefCell<Vec<(usize, SortDir)>> = const { RefCell::new(Vec::new()) };
@@ -163,6 +165,50 @@ fn empty_state_and_striped_paint() {
     ui.layout(&mut text_env, window);
     let mut scene = pebbles_render::Scene::new();
     ui.paint(&mut text_env, &mut scene);
+}
+
+// A long single value that must wrap over several lines in a ~250px column.
+const LONG: &str = "This is an intentionally very long product description that must wrap across several lines \
+     when the column is narrow instead of overflowing into the next column.";
+
+fn wrap_view() -> impl IntoWidget {
+    table(vec!["Desc".into(), "N".into()]).row(vec![LONG, "1"]).style(style().background(palette::WHITE))
+}
+
+fn ellipsis_view() -> impl IntoWidget {
+    table(vec!["Desc".into(), "N".into()])
+        .row(vec![LONG, "1"])
+        .overflow(0, CellOverflow::Ellipsis)
+        .style(style().background(palette::WHITE))
+}
+
+fn surface_height(ui: &Ui) -> f64 {
+    let tree = ui.render_tree();
+    // The surface style wraps the whole table and mounts first, so it's the first
+    // decorated box (see `surface_style_lands_on_the_table`).
+    let rid = tree.find::<RenderDecoratedBox>().expect("surface");
+    tree.size_of(rid).height
+}
+
+#[test]
+fn long_cells_wrap_and_are_clipped_not_overlapping() {
+    // Default (Wrap): a long value wraps → each cell is clipped to its column, and the
+    // row grows taller to show every line.
+    let (ui, _e, _w) = setup(wrap_view);
+    assert!(
+        ui.render_tree().find::<RenderClipRRect>().is_some(),
+        "every cell is wrapped in a clip, so content can't bleed into the next column",
+    );
+    let wrap_h = surface_height(&ui);
+
+    // Same content with Ellipsis: one line, so the table is much shorter.
+    let (ui2, _e2, _w2) = setup(ellipsis_view);
+    let ellipsis_h = surface_height(&ui2);
+
+    assert!(
+        wrap_h > ellipsis_h + 40.0,
+        "Wrap grows the row (h={wrap_h}) while Ellipsis stays one line (h={ellipsis_h})",
+    );
 }
 
 #[test]
