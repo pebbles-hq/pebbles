@@ -38,8 +38,9 @@ fn customers_view() -> impl IntoWidget {
     let headers =
         ["Customer", "Email", "Orders", "Spent", ""].iter().map(|s| s.to_string()).collect::<Vec<_>>();
     // Email addresses can be long → keep them to one line with an ellipsis.
-    let mut t =
-        table(headers).striped(true).row_hover(true).overflow(1, CellOverflow::Ellipsis).empty(empty_state());
+    // Columns size to their content (full values, no truncation); the table scrolls
+    // horizontally if they don't all fit.
+    let mut t = table(headers).striped(true).row_hover(true).empty(empty_state());
     for cu in &slice {
         let id = cu.id;
         t = t.row(vec![
@@ -109,25 +110,12 @@ fn name_cell(cu: &Customer) -> AnyWidget {
                 .alignment(Alignment::CENTER)
                 .child(text(initials).size(12.5).weight(700.0).color(Color::WHITE)),
             gap_w(10.0),
-            Expanded::new(
-                column(children![
-                    text(cu.name.clone())
-                        .size(13.5)
-                        .weight(600.0)
-                        .max_lines(1)
-                        .ellipsis()
-                        .soft_wrap(false)
-                        .color(c.foreground),
-                    text(cu.company.clone())
-                        .size(12.0)
-                        .max_lines(1)
-                        .ellipsis()
-                        .soft_wrap(false)
-                        .color(c.muted_foreground),
-                ])
-                .cross_axis_alignment(CrossAxisAlignment::Start)
-                .main_axis_size(MainAxisSize::Min),
-            ),
+            column(children![
+                text(cu.name.clone()).size(13.5).weight(600.0).color(c.foreground),
+                text(cu.company.clone()).size(12.0).color(c.muted_foreground),
+            ])
+            .cross_axis_alignment(CrossAxisAlignment::Start)
+            .main_axis_size(MainAxisSize::Min),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Center),
     )
