@@ -818,6 +818,7 @@ dependencies = [
  "pebbles",
  "pebbles-render",
  "pebbles-testing",
+ "pebbles-widgets",
  "rusqlite",
  "serde",
  "serde_json",
