@@ -17,7 +17,7 @@ use super::menu::{ActionRowProps, action_row};
 use super::text_field::text_field;
 use crate::dialog::{dialog, dismiss_top};
 use crate::theme::theme;
-use crate::widgets::{Container, SingleChildScrollView, column, gap_h, text};
+use crate::widgets::{Container, Padding, SingleChildScrollView, column, gap_h, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{component_props, create_signal};
 
@@ -262,23 +262,23 @@ fn render_command(p: &Props) -> AnyWidget {
         }
     };
 
-    // Inline command draws its own bordered surface; the palette gets the dialog's.
+    // Search on top, a full-width rule, then the results. The search and the list are
+    // padded per-section, but the rule spans the whole surface edge-to-edge (outside the
+    // padding) — the divider is `width`, the padded sections are `inner = width - 16`.
+    let divider = Container::new().width(width).height(1.0).decoration(BoxDecoration::new().color(c.border));
     let content = column(pebbles_core::children![
-        search,
-        Container::new().width(inner).padding(EdgeInsets::symmetric(0.0, 8.0)).child(
-            Container::new().width(inner).height(1.0).decoration(BoxDecoration::new().color(c.border))
-        ),
-        list,
+        Padding::new(EdgeInsets::all(8.0), search),
+        divider,
+        Padding::new(EdgeInsets::all(8.0), list),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Start)
     .main_axis_size(MainAxisSize::Min);
 
     if p.modal {
-        // The dialog draws the surface, but has no inner padding — supply the same 8px
-        // inset the inline command uses (matches `inner = width - 16`), so the search
-        // field and rows aren't flush against the edge.
-        Container::new().padding(EdgeInsets::all(8.0)).child(content).into_widget()
+        // The dialog draws the surface; the content is already padded per-section.
+        content.into_widget()
     } else {
+        // Inline command draws its own bordered surface.
         Container::new()
             .width(width)
             .decoration(
@@ -289,7 +289,6 @@ fn render_command(p: &Props) -> AnyWidget {
                     .decoration()
                     .unwrap_or_else(BoxDecoration::new),
             )
-            .padding(EdgeInsets::all(8.0))
             .child(content)
             .into_widget()
     }
