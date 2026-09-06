@@ -12,13 +12,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use web_time::Instant;
 
+use crate::gpu::{AaConfig, RenderContext, RenderParams, RenderSurface, Renderer, Scene, new_renderer};
+use kurbo::Affine;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
 use pebbles_foundation::{Color, Offset, Size, TextDirection};
 use pebbles_widgets::{MenuBar, View};
-use kurbo::Affine;
-use crate::gpu::{
-    new_renderer, AaConfig, RenderContext, RenderParams, RenderSurface, Renderer, Scene,
-};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};

@@ -2,8 +2,8 @@
 //! spinner: a 270° arc rotated by `angle`. The widget layer drives `angle` from a
 //! looping animation (`create_loop`), so the arc spins.
 
-use pebbles_foundation::{Color, Offset, Size};
 use kurbo::{Affine, Arc, Cap, Point, Shape, Stroke, Vec2};
+use pebbles_foundation::{Color, Offset, Size};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;

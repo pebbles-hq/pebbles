@@ -7,8 +7,8 @@
 
 use std::f64::consts::FRAC_PI_2;
 
-use pebbles_foundation::{Alignment, Color, Offset, Rect, Size};
 use kurbo::Affine;
+use pebbles_foundation::{Alignment, Color, Offset, Rect, Size};
 use peniko::{Brush, Fill};
 
 use crate::RenderId;

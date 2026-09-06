@@ -36,10 +36,10 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use kurbo::Rect;
 use parley::{
     Affinity, Alignment, AlignmentOptions, Cursor, FontWeight, Layout, LineHeight, Selection, StyleProperty,
 };
-use kurbo::Rect;
 use peniko::Brush;
 
 // ---------------------------------------------------------------------------

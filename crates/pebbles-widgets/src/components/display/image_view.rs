@@ -18,10 +18,10 @@ use pebbles_render::{BorderRadius, BoxDecoration, Image, ImageFit, image_from_rg
 
 use crate::theme::theme;
 use crate::widgets::{Container, Opacity, spinner, stack, text};
-use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Signal, animated, component_props, create_effect, create_signal};
 #[cfg(not(target_family = "wasm"))]
 use pebbles_core::spawn;
+use pebbles_core::widget::{AnyWidget, IntoWidget};
+use pebbles_core::{Signal, animated, component_props, create_effect, create_signal};
 
 // ---------------------------------------------------------------------------
 // Async network loader

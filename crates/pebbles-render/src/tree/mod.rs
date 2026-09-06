@@ -13,10 +13,10 @@
 
 use std::any::Any;
 
+use kurbo::Affine;
 use pebbles_foundation::{Axis, Offset, Rect, Size};
 use slotmap::{SlotMap, new_key_type};
 use smallvec::SmallVec;
-use kurbo::Affine;
 
 use crate::constraints::BoxConstraints;
 use crate::object::{HitBehavior, RenderObject, SemanticsFlag};
@@ -716,7 +716,6 @@ impl RenderTree {
     }
 }
 
-
 /// Strict rect overlap — an empty or exactly-touching intersection is a miss.
 fn overlaps(a: Rect, b: Rect) -> bool {
     a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
@@ -739,7 +738,6 @@ fn node_transform(node: &RenderNode) -> Option<Affine> {
         (Some(lt), Some(own)) => Some(lt * own),
     }
 }
-
 
 // The traversal contexts (LayoutCx / IntrinsicCx / PaintCx) live in a child module so
 // they retain access to this module's internals; re-exported so `crate::tree::PaintCx`

@@ -13,7 +13,7 @@
 //! ```
 //!
 //! The render backend is chosen by a feature that forwards to `pebbles-render`
-//! (`vello` default, `vello-hybrid` opt-in). The GPU host for each lives in [`mod@gpu`];
+//! (`vello` default, `vello-hybrid` opt-in). The GPU host for each lives in `gpu`;
 //! the runner's frame loop is backend-agnostic.
 
 // AccessKit has no web adapter yet, so wasm gets a no-op bridge with the same

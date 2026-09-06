@@ -2,7 +2,7 @@
 //! `vello::Scene`. Selected by the `vello` feature; the shared geometry/brush vocabulary
 //! ([`Affine`], [`Fill`], …) is re-exported by the parent [`super`] (the paint seam).
 
-use super::{peniko, Affine, Brush, BrushRef, Color, Fill, FontData, Rect, Shape, Stroke};
+use super::{Affine, Brush, BrushRef, Color, Fill, FontData, Rect, Shape, Stroke, peniko};
 
 /// A shaped glyph + font variation coordinate, straight from vello.
 pub use vello::{Glyph, NormalizedCoord};
@@ -85,11 +85,7 @@ impl<'a> Painter<'a> {
     }
 
     /// Draw an image (already positioned by `transform`).
-    pub fn draw_image<'b>(
-        &mut self,
-        image: impl Into<peniko::ImageBrushRef<'b>>,
-        transform: Affine,
-    ) {
+    pub fn draw_image<'b>(&mut self, image: impl Into<peniko::ImageBrushRef<'b>>, transform: Affine) {
         self.scene.draw_image(image, transform);
     }
 

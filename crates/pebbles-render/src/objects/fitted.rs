@@ -3,8 +3,8 @@
 //! `FittedBox` render object; the scale is expressed as a paint/hit-test
 //! transform, so pointer events land on the child exactly where it appears.
 
-use pebbles_foundation::{Alignment, Axis, BoxFit, Offset, Size};
 use kurbo::Affine;
+use pebbles_foundation::{Alignment, Axis, BoxFit, Offset, Size};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;

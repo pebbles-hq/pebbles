@@ -1,8 +1,8 @@
 //! [`RenderFractionallySizedBox`] — sizes its child to a fraction of the incoming
 //! constraints (Flutter's `FractionallySizedBox`), aligning it within the box.
 
-use pebbles_foundation::{Alignment, Offset, Size};
 use kurbo::Affine;
+use pebbles_foundation::{Alignment, Offset, Size};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;

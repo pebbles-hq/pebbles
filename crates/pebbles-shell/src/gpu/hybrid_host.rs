@@ -15,13 +15,13 @@
 use std::ops::Deref;
 use std::sync::OnceLock;
 
+use std::collections::HashMap;
 use vello::util::RenderContext as VelloCtx;
 pub(crate) use vello::util::RenderSurface;
-use std::collections::HashMap;
 
 use vello_hybrid::{
-    RenderSize, RenderTargetConfig, Renderer as HybRenderer, Resources, Scene as HybScene,
-    TextureBindings, TextureId,
+    RenderSize, RenderTargetConfig, Renderer as HybRenderer, Resources, Scene as HybScene, TextureBindings,
+    TextureId,
 };
 
 use pebbles_render::Scene;
@@ -89,11 +89,7 @@ impl Deref for RenderContext {
 fn swap_target(device: &wgpu::Device, surface: &mut RenderSurface<'_>, width: u32, height: u32) {
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("pebbles.hybrid.target"),
-        size: wgpu::Extent3d {
-            width: width.max(1),
-            height: height.max(1),
-            depth_or_array_layers: 1,
-        },
+        size: wgpu::Extent3d { width: width.max(1), height: height.max(1), depth_or_array_layers: 1 },
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
@@ -121,12 +117,7 @@ pub(crate) struct Renderer {
 /// Construct an (empty) hybrid renderer; the inner GPU renderer is built on first frame, when
 /// the target format + size are known (the runner has no size at `new_renderer` time).
 pub(crate) fn new_renderer(_device: &wgpu::Device, _queue: &wgpu::Queue) -> Renderer {
-    Renderer {
-        inner: None,
-        resources: None,
-        size: (0, 0),
-        image_cache: HashMap::new(),
-    }
+    Renderer { inner: None, resources: None, size: (0, 0), image_cache: HashMap::new() }
 }
 
 impl Renderer {
@@ -138,19 +129,11 @@ impl Renderer {
         target: &wgpu::TextureView,
         params: &RenderParams,
     ) -> Result<(), String> {
-        let format = *SURFACE_FORMAT
-            .get()
-            .ok_or("pebbles(vello-hybrid): surface format not yet known")?;
+        let format = *SURFACE_FORMAT.get().ok_or("pebbles(vello-hybrid): surface format not yet known")?;
         let size = (params.width.max(1), params.height.max(1));
         if self.inner.is_none() || self.size != size {
-            let (renderer, resources) = HybRenderer::new(
-                device,
-                &RenderTargetConfig {
-                    format,
-                    width: size.0,
-                    height: size.1,
-                },
-            );
+            let (renderer, resources) =
+                HybRenderer::new(device, &RenderTargetConfig { format, width: size.0, height: size.1 });
             self.inner = Some(renderer);
             self.resources = Some(resources);
             self.size = size;
@@ -199,22 +182,16 @@ impl Renderer {
                         bytes_per_row: Some(up.width * 4),
                         rows_per_image: Some(up.height),
                     },
-                    wgpu::Extent3d {
-                        width: up.width,
-                        height: up.height,
-                        depth_or_array_layers: 1,
-                    },
+                    wgpu::Extent3d { width: up.width, height: up.height, depth_or_array_layers: 1 },
                 );
                 texture
             });
-            bindings.insert(
-                TextureId(i as u64),
-                texture.create_view(&wgpu::TextureViewDescriptor::default()),
-            );
+            bindings
+                .insert(TextureId(i as u64), texture.create_view(&wgpu::TextureViewDescriptor::default()));
         }
 
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.hybrid.render") });
+        let mut encoder = device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.hybrid.render") });
         renderer
             .render(
                 &hyb,
@@ -222,10 +199,7 @@ impl Renderer {
                 device,
                 queue,
                 &mut encoder,
-                &RenderSize {
-                    width: size.0,
-                    height: size.1,
-                },
+                &RenderSize { width: size.0, height: size.1 },
                 target,
                 &bindings,
             )

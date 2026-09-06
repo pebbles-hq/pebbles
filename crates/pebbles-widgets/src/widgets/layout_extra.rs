@@ -371,7 +371,7 @@ pub struct LayoutTable {
 
 /// A [`LayoutTable`] from `rows` of cells. Short rows are padded with empty cells so the
 /// grid stays rectangular. Columns default to equal [`TableColumnWidth::Flex`]; set
-/// them with [`Table::column_widths`].
+/// them with [`LayoutTable::column_widths`].
 pub fn layout_table(rows: Vec<Vec<AnyWidget>>) -> LayoutTable {
     let column_count = rows.iter().map(Vec::len).max().unwrap_or(0);
     let mut cells = Vec::with_capacity(rows.len() * column_count);

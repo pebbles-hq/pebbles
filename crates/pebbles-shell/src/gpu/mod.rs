@@ -10,15 +10,17 @@
 //!
 //! The scene type is always `pebbles_render::Scene` (backend-correct by construction).
 
-#[cfg(feature = "vello")]
+// Mirror pebbles-render's backend precedence: `vello` only when `vello-hybrid` is NOT
+// also on, so `--all-features` selects the hybrid host and there's never a duplicate.
+#[cfg(all(feature = "vello", not(feature = "vello-hybrid")))]
 mod vello_host;
-#[cfg(feature = "vello")]
-pub(crate) use vello_host::{new_renderer, AaConfig, RenderContext, RenderParams, Renderer, RenderSurface};
+#[cfg(all(feature = "vello", not(feature = "vello-hybrid")))]
+pub(crate) use vello_host::{AaConfig, RenderContext, RenderParams, RenderSurface, Renderer, new_renderer};
 
 #[cfg(feature = "vello-hybrid")]
 mod hybrid_host;
 #[cfg(feature = "vello-hybrid")]
-pub(crate) use hybrid_host::{new_renderer, AaConfig, RenderContext, RenderParams, Renderer, RenderSurface};
+pub(crate) use hybrid_host::{AaConfig, RenderContext, RenderParams, RenderSurface, Renderer, new_renderer};
 
 /// The retained scene the runner paints into and presents — always the backend-correct
 /// `pebbles-render` type (a `vello::Scene` under `vello`, a recorded op-list under hybrid).

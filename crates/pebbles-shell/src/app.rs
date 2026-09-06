@@ -170,7 +170,7 @@ impl App {
     /// One entry point, two runtimes. On **desktop** this blocks in
     /// [`run_app`](EventLoop::run_app) until the window closes. On **web** the
     /// browser owns the loop, so it hands the runner to winit's
-    /// [`spawn_app`](winit::platform::web::EventLoopExtWebSys::spawn_app) and
+    /// `spawn_app` and
     /// returns immediately — the app keeps running under the browser's animation
     /// frames. App code (`App::new(root).run()`) is identical on both.
     pub fn run(self) -> Result<(), Box<dyn std::error::Error>> {

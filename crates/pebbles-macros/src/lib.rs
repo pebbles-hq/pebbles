@@ -80,7 +80,7 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// It leaves your function **exactly as written** (so it's the ordinary `fn main`
 /// on desktop/web, or a `pub fn run` your desktop bin calls) and *additionally*, on
 /// **Android**, generates the `android_main(app: AndroidApp)` the OS calls there:
-/// it stashes the `AndroidApp` so [`App::run`] can build the winit event loop with
+/// it stashes the `AndroidApp` so `App::run` can build the winit event loop with
 /// it, then invokes your function.
 ///
 /// Desktop/web — one file:

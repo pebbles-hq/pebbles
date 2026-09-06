@@ -105,13 +105,13 @@ pub fn run(args: &[String]) -> ExitCode {
         Source::Git => None,
     };
     let dep = move |crate_name: &str, no_default: bool| {
-        let nd = if no_default { ", default-features = false" } else { "" };
+        let feats = if no_default { ", default-features = false" } else { "" };
         match &root {
             Some(crates) => {
                 let p = crates.join(crate_name);
-                format!("{crate_name} = {{ path = {:?}{nd} }}", p.display().to_string())
+                format!("{crate_name} = {{ path = {:?}{feats} }}", p.display().to_string())
             }
-            None => format!("{crate_name} = {{ git = {GIT_URL:?}{nd} }}"),
+            None => format!("{crate_name} = {{ git = {GIT_URL:?}{feats} }}"),
         }
     };
 

@@ -7,13 +7,13 @@
 
 use std::rc::Rc;
 
+use crate::paint::Glyph;
+use kurbo::{Affine, Rect};
 use parley::{
     Affinity, Alignment, AlignmentOptions, Cursor, FontWeight, Layout, LineHeight, PositionedLayoutItem,
     Selection, StyleProperty,
 };
 use pebbles_foundation::{Color, Offset, Size};
-use crate::paint::Glyph;
-use kurbo::{Affine, Rect};
 use peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;

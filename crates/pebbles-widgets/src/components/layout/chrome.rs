@@ -93,20 +93,20 @@ impl Scaffold {
     }
     /// A **persistent** (non-modal) bottom sheet pinned above the bottom bar — always
     /// visible, part of the layout, with a top divider (Flutter's `Scaffold.bottomSheet`).
-    /// For a dismissible, scrim-backed sheet use the [`sheet`](crate::sheet) service.
+    /// For a dismissible, scrim-backed sheet use the [`sheet`](fn@crate::sheet) service.
     pub fn bottom_sheet(mut self, sheet: impl IntoWidget) -> Self {
         self.bottom_sheet = Some(sheet.into_widget());
         self
     }
     /// A left drawer opened by [`open_drawer`] (or [`drawer_button`]) — Flutter's
     /// `Scaffold.drawer`. Registered per-window on build; it slides in as a
-    /// [`sheet`](crate::sheet) from the left.
+    /// [`sheet`](fn@crate::sheet) from the left.
     pub fn drawer(mut self, drawer: impl IntoWidget) -> Self {
         self.drawer = Some(drawer.into_widget());
         self
     }
     /// A right (end) drawer opened by [`open_end_drawer`] — Flutter's
-    /// `Scaffold.endDrawer`. Slides in as a [`sheet`](crate::sheet) from the right.
+    /// `Scaffold.endDrawer`. Slides in as a [`sheet`](fn@crate::sheet) from the right.
     pub fn end_drawer(mut self, drawer: impl IntoWidget) -> Self {
         self.end_drawer = Some(drawer.into_widget());
         self

@@ -112,8 +112,8 @@ fn padding_grows_and_offsets_child() {
 /// the renderer can't handle.
 #[test]
 fn all_lucide_paths_parse() {
-    use pebbles_render::objects::{IconPrim, lucide};
     use pebbles_render::BezPath;
+    use pebbles_render::objects::{IconPrim, lucide};
 
     let mut checked = 0usize;
     for (name, data) in lucide::ALL {

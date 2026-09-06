@@ -5,8 +5,8 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Color, Offset, Rect, Size};
 use kurbo::{Affine, BezPath, Ellipse};
+use pebbles_foundation::{Color, Offset, Rect, Size};
 use peniko::{BlendMode, Compose, Fill, Mix};
 
 use super::decorated::gradient_brush;
@@ -187,16 +187,12 @@ fn luminance_gradient(g: &Gradient, rect: Rect) -> peniko::Gradient {
     }
     let derive = |colors: &[Color]| colors.iter().map(to_luminance_alpha).collect::<Vec<_>>();
     let masked = match g {
-        Gradient::Linear { begin, end, colors } => Gradient::Linear {
-            begin: *begin,
-            end: *end,
-            colors: derive(colors),
-        },
-        Gradient::Radial { center, radius, colors } => Gradient::Radial {
-            center: *center,
-            radius: *radius,
-            colors: derive(colors),
-        },
+        Gradient::Linear { begin, end, colors } => {
+            Gradient::Linear { begin: *begin, end: *end, colors: derive(colors) }
+        }
+        Gradient::Radial { center, radius, colors } => {
+            Gradient::Radial { center: *center, radius: *radius, colors: derive(colors) }
+        }
         Gradient::Sweep { center, start_angle, end_angle, colors } => Gradient::Sweep {
             center: *center,
             start_angle: *start_angle,

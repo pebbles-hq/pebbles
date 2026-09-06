@@ -2,7 +2,7 @@
 //!
 //! Each is a plain `fn() -> impl IntoWidget`. Mounted with `component(..)`, a
 //! component that reads global state re-renders **on its own** when that state
-//! changes — so tapping a button re-renders only [`display`], not the whole app.
+//! changes — so tapping a button re-renders only `display`, not the whole app.
 
 use pebbles::prelude::*;
 

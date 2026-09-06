@@ -5,9 +5,7 @@
 
 use std::rc::Rc;
 
-use super::{
-    peniko, Affine, BezPath, Brush, BrushRef, Color, Fill, FontData, Rect, Shape, Stroke,
-};
+use super::{Affine, BezPath, Brush, BrushRef, Color, Fill, FontData, Rect, Shape, Stroke, peniko};
 
 /// Path-flattening tolerance for recorded shapes (px). The hybrid backend keeps
 /// paths, not compute encodings, so we flatten once at record time.
@@ -123,10 +121,7 @@ impl Scene {
     /// `Scene`-level twin of [`Painter::append`], used by the shell to compose the
     /// per-frame logical scene into the DPI-scaled frame. Mirrors `vello::Scene::append`.
     pub fn append(&mut self, fragment: &Scene, transform: Option<Affine>) {
-        self.ops.push(Op::Fragment {
-            transform,
-            ops: Rc::new(fragment.ops.clone()),
-        });
+        self.ops.push(Op::Fragment { transform, ops: Rc::new(fragment.ops.clone()) });
     }
 }
 
@@ -135,7 +130,7 @@ pub fn scene() -> Scene {
     Scene::new()
 }
 
-/// The drawing surface RenderObjects paint into — records each verb as an [`Op`]
+/// The drawing surface RenderObjects paint into — records each verb as an `Op`
 /// on the retained list. Signatures mirror the vello backend exactly.
 pub struct Painter<'a> {
     scene: &'a mut Scene,
@@ -222,15 +217,8 @@ impl<'a> Painter<'a> {
     }
 
     /// Draw an image (already positioned by `transform`).
-    pub fn draw_image<'b>(
-        &mut self,
-        image: impl Into<peniko::ImageBrushRef<'b>>,
-        transform: Affine,
-    ) {
-        self.scene.ops.push(Op::Image {
-            image: image.into().to_owned(),
-            transform,
-        });
+    pub fn draw_image<'b>(&mut self, image: impl Into<peniko::ImageBrushRef<'b>>, transform: Affine) {
+        self.scene.ops.push(Op::Image { image: image.into().to_owned(), transform });
     }
 
     /// A GPU-accelerated blurred rounded rectangle (drop shadow).
@@ -242,22 +230,13 @@ impl<'a> Painter<'a> {
         radius: f64,
         std_dev: f64,
     ) {
-        self.scene.ops.push(Op::BlurredRect {
-            transform,
-            rect,
-            brush,
-            radius,
-            std_dev,
-        });
+        self.scene.ops.push(Op::BlurredRect { transform, rect, brush, radius, std_dev });
     }
 
     /// Append a retained [`Scene`] fragment, translated by `transform`. The
     /// fragment's ops are shared (an `Rc`) so re-appending each frame is cheap.
     pub fn append(&mut self, fragment: &Scene, transform: Option<Affine>) {
-        self.scene.ops.push(Op::Fragment {
-            transform,
-            ops: Rc::new(fragment.ops.clone()),
-        });
+        self.scene.ops.push(Op::Fragment { transform, ops: Rc::new(fragment.ops.clone()) });
     }
 
     /// Record a shaped glyph run (owned; the flush resolves glyphs against the
@@ -298,11 +277,7 @@ impl Scene {
     /// Images are the single deferred surface — `vello_hybrid` 0.2 exposes no stable
     /// public atlas-upload path — and are skipped with a one-time note (never wrong
     /// pixels; the image is simply absent until that lands).
-    pub fn flush(
-        &self,
-        out: &mut vello_hybrid::Scene,
-        resources: &mut vello_hybrid::Resources,
-    ) {
+    pub fn flush(&self, out: &mut vello_hybrid::Scene, resources: &mut vello_hybrid::Resources) {
         // Image ops draw an EXTERNAL texture keyed by its visit index; the shell binds
         // `TextureId(index)` from `image_uploads()` (same walk order) before rendering.
         let mut img_idx: u32 = 0;
@@ -342,12 +317,7 @@ fn image_to_upload(img: &peniko::ImageBrush) -> ImageUpload {
             px.swap(0, 2);
         }
     }
-    ImageUpload {
-        id: bytes.as_ptr() as usize as u64,
-        width: d.width,
-        height: d.height,
-        rgba8,
-    }
+    ImageUpload { id: bytes.as_ptr() as usize as u64, width: d.width, height: d.height, rgba8 }
 }
 
 /// Collect image uploads in flush-visit order (ops in order, recursing fragments),
@@ -460,13 +430,9 @@ fn emit(
             if !apply_paint(out, brush) {
                 return;
             }
-            let run_glyphs = glyphs
-                .iter()
-                .map(|g| glifo::Glyph { id: g.id, x: g.x, y: g.y });
-            let mut run = out
-                .glyph_run(resources, font)
-                .font_size(*font_size)
-                .normalized_coords(normalized_coords);
+            let run_glyphs = glyphs.iter().map(|g| glifo::Glyph { id: g.id, x: g.x, y: g.y });
+            let mut run =
+                out.glyph_run(resources, font).font_size(*font_size).normalized_coords(normalized_coords);
             if let Some(gt) = glyph_transform {
                 run = run.glyph_transform(*gt);
             }

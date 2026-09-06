@@ -11,13 +11,13 @@ use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
 
+use crate::paint::Glyph;
+use kurbo::Affine;
 use parley::{
     Alignment, AlignmentOptions, FontStyle, FontWeight, Layout, LineHeight, PositionedLayoutItem,
     StyleProperty,
 };
 use pebbles_foundation::{Axis, Color, Offset, Rect, Size, TextAlign, TextDirection};
-use crate::paint::Glyph;
-use kurbo::Affine;
 use peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;

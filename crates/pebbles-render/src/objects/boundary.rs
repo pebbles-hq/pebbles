@@ -12,8 +12,8 @@
 
 use std::cell::{Cell, RefCell};
 
-use pebbles_foundation::{Offset, Size};
 use kurbo::Affine;
+use pebbles_foundation::{Offset, Size};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;

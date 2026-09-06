@@ -2,8 +2,8 @@
 //! an input (the widget's signal), not mutated here. Split from `scroll.rs`; the
 //! imperative sibling is [`RenderScroll`](super::scroll::RenderScroll).
 
-use pebbles_foundation::{Axis, Offset, Rect, Size};
 use kurbo::{Affine, RoundedRect};
+use pebbles_foundation::{Axis, Offset, Rect, Size};
 use peniko::{Fill, Mix};
 
 use crate::constraints::BoxConstraints;

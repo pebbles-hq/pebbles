@@ -9,7 +9,7 @@
 //! reason, every function degrades to a no-op / empty result and the app runs purely
 //! in memory — it never panics on a storage hiccup.
 //!
-//! This module is native-only; the web build uses the in-memory [`super::web`] twin.
+//! This module is native-only; the web build uses the in-memory `super::web` twin.
 
 use std::cell::RefCell;
 use std::path::PathBuf;

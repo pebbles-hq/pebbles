@@ -1,8 +1,8 @@
 //! [`RenderView`] — the root render object. It fills the window with an optional
 //! background color and forces its single child to the window size.
 
-use pebbles_foundation::{Color, Offset, Rect, Size};
 use kurbo::Affine;
+use pebbles_foundation::{Color, Offset, Rect, Size};
 use peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;
