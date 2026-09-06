@@ -59,7 +59,12 @@ fn orders_view() -> impl IntoWidget {
             Cell::from(o.item_count().to_string()),
             Cell::from(ui::price(o.subtotal_cents())),
             cell(ui::order_badge(o.status)),
-            cell(button("View").variant(ButtonVariant::Ghost).on_pressed(move || open_order_detail(id))),
+            cell(
+                button("View")
+                    .variant(ButtonVariant::Outline)
+                    .leading(lucide::EYE)
+                    .on_pressed(move || open_order_detail(id)),
+            ),
         ]);
     }
 
@@ -104,7 +109,7 @@ fn orders_view() -> impl IntoWidget {
                 .border(Border::new(c.border, 1.0))
                 .radius(BorderRadius::all(14.0)),
         )
-        .padding(EdgeInsets::all(6.0))
+        .clip()
         .child(t);
 
     scroll_view(

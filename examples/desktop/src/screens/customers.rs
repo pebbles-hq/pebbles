@@ -47,7 +47,12 @@ fn customers_view() -> impl IntoWidget {
             Cell::from(cu.email.clone()),
             Cell::from(store::customer_order_count(cu.id).to_string()),
             Cell::from(ui::price(store::customer_spent_cents(cu.id))),
-            cell(button("View").variant(ButtonVariant::Ghost).on_pressed(move || open_customer_detail(id))),
+            cell(
+                button("View")
+                    .variant(ButtonVariant::Outline)
+                    .leading(lucide::EYE)
+                    .on_pressed(move || open_customer_detail(id)),
+            ),
         ]);
     }
 
@@ -83,7 +88,7 @@ fn customers_view() -> impl IntoWidget {
                 .border(Border::new(c.border, 1.0))
                 .radius(BorderRadius::all(14.0)),
         )
-        .padding(EdgeInsets::all(6.0))
+        .clip()
         .child(t);
 
     scroll_view(
