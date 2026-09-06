@@ -5,23 +5,30 @@
 use pebbles::prelude::*;
 
 use crate::components;
-use crate::model::{self, Order, OrderStatus};
+use crate::model::{self, Order, OrderStatus, Product};
 use crate::store;
 
 // ===========================================================================
 // Product detail
 // ===========================================================================
 
+/// Horizontal inset for the product sheet's content (the scroll bar sits outside it,
+/// on the panel edge).
+const PAD: f64 = 20.0;
+
 pub fn open_product_detail(id: i64) {
-    // Wider than the other sheets — the product form is a full management surface
-    // (media, details, pricing, inventory, history), so it needs the room.
-    sheet(component_props(product_view, id)).side(Side::Right).size(600.0).title("Product").open();
+    // A full management surface: a fixed header + tabs (Details / Inventory / Media /
+    // History), each tab's content scrolling on its own. Zero host padding + a custom
+    // header so the scroll bar hugs the panel's right edge; the content brings its own
+    // padding.
+    sheet(component_props(product_view, id)).side(Side::Right).size(560.0).padding(EdgeInsets::ZERO).open();
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn product_view(id: &i64) -> AnyWidget {
     let id = *id;
     let c = theme().colors;
+    let tab = create_signal(0_usize); // active tab
     let selected = create_signal(0_usize); // gallery preview selection
     let new_image = create_signal(String::new());
 
@@ -47,7 +54,282 @@ fn product_view(id: &i64) -> AnyWidget {
     let cat_start = cats.iter().position(|x| *x == p.category).unwrap_or(0);
     let cat_idx = create_signal(cat_start);
 
-    // === Media: hero preview + manageable thumbnails =========================
+    // --- fixed header (name / SKU · brand / stock badge / close) -------------
+    let header = container()
+        .padding(EdgeInsets::only(PAD, 18.0, 12.0, 16.0))
+        .child(
+            row(children![
+                Expanded::new(
+                    column(children![
+                        text(p.name.clone()).size(19.0).weight(700.0).max_lines(2).color(c.foreground),
+                        gap_h(4.0),
+                        row(children![
+                            Expanded::new(
+                                text(format!("SKU {} · {}", p.sku, p.brand))
+                                    .size(12.5)
+                                    .max_lines(1)
+                                    .ellipsis()
+                                    .color(c.muted_foreground),
+                            ),
+                            gap_w(8.0),
+                            components::stars(p.rating),
+                        ])
+                        .cross_axis_alignment(CrossAxisAlignment::Center),
+                    ])
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .main_axis_size(MainAxisSize::Min),
+                ),
+                gap_w(10.0),
+                components::stock_badge(&p),
+                gap_w(4.0),
+                icon_button(lucide::X).on_pressed(|| close_sheet(0)),
+            ])
+            .cross_axis_alignment(CrossAxisAlignment::Start),
+        )
+        .into_widget();
+
+    let strip = tab_strip(tab, &["Details", "Inventory", "Media", "History"]);
+
+    // --- the active tab's content -------------------------------------------
+    let content: Vec<AnyWidget> = match tab.get() {
+        0 => {
+            details_tab(&p, id, name, sku, brand, description, price, cost, reorder, cats, cat_start, cat_idx)
+        }
+        1 => inventory_tab(&p, id),
+        2 => media_tab(&p, id, selected, new_image),
+        _ => vec![order_history(id)],
+    };
+
+    // Header + strip stay fixed; only the tab body scrolls. A fixed-height wrapper
+    // gives the `Expanded` scroll a bounded height (the sheet host otherwise measures
+    // content with an unbounded height — see `sheet_body`). Floor keeps it sane in a
+    // headless test where the window size isn't reported.
+    let panel_h = media_query().size.height.max(320.0);
+    container()
+        .height(panel_h)
+        .child(
+            column(children![
+                header,
+                strip,
+                Expanded::new(
+                    scroll_view(
+                        container().padding(EdgeInsets::symmetric(PAD, 18.0)).child(
+                            column(content)
+                                .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                                .main_axis_size(MainAxisSize::Min),
+                        ),
+                    )
+                    .drag_scroll(true),
+                ),
+            ])
+            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .main_axis_size(MainAxisSize::Max),
+        )
+        .into_widget()
+}
+
+/// A fixed tab strip: a left-aligned row of tab buttons (active one carries a primary
+/// underline) over a full-width hairline.
+fn tab_strip(selected: Signal<usize>, labels: &[&str]) -> AnyWidget {
+    let c = theme().colors;
+    let cur = selected.get();
+    let cells: Vec<AnyWidget> = labels
+        .iter()
+        .enumerate()
+        .map(|(i, label)| {
+            let active = i == cur;
+            let fg = if active { c.foreground } else { c.muted_foreground };
+            let underline = if active { c.primary } else { palette::TRANSPARENT };
+            pressable(
+                column(children![
+                    container().padding(EdgeInsets::symmetric(14.0, 12.0)).child(
+                        text(label.to_string())
+                            .size(13.5)
+                            .weight(if active { 600.0 } else { 500.0 })
+                            .color(fg)
+                    ),
+                    container().height(2.0).color(underline),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Stretch)
+                .main_axis_size(MainAxisSize::Min),
+            )
+            .on_tap(move || selected.set(i))
+            .into_widget()
+        })
+        .collect();
+    column(children![
+        container()
+            .padding(EdgeInsets::only(PAD - 6.0, 0.0, 0.0, 0.0))
+            .child(row(cells).main_axis_size(MainAxisSize::Min)),
+        container().color(c.border).height(1.0),
+    ])
+    .cross_axis_alignment(CrossAxisAlignment::Stretch)
+    .main_axis_size(MainAxisSize::Min)
+    .into_widget()
+}
+
+/// **Details** tab: the editable product form (identity, categorisation, description,
+/// pricing) + a live margin preview, Save, and a delete danger zone.
+#[allow(clippy::too_many_arguments)]
+fn details_tab(
+    p: &Product,
+    id: i64,
+    name: Signal<String>,
+    sku: Signal<String>,
+    brand: Signal<String>,
+    description: Signal<String>,
+    price: Signal<String>,
+    cost: Signal<String>,
+    reorder: Signal<String>,
+    cats: Vec<String>,
+    cat_start: usize,
+    cat_idx: Signal<usize>,
+) -> Vec<AnyWidget> {
+    let c = theme().colors;
+    let cats_save = cats.clone();
+    let save = move || {
+        let category = cats_save.get(cat_idx.peek()).cloned().unwrap_or_default();
+        store::save_product(
+            id,
+            store::ProductEdits {
+                name: name.peek(),
+                sku: sku.peek(),
+                brand: brand.peek(),
+                category,
+                description: description.peek(),
+                price_cents: parse_dollars(&price.peek()),
+                cost_cents: parse_dollars(&cost.peek()),
+                reorder_level: reorder.peek().trim().parse::<i64>().unwrap_or(0),
+            },
+        );
+    };
+    let _ = p;
+    vec![
+        section_label("Identity"),
+        field(text_field().bind(name)).label("Name").into_widget(),
+        gap_h(10.0).into_widget(),
+        row(children![
+            Expanded::new(field(text_field().bind(sku)).label("SKU")),
+            gap_w(10.0),
+            Expanded::new(field(text_field().bind(brand)).label("Brand")),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .into_widget(),
+        gap_h(10.0).into_widget(),
+        field(select(cats).value(cat_start).on_changed(move |i, _| cat_idx.set(i)))
+            .label("Category")
+            .into_widget(),
+        gap_h(10.0).into_widget(),
+        field(text_area(4).bind(description)).label("Description").into_widget(),
+        gap_h(18.0).into_widget(),
+        divider(),
+        section_label("Pricing"),
+        row(children![
+            Expanded::new(field(text_field().bind(price).kind(InputKind::Number)).label("Price")),
+            gap_w(10.0),
+            Expanded::new(field(text_field().bind(cost).kind(InputKind::Number)).label("Cost")),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .into_widget(),
+        gap_h(10.0).into_widget(),
+        component_props(margin_preview, (price, cost)).into_widget(),
+        gap_h(10.0).into_widget(),
+        field(text_field().bind(reorder).kind(InputKind::Integer))
+            .label("Reorder at")
+            .description("Low-stock alerts fire at or below this quantity.")
+            .into_widget(),
+        gap_h(18.0).into_widget(),
+        button("Save changes").leading(lucide::CHECK).full_width().on_pressed(save).into_widget(),
+        gap_h(24.0).into_widget(),
+        divider(),
+        section_label("Danger zone"),
+        row(children![
+            Expanded::new(
+                column(children![
+                    text("Delete this product").size(13.5).weight(600.0).color(c.foreground),
+                    gap_h(2.0),
+                    text("Removes it from the catalogue. This can't be undone.")
+                        .size(12.0)
+                        .color(c.muted_foreground),
+                ])
+                .cross_axis_alignment(CrossAxisAlignment::Start)
+                .main_axis_size(MainAxisSize::Min),
+            ),
+            gap_w(10.0),
+            button("Delete")
+                .variant(ButtonVariant::Destructive)
+                .leading(lucide::TRASH_2)
+                .on_pressed(move || confirm_delete(id)),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Center)
+        .into_widget(),
+        gap_h(8.0).into_widget(),
+    ]
+}
+
+/// **Inventory** tab: live stock quantity (persisted immediately) + summary metrics.
+fn inventory_tab(p: &Product, id: i64) -> Vec<AnyWidget> {
+    let c = theme().colors;
+    let stock_color = match p.status() {
+        model::StockStatus::OutOfStock => palette::rose::S500,
+        model::StockStatus::LowStock => palette::amber::S500,
+        model::StockStatus::InStock => c.foreground,
+    };
+    let stepper = row(children![
+        column(children![
+            text("On hand").size(12.5).color(c.muted_foreground),
+            gap_h(2.0),
+            text(p.stock.to_string()).size(26.0).weight(700.0).color(stock_color),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min),
+        spacer(),
+        icon_button(lucide::MINUS)
+            .variant(ButtonVariant::Outline)
+            .on_pressed(move || store::adjust_stock(id, -1)),
+        gap_w(8.0),
+        icon_button(lucide::PLUS)
+            .variant(ButtonVariant::Outline)
+            .on_pressed(move || store::adjust_stock(id, 1)),
+        gap_w(12.0),
+        button("Restock")
+            .variant(ButtonVariant::Secondary)
+            .leading(lucide::REFRESH_CW)
+            .on_pressed(move || { store::reorder(id) }),
+    ])
+    .cross_axis_alignment(CrossAxisAlignment::Center);
+
+    vec![
+        section_label("Stock on hand"),
+        stepper.into_widget(),
+        gap_h(10.0).into_widget(),
+        row(children![
+            components::stock_badge(p),
+            spacer(),
+            text(format!("Reorder at {} · edit in Details", p.reorder_level))
+                .size(12.5)
+                .color(c.muted_foreground),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Center)
+        .into_widget(),
+        gap_h(18.0).into_widget(),
+        divider(),
+        section_label("Valuation"),
+        row(children![
+            metric("Price", &components::price(p.price_cents)),
+            metric("Unit margin", &components::price(p.margin_cents())),
+            metric("Stock value", &components::price(p.stock_value_cents())),
+        ])
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .into_widget(),
+        gap_h(8.0).into_widget(),
+    ]
+}
+
+/// **Media** tab: a cover preview + a spaced, manageable thumbnail grid, and an
+/// add-by-URL row. Add / remove / set-cover persist immediately.
+fn media_tab(p: &Product, id: i64, selected: Signal<usize>, new_image: Signal<String>) -> Vec<AnyWidget> {
+    let c = theme().colors;
     let sel = selected.get().min(p.images.len().saturating_sub(1));
     let hero: AnyWidget = match p.images.get(sel) {
         Some(url) => container()
@@ -71,25 +353,8 @@ fn product_view(id: &i64) -> AnyWidget {
             .into_widget(),
     };
 
-    // "Set as cover" appears while previewing a non-cover image.
-    let cover_action: AnyWidget = if p.images.len() > 1 && sel != 0 {
-        container()
-            .padding(EdgeInsets::only(0.0, 8.0, 0.0, 0.0))
-            .child(
-                button("Set as cover").variant(ButtonVariant::Ghost).leading(lucide::IMAGE_PLUS).on_pressed(
-                    move || {
-                        store::set_cover_image(id, sel);
-                        selected.set(0);
-                    },
-                ),
-            )
-            .into_widget()
-    } else {
-        gap_h(0.0).into_widget()
-    };
-
-    // Thumbnails: tap to preview, × to remove.
-    let thumbs: Vec<AnyWidget> = p
+    // Thumbnails wrap into a spaced grid: tap to preview, × to remove.
+    let tiles: Vec<AnyWidget> = p
         .images
         .iter()
         .enumerate()
@@ -102,227 +367,77 @@ fn product_view(id: &i64) -> AnyWidget {
                         BoxDecoration::new()
                             .color(c.secondary)
                             .border(Border::new(border, if active { 2.0 } else { 1.0 }))
-                            .radius(BorderRadius::all(9.0)),
+                            .radius(BorderRadius::all(10.0)),
                     )
                     .clip()
-                    .width(60.0)
-                    .height(60.0)
+                    .width(72.0)
+                    .height(72.0)
                     .child(ImageView::network(url.clone()).fit(ImageFit::Cover)),
             )
-            .radius(9.0)
+            .radius(10.0)
             .on_tap(move || selected.set(i));
             let remove = positioned(
                 pressable(
                     container()
                         .decoration(BoxDecoration::new().color(c.foreground).shape(BoxShape::Circle))
-                        .width(18.0)
-                        .height(18.0)
+                        .width(20.0)
+                        .height(20.0)
                         .alignment(Alignment::CENTER)
-                        .child(icon(lucide::X).size(11.0).color(c.background)),
+                        .child(icon(lucide::X).size(12.0).color(c.background)),
                 )
-                .radius(9.0)
+                .radius(10.0)
                 .on_tap(move || {
                     store::remove_product_image(id, i);
                     selected.set(0);
                 }),
             )
-            .right(3.0)
-            .top(3.0);
+            .right(4.0)
+            .top(4.0);
             stack(children![tile, remove]).into_widget()
         })
         .collect();
+    let gallery = wrap(tiles).spacing(12.0).run_spacing(12.0).into_widget();
 
-    let add_image = row(children![
-        Expanded::new(text_field().leading(lucide::LINK).placeholder("Paste an image URL…").bind(new_image),),
-        gap_w(10.0),
-        button("Add image").variant(ButtonVariant::Outline).leading(lucide::IMAGE_PLUS).on_pressed(
-            move || {
+    let cover_action: AnyWidget = if p.images.len() > 1 && sel != 0 {
+        button("Set as cover")
+            .variant(ButtonVariant::Ghost)
+            .leading(lucide::IMAGE_PLUS)
+            .on_pressed(move || {
+                store::set_cover_image(id, sel);
+                selected.set(0);
+            })
+            .into_widget()
+    } else {
+        gap_h(0.0).into_widget()
+    };
+
+    vec![
+        section_label("Cover"),
+        hero,
+        gap_h(8.0).into_widget(),
+        cover_action,
+        gap_h(18.0).into_widget(),
+        divider(),
+        section_label(&format!("Gallery · {}", p.images.len())),
+        gallery,
+        gap_h(14.0).into_widget(),
+        row(children![
+            Expanded::new(
+                text_field().leading(lucide::LINK).placeholder("Paste an image URL…").bind(new_image),
+            ),
+            gap_w(10.0),
+            button("Add").variant(ButtonVariant::Outline).leading(lucide::IMAGE_PLUS).on_pressed(move || {
                 let url = new_image.peek();
                 if !url.trim().is_empty() {
                     store::add_product_image(id, url);
                     new_image.set(String::new());
                 }
-            },
-        ),
-    ])
-    .cross_axis_alignment(CrossAxisAlignment::Center);
-
-    // === Header ==============================================================
-    let header = column(children![
-        row(children![
-            Expanded::new(text(p.name.clone()).size(20.0).weight(700.0).max_lines(2).color(c.foreground)),
-            gap_w(10.0),
-            components::stock_badge(&p),
-        ])
-        .cross_axis_alignment(CrossAxisAlignment::Start),
-        gap_h(4.0),
-        row(children![
-            text(format!("SKU {} · {}", p.sku, p.brand)).size(13.0).color(c.muted_foreground),
-            spacer(),
-            components::stars(p.rating),
-        ])
-        .cross_axis_alignment(CrossAxisAlignment::Center),
-    ])
-    .cross_axis_alignment(CrossAxisAlignment::Stretch)
-    .main_axis_size(MainAxisSize::Min);
-
-    // Summary metrics (live, from the stored product).
-    let metrics = row(children![
-        metric("Price", &components::price(p.price_cents)),
-        metric("Margin", &components::price(p.margin_cents())),
-        metric("Stock value", &components::price(p.stock_value_cents())),
-    ])
-    .cross_axis_alignment(CrossAxisAlignment::Start);
-
-    // === Inventory: live quick actions (persist immediately) =================
-    let stock_color = match p.status() {
-        model::StockStatus::OutOfStock => palette::rose::S500,
-        model::StockStatus::LowStock => palette::amber::S500,
-        model::StockStatus::InStock => c.foreground,
-    };
-    let stock_stepper = row(children![
-        column(children![
-            text("On hand").size(12.5).color(c.muted_foreground),
-            gap_h(2.0),
-            text(p.stock.to_string()).size(24.0).weight(700.0).color(stock_color),
-        ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .main_axis_size(MainAxisSize::Min),
-        spacer(),
-        icon_button(lucide::MINUS)
-            .variant(ButtonVariant::Outline)
-            .on_pressed(move || store::adjust_stock(id, -1)),
-        gap_w(8.0),
-        icon_button(lucide::PLUS)
-            .variant(ButtonVariant::Outline)
-            .on_pressed(move || store::adjust_stock(id, 1)),
-        gap_w(12.0),
-        button("Restock")
-            .variant(ButtonVariant::Secondary)
-            .leading(lucide::REFRESH_CW)
-            .on_pressed(move || store::reorder(id)),
-    ])
-    .cross_axis_alignment(CrossAxisAlignment::Center);
-
-    let stock_meta = row(children![
-        components::stock_badge(&p),
-        spacer(),
-        text(format!("Reorder at {}", p.reorder_level)).size(12.5).color(c.muted_foreground),
-    ])
-    .cross_axis_alignment(CrossAxisAlignment::Center);
-
-    // A live margin preview that recomputes as the price/cost fields are typed —
-    // a small nested component so only this line re-runs, not the whole sheet.
-    let margin_line = component_props(margin_preview, (price, cost)).into_widget();
-
-    // Save the whole descriptive/pricing/rules form at once.
-    let cats_save = cats.clone();
-    let save = move || {
-        let category = cats_save.get(cat_idx.peek()).cloned().unwrap_or_default();
-        store::save_product(
-            id,
-            store::ProductEdits {
-                name: name.peek(),
-                sku: sku.peek(),
-                brand: brand.peek(),
-                category,
-                description: description.peek(),
-                price_cents: parse_dollars(&price.peek()),
-                cost_cents: parse_dollars(&cost.peek()),
-                reorder_level: reorder.peek().trim().parse::<i64>().unwrap_or(0),
-            },
-        );
-    };
-
-    // Recent orders that included this product — the item's "history".
-    let history = order_history(id);
-
-    let body: Vec<AnyWidget> = vec![
-        hero,
-        cover_action,
-        gap_h(10.0).into_widget(),
-        row(thumbs).main_axis_size(MainAxisSize::Min).into_widget(),
-        gap_h(10.0).into_widget(),
-        add_image.into_widget(),
-        gap_h(18.0).into_widget(),
-        header.into_widget(),
-        gap_h(16.0).into_widget(),
-        metrics.into_widget(),
-        gap_h(16.0).into_widget(),
-        divider(),
-        section_label("Inventory"),
-        stock_stepper.into_widget(),
-        gap_h(10.0).into_widget(),
-        stock_meta.into_widget(),
-        gap_h(16.0).into_widget(),
-        divider(),
-        section_label("Details"),
-        field(text_field().bind(name)).label("Name").into_widget(),
-        gap_h(10.0).into_widget(),
-        field(text_field().bind(sku)).label("SKU").into_widget(),
-        gap_h(10.0).into_widget(),
-        row(children![
-            Expanded::new(field(text_field().bind(brand)).label("Brand")),
-            gap_w(10.0),
-            Expanded::new(
-                field(select(cats.clone()).value(cat_start).on_changed(move |i, _| cat_idx.set(i)))
-                    .label("Category"),
-            ),
-        ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .into_widget(),
-        gap_h(10.0).into_widget(),
-        field(text_area(4).bind(description)).label("Description").into_widget(),
-        gap_h(16.0).into_widget(),
-        divider(),
-        section_label("Pricing & stock rules"),
-        row(children![
-            Expanded::new(field(text_field().bind(price).kind(InputKind::Number)).label("Price")),
-            gap_w(10.0),
-            Expanded::new(field(text_field().bind(cost).kind(InputKind::Number)).label("Cost")),
-        ])
-        .cross_axis_alignment(CrossAxisAlignment::Start)
-        .into_widget(),
-        gap_h(10.0).into_widget(),
-        margin_line,
-        gap_h(12.0).into_widget(),
-        field(text_field().bind(reorder).kind(InputKind::Integer))
-            .label("Reorder at")
-            .description("Low-stock alerts fire at or below this quantity.")
-            .into_widget(),
-        gap_h(16.0).into_widget(),
-        button("Save changes").leading(lucide::CHECK).on_pressed(save).into_widget(),
-        gap_h(18.0).into_widget(),
-        divider(),
-        section_label("Order history"),
-        history,
-        gap_h(20.0).into_widget(),
-        divider(),
-        section_label("Danger zone"),
-        row(children![
-            Expanded::new(
-                column(children![
-                    text("Delete this product").size(13.5).weight(600.0).color(c.foreground),
-                    gap_h(2.0),
-                    text("Removes it from the catalogue. This can't be undone.")
-                        .size(12.0)
-                        .color(c.muted_foreground),
-                ])
-                .cross_axis_alignment(CrossAxisAlignment::Start)
-                .main_axis_size(MainAxisSize::Min),
-            ),
-            gap_w(10.0),
-            button("Delete")
-                .variant(ButtonVariant::Destructive)
-                .leading(lucide::TRASH_2)
-                .on_pressed(move || confirm_delete(id)),
+            }),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Center)
         .into_widget(),
-        gap_h(12.0).into_widget(),
-    ];
-
-    sheet_body(body)
+        gap_h(8.0).into_widget(),
+    ]
 }
 
 /// Live margin readout (amount + %) that recomputes as the price/cost fields change.
