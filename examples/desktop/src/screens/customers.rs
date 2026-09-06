@@ -3,10 +3,10 @@
 
 use pebbles::prelude::*;
 
+use crate::components;
 use crate::model::Customer;
 use crate::sheets::open_customer_detail;
 use crate::store;
-use crate::ui;
 
 pub fn customers() -> impl IntoWidget {
     component(customers_view)
@@ -39,14 +39,17 @@ fn customers_view() -> impl IntoWidget {
         ["Customer", "Email", "Orders", "Spent", ""].iter().map(|s| s.to_string()).collect::<Vec<_>>();
     // Columns size to their content (full values, no truncation); the table scrolls
     // horizontally if they don't all fit.
-    let mut t = table(headers).striped(true).row_hover(true).empty(empty_state());
+    let mut t = table(headers)
+        .striped(true)
+        .row_hover(true)
+        .empty(components::table_empty("No customers match your search."));
     for cu in &slice {
         let id = cu.id;
         t = t.row(vec![
             cell(name_cell(cu)),
             Cell::from(cu.email.clone()),
             Cell::from(store::customer_order_count(cu.id).to_string()),
-            Cell::from(ui::price(store::customer_spent_cents(cu.id))),
+            Cell::from(components::price(store::customer_spent_cents(cu.id))),
             cell(
                 button("View")
                     .variant(ButtonVariant::Outline)
@@ -57,31 +60,15 @@ fn customers_view() -> impl IntoWidget {
     }
 
     let toolbar = row(children![
-        container().width(300.0).child(
-            text_field()
-                .leading(lucide::SEARCH)
-                .placeholder("Search name, company or email…")
-                .bind(search)
-                .on_changed(move |_| page.set(0)),
-        ),
+        components::search_field(search, page, "Search name, company or email…", 300.0),
         spacer(),
         text(format!("{total} customers")).size(13.0).color(c.muted_foreground),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center);
 
-    // Rows-per-page + results on the left, nav on the right (shadcn table footer).
-    let pager = container().padding(EdgeInsets::only(0.0, 14.0, 0.0, 0.0)).child(
-        pagination(cur + 1, total_pages)
-            .variant(PaginationVariant::Compact)
-            .rows_per_page(size, vec![10, 20, 30, 50], move |s| {
-                per_page.set(s);
-                page.set(0);
-            })
-            .total_items(total)
-            .on_page(move |p| page.set(p - 1)),
-    );
+    let pager = components::table_pager(page, per_page, cur, total_pages, total);
 
-    let card = ui::table_card(t);
+    let card = components::table_card(t);
 
     scroll_view(
         container().padding(EdgeInsets::all(24.0)).child(
@@ -118,13 +105,4 @@ fn name_cell(cu: &Customer) -> AnyWidget {
     .radius(8.0)
     .on_tap(move || open_customer_detail(id))
     .into_widget()
-}
-
-fn empty_state() -> AnyWidget {
-    let c = theme().colors;
-    container()
-        .padding(EdgeInsets::all(30.0))
-        .alignment(Alignment::CENTER)
-        .child(text("No customers match your search.").size(13.5).color(c.muted_foreground))
-        .into_widget()
 }

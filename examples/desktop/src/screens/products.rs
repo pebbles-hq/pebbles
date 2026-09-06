@@ -5,10 +5,10 @@
 
 use pebbles::prelude::*;
 
+use crate::components;
 use crate::model::{Product, StockStatus};
 use crate::sheets::open_product_detail;
 use crate::store;
-use crate::ui;
 
 pub fn products() -> impl IntoWidget {
     component(products_view)
@@ -86,7 +86,7 @@ fn products_view() -> impl IntoWidget {
             sort_dir.set(dir);
             page.set(0);
         })
-        .empty(empty_state());
+        .empty(components::table_empty("No products match your filters."));
 
     for p in &slice {
         let id = p.id;
@@ -94,9 +94,9 @@ fn products_view() -> impl IntoWidget {
             cell(name_cell(p)),
             Cell::from(p.sku.clone()),
             Cell::from(p.category.clone()),
-            Cell::from(ui::price(p.price_cents)),
+            Cell::from(components::price(p.price_cents)),
             Cell::from(p.stock.to_string()),
-            cell(ui::stock_badge(p)),
+            cell(components::stock_badge(p)),
             cell(
                 button("View")
                     .variant(ButtonVariant::Outline)
@@ -108,7 +108,7 @@ fn products_view() -> impl IntoWidget {
 
     // --- toolbar ------------------------------------------------------------
     let toolbar = row(children![
-        field_search(search, page),
+        components::search_field(search, page, "Search name, SKU or brand…", 280.0),
         gap_w(10.0),
         select(categories.clone()).value(cat_sel).width(170.0).on_changed(move |i, _| {
             cat.set(i);
@@ -127,19 +127,9 @@ fn products_view() -> impl IntoWidget {
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center);
 
-    // --- pagination: rows-per-page + results on the left, nav on the right ---
-    let pager = container().padding(EdgeInsets::only(0.0, 14.0, 0.0, 0.0)).child(
-        pagination(cur + 1, total_pages)
-            .variant(PaginationVariant::Compact)
-            .rows_per_page(size, vec![10, 20, 30, 50], move |s| {
-                per_page.set(s);
-                page.set(0);
-            })
-            .total_items(total)
-            .on_page(move |p| page.set(p - 1)),
-    );
+    let pager = components::table_pager(page, per_page, cur, total_pages, total);
 
-    let card = ui::table_card(t);
+    let card = components::table_card(t);
 
     scroll_view(
         container().padding(EdgeInsets::all(24.0)).child(
@@ -151,16 +141,6 @@ fn products_view() -> impl IntoWidget {
     .drag_scroll(true)
 }
 
-fn field_search(search: Signal<String>, page: Signal<usize>) -> impl IntoWidget {
-    container().width(280.0).child(
-        text_field()
-            .leading(lucide::SEARCH)
-            .placeholder("Search name, SKU or brand…")
-            .bind(search)
-            .on_changed(move |_| page.set(0)),
-    )
-}
-
 /// The first column: thumbnail + name (tap to open) + brand. No width cap — the
 /// column sizes to its content (the table scrolls horizontally if the row is wide).
 fn name_cell(p: &Product) -> AnyWidget {
@@ -168,7 +148,7 @@ fn name_cell(p: &Product) -> AnyWidget {
     let id = p.id;
     pressable(
         row(children![
-            ui::thumb(p, 34.0),
+            components::thumb(p, 34.0),
             gap_w(10.0),
             column(children![
                 text(p.name.clone()).size(13.5).weight(600.0).color(c.foreground),
@@ -191,13 +171,4 @@ fn stock_matches(sel: usize, status: StockStatus) -> bool {
         3 => status == StockStatus::OutOfStock,
         _ => true,
     }
-}
-
-fn empty_state() -> AnyWidget {
-    let c = theme().colors;
-    container()
-        .padding(EdgeInsets::all(30.0))
-        .alignment(Alignment::CENTER)
-        .child(text("No products match your filters.").size(13.5).color(c.muted_foreground))
-        .into_widget()
 }

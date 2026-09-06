@@ -4,9 +4,9 @@
 
 use pebbles::prelude::*;
 
+use crate::components;
 use crate::model::{Order, OrderStatus};
 use crate::store;
-use crate::ui;
 
 // ===========================================================================
 // Product detail
@@ -81,14 +81,14 @@ fn product_view(id: &i64) -> AnyWidget {
         row(children![
             text(p.name.clone()).size(19.0).weight(700.0).color(c.foreground),
             spacer(),
-            ui::stock_badge(&p),
+            components::stock_badge(&p),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Start),
         gap_h(4.0),
         row(children![
             text(format!("{} · {}", p.brand, p.category)).size(13.0).color(c.muted_foreground),
             spacer(),
-            ui::stars(p.rating),
+            components::stars(p.rating),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Center),
         gap_h(2.0),
@@ -99,9 +99,9 @@ fn product_view(id: &i64) -> AnyWidget {
 
     // Price / cost / margin metrics.
     let metrics = row(children![
-        metric("Price", &ui::price(p.price_cents)),
-        metric("Cost", &ui::price(p.cost_cents)),
-        metric("Margin", &ui::price(p.margin_cents())),
+        metric("Price", &components::price(p.price_cents)),
+        metric("Cost", &components::price(p.cost_cents)),
+        metric("Margin", &components::price(p.margin_cents())),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Start);
 
@@ -219,7 +219,7 @@ fn order_history(product_id: i64) -> AnyWidget {
                             gap_w(10.0),
                             text(date).size(12.5).color(c.muted_foreground),
                             spacer(),
-                            ui::order_badge(status),
+                            components::order_badge(status),
                             gap_w(10.0),
                             text(format!("×{qty}")).size(13.0).color(c.foreground),
                         ])
@@ -263,7 +263,7 @@ fn order_view(id: &i64) -> AnyWidget {
         row(children![
             text(o.code.clone()).size(20.0).weight(700.0).color(c.foreground),
             spacer(),
-            ui::order_badge(o.status),
+            components::order_badge(o.status),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Center),
         gap_h(4.0),
@@ -281,14 +281,14 @@ fn order_view(id: &i64) -> AnyWidget {
                 Expanded::new(
                     column(children![
                         text(l.name.clone()).size(13.5).weight(500.0).color(c.foreground),
-                        text(format!("{} × {}", l.qty, ui::price(l.unit_cents)))
+                        text(format!("{} × {}", l.qty, components::price(l.unit_cents)))
                             .size(12.0)
                             .color(c.muted_foreground),
                     ])
                     .cross_axis_alignment(CrossAxisAlignment::Start)
                     .main_axis_size(MainAxisSize::Min),
                 ),
-                text(ui::price(l.line_total_cents())).size(13.5).weight(600.0).color(c.foreground),
+                text(components::price(l.line_total_cents())).size(13.5).weight(600.0).color(c.foreground),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Center)
             .into_widget()
@@ -301,10 +301,10 @@ fn order_view(id: &i64) -> AnyWidget {
     let tax = (subtotal as f64 * store::settings().tax_rate / 100.0).round() as i64;
     let total = subtotal + tax;
     let totals = column(children![
-        total_row("Subtotal", &ui::price(subtotal), false),
-        total_row(&format!("Tax ({:.1}%)", store::settings().tax_rate), &ui::price(tax), false),
+        total_row("Subtotal", &components::price(subtotal), false),
+        total_row(&format!("Tax ({:.1}%)", store::settings().tax_rate), &components::price(tax), false),
         gap_h(6.0),
-        total_row("Total", &ui::price(total), true),
+        total_row("Total", &components::price(total), true),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Stretch)
     .main_axis_size(MainAxisSize::Min);
@@ -422,7 +422,7 @@ fn customer_view(id: &i64) -> AnyWidget {
 
     let stats = row(children![
         metric("Orders", &store::customer_order_count(id).to_string()),
-        metric("Spent", &ui::price(store::customer_spent_cents(id))),
+        metric("Spent", &components::price(store::customer_spent_cents(id))),
         metric("Since", &cust.since),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Start);
@@ -447,7 +447,7 @@ fn customer_view(id: &i64) -> AnyWidget {
                 let code = o.code.clone();
                 let date = o.date.clone();
                 let status = o.status;
-                let total = ui::price(o.subtotal_cents());
+                let total = components::price(o.subtotal_cents());
                 pressable(
                     container().padding(EdgeInsets::symmetric(0.0, 8.0)).child(
                         row(children![
@@ -455,7 +455,7 @@ fn customer_view(id: &i64) -> AnyWidget {
                             gap_w(10.0),
                             text(date).size(12.5).color(c.muted_foreground),
                             spacer(),
-                            ui::order_badge(status),
+                            components::order_badge(status),
                             gap_w(10.0),
                             text(total).size(13.0).color(c.foreground),
                         ])

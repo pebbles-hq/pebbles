@@ -3,10 +3,10 @@
 
 use pebbles::prelude::*;
 
+use crate::components;
 use crate::model::{Order, OrderStatus};
 use crate::sheets::open_order_detail;
 use crate::store;
-use crate::ui;
 
 pub fn orders() -> impl IntoWidget {
     component(orders_view)
@@ -48,7 +48,10 @@ fn orders_view() -> impl IntoWidget {
     // The customer name can be long → one line with an ellipsis.
     // Columns size to their content (full values, no truncation); the table scrolls
     // horizontally if they don't all fit.
-    let mut t = table(headers).striped(true).row_hover(true).empty(empty_state());
+    let mut t = table(headers)
+        .striped(true)
+        .row_hover(true)
+        .empty(components::table_empty("No orders match your filters."));
     for o in &slice {
         let id = o.id;
         let customer = store::customer(o.customer_id).map(|cu| cu.name).unwrap_or_else(|| "—".into());
@@ -57,8 +60,8 @@ fn orders_view() -> impl IntoWidget {
             Cell::from(customer),
             Cell::from(o.date.clone()),
             Cell::from(o.item_count().to_string()),
-            Cell::from(ui::price(o.subtotal_cents())),
-            cell(ui::order_badge(o.status)),
+            Cell::from(components::price(o.subtotal_cents())),
+            cell(components::order_badge(o.status)),
             cell(
                 button("View")
                     .variant(ButtonVariant::Outline)
@@ -73,13 +76,7 @@ fn orders_view() -> impl IntoWidget {
     status_opts.extend(OrderStatus::all().iter().map(|s| s.label().to_string()));
 
     let toolbar = row(children![
-        container().width(280.0).child(
-            text_field()
-                .leading(lucide::SEARCH)
-                .placeholder("Search order # or customer…")
-                .bind(search)
-                .on_changed(move |_| page.set(0)),
-        ),
+        components::search_field(search, page, "Search order # or customer…", 280.0),
         gap_w(10.0),
         select(status_opts).value(status_sel).width(170.0).on_changed(move |i, _| {
             status.set(i);
@@ -90,19 +87,9 @@ fn orders_view() -> impl IntoWidget {
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center);
 
-    // Rows-per-page + results on the left, nav on the right (shadcn table footer).
-    let pager = container().padding(EdgeInsets::only(0.0, 14.0, 0.0, 0.0)).child(
-        pagination(cur + 1, total_pages)
-            .variant(PaginationVariant::Compact)
-            .rows_per_page(size, vec![10, 20, 30, 50], move |s| {
-                per_page.set(s);
-                page.set(0);
-            })
-            .total_items(total)
-            .on_page(move |p| page.set(p - 1)),
-    );
+    let pager = components::table_pager(page, per_page, cur, total_pages, total);
 
-    let card = ui::table_card(t);
+    let card = components::table_card(t);
 
     scroll_view(
         container().padding(EdgeInsets::all(24.0)).child(
@@ -119,14 +106,5 @@ fn link(label: &str, on_tap: impl Fn() + 'static) -> AnyWidget {
     pressable(text(label.to_string()).size(13.5).weight(600.0).color(theme().colors.primary))
         .radius(6.0)
         .on_tap(on_tap)
-        .into_widget()
-}
-
-fn empty_state() -> AnyWidget {
-    let c = theme().colors;
-    container()
-        .padding(EdgeInsets::all(30.0))
-        .alignment(Alignment::CENTER)
-        .child(text("No orders match your filters.").size(13.5).color(c.muted_foreground))
         .into_widget()
 }

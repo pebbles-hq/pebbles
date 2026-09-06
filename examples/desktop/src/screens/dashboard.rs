@@ -4,24 +4,30 @@
 
 use pebbles::prelude::*;
 
+use crate::components;
 use crate::sheets::{open_order_detail, open_product_detail};
 use crate::store;
-use crate::ui;
 
 pub fn dashboard() -> impl IntoWidget {
-    let revenue = ui::price(store::revenue_cents());
-    let inv_value = ui::price(store::inventory_value_cents());
+    let revenue = components::price(store::revenue_cents());
+    let inv_value = components::price(store::inventory_value_cents());
     let products = store::products().len();
     let low = store::low_stock().len();
     let pending = store::pending_orders();
     let customers = store::customers().len();
 
     let cards = vec![
-        ui::kpi_card("Revenue", &revenue, "paid + fulfilled", lucide::TRENDING_UP, palette::emerald::S500)
+        components::kpi_card(
+            "Revenue",
+            &revenue,
+            "paid + fulfilled",
+            lucide::TRENDING_UP,
+            palette::emerald::S500,
+        )
+        .into_widget(),
+        components::kpi_card("Inventory value", &inv_value, "at cost", lucide::BOXES, palette::sky::S500)
             .into_widget(),
-        ui::kpi_card("Inventory value", &inv_value, "at cost", lucide::BOXES, palette::sky::S500)
-            .into_widget(),
-        ui::kpi_card(
+        components::kpi_card(
             "Products",
             &products.to_string(),
             &format!("{low} need attention"),
@@ -29,7 +35,7 @@ pub fn dashboard() -> impl IntoWidget {
             palette::violet::S500,
         )
         .into_widget(),
-        ui::kpi_card(
+        components::kpi_card(
             "Pending orders",
             &pending.to_string(),
             &format!("{customers} customers"),
@@ -39,49 +45,25 @@ pub fn dashboard() -> impl IntoWidget {
         .into_widget(),
     ];
 
-    let low_card = panel("Low stock", "Products at or below their reorder level", low_stock_list());
-    let orders_card = panel("Recent orders", "The latest activity", recent_orders_list());
+    let low_card =
+        components::panel("Low stock", "Products at or below their reorder level", low_stock_list());
+    let orders_card = components::panel("Recent orders", "The latest activity", recent_orders_list());
 
     scroll_view(
         container().padding(EdgeInsets::all(24.0)).child(
             column(children![
                 // KPI cards: 4 across on desktop, 2 on tablet, 1 on mobile.
-                ui::responsive_grid(16.0, 1, 2, 4, cards),
+                components::responsive_grid(16.0, 1, 2, 4, cards),
                 gap_h(20.0),
                 // The two panels sit side by side on desktop, and stack to one column
                 // on tablet and mobile.
-                ui::responsive_grid(20.0, 1, 1, 2, vec![low_card, orders_card]),
+                components::responsive_grid(20.0, 1, 1, 2, vec![low_card, orders_card]),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Stretch)
             .main_axis_size(MainAxisSize::Min),
         ),
     )
     .drag_scroll(true)
-}
-
-/// A titled content card.
-fn panel(title: &str, subtitle: &str, body: AnyWidget) -> AnyWidget {
-    let c = theme().colors;
-    container()
-        .decoration(
-            BoxDecoration::new()
-                .color(c.card)
-                .border(Border::new(c.border, 1.0))
-                .radius(BorderRadius::all(14.0)),
-        )
-        .padding(EdgeInsets::all(18.0))
-        .child(
-            column(children![
-                text(title.to_string()).size(15.0).weight(700.0).color(c.foreground),
-                gap_h(2.0),
-                text(subtitle.to_string()).size(12.5).color(c.muted_foreground),
-                gap_h(14.0),
-                body,
-            ])
-            .cross_axis_alignment(CrossAxisAlignment::Stretch)
-            .main_axis_size(MainAxisSize::Min),
-        )
-        .into_widget()
 }
 
 fn low_stock_list() -> AnyWidget {
@@ -98,7 +80,7 @@ fn low_stock_list() -> AnyWidget {
             pressable(
                 container().padding(EdgeInsets::symmetric(0.0, 8.0)).child(
                     row(children![
-                        ui::thumb(p, 30.0),
+                        components::thumb(p, 30.0),
                         gap_w(10.0),
                         Expanded::new(
                             text(p.name.clone()).size(13.5).max_lines(1).ellipsis().color(c.foreground),
@@ -106,7 +88,7 @@ fn low_stock_list() -> AnyWidget {
                         gap_w(8.0),
                         text(format!("{} left", p.stock)).size(12.5).color(c.muted_foreground),
                         gap_w(10.0),
-                        ui::stock_badge(p),
+                        components::stock_badge(p),
                     ])
                     .cross_axis_alignment(CrossAxisAlignment::Center),
                 ),
@@ -132,7 +114,7 @@ fn recent_orders_list() -> AnyWidget {
         .map(|o| {
             let id = o.id;
             let name = store::customer(o.customer_id).map(|cu| cu.name).unwrap_or_else(|| "—".into());
-            let total = ui::price(o.subtotal_cents());
+            let total = components::price(o.subtotal_cents());
             let code = o.code.clone();
             let status = o.status;
             pressable(
@@ -144,7 +126,7 @@ fn recent_orders_list() -> AnyWidget {
                             text(name).size(13.0).max_lines(1).ellipsis().color(c.muted_foreground)
                         ),
                         gap_w(8.0),
-                        ui::order_badge(status),
+                        components::order_badge(status),
                         gap_w(10.0),
                         text(total).size(13.0).weight(600.0).color(c.foreground),
                     ])
