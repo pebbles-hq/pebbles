@@ -274,7 +274,10 @@ fn render_command(p: &Props) -> AnyWidget {
     .main_axis_size(MainAxisSize::Min);
 
     if p.modal {
-        content.into_widget()
+        // The dialog draws the surface, but has no inner padding — supply the same 8px
+        // inset the inline command uses (matches `inner = width - 16`), so the search
+        // field and rows aren't flush against the edge.
+        Container::new().padding(EdgeInsets::all(8.0)).child(content).into_widget()
     } else {
         Container::new()
             .width(width)
