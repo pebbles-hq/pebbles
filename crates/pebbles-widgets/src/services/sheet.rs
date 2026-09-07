@@ -42,6 +42,10 @@ struct SheetEntry {
     /// True once closing started: the panel slides out and the entry is removed after
     /// [`MOTION_SECS`] (deferred removal). `is_open()` reports `false` immediately.
     leaving: bool,
+    /// Shared modal open-sequence (see [`crate::overlay::next_modal_seq`]) — the host
+    /// paints modals in ascending order, so a sheet opened after a dialog sits on top
+    /// of it (and a dialog opened later sits on top of this sheet).
+    seq: u64,
 }
 
 thread_local! {
@@ -239,6 +243,7 @@ impl Sheet {
             dismissible: self.dismissible,
             on_close: self.on_close,
             leaving: false,
+            seq: crate::overlay::next_modal_seq(),
         }));
         // C3: slide in + fade the scrim from off-screen (t: 0 → 1).
         let t = t_signal();
@@ -249,8 +254,16 @@ impl Sheet {
     }
 }
 
+/// The open sheet's modal open-sequence, or `None` when none is present (including
+/// during the exit tween, while it still renders). The host uses it to stack modals
+/// (dialogs + sheets) in open order. Mirrors [`overlay_children`]'s presence.
+pub(crate) fn open_seq() -> Option<u64> {
+    sheet_signal().get().map(|e| e.seq)
+}
+
 /// Overlay children for the open sheet (scrim + edge-anchored panel), or empty.
-/// Rendered by [`OverlayHost`](crate::overlay::OverlayHost).
+/// Rendered by [`OverlayHost`](crate::overlay::OverlayHost); stacked among the other
+/// modal surfaces by open order (see [`open_seq`]).
 pub(crate) fn overlay_children() -> Vec<AnyWidget> {
     let Some(e) = sheet_signal().get() else {
         return Vec::new();

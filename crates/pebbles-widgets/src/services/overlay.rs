@@ -313,6 +313,26 @@ struct GuardProps {
     alive: Option<std::rc::Rc<dyn Fn() -> bool>>,
 }
 
+thread_local! {
+    /// A shared, monotonic "modal open sequence" counter. Every modal surface
+    /// (dialog, sheet) stamps the next value when it opens; [`render_host`] paints
+    /// them in ascending order so the most-recently-opened is on top — regardless of
+    /// which layer it belongs to. One counter for all modal kinds, so their open
+    /// order is globally comparable.
+    static MODAL_SEQ: std::cell::Cell<u64> = const { std::cell::Cell::new(1) };
+}
+
+/// The next modal open-sequence value (monotonic; never reused). Called by
+/// `dialog::open` / `sheet::open` at open time; read back via each service's
+/// `open_seq()` to order the modal layers in [`render_host`].
+pub(crate) fn next_modal_seq() -> u64 {
+    MODAL_SEQ.with(|c| {
+        let v = c.get();
+        c.set(v + 1);
+        v
+    })
+}
+
 /// Wrap overlay panel content so the aliveness probe is re-checked at the
 /// panel's own inflate/render time (see the comment in [`render_host`]).
 fn guarded(content: AnyWidget, alive: Option<std::rc::Rc<dyn Fn() -> bool>>) -> AnyWidget {
@@ -331,10 +351,23 @@ fn render_panel_guard(p: &GuardProps) -> AnyWidget {
 
 fn render_host(p: &Props) -> crate::widgets::Stack {
     let mut kids: Vec<AnyWidget> = vec![p.child.clone()];
-    // Modal dialogs paint above the base content (dim scrim + centered surface).
-    kids.extend(crate::dialog::overlay_children());
-    // Sheets / drawers — edge-anchored modal panels, above dialogs.
-    kids.extend(crate::sheet::overlay_children());
+    // Modal surfaces (dialogs + sheets) stack by OPEN ORDER, not by a fixed layer:
+    // the most-recently-opened paints last (on top). A confirmation dialog opened
+    // from inside a sheet must sit ABOVE the sheet; a sheet opened from inside a
+    // dialog must sit above the dialog. Each stamps a shared monotonic sequence at
+    // open time (`modal_seq`), and we paint them in ascending order. Sorting is
+    // stable, so ties (can't happen — the counter is monotonic) keep insertion order.
+    let mut modals: Vec<(u64, Vec<AnyWidget>)> = Vec::new();
+    if let Some(seq) = crate::dialog::open_seq() {
+        modals.push((seq, crate::dialog::overlay_children()));
+    }
+    if let Some(seq) = crate::sheet::open_seq() {
+        modals.push((seq, crate::sheet::overlay_children()));
+    }
+    modals.sort_by_key(|(seq, _)| *seq);
+    for (_, children) in modals {
+        kids.extend(children);
+    }
     // Anchored floating layers (tooltips + popovers/dropdowns/selects) paint ABOVE the
     // modal surfaces, not below: a dropdown/select/combobox/date-picker opened FROM
     // inside a sheet or dialog must float over it, else its menu is occluded by the

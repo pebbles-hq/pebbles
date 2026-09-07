@@ -122,3 +122,52 @@ fn a_popover_opened_from_a_sheet_floats_above_it_and_is_clickable() {
     assert!(picked.get(), "the popover over the sheet received the tap");
     assert!(sheet::is_open(), "and the sheet stayed open (the popover consumed the tap)");
 }
+
+#[test]
+fn a_dialog_opened_from_a_sheet_stacks_above_it() {
+    // Modal surfaces stack by OPEN ORDER. Open a sheet, then a confirmation dialog
+    // from within it (the "view → sheet → delete → confirm" flow): the dialog must
+    // render above the sheet, not be buried under the sheet's panel + scrim.
+    let (mut ui, mut env, win) = mount();
+
+    // Full-window bottom sheet (covers the whole window while open).
+    sheet(text("sheet content")).side(Side::Bottom).size(600.0).open();
+    settle(&mut ui, &mut env, win);
+    assert!(sheet::is_open(), "sheet opened");
+
+    // Then a dialog from within the sheet (opened LATER → higher sequence → on top).
+    let picked = Rc::new(Cell::new(false));
+    let flag = picked.clone();
+    let body =
+        GestureDetector::new(Container::new().width(200.0).height(120.0)).on_tap(move || flag.set(true));
+    dialog(body).width(200.0).open();
+    settle(&mut ui, &mut env, win);
+    assert!(dialog::is_open(), "dialog opened over the sheet");
+
+    // The dialog surface is centered (200×~120 in a 400×600 window). A tap on it must
+    // reach the dialog's content — proving the dialog is stacked above the sheet.
+    ui.dispatch_tap(Offset::new(200.0, 300.0));
+    assert!(picked.get(), "the dialog above the sheet received the tap");
+    assert!(dialog::is_open() && sheet::is_open(), "both modals remain (tap hit the dialog body)");
+}
+
+#[test]
+fn a_sheet_opened_from_a_dialog_stacks_above_it() {
+    // The reverse: a sheet opened AFTER a dialog must sit above the dialog. This is
+    // what a fixed layer order can never satisfy in both directions — only open order.
+    let (mut ui, mut env, win) = mount();
+
+    dialog(text("dialog content")).width(300.0).open();
+    settle(&mut ui, &mut env, win);
+    assert!(dialog::is_open(), "dialog opened");
+
+    // A full-window bottom sheet opened LATER → higher sequence → paints on top,
+    // covering the dialog. A tap anywhere inside the sheet panel must NOT dismiss the
+    // dialog behind it (the sheet's panel is now the topmost hit layer there).
+    sheet(text("sheet over dialog")).side(Side::Bottom).size(600.0).open();
+    settle(&mut ui, &mut env, win);
+
+    ui.dispatch_tap(Offset::new(200.0, 300.0));
+    assert!(sheet::is_open(), "the later sheet is on top and stays open");
+    assert!(dialog::is_open(), "the dialog underneath was not dismissed by a tap on the sheet");
+}

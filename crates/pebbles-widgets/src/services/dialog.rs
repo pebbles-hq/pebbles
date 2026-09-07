@@ -36,6 +36,10 @@ struct DialogEntry {
     on_close: Option<Rc<dyn Fn()>>,
     /// Accessible name announced for the dialog surface (C7 semantics).
     title: String,
+    /// Shared modal open-sequence (see [`crate::overlay::next_modal_seq`]) — the
+    /// host paints modals in ascending order, so a dialog opened after a sheet
+    /// (a confirm from within a sheet) sits on top of it.
+    seq: u64,
 }
 
 thread_local! {
@@ -158,6 +162,7 @@ impl Dialog {
             dismissible: self.dismissible,
             on_close: self.on_close,
             title: self.title,
+            seq: crate::overlay::next_modal_seq(),
         }));
         id
     }
@@ -282,8 +287,16 @@ impl AlertDialog {
     }
 }
 
+/// The open dialog's modal open-sequence, or `None` when none is open. The host
+/// uses it to stack modals (dialogs + sheets) in open order. Mirrors
+/// [`overlay_children`]'s presence exactly (both key off `modal_signal`).
+pub(crate) fn open_seq() -> Option<u64> {
+    modal_signal().get().map(|e| e.seq)
+}
+
 /// The overlay children for the open dialog (scrim + centered surface), or empty.
-/// Rendered by [`OverlayHost`](crate::overlay::OverlayHost) above the popover layer.
+/// Rendered by [`OverlayHost`](crate::overlay::OverlayHost); stacked among the other
+/// modal surfaces by open order (see [`open_seq`]).
 pub(crate) fn overlay_children() -> Vec<AnyWidget> {
     let Some(entry) = modal_signal().get() else {
         return Vec::new();
