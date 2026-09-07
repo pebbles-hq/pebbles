@@ -1,11 +1,15 @@
 //! Regression: a tap INSIDE a sheet/dialog must not fall through to the dismiss
 //! scrim behind it. The panel consumes taps; only a tap on the scrim (outside the
-//! panel) dismisses.
+//! panel) dismisses. Plus: a popover (dropdown/select) opened FROM a sheet must
+//! float ABOVE it and stay clickable — not be occluded by the sheet's panel/scrim.
+
+use std::cell::Cell;
+use std::rc::Rc;
 
 use pebbles_core::{IntoWidget, Ui, animation, component};
 use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{OverlayHost, Side, View, dialog, overlay, sheet, text};
+use pebbles_widgets::{Container, GestureDetector, OverlayHost, Side, View, dialog, overlay, sheet, text};
 
 fn root() -> impl IntoWidget {
     OverlayHost::wrap(text("body"))
@@ -90,4 +94,31 @@ fn tapping_inside_a_dialog_keeps_it_open() {
     // A tap in the far corner (outside the ~300px-wide surface) dismisses.
     ui.dispatch_tap(Offset::new(10.0, 10.0));
     assert!(!dialog::is_open(), "a tap outside the dialog surface dismisses it");
+}
+
+#[test]
+fn a_popover_opened_from_a_sheet_floats_above_it_and_is_clickable() {
+    // A dropdown/select/combobox opened from inside a sheet lives in the popover
+    // layer. It MUST render above the sheet, else its menu is occluded by the
+    // sheet's panel + scrim and can neither be seen nor tapped (the reported bug).
+    let (mut ui, mut env, win) = mount();
+
+    // A 300px-tall bottom sheet occupies y ∈ [300, 600].
+    sheet(text("sheet content")).side(Side::Bottom).size(300.0).open();
+    settle(&mut ui, &mut env, win);
+    assert!(sheet::is_open(), "sheet opened");
+
+    // A popover menu item sitting OVER the sheet panel (x ∈ [150,250], y ∈ [400,440]).
+    let picked = Rc::new(Cell::new(false));
+    let flag = picked.clone();
+    let item =
+        GestureDetector::new(Container::new().width(100.0).height(40.0)).on_tap(move || flag.set(true));
+    overlay::show_overlay(item.into_widget(), 150.0, 400.0, 100.0, 40.0);
+    settle(&mut ui, &mut env, win);
+
+    // Tapping the menu item (which overlaps the sheet) must reach the popover, proving
+    // it is stacked above the sheet — not swallowed by the sheet's panel underneath.
+    ui.dispatch_tap(Offset::new(200.0, 420.0));
+    assert!(picked.get(), "the popover over the sheet received the tap");
+    assert!(sheet::is_open(), "and the sheet stayed open (the popover consumed the tap)");
 }

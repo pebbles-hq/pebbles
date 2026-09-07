@@ -331,7 +331,18 @@ fn render_panel_guard(p: &GuardProps) -> AnyWidget {
 
 fn render_host(p: &Props) -> crate::widgets::Stack {
     let mut kids: Vec<AnyWidget> = vec![p.child.clone()];
-    // Passive layer (tooltips / hover cards): above content, click-through, no scrim.
+    // Modal dialogs paint above the base content (dim scrim + centered surface).
+    kids.extend(crate::dialog::overlay_children());
+    // Sheets / drawers — edge-anchored modal panels, above dialogs.
+    kids.extend(crate::sheet::overlay_children());
+    // Anchored floating layers (tooltips + popovers/dropdowns/selects) paint ABOVE the
+    // modal surfaces, not below: a dropdown/select/combobox/date-picker opened FROM
+    // inside a sheet or dialog must float over it, else its menu is occluded by the
+    // sheet's panel + scrim and can neither be seen nor clicked. (Opening a modal while
+    // a popover is up can't strand the popover behind it — the popover's own full-window
+    // scrim dismisses it on any outside tap first.)
+    //
+    // Passive layer (tooltips / hover cards): click-through, no scrim.
     if let Some(entry) = passive_signal().get() {
         kids.push(Positioned::new(entry.content).left(entry.left).top(entry.top).into_widget());
     }
@@ -364,11 +375,7 @@ fn render_host(p: &Props) -> crate::widgets::Stack {
             );
         }
     }
-    // Modal dialogs paint above the popover layer (dim scrim + centered surface).
-    kids.extend(crate::dialog::overlay_children());
-    // Sheets / drawers — edge-anchored modal panels, above dialogs.
-    kids.extend(crate::sheet::overlay_children());
-    // Toasts paint topmost (over modals) so notifications are always visible.
+    // Toasts paint topmost (over modals and popovers) so notifications are always visible.
     kids.extend(crate::toast::overlay_children());
     stack(kids).alignment(Alignment::TOP_LEFT).fit(StackFit::Expand)
 }
