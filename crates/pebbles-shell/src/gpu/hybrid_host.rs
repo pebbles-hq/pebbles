@@ -101,13 +101,12 @@ fn swap_target(device: &wgpu::Device, surface: &mut RenderSurface<'_>, width: u3
     surface.target_texture = texture;
 }
 
-/// The hybrid renderer: the `vello_hybrid::Renderer` + its `Resources`, built lazily once the
-/// target size is known and rebuilt on resize. `render_to_texture` mirrors `vello::Renderer`'s
-/// signature so the runner calls it identically.
+/// The hybrid renderer: the `vello_hybrid::Renderer` + its `Resources`, built once (lazily,
+/// on the first frame) and reused at EVERY size. `render_to_texture` mirrors
+/// `vello::Renderer`'s signature so the runner calls it identically.
 pub(crate) struct Renderer {
     inner: Option<HybRenderer>,
     resources: Option<Resources>,
-    size: (u32, u32),
     /// GPU textures for `draw_image` content, keyed by source-pixel identity so an image
     /// isn't re-uploaded every frame. (Grows with distinct images seen; a real eviction
     /// policy is a follow-up — fine for typical screens.)
@@ -117,7 +116,7 @@ pub(crate) struct Renderer {
 /// Construct an (empty) hybrid renderer; the inner GPU renderer is built on first frame, when
 /// the target format + size are known (the runner has no size at `new_renderer` time).
 pub(crate) fn new_renderer(_device: &wgpu::Device, _queue: &wgpu::Queue) -> Renderer {
-    Renderer { inner: None, resources: None, size: (0, 0), image_cache: HashMap::new() }
+    Renderer { inner: None, resources: None, image_cache: HashMap::new() }
 }
 
 impl Renderer {
@@ -131,12 +130,15 @@ impl Renderer {
     ) -> Result<(), String> {
         let format = *SURFACE_FORMAT.get().ok_or("pebbles(vello-hybrid): surface format not yet known")?;
         let size = (params.width.max(1), params.height.max(1));
-        if self.inner.is_none() || self.size != size {
+        // Build the renderer + its Resources (glyph/image atlas) ONCE and reuse them at every
+        // size: `render()` takes the size per frame and grows its internal targets as needed.
+        // Recreating them on resize wiped the atlas and rendered a fresh renderer's first frame
+        // each time — that was the "christmas lights" flicker while dragging the window.
+        if self.inner.is_none() {
             let (renderer, resources) =
                 HybRenderer::new(device, &RenderTargetConfig { format, width: size.0, height: size.1 });
             self.inner = Some(renderer);
             self.resources = Some(resources);
-            self.size = size;
         }
         let renderer = self.inner.as_mut().unwrap();
         let resources = self.resources.as_mut().unwrap();
