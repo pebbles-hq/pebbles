@@ -46,9 +46,12 @@ pub(crate) struct RenderParams {
     pub antialiasing_method: AaConfig,
 }
 
-/// The wgpu context — a thin wrapper over `vello::util::RenderContext` that, after creating
-/// or resizing a surface, swaps the intermediate target to a render-attachment texture the
-/// hybrid rasterizer can draw into. `Deref` exposes the inner `devices` pool unchanged.
+/// The wgpu context — a thin wrapper over `vello::util::RenderContext` whose only job is to
+/// capture the swapchain format at surface creation (for the lazily-built
+/// `vello_hybrid::Renderer`). It does NOT swap the intermediate target: the hybrid path
+/// rasterizes straight into the swapchain (see `render.rs::present_frame`), so no
+/// render-attachment intermediate is needed. `Deref` exposes the inner context —
+/// `devices`, `resize_surface`, etc. — unchanged.
 pub(crate) struct RenderContext(VelloCtx);
 
 impl RenderContext {
@@ -63,17 +66,9 @@ impl RenderContext {
         height: u32,
         present_mode: wgpu::PresentMode,
     ) -> Result<RenderSurface<'w>, vello::Error> {
-        let mut surface = self.0.create_surface(window, width, height, present_mode).await?;
-        let _ = SURFACE_FORMAT.set(surface.config.format);
-        let device = &self.0.devices[surface.dev_id].device;
-        swap_target(device, &mut surface, width, height);
+        let surface = self.0.create_surface(window, width, height, present_mode).await?;
+        SURFACE_FORMAT.get_or_init(|| surface.config.format);
         Ok(surface)
-    }
-
-    pub(crate) fn resize_surface(&self, surface: &mut RenderSurface<'_>, width: u32, height: u32) {
-        self.0.resize_surface(surface, width, height);
-        let device = &self.0.devices[surface.dev_id].device;
-        swap_target(device, surface, width, height);
     }
 }
 
@@ -82,23 +77,6 @@ impl Deref for RenderContext {
     fn deref(&self) -> &VelloCtx {
         &self.0
     }
-}
-
-/// Replace the surface's intermediate target with a `RENDER_ATTACHMENT | TEXTURE_BINDING`
-/// texture — hybrid rasterizes into it, and the (unchanged) blitter samples it to present.
-fn swap_target(device: &wgpu::Device, surface: &mut RenderSurface<'_>, width: u32, height: u32) {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("pebbles.hybrid.target"),
-        size: wgpu::Extent3d { width: width.max(1), height: height.max(1), depth_or_array_layers: 1 },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: surface.config.format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    });
-    surface.target_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    surface.target_texture = texture;
 }
 
 /// The hybrid renderer: the `vello_hybrid::Renderer` + its `Resources`, built once (lazily,

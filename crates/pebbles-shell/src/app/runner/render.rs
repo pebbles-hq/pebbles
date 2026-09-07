@@ -273,10 +273,10 @@ impl Runner {
             eprintln!("[pebbles reactive] {}", pebbles_core::reactive_stats::summary());
         }
 
-        // 4. Render to the offscreen target and blit to the surface.
-        // NOTHING in this GPU section may panic: a desktop app must survive any
-        // driver hiccup. On failure: log, bump GPU_ERRORS (the recovery reset
-        // picks it up next frame), and skip THIS frame.
+        // 4. Render + present. Backend-split (see `present_frame`): Vello renders to an
+        // intermediate storage target and blits it to the swapchain; Vello Hybrid renders
+        // straight to the swapchain. NOTHING here may panic — on failure it logs, bumps
+        // GPU_ERRORS (the reset picks it up), and skips THIS frame.
         let surface = &active.surface;
         let device_handle = &self.context.as_ref().unwrap().devices[surface.dev_id];
         let renderer = match self.renderers[surface.dev_id].as_mut() {
@@ -284,56 +284,23 @@ impl Runner {
             None => self.renderers[surface.dev_id]
                 .insert(new_renderer(&device_handle.device, &device_handle.queue)),
         };
-
-        if let Err(e) = renderer.render_to_texture(
+        let params = RenderParams {
+            base_color: self.background,
+            width: phys.width,
+            height: phys.height,
+            antialiasing_method: AaConfig::Area,
+        };
+        if !present_frame(
+            renderer,
             &device_handle.device,
             &device_handle.queue,
+            surface,
             &self.frame,
-            &surface.target_view,
-            &RenderParams {
-                base_color: self.background,
-                width: phys.width,
-                height: phys.height,
-                antialiasing_method: AaConfig::Area,
-            },
+            &params,
+            &active.window,
         ) {
-            eprintln!("pebbles: vello render failed (skipping frame, scheduling GPU reset): {e}");
-            GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            active.window.request_redraw();
             return;
         }
-        // DRIVER WORKAROUND — wait the vello compute pass out before touching the
-        // swapchain. On some Linux/Vulkan drivers (seen on RADV/Wayland), letting
-        // the blit/present chain queue up while the vello submission is still in
-        // flight races in the driver and surfaces as spurious, timing-dependent
-        // validation errors ("Texture/Buffer … is invalid") that poison the
-        // device. A desktop UI is nowhere near GPU-bound, so the sync costs
-        // nothing perceptible; correctness beats pipelining here.
-        //
-        // BUT bounded: a `Wait` with no timeout blocks THIS (main) thread forever
-        // if the submission never completes — a lost device would freeze the app
-        // to a black window instead of triggering recovery. Poll returns Timeout,
-        // we log it, and fall through; the error handler / reset path takes over.
-        // Non-blocking: process any completed GPU work without WAITING. A `Wait`
-        // here froze markdown-heavy scenes on Intel (the submission never
-        // signalled in time and every frame timed out → black screen). Present
-        // immediately; the swapchain + AutoVsync already pace us.
-        let _ = device_handle.device.poll(wgpu::PollType::Poll);
-
-        let surface_texture = match surface.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(texture)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
-            // Timeout / occluded / outdated / lost — skip this frame and try again.
-            _ => return,
-        };
-        let mut encoder = device_handle
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.blit") });
-        let target_view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        surface.blitter.copy(&device_handle.device, &mut encoder, &surface.target_view, &target_view);
-        device_handle.queue.submit([encoder.finish()]);
-        active.window.pre_present_notify();
-        surface_texture.present();
 
         // Keep the frames coming while any animation or scroll spring is running —
         // or while a lazy paint-time measurement requested a corrective relayout
@@ -444,40 +411,100 @@ impl Runner {
             None => self.renderers[surface.dev_id]
                 .insert(new_renderer(&device_handle.device, &device_handle.queue)),
         };
-        if let Err(e) = renderer.render_to_texture(
+        let params = RenderParams {
+            base_color: w.background,
+            width: phys.width,
+            height: phys.height,
+            antialiasing_method: AaConfig::Area,
+        };
+        if !present_frame(
+            renderer,
             &device_handle.device,
             &device_handle.queue,
+            surface,
             &self.frame,
-            &surface.target_view,
-            &RenderParams {
-                base_color: w.background,
-                width: phys.width,
-                height: phys.height,
-                antialiasing_method: AaConfig::Area,
-            },
+            &params,
+            &w.window,
         ) {
-            eprintln!("pebbles: vello render failed (skipping frame, scheduling GPU reset): {e}");
-            GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            w.window.request_redraw();
             return;
         }
-        // Non-blocking (see render()): never Wait on the render submission.
-        let _ = device_handle.device.poll(wgpu::PollType::Poll);
-        let surface_texture = match surface.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
-            _ => return,
-        };
-        let mut encoder = device_handle
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.window.blit") });
-        let target_view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
-        surface.blitter.copy(&device_handle.device, &mut encoder, &surface.target_view, &target_view);
-        device_handle.queue.submit([encoder.finish()]);
-        w.window.pre_present_notify();
-        surface_texture.present();
 
         if pending_tasks || corrective || pebbles_core::animation::active() {
             w.window.request_redraw();
         }
     }
+}
+
+/// Render `frame` and present it on `surface`; returns `false` if the frame was skipped
+/// (a GPU error or an unavailable surface texture — the caller then bails out for this
+/// frame). No panics: a GPU hiccup logs, bumps [`GPU_ERRORS`] so the reset path rebuilds
+/// the stack, and skips one frame.
+///
+/// Backend-split, because presenting differs by rasterizer:
+/// * **Vello** (compute) can't write a swapchain image directly, so it renders into an
+///   intermediate storage target and blits that to the swapchain.
+/// * **Vello Hybrid** (raster) renders **straight to the swapchain** — no intermediate, no
+///   blit. Besides being simpler and cheaper, this removes the extra render target (and its
+///   per-resize recreation) that caused multicolored flicker while resizing on the web.
+#[cfg(all(feature = "vello", not(feature = "vello-hybrid")))]
+fn present_frame(
+    renderer: &mut Renderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    surface: &RenderSurface<'_>,
+    frame: &Scene,
+    params: &RenderParams,
+    window: &Window,
+) -> bool {
+    if let Err(e) = renderer.render_to_texture(device, queue, frame, &surface.target_view, params) {
+        eprintln!("pebbles: vello render failed (skipping frame, scheduling GPU reset): {e}");
+        GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        window.request_redraw();
+        return false;
+    }
+    // DRIVER WORKAROUND — process completed GPU work without WAITING before touching the
+    // swapchain (a blocking `Wait` froze markdown-heavy scenes on Intel; the swapchain +
+    // AutoVsync already pace us). See the git history for the full rationale.
+    let _ = device.poll(wgpu::PollType::Poll);
+    let surface_texture = match surface.surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+        // Timeout / occluded / outdated / lost — skip this frame and try again.
+        _ => return false,
+    };
+    let mut encoder =
+        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.blit") });
+    let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+    surface.blitter.copy(device, &mut encoder, &surface.target_view, &view);
+    queue.submit([encoder.finish()]);
+    window.pre_present_notify();
+    surface_texture.present();
+    true
+}
+
+#[cfg(feature = "vello-hybrid")]
+fn present_frame(
+    renderer: &mut Renderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    surface: &RenderSurface<'_>,
+    frame: &Scene,
+    params: &RenderParams,
+    window: &Window,
+) -> bool {
+    // Acquire the swapchain image and rasterize straight into it (no intermediate/blit).
+    let surface_texture = match surface.surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+        _ => return false,
+    };
+    let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+    if let Err(e) = renderer.render_to_texture(device, queue, frame, &view, params) {
+        eprintln!("pebbles: hybrid render failed (skipping frame, scheduling GPU reset): {e}");
+        GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        window.request_redraw();
+        return false;
+    }
+    let _ = device.poll(wgpu::PollType::Poll);
+    window.pre_present_notify();
+    surface_texture.present();
+    true
 }
