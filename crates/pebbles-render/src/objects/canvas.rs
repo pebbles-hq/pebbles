@@ -62,6 +62,12 @@ impl Canvas<'_> {
         self.scene.stroke(&Stroke::new(width), self.xf(), &Brush::Solid(color), None, path);
     }
 
+    /// Fill an arbitrary kurbo path (non-zero winding) — the basis for area fills, pie
+    /// wedges, and any custom filled shape. Build one with `BezPath`.
+    pub fn fill_path(&mut self, path: &BezPath, color: Color) {
+        self.scene.fill(Fill::NonZero, self.xf(), &Brush::Solid(color), None, path);
+    }
+
     /// Clip subsequent draws to `rect` until the matching [`pop_clip`](Canvas::pop_clip).
     pub fn push_clip(&mut self, rect: Rect) {
         let r = KRect::new(rect.x0, rect.y0, rect.x1, rect.y1);
