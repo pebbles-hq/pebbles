@@ -10,7 +10,7 @@ license = "Apache-2.0"
 authors = ["Reyco Seguma"]
 repository = "https://github.com/pebbles-hq/pebbles"
 homepage = "https://github.com/pebbles-hq/pebbles"
-description = "Pebbles — a Flutter-style, desktop-first GUI framework built on Vello."
+description = "Pebbles — a GUI framework for Rust built from handpicked ideas: a widget model in the spirit of Flutter, reactivity in the spirit of SolidJS, styling in the spirit of Tailwind, and pure-Rust GPU rendering on Vello."
 keywords = ["gui", "ui", "graphics", "vello", "flutter"]
 categories = ["gui", "graphics", "rendering"]
 

@@ -4,9 +4,9 @@
 
 <h1>Pebbles</h1>
 
-<strong>A Flutter-style, desktop-first GUI framework for Rust.</strong>
+<strong>A GUI framework for Rust, built from handpicked ideas.</strong>
 
-<em>Pure-Rust GPU rendering (Vello) · SolidJS-style reactivity · a shadcn-styled widget catalog.</em>
+<em>The good parts from across software — reimplemented natively and brought together in pure Rust.</em>
 
 <br /><br />
 
@@ -31,18 +31,26 @@
 
 ---
 
-Pebbles rasterizes with the [Vello](https://vello.dev) family of pure-Rust,
-`wgpu`-based GPU renderers, on the rest of the Linebender stack (kurbo · peniko ·
-parley) — a modern, GPU-accelerated graphics pipeline rather than a retained widget
-toolkit. It ships **two interchangeable backends**: a low-power **Vello Hybrid**
-default and a GPU-compute **Vello** opt-in for vector-heavy work
-(see [Render backends](#render-backends)).
+**Pebbles are handpicked, polished stones** — each chosen for being good. The framework
+is that idea applied to software. We didn't set out to invent a new way to build UIs; we
+picked the approaches that already got it right across different ecosystems and
+reimplemented them natively as one **pure-Rust** stack. Pebbles is not a clone of any one
+of them — it's the curated set, made to work well together in idiomatic Rust.
 
-It keeps Flutter's **UI-building syntax** — `Row`/`Column`/`Container`/`Text`,
-the box layout protocol, a rich themed widget catalog — but swaps Flutter's
-`StatefulWidget`/`setState` boilerplate for **SolidJS-style reactivity**: signals,
-memos, effects, and plain **function components**. The result is Flutter's
-familiarity with a fraction of the ceremony, in idiomatic Rust.
+Each part is an idea we admired, brought to Rust:
+
+- **Interface** — a declarative, composable widget model *in the spirit of* **Flutter**:
+  `Row`/`Column`/`Container`/`Text`, the box layout protocol, and plain function components.
+- **State** — fine-grained reactivity *in the spirit of* **SolidJS**: signals, memos, and
+  effects, in place of `setState`-style ceremony.
+- **Styling** — utility- and token-driven styling *in the spirit of* **Tailwind**, with a
+  themed default design and live light/dark.
+- **Rendering** — GPU 2D rendering on **[Vello](https://vello.dev)** and the rest of the
+  pure-Rust Linebender stack (kurbo · peniko · parley) — no platform toolkit underneath.
+  Two interchangeable backends ship: a low-power **Vello Hybrid** default and a
+  GPU-compute **Vello** opt-in for vector-heavy work (see [Render backends](#render-backends)).
+
+We expect to keep picking — more good ideas, added over time.
 
 > Status: early but broad. Catalog, reactivity, layout, text editing (incl. **IME/CJK**),
 > scrolling, theming (**live light/dark**), **multi-window + IPC**, **async data**, and an
@@ -191,7 +199,7 @@ claim — the platform builds and passes the headless test suites in
 Legend: ✅ built + tested in CI · 🟢 runs (WebGPU browser) · 🟡 compiles in CI,
 not yet runnable · ⛔ not supported.
 
-Run on any target with Flutter-style `-d`: `pebbles run` (desktop, the default),
+Run on any target with a familiar `-d` device flag: `pebbles run` (desktop, the default),
 `pebbles run -d web` (needs [Trunk](https://trunkrs.dev): `cargo install --locked
 trunk`). **Per-capability compatibility** (which widgets/features run where, and
 how to detect the platform in code) is documented in
