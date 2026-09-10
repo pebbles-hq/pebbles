@@ -41,8 +41,9 @@ use input::{to_command, to_shortcut_key, to_winit_cursor, wheel_with_overlay};
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
 /// How long the primary button must be held to count as a long-press.
 const LONG_PRESS: Duration = Duration::from_millis(500);
-/// Logical pixels scrolled per wheel line.
-const LINE_SCROLL: f64 = 48.0;
+/// Logical pixels scrolled per wheel notch/line. Matched to browsers (Chrome/Firefox
+/// scroll ~100 px per notch); the previous 48 was GTK-ish and felt about half-speed.
+const LINE_SCROLL: f64 = 100.0;
 
 /// Global count of uncaptured GPU errors — the render loop compares it per
 /// frame and REBUILDS the poisoned GPU state (vello renderer + surface target)
