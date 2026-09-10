@@ -396,22 +396,18 @@ impl Ui {
     /// the widget restyles itself. A pointer staying over the same widget is a no-op.
     pub fn dispatch_hover(&mut self, point: Offset) -> bool {
         let hits = self.render.hit_test(point);
-        let found: Option<(u64, Vec<Invoke>, Vec<Invoke>)> = hits.iter().rev().find_map(|&rid| {
-            let listener = self.render.object_ref(rid).downcast_ref::<RenderPointerListener>()?;
-            if !listener.wants_hover() {
-                return None;
-            }
-            let source = self.render.source_of(rid)?;
-            let enters = Self::invokes_of(listener, |l| &l.on_enter);
-            let exits = Self::invokes_of(listener, |l| &l.on_exit);
-            Some((source, enters, exits))
-        });
-
-        let new_key = found.as_ref().map(|(s, _, _)| *s);
-        let old_key = self.hovered.as_ref().map(|h| h.source);
-        if new_key == old_key {
-            return false; // still over the same widget
-        }
+        let found: Option<(u64, Vec<Invoke>, Vec<Invoke>, Vec<Invoke>)> =
+            hits.iter().rev().find_map(|&rid| {
+                let listener = self.render.object_ref(rid).downcast_ref::<RenderPointerListener>()?;
+                if !listener.wants_hover() {
+                    return None;
+                }
+                let source = self.render.source_of(rid)?;
+                let enters = Self::invokes_of(listener, |l| &l.on_enter);
+                let exits = Self::invokes_of(listener, |l| &l.on_exit);
+                let moves = Self::invokes_of(listener, |l| &l.on_move);
+                Some((source, enters, exits, moves))
+            });
 
         let hover_event = PointerEvent {
             position: point,
@@ -419,7 +415,23 @@ impl Ui {
             button: PointerButton::Primary,
             delta: Offset::ZERO,
         };
+
+        let new_key = found.as_ref().map(|(s, _, _, _)| *s);
+        let old_key = self.hovered.as_ref().map(|h| h.source);
         let mut fired = false;
+
+        if new_key == old_key {
+            // Still over the same widget (or nothing): fire only its continuous move
+            // handlers with the current position. Enter/exit are edge-triggered below.
+            if let Some((_, _, _, moves)) = found {
+                for invoke in moves {
+                    self.run_invoke(invoke, hover_event);
+                    fired = true;
+                }
+            }
+            return fired;
+        }
+
         if let Some(old) = self.hovered.take() {
             // Only fire the previously-hovered widget's exit handlers if its element
             // still exists. If it unmounted while hovered (e.g. a click swapped the
@@ -434,8 +446,13 @@ impl Ui {
                 }
             }
         }
-        if let Some((source, enters, exits)) = found {
+        if let Some((source, enters, exits, moves)) = found {
             for invoke in enters {
+                self.run_invoke(invoke, hover_event);
+                fired = true;
+            }
+            // Seed the initial position for the newly-entered widget's move handlers.
+            for invoke in moves {
                 self.run_invoke(invoke, hover_event);
                 fired = true;
             }

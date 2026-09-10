@@ -40,6 +40,11 @@ struct FocusManager {
     on_change: HashMap<FocusKey, Rc<dyn Fn(bool)>>,
     /// Text-editor key handlers — the routing target for [`dispatch_key`].
     edit: HashMap<FocusKey, Rc<dyn Fn(KeyInput)>>,
+    /// Non-editor key handlers (e.g. chart keyboard traversal). Consulted by
+    /// [`dispatch_key`] AFTER editors; the handler returns whether it consumed the key.
+    /// Unlike editors these do NOT set [`focused_is_editor`], so shell shortcuts and IME
+    /// stay off for them.
+    keys: HashMap<FocusKey, Rc<dyn Fn(KeyInput) -> bool>>,
     /// Nodes whose one-shot `autofocus` has already been consumed. Autofocus must fire
     /// exactly once (on the node's first mount) — NOT every render in which nothing is
     /// focused, which would let an autofocus field yank focus back after the user blurs
@@ -65,6 +70,7 @@ fn with_mgr<R>(f: impl FnOnce(&mut FocusManager) -> R) -> R {
                 activation: HashMap::new(),
                 on_change: HashMap::new(),
                 edit: HashMap::new(),
+                keys: HashMap::new(),
                 autofocused: HashSet::new(),
                 scope_of: HashMap::new(),
             });
@@ -209,6 +215,17 @@ impl FocusNode {
         });
     }
 
+    /// Register a NON-editor key handler: while focused, keys route to `handler` (after
+    /// editors), which returns whether it consumed the key. For focusable widgets that
+    /// want arrow-key navigation (charts, custom lists) without being text editors.
+    /// Called each render (idempotent).
+    pub fn register_keys(&self, handler: Rc<dyn Fn(KeyInput) -> bool>) {
+        let key = self.key();
+        with_mgr(|m| {
+            m.keys.insert(key, handler);
+        });
+    }
+
     /// Register this node's keyboard-activation + focus-change handlers (called each
     /// render; idempotent). `autofocus` grabs focus if nothing is focused yet.
     pub fn register(&self, activation: Rc<dyn Fn()>, on_change: Option<Rc<dyn Fn(bool)>>, autofocus: bool) {
@@ -249,6 +266,7 @@ pub fn unregister(id: ElementId) {
         m.activation.remove(&key);
         m.on_change.remove(&key);
         m.edit.remove(&key);
+        m.keys.remove(&key);
         m.scope_of.remove(&key);
         // Let a genuine remount of this id autofocus again.
         m.autofocused.remove(&key);
@@ -287,15 +305,18 @@ pub fn census_registrations() -> usize {
 /// Route a keyboard edit intent to the focused editor. Returns whether it was
 /// handled (i.e. an editor was focused).
 pub fn dispatch_key(key: KeyInput) -> bool {
-    let handler = {
-        let focused = focus_signal().peek();
-        with_mgr(|m| focused.and_then(|k| m.edit.get(&k).cloned()))
-    };
-    match handler {
-        Some(h) => {
-            h(key);
-            true
-        }
+    let focused = focus_signal().peek();
+    // Editors take precedence (they consume all text intents).
+    let editor = with_mgr(|m| focused.and_then(|k| m.edit.get(&k).cloned()));
+    if let Some(h) = editor {
+        h(key);
+        return true;
+    }
+    // Otherwise offer it to a non-editor key handler (chart traversal, etc.), which
+    // reports whether it actually used the key so unhandled keys fall through to Tab.
+    let keys = with_mgr(|m| focused.and_then(|k| m.keys.get(&k).cloned()));
+    match keys {
+        Some(h) => h(key),
         None => false,
     }
 }

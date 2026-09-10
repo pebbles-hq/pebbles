@@ -99,6 +99,9 @@ pub struct RenderPointerListener {
     pub on_enter: Vec<TapCallback>,
     /// The pointer left this box's bounds.
     pub on_exit: Vec<TapCallback>,
+    /// The pointer moved while inside this box — fires continuously with the current
+    /// position each time the cursor moves over it (hover-move, no button held).
+    pub on_move: Vec<TapCallback>,
     /// Primary press began a drag over this box (fires with the down position).
     pub on_pan_start: Vec<TapCallback>,
     /// Pointer moved while the drag it started is active (fires with the position).
@@ -128,7 +131,7 @@ impl RenderPointerListener {
 
     /// Whether this listener participates in hover tracking.
     pub fn wants_hover(&self) -> bool {
-        !self.on_enter.is_empty() || !self.on_exit.is_empty()
+        !self.on_enter.is_empty() || !self.on_exit.is_empty() || !self.on_move.is_empty()
     }
 
     /// Whether this listener participates in drag/pan tracking.

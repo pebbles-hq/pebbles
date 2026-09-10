@@ -49,6 +49,7 @@ pub struct GestureDetector {
     on_pointer_up: Vec<Callback>,
     on_enter: Vec<Callback>,
     on_exit: Vec<Callback>,
+    on_move: Vec<Callback>,
     on_pan_start: Vec<Callback>,
     on_pan_update: Vec<Callback>,
     on_pan_end: Vec<Callback>,
@@ -152,6 +153,13 @@ impl GestureDetector {
         self.on_exit.push(cb.into_callback());
         self
     }
+    /// The pointer moved while hovering this widget (no button held). Fires continuously
+    /// with the current position; use `action_event` to read it in the widget's local
+    /// space. This is the hook for cursor-following UI like chart tooltips.
+    pub fn on_hover_move(mut self, cb: impl IntoCallback) -> Self {
+        self.on_move.push(cb.into_callback());
+        self
+    }
     /// A drag began on this widget (primary press). Use `action_event` to read the
     /// start position.
     pub fn on_pan_start(mut self, cb: impl IntoCallback) -> Self {
@@ -229,6 +237,7 @@ impl GestureDetector {
             on_pointer_up: erase(&self.on_pointer_up),
             on_enter: erase(&self.on_enter),
             on_exit: erase(&self.on_exit),
+            on_move: erase(&self.on_move),
             on_pan_start: erase(&self.on_pan_start),
             on_pan_update: erase(&self.on_pan_update),
             on_pan_end: erase(&self.on_pan_end),
