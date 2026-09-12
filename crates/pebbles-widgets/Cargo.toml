@@ -50,7 +50,7 @@ web-time.workspace = true
 # `ring`/`getrandom`/GTK off the wasm build entirely.
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 ureq = { version = "2", optional = true }
-rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"], optional = true }
+rfd = { version = "0.16", default-features = false, features = ["xdg-portal", "async-std"], optional = true }
 
 # Web `image-view` network loading: the browser's own `fetch` + ArrayBuffer readback,
 # decoded by the same pure-Rust `image` codecs. These replace `ureq` on wasm.
