@@ -25,6 +25,10 @@ mod a11y;
 #[path = "a11y_stub.rs"]
 mod a11y;
 mod app;
+// Offscreen widget→PNG/RGBA capture. Desktop + the default hybrid backend (needs an
+// offscreen GPU device); the export primitive charts/reports build on.
+#[cfg(all(not(target_family = "wasm"), feature = "vello-hybrid"))]
+pub mod capture;
 // The GPU host seam (wgpu context/surface/renderer) — one impl per render backend.
 mod gpu;
 mod hotkeys;

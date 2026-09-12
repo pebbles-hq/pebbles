@@ -24,6 +24,8 @@ wgpu.workspace = true
 winit.workspace = true
 raw-window-handle.workspace = true
 pollster.workspace = true
+# PNG encoding for the offscreen `capture` API (render any widget tree to a PNG).
+png = "0.18"
 # A std::time drop-in that works on wasm too: on native it IS std::time (zero
 # cost); on wasm `Instant` uses `performance.now()` instead of panicking. winit
 # already uses it for `ControlFlow::WaitUntil`.

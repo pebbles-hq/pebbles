@@ -3092,6 +3092,7 @@ dependencies = [
  "pebbles-render",
  "pebbles-widgets",
  "peniko",
+ "png",
  "pollster 1.0.1",
  "raw-window-handle",
  "vello",
