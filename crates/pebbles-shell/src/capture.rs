@@ -14,7 +14,9 @@
 
 use std::error::Error;
 
-use pebbles_core::{AnyWidget, IntoWidget, Ui};
+use pebbles_core::{
+    AnyWidget, IntoWidget, Ui, prefers_reduced_motion, set_prefers_reduced_motion,
+};
 use pebbles_foundation::{Color, Size};
 use pebbles_render::paint::kurbo;
 use pebbles_render::{Scene, TextEnv};
@@ -46,6 +48,12 @@ pub fn capture_rgba(
     pebbles_widgets::overlay::init();
     pebbles_core::focus::init();
 
+    // A capture is one still frame — there's no clock to run entry/transition animations,
+    // so render the settled (reduced-motion) state: mount-time animations resolve to their
+    // final frame instead of the blank first frame. Restore the prior preference after.
+    let prev_reduced = prefers_reduced_motion();
+    set_prefers_reduced_motion(true);
+
     let mut gpu = Gpu::new(width, height)?;
     let mut env = TextEnv::new();
     let mut ui = Ui::new();
@@ -54,7 +62,10 @@ pub fn capture_rgba(
     pebbles_widgets::overlay::set_window_size(f64::from(width), f64::from(height));
 
     let scene = scene_for(&mut ui, &mut env, width, height);
-    Ok(gpu.rasterize(&scene, width, height, background))
+    let pixels = gpu.rasterize(&scene, width, height, background);
+
+    set_prefers_reduced_motion(prev_reduced);
+    Ok(pixels)
 }
 
 /// Render `root` at `width`×`height` on `background` and return PNG bytes.
