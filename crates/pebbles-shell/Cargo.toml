@@ -103,7 +103,7 @@ console_error_panic_hook = "0.1"
 web-sys = { version = "0.3", features = [
     "Window", "Navigator", "Clipboard",
     "Document", "Element", "Node", "HtmlElement", "HtmlInputElement", "EventTarget",
-    "Event", "InputEvent", "CompositionEvent", "KeyboardEvent",
+    "Event", "InputEvent", "CompositionEvent", "KeyboardEvent", "MediaQueryList",
 ] }
 
 [lints]

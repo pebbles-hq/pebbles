@@ -94,12 +94,30 @@ thread_local! {
     /// animation clock's base. `set_timeout` bookkeeping (e.g. toast hover-pause
     /// remaining time) reads it via [`now`].
     static NOW: Cell<f64> = const { Cell::new(0.0) };
+    /// Whether the user has asked the OS to minimize non-essential motion
+    /// (`prefers-reduced-motion`). The shell sets it from the platform at startup (and on
+    /// change); widgets read it via [`prefers_reduced_motion`] to default animations off.
+    static REDUCED_MOTION: Cell<bool> = const { Cell::new(false) };
 }
 
 /// The current animation-clock time (seconds) — the last value passed to [`tick`].
 /// Zero until the first frame. Use for elapsed/remaining math around [`set_timeout`].
 pub fn now() -> f64 {
     NOW.with(Cell::get)
+}
+
+/// Whether the user prefers reduced motion (`prefers-reduced-motion: reduce`). The shell
+/// populates this from the platform; default `false` until it does. Widgets should use it
+/// to default entry/transition animations OFF (e.g. a chart's `.animate` default), while
+/// still letting the app force a value explicitly.
+pub fn prefers_reduced_motion() -> bool {
+    REDUCED_MOTION.with(Cell::get)
+}
+
+/// Set the reduced-motion preference (called by the shell from the platform query). Apps
+/// rarely call this directly; prefer letting the shell wire it from the OS setting.
+pub fn set_prefers_reduced_motion(reduced: bool) {
+    REDUCED_MOTION.with(|c| c.set(reduced));
 }
 
 /// Ease-out cubic — fast start, gentle settle. The default UI curve.

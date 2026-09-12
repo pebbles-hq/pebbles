@@ -4,13 +4,14 @@
 
 use std::rc::Rc;
 
-use kurbo::{Affine, BezPath, Circle, Line, Point, Rect as KRect, RoundedRect, Stroke};
+use kurbo::{Affine, BezPath, Circle, Line, Point, Rect as KRect, RoundedRect, Shape, Stroke};
 use pebbles_foundation::{Color, Offset, Rect, Size};
 use peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;
-use crate::decoration::BlendMode;
+use crate::decoration::{BlendMode, Gradient};
 use crate::object::RenderObject;
+use crate::objects::decorated::gradient_brush;
 use crate::tree::{LayoutCx, PaintCx};
 
 /// An immediate-mode drawing surface, in the canvas widget's **local** coordinates
@@ -66,6 +67,65 @@ impl Canvas<'_> {
     /// wedges, and any custom filled shape. Build one with `BezPath`.
     pub fn fill_path(&mut self, path: &BezPath, color: Color) {
         self.scene.fill(Fill::NonZero, self.xf(), &Brush::Solid(color), None, path);
+    }
+
+    // ---- gradient fills -----------------------------------------------------
+    // The [`Gradient`] endpoints are `Alignment`s within the shape's bounds (the same
+    // spec `BoxDecoration` uses), so a gradient scales with any size. Linear, radial,
+    // and sweep are all supported.
+
+    /// Fill an axis-aligned rectangle with a gradient positioned within it.
+    pub fn fill_rect_gradient(&mut self, rect: Rect, gradient: &Gradient) {
+        let r = KRect::new(rect.x0, rect.y0, rect.x1, rect.y1);
+        let brush = Brush::Gradient(gradient_brush(gradient, rect));
+        self.scene.fill(Fill::NonZero, self.xf(), &brush, None, &r);
+    }
+
+    /// Fill a rounded rectangle with a gradient positioned within it.
+    pub fn fill_rrect_gradient(&mut self, rect: Rect, radius: f64, gradient: &Gradient) {
+        let r = RoundedRect::new(rect.x0, rect.y0, rect.x1, rect.y1, radius);
+        let brush = Brush::Gradient(gradient_brush(gradient, rect));
+        self.scene.fill(Fill::NonZero, self.xf(), &brush, None, &r);
+    }
+
+    /// Fill an arbitrary kurbo path with a gradient positioned within the path's
+    /// bounding box (non-zero winding).
+    pub fn fill_path_gradient(&mut self, path: &BezPath, gradient: &Gradient) {
+        let bounds = path.bounding_box();
+        let brush = Brush::Gradient(gradient_brush(gradient, bounds));
+        self.scene.fill(Fill::NonZero, self.xf(), &brush, None, path);
+    }
+
+    // ---- dashed strokes -----------------------------------------------------
+    // `dashes` is an on/off length pattern (e.g. `&[6.0, 4.0]` = 6px dash, 4px gap),
+    // repeated along the path; `dash_offset` shifts the start into the pattern.
+
+    /// Stroke a straight line with a dash pattern.
+    pub fn stroke_line_dashed(
+        &mut self,
+        a: Offset,
+        b: Offset,
+        width: f64,
+        color: Color,
+        dashes: &[f64],
+        dash_offset: f64,
+    ) {
+        let l = Line::new(Point::new(a.x, a.y), Point::new(b.x, b.y));
+        let stroke = Stroke::new(width).with_dashes(dash_offset, dashes);
+        self.scene.stroke(&stroke, self.xf(), &Brush::Solid(color), None, &l);
+    }
+
+    /// Stroke an arbitrary kurbo path with a dash pattern.
+    pub fn stroke_path_dashed(
+        &mut self,
+        path: &BezPath,
+        width: f64,
+        color: Color,
+        dashes: &[f64],
+        dash_offset: f64,
+    ) {
+        let stroke = Stroke::new(width).with_dashes(dash_offset, dashes);
+        self.scene.stroke(&stroke, self.xf(), &Brush::Solid(color), None, path);
     }
 
     /// Clip subsequent draws to `rect` until the matching [`pop_clip`](Canvas::pop_clip).

@@ -11,6 +11,40 @@ pub(crate) mod runner;
 
 use runner::{PebblesUserEvent, Runner};
 
+/// Query the platform's "reduce motion" accessibility preference at startup.
+///
+/// - **Any platform**: the `PEBBLES_REDUCED_MOTION` env var (`1`/`true`/`yes`/`on`) forces
+///   it — handy for tests, kiosks, and headless captures.
+/// - **Web**: the real `(prefers-reduced-motion: reduce)` media query.
+/// - **Linux (GNOME)**: `org.gnome.desktop.interface enable-animations = false`.
+/// - **Other desktops (macOS/Windows)**: default `false` unless the env var is set — native
+///   detection there is per-OS and lands as a follow-up.
+fn detect_reduced_motion() -> bool {
+    if let Ok(v) = std::env::var("PEBBLES_REDUCED_MOTION") {
+        return matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on");
+    }
+    #[cfg(target_family = "wasm")]
+    {
+        return web_sys::window()
+            .and_then(|w| w.match_media("(prefers-reduced-motion: reduce)").ok().flatten())
+            .map(|m| m.matches())
+            .unwrap_or(false);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(out) = std::process::Command::new("gsettings")
+            .args(["get", "org.gnome.desktop.interface", "enable-animations"])
+            .output()
+        {
+            if out.status.success() {
+                return String::from_utf8_lossy(&out.stdout).trim() == "false";
+            }
+        }
+    }
+    #[allow(unreachable_code)]
+    false
+}
+
 /// A Pebbles desktop application. Configure it fluently, then [`run`](App::run).
 ///
 /// ```ignore
@@ -182,6 +216,11 @@ impl App {
         console_error_panic_hook::set_once();
 
         log::init();
+
+        // Reduced-motion: query the platform once at startup so widgets can default their
+        // entry/transition animations off (`prefers_reduced_motion()`), honoring the user's
+        // OS accessibility setting without every app wiring it by hand.
+        pebbles_core::set_prefers_reduced_motion(detect_reduced_motion());
 
         // Desktop: a panic anywhere in the UI dumps the whole event log first, so we
         // always see what the UI was doing in the run-up to the crash — then the
