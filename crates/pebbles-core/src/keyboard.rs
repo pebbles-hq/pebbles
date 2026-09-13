@@ -81,6 +81,10 @@ pub enum KeyInput {
     GoToDefinition,
     /// Format the document (or selection) via the format provider (Shift+Alt+F).
     Format,
+    /// Open the find widget (Ctrl+F).
+    Find,
+    /// Open the find-and-replace widget (Ctrl+H).
+    Replace,
 }
 
 thread_local! {

@@ -742,7 +742,9 @@ impl Editor {
             | KeyInput::ToggleComment
             | KeyInput::TriggerCompletion
             | KeyInput::GoToDefinition
-            | KeyInput::Format => {
+            | KeyInput::Format
+            | KeyInput::Find
+            | KeyInput::Replace => {
                 return (false, false);
             }
             KeyInput::Preedit(_) => unreachable!("handled before the match"),

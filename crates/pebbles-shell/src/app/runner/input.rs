@@ -72,6 +72,8 @@ pub(super) fn to_command(event: &KeyEvent, ctrl: bool, shift: bool) -> Option<Ke
             "y" => Some(Redo),
             "d" => Some(SelectNextOccurrence),
             "/" => Some(ToggleComment),
+            "f" => Some(Find),
+            "h" => Some(Replace),
             _ => None,
         },
         Key::Character(s) if s.chars().all(|ch| !ch.is_control()) => Some(Insert(s.to_string())),
