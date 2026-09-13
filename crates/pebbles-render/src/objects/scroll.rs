@@ -3,6 +3,7 @@
 //! imperatively (wheel events + scrollbar drag, routed from the shell) and clamped
 //! to the content extent during layout.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use kurbo::{Affine, RoundedRect};
@@ -173,6 +174,81 @@ impl RefreshState {
     }
 }
 
+/// A handle to command a [`RenderScroll`] imperatively and read its live metrics — the
+/// scroll equivalent of a text `Editor` handle.
+///
+/// Clone it, hand one copy to `scroll_view(...).controller(ctrl)`, and keep the other to
+/// drive it: [`ensure_visible`](Self::ensure_visible) brings a span into view (the basis
+/// for caret autoscroll in the code editor) and [`scroll_to`](Self::scroll_to) jumps to an
+/// absolute offset. A programmatic move snaps directly (no spring), so the target is in
+/// view on the very next frame. Reads ([`offset`](Self::offset) / [`max`](Self::max) /
+/// [`viewport`](Self::viewport)) reflect the last laid-out frame.
+#[derive(Clone, Default)]
+pub struct ScrollHandle(Rc<RefCell<ScrollHandleState>>);
+
+#[derive(Default)]
+struct ScrollHandleState {
+    /// A requested absolute target offset, consumed by the next layout.
+    pending: Option<f64>,
+    offset: f64,
+    max: f64,
+    viewport: f64,
+}
+
+impl ScrollHandle {
+    /// A fresh, unattached controller.
+    pub fn new() -> Self {
+        Self::default()
+    }
+    /// The current displayed offset (from the last laid-out frame).
+    pub fn offset(&self) -> f64 {
+        self.0.borrow().offset
+    }
+    /// The maximum scrollable offset (`content − viewport`) from the last frame.
+    pub fn max(&self) -> f64 {
+        self.0.borrow().max
+    }
+    /// The viewport extent along the scroll axis from the last frame.
+    pub fn viewport(&self) -> f64 {
+        self.0.borrow().viewport
+    }
+    /// Jump the offset to `offset` (clamped into range at the next layout).
+    pub fn scroll_to(&self, offset: f64) {
+        self.0.borrow_mut().pending = Some(offset);
+    }
+    /// Scroll the minimum amount so the span `start..end` (content coordinates along the
+    /// scroll axis) is fully visible, keeping `margin` px of breathing room. No-op when it
+    /// already fits.
+    pub fn ensure_visible(&self, start: f64, end: f64, margin: f64) {
+        let (off, vp) = {
+            let s = self.0.borrow();
+            (s.offset, s.viewport)
+        };
+        if vp <= 0.0 {
+            // Not laid out yet — just aim the start near the top.
+            self.scroll_to((start - margin).max(0.0));
+            return;
+        }
+        let target = if start < off + margin {
+            (start - margin).max(0.0)
+        } else if end > off + vp - margin {
+            end - vp + margin
+        } else {
+            return;
+        };
+        self.0.borrow_mut().pending = Some(target);
+    }
+    /// Publish this frame's metrics and take any pending target (called by `RenderScroll`
+    /// during layout). Returns the requested offset, if one was queued.
+    fn sync(&self, offset: f64, max: f64, viewport: f64) -> Option<f64> {
+        let mut s = self.0.borrow_mut();
+        s.offset = offset;
+        s.max = max;
+        s.viewport = viewport;
+        s.pending.take()
+    }
+}
+
 /// A scrollable viewport.
 pub struct RenderScroll {
     pub axis: Axis,
@@ -223,6 +299,9 @@ pub struct RenderScroll {
     /// Scroll-notification sink (Flutter's `ScrollNotification` / `NotificationListener`).
     /// Fired on Start/Update/End/Overscroll as the offset moves.
     pub on_scroll: Option<Rc<dyn Fn(ScrollNotification)>>,
+    /// Imperative handle for programmatic scrolling + metric readback (e.g. caret
+    /// autoscroll). The owning widget installs it via `.controller(..)`.
+    pub controller: Option<ScrollHandle>,
     /// True while a scroll activity is live — gates one Start and one End per activity.
     was_moving: bool,
 }
@@ -251,6 +330,7 @@ impl RenderScroll {
             fling_samples_len: 0,
             fling_cursor: 0,
             on_scroll: None,
+            controller: None,
             was_moving: false,
         }
     }
@@ -619,6 +699,17 @@ impl RenderObject for RenderScroll {
         if !self.dragging {
             self.offset = self.offset.clamp(0.0, self.max_offset);
             self.target = self.target.clamp(0.0, self.max_offset);
+        }
+
+        // Publish metrics to the controller and apply any queued programmatic scroll.
+        // A programmatic move snaps directly (no spring) so the target is in view now.
+        if let Some(ctrl) = &self.controller
+            && let Some(t) = ctrl.sync(self.offset, self.max_offset, self.viewport_extent)
+        {
+            let t = t.clamp(0.0, self.max_offset);
+            self.offset = t;
+            self.target = t;
+            self.velocity = 0.0;
         }
 
         let child_offset = match self.axis {

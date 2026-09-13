@@ -10,8 +10,8 @@ use std::rc::Rc;
 
 use pebbles_foundation::{Axis, Color, MainAxisSize};
 use pebbles_render::{
-    RefreshState, RenderObject, RenderScroll, ScrollNotification, ScrollPhysics, ScrollbarPolicy,
-    ScrollbarStyle,
+    RefreshState, RenderObject, RenderScroll, ScrollHandle, ScrollNotification, ScrollPhysics,
+    ScrollbarPolicy, ScrollbarStyle,
 };
 
 use crate::widgets::column;
@@ -29,6 +29,7 @@ pub struct SingleChildScrollView {
     physics: ScrollPhysics,
     refresh: Option<RefreshState>,
     on_scroll: Option<Rc<dyn Fn(ScrollNotification)>>,
+    controller: Option<ScrollHandle>,
     child: Option<AnyWidget>,
 }
 
@@ -44,6 +45,7 @@ impl SingleChildScrollView {
             physics: ScrollPhysics::default(),
             refresh: None,
             on_scroll: None,
+            controller: None,
             child: Some(child.into_widget()),
         }
     }
@@ -58,6 +60,7 @@ impl SingleChildScrollView {
             physics: ScrollPhysics::default(),
             refresh: None,
             on_scroll: None,
+            controller: None,
             child: Some(child.into_widget()),
         }
     }
@@ -109,6 +112,13 @@ impl SingleChildScrollView {
         self
     }
 
+    /// Attach a [`ScrollHandle`] for imperative scrolling + metric readback (e.g.
+    /// scroll a caret into view). Clone the controller so you keep a copy to drive it.
+    pub fn controller(mut self, controller: ScrollHandle) -> Self {
+        self.controller = Some(controller);
+        self
+    }
+
     /// Replace the whole scrollbar style.
     pub fn scrollbar(mut self, style: ScrollbarStyle) -> Self {
         self.scrollbar = style;
@@ -145,6 +155,7 @@ impl SingleChildScrollView {
         r.physics = self.physics;
         r.refresh = self.refresh.clone();
         r.on_scroll = self.on_scroll.clone();
+        r.controller = self.controller.clone();
         r
     }
 }
@@ -165,6 +176,7 @@ impl RenderWidget for SingleChildScrollView {
             s.physics = self.physics;
             s.refresh = self.refresh.clone();
             s.on_scroll = self.on_scroll.clone();
+            s.controller = self.controller.clone();
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {

@@ -241,6 +241,13 @@ impl Harness {
         self.frame();
     }
 
+    /// A triple-click at `at` (line selection in a text/code editor).
+    pub fn triple_click(&mut self, at: Offset) {
+        self.ui.make_current();
+        self.ui.dispatch_triple_tap(at);
+        self.frame();
+    }
+
     /// Move the pointer to `at` (hover states, tooltips).
     pub fn hover(&mut self, at: Offset) {
         self.ui.make_current();

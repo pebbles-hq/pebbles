@@ -279,6 +279,9 @@ pub(super) struct Runner {
     /// The tap target of the previous click — a double-tap only counts if the two
     /// clicks land on the same widget.
     last_tap_target: Option<u64>,
+    /// Consecutive clicks on the same target within the multi-click interval: 1 = single,
+    /// 2 = double, 3 = triple (then it cycles back to 1). Drives double/triple-tap.
+    click_count: u32,
     /// Whether the right-button PRESS was claimed by a widget (its own context
     /// menu, a blocker) — the release must not open the global menu then.
     secondary_down_handled: bool,
@@ -356,6 +359,7 @@ impl Runner {
             cursor: Offset::ZERO,
             last_click: None,
             last_tap_target: None,
+            click_count: 0,
             secondary_down_handled: false,
             current_cursor: Cursor::Default,
             press_deadline: None,
@@ -557,17 +561,21 @@ impl Runner {
                 let up_target = self.ui.tap_target_at(cursor);
                 let armed = self.armed_tap.take();
                 let result = if up_target.is_some() && up_target == armed {
-                    // Released over the same widget → tap / double-tap.
+                    // Released over the same widget → tap / double-tap / triple-tap.
                     let now = Instant::now();
-                    let is_double = self.last_tap_target == up_target
+                    let within = self.last_tap_target == up_target
                         && self.last_click.is_some_and(|t| now.duration_since(t) <= DOUBLE_CLICK);
+                    // 1 → 2 → 3 → 1 for consecutive in-window clicks on the same target.
+                    self.click_count = if within { (self.click_count % 3) + 1 } else { 1 };
                     self.last_click = Some(now);
                     self.last_tap_target = up_target;
-                    if is_double && self.ui.dispatch_double_tap(cursor) {
-                        true
-                    } else {
-                        self.ui.dispatch_tap(cursor)
-                    }
+                    let multi = match self.click_count {
+                        3 => self.ui.dispatch_triple_tap(cursor),
+                        2 => self.ui.dispatch_double_tap(cursor),
+                        _ => false,
+                    };
+                    // Fall back to a plain tap when the multi-tap isn't handled.
+                    if multi { true } else { self.ui.dispatch_tap(cursor) }
                 } else if let Some(a) = armed {
                     // Released off the armed widget → cancel.
                     self.ui.dispatch_tap_cancel(a)

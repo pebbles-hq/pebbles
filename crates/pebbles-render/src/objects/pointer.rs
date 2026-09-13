@@ -61,6 +61,8 @@ pub struct RenderPointerListener {
     pub on_tap: Vec<TapCallback>,
     /// Second primary tap within the double-tap interval.
     pub on_double_tap: Vec<TapCallback>,
+    /// Third primary tap within the multi-tap interval (e.g. select-line).
+    pub on_triple_tap: Vec<TapCallback>,
     /// Primary press began but ended without a tap (released off / dragged away).
     pub on_tap_cancel: Vec<TapCallback>,
     /// Secondary-button (right-click) tap.

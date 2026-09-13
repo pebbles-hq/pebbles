@@ -69,6 +69,10 @@ pub enum KeyInput {
     Indent,
     /// Shift+Tab in a focused code editor: outdent the current line / selected lines.
     Outdent,
+    /// Add a cursor at the next occurrence of the current selection — or select the word
+    /// under the caret when there's no selection yet (Ctrl+D / Cmd+D). The multi-cursor
+    /// "add selection to next match" command.
+    SelectNextOccurrence,
 }
 
 thread_local! {

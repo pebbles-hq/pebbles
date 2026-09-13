@@ -76,6 +76,11 @@ impl Ui {
         self.fire_pointer(point, PointerButton::Primary, |l| &l.on_double_tap)
     }
 
+    /// A primary-button triple tap at `point` (e.g. select the whole line).
+    pub fn dispatch_triple_tap(&mut self, point: Offset) -> bool {
+        self.fire_pointer(point, PointerButton::Primary, |l| &l.on_triple_tap)
+    }
+
     /// A secondary-button (right-click) tap at `point`.
     pub fn dispatch_secondary_tap(&mut self, point: Offset) -> bool {
         self.fire_pointer(point, PointerButton::Secondary, |l| &l.on_secondary_tap)
@@ -113,7 +118,11 @@ impl Ui {
         let hits = self.render.hit_test(point);
         hits.iter().rev().find_map(|&rid| {
             let l = self.render.object_ref(rid).downcast_ref::<RenderPointerListener>()?;
-            if l.on_tap.is_empty() && l.on_double_tap.is_empty() { None } else { self.render.source_of(rid) }
+            if l.on_tap.is_empty() && l.on_double_tap.is_empty() && l.on_triple_tap.is_empty() {
+                None
+            } else {
+                self.render.source_of(rid)
+            }
         })
     }
 

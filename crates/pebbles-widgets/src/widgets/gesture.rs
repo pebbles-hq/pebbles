@@ -31,6 +31,7 @@ pub struct GestureDetector {
     on_tap: Vec<Callback>,
     on_tap_cancel: Vec<Callback>,
     on_double_tap: Vec<Callback>,
+    on_triple_tap: Vec<Callback>,
     on_secondary_tap: Vec<Callback>,
     on_secondary_tap_down: Vec<Callback>,
     on_secondary_tap_up: Vec<Callback>,
@@ -75,6 +76,11 @@ impl GestureDetector {
     }
     pub fn on_double_tap(mut self, cb: impl IntoCallback) -> Self {
         self.on_double_tap.push(cb.into_callback());
+        self
+    }
+    /// A triple primary tap (e.g. select the whole line in a text/code editor).
+    pub fn on_triple_tap(mut self, cb: impl IntoCallback) -> Self {
+        self.on_triple_tap.push(cb.into_callback());
         self
     }
     pub fn on_tap_cancel(mut self, cb: impl IntoCallback) -> Self {
@@ -219,6 +225,7 @@ impl GestureDetector {
             on_tap: erase(&self.on_tap),
             on_tap_cancel: erase(&self.on_tap_cancel),
             on_double_tap: erase(&self.on_double_tap),
+            on_triple_tap: erase(&self.on_triple_tap),
             on_secondary_tap: erase(&self.on_secondary_tap),
             on_secondary_tap_down: erase(&self.on_secondary_tap_down),
             on_secondary_tap_up: erase(&self.on_secondary_tap_up),
