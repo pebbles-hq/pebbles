@@ -702,14 +702,25 @@ impl RenderObject for RenderScroll {
         }
 
         // Publish metrics to the controller and apply any queued programmatic scroll.
-        // A programmatic move snaps directly (no spring) so the target is in view now.
+        // A programmatic move snaps directly (no spring) so the target is in view now, and
+        // fires a scroll notification (Update + End) — the same signal a wheel move sends —
+        // so listeners (e.g. a virtualized editor tracking the offset) re-render at the new
+        // position. Without this, `scroll_to`/`ensure_visible` would move the offset but any
+        // offset-driven rendering would stay stale.
         if let Some(ctrl) = &self.controller
             && let Some(t) = ctrl.sync(self.offset, self.max_offset, self.viewport_extent)
         {
             let t = t.clamp(0.0, self.max_offset);
+            let delta = t - self.offset;
             self.offset = t;
             self.target = t;
             self.velocity = 0.0;
+            if delta.abs() > 1e-9 {
+                self.begin_activity();
+                self.emit(ScrollEvent::Update { delta });
+                self.was_moving = false;
+                self.emit(ScrollEvent::End);
+            }
         }
 
         let child_offset = match self.axis {
