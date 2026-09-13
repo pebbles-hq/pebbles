@@ -440,6 +440,11 @@ impl RichText {
         self.base.line_height = factor;
         self
     }
+    /// Extra spacing between glyphs in logical px (0 = none).
+    pub fn letter_spacing(mut self, px: f32) -> Self {
+        self.base.letter_spacing = px;
+        self
+    }
     pub fn align(mut self, align: TextAlign) -> Self {
         self.base.align = align;
         self
