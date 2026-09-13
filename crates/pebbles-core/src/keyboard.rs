@@ -85,6 +85,8 @@ pub enum KeyInput {
     Find,
     /// Open the find-and-replace widget (Ctrl+H).
     Replace,
+    /// Open the command palette (Ctrl+P / Ctrl+Shift+P) — run any registered command.
+    CommandPalette,
 }
 
 thread_local! {

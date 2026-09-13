@@ -744,7 +744,8 @@ impl Editor {
             | KeyInput::GoToDefinition
             | KeyInput::Format
             | KeyInput::Find
-            | KeyInput::Replace => {
+            | KeyInput::Replace
+            | KeyInput::CommandPalette => {
                 return (false, false);
             }
             KeyInput::Preedit(_) => unreachable!("handled before the match"),
