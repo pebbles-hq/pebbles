@@ -73,6 +73,8 @@ pub enum KeyInput {
     /// under the caret when there's no selection yet (Ctrl+D / Cmd+D). The multi-cursor
     /// "add selection to next match" command.
     SelectNextOccurrence,
+    /// Toggle line comments on the selected lines / caret line (Ctrl+/ / Cmd+/).
+    ToggleComment,
 }
 
 thread_local! {

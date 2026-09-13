@@ -736,7 +736,10 @@ impl Editor {
             // focus instead. These arms exist only for match exhaustiveness.
             // Multi-cursor "add next occurrence" is a code-editor command; a plain text
             // field has a single caret, so it ignores it.
-            KeyInput::Indent | KeyInput::Outdent | KeyInput::SelectNextOccurrence => {
+            KeyInput::Indent
+            | KeyInput::Outdent
+            | KeyInput::SelectNextOccurrence
+            | KeyInput::ToggleComment => {
                 return (false, false);
             }
             KeyInput::Preedit(_) => unreachable!("handled before the match"),
