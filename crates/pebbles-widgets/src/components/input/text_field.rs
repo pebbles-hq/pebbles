@@ -739,7 +739,10 @@ impl Editor {
             KeyInput::Indent
             | KeyInput::Outdent
             | KeyInput::SelectNextOccurrence
-            | KeyInput::ToggleComment => {
+            | KeyInput::ToggleComment
+            | KeyInput::TriggerCompletion
+            | KeyInput::GoToDefinition
+            | KeyInput::Format => {
                 return (false, false);
             }
             KeyInput::Preedit(_) => unreachable!("handled before the match"),

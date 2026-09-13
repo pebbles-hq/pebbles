@@ -60,6 +60,8 @@ pub(super) fn to_command(event: &KeyEvent, ctrl: bool, shift: bool) -> Option<Ke
         Key::Named(NamedKey::End) => mv(if ctrl { DocEnd } else { LineEnd }),
         Key::Named(NamedKey::Enter) => Some(Enter),
         Key::Named(NamedKey::Escape) => Some(Escape),
+        Key::Named(NamedKey::F12) => Some(GoToDefinition),
+        Key::Named(NamedKey::Space) if ctrl => Some(TriggerCompletion),
         Key::Named(NamedKey::Space) if !ctrl => Some(Insert(" ".to_string())),
         Key::Character(s) if ctrl => match s.to_lowercase().as_str() {
             "a" => Some(SelectAll),

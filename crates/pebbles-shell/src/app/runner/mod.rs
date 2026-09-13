@@ -937,6 +937,15 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                         pebbles_core::log::dump("Mod+Shift+D render-tree capture");
                         return;
                     }
+                    // Shift+Alt+F: format the focused code editor via its format provider.
+                    if self.shift_down
+                        && self.alt_down
+                        && to_shortcut_key(&event) == Some(pebbles_core::ShortcutKey::Char('f'))
+                        && self.ui.dispatch_key(KeyInput::Format)
+                    {
+                        self.request_redraw();
+                        return;
+                    }
                     // Escape closes an open (dismissible) sheet or modal dialog first.
                     if event.logical_key == Key::Named(NamedKey::Escape)
                         && (pebbles_widgets::sheet::is_open() || pebbles_widgets::dialog::is_open())

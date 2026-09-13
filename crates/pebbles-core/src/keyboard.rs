@@ -75,6 +75,12 @@ pub enum KeyInput {
     SelectNextOccurrence,
     /// Toggle line comments on the selected lines / caret line (Ctrl+/ / Cmd+/).
     ToggleComment,
+    /// Request the completion popup (Ctrl+Space) — the IntelliSense trigger.
+    TriggerCompletion,
+    /// Go to the definition of the symbol under the caret (F12).
+    GoToDefinition,
+    /// Format the document (or selection) via the format provider (Shift+Alt+F).
+    Format,
 }
 
 thread_local! {
