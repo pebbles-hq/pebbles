@@ -731,6 +731,10 @@ impl Editor {
                 pebbles_core::focus::set_focus(None);
                 return (false, false);
             }
+            // A plain text field isn't a code editor: it registers with `register_editor`
+            // (not `register_code_editor`), so the shell never routes Tab here — it traverses
+            // focus instead. These arms exist only for match exhaustiveness.
+            KeyInput::Indent | KeyInput::Outdent => return (false, false),
             KeyInput::Preedit(_) => unreachable!("handled before the match"),
         }
 

@@ -45,6 +45,9 @@ struct FocusManager {
     /// Unlike editors these do NOT set [`focused_is_editor`], so shell shortcuts and IME
     /// stay off for them.
     keys: HashMap<FocusKey, Rc<dyn Fn(KeyInput) -> bool>>,
+    /// Editors that consume Tab for indent/outdent (code editors) rather than letting Tab
+    /// traverse focus (single-line text fields). Read by the shell via [`focused_wants_tab`].
+    wants_tab: HashSet<FocusKey>,
     /// Nodes whose one-shot `autofocus` has already been consumed. Autofocus must fire
     /// exactly once (on the node's first mount) — NOT every render in which nothing is
     /// focused, which would let an autofocus field yank focus back after the user blurs
@@ -71,6 +74,7 @@ fn with_mgr<R>(f: impl FnOnce(&mut FocusManager) -> R) -> R {
                 on_change: HashMap::new(),
                 edit: HashMap::new(),
                 keys: HashMap::new(),
+                wants_tab: HashSet::new(),
                 autofocused: HashSet::new(),
                 scope_of: HashMap::new(),
             });
@@ -212,6 +216,19 @@ impl FocusNode {
         let key = self.key();
         with_mgr(|m| {
             m.edit.insert(key, handler);
+            m.wants_tab.remove(&key);
+        });
+    }
+
+    /// Register as an editor that also **consumes Tab/Shift+Tab** for indent/outdent (a code
+    /// editor), so the shell sends [`KeyInput::Indent`]/[`KeyInput::Outdent`] instead of
+    /// moving focus. Plain text fields use [`register_editor`](Self::register_editor) so Tab
+    /// still traverses focus. Called each render (idempotent).
+    pub fn register_code_editor(&self, handler: Rc<dyn Fn(KeyInput)>) {
+        let key = self.key();
+        with_mgr(|m| {
+            m.edit.insert(key, handler);
+            m.wants_tab.insert(key);
         });
     }
 
@@ -267,6 +284,7 @@ pub fn unregister(id: ElementId) {
         m.on_change.remove(&key);
         m.edit.remove(&key);
         m.keys.remove(&key);
+        m.wants_tab.remove(&key);
         m.scope_of.remove(&key);
         // Let a genuine remount of this id autofocus again.
         m.autofocused.remove(&key);
@@ -282,6 +300,13 @@ pub fn unregister(id: ElementId) {
 pub fn focused_is_editor() -> bool {
     let focused = focus_signal().peek();
     with_mgr(|m| focused.is_some_and(|k| m.edit.contains_key(&k)))
+}
+
+/// Whether the focused node is a code editor that consumes Tab for indent/outdent (so the
+/// shell sends [`KeyInput::Indent`]/[`KeyInput::Outdent`] rather than traversing focus).
+pub fn focused_wants_tab() -> bool {
+    let focused = focus_signal().peek();
+    with_mgr(|m| focused.is_some_and(|k| m.wants_tab.contains(&k)))
 }
 
 /// Whether a text editor currently holds focus (so clipboard intents have a

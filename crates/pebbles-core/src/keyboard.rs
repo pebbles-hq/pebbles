@@ -64,6 +64,11 @@ pub enum KeyInput {
     Enter,
     /// Escape — blur the field.
     Escape,
+    /// Tab in a focused code editor: indent the current line / selected lines (the shell
+    /// only sends this to an editor; elsewhere Tab traverses focus).
+    Indent,
+    /// Shift+Tab in a focused code editor: outdent the current line / selected lines.
+    Outdent,
 }
 
 thread_local! {

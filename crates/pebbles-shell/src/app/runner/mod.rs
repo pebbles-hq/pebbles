@@ -957,8 +957,16 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                         stage = "shortcut";
                         true
                     } else if event.logical_key == Key::Named(NamedKey::Tab) {
-                        stage = "focus-move";
-                        self.ui.focus_move(!self.shift_down)
+                        // A focused code editor consumes Tab/Shift+Tab for indent/outdent;
+                        // anywhere else (incl. single-line text fields) Tab traverses focus.
+                        if pebbles_core::focus::focused_wants_tab() {
+                            stage = "editor-indent";
+                            let ki = if self.shift_down { KeyInput::Outdent } else { KeyInput::Indent };
+                            self.ui.dispatch_key(ki)
+                        } else {
+                            stage = "focus-move";
+                            self.ui.focus_move(!self.shift_down)
+                        }
                     } else if matches!(
                         event.logical_key.as_ref(),
                         Key::Named(NamedKey::Enter | NamedKey::Space) | Key::Character(" ")
