@@ -31,8 +31,11 @@ height / padding / border / lift — every input, select, menu, tab, nav item,
 list/table row, dialog, sheet, toast, card, etc. — so a switch re-skins the entire
 UI with **no structural change**. Controls share one `control_height`, so a form
 row (input · select · button) is uniform, and Compact makes everything short,
-square and dense (DBeaver-style) for productivity apps. `pad()` scales interior
-padding by `density`; `set_design(lang)` is the one-liner a developer sets to pick
+square and dense (DBeaver-style) for productivity apps — even **pill** elements
+(badges, chips, progress bars) go rectangular in Compact and stay fully rounded in
+Tailwind/Material via the new `pill()` helper, while genuinely circular shapes
+(switch thumb, avatar, radio dot) stay round in every design. `pad()` scales
+interior padding by `density`; `set_design(lang)` is the one-liner a developer sets to pick
 the base look. `toggle_theme()` preserves the active design. **Note:** the default
 look is now Compact; pick `Theme::tailwind()` for the previous default.
 

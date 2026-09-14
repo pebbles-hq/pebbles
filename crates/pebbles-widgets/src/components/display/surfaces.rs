@@ -183,7 +183,8 @@ impl Badge {
 
 impl IntoWidget for Badge {
     fn into_widget(mut self) -> AnyWidget {
-        let c = theme().colors;
+        let th = theme();
+        let c = th.colors;
         let (bg, fg, border) = match self.variant {
             BadgeVariant::Default => (Some(c.primary), c.primary_foreground, false),
             BadgeVariant::Secondary => (Some(c.secondary), c.secondary_foreground, false),
@@ -191,12 +192,13 @@ impl IntoWidget for Badge {
             BadgeVariant::Success => (Some(c.success), Color::WHITE, false),
             BadgeVariant::Outline => (None, c.foreground, true),
         };
-        let mut base = style().radius_all(999.0).padding_xy(10.0, 3.0);
+        // Pill in Tailwind/Material, rectangular (square) + tighter in Compact.
+        let mut base = style().radius_all(th.pill()).padding(th.pad(10.0, 3.0));
         if let Some(bg) = bg {
             base = base.background(bg);
         }
         if border {
-            base = base.border(Border::new(c.border, 1.0));
+            base = base.border(Border::new(c.border, th.border_width));
         }
         let label = text(std::mem::take(&mut self.label)).size(12.0).weight(500.0).color(fg);
         styled(label, base.merge(self.style.take().unwrap_or_default()))

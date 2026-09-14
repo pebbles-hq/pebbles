@@ -279,6 +279,18 @@ impl Theme {
         (self.radius - 2.0).max(0.0)
     }
 
+    /// The corner radius for a **pill-style** element (badge, chip, tag, progress
+    /// bar): fully rounded in Tailwind and Material, but **square in Compact** — a
+    /// desktop/productivity UI uses rectangular tags and square-ended bars, not
+    /// pills. (Genuinely *circular* shapes — a switch thumb, an avatar, a radio dot
+    /// — stay round in every design; use `999.0` / `.circular()` for those.)
+    pub fn pill(&self) -> f64 {
+        match self.design {
+            DesignLanguage::Compact => self.radius,
+            DesignLanguage::Tailwind | DesignLanguage::Material => 999.0,
+        }
+    }
+
     /// Symmetric control padding scaled by [`density`](Self::density) — pass the
     /// Tailwind-base values and they tighten (Compact) or loosen (Material) with
     /// the design language.

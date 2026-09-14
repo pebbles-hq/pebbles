@@ -60,7 +60,7 @@ impl IntoWidget for Progress {
 fn render_progress(p: &Progress) -> AnyWidget {
     let c = theme().colors;
     let color = p.color.unwrap_or(c.primary);
-    let radius = BorderRadius::all(999.0);
+    let radius = BorderRadius::all(theme().pill());
     let track = || {
         Container::new()
             .decoration(BoxDecoration::new().color(c.muted).radius(radius))
