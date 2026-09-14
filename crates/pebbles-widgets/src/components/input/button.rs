@@ -276,11 +276,19 @@ impl Button {
     }
 
     fn resolved_padding(&self) -> EdgeInsets {
-        self.padding.unwrap_or(match self.size {
-            ButtonSize::Sm => EdgeInsets::symmetric(12.0, 6.0),
-            ButtonSize::Md => EdgeInsets::symmetric(16.0, 9.0),
-            ButtonSize::Lg => EdgeInsets::symmetric(22.0, 12.0),
-        })
+        if let Some(p) = self.padding {
+            return p;
+        }
+        // Interior padding follows the design language's control density; the size
+        // just scales it (Md = the base). For the Tailwind base these reproduce the
+        // original 12/6 · 16/9 · 22/12 padding; Compact tightens, Material widens.
+        let th = theme();
+        let (sx, sy) = match self.size {
+            ButtonSize::Sm => (0.75, 0.72),
+            ButtonSize::Md => (1.0, 1.0),
+            ButtonSize::Lg => (1.36, 1.33),
+        };
+        EdgeInsets::symmetric(th.control_pad_x * sx, th.control_pad_y * sy)
     }
 
     fn font_size(&self) -> f32 {
@@ -393,12 +401,20 @@ fn render_button(b: &Button) -> Element {
     let mut decoration = BoxDecoration::new().radius(BorderRadius::all(b.radius.unwrap_or(th.radius)));
     if let Some(shadow) = b.shadow {
         decoration = decoration.shadow(shadow);
+    } else if th.design == crate::DesignLanguage::Material
+        && !inert
+        && matches!(b.variant, ButtonVariant::Primary | ButtonVariant::Secondary | ButtonVariant::Destructive)
+        && let Some(sh) = th.elevation_shadow(th.elevation)
+    {
+        // Filled buttons lift only under Material; Compact/Tailwind keep buttons
+        // flat (surfaces like cards still use the elevation token more broadly).
+        decoration = decoration.shadow(sh);
     }
     if let Some(bg) = bg {
         decoration = decoration.color(bg);
     }
     if border {
-        decoration = decoration.border(Border::new(th.colors.border, 1.0));
+        decoration = decoration.border(Border::new(th.colors.border, th.border_width));
     }
     // Focus ring.
     if focused {

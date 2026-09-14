@@ -5,7 +5,7 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, EdgeInsets, MainAxisSize};
+use pebbles_foundation::{Alignment, MainAxisSize};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconData, IconKind, PointerEvent};
 
 use super::list_nav::{ListNav, list_nav};
@@ -261,7 +261,7 @@ fn default_trigger(label: &str, width: f64, hovered: bool, user: Option<crate::s
         .width(width)
         .height(38.0)
         .decoration(deco)
-        .padding(EdgeInsets::symmetric(12.0, 0.0))
+        .padding(theme().pad(12.0, 0.0))
         .alignment(Alignment::CENTER_LEFT)
         .child(row(children![
             text(label.to_string()).size(14.0).color(c.foreground),
@@ -531,8 +531,8 @@ fn render_sub_row(p: &SubRowProps) -> AnyWidget {
 
     let body = Container::new()
         .width(p.width)
-        .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(4.0)))
-        .padding(EdgeInsets::symmetric(8.0, 7.0))
+        .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius_sm())))
+        .padding(theme().pad(8.0, 7.0))
         .child(row(kids));
 
     let bp = p.bp.clone();
@@ -842,7 +842,7 @@ impl RebuildableMenu {
                 BpEntry::Label(l) => {
                     y += 28.0;
                     Container::new()
-                        .padding(EdgeInsets::symmetric(8.0, 6.0))
+                        .padding(theme().pad(8.0, 6.0))
                         .alignment(Alignment::CENTER_LEFT)
                         .child(text(l.clone()).size(11.5).semibold().color(theme().colors.muted_foreground))
                         .into_widget()
@@ -851,7 +851,7 @@ impl RebuildableMenu {
                     y += 9.0;
                     Container::new()
                         .width(inner)
-                        .padding(EdgeInsets::symmetric(0.0, 4.0))
+                        .padding(theme().pad(0.0, 4.0))
                         .child(
                             Container::new()
                                 .width(inner)
@@ -998,8 +998,8 @@ fn render_action_row(p: &ActionRowProps) -> AnyWidget {
 
     let body = Container::new()
         .width(p.width)
-        .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(4.0)))
-        .padding(EdgeInsets::symmetric(8.0, 7.0))
+        .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius_sm())))
+        .padding(theme().pad(8.0, 7.0))
         .child(row(rowkids));
 
     if p.disabled {

@@ -102,6 +102,7 @@ fn new_file_creates_and_inline_rename_commits() {
     let _ = tree_sig();
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
@@ -140,6 +141,7 @@ fn select_then_custom_button_deletes() {
     let _ = tree_sig();
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
@@ -173,6 +175,7 @@ fn drag_onto_folder_moves() {
     let _ = tree_sig();
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
@@ -205,6 +208,7 @@ fn ctrl_click_toggles_and_shift_click_ranges() {
     pebbles_core::keyboard::set_modifiers(false, false, false, false);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
@@ -274,6 +278,7 @@ fn dragging_a_selection_moves_them_all() {
     });
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
@@ -319,6 +324,7 @@ fn right_clicking_empty_space_offers_new_nodes() {
     let _ = tree_sig();
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
@@ -423,6 +429,7 @@ fn row_context_menu_opens_with_the_global_menu_disabled() {
     assert!(!pebbles_widgets::is_global_menu_enabled(), "the global switch defaults OFF");
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
@@ -452,6 +459,7 @@ fn keyboard_drives_the_explorer_and_declines_when_idle() {
     pebbles_core::keyboard::set_modifiers(false, false, false, false);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
@@ -557,6 +565,7 @@ fn rename_prefills_the_current_name_with_the_stem_selected() {
     pebbles_core::keyboard::set_modifiers(false, false, false, false);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
@@ -595,6 +604,7 @@ fn clipboard_copy_cut_paste_and_the_remaining_common_shortcuts() {
     pebbles_core::keyboard::set_modifiers(false, false, false, false);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
@@ -665,6 +675,7 @@ fn icon_theme_resolution_priority() {
     let _ = tree_sig();
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
@@ -711,6 +722,7 @@ fn mod_arrows_walk_focus_and_mod_space_toggles_one_by_one() {
     pebbles_core::keyboard::set_modifiers(false, false, false, false);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
@@ -750,6 +762,7 @@ fn external_filter_prunes_the_tree_and_keyboard_follows() {
     pebbles_core::keyboard::set_modifiers(false, false, false, false);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());

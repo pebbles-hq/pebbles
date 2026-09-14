@@ -31,6 +31,7 @@ fn show_opens_and_custom_options_replace() {
     PICKED.with(|p| *p.borrow_mut() = None);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(
@@ -77,6 +78,7 @@ fn standard_items_dispatch_to_the_focused_editor() {
     init();
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(
@@ -128,6 +130,7 @@ fn block_context_menu_consumes_right_clicks() {
     init();
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(
@@ -160,6 +163,7 @@ fn styled_surface_paints() {
     init();
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(
@@ -181,6 +185,7 @@ fn defaults_disabled_but_opt_ins_work() {
     set_global_menu_enabled(false); // the new default
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(
@@ -214,6 +219,7 @@ fn widget_opt_ins_open_the_menu_while_disabled() {
     set_global_menu_enabled(false);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(
@@ -245,6 +251,7 @@ fn buttons_consume_right_clicks_until_opted_in() {
     set_global_menu_enabled(true);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 300.0);
     ui.mount_root(

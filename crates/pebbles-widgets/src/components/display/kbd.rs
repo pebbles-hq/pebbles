@@ -25,7 +25,7 @@ impl IntoWidget for Kbd {
                 BoxDecoration::new()
                     .color(c.secondary)
                     .border(Border::new(c.border, 1.0))
-                    .radius(BorderRadius::all(4.0)),
+                    .radius(BorderRadius::all(theme().radius_sm())),
             )
             .padding(EdgeInsets::symmetric(6.0, 2.0))
             .child(text(self.keys).size(11.0).weight(500.0).color(c.muted_foreground))

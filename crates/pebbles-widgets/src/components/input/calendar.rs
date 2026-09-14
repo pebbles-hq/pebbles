@@ -324,7 +324,7 @@ fn render_day_cell(p: &DayCellProps) -> AnyWidget {
     let hovered = create_signal(false);
     let (y, m, d) = (p.y, p.m, p.d);
 
-    let mut deco = BoxDecoration::new().radius(BorderRadius::all(6.0));
+    let mut deco = BoxDecoration::new().radius(BorderRadius::all(theme().radius_md()));
     // `in_range` and `today` are distinct states that happen to share styling today.
     #[allow(clippy::if_same_then_else)]
     let fg = if p.disabled {
@@ -366,7 +366,7 @@ fn render_day_cell(p: &DayCellProps) -> AnyWidget {
 /// A month/year chooser cell (used by the Months and Years panels).
 fn choice_cell(label: String, current: bool, on_tap: impl Fn() + 'static) -> AnyWidget {
     let c = theme().colors;
-    let mut deco = BoxDecoration::new().radius(BorderRadius::all(8.0));
+    let mut deco = BoxDecoration::new().radius(BorderRadius::all(theme().radius));
     let fg = if current {
         deco = deco.color(c.primary);
         c.primary_foreground

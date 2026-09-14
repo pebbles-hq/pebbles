@@ -245,7 +245,7 @@ fn render_checkbox(p: &Checkbox) -> AnyWidget {
     let mut border = mix(c.border, accent, t as f32);
     border = mix(border, c.foreground, 0.22 * hv as f32 * (1.0 - t as f32));
 
-    let mut deco = BoxDecoration::new().color(bg).radius(BorderRadius::all(4.0));
+    let mut deco = BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius_sm()));
     deco =
         if focused { deco.border(Border::new(c.ring, 2.0)) } else { deco.border(Border::new(border, 1.5)) };
     let box_ = Container::new()

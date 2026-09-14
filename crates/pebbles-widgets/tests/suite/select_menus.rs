@@ -48,6 +48,7 @@ fn select_keyboard_skips_disabled_and_enter_picks() {
     PICKED.with(|p| *p.borrow_mut() = None);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 400.0);
     ui.mount_root(View::new(palette::WHITE, component(select_root)).into_widget());
@@ -82,6 +83,7 @@ fn select_escape_dismisses_without_picking() {
     PICKED.with(|p| *p.borrow_mut() = None);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 400.0);
     ui.mount_root(View::new(palette::WHITE, component(select_root)).into_widget());
@@ -121,6 +123,7 @@ fn select_clearable_x_resets_without_opening() {
     CLEARED.with(|c| *c.borrow_mut() = false);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 400.0);
     ui.mount_root(View::new(palette::WHITE, component(clear_root)).into_widget());
@@ -189,6 +192,7 @@ fn dropdown_menu_keyboard_runs_actionable_rows() {
     ACTION.with(|a| *a.borrow_mut() = None);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 400.0);
     ui.mount_root(View::new(palette::WHITE, component(dd_root)).into_widget());
@@ -224,6 +228,7 @@ fn submenu_opens_on_hover_and_closes_after_grace() {
     ACTION.with(|a| *a.borrow_mut() = None);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(600.0, 400.0);
     overlay::set_window_size(600.0, 400.0);
@@ -288,6 +293,7 @@ fn submenu_keyboard_right_enters_and_left_closes() {
     ACTION.with(|a| *a.borrow_mut() = None);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(600.0, 400.0);
     overlay::set_window_size(600.0, 400.0);
@@ -349,6 +355,7 @@ fn submenu_flips_left_when_the_right_edge_is_full() {
     ACTION.with(|a| *a.borrow_mut() = None);
 
     let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
     let mut env = TextEnv::new();
     let win = Size::new(400.0, 400.0); // too narrow for a right-side panel
     overlay::set_window_size(400.0, 400.0);

@@ -243,7 +243,7 @@ fn render_select_menu(p: &MenuProps) -> AnyWidget {
         if let Some(group) = &opt.group {
             items.push(
                 Container::new()
-                    .padding(EdgeInsets::symmetric(8.0, 6.0))
+                    .padding(theme().pad(8.0, 6.0))
                     .alignment(Alignment::CENTER_LEFT)
                     .child(text(group.clone()).size(11.5).semibold().color(c.muted_foreground))
                     .into_widget(),
@@ -353,8 +353,8 @@ fn render_menu_item(p: &MenuItemProps) -> AnyWidget {
 
     let body = Container::new()
         .width(p.width)
-        .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(4.0)))
-        .padding(EdgeInsets::symmetric(8.0, 7.0))
+        .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius_sm())))
+        .padding(theme().pad(8.0, 7.0))
         .child(row(kids));
 
     if p.disabled {
@@ -462,7 +462,7 @@ fn render_select(p: &Props) -> AnyWidget {
         .width(width)
         .height(38.0)
         .decoration(deco)
-        .padding(EdgeInsets::symmetric(12.0, 0.0))
+        .padding(theme().pad(12.0, 0.0))
         .alignment(Alignment::CENTER_LEFT)
         .child(row(trigger_kids));
 

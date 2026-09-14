@@ -8,7 +8,8 @@ use std::cell::RefCell;
 
 use pebbles_core::widget::IntoWidget as _;
 use pebbles_core::{Signal, create_root_signal};
-use pebbles_foundation::Color;
+use pebbles_foundation::{Color, EdgeInsets, Offset};
+use pebbles_render::BoxShadow;
 
 /// The semantic color roles a component can reference.
 #[derive(Clone, Copy, Debug)]
@@ -36,14 +37,106 @@ pub struct Colors {
     pub ring: Color,
 }
 
-/// The full token set: colors, corner radius, spacing unit and base font size.
+/// The **base design language** — the single switch that reshapes the whole
+/// component catalog (like Flutter's Material vs Cupertino). It seeds the
+/// shape / density / elevation tokens; colors stay orthogonal, and every token
+/// (and every per-component setter) remains overridable on top. Pick a base,
+/// then customize as far as you like.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DesignLanguage {
+    /// Dense, flat, near-sharp corners, minimal padding — the desktop /
+    /// productivity / power-user default (no decorative chrome).
+    Compact,
+    /// The tailwind / shadcn-inspired look: rounded corners, roomy padding,
+    /// subtle borders. (Pebbles' original default.)
+    Tailwind,
+    /// Google **Material 3**: large radii, generous touch targets, elevation —
+    /// the closest base for a mobile app.
+    Material,
+}
+
+/// The shape / density / elevation values a [`DesignLanguage`] seeds a [`Theme`]
+/// with. Not public — themes expose the resolved fields, which stay overridable.
+#[derive(Clone, Copy)]
+struct DesignTokens {
+    radius: f64,
+    spacing: f64,
+    control_pad_x: f64,
+    control_pad_y: f64,
+    control_height: f64,
+    border_width: f64,
+    elevation: f64,
+    density: f64,
+}
+
+impl DesignLanguage {
+    const fn tokens(self) -> DesignTokens {
+        match self {
+            // Sharp, tight, flat — power-user chrome. Zero radius (truly square).
+            DesignLanguage::Compact => DesignTokens {
+                radius: 0.0,
+                spacing: 6.0,
+                control_pad_x: 10.0,
+                control_pad_y: 4.0,
+                control_height: 28.0,
+                border_width: 1.0,
+                elevation: 0.0,
+                density: 0.82,
+            },
+            // The original shadcn/tailwind look (unchanged from Pebbles' first default).
+            DesignLanguage::Tailwind => DesignTokens {
+                radius: 8.0,
+                spacing: 8.0,
+                control_pad_x: 16.0,
+                control_pad_y: 9.0,
+                control_height: 36.0,
+                border_width: 1.0,
+                elevation: 1.0,
+                density: 1.0,
+            },
+            // Material 3: pill-ish radii, big targets, tonal elevation.
+            DesignLanguage::Material => DesignTokens {
+                radius: 18.0,
+                spacing: 8.0,
+                control_pad_x: 24.0,
+                control_pad_y: 10.0,
+                control_height: 40.0,
+                border_width: 1.0,
+                elevation: 3.0,
+                density: 1.2,
+            },
+        }
+    }
+}
+
+/// The full token set: the base [`design`](Self::design) language plus the
+/// resolved colors, corner radius, spacing, control density, border width,
+/// elevation and font size it seeds. Every field is public and overridable —
+/// switch [`design`](Self::design) for a wholesale re-skin, then tweak fields
+/// (or individual components) from there.
 #[derive(Clone, Copy, Debug)]
 pub struct Theme {
     pub colors: Colors,
+    /// The base design language these tokens were seeded from.
+    pub design: DesignLanguage,
     /// Base corner radius (buttons, inputs, cards).
     pub radius: f64,
     /// Base spacing unit; paddings/gaps are multiples of this.
     pub spacing: f64,
+    /// Default horizontal padding inside a control (button/input) at medium size.
+    pub control_pad_x: f64,
+    /// Default vertical padding inside a control at medium size.
+    pub control_pad_y: f64,
+    /// Minimum control height — the click/touch target (small on desktop, large on mobile).
+    pub control_height: f64,
+    /// Default border/outline thickness.
+    pub border_width: f64,
+    /// Default elevation (0 = flat). Drives whether surfaces cast a shadow; see
+    /// [`elevation_shadow`](Self::elevation_shadow).
+    pub elevation: f64,
+    /// Padding-density multiplier (Compact `<1`, Material `>1`). Scale a control's
+    /// interior padding by this to make it tighten/loosen with the design language.
+    pub density: f64,
     /// Base body font size.
     pub font_size: f32,
     pub dark: bool,
@@ -54,10 +147,10 @@ const fn rgb(r: u8, g: u8, b: u8) -> Color {
 }
 
 impl Theme {
-    /// The default light theme (zinc/neutral palette).
+    /// The default light theme — Compact design, zinc/neutral palette.
     pub fn light() -> Self {
-        Theme {
-            colors: Colors {
+        Self::seed(
+            &Colors {
                 background: rgb(0xFF, 0xFF, 0xFF),
                 foreground: rgb(0x0A, 0x0A, 0x0A),
                 card: rgb(0xFF, 0xFF, 0xFF),
@@ -80,17 +173,14 @@ impl Theme {
                 input: rgb(0xE4, 0xE4, 0xE7),
                 ring: rgb(0xA1, 0xA1, 0xAA),
             },
-            radius: 8.0,
-            spacing: 8.0,
-            font_size: 14.0,
-            dark: false,
-        }
+            false,
+        )
     }
 
-    /// The default dark theme.
+    /// The default dark theme — Compact design, dark palette.
     pub fn dark() -> Self {
-        Theme {
-            colors: Colors {
+        Self::seed(
+            &Colors {
                 background: rgb(0x0A, 0x0A, 0x0B),
                 foreground: rgb(0xFA, 0xFA, 0xFA),
                 card: rgb(0x14, 0x14, 0x16),
@@ -113,11 +203,104 @@ impl Theme {
                 input: rgb(0x27, 0x27, 0x2A),
                 ring: rgb(0x52, 0x52, 0x5B),
             },
-            radius: 8.0,
-            spacing: 8.0,
+            true,
+        )
+    }
+
+    /// Build a theme from `colors` + `dark`, seeding shape/density/elevation from
+    /// the **Compact** base (the default design language).
+    fn seed(colors: &Colors, dark: bool) -> Self {
+        let design = DesignLanguage::Compact;
+        let t = design.tokens();
+        Theme {
+            colors: *colors,
+            design,
+            radius: t.radius,
+            spacing: t.spacing,
+            control_pad_x: t.control_pad_x,
+            control_pad_y: t.control_pad_y,
+            control_height: t.control_height,
+            border_width: t.border_width,
+            elevation: t.elevation,
+            density: t.density,
             font_size: 14.0,
-            dark: true,
+            dark,
         }
+    }
+
+    /// Switch the base [`DesignLanguage`], re-seeding the shape / density /
+    /// elevation tokens to that language's defaults. **Colors and font size are
+    /// preserved**, and any field you set *after* this wins — so the flow is
+    /// "pick a base, then customize":
+    ///
+    /// ```ignore
+    /// // Material base, but with the app's own radius and palette.
+    /// let mut t = Theme::light().design(DesignLanguage::Material);
+    /// t.radius = 10.0;
+    /// t.colors.primary = brand_blue;
+    /// t.make_current();
+    /// ```
+    pub fn design(mut self, lang: DesignLanguage) -> Self {
+        self.design = lang;
+        let t = lang.tokens();
+        self.radius = t.radius;
+        self.spacing = t.spacing;
+        self.control_pad_x = t.control_pad_x;
+        self.control_pad_y = t.control_pad_y;
+        self.control_height = t.control_height;
+        self.border_width = t.border_width;
+        self.elevation = t.elevation;
+        self.density = t.density;
+        self
+    }
+
+    /// Light theme on the **Compact** base (the default) — dense, flat, sharp.
+    pub fn compact() -> Self {
+        Self::light().design(DesignLanguage::Compact)
+    }
+    /// Light theme on the **Tailwind** base — the original shadcn-inspired look.
+    pub fn tailwind() -> Self {
+        Self::light().design(DesignLanguage::Tailwind)
+    }
+    /// Light theme on the **Material 3** base — roomy, elevated, mobile-friendly.
+    pub fn material() -> Self {
+        Self::light().design(DesignLanguage::Material)
+    }
+
+    /// A tighter radius for small / nested elements (chips, menu items, key caps):
+    /// `radius − 4`, floored at 0. Derived so a design switch scales them with the
+    /// base (for the Tailwind base this is 4, matching the original look).
+    pub fn radius_sm(&self) -> f64 {
+        (self.radius - 4.0).max(0.0)
+    }
+    /// A slightly tighter radius for medium surfaces (cards, list rows, toasts):
+    /// `radius − 2`, floored at 0. (Tailwind base ⇒ 6, matching the original.)
+    pub fn radius_md(&self) -> f64 {
+        (self.radius - 2.0).max(0.0)
+    }
+
+    /// Symmetric control padding scaled by [`density`](Self::density) — pass the
+    /// Tailwind-base values and they tighten (Compact) or loosen (Material) with
+    /// the design language.
+    pub fn pad(&self, x: f64, y: f64) -> EdgeInsets {
+        EdgeInsets::symmetric(x * self.density, y * self.density)
+    }
+    /// Uniform control padding scaled by [`density`](Self::density).
+    pub fn pad_all(&self, v: f64) -> EdgeInsets {
+        EdgeInsets::all(v * self.density)
+    }
+
+    /// A soft drop shadow for elevation `level` (0 or negative ⇒ `None`) —
+    /// Material-style. Components use this to elevate surfaces per the active
+    /// design language; `level` defaults to [`elevation`](Self::elevation).
+    pub fn elevation_shadow(&self, level: f64) -> Option<BoxShadow> {
+        if level <= 0.0 {
+            return None;
+        }
+        // Ambient soft shadow: blur grows with elevation, alpha stays gentle.
+        let alpha = (0.10 + level * 0.03).min(0.30);
+        let a = (alpha * 255.0) as u8;
+        Some(BoxShadow::new(Color::from_rgba8(0, 0, 0, a), Offset::new(0.0, level), level * 3.0, 0.0))
     }
 
     /// Install this theme as the current theme. Reactive: every component that read
@@ -164,9 +347,11 @@ pub fn set_theme(theme: Theme) {
     theme_signal().set(theme);
 }
 
-/// Flip between the default light and dark themes (a one-line dark-mode toggle).
+/// Flip between light and dark, **preserving the active design language** and any
+/// customizations are re-seeded from the base (a one-line dark-mode toggle).
 pub fn toggle_theme() {
-    let next = if theme().dark { Theme::light() } else { Theme::dark() };
+    let cur = theme();
+    let next = if cur.dark { Theme::light() } else { Theme::dark() }.design(cur.design);
     set_theme(next);
 }
 

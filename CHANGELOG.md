@@ -6,6 +6,21 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — base design languages (Compact / Tailwind / Material)
+A single switch reshapes the whole catalog, like Flutter's Material vs Cupertino.
+`Theme` gained a base [`DesignLanguage`] — **`Compact`** (the new default: flat,
+square, dense — for desktop / power-user tools), **`Tailwind`** (the original
+shadcn-inspired look), and **`Material`** (Material 3: rounded, roomy, elevated —
+the closest base for a mobile app). It seeds shape/density/elevation tokens
+(`radius` + `radius_sm/md`, `spacing`, `control_pad_x/y`, `control_height`,
+`border_width`, `elevation`, `density`) plus helpers (`design(lang)`, `pad()`,
+`elevation_shadow()`, `Theme::compact()/tailwind()/material()`). Colors stay
+orthogonal and every token — and every per-component setter — stays overridable:
+pick a base, then customize. Components read the tokens for their radius / padding
+/ border / lift, so switching the language re-skins them with no structural change.
+`toggle_theme()` preserves the active design. **Note:** the default look is now
+Compact; pick `Theme::tailwind()` for the previous default.
+
 ### Fixed — scroll physics trembled (now standardized)
 Scrolling shook/oscillated: `RenderScroll` eased the offset with a stiff
 second-order spring integrated by Euler at wall-clock `dt`, and a fling advanced a

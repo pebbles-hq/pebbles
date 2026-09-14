@@ -1,8 +1,8 @@
 //! Surface & display components: [`Card`], [`Badge`], [`Alert`], [`Avatar`],
 //! [`Separator`] and [`Skeleton`].
 
-use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, Offset};
-use pebbles_render::{Border, BorderRadius, BorderSide, BoxDecoration, BoxShadow, IconData, IconKind};
+use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
+use pebbles_render::{Border, BorderRadius, BorderSide, BoxDecoration, IconData, IconKind};
 
 #[cfg(feature = "image-view")]
 use crate::ImageView;
@@ -127,12 +127,17 @@ impl IntoWidget for Card {
         };
 
         // Base presentation as a Style; the user's `.style(..)` merges on top (wins).
-        let base = style()
+        // Radius + border + lift all follow the design language (Compact = flat &
+        // square, Tailwind = subtle lift, Material = rounded & elevated).
+        let th = theme();
+        let mut base = style()
             .background(c.card)
-            .border(Border::new(c.border, 1.0))
-            .radius_all(theme().radius + 4.0)
-            .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 18), Offset::new(0.0, 2.0), 8.0, 0.0))
+            .border(Border::new(c.border, th.border_width))
+            .radius_all(th.radius)
             .padding(self.padding);
+        if let Some(sh) = th.elevation_shadow(th.elevation) {
+            base = base.shadow(sh);
+        }
         styled(body, base.merge(self.style.take().unwrap_or_default()))
     }
 }
@@ -630,7 +635,7 @@ impl IntoWidget for Skeleton {
 
 fn render_skeleton(s: &Skeleton) -> AnyWidget {
     let c = theme().colors;
-    let radius = BorderRadius::all(6.0);
+    let radius = BorderRadius::all(theme().radius_md());
     let base = Container::new()
         .decoration(BoxDecoration::new().color(c.muted).radius(radius))
         .width(s.width)

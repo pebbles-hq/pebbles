@@ -246,7 +246,11 @@ fn toast_card_inner(e: &ToastEntry) -> AnyWidget {
         r.push(
             GestureDetector::new(
                 Container::new()
-                    .decoration(BoxDecoration::new().color(c.secondary).radius(BorderRadius::all(6.0)))
+                    .decoration(
+                        BoxDecoration::new()
+                            .color(c.secondary)
+                            .radius(BorderRadius::all(theme().radius_md())),
+                    )
                     .padding(EdgeInsets::symmetric(10.0, 6.0))
                     .child(text(label.clone()).size(12.5).weight(500.0).color(c.secondary_foreground)),
             )
