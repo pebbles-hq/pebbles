@@ -18,6 +18,15 @@ stays authoritative (a `RouteChanged` user-event wakes the loop to re-render). Q
 values round-trip through the URL; the core never touches `web-sys` (the shell owns
 the browser).
 
+At the widget layer, `RouteView` now takes **path-parameter** patterns via
+`param_route("/user/:id", |p| ..)`: `:name` segments are captured into a
+`RouteParams` the builder receives (`p.get("id")`), while `route(name, ..)` keeps its
+exact-match behavior unchanged. Patterns and exact routes share one first-match-wins
+order (register a literal before its pattern to win); segment splitting normalizes
+leading/trailing slashes. Point a `RouteView` at `router::path()` and the browser URL
+drives which page — with its values — renders. This is the "pass values through the
+route" half of the router; query values come from `router::query(..)`.
+
 ### Fixed — scoped context (theme override / focus scope) lost on an independent re-render
 A widget inside a `theme_override` that re-rendered on its OWN signal (hover, press,
 focus) reverted to the global theme — e.g. a Material/Tailwind button snapping back
