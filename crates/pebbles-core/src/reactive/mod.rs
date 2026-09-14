@@ -204,6 +204,13 @@ struct Runtime {
     /// Per-component unmount callbacks (registry cleanup, etc). Re-registered each
     /// render (cleared in `begin_component`); run in `dispose_component`.
     cleanups: std::collections::HashMap<CompKey, Vec<Box<dyn FnOnce()>>>,
+    /// Per-component render-time contexts it PROVIDED, kept PERSISTENTLY (not just on
+    /// the transient stack). Re-populated each render (cleared in `begin_component`),
+    /// removed on unmount. Lets an independently re-rendering component restore its
+    /// ancestors' contexts (theme overrides / focus scopes) — see
+    /// [`push_ancestor_contexts`] — so `consume_context` resolves the same as in a
+    /// top-down render (fixes e.g. a themed button reverting on hover).
+    provided: std::collections::HashMap<CompKey, Vec<Rc<dyn Any>>>,
     /// A globally-unique u64 per component instance — the id the render-side
     /// registries (text-edit layout, scroll) key by, so they never collide across
     /// windows even though raw element ids do.
@@ -1024,6 +1031,9 @@ pub(crate) fn begin_component(id: ElementId) -> ComponentGuard {
         }
         // Cleanups are re-registered fresh each render (they only run on unmount).
         rt.cleanups.remove(&key);
+        // Provided contexts are re-declared each render; drop the previous set so a
+        // component that stops providing a context doesn't keep a stale entry.
+        rt.provided.remove(&key);
         // Clear this component's old subscriptions so tracking is fresh each run —
         // touching only the signals it actually read (via the reverse index).
         if let Some(sids) = rt.subs_of.remove(&key) {
@@ -1096,6 +1106,7 @@ pub(crate) fn dispose_component(id: ElementId) {
             }
         }
         rt.instances.remove(&key);
+        rt.provided.remove(&key);
     });
 }
 
@@ -1154,7 +1165,43 @@ pub fn census_pending() -> usize {
 pub fn provide_context<T: 'static>(value: T) {
     with_rt(|rt| {
         if let Some(owner) = rt.owner {
-            rt.contexts.push(ContextEntry { owner, value: Rc::new(value) });
+            let value: Rc<dyn Any> = Rc::new(value);
+            // On the transient stack (visible to this render's subtree) AND persisted
+            // per-owner so an independent re-render can restore it (see
+            // `push_ancestor_contexts`).
+            rt.contexts.push(ContextEntry { owner, value: value.clone() });
+            rt.provided.entry(owner).or_default().push(value);
+        }
+    });
+}
+
+/// Push the persisted render-time contexts of `ancestors` (given OUTERMOST→innermost)
+/// onto the context stack, returning how many entries were pushed — pass that to
+/// [`pop_pushed_contexts`]. The reconciler calls this before re-rendering a dirty
+/// component so `consume_context` (theme overrides, focus scopes) sees the same
+/// ancestor contexts it would in a top-down render.
+pub(crate) fn push_ancestor_contexts(ancestors: &[ElementId]) -> usize {
+    with_rt(|rt| {
+        let win = rt.current_window;
+        let mut pushed = 0;
+        for &eid in ancestors {
+            let key = (win, eid);
+            if let Some(list) = rt.provided.get(&key) {
+                for value in list.clone() {
+                    rt.contexts.push(ContextEntry { owner: key, value });
+                    pushed += 1;
+                }
+            }
+        }
+        pushed
+    })
+}
+
+/// Pop `n` entries previously pushed by [`push_ancestor_contexts`].
+pub(crate) fn pop_pushed_contexts(n: usize) {
+    with_rt(|rt| {
+        for _ in 0..n {
+            rt.contexts.pop();
         }
     });
 }

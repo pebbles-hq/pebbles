@@ -6,6 +6,16 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — scoped context (theme override / focus scope) lost on an independent re-render
+A widget inside a `theme_override` that re-rendered on its OWN signal (hover, press,
+focus) reverted to the global theme — e.g. a Material/Tailwind button snapping back
+to the default look on hover — because render-time context lived only on a transient
+stack that a top-down render builds, absent when a single component re-renders alone.
+Contexts a component provides are now also kept persistently per-component, and the
+reconciler restores the ancestor chain's contexts before an independent re-render, so
+`consume_context` resolves identically either way. Regression-tested
+(`tests/suite/context_scope.rs`).
+
 ### Added — base design languages (Compact / Tailwind / Material)
 A single switch reshapes the whole catalog, like Flutter's Material vs Cupertino.
 `Theme` gained a base [`DesignLanguage`] — **`Compact`** (the new default: flat,

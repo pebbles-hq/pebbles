@@ -226,6 +226,14 @@ impl Ui {
         let (_, render) =
             self.elements[id].widget.as_component().expect("a dirty element must be a function component");
         let old_child = self.elements[id].children.first().copied();
+        // Restore the ancestors' render-time contexts before rendering. A top-down
+        // build has them on the stack (from each ancestor's live render); an
+        // INDEPENDENT re-render (this component's own signal fired) does not — without
+        // this, `consume_context` (theme overrides, focus scopes) would resolve to the
+        // global fallback, e.g. a Material/Tailwind button reverting to the default on
+        // hover. Ancestors are pushed outermost→innermost so the innermost wins.
+        let ancestors = self.ancestor_chain(id);
+        let pushed = crate::reactive::push_ancestor_contexts(&ancestors);
         // Guard spans the child reconcile (render-time contexts stay visible to the
         // subtree — same discipline as `update`/`inflate`).
         let new_child = {
@@ -235,7 +243,22 @@ impl Ui {
             crate::reactive::end_component(guard);
             child
         };
+        crate::reactive::pop_pushed_contexts(pushed);
         self.elements[id].children = new_child.into_iter().collect();
+    }
+
+    /// This element's ancestors, OUTERMOST→innermost (root first, immediate parent
+    /// last), excluding the element itself — the order [`push_ancestor_contexts`]
+    /// expects.
+    fn ancestor_chain(&self, id: ElementId) -> Vec<ElementId> {
+        let mut chain = Vec::new();
+        let mut cur = self.elements[id].parent;
+        while let Some(p) = cur {
+            chain.push(p);
+            cur = self.elements[p].parent;
+        }
+        chain.reverse();
+        chain
     }
 
     /// Tear down this window's whole tree: unmount every element — running component

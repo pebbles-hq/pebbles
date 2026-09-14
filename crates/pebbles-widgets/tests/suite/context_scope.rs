@@ -4,13 +4,15 @@
 use std::cell::RefCell;
 
 use pebbles_core::focus;
-use pebbles_core::{IntoWidget, Ui, component, component_props};
+use pebbles_core::{IntoWidget, Signal, Ui, component, component_props, create_signal};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::TextEnv;
 use pebbles_widgets::{BadgeVariant, Theme, View, badge, button, column, focus_scope, row, theme_override};
 
 thread_local! {
     static SEEN_DARK: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
+    static SEEN_INNER: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
+    static REDRAW: RefCell<Option<Signal<u32>>> = const { RefCell::new(None) };
 }
 
 #[derive(Clone)]
@@ -55,6 +57,56 @@ fn theme_override_scopes_to_exactly_one_subtree() {
     assert!(!seen[0], "before the override sees the global (light) theme");
     assert!(seen[1], "inside the override sees dark");
     assert!(!seen[2], "a sibling after the override sees the global theme again");
+}
+
+/// Like `probe`, but it OWNS a signal — so bumping that signal re-renders THIS
+/// component alone (an "independent" re-render, exactly what a hover/press state
+/// flip does) without its ancestors re-rendering.
+fn interactive_probe(_p: &ProbeProps) -> pebbles_core::Element {
+    let tick = create_signal(0u32);
+    REDRAW.with(|c| *c.borrow_mut() = Some(tick));
+    let _ = tick.get(); // subscribe, so `tick.set(..)` re-renders only this component
+    SEEN_INNER.with(|c| c.borrow_mut().push(pebbles_widgets::theme().dark));
+    badge("x").variant(BadgeVariant::Secondary).into_widget()
+}
+
+// Regression: a widget inside a `theme_override` re-rendering on its OWN signal
+// (hover/press/focus) used to lose the scoped theme and revert to the global one
+// (e.g. a Material/Tailwind button snapping back to the default on hover). The
+// reconciler now restores ancestor render-time contexts before an independent
+// re-render.
+#[test]
+fn scoped_theme_survives_an_independent_re_render() {
+    SEEN_INNER.with(|c| c.borrow_mut().clear());
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            component(|| {
+                theme_override(Theme::dark(), component_props(interactive_probe, ProbeProps { label: "x" }))
+            }),
+        )
+        .into_widget(),
+    );
+    ui.layout(&mut env, Size::new(300.0, 200.0));
+    assert_eq!(
+        SEEN_INNER.with(|c| c.borrow().last().copied()),
+        Some(true),
+        "first render inside the override sees the dark theme"
+    );
+
+    // Fire ONLY this component's signal — the ancestor `theme_override` does not
+    // re-render; the probe re-renders independently.
+    REDRAW.with(|c| c.borrow().unwrap().set(1));
+    ui.rebuild_if_dirty();
+    ui.layout(&mut env, Size::new(300.0, 200.0));
+
+    assert_eq!(
+        SEEN_INNER.with(|c| c.borrow().last().copied()),
+        Some(true),
+        "an independent re-render KEEPS the scoped dark theme (was global light before the fix)"
+    );
 }
 
 #[test]
