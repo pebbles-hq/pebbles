@@ -110,6 +110,8 @@ pub use sizing::{
 pub use spinner::{Spinner, spinner};
 pub use stack::{Positioned, Stack, positioned, stack};
 pub use stream_builder::{StreamBuilder, stream_builder};
-pub use text::{RichText, Text, TextSpan, span, text, text_rich, text_signal};
+pub use text::{
+    RichText, SelectionGroup, Text, TextSpan, selection_group, span, text, text_rich, text_signal,
+};
 pub use transform::{Transform, transform};
 pub use view::View;

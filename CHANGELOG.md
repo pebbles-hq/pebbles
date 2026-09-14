@@ -6,6 +6,27 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — scroll physics trembled (now standardized)
+Scrolling shook/oscillated: `RenderScroll` eased the offset with a stiff
+second-order spring integrated by Euler at wall-clock `dt`, and a fling advanced a
+`target` the spring *chased* — a coupled, dt-sensitive system that micro-oscillates.
+Replaced with the model browsers/Flutter use: **first-order exponential smoothing**
+(`offset += (target−offset)·(1−e^(−√stiffness·dt))`) for wheel/keyboard/settle/
+overscroll — monotone, so it cannot overshoot — and **analytic friction**
+(`v(t)=v₀·e^(−r·t)`, exact per-frame integral) for flings, applied straight to the
+offset. Both are closed-form ⇒ **frame-rate independent** (identical glide at
+60/120/144 Hz). `ScrollPhysics { stiffness, friction }` keep their tuning
+(reinterpreted as rates). Regression-tested for monotone, no-overshoot, dt-exact
+glide under jittery frame times (`objects/scroll.rs` tests).
+
+### Added — text selection + keyboard link traversal primitives
+`RichText`/`RenderParagraph` gained the primitives the ecosystem widgets needed:
+`on_link_hover` (link hover reporting), `selectable`/`selectable_in` + a
+`SelectionGroup` for **cross-block** drag-select-and-copy (paint via parley
+`Selection`, point→byte hit-testing through `text_edit`), and `keyboard_nav` + a
+`RenderParagraph` keyboard-focus ring for **Tab/arrow link traversal**. All
+additive; existing `text_rich` usage is unchanged.
+
 ### Fixed — tapping inside a sheet/dialog dismissed it
 A tap inside a `sheet` or `dialog` panel (e.g. focusing a text field) fell through
 to the dismiss **scrim** behind it and closed the modal — the shell fires a tap on

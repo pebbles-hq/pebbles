@@ -14,9 +14,7 @@
 
 use std::error::Error;
 
-use pebbles_core::{
-    AnyWidget, IntoWidget, Ui, prefers_reduced_motion, set_prefers_reduced_motion,
-};
+use pebbles_core::{AnyWidget, IntoWidget, Ui, prefers_reduced_motion, set_prefers_reduced_motion};
 use pebbles_foundation::{Color, Size};
 use pebbles_render::paint::kurbo;
 use pebbles_render::{Scene, TextEnv};
@@ -114,8 +112,7 @@ struct Gpu {
 impl Gpu {
     fn new(w: u32, h: u32) -> Result<Self, Box<dyn Error>> {
         let mut ctx = RenderContext::new();
-        let dev_id =
-            pollster::block_on(ctx.device(None)).ok_or("no compatible GPU device for capture")?;
+        let dev_id = pollster::block_on(ctx.device(None)).ok_or("no compatible GPU device for capture")?;
         let handle = ctx.devices.remove(dev_id);
         let (renderer, resources) = HybRenderer::new(
             &handle.device,
@@ -177,7 +174,11 @@ impl Gpu {
             },
             TexelCopyBufferInfo {
                 buffer: &buffer,
-                layout: TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: Some(h) },
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded),
+                    rows_per_image: Some(h),
+                },
             },
             Extent3d { width: w, height: h, depth_or_array_layers: 1 },
         );

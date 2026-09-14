@@ -4,10 +4,67 @@
 use pebbles_foundation::{Color, TextAlign};
 use pebbles_render::{ParagraphStyle, RenderObject, RenderParagraph};
 
+use pebbles_core::IntoWidget;
 use pebbles_core::widget::{AnyWidget, RenderWidget};
 
 type LinkCb = std::rc::Rc<dyn Fn(&str)>;
+/// A link-hover callback: `Some(url)` while the pointer is over a link span,
+/// `None` when it leaves the last link.
+type LinkHoverCb = std::rc::Rc<dyn Fn(Option<&str>)>;
 type LinkBoxes = std::rc::Rc<std::cell::RefCell<Vec<(pebbles_foundation::Rect, usize)>>>;
+
+/// A document-wide selection: `(anchor_index, anchor_byte, focus_index, focus_byte)`
+/// where `index` is a leaf's position in its [`SelectionGroup`].
+type CrossSel = (usize, usize, usize, usize);
+
+/// A registered leaf: `(select_id, global rect, text)`.
+type LeafInfo = (u64, pebbles_foundation::Rect, String);
+/// A group's leaves, keyed by document index.
+type GroupLeaves = std::collections::HashMap<usize, LeafInfo>;
+
+thread_local! {
+    /// Registered selectable leaves per group: `group_id → (leaf_index → info)` —
+    /// refreshed each layout so a drag can map a global point to the leaf under it
+    /// and copy across leaves.
+    static SEL_GROUPS: std::cell::RefCell<std::collections::HashMap<u64, GroupLeaves>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// A shared handle that ties several [`RichText::selectable_in`] leaves into one
+/// selection surface, so a drag (and copy) spans across them. Create one per
+/// document region and give each selectable leaf a monotonic `index`.
+#[derive(Clone, Copy)]
+pub struct SelectionGroup {
+    id: u64,
+    sel: pebbles_core::Signal<Option<CrossSel>>,
+}
+
+/// Create a [`SelectionGroup`] with a stable `id` (e.g. the owning component's
+/// `owner_id`). Call from a component so its selection signal is stable.
+pub fn selection_group(id: u64) -> SelectionGroup {
+    SelectionGroup { id, sel: pebbles_core::create_signal(None) }
+}
+
+/// A stable per-leaf hit-test id from a group + index.
+fn leaf_select_id(group: u64, index: usize) -> u64 {
+    group.wrapping_mul(1_000_003).wrapping_add(index as u64 + 1)
+}
+
+/// The leaf under a global point within a group: `(index, select_id, local_x, local_y)`.
+fn group_leaf_at(group: u64, gx: f64, gy: f64) -> Option<(usize, u64, f64, f64)> {
+    SEL_GROUPS.with(|g| {
+        let g = g.borrow();
+        let leaves = g.get(&group)?;
+        leaves.iter().find_map(|(&idx, &(sid, rect, _))| {
+            rect.contains(pebbles_foundation::Offset::new(gx, gy).to_point()).then_some((
+                idx,
+                sid,
+                gx - rect.x0,
+                gy - rect.y0,
+            ))
+        })
+    })
+}
 
 /// Which text properties a [`Text`] set **explicitly** — the ones that win over an
 /// inherited [`default_text_style`](crate::default_text_style). Unset properties fall
@@ -110,7 +167,7 @@ pub fn text(data: impl Into<String>) -> Text {
 /// text updates, so the heavier render-object-direct-write path stays unbuilt (its win
 /// is unproven per the E5 charter). Style it via the closure, e.g.
 /// `text_signal(count)` or wrap: `text(sig.get()).size(24.0)` inside `component(..)`.
-pub fn text_signal(signal: pebbles_core::Signal<String>) -> impl pebbles_core::IntoWidget {
+pub fn text_signal(signal: pebbles_core::Signal<String>) -> impl IntoWidget {
     pebbles_core::component_props(render_text_signal, TextSignalProps { signal })
 }
 
@@ -418,11 +475,25 @@ pub struct RichText {
     base: ParagraphStyle,
     spans: Vec<TextSpan>,
     on_link: Option<LinkCb>,
+    on_link_hover: Option<LinkHoverCb>,
+    selectable: bool,
+    on_selection: Option<LinkCb>,
+    group: Option<(SelectionGroup, usize)>,
+    keyboard: bool,
 }
 
 /// Build a rich paragraph from spans. Base style via the setters.
 pub fn text_rich(spans: Vec<TextSpan>) -> RichText {
-    RichText { base: ParagraphStyle::default(), spans, on_link: None }
+    RichText {
+        base: ParagraphStyle::default(),
+        spans,
+        on_link: None,
+        on_link_hover: None,
+        selectable: false,
+        on_selection: None,
+        group: None,
+        keyboard: false,
+    }
 }
 
 impl RichText {
@@ -473,6 +544,46 @@ impl RichText {
         self.on_link = Some(std::rc::Rc::new(f));
         self
     }
+    /// Called as the pointer moves over the paragraph: `Some(url)` when it is over
+    /// a link span, `None` when it leaves the last link. The hook for link
+    /// hover-previews / status-bar URL display; resolves by the same laid-out link
+    /// boxes as [`on_link`](Self::on_link), so multi-line links hover exactly.
+    pub fn on_link_hover(mut self, f: impl Fn(Option<&str>) + 'static) -> Self {
+        self.on_link_hover = Some(std::rc::Rc::new(f));
+        self
+    }
+    /// Make the paragraph's text selectable: drag to select, and the selection is
+    /// copied to the clipboard on release. Links still tap (a click) while a drag
+    /// selects. See [`on_selection`](Self::on_selection) to observe the text.
+    pub fn selectable(mut self) -> Self {
+        self.selectable = true;
+        self
+    }
+    /// Join this leaf into a [`SelectionGroup`] at document position `index`, so a
+    /// drag — and the copy on release — spans **across** all leaves in the group
+    /// (document-wide selection), not just this one.
+    pub fn selectable_in(mut self, group: SelectionGroup, index: usize) -> Self {
+        self.selectable = true;
+        self.group = Some((group, index));
+        self
+    }
+    /// Called with the selected text when a selection drag ends (implies
+    /// [`selectable`](Self::selectable)).
+    pub fn on_selection(mut self, f: impl Fn(&str) + 'static) -> Self {
+        self.selectable = true;
+        self.on_selection = Some(std::rc::Rc::new(f));
+        self
+    }
+    /// Make the paragraph a keyboard focus stop that traverses its links: Tab
+    /// focuses it, Left/Right (or Up/Down) cycle between link spans painting a
+    /// focus ring, and Enter activates the focused link through
+    /// [`on_link`](Self::on_link). Arrowing past the last/first link releases
+    /// focus so Tab moves on. A no-op unless the paragraph has link spans and an
+    /// [`on_link`](Self::on_link) handler.
+    pub fn keyboard_nav(mut self) -> Self {
+        self.keyboard = true;
+        self
+    }
 }
 
 /// The leaf render widget behind [`RichText`] (post-resolution: byte ranges,
@@ -483,6 +594,13 @@ struct RichTextLeaf {
     style: ParagraphStyle,
     spans: Vec<pebbles_render::TextSpanStyle>,
     boxes: Option<LinkBoxes>,
+    /// When set, the paragraph publishes its shaped layout under this id for
+    /// point→byte selection hit-testing, and paints `selection`.
+    select_id: Option<u64>,
+    selection: Option<(usize, usize)>,
+    /// When set, the paragraph paints a keyboard-focus ring behind the link span
+    /// with this URL index (keyboard link traversal).
+    focused_link: Option<usize>,
 }
 
 pebbles_core::render_widget!(RichTextLeaf);
@@ -491,6 +609,9 @@ impl RenderWidget for RichTextLeaf {
     fn create_render_object(&self) -> Box<dyn RenderObject> {
         let mut p = RenderParagraph::with_spans(self.text.clone(), self.style.clone(), self.spans.clone());
         p.link_boxes = self.boxes.clone();
+        p.select_id = self.select_id;
+        p.selection = self.selection;
+        p.focused_link = self.focused_link;
         Box::new(p)
     }
 
@@ -500,59 +621,396 @@ impl RenderWidget for RichTextLeaf {
             p.style = self.style.clone();
             p.spans = self.spans.clone();
             p.link_boxes = self.boxes.clone();
+            p.select_id = self.select_id;
+            p.selection = self.selection;
+            p.focused_link = self.focused_link;
         }
     }
 }
 
-impl pebbles_core::IntoWidget for RichText {
-    fn into_widget(self) -> AnyWidget {
-        // Resolve spans → concatenated text + byte-ranged style overrides.
-        let mut text = String::new();
-        let mut rspans: Vec<pebbles_render::TextSpanStyle> = Vec::with_capacity(self.spans.len());
-        let mut urls: Vec<String> = Vec::new();
-        for s in &self.spans {
-            let start = text.len();
-            text.push_str(&s.text);
-            let mut rs = pebbles_render::TextSpanStyle::new(start..text.len());
-            rs.weight = s.weight;
-            rs.italic = s.italic;
-            rs.underline = s.underline;
-            rs.strikethrough = s.strikethrough;
-            rs.color = s.color;
-            rs.family = s.family.clone();
-            rs.size = s.size;
-            rs.chip = s.chip;
-            if let Some(url) = &s.link {
-                rs.link = Some(urls.len());
-                urls.push(url.clone());
-            }
-            rspans.push(rs);
+/// Resolve spans → concatenated text + byte-ranged style overrides + link URLs.
+fn resolve_spans(spans: &[TextSpan]) -> (String, Vec<pebbles_render::TextSpanStyle>, Vec<String>) {
+    let mut text = String::new();
+    let mut rspans: Vec<pebbles_render::TextSpanStyle> = Vec::with_capacity(spans.len());
+    let mut urls: Vec<String> = Vec::new();
+    for s in spans {
+        let start = text.len();
+        text.push_str(&s.text);
+        let mut rs = pebbles_render::TextSpanStyle::new(start..text.len());
+        rs.weight = s.weight;
+        rs.italic = s.italic;
+        rs.underline = s.underline;
+        rs.strikethrough = s.strikethrough;
+        rs.color = s.color;
+        rs.family = s.family.clone();
+        rs.size = s.size;
+        rs.chip = s.chip;
+        if let Some(url) = &s.link {
+            rs.link = Some(urls.len());
+            urls.push(url.clone());
         }
-        let boxes = (self.on_link.is_some() && !urls.is_empty())
-            .then(|| std::rc::Rc::new(std::cell::RefCell::new(Vec::new())));
-        let leaf = RichTextLeaf { text, style: self.base, spans: rspans, boxes: boxes.clone() };
-        match (self.on_link, boxes) {
-            (Some(f), Some(boxes)) => {
-                // The tap handler resolves the LOCAL hit point against the link
-                // boxes the paragraph published at layout. Cursor stays Default:
-                // only the link glyphs are interactive, not the whole paragraph.
-                crate::widgets::GestureDetector::new(leaf)
-                    .on_tap(pebbles_core::action_event(move |e| {
-                        let hit = boxes
-                            .borrow()
-                            .iter()
-                            .find(|(r, _)| r.contains(e.position.to_point()))
-                            .map(|&(_, ix)| ix);
-                        if let Some(ix) = hit
-                            && let Some(url) = urls.get(ix)
-                        {
-                            f(url);
+        rspans.push(rs);
+    }
+    (text, rspans, urls)
+}
+
+/// Wire link tap + hover onto a [`GestureDetector`] over a link-bearing paragraph.
+fn wire_links(
+    mut gd: crate::widgets::GestureDetector,
+    boxes: LinkBoxes,
+    urls: std::rc::Rc<Vec<String>>,
+    on_link: Option<LinkCb>,
+    on_link_hover: Option<LinkHoverCb>,
+) -> crate::widgets::GestureDetector {
+    if let Some(f) = on_link {
+        let (boxes, urls) = (boxes.clone(), urls.clone());
+        gd = gd.on_tap(pebbles_core::action_event(move |e| {
+            let hit =
+                boxes.borrow().iter().find(|(r, _)| r.contains(e.position.to_point())).map(|&(_, ix)| ix);
+            if let Some(ix) = hit
+                && let Some(url) = urls.get(ix)
+            {
+                f(url);
+            }
+        }));
+    }
+    if let Some(h) = on_link_hover {
+        let last = std::rc::Rc::new(std::cell::Cell::new(None::<usize>));
+        let (boxes, urls, last_m, h_m) = (boxes.clone(), urls.clone(), last.clone(), h.clone());
+        gd = gd.on_hover_move(pebbles_core::action_event(move |e| {
+            let hit =
+                boxes.borrow().iter().find(|(r, _)| r.contains(e.position.to_point())).map(|&(_, ix)| ix);
+            if hit != last_m.get() {
+                last_m.set(hit);
+                h_m(hit.and_then(|ix| urls.get(ix)).map(String::as_str));
+            }
+        }));
+        gd = gd.on_hover_exit(move || {
+            if last.get().is_some() {
+                last.set(None);
+                h(None);
+            }
+        });
+    }
+    gd
+}
+
+/// Props for the selectable rich-text component (needs per-widget selection state).
+#[derive(Clone)]
+struct SelectableRichProps {
+    base: ParagraphStyle,
+    spans: Vec<TextSpan>,
+    on_link: Option<LinkCb>,
+    on_link_hover: Option<LinkHoverCb>,
+    on_selection: Option<LinkCb>,
+    group: Option<(SelectionGroup, usize)>,
+}
+
+/// Normalize a cross-selection into `(lo, hi)` document positions.
+fn cross_bounds(s: CrossSel) -> ((usize, usize), (usize, usize)) {
+    let (ai, ab, fi, fb) = s;
+    if (ai, ab) <= (fi, fb) { ((ai, ab), (fi, fb)) } else { ((fi, fb), (ai, ab)) }
+}
+
+/// A leaf that participates in a document-wide [`SelectionGroup`]: it registers
+/// its shaped layout + global rect, paints its slice of the group selection, and
+/// its drag maps global points to whichever leaf is under the pointer.
+fn render_group_leaf(p: &SelectableRichProps, group: SelectionGroup, index: usize) -> AnyWidget {
+    let sid = leaf_select_id(group.id, index);
+    let gid = group.id;
+    pebbles_core::create_cleanup(move || {
+        pebbles_render::text_edit::clear(sid);
+        SEL_GROUPS.with(|g| {
+            if let Some(m) = g.borrow_mut().get_mut(&gid) {
+                m.remove(&index);
+            }
+        });
+    });
+    let (text, rspans, urls) = resolve_spans(&p.spans);
+    let text = std::rc::Rc::new(text);
+    let rect = pebbles_core::use_bounds();
+    SEL_GROUPS.with(|g| {
+        g.borrow_mut().entry(gid).or_default().insert(index, (sid, rect, (*text).clone()));
+    });
+    // This leaf's slice of the group selection.
+    let local = group.sel.get().and_then(|s| {
+        let (lo, hi) = cross_bounds(s);
+        if index < lo.0 || index > hi.0 {
+            return None;
+        }
+        let start = if index == lo.0 { lo.1 } else { 0 };
+        let end = if index == hi.0 { hi.1 } else { text.len() };
+        (start != end).then_some((start, end))
+    });
+    let has_links = (p.on_link.is_some() || p.on_link_hover.is_some()) && !urls.is_empty();
+    let boxes = has_links.then(|| std::rc::Rc::new(std::cell::RefCell::new(Vec::new())));
+    let leaf = RichTextLeaf {
+        text: (*text).clone(),
+        style: p.base.clone(),
+        spans: rspans,
+        boxes: boxes.clone(),
+        select_id: Some(sid),
+        selection: local,
+        focused_link: None,
+    };
+    let mut gd = crate::widgets::GestureDetector::new(leaf);
+    if let Some(boxes) = boxes {
+        gd = wire_links(gd, boxes, std::rc::Rc::new(urls), p.on_link.clone(), p.on_link_hover.clone());
+    }
+    let selg = group.sel;
+    gd = gd.on_pan_start(pebbles_core::action_event(move |e| {
+        if let Some(b) = pebbles_render::text_edit::hit(sid, e.position.x, e.position.y) {
+            selg.set(Some((index, b, index, b)));
+        }
+    }));
+    gd = gd.on_pan_update(pebbles_core::action_event(move |e| {
+        // The drag is captured to this leaf, but the pointer may be over another —
+        // map the GLOBAL point to whichever group leaf is under it. When global
+        // rects aren't published (no shell bounds), fall back to this leaf locally.
+        let target = group_leaf_at(gid, e.global.x, e.global.y)
+            .and_then(|(tidx, tsid, lx, ly)| pebbles_render::text_edit::hit(tsid, lx, ly).map(|b| (tidx, b)))
+            .or_else(|| pebbles_render::text_edit::hit(sid, e.position.x, e.position.y).map(|b| (index, b)));
+        if let Some((tidx, b)) = target {
+            selg.update(|s| {
+                let (ai, ab) = s.map(|(ai, ab, _, _)| (ai, ab)).unwrap_or((tidx, b));
+                *s = Some((ai, ab, tidx, b));
+            });
+        }
+    }));
+    let on_selection = p.on_selection.clone();
+    gd = gd.on_pan_end(move || {
+        let Some(s) = selg.peek() else { return };
+        let (lo, hi) = cross_bounds(s);
+        let mut out = String::new();
+        SEL_GROUPS.with(|g| {
+            if let Some(leaves) = g.borrow().get(&gid) {
+                for i in lo.0..=hi.0 {
+                    let Some((_, _, t)) = leaves.get(&i) else { continue };
+                    let start = if i == lo.0 { lo.1.min(t.len()) } else { 0 };
+                    let end = if i == hi.0 { hi.1.min(t.len()) } else { t.len() };
+                    if start < end && t.is_char_boundary(start) && t.is_char_boundary(end) {
+                        if !out.is_empty() {
+                            out.push('\n');
                         }
-                    }))
-                    .cursor(pebbles_render::Cursor::Default)
-                    .into_widget()
+                        out.push_str(&t[start..end]);
+                    }
+                }
             }
-            _ => leaf.into_widget(),
+        });
+        if !out.is_empty() {
+            pebbles_core::clipboard::write(&out);
+            if let Some(cb) = &on_selection {
+                cb(&out);
+            }
         }
+    });
+    gd.cursor(pebbles_render::Cursor::Text).into_widget()
+}
+
+/// Selectable rich text: drag selects (published layout → point→byte via
+/// `text_edit`), the selection paints, and it copies to the clipboard on release.
+fn render_selectable_rich(p: &SelectableRichProps) -> AnyWidget {
+    if let Some((group, index)) = p.group {
+        return render_group_leaf(p, group, index);
+    }
+    let sel = pebbles_core::create_signal(None::<(usize, usize)>);
+    let id = pebbles_core::owner_id().unwrap_or(0) ^ 0x5E1E_C700_0000_0000;
+    pebbles_core::create_cleanup(move || pebbles_render::text_edit::clear(id));
+
+    let (text, rspans, urls) = resolve_spans(&p.spans);
+    let text = std::rc::Rc::new(text);
+    let has_links = (p.on_link.is_some() || p.on_link_hover.is_some()) && !urls.is_empty();
+    let boxes = has_links.then(|| std::rc::Rc::new(std::cell::RefCell::new(Vec::new())));
+    let leaf = RichTextLeaf {
+        text: (*text).clone(),
+        style: p.base.clone(),
+        spans: rspans,
+        boxes: boxes.clone(),
+        select_id: Some(id),
+        selection: sel.get(),
+        focused_link: None,
+    };
+    let mut gd = crate::widgets::GestureDetector::new(leaf);
+    if let Some(boxes) = boxes {
+        gd = wire_links(gd, boxes, std::rc::Rc::new(urls), p.on_link.clone(), p.on_link_hover.clone());
+    }
+
+    // Drag → selection (anchor at press, focus follows), copy on release.
+    gd = gd.on_pan_start(pebbles_core::action_event(move |e| {
+        let b = pebbles_render::text_edit::hit(id, e.position.x, e.position.y);
+        sel.set(b.map(|b| (b, b)));
+    }));
+    gd = gd.on_pan_update(pebbles_core::action_event(move |e| {
+        if let Some(b) = pebbles_render::text_edit::hit(id, e.position.x, e.position.y) {
+            sel.update(|s| {
+                let anchor = s.map(|(a, _)| a).unwrap_or(b);
+                *s = Some((anchor, b));
+            });
+        }
+    }));
+    let on_selection = p.on_selection.clone();
+    gd = gd.on_pan_end(move || {
+        if let Some((a, f)) = sel.peek() {
+            let (lo, hi) = (a.min(f), a.max(f));
+            if lo < hi && text.is_char_boundary(lo) && text.is_char_boundary(hi) {
+                let picked = &text[lo..hi];
+                pebbles_core::clipboard::write(picked);
+                if let Some(cb) = &on_selection {
+                    cb(picked);
+                }
+            }
+        }
+    });
+    gd.cursor(pebbles_render::Cursor::Text).into_widget()
+}
+
+/// Props for the keyboard-navigable rich-text component.
+#[derive(Clone)]
+struct KeyboardRichProps {
+    base: ParagraphStyle,
+    spans: Vec<TextSpan>,
+    on_link: Option<LinkCb>,
+    on_link_hover: Option<LinkHoverCb>,
+}
+
+/// Keyboard link traversal: a focus stop that cycles its link spans with the
+/// arrow keys (painting a focus ring) and activates the focused link on
+/// Enter/Space. Arrowing past the first/last link returns `false` so Tab moves
+/// focus on. Mouse taps still resolve links by geometry (via [`wire_links`]).
+fn render_keyboard_rich(p: &KeyboardRichProps) -> AnyWidget {
+    let node = pebbles_core::create_focus();
+    let focused_idx = pebbles_core::create_signal(0usize);
+    let (text, rspans, urls) = resolve_spans(&p.spans);
+    let urls = std::rc::Rc::new(urls);
+    let n = urls.len();
+
+    // No links, or no tap handler to activate them → an inert, non-focusable
+    // paragraph (registering a focus stop with nothing to do would be a dead Tab).
+    if n == 0 || p.on_link.is_none() {
+        let leaf = RichTextLeaf {
+            text,
+            style: p.base.clone(),
+            spans: rspans,
+            boxes: None,
+            select_id: None,
+            selection: None,
+            focused_link: None,
+        };
+        return leaf.into_widget();
+    }
+
+    let is_focused = node.is_focused();
+
+    // Activate the currently-focused link through `on_link`.
+    let act_urls = urls.clone();
+    let act_link = p.on_link.clone();
+    let activate: std::rc::Rc<dyn Fn()> = std::rc::Rc::new(move || {
+        if let Some(url) = act_urls.get(focused_idx.peek())
+            && let Some(f) = &act_link
+        {
+            f(url);
+        }
+    });
+
+    // Arrow keys cycle links; Enter activates. Returning false at an edge (or on
+    // an unrelated key) releases the key so Tab/scroll can claim it.
+    let keys_activate = activate.clone();
+    node.register_keys(std::rc::Rc::new(move |k: pebbles_core::KeyInput| -> bool {
+        use pebbles_core::{KeyInput, Motion};
+        match k {
+            KeyInput::Move { motion: Motion::Right | Motion::Down | Motion::WordRight, .. } => {
+                let i = focused_idx.peek();
+                if i + 1 < n {
+                    focused_idx.set(i + 1);
+                    true
+                } else {
+                    false
+                }
+            }
+            KeyInput::Move { motion: Motion::Left | Motion::Up | Motion::WordLeft, .. } => {
+                let i = focused_idx.peek();
+                if i > 0 {
+                    focused_idx.set(i - 1);
+                    true
+                } else {
+                    false
+                }
+            }
+            KeyInput::Enter => {
+                keys_activate();
+                true
+            }
+            _ => false,
+        }
+    }));
+
+    // `register` makes this a Tab focus stop and handles Space activation (the
+    // shell routes Space to `dispatch_activate`; Enter is claimed above).
+    node.register(activate, None, false);
+
+    let boxes = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let leaf = RichTextLeaf {
+        text,
+        style: p.base.clone(),
+        spans: rspans,
+        boxes: Some(boxes.clone()),
+        select_id: None,
+        selection: None,
+        focused_link: is_focused.then(|| focused_idx.get().min(n - 1)),
+    };
+    let mut gd = crate::widgets::GestureDetector::new(leaf);
+    gd = wire_links(gd, boxes, urls, p.on_link.clone(), p.on_link_hover.clone());
+    // A pointer press focuses the paragraph so keyboard traversal picks up there.
+    gd = gd.on_pointer_down(move || node.request_focus());
+    gd.cursor(pebbles_render::Cursor::Pointer).into_widget()
+}
+
+impl IntoWidget for RichText {
+    fn into_widget(self) -> AnyWidget {
+        if self.keyboard && !self.selectable {
+            return pebbles_core::component_props(
+                render_keyboard_rich,
+                KeyboardRichProps {
+                    base: self.base,
+                    spans: self.spans,
+                    on_link: self.on_link,
+                    on_link_hover: self.on_link_hover,
+                },
+            )
+            .into_widget();
+        }
+        if self.selectable {
+            return pebbles_core::component_props(
+                render_selectable_rich,
+                SelectableRichProps {
+                    base: self.base,
+                    spans: self.spans,
+                    on_link: self.on_link,
+                    on_link_hover: self.on_link_hover,
+                    on_selection: self.on_selection,
+                    group: self.group,
+                },
+            )
+            .into_widget();
+        }
+        let (text, rspans, urls) = resolve_spans(&self.spans);
+        // Link geometry is needed for tap AND/OR hover; publish boxes if either is wired.
+        let interactive = (self.on_link.is_some() || self.on_link_hover.is_some()) && !urls.is_empty();
+        let boxes = interactive.then(|| std::rc::Rc::new(std::cell::RefCell::new(Vec::new())));
+        let leaf = RichTextLeaf {
+            text,
+            style: self.base,
+            spans: rspans,
+            boxes: boxes.clone(),
+            select_id: None,
+            selection: None,
+            focused_link: None,
+        };
+        let Some(boxes) = boxes else {
+            return leaf.into_widget();
+        };
+        let gd = crate::widgets::GestureDetector::new(leaf);
+        let gd = wire_links(gd, boxes, std::rc::Rc::new(urls), self.on_link, self.on_link_hover);
+        gd.cursor(pebbles_render::Cursor::Default).into_widget()
     }
 }

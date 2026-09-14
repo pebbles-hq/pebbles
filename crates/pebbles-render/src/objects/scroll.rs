@@ -128,11 +128,19 @@ impl Default for ScrollbarStyle {
 
 /// The physics of a scroll view: how the offset eases toward its target, how a
 /// fling decays, and whether drags may pull past the edges (rubber-banding).
+///
+/// The model is first-order and closed-form (browser / Flutter style), so it is
+/// dt-exact and cannot oscillate: wheel/keyboard/settle use exponential smoothing
+/// (`offset += (target−offset)·(1−e^(−√stiffness·dt))`) and a fling uses analytic
+/// friction (`v(t)=v0·e^(−r·t)`, `r = −60·ln(1−friction)`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ScrollPhysics {
-    /// Spring stiffness for the offset→target ease (critically damped).
+    /// Smoothing rate for the offset→target ease: the per-second rate is
+    /// `√stiffness` (never overshoots — first-order lag, not a spring).
     pub stiffness: f64,
-    /// Per-frame fling friction: velocity *= (1 − friction)^(dt·60).
+    /// Fling friction: velocity decays as `e^(−r·t)` with `r = −60·ln(1−friction)`
+    /// per second (so a value keeps the same feel it had as a per-frame-at-60 Hz
+    /// decay, but is now frame-rate independent).
     pub friction: f64,
     /// Whether content drags may pull past `[0, max]` with resistance (excess/3),
     /// springing back on release.
@@ -252,18 +260,17 @@ impl ScrollHandle {
 /// A scrollable viewport.
 pub struct RenderScroll {
     pub axis: Axis,
-    /// Displayed scroll offset (eased toward `target` by the spring).
+    /// Displayed scroll offset (eased toward `target`, or driven by a fling).
     pub offset: f64,
-    /// Where the offset is heading — wheel/keyboard move this; the spring animates
-    /// `offset` toward it for a smooth, momentum-like glide.
+    /// Where the offset is heading — wheel/keyboard/programmatic moves set this;
+    /// first-order smoothing eases `offset` toward it for a browser-style glide.
     pub target: f64,
-    /// Current spring velocity (px/s) — the offset→target ease. During a fling
-    /// this tracks the moving target; the fling's own speed lives in
-    /// the private `fling_velocity` field.
+    /// The offset's current speed (px/s), reported for consumers — the fling speed
+    /// while [`flinging`](Self::flinging), else the smoothing's effective rate.
     pub velocity: f64,
     /// Decaying fling speed (px/s) while [`flinging`](Self::flinging).
     fling_velocity: f64,
-    /// Whether a fling is in progress (the target advances, the spring follows).
+    /// Whether a fling is in progress (analytic friction drives `offset` directly).
     flinging: bool,
     /// Snap increment: after settling, the target rounds to a multiple of this
     /// (0 = no snapping).
@@ -542,32 +549,66 @@ impl RenderScroll {
         }
         let before = self.offset;
         let dt = dt.clamp(0.0, 0.05); // guard against long stalls
-        // Fling: the target keeps moving while the fling velocity decays.
+        if dt <= 0.0 {
+            return self.flinging || (self.offset - self.target).abs() >= 0.1;
+        }
+        let max = self.max_offset;
+
+        // ── Fling: Flutter-style analytic friction, applied straight to the offset.
+        // Velocity decays as v(t)=v0·e^(−r·t); the exact distance over this frame is
+        // ∫₀ᵈᵗ v0·e^(−r·t) dt = v0·(1−e^(−r·dt))/r. Being closed-form it is dt-EXACT
+        // (identical glide at 60/120/144 Hz or a stalled frame) and, being first-order,
+        // it cannot ring — so there is nothing to shake. `friction` is read as the old
+        // per-frame-at-60 Hz decay so existing tunings keep their feel: r = −60·ln(1−f).
         if self.flinging {
-            let decay = (1.0 - self.physics.friction).powf(dt * 60.0);
+            let r = (-60.0 * (1.0 - self.physics.friction).ln()).max(1e-3);
+            let decay = (-r * dt).exp();
+            let dist = self.fling_velocity * (1.0 - decay) / r;
             self.fling_velocity *= decay;
-            self.target = (self.target + self.fling_velocity * dt).clamp(0.0, self.max_offset);
+            let mut next = self.offset + dist;
+            if !self.physics.overscroll {
+                // Clamp at the edges; hitting one ends the fling cleanly.
+                if next <= 0.0 {
+                    next = 0.0;
+                    self.fling_velocity = 0.0;
+                } else if next >= max {
+                    next = max;
+                    self.fling_velocity = 0.0;
+                }
+            } else if next < 0.0 || next > max {
+                // Overscroll: keep this frame's small overshoot, then let the
+                // first-order bounce below ease it back — no second bounce, no ring.
+                self.fling_velocity = 0.0;
+            }
+            self.offset = next;
+            self.target = next.clamp(0.0, max);
             if self.fling_velocity.abs() < 0.5 {
                 self.flinging = false;
                 self.fling_velocity = 0.0;
                 if self.snap > 0.0 {
-                    self.target = ((self.target / self.snap).round() * self.snap).clamp(0.0, self.max_offset);
+                    self.target = ((self.target / self.snap).round() * self.snap).clamp(0.0, max);
                 }
             }
         }
-        let stiffness = self.physics.stiffness.max(1.0);
-        let damping = 2.0 * stiffness.sqrt(); // critically damped — no overshoot
-        let x = self.offset - self.target;
-        let accel = -stiffness * x - damping * self.velocity;
-        self.velocity += accel * dt;
-        self.offset += self.velocity * dt;
-        let moving = if x.abs() < 0.1 && self.velocity.abs() < 0.5 {
-            self.offset = self.target;
-            self.velocity = 0.0;
-            false
-        } else {
-            true
-        };
+
+        // ── Settle / smooth-scroll / overscroll bounce: first-order exponential ease
+        // toward the goal. `offset += (goal−offset)·(1−e^(−r·dt))` is the continuous
+        // form of a browser "smooth scroll": monotone (it NEVER overshoots), so it
+        // cannot oscillate, and dt-exact via the exp. The fling owns the offset while
+        // active; this drives wheel/keyboard glides, programmatic settles, and the
+        // spring-back from an overscrolled edge. r = √stiffness (per second).
+        if !self.flinging {
+            let goal = self.target.clamp(0.0, max);
+            let r = self.physics.stiffness.max(1.0).sqrt();
+            let f = 1.0 - (-r * dt).exp();
+            self.offset += (goal - self.offset) * f;
+            if (goal - self.offset).abs() < 0.1 {
+                self.offset = goal;
+            }
+        }
+
+        let settled = !self.flinging && (self.offset - self.target.clamp(0.0, max)).abs() < 0.1;
+        self.velocity = if self.flinging { self.fling_velocity } else { (self.offset - before) / dt };
 
         // Emit Update on real movement (opening the activity if a programmatic
         // `scroll_to` started it), and End exactly once when it settles.
@@ -576,11 +617,12 @@ impl RenderScroll {
             self.begin_activity();
             self.emit(ScrollEvent::Update { delta });
         }
-        if !moving && self.was_moving {
+        if settled && self.was_moving {
             self.was_moving = false;
+            self.velocity = 0.0;
             self.emit(ScrollEvent::End);
         }
-        moving
+        !settled
     }
 
     /// Whether a scrollbar thumb is currently drawn (content overflows).
@@ -804,5 +846,105 @@ impl RenderObject for RenderScroll {
 
     fn debug_name(&self) -> &'static str {
         "RenderScroll"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mk(max: f64) -> RenderScroll {
+        let mut s = RenderScroll::new(Axis::Vertical);
+        s.viewport_extent = 500.0;
+        s.max_offset = max;
+        s
+    }
+
+    // Deterministic jittery frame times (12–24 ms) — the exact condition the old
+    // stiff-spring + Euler integrator trembled under. A strictly monotone glide
+    // with no overshoot is the mathematical signature of "no oscillation".
+    fn jitter(i: usize) -> f64 {
+        [0.0166, 0.0200, 0.0125, 0.0235, 0.0140, 0.0180][i % 6]
+    }
+
+    #[test]
+    fn smooth_scroll_is_monotone_and_never_overshoots() {
+        let mut s = mk(5000.0);
+        s.scroll_by(1200.0);
+        let target = s.target;
+        assert!(target > 0.0);
+        let mut prev = s.offset;
+        let mut moving = true;
+        for i in 0..600 {
+            moving = s.tick(jitter(i));
+            // A spring overshoot would reverse direction or pass the target.
+            assert!(s.offset >= prev - 1e-6, "offset reversed: {prev} -> {}", s.offset);
+            assert!(s.offset <= target + 1e-6, "overshot target: {} > {target}", s.offset);
+            prev = s.offset;
+            if !moving {
+                break;
+            }
+        }
+        assert!(!moving, "glide terminated");
+        assert!((s.offset - target).abs() < 0.5, "settled on the target: {}", s.offset);
+    }
+
+    #[test]
+    fn fling_is_monotone_and_settles() {
+        let mut s = mk(100_000.0);
+        s.fling_velocity = 3000.0;
+        s.flinging = true;
+        s.target = s.offset;
+        let mut prev = s.offset;
+        let mut frames = 0;
+        for i in 0..3000 {
+            let moving = s.tick(jitter(i));
+            assert!(s.offset >= prev - 1e-6, "fling reversed direction (rang)");
+            prev = s.offset;
+            frames += 1;
+            if !moving {
+                break;
+            }
+        }
+        assert!(!s.flinging, "fling ended");
+        assert!(s.offset > 100.0, "fling covered real distance: {}", s.offset);
+        assert!(frames < 3000, "fling terminated in bounded time");
+    }
+
+    #[test]
+    fn glide_is_frame_rate_independent() {
+        // The same wheel move at 60 Hz and at 144 Hz must land in the same place —
+        // the closed-form model is dt-exact, unlike the old Euler spring.
+        let mut a = mk(5000.0);
+        a.scroll_by(800.0);
+        let mut b = mk(5000.0);
+        b.scroll_by(800.0);
+        for _ in 0..2000 {
+            if !a.tick(1.0 / 60.0) {
+                break;
+            }
+        }
+        for _ in 0..4000 {
+            if !b.tick(1.0 / 144.0) {
+                break;
+            }
+        }
+        assert!(
+            (a.offset - b.offset).abs() < 1.0,
+            "60 Hz vs 144 Hz land together: {} vs {}",
+            a.offset,
+            b.offset
+        );
+    }
+
+    #[test]
+    fn a_long_stall_frame_does_not_explode() {
+        // A 500 ms hitch (dt clamped) must not fling the offset past its target or
+        // NaN — the failure mode of an unclamped stiff Euler spring.
+        let mut s = mk(3000.0);
+        s.scroll_by(600.0);
+        s.tick(0.5);
+        assert!(s.offset.is_finite());
+        assert!(s.offset >= 0.0 && s.offset <= 600.0 + 1e-6, "stayed in range: {}", s.offset);
     }
 }

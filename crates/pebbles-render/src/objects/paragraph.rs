@@ -14,8 +14,8 @@ use std::rc::Rc;
 use crate::paint::Glyph;
 use kurbo::Affine;
 use parley::{
-    Alignment, AlignmentOptions, FontStyle, FontWeight, Layout, LineHeight, PositionedLayoutItem,
-    StyleProperty,
+    Affinity, Alignment, AlignmentOptions, Cursor, FontStyle, FontWeight, Layout, LineHeight,
+    PositionedLayoutItem, Selection, StyleProperty,
 };
 use pebbles_foundation::{Axis, Color, Offset, Rect, Size, TextAlign, TextDirection};
 use peniko::{Brush, Fill};
@@ -173,6 +173,18 @@ pub struct RenderParagraph {
     /// Where the paragraph publishes each link span's laid-out boxes
     /// `(rect in local space, link index)` — shared with the widget's tap handler.
     pub link_boxes: Option<LinkBoxes>,
+    /// When set, the shaped layout is published to [`crate::text_edit`] under this
+    /// id at layout, so the owning widget can hit-test a point → byte for text
+    /// selection. Opt-in — plain/rich paragraphs leave it `None`.
+    pub select_id: Option<u64>,
+    /// The active selection `(anchor, focus)` byte offsets, fed by the widget.
+    /// Painted behind the glyphs; `None` (or `anchor == focus`) paints nothing.
+    pub selection: Option<(usize, usize)>,
+    /// Selection highlight color.
+    pub selection_color: Color,
+    /// The link index (into the widget's URL list) to draw a keyboard-focus ring
+    /// around — for `Tab`-through-links a11y. `None` draws no ring.
+    pub focused_link: Option<usize>,
     /// Chip (inline-code) backgrounds computed from the shaped layout, local space.
     chips: Vec<(Rect, Color)>,
     /// Shaped layout, produced in [`RenderObject::layout`] and consumed in paint.
@@ -195,6 +207,10 @@ impl RenderParagraph {
             style,
             spans: Vec::new(),
             link_boxes: None,
+            select_id: None,
+            selection: None,
+            selection_color: Color::from_rgba8(59, 130, 246, 70),
+            focused_link: None,
             chips: Vec::new(),
             cached: None,
             shape_key: None,
@@ -350,6 +366,10 @@ impl RenderParagraph {
     /// cache-hit.
     fn refresh_span_geometry(&mut self) {
         let Some(layout) = &self.cached else { return };
+        // Publish the shaped layout for point→byte hit-testing when selection is on.
+        if let Some(id) = self.select_id {
+            crate::text_edit::store(id, layout.clone());
+        }
         let needs_chips = self.spans.iter().any(|s| s.chip.is_some());
         let needs_links = self.link_boxes.is_some() && self.spans.iter().any(|s| s.link.is_some());
         if !needs_chips && !needs_links {
@@ -455,8 +475,49 @@ impl RenderObject for RenderParagraph {
         let Some(layout) = &self.cached else { return };
         let transform = Affine::translate((offset.x, offset.y));
 
-        // Chip (inline-code) backgrounds first, behind the glyphs — culled per chip.
+        // Selection highlight, behind everything (only when a non-empty range is set).
         let visible = cx.visible();
+        if let Some((a, f)) = self.selection
+            && a != f
+        {
+            let (a, f) = (a.min(self.text.len()), f.min(self.text.len()));
+            let sel = Selection::new(
+                Cursor::from_byte_index(layout, a, Affinity::Downstream),
+                Cursor::from_byte_index(layout, f, Affinity::Downstream),
+            );
+            for (bb, _) in sel.geometry(layout) {
+                let rect = Rect::new(offset.x + bb.x0, offset.y + bb.y0, offset.x + bb.x1, offset.y + bb.y1);
+                if rect.y1 < visible.y0 || rect.y0 > visible.y1 {
+                    continue;
+                }
+                cx.scene.fill(Fill::NonZero, Affine::IDENTITY, self.selection_color, None, &rect);
+            }
+        }
+
+        // Keyboard-focus highlight behind the focused link's glyphs (a11y Tab-nav).
+        if let Some(fl) = self.focused_link {
+            let mut boxes: Vec<Rect> = Vec::new();
+            for span in &self.spans {
+                if span.link == Some(fl) {
+                    Self::range_boxes(layout, &span.range, &mut boxes);
+                }
+            }
+            let ring = Color::from_rgba8(59, 130, 246, 64);
+            for r in &boxes {
+                let rect = Rect::new(
+                    offset.x + r.x0 - 1.0,
+                    offset.y + r.y0 - 1.0,
+                    offset.x + r.x1 + 1.0,
+                    offset.y + r.y1 + 1.0,
+                );
+                if rect.y1 < visible.y0 || rect.y0 > visible.y1 {
+                    continue;
+                }
+                cx.scene.fill(Fill::NonZero, Affine::IDENTITY, ring, None, &rect.to_rounded_rect(3.0));
+            }
+        }
+
+        // Chip (inline-code) backgrounds first, behind the glyphs — culled per chip.
         for (r, color) in &self.chips {
             let world = Rect::new(r.x0 + offset.x, r.y0 + offset.y, r.x1 + offset.x, r.y1 + offset.y);
             if world.y1 < visible.y0 || world.y0 > visible.y1 {
