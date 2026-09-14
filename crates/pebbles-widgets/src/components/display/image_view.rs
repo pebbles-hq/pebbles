@@ -13,7 +13,7 @@ use std::io::Read;
 use std::time::Duration;
 
 use base64::Engine;
-use pebbles_foundation::{Alignment, EdgeInsets};
+use pebbles_foundation::Alignment;
 use pebbles_render::{BorderRadius, BoxDecoration, Image, ImageFit, image_from_rgba8};
 
 use crate::theme::theme;
@@ -300,7 +300,7 @@ fn error_box(p: &Props) -> AnyWidget {
         None => filler(
             p,
             Container::new()
-                .padding(EdgeInsets::all(6.0))
+                .padding(theme().pad_all(6.0))
                 .child(text("⚠").size(20.0).color(theme().colors.muted_foreground))
                 .into_widget(),
         ),

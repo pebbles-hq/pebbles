@@ -1,7 +1,7 @@
 //! [`Panel`] — a titled, bordered surface for docking-style desktop layouts (a
 //! side panel, an inspector, a tool window).
 
-use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
+use pebbles_foundation::{CrossAxisAlignment, MainAxisAlignment, MainAxisSize};
 use pebbles_render::{Border, BorderRadius, BoxDecoration};
 
 use crate::theme::theme;
@@ -32,7 +32,8 @@ impl Panel {
 
 impl IntoWidget for Panel {
     fn into_widget(mut self) -> AnyWidget {
-        let c = theme().colors;
+        let th = theme();
+        let c = th.colors;
 
         let mut header_row: Vec<AnyWidget> = vec![
             text(std::mem::take(&mut self.title))
@@ -47,17 +48,16 @@ impl IntoWidget for Panel {
         }
         let header = Container::new()
             .color(c.muted)
-            .padding(EdgeInsets::symmetric(12.0, 8.0))
+            .padding(th.pad(12.0, 8.0))
             .child(row(header_row).main_axis_alignment(MainAxisAlignment::SpaceBetween));
 
-        let body =
-            Container::new().color(c.card).padding(EdgeInsets::all(12.0)).child(self.child.take().unwrap());
+        let body = Container::new().color(c.card).padding(th.pad_all(12.0)).child(self.child.take().unwrap());
 
         Container::new()
             .decoration(
                 BoxDecoration::new()
-                    .border(Border::new(c.border, 1.0))
-                    .radius(BorderRadius::all(theme().radius)),
+                    .border(Border::new(c.border, th.border_width))
+                    .radius(BorderRadius::all(th.radius)),
             )
             .child(
                 column(children![header, Container::new().color(c.border).height(1.0), body,])

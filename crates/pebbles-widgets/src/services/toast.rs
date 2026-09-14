@@ -8,7 +8,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, Offset};
+use pebbles_foundation::{Color, CrossAxisAlignment, MainAxisSize, Offset};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, IconKind};
 
 use crate::components::icon;
@@ -251,7 +251,7 @@ fn toast_card_inner(e: &ToastEntry) -> AnyWidget {
                             .color(c.secondary)
                             .radius(BorderRadius::all(theme().radius_md())),
                     )
-                    .padding(EdgeInsets::symmetric(10.0, 6.0))
+                    .padding(theme().pad(10.0, 6.0))
                     .child(text(label.clone()).size(12.5).weight(500.0).color(c.secondary_foreground)),
             )
             .cursor(pebbles_render::Cursor::Pointer)
@@ -276,10 +276,10 @@ fn toast_card_inner(e: &ToastEntry) -> AnyWidget {
     let base = crate::style::style()
         .width(WIDTH)
         .background(c.popover)
-        .border(Border::new(c.border, 1.0))
+        .border(Border::new(c.border, theme().border_width))
         .radius_all(theme().radius + 2.0)
         .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 60), Offset::new(0.0, 8.0), 24.0, -6.0))
-        .padding_xy(14.0, 12.0);
+        .padding(theme().pad(14.0, 12.0));
     let card = crate::style::styled(
         row(r).cross_axis_alignment(CrossAxisAlignment::Center),
         base.merge(e.style.clone().unwrap_or_default()),

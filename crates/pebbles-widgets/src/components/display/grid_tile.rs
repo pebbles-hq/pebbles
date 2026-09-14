@@ -2,10 +2,11 @@
 //! overlaid on its top and/or bottom edge (Flutter's `GridTile` / `GridTileBar`). The
 //! classic use is a photo tile with a translucent title strip.
 
-use pebbles_foundation::{Color, EdgeInsets, MainAxisSize, palette};
+use pebbles_foundation::{Color, MainAxisSize, palette};
 use pebbles_render::{BoxDecoration, IconData};
 
 use crate::components::icon;
+use crate::theme::theme;
 use crate::widgets::{Container, column, positioned, row, spacer, stack, text};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
@@ -113,7 +114,7 @@ impl IntoWidget for GridTileBar {
         }
         Container::new()
             .decoration(BoxDecoration::new().color(Color::from_rgba8(0, 0, 0, 140)))
-            .padding(EdgeInsets::symmetric(12.0, 8.0))
+            .padding(theme().pad(12.0, 8.0))
             .child(row(kids).cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Center))
             .into_widget()
     }

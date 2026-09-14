@@ -48,19 +48,15 @@ pub struct Tabs {
     variant: TabsVariant,
     autofocus: bool,
     active_color: Option<pebbles_foundation::Color>,
-    content_padding: EdgeInsets,
-    tab_padding: EdgeInsets,
+    // `None` = the design-language default (resolved at render so it re-skins live).
+    content_padding: Option<EdgeInsets>,
+    tab_padding: Option<EdgeInsets>,
     style: Option<crate::style::Style>,
 }
 
 /// Create a [`Tabs`] with the given selected index.
 pub fn tabs(selected: usize) -> Tabs {
-    Tabs {
-        selected,
-        content_padding: EdgeInsets::symmetric(0.0, 16.0),
-        tab_padding: EdgeInsets::symmetric(14.0, 8.0),
-        ..Default::default()
-    }
+    Tabs { selected, ..Default::default() }
 }
 
 impl Tabs {
@@ -110,14 +106,14 @@ impl Tabs {
         self.active_color = Some(color);
         self
     }
-    /// The padding around the content area (default `(0, 16)`).
+    /// The padding around the content area (default: the design-language `(0, 16)`).
     pub fn content_padding(mut self, insets: EdgeInsets) -> Self {
-        self.content_padding = insets;
+        self.content_padding = Some(insets);
         self
     }
-    /// The padding inside each tab button (default `(14, 8)`).
+    /// The padding inside each tab button (default: the design-language `(14, 8)`).
     pub fn tab_padding(mut self, insets: EdgeInsets) -> Self {
-        self.tab_padding = insets;
+        self.tab_padding = Some(insets);
         self
     }
 }
@@ -130,6 +126,10 @@ impl IntoWidget for Tabs {
 
 fn render_tabs(p: &Tabs) -> AnyWidget {
     let th = theme();
+    // Resolve the design-language padding defaults here (so a live design switch
+    // re-skins them); an explicit `.tab_padding(..)`/`.content_padding(..)` wins.
+    let tab_padding = p.tab_padding.unwrap_or_else(|| th.pad(14.0, 8.0));
+    let content_padding = p.content_padding.unwrap_or_else(|| th.pad(0.0, 16.0));
     let node = create_focus();
     let n = p.tabs.len();
     let selected = p.selected;
@@ -192,7 +192,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
                     size: label_size,
                     weight: label_weight,
                     active_color,
-                    tab_padding: p.tab_padding,
+                    tab_padding,
                 },
             )
             .into_widget(),
@@ -229,7 +229,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
             if node.is_focused() {
                 deco = deco.border(Border::new(th.colors.ring, 2.0));
             }
-            (deco, Some(EdgeInsets::all(4.0)))
+            (deco, Some(th.pad_all(4.0)))
         }
     };
     let mut strip = Container::new().decoration(strip_deco).child(row(bar).main_axis_size(MainAxisSize::Min));
@@ -247,7 +247,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
         .unwrap_or_else(|| gap_h(0.0).into_widget());
 
     let mut body = vec![strip];
-    body.push(Padding::new(p.content_padding, content).into_widget());
+    body.push(Padding::new(content_padding, content).into_widget());
 
     column(body)
         .cross_axis_alignment(CrossAxisAlignment::Stretch)

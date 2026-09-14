@@ -115,9 +115,11 @@ impl IntoWidget for Toolbar {
         let th = theme();
         Container::new()
             .decoration(
-                BoxDecoration::new().color(th.colors.background).border(Border::new(th.colors.border, 1.0)),
+                BoxDecoration::new()
+                    .color(th.colors.background)
+                    .border(Border::new(th.colors.border, th.border_width)),
             )
-            .padding(EdgeInsets::symmetric(12.0, 8.0))
+            .padding(th.pad(12.0, 8.0))
             .child(row(std::mem::take(&mut self.children)).main_axis_size(MainAxisSize::Min))
             .into_widget()
     }
@@ -139,7 +141,7 @@ impl IntoWidget for StatusBar {
         let th = theme();
         Container::new()
             .decoration(BoxDecoration::new().color(th.colors.muted))
-            .padding(EdgeInsets::symmetric(12.0, 5.0))
+            .padding(th.pad(12.0, 5.0))
             .child(
                 row(children![
                     text(std::mem::take(&mut self.text)).size(12.0).color(th.colors.muted_foreground)

@@ -203,11 +203,16 @@ impl IntoWidget for Scaffold {
         col.push(Expanded::new(middle).into_widget());
         // Persistent footer buttons sit above the bottom bar, with a top divider.
         if let Some(footer) = self.persistent_footer.take() {
-            let c = theme().colors;
+            let th = theme();
+            let c = th.colors;
             col.push(
                 Container::new()
-                    .decoration(BoxDecoration::new().color(c.background).border(Border::new(c.border, 1.0)))
-                    .padding(EdgeInsets::symmetric(12.0, 8.0))
+                    .decoration(
+                        BoxDecoration::new()
+                            .color(c.background)
+                            .border(Border::new(c.border, th.border_width)),
+                    )
+                    .padding(th.pad(12.0, 8.0))
                     .child(footer)
                     .into_widget(),
             );
@@ -215,11 +220,14 @@ impl IntoWidget for Scaffold {
         // A persistent (non-modal) bottom sheet sits above the bottom bar: a card
         // surface with a top divider, always part of the layout.
         if let Some(sheet) = self.bottom_sheet.take() {
-            let c = theme().colors;
+            let th = theme();
+            let c = th.colors;
             col.push(
                 Container::new()
-                    .decoration(BoxDecoration::new().color(c.card).border(Border::new(c.border, 1.0)))
-                    .padding(EdgeInsets::all(16.0))
+                    .decoration(
+                        BoxDecoration::new().color(c.card).border(Border::new(c.border, th.border_width)),
+                    )
+                    .padding(th.pad_all(16.0))
                     .child(sheet)
                     .into_widget(),
             );
@@ -277,7 +285,8 @@ impl TopPanel {
 
 impl IntoWidget for TopPanel {
     fn into_widget(mut self) -> AnyWidget {
-        let c = theme().colors;
+        let th = theme();
+        let c = th.colors;
         let mut items: Vec<AnyWidget> = Vec::new();
         if let Some(leading) = self.leading.take() {
             items.push(leading);
@@ -293,9 +302,11 @@ impl IntoWidget for TopPanel {
         }
 
         Container::new()
-            .decoration(BoxDecoration::new().color(c.background).border(Border::new(c.border, 1.0)))
+            .decoration(
+                BoxDecoration::new().color(c.background).border(Border::new(c.border, th.border_width)),
+            )
             .height(self.height)
-            .padding(EdgeInsets::symmetric(16.0, 0.0))
+            .padding(th.pad(16.0, 0.0))
             .child(row(items).cross_axis_alignment(CrossAxisAlignment::Center))
             .into_widget()
     }
@@ -378,7 +389,7 @@ fn render_nav_item(w: &NavItem) -> AnyWidget {
 
     let container = Container::new()
         .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius)))
-        .padding(EdgeInsets::symmetric(if collapsed { 0.0 } else { 10.0 }, 9.0))
+        .padding(theme().pad(if collapsed { 0.0 } else { 10.0 }, 9.0))
         .child(inner);
 
     let mut gesture = GestureDetector::new(container)
@@ -569,7 +580,7 @@ fn render_collapse_toggle(t: &CollapseToggle) -> AnyWidget {
     let mut gesture = GestureDetector::new(
         Container::new()
             .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius)))
-            .padding(EdgeInsets::all(7.0))
+            .padding(theme().pad_all(7.0))
             .child(icon(glyph).size(18.0).color(c.muted_foreground)),
     )
     .cursor(Cursor::Pointer)
@@ -638,7 +649,7 @@ fn render_bottom_nav_item(w: &BottomNavItem) -> AnyWidget {
     .cross_axis_alignment(CrossAxisAlignment::Center)
     .main_axis_size(MainAxisSize::Min);
 
-    let container = Container::new().padding(EdgeInsets::symmetric(16.0, 8.0)).child(center(content));
+    let container = Container::new().padding(theme().pad(16.0, 8.0)).child(center(content));
     let mut gesture = GestureDetector::new(container)
         .cursor(Cursor::Pointer)
         .on_hover_enter(move || hovered.set(true))
@@ -674,11 +685,14 @@ impl BottomNav {
 
 impl IntoWidget for BottomNav {
     fn into_widget(mut self) -> AnyWidget {
-        let c = theme().colors;
+        let th = theme();
+        let c = th.colors;
         let items: Vec<AnyWidget> =
             std::mem::take(&mut self.items).into_iter().map(|it| Expanded::new(it).into_widget()).collect();
         Container::new()
-            .decoration(BoxDecoration::new().color(c.background).border(Border::new(c.border, 1.0)))
+            .decoration(
+                BoxDecoration::new().color(c.background).border(Border::new(c.border, th.border_width)),
+            )
             .height(self.height)
             .child(
                 row(items)

@@ -292,10 +292,10 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
     // Base surface presentation as a Style; the user's `.style(..)` merges on top.
     let base = crate::style::style()
         .background(e.background.unwrap_or(c.background))
-        .border(Border::new(c.border, 1.0))
+        .border(Border::new(c.border, theme().border_width))
         .radius_all(0.0);
     let deco = base.merge(e.style.clone().unwrap_or_default()).decoration().unwrap_or_default();
-    let pad = e.padding.unwrap_or(EdgeInsets::all(22.0));
+    let pad = e.padding.unwrap_or(theme().pad_all(22.0));
     let mut surface = Container::new().decoration(deco).padding(pad).child(body);
     // Resolve each dimension: an explicit width/height wins; otherwise the main axis is
     // `size` and the cross axis fills the window (when its size is known yet).

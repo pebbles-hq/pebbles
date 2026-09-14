@@ -10,7 +10,7 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets, MainAxisSize};
+use pebbles_foundation::{Alignment, CrossAxisAlignment, MainAxisSize};
 use pebbles_render::text_edit as edit;
 use pebbles_render::{Cursor, IconData, IconKind, PointerEvent, TextFieldStyle, lucide};
 
@@ -985,17 +985,21 @@ fn render_field(p: &Props) -> AnyWidget {
         let (border_color, border_w) =
             if has_error { (c.destructive, 1.5) } else { (mix(c.input, c.ring, fr as f32), 1.0 + fr) };
         let bg = if disabled { c.muted } else { c.background };
+        // Height + padding follow the design language: compact fields are short &
+        // tight, material roomy — and the single-line height matches every other
+        // control (buttons, selects) so a form row is uniform.
+        let th = theme();
         let (height, padding, align) = if p.multiline {
-            (p.lines as f64 * 20.0 + 20.0, EdgeInsets::all(10.0), Alignment::TOP_LEFT)
+            (p.lines as f64 * 20.0 + 20.0 * th.density, th.pad_all(10.0), Alignment::TOP_LEFT)
         } else {
-            (38.0, EdgeInsets::symmetric(12.0, 0.0), Alignment::CENTER_LEFT)
+            (th.control_height, th.pad(12.0, 0.0), Alignment::CENTER_LEFT)
         };
         // The field box's presentation as a base Style; the user's `.style(..)` merges
         // on top (bg / border / radius / shadow overrides), user wins.
         let base = crate::style::style()
             .background(bg)
             .border(pebbles_render::Border::new(border_color, border_w))
-            .radius_all(theme().radius);
+            .radius_all(th.radius);
         let merged = base.merge(p.style.clone().unwrap_or_default());
         let deco = merged.decoration().unwrap_or_default();
         let mut field =

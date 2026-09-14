@@ -12,7 +12,7 @@ use std::rc::Rc;
 // web_time, not std::time: SystemTime::now() panics on wasm.
 use web_time::{SystemTime, UNIX_EPOCH};
 
-use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, Offset};
+use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, MainAxisSize, Offset};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, IconKind};
 
 use super::{ButtonSize, ButtonVariant, button, icon_button};
@@ -628,7 +628,7 @@ fn render_calendar(p: &Props) -> AnyWidget {
     let s = p.style.clone().unwrap_or_default();
     let mut deco = BoxDecoration::new()
         .color(s.background.unwrap_or(c.popover))
-        .border(s.border.unwrap_or(Border::new(c.border, 1.0)))
+        .border(s.border.unwrap_or(Border::new(c.border, theme().border_width)))
         .radius(s.radius.unwrap_or(BorderRadius::all(theme().radius)));
     if s.shadows.is_empty() {
         deco = deco.shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 45), Offset::new(0.0, 8.0), 22.0, -4.0));
@@ -640,7 +640,7 @@ fn render_calendar(p: &Props) -> AnyWidget {
     Container::new()
         .width(s.width.unwrap_or(BODY_W + 24.0))
         .decoration(deco)
-        .padding(s.padding.unwrap_or(EdgeInsets::all(12.0)))
+        .padding(s.padding.unwrap_or(theme().pad_all(12.0)))
         .child(panel)
         .into_widget()
 }

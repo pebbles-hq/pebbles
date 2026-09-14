@@ -1,7 +1,6 @@
 //! [`Empty`] — an empty-state placeholder (shadcn's `Empty`): a centered icon,
 //! title, description and optional action.
 
-use pebbles_foundation::EdgeInsets;
 use pebbles_foundation::MainAxisSize;
 use pebbles_render::{BorderRadius, BoxDecoration, IconData};
 
@@ -47,13 +46,14 @@ impl Empty {
 
 impl IntoWidget for Empty {
     fn into_widget(self) -> AnyWidget {
-        let c = theme().colors;
+        let th = theme();
+        let c = th.colors;
         let mut items: Vec<AnyWidget> = Vec::new();
         if let Some(ic) = self.icon {
             items.push(
                 Container::new()
                     .decoration(BoxDecoration::new().color(c.secondary).radius(BorderRadius::all(999.0)))
-                    .padding(EdgeInsets::all(14.0))
+                    .padding(th.pad_all(14.0))
                     .child(icon(ic).size(24.0).color(c.muted_foreground))
                     .into_widget(),
             );

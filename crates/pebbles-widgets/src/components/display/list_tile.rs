@@ -155,8 +155,10 @@ fn render_tile(p: &TileProps) -> AnyWidget {
     if p.selected {
         bg = mix(bg, p.selected_color.unwrap_or(c.accent), 0.14);
     }
-    let default_pad =
-        if p.dense { EdgeInsets::symmetric(12.0, 6.0) } else { EdgeInsets::symmetric(12.0, 10.0) };
+    // Row padding follows the design language's density (Compact tight, Material
+    // roomy); it drives the row height, since the row sizes to content.
+    let th = theme();
+    let default_pad = if p.dense { th.pad(12.0, 6.0) } else { th.pad(12.0, 10.0) };
     let base = crate::style::style().background(bg).padding(p.content_padding.unwrap_or(default_pad));
     let merged = base.merge(p.style.clone().unwrap_or_default());
     // Read the Style's text props first (merged is consumed to build the surface).

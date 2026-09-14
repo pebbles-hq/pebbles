@@ -347,6 +347,20 @@ pub fn set_theme(theme: Theme) {
     theme_signal().set(theme);
 }
 
+/// **The one config a developer sets to choose their base look.** Switches the whole
+/// app's [`DesignLanguage`] — every component re-skins its radius / padding / height
+/// / border / elevation to match — while keeping the current colors. Call it once at
+/// startup (`set_design(DesignLanguage::Compact)`) and build from there, or change it
+/// live behind a setting.
+pub fn set_design(lang: DesignLanguage) {
+    set_theme(theme().design(lang));
+}
+
+/// The active base [`DesignLanguage`] (reactive read).
+pub fn design() -> DesignLanguage {
+    theme().design
+}
+
 /// Flip between light and dark, **preserving the active design language** and any
 /// customizations are re-seeded from the base (a one-line dark-mode toggle).
 pub fn toggle_theme() {

@@ -12,7 +12,7 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, Color, EdgeInsets, MainAxisSize, Offset};
+use pebbles_foundation::{Alignment, Color, MainAxisSize, Offset};
 use pebbles_render::{
     Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, IconData, IconKind, PointerEvent,
 };
@@ -289,11 +289,11 @@ fn render_select_menu(p: &MenuProps) -> AnyWidget {
         .decoration(
             BoxDecoration::new()
                 .color(c.popover)
-                .border(Border::new(c.border, 1.0))
+                .border(Border::new(c.border, theme().border_width))
                 .radius(BorderRadius::all(theme().radius))
                 .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 45), Offset::new(0.0, 8.0), 22.0, -4.0)),
         )
-        .padding(EdgeInsets::all(4.0))
+        .padding(theme().pad_all(4.0))
         .child(body)
         .into_widget()
 }
@@ -372,6 +372,7 @@ fn render_menu_item(p: &MenuItemProps) -> AnyWidget {
 
 fn render_select(p: &Props) -> AnyWidget {
     let c = theme().colors;
+    let control_h = theme().control_height;
     let selected = create_signal(p.initial);
     let width = p.width;
     let options = Rc::new(p.options.clone());
@@ -453,14 +454,14 @@ fn render_select(p: &Props) -> AnyWidget {
 
     let deco = crate::style::style()
         .background(c.background)
-        .border(Border::new(c.input, 1.0))
+        .border(Border::new(c.input, theme().border_width))
         .radius_all(theme().radius)
         .merge(p.style.clone().unwrap_or_default())
         .decoration()
         .unwrap_or_default();
     let trigger = Container::new()
         .width(width)
-        .height(38.0)
+        .height(control_h)
         .decoration(deco)
         .padding(theme().pad(12.0, 0.0))
         .alignment(Alignment::CENTER_LEFT)
@@ -471,7 +472,7 @@ fn render_select(p: &Props) -> AnyWidget {
             // The trigger's window-space rect = click global − click local.
             let trigger_left = e.global.x - e.position.x;
             let trigger_top = e.global.y - e.position.y;
-            let trigger_h = 38.0;
+            let trigger_h = control_h;
             let (ww, wh) = window_size();
 
             // Menu height: rows + padding + group headers, capped (then it scrolls).

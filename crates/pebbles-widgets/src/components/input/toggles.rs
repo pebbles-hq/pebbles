@@ -76,10 +76,11 @@ impl ToggleSize {
     }
     /// Padding for a [`Toggle`] button.
     fn toggle_pad(self) -> EdgeInsets {
+        let th = theme();
         match self {
-            Self::Sm => EdgeInsets::symmetric(8.0, 5.0),
-            Self::Md => EdgeInsets::symmetric(10.0, 7.0),
-            Self::Lg => EdgeInsets::symmetric(13.0, 9.0),
+            Self::Sm => th.pad(8.0, 5.0),
+            Self::Md => th.pad(10.0, 7.0),
+            Self::Lg => th.pad(13.0, 9.0),
         }
     }
 }
@@ -579,7 +580,7 @@ fn render_toggle(p: &ToggleProps) -> AnyWidget {
     if focused {
         deco = deco.border(Border::new(c.ring, 2.0));
     } else if p.variant == ToggleVariant::Outline {
-        deco = deco.border(Border::new(c.border, 1.0));
+        deco = deco.border(Border::new(c.border, theme().border_width));
     }
     let container = Container::new()
         .decoration(deco)

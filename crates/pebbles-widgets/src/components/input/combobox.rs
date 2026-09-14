@@ -22,8 +22,6 @@ use pebbles_core::{Signal, action_event, children, component_props, create_signa
 type ChangedCb = Rc<dyn Fn(usize, &str)>;
 type SelectionCb = Rc<dyn Fn(&[usize])>;
 
-const TRIGGER_H: f64 = 38.0;
-
 /// A trigger that looks like the [`Select`](super::Select) trigger: bordered box,
 /// value-or-placeholder text, trailing chevron.
 fn trigger_box(label: String, filled: bool, width: f64, user: Option<crate::style::Style>) -> AnyWidget {
@@ -31,16 +29,16 @@ fn trigger_box(label: String, filled: bool, width: f64, user: Option<crate::styl
     let fg = if filled { c.foreground } else { c.muted_foreground };
     let deco = crate::style::style()
         .background(c.background)
-        .border(Border::new(c.input, 1.0))
+        .border(Border::new(c.input, theme().border_width))
         .radius_all(theme().radius)
         .merge(user.unwrap_or_default())
         .decoration()
         .unwrap_or_default();
     Container::new()
         .width(width)
-        .height(TRIGGER_H)
+        .height(theme().control_height)
         .decoration(deco)
-        .padding(EdgeInsets::symmetric(12.0, 0.0))
+        .padding(theme().pad(12.0, 0.0))
         .alignment(Alignment::CENTER_LEFT)
         .child(row(children![
             text(label).size(14.0).color(fg),
@@ -259,6 +257,8 @@ impl IntoWidget for Combobox {
 
 fn render_combobox(p: &ComboProps) -> AnyWidget {
     let width = p.width;
+    // Captured at render time so the on-tap anchor matches the (control-height) trigger.
+    let trigger_h = theme().control_height;
     let selected = create_signal(p.initial);
     let options = Rc::new(p.options.clone());
     let on_changed = p.on_changed.clone();
@@ -278,7 +278,7 @@ fn render_combobox(p: &ComboProps) -> AnyWidget {
             let trigger_left = e.global.x - e.position.x;
             let trigger_top = e.global.y - e.position.y;
             let est = (menu_options.len().min(6) as f64) * 34.0 + 60.0;
-            let (left, top) = anchor_below(trigger_left, trigger_top, TRIGGER_H, width, est);
+            let (left, top) = anchor_below(trigger_left, trigger_top, trigger_h, width, est);
 
             let opts = menu_options.clone();
             let is_selected: Rc<dyn Fn(usize) -> bool> = Rc::new(move |i| selected.peek() == Some(i));
@@ -400,6 +400,8 @@ impl IntoWidget for MultiSelect {
 
 fn render_multi(p: &MultiProps) -> AnyWidget {
     let width = p.width;
+    // Captured at render time so the on-tap anchor matches the (control-height) trigger.
+    let trigger_h = theme().control_height;
     let selected: Signal<Vec<usize>> = create_signal(p.initial.clone());
     let options = Rc::new(p.options.clone());
     let on_changed = p.on_changed.clone();
@@ -424,7 +426,7 @@ fn render_multi(p: &MultiProps) -> AnyWidget {
             let trigger_left = e.global.x - e.position.x;
             let trigger_top = e.global.y - e.position.y;
             let est = (menu_options.len().min(6) as f64) * 34.0 + 60.0;
-            let (left, top) = anchor_below(trigger_left, trigger_top, TRIGGER_H, width, est);
+            let (left, top) = anchor_below(trigger_left, trigger_top, trigger_h, width, est);
 
             let opts = menu_options.clone();
             let is_selected: Rc<dyn Fn(usize) -> bool> = Rc::new(move |i| selected.get().contains(&i));

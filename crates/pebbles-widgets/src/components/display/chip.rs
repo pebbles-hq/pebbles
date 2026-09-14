@@ -99,7 +99,8 @@ impl Chip {
 
 impl IntoWidget for Chip {
     fn into_widget(mut self) -> AnyWidget {
-        let c = theme().colors;
+        let th = theme();
+        let c = th.colors;
         let (bg, fg, border) = if self.disabled {
             (Some(c.muted), c.muted_foreground, false)
         } else if self.selected {
@@ -107,12 +108,12 @@ impl IntoWidget for Chip {
         } else {
             (Some(c.secondary), c.secondary_foreground, true)
         };
-        let mut base = style().radius_all(999.0).padding_xy(10.0, 4.0);
+        let mut base = style().radius_all(999.0).padding(th.pad(10.0, 4.0));
         if let Some(bg) = bg {
             base = base.background(bg);
         }
         if border {
-            base = base.border(pebbles_render::Border::new(c.border, 1.0));
+            base = base.border(pebbles_render::Border::new(c.border, th.border_width));
         }
         let mut row_items: Vec<AnyWidget> = Vec::new();
         // A leading check for a selected FilterChip.
@@ -133,7 +134,7 @@ impl IntoWidget for Chip {
             && let Some(on_deleted) = self.on_deleted.take()
         {
             let close = icon_button(IconKind::Close).size(12.0).on_pressed(on_deleted);
-            let close_styled = styled(close, style().padding_all(2.0).radius_all(999.0));
+            let close_styled = styled(close, style().padding(th.pad_all(2.0)).radius_all(999.0));
             body = row(vec![body, gap_w(6.0).into_widget(), close_styled.into_widget()])
                 .main_axis_size(pebbles_foundation::MainAxisSize::Min)
                 .into_widget();

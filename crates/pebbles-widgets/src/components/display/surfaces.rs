@@ -256,11 +256,12 @@ impl IntoWidget for Alert {
             AlertVariant::Warning => (c.warning, IconKind::Warning),
             AlertVariant::Destructive => (c.destructive, IconKind::Warning),
         };
+        let th = theme();
         let base = style()
             .background(c.card)
-            .border(Border::new(c.border, 1.0))
-            .radius_all(theme().radius)
-            .padding_all(14.0);
+            .border(Border::new(c.border, th.border_width))
+            .radius_all(th.radius)
+            .padding(th.pad_all(14.0));
         let mut texts: Vec<AnyWidget> = vec![
             text(std::mem::take(&mut self.title)).size(14.0).semibold().color(c.foreground).into_widget(),
         ];

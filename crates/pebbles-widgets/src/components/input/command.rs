@@ -218,7 +218,7 @@ fn render_command(p: &Props) -> AnyWidget {
         first_group = false;
         body.push(
             Container::new()
-                .padding(EdgeInsets::symmetric(8.0, 6.0))
+                .padding(theme().pad(8.0, 6.0))
                 .alignment(Alignment::CENTER_LEFT)
                 .child(text(g.label.clone()).size(11.5).semibold().color(c.muted_foreground))
                 .into_widget(),
@@ -267,9 +267,9 @@ fn render_command(p: &Props) -> AnyWidget {
     // padding) — the divider is `width`, the padded sections are `inner = width - 16`.
     let divider = Container::new().width(width).height(1.0).decoration(BoxDecoration::new().color(c.border));
     let content = column(pebbles_core::children![
-        Padding::new(EdgeInsets::all(8.0), search),
+        Padding::new(theme().pad_all(8.0), search),
         divider,
-        Padding::new(EdgeInsets::all(8.0), list),
+        Padding::new(theme().pad_all(8.0), list),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Start)
     .main_axis_size(MainAxisSize::Min);
@@ -284,7 +284,7 @@ fn render_command(p: &Props) -> AnyWidget {
             .decoration(
                 crate::style::style()
                     .background(c.popover)
-                    .border(pebbles_render::Border::new(c.border, 1.0))
+                    .border(pebbles_render::Border::new(c.border, theme().border_width))
                     .radius_all(theme().radius)
                     .decoration()
                     .unwrap_or_default(),

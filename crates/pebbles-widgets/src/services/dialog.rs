@@ -277,7 +277,7 @@ impl AlertDialog {
         );
 
         // The base dialog surface has no inner padding, so the alert supplies its own.
-        let content = Container::new().padding(pebbles_foundation::EdgeInsets::symmetric(24.0, 22.0)).child(
+        let content = Container::new().padding(theme().pad(24.0, 22.0)).child(
             column(kids)
                 .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start)
                 .main_axis_size(MainAxisSize::Min),
@@ -318,7 +318,7 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
         .decoration(
             BoxDecoration::new()
                 .color(entry.background.unwrap_or(c.popover))
-                .border(Border::new(c.border, 1.0))
+                .border(Border::new(c.border, theme().border_width))
                 .radius(BorderRadius::all(theme().radius + 4.0))
                 .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 90), Offset::new(0.0, 18.0), 40.0, -8.0)),
         )

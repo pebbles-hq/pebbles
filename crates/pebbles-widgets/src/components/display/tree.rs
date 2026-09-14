@@ -103,7 +103,9 @@ fn emit(node: TreeNode, depth: f64, indent: f64, out: &mut Vec<AnyWidget>) {
 
     // Row is left-packed but fills the width (default MainAxisSize::Max) so the
     // selection highlight spans the whole row.
-    let content = Padding::new(pebbles_foundation::EdgeInsets::symmetric(6.0, 5.0), row(cells));
+    // Node row padding follows the design language's density — it also sets the row
+    // height, since the row sizes to content.
+    let content = Padding::new(th.pad(6.0, 5.0), row(cells));
     let bg = if node.selected { c.accent } else { palette::TRANSPARENT };
     let mut gesture = GestureDetector::new(Container::new().color(bg).child(content));
     if has_children {

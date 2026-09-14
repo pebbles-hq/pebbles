@@ -252,14 +252,14 @@ fn default_trigger(label: &str, width: f64, hovered: bool, user: Option<crate::s
     let bg = if hovered { c.accent } else { c.background };
     let deco = crate::style::style()
         .background(bg)
-        .border(Border::new(c.input, 1.0))
+        .border(Border::new(c.input, theme().border_width))
         .radius_all(theme().radius)
         .merge(user.unwrap_or_default())
         .decoration()
         .unwrap_or_default();
     Container::new()
         .width(width)
-        .height(38.0)
+        .height(theme().control_height)
         .decoration(deco)
         .padding(theme().pad(12.0, 0.0))
         .alignment(Alignment::CENTER_LEFT)
@@ -285,6 +285,8 @@ pub(crate) fn estimate_height(entries: &[MenuEntry]) -> f64 {
 
 fn render_dropdown(p: &Props) -> AnyWidget {
     let width = p.width;
+    // Captured at render time so the on-tap anchor matches the (control-height) trigger.
+    let control_h = theme().control_height;
     let hovered = create_signal(false);
     let node = create_focus();
     let nav = list_nav();
@@ -369,7 +371,7 @@ fn render_dropdown(p: &Props) -> AnyWidget {
         move |e: PointerEvent| {
             let trigger_left = e.global.x - e.position.x;
             let trigger_top = e.global.y - e.position.y;
-            let (left, top) = anchor_below(trigger_left, trigger_top, 38.0, width, menu_h);
+            let (left, top) = anchor_below(trigger_left, trigger_top, control_h, width, menu_h);
             let menu = component_props(
                 render_dd_menu,
                 DdMenuProps {

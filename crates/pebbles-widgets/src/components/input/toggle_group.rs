@@ -164,7 +164,7 @@ impl IntoWidget for ToggleGroup {
         Container::new()
             .decoration(
                 BoxDecoration::new()
-                    .border(Border::new(th.colors.border, 1.0))
+                    .border(Border::new(th.colors.border, th.border_width))
                     .radius(BorderRadius::all(th.radius)),
             )
             .clip()

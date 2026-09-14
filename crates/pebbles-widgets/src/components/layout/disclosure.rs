@@ -122,7 +122,7 @@ fn render_section(p: &SectionProps) -> AnyWidget {
     // fragmented).
     let header = GestureDetector::new(
         Container::new().color(mix(p.hover_base, c.muted, 0.5 * hv as f32)).child(Padding::new(
-            EdgeInsets::symmetric(4.0, 12.0),
+            theme().pad(4.0, 12.0),
             row(children![
                 text(p.title.clone()).size(p.title_size).weight(p.title_weight).color(p.title_color),
                 spacer(),
@@ -283,7 +283,7 @@ fn render_collapsible(p: &CollapsibleProps) -> AnyWidget {
     let header_inner: AnyWidget = match &p.trigger {
         Some(t) => t.clone(),
         None => Padding::new(
-            EdgeInsets::symmetric(4.0, 12.0),
+            theme().pad(4.0, 12.0),
             row(children![
                 text(p.title.clone()).size(14.0).weight(500.0).color(c.foreground),
                 spacer(),

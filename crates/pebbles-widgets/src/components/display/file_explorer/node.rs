@@ -18,7 +18,8 @@ pub(super) struct NodeProps {
 /// multi), inline rename, a context menu, and drag-to-move (a selection drags
 /// together; folders highlight as drop targets and expand on hover-hold).
 pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
-    let c = theme().colors;
+    let th = theme();
+    let c = th.colors;
     let explorer = p.explorer;
     let node = &p.node;
     let is_folder = node.kind == FsKind::Folder;
@@ -87,14 +88,18 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
 
     let content = row(children![indent, twistie, gap_w(4.0), glyph, gap_w(6.0), Expanded::new(label)])
         .main_axis_size(MainAxisSize::Min);
+    // Row padding follows the design language's density — it also sets the row
+    // height, since the row sizes to content. (The focus-ring border keeps its
+    // fixed width — a focus indicator, not a design-language border.)
+    let row_pad = th.pad(6.0, 3.0);
     let body = if active && !renaming {
         // The active row carries the focus ring (painted inside — no layout shift).
         Container::new()
             .decoration(BoxDecoration::new().color(bg).border(Border::new(c.ring, 1.0)))
-            .padding(EdgeInsets::symmetric(6.0, 3.0))
+            .padding(row_pad)
             .child(content)
     } else {
-        Container::new().color(bg).padding(EdgeInsets::symmetric(6.0, 3.0)).child(content)
+        Container::new().color(bg).padding(row_pad).child(content)
     };
 
     // Renaming: no row gestures — the editor owns the input.

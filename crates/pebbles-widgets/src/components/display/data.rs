@@ -127,7 +127,7 @@ pub struct Table {
     overflow_default: CellOverflow,
     columns: Vec<Option<ColumnWidth>>,
     column_default: ColumnWidth,
-    cell_padding: EdgeInsets,
+    cell_padding: Option<EdgeInsets>,
     cell_size: f32,
     cell_color: Option<Color>,
     header_style: Option<Style>,
@@ -147,7 +147,7 @@ pub fn table(headers: Vec<String>) -> Table {
     Table {
         headers,
         rows: Vec::new(),
-        cell_padding: EdgeInsets::symmetric(12.0, 10.0),
+        cell_padding: None,
         cell_size: 13.0,
         selection_column_width: 40.0,
         row_hover: true,
@@ -287,9 +287,11 @@ impl Table {
         self.overflow_default = mode;
         self
     }
-    /// The cells' padding (default `(12, 10)` — horizontal 12, vertical 10).
+    /// The cells' padding (default `(12, 10)` — horizontal 12, vertical 10 —
+    /// scaled by the design language's density; tighter on Compact, roomier on
+    /// Material). An explicit value here is used verbatim.
     pub fn cell_padding(mut self, insets: EdgeInsets) -> Self {
-        self.cell_padding = insets;
+        self.cell_padding = Some(insets);
         self
     }
     /// The cell text size (default 13).
@@ -478,7 +480,11 @@ fn data_slot(
 /// [`ColumnWidth`] (content by default), rows share those widths, and the grid scrolls
 /// horizontally when content-sized columns don't fit.
 fn render_data_table(t: &Table) -> AnyWidget {
-    let c = theme().colors;
+    let th = theme();
+    let c = th.colors;
+    // Cell padding follows the design language's density (Compact tight, Material
+    // roomy) — which also drives the row height, since rows size to content.
+    let cell_padding = t.cell_padding.unwrap_or_else(|| th.pad(12.0, 10.0));
 
     // Surface + cell styles (transparent base; user's style wins; text props drive cells).
     let merged = crate::style::style().merge(t.style.clone().unwrap_or_default());
@@ -560,7 +566,7 @@ fn render_data_table(t: &Table) -> AnyWidget {
                         color: header_color,
                         size: header_size,
                         weight: header_weight,
-                        pad: t.cell_padding,
+                        pad: cell_padding,
                         align: alignment,
                         asc_icon: t.sort_asc_icon,
                         desc_icon: t.sort_desc_icon,
@@ -574,7 +580,7 @@ fn render_data_table(t: &Table) -> AnyWidget {
             );
         } else {
             let label = Padding::new(
-                t.cell_padding,
+                cell_padding,
                 Align::new(
                     alignment,
                     text(h.clone()).size(header_size).weight(header_weight).color(header_color),
@@ -624,7 +630,7 @@ fn render_data_table(t: &Table) -> AnyWidget {
                 Some(Cell::Widget(w)) => w.clone(),
                 None => gap_w(0.0).into_widget(),
             };
-            let inner = clip_rect(Padding::new(t.cell_padding, Align::new(alignment, content))).into_widget();
+            let inner = clip_rect(Padding::new(cell_padding, Align::new(alignment, content))).into_widget();
             drow.push(data_slot(r, striped, t.row_hover, hovered, inner));
         }
         grid_rows.push(drow);
@@ -633,7 +639,7 @@ fn render_data_table(t: &Table) -> AnyWidget {
     let grid = layout_table(grid_rows)
         .column_widths(specs)
         .stretch_rows(true)
-        .divider(c.border, 1.0)
+        .divider(c.border, th.border_width)
         .fill_width(true);
 
     let grid_widget: AnyWidget = if any_flex {

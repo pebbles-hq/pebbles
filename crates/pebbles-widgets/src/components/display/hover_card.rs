@@ -4,7 +4,7 @@
 //! trigger + card, with a short close delay so moving between them doesn't flicker).
 //! Rendered in the passive overlay layer (click-through). Mirrors shadcn's Hover Card.
 
-use pebbles_foundation::{Color, EdgeInsets, Offset};
+use pebbles_foundation::{Color, Offset};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, PointerEvent};
 
 use crate::overlay::{hide_passive, show_passive};
@@ -68,17 +68,19 @@ impl IntoWidget for HoverCard {
 }
 
 fn surface(content: AnyWidget, width: f64) -> AnyWidget {
-    let c = theme().colors;
+    let th = theme();
+    let c = th.colors;
     Container::new()
         .width(width)
         .decoration(
             BoxDecoration::new()
                 .color(c.popover)
-                .border(Border::new(c.border, 1.0))
-                .radius(BorderRadius::all(theme().radius + 2.0))
+                .border(Border::new(c.border, th.border_width))
+                .radius(BorderRadius::all(th.radius + 2.0))
+                // Overlay float-shadow: kept fixed so the popover reads in every design.
                 .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 45), Offset::new(0.0, 8.0), 24.0, -6.0)),
         )
-        .padding(EdgeInsets::all(16.0))
+        .padding(th.pad_all(16.0))
         .child(content)
         .into_widget()
 }

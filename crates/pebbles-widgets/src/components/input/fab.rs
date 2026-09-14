@@ -3,7 +3,7 @@
 //! extended pill (icon + text). The canonical placement is the [`Scaffold`]'s `.fab(..)`
 //! slot (bottom-right), but it works standalone in any `Stack`.
 
-use pebbles_foundation::{Color, EdgeInsets, MainAxisSize, Offset};
+use pebbles_foundation::{Color, MainAxisSize, Offset};
 use pebbles_render::{BorderRadius, BoxDecoration, BoxShadow, Cursor, IconData};
 
 use crate::components::icon;
@@ -77,7 +77,7 @@ impl IntoWidget for Fab {
             Container::new()
                 .decoration(deco)
                 .height(if self.mini { 40.0 } else { 48.0 })
-                .padding(EdgeInsets::symmetric(20.0, 0.0))
+                .padding(theme().pad(20.0, 0.0))
                 .child(center(inner))
         } else {
             let d = if self.mini { 40.0 } else { 56.0 };

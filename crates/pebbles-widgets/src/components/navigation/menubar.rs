@@ -5,7 +5,7 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, EdgeInsets, MainAxisSize};
+use pebbles_foundation::{Alignment, MainAxisSize};
 use pebbles_render::{BorderRadius, BoxDecoration, Cursor, PointerEvent};
 
 use crate::components::input::list_nav::list_nav;
@@ -95,10 +95,12 @@ impl IntoWidget for Menubar {
     }
 }
 
-const TRIGGER_H: f64 = 34.0;
-
 fn render_menubar(p: &Props) -> AnyWidget {
     let c = theme().colors;
+    let th = theme();
+    // The trigger row height is the uniform control height (density-scaled); the
+    // dropdown anchors directly below it, so both use the same value.
+    let trigger_h = th.control_height;
     // Which top-level menu is open (index), so the trigger can highlight and hover can
     // switch. `is_open()` (the overlay) is the source of truth for "a menu is showing".
     let open = create_signal(Option::<usize>::None);
@@ -122,7 +124,7 @@ fn render_menubar(p: &Props) -> AnyWidget {
             move |e: &PointerEvent| {
                 let left = e.global.x - e.position.x;
                 let top = e.global.y - e.position.y;
-                let (l, t) = anchor_below(left, top, TRIGGER_H, width, menu_h);
+                let (l, t) = anchor_below(left, top, trigger_h, width, menu_h);
                 let handles = SubMenuHandles { nav: child_nav, ctx: child_ctx, subs: Rc::new(bp.sub_rows()) };
                 show_overlay_guarded(bp.build(width, &handles), l, t, width, menu_h, move || open.alive());
                 open.set(Some(i));
@@ -130,10 +132,10 @@ fn render_menubar(p: &Props) -> AnyWidget {
         };
 
         let trigger = Container::new()
-            .height(TRIGGER_H)
+            .height(trigger_h)
             .alignment(Alignment::CENTER)
-            .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius)))
-            .padding(EdgeInsets::symmetric(12.0, 0.0))
+            .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(th.radius)))
+            .padding(th.pad(12.0, 0.0))
             .child(text(m.label.clone()).size(label_size).weight(500.0).color(fg));
 
         let hover_show = show_at.clone();

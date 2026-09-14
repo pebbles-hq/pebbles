@@ -137,9 +137,17 @@ fn render(p: &Props) -> AnyWidget {
             .on_pan_end(end);
 
         let panel = Container::new()
-            .decoration(BoxDecoration::new().color(c.card).border(Border::new(c.border, 1.0)).radius(
-                BorderRadius { top_left: 16.0, top_right: 16.0, bottom_right: 0.0, bottom_left: 0.0 },
-            ))
+            .decoration(
+                BoxDecoration::new()
+                    .color(c.card)
+                    .border(Border::new(c.border, theme().border_width))
+                    .radius(BorderRadius {
+                        top_left: 16.0,
+                        top_right: 16.0,
+                        bottom_right: 0.0,
+                        bottom_left: 0.0,
+                    }),
+            )
             .height(h)
             .clip()
             .child(

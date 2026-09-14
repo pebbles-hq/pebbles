@@ -16,10 +16,15 @@ the closest base for a mobile app). It seeds shape/density/elevation tokens
 `border_width`, `elevation`, `density`) plus helpers (`design(lang)`, `pad()`,
 `elevation_shadow()`, `Theme::compact()/tailwind()/material()`). Colors stay
 orthogonal and every token — and every per-component setter — stays overridable:
-pick a base, then customize. Components read the tokens for their radius / padding
-/ border / lift, so switching the language re-skins them with no structural change.
-`toggle_theme()` preserves the active design. **Note:** the default look is now
-Compact; pick `Theme::tailwind()` for the previous default.
+pick a base, then customize. The whole catalog reads the tokens for its radius /
+height / padding / border / lift — every input, select, menu, tab, nav item,
+list/table row, dialog, sheet, toast, card, etc. — so a switch re-skins the entire
+UI with **no structural change**. Controls share one `control_height`, so a form
+row (input · select · button) is uniform, and Compact makes everything short,
+square and dense (DBeaver-style) for productivity apps. `pad()` scales interior
+padding by `density`; `set_design(lang)` is the one-liner a developer sets to pick
+the base look. `toggle_theme()` preserves the active design. **Note:** the default
+look is now Compact; pick `Theme::tailwind()` for the previous default.
 
 ### Fixed — scroll physics trembled (now standardized)
 Scrolling shook/oscillated: `RenderScroll` eased the offset with a stiff
