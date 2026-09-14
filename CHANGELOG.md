@@ -6,6 +6,18 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — a real router with browser-URL sync
+`pebbles_core::router` is a history stack of `Location`s (path + parsed `?query`)
+with `navigate` / `replace` / `back` / `forward`, driven by a global reactive signal
+so any component that reads `location()` / `path()` / `query()` re-renders on
+navigation. **One model, every platform:** desktop & mobile keep it purely
+in-memory (no URL); on **web** the shell installs a `UrlSync` bridge so the same
+navigation mirrors to the browser — deep-linkable URLs, working Back/Forward, and
+`popstate` fed back in — with the history `index` carried in `history.state` so it
+stays authoritative (a `RouteChanged` user-event wakes the loop to re-render). Query
+values round-trip through the URL; the core never touches `web-sys` (the shell owns
+the browser).
+
 ### Fixed — scoped context (theme override / focus scope) lost on an independent re-render
 A widget inside a `theme_override` that re-rendered on its OWN signal (hover, press,
 focus) reverted to the global theme — e.g. a Material/Tailwind button snapping back

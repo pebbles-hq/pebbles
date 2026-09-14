@@ -106,6 +106,8 @@ web-sys = { version = "0.3", features = [
     "Window", "Navigator", "Clipboard",
     "Document", "Element", "Node", "HtmlElement", "HtmlInputElement", "EventTarget",
     "Event", "InputEvent", "CompositionEvent", "KeyboardEvent", "MediaQueryList",
+    # Router ↔ browser-URL bridge (web_router.rs).
+    "History", "Location", "PopStateEvent",
 ] }
 
 [lints]

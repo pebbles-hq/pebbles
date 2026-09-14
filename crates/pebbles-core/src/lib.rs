@@ -36,6 +36,7 @@ pub mod reactive;
 // `reactive_stats` keeps its flat public path (the shell reads it as
 // `pebbles_core::reactive_stats`); it now lives inside the reactive module.
 pub use reactive::stats as reactive_stats;
+pub mod router;
 pub mod scroll;
 pub mod shortcuts;
 pub mod task;

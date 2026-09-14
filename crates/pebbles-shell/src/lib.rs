@@ -37,6 +37,9 @@ mod native_menu;
 // Opt-in hidden-input IME bridge (App::web_ime) — winit can't do IME on a canvas.
 #[cfg(target_family = "wasm")]
 mod web_ime;
+// Router ↔ browser-URL bridge (history, Back/Forward, deep links).
+#[cfg(target_family = "wasm")]
+mod web_router;
 
 pub use app::App;
 pub use hotkeys::{HotkeyId, register_global_hotkey, unregister_global_hotkey};

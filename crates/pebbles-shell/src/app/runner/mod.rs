@@ -184,6 +184,9 @@ pub(crate) enum PebblesUserEvent {
     SurfaceReady { context: RenderContext, surface: RenderSurface<'static>, window: Arc<Window> },
     /// (web) The hidden-input IME bridge queued edit intents — wake to drain them.
     WebImeInput,
+    /// (web) The browser URL changed (Back/Forward/popstate) — the router already
+    /// updated its location; wake to re-render at the new route.
+    RouteChanged,
 }
 
 /// The live window + its GPU surface.
@@ -442,6 +445,11 @@ impl Runner {
                 && let Some(proxy) = self.proxy.clone()
             {
                 crate::web_ime::enable(proxy);
+            }
+            // Bridge the router to the browser URL (history + Back/Forward + deep
+            // links). Harmless if the app never navigates.
+            if let Some(proxy) = self.proxy.clone() {
+                crate::web_router::enable(proxy);
             }
         }
         // Ensure a renderer exists for this surface's device.
@@ -704,6 +712,13 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                         self.request_redraw();
                     }
                 }
+            }
+            PebblesUserEvent::RouteChanged => {
+                // The router's location signal was already set by the popstate
+                // handler; make this window current and repaint so the dirty
+                // route-reading components rebuild at the new location.
+                self.ui.make_current();
+                self.request_redraw();
             }
         }
     }
