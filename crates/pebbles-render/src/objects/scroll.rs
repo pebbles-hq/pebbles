@@ -266,7 +266,7 @@ pub struct RenderScroll {
     /// first-order smoothing eases `offset` toward it for a browser-style glide.
     pub target: f64,
     /// The offset's current speed (px/s), reported for consumers — the fling speed
-    /// while [`flinging`](Self::flinging), else the smoothing's effective rate.
+    /// while a fling is active, else the smoothing's effective rate.
     pub velocity: f64,
     /// Decaying fling speed (px/s) while [`flinging`](Self::flinging).
     fling_velocity: f64,
