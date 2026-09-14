@@ -6,6 +6,18 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — module organization (no public-API change)
+`pebbles-widgets/src/widgets/` (35 flat files) is now grouped by concern —
+`layout/`, `animation/`, `interaction/`, `scrolling/`, `painting/`, `text/` — with
+genuine singletons (`view`, `media`, `semantics`, `keyed`, `probe`, `spinner`,
+`stream_builder`, `mobile_runtime`) left loose. `pebbles-core` gains `input/`
+(focus, keyboard, key, shortcuts, scroll), re-exported to the crate root so
+`pebbles_core::focus` etc. are unchanged. Public paths are byte-identical
+(`pebbles_widgets::<Item>` / `pebbles_core::<module>`); this is a file-tree move
+only. [ARCHITECTURE.md](ARCHITECTURE.md) documents the "earn the folder / `mod.rs`
+front door" organizing rule. The reactive core and core's root vocabulary
+(`widget`/`element`/`component`/`context`) were deliberately left as-is.
+
 ### Added — a real router with browser-URL sync
 `pebbles_core::router` is a history stack of `Location`s (path + parsed `?query`)
 with `navigate` / `replace` / `back` / `forward`, driven by a global reactive signal

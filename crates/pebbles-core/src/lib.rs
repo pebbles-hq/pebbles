@@ -24,10 +24,13 @@ pub mod clipboard;
 pub mod component;
 pub mod context;
 pub mod element;
-pub mod focus;
+// Input concern grouped under `input/`; re-exported to the crate root so
+// `pebbles_core::focus`, `::keyboard`, `::key`, `::scroll`, `::shortcuts` are
+// unchanged public paths.
+mod input;
+pub use input::{focus, key, keyboard, scroll, shortcuts};
+
 pub mod ipc;
-pub mod key;
-pub mod keyboard;
 /// Re-export the diagnostic log — it lives in `pebbles-foundation` (the lowest
 /// crate) so every layer, including the render engine below core, can log to one
 /// stream. `pebbles_core::log` stays a valid path.
@@ -37,8 +40,6 @@ pub mod reactive;
 // `pebbles_core::reactive_stats`); it now lives inside the reactive module.
 pub use reactive::stats as reactive_stats;
 pub mod router;
-pub mod scroll;
-pub mod shortcuts;
 pub mod task;
 pub mod widget;
 

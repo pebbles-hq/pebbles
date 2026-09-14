@@ -23,9 +23,11 @@ pebbles-icons        generated Lucide icon data (see scripts/gen-lucide.mjs)
 pebbles-render       RenderObject trait + the built-in render objects, text (Parley),
                      vello Scene painting, hit-test tree
 pebbles-core         reactivity (signals/memos/effects/stores), the Element tree +
-                     reconciler, components, focus, keyboard, animation, bounds
-pebbles-widgets      the widget catalog: Flutter-style layout widgets + the
-                     shadcn-style component set, theming, overlays, windows API
+                     reconciler, components, input (focus/keyboard/shortcuts/scroll),
+                     the router, animation, bounds
+pebbles-widgets      the widget catalog: Flutter-style primitive widgets (grouped by
+                     concern) + the shadcn-style component set, theming, overlays,
+                     windows API
 pebbles-shell        the app runner: winit event loop, wgpu surface, vello Renderer,
                      AccessKit a11y, native menus / global hotkeys (feature-gated)
 pebbles-macros       the #[component] proc-macro
@@ -34,6 +36,39 @@ pebbles              the umbrella crate: re-exports + `pebbles::prelude`
 
 `examples/*` (counter, todo, temperature, stopwatch) are workspace members that consume only the umbrella
 crate — they are the consumer-facing API check.
+
+## Module organization
+
+Within a crate, code is grouped **by concern into folders, each with a `mod.rs`
+front door** that re-exports the concern's public surface (siblings stay private
+files). Three rules keep this from swinging into the opposite kind of mess:
+
+- **Earn the folder.** A concern gets a folder once it's ~2–3 files or one file big
+  enough to split. A folder wrapping a single small file is noise — genuine
+  singletons stay as loose files at the crate's module root.
+- **`mod.rs` is the public face.** You read one file to see a concern's surface; the
+  implementation files behind it are private. Re-exports flatten, so grouping a file
+  into a subfolder never changes its public path (`pebbles_widgets::<Item>` /
+  `pebbles_core::<module>` stay put).
+- **A concern may span crates — don't force it into one place.** The crate DAG wins.
+  Routing lives as a core model (`pebbles-core/src/router.rs`), a web bridge
+  (`pebbles-shell/src/web_router.rs`), and a widget view
+  (`pebbles-widgets/.../navigation/routing.rs`). That spread is correct layering.
+
+Concretely, the two large crates:
+
+- **`pebbles-widgets/src/widgets/`** (Flutter-style primitives) is grouped:
+  `layout/` (boxes, flex, stack, sizing), `animation/` (implicit `Animated*` +
+  explicit `*Transition`), `interaction/` (gesture, pointer, drag-and-drop, focus),
+  `scrolling/`, `painting/` (canvas, clip, effects), `text/`. Cross-cutting
+  singletons (`view`, `media`, `semantics`, `keyed`, `probe`, `spinner`,
+  `stream_builder`, `mobile_runtime`) stay loose. The higher-level catalog is
+  separately under `components/{input,display,layout,navigation}/`.
+- **`pebbles-core/src/`** keeps its public vocabulary at the root (`widget`,
+  `element`, `component`, `context`, `reactive`, `router`, `animation`), with
+  `input/` grouping focus/keyboard/key/shortcuts/scroll (re-exported to the root so
+  `pebbles_core::focus` etc. are unchanged) and `element/` holding the reconciler
+  internals (`build.rs` / `dispatch.rs`).
 
 ## The three trees
 
@@ -91,8 +126,11 @@ umbrella crate: `native-menus`, `global-hotkeys` (shell), `image-view`
 
 | You want to… | Touch |
 |---|---|
-| add a layout/paint behavior | `pebbles-render/src/objects/` + a widget wrapper in `pebbles-widgets/src/widgets/` |
+| add a layout/paint behavior | `pebbles-render/src/objects/` + a widget wrapper in the matching `pebbles-widgets/src/widgets/{layout,painting,…}/` group |
+| add a primitive widget | `pebbles-widgets/src/widgets/<concern>/` (layout, animation, interaction, scrolling, painting, text) — or a loose file if it's a genuine singleton |
 | add a catalog component | `pebbles-widgets/src/components/{input,display,layout,navigation}/` |
+| change input handling (focus/keyboard/shortcuts/scroll) | `pebbles-core/src/input/` |
+| change routing | model in `pebbles-core/src/router.rs`, browser bridge in `pebbles-shell/src/web_router.rs`, `RouteView` in `pebbles-widgets/src/components/navigation/routing.rs` |
 | change theming / the style system | `pebbles-widgets/src/design/` (theme, style, modifiers, fonts, text direction) |
 | change an overlay layer | `pebbles-widgets/src/services/` (overlay, dialog, sheet, toast, global menu) |
 | change window / native-menu behavior | `pebbles-widgets/src/platform/` |

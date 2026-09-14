@@ -11,7 +11,7 @@
 use pebbles_foundation::{Color, TextAlign};
 use pebbles_render::ParagraphStyle;
 
-use crate::widgets::text::{InheritedTextStyle, TextFields, overlay_fields};
+use super::text::{InheritedTextStyle, TextFields, overlay_fields};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{animated, component_props, consume_context, provide_context};
 
