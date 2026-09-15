@@ -37,11 +37,13 @@
 //! Segment splitting ignores leading/trailing slashes, so `"/user/:id"`,
 //! `"user/:id"`, and a current path of `"/user/42/"` all line up.
 
-use crate::widgets::gap_h;
+use crate::widgets::{gap_h, gesture_detector};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
+use pebbles_core::router;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
+use pebbles_core::{Component, component, component_props, consume_context, on_mount, provide_context};
 
 /// A navigation history — a stack of route names. Keep one in a signal; it is
 /// `Clone` + `Default` and mutated through `signal.update(..)`.
@@ -116,6 +118,13 @@ impl RouteParams {
         self.get(name).unwrap_or(default)
     }
 
+    /// The captured value for `name`, **parsed** into `T` (e.g. `get_as::<u64>("id")`).
+    /// `None` if the segment is absent or doesn't parse — so a `/user/:id` route can
+    /// take a real number instead of a `&str`.
+    pub fn get_as<T: std::str::FromStr>(&self, name: &str) -> Option<T> {
+        self.get(name)?.parse().ok()
+    }
+
     /// Whether any path parameter was captured.
     pub fn is_empty(&self) -> bool {
         self.params.is_empty()
@@ -132,8 +141,10 @@ impl RouteParams {
 enum Seg {
     /// A literal segment that must match exactly.
     Lit(String),
-    /// A `:name` capture segment.
+    /// A `:name` capture segment (one segment).
     Param(String),
+    /// A `*name` catch-all — captures the whole rest of the path (must be last).
+    Wildcard(String),
 }
 
 /// Split a path/pattern into non-empty segments (leading/trailing slashes ignored).
@@ -141,21 +152,49 @@ fn segments(path: &str) -> Vec<&str> {
     path.split('/').filter(|s| !s.is_empty()).collect()
 }
 
-/// Compile a pattern string (`/user/:id`) into segments.
+/// Compile a pattern string (`/user/:id`, `/files/*rest`) into segments.
 fn compile(pattern: &str) -> Vec<Seg> {
     segments(pattern)
         .into_iter()
-        .map(|s| match s.strip_prefix(':') {
-            Some(name) => Seg::Param(name.to_string()),
-            None => Seg::Lit(s.to_string()),
+        .map(|s| {
+            if let Some(name) = s.strip_prefix(':') {
+                Seg::Param(name.to_string())
+            } else if let Some(name) = s.strip_prefix('*') {
+                Seg::Wildcard(name.to_string())
+            } else {
+                Seg::Lit(s.to_string())
+            }
         })
         .collect()
 }
 
-/// Match a compiled pattern against a current path, capturing `:name` segments.
-/// Returns `None` unless every segment lines up (literals equal, counts match).
+/// Match a compiled pattern against a current path, capturing `:name` and a trailing
+/// `*name`. Returns `None` unless every segment lines up.
 fn match_path(pattern: &[Seg], current: &str) -> Option<RouteParams> {
     let segs = segments(current);
+
+    // A trailing `*name` matches the fixed prefix, then captures the rest (possibly
+    // empty) as a single `/`-joined value.
+    if let Some(Seg::Wildcard(name)) = pattern.last() {
+        let fixed = &pattern[..pattern.len() - 1];
+        if segs.len() < fixed.len() {
+            return None;
+        }
+        let mut params = BTreeMap::new();
+        for (pat, seg) in fixed.iter().zip(segs.iter()) {
+            match pat {
+                Seg::Lit(lit) if lit != seg => return None,
+                Seg::Lit(_) => {}
+                Seg::Param(n) => {
+                    params.insert(n.clone(), (*seg).to_string());
+                }
+                Seg::Wildcard(_) => return None, // a wildcard is only valid as the last segment
+            }
+        }
+        params.insert(name.clone(), segs[fixed.len()..].join("/"));
+        return Some(RouteParams { params });
+    }
+
     if segs.len() != pattern.len() {
         return None;
     }
@@ -167,21 +206,68 @@ fn match_path(pattern: &[Seg], current: &str) -> Option<RouteParams> {
             Seg::Param(name) => {
                 params.insert(name.clone(), (*seg).to_string());
             }
+            Seg::Wildcard(_) => unreachable!("handled above"),
         }
     }
     Some(RouteParams { params })
 }
 
+/// Whether `current`'s leading segments match `prefix` (used for nested layouts —
+/// `/settings` prefixes `/settings/profile`). Params/wildcards in the prefix match any
+/// segment.
+fn prefix_matches(prefix: &[Seg], current: &str) -> bool {
+    let segs = segments(current);
+    if segs.len() < prefix.len() {
+        return false;
+    }
+    prefix.iter().zip(segs.iter()).all(|(pat, seg)| !matches!(pat, Seg::Lit(l) if l != seg))
+}
+
 type PageBuilder = Rc<dyn Fn() -> AnyWidget>;
 type ParamBuilder = Rc<dyn Fn(&RouteParams) -> AnyWidget>;
 
-/// A registered route: an exact-string match, or a `:param` pattern.
+/// A registered route: an exact-string match, a `:param` pattern, or a nested layout.
 #[derive(Clone)]
 enum RouteEntry {
     /// Matches when the current route equals `name` exactly.
     Exact(String, PageBuilder),
     /// Matches when the current path fits `segs`, passing the captures to `builder`.
     Pattern { segs: Vec<Seg>, builder: ParamBuilder },
+    /// Matches when the current path is under `prefix`: renders `layout`, which places
+    /// the matched child route via [`outlet`].
+    Nested { prefix: Vec<Seg>, layout: PageBuilder, child: Rc<RouteView> },
+}
+
+/// The nested child route the enclosing layout should render — provided into context
+/// by a [`RouteView::nest`] match and consumed by [`outlet`].
+#[derive(Clone)]
+struct OutletContent(Rc<dyn Fn() -> AnyWidget>);
+
+struct NestedProps {
+    outlet: Rc<dyn Fn() -> AnyWidget>,
+    layout: PageBuilder,
+}
+
+fn nested_render(p: &NestedProps) -> AnyWidget {
+    // Make the child route available to `outlet()` anywhere in the layout subtree,
+    // then render the layout.
+    provide_context(OutletContent(p.outlet.clone()));
+    (p.layout)()
+}
+
+fn outlet_render() -> AnyWidget {
+    match consume_context::<OutletContent>() {
+        Some(content) => (content.0)(),
+        None => gap_h(0.0).into_widget(),
+    }
+}
+
+/// Render the matched **child** route of the enclosing [`RouteView::nest`] layout
+/// (SolidJS `<Outlet>` / the router's `props.children`). Place it wherever the child
+/// page should appear inside the layout's chrome. Renders nothing outside a nested
+/// layout.
+pub fn outlet() -> Component {
+    component(outlet_render)
 }
 
 /// Renders the page for the current route. Only the matching route's builder runs,
@@ -228,6 +314,39 @@ impl RouteView {
         self
     }
 
+    /// Register a **nested layout**: when the current path is under `prefix`, render
+    /// `layout` (shared chrome — sidebar, header) and let it place the matched child
+    /// route with [`outlet`]. `children` builds the child routes (matched against the
+    /// full current path), so a layout's pages aren't copy-pasted per route:
+    ///
+    /// ```ignore
+    /// route_view(router::path())
+    ///     .nest("/settings", settings_layout, |r| r
+    ///         .route("/settings/profile", || component(profile))
+    ///         .route("/settings/billing", || component(billing)))
+    ///     .route("/", || component(home))
+    /// // settings_layout renders its sidebar + `outlet()`; the outlet shows profile/billing.
+    /// ```
+    pub fn nest<F, W>(
+        mut self,
+        prefix: impl AsRef<str>,
+        layout: F,
+        children: impl FnOnce(RouteView) -> RouteView,
+    ) -> Self
+    where
+        F: Fn() -> W + 'static,
+        W: IntoWidget,
+    {
+        let child = children(route_view(self.current.clone()));
+        let layout: PageBuilder = Rc::new(move || layout().into_widget());
+        self.routes.push(RouteEntry::Nested {
+            prefix: compile(prefix.as_ref()),
+            layout,
+            child: Rc::new(child),
+        });
+        self
+    }
+
     /// A page to show when no route matches.
     pub fn fallback<F, W>(mut self, builder: F) -> Self
     where
@@ -252,6 +371,18 @@ impl IntoWidget for RouteView {
                         return builder(&params);
                     }
                 }
+                RouteEntry::Nested { prefix, layout, child } => {
+                    if prefix_matches(prefix, &self.current) {
+                        let child = child.clone();
+                        let outlet: Rc<dyn Fn() -> AnyWidget> =
+                            Rc::new(move || (*child).clone().into_widget());
+                        return component_props(
+                            nested_render,
+                            NestedProps { outlet, layout: layout.clone() },
+                        )
+                        .into_widget();
+                    }
+                }
             }
         }
         match &self.fallback {
@@ -259,6 +390,72 @@ impl IntoWidget for RouteView {
             None => gap_h(0.0).into_widget(),
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Navigation widgets — link (active-aware), redirect, use_match.
+// ---------------------------------------------------------------------------
+
+struct LinkProps {
+    to: String,
+    builder: Rc<dyn Fn(bool) -> AnyWidget>,
+}
+
+fn link_render(p: &LinkProps) -> AnyWidget {
+    let active = router::path() == p.to; // reactive: re-styles on navigation
+    let child = (p.builder)(active);
+    let to = p.to.clone();
+    gesture_detector(child)
+        .on_tap(move || {
+            router::navigate(&to);
+        })
+        .into_widget()
+}
+
+/// A navigable link (SolidJS `<A>`): tapping it navigates to `to`, and `builder`
+/// receives whether the link is **active** (its target is the current path) so it can
+/// style itself. Reactive — the active state updates on navigation.
+///
+/// ```ignore
+/// link("/inbox", |active| text("Inbox").color(if active { ACCENT } else { FG }))
+/// ```
+///
+/// For prefix-active (a section link active on any child route), gate the styling on
+/// [`use_match`] instead.
+pub fn link<F, W>(to: impl Into<String>, builder: F) -> Component
+where
+    F: Fn(bool) -> W + 'static,
+    W: IntoWidget,
+{
+    let builder: Rc<dyn Fn(bool) -> AnyWidget> = Rc::new(move |active| builder(active).into_widget());
+    component_props(link_render, LinkProps { to: to.into(), builder })
+}
+
+fn redirect_render(to: &String) -> AnyWidget {
+    let to = to.clone();
+    // Replace once on mount (no history entry, no Back-trap); renders nothing.
+    on_mount(move || {
+        router::replace(&to);
+    });
+    gap_h(0.0).into_widget()
+}
+
+/// A declarative redirect (SolidJS `<Navigate>`): on mount it `replace`s the current
+/// route with `to` and renders nothing. Drop it in a route arm to send that route
+/// elsewhere (`/` → `/home`, an unauthorized route → `/login`).
+pub fn redirect(to: impl Into<String>) -> Component {
+    component_props(redirect_render, to.into())
+}
+
+/// Whether the current route matches `pattern` (SolidJS `useMatch`) — reactive, for
+/// active-link styling or conditional UI. Supports the same `:param` / `*wildcard`
+/// patterns as [`RouteView::param_route`].
+///
+/// ```ignore
+/// let on_settings = use_match("/settings/*rest"); // active on any settings sub-page
+/// ```
+pub fn use_match(pattern: impl AsRef<str>) -> bool {
+    match_path(&compile(pattern.as_ref()), &router::path()).is_some()
 }
 
 #[cfg(test)]
@@ -314,5 +511,33 @@ mod tests {
         let params = RouteParams::default();
         assert_eq!(params.get_or("id", "none"), "none");
         assert!(params.is_empty());
+    }
+
+    #[test]
+    fn typed_params_parse() {
+        let p = compile("/user/:id");
+        let got = match_path(&p, "/user/42").unwrap();
+        assert_eq!(got.get_as::<u64>("id"), Some(42));
+        assert_eq!(got.get_as::<u64>("missing"), None);
+        let bad = match_path(&p, "/user/abc").unwrap();
+        assert_eq!(bad.get_as::<u64>("id"), None);
+    }
+
+    #[test]
+    fn wildcard_captures_the_rest() {
+        let p = compile("/files/*rest");
+        let got = match_path(&p, "/files/a/b/c.txt").unwrap();
+        assert_eq!(got.get("rest"), Some("a/b/c.txt"));
+        // Matches with an empty rest, and requires the fixed prefix.
+        assert_eq!(match_path(&p, "/files").unwrap().get("rest"), Some(""));
+        assert!(match_path(&p, "/other/x").is_none());
+    }
+
+    #[test]
+    fn nested_prefix_matches_children() {
+        let prefix = compile("/settings");
+        assert!(prefix_matches(&prefix, "/settings/profile"));
+        assert!(prefix_matches(&prefix, "/settings"));
+        assert!(!prefix_matches(&prefix, "/dashboard"));
     }
 }

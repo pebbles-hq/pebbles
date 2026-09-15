@@ -12,7 +12,7 @@
 //! which extracts them from the current [`Location::path`]. Query values
 //! (`?tab=activity`) are parsed here and read with [`Location::query`].
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -186,10 +186,24 @@ pub fn query(key: &str) -> Option<String> {
     location_signal().get().query.get(key).cloned()
 }
 
-/// Navigate to `to` (a `path` with an optional `?query`), pushing a history entry.
-/// Any forward history is discarded (standard browser semantics).
-pub fn navigate(to: &str) {
-    let loc = Location::parse(to);
+/// Navigate to `to`, pushing a history entry. `to` is a `path` with an optional
+/// `?query`; a leading `/` is absolute, and `./x` / `../x` resolve **relative** to the
+/// current path (a bare `x` stays absolute, so existing call sites are unchanged). Any
+/// forward history is discarded (standard browser semantics). A registered
+/// [guard](add_guard) can block or redirect the navigation. Returns whether it moved.
+pub fn navigate(to: &str) -> bool {
+    navigate_guarded(to, 0)
+}
+
+fn navigate_guarded(to: &str, depth: u8) -> bool {
+    let loc = Location::parse(&resolve(to));
+    match run_guards(&loc) {
+        NavGuard::Block => return false,
+        NavGuard::Redirect(target) => {
+            return depth < MAX_REDIRECTS && navigate_guarded(&target, depth + 1);
+        }
+        NavGuard::Allow => {}
+    }
     let (url, index) = CORE.with(|c| {
         let mut c = c.borrow_mut();
         let keep = c.index + 1;
@@ -202,12 +216,25 @@ pub fn navigate(to: &str) {
     if let Some(s) = CORE.with(|c| c.borrow().sync.clone()) {
         s.push(&url, index);
     }
+    true
 }
 
 /// Replace the current entry in place — no new history entry (a redirect / a
-/// side-nav selection you don't want Back to undo).
-pub fn replace(to: &str) {
-    let loc = Location::parse(to);
+/// side-nav selection you don't want Back to undo). Resolves + guards like
+/// [`navigate`]. Returns whether it moved.
+pub fn replace(to: &str) -> bool {
+    replace_guarded(to, 0)
+}
+
+fn replace_guarded(to: &str, depth: u8) -> bool {
+    let loc = Location::parse(&resolve(to));
+    match run_guards(&loc) {
+        NavGuard::Block => return false,
+        NavGuard::Redirect(target) => {
+            return depth < MAX_REDIRECTS && replace_guarded(&target, depth + 1);
+        }
+        NavGuard::Allow => {}
+    }
     let (url, index) = CORE.with(|c| {
         let mut c = c.borrow_mut();
         let i = c.index;
@@ -218,6 +245,167 @@ pub fn replace(to: &str) {
     if let Some(s) = CORE.with(|c| c.borrow().sync.clone()) {
         s.replace(&url, index);
     }
+    true
+}
+
+/// Resolve `to` against the current path: `/x` is absolute; `./x` and `../x` (and
+/// bare `.`/`..`) resolve relative to the current path treated as a directory
+/// (`../sibling` from `/a/b` → `/a/sibling`); anything else is taken as-is (absolute,
+/// so existing `navigate("/home")`-style calls are unchanged).
+fn resolve(to: &str) -> String {
+    let t = to.trim();
+    let is_relative = t == "." || t == ".." || t.starts_with("./") || t.starts_with("../");
+    if !is_relative {
+        return t.to_string();
+    }
+    let (path_part, query_part) = t.split_once('?').unwrap_or((t, ""));
+    let mut segs: Vec<String> =
+        current_from_core().path.split('/').filter(|s| !s.is_empty()).map(String::from).collect();
+    for seg in path_part.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                segs.pop();
+            }
+            other => segs.push(other.to_string()),
+        }
+    }
+    let mut out = if segs.is_empty() { "/".to_string() } else { format!("/{}", segs.join("/")) };
+    if !query_part.is_empty() {
+        out.push('?');
+        out.push_str(query_part);
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Query parameters — reactive setters (SolidJS `useSearchParams` set half).
+// ---------------------------------------------------------------------------
+
+/// Set a `?query` value on the current location (replacing the entry in place — the
+/// path is unchanged, so Back doesn't accumulate one entry per keystroke). Reactive.
+pub fn set_query(key: &str, value: &str) {
+    let (k, v) = (key.to_string(), value.to_string());
+    update_query(move |q| {
+        q.insert(k, v);
+    });
+}
+
+/// Remove a `?query` key from the current location (in place). Reactive.
+pub fn remove_query(key: &str) {
+    let k = key.to_string();
+    update_query(move |q| {
+        q.remove(&k);
+    });
+}
+
+/// Edit the current location's query map in place and replace the entry. Reactive —
+/// readers of [`query`]/[`location`] re-render.
+pub fn update_query(f: impl FnOnce(&mut BTreeMap<String, String>)) {
+    let mut loc = current_from_core();
+    f(&mut loc.query);
+    replace(&loc.to_url());
+}
+
+// ---------------------------------------------------------------------------
+// Guards & redirects (SolidJS `useBeforeLeave` + `<Navigate>` / route guards).
+// ---------------------------------------------------------------------------
+
+const MAX_REDIRECTS: u8 = 8;
+
+/// A guard's verdict for a pending navigation.
+pub enum NavGuard {
+    /// Let the navigation proceed.
+    Allow,
+    /// Cancel it and go to this target instead (auth gate, `/old`→`/new`).
+    Redirect(String),
+    /// Cancel it and stay put (unsaved-changes blocker — SolidJS `useBeforeLeave`).
+    Block,
+}
+
+type GuardFn = Rc<dyn Fn(&Location) -> NavGuard>;
+
+thread_local! {
+    static GUARDS: RefCell<Vec<(u64, GuardFn)>> = const { RefCell::new(Vec::new()) };
+    static NEXT_GUARD: Cell<u64> = const { Cell::new(0) };
+}
+
+/// A handle to a registered [guard](add_guard); drop it via [`remove_guard`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct GuardHandle(u64);
+
+/// Register a navigation guard consulted on every [`navigate`] / [`replace`] (and the
+/// in-memory [`back`] / [`forward`]): it receives the target [`Location`] and returns
+/// [`NavGuard`] to allow, redirect, or block. Guards run in registration order; the
+/// first non-`Allow` verdict wins. Use it for auth gating, `/old`→`/new` redirects, and
+/// unsaved-changes blocking. Pair with [`remove_guard`] on teardown (a component can do
+/// so in `create_cleanup`).
+pub fn add_guard(f: impl Fn(&Location) -> NavGuard + 'static) -> GuardHandle {
+    let id = NEXT_GUARD.with(|n| {
+        let id = n.get();
+        n.set(id + 1);
+        id
+    });
+    GUARDS.with(|g| g.borrow_mut().push((id, Rc::new(f))));
+    GuardHandle(id)
+}
+
+/// Remove a guard registered with [`add_guard`].
+pub fn remove_guard(handle: GuardHandle) {
+    GUARDS.with(|g| g.borrow_mut().retain(|(id, _)| *id != handle.0));
+}
+
+fn run_guards(target: &Location) -> NavGuard {
+    let guards: Vec<GuardFn> = GUARDS.with(|g| g.borrow().iter().map(|(_, f)| f.clone()).collect());
+    for guard in guards {
+        match guard(target) {
+            NavGuard::Allow => {}
+            other => return other,
+        }
+    }
+    NavGuard::Allow
+}
+
+// ---------------------------------------------------------------------------
+// Document / window title per route (applied by the shell).
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    static TITLE: RefCell<Option<Signal<Option<String>>>> = const { RefCell::new(None) };
+}
+
+fn title_signal() -> Signal<Option<String>> {
+    TITLE.with(|cell| {
+        let mut cell = cell.borrow_mut();
+        if cell.is_none() {
+            *cell = Some(create_root_signal(None));
+        }
+        cell.unwrap()
+    })
+}
+
+/// Set the window / document title for the current route. The shell applies it
+/// (winit window title on desktop, `document.title` on web). Call it from a route's
+/// page (e.g. in `on_mount`) so the title tracks navigation.
+pub fn set_title(title: impl Into<String>) {
+    title_signal().set(Some(title.into()));
+}
+
+/// The current route title set via [`set_title`] (reactive — the shell reads it).
+pub fn title() -> Option<String> {
+    title_signal().get()
+}
+
+// ---------------------------------------------------------------------------
+// Navigation hook.
+// ---------------------------------------------------------------------------
+
+/// Run `f` whenever the route changes (after the change), receiving the new
+/// [`Location`]. Sugar for `on(|| location(), f)`; use it to move focus to the new
+/// view for accessibility, log page views, or sync external state. Skips the initial
+/// mount (fires on real changes only).
+pub fn on_route_change(f: impl Fn(Location) + 'static) {
+    crate::reactive::on_defer(location, f);
 }
 
 fn current_from_core() -> Location {
@@ -240,6 +428,15 @@ pub fn back() -> bool {
     if has_sync {
         CORE.with(|c| c.borrow().sync.clone()).unwrap().go(-1);
     } else {
+        let target = CORE.with(|c| {
+            let c = c.borrow();
+            c.entries[c.index - 1].clone()
+        });
+        match run_guards(&target) {
+            NavGuard::Block => return false,
+            NavGuard::Redirect(t) => return navigate(&t),
+            NavGuard::Allow => {}
+        }
         CORE.with(|c| c.borrow_mut().index -= 1);
         set_current(current_from_core());
     }
@@ -258,6 +455,15 @@ pub fn forward() -> bool {
     if has_sync {
         CORE.with(|c| c.borrow().sync.clone()).unwrap().go(1);
     } else {
+        let target = CORE.with(|c| {
+            let c = c.borrow();
+            c.entries[c.index + 1].clone()
+        });
+        match run_guards(&target) {
+            NavGuard::Block => return false,
+            NavGuard::Redirect(t) => return navigate(&t),
+            NavGuard::Allow => {}
+        }
         CORE.with(|c| c.borrow_mut().index += 1);
         set_current(current_from_core());
     }
@@ -355,5 +561,60 @@ mod tests {
         navigate("/d");
         assert_eq!(path(), "/d");
         assert!(!can_forward());
+    }
+
+    #[test]
+    fn relative_navigation_resolves_against_current() {
+        navigate("/a/b/c");
+        navigate("../x"); // /a/b + x
+        assert_eq!(path(), "/a/b/x");
+        navigate("./y"); // /a/b/x + y
+        assert_eq!(path(), "/a/b/x/y");
+        navigate("../../z"); // pop y, pop x → /a/b + z
+        assert_eq!(path(), "/a/b/z");
+        // A bare string stays absolute (back-compat).
+        navigate("home");
+        assert_eq!(path(), "/home");
+    }
+
+    #[test]
+    fn set_and_remove_query_stay_on_the_path() {
+        navigate("/items");
+        set_query("sort", "asc");
+        assert_eq!(path(), "/items");
+        assert_eq!(query("sort").as_deref(), Some("asc"));
+        set_query("page", "2");
+        assert_eq!(query("page").as_deref(), Some("2"));
+        remove_query("sort");
+        assert_eq!(query("sort"), None);
+        assert_eq!(query("page").as_deref(), Some("2"));
+    }
+
+    #[test]
+    fn a_guard_can_block_and_redirect() {
+        navigate("/start");
+        // Block anything under /locked.
+        let block =
+            add_guard(
+                |loc| {
+                    if loc.path().starts_with("/locked") { NavGuard::Block } else { NavGuard::Allow }
+                },
+            );
+        assert!(!navigate("/locked/x"), "blocked navigation reports false");
+        assert_eq!(path(), "/start", "and stays put");
+        remove_guard(block);
+        // Redirect /old → /new.
+        let redir =
+            add_guard(
+                |loc| {
+                    if loc.path() == "/old" { NavGuard::Redirect("/new".into()) } else { NavGuard::Allow }
+                },
+            );
+        assert!(navigate("/old"));
+        assert_eq!(path(), "/new", "redirected to the target");
+        remove_guard(redir);
+        // After removal, the path is reachable again.
+        assert!(navigate("/old"));
+        assert_eq!(path(), "/old");
     }
 }

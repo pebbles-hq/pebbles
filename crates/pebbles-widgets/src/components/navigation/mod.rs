@@ -13,6 +13,6 @@ pub use nav::{
     Breadcrumb, Pagination, PaginationVariant, StatusBar, Toolbar, breadcrumb, pagination, status_bar,
     toolbar,
 };
-pub use routing::{NavStack, RouteParams, RouteView, route_view};
+pub use routing::{NavStack, RouteParams, RouteView, link, outlet, redirect, route_view, use_match};
 pub use stepper::{Step, Stepper, step, stepper};
 pub use tabs::{Tabs, TabsVariant, tabs};
