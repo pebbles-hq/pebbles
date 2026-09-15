@@ -36,8 +36,8 @@
 //!   run the body untracked (`on_defer` skips the mount run).
 //! * [`on_mount`](pebbles_core::on_mount) — run a one-shot setup once, when the component first mounts.
 //! * [`create_cleanup`](pebbles_core::create_cleanup) — run teardown when the owning component unmounts.
-//! * [`batch`](pebbles_core::batch) — group a burst of writes (Pebbles already coalesces writes at
-//!   the frame flush, so this expresses intent rather than changing behavior).
+//!   (No `batch()`: writes already coalesce at the frame flush — a burst re-runs each
+//!   effect once — so a batch primitive would be a no-op.)
 //!
 //! ### Time & async
 //! * [`create_timeout`](pebbles_core::create_timeout) — a one-shot timer, keyed so re-registering replaces the
@@ -74,7 +74,7 @@ pub use pebbles_core::{RootDisposer, create_root, create_root_signal, create_sig
 pub use pebbles_core::{create_memo, create_memo_with};
 
 // --- effects ---------------------------------------------------------------
-pub use pebbles_core::{batch, create_cleanup, create_effect, on, on_defer, on_mount};
+pub use pebbles_core::{create_cleanup, create_effect, on, on_defer, on_mount};
 
 // --- selection & ids -------------------------------------------------------
 pub use pebbles_core::{create_selector, create_unique_id};

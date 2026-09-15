@@ -56,6 +56,34 @@ fn shape_wide_one_signal_many_readers() {
 }
 
 #[test]
+fn writes_coalesce_to_one_flush() {
+    // Effect/render scheduling is deferred to the frame flush and deduped, so a burst
+    // of writes in one turn re-runs each dependent effect ONCE — the reason Pebbles
+    // needs no `batch()` primitive (writes are already coalesced).
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    let runs = Rc::new(Cell::new(0));
+    let a = create_signal(0);
+    let b = create_signal(0);
+    {
+        let runs = runs.clone();
+        create_effect(move || {
+            let _ = a.get();
+            let _ = b.get();
+            runs.set(runs.get() + 1);
+        });
+    }
+    flush();
+    let base = runs.get();
+    a.set(1);
+    b.set(1);
+    a.set(2);
+    flush();
+    assert_eq!(runs.get() - base, 1, "three writes across two signals re-run the effect once");
+}
+
+#[test]
 fn shape_deep_chain_recompute_count() {
     // signal → memo¹⁰⁰ → leaf effect. One write cascades through the chain.
     const K: usize = 100;

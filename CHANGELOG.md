@@ -27,8 +27,7 @@ design: SSR/form `action`/`cache`, `<HashRouter>`/`base`, and lazy route code-sp
 
 ### Added — SolidJS-parity state primitives (Rust-applicable set)
 The reactive capabilities Solid has that make sense for a Rust framework, each new,
-tested, and in the prelude. In `pebbles-core` reactivity: **`batch(f)`** (an honest
-scope — writes already coalesce at the frame flush, and a test locks that invariant),
+tested, and in the prelude. In `pebbles-core` reactivity:
 **`on_mount(f)`** (one-shot mount setup), **`create_selector(source)`**
 (`selector(key) -> bool` via a per-key memo equality-cut, so changing the selection
 only re-renders the losing and gaining rows), and **`create_unique_id()`** (stable

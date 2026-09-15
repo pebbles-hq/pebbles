@@ -20,13 +20,11 @@ pub mod stats;
 
 // SolidJS-parity primitives built on the core below (each its own file so the core
 // runtime stays one cohesive machine).
-mod batch;
 mod error_scope;
 mod ids;
 mod lifecycle;
 mod root;
 mod selector;
-pub use batch::batch;
 pub use error_scope::ErrorBoundaryHandle;
 pub(crate) use error_scope::trip_nearest_error_boundary;
 pub use ids::create_unique_id;

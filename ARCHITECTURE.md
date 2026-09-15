@@ -106,11 +106,11 @@ SolidJS semantics in `pebbles-core/src/reactive/`:
 - `on(deps, f)` / `on_defer(deps, f)` are explicit-dependency effects (track
   `deps`, run the body untracked); `Store::select_memo` is a field-scoped lazy
   selector — a write to an untouched field never wakes it.
-- SolidJS-parity helpers built on the above: `batch` (writes already coalesce at the
-  frame flush — this expresses intent), `on_mount`, `create_selector` (per-key memo
+- SolidJS-parity helpers built on the above: `on_mount`, `create_selector` (per-key memo
   equality-cut), `create_unique_id`, `create_root` (a detached ownership scope that
   disposes everything made inside it); and the `control/` widgets `for_each`/`suspense`/
-  `error_boundary`. `<Show>`/`<Switch>` are Rust's `if`/`match`. `error_boundary` is
+  `error_boundary`. `<Show>`/`<Switch>` are Rust's `if`/`match`; there is no `batch` —
+  writes already coalesce at the frame flush, so it would be a no-op. `error_boundary` is
   render-time: each component render in the reconciler (`element/build.rs`) runs under a
   panic guard that routes a caught panic to the nearest `ErrorBoundaryHandle` in the
   render-time context, so the boundary shows its fallback instead of the app crashing
