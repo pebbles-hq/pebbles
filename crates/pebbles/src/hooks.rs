@@ -32,7 +32,10 @@
 //!   tracked reads change.
 //! * [`on`](pebbles_core::on) / [`on_defer`](pebbles_core::on_defer) — explicit-dependency effects: track only `deps` and
 //!   run the body untracked (`on_defer` skips the mount run).
+//! * [`on_mount`](pebbles_core::on_mount) — run a one-shot setup once, when the component first mounts.
 //! * [`create_cleanup`](pebbles_core::create_cleanup) — run teardown when the owning component unmounts.
+//! * [`batch`](pebbles_core::batch) — group a burst of writes (Pebbles already coalesces writes at
+//!   the frame flush, so this expresses intent rather than changing behavior).
 //!
 //! ### Time & async
 //! * [`create_timeout`](pebbles_core::create_timeout) — a one-shot timer, keyed so re-registering replaces the
@@ -51,6 +54,12 @@
 //! * [`create_shortcut`](pebbles_core::create_shortcut) / [`create_shortcut_if`](pebbles_core::create_shortcut_if) — bind a key combination,
 //!   conditionally for the `_if` form.
 //!
+//! ### Selection & ids
+//! * [`create_selector`](pebbles_core::create_selector) — `selector(key) -> bool` for the selected row; changing
+//!   the selection only re-renders the row that lost and the row that gained it.
+//! * [`create_unique_id`](pebbles_core::create_unique_id) — a process-unique id string, stable across re-renders
+//!   (tie an input to its label, a stable key).
+//!
 //! ### Measurement & controllers
 //! * [`use_bounds`](pebbles_core::use_bounds) — the laid-out rect of a widget, after layout.
 //! * [`use_scroll_controller`](pebbles_widgets::use_scroll_controller) — drive/observe a scroll view.
@@ -63,7 +72,10 @@ pub use pebbles_core::{create_root_signal, create_signal, create_store};
 pub use pebbles_core::{create_memo, create_memo_with};
 
 // --- effects ---------------------------------------------------------------
-pub use pebbles_core::{create_cleanup, create_effect, on, on_defer};
+pub use pebbles_core::{batch, create_cleanup, create_effect, on, on_defer, on_mount};
+
+// --- selection & ids -------------------------------------------------------
+pub use pebbles_core::{create_selector, create_unique_id};
 
 // --- time & async ----------------------------------------------------------
 #[cfg(feature = "tokio")]

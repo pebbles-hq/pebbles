@@ -78,7 +78,8 @@ pub mod prelude {
     #[cfg(feature = "tokio")]
     pub use pebbles_core::create_resource_future;
     pub use pebbles_core::{
-        create_cleanup, create_loop, create_loop_while, create_memo_with, create_root_signal, on, on_defer,
+        batch, create_cleanup, create_loop, create_loop_while, create_memo_with, create_root_signal,
+        create_selector, create_unique_id, on, on_defer, on_mount,
     };
 
     // runtime (pebbles-core): the widget contract + reconciler handles

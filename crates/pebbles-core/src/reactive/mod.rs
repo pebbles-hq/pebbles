@@ -18,6 +18,17 @@
 mod bench;
 pub mod stats;
 
+// SolidJS-parity primitives built on the core below (each its own file so the core
+// runtime stays one cohesive machine).
+mod batch;
+mod ids;
+mod lifecycle;
+mod selector;
+pub use batch::batch;
+pub use ids::create_unique_id;
+pub use lifecycle::on_mount;
+pub use selector::create_selector;
+
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashSet;

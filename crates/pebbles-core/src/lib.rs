@@ -57,8 +57,9 @@ pub use ipc::{Channel, channel};
 pub use key::Key;
 pub use keyboard::{KeyInput, Motion};
 pub use reactive::{
-    Signal, Store, consume_context, create_cleanup, create_effect, create_memo, create_memo_with,
-    create_root_signal, create_signal, create_store, on, on_defer, owner_id, provide_context, untrack,
+    Signal, Store, batch, consume_context, create_cleanup, create_effect, create_memo, create_memo_with,
+    create_root_signal, create_selector, create_signal, create_store, create_unique_id, on, on_defer,
+    on_mount, owner_id, provide_context, untrack,
 };
 pub use shortcuts::{Mods, ShortcutKey, create_shortcut, create_shortcut_if};
 #[cfg(target_family = "wasm")]
