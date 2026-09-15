@@ -278,11 +278,12 @@ pub struct RouteView {
     current: String,
     routes: Vec<RouteEntry>,
     fallback: Option<PageBuilder>,
+    transition: Option<f64>,
 }
 
 /// Create a [`RouteView`] for `current` route.
 pub fn route_view(current: impl Into<String>) -> RouteView {
-    RouteView { current: current.into(), routes: Vec::new(), fallback: None }
+    RouteView { current: current.into(), routes: Vec::new(), fallback: None, transition: None }
 }
 
 impl RouteView {
@@ -356,10 +357,17 @@ impl RouteView {
         self.fallback = Some(Rc::new(move || builder().into_widget()));
         self
     }
-}
 
-impl IntoWidget for RouteView {
-    fn into_widget(self) -> AnyWidget {
+    /// Animate route changes: cross-fade the matched page over `secs` seconds when
+    /// the path changes (wraps the output in an `animated_switcher` keyed by the
+    /// current path). Off by default (instant swap).
+    pub fn transition(mut self, secs: f64) -> Self {
+        self.transition = Some(secs);
+        self
+    }
+
+    /// The matched page for the current route (before any transition wrapper).
+    fn render_match(&self) -> AnyWidget {
         for entry in &self.routes {
             match entry {
                 RouteEntry::Exact(name, builder) if *name == self.current => {
@@ -388,6 +396,22 @@ impl IntoWidget for RouteView {
         match &self.fallback {
             Some(builder) => builder(),
             None => gap_h(0.0).into_widget(),
+        }
+    }
+}
+
+impl IntoWidget for RouteView {
+    fn into_widget(self) -> AnyWidget {
+        let matched = self.render_match();
+        match self.transition {
+            Some(secs) => {
+                // Key the switcher by the current path so a route change cross-fades.
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                std::hash::Hash::hash(&self.current, &mut hasher);
+                let key = std::hash::Hasher::finish(&hasher);
+                crate::widgets::animated_switcher(key, matched).duration(secs).into_widget()
+            }
+            None => matched,
         }
     }
 }

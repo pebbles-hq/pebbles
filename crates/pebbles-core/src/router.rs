@@ -138,6 +138,10 @@ struct Core {
     entries: Vec<Location>,
     index: usize,
     sync: Option<Rc<dyn UrlSync>>,
+    /// Remembered scroll offset per history index (SolidJS scroll restoration). A
+    /// scroll view saves its offset here and restores it when its route re-appears via
+    /// Back/Forward.
+    scrolls: BTreeMap<usize, f64>,
 }
 
 thread_local! {
@@ -145,8 +149,12 @@ thread_local! {
     static LOCATION: RefCell<Option<Signal<Location>>> = const { RefCell::new(None) };
     /// The history mechanics (non-reactive): the entry stack, the cursor, and the
     /// optional web bridge.
-    static CORE: RefCell<Core> =
-        RefCell::new(Core { entries: vec![Location { path: String::new(), query: BTreeMap::new() }], index: 0, sync: None });
+    static CORE: RefCell<Core> = RefCell::new(Core {
+        entries: vec![Location { path: String::new(), query: BTreeMap::new() }],
+        index: 0,
+        sync: None,
+        scrolls: BTreeMap::new(),
+    });
 }
 
 fn location_signal() -> Signal<Location> {
@@ -408,6 +416,31 @@ pub fn on_route_change(f: impl Fn(Location) + 'static) {
     crate::reactive::on_defer(location, f);
 }
 
+// ---------------------------------------------------------------------------
+// Scroll restoration (SolidJS router scroll restoration).
+// ---------------------------------------------------------------------------
+
+/// Remember `offset` as the scroll position for the **current** history entry. A
+/// scroll view calls this as it scrolls (or before navigating away) so the position
+/// can be restored when the user returns via Back/Forward.
+pub fn save_scroll(offset: f64) {
+    CORE.with(|c| {
+        let mut c = c.borrow_mut();
+        let i = c.index;
+        c.scrolls.insert(i, offset);
+    });
+}
+
+/// The remembered scroll offset for the current history entry (`0.0` if none). A
+/// scroll view reads this on [`on_route_change`] and scrolls there to restore the
+/// position for a Back/Forward navigation.
+pub fn saved_scroll() -> f64 {
+    CORE.with(|c| {
+        let c = c.borrow();
+        c.scrolls.get(&c.index).copied().unwrap_or(0.0)
+    })
+}
+
 fn current_from_core() -> Location {
     CORE.with(|c| {
         let c = c.borrow();
@@ -616,5 +649,24 @@ mod tests {
         // After removal, the path is reachable again.
         assert!(navigate("/old"));
         assert_eq!(path(), "/old");
+    }
+
+    #[test]
+    fn scroll_is_remembered_per_entry() {
+        navigate("/list");
+        save_scroll(420.0);
+        navigate("/detail");
+        assert_eq!(saved_scroll(), 0.0, "a fresh entry starts at the top");
+        save_scroll(80.0);
+        back();
+        assert_eq!(saved_scroll(), 420.0, "returning restores the list's offset");
+        forward();
+        assert_eq!(saved_scroll(), 80.0, "and the detail's");
+    }
+
+    #[test]
+    fn title_round_trips() {
+        set_title("Dashboard");
+        assert_eq!(title().as_deref(), Some("Dashboard"));
     }
 }

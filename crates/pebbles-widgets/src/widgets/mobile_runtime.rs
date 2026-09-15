@@ -76,7 +76,11 @@ pub fn dispatch_back() -> bool {
             cb();
             true
         }
-        None => false,
+        // Nothing intercepting: let the framework router handle it. `back()` navigates
+        // and returns `true` (consumed); at the root it returns `false`, so the shell
+        // performs its default action (exit the app). Apps not using the router keep the
+        // old behavior — the in-memory history sits at the root, so `back()` is `false`.
+        None => pebbles_core::router::back(),
     }
 }
 

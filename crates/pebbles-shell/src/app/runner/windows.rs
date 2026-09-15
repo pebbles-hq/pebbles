@@ -5,6 +5,12 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+thread_local! {
+    /// Last router title pushed to the OS window, so the per-frame poll only calls
+    /// `set_title` on an actual change.
+    static TITLE_APPLIED: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
 impl Runner {
     /// Create/close secondary windows requested by app code this turn.
     pub(super) fn pump_windows(&mut self, event_loop: &ActiveEventLoop) {
@@ -60,6 +66,26 @@ impl Runner {
                     }
                 }
             }
+        }
+
+        // Apply the router's per-route title (`router::set_title`) to the main window.
+        // winit maps `set_title` to the OS window title on desktop and to
+        // `document.title` on web. Poll-and-diff so we only touch it on a real change.
+        let title = pebbles_core::router::title();
+        let changed = TITLE_APPLIED.with(|last| {
+            let mut last = last.borrow_mut();
+            if *last != title {
+                *last = title.clone();
+                true
+            } else {
+                false
+            }
+        });
+        if changed
+            && let Some(t) = &title
+            && let Some(w) = self.windows.values().find(|w| w.ui.window_id() == 0)
+        {
+            w.window.set_title(t);
         }
     }
 
