@@ -1,9 +1,10 @@
 # Matches the existing hand-formatted style (~110-column). The tree IS
 # rustfmt-clean and CI gates on it.
 #
-# NOTE: crates/pebbles-icons/src/lucide.rs is generated but still formatted here
+# NOTE: crates/pebbles-icons/src/tabler.rs is generated but still formatted here
 # — `format_generated_files = false` is nightly-only, so it cannot be skipped on
-# stable. scripts/gen-lucide.mjs therefore runs `cargo fmt` on its output.
+# stable. After regenerating, run `cargo fmt -p pebbles-icons` so the output stays
+# rustfmt-clean for CI (the generator itself does not self-format).
 style_edition = "2024"
 max_width = 110
 use_small_heuristics = "Max"

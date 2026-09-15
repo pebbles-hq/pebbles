@@ -457,6 +457,9 @@ where
     component_props(link_render, LinkProps { to: to.into(), builder })
 }
 
+// `&String` (not `&str`) because `component_props` requires `fn(&P)` and the prop `P`
+// is a `String`.
+#[allow(clippy::ptr_arg)]
 fn redirect_render(to: &String) -> AnyWidget {
     let to = to.clone();
     // Replace once on mount (no history entry, no Back-trap); renders nothing.

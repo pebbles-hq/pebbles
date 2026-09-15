@@ -48,7 +48,7 @@ pub fn profile() -> impl IntoWidget {
     // A real, working setting: flip the whole app light/dark live.
     let is_dark = dark().get();
     let settings = switch_list_tile("Dark mode", is_dark)
-        .secondary(icon(lucide::MOON).color(c.muted_foreground))
+        .secondary(icon(tabler::MOON).color(c.muted_foreground))
         .on_changed(move || {
             dark().update(|d| *d = !*d);
             toggle_theme();

@@ -31,7 +31,7 @@ pub struct FsNode {
     /// are always loaded.
     pub loaded: bool,
     /// Per-node glyph override (`None` = the icon theme, then the kind's
-    /// default). Any of the ~1800 bundled lucide icons (or custom [`IconData`]).
+    /// default). Any of the ~1800 bundled tabler icons (or custom [`IconData`]).
     pub icon: Option<IconData>,
     /// Per-node glyph color override (`None` = the theme's muted foreground).
     pub color: Option<Color>,
@@ -64,7 +64,7 @@ impl FsNode {
     }
     /// Give THIS node its own glyph (each node is customizable individually —
     /// e.g. a `.rs` file gets a code icon, `src/` a special folder). Accepts an
-    /// [`IconKind`](pebbles_render::IconKind) or any `pebbles_render::lucide::*`
+    /// [`IconKind`](pebbles_render::IconKind) or any `pebbles_render::tabler::*`
     /// const.
     pub fn icon(mut self, icon: impl Into<IconData>) -> Self {
         self.icon = Some(icon.into());

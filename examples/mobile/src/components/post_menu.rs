@@ -15,7 +15,7 @@ fn menu(id: u64) -> impl IntoWidget {
     pressable(
         container().padding(EdgeInsets::symmetric(6.0, 14.0)).child(
             row(children![
-                icon(lucide::TRASH_2).size(19.0).color(palette::rose::S500),
+                icon(tabler::TRASH).size(19.0).color(palette::rose::S500),
                 gap_w(12.0),
                 text("Delete post").size(15.0).weight(500.0).color(palette::rose::S500),
             ])

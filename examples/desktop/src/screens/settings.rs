@@ -87,18 +87,18 @@ fn settings_view() -> impl IntoWidget {
         "These apply immediately",
         column(children![
             switch_list_tile("Dark mode", s.dark_mode)
-                .secondary(icon(lucide::MOON).color(c.muted_foreground))
+                .secondary(icon(tabler::MOON).color(c.muted_foreground))
                 .on_changed(move || store::set_dark_mode(!store::settings().dark_mode)),
             switch_list_tile("Email notifications", s.email_notifications)
-                .secondary(icon(lucide::MAIL).color(c.muted_foreground))
+                .secondary(icon(tabler::MAIL).color(c.muted_foreground))
                 .on_changed(move || {
                     store::set_flag(|x| x.email_notifications = !x.email_notifications, "notifications")
                 }),
             switch_list_tile("Weekly report", s.weekly_report)
-                .secondary(icon(lucide::TRENDING_UP).color(c.muted_foreground))
+                .secondary(icon(tabler::TRENDING_UP).color(c.muted_foreground))
                 .on_changed(move || store::set_flag(|x| x.weekly_report = !x.weekly_report, "report")),
             switch_list_tile("Auto-reorder low stock", s.auto_reorder)
-                .secondary(icon(lucide::REFRESH_CW).color(c.muted_foreground))
+                .secondary(icon(tabler::REFRESH).color(c.muted_foreground))
                 .on_changed(move || store::set_flag(|x| x.auto_reorder = !x.auto_reorder, "reorder")),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Stretch)

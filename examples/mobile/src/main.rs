@@ -38,19 +38,19 @@ fn app() -> AnyWidget {
         .top(
             top_panel(title)
                 // A dog logo on the leading edge (testing top_panel.leading).
-                .leading(icon(lucide::DOG).size(24.0).color(c.primary))
+                .leading(icon(tabler::DOG).size(24.0).color(c.primary))
                 // Messaging button on the top-right, with an unread badge.
                 .action(messages_button()),
         )
         .bottom(
             bottom_nav()
-                .item(tab_item(lucide::HOUSE, "Home", 0, tab, None))
-                .item(tab_item(lucide::BELL, "Alerts", 1, tab, Some(store::unread())))
-                .item(tab_item(lucide::USER, "Profile", 2, tab, None)),
+                .item(tab_item(tabler::HOME, "Home", 0, tab, None))
+                .item(tab_item(tabler::BELL, "Alerts", 1, tab, Some(store::unread())))
+                .item(tab_item(tabler::USER, "Profile", 2, tab, None)),
         );
     // Compose a new post — the canonical bottom-right action, on the feed only.
     if tab.get() == 0 {
-        shell = shell.fab(fab(lucide::PLUS).on_pressed(open_composer));
+        shell = shell.fab(fab(tabler::PLUS).on_pressed(open_composer));
     }
     shell.into_widget()
 }
@@ -61,7 +61,7 @@ fn messages_button() -> impl IntoWidget {
     let unread = store::unread_messages();
     let glyph: AnyWidget = if unread > 0 {
         stack(children![
-            icon(lucide::MESSAGE_SQUARE).size(22.0).color(c.foreground),
+            icon(tabler::MESSAGE).size(22.0).color(c.foreground),
             positioned(
                 container()
                     .decoration(BoxDecoration::new().color(palette::rose::S500).shape(BoxShape::Circle))
@@ -73,7 +73,7 @@ fn messages_button() -> impl IntoWidget {
         ])
         .into_widget()
     } else {
-        icon(lucide::MESSAGE_SQUARE).size(22.0).color(c.foreground).into_widget()
+        icon(tabler::MESSAGE).size(22.0).color(c.foreground).into_widget()
     };
     pressable(container().padding(EdgeInsets::all(8.0)).child(glyph)).radius(8.0).on_tap(store::open_messages)
 }

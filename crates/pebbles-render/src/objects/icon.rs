@@ -1,9 +1,9 @@
 //! [`RenderIcon`] — paints an [`IconData`] glyph inside its box. The glyph's
-//! primitives are authored in a `view`-unit square (24 for Lucide) and scaled to
-//! the requested pixel size. The icon **model** (and the bundled Lucide set)
+//! primitives are authored in a `view`-unit square (24 for Tabler) and scaled to
+//! the requested pixel size. The icon **model** (and the bundled Tabler set)
 //! lives in `pebbles-icons`; this is only the painter.
 
-pub use pebbles_icons::{IconData, IconKind, IconPrim, lucide};
+pub use pebbles_icons::{IconData, IconKind, IconPrim, tabler};
 
 use kurbo::{Affine, BezPath, Cap, Circle, Ellipse, Join, RoundedRect, Shape, Stroke};
 use pebbles_foundation::{Color, Offset, Size};
@@ -41,7 +41,7 @@ fn prim_path(prim: &IconPrim) -> BezPath {
         IconPrim::Circle(cx, cy, r) => Circle::new((cx, cy), r).to_path(0.1),
         IconPrim::Ellipse(cx, cy, rx, ry) => Ellipse::new((cx, cy), (rx, ry), 0.0).to_path(0.1),
         IconPrim::Rect(x, y, w, h, rx, _ry) => {
-            // kurbo rounds corners circularly; Lucide rects are effectively circular.
+            // kurbo rounds corners circularly; Tabler rects are effectively circular.
             RoundedRect::new(x, y, x + w, y + h, rx).to_path(0.1)
         }
     }

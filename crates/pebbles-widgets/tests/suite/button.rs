@@ -5,7 +5,7 @@
 
 use pebbles_core::IntoWidget;
 use pebbles_foundation::{CrossAxisAlignment, MainAxisSize};
-use pebbles_render::{RenderParagraph, lucide};
+use pebbles_render::{RenderParagraph, tabler};
 use pebbles_testing::Harness;
 use pebbles_widgets::{button, column};
 
@@ -25,14 +25,14 @@ fn widest_label(h: &Harness) -> (f64, f64) {
 
 fn stretched() -> impl IntoWidget {
     // Stretch makes the button fill the 400px window width — wider than its content.
-    column(vec![button("Save changes").leading(lucide::CHECK).on_pressed(|| {}).into_widget()])
+    column(vec![button("Save changes").leading(tabler::CHECK).on_pressed(|| {}).into_widget()])
         .cross_axis_alignment(CrossAxisAlignment::Stretch)
         .main_axis_size(MainAxisSize::Min)
 }
 
 fn unstretched() -> impl IntoWidget {
     // Start does NOT stretch the button — it must hug its content on the left.
-    column(vec![button("Save changes").leading(lucide::CHECK).on_pressed(|| {}).into_widget()])
+    column(vec![button("Save changes").leading(tabler::CHECK).on_pressed(|| {}).into_widget()])
         .cross_axis_alignment(CrossAxisAlignment::Start)
         .main_axis_size(MainAxisSize::Min)
 }

@@ -24,7 +24,7 @@ pub fn thumb(p: &Product, size: f64) -> AnyWidget {
         .width(size)
         .height(size)
         .alignment(Alignment::CENTER)
-        .child(icon(lucide::PACKAGE).size(size * 0.42).color(c.muted_foreground));
+        .child(icon(tabler::PACKAGE).size(size * 0.42).color(c.muted_foreground));
 
     match p.thumb() {
         Some(url) => container()

@@ -36,7 +36,7 @@ fn form() -> impl IntoWidget {
                 .height(150.0)
                 .child(ImageView::network(url).fit(ImageFit::Cover)),
             positioned(
-                icon_button(lucide::X).variant(ButtonVariant::Secondary).on_pressed(move || media.set(None))
+                icon_button(tabler::X).variant(ButtonVariant::Secondary).on_pressed(move || media.set(None))
             )
             .top(6.0)
             .right(6.0),
@@ -53,7 +53,7 @@ fn form() -> impl IntoWidget {
         row(children![
             pressable(
                 row(children![
-                    icon(lucide::IMAGE).size(18.0).color(c.primary),
+                    icon(tabler::PHOTO).size(18.0).color(c.primary),
                     gap_w(8.0),
                     text("Photo").size(14.0).color(c.primary)
                 ])

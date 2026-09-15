@@ -82,7 +82,7 @@ fn product_view(id: &i64) -> AnyWidget {
                 gap_w(10.0),
                 components::stock_badge(&p),
                 gap_w(4.0),
-                icon_button(lucide::X).on_pressed(|| close_sheet(0)),
+                icon_button(tabler::X).on_pressed(|| close_sheet(0)),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Start),
         )
@@ -239,7 +239,7 @@ fn details_tab(
             .description("Low-stock alerts fire at or below this quantity.")
             .into_widget(),
         gap_h(18.0).into_widget(),
-        button("Save changes").leading(lucide::CHECK).full_width().on_pressed(save).into_widget(),
+        button("Save changes").leading(tabler::CHECK).full_width().on_pressed(save).into_widget(),
         gap_h(24.0).into_widget(),
         divider(),
         section_label("Danger zone"),
@@ -258,7 +258,7 @@ fn details_tab(
             gap_w(10.0),
             button("Delete")
                 .variant(ButtonVariant::Destructive)
-                .leading(lucide::TRASH_2)
+                .leading(tabler::TRASH)
                 .on_pressed(move || confirm_delete(id)),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Center)
@@ -284,17 +284,17 @@ fn inventory_tab(p: &Product, id: i64) -> Vec<AnyWidget> {
         .cross_axis_alignment(CrossAxisAlignment::Start)
         .main_axis_size(MainAxisSize::Min),
         spacer(),
-        icon_button(lucide::MINUS)
+        icon_button(tabler::MINUS)
             .variant(ButtonVariant::Outline)
             .on_pressed(move || store::adjust_stock(id, -1)),
         gap_w(8.0),
-        icon_button(lucide::PLUS)
+        icon_button(tabler::PLUS)
             .variant(ButtonVariant::Outline)
             .on_pressed(move || store::adjust_stock(id, 1)),
         gap_w(12.0),
         button("Restock")
             .variant(ButtonVariant::Secondary)
-            .leading(lucide::REFRESH_CW)
+            .leading(tabler::REFRESH)
             .on_pressed(move || { store::reorder(id) }),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center);
@@ -341,7 +341,7 @@ fn media_tab(p: &Product, id: i64, selected: Signal<usize>, new_image: Signal<St
                     container()
                         .color(c.secondary)
                         .alignment(Alignment::CENTER)
-                        .child(icon(lucide::IMAGE).size(30.0).color(c.muted_foreground)),
+                        .child(icon(tabler::PHOTO).size(30.0).color(c.muted_foreground)),
                 ),
             )
             .into_widget(),
@@ -349,7 +349,7 @@ fn media_tab(p: &Product, id: i64, selected: Signal<usize>, new_image: Signal<St
             .decoration(BoxDecoration::new().color(c.secondary).radius(BorderRadius::all(14.0)))
             .height(240.0)
             .alignment(Alignment::CENTER)
-            .child(icon(lucide::PACKAGE).size(40.0).color(c.muted_foreground))
+            .child(icon(tabler::PACKAGE).size(40.0).color(c.muted_foreground))
             .into_widget(),
     };
 
@@ -383,7 +383,7 @@ fn media_tab(p: &Product, id: i64, selected: Signal<usize>, new_image: Signal<St
                         .width(20.0)
                         .height(20.0)
                         .alignment(Alignment::CENTER)
-                        .child(icon(lucide::X).size(12.0).color(c.background)),
+                        .child(icon(tabler::X).size(12.0).color(c.background)),
                 )
                 .radius(10.0)
                 .on_tap(move || {
@@ -401,7 +401,7 @@ fn media_tab(p: &Product, id: i64, selected: Signal<usize>, new_image: Signal<St
     let cover_action: AnyWidget = if p.images.len() > 1 && sel != 0 {
         button("Set as cover")
             .variant(ButtonVariant::Ghost)
-            .leading(lucide::IMAGE_PLUS)
+            .leading(tabler::PHOTO_PLUS)
             .on_pressed(move || {
                 store::set_cover_image(id, sel);
                 selected.set(0);
@@ -423,10 +423,10 @@ fn media_tab(p: &Product, id: i64, selected: Signal<usize>, new_image: Signal<St
         gap_h(14.0).into_widget(),
         row(children![
             Expanded::new(
-                text_field().leading(lucide::LINK).placeholder("Paste an image URL…").bind(new_image),
+                text_field().leading(tabler::LINK).placeholder("Paste an image URL…").bind(new_image),
             ),
             gap_w(10.0),
-            button("Add").variant(ButtonVariant::Outline).leading(lucide::IMAGE_PLUS).on_pressed(move || {
+            button("Add").variant(ButtonVariant::Outline).leading(tabler::PHOTO_PLUS).on_pressed(move || {
                 let url = new_image.peek();
                 if !url.trim().is_empty() {
                     store::add_product_image(id, url);
@@ -701,9 +701,9 @@ fn customer_view(id: &i64) -> AnyWidget {
     .cross_axis_alignment(CrossAxisAlignment::Start);
 
     let contact = column(children![
-        contact_row(lucide::MAIL, &cust.email),
+        contact_row(tabler::MAIL, &cust.email),
         gap_h(8.0),
-        contact_row(lucide::PHONE, &cust.phone),
+        contact_row(tabler::PHONE, &cust.phone),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Stretch)
     .main_axis_size(MainAxisSize::Min);

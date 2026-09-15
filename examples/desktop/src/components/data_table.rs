@@ -13,7 +13,7 @@ pub fn search_field(
 ) -> impl IntoWidget {
     container().width(width).child(
         text_field()
-            .leading(lucide::SEARCH)
+            .leading(tabler::SEARCH)
             .placeholder(placeholder.to_string())
             .bind(search)
             .on_changed(move |_| page.set(0)),

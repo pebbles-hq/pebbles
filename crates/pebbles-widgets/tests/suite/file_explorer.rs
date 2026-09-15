@@ -669,7 +669,7 @@ fn clipboard_copy_cut_paste_and_the_remaining_common_shortcuts() {
 
 #[test]
 fn icon_theme_resolution_priority() {
-    use pebbles_render::{IconKind, lucide};
+    use pebbles_render::{IconKind, tabler};
     pebbles_widgets::overlay::init();
     pebbles_core::focus::init();
     let _ = tree_sig();
@@ -688,21 +688,21 @@ fn icon_theme_resolution_priority() {
 
     // Defaults: closed/open folder glyphs differ; plain file glyph.
     assert_eq!(ex().resolved_icon(&folder, false).0, IconKind::Folder.data());
-    assert_eq!(ex().resolved_icon(&folder, true).0, lucide::FOLDER_OPEN, "open folders get their own glyph");
+    assert_eq!(ex().resolved_icon(&folder, true).0, tabler::FOLDER_OPEN, "open folders get their own glyph");
     assert_eq!(ex().resolved_icon(&file, false).0, IconKind::File.data());
 
     // An installed theme wins over the defaults; returning None falls through.
     ex().set_icon_theme(|n, _open| {
-        n.name.ends_with(".rs").then_some((lucide::FILE_CODE, Some(palette::WHITE)))
+        n.name.ends_with(".rs").then_some((tabler::FILE_CODE, Some(palette::WHITE)))
     });
-    assert_eq!(ex().resolved_icon(&file, false), (lucide::FILE_CODE, Some(palette::WHITE)));
+    assert_eq!(ex().resolved_icon(&file, false), (tabler::FILE_CODE, Some(palette::WHITE)));
     assert_eq!(ex().resolved_icon(&folder, false).0, IconKind::Folder.data(), "None keeps the default");
 
     // A per-node override wins over everything.
     let mut starred = file.clone();
-    starred.icon = Some(lucide::STAR);
+    starred.icon = Some(tabler::STAR);
     starred.color = Some(palette::BLACK);
-    assert_eq!(ex().resolved_icon(&starred, false), (lucide::STAR, Some(palette::BLACK)));
+    assert_eq!(ex().resolved_icon(&starred, false), (tabler::STAR, Some(palette::BLACK)));
 
     // Clearing restores the defaults.
     ex().clear_icon_theme();

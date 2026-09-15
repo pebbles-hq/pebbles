@@ -35,7 +35,7 @@ impl ErrorBoundaryHandle {
     }
 
     /// Trip the boundary (idempotent) — called by the reconciler on a caught panic.
-    fn trip(&self) {
+    fn trip(self) {
         if !self.errored.peek() {
             self.errored.set(true);
         }

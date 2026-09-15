@@ -25,7 +25,7 @@ fn empty() -> impl IntoWidget {
     let c = theme().colors;
     container().padding(EdgeInsets::symmetric(0.0, 28.0)).child(
         column(children![
-            icon(lucide::CHECK_CHECK).size(28.0).color(c.muted_foreground),
+            icon(tabler::CHECKS).size(28.0).color(c.muted_foreground),
             gap_h(8.0),
             text("Nothing here").size(14.0).color(c.muted_foreground),
         ])

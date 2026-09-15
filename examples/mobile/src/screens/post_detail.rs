@@ -53,7 +53,7 @@ fn view(post_id: &u64) -> AnyWidget {
     )
     .top(
         top_panel("Post").leading(
-            icon_button(lucide::ARROW_LEFT).variant(ButtonVariant::Ghost).on_pressed(store::close_post),
+            icon_button(tabler::ARROW_LEFT).variant(ButtonVariant::Ghost).on_pressed(store::close_post),
         ),
     )
     .background(c.background)
@@ -119,11 +119,11 @@ fn hero_actions(post: &Post) -> impl IntoWidget {
     let bookmark = if post.bookmarked { c.primary } else { c.muted_foreground };
 
     row(children![
-        stat_button(lucide::HEART, heart, Some(post.likes), move || store::toggle_like(id)),
+        stat_button(tabler::HEART, heart, Some(post.likes), move || store::toggle_like(id)),
         gap_w(20.0),
-        stat_button(lucide::MESSAGE_CIRCLE, c.muted_foreground, post.comment_count, || {}),
+        stat_button(tabler::MESSAGE_CIRCLE, c.muted_foreground, post.comment_count, || {}),
         spacer(),
-        stat_button(lucide::BOOKMARK, bookmark, None, move || store::toggle_bookmark(id)),
+        stat_button(tabler::BOOKMARK, bookmark, None, move || store::toggle_bookmark(id)),
     ])
     .cross_axis_alignment(CrossAxisAlignment::Center)
 }
@@ -145,7 +145,7 @@ fn stat_button(
 
 fn menu_or_gap(author: u64, pid: u64) -> AnyWidget {
     if author == store::ME {
-        icon_button(lucide::ELLIPSIS)
+        icon_button(tabler::DOTS)
             .variant(ButtonVariant::Ghost)
             .on_pressed(move || open_post_menu(pid))
             .into_widget()
@@ -309,7 +309,7 @@ fn like_pill(pid: u64, cm: &Comment) -> impl IntoWidget {
     let color = if cm.liked { palette::rose::S500 } else { c.muted_foreground };
     let count = cm.likes;
 
-    let mut kids: Vec<AnyWidget> = vec![icon(lucide::HEART).size(15.0).color(color).into_widget()];
+    let mut kids: Vec<AnyWidget> = vec![icon(tabler::HEART).size(15.0).color(color).into_widget()];
     if count > 0 {
         kids.push(gap_w(5.0).into_widget());
         kids.push(text(format!("{count}")).size(12.5).color(c.muted_foreground).into_widget());
@@ -356,7 +356,7 @@ fn composer(
                     row(children![
                         text(format!("Replying to @{handle}")).size(12.5).color(c.muted_foreground),
                         spacer(),
-                        pressable(icon(lucide::X).size(15.0).color(c.muted_foreground))
+                        pressable(icon(tabler::X).size(15.0).color(c.muted_foreground))
                             .radius(6.0)
                             .on_tap(move || replying_to.set(None)),
                     ])
@@ -376,7 +376,7 @@ fn composer(
             row(children![
                 Expanded::new(text_field().bind(draft).placeholder(placeholder).on_submit(move |_| send())),
                 gap_w(8.0),
-                icon_button(lucide::SEND).on_pressed(send),
+                icon_button(tabler::SEND).on_pressed(send),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Center),
         );
@@ -403,7 +403,7 @@ fn not_found() -> AnyWidget {
     )
     .top(
         top_panel("Post").leading(
-            icon_button(lucide::ARROW_LEFT).variant(ButtonVariant::Ghost).on_pressed(store::close_post),
+            icon_button(tabler::ARROW_LEFT).variant(ButtonVariant::Ghost).on_pressed(store::close_post),
         ),
     )
     .into_widget()

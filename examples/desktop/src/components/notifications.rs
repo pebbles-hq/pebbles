@@ -11,7 +11,7 @@ pub fn notifications_button() -> AnyWidget {
     let unread = store::unread_notifs();
     let glyph: AnyWidget = if unread > 0 {
         stack(children![
-            icon(lucide::BELL).size(20.0).color(c.foreground),
+            icon(tabler::BELL).size(20.0).color(c.foreground),
             positioned(
                 container()
                     .decoration(BoxDecoration::new().color(palette::rose::S500).shape(BoxShape::Circle))
@@ -23,7 +23,7 @@ pub fn notifications_button() -> AnyWidget {
         ])
         .into_widget()
     } else {
-        icon(lucide::BELL).size(20.0).color(c.foreground).into_widget()
+        icon(tabler::BELL).size(20.0).color(c.foreground).into_widget()
     };
     let trigger = container().padding(EdgeInsets::all(8.0)).child(glyph);
     // pad(0) so the header divider and row separators run edge to edge.
@@ -85,10 +85,10 @@ fn panel() -> AnyWidget {
 fn row_of(n: &store::Notif) -> AnyWidget {
     let c = theme().colors;
     let (ic, color) = match n.kind {
-        NotifKind::LowStock => (lucide::PACKAGE, palette::amber::S500),
-        NotifKind::Order => (lucide::SHOPPING_CART, palette::sky::S500),
-        NotifKind::Sync => (lucide::CLOUD_DOWNLOAD, palette::emerald::S500),
-        NotifKind::Info => (lucide::BELL, palette::violet::S500),
+        NotifKind::LowStock => (tabler::PACKAGE, palette::amber::S500),
+        NotifKind::Order => (tabler::SHOPPING_CART, palette::sky::S500),
+        NotifKind::Sync => (tabler::CLOUD_DOWNLOAD, palette::emerald::S500),
+        NotifKind::Info => (tabler::BELL, palette::violet::S500),
     };
     let unread = !n.read;
     // Unread rows get a faint accent wash across the full width.

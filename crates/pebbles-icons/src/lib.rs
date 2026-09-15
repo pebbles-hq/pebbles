@@ -1,27 +1,32 @@
-//! The Pebbles icon **data model** and the bundled **Lucide** icon set.
+//! The Pebbles icon **data model** and the bundled **Tabler** icon set.
 //!
 //! An icon is plain data — [`IconData`], a `Copy`, `'static`-friendly value
 //! describing drawable geometry in an SVG-style viewbox. Nothing here renders;
 //! `pebbles-render`'s `RenderIcon` consumes an [`IconData`] and paints it. This
-//! is what makes the icon set **pluggable**: the default set is Lucide, but any
+//! is what makes the icon set **pluggable**: the default set is Tabler, but any
 //! `IconData` — yours included — drops straight in.
+//!
+//! Tabler ships in **two styles**: **outline** (the default stroke look) at the
+//! [`tabler`] module root, and **filled** (solid) under [`tabler::filled`] — so the
+//! same glyph is available either way (`tabler::HEART` / `tabler::filled::HEART`).
 //!
 //! ```ignore
 //! use pebbles::prelude::*;
 //!
-//! icon(IconKind::Check);      // a named built-in (resolves to a Lucide glyph)
-//! icon(lucide::CAMERA);       // any of the ~1800 bundled Lucide icons
-//! icon(lucide::by_name("circle-check").unwrap());   // …or look one up by name
+//! icon(IconKind::Check);        // a named built-in (resolves to a Tabler glyph)
+//! icon(tabler::CAMERA);         // any of the ~5100 bundled outline icons
+//! icon(tabler::filled::STAR);   // …or its solid variant
+//! icon(tabler::by_name("circle-check").unwrap());   // …or look one up by name
 //!
 //! // Bring your own — a compile-time const, no framework buy-in:
 //! const BRAND: IconData = IconData::filled(24.0, &[IconPrim::Path("M12 2 …")]);
 //! icon(BRAND);
 //! ```
 
-pub mod lucide;
+pub mod tabler;
 
 /// One drawable primitive in an icon's viewbox, mirroring the SVG element set
-/// Lucide uses. Coordinates are in the icon's own `view` units (24 for Lucide).
+/// Tabler uses. Coordinates are in the icon's own `view` units (24 for Tabler).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum IconPrim {
     /// An SVG path `d` string (parsed with `kurbo` at paint time).
@@ -41,25 +46,25 @@ pub enum IconPrim {
 }
 
 /// A renderable icon: geometry plus how to ink it. Cheap to copy and store; the
-/// bundled Lucide glyphs are `const` values built entirely from `&'static` data.
+/// bundled Tabler glyphs are `const` values built entirely from `&'static` data.
 ///
 /// `view` is the side of the (square) viewbox the primitives are authored in;
 /// the renderer scales it to the requested pixel size. `fill = false` strokes
-/// the geometry (the Lucide style); `fill = true` fills it (for solid glyphs).
+/// the geometry (the Tabler style); `fill = true` fills it (for solid glyphs).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct IconData {
-    /// Side length of the authoring viewbox (Lucide uses 24).
+    /// Side length of the authoring viewbox (Tabler uses 24).
     pub view: f64,
     /// Fill the geometry instead of stroking it.
     pub fill: bool,
-    /// Stroke width, in viewbox units (Lucide uses 2).
+    /// Stroke width, in viewbox units (Tabler uses 2).
     pub stroke_width: f64,
     /// The primitives that make up the glyph.
     pub prims: &'static [IconPrim],
 }
 
 impl IconData {
-    /// A stroked glyph in a `view`-unit box (stroke width 2 — the Lucide style).
+    /// A stroked glyph in a `view`-unit box (stroke width 2 — the Tabler style).
     pub const fn stroked(view: f64, prims: &'static [IconPrim]) -> Self {
         IconData { view, fill: false, stroke_width: 2.0, prims }
     }
@@ -86,8 +91,8 @@ impl IconData {
 }
 
 /// The built-in **named** icons. These are ergonomic handles used across the
-/// widget catalog; each resolves to a bundled Lucide glyph. For the full set,
-/// reach for [`lucide`] directly. Any `IconData` also works wherever an
+/// widget catalog; each resolves to a bundled Tabler glyph. For the full set,
+/// reach for [`tabler`] directly. Any `IconData` also works wherever an
 /// `impl Into<IconData>` is accepted, so custom icons need no enum entry.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IconKind {
@@ -120,35 +125,35 @@ pub enum IconKind {
 }
 
 impl IconKind {
-    /// The Lucide glyph this named icon resolves to.
+    /// The Tabler glyph this named icon resolves to.
     pub const fn data(self) -> IconData {
         match self {
-            IconKind::Check => lucide::CHECK,
-            IconKind::Close => lucide::X,
-            IconKind::Plus => lucide::PLUS,
-            IconKind::Minus => lucide::MINUS,
-            IconKind::ChevronDown => lucide::CHEVRON_DOWN,
-            IconKind::ChevronUp => lucide::CHEVRON_UP,
-            IconKind::ChevronsUpDown => lucide::CHEVRONS_UP_DOWN,
-            IconKind::ChevronRight => lucide::CHEVRON_RIGHT,
-            IconKind::ChevronLeft => lucide::CHEVRON_LEFT,
-            IconKind::Menu => lucide::MENU,
-            IconKind::Search => lucide::SEARCH,
-            IconKind::Star => lucide::STAR,
-            IconKind::Dot => lucide::DOT,
-            IconKind::Info => lucide::INFO,
-            IconKind::Warning => lucide::TRIANGLE_ALERT,
-            IconKind::ArrowRight => lucide::ARROW_RIGHT,
-            IconKind::Circle => lucide::CIRCLE,
-            IconKind::Eye => lucide::EYE,
-            IconKind::EyeOff => lucide::EYE_OFF,
-            IconKind::Mail => lucide::MAIL,
-            IconKind::Calendar => lucide::CALENDAR,
-            IconKind::Lock => lucide::LOCK,
-            IconKind::User => lucide::USER,
-            IconKind::Phone => lucide::PHONE,
-            IconKind::Folder => lucide::FOLDER,
-            IconKind::File => lucide::FILE,
+            IconKind::Check => tabler::CHECK,
+            IconKind::Close => tabler::X,
+            IconKind::Plus => tabler::PLUS,
+            IconKind::Minus => tabler::MINUS,
+            IconKind::ChevronDown => tabler::CHEVRON_DOWN,
+            IconKind::ChevronUp => tabler::CHEVRON_UP,
+            IconKind::ChevronsUpDown => tabler::SELECTOR,
+            IconKind::ChevronRight => tabler::CHEVRON_RIGHT,
+            IconKind::ChevronLeft => tabler::CHEVRON_LEFT,
+            IconKind::Menu => tabler::MENU_2,
+            IconKind::Search => tabler::SEARCH,
+            IconKind::Star => tabler::STAR,
+            IconKind::Dot => tabler::POINT,
+            IconKind::Info => tabler::INFO_CIRCLE,
+            IconKind::Warning => tabler::ALERT_TRIANGLE,
+            IconKind::ArrowRight => tabler::ARROW_RIGHT,
+            IconKind::Circle => tabler::CIRCLE,
+            IconKind::Eye => tabler::EYE,
+            IconKind::EyeOff => tabler::EYE_OFF,
+            IconKind::Mail => tabler::MAIL,
+            IconKind::Calendar => tabler::CALENDAR,
+            IconKind::Lock => tabler::LOCK,
+            IconKind::User => tabler::USER,
+            IconKind::Phone => tabler::PHONE,
+            IconKind::Folder => tabler::FOLDER,
+            IconKind::File => tabler::FILE,
         }
     }
 }

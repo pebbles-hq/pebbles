@@ -53,7 +53,7 @@ fn customers_view() -> impl IntoWidget {
             cell(
                 button("View")
                     .variant(ButtonVariant::Outline)
-                    .leading(lucide::EYE)
+                    .leading(tabler::EYE)
                     .on_pressed(move || open_customer_detail(id)),
             ),
         ]);

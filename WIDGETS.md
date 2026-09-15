@@ -46,7 +46,7 @@ remote-URL images) and their per-platform status live in
 | `RichText` / `text_rich` + `TextSpan`/`span` | ✅ | ONE shaped layout, per-range styles (weight/italic/underline/strike/color/family/size), inline-code chips, geometry-resolved links (`.on_link`) |
 | `RepaintBoundary` / `repaint_boundary` | ✅ | retained scene fragment, re-encoded only when the subtree changes; automatic on ListView items |
 | `EditableText` / `editable` | ✅ | low-level editor under TextField |
-| `Icon` (lucide set) | ✅ | |
+| `Icon` (Tabler set) | ✅ | |
 | `Spinner` | ✅ | indeterminate arc |
 | `GestureDetector` | ✅ | tap/double/secondary/down/up/hover/cursor/pan + long-press lifecycle + vertical/horizontal axis-drag trios |
 | `pressable` / `ink_well` / `ink_response` / `ink` (InkWell/InkResponse/Ink) | ✅ | make any widget a tappable region with hover/press tint + focus ring + keyboard activation + Button semantics; `ink_response` = circular highlight, `ink` = the decorated surface the tint draws over. shadcn state feedback, **no Material ripple** (§10) |
@@ -140,7 +140,7 @@ remote-URL images) and their per-platform status live in
 | `ListTile` | ✅ | style/tap/selected/dense |
 | `checkbox_list_tile` · `radio_list_tile` · `switch_list_tile` | ✅ | a ListTile with a trailing selection control; the whole row is the tap target (Flutter's CheckboxListTile / RadioListTile / SwitchListTile) |
 | `TreeView` / `TreeNode` | ✅ | multi-select, drag |
-| `FileExplorer` / `FileTree` (+ `pick_folder`) | ✅ | real disk: native picker (`pick_folder` needs the `file-dialogs` feature), lazy loading, mutations, multi-select/-drag, icon themes (set_icon_theme resolver over ~1800 lucide glyphs) + per-node icon/color, full row-state set (hover/selected/focus-ring/cut-dim/drop), VSCode keyboard set (↑/↓/←/→ + Shift-extend, Mod+↑/↓ focus walk + Mod+Space one-by-one toggle, Home/End, F2 prefilled-stem rename, Delete, Mod+A, Mod+C/X/V clipboard), external control surface (bindable filter(), active_row(), reveal, expand_all), built-in right-click menus (independent of the global switch) |
+| `FileExplorer` / `FileTree` (+ `pick_folder`) | ✅ | real disk: native picker (`pick_folder` needs the `file-dialogs` feature), lazy loading, mutations, multi-select/-drag, icon themes (set_icon_theme resolver over ~5100 Tabler outline + ~1050 filled glyphs) + per-node icon/color, full row-state set (hover/selected/focus-ring/cut-dim/drop), VSCode keyboard set (↑/↓/←/→ + Shift-extend, Mod+↑/↓ focus walk + Mod+Space one-by-one toggle, Home/End, F2 prefilled-stem rename, Delete, Mod+A, Mod+C/X/V clipboard), external control surface (bindable filter(), active_row(), reveal, expand_all), built-in right-click menus (independent of the global switch) |
 | `ImageView` | ✅ | `asset`/`network`/`memory`/`base64`/`image` + `ImageFit`; reactive source (`image-view` feature) |
 | `fade_in_image` (FadeInImage) | ✅ | shows a placeholder, then cross-fades in the loaded network image; `.fade(secs)` (`image-view` feature) |
 | `markdown` / `markdown_editor` | ✅ 📦 | Obsidian-style GFM reader + editor — now a **separate package**, [`pebbles-markdown`](https://github.com/pebbles-hq/pebbles-markdown): tables, task lists with source-rewriting checkboxes, code (JetBrains Mono), links, quotes, images; Edit/Split/Read via an app-owned mode signal; themable `MarkdownStyle`. The reference third-party widget crate — add it alongside `pebbles`. |

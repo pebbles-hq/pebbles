@@ -107,24 +107,25 @@ fn padding_grows_and_offsets_child() {
     assert_eq!(tree.offset_of(child).to_point().y, 10.0);
 }
 
-/// Every bundled Lucide `Path` primitive must parse under kurbo's SVG parser —
-/// this guards the whole generated set (all ~1800 icons) against a path command
-/// the renderer can't handle.
+/// Every bundled Tabler `Path` primitive — both outline and filled — must parse
+/// under kurbo's SVG parser, guarding the whole generated set (~5100 outline + ~1050
+/// filled) against a path command the renderer can't handle.
 #[test]
-fn all_lucide_paths_parse() {
+fn all_tabler_paths_parse() {
     use pebbles_render::BezPath;
-    use pebbles_render::objects::{IconPrim, lucide};
+    use pebbles_render::objects::{IconPrim, tabler};
 
     let mut checked = 0usize;
-    for (name, data) in lucide::ALL {
+    let both = tabler::ALL.iter().chain(tabler::filled::ALL.iter());
+    for (name, data) in both {
         for prim in data.prims {
             if let IconPrim::Path(d) = prim {
-                assert!(BezPath::from_svg(d).is_ok(), "lucide `{name}` has an unparsable path: {d}");
+                assert!(BezPath::from_svg(d).is_ok(), "tabler `{name}` has an unparsable path: {d}");
                 checked += 1;
             }
         }
     }
-    assert!(checked > 1000, "expected the full Lucide set, only saw {checked} paths");
+    assert!(checked > 5000, "expected the full Tabler set, only saw {checked} paths");
 }
 
 /// A row with one fixed child and one flex child splits the remaining main-axis

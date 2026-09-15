@@ -19,7 +19,7 @@ Strictly bottom-up; a crate never depends on one above it:
 
 ```
 pebbles-foundation   geometry, color, layout enums (Rect, Offset, Size, EdgeInsets, …)
-pebbles-icons        generated Lucide icon data (see scripts/gen-lucide.mjs)
+pebbles-icons        generated Tabler icon data (outline + filled; see scripts/gen-tabler.mjs)
 pebbles-render       RenderObject trait + the built-in render objects, text (Parley),
                      vello Scene painting, hit-test tree
 pebbles-core         reactivity (signals/memos/effects/stores), the Element tree +

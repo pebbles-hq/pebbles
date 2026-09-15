@@ -16,7 +16,7 @@ pub struct Icon {
 
 /// Create an [`Icon`] (default 20px, current theme foreground). Accepts any
 /// icon source — a named [`IconKind`](pebbles_render::IconKind), a bundled
-/// [`lucide`](pebbles_render::lucide) glyph, or your own [`IconData`].
+/// [`tabler`](pebbles_render::tabler) glyph, or your own [`IconData`].
 pub fn icon(icon: impl Into<IconData>) -> Icon {
     Icon { data: icon.into(), size: 20.0, color: theme().colors.foreground }
 }

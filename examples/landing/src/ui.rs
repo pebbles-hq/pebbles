@@ -44,7 +44,7 @@ pub fn image_fill(url: String) -> AnyWidget {
             container()
                 .color(paper_dim())
                 .alignment(Alignment::CENTER)
-                .child(icon(lucide::IMAGE).size(30.0).color(with_alpha(ink(), 0.18))),
+                .child(icon(tabler::PHOTO).size(30.0).color(with_alpha(ink(), 0.18))),
         )
         .into_widget()
 }

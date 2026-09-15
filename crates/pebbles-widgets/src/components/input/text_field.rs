@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, CrossAxisAlignment, MainAxisSize};
 use pebbles_render::text_edit as edit;
-use pebbles_render::{Cursor, IconData, IconKind, PointerEvent, TextFieldStyle, lucide};
+use pebbles_render::{Cursor, IconData, IconKind, PointerEvent, TextFieldStyle, tabler};
 
 use super::{ButtonVariant, icon_button};
 use crate::components::icon;
@@ -84,7 +84,7 @@ fn kind_leading(kind: InputKind) -> Option<IconData> {
         InputKind::Phone => IconKind::Phone.into(),
         InputKind::Password => IconKind::Lock.into(),
         InputKind::Search => IconKind::Search.into(),
-        InputKind::Currency => lucide::DOLLAR_SIGN,
+        InputKind::Currency => tabler::CURRENCY_DOLLAR,
         _ => return None,
     })
 }

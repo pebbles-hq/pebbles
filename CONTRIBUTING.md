@@ -25,8 +25,8 @@ cargo fmt --check                # style (max_width = 110, see rustfmt.toml)
 - **Tests are headless** (no window/GPU). New pebbles-widgets tests go in
   `crates/pebbles-widgets/tests/suite/<name>.rs` + a `mod <name>;` line in
   `suite/main.rs` — do not add new top-level files under `tests/`.
-- **Icons are generated**: `crates/pebbles-icons/src/lucide.rs` comes from
-  `scripts/gen-lucide.mjs` (Node). Never hand-edit it.
+- **Icons are generated**: `crates/pebbles-icons/src/tabler.rs` comes from
+  `scripts/gen-tabler.mjs` (Node). Never hand-edit it.
 - New public API must be re-exported from `pebbles::prelude`.
 - Optional OS integrations are default-off cargo features forwarded through the
   umbrella crate (see `native-menus` / `global-hotkeys` for the pattern).

@@ -172,7 +172,7 @@ pub fn open_end_drawer() {
 /// A hamburger button that opens the [`Scaffold::drawer`] — drop it in a
 /// [`TopPanel::leading`] slot (Flutter auto-inserts this; Pebbles keeps it explicit).
 pub fn drawer_button() -> AnyWidget {
-    crate::components::icon_button(pebbles_render::lucide::MENU).on_pressed(open_drawer).into_widget()
+    crate::components::icon_button(pebbles_render::tabler::MENU_2).on_pressed(open_drawer).into_widget()
 }
 
 impl IntoWidget for Scaffold {

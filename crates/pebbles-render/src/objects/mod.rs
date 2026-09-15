@@ -41,7 +41,7 @@ pub use effects_extra::{RenderClipOval, RenderClipPath, RenderColorFilter, Rende
 pub use fitted::RenderFittedBox;
 pub use flex::{FlexParentData, RenderFlex};
 pub use fractional::RenderFractionallySizedBox;
-pub use icon::{IconData, IconKind, IconPrim, RenderIcon, lucide};
+pub use icon::{IconData, IconKind, IconPrim, RenderIcon, tabler};
 pub use intrinsic::{RenderIntrinsicHeight, RenderIntrinsicWidth};
 pub use layout_extra::{
     RenderBaseline, RenderCustomMultiChild, RenderCustomSingleChild, RenderFlow, RenderFractionalTranslation,

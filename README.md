@@ -310,8 +310,9 @@ Everything below is built and shown live in the [gallery](https://github.com/peb
   `DecoratedBox`, `Opacity`, `ClipRRect`, `Wrap`, `AspectRatio`, `Icon`, `Spinner`,
   `ScrollArea`, `Resizable`, `Separator`; child-first modifiers (`.padded()/.centered()/
   .expanded()/.sized()/.clipped()/.opacity()`).
-- **Icons** — the full **Lucide** set (~1800 glyphs), addressable by const (`lucide::CAMERA`),
-  by name, or via `IconKind`. Icons are plain data, so your own drop in anywhere.
+- **Icons** — the full **Tabler** set in two styles: ~5100 **outline** (`tabler::CAMERA`)
+  + ~1050 **filled** (`tabler::filled::CAMERA`), addressable by const, by name, or via
+  `IconKind`. Icons are plain data, so your own drop in anywhere.
 - **Gestures** — `GestureDetector` with the full pointer set: tap, double-tap,
   secondary/tertiary click, the long-press lifecycle, hover enter/exit, and drag/pan.
 - **Buttons** — `Button` (Primary/Secondary/Outline/Ghost/Destructive/Link · Sm/Md/Lg ·

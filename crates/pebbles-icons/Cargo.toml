@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Icon data model for Pebbles + the bundled Lucide icon set."
+description = "Icon data model for Pebbles + the bundled Tabler icon set."
 
 [dependencies]
 

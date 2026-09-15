@@ -1,6 +1,6 @@
 [files]
 extend-exclude = [
-    "crates/pebbles-icons/src/lucide.rs", # generated
+    "crates/pebbles-icons/src/tabler.rs", # generated
     "Cargo.lock",
 ]
 

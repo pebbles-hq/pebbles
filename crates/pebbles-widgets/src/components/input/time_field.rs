@@ -5,7 +5,7 @@
 use pebbles_foundation::MainAxisSize;
 use std::rc::Rc;
 
-use pebbles_render::{IconKind, PointerEvent, lucide};
+use pebbles_render::{IconKind, PointerEvent, tabler};
 
 use super::menu::{ActionRowProps, action_row};
 use super::popover::{anchor_below, popover_surface};
@@ -187,7 +187,7 @@ fn render_time(p: &Props) -> AnyWidget {
     let ph = p.placeholder.clone().unwrap_or_else(|| if hour12 { "hh:mm AM".into() } else { "HH:MM".into() });
     let oc_edit = oc.clone();
     let mut tf =
-        text_field().leading(lucide::CLOCK).placeholder(ph).bind(text).trailing(open_btn).on_changed(
+        text_field().leading(tabler::CLOCK).placeholder(ph).bind(text).trailing(open_btn).on_changed(
             move |s| {
                 if let Some(cb) = &oc_edit {
                     cb(s);

@@ -20,7 +20,7 @@ pub fn nav_bar() -> AnyWidget {
                     container()
                         .decoration(BoxDecoration::new().color(ui::white()).radius(BorderRadius::all(8.0)))
                         .padding(EdgeInsets::all(7.0))
-                        .child(icon(lucide::LAYERS).size(17.0).color(ui::ink())),
+                        .child(icon(tabler::STACK).size(17.0).color(ui::ink())),
                     gap_w(10.0),
                     text("PEBBLES ATELIER").size(15.0).weight(700.0).letter_spacing(1.0).color(ui::white()),
                 ])
@@ -42,15 +42,15 @@ pub fn nav_bar() -> AnyWidget {
                 .main_axis_size(MainAxisSize::Min),
                 spacer(),
                 row(children![
-                    nav_icon(lucide::SEARCH),
+                    nav_icon(tabler::SEARCH),
                     gap_w(8.0),
-                    nav_icon(lucide::USER),
+                    nav_icon(tabler::USER),
                     gap_w(10.0),
                     pressable(ui::glass(
                         999.0,
                         container().padding(EdgeInsets::symmetric(14.0, 8.0)).child(
                             row(children![
-                                icon(lucide::SHOPPING_BAG).size(15.0).color(ui::white()),
+                                icon(tabler::SHOPPING_BAG).size(15.0).color(ui::white()),
                                 gap_w(8.0),
                                 text("Bag · 2").size(13.0).weight(600.0).color(ui::white()),
                             ])
@@ -159,7 +159,7 @@ fn hero_slide(eyebrow: &str, headline: &str, seed: &str) -> AnyWidget {
                             .size(ButtonSize::Lg)
                             .color(ui::white())
                             .text_color(ui::ink())
-                            .trailing(lucide::ARROW_RIGHT),
+                            .trailing(tabler::ARROW_RIGHT),
                         gap_w(12.0),
                         ui::glass_button("Lookbook"),
                     ])
@@ -312,7 +312,7 @@ fn card_view(idx: &usize) -> AnyWidget {
                 .width(38.0)
                 .height(38.0)
                 .alignment(Alignment::CENTER)
-                .child(icon(lucide::PLUS).size(18.0).color(ui::white())),
+                .child(icon(tabler::PLUS).size(18.0).color(ui::white())),
         ))
         .radius(999.0),
     )
@@ -416,7 +416,7 @@ pub fn lifestyle() -> AnyWidget {
                             .size(ButtonSize::Lg)
                             .color(ui::white())
                             .text_color(ui::ink())
-                            .trailing(lucide::ARROW_RIGHT),
+                            .trailing(tabler::ARROW_RIGHT),
                     ])
                     .main_axis_size(MainAxisSize::Min),
                 ])

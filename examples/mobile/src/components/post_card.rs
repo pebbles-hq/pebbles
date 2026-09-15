@@ -89,7 +89,7 @@ pub fn post_card(post: &Post) -> impl IntoWidget {
 fn follow_or_menu(author: &store::User, post_id: u64) -> AnyWidget {
     if author.id == store::ME {
         // Your own post: a ⋯ menu (delete, etc.).
-        icon_button(lucide::ELLIPSIS)
+        icon_button(tabler::DOTS)
             .variant(ButtonVariant::Ghost)
             .on_pressed(move || open_post_menu(post_id))
             .into_widget()
@@ -108,15 +108,15 @@ fn actions(post: &Post) -> impl IntoWidget {
     let heart = if post.liked { palette::rose::S500 } else { c.muted_foreground };
 
     row(children![
-        action(lucide::HEART, heart, Some(post.likes), move || store::toggle_like(id)),
+        action(tabler::HEART, heart, Some(post.likes), move || store::toggle_like(id)),
         gap_w(18.0),
         // The comment icon opens the full post + its thread.
-        action(lucide::MESSAGE_CIRCLE, c.muted_foreground, post.comment_count, move || {
+        action(tabler::MESSAGE_CIRCLE, c.muted_foreground, post.comment_count, move || {
             store::open_post(id)
         }),
         spacer(),
         action(
-            lucide::BOOKMARK,
+            tabler::BOOKMARK,
             if post.bookmarked { c.primary } else { c.muted_foreground },
             None,
             move || store::toggle_bookmark(id),

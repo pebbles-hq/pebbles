@@ -27,7 +27,7 @@ fn list() -> impl IntoWidget {
         column(rows).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
     ))
     .top(top_panel("Messages").leading(
-        icon_button(lucide::ARROW_LEFT).variant(ButtonVariant::Ghost).on_pressed(store::messages_back),
+        icon_button(tabler::ARROW_LEFT).variant(ButtonVariant::Ghost).on_pressed(store::messages_back),
     ))
 }
 
@@ -116,7 +116,7 @@ fn thread(id: &u64) -> AnyWidget {
             row(children![
                 Expanded::new(text_field().bind(draft).placeholder("Message…").on_submit(move |_| send())),
                 gap_w(8.0),
-                icon_button(lucide::SEND).on_pressed(send),
+                icon_button(tabler::SEND).on_pressed(send),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Center),
         );
@@ -135,7 +135,7 @@ fn thread(id: &u64) -> AnyWidget {
         .cross_axis_alignment(CrossAxisAlignment::Stretch),
     )
     .top(top_panel(other.name.clone()).leading(
-        icon_button(lucide::ARROW_LEFT).variant(ButtonVariant::Ghost).on_pressed(store::messages_back),
+        icon_button(tabler::ARROW_LEFT).variant(ButtonVariant::Ghost).on_pressed(store::messages_back),
     ))
     .into_widget()
 }

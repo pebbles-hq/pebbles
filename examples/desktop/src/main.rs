@@ -53,7 +53,7 @@ fn content(section: Section) -> AnyWidget {
 fn top_bar(section: Section, desktop: bool) -> AnyWidget {
     let c = theme().colors;
     // The hamburger toggles the persistent nav on desktop, opens the drawer otherwise.
-    let menu = icon_button(lucide::PANEL_LEFT).variant(ButtonVariant::Ghost).on_pressed(move || {
+    let menu = icon_button(tabler::LAYOUT_SIDEBAR).variant(ButtonVariant::Ghost).on_pressed(move || {
         if desktop {
             store::toggle_nav();
         } else {
@@ -75,7 +75,7 @@ fn top_bar(section: Section, desktop: bool) -> AnyWidget {
         // Collapse the search to an icon and the Sync to an icon; push actions right.
         kids.push(spacer().into_widget());
         kids.push(
-            icon_button(lucide::SEARCH).variant(ButtonVariant::Ghost).on_pressed(open_search).into_widget(),
+            icon_button(tabler::SEARCH).variant(ButtonVariant::Ghost).on_pressed(open_search).into_widget(),
         );
         kids.push(gap_w(2.0).into_widget());
         kids.push(sync_button(true));
@@ -111,7 +111,7 @@ fn search_box() -> impl IntoWidget {
             .padding(EdgeInsets::symmetric(12.0, 8.0))
             .child(
                 row(children![
-                    icon(lucide::SEARCH).size(16.0).color(c.muted_foreground),
+                    icon(tabler::SEARCH).size(16.0).color(c.muted_foreground),
                     gap_w(8.0),
                     text("Search products, orders, customers…").size(13.0).color(c.muted_foreground),
                     spacer(),
@@ -139,7 +139,7 @@ fn open_search() {
         .take(80)
         .map(|p| {
             let id = p.id;
-            command_item(format!("{} · {}", p.name, p.sku)).icon(lucide::PACKAGE).on_select(move || {
+            command_item(format!("{} · {}", p.name, p.sku)).icon(tabler::PACKAGE).on_select(move || {
                 store::go_to(Section::Products);
                 open_product_detail(id);
             })
@@ -151,7 +151,7 @@ fn open_search() {
         .map(|o| {
             let id = o.id;
             let name = store::customer(o.customer_id).map(|c| c.name).unwrap_or_default();
-            command_item(format!("{} · {}", o.code, name)).icon(lucide::SHOPPING_CART).on_select(move || {
+            command_item(format!("{} · {}", o.code, name)).icon(tabler::SHOPPING_CART).on_select(move || {
                 store::go_to(Section::Orders);
                 open_order_detail(id);
             })
@@ -161,7 +161,7 @@ fn open_search() {
         .iter()
         .map(|cu| {
             let id = cu.id;
-            command_item(format!("{} · {}", cu.name, cu.company)).icon(lucide::USERS).on_select(move || {
+            command_item(format!("{} · {}", cu.name, cu.company)).icon(tabler::USERS).on_select(move || {
                 store::go_to(Section::Customers);
                 open_customer_detail(id);
             })
@@ -193,14 +193,14 @@ fn sync_button(compact: bool) -> AnyWidget {
             )
             .into_widget()
     } else if compact {
-        icon_button(lucide::CLOUD_DOWNLOAD)
+        icon_button(tabler::CLOUD_DOWNLOAD)
             .variant(ButtonVariant::Ghost)
             .on_pressed(store::sync_from_cloud)
             .into_widget()
     } else {
         button("Sync")
             .variant(ButtonVariant::Secondary)
-            .leading(lucide::CLOUD_DOWNLOAD)
+            .leading(tabler::CLOUD_DOWNLOAD)
             .on_pressed(store::sync_from_cloud)
             .into_widget()
     }
@@ -217,11 +217,11 @@ fn side_panel(section: Section) -> AnyWidget {
         .collapsed(store::nav_collapsed())
         .on_collapse_changed(store::set_nav_collapsed)
         .header(brand())
-        .item(nav(lucide::LAYOUT_DASHBOARD, "Dashboard", Section::Dashboard, section))
-        .item(nav(lucide::PACKAGE, "Products", Section::Products, section))
-        .item(nav(lucide::SHOPPING_CART, "Orders", Section::Orders, section))
-        .item(nav(lucide::USERS, "Customers", Section::Customers, section))
-        .item(nav(lucide::SETTINGS, "Settings", Section::Settings, section))
+        .item(nav(tabler::LAYOUT_DASHBOARD, "Dashboard", Section::Dashboard, section))
+        .item(nav(tabler::PACKAGE, "Products", Section::Products, section))
+        .item(nav(tabler::SHOPPING_CART, "Orders", Section::Orders, section))
+        .item(nav(tabler::USERS, "Customers", Section::Customers, section))
+        .item(nav(tabler::SETTINGS, "Settings", Section::Settings, section))
         .footer(profile())
         .into_widget()
 }
@@ -246,11 +246,11 @@ fn nav_drawer(section: Section) -> AnyWidget {
             side_nav()
                 .width(280.0)
                 .header(brand())
-                .item(nav_go(lucide::LAYOUT_DASHBOARD, "Dashboard", Section::Dashboard, section))
-                .item(nav_go(lucide::PACKAGE, "Products", Section::Products, section))
-                .item(nav_go(lucide::SHOPPING_CART, "Orders", Section::Orders, section))
-                .item(nav_go(lucide::USERS, "Customers", Section::Customers, section))
-                .item(nav_go(lucide::SETTINGS, "Settings", Section::Settings, section))
+                .item(nav_go(tabler::LAYOUT_DASHBOARD, "Dashboard", Section::Dashboard, section))
+                .item(nav_go(tabler::PACKAGE, "Products", Section::Products, section))
+                .item(nav_go(tabler::SHOPPING_CART, "Orders", Section::Orders, section))
+                .item(nav_go(tabler::USERS, "Customers", Section::Customers, section))
+                .item(nav_go(tabler::SETTINGS, "Settings", Section::Settings, section))
                 .footer(profile()),
         )
         .into_widget()
@@ -269,7 +269,7 @@ fn brand() -> impl IntoWidget {
         container()
             .decoration(BoxDecoration::new().color(c.primary).radius(BorderRadius::all(8.0)))
             .padding(EdgeInsets::all(6.0))
-            .child(icon(lucide::BOXES).size(18.0).color(c.primary_foreground)),
+            .child(icon(tabler::BOX_MULTIPLE).size(18.0).color(c.primary_foreground)),
         gap_w(10.0),
         text("Northwind").size(16.0).weight(700.0).color(c.foreground),
     ])

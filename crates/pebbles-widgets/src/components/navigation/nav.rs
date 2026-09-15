@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use pebbles_core::IntoCallback;
 use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
-use pebbles_render::{Border, BoxDecoration, IconData, IconKind, lucide};
+use pebbles_render::{Border, BoxDecoration, IconData, IconKind, tabler};
 
 use crate::style::{Style, styled};
 use crate::theme::theme;
@@ -344,10 +344,10 @@ impl IntoWidget for Pagination {
         };
         let at_start = page <= 1;
         let at_end = page >= total;
-        let first = arrow(lucide::CHEVRONS_LEFT, !at_start, 1, &go);
+        let first = arrow(tabler::CHEVRONS_LEFT, !at_start, 1, &go);
         let prev = arrow(IconKind::ChevronLeft.into(), !at_start, page.saturating_sub(1).max(1), &go);
         let next = arrow(IconKind::ChevronRight.into(), !at_end, (page + 1).min(total), &go);
-        let last = arrow(lucide::CHEVRONS_RIGHT, !at_end, total, &go);
+        let last = arrow(tabler::CHEVRONS_RIGHT, !at_end, total, &go);
 
         let line: AnyWidget = match self.variant {
             PaginationVariant::Numbers => {

@@ -50,7 +50,7 @@
 //!
 //! **Icons are themable** ([`set_icon_theme`](FileExplorer::set_icon_theme) —
 //! the hook an IDE's icon theming plugs into): a resolver maps every node to
-//! any bundled lucide glyph + color, per-node [`FsNode::icon`]/[`FsNode::color`]
+//! any bundled tabler glyph + color, per-node [`FsNode::icon`]/[`FsNode::color`]
 //! overrides win, and the defaults show open/closed folder glyphs.
 //!
 //! Rows carry the standard state set: hover tint, selected (accent), active
@@ -62,7 +62,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
-use pebbles_render::{Border, BoxDecoration, Cursor, IconData, IconKind, lucide};
+use pebbles_render::{Border, BoxDecoration, Cursor, IconData, IconKind, tabler};
 
 use crate::components::{ButtonVariant, context_menu, icon, icon_button, menu_item, muted, text_field};
 use crate::theme::{mix, theme};
@@ -186,7 +186,7 @@ impl FileExplorer {
     ///
     /// ```ignore
     /// explorer.set_icon_theme(|n, _open| match n.name.rsplit('.').next() {
-    ///     Some("rs") => Some((lucide::FILE_CODE, None)),
+    ///     Some("rs") => Some((tabler::FILE_CODE, None)),
     ///     _ => None,
     /// });
     /// ```
@@ -212,7 +212,7 @@ impl FileExplorer {
             return (d, c.or(node.color));
         }
         let d = if node.kind == FsKind::Folder {
-            if expanded { lucide::FOLDER_OPEN } else { IconKind::Folder.data() }
+            if expanded { tabler::FOLDER_OPEN } else { IconKind::Folder.data() }
         } else {
             IconKind::File.data()
         };
@@ -914,17 +914,17 @@ impl FileExplorer {
     /// compose your own buttons from the action closures wherever you want.
     pub fn toolbar(self) -> impl IntoWidget {
         row(children![
-            icon_button(lucide::FILE_PLUS)
+            icon_button(tabler::FILE_PLUS)
                 .variant(ButtonVariant::Ghost)
                 .size(15.0)
                 .on_pressed(self.new_file()),
             gap_w(2.0),
-            icon_button(lucide::FOLDER_PLUS)
+            icon_button(tabler::FOLDER_PLUS)
                 .variant(ButtonVariant::Ghost)
                 .size(15.0)
                 .on_pressed(self.new_folder()),
             gap_w(2.0),
-            icon_button(lucide::CHEVRONS_DOWN_UP)
+            icon_button(tabler::FOLD)
                 .variant(ButtonVariant::Ghost)
                 .size(15.0)
                 .on_pressed(self.collapse_all()),

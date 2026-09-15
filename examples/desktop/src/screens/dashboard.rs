@@ -21,17 +21,23 @@ pub fn dashboard() -> impl IntoWidget {
             "Revenue",
             &revenue,
             "paid + fulfilled",
-            lucide::TRENDING_UP,
+            tabler::TRENDING_UP,
             palette::emerald::S500,
         )
         .into_widget(),
-        components::kpi_card("Inventory value", &inv_value, "at cost", lucide::BOXES, palette::sky::S500)
-            .into_widget(),
+        components::kpi_card(
+            "Inventory value",
+            &inv_value,
+            "at cost",
+            tabler::BOX_MULTIPLE,
+            palette::sky::S500,
+        )
+        .into_widget(),
         components::kpi_card(
             "Products",
             &products.to_string(),
             &format!("{low} need attention"),
-            lucide::PACKAGE,
+            tabler::PACKAGE,
             palette::violet::S500,
         )
         .into_widget(),
@@ -39,7 +45,7 @@ pub fn dashboard() -> impl IntoWidget {
             "Pending orders",
             &pending.to_string(),
             &format!("{customers} customers"),
-            lucide::SHOPPING_CART,
+            tabler::SHOPPING_CART,
             palette::amber::S500,
         )
         .into_widget(),
