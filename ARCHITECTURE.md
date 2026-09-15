@@ -140,7 +140,7 @@ umbrella crate: `native-menus`, `global-hotkeys` (shell), `image-view`
 | add a primitive widget | `pebbles-widgets/src/widgets/<concern>/` (layout, animation, interaction, scrolling, painting, text) — or a loose file if it's a genuine singleton |
 | add a catalog component | `pebbles-widgets/src/components/{input,display,layout,navigation}/` |
 | change input handling (focus/keyboard/shortcuts/scroll) | `pebbles-core/src/input/` |
-| change routing | model in `pebbles-core/src/router.rs`, browser bridge in `pebbles-shell/src/web_router.rs`, `RouteView` in `pebbles-widgets/src/components/navigation/routing.rs` |
+| change routing | model + guards/query/title/scroll in `pebbles-core/src/router.rs`, browser bridge in `pebbles-shell/src/web_router.rs`, `RouteView`/`nest`/`outlet`/`link`/`redirect`/`use_match` in `pebbles-widgets/src/components/navigation/routing.rs`; title application in `pebbles-shell/src/app/runner/windows.rs`, mobile Back in `pebbles-widgets/.../mobile_runtime.rs` |
 | change theming / the style system | `pebbles-widgets/src/design/` (theme, style, modifiers, fonts, text direction) |
 | change an overlay layer | `pebbles-widgets/src/services/` (overlay, dialog, sheet, toast, global menu) |
 | change window / native-menu behavior | `pebbles-widgets/src/platform/` |

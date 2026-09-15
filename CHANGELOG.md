@@ -6,6 +6,25 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — full router feature set (SolidJS Router parity, Rust-applicable)
+On top of the existing history + URL-sync + path/query core, the router now has every
+Rust-applicable `@solidjs/router` capability. In `pebbles-core/src/router.rs`:
+**relative navigation** (`./x` / `../x` resolve against the current path; `navigate` /
+`replace` now return `bool`), **query setters** (`set_query` / `remove_query` /
+`update_query`, in place), **guards + redirects + navigation blocking**
+(`add_guard`/`remove_guard` → `NavGuard::{Allow, Redirect, Block}`, consulted on
+navigate/replace and in-memory back/forward), **title per route** (`set_title`/`title`),
+an **`on_route_change`** hook, and **scroll restoration** primitives
+(`save_scroll`/`saved_scroll` per history entry). In the routing widgets
+(`components/navigation/routing.rs`): **nested routes / outlets** (`RouteView::nest` +
+`outlet()`), an active-aware **`link`** (`<A>`), **`redirect`** (`<Navigate>`),
+**`use_match`** (`useMatch`), **typed params** (`RouteParams::get_as::<T>`),
+**`*wildcard`** catch-all segments, and **route transitions** (`RouteView::transition`,
+a path-keyed cross-fade). The shell applies the route title to the main window
+(`app/runner/windows.rs`, winit `set_title` → OS title / `document.title`), and mobile
+hardware **Back** falls through to `router::back()` (`mobile_runtime.rs`). Excluded by
+design: SSR/form `action`/`cache`, `<HashRouter>`/`base`, and lazy route code-splitting.
+
 ### Added — SolidJS-parity state primitives (Rust-applicable set)
 The reactive capabilities Solid has that make sense for a Rust framework, each new,
 tested, and in the prelude. In `pebbles-core` reactivity: **`batch(f)`** (an honest
