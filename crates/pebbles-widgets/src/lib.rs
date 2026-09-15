@@ -86,7 +86,7 @@ pub use widgets::{
     fractionally_sized_box, gap_h, gap_w, gesture_detector, intrinsic_height, intrinsic_width, keyed,
     limited_box, list_view, merge_semantics, opacity, overflow_box, padding, positioned, repaint_boundary,
     row, scroll_view, selection_group, semantics, sized_box, spacer, span, spinner, stack, text, text_rich,
-    text_signal, transform, use_scroll_controller, wrap,
+    text_signal, transform, use_scroll_controller, use_scroll_restoration, wrap,
 };
 pub use widgets::{
     AnimatedAlign, AnimatedCrossFade, AnimatedOpacity, AnimatedPadding, AnimatedPositioned, AnimatedRotation,

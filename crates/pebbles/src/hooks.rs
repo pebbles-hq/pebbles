@@ -89,4 +89,4 @@ pub use pebbles_core::{create_focus, create_focus_scope, create_shortcut, create
 
 // --- measurement & controllers ---------------------------------------------
 pub use pebbles_core::use_bounds;
-pub use pebbles_widgets::{use_carousel_controller, use_scroll_controller};
+pub use pebbles_widgets::{use_carousel_controller, use_scroll_controller, use_scroll_restoration};

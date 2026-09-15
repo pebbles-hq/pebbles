@@ -193,7 +193,7 @@ pub mod prelude {
         focus_scope, fractionally_sized_box, gap_h, gap_w, gesture_detector, intrinsic_height,
         intrinsic_width, keyed, limited_box, list_view, opacity, overflow_box, padding, positioned,
         repaint_boundary, row, scroll_view, sized_box, spacer, span, spinner, stack, text, text_rich,
-        text_signal, transform, use_carousel_controller, use_scroll_controller, wrap,
+        text_signal, transform, use_carousel_controller, use_scroll_controller, use_scroll_restoration, wrap,
     };
 
     // the shadcn-style component catalog

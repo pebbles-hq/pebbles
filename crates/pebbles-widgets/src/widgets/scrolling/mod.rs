@@ -3,5 +3,5 @@
 mod list;
 mod scroll;
 
-pub use list::{GridView, ListView, ScrollController, use_scroll_controller};
+pub use list::{GridView, ListView, ScrollController, use_scroll_controller, use_scroll_restoration};
 pub use scroll::{ScrollExt, SingleChildScrollView, list_view, scroll_view};

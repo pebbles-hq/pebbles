@@ -43,7 +43,9 @@ use std::rc::Rc;
 
 use pebbles_core::router;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Component, component, component_props, consume_context, on_mount, provide_context};
+use pebbles_core::{
+    Component, FocusNode, component, component_props, consume_context, on_mount, provide_context,
+};
 
 /// A navigation history — a stack of route names. Keep one in a signal; it is
 /// `Clone` + `Default` and mutated through `signal.update(..)`.
@@ -480,6 +482,21 @@ pub fn redirect(to: impl Into<String>) -> Component {
 /// ```
 pub fn use_match(pattern: impl AsRef<str>) -> bool {
     match_path(&compile(pattern.as_ref()), &router::path()).is_some()
+}
+
+/// Move focus to `node` whenever the route changes — the accessibility pattern for
+/// in-app navigation, so a screen reader announces the newly-shown view. Attach `node`
+/// (from `create_focus()`) to the routed content container and call this once at the
+/// top of the component that owns the router view.
+///
+/// ```ignore
+/// let content_focus = create_focus();
+/// use_route_focus(&content_focus);
+/// // …attach content_focus to the main content region…
+/// ```
+pub fn use_route_focus(node: &FocusNode) {
+    let node = *node;
+    router::on_route_change(move |_| node.request_focus());
 }
 
 #[cfg(test)]

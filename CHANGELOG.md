@@ -14,8 +14,9 @@ Rust-applicable `@solidjs/router` capability. In `pebbles-core/src/router.rs`:
 `update_query`, in place), **guards + redirects + navigation blocking**
 (`add_guard`/`remove_guard` → `NavGuard::{Allow, Redirect, Block}`, consulted on
 navigate/replace and in-memory back/forward), **title per route** (`set_title`/`title`),
-an **`on_route_change`** hook, and **scroll restoration** primitives
-(`save_scroll`/`saved_scroll` per history entry). In the routing widgets
+an **`on_route_change`** hook, and **scroll restoration** (`save_scroll`/`saved_scroll`
+per history entry, wired by `use_scroll_restoration`) plus **focus-on-navigation**
+(`use_route_focus`). In the routing widgets
 (`components/navigation/routing.rs`): **nested routes / outlets** (`RouteView::nest` +
 `outlet()`), an active-aware **`link`** (`<A>`), **`redirect`** (`<Navigate>`),
 **`use_match`** (`useMatch`), **typed params** (`RouteParams::get_as::<T>`),

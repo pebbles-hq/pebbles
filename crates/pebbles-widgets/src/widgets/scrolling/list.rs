@@ -18,7 +18,10 @@ use crate::widgets::{Positioned, stack};
 use pebbles_core::reactive::request_frame;
 use pebbles_core::scroll::{self, ScrollTo};
 use pebbles_core::widget::{AnyWidget, IntoWidget, RenderWidget};
-use pebbles_core::{Signal, animate_to, component_props, create_cleanup, create_signal, owner_id};
+use pebbles_core::{
+    Signal, animate_to, component_props, create_cleanup, create_effect, create_signal, on_mount, owner_id,
+    router,
+};
 
 type SepBuilder = Rc<dyn Fn(usize) -> AnyWidget>;
 type SpanFn = Rc<dyn Fn(usize) -> (u32, u32)>;
@@ -197,6 +200,28 @@ pub struct ScrollController {
 pub fn use_scroll_controller() -> ScrollController {
     let offset = create_signal(0.0_f64);
     ScrollController { id: offset.raw_id(), offset }
+}
+
+/// Wire a scroll controller to the router's **scroll restoration**: restore the saved
+/// offset when this page mounts (so Back/Forward returns to where the user was), and
+/// save the offset as the page scrolls. Call it at the top of a page component next to
+/// [`use_scroll_controller`], on the page's **main content** scroll — not incidental
+/// scrolls like a dropdown or a small inner pane, which shouldn't track the route.
+///
+/// ```ignore
+/// let content = use_scroll_controller();
+/// use_scroll_restoration(&content);
+/// scroll_view(page_body()).controller(content.handle())
+/// ```
+pub fn use_scroll_restoration(controller: &ScrollController) {
+    let offset = controller.offset;
+    // Restore this route's saved offset on mount (fresh page, or a Back/Forward remount).
+    on_mount(move || offset.set(router::saved_scroll()));
+    // Remember the offset (keyed by the current history entry) as it scrolls.
+    create_effect(move || {
+        let o = offset.get();
+        router::save_scroll(o);
+    });
 }
 
 impl ScrollController {
