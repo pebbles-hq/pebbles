@@ -108,8 +108,13 @@ SolidJS semantics in `pebbles-core/src/reactive/`:
   selector — a write to an untouched field never wakes it.
 - SolidJS-parity helpers built on the above: `batch` (writes already coalesce at the
   frame flush — this expresses intent), `on_mount`, `create_selector` (per-key memo
-  equality-cut), `create_unique_id`; and the `control/` widgets `for_each`/`suspense`/
-  `error_boundary`. `<Show>`/`<Switch>` are Rust's `if`/`match`.
+  equality-cut), `create_unique_id`, `create_root` (a detached ownership scope that
+  disposes everything made inside it); and the `control/` widgets `for_each`/`suspense`/
+  `error_boundary`. `<Show>`/`<Switch>` are Rust's `if`/`match`. `error_boundary` is
+  render-time: each component render in the reconciler (`element/build.rs`) runs under a
+  panic guard that routes a caught panic to the nearest `ErrorBoundaryHandle` in the
+  render-time context, so the boundary shows its fallback instead of the app crashing
+  (no boundary in scope → the panic propagates as before).
 - Reactive-runtime work is measurable via `pebbles-core::reactive_stats`
   (`PEBBLES_REACTIVE_STATS=1`): writes, notifies, memo recomputes, effect runs,
   and hot-path allocations.

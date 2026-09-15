@@ -20,6 +20,8 @@
 //! * [`create_root_signal`](pebbles_core::create_root_signal) — app-scope state, owned by the root rather than the
 //!   calling component (how the theme, overlay host and focus registries
 //!   initialize lazily without binding to whoever touched them first).
+//! * [`create_root`](pebbles_core::create_root) — a disposable ownership scope for a whole reactive graph
+//!   that lives outside a component (its signals/effects/cleanups free together).
 //!
 //! ### Derived values
 //! * [`create_memo`](pebbles_core::create_memo) — a cached computation that recomputes only when a
@@ -66,7 +68,7 @@
 //! * [`use_carousel_controller`](pebbles_widgets::use_carousel_controller) — drive/observe a carousel.
 
 // --- state -----------------------------------------------------------------
-pub use pebbles_core::{create_root_signal, create_signal, create_store};
+pub use pebbles_core::{RootDisposer, create_root, create_root_signal, create_signal, create_store};
 
 // --- derived ---------------------------------------------------------------
 pub use pebbles_core::{create_memo, create_memo_with};

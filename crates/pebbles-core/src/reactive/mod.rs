@@ -21,12 +21,17 @@ pub mod stats;
 // SolidJS-parity primitives built on the core below (each its own file so the core
 // runtime stays one cohesive machine).
 mod batch;
+mod error_scope;
 mod ids;
 mod lifecycle;
+mod root;
 mod selector;
 pub use batch::batch;
+pub use error_scope::ErrorBoundaryHandle;
+pub(crate) use error_scope::trip_nearest_error_boundary;
 pub use ids::create_unique_id;
 pub use lifecycle::on_mount;
+pub use root::{RootDisposer, create_root};
 pub use selector::create_selector;
 
 use std::any::Any;
@@ -81,6 +86,11 @@ new_key_type! {
     /// [`SignalSlot`] (so it reuses the read API + subscriber sets); the node
     /// carries the compute closure, its state, and the sources it read.
     struct MemoId;
+}
+new_key_type! {
+    /// A reactive ownership scope created by [`create_root`] — collects the signals,
+    /// effects, and cleanups made inside it so they dispose together.
+    struct RootId;
 }
 
 /// The three-color state of a lazy memo (Reactively/Leptos/Svelte model):
@@ -171,6 +181,16 @@ struct EffectSlot {
     func: Rc<dyn Fn()>,
 }
 
+/// The reactive nodes collected while a [`create_root`] scope is active — disposed
+/// together by its [`RootDisposer`]. Disposing a scope's signals also tears down any
+/// memos they back (see [`dispose_signal`]).
+#[derive(Default)]
+struct RootScope {
+    signals: Vec<SignalId>,
+    effects: Vec<EffectId>,
+    cleanups: Vec<Box<dyn FnOnce()>>,
+}
+
 #[derive(Default)]
 struct Runtime {
     signals: SlotMap<SignalId, SignalSlot>,
@@ -259,6 +279,12 @@ struct Runtime {
     scratch_effects: Vec<EffectId>,
     /// Set when a write happened; the shell polls this to request a frame.
     frame_requested: bool,
+    /// Reactive-ownership scopes ([`create_root`]). A signal/effect/cleanup created
+    /// while a scope id is on `active_roots` registers into it, so
+    /// [`RootDisposer::dispose`] frees the whole graph at once. Scopes persist in
+    /// `roots` until disposed.
+    roots: SlotMap<RootId, RootScope>,
+    active_roots: Vec<RootId>,
 }
 
 thread_local! {
@@ -328,9 +354,17 @@ pub fn create_signal<T: 'static + Clone>(value: T) -> Signal<T> {
             Signal { id, _marker: PhantomData }
         } else {
             let id = rt.signals.insert(SignalSlot::new(Box::new(value)));
+            register_in_active_root_signal(rt, id);
             Signal { id, _marker: PhantomData }
         }
     })
+}
+
+/// If a [`create_root`] scope is collecting, register `id` so the scope disposes it.
+fn register_in_active_root_signal(rt: &mut Runtime, id: SignalId) {
+    if let Some(&rid) = rt.active_roots.last() {
+        rt.roots[rid].signals.push(id);
+    }
 }
 
 /// Create an **app-owned** signal even when called from inside a component render.
@@ -344,6 +378,9 @@ pub fn create_signal<T: 'static + Clone>(value: T) -> Signal<T> {
 pub fn create_root_signal<T: 'static + Clone>(value: T) -> Signal<T> {
     with_rt(|rt| {
         let id = rt.signals.insert(SignalSlot::new(Box::new(value)));
+        // Inside a `create_root` scope this signal is owned by that scope (disposed
+        // with it); outside one it stays app-global, as before.
+        register_in_active_root_signal(rt, id);
         Signal { id, _marker: PhantomData }
     })
 }
@@ -636,8 +673,15 @@ fn mark_memos(rt: &mut Runtime, work: &mut Vec<(MemoId, NodeState)>) {
 pub fn create_effect(f: impl Fn() + 'static) {
     let owner = with_rt(|rt| rt.owner);
     let Some(key) = owner else {
-        // App scope (e.g. `Channel::on`): untracked, lives for the app.
-        let id = with_rt(|rt| rt.effects.insert(EffectSlot { func: Rc::new(f) }));
+        // App scope (e.g. `Channel::on`): untracked, lives for the app — unless a
+        // `create_root` scope is collecting, which then owns/disposes it.
+        let id = with_rt(|rt| {
+            let id = rt.effects.insert(EffectSlot { func: Rc::new(f) });
+            if let Some(&rid) = rt.active_roots.last() {
+                rt.roots[rid].effects.push(id);
+            }
+            id
+        });
         run_effect(id);
         return;
     };
@@ -1128,6 +1172,9 @@ pub fn create_cleanup(f: impl FnOnce() + 'static) {
     with_rt(|rt| {
         if let Some(owner) = rt.owner {
             rt.cleanups.entry(owner).or_default().push(Box::new(f));
+        } else if let Some(&rid) = rt.active_roots.last() {
+            // Inside a `create_root` scope (owner cleared): run on the scope's dispose.
+            rt.roots[rid].cleanups.push(Box::new(f));
         }
     });
 }

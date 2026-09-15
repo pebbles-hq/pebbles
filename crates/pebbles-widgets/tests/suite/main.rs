@@ -20,6 +20,7 @@ mod context_scope;
 mod date_field_range;
 mod default_text_style;
 mod engine;
+mod error_boundary;
 mod field_lazy;
 mod file_explorer;
 mod fonts;

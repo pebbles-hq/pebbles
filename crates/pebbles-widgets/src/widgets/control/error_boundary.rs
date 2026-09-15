@@ -1,73 +1,72 @@
-//! `error_boundary` — SolidJS `<ErrorBoundary>` (build-time).
+//! `error_boundary` — SolidJS `<ErrorBoundary>`.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::rc::Rc;
 
 use pebbles_core::widget::{AnyWidget, IntoWidget};
+use pebbles_core::{Component, ErrorBoundaryHandle, component_props, create_signal, provide_context};
 
-/// Build `content`; if constructing it **panics**, show `fallback` instead (SolidJS
-/// `<ErrorBoundary>`).
+struct ErrorBoundaryProps {
+    content: Rc<dyn Fn() -> AnyWidget>,
+    fallback: Rc<dyn Fn() -> AnyWidget>,
+}
+
+fn render(p: &ErrorBoundaryProps) -> AnyWidget {
+    // One "errored" signal per boundary instance (a hook — persists across the
+    // boundary's own re-renders). Provide a handle into context so the reconciler can
+    // route a descendant render panic to THIS boundary; a fallback can `reset()` it.
+    let errored = create_signal(false);
+    let handle = ErrorBoundaryHandle::wrap(errored);
+    provide_context(handle);
+
+    if handle.errored() {
+        (p.fallback)()
+    } else {
+        // Build-time guard: a panic while constructing the content subtree flips the
+        // boundary and shows the fallback this frame too.
+        match catch_unwind(AssertUnwindSafe(|| (p.content)())) {
+            Ok(widget) => widget,
+            Err(_) => {
+                errored.set(true);
+                (p.fallback)()
+            }
+        }
+    }
+}
+
+/// Contain errors in a subtree and show `fallback` instead of crashing the app
+/// (SolidJS `<ErrorBoundary>`).
 ///
 /// ```ignore
 /// error_boundary(|| risky_view(data), || text("Something went wrong"))
 /// ```
 ///
-/// **Scope.** This catches panics raised while *building* the subtree — e.g. an
-/// `unwrap` on malformed data while composing the view. It runs in the enclosing
-/// render, so a caught panic leaves no dangling reactive scope. Panics inside a nested
-/// component's *own later re-render* are that component's separate reconcile pass and
-/// are not caught here; a full render-time boundary needs reconciler integration
-/// (future work). The panic is still reported through the process panic hook.
-pub fn error_boundary<C, F, W1, W2>(content: C, fallback: F) -> AnyWidget
+/// Catches **both** kinds of failure:
+/// - a panic while *building* the content subtree (e.g. an `unwrap` on bad data), and
+/// - a panic inside a *descendant component's render* during reconcile — the
+///   reconciler routes it to the nearest boundary, which re-renders to its fallback.
+///
+/// The boundary stays in its fallback state until reset. A retry affordance can clear
+/// it by reading the handle from context and calling
+/// [`reset`](pebbles_core::ErrorBoundaryHandle::reset):
+///
+/// ```ignore
+/// if let Some(b) = consume_context::<ErrorBoundaryHandle>() {
+///     button("Retry").on_pressed(move || b.reset());
+/// }
+/// ```
+///
+/// (Under a `panic = "abort"` build there is nothing to catch — the boundary is inert,
+/// as with any `catch_unwind`.)
+pub fn error_boundary<Wc, Wf>(
+    content: impl Fn() -> Wc + 'static,
+    fallback: impl Fn() -> Wf + 'static,
+) -> Component
 where
-    C: FnOnce() -> W1,
-    F: FnOnce() -> W2,
-    W1: IntoWidget,
-    W2: IntoWidget,
+    Wc: IntoWidget,
+    Wf: IntoWidget,
 {
-    match catch_unwind(AssertUnwindSafe(|| content().into_widget())) {
-        Ok(widget) => widget,
-        Err(_) => fallback().into_widget(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::cell::Cell;
-    use std::rc::Rc;
-
-    use super::error_boundary;
-    use crate::widgets::{gap_h, text};
-    use pebbles_core::widget::AnyWidget;
-
-    #[test]
-    fn happy_path_returns_content() {
-        let used_fallback = Rc::new(Cell::new(false));
-        let f = used_fallback.clone();
-        let _ = error_boundary(
-            || text("ok"),
-            move || {
-                f.set(true);
-                gap_h(0.0)
-            },
-        );
-        assert!(!used_fallback.get(), "content built fine — fallback not used");
-    }
-
-    #[test]
-    fn panicking_content_falls_back() {
-        fn boom() -> AnyWidget {
-            panic!("boom")
-        }
-        let used_fallback = Rc::new(Cell::new(false));
-        let f = used_fallback.clone();
-        // Silence the panic hook for the intentional panic below.
-        let prev = std::panic::take_hook();
-        std::panic::set_hook(Box::new(|_| {}));
-        let _ = error_boundary(boom, move || {
-            f.set(true);
-            gap_h(0.0)
-        });
-        std::panic::set_hook(prev);
-        assert!(used_fallback.get(), "a panic during build shows the fallback");
-    }
+    let content: Rc<dyn Fn() -> AnyWidget> = Rc::new(move || content().into_widget());
+    let fallback: Rc<dyn Fn() -> AnyWidget> = Rc::new(move || fallback().into_widget());
+    component_props(render, ErrorBoundaryProps { content, fallback })
 }

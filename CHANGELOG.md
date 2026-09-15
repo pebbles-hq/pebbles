@@ -17,11 +17,18 @@ across re-renders). In `pebbles-widgets` a new `control/` group adds SolidJS-sty
 control flow: **`for_each(items, key, view)`** (`<For>` — keyed children preserving
 element state across list changes), **`suspense(loading, fallback, content)`**
 (`<Suspense>` — explicit-predicate form that coordinates any number of `Resource`s),
-and **`error_boundary(content, fallback)`** (`<ErrorBoundary>` — catches panics while
-building the subtree). `<Show>`/`<Switch>` are Rust's own `if`/`match`; `createMutable`
-/ `reconcile` (fine-grained proxy-store idioms) don't apply to the coarse `Store`. A
-general `createRoot` scope and a full render-time error boundary are deliberately
-deferred as deeper reconciler/runtime work.
+and **`error_boundary(content, fallback)`** (`<ErrorBoundary>`). `<Show>`/`<Switch>`
+are Rust's own `if`/`match`; `createMutable` / `reconcile` (fine-grained proxy-store
+idioms) don't apply to the coarse `Store`.
+
+Completing the set, two that needed deeper work: **`create_root(|dispose| …)`**
+(`createRoot` — a detached ownership scope that collects every signal/memo/effect/
+cleanup made inside it and frees them together via `RootDisposer`), and a
+**render-time `error_boundary`** — the reconciler now runs every component render under
+a panic guard that routes a caught panic to the nearest `ErrorBoundaryHandle` in the
+render-time context (the boundary re-renders to its fallback; `reset` retries). With no
+boundary in scope a panic propagates exactly as before. This makes `error_boundary`
+catch both build-time and descendant-render panics.
 
 ### Changed — module organization (no public-API change)
 `pebbles-widgets/src/widgets/` (35 flat files) is now grouped by concern —

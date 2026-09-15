@@ -26,12 +26,14 @@ impl Ui {
                 // (theme overrides, focus scopes) must stay visible to the subtree.
                 let child = {
                     let guard = crate::reactive::begin_component(id);
-                    let out = render();
-                    let child = self.inflate(Some(id), out);
+                    let out = guarded_render(&render);
+                    let child = out.map(|w| self.inflate(Some(id), w));
                     crate::reactive::end_component(guard);
                     child
                 };
-                self.elements[id].children.push(child);
+                if let Some(child) = child {
+                    self.elements[id].children.push(child);
+                }
                 id
             }
             Category::Render => {
@@ -128,8 +130,8 @@ impl Ui {
                 // render-time contexts this component provides cover its subtree.
                 let new_child = {
                     let guard = crate::reactive::begin_component(id);
-                    let out = render();
-                    let child = self.update_child(id, old_child, Some(out));
+                    let out = guarded_render(&render);
+                    let child = self.update_child(id, old_child, out);
                     crate::reactive::end_component(guard);
                     child
                 };
@@ -238,8 +240,8 @@ impl Ui {
         // subtree — same discipline as `update`/`inflate`).
         let new_child = {
             let guard = crate::reactive::begin_component(id);
-            let out = render();
-            let child = self.update_child(id, old_child, Some(out));
+            let out = guarded_render(&render);
+            let child = self.update_child(id, old_child, out);
             crate::reactive::end_component(guard);
             child
         };
@@ -342,6 +344,25 @@ impl Ui {
         }
         for child in self.elements[el].children.clone() {
             self.apply_parent_data(child);
+        }
+    }
+}
+
+/// Run a component's `render` under a panic boundary. On a caught panic, route it to
+/// the nearest enclosing `error_boundary` (which then re-renders to its fallback) and
+/// produce NO child this frame; with no boundary in scope, re-raise it — so a panic
+/// with no boundary behaves exactly as before. The panic is still reported through the
+/// process panic hook. (Under `panic = "abort"` there is nothing to catch; the boundary
+/// is a no-op, as with any `catch_unwind`.)
+fn guarded_render(render: &Rc<dyn Fn() -> AnyWidget>) -> Option<AnyWidget> {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render())) {
+        Ok(out) => Some(out),
+        Err(payload) => {
+            if crate::reactive::trip_nearest_error_boundary() {
+                None
+            } else {
+                std::panic::resume_unwind(payload);
+            }
         }
     }
 }
