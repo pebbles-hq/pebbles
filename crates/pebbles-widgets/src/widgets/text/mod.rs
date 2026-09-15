@@ -2,6 +2,7 @@
 
 mod default_text_style;
 mod editable;
+#[allow(clippy::module_inception)] // the group's core text widgets (Text, RichText)
 mod text;
 
 pub use default_text_style::{DefaultTextStyle, animated_default_text_style, default_text_style};

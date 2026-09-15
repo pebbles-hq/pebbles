@@ -6,6 +6,23 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — SolidJS-parity state primitives (Rust-applicable set)
+The reactive capabilities Solid has that make sense for a Rust framework, each new,
+tested, and in the prelude. In `pebbles-core` reactivity: **`batch(f)`** (an honest
+scope — writes already coalesce at the frame flush, and a test locks that invariant),
+**`on_mount(f)`** (one-shot mount setup), **`create_selector(source)`**
+(`selector(key) -> bool` via a per-key memo equality-cut, so changing the selection
+only re-renders the losing and gaining rows), and **`create_unique_id()`** (stable
+across re-renders). In `pebbles-widgets` a new `control/` group adds SolidJS-style
+control flow: **`for_each(items, key, view)`** (`<For>` — keyed children preserving
+element state across list changes), **`suspense(loading, fallback, content)`**
+(`<Suspense>` — explicit-predicate form that coordinates any number of `Resource`s),
+and **`error_boundary(content, fallback)`** (`<ErrorBoundary>` — catches panics while
+building the subtree). `<Show>`/`<Switch>` are Rust's own `if`/`match`; `createMutable`
+/ `reconcile` (fine-grained proxy-store idioms) don't apply to the coarse `Store`. A
+general `createRoot` scope and a full render-time error boundary are deliberately
+deferred as deeper reconciler/runtime work.
+
 ### Changed — module organization (no public-API change)
 `pebbles-widgets/src/widgets/` (35 flat files) is now grouped by concern —
 `layout/`, `animation/`, `interaction/`, `scrolling/`, `painting/`, `text/` — with

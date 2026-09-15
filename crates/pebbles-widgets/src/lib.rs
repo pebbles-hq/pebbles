@@ -99,6 +99,8 @@ pub use widgets::{
 };
 // async builder (Flutter's StreamBuilder, over the reactive Channel)
 pub use widgets::{StreamBuilder, stream_builder};
+// control flow (SolidJS-style For / Suspense / ErrorBoundary)
+pub use widgets::{error_boundary, for_each, suspense};
 // drag & drop / pointer control (Flutter's Draggable / DragTarget / Ignore/AbsorbPointer
 // / ReorderableListView / InteractiveViewer)
 pub use widgets::{

@@ -13,6 +13,7 @@
 
 // Concern groups.
 mod animation;
+mod control;
 mod interaction;
 mod layout;
 mod painting;
@@ -30,6 +31,7 @@ mod stream_builder;
 mod view;
 
 pub use animation::*;
+pub use control::*;
 pub use interaction::*;
 pub use layout::*;
 pub use painting::*;

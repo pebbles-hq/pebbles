@@ -60,10 +60,11 @@ Concretely, the two large crates:
 - **`pebbles-widgets/src/widgets/`** (Flutter-style primitives) is grouped:
   `layout/` (boxes, flex, stack, sizing), `animation/` (implicit `Animated*` +
   explicit `*Transition`), `interaction/` (gesture, pointer, drag-and-drop, focus),
-  `scrolling/`, `painting/` (canvas, clip, effects), `text/`. Cross-cutting
-  singletons (`view`, `media`, `semantics`, `keyed`, `probe`, `spinner`,
-  `stream_builder`, `mobile_runtime`) stay loose. The higher-level catalog is
-  separately under `components/{input,display,layout,navigation}/`.
+  `scrolling/`, `painting/` (canvas, clip, effects), `text/`, `control/` (SolidJS-style
+  `for_each`/`suspense`/`error_boundary`). Cross-cutting singletons (`view`, `media`,
+  `semantics`, `keyed`, `probe`, `spinner`, `stream_builder`, `mobile_runtime`) stay
+  loose. The higher-level catalog is separately under
+  `components/{input,display,layout,navigation}/`.
 - **`pebbles-core/src/`** keeps its public vocabulary at the root (`widget`,
   `element`, `component`, `context`, `reactive`, `router`, `animation`), with
   `input/` grouping focus/keyboard/key/shortcuts/scroll (re-exported to the root so
@@ -105,6 +106,10 @@ SolidJS semantics in `pebbles-core/src/reactive/`:
 - `on(deps, f)` / `on_defer(deps, f)` are explicit-dependency effects (track
   `deps`, run the body untracked); `Store::select_memo` is a field-scoped lazy
   selector — a write to an untouched field never wakes it.
+- SolidJS-parity helpers built on the above: `batch` (writes already coalesce at the
+  frame flush — this expresses intent), `on_mount`, `create_selector` (per-key memo
+  equality-cut), `create_unique_id`; and the `control/` widgets `for_each`/`suspense`/
+  `error_boundary`. `<Show>`/`<Switch>` are Rust's `if`/`match`.
 - Reactive-runtime work is measurable via `pebbles-core::reactive_stats`
   (`PEBBLES_REACTIVE_STATS=1`): writes, notifies, memo recomputes, effect runs,
   and hot-path allocations.

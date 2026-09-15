@@ -107,6 +107,9 @@ pub mod prelude {
     // async builder (Flutter's StreamBuilder, over the reactive Channel)
     pub use pebbles_widgets::{StreamBuilder, stream_builder};
 
+    // control flow (SolidJS-style For / Suspense / ErrorBoundary)
+    pub use pebbles_widgets::{error_boundary, for_each, suspense};
+
     // the global overlay layer (dropdowns / menus / popovers) + the passive layer
     // (tooltips / hover cards) + toasts
     pub use pebbles_widgets::{

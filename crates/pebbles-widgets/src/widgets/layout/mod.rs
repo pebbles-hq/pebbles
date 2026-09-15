@@ -4,6 +4,7 @@ mod boxes;
 mod container;
 mod flex;
 mod flex_children;
+#[allow(clippy::module_inception)] // the group's core layout widgets (AspectRatio, Wrap)
 mod layout;
 mod layout_extra;
 mod sizing;
