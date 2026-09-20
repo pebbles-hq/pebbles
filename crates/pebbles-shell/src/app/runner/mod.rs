@@ -440,16 +440,21 @@ impl Runner {
         #[cfg(target_family = "wasm")]
         {
             self.gpu_pending = false;
-            // Install the opt-in hidden-input IME bridge now that the loop is live.
-            if self.web_ime
-                && let Some(proxy) = self.proxy.clone()
-            {
-                crate::web_ime::enable(proxy);
-            }
-            // Bridge the router to the browser URL (history + Back/Forward + deep
-            // links). Harmless if the app never navigates.
-            if let Some(proxy) = self.proxy.clone() {
-                crate::web_router::enable(proxy);
+            // One-time browser bridges — install only on the FIRST gpu-ready, not on every
+            // resurface / device-loss recovery (a second `web_router::enable` would register a
+            // duplicate `popstate` listener and re-seed history to a single entry).
+            if !self.mounted {
+                // The opt-in hidden-input IME bridge.
+                if self.web_ime
+                    && let Some(proxy) = self.proxy.clone()
+                {
+                    crate::web_ime::enable(proxy);
+                }
+                // The router ↔ browser-URL bridge (history + Back/Forward + deep links).
+                // Harmless if the app never navigates.
+                if let Some(proxy) = self.proxy.clone() {
+                    crate::web_router::enable(proxy);
+                }
             }
         }
         // Ensure a renderer exists for this surface's device.

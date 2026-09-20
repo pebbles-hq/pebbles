@@ -134,6 +134,9 @@ impl Renderer {
     /// dependence on the windowed surface. Both the windowed [`Self::render_to_texture`] and the
     /// headless `capture` path funnel through here, so the renderer-once construction, the flush,
     /// the base-color clear and the `draw_image` texture binding are all defined exactly once.
+    // A GPU render entry legitimately takes device+queue+scene+target+color+size+format; a
+    // params struct here would only obscure a flat, single-call-site signature.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn render_offscreen(
         &mut self,
         device: &wgpu::Device,

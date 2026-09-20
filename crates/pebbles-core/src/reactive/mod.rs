@@ -317,6 +317,14 @@ impl<T> PartialEq for Signal<T> {
 }
 impl<T> Eq for Signal<T> {}
 
+// Id-based `Debug` (the value isn't read here — that would need the runtime borrow). Lets a
+// handle be printed in app logs without reaching for `raw_id()`.
+impl<T> std::fmt::Debug for Signal<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Signal({:?})", self.id)
+    }
+}
+
 /// Create a reactive value. Inside a component it is **local** state (persisted
 /// across re-renders); at app scope it is **global** state shared by capture.
 pub fn create_signal<T: 'static + Clone>(value: T) -> Signal<T> {
@@ -362,6 +370,67 @@ pub fn create_signal<T: 'static + Clone>(value: T) -> Signal<T> {
 fn register_in_active_root_signal(rt: &mut Runtime, id: SignalId) {
     if let Some(&rid) = rt.active_roots.last() {
         rt.roots[rid].signals.push(id);
+    }
+}
+
+/// Like [`create_signal`], but the initial value is produced **lazily**: `init` runs only
+/// when a fresh slot is actually allocated, NOT on the re-renders that reuse the
+/// position-stable slot. This is what lets `create_memo`/`create_unique_id` honor their
+/// laziness contract — the (possibly expensive) initial expression is no longer evaluated
+/// and discarded on every render. `init` runs OUTSIDE the runtime borrow, so it may read
+/// other signals (e.g. via `untrack`).
+pub fn create_signal_with<T: 'static + Clone>(init: impl FnOnce() -> T) -> Signal<T> {
+    // Reuse path: if a slot already exists at this hook position, return it WITHOUT running
+    // `init`. Otherwise reserve the position and fall through to allocate below.
+    enum Decision {
+        Reuse(SignalId),
+        FreshLocal(CompKey),
+        FreshGlobal,
+    }
+    let decision = with_rt(|rt| {
+        if let Some(owner) = rt.owner {
+            let index = rt.hook_cursor;
+            rt.hook_cursor += 1;
+            if let Some(existing) = rt.hooks.get(&owner).and_then(|v| v.get(index)).copied() {
+                #[cfg(debug_assertions)]
+                {
+                    let stored = rt.hook_types.get(&owner).and_then(|v| v.get(index)).copied();
+                    debug_assert_eq!(
+                        stored,
+                        Some(std::any::TypeId::of::<T>()),
+                        "Pebbles hooks rule: a hook at position {index} of component {owner:?} \
+                         changed type between renders. Never create signals/memos conditionally \
+                         or in a variable order — create them at the top of the component."
+                    );
+                }
+                return Decision::Reuse(existing);
+            }
+            Decision::FreshLocal(owner)
+        } else {
+            Decision::FreshGlobal
+        }
+    });
+    match decision {
+        Decision::Reuse(id) => Signal { id, _marker: PhantomData },
+        // Compute the initial value outside the borrow (it may itself touch the runtime).
+        Decision::FreshLocal(owner) => {
+            let value = init();
+            with_rt(|rt| {
+                let id = rt.signals.insert(SignalSlot::new(Box::new(value)));
+                rt.hooks.entry(owner).or_default().push(id);
+                #[cfg(debug_assertions)]
+                rt.hook_types.entry(owner).or_default().push(std::any::TypeId::of::<T>());
+                Signal { id, _marker: PhantomData }
+            })
+        }
+        Decision::FreshGlobal => {
+            let value = init();
+            with_rt(|rt| {
+                let id = rt.signals.insert(SignalSlot::new(Box::new(value)));
+                register_in_active_root_signal(rt, id);
+                Signal { id, _marker: PhantomData }
+            })
+        }
     }
 }
 
@@ -412,6 +481,11 @@ fn dispose_signal(rt: &mut Runtime, sid: SignalId) {
 
 impl<T: 'static + Clone> Signal<T> {
     /// Read the value, subscribing the current component/effect/memo to changes.
+    ///
+    /// # Panics
+    /// Panics if the signal has been disposed (its owning component unmounted) — this
+    /// catches a callback that outlived its component. Use [`try_peek`](Self::try_peek) in
+    /// timers/closures that can fire after unmount.
     pub fn get(&self) -> T {
         // If this signal is a memo's output, PULL it first (lazy evaluation) —
         // done outside the read borrow, since a recompute runs user code.
@@ -452,6 +526,10 @@ impl<T: 'static + Clone> Signal<T> {
 
     /// Read without subscribing (but still pulls a stale memo so the value is
     /// current).
+    ///
+    /// # Panics
+    /// Panics if the signal has been disposed — same contract as [`get`](Self::get). Use
+    /// [`try_peek`](Self::try_peek) where the signal may already be gone.
     pub fn peek(&self) -> T {
         self.pull_if_memo();
         with_rt(|rt| {
@@ -774,11 +852,10 @@ pub fn create_memo_with<T: 'static + Clone>(
     equals: impl Fn(&T, &T) -> bool + 'static,
 ) -> Signal<T> {
     // The output value lives in an ordinary signal (reusing the read API + the
-    // subscriber sets). The initial value is computed UNTRACKED; the tracked
-    // recompute below wires the sources. Position-stable inside a component: the
-    // output signal persists by hook order, and the memo node is created only on
-    // the first render (when the signal isn't yet linked to a memo).
-    let signal = create_signal(untrack(&f));
+    // subscriber sets). The initial value is computed UNTRACKED and **lazily** — only on
+    // the first render (a re-render reuses the position-stable slot and does NOT re-run `f`,
+    // which is the whole point of a memo). The tracked recompute below wires the sources.
+    let signal = create_signal_with(|| untrack(&f));
     let already_linked = with_rt(|rt| rt.signals[signal.id].memo.is_some());
     if already_linked {
         return signal; // re-render: the memo node already exists
@@ -970,7 +1047,19 @@ fn recompute_memo(mid: MemoId) {
 /// Undemanded memos are never queued, so they never recompute here — that is the
 /// lazy win. Loops because waking effects can, in turn, dirty more demanded memos.
 fn settle_memos() {
+    #[cfg(debug_assertions)]
+    let mut rounds = 0u32;
     loop {
+        // Debug-only runaway guard: a memo that keeps re-dirtying itself (e.g. a write inside
+        // a recompute) would spin forever and silently hang the frame. Fail loudly in debug.
+        #[cfg(debug_assertions)]
+        {
+            rounds += 1;
+            assert!(
+                rounds < 1000,
+                "reactive: memo settle did not converge in 1000 rounds — a memo/effect is likely writing a dependency it reads (cycle)"
+            );
+        }
         let pending = with_rt(|rt| {
             rt.pending_memos_set.clear();
             std::mem::take(&mut rt.pending_memos)
@@ -1329,7 +1418,19 @@ pub(crate) fn take_pending_components(window: u32) -> Vec<ElementId> {
 /// the scheduled components (which then read already-settled memos). Named
 /// `flush_effects` for continuity with the shell's call site.
 pub(crate) fn flush_effects() {
+    #[cfg(debug_assertions)]
+    let mut rounds = 0u32;
     loop {
+        // Debug-only runaway guard: an effect that writes its own dependency would re-queue
+        // itself forever and livelock the frame. Fail loudly in debug instead of hanging.
+        #[cfg(debug_assertions)]
+        {
+            rounds += 1;
+            assert!(
+                rounds < 1000,
+                "reactive: effect flush did not converge in 1000 rounds — an effect is likely writing a signal it depends on (cycle)"
+            );
+        }
         // Settle demanded memos first, so the equality cut has already decided which
         // components/effects to wake before we run/render anything.
         settle_memos();

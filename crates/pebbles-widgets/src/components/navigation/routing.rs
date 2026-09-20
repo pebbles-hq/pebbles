@@ -437,7 +437,10 @@ struct LinkProps {
 }
 
 fn link_render(p: &LinkProps) -> AnyWidget {
-    let active = router::path() == p.to; // reactive: re-styles on navigation
+    // Normalize `to` the same way the router normalizes the live path (leading `/`, no
+    // trailing `/`, query stripped) — otherwise `link("inbox")`, `link("/inbox/")` or a `to`
+    // with a `?query` would never render active. Reactive: re-styles on navigation.
+    let active = router::Location::parse(&p.to).path() == router::path();
     let child = (p.builder)(active);
     let to = p.to.clone();
     gesture_detector(child)

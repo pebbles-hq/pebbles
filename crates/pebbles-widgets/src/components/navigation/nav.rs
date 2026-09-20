@@ -227,14 +227,16 @@ impl Pagination {
         self.on_page = Some(Rc::new(f));
         self
     }
-    /// Legacy per-button callbacks (used only when [`on_page`](Pagination::on_page)
-    /// is unset). Kept for compatibility with the previous API.
+    /// Per-button navigation — an intentional **alternative** to the unified
+    /// [`on_page`](Pagination::on_page). Supply `on_prev`/`on_next` and track the page number
+    /// yourself, instead of one `on_page(page)`. `on_page` takes precedence when both are set;
+    /// pick whichever style fits (this is a sanctioned two-style API, not a deprecation).
     pub fn on_prev(mut self, cb: impl IntoCallback) -> Self {
         self.on_prev = Some(cb.into_callback());
         self
     }
-    /// Legacy per-button callbacks (used only when [`on_page`](Pagination::on_page)
-    /// is unset).
+    /// Per-button navigation — see [`on_prev`](Pagination::on_prev). Fires on the Next button;
+    /// used when [`on_page`](Pagination::on_page) is unset.
     pub fn on_next(mut self, cb: impl IntoCallback) -> Self {
         self.on_next = Some(cb.into_callback());
         self
@@ -299,7 +301,7 @@ fn page_window(page: usize, total: usize, max: usize) -> Vec<PageItem> {
     items
 }
 
-/// Fire a legacy plain callback, if it is one.
+/// Fire a per-button plain callback, if it is one.
 fn invoke(cb: &Callback) {
     if let Callback::Plain(f) = cb {
         f();
@@ -316,7 +318,8 @@ impl IntoWidget for Pagination {
         let on_prev = self.on_prev.take();
         let on_next = self.on_next.take();
 
-        // The unified navigation: on_page wins; legacy callbacks are the fallback.
+        // Two-style navigation: on_page wins; the per-button on_prev/on_next are used when
+        // on_page is unset.
         let go: Rc<dyn Fn(usize)> = Rc::new(move |p| {
             if let Some(f) = &on_page {
                 f(p);

@@ -8,8 +8,13 @@
 //! `popstate` fed back in — with `index` carried in `history.state` so it stays
 //! authoritative. This core never touches `web-sys`; the shell owns the browser.
 //!
-//! Route PARAMETERS (`/user/:id`) are matched at the widget layer (`router_view`),
-//! which extracts them from the current [`Location::path`]. Query values
+//! **Scope: one router per app, not per window.** The history, guards and title live in
+//! app-global `thread_local` state, so a multi-window app shares a single route across all
+//! its windows (navigating in one would move them all). This is fine for the common
+//! single-window case; per-window routing is a v0.2 enhancement.
+//!
+//! Route PARAMETERS (`/user/:id`) are matched at the widget layer by the `route_view`
+//! widget, which extracts them from the current [`Location::path`]. Query values
 //! (`?tab=activity`) are parsed here and read with [`Location::query`].
 
 use std::cell::{Cell, RefCell};
@@ -20,8 +25,8 @@ use crate::reactive::{Signal, create_root_signal};
 
 /// A resolved location: the URL **path** plus its parsed **`?query`** pairs.
 ///
-/// Route params (`:id`) are not stored here — they are matched against a pattern by
-/// [`router_view`](../../pebbles_widgets/index.html) when it selects the page.
+/// Route params (`:id`) are not stored here — they are matched against a pattern by the
+/// `route_view` widget when it selects the page.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Location {
     path: String,
@@ -347,6 +352,7 @@ pub fn update_query(f: impl FnOnce(&mut BTreeMap<String, String>)) {
 const MAX_REDIRECTS: u8 = 8;
 
 /// A guard's verdict for a pending navigation.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NavGuard {
     /// Let the navigation proceed.
     Allow,
@@ -364,7 +370,7 @@ thread_local! {
 }
 
 /// A handle to a registered [guard](add_guard); drop it via [`remove_guard`].
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GuardHandle(u64);
 
 /// Register a navigation guard: it receives the target [`Location`] and returns [`NavGuard`]

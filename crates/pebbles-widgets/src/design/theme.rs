@@ -365,7 +365,11 @@ pub fn set_theme(theme: Theme) {
 /// startup (`set_design(DesignLanguage::Compact)`) and build from there, or change it
 /// live behind a setting.
 pub fn set_design(lang: DesignLanguage) {
-    set_theme(theme().design(lang));
+    // Read the GLOBAL theme (`peek` — this is a setter, not a reactive read), never
+    // `theme()`: inside a `theme_override` subtree `theme()` returns that subtree's private
+    // theme, and writing it back would promote the override to the whole app. `.design(lang)`
+    // keeps the global theme's colors and only swaps the design language.
+    set_theme(theme_signal().peek().design(lang));
 }
 
 /// The active base [`DesignLanguage`] (reactive read).
@@ -373,10 +377,13 @@ pub fn design() -> DesignLanguage {
     theme().design
 }
 
-/// Flip between light and dark, **preserving the active design language** and any
-/// customizations are re-seeded from the base (a one-line dark-mode toggle).
+/// Flip the whole app between light and dark, **keeping the active [`DesignLanguage`]**.
+/// Colors re-seed from the base light/dark palette, so app-specific color customizations are
+/// reset on the flip (there is no 1:1 light↔dark mapping for a custom color) — re-apply them
+/// after toggling if they must persist across modes.
 pub fn toggle_theme() {
-    let cur = theme();
+    // Global theme (`peek`), never a `theme_override` subtree — see `set_design`.
+    let cur = theme_signal().peek();
     let next = if cur.dark { Theme::light() } else { Theme::dark() }.design(cur.design);
     set_theme(next);
 }

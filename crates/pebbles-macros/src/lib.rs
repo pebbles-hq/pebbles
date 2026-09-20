@@ -116,7 +116,12 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #[unsafe(no_mangle)]
         extern "C" fn android_main(app: ::pebbles::shell::AndroidApp) {
             ::pebbles::shell::__set_android_app(app);
-            let _ = #entry();
+            if let ::core::result::Result::Err(e) = #entry() {
+                ::pebbles::core::log::error(
+                    ::pebbles::core::log::Cat::General,
+                    ::std::format!("app run failed: {e}"),
+                );
+            }
         }
     }
     .into()

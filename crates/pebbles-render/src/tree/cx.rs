@@ -167,9 +167,9 @@ impl IntrinsicCx<'_> {
     }
 }
 
-/// Traversal context handed to [`RenderObject::paint`]. It carries the mutable
-/// [`vello::Scene`] being built, a shared borrow of the tree, and the id of the
-/// object currently painting (so it can read its own size and children).
+/// Traversal context handed to [`RenderObject::paint`]. It carries the mutable,
+/// backend-agnostic [`Scene`](crate::paint::Scene) being built, a shared borrow of the tree,
+/// and the id of the object currently painting (so it can read its own size and children).
 pub struct PaintCx<'a> {
     /// The backend-agnostic drawing surface (see [`crate::paint`]). RenderObjects call
     /// its verbs (`fill`, `stroke`, `push_layer`, `draw_glyphs`, …) and never name a

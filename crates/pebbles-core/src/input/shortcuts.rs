@@ -155,7 +155,12 @@ fn key_token(token: &str) -> Result<ShortcutKey, String> {
 
 /// A component hook: register `binding` in the current window. Fires `cb` on
 /// every press while the component is mounted; unregisters automatically on
-/// unmount. Panics on an unparsable binding (compile-time-ish check at run).
+/// unmount.
+///
+/// # Panics
+/// Panics at first render on an unparsable `binding` (e.g. `"Mod+"` or an unknown key) — the
+/// binding is a compile-time constant in practice, so this surfaces the typo loudly rather
+/// than silently never firing. Keep bindings as string literals.
 ///
 /// ```ignore
 /// create_shortcut("Mod+K", move || palette.open());
@@ -173,6 +178,9 @@ pub fn create_shortcut(binding: &str, cb: impl Fn() + 'static) {
 /// key-scroll fallback. Use it for bindings that should only act while a widget
 /// is "engaged" (e.g. the file explorer's arrows act only while it has a
 /// selection, so they never hijack page scrolling).
+///
+/// # Panics
+/// Same as [`create_shortcut`] — panics at first render on an unparsable `binding`.
 pub fn create_shortcut_if(binding: &str, cb: impl Fn() -> bool + 'static) {
     register(binding, cb);
 }

@@ -2,7 +2,7 @@
 
 use std::cell::Cell;
 
-use super::create_signal;
+use super::create_signal_with;
 
 thread_local! {
     static COUNTER: Cell<u64> = const { Cell::new(0) };
@@ -19,15 +19,12 @@ fn next() -> u64 {
 /// A process-unique id string, **stable across re-renders** (SolidJS `createUniqueId`).
 /// Use it to tie an input to its label (`labelledby`/`aria-*`) or as a stable key.
 ///
-/// Stability comes from `create_signal` being position-stable: the id is captured on
-/// the first render and reused afterwards. (The counter still advances each render
-/// because the initial expression is evaluated every time, but ids are opaque so the
-/// churn is harmless and there is no re-render triggered.) Call it at a stable position
-/// like any hook; at app scope each call is simply globally unique.
+/// Stability comes from `create_signal_with` being position-stable AND lazy: the id string
+/// is generated on the first render only and reused afterwards. The counter advances exactly
+/// once per id (no per-render churn). Call it at a stable position like any hook; at app
+/// scope each call is simply globally unique.
 pub fn create_unique_id() -> String {
-    // The initial value is captured only on the first render; re-renders reuse the
-    // stored id and ignore this (freshly-generated, discarded) one.
-    create_signal(format!("pb-{}", next())).peek()
+    create_signal_with(|| format!("pb-{}", next())).peek()
 }
 
 #[cfg(test)]

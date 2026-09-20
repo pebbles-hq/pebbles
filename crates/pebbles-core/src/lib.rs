@@ -62,7 +62,8 @@ pub use keyboard::{KeyInput, Motion};
 pub use reactive::{
     ErrorBoundaryHandle, RootDisposer, Signal, Store, consume_context, create_cleanup, create_effect,
     create_memo, create_memo_with, create_root, create_root_signal, create_selector, create_signal,
-    create_store, create_unique_id, on, on_defer, on_mount, owner_id, provide_context, untrack,
+    create_signal_with, create_store, create_unique_id, on, on_defer, on_mount, owner_id, provide_context,
+    untrack,
 };
 pub use shortcuts::{Mods, ShortcutKey, create_shortcut, create_shortcut_if};
 #[cfg(target_family = "wasm")]
