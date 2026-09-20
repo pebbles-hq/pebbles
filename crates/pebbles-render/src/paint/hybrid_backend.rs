@@ -315,7 +315,7 @@ fn image_to_upload(img: &peniko::ImageBrush) -> ImageUpload {
     let bytes: &[u8] = d.data.as_ref();
     let mut rgba8 = bytes.to_vec();
     if matches!(d.format, peniko::ImageFormat::Bgra8) {
-        for px in rgba8.chunks_exact_mut(4) {
+        for px in rgba8.as_chunks_mut::<4>().0 {
             px.swap(0, 2);
         }
     }
@@ -481,7 +481,7 @@ mod tests {
     /// identified by their visit order.
     fn tagged_image(tag: u8, w: u32, h: u32) -> peniko::ImageBrush {
         let mut data = vec![0u8; (w * h * 4) as usize];
-        for px in data.chunks_exact_mut(4) {
+        for px in data.as_chunks_mut::<4>().0 {
             px[3] = 255;
         }
         if !data.is_empty() {
