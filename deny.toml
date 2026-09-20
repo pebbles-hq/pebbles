@@ -64,6 +64,12 @@ allow = [
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# …but allow a *path* dependency to omit a version. `pebbles-widgets`' dev-dep on
+# `pebbles-testing` is declared path-only (no `version`) on purpose, so `cargo package`
+# strips it and the two crates don't deadlock on first crates.io publish. A path dep is
+# never fetched from a registry, so its missing version isn't the supply-chain risk
+# `wildcards = "deny"` guards against.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"
