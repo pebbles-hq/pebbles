@@ -18,6 +18,7 @@ use crate::widgets::{
 };
 use pebbles_core::children;
 use pebbles_core::context::Callback;
+use pebbles_core::focus::create_focus;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{animated, component_props, consume_context, create_signal, provide_context};
 
@@ -355,6 +356,8 @@ fn render_nav_item(w: &NavItem) -> AnyWidget {
     let c = theme().colors;
     let collapsed = consume_context::<NavCollapsed>().map(|x| x.0).unwrap_or(false);
     let hovered = create_signal(false);
+    let node = create_focus();
+    let focused = node.is_focused();
     let bg = if w.selected {
         c.accent
     } else if hovered.get() {
@@ -387,22 +390,40 @@ fn render_nav_item(w: &NavItem) -> AnyWidget {
         row(cells).into_widget()
     };
 
+    let mut deco = BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius));
+    if focused {
+        deco = deco.border(Border::new(c.ring, 2.0));
+    }
     let container = Container::new()
-        .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius)))
+        .decoration(deco)
         .padding(theme().pad(if collapsed { 0.0 } else { 10.0 }, 9.0))
         .child(inner);
+
+    // Register keyboard activation (Enter/Space while focused), reusing on_select.
+    let activation: Rc<dyn Fn()> = match &w.on_select {
+        Some(Callback::Plain(f)) => f.clone(),
+        _ => Rc::new(|| {}),
+    };
+    node.register(activation, None, false);
 
     let mut gesture = GestureDetector::new(container)
         .cursor(Cursor::Pointer)
         .on_hover_enter(move || hovered.set(true))
-        .on_hover_exit(move || hovered.set(false));
+        .on_hover_exit(move || hovered.set(false))
+        .on_pointer_down(move || node.request_focus());
     if let Some(cb) = w.on_select.clone() {
         gesture = gesture.on_tap(cb);
     }
     let row_widget = gesture.into_widget();
 
     // Collapsed rows surface their label as a right-side tooltip (C5 + C2).
-    if collapsed { tooltip(w.label.clone(), row_widget).side(Side::Right).into_widget() } else { row_widget }
+    let out = if collapsed {
+        tooltip(w.label.clone(), row_widget).side(Side::Right).into_widget()
+    } else {
+        row_widget
+    };
+    // Expose the nav row as an operable Button to screen readers.
+    crate::widgets::semantics(crate::widgets::SemanticsRole::Button, w.label.clone(), out).into_widget()
 }
 
 // ===========================================================================
@@ -634,6 +655,8 @@ impl IntoWidget for BottomNavItem {
 fn render_bottom_nav_item(w: &BottomNavItem) -> AnyWidget {
     let c = theme().colors;
     let hovered = create_signal(false);
+    let node = create_focus();
+    let focused = node.is_focused();
     let fg = if w.selected {
         c.primary
     } else if hovered.get() {
@@ -649,15 +672,30 @@ fn render_bottom_nav_item(w: &BottomNavItem) -> AnyWidget {
     .cross_axis_alignment(CrossAxisAlignment::Center)
     .main_axis_size(MainAxisSize::Min);
 
-    let container = Container::new().padding(theme().pad(16.0, 8.0)).child(center(content));
+    let mut deco = BoxDecoration::new().radius(BorderRadius::all(theme().radius));
+    if focused {
+        deco = deco.border(Border::new(c.ring, 2.0));
+    }
+    let container = Container::new().decoration(deco).padding(theme().pad(16.0, 8.0)).child(center(content));
+
+    // Register keyboard activation (Enter/Space while focused), reusing on_select.
+    let activation: Rc<dyn Fn()> = match &w.on_select {
+        Some(Callback::Plain(f)) => f.clone(),
+        _ => Rc::new(|| {}),
+    };
+    node.register(activation, None, false);
+
     let mut gesture = GestureDetector::new(container)
         .cursor(Cursor::Pointer)
         .on_hover_enter(move || hovered.set(true))
-        .on_hover_exit(move || hovered.set(false));
+        .on_hover_exit(move || hovered.set(false))
+        .on_pointer_down(move || node.request_focus());
     if let Some(cb) = w.on_select.clone() {
         gesture = gesture.on_tap(cb);
     }
-    gesture.into_widget()
+    // Expose the nav item as an operable Button to screen readers.
+    crate::widgets::semantics(crate::widgets::SemanticsRole::Button, w.label.clone(), gesture.into_widget())
+        .into_widget()
 }
 
 /// A bottom navigation bar.

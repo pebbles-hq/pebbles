@@ -19,12 +19,13 @@ use pebbles_render::{
 
 use super::list_nav::list_nav;
 use crate::components::icon;
-use crate::overlay::{hide_overlay, show_overlay_guarded, window_size};
+use crate::overlay::{hide_overlay, is_open as overlay_is_open, show_overlay_guarded, window_size};
 use crate::theme::{mix, theme};
 use crate::widgets::{
     Container, GestureDetector, Opacity, SingleChildScrollView, column, gap_h, gap_w, row, spacer, text,
 };
 use pebbles_core::focus::create_focus;
+use pebbles_core::keyboard::{KeyInput, Motion};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, action_event, animated, component_props, create_signal};
 
@@ -384,7 +385,68 @@ fn render_select(p: &Props) -> AnyWidget {
     // the active row, Escape dismisses.
     let enabled: Vec<usize> =
         options.iter().enumerate().filter(|(_, o)| !o.disabled).map(|(i, _)| i).collect();
-    node.register(Rc::new(|| {}), None, false);
+    // The trigger's last-known window-space top-left, captured when it is opened by
+    // pointer so keyboard-open can anchor the menu without a pointer event. Falls back
+    // to the top-left corner if the trigger has never been pointed at (pure-keyboard,
+    // never-hovered) — degraded but functional; a layout-reported rect is the proper
+    // fix (tracked in the Platform doc).
+    let trigger_rect = create_signal::<Option<(f64, f64)>>(None);
+
+    // Open the menu anchored to a trigger's window-space top-left (flip up when there
+    // is no room below; shift horizontally to stay on-screen). Shared by the pointer
+    // tap and the keyboard-open paths.
+    let open_menu: Rc<dyn Fn(f64, f64)> = {
+        let options = options.clone();
+        let on_changed = on_changed.clone();
+        Rc::new(move |trigger_left: f64, trigger_top: f64| {
+            let trigger_h = control_h;
+            let (ww, wh) = window_size();
+            let group_count = options.iter().filter(|o| o.group.is_some()).count();
+            let natural = options.len() as f64 * 34.0 + group_count as f64 * 28.0 + 8.0;
+            let menu_h = natural.min(300.0);
+            let scrolls = natural > menu_h + 0.5;
+            let below = trigger_top + trigger_h + 6.0;
+            let above = trigger_top - menu_h - 6.0;
+            let top = if wh > 0.0 && below + menu_h > wh - 8.0 && above >= 8.0 { above } else { below };
+            let left = if ww > 0.0 { trigger_left.min(ww - width - 8.0).max(8.0) } else { trigger_left };
+            let menu = component_props(
+                render_select_menu,
+                MenuProps {
+                    options: options.clone(),
+                    width,
+                    selected,
+                    on_changed: on_changed.clone(),
+                    max_height: scrolls.then_some(menu_h),
+                    nav,
+                },
+            );
+            // Guarded: tear the menu down if this select unmounts while open.
+            show_overlay_guarded(menu.into_widget(), left, top, width, menu_h, move || selected.alive());
+            node.request_focus();
+        })
+    };
+    // Keyboard-open using the captured trigger rect (or the top-left fallback).
+    let open_kbd: Rc<dyn Fn()> = {
+        let open_menu = open_menu.clone();
+        Rc::new(move || {
+            let (l, t) = trigger_rect.peek().unwrap_or((8.0, 8.0));
+            open_menu(l, t);
+        })
+    };
+
+    // Enter/Space activates the trigger: open the menu when it is closed.
+    node.register(
+        {
+            let open_kbd = open_kbd.clone();
+            Rc::new(move || {
+                if !overlay_is_open() {
+                    open_kbd();
+                }
+            })
+        },
+        None,
+        false,
+    );
     {
         let pick_opt = {
             let options = options.clone();
@@ -410,8 +472,22 @@ fn render_select(p: &Props) -> AnyWidget {
             })
         };
         let handler = nav.handler(enabled.len(), move |row| pick_by_row(row), hide_overlay);
-        node.register_editor(Rc::new(move |k| {
-            handler(k);
+        // register_keys (NOT register_editor): while the menu is open the trigger routes
+        // Up/Down/Enter/Escape to the list nav; while closed, Down/Up/Enter open it.
+        // Every other key returns false so it falls through to shortcuts / Tab instead
+        // of being swallowed (the register_editor bug that ate Ctrl+F/P/D while focused).
+        node.register_keys(Rc::new(move |k| {
+            if overlay_is_open() {
+                handler(k)
+            } else {
+                match k {
+                    KeyInput::Move { motion: Motion::Down | Motion::Up, .. } | KeyInput::Enter => {
+                        open_kbd();
+                        true
+                    }
+                    _ => false,
+                }
+            }
         }));
     }
 
@@ -469,39 +545,12 @@ fn render_select(p: &Props) -> AnyWidget {
 
     let control =
         GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(move |e: PointerEvent| {
-            // The trigger's window-space rect = click global − click local.
+            // The trigger's window-space top-left = click global − click local. Cache it
+            // so a later keyboard-open anchors to the same place, then open.
             let trigger_left = e.global.x - e.position.x;
             let trigger_top = e.global.y - e.position.y;
-            let trigger_h = control_h;
-            let (ww, wh) = window_size();
-
-            // Menu height: rows + padding + group headers, capped (then it scrolls).
-            let group_count = options.iter().filter(|o| o.group.is_some()).count();
-            let natural = options.len() as f64 * 34.0 + group_count as f64 * 28.0 + 8.0;
-            let menu_h = natural.min(300.0);
-            let scrolls = natural > menu_h + 0.5;
-
-            // Flip up when there isn't room below and there is room above.
-            let below = trigger_top + trigger_h + 6.0;
-            let above = trigger_top - menu_h - 6.0;
-            let top = if wh > 0.0 && below + menu_h > wh - 8.0 && above >= 8.0 { above } else { below };
-            // Shift horizontally to stay on-screen.
-            let left = if ww > 0.0 { trigger_left.min(ww - width - 8.0).max(8.0) } else { trigger_left };
-
-            let menu = component_props(
-                render_select_menu,
-                MenuProps {
-                    options: options.clone(),
-                    width,
-                    selected,
-                    on_changed: on_changed.clone(),
-                    max_height: scrolls.then_some(menu_h),
-                    nav,
-                },
-            );
-            // Guarded: tear the menu down if this select unmounts while open.
-            show_overlay_guarded(menu.into_widget(), left, top, width, menu_h, move || selected.alive());
-            node.request_focus();
+            trigger_rect.set(Some((trigger_left, trigger_top)));
+            open_menu(trigger_left, trigger_top);
         }));
 
     // Accessibility: a combo box announcing its name + current value.

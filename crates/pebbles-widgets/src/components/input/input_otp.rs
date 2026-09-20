@@ -213,5 +213,9 @@ fn render_otp(p: &Props) -> AnyWidget {
     } else {
         GestureDetector::new(field).cursor(Cursor::Text).on_tap(move || focus.request_focus()).into_widget()
     };
-    field
+    // Announce the whole group as a single text input to assistive tech (the individual
+    // cells are decorative). The value is intentionally omitted so the code isn't spoken.
+    crate::widgets::semantics(pebbles_render::SemanticsRole::TextInput, "One-time code", field)
+        .disabled(p.disabled)
+        .into_widget()
 }

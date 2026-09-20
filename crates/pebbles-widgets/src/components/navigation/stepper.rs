@@ -5,11 +5,13 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{Axis, CrossAxisAlignment, EdgeInsets, MainAxisSize};
-use pebbles_render::{BorderRadius, BoxDecoration, Cursor, IconKind};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconKind};
 
 use crate::components::icon;
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, center, column, gap_h, gap_w, row, text};
+use pebbles_core::component_props;
+use pebbles_core::focus::create_focus;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// One step: a title, optional subtitle, and the content shown when it is current.
@@ -84,23 +86,80 @@ fn indicator(i: usize, current: usize) -> AnyWidget {
         .into_widget()
 }
 
-/// A step's title + optional subtitle, made tappable if a handler is set.
-fn header(s: &Step, i: usize, current: usize, on_tap: &Option<Rc<dyn Fn(usize)>>) -> AnyWidget {
+/// The bare title + optional subtitle block (no interactivity).
+fn head_block(title: &str, subtitle: &Option<String>, i: usize, current: usize) -> AnyWidget {
     let c = theme().colors;
     let title_color = if i <= current { c.foreground } else { c.muted_foreground };
     let mut col: Vec<AnyWidget> =
-        vec![text(s.title.clone()).size(14.0).semibold().color(title_color).into_widget()];
-    if let Some(sub) = &s.subtitle {
+        vec![text(title.to_string()).size(14.0).semibold().color(title_color).into_widget()];
+    if let Some(sub) = subtitle {
         col.push(gap_h(2.0).into_widget());
         col.push(text(sub.clone()).size(12.0).color(c.muted_foreground).into_widget());
     }
-    let head = column(col).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min);
+    column(col)
+        .cross_axis_alignment(CrossAxisAlignment::Start)
+        .main_axis_size(MainAxisSize::Min)
+        .into_widget()
+}
+
+/// Props for an interactive (tappable) step header.
+struct StepHeaderProps {
+    title: String,
+    subtitle: Option<String>,
+    index: usize,
+    current: usize,
+    on_tap: Rc<dyn Fn(usize)>,
+}
+
+/// An interactive step header: focusable, Enter/Space-activatable, with a focus ring
+/// and a Button semantics node. Its own component so focus/keyboard bind to this row.
+fn render_step_header(p: &StepHeaderProps) -> AnyWidget {
+    let c = theme().colors;
+    let node = create_focus();
+    let focused = node.is_focused();
+    let i = p.index;
+
+    // Keyboard activation (Enter/Space while focused) reuses the tap callback.
+    let on_activate = p.on_tap.clone();
+    node.register(Rc::new(move || on_activate(i)), None, false);
+
+    let head = head_block(&p.title, &p.subtitle, p.index, p.current);
+    let mut deco = BoxDecoration::new().radius(BorderRadius::all(theme().radius));
+    if focused {
+        deco = deco.border(Border::new(c.ring, 2.0));
+    }
+    let boxed = Container::new().decoration(deco).child(head);
+
+    let on_tap = p.on_tap.clone();
+    let gesture = GestureDetector::new(boxed)
+        .on_tap(move || on_tap(i))
+        .on_pointer_down(move || node.request_focus())
+        .cursor(Cursor::Pointer);
+    crate::widgets::semantics(crate::widgets::SemanticsRole::Button, p.title.clone(), gesture.into_widget())
+        .into_widget()
+}
+
+/// A step's title + optional subtitle. Interactive (focusable + keyboard) when a
+/// handler is set; otherwise a display-only Label semantics node.
+fn header(s: &Step, i: usize, current: usize, on_tap: &Option<Rc<dyn Fn(usize)>>) -> AnyWidget {
     match on_tap {
-        Some(f) => {
-            let f = f.clone();
-            GestureDetector::new(head).on_tap(move || f(i)).cursor(Cursor::Pointer).into_widget()
-        }
-        None => head.into_widget(),
+        Some(f) => component_props(
+            render_step_header,
+            StepHeaderProps {
+                title: s.title.clone(),
+                subtitle: s.subtitle.clone(),
+                index: i,
+                current,
+                on_tap: f.clone(),
+            },
+        )
+        .into_widget(),
+        None => crate::widgets::semantics(
+            crate::widgets::SemanticsRole::Label,
+            s.title.clone(),
+            head_block(&s.title, &s.subtitle, i, current),
+        )
+        .into_widget(),
     }
 }
 

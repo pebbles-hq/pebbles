@@ -3,15 +3,20 @@
 //! standard token widget for filters, tags, selected options and contact chips.
 //! Built on the Badge surface with an `IconButton` ✕ that fires `on_deleted`.
 
+use std::rc::Rc;
+
 use pebbles_render::{IconData, IconKind};
 
 use crate::components::icon;
 use crate::components::input::icon_button;
 use crate::style::{Style, style, styled};
-use crate::theme::theme;
+use crate::theme::{mix, theme};
 use crate::widgets::{gap_w, row, text};
 use pebbles_core::context::Callback;
+use pebbles_core::focus::create_focus;
+use pebbles_core::reactive::create_signal;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
+use pebbles_core::{animated, component_props};
 
 /// A small pill with a label, an optional icon, and an optional ✕ delete button.
 #[derive(Clone, Default)]
@@ -98,55 +103,133 @@ impl Chip {
 }
 
 impl IntoWidget for Chip {
-    fn into_widget(mut self) -> AnyWidget {
-        let th = theme();
-        let c = th.colors;
-        let (bg, fg, border) = if self.disabled {
-            (Some(c.muted), c.muted_foreground, false)
-        } else if self.selected {
-            (Some(c.primary), c.primary_foreground, false)
+    fn into_widget(self) -> AnyWidget {
+        component_props(render_chip, self).into_widget()
+    }
+}
+
+fn render_chip(p: &Chip) -> AnyWidget {
+    let th = theme();
+    let c = th.colors;
+    // Tap-able chips (choice / filter / action) take hover/press/focus feedback and
+    // keyboard activation; display / disabled chips stay static.
+    let interactive = p.on_pressed.is_some() && !p.disabled;
+    let hovered = create_signal(false);
+    let pressed = create_signal(false);
+    let node = create_focus();
+    let focused = interactive && node.is_focused();
+
+    let (base_bg, fg, border) = if p.disabled {
+        (Some(c.muted), c.muted_foreground, false)
+    } else if p.selected {
+        (Some(c.primary), c.primary_foreground, false)
+    } else {
+        (Some(c.secondary), c.secondary_foreground, true)
+    };
+    // Blend the base background toward the foreground on hover/press (interactive only).
+    let bg = base_bg.map(|b| {
+        if interactive {
+            let hv = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12);
+            let pr = animated(if pressed.get() { 1.0 } else { 0.0 }, 0.07);
+            let cur = mix(b, mix(b, c.foreground, 0.08), hv as f32);
+            mix(cur, mix(b, c.foreground, 0.16), pr as f32)
         } else {
-            (Some(c.secondary), c.secondary_foreground, true)
-        };
-        let mut base = style().radius_all(th.pill()).padding(th.pad(10.0, 4.0));
-        if let Some(bg) = bg {
-            base = base.background(bg);
+            b
         }
-        if border {
-            base = base.border(pebbles_render::Border::new(c.border, th.border_width));
-        }
-        let mut row_items: Vec<AnyWidget> = Vec::new();
-        // A leading check for a selected FilterChip.
-        if self.selected && self.show_check && !self.disabled {
-            row_items.push(icon(IconKind::Check).size(14.0).color(fg).into_widget());
-            row_items.push(gap_w(6.0).into_widget());
-        }
-        if let Some(kind) = self.icon_kind.take() {
-            row_items.push(icon(kind).size(14.0).color(fg).into_widget());
-            row_items.push(gap_w(6.0).into_widget());
-        }
-        row_items
-            .push(text(std::mem::take(&mut self.label)).size(12.5).weight(500.0).color(fg).into_widget());
-        let mut body: AnyWidget =
-            row(row_items).main_axis_size(pebbles_foundation::MainAxisSize::Min).into_widget();
-        if self.deletable
-            && !self.disabled
-            && let Some(on_deleted) = self.on_deleted.take()
-        {
-            let close = icon_button(IconKind::Close).size(12.0).on_pressed(on_deleted);
-            let close_styled = styled(close, style().padding(th.pad_all(2.0)).radius_all(th.pill()));
-            body = row(vec![body, gap_w(6.0).into_widget(), close_styled.into_widget()])
-                .main_axis_size(pebbles_foundation::MainAxisSize::Min)
-                .into_widget();
-        }
-        let pill = styled(body, base.merge(self.style.take().unwrap_or_default()));
-        // Tappable (choice / filter / action chips): wrap in a gesture with a pointer.
-        match self.on_pressed.take() {
-            Some(on_pressed) if !self.disabled => crate::widgets::GestureDetector::new(pill)
+    });
+
+    let mut base = style().radius_all(th.pill()).padding(th.pad(10.0, 4.0));
+    if let Some(bg) = bg {
+        base = base.background(bg);
+    }
+    // Focus ring replaces the resting border while the chip holds keyboard focus.
+    if focused {
+        base = base.border(pebbles_render::Border::new(c.ring, 2.0));
+    } else if border {
+        base = base.border(pebbles_render::Border::new(c.border, th.border_width));
+    }
+
+    let mut row_items: Vec<AnyWidget> = Vec::new();
+    // A leading check for a selected FilterChip.
+    if p.selected && p.show_check && !p.disabled {
+        row_items.push(icon(IconKind::Check).size(14.0).color(fg).into_widget());
+        row_items.push(gap_w(6.0).into_widget());
+    }
+    if let Some(kind) = p.icon_kind {
+        row_items.push(icon(kind).size(14.0).color(fg).into_widget());
+        row_items.push(gap_w(6.0).into_widget());
+    }
+    row_items.push(text(p.label.clone()).size(12.5).weight(500.0).color(fg).into_widget());
+    let mut body: AnyWidget =
+        row(row_items).main_axis_size(pebbles_foundation::MainAxisSize::Min).into_widget();
+    if p.deletable
+        && !p.disabled
+        && let Some(on_deleted) = p.on_deleted.clone()
+    {
+        // The ✕ is itself a focusable IconButton, so it is Tab-reachable and
+        // Enter/Space-activatable for free; a label announces it to screen readers.
+        let close = icon_button(IconKind::Close)
+            .size(12.0)
+            .label(format!("Remove {}", p.label))
+            .on_pressed(on_deleted);
+        let close_styled = styled(close, style().padding(th.pad_all(2.0)).radius_all(th.pill()));
+        body = row(vec![body, gap_w(6.0).into_widget(), close_styled.into_widget()])
+            .main_axis_size(pebbles_foundation::MainAxisSize::Min)
+            .into_widget();
+    }
+    let pill = styled(body, base.merge(p.style.clone().unwrap_or_default()));
+
+    // Tappable (choice / filter / action chips): wrap in a gesture + keyboard activation.
+    match p.on_pressed.clone() {
+        Some(on_pressed) if !p.disabled => {
+            let activation: Rc<dyn Fn()> = match &p.on_pressed {
+                Some(Callback::Plain(f)) => f.clone(),
+                _ => Rc::new(|| {}),
+            };
+            node.register(activation, None, false);
+            let gesture = crate::widgets::GestureDetector::new(pill)
                 .on_tap(on_pressed)
                 .cursor(pebbles_render::Cursor::Pointer)
-                .into_widget(),
-            _ => pill.into_widget(),
+                .on_hover_enter(move || hovered.set(true))
+                .on_hover_exit(move || {
+                    hovered.set(false);
+                    pressed.set(false);
+                })
+                .on_pointer_down(move || {
+                    pressed.set(true);
+                    node.request_focus();
+                })
+                .on_pointer_up(move || pressed.set(false));
+            let mut sem = crate::widgets::semantics(
+                crate::widgets::SemanticsRole::Button,
+                p.label.clone(),
+                gesture.into_widget(),
+            );
+            // Choice / filter chips carry a selected state; action chips don't.
+            if p.show_check || p.selected {
+                sem = sem.checked(p.selected);
+            }
+            sem.into_widget()
+        }
+        // Disabled-but-tappable chips announce as a disabled Button; plain display
+        // chips get a trivial Label so their text is still surfaced.
+        _ => {
+            if p.on_pressed.is_some() {
+                crate::widgets::semantics(
+                    crate::widgets::SemanticsRole::Button,
+                    p.label.clone(),
+                    pill.into_widget(),
+                )
+                .disabled(true)
+                .into_widget()
+            } else {
+                crate::widgets::semantics(
+                    crate::widgets::SemanticsRole::Label,
+                    p.label.clone(),
+                    pill.into_widget(),
+                )
+                .into_widget()
+            }
         }
     }
 }

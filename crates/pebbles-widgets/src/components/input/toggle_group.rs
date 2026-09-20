@@ -24,6 +24,9 @@ type SelectionCb = Rc<dyn Fn(&[usize])>;
 /// A joined set of toggle cells. Build with [`toggle_group`] / [`toggle_group_labels`].
 pub struct ToggleGroup {
     cells: Vec<AnyWidget>,
+    /// Accessible label per cell (parallel to `cells`) — a text-labelled group carries
+    /// each label so its toggle button announces it; icon cells stay `None`.
+    labels: Vec<Option<String>>,
     values: Vec<usize>,
     multiple: bool,
     allow_empty: bool,
@@ -34,8 +37,10 @@ pub struct ToggleGroup {
 }
 
 fn make(cells: Vec<AnyWidget>) -> ToggleGroup {
+    let labels = vec![None; cells.len()];
     ToggleGroup {
         cells,
+        labels,
         values: Vec::new(),
         multiple: false,
         allow_empty: false,
@@ -58,13 +63,26 @@ where
     I: IntoIterator<Item = S>,
     S: Into<String>,
 {
-    make(labels.into_iter().map(|l| text(l.into()).size(13.0).into_widget()).collect())
+    let labels: Vec<String> = labels.into_iter().map(|l| l.into()).collect();
+    let cells = labels.iter().map(|l| text(l.clone()).size(13.0).into_widget()).collect();
+    let mut g = make(cells);
+    // Carry each label so the cell's toggle button announces it to assistive tech.
+    g.labels = labels.into_iter().map(Some).collect();
+    g
 }
 
 impl ToggleGroup {
     /// Append a cell widget (e.g. an icon). The house `.item()` builder pattern.
     pub fn item(mut self, cell: impl IntoWidget) -> Self {
         self.cells.push(cell.into_widget());
+        self.labels.push(None);
+        self
+    }
+    /// Append a cell widget with an explicit accessible label (for icon cells, so the
+    /// toggle button still announces something meaningful to assistive tech).
+    pub fn labelled_item(mut self, cell: impl IntoWidget, label: impl Into<String>) -> Self {
+        self.cells.push(cell.into_widget());
+        self.labels.push(Some(label.into()));
         self
     }
     /// Allow multiple cells selected at once (default: single-select).
@@ -139,6 +157,9 @@ impl IntoWidget for ToggleGroup {
                 .size(group.size)
                 .disabled(group.disabled)
                 .radius(0.0);
+            if let Some(Some(label)) = group.labels.get(i) {
+                t = t.label(label.clone());
+            }
             if pressed {
                 t = t.color(th.colors.secondary);
             }

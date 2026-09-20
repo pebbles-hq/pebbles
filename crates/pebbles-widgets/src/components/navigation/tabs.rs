@@ -151,17 +151,20 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
             _ => None,
         })
         .collect();
-    node.register_editor(Rc::new(move |k: KeyInput| {
+    // register_keys (not register_editor): consume only the Left/Right/Up/Down it
+    // handles and return false for everything else, so Ctrl shortcuts and typing fall
+    // through instead of being swallowed while the strip holds focus.
+    node.register_keys(Rc::new(move |k: KeyInput| {
         if n == 0 {
-            return;
+            return false;
         }
         let step = match k {
             KeyInput::Move { motion, .. } => match motion {
                 Motion::Right | Motion::Down => 1i64,
                 Motion::Left | Motion::Up => -1i64,
-                _ => return,
+                _ => return false,
             },
-            _ => return,
+            _ => return false,
         };
         for offset in 1..=n {
             let i = ((selected as i64 + step * offset as i64).rem_euclid(n as i64)) as usize;
@@ -170,6 +173,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
                 break;
             }
         }
+        true
     }));
 
     // --- strip -------------------------------------------------------------

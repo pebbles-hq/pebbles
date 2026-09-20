@@ -6,12 +6,13 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
-use pebbles_render::IconKind;
+use pebbles_render::{Border, BoxDecoration, IconKind};
 
 use crate::theme::{mix, theme};
 use crate::widgets::{Container, GestureDetector, Padding, Transform, column, gap_h, row, spacer, text};
 use pebbles_core::children;
-use pebbles_core::context::action;
+use pebbles_core::context::{Callback, action};
+use pebbles_core::focus::create_focus;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{animated, component_props, create_signal};
 
@@ -94,9 +95,11 @@ struct SectionProps {
 fn render_section(p: &SectionProps) -> AnyWidget {
     let c = theme().colors;
     let hovered = create_signal(false);
+    let node = create_focus();
     let is_open = p.open.get()[p.index];
     let hv = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12);
     let rot = animated(if is_open { 1.0 } else { 0.0 }, 0.18);
+    let focused = node.is_focused();
 
     let open = p.open;
     let index = p.index;
@@ -117,11 +120,22 @@ fn render_section(p: &SectionProps) -> AnyWidget {
         }
     });
 
+    // Keyboard activation (Enter/Space while focused) reuses the header's toggle.
+    let activation: Rc<dyn Fn()> = match toggle.clone() {
+        Callback::Plain(f) => f,
+        _ => Rc::new(|| {}),
+    };
+    node.register(activation, None, false);
+
     // Headers are plain — a soft hover tint only. The Style frames the WHOLE
     // accordion (one clean card), never each header (per-header borders read
-    // fragmented).
+    // fragmented). A focus ring appears while the header holds keyboard focus.
+    let mut header_deco = BoxDecoration::new().color(mix(p.hover_base, c.muted, 0.5 * hv as f32));
+    if focused {
+        header_deco = header_deco.border(Border::new(c.ring, 2.0));
+    }
     let header = GestureDetector::new(
-        Container::new().color(mix(p.hover_base, c.muted, 0.5 * hv as f32)).child(Padding::new(
+        Container::new().decoration(header_deco).child(Padding::new(
             theme().pad(4.0, 12.0),
             row(children![
                 text(p.title.clone()).size(p.title_size).weight(p.title_weight).color(p.title_color),
@@ -137,9 +151,18 @@ fn render_section(p: &SectionProps) -> AnyWidget {
     .cursor(pebbles_render::Cursor::Pointer)
     .on_hover_enter(move || hovered.set(true))
     .on_hover_exit(move || hovered.set(false))
+    .on_pointer_down(move || node.request_focus())
     .on_tap(toggle);
 
-    let mut items: Vec<AnyWidget> = vec![header.into_widget()];
+    // Expose the header as an operable Button to screen readers.
+    let header = crate::widgets::semantics(
+        crate::widgets::SemanticsRole::Button,
+        p.title.clone(),
+        header.into_widget(),
+    )
+    .into_widget();
+
+    let mut items: Vec<AnyWidget> = vec![header];
     if is_open {
         items.push(Padding::new(EdgeInsets::only(4.0, 0.0, 4.0, 12.0), p.content.clone()).into_widget());
     }
@@ -270,8 +293,10 @@ impl IntoWidget for Collapsible {
 
 fn render_collapsible(p: &CollapsibleProps) -> AnyWidget {
     let c = theme().colors;
+    let node = create_focus();
     let open = create_signal(p.open);
     let is_open = open.get();
+    let focused = node.is_focused();
     let on = p.on_toggle.clone();
     let toggle = action(move || {
         open.update(|o| *o = !*o);
@@ -279,6 +304,13 @@ fn render_collapsible(p: &CollapsibleProps) -> AnyWidget {
             f(open.peek());
         }
     });
+
+    // Keyboard activation (Enter/Space while focused) reuses the header's toggle.
+    let activation: Rc<dyn Fn()> = match toggle.clone() {
+        Callback::Plain(f) => f,
+        _ => Rc::new(|| {}),
+    };
+    node.register(activation, None, false);
 
     let header_inner: AnyWidget = match &p.trigger {
         Some(t) => t.clone(),
@@ -295,9 +327,25 @@ fn render_collapsible(p: &CollapsibleProps) -> AnyWidget {
         )
         .into_widget(),
     };
-    let header = GestureDetector::new(header_inner).cursor(pebbles_render::Cursor::Pointer).on_tap(toggle);
+    // A focus ring appears while the header holds keyboard focus.
+    let mut header_deco = BoxDecoration::new();
+    if focused {
+        header_deco = header_deco.border(Border::new(c.ring, 2.0));
+    }
+    let header = GestureDetector::new(Container::new().decoration(header_deco).child(header_inner))
+        .cursor(pebbles_render::Cursor::Pointer)
+        .on_pointer_down(move || node.request_focus())
+        .on_tap(toggle);
 
-    let mut items: Vec<AnyWidget> = vec![header.into_widget()];
+    // Expose the header as an operable Button to screen readers.
+    let header = crate::widgets::semantics(
+        crate::widgets::SemanticsRole::Button,
+        p.title.clone(),
+        header.into_widget(),
+    )
+    .into_widget();
+
+    let mut items: Vec<AnyWidget> = vec![header];
     if is_open {
         items.push(Padding::new(EdgeInsets::only(4.0, 0.0, 4.0, 12.0), p.content.clone()).into_widget());
     }
