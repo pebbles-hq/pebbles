@@ -27,6 +27,10 @@ pub struct RenderList {
     /// Stable id for metrics publishing + scroll routing.
     pub id: u64,
     pub scrollbar: ScrollbarStyle,
+    /// Whether a touch/pointer drag over the viewport scrolls it (finger pan). On by
+    /// default so virtualized lists finger-scroll on touch; the wheel + scrollbar paths
+    /// are unaffected either way.
+    pub drag_scroll: bool,
     viewport_extent: f64,
 }
 
@@ -38,6 +42,7 @@ impl RenderList {
             content_extent: 0.0,
             id: 0,
             scrollbar: ScrollbarStyle::default(),
+            drag_scroll: true,
             viewport_extent: 0.0,
         }
     }

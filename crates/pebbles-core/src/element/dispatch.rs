@@ -237,14 +237,14 @@ impl Ui {
     /// Whether a content drag is currently in progress (began with
     /// [`begin_content_drag`](Self::begin_content_drag)).
     pub fn content_drag_active(&self) -> bool {
-        self.content_drag.is_some()
+        self.content_drag.is_some() || self.list_drag.is_some()
     }
 
     /// Claim a pointer drag as a **content drag** on a drag-scroll viewport under
     /// `point`. Arbitration: a pan-hungry descendant at the point wins — the
     /// viewport only claims drags nothing else wants (A4).
     pub fn begin_content_drag(&mut self, point: Offset) -> bool {
-        if self.content_drag.is_some() || self.pan_target_at(point).is_some() {
+        if self.content_drag.is_some() || self.list_drag.is_some() || self.pan_target_at(point).is_some() {
             return false;
         }
         let hits = self.render.hit_test(point);
@@ -252,25 +252,59 @@ impl Ui {
             let s = self.render.object_ref(rid).downcast_ref::<RenderScroll>()?;
             s.drag_scroll.then_some(rid)
         });
-        let Some(rid) = rid else { return false };
-        let now = self.clock_now();
-        let (at, claimed) = self
-            .render
-            .object_mut(rid)
-            .downcast_mut::<RenderScroll>()
-            .map(|s| (drag_axis_pos(s.axis, point), s.drag_begin(drag_axis_pos(s.axis, point), now)))
-            .unwrap_or((0.0, false));
-        let _ = at;
-        if claimed {
-            self.content_drag = Some(rid);
+        if let Some(rid) = rid {
+            let now = self.clock_now();
+            let (at, claimed) = self
+                .render
+                .object_mut(rid)
+                .downcast_mut::<RenderScroll>()
+                .map(|s| (drag_axis_pos(s.axis, point), s.drag_begin(drag_axis_pos(s.axis, point), now)))
+                .unwrap_or((0.0, false));
+            let _ = at;
+            if claimed {
+                self.content_drag = Some(rid);
+            }
+            return claimed;
         }
-        claimed
+        // No imperative scroll view — fall back to a controlled (virtualized) list under
+        // the point. This is what makes ListView/GridView finger-scroll on touch: the
+        // drag routes to the list's offset signal (same path the wheel uses).
+        let list = hits.iter().rev().find_map(|&rid| {
+            let l = self.render.object_ref(rid).downcast_ref::<RenderList>()?;
+            (l.drag_scroll && l.scrollable()).then_some((rid, l.id, drag_axis_pos(l.axis, point)))
+        });
+        if let Some((rid, id, at)) = list {
+            self.list_drag = Some((rid, id, at));
+            return true;
+        }
+        false
     }
 
     /// The pointer moved during a content drag: moves the content 1:1 (the
     /// rubber-band math lives in [`RenderScroll::drag_move`]) and fires any
     /// pull-to-refresh arm trigger (A5).
     pub fn update_content_drag(&mut self, point: Offset) -> bool {
+        // Controlled list: route the finger delta to its offset signal (dragging the
+        // content down — positive axis delta — scrolls toward the top, so `By(-delta)`).
+        if let Some((rid, id, last)) = self.list_drag {
+            let Some(axis) =
+                self.render.try_object_mut(rid).and_then(|o| o.downcast_mut::<RenderList>()).map(|l| l.axis)
+            else {
+                self.list_drag = None;
+                return false;
+            };
+            let at = drag_axis_pos(axis, point);
+            let delta = at - last;
+            self.list_drag = Some((rid, id, at));
+            if delta == 0.0 {
+                return false;
+            }
+            let moved = crate::scroll::dispatch(id, ScrollTo::By(-delta));
+            if moved {
+                self.scroll_moved(rid);
+            }
+            return moved;
+        }
         let Some(rid) = self.content_drag else { return false };
         let now = self.clock_now();
         // The scroll view may have unmounted mid-drag (navigation, overlay close)
@@ -296,6 +330,19 @@ impl Ui {
     /// settle (or snap back from overscroll). An armed pull-to-refresh fires its
     /// release callback here. Frames keep ticking while the spring settles.
     pub fn end_content_drag(&mut self, point: Offset) -> bool {
+        // Controlled list: apply the final delta and end. No fling in 0.1.0 — a
+        // signal-driven fling is a backlog item; the offset settles where released.
+        if let Some((rid, id, last)) = self.list_drag.take() {
+            if let Some(axis) =
+                self.render.try_object_mut(rid).and_then(|o| o.downcast_mut::<RenderList>()).map(|l| l.axis)
+            {
+                let delta = drag_axis_pos(axis, point) - last;
+                if delta != 0.0 && crate::scroll::dispatch(id, ScrollTo::By(-delta)) {
+                    self.scroll_moved(rid);
+                }
+            }
+            return true;
+        }
         let Some(rid) = self.content_drag.take() else { return false };
         let now = self.clock_now();
         // Unmounted mid-drag → nothing to settle; the drag is simply over.

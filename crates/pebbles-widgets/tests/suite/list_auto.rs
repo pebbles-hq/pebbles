@@ -5,7 +5,7 @@
 use std::cell::RefCell;
 
 use pebbles_core::{IntoWidget, Ui, animation, component};
-use pebbles_foundation::{Size, palette};
+use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::{RenderMeasureProbe, TextEnv};
 use pebbles_testing::frame;
 use pebbles_widgets::{ListView, ScrollController, View, container, list_view, text, use_scroll_controller};
@@ -169,6 +169,33 @@ fn auto_list_count_shrink_does_not_panic() {
         ui.render_tree().object_ref(id).downcast_ref::<pebbles_render::RenderList>().unwrap().content_extent
     };
     assert!((extent - 200.0).abs() < 1e-6, "shrunk content extent: {extent}");
+}
+
+#[test]
+fn touch_drag_scrolls_a_controlled_list() {
+    CTL.with(|c| *c.borrow_mut() = None);
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(300.0, 200.0);
+    ui.mount_root(View::new(palette::WHITE, component(|| auto_root(5000))).into_widget());
+    for _ in 0..3 {
+        frame(&mut ui, &mut env, win);
+    }
+    let ctl = CTL.with(|c| c.borrow().expect("controller captured"));
+    assert!(ctl.offset().abs() < 1e-6, "starts at the top");
+
+    // A finger pan UP (y 150 → 50) scrolls a virtualized list DOWN — previously
+    // impossible: begin_content_drag only recognized RenderScroll, so ListView/GridView
+    // could not be finger-scrolled at all.
+    assert!(ui.begin_content_drag(Offset::new(150.0, 150.0)), "the list claims the touch drag");
+    assert!(ui.content_drag_active());
+    ui.update_content_drag(Offset::new(150.0, 50.0));
+    for _ in 0..3 {
+        frame(&mut ui, &mut env, win);
+    }
+    assert!(ctl.offset() > 50.0, "finger pan scrolled the list: {}", ctl.offset());
+    ui.end_content_drag(Offset::new(150.0, 50.0));
+    assert!(!ui.content_drag_active(), "the drag ended");
 }
 
 // `list_view` import kept out of the way — the fixed-extent helper is exercised

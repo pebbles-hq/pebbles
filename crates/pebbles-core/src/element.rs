@@ -109,6 +109,11 @@ pub struct Ui {
     scrollbar_drag: Option<RenderId>,
     /// The drag-scroll viewport a content drag is currently driving, if any.
     content_drag: Option<RenderId>,
+    /// A controlled (virtualized) `RenderList` being finger-dragged: its render id, its
+    /// scroll-routing id, and the last pointer position along its axis. Separate from
+    /// `content_drag` because a controlled list has no internal drag state — the delta
+    /// is routed to its offset signal each move.
+    list_drag: Option<(RenderId, u64, f64)>,
     /// Test override for [`Ui::clock_now`] (drag/fling velocity estimation);
     /// `None` uses the wall clock.
     clock_override: Option<f64>,
