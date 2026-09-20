@@ -322,7 +322,9 @@ fn render_date(p: &DateProps) -> AnyWidget {
     // pick writes the formatted string into `text`, which this effect observes).
     // A `last` latch dedups so the same date isn't reported twice, and the initial
     // empty/partial state never fires. Range mode reports via `on_range_changed`.
-    if !p.range && let Some(on_changed) = p.on_changed.clone() {
+    if !p.range
+        && let Some(on_changed) = p.on_changed.clone()
+    {
         let last = create_signal::<Option<Date>>(None);
         create_effect(move || {
             let parsed = fmt.parse(&text.get());

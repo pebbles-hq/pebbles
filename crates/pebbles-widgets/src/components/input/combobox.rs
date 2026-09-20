@@ -274,9 +274,8 @@ fn render_combobox(p: &ComboProps) -> AnyWidget {
     let trigger = trigger_box(label, has_value, width, p.style.clone());
 
     let menu_options = options.clone();
-    let control = GestureDetector::new(trigger)
-        .cursor(Cursor::Pointer)
-        .on_tap(action_event(move |e: PointerEvent| {
+    let control =
+        GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(move |e: PointerEvent| {
             let trigger_left = e.global.x - e.position.x;
             let trigger_top = e.global.y - e.position.y;
             let est = (menu_options.len().min(6) as f64) * 34.0 + 60.0;

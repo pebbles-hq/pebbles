@@ -601,14 +601,10 @@ fn render_toggle(p: &ToggleProps) -> AnyWidget {
     let out = wire(container.into_widget(), p.disabled, &p.on_changed, hovered, node, p.autofocus);
     // Expose the toggle button to screen readers with its pressed state — Checkbox /
     // Switch / Radio already emit their own nodes; the plain Toggle previously did not.
-    crate::widgets::semantics(
-        crate::widgets::SemanticsRole::Button,
-        p.label.clone().unwrap_or_default(),
-        out,
-    )
-    .checked(p.pressed)
-    .disabled(p.disabled)
-    .into_widget()
+    crate::widgets::semantics(crate::widgets::SemanticsRole::Button, p.label.clone().unwrap_or_default(), out)
+        .checked(p.pressed)
+        .disabled(p.disabled)
+        .into_widget()
 }
 
 // ---------------------------------------------------------------------------
