@@ -108,6 +108,8 @@ impl<'a> Painter<'a> {
 
     /// Draw a shaped glyph run. Wraps vello's fluent builder in one call so the
     /// text object stays backend-agnostic.
+    // A glyph run legitimately needs font+size+coords+brush+transforms+style+glyphs; a params
+    // struct would only obscure a flat, single-call-site signature that mirrors vello's own.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_glyphs(
         &mut self,

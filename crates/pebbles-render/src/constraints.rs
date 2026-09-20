@@ -91,12 +91,12 @@ impl BoxConstraints {
 
     /// Clamp a single width into `[min_width, max_width]`.
     pub fn constrain_width(&self, width: f64) -> f64 {
-        width.clamp(self.min_width, self.max_width)
+        clamp_range(width, self.min_width, self.max_width)
     }
 
     /// Clamp a single height into `[min_height, max_height]`.
     pub fn constrain_height(&self, height: f64) -> f64 {
-        height.clamp(self.min_height, self.max_height)
+        clamp_range(height, self.min_height, self.max_height)
     }
 
     /// Return the closest [`Size`] to `size` that satisfies these constraints.
@@ -123,10 +123,10 @@ impl BoxConstraints {
     /// satisfying `constraints` (Flutter's `BoxConstraints.enforce`).
     pub fn enforce(&self, constraints: BoxConstraints) -> Self {
         BoxConstraints {
-            min_width: self.min_width.clamp(constraints.min_width, constraints.max_width),
-            max_width: self.max_width.clamp(constraints.min_width, constraints.max_width),
-            min_height: self.min_height.clamp(constraints.min_height, constraints.max_height),
-            max_height: self.max_height.clamp(constraints.min_height, constraints.max_height),
+            min_width: clamp_range(self.min_width, constraints.min_width, constraints.max_width),
+            max_width: clamp_range(self.max_width, constraints.min_width, constraints.max_width),
+            min_height: clamp_range(self.min_height, constraints.min_height, constraints.max_height),
+            max_height: clamp_range(self.max_height, constraints.min_height, constraints.max_height),
         }
     }
 
@@ -149,4 +149,15 @@ impl BoxConstraints {
         };
         BoxConstraints { min_width, max_width, min_height, max_height }
     }
+}
+
+/// Clamp `v` into `[lo, hi]` WITHOUT panicking on degenerate bounds. `f64::clamp` panics if
+/// `lo > hi` or either bound is NaN — both of which reach layout from hostile/degenerate input
+/// (an inverted `ConstrainedBox`, a NaN window size). Treat a NaN bound as unbounded, order the
+/// bounds, and pull a NaN value to the low bound, so constraint math can never crash the frame.
+fn clamp_range(v: f64, lo: f64, hi: f64) -> f64 {
+    let lo = if lo.is_nan() { f64::NEG_INFINITY } else { lo };
+    let hi = if hi.is_nan() { f64::INFINITY } else { hi };
+    let (lo, hi) = if lo <= hi { (lo, hi) } else { (hi, lo) };
+    v.max(lo).min(hi)
 }

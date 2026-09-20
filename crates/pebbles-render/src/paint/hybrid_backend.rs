@@ -241,6 +241,8 @@ impl<'a> Painter<'a> {
 
     /// Record a shaped glyph run (owned; the flush resolves glyphs against the
     /// hybrid atlas in `Resources`).
+    // Mirrors the vello backend's `draw_glyphs` signature exactly (backend parity); the flat
+    // font+size+coords+brush+transforms+style+glyphs list is the call contract, not a smell.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_glyphs(
         &mut self,

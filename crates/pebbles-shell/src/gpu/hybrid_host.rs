@@ -45,6 +45,8 @@ pub(crate) struct RenderParams {
     pub base_color: peniko::Color,
     pub width: u32,
     pub height: u32,
+    // The hybrid backend antialiases internally, so this field is never read here — it exists
+    // only to mirror the Vello host's `RenderParams` shape so the runner fills both identically.
     #[allow(dead_code)]
     pub antialiasing_method: AaConfig,
 }
@@ -158,8 +160,9 @@ impl Renderer {
             self.inner = Some(renderer);
             self.resources = Some(resources);
         }
-        let renderer = self.inner.as_mut().unwrap();
-        let resources = self.resources.as_mut().unwrap();
+        let renderer = self.inner.as_mut().expect("hybrid renderer built just above when inner was None");
+        let resources =
+            self.resources.as_mut().expect("hybrid resources built just above when inner was None");
 
         // Build the backend scene: clear to the base color, then flush the recorded op-list.
         let mut hyb = HybScene::new(size.0.min(u16::MAX as u32) as u16, size.1.min(u16::MAX as u32) as u16);

@@ -69,8 +69,13 @@ struct Props {
 
 impl IntoWidget for Resizable {
     fn into_widget(self) -> AnyWidget {
-        let n = self.panels.len().max(1);
-        let sizes = self.sizes.unwrap_or_else(|| vec![self.length / n as f64; n]);
+        let count = self.panels.len();
+        let n = count.max(1);
+        let mut sizes = self.sizes.unwrap_or_else(|| vec![self.length / n as f64; n]);
+        // Guard: sizes must match the panel count or the drag path indexes OOB.
+        if sizes.len() != count {
+            sizes.resize(count, self.length / n as f64);
+        }
         component_props(
             render_resizable,
             Props { panels: self.panels, axis: self.axis, sizes, min: self.min, handle: self.handle },

@@ -415,5 +415,6 @@ const MONTHS: [&str; 12] = [
 
 /// `Jan 5, 2026`.
 fn readable(d: Date) -> String {
-    format!("{} {}, {}", &MONTHS[d.1.saturating_sub(1) as usize][..3], d.2, d.0)
+    // Guard: clamp month to 1..=12 so an out-of-range month can't index OOB.
+    format!("{} {}, {}", &MONTHS[(d.1.clamp(1, 12) - 1) as usize][..3], d.2, d.0)
 }

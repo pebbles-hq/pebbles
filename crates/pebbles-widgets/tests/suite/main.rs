@@ -6,6 +6,7 @@
 //! disk). Add new test files to this directory and list them below.
 
 mod accordion;
+mod adversarial;
 mod animated_container;
 mod breadcrumb;
 mod button;
@@ -17,8 +18,10 @@ mod catalog_batch;
 mod command;
 mod components;
 mod context_scope;
+mod control;
 mod date_field_range;
 mod default_text_style;
+mod design_language;
 mod engine;
 mod error_boundary;
 mod field_lazy;
@@ -54,6 +57,7 @@ mod popover;
 mod pressable;
 mod property_parity;
 mod reactive;
+mod router;
 mod scroll_notification;
 mod scroll_physics;
 mod scrollbar;

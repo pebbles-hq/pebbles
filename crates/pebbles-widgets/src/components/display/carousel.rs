@@ -200,7 +200,8 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
     }
 
     // Autoplay: advance when the loop wraps; paused while hovered.
-    if let Some(secs) = p.autoplay {
+    // Guard: no slides means nothing to advance (% count would divide by zero).
+    if let Some(secs) = p.autoplay.filter(|_| count > 0) {
         let looped = create_loop_while(!hovered.get(), secs);
         let prev_phase = create_signal(looped.get());
         create_effect(move || {

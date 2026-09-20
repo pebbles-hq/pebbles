@@ -1,6 +1,6 @@
 //! `pebbles` — the developer CLI for the Pebbles GUI framework.
 //!
-//! Flutter-style tooling for a Rust desktop UI:
+//! Scaffold, run, and check a Pebbles project:
 //!
 //! ```text
 //! pebbles create <name>   scaffold a new Pebbles project (app or widget package)
@@ -103,10 +103,10 @@ fn print_help() {
 {BOLD}EXAMPLES{RESET}
     pebbles create hello && cd hello && pebbles run
     pebbles create --template widget my-widget   {DIM}# a reusable widget package{RESET}
-    pebbles run -p gallery          {DIM}# run a sample from the workspace root{RESET}
+    pebbles run -p desktop          {DIM}# run a sample from the workspace root{RESET}
     pebbles run -d web              {DIM}# build to wasm + open in a WebGPU browser{RESET}
     pebbles run -p counter -d web   {DIM}# run a specific sample on the web{RESET}
-    pebbles run -p gallery --watch crates   {DIM}# also hot-restart on framework edits{RESET}
+    pebbles run -p desktop --watch crates   {DIM}# also hot-restart on framework edits{RESET}
     pebbles run --renderer vello    {DIM}# run on the GPU-compute backend{RESET}
     pebbles run --release --renderer vello   {DIM}# optimized release on vello{RESET}
     pebbles create app2 --renderer vello     {DIM}# scaffold defaulting to vello{RESET}

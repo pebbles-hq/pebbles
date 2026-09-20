@@ -324,3 +324,153 @@ impl Harness {
 fn ui_make_current(ui: &Ui) {
     ui.make_current();
 }
+
+#[cfg(test)]
+mod tests {
+    //! The harness asserting things about ITSELF (§3 blocker): a mounted tree draws
+    //! and settles, `click` / `key` / `scroll` actually reach the mounted widgets, and
+    //! an oscillating tree makes `draw()` panic loudly instead of hanging. Without
+    //! this, nothing proved the harness plumbs input or catches non-settling layout —
+    //! the reason the suite under-adopted it.
+
+    use std::cell::{Cell, RefCell};
+
+    use pebbles_core::{IntoWidget, KeyInput, RenderWidget, Signal, component, create_signal};
+    use pebbles_foundation::{Offset, Size, palette};
+    use pebbles_render::{BoxConstraints, LayoutCx, PaintCx, RenderObject};
+    use pebbles_widgets::{
+        ScrollController, container, gesture_detector, text, text_field, use_scroll_controller,
+    };
+
+    use super::Harness;
+
+    // ----- draw settles ----------------------------------------------------
+
+    fn plain() -> impl IntoWidget {
+        container().width(100.0).height(40.0).child(text("hi"))
+    }
+
+    #[test]
+    fn draw_settles_and_builds_a_tree() {
+        let mut h = Harness::new();
+        h.mount(plain);
+        h.draw(); // must return (settle), not panic
+        assert!(h.element_count() > 0, "a mounted tree has live elements");
+    }
+
+    // ----- click reaches a widget -----------------------------------------
+
+    thread_local! {
+        static TAPS: Cell<u32> = const { Cell::new(0) };
+    }
+
+    fn tap_probe() -> impl IntoWidget {
+        gesture_detector(container().width(120.0).height(120.0).color(palette::BLUE))
+            .on_tap(|| TAPS.with(|t| t.set(t.get() + 1)))
+    }
+
+    #[test]
+    fn click_reaches_the_mounted_widget() {
+        TAPS.with(|t| t.set(0));
+        let mut h = Harness::new();
+        h.mount(tap_probe);
+        h.draw();
+        h.click(Offset::new(20.0, 20.0));
+        assert_eq!(TAPS.with(Cell::get), 1, "a click dispatched through the harness reaches on_tap");
+    }
+
+    // ----- key reaches the focused editor ---------------------------------
+
+    thread_local! {
+        static KEY_VAL: RefCell<Option<Signal<String>>> = const { RefCell::new(None) };
+    }
+
+    fn key_bound() -> Signal<String> {
+        KEY_VAL.with(|c| {
+            let mut c = c.borrow_mut();
+            if c.is_none() {
+                *c = Some(create_signal(String::new()));
+            }
+            c.unwrap()
+        })
+    }
+
+    fn key_probe() -> impl IntoWidget {
+        text_field().bind(key_bound()).autofocus().width(200.0)
+    }
+
+    #[test]
+    fn key_reaches_the_focused_editor() {
+        KEY_VAL.with(|c| *c.borrow_mut() = None);
+        let mut h = Harness::new();
+        h.mount(|| component(key_probe));
+        h.draw(); // autofocus lands
+        h.key(KeyInput::Insert("x".into()));
+        assert_eq!(key_bound().get(), "x", "a key dispatched through the harness reaches the editor");
+    }
+
+    // ----- scroll reaches a scrollable ------------------------------------
+
+    thread_local! {
+        static SCROLL: RefCell<Option<ScrollController>> = const { RefCell::new(None) };
+    }
+
+    fn scroll_probe() -> impl IntoWidget {
+        let ctrl = use_scroll_controller();
+        SCROLL.with(|c| {
+            if c.borrow().is_none() {
+                *c.borrow_mut() = Some(ctrl);
+            }
+        });
+        container().height(200.0).child(
+            pebbles_widgets::ListView::builder(200, 40.0, |i| text(format!("row {i}"))).controller(ctrl),
+        )
+    }
+
+    #[test]
+    fn scroll_reaches_the_scrollable() {
+        SCROLL.with(|c| *c.borrow_mut() = None);
+        let mut h = Harness::new();
+        h.mount(|| component(scroll_probe));
+        h.draw();
+        h.scroll(Offset::new(100.0, 100.0), 500.0);
+        h.settle();
+        let offset = SCROLL.with(|c| c.borrow().as_ref().map(ScrollController::offset).unwrap_or(0.0));
+        assert!(offset > 0.0, "a scroll dispatched through the harness moves the scrollable, got {offset}");
+    }
+
+    // ----- oscillation panics loudly --------------------------------------
+
+    /// A leaf render object that requests a corrective relayout on EVERY paint — it
+    /// never settles, so the harness's bounded settle loop must give up and panic.
+    struct AlwaysCorrective;
+
+    impl RenderObject for AlwaysCorrective {
+        fn layout(&mut self, _cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
+            constraints.constrain(Size::new(20.0, 20.0))
+        }
+        fn paint(&self, cx: &mut PaintCx<'_>, _offset: Offset) {
+            cx.request_relayout();
+        }
+    }
+
+    #[derive(Clone)]
+    struct Oscillator;
+
+    impl RenderWidget for Oscillator {
+        fn create_render_object(&self) -> Box<dyn RenderObject> {
+            Box::new(AlwaysCorrective)
+        }
+        fn update_render_object(&self, _object: &mut dyn RenderObject) {}
+    }
+
+    pebbles_core::render_widget!(Oscillator);
+
+    #[test]
+    #[should_panic(expected = "oscillating")]
+    fn oscillating_layout_panics_instead_of_hanging() {
+        let mut h = Harness::new();
+        h.mount_widget(Oscillator);
+        h.draw(); // never settles → bounded loop panics
+    }
+}

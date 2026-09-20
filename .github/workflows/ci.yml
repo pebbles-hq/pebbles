@@ -157,10 +157,9 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: clippy
-      # Warn-only: [workspace.lints] is the source of truth and there is a known
-      # backlog (~121 warnings under --all-features). Ratchet to
-      # `-- -D warnings` once it is burned down.
-      - run: cargo clippy --workspace --all-targets --all-features
+      # The backlog is burned down (0 warnings at HEAD), so the ratchet is now on:
+      # `-D warnings` fails the build on any new clippy warning. Keep it green.
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   fmt:
     name: Rustfmt

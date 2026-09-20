@@ -131,8 +131,9 @@ impl IntoWidget for Slider {
             render_slider,
             SliderProps {
                 length: self.length,
-                min: self.min,
-                max: self.max,
+                // Guard: order the domain so downstream clamp(min, max) never panics.
+                min: self.min.min(self.max),
+                max: self.max.max(self.min),
                 step: self.step,
                 values,
                 orientation: self.orientation,

@@ -10,6 +10,11 @@
 //! [`tabler`] module root, and **filled** (solid) under [`tabler::filled`] — so the
 //! same glyph is available either way (`tabler::HEART` / `tabler::filled::HEART`).
 //!
+//! **Binary size:** referencing a glyph by its `const` (`tabler::CAMERA`) lets the
+//! linker drop every icon you don't name. Calling [`tabler::by_name`] or iterating
+//! [`tabler::ALL`] links the whole table (~6,184 glyphs) into the binary, since the
+//! lookup can reach any of them — reach for `by_name` only when the name is dynamic.
+//!
 //! ```ignore
 //! use pebbles::prelude::*;
 //!

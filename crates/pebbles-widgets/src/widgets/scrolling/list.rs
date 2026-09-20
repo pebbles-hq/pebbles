@@ -666,7 +666,12 @@ fn render_list(p: &Props) -> ListViewport {
     // Visible window from the current offset + last-known viewport extent.
     let o = offset.get();
     let viewport = scroll_metrics::get(id).map(|m| m.viewport).unwrap_or(800.0);
-    let unit = if sep_ext > 0.0 { stride } else { ext };
+    // Guard: a non-finite or non-positive stride (e.g. a negative item_extent
+    // cancelling the separator) would divide-by-zero / overflow the window math.
+    let unit = {
+        let u = if sep_ext > 0.0 { stride } else { ext };
+        if u.is_finite() && u > 0.0 { u } else { 1.0 }
+    };
 
     // The visible window: binary search over the prefix when variable, a walk
     // over the extent cache when auto, else the fixed-extent arithmetic.
@@ -924,6 +929,10 @@ impl IntoWidget for GridView {
 /// One packed grid item: (row, col, col-span, row-span).
 type Placement = (usize, usize, u32, u32);
 
+/// A generous absolute cap on a grid cell's row-span — well above any real layout, but small
+/// enough that `(row + rs) * cols` can't overflow / OOM the packer on a hostile `u32::MAX`.
+const MAX_GRID_SPAN: u32 = 4096;
+
 /// Pack `count` items with their spans into a `cols`-column grid (the
 /// CSS-grid packing: fill left-to-right, top-to-bottom, wrapping when a span
 /// doesn't fit). Returns the placements and the number of rows used.
@@ -939,11 +948,14 @@ pub(crate) fn pack_grid(
     for i in 0..count {
         let (raw_cs, raw_rs) = spans(i);
         let cs = raw_cs.clamp(1, cols as u32);
-        let rs = raw_rs.max(1);
+        // Guard: floor row-span at 1 and cap it at a sane absolute (a hostile `u32::MAX`
+        // would overflow `(row + rs) * cols` and OOM the packer). NOT clamped to `count` —
+        // a row-span legitimately exceeds the item count (2 items each spanning 3 rows).
+        let rs = raw_rs.clamp(1, MAX_GRID_SPAN);
         // Find the first position (row-major) where the span fits.
         let mut placed = None;
         'scan: for row in 0usize.. {
-            let needed = (row + rs as usize) * cols;
+            let needed = (row + rs as usize).saturating_mul(cols);
             if occupied.len() < needed {
                 occupied.resize(needed, 0);
             }

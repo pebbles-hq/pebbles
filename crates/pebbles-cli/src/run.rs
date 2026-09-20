@@ -28,7 +28,7 @@ struct Opts {
 /// The render backend to build with. `None` uses the crate's own default
 /// (`vello-hybrid` — the low-power path). `Some(_)` pins it explicitly, passing
 /// `--no-default-features --features <feature>` to cargo so exactly one backend is on.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Renderer {
     /// `vello_hybrid` — hybrid CPU+GPU raster, low power. Pebbles' default.
     Hybrid,
@@ -64,7 +64,7 @@ fn renderer_label(r: Option<Renderer>) -> &'static str {
 }
 
 /// The target Pebbles runs on — Flutter's `-d`. Default is the host desktop.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Platform {
     /// The host OS (Linux / macOS / Windows) — a native window. Default.
     Desktop,
@@ -103,6 +103,9 @@ pub fn run(args: &[String]) -> ExitCode {
         port: 8080,
         renderer: None,
     };
+    // Did the user pin the log level on the command line? If not, `pebbles.toml`'s
+    // `[dev] log` (resolved once we know the project dir) supplies the default.
+    let mut log_from_cli = false;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -153,10 +156,14 @@ pub fn run(args: &[String]) -> ExitCode {
                     o.port = p;
                 }
             }
-            "-q" | "--quiet" => o.log = "warn".into(),
+            "-q" | "--quiet" => {
+                o.log = "warn".into();
+                log_from_cli = true;
+            }
             "--log" => {
                 if let Some(l) = it.next() {
                     o.log = l.clone();
+                    log_from_cli = true;
                 }
             }
             // Write the full log to a file too. `--log-file` alone picks a default
@@ -232,6 +239,12 @@ pub fn run(args: &[String]) -> ExitCode {
             }
         }
     };
+
+    // `pebbles.toml` `[dev] log` sets the default level; an explicit `--log`/`-q`
+    // still wins.
+    if !log_from_cli && let Some(level) = read_dev_log(&member_dir) {
+        o.log = level;
+    }
 
     // Flutter-style target dispatch. Desktop falls through to the native
     // build+watch+run loop below; the others have their own runtimes.
@@ -843,6 +856,16 @@ fn read_watch_dirs(project: &Path) -> Vec<PathBuf> {
     vec![project.join("src")]
 }
 
+/// pebbles.toml `[dev] log = "…"` — the default level the dev runner starts the
+/// app at, overridden by `--log`/`-q`. `None` if unset (naive, dep-free parse;
+/// mirrors `read_watch_dirs`).
+fn read_dev_log(project: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(project.join("pebbles.toml")).ok()?;
+    let line = text.lines().find(|l| l.trim_start().starts_with("log"))?;
+    let val = line.split('=').nth(1)?.trim().trim_matches('"').trim();
+    (!val.is_empty()).then(|| val.to_string())
+}
+
 fn target_bin(target_root: &Path, bin: &str, release: bool) -> PathBuf {
     let profile = if release { "release" } else { "debug" };
     target_root.join("target").join(profile).join(bin)
@@ -929,4 +952,54 @@ fn short(project: &Path, file: &Path) -> String {
 /// window is detected by the watch loop as a clean `Exited`.
 fn install_sigint(flag: Arc<AtomicBool>) {
     let _ = flag;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn package_name_parsing() {
+        assert_eq!(package_name_from("[package]\nname = \"foo\"\n").as_deref(), Some("foo"));
+        assert_eq!(package_name_from("[package]\nname=\"bar-baz\"").as_deref(), Some("bar-baz"));
+        // `name` outside `[package]` is ignored…
+        assert_eq!(package_name_from("[dependencies]\nname = \"nope\""), None);
+        // …and a workspace-only root has no package name.
+        assert_eq!(package_name_from("[workspace]\nmembers = [\"a\"]"), None);
+    }
+
+    #[test]
+    fn workspace_table_detection() {
+        assert!(has_workspace_table("[workspace]\nmembers = []"));
+        assert!(has_workspace_table("[package]\nname=\"x\"\n\n[workspace]\n"));
+        assert!(!has_workspace_table("[package]\nname=\"x\""));
+        // Exact-trim match: a commented line does not count.
+        assert!(!has_workspace_table("# [workspace]"));
+    }
+
+    #[test]
+    fn target_bin_path() {
+        let root = Path::new("/w");
+        assert_eq!(target_bin(root, "app", false), Path::new("/w/target/debug/app"));
+        assert_eq!(target_bin(root, "app", true), Path::new("/w/target/release/app"));
+    }
+
+    #[test]
+    fn renderer_parsing() {
+        assert_eq!(Renderer::parse("vello"), Some(Renderer::Vello));
+        assert_eq!(Renderer::parse("HYBRID"), Some(Renderer::Hybrid));
+        assert_eq!(Renderer::parse("vello_hybrid"), Some(Renderer::Hybrid));
+        assert_eq!(Renderer::parse("nonsense"), None);
+        assert_eq!(Renderer::Vello.feature(), "vello");
+        assert_eq!(Renderer::Hybrid.feature(), "vello-hybrid");
+    }
+
+    #[test]
+    fn platform_parsing() {
+        assert_eq!(Platform::parse("chrome"), Some(Platform::Web));
+        assert_eq!(Platform::parse("linux"), Some(Platform::Desktop));
+        assert_eq!(Platform::parse("ipad"), Some(Platform::Ios));
+        assert_eq!(Platform::parse("android"), Some(Platform::Android));
+        assert_eq!(Platform::parse("???"), None);
+    }
 }

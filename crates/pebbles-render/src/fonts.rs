@@ -58,12 +58,13 @@ fn user_fonts() -> &'static RwLock<Vec<&'static [u8]>> {
 /// font's own metadata family name is what `style().font_family("…")` then matches.
 /// Runtime (post-startup) loading is v2 (§J).
 pub fn register_user_font(bytes: &'static [u8]) {
-    user_fonts().write().unwrap().push(bytes);
+    user_fonts().write().expect("user-font registry lock poisoned (a prior panic held it)").push(bytes);
 }
 
 /// Apply every registered user font into a fresh font context.
 pub(crate) fn apply_user_fonts(fonts: &mut parley::FontContext) {
-    for bytes in user_fonts().read().unwrap().iter() {
+    for bytes in user_fonts().read().expect("user-font registry lock poisoned (a prior panic held it)").iter()
+    {
         fonts.collection.register_fonts(Blob::new(std::sync::Arc::new(bytes.to_vec())), None);
     }
 }

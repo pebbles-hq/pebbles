@@ -79,7 +79,7 @@ fn with_mgr<R>(f: impl FnOnce(&mut FocusManager) -> R) -> R {
                 scope_of: HashMap::new(),
             });
         }
-        f(cell.as_mut().unwrap())
+        f(cell.as_mut().expect("FocusManager initialized just above when cell was None"))
     })
 }
 

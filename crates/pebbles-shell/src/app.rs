@@ -17,8 +17,12 @@ use runner::{PebblesUserEvent, Runner};
 ///   it — handy for tests, kiosks, and headless captures.
 /// - **Web**: the real `(prefers-reduced-motion: reduce)` media query.
 /// - **Linux (GNOME)**: `org.gnome.desktop.interface enable-animations = false`.
-/// - **Other desktops (macOS/Windows)**: default `false` unless the env var is set — native
-///   detection there is per-OS and lands as a follow-up.
+/// - **macOS / Windows**: **not detected natively — always `false` unless the env var is set.**
+///   The OS values live behind FFI that needs a platform crate this shell does not depend on:
+///   macOS `NSWorkspace.accessibilityDisplayShouldReduceMotion` (objc2/AppKit) and Windows
+///   `SystemParametersInfo(SPI_GETCLIENTAREAANIMATION)` (windows-sys). We deliberately avoid
+///   pulling either heavy dep in just for a startup boolean; apps that need it on those two
+///   platforms should set `PEBBLES_REDUCED_MOTION`. Wiring the native queries is a follow-up.
 fn detect_reduced_motion() -> bool {
     if let Ok(v) = std::env::var("PEBBLES_REDUCED_MOTION") {
         return matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on");
@@ -35,12 +39,13 @@ fn detect_reduced_motion() -> bool {
         if let Ok(out) = std::process::Command::new("gsettings")
             .args(["get", "org.gnome.desktop.interface", "enable-animations"])
             .output()
+            && out.status.success()
         {
-            if out.status.success() {
-                return String::from_utf8_lossy(&out.stdout).trim() == "false";
-            }
+            return String::from_utf8_lossy(&out.stdout).trim() == "false";
         }
     }
+    // The wasm/Linux arms above `return` early, making this fall-through unreachable on those
+    // targets; on macOS/Windows (no native query) it IS the answer. One `false` serves both.
     #[allow(unreachable_code)]
     false
 }
@@ -73,6 +78,10 @@ pub struct App {
     /// keyboard). Off by default; no effect off wasm (read only in the wasm runner).
     #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
     web_ime: bool,
+    /// Main-window icon (RGBA8 + dimensions), applied at window creation. `None` = OS default.
+    /// Mirrors the secondary-window `WindowSpec::icon`. Windows taskbar/titlebar + Linux;
+    /// macOS takes its icon from the `.app` bundle, not this call.
+    icon: Option<pebbles_widgets::window::WindowIcon>,
 }
 
 impl App {
@@ -94,6 +103,7 @@ impl App {
             menu: None,
             text_direction: TextDirection::Ltr,
             web_ime: false,
+            icon: None,
         }
     }
 
@@ -187,6 +197,16 @@ impl App {
     /// wasm.
     pub fn web_ime(mut self, on: bool) -> Self {
         self.web_ime = on;
+        self
+    }
+
+    /// Set the main window's icon from raw RGBA8 pixels (`width * height * 4` bytes, row-major).
+    /// Applied at window creation, mirroring the secondary-window icon in
+    /// [`pebbles_widgets::window`](mod@pebbles_widgets::window). Shown in the Windows taskbar/titlebar and
+    /// by most Linux window managers; **macOS** takes its icon from the `.app` bundle, not here.
+    /// A malformed buffer (length ≠ `width * height * 4`) is ignored (the OS default is kept).
+    pub fn icon(mut self, rgba: impl Into<Vec<u8>>, width: u32, height: u32) -> Self {
+        self.icon = Some(pebbles_widgets::window::WindowIcon { rgba: rgba.into(), width, height });
         self
     }
 

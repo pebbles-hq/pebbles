@@ -58,6 +58,10 @@ impl IntoWidget for Breadcrumb {
     fn into_widget(mut self) -> AnyWidget {
         let th = theme();
         let segments = std::mem::take(&mut self.segments);
+        // Guard: empty trail renders an empty row (segments[0]/[1..] would panic).
+        if segments.is_empty() {
+            return row(Vec::<AnyWidget>::new()).main_axis_size(MainAxisSize::Min).into_widget();
+        }
         let n = self.max_visible.max(3);
         let len = segments.len();
         let merged = crate::style::style().merge(self.style.clone().unwrap_or_default());

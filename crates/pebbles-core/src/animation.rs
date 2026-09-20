@@ -107,9 +107,10 @@ pub fn now() -> f64 {
 }
 
 /// Whether the user prefers reduced motion (`prefers-reduced-motion: reduce`). The shell
-/// populates this from the platform; default `false` until it does. Widgets should use it
-/// to default entry/transition animations OFF (e.g. a chart's `.animate` default), while
-/// still letting the app force a value explicitly.
+/// populates this from the platform; default `false` until it does. The animation primitives
+/// ([`animate_to`], [`animate_to_with`], [`animate_spring`] — and the `animated*` hooks built
+/// on them) honor it by **snapping to the final value** instead of tweening, so every implicit
+/// animation goes still automatically. Widgets can also read it to drop non-essential motion.
 pub fn prefers_reduced_motion() -> bool {
     REDUCED_MOTION.with(Cell::get)
 }
@@ -176,7 +177,9 @@ pub fn animate_to_with(value: Signal<f64>, to: f64, duration: f64, curve: Curve)
     TRACKS.with(|t| {
         let mut t = t.borrow_mut();
         t.retain(|tr| tr.value != value);
-        if duration <= 0.0 || (from - to).abs() <= 1e-4 {
+        // Honor the reduced-motion preference: snap to the final value instead of tweening
+        // (the accessibility contract — the animation primitives all funnel through here).
+        if duration <= 0.0 || (from - to).abs() <= 1e-4 || prefers_reduced_motion() {
             value.set(to);
         } else {
             t.push(Track { value, to, mode: TrackMode::Tween { from, start: None, duration, curve } });
@@ -203,7 +206,8 @@ pub fn animate_spring(value: Signal<f64>, to: f64, spring: Spring) {
             }
         });
         let x = value.peek();
-        if (x - to).abs() <= 1e-4 && velocity.abs() <= 1e-4 {
+        // Reduced-motion: snap to the target rather than springing (see `animate_to_with`).
+        if prefers_reduced_motion() || ((x - to).abs() <= 1e-4 && velocity.abs() <= 1e-4) {
             value.set(to);
             return;
         }

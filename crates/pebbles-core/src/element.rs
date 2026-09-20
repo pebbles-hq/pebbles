@@ -219,8 +219,12 @@ impl Ui {
 
     // ----- layout / paint --------------------------------------------------
 
-    /// Lay the tree out to fill a `window`-sized area.
+    /// Lay the tree out to fill a `window`-sized area. The window size is sanitized to a
+    /// finite, non-negative extent first — a NaN/negative size (a 0×0 or degenerate surface,
+    /// a bad DPI event) must not propagate into constraint math and crash the frame.
     pub fn layout(&mut self, text: &mut TextEnv, window: Size) {
+        let sane = |v: f64| if v.is_finite() && v >= 0.0 { v } else { 0.0 };
+        let window = Size::new(sane(window.width), sane(window.height));
         self.render.layout(text, BoxConstraints::tight(window));
     }
 

@@ -543,7 +543,8 @@ struct ToggleProps {
 
 impl IntoWidget for Toggle {
     fn into_widget(mut self) -> AnyWidget {
-        let child = self.child.take().expect("toggle child");
+        // Guard: a child-less Toggle (e.g. Toggle::default()) renders an empty box, not a panic.
+        let child = self.child.take().unwrap_or_else(|| crate::widgets::SizedBox::shrink().into_widget());
         component_props(
             render_toggle,
             ToggleProps {

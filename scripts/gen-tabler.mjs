@@ -9,6 +9,25 @@
 //
 // Source data: the `@tabler/icons` npm package (`tabler-nodes-outline.json` and
 // `tabler-nodes-filled.json`). Tabler is MIT-licensed; see NOTICE.
+//
+// Reproducible regeneration
+// -------------------------
+// The default input paths (/tmp/…) are NOT self-documenting, so pin the upstream
+// release explicitly and fetch its node JSON from the exact tarball:
+//
+//   VER=<x.y.z>                              # the @tabler/icons release to build from
+//   npm pack "@tabler/icons@$VER"            # → tabler-icons-$VER.tgz (no global install)
+//   tar -xzf "tabler-icons-$VER.tgz"
+//   node scripts/gen-tabler.mjs \
+//     package/tabler-nodes-outline.json \
+//     package/tabler-nodes-filled.json
+//
+// Then RECORD the `VER` you used here on every bump, and confirm the output
+// fingerprint is unchanged — the checked-in tabler.rs is 5130 outline + 1054
+// filled = 6184 icons; a different count means a different release.
+//
+//   Pinned @tabler/icons version: <UNRECORDED — the checked-in file predates this
+//   note; set to the exact release string the next time this is regenerated>
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

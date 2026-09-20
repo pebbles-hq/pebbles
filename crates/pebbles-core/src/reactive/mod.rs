@@ -325,6 +325,15 @@ impl<T> std::fmt::Debug for Signal<T> {
     }
 }
 
+/// Panic message when a signal's value fails to downcast on read. In practice the only
+/// way this fires is a **re-entrant read inside `update`**: `update` temporarily swaps the
+/// value box for a zero-sized placeholder while it runs the mutator (see [`Signal::update`]),
+/// so reading the *same* signal via `get`/`peek` inside that closure finds the placeholder,
+/// not a `T`. Read a different signal, or capture the value before the `update`.
+const REENTRANT_READ_MSG: &str = "signal value missing on read — a signal was read inside its own \
+     update() closure (its value is temporarily taken out during update); read it before update() \
+     or use a separate signal";
+
 /// Create a reactive value. Inside a component it is **local** state (persisted
 /// across re-renders); at app scope it is **global** state shared by capture.
 pub fn create_signal<T: 'static + Clone>(value: T) -> Signal<T> {
@@ -520,7 +529,7 @@ impl<T: 'static + Clone> Signal<T> {
                     }
                 }
             }
-            rt.signals[self.id].value.downcast_ref::<T>().unwrap().clone()
+            rt.signals[self.id].value.downcast_ref::<T>().expect(REENTRANT_READ_MSG).clone()
         })
     }
 
@@ -539,7 +548,7 @@ impl<T: 'static + Clone> Signal<T> {
                      use try_peek() in timers/closures that can fire after unmount"
                 )
             });
-            slot.value.downcast_ref::<T>().unwrap().clone()
+            slot.value.downcast_ref::<T>().expect(REENTRANT_READ_MSG).clone()
         })
     }
 
@@ -1122,6 +1131,14 @@ pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
 #[derive(Clone, Copy)]
 pub struct Store<S: 'static + Clone> {
     signal: Signal<S>,
+}
+
+// Id-based `Debug`, mirroring `Signal` (the value isn't read here — that would need the
+// runtime borrow). Prints the backing signal's id so a store can be logged without `get()`.
+impl<S: 'static + Clone> std::fmt::Debug for Store<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Store({:?})", self.signal.id)
+    }
 }
 
 /// Create a global [`Store`].

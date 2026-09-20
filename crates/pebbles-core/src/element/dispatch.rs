@@ -405,6 +405,9 @@ impl Ui {
     /// the widget restyles itself. A pointer staying over the same widget is a no-op.
     pub fn dispatch_hover(&mut self, point: Offset) -> bool {
         let hits = self.render.hit_test(point);
+        // (render id, enter, move, exit) invoke lists — a local one-shot tuple, clearer inline
+        // than a named type for a single find_map.
+        #[allow(clippy::type_complexity)]
         let found: Option<(u64, Vec<Invoke>, Vec<Invoke>, Vec<Invoke>)> =
             hits.iter().rev().find_map(|&rid| {
                 let listener = self.render.object_ref(rid).downcast_ref::<RenderPointerListener>()?;

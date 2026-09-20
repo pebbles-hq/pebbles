@@ -82,9 +82,9 @@ android-native-activity = ["winit/android-native-activity"]
 muda = { version = "0.19", optional = true }
 
 # System clipboard (text only — the heavy image feature is dropped). arboard has
-# no wasm or Android backend; on those targets the core's in-process clipboard
-# fallback takes over.
-[target.'cfg(not(any(target_family = "wasm", target_os = "android")))'.dependencies]
+# no wasm, Android, or iOS backend (on iOS it would compile its Linux X11/Wayland
+# backend); on those targets the core's in-process clipboard fallback takes over.
+[target.'cfg(not(any(target_family = "wasm", target_os = "android", target_os = "ios")))'.dependencies]
 arboard = { version = "3", default-features = false }
 
 # The AccessKit platform bridge (AT-SPI on Linux, UIA on Windows, NSAccessibility

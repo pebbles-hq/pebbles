@@ -95,3 +95,9 @@ opt-level = 2
 [profile.release]
 lto = "thin"
 strip = "debuginfo"
+
+# Tests/CI: turn on integer overflow checks (defense-in-depth for the integer math — capture
+# readback offsets, index arithmetic — so a wrap trips a panic in CI instead of silently
+# wrapping). Inherits everything else from `dev`.
+[profile.test]
+overflow-checks = true

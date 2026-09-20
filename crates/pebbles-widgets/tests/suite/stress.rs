@@ -1,21 +1,25 @@
-//! E1 regression tripwire (`#[ignore]`d — run manually):
+//! Widget-scale stress tripwires — deterministic, count-based, CI-run.
 //!
-//! ```text
-//! cargo test -p pebbles-widgets --test stress -- --ignored
-//! ```
+//! 1. **Scheduling isolation + linear drain.** 1 000 components, each subscribed to
+//!    its own signal. Writing one signal must schedule only that component
+//!    (isolation); writing all 1 000 then draining a single frame must stay linear
+//!    (the O(1) membership set replacing the old linear `contains`) and complete well
+//!    inside a generous wall-clock bound.
+//! 2. **10k-row virtualization tripwire.** A 10 000-row `ListView` must render only
+//!    the viewport window — `render_node_count()` stays bounded on mount and after a
+//!    deep scroll, never scaling with the item count.
 //!
-//! 1 000 components, each subscribed to its own signal. Writing one signal must
-//! schedule only that component (isolation); writing all 1 000 then draining a single
-//! frame must stay linear (the O(1) membership set replacing the old linear `contains`)
-//! and complete well inside a generous wall-clock bound.
+//! The asserts are count-based and deterministic (the wall bound is generous), so the
+//! suite runs these in CI rather than gating them behind `#[ignore]`.
 
 use std::cell::RefCell;
 use std::time::Instant;
 
 use pebbles_core::{AnyWidget, IntoWidget, Signal, Ui, component, component_props, create_signal};
-use pebbles_foundation::{Size, palette};
+use pebbles_foundation::{Offset, Size, palette};
 use pebbles_render::TextEnv;
-use pebbles_widgets::{SizedBox, View, column};
+use pebbles_testing::Harness;
+use pebbles_widgets::{ListView, SizedBox, View, column, container, text};
 
 const N: usize = 1000;
 
@@ -43,7 +47,6 @@ fn root() -> impl IntoWidget {
 }
 
 #[test]
-#[ignore = "stress tripwire — run manually with --ignored"]
 fn thousand_components_schedule_and_drain_in_isolation() {
     SIGNALS.with(|s| {
         let mut s = s.borrow_mut();
@@ -91,4 +94,40 @@ fn thousand_components_schedule_and_drain_in_isolation() {
         );
     });
     assert!(elapsed.as_secs() < 5, "schedule+drain of {N} components took {elapsed:?} (regression?)");
+}
+
+// ---------------------------------------------------------------------------
+// 10k-row virtualization tripwire
+// ---------------------------------------------------------------------------
+
+/// Bound on live render nodes for a viewport-window'd list — comfortably above the
+/// ~13 visible rows + overscan + chrome, and *far* below the 10 000 item count, so a
+/// regression to a non-virtualized list (nodes ∝ items) trips it loudly.
+const NODE_BOUND: usize = 2000;
+
+fn ten_thousand_rows() -> impl IntoWidget {
+    container().height(400.0).child(ListView::builder(10_000, 32.0, |i| text(format!("row {i}"))))
+}
+
+#[test]
+fn ten_thousand_row_list_stays_virtualized() {
+    let mut h = Harness::new().window(400.0, 400.0);
+    h.mount(ten_thousand_rows);
+    h.draw();
+    let on_mount = h.render_node_count();
+    assert!(
+        on_mount < NODE_BOUND,
+        "a 10k-row list must render only the viewport window, got {on_mount} nodes"
+    );
+
+    // Scroll deep into the list, land the spring, and re-measure — the node count must
+    // stay bounded (it tracks the viewport, not the content).
+    h.scroll(Offset::new(200.0, 200.0), 6000.0);
+    h.settle();
+    h.draw();
+    let after_scroll = h.render_node_count();
+    assert!(
+        after_scroll < NODE_BOUND,
+        "node count stays bounded after a deep scroll, got {after_scroll} nodes"
+    );
 }

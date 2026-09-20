@@ -87,7 +87,7 @@ remote-URL images) and their per-platform status live in
 | `keyed` / `Keyed` (KeyedSubtree) | ✅ | attach a reconciliation key to any child; the reconciler now matches keyed children BY KEY across positions (insert/remove/reorder preserves element state) — prerequisite for AnimatedList + reorderable lists |
 | `AnimatedList` · `AnimatedGrid` | ✅ | items animate in on add / out on remove (`animated_list`/`animated_grid`, `(u64,child)` pairs); removed items kept for one exit tween then dropped. List = size+fade (column); grid = scale+fade (flowing `Wrap`) |
 | `AnimatedPositioned` | ✅ | Stack child that eases to target left/top/right/bottom/width/height on change |
-| `Hero` / `fly_heroes` | ✅ | shared-element route transition: `hero(tag, child)` + `fly_heroes(dur, navigate)` flies matching tags between screens via an overlay (RouteView swaps instantly, so it's a hero-only transition; full route cross-fade is a follow-up) |
+| `Hero` / `fly_heroes` | ✅ | shared-element route transition: `hero(tag, child)` + `fly_heroes(dur, navigate)` flies matching tags between screens via an overlay (independent of `RouteView::transition`, the opt-in route cross-fade) |
 | `Draggable` / `long_press_draggable` · `DragTarget` | ✅ | general drag-and-drop: `draggable(data, child).feedback(w)` carries a typed payload + flies feedback under the pointer; `drag_target(builder).on_accept::<T>(..)` receives it (matched by type; `on_will_accept` for a custom predicate). `long_press_draggable` gates the drag behind a press-hold |
 | `ReorderableListView` | ✅ | drag-to-reorder vertical list (`reorderable_list_view(rows, on_reorder)`, fixed `item_extent`); rows keep state via keyed children, others slide to open the gap, order commits on drop |
 | `InteractiveViewer` | ✅ | pan (drag) + zoom (double-tap, clamped `min_scale`..`max_scale`) over a clipped viewport |
@@ -182,11 +182,11 @@ remote-URL images) and their per-platform status live in
 | `dialog` / `alert_dialog` | ✅ | per-window modal; alert preset non-dismissible by default |
 | `sheet` (Drawer) | ✅ | `Side::{Left,Right,Top,Bottom}` + slide/scrim motion + deferred-removal exit tween |
 | `refresh_indicator` | ✅ | pull-to-refresh over drag-scroll + rubber-band (A5 ✅); `RefreshDone.finish()` contract |
-| `toast` | ✅ 🔶C1 | variants/duration/action/dismiss, max-3 stack; hover-pause + motion (C1) open |
+| `toast` | ✅ | variants/duration/action/dismiss, max-3 stack; hover-pause + motion (C1 ✅) |
 | overlay (`show_overlay`/`show_passive`/`OverlayHost`) | ✅ 🔶C6 | anchor+flip+scroll-follow; secondary-window scroll-follow (C6) open |
 | global context menu | ✅ | disabled-by-default fallback, per-widget opt-in/out, styleable |
-| windows (multi-window) | ✅ | `window()` + close/focus/minimize/maximize/position/resizable/title; `monitors()` (F5) open |
-| fonts | ✅ 🔶F4 | 4 bundled builtins + host discovery (`families`/`has`); user-supplied bytes `App::font` (F4) open |
+| windows (multi-window) | ✅ | `window()` + close/focus/minimize/maximize/position/resizable/title; `monitors()` reactive snapshots (F5 ✅) |
+| fonts | ✅ | 4 bundled builtins + host discovery (`families`/`has`); user-supplied bytes `App::font` (F4 ✅) |
 
 ## 6. Styling & theming
 
@@ -229,19 +229,18 @@ Baseline-as-a-widget rides **G1** (real baseline alignment); `CustomPaint` IS **
 
 ## 9. Open items — already tracked in `p2-roadmap.md`
 
-Widget-visible only (infra/perf/tooling live in the roadmap): **A3** sticky/collapsing
-headers · **A4** drag-fling/overscroll/physics · **A5** pull-to-refresh · **A6** Carousel ·
-**B1–B4** keyboard tier · **C1** toast motion · **C2** tooltip sides · **C3** sheet slide ·
-**C5** rail-collapse · **C6** secondary-window scroll-follow · **C7** semantics roles ·
-**C8f/g/h** Toolbar/chrome/routing gallery screens · **D1** AT actions · **D2** RTL ·
-**F4** `App::font` · **F5** monitors · **G1–G5, G7, G8** property parity · **H1** animation v2 ·
-**H2** canvas · **H3** chart plan. (A1 remainder: auto-measured list extents. A2, B5, B6, C4 ✅ done. **E6 ✅ DONE 2026-09-02.**)
+Widget-visible only (infra/perf/tooling live in the roadmap):
+**B1–B4** keyboard tier (B1/B2 done; B3/B4 pending build-verify) · **C2** tooltip sides ·
+**C3** sheet slide · **C6** secondary-window scroll-follow · **C7** semantics roles ·
+**C8f/g/h** Toolbar/chrome/routing gallery screens · **D1** AT actions ·
+**G1–G5, G7, G8** property parity · **H1** animation v2 · **H3** chart plan.
+(A1 remainder: auto-measured list extents. A2, B5, B6, C4 ✅ done. **A3, A4, A5, A6, C1, C5, D2, F4, F5, H2 ✅ done.** **E6 ✅ DONE 2026-09-02.**)
 
 ## 10. Decided OUT — do not re-add (p2 §J + desktop-catalog §5)
 
 NavigationMenu (Menubar covers) · InputGroup (TextField leading/trailing) · Material ripple ·
 `blur`/`backdrop` in Style · per-state styles · form-validation framework (parked) · full
-Flutter sliver protocol · infinite carousel (v2) · wasm/web target · hot reload ·
+Flutter sliver protocol · infinite carousel (v2) ·
 `text_transform`/style cascade/`overflow`/`z_index` in Style · monitor hot-plug events ·
 Ribbon · MDI · WebView · printing (deferred) · terminal emulator (deferred, plan-first) ·
 media playback · auto-updater · OS jump lists · gauges (ride H3).

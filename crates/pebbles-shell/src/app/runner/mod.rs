@@ -118,7 +118,7 @@ pub(super) fn install_error_handler(device: &wgpu::Device) {
 /// core's in-process clipboard handles intra-app copy/paste. (Web additionally does
 /// copy-OUT through `navigator.clipboard.write_text`; only paste-IN stays app-local.
 /// Android's JNI backend is a follow-up.)
-#[cfg(not(any(target_family = "wasm", target_os = "android")))]
+#[cfg(not(any(target_family = "wasm", target_os = "android", target_os = "ios")))]
 fn install_clipboard() {
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -138,9 +138,9 @@ fn install_clipboard() {
     }
 }
 
-/// Android: no `arboard` backend yet — the core's in-process fallback keeps
-/// intra-app copy/paste working (a JNI backend is a follow-up).
-#[cfg(all(target_os = "android", not(target_family = "wasm")))]
+/// Android / iOS: no `arboard` backend — the core's in-process fallback keeps
+/// intra-app copy/paste working (a JNI / UIPasteboard backend is a follow-up).
+#[cfg(all(any(target_os = "android", target_os = "ios"), not(target_family = "wasm")))]
 fn install_clipboard() {}
 
 /// Web: writes go to the system clipboard via the async `navigator.clipboard`
@@ -195,7 +195,7 @@ struct ActiveWindow {
     surface: RenderSurface<'static>,
 }
 
-/// A secondary OS window opened via [`window`](pebbles_widgets::window). It has its
+/// A secondary OS window opened via [`window`](fn@pebbles_widgets::window). It has its
 /// own [`Ui`] + surface but shares the GPU context, renderers and — crucially — the
 /// reactive runtime with the main window, so cross-window state is just a shared
 /// signal. Each `Ui` carries a distinct `window_id`, so components never alias.
@@ -224,6 +224,10 @@ pub(super) struct Runner {
     resizable: bool,
     maximized: bool,
     decorations: bool,
+    /// Main-window icon (RGBA8 + dims), applied at creation. Read only on desktop
+    /// (winit ignores it on web); `allow(dead_code)` keeps the wasm build quiet.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    icon: Option<pebbles_widgets::window::WindowIcon>,
     pending_root: Option<pebbles_core::AnyWidget>,
     /// B3 native menu bar spec, held until the window exists (see `resumed`). Read
     /// only when the native menu path is actually compiled (feature on + macOS/Windows).
@@ -335,6 +339,7 @@ impl Runner {
             resizable: app.resizable,
             maximized: app.maximized,
             decorations: app.decorations,
+            icon: app.icon,
             pending_root: app.root,
             menu_spec: app.menu,
             text_direction: app.text_direction,
@@ -416,6 +421,14 @@ impl Runner {
         }
         if let Some((x, y)) = self.position {
             attrs = attrs.with_position(winit::dpi::LogicalPosition::new(x, y));
+        }
+        // Main-window icon (desktop only; winit ignores it on web). Mirrors the
+        // secondary-window path — a malformed RGBA buffer is dropped, keeping the OS default.
+        #[cfg(not(target_family = "wasm"))]
+        if let Some(icon) = &self.icon
+            && let Ok(i) = winit::window::Icon::from_rgba(icon.rgba.clone(), icon.width, icon.height)
+        {
+            attrs = attrs.with_window_icon(Some(i));
         }
         // Desktop: create hidden so the AccessKit adapter can attach before the
         // window is shown (it panics if the window is already visible).
@@ -1060,6 +1073,13 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
 
             // IME composition (CJK, dead keys). Preedit = the in-progress underline;
             // Commit = the finished text, inserted like a normal keystroke.
+            //
+            // DEFERRED: `window.set_ime_cursor_area(..)` (which positions the OS candidate
+            // window at the caret) is not called — the focused editor's caret rect in window
+            // coordinates isn't plumbed to the shell. Caret geometry lives in the widget layer
+            // (the text-edit layout registry, keyed by instance id) and is never published in
+            // window space, so the shell has no rect to hand winit. The candidate window falls
+            // back to winit's default position until that geometry is surfaced (a follow-up).
             WindowEvent::Ime(ime) => {
                 let handled = match ime {
                     Ime::Preedit(text, _cursor) => self.ui.dispatch_key(KeyInput::Preedit(text)),
@@ -1068,6 +1088,26 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 };
                 if handled {
                     self.request_redraw();
+                }
+            }
+
+            // DPI changed (e.g. dragging across mixed-DPI monitors). Anchored popovers shift,
+            // and the swapchain must track the new physical size — resize to the window's current
+            // inner size and repaint. Layout picks up the new scale via `window.scale_factor()`.
+            // (winit follows this with a `Resized` in most cases, but handling it here avoids a
+            // blurry/mis-scaled frame in the ones where it doesn't.)
+            WindowEvent::ScaleFactorChanged { .. } => {
+                pebbles_widgets::overlay::hide_overlay();
+                if let Some(active) = self.active.as_mut() {
+                    let size = active.window.inner_size();
+                    if size.width > 0 && size.height > 0 {
+                        self.context.as_mut().unwrap().resize_surface(
+                            &mut active.surface,
+                            size.width,
+                            size.height,
+                        );
+                    }
+                    active.window.request_redraw();
                 }
             }
 

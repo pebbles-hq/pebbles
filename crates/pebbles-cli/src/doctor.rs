@@ -113,18 +113,20 @@ pub fn run(_args: &[String]) -> ExitCode {
         item(St::Warn, "android target", "missing — `rustup target add aarch64-linux-android`");
         android_missing += 1;
     }
-    if tool_version("cargo", &["ndk", "--version"]).is_some() || have("cargo-ndk") {
-        item(St::Ok, "cargo-ndk", "installed");
+    // `pebbles run -d android` builds + installs via cargo-apk2 (the NDK-driven,
+    // Gradle-free NativeActivity path) — so that, not cargo-ndk/Gradle/JDK, is
+    // what doctor checks. Accept the older cargo-apk too, as the run path does.
+    if tool_version("cargo", &["apk2", "--version"]).is_some() || have("cargo-apk2") {
+        item(St::Ok, "cargo-apk2", "installed");
+    } else if tool_version("cargo", &["apk", "--version"]).is_some() || have("cargo-apk") {
+        item(St::Ok, "cargo-apk", "installed (older cargo-apk; cargo-apk2 recommended)");
     } else {
-        item(St::Warn, "cargo-ndk", "not found — `cargo install cargo-ndk`");
+        item(
+            St::Warn,
+            "cargo-apk2",
+            "not found — `cargo install cargo-apk2` (builds + runs the APK via the NDK, Gradle-free)",
+        );
         android_missing += 1;
-    }
-    match jdk_version() {
-        Some(v) => item(St::Ok, "Java (JDK)", &v),
-        None => {
-            item(St::Warn, "Java (JDK 17+)", "not found — needed by Gradle (install a JDK, e.g. Temurin 17)");
-            android_missing += 1;
-        }
     }
     if have("adb") || sdk.as_deref().is_some_and(|s| s.join("platform-tools/adb").exists()) {
         item(St::Ok, "adb", "present (device/emulator install)");
@@ -238,11 +240,6 @@ fn installed_targets() -> &'static str {
 
 fn rustup_target_installed(target: &str) -> bool {
     installed_targets().lines().any(|l| l.trim() == target)
-}
-
-fn jdk_version() -> Option<String> {
-    // `java -version` writes to stderr; prefer a JDK (javac) if present.
-    tool_version("java", &["-version"])
 }
 
 fn host_os() -> &'static str {

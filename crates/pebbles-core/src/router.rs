@@ -200,7 +200,7 @@ fn location_signal() -> Signal<Location> {
             });
             *cell = Some(create_root_signal(init));
         }
-        cell.unwrap()
+        cell.expect("location signal initialized just above when None")
     })
 }
 
@@ -425,7 +425,7 @@ fn title_signal() -> Signal<Option<String>> {
         if cell.is_none() {
             *cell = Some(create_root_signal(None));
         }
-        cell.unwrap()
+        cell.expect("title signal initialized just above when None")
     })
 }
 
@@ -496,7 +496,7 @@ pub fn back() -> bool {
         return false;
     }
     if has_sync {
-        CORE.with(|c| c.borrow().sync.clone()).unwrap().go(-1);
+        CORE.with(|c| c.borrow().sync.clone()).expect("has_sync checked above").go(-1);
     } else {
         let target = CORE.with(|c| {
             let c = c.borrow();
@@ -523,7 +523,7 @@ pub fn forward() -> bool {
         return false;
     }
     if has_sync {
-        CORE.with(|c| c.borrow().sync.clone()).unwrap().go(1);
+        CORE.with(|c| c.borrow().sync.clone()).expect("has_sync checked above").go(1);
     } else {
         let target = CORE.with(|c| {
             let c = c.borrow();

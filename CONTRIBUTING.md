@@ -25,6 +25,10 @@ cargo fmt --check                # style (max_width = 110, see rustfmt.toml)
 - **Tests are headless** (no window/GPU). New pebbles-widgets tests go in
   `crates/pebbles-widgets/tests/suite/<name>.rs` + a `mod <name>;` line in
   `suite/main.rs` — do not add new top-level files under `tests/`.
+- **Drive tests through the harness.** New tests must use `pebbles_testing::Harness`
+  (or its free functions) to mount, tick and query — never hand-roll a `Ui::new()`
+  plus a private frame loop. The harness owns service init and the corrective-relayout
+  settle; a bespoke loop silently drifts from the real frame pipeline.
 - **Icons are generated**: `crates/pebbles-icons/src/tabler.rs` comes from
   `scripts/gen-tabler.mjs` (Node). Never hand-edit it.
 - New public API must be re-exported from `pebbles::prelude`.

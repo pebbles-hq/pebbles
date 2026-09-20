@@ -69,11 +69,14 @@ fn render_interactive_viewer(v: &InteractiveViewer) -> Element {
     let tx = create_signal(0.0_f64);
     let ty = create_signal(0.0_f64);
 
-    let s = scale.get().clamp(v.min_scale, v.max_scale);
+    // Guard: order the bounds so clamp never sees min > max (would panic).
+    let (lo, hi) =
+        if v.min_scale <= v.max_scale { (v.min_scale, v.max_scale) } else { (v.max_scale, v.min_scale) };
+    let s = scale.get().clamp(lo, hi);
     let matrix = Affine::translate((tx.get(), ty.get())) * Affine::scale(s);
     let content = transform(matrix, v.child.clone());
 
-    let zoomed = v.zoomed_scale.clamp(v.min_scale, v.max_scale);
+    let zoomed = v.zoomed_scale.clamp(lo, hi);
     let pannable = v.pannable;
 
     let gd = GestureDetector::new(content)
