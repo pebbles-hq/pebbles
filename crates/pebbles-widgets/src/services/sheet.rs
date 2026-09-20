@@ -330,6 +330,15 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
     // would reach the scrim and close the sheet. The catcher wraps the Transform so
     // it's the panel's outermost hit layer. Flutter's modal content absorbs the same.
     let slid = GestureDetector::new(Transform::translate(dx, dy, surface)).on_tap(|| {});
+    // Announce the sheet as a Dialog to assistive tech (Dialog does the same) and trap
+    // Tab traversal inside it so keyboard focus can't leak to the page behind. The
+    // semantics/focus-scope wrappers are pointer-transparent, so the GestureDetector
+    // above stays the panel's outermost tap-catching layer.
+    let slid = crate::widgets::focus_scope(crate::widgets::semantics(
+        pebbles_render::SemanticsRole::Dialog,
+        e.title.clone(),
+        slid,
+    ));
 
     // Anchor to the sheet's edge on the main axis; center on the cross axis when the
     // panel is smaller than the window there (a partial-width bottom sheet, say).

@@ -319,15 +319,26 @@ impl Runner {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state == ElementState::Pressed {
-                    // Escape closes this window's open (dismissible) modal dialog first.
-                    if event.logical_key == Key::Named(NamedKey::Escape) && pebbles_widgets::dialog::is_open()
-                    {
-                        pebbles_widgets::dialog::dismiss_top();
-                        w.window.request_redraw();
-                        if keep {
-                            self.windows.insert(window_id, w);
+                    // Escape, topmost-first (mirrors the main window): a transient
+                    // overlay (menu/popover/dropdown/date-time picker) closes before
+                    // any modal, then the topmost modal (dialog vs sheet) — so Escape
+                    // can't close a modal underneath a floating menu.
+                    if event.logical_key == Key::Named(NamedKey::Escape) {
+                        let mut consumed = false;
+                        if pebbles_widgets::overlay::is_open() {
+                            pebbles_widgets::overlay::hide_overlay();
+                            consumed = true;
+                        } else if pebbles_widgets::dialog::is_open() || pebbles_widgets::sheet::is_open() {
+                            pebbles_widgets::overlay::dismiss_topmost_modal();
+                            consumed = true;
                         }
-                        return;
+                        if consumed {
+                            w.window.request_redraw();
+                            if keep {
+                                self.windows.insert(window_id, w);
+                            }
+                            return;
+                        }
                     }
                     // B2 precedence: focused editor → shortcuts → Tab → activation.
                     let intent = to_command(&event, self.ctrl_down, self.shift_down);

@@ -991,14 +991,26 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                         self.request_redraw();
                         return;
                     }
-                    // Escape closes an open (dismissible) sheet or modal dialog first.
-                    if event.logical_key == Key::Named(NamedKey::Escape)
-                        && (pebbles_widgets::sheet::is_open() || pebbles_widgets::dialog::is_open())
-                    {
-                        pebbles_widgets::sheet::dismiss_top();
-                        pebbles_widgets::dialog::dismiss_top();
-                        self.request_redraw();
-                        return;
+                    // Escape, topmost-first. Transient overlays (menus, popovers,
+                    // dropdowns, context menus, the date/time pickers) float ABOVE
+                    // modals, so close the topmost one before touching any modal —
+                    // otherwise Escape would close the sheet/dialog underneath and
+                    // orphan the menu above it.
+                    if event.logical_key == Key::Named(NamedKey::Escape) {
+                        if pebbles_widgets::overlay::is_open() {
+                            pebbles_widgets::overlay::hide_overlay();
+                            self.request_redraw();
+                            return;
+                        }
+                        // Otherwise close only the TOPMOST modal (dialog vs sheet by
+                        // open order). While any modal is open, consume Escape so it
+                        // can't reach the page behind — even if the top modal is
+                        // non-dismissible (then this is a no-op but still consumes).
+                        if pebbles_widgets::dialog::is_open() || pebbles_widgets::sheet::is_open() {
+                            pebbles_widgets::overlay::dismiss_topmost_modal();
+                            self.request_redraw();
+                            return;
+                        }
                     }
                     // B2 precedence: focused editor → shortcuts → Tab → activation.
                     // The editing-command modifier is Ctrl everywhere, plus ⌘ (Super) on

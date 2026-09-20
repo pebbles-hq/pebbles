@@ -242,12 +242,15 @@ impl AlertDialog {
         let confirm_variant =
             if self.destructive { ButtonVariant::Destructive } else { ButtonVariant::Primary };
         // Both buttons close the top modal (one per window) then fire their callback.
-        let confirm_btn = button(self.confirm.clone()).variant(confirm_variant).on_pressed(move || {
-            close_dialog(0);
-            if let Some(f) = &on_confirm {
-                f();
-            }
-        });
+        // The confirm button autofocuses so opening the dialog pulls keyboard focus
+        // into the modal's focus scope (and Enter/Space activates the default action).
+        let confirm_btn =
+            button(self.confirm.clone()).variant(confirm_variant).autofocus().on_pressed(move || {
+                close_dialog(0);
+                if let Some(f) = &on_confirm {
+                    f();
+                }
+            });
         let on_cancel = self.on_cancel.clone();
         let cancel_btn: Button =
             button(self.cancel.clone()).variant(ButtonVariant::Outline).on_pressed(move || {
@@ -329,7 +332,11 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
     // C7: announce the surface as a Dialog (label = title) to assistive tech.
     let labelled =
         crate::widgets::semantics(pebbles_render::SemanticsRole::Dialog, entry.title.clone(), surface);
-    let panel = Positioned::fill(center(labelled)).into_widget();
+    // Trap Tab traversal inside the modal so keyboard focus can't leak to the page
+    // behind it (an autofocused control in the content pulls initial focus into the
+    // scope — see AlertDialog's confirm button).
+    let trapped = crate::widgets::focus_scope(labelled);
+    let panel = Positioned::fill(center(trapped)).into_widget();
 
     vec![scrim, panel]
 }

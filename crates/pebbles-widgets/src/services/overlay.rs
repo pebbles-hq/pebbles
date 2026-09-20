@@ -188,6 +188,28 @@ pub fn hide_overlay() {
     overlay_signal().set(None);
 }
 
+/// Dismiss only the **topmost** modal — the dialog or the sheet with the higher
+/// open-sequence — if it is dismissible. Escape must close one surface at a time
+/// (the previous shell path dismissed both a sheet and a dialog at once). A
+/// non-dismissible top modal is a no-op here, and the caller still consumes Escape
+/// so it can't reach the page behind the modal.
+pub fn dismiss_topmost_modal() {
+    let dialog_seq = crate::dialog::open_seq();
+    let sheet_seq = crate::sheet::open_seq();
+    match (dialog_seq, sheet_seq) {
+        (Some(d), Some(s)) => {
+            if d >= s {
+                crate::dialog::dismiss_top();
+            } else {
+                crate::sheet::dismiss_top();
+            }
+        }
+        (Some(_), None) => crate::dialog::dismiss_top(),
+        (None, Some(_)) => crate::sheet::dismiss_top(),
+        (None, None) => {}
+    }
+}
+
 /// Forget a closed window's overlay state: clear + drop its overlay/passive signals
 /// and its recorded size. Window ids are never reused, so skipping this would grow
 /// the maps — and pin the dropped panels' widget trees — on every open/close cycle.
