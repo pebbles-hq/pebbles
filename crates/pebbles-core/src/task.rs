@@ -169,7 +169,7 @@ where
 // F3 — optional tokio async (behind the `tokio` feature; default off)
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "tokio")]
+#[cfg(all(feature = "tokio", not(target_family = "wasm")))]
 mod tokio_support {
     use std::sync::OnceLock;
 
@@ -234,10 +234,10 @@ mod tokio_support {
     }
 }
 
-#[cfg(feature = "tokio")]
+#[cfg(all(feature = "tokio", not(target_family = "wasm")))]
 pub use tokio_support::{create_resource_future, spawn_future};
 
-#[cfg(all(test, feature = "tokio"))]
+#[cfg(all(test, feature = "tokio", not(target_family = "wasm")))]
 mod tokio_tests {
     use super::*;
     use std::cell::Cell;

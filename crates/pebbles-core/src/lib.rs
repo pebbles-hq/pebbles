@@ -68,7 +68,7 @@ pub use shortcuts::{Mods, ShortcutKey, create_shortcut, create_shortcut_if};
 #[cfg(target_family = "wasm")]
 pub use task::spawn_local_future;
 pub use task::{Resource, create_resource, spawn};
-#[cfg(feature = "tokio")]
+#[cfg(all(feature = "tokio", not(target_family = "wasm")))]
 pub use task::{create_resource_future, spawn_future};
 pub use widget::{AnyWidget, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget, Widget};
 

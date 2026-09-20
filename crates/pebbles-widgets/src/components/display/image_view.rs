@@ -207,10 +207,9 @@ impl ImageView {
     /// An image fetched from a URL (loads on a background thread).
     ///
     /// # Platform support
-    /// Native (desktop/mobile) only for now. On **web** a remote URL renders the
-    /// `error` widget until the browser `fetch` backend lands — use
-    /// [`asset`](Self::asset)/[`memory`](Self::memory)/[`base64`](Self::base64) or
-    /// a `data:` URI, which work on every platform. See `PLATFORMS.md`.
+    /// Works on every target: native uses a background-thread `ureq` fetch, **web** uses the
+    /// browser's own `fetch`. Cross-origin URLs must send CORS headers (web) or are the app's
+    /// SSRF/trust responsibility (native). See `PLATFORMS.md`.
     pub fn network(url: impl Into<String>) -> Self {
         make(Source::Network(url.into()))
     }
@@ -379,7 +378,7 @@ pub struct FadeInImage {
     fade_secs: f64,
 }
 
-/// A [`FadeInImage`] that loads `url` from the network (native only — see
+/// A [`FadeInImage`] that loads `url` from the network (works on native and web — see
 /// [`ImageView::network`]).
 pub fn fade_in_image(url: impl Into<String>) -> FadeInImage {
     FadeInImage {

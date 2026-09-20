@@ -88,7 +88,7 @@ pub use pebbles_core::{create_cleanup, create_effect, on, on_defer, on_mount};
 pub use pebbles_core::{create_selector, create_unique_id};
 
 // --- time & async ----------------------------------------------------------
-#[cfg(feature = "tokio")]
+#[cfg(all(feature = "tokio", not(target_family = "wasm")))]
 pub use pebbles_core::create_resource_future;
 pub use pebbles_core::{create_loop, create_loop_while, create_resource, create_timeout};
 

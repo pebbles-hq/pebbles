@@ -19,13 +19,16 @@ slotmap.workspace = true
 smallvec.workspace = true
 # wasm-safe clock for scroll/fling timing (std::time::SystemTime panics on wasm).
 web-time.workspace = true
-# F3 — optional async: a lazy multi-thread tokio runtime behind the `tokio` feature
-# (default off). Same pump-based UI-thread result delivery as the std-thread `spawn`.
-tokio = { version = "1", optional = true, features = ["rt", "rt-multi-thread"] }
-
 # Web: `spawn` runs background work on the microtask queue (no OS threads on wasm).
 [target.'cfg(target_family = "wasm")'.dependencies]
 wasm-bindgen-futures = "0.4"
+
+# F3 — optional async: a lazy multi-thread tokio runtime behind the `tokio` feature
+# (default off). NATIVE-ONLY — tokio's `rt-multi-thread` hard-`compile_error!`s on wasm and
+# task.rs builds a multi-thread runtime, so the dep (and its module + re-exports) are gated
+# off wasm. `--features tokio` on wasm is therefore a no-op, not a build break.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tokio = { version = "1", optional = true, features = ["rt", "rt-multi-thread"] }
 
 [features]
 # Render backend, forwarded to pebbles-render. `vello-hybrid` is the default.

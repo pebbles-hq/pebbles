@@ -84,7 +84,7 @@ pub mod prelude {
         ErrorBoundaryHandle, RootDisposer, create_cleanup, create_loop, create_loop_while, create_memo_with,
         create_root, create_root_signal, create_selector, create_unique_id, on, on_defer, on_mount,
     };
-    #[cfg(feature = "tokio")]
+    #[cfg(all(feature = "tokio", not(target_family = "wasm")))]
     pub use pebbles_core::{create_resource_future, spawn_future};
     // router runtime — the imperative navigation API (`router::navigate`, `router::path`,
     // `router::add_guard`, …) behind the route_view / link / outlet widgets. Exposed as a

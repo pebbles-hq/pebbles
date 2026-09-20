@@ -54,6 +54,11 @@ web-time.workspace = true
 # `ring`/`getrandom`/GTK off the wasm build entirely.
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 ureq = { version = "2", optional = true }
+
+# rfd (the `file-dialogs` picker) is DESKTOP-only — it has no android/ios backend module, so
+# `--features file-dialogs` on a mobile target used to fail to build. Narrow it to non-wasm,
+# non-mobile; `pick_folder` resolves as cancelled on the excluded targets (see tree.rs).
+[target.'cfg(not(any(target_family = "wasm", target_os = "android", target_os = "ios")))'.dependencies]
 rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"], optional = true }
 
 # Web `image-view` network loading: the browser's own `fetch` + ArrayBuffer readback,

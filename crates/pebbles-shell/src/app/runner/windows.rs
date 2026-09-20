@@ -68,9 +68,12 @@ impl Runner {
             }
         }
 
-        // Apply the router's per-route title (`router::set_title`) to the main window.
-        // winit maps `set_title` to the OS window title on desktop and to
-        // `document.title` on web. Poll-and-diff so we only touch it on a real change.
+        // Apply the router's per-route title (`router::set_title`) to the MAIN window
+        // (`self.active`) — the previous lookup searched `self.windows`, the *secondary*
+        // map, which never holds the main window, so the title never applied. Poll-and-diff
+        // so we only touch it on a real change. On desktop winit sets the OS title; on web
+        // winit's `set_title` writes the canvas `alt`, not the tab title, so we set
+        // `document.title` directly instead.
         let title = pebbles_core::router::title();
         let changed = TITLE_APPLIED.with(|last| {
             let mut last = last.borrow_mut();
@@ -81,11 +84,15 @@ impl Runner {
                 false
             }
         });
-        if changed
-            && let Some(t) = &title
-            && let Some(w) = self.windows.values().find(|w| w.ui.window_id() == 0)
-        {
-            w.window.set_title(t);
+        if changed && let Some(t) = &title {
+            #[cfg(not(target_family = "wasm"))]
+            if let Some(active) = self.active.as_ref() {
+                active.window.set_title(t);
+            }
+            #[cfg(target_family = "wasm")]
+            if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+                doc.set_title(t);
+            }
         }
     }
 
@@ -141,16 +148,35 @@ impl Runner {
         {
             attrs = attrs.with_window_icon(Some(i));
         }
-        let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
+        // A secondary window failing must NOT take down the app (the main window is fine) —
+        // log and skip opening it, unlike the fatal main-window path.
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => {
+                pebbles_core::log::warn(
+                    pebbles_core::log::Cat::General,
+                    format!("could not open a secondary window: {e}"),
+                );
+                return;
+            }
+        };
         window.set_ime_allowed(true); // enable IME composition on secondary windows too
         let physical = window.inner_size();
-        let surface = pollster::block_on(self.context.as_mut().unwrap().create_surface(
+        let surface = match pollster::block_on(self.context.as_mut().unwrap().create_surface(
             window.clone(),
             physical.width.max(1),
             physical.height.max(1),
             wgpu::PresentMode::AutoVsync,
-        ))
-        .expect("create surface");
+        )) {
+            Ok(s) => s,
+            Err(e) => {
+                pebbles_core::log::warn(
+                    pebbles_core::log::Cat::General,
+                    format!("could not create a GPU surface for a secondary window: {e}"),
+                );
+                return;
+            }
+        };
         self.renderers.resize_with(self.context.as_ref().unwrap().devices.len(), || None);
         install_error_handler(&self.context.as_ref().unwrap().devices[surface.dev_id].device);
         let dh = &self.context.as_ref().unwrap().devices[surface.dev_id];

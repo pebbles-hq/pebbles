@@ -214,7 +214,10 @@ fn match_path(pattern: &[Seg], current: &str) -> Option<RouteParams> {
             Seg::Param(name) => {
                 params.insert(name.clone(), (*seg).to_string());
             }
-            Seg::Wildcard(_) => unreachable!("handled above"),
+            // A trailing wildcard is consumed by the `pattern.last()` branch above. A
+            // NON-terminal wildcard (which `compile` currently accepts) is invalid — treat it
+            // as a non-match rather than panicking at render time.
+            Seg::Wildcard(_) => return None,
         }
     }
     Some(RouteParams { params })

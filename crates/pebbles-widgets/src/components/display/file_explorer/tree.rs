@@ -342,13 +342,13 @@ pub(super) fn read_dir(path: &Path) -> std::io::Result<Vec<FsNode>> {
 /// `file-dialogs` feature.
 #[cfg(feature = "file-dialogs")]
 pub fn pick_folder(on_picked: impl Fn(Option<PathBuf>) + 'static) {
-    // Web has no native folder picker (rfd/xdg/GTK don't apply); a browser
-    // `<input type=file>`-backed picker is a follow-up. Resolve as "cancelled" so
-    // the symbol exists and callers still link and behave sanely.
-    #[cfg(target_family = "wasm")]
+    // No native folder picker on web (`<input type=file>` is a follow-up) or on mobile
+    // (rfd has no android/ios backend, so it isn't even compiled there — see Cargo.toml).
+    // Resolve as "cancelled" so the symbol exists and callers still link and behave sanely.
+    #[cfg(any(target_family = "wasm", target_os = "android", target_os = "ios"))]
     return on_picked(None);
 
-    #[cfg(not(target_family = "wasm"))]
+    #[cfg(not(any(target_family = "wasm", target_os = "android", target_os = "ios")))]
     {
         // Under the synthetic-input monkey (PEBBLES_INPUT_STORM) never open a real
         // OS dialog — resolve as "cancelled" so burn-in runs stay unattended.

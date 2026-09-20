@@ -15,7 +15,7 @@
 <a href="https://scorecard.dev/viewer/?uri=github.com/pebbles-hq/pebbles"><img src="https://api.scorecard.dev/projects/github.com/pebbles-hq/pebbles/badge" alt="OpenSSF Scorecard" /></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0" /></a>
 <a href="rust-toolchain.toml"><img src="https://img.shields.io/badge/rustc-1.90+-orange.svg" alt="MSRV 1.90+" /></a>
-<a href="#platform-support"><img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-informational.svg" alt="Platforms: Linux | Windows | macOS" /></a>
+<a href="#platform-support"><img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Web-informational.svg" alt="Platforms: Linux | Windows | macOS | Web" /></a>
 
 <br /><br />
 

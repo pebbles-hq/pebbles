@@ -117,6 +117,14 @@ jobs:
       # cross-platform port earned: it compiles for all three today.
       - name: Shell compiles (window / GPU / input)
         run: cargo check -p pebbles-shell --target ${{ matrix.target }} ${{ matrix.shell_args }}
+      # Feature-gated integrations per target — these are exactly the combos that used to
+      # break silently because this job passed no features: `file-dialogs` (rfd) on
+      # android/ios and `tokio` on wasm. Both are now gated to a no-op on the wrong target.
+      - name: file-dialogs compiles (rfd is desktop-only)
+        run: cargo check -p pebbles-widgets --target ${{ matrix.target }} --features file-dialogs
+      - name: umbrella + tokio on wasm (tokio is native-only → no-op here)
+        if: matrix.target == 'wasm32-unknown-unknown'
+        run: cargo check -p pebbles --target ${{ matrix.target }} --features tokio
 
   # ───────────────────────────────────────────────────────────────────────────
   # The classic `vello` backend. Every other job resolves to `vello-hybrid` (the

@@ -115,9 +115,9 @@ pub(super) fn install_error_handler(device: &wgpu::Device) {
 /// in-process clipboard if the platform clipboard can't be opened (e.g. headless).
 ///
 /// On wasm and Android there is no `arboard` backend, so this is a no-op and the
-/// core's in-process clipboard handles intra-app copy/paste. (Web will grow a
-/// `navigator.clipboard` backend and Android a JNI one — see
-/// documentations/cross-platform-overview.md.)
+/// core's in-process clipboard handles intra-app copy/paste. (Web additionally does
+/// copy-OUT through `navigator.clipboard.write_text`; only paste-IN stays app-local.
+/// Android's JNI backend is a follow-up.)
 #[cfg(not(any(target_family = "wasm", target_os = "android")))]
 fn install_clipboard() {
     use std::cell::RefCell;
@@ -655,13 +655,25 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         // install the surface right here — behavior identical to before.
         #[cfg(not(target_family = "wasm"))]
         {
-            let surface = pollster::block_on(self.context.as_mut().unwrap().create_surface(
+            let surface = match pollster::block_on(self.context.as_mut().unwrap().create_surface(
                 window.clone(),
                 w,
                 h,
                 wgpu::PresentMode::AutoVsync,
-            ))
-            .expect("create surface");
+            )) {
+                Ok(s) => s,
+                Err(e) => {
+                    // The #1 first-run failure on Linux/Windows: no compatible GPU/driver.
+                    // Exit with a readable message pointing at `pebbles doctor`, not a
+                    // one-word `expect` panic + backtrace.
+                    eprintln!(
+                        "\npebbles: could not initialize the GPU — no compatible graphics device or driver.\n  \
+                         {e}\n  \
+                         Run `pebbles doctor` to check your setup (Linux typically needs Vulkan).\n"
+                    );
+                    std::process::exit(1);
+                }
+            };
             self.on_gpu_ready(window, surface);
         }
 
@@ -971,7 +983,12 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                         return;
                     }
                     // B2 precedence: focused editor → shortcuts → Tab → activation.
-                    let intent = to_command(&event, self.ctrl_down, self.shift_down);
+                    // The editing-command modifier is Ctrl everywhere, plus ⌘ (Super) on
+                    // macOS — otherwise ⌘C/⌘V/⌘X/⌘Z fall through to `Insert` and type a
+                    // literal "c"/"v"/… The shortcut layer above already accepts ctrl||meta;
+                    // this brings the editor call site in line.
+                    let cmd = self.ctrl_down || (cfg!(target_os = "macos") && self.meta_down);
+                    let intent = to_command(&event, cmd, self.shift_down);
                     let mods = pebbles_core::Mods {
                         shift: self.shift_down,
                         ctrl: self.ctrl_down,
