@@ -488,6 +488,7 @@ pub struct Toggle {
     disabled: bool,
     autofocus: bool,
     on_changed: Option<Callback>,
+    label: Option<String>,
 }
 
 /// Create a [`Toggle`] around `child`.
@@ -527,6 +528,12 @@ impl Toggle {
         self.on_changed = Some(cb.into_callback());
         self
     }
+    /// The accessible label announced by screen readers. A Toggle usually wraps a
+    /// bare icon, which carries no text, so set this for an operable a11y node.
+    pub fn label(mut self, s: impl Into<String>) -> Self {
+        self.label = Some(s.into());
+        self
+    }
 }
 
 struct ToggleProps {
@@ -539,6 +546,7 @@ struct ToggleProps {
     disabled: bool,
     autofocus: bool,
     on_changed: Option<Callback>,
+    label: Option<String>,
 }
 
 impl IntoWidget for Toggle {
@@ -557,6 +565,7 @@ impl IntoWidget for Toggle {
                 disabled: self.disabled,
                 autofocus: self.autofocus,
                 on_changed: self.on_changed,
+                label: self.label,
             },
         )
         .into_widget()
@@ -589,7 +598,17 @@ fn render_toggle(p: &ToggleProps) -> AnyWidget {
         .alignment(Alignment::CENTER)
         .child(center(p.child.clone()));
 
-    wire(container.into_widget(), p.disabled, &p.on_changed, hovered, node, p.autofocus)
+    let out = wire(container.into_widget(), p.disabled, &p.on_changed, hovered, node, p.autofocus);
+    // Expose the toggle button to screen readers with its pressed state — Checkbox /
+    // Switch / Radio already emit their own nodes; the plain Toggle previously did not.
+    crate::widgets::semantics(
+        crate::widgets::SemanticsRole::Button,
+        p.label.clone().unwrap_or_default(),
+        out,
+    )
+    .checked(p.pressed)
+    .disabled(p.disabled)
+    .into_widget()
 }
 
 // ---------------------------------------------------------------------------

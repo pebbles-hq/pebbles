@@ -30,20 +30,19 @@ impl RenderObject for RenderFractionallySizedBox {
         let Some(child) = cx.children().first().copied() else {
             return constraints.constrain(constraints.biggest());
         };
+        // Sanitize the factors: a fraction must be finite and non-negative (Flutter
+        // asserts `factor >= 0`). A NaN/±inf factor falls through to the unconstrained
+        // axis; a negative one clamps to 0 rather than inverting the constraints.
+        let wf = self.width_factor.filter(|f| f.is_finite()).map(|f| f.max(0.0));
+        let hf = self.height_factor.filter(|f| f.is_finite()).map(|f| f.max(0.0));
         // Tighten the set axes to the requested fraction, pass the other axis
         // through, then enforce the result back inside the incoming constraints
         // (Flutter's `tightFor(width:, height:).enforce(constraints)`).
         let child_constraints = BoxConstraints {
-            min_width: self.width_factor.map(|f| constraints.max_width * f).unwrap_or(constraints.min_width),
-            max_width: self.width_factor.map(|f| constraints.max_width * f).unwrap_or(constraints.max_width),
-            min_height: self
-                .height_factor
-                .map(|f| constraints.max_height * f)
-                .unwrap_or(constraints.min_height),
-            max_height: self
-                .height_factor
-                .map(|f| constraints.max_height * f)
-                .unwrap_or(constraints.max_height),
+            min_width: wf.map(|f| constraints.max_width * f).unwrap_or(constraints.min_width),
+            max_width: wf.map(|f| constraints.max_width * f).unwrap_or(constraints.max_width),
+            min_height: hf.map(|f| constraints.max_height * f).unwrap_or(constraints.min_height),
+            max_height: hf.map(|f| constraints.max_height * f).unwrap_or(constraints.max_height),
         }
         .enforce(constraints);
         let child_size = cx.layout_child(child, child_constraints);

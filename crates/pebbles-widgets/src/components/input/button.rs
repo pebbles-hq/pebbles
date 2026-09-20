@@ -558,6 +558,7 @@ pub struct IconButton {
     variant: ButtonVariant,
     on_pressed: Option<Callback>,
     disabled: bool,
+    label: String,
 }
 
 /// Create an [`IconButton`] for the given icon.
@@ -568,6 +569,7 @@ pub fn icon_button(kind: impl Into<IconData>) -> IconButton {
         variant: ButtonVariant::Ghost,
         on_pressed: None,
         disabled: false,
+        label: String::new(),
     }
 }
 
@@ -591,6 +593,12 @@ impl IconButton {
         self.disabled = disabled;
         self
     }
+    /// The accessible label announced to screen readers. An icon-only button has no
+    /// visible text, so set this to describe the action (e.g. "Delete", "Close").
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = label.into();
+        self
+    }
 }
 
 impl IntoWidget for IconButton {
@@ -602,6 +610,7 @@ impl IntoWidget for IconButton {
 fn render_icon_button(b: &IconButton) -> Element {
     let hovered = create_signal(false);
     let pressed = create_signal(false);
+    let node = create_focus();
     let th = theme();
     let (base_bg, border) = match b.variant {
         ButtonVariant::Primary => (Some(th.colors.primary), false),
@@ -612,6 +621,7 @@ fn render_icon_button(b: &IconButton) -> Element {
     };
     let hv = if b.disabled { 0.0 } else { animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12) };
     let pr = if b.disabled { 0.0 } else { animated(if pressed.get() { 1.0 } else { 0.0 }, 0.07) };
+    let focused = !b.disabled && node.is_focused();
     let bg = interactive_bg(b.variant, base_bg, false, hv, pr);
     let fg = th.colors.foreground;
 
@@ -622,14 +632,36 @@ fn render_icon_button(b: &IconButton) -> Element {
     if border {
         decoration = decoration.border(Border::new(th.colors.border, 1.0));
     }
+    // Focus ring.
+    if focused {
+        decoration = decoration.border(Border::new(th.colors.ring, 2.0));
+    }
     let container = Container::new()
         .decoration(decoration)
         .padding(EdgeInsets::all(8.0))
         .child(icon(b.kind).size(b.icon_size).color(fg));
 
+    // Accessibility wrapper — applied at every exit so a disabled button is announced
+    // too (with its disabled state).
+    let a11y = |w: AnyWidget, disabled: bool| {
+        crate::widgets::semantics(crate::widgets::SemanticsRole::Button, b.label.clone(), w)
+            .disabled(disabled)
+            .into_widget()
+    };
+
     if b.disabled {
-        return GestureDetector::new(Opacity::new(0.55, container)).cursor(Cursor::NotAllowed).into_widget();
+        return a11y(
+            GestureDetector::new(Opacity::new(0.55, container)).cursor(Cursor::NotAllowed).into_widget(),
+            true,
+        );
     }
+
+    // Register keyboard activation (Enter/Space while focused).
+    let activation: Rc<dyn Fn()> = match &b.on_pressed {
+        Some(Callback::Plain(f)) => f.clone(),
+        _ => Rc::new(|| {}),
+    };
+    node.register(activation, None, false);
 
     let mut gesture = GestureDetector::new(container)
         .cursor(Cursor::Pointer)
@@ -638,12 +670,15 @@ fn render_icon_button(b: &IconButton) -> Element {
             hovered.set(false);
             pressed.set(false);
         })
-        .on_pointer_down(move || pressed.set(true))
+        .on_pointer_down(move || {
+            pressed.set(true);
+            node.request_focus(); // clicking focuses, like Flutter
+        })
         .on_pointer_up(move || pressed.set(false));
     if let Some(cb) = b.on_pressed.clone() {
         gesture = gesture.on_tap(cb);
     }
     // Icon buttons consume right-clicks by default (no global menu over them).
     gesture = gesture.on_secondary_tap(|| {});
-    gesture.into_widget()
+    a11y(gesture.into_widget(), false)
 }

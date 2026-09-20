@@ -205,16 +205,12 @@ fn variant_icon(v: ToastVariant) -> Option<(IconKind, Color)> {
     let c = theme().colors;
     match v {
         ToastVariant::Default => None,
-        ToastVariant::Success => Some((IconKind::Check, palette_ok())),
-        ToastVariant::Warning => Some((IconKind::Warning, palette_warn())),
+        // Theme tokens (not hardcoded literals) so brand overrides and the dark-mode
+        // variants apply — matches how `Destructive` already reads `c.destructive`.
+        ToastVariant::Success => Some((IconKind::Check, c.success)),
+        ToastVariant::Warning => Some((IconKind::Warning, c.warning)),
         ToastVariant::Destructive => Some((IconKind::Warning, c.destructive)),
     }
-}
-fn palette_ok() -> Color {
-    Color::from_rgba8(34, 197, 94, 255)
-}
-fn palette_warn() -> Color {
-    Color::from_rgba8(234, 179, 8, 255)
 }
 
 /// The static visual (surface + content + Alert semantics), without motion/hover.

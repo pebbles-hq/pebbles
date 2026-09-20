@@ -17,7 +17,7 @@ use crate::overlay::{hide_overlay, show_overlay_guarded, window_size};
 use crate::style::{Style, styled};
 use crate::widgets::{gap_w, row};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{action_event, component_props, create_signal};
+use pebbles_core::{action_event, component_props, create_effect, create_signal};
 
 type DisabledPred = Rc<dyn Fn(i32, u32, u32) -> bool>;
 
@@ -101,7 +101,12 @@ impl DateFormat {
         let m: u32 = ms.parse().ok()?;
         let d: u32 = ds.parse().ok()?;
         let y: i32 = ys.parse().ok()?;
-        if (1..=12).contains(&m) && (1..=31).contains(&d) && ys.len() == 4 { Some((y, m, d)) } else { None }
+        // Reject calendar-impossible dates (e.g. Feb 30, Apr 31) — not just 1..=31.
+        if (1..=12).contains(&m) && (1..=days_in_month(y, m)).contains(&d) && ys.len() == 4 {
+            Some((y, m, d))
+        } else {
+            None
+        }
     }
 
     /// Format `(year, month, day)` into a string.
@@ -129,6 +134,20 @@ impl DateFormat {
     }
 }
 
+/// Days in a given month, honoring the proleptic-Gregorian leap-year rule so the
+/// parser can reject impossible dates (Feb 30, Apr 31, …).
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+            if leap { 29 } else { 28 }
+        }
+        _ => 0,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // DateField — dedicated to dates. For time, use `time_field`.
 // ---------------------------------------------------------------------------
@@ -147,6 +166,7 @@ pub struct DateField {
     calendar_style: Option<Style>,
     range: bool,
     range_value: Option<(Date, Date)>,
+    on_changed: Option<Rc<dyn Fn(Date)>>,
     on_range_changed: Option<Rc<dyn Fn(Date, Date)>>,
     clearable: bool,
     min: Option<Date>,
@@ -195,6 +215,13 @@ impl DateField {
         self.range = yes;
         self
     }
+    /// Reports a completed single-date pick — whether typed to a valid, complete
+    /// date or chosen from the calendar (a [`Date`] is `(year, month, day)`).
+    /// Range mode uses [`on_range_changed`](DateField::on_range_changed) instead.
+    pub fn on_changed(mut self, f: impl Fn(Date) + 'static) -> Self {
+        self.on_changed = Some(Rc::new(f));
+        self
+    }
     /// The initial range in range mode (a [`Date`] is `(year, month, day)`).
     pub fn range_value(mut self, start: Date, end: Date) -> Self {
         self.range_value = Some((start, end));
@@ -237,6 +264,7 @@ struct DateProps {
     calendar_style: Option<Style>,
     range: bool,
     range_value: Option<(Date, Date)>,
+    on_changed: Option<Rc<dyn Fn(Date)>>,
     on_range_changed: Option<Rc<dyn Fn(Date, Date)>>,
     clearable: bool,
     min: Option<Date>,
@@ -257,6 +285,7 @@ impl IntoWidget for DateField {
                 calendar_style: self.calendar_style,
                 range: self.range,
                 range_value: self.range_value,
+                on_changed: self.on_changed,
                 on_range_changed: self.on_range_changed,
                 clearable: self.clearable,
                 min: self.min,
@@ -287,6 +316,24 @@ fn render_date(p: &DateProps) -> AnyWidget {
     let on_range_changed = p.on_range_changed.clone();
     let (cmin, cmax, cpred) = (p.min, p.max, p.disabled_pred.clone());
     let clearable = p.clearable;
+
+    // Single-date reporting: fire `on_changed` whenever the input settles on a new,
+    // valid, complete date — covering both a typed date and a calendar pick (the
+    // pick writes the formatted string into `text`, which this effect observes).
+    // A `last` latch dedups so the same date isn't reported twice, and the initial
+    // empty/partial state never fires. Range mode reports via `on_range_changed`.
+    if !p.range && let Some(on_changed) = p.on_changed.clone() {
+        let last = create_signal::<Option<Date>>(None);
+        create_effect(move || {
+            let parsed = fmt.parse(&text.get());
+            if let Some(date) = parsed
+                && last.peek() != Some(date)
+            {
+                last.set(Some(date));
+                on_changed(date);
+            }
+        });
+    }
 
     let cal_btn = icon_button(IconKind::Calendar).variant(ButtonVariant::Ghost).size(16.0).on_pressed(
         action_event(move |e: PointerEvent| {

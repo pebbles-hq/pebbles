@@ -148,6 +148,11 @@ impl IntoWidget for Container {
                 boxed = boxed.foreground(fg);
             }
             current = boxed.into_widget();
+        } else if let Some(fg) = self.foreground_decoration.take() {
+            // Foreground-only container: paint the overlay over the child with an
+            // empty background decoration. Previously the foreground was silently
+            // dropped whenever no background decoration was set.
+            current = DecoratedBox::new(BoxDecoration::new(), current).foreground(fg).into_widget();
         }
         if self.width.is_some() || self.height.is_some() {
             current = SizedBox::new(self.width, self.height, Some(current)).into_widget();

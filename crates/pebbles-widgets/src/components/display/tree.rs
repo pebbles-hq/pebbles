@@ -109,8 +109,20 @@ fn emit(node: TreeNode, depth: f64, indent: f64, out: &mut Vec<AnyWidget>) {
     let bg = if node.selected { c.accent } else { palette::TRANSPARENT };
     let mut gesture = GestureDetector::new(Container::new().color(bg).child(content));
     if has_children {
-        if let Some(cb) = node.on_toggle {
-            gesture = gesture.on_tap(cb);
+        // A parent row is both expandable and selectable: a tap fires `on_select`
+        // (if set) and toggles its children. Previously `on_select` was dropped for
+        // any node with children, so a parent could never be selected.
+        let on_select = node.on_select;
+        let on_toggle = node.on_toggle;
+        if on_select.is_some() || on_toggle.is_some() {
+            gesture = gesture.on_tap(move || {
+                if let Some(Callback::Plain(f)) = &on_select {
+                    f();
+                }
+                if let Some(Callback::Plain(f)) = &on_toggle {
+                    f();
+                }
+            });
         }
     } else if let Some(cb) = node.on_select {
         gesture = gesture.on_tap(cb);

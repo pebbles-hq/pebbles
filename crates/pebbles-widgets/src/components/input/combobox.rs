@@ -269,10 +269,12 @@ fn render_combobox(p: &ComboProps) -> AnyWidget {
         Some(i) => options.get(i).cloned().unwrap_or_else(|| p.placeholder.clone()),
         None => p.placeholder.clone(),
     };
-    let trigger = trigger_box(label, selected.get().is_some(), width, p.style.clone());
+    let has_value = selected.get().is_some();
+    let name = label.clone();
+    let trigger = trigger_box(label, has_value, width, p.style.clone());
 
     let menu_options = options.clone();
-    GestureDetector::new(trigger)
+    let control = GestureDetector::new(trigger)
         .cursor(Cursor::Pointer)
         .on_tap(action_event(move |e: PointerEvent| {
             let trigger_left = e.global.x - e.position.x;
@@ -299,7 +301,11 @@ fn render_combobox(p: &ComboProps) -> AnyWidget {
                 est,
                 move || selected.alive(),
             );
-        }))
+        }));
+
+    // Accessibility: a combo box announcing its name + current value (mirrors Select).
+    crate::widgets::semantics(pebbles_render::SemanticsRole::ComboBox, name.clone(), control)
+        .value(if has_value { name } else { String::new() })
         .into_widget()
 }
 
