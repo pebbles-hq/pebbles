@@ -702,17 +702,49 @@ pub fn create_effect(f: impl Fn() + 'static) {
     run_effect(id);
 }
 
+/// Restores `rt.observer` on drop, so a panic in observed user code (an effect body, an
+/// `untrack` closure) unwinds without leaving the runtime's observer pointing at a disposed
+/// node — the render-time error boundary can then catch the panic and resume on an intact
+/// runtime instead of one whose invariants were skipped by the unwind.
+struct ObserverGuard(Option<Observer>);
+impl Drop for ObserverGuard {
+    fn drop(&mut self) {
+        with_rt(|rt| rt.observer = self.0);
+    }
+}
+
+/// Panic-only cleanup for a memo recompute: on unwind it restores the observer AND recycles
+/// the source-collection buffer that `recompute_memo` pushed, so a panicking memo body leaks
+/// neither a dangling observer nor a pooled buffer. Disarmed on the success path, which pops
+/// the buffer itself for edge-diffing.
+struct MemoRecomputeGuard {
+    prev: Option<Observer>,
+    armed: bool,
+}
+impl Drop for MemoRecomputeGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            with_rt(|rt| {
+                rt.observer = self.prev;
+                if let Some(mut buf) = rt.source_stack.pop() {
+                    buf.clear();
+                    rt.source_pool.push(buf);
+                }
+            });
+        }
+    }
+}
+
 fn run_effect(id: EffectId) {
     let func = with_rt(|rt| rt.effects.get(id).map(|e| e.func.clone()));
     let Some(func) = func else { return };
     stats::bump_effect_run();
-    let prev = with_rt(|rt| {
+    let _obs = with_rt(|rt| {
         let p = rt.observer;
         rt.observer = Some(Observer::Effect(id));
-        p
+        ObserverGuard(p)
     });
     func();
-    with_rt(|rt| rt.observer = prev);
 }
 
 /// A cached derived value — **lazy** (push-pull, three-color): a write to an input
@@ -889,7 +921,9 @@ fn recompute_memo(mid: MemoId) {
         rt.observer = Some(Observer::Memo(mid));
         p
     });
+    let mut guard = MemoRecomputeGuard { prev, armed: true };
     recompute(mid); // reads collect into the top buffer; writes the value + bumps wv if changed
+    guard.armed = false; // success — the block below owns the observer restore + buffer pop
     with_rt(|rt| {
         rt.observer = prev;
         let mut new_sources = rt.source_stack.pop().unwrap_or_default();
@@ -964,14 +998,12 @@ fn settle_memos() {
 /// subscribe the current component/effect (Solid's `untrack`). Use it to peek
 /// at reactive state from inside a render without re-rendering on its changes.
 pub fn untrack<T>(f: impl FnOnce() -> T) -> T {
-    let prev = with_rt(|rt| {
+    let _obs = with_rt(|rt| {
         let p = rt.observer;
         rt.observer = None;
-        p
+        ObserverGuard(p)
     });
-    let out = f();
-    with_rt(|rt| rt.observer = prev);
-    out
+    f()
 }
 
 // ---------------------------------------------------------------------------
@@ -1363,4 +1395,47 @@ pub fn instance_id(window: u32, element: ElementId) -> u64 {
             id
         }
     })
+}
+
+#[cfg(test)]
+mod unwind_safety {
+    use super::*;
+
+    /// A panic in a memo body (which the render-time error boundary may catch) must leave the
+    /// runtime intact: observer cleared, no source-collection buffer leaked, and still usable.
+    /// Regression for the "caught panic runs the app on a corrupted runtime" gap.
+    #[test]
+    fn panic_in_memo_does_not_corrupt_runtime() {
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let m = create_memo(|| -> i32 { panic!("boom in memo body") });
+            m.get()
+        }));
+        assert!(caught.is_err(), "the memo panic should propagate");
+
+        with_rt(|rt| {
+            assert!(rt.observer.is_none(), "observer left dangling after a panicking memo");
+            assert!(rt.source_stack.is_empty(), "source_stack leaked a buffer after a panicking memo");
+        });
+
+        // The runtime is still usable: a fresh signal + memo behave normally.
+        let s = create_signal(3);
+        let doubled = create_memo(move || s.get() * 2);
+        assert_eq!(doubled.get(), 6);
+        s.set(5);
+        assert_eq!(doubled.get(), 10);
+    }
+
+    /// Same contract for a panicking effect body: the observer must be restored on unwind.
+    #[test]
+    fn panic_in_effect_does_not_corrupt_runtime() {
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            create_effect(|| panic!("boom in effect body"));
+            flush_effects();
+        }));
+        assert!(caught.is_err(), "the effect panic should propagate");
+        with_rt(|rt| assert!(rt.observer.is_none(), "observer left dangling after a panicking effect"));
+
+        let s = create_signal(1);
+        assert_eq!(s.get(), 1);
+    }
 }

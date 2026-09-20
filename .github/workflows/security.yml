@@ -115,24 +115,19 @@ jobs:
 
   # ───────────────────────────────────────────────────────────────────────────
   # Miri — undefined-behaviour detector. This is the security-relevant SAST for
-  # this codebase: the reactive runtime and the native-menu bridge contain
-  # `unsafe`, and UB there is exactly the class of bug that becomes a memory
-  # -safety vulnerability. Scoped to pebbles-core's own tests (miri interprets
-  # the program, so it cannot run GPU/windowing code) and to the reactive
-  # runtime in particular.
+  # this codebase: the native-menu FFI bridge contains `unsafe` (and the
+  # proc-macro emits one `#[unsafe(no_mangle)]`), and UB there is exactly the
+  # class of bug that becomes a memory-safety vulnerability. Scoped to
+  # pebbles-core's own tests (miri interprets the program, so it cannot run
+  # GPU/windowing code). The reactive runtime contains no `unsafe`, but Miri
+  # still guards it against dependency UB + future regressions.
   #
-  # Runs on the SCHEDULE and on demand, not on every push/PR: the baseline has
-  # not been confirmed green yet (miri interprets the whole dependency graph and
-  # can trip on third-party internals we do not control), and a job that is
-  # always red teaches people to ignore the tab. Once a scheduled run is green,
-  # add push/pull_request back and drop `continue-on-error` so real UB
-  # regressions gate merges.
+  # GATING on push/PR: the scheduled baseline has been green for days, so real UB
+  # regressions now block merges (was schedule-only + continue-on-error).
   # ───────────────────────────────────────────────────────────────────────────
   miri:
     name: Miri (unsafe / UB)
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev

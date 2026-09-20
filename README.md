@@ -54,7 +54,7 @@ We expect to keep picking — more good ideas, added over time.
 
 > Status: early but broad. Catalog, reactivity, layout, text editing (incl. **IME/CJK**),
 > scrolling, theming (**live light/dark**), **multi-window + IPC**, **async data**, and an
-> **AccessKit accessibility** layer are all real and demonstrated in the [gallery](https://github.com/pebbles-hq/pebbles-landing). It's a
+> **AccessKit accessibility** layer are all real and demonstrated in the [gallery](https://github.com/pebbles-hq/pebbles-docs). It's a
 > personal project and the foundation for **Gravel**, an IDE built on top of it — but it
 > stands on its own.
 
@@ -95,10 +95,10 @@ cargo run -p landing        # a scrolling landing page (hero / features / code /
 ```
 
 Those `examples/` are the small "how easy is it" starters plus a few
-larger structural showcases. The **full widget showcase / documentation**
-(every widget, live) is its own app in
-[`pebbles-hq/pebbles-landing`](https://github.com/pebbles-hq/pebbles-landing) —
-the gallery that backs the landing site's learn/docs section.
+larger structural showcases (the in-repo `landing` example keeps its name). The
+**full widget showcase / documentation** (every widget, live) is its own app in
+[`pebbles-hq/pebbles-docs`](https://github.com/pebbles-hq/pebbles-docs) —
+the gallery that backs the docs site's learn/docs section.
 
 ## The `pebbles` command
 
@@ -286,10 +286,12 @@ Layered so the GPU stack is quarantined and the core compiles in seconds:
 | Crate | Responsibility |
 |-------|----------------|
 | [`pebbles-foundation`](crates/pebbles-foundation) | geometry (kurbo), layout enums, color + the full Tailwind/shadcn palette |
+| [`pebbles-icons`](crates/pebbles-icons) | the icon data model + the bundled Tabler set (~5100 outline + ~1050 filled); pluggable — any `IconData` drops in |
 | [`pebbles-render`](crates/pebbles-render) | `BoxConstraints`, render tree, layout/paint, text (parley), icons, accessibility nodes |
-| [`pebbles-core`](crates/pebbles-core) | the runtime: `Widget`/`Element`, reconciler, reactivity, focus, keyboard, animation, async tasks, IPC, clipboard |
-| [`pebbles-widgets`](crates/pebbles-widgets) | the catalog: primitives + shadcn-style components, theme, styling, overlays, dialogs, windows |
-| [`pebbles-shell`](crates/pebbles-shell) | winit window + wgpu surface + the Vello / Vello Hybrid GPU renderer + event loop + AccessKit bridge |
+| [`pebbles-core`](crates/pebbles-core) | the runtime: `Widget`/`Element`, reconciler, reactivity, focus, keyboard, animation, async tasks, IPC, clipboard, router |
+| [`pebbles-macros`](crates/pebbles-macros) | proc-macros: the `#[component]` authoring form (re-exported from the prelude) |
+| [`pebbles-widgets`](crates/pebbles-widgets) | the catalog: primitives + shadcn-style components, theme, styling, overlays, dialogs, windows, routing |
+| [`pebbles-shell`](crates/pebbles-shell) | winit window + wgpu surface + the Vello / Vello Hybrid GPU renderer + event loop + AccessKit bridge + offscreen capture |
 | [`pebbles-testing`](crates/pebbles-testing) | the headless test harness: mount, frame/draw, input, queries |
 | [`pebbles`](crates/pebbles) | umbrella crate + `prelude` + the [`hooks`](crates/pebbles/src/hooks.rs) index |
 | [`pebbles-cli`](crates/pebbles-cli) | the `pebbles` command: scaffold, dev-run with hot-restart, doctor |
@@ -301,7 +303,7 @@ surface. See [Render backends](#render-backends).
 
 ## What's in the box
 
-Everything below is built and shown live in the [gallery](https://github.com/pebbles-hq/pebbles-landing), styled to **shadcn**.
+Everything below is built and shown live in the [gallery](https://github.com/pebbles-hq/pebbles-docs), styled to **shadcn**.
 
 - **Layout & primitives** — `Text`, `Container`, `Row`/`Column` (Flutter's
   `.main_axis_alignment()/.cross_axis_alignment()/.main_axis_size()/.spacing()`),
@@ -332,6 +334,16 @@ Everything below is built and shown live in the [gallery](https://github.com/peb
   (+shimmer), `Kbd`, `Empty`, `ListTile`, `Table`, `TreeView`, typography helpers.
 - **App chrome** — `Scaffold`, `SideNav`, `TopPanel`, `BottomNav`, `Tabs`, `SplitView`,
   `Panel`, `Accordion`/`Collapsible`, `Breadcrumb`/`Pagination`/`Toolbar`/`StatusBar`.
+- **Routing** — a full history router: URL-synced on web (deep links + working
+  Back/Forward), path params (`/user/:id`), query strings, nested layouts, navigation
+  guards, route transitions, and scroll restoration. `route_view`/`link`/`outlet`/
+  `redirect`/`NavStack` at the widget layer over `pebbles_core::router`
+  (`navigate`/`back`/`forward`/`path`/`location`/`query`/`set_query`/`add_guard`/`set_title`).
+- **Control flow** — SolidJS-style helpers in the `control/` group: `for_each` (map a list
+  to keyed children, preserving element state across insert/remove/reorder), `suspense`
+  (show a fallback while resources load), and `error_boundary` (contain a subtree's build-
+  or render-time panic and show a fallback instead of crashing the app). Solid's `<Show>`/
+  `<Switch>` are just Rust `if`/`match` in the component body.
 - **Overlays, dialogs & windows** — a **per-window** overlay layer (dropdowns/popovers), modal
   `Dialog` + `AlertDialog`, and real **secondary OS windows** (`window()`) that share the one
   reactive runtime — cross-window communication is a shared signal or a typed `Channel<T>`, no
@@ -340,11 +352,17 @@ Everything below is built and shown live in the [gallery](https://github.com/peb
 - **Async** — `spawn(work, on_done)` and `create_resource(fetcher) -> Signal<Resource<T>>`
   (SolidJS-style `Loading → Ready`) run background work off-thread and deliver results on the
   UI thread.
+- **Offscreen capture** — `pebbles_shell::capture::{capture_png, capture_rgba}` renders any
+  widget tree to pixels with no window or display server — the export primitive for
+  chart/report export, server-side rendering, and golden-image tests. Desktop + the
+  `vello-hybrid` backend (it needs an offscreen GPU device).
 - **Accessibility** — an AccessKit bridge (AT-SPI / UIA / VoiceOver): interactive widgets
   publish role/label/value/toggled/disabled + bounds, and keyboard focus is announced.
 - **Theming & styling** — a **reactive** global `Theme` (shadcn light/dark; `toggle_theme()`
-  flips the whole tree live), the complete Tailwind/shadcn palette, and a CSS-like `Style`
-  system applicable to any widget.
+  flips the whole tree live), switchable **design languages** (`DesignLanguage::{Compact,
+  Tailwind, Material}` via `design()`/`set_design()` — density, radius, and elevation re-skin
+  every component live), the complete Tailwind/shadcn palette, and a CSS-like `Style` system
+  applicable to any widget.
 - **Animation** — a spring + tween driver (`animated`/`animate_to`), a looping ticker
   (`create_loop`) and a one-shot `create_timeout`, behind hover fades, sliding switches,
   focus rings and spinners.
@@ -436,7 +454,7 @@ Electron's `postMessage`). The still strip is [`demo/windows-ipc-strip.png`](dem
 
 Both assets are rendered straight from the gallery, headless and reproducibly —
 the capture tooling lives with the gallery in
-[`pebbles-landing`](https://github.com/pebbles-hq/pebbles-landing)
+[`pebbles-docs`](https://github.com/pebbles-hq/pebbles-docs)
 (`GALLERY_CAPTURE=<dir> cargo run --release` rasterizes each window through vello
 off-screen, then `build_demo.py` composites the strip and GIF). No screenshot tool
 or display server required.

@@ -19,7 +19,9 @@ categories = ["gui", "graphics", "rendering"]
 [workspace.lints.rust]
 rust_2018_idioms = { level = "warn", priority = -1 }
 unused_qualifications = "warn"
-# NOT `unsafe_code = "forbid"`: reactive.rs + native_menu.rs legitimately use unsafe.
+# NOT `unsafe_code = "forbid"`: pebbles-shell's native_menu.rs has one justified FFI block,
+# and pebbles-macros emits `#[unsafe(no_mangle)]` into generated Android entry code. The
+# reactive runtime contains no unsafe.
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -48,7 +50,7 @@ pebbles-testing = { path = "crates/pebbles-testing", version = "0.0.1", default-
 
 # --- Linebender 2D stack ---
 # Two swappable rasterizer backends, both pure-Rust Vello-family, picked by a
-# `pebbles-render` feature (see docs/renderer-backend-plan.md):
+# `pebbles-render` feature (see documentations/renderer-backend-plan.md):
 #  · `vello`        — GPU-compute raster. Heavy per frame; the opt-in for complex
 #                     zoomable vector (design tools / node canvases). Without default
 #                     features it's the CPU-side `Scene` encoder (no wgpu); the shell

@@ -184,7 +184,7 @@ impl App {
     /// forwards it to the focused text editor. winit can't do IME on a `<canvas>`
     /// (winit#4424), so this is the standard workaround. Off by default — plain
     /// physical-keyboard typing on desktop browsers works without it. No effect off
-    /// wasm. See `documentations/web-support.md` §4.7.
+    /// wasm.
     pub fn web_ime(mut self, on: bool) -> Self {
         self.web_ime = on;
         self

@@ -39,6 +39,15 @@ a path-keyed cross-fade). The shell applies the route title to the main window
 hardware **Back** falls through to `router::back()` (`mobile_runtime.rs`). Excluded by
 design: SSR/form `action`/`cache`, `<HashRouter>`/`base`, and lazy route code-splitting.
 
+### Added — offscreen capture
+Render any widget tree to a PNG or raw RGBA with no window, via
+`pebbles_shell::capture::{capture_png, capture_rgba}` — the export primitive for
+chart/report export, server-side rendering and golden-image tests. Animations settle to
+their final (reduced-motion) frame first, so entry/transition tweens don't leave a
+half-drawn capture. Desktop + the default `vello-hybrid` backend only (it needs an
+offscreen GPU device); it shares the hybrid GPU host's render path, so image content in
+the captured tree rasterizes correctly.
+
 ### Added — SolidJS-parity state primitives (Rust-applicable set)
 The reactive capabilities Solid has that make sense for a Rust framework, each new,
 tested, and in the prelude. In `pebbles-core` reactivity:

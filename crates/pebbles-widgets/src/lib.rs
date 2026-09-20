@@ -12,7 +12,7 @@
 
 //! ### Crate layout
 //!
-//! Four groups, each a directory:
+//! Five groups, each a directory:
 //!
 //! * [`widgets`] — the Flutter-style primitives (each backed by a render object)
 //! * [`components`] — the shadcn-style catalog, by role (input / display /
@@ -97,6 +97,9 @@ pub use widgets::{
     dismissible, fade_transition, positioned_transition, rotation_transition, scale_transition,
     size_transition, slide_transition,
 };
+// `ExtentProbe`/`extent_probe` live in `widgets/` like every other widget; re-exported
+// here so the crate root stays the single flat surface (`pebbles_widgets::ExtentProbe`).
+pub use widgets::{ExtentProbe, extent_probe};
 // async builder (Flutter's StreamBuilder, over the reactive Channel)
 pub use widgets::{StreamBuilder, stream_builder};
 // control flow (SolidJS-style For / Suspense / ErrorBoundary)

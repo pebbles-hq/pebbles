@@ -33,9 +33,11 @@ Pebbles is a **client-side desktop UI framework**. It renders a local
 application's own UI — it is not a network service, a sandbox, or a security
 boundary. What is in scope:
 
-- **Memory safety.** The reactive runtime and the native-menu bridge use
-  `unsafe`. Any UB there is a real vulnerability class; Miri runs over the
-  reactive runtime in CI for exactly this reason.
+- **Memory safety.** The framework's only `unsafe` block is the Windows
+  native-menu FFI bridge (`pebbles-shell/src/native_menu.rs`); the proc-macro
+  additionally emits one `#[unsafe(no_mangle)]` for the Android entry point. Any
+  UB there is a real vulnerability class; Miri runs in CI for exactly this reason.
+  (The reactive runtime contains no `unsafe`.)
 - **Untrusted *content*.** A widget must not crash, hang, or corrupt memory on
   hostile input — malformed text, adversarial Unicode, pathological layout
   sizes, huge documents. A denial-of-service via an infinite loop in a
@@ -43,11 +45,22 @@ boundary. What is in scope:
 - **Supply chain.** Dependency advisories, license policy, and unpinned CI
   actions are gated by `cargo-audit`, `cargo-deny` and SHA-pinned workflows.
 - **Secrets.** Gitleaks audits the full git history on every run.
+- **New surfaces.** The offscreen `capture` API caps dimensions and bytes and
+  returns `Err` (never panics) on GPU failure; the `router` coerces paths to
+  same-origin and runs navigation guards on web Back/Forward and deep links.
+  Guards are a navigation-flow tool, **not** an auth boundary — protected data
+  must be authorized server-side (see `router::add_guard`).
 
-Out of scope: anything requiring the attacker to already run code as the user
-(they control the process either way), and the security of the *application*
-built with Pebbles — input validation, authentication and data handling are the
-app's responsibility.
+Out of scope: anything requiring the attacker to already run code as the user —
+they control the process either way, *including its environment*, so a file sink
+like `PEBBLES_LOG_FILE=<path>` (which truncates an arbitrary path with the
+process's own privileges) is by design, not a vulnerability. Also out of scope:
+the security of the *application* built with Pebbles — input validation,
+authentication, URL/SSRF trust, and data handling are the app's responsibility.
+
+The sibling widget packages (`pebbles-markdown`, `pebbles-charts`,
+`pebbles-code-editor`) follow this same policy and gate their own supply chain;
+report an issue in any of them through this same advisory process.
 
 ## Hardening in CI
 

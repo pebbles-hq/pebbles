@@ -5,7 +5,8 @@
 //! `column(children![...])`, `Container::new().color(..).padding(..)`.
 //!
 //! Grouped by concern (each subdir's `mod.rs` is its front door): `layout`,
-//! `animation`, `interaction`, `scrolling`, `painting`, `text`. A handful
+//! `animation`, `control` (SolidJS-style `for_each` / `suspense` / `error_boundary`),
+//! `interaction`, `scrolling`, `painting`, `text`. A handful
 //! of cross-cutting singletons stay at this level (`view`, `media`, `semantics`,
 //! `keyed`, `probe`, `spinner`, `stream_builder`, `mobile_runtime`). Everything is
 //! re-exported flat here, so the public path is `pebbles_widgets::<Item>` regardless

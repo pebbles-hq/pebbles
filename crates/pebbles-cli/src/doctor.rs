@@ -132,7 +132,7 @@ pub fn run(_args: &[String]) -> ExitCode {
         item(St::Warn, "adb", "not found — comes with the SDK platform-tools");
     }
     if android_missing == 0 {
-        item(St::Info, "status", "toolchain looks ready — see documentations/android-support.md");
+        item(St::Info, "status", "toolchain looks ready");
     }
 
     // ── iOS ──────────────────────────────────────────────────────────────────

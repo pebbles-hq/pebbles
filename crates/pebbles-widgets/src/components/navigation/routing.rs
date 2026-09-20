@@ -104,6 +104,12 @@ impl NavStack {
 /// e.g. matching `/user/:id` against `/user/42` yields `{ "id": "42" }`. Values are
 /// URL-path segments exactly as they appear in the current route; decode further if
 /// your app percent-encodes them.
+///
+/// **Security:** captures are raw path text and are **not** sanitized. A trailing
+/// `*wildcard` captures the remainder verbatim, including `..` — matching `/files/*rest`
+/// against `/files/../../etc/passwd` yields `rest = "../../etc/passwd"`. Never join a
+/// captured value straight onto a filesystem path (or any other sink) without validating /
+/// canonicalizing it first; path traversal is the app's responsibility.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RouteParams {
     params: BTreeMap<String, String>,

@@ -6,7 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "Pebbles — a Flutter-style, desktop-first GUI framework built on Vello. Umbrella crate + prelude."
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+description = "Pebbles — a GUI framework for Rust, built from handpicked ideas. Umbrella crate + prelude."
 
 [dependencies]
 pebbles-foundation.workspace = true
@@ -20,6 +24,8 @@ pebbles-macros.workspace = true
 # Render backend, forwarded through the whole graph. `vello-hybrid` (low-power) is the
 # default; build on classic `vello` (GPU compute, heavy vector) with
 # `--no-default-features --features vello`. See documentations/renderer-backend-plan.md.
+# Note: the offscreen `capture` API (`pebbles::shell::capture`) is available only under
+# the `vello-hybrid` backend (and off-wasm) — it needs an offscreen hybrid GPU device.
 default = ["vello-hybrid"]
 vello = [
     "pebbles-render/vello",
@@ -53,3 +59,10 @@ android-game-activity = ["pebbles-shell/android-game-activity"]
 
 [lints]
 workspace = true
+
+# docs.rs builds with every feature so the feature-gated API (ImageView, hotkeys,
+# `create_resource_future`, offscreen `capture`) appears. `--all-features` resolves to the
+# hybrid backend (hybrid wins over vello), so this is safe.
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

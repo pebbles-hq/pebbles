@@ -1,6 +1,8 @@
 //! # Pebbles
 //!
-//! A Flutter-style, desktop-first GUI framework built on [Vello](https://vello.dev).
+//! A GUI framework for Rust, built from handpicked ideas — a widget model in the
+//! spirit of Flutter, reactivity in the spirit of SolidJS, and pure-Rust GPU
+//! rendering on [Vello](https://vello.dev).
 //!
 //! Pebbles pairs **Flutter's widget model** for building UI with **Solid's signals**
 //! for state. It keeps Flutter's three-tree architecture — **Widget → Element →
@@ -74,13 +76,21 @@ pub mod prelude {
         create_signal, create_store, create_timeout, prefers_reduced_motion, provide_context,
         set_prefers_reduced_motion, spawn, transition, untrack, use_bounds,
     };
+    // shortcut key vocabulary + wasm-safe timers (siblings of create_shortcut / create_timeout,
+    // which were in the prelude while their companion types/fns were not).
+    pub use pebbles_core::{Key, Mods, ShortcutKey, clear_timeout, set_timeout};
     // The rest of the hook surface (was reachable only via `pebbles::core::…`).
-    #[cfg(feature = "tokio")]
-    pub use pebbles_core::create_resource_future;
     pub use pebbles_core::{
         ErrorBoundaryHandle, RootDisposer, create_cleanup, create_loop, create_loop_while, create_memo_with,
         create_root, create_root_signal, create_selector, create_unique_id, on, on_defer, on_mount,
     };
+    #[cfg(feature = "tokio")]
+    pub use pebbles_core::{create_resource_future, spawn_future};
+    // router runtime — the imperative navigation API (`router::navigate`, `router::path`,
+    // `router::add_guard`, …) behind the route_view / link / outlet widgets. Exposed as a
+    // module rather than flattened, since its verbs (path/query/title/replace) are generic.
+    // Was reachable only as `pebbles::core::router::…`.
+    pub use pebbles_core::router;
 
     // runtime (pebbles-core): the widget contract + reconciler handles
     pub use pebbles_core::{
@@ -90,10 +100,11 @@ pub mod prelude {
     // font discovery: bundled families + everything installed on the host
     pub use pebbles_widgets::{builtins, families, has, is_builtin};
 
-    // theming + the general style system (RN/CSS-like, apply anywhere)
+    // theming + the general style system (RN/CSS-like, apply anywhere), incl. the
+    // design languages (Compact / Tailwind / Material) applied across the whole catalog
     pub use pebbles_widgets::{
-        Colors, ModifierExt, Style, StyleExt, Theme, set_text_direction, set_theme, style, styled, styles,
-        text_direction, theme, theme_override, toggle_theme,
+        Colors, DesignLanguage, ModifierExt, Style, StyleExt, Theme, design, set_design, set_text_direction,
+        set_theme, style, styled, styles, text_direction, theme, theme_override, toggle_theme,
     };
     #[cfg(feature = "image-view")]
     pub use pebbles_widgets::{ImageView, image_from_bytes, image_from_path};
@@ -109,6 +120,9 @@ pub mod prelude {
 
     // control flow (SolidJS-style For / Suspense / ErrorBoundary)
     pub use pebbles_widgets::{error_boundary, for_each, suspense};
+
+    // shared text-selection group (drag-select spanning several selectable_text widgets)
+    pub use pebbles_widgets::{SelectionGroup, selection_group};
 
     // the global overlay layer (dropdowns / menus / popovers) + the passive layer
     // (tooltips / hover cards) + toasts
@@ -178,6 +192,8 @@ pub mod prelude {
         fractional_translation, indexed_stack, layout_builder, layout_table, list_body, offstage,
         rotated_box, sized_overflow_box, unconstrained_box, visibility,
     };
+    // laid-out-extent probe (read a subtree's measured size for a sibling)
+    pub use pebbles_widgets::{ExtentProbe, extent_probe};
 
     // widgets: layout primitives + constructors
     pub use pebbles_widgets::{

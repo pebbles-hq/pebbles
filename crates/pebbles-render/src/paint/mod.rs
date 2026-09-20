@@ -2,25 +2,24 @@
 //! concrete GPU scene — so the rasterizer is swappable without touching a single
 //! widget. Each backend lives in its own file (mirroring the shell's `gpu/` split):
 //!
-//! - `vello_backend` (`vello` feature, default) — `Scene` IS a `vello::Scene`; the
-//!   `Painter` verbs forward straight to it. GPU-compute raster; the opt-in for heavy vector.
-//! - `hybrid_backend` (`vello-hybrid` feature) — `Scene` is a retained, backend-neutral
-//!   op-list; the `Painter` verbs record ops (owning their `kurbo`/`peniko` inputs), and the
-//!   shell flushes the list into a `vello_hybrid::Scene`. Low-power hybrid CPU+GPU raster.
+//! - `hybrid_backend` (`vello-hybrid` feature, **default**) — `Scene` is a retained,
+//!   backend-neutral op-list; the `Painter` verbs record ops (owning their `kurbo`/`peniko`
+//!   inputs), and the shell flushes the list into a `vello_hybrid::Scene`. Low-power hybrid
+//!   CPU+GPU raster.
+//! - `vello_backend` (`vello` feature, opt-in) — `Scene` IS a `vello::Scene`; the `Painter`
+//!   verbs forward straight to it. GPU-compute raster; the opt-in for heavy vector.
 //!
 //! Both expose the SAME `Scene` / `scene()` / `Painter` / `Glyph` surface, so the widget
 //! layer is identical across backends. The geometry/brush vocabulary ([`Affine`], [`Fill`],
 //! [`Stroke`], [`Brush`], …) is `kurbo`/`peniko` — renderer-neutral, re-exported here and
 //! imported by RenderObjects from `crate::paint` rather than from any backend crate.
-//!
-//! See `documentations/renderer-backend-plan.md` for the full phased plan.
 
 // Pick a backend. A real app enables exactly one; if BOTH are on at once — as
 // `--all-features` tooling (CI, docs.rs) does — the hybrid backend wins (it's the
 // default), so `--all-features` builds instead of erroring. Enabling neither is the
 // one true error.
 #[cfg(not(any(feature = "vello", feature = "vello-hybrid")))]
-compile_error!("pebbles-render: enable a render backend feature — `vello` (default) or `vello-hybrid`");
+compile_error!("pebbles-render: enable a render backend feature — `vello-hybrid` (default) or `vello`");
 
 // ---- backend-neutral vocabulary (identical types for both backends) --------
 pub use kurbo::{self, Affine, BezPath, Circle, Point, Rect, Shape, Stroke};

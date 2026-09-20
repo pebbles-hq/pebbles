@@ -56,8 +56,10 @@ fn render(p: &ErrorBoundaryProps) -> AnyWidget {
 /// }
 /// ```
 ///
-/// (Under a `panic = "abort"` build there is nothing to catch — the boundary is inert,
-/// as with any `catch_unwind`.)
+/// **Web caveat.** Catching relies on unwinding. `wasm32-unknown-unknown` has no unwinding
+/// (a Rust panic aborts the module), and any `panic = "abort"` build likewise has nothing to
+/// catch — the boundary is **inert** there. So on the web target this is not hostile-input
+/// crash containment; do not rely on it to keep a panicking widget from taking down the app.
 pub fn error_boundary<Wc, Wf>(
     content: impl Fn() -> Wc + 'static,
     fallback: impl Fn() -> Wf + 'static,

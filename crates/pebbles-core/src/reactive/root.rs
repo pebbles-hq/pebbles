@@ -1,6 +1,26 @@
 //! Reactive ownership scope — SolidJS `createRoot`.
 
-use super::{RootId, dispose_signal, with_rt};
+use super::{CompKey, Observer, RootId, dispose_signal, with_rt};
+
+/// Restores the owner/observer the scope detached and stops collecting into it — on drop,
+/// so a panic inside a `create_root` body unwinds without leaving the runtime detached
+/// (owner/observer cleared) or still collecting nodes into a scope that will never close.
+struct RootScopeGuard {
+    id: RootId,
+    prev_owner: Option<CompKey>,
+    prev_observer: Option<Observer>,
+}
+impl Drop for RootScopeGuard {
+    fn drop(&mut self) {
+        let id = self.id;
+        with_rt(|rt| {
+            rt.owner = self.prev_owner;
+            rt.observer = self.prev_observer;
+            // Stop collecting; the scope stays in `roots` (its nodes live) until disposed.
+            rt.active_roots.retain(|&r| r != id);
+        });
+    }
+}
 
 /// A handle that disposes a [`create_root`] scope: every signal, memo, effect, and
 /// cleanup made inside it. `Copy`, so store it and dispose later.
@@ -65,14 +85,10 @@ pub fn create_root<T>(f: impl FnOnce(RootDisposer) -> T) -> T {
         // subscribe an enclosing component (observer cleared).
         (id, rt.owner.take(), rt.observer.take())
     });
-    let out = f(RootDisposer { id });
-    with_rt(|rt| {
-        rt.owner = prev_owner;
-        rt.observer = prev_observer;
-        // Stop collecting; the scope stays in `roots` (its nodes live) until disposed.
-        rt.active_roots.retain(|&r| r != id);
-    });
-    out
+    // The guard re-attaches the owner/observer and stops collecting on EVERY exit path,
+    // including a panic inside `f` (which the render-time error boundary may catch).
+    let _scope = RootScopeGuard { id, prev_owner, prev_observer };
+    f(RootDisposer { id })
 }
 
 #[cfg(test)]

@@ -15,7 +15,7 @@ Legend: **✅ built** (themed, interactive, tested) · **🔶 built, tracked rem
 **⬜ open, tracked** (→ p2 ID) · **🆕 open, NOT yet tracked** — promote to a p2 item when
 ratified · **🚫 decided OUT** (p2 §J — do not "helpfully" add).
 
-The interactive gallery (~50 screens, one per component family) lives in its own repo, [pebbles-hq/pebbles-landing](https://github.com/pebbles-hq/pebbles-landing).
+The interactive gallery (~50 screens, one per component family) lives in its own repo, [pebbles-hq/pebbles-docs](https://github.com/pebbles-hq/pebbles-docs) (the in-repo `examples/landing` keeps its name).
 
 **Platform support:** every widget here works on all six platforms (Linux, macOS,
 Windows, web, Android, iOS) — the catalog is universal. The few OS-specific
@@ -53,6 +53,9 @@ remote-URL images) and their per-platform status live in
 | `Semantics` (+ `SemanticsRole`) | ✅ 🔶C7 | long-tail roles (Menu/Tab/Dialog/…) open (C7) |
 | `merge_semantics` · `exclude_semantics` · `block_semantics` | ✅ | a11y combinators: collapse a subtree into one announcement · hide a subtree from AT · modal barrier that blocks lower layers from AT |
 | `stream_builder` | ✅ | rebuild on each `Channel` emission (Flutter's StreamBuilder) — `stream_builder(channel, builder)` passes the latest value; a thin reactive builder over the existing `Channel` |
+| `for_each` (control) | ✅ | SolidJS `<For>`: map a list to **keyed** children (`for_each(items, key, view)` → `Vec<AnyWidget>`); insert/remove/reorder preserves surviving children's element state. `crates/pebbles-widgets/src/widgets/control/` |
+| `suspense` (control) | ✅ | SolidJS `<Suspense>` (explicit-predicate): show fallback while `loading()` is true, else content; `\|\|` any number of `Resource::is_loading()` |
+| `error_boundary` (control) | ✅ | SolidJS `<ErrorBoundary>`: contain a subtree's build- **and** descendant-render panic, show a fallback instead of crashing; `ErrorBoundaryHandle::reset()` from context to retry (inert under `panic = "abort"`). Solid's `<Show>`/`<Switch>` = Rust `if`/`match` |
 | `SingleChildScrollView` | ✅ | wheel/scrollbar/keys/snap/spring + `.drag_scroll(true)` pan-to-scroll with fling, `.physics(ScrollPhysics)` knobs and rubber-band overscroll (A4 ✅); `.on_scroll(cb)` scroll notifications |
 | `.on_scroll(cb)` (ScrollNotification) | ✅ | a scroll view's notification callback — `ScrollNotification` = `ScrollMetrics` (pixels/max/viewport/fraction) + Start/Update/End/Overscroll; the direct equivalent of Flutter's `NotificationListener<ScrollNotification>` |
 | `ListView::builder` (fixed extent) | ✅ | virtualized, `.horizontal/.reverse/.padding/.scrollbar/.controller` |
@@ -169,9 +172,10 @@ remote-URL images) and their per-platform status live in
 | `StickyList` / `sticky_section` · `CollapsingHeader` | ✅ | pinned section headers with push-off; collapsing hero driven by scroll progress `t` (A3 ✅) |
 | `nested_scroll_view` (NestedScrollView) | ✅ | header over a scrolling body — scroll-away (shared scroll position) or `.pinned(true)` (fixed header, body scrolls beneath) |
 | `Toolbar` · `StatusBar` | ✅ 🔶C8f | work; dedicated gallery screen (C8f) open |
-| `NavStack` / `RouteView` | ✅ 🔶C8h | push/replace/pop, fallback; dedicated gallery screen (C8h) open |
+| `NavStack` / `RouteView` (`route_view`) | ✅ 🔶C8h | push/replace/pop history + fallback; `route`/`param_route` (`/user/:id` → `RouteParams`, first-match-wins), `nest`+`outlet` (nested layouts), `transition(secs)`; `link`/`redirect` builders. Widget layer over `pebbles_core::router`. Dedicated gallery screen (C8h) open |
+| `link` / `redirect` / `outlet` | ✅ | `link(to, builder)` navigates on tap; `redirect(to)` swaps route on mount; `outlet()` renders the matched child of the enclosing `RouteView::nest` layout (SolidJS `<Outlet>`) |
 
-## 5. App services (`pebbles-widgets/src/*.rs`)
+## 5. App services (`crates/pebbles-widgets/src/services/`)
 
 | Service | Status | Notes |
 |---------|--------|-------|
@@ -191,6 +195,7 @@ remote-URL images) and their per-platform status live in
 | `Style` builder (`style()`, `styled`, `styles`, `.merge`) | ✅ | box: background/gradient/image/border (+ per-side)/radius/shape/shadow/opacity/blend/padding/margin/size/min-max/aspect_ratio/align/cursor · text: color/family/size/weight/bold/semibold/italic/underline/strikethrough/letter_spacing/line_height/text_align/max_lines/ellipsis · transform: rotate/scale/translate · presets: card/heading/circle |
 | `BoxDecoration` | ✅ | `Gradient::{linear,vertical,horizontal,radial}`, `Border` per-side, `BorderRadius`, `BoxShadow` (offset/blur/spread), `BoxShape`, blend, image fill + `ImageFit` |
 | Theme | ✅ | `Theme::light()/dark()`, `set_theme`/`toggle_theme`, `Colors` tokens, `shade`/`mix`; reactive |
+| `DesignLanguage` (`Compact`/`Tailwind`/`Material`) | ✅ | base design language seeding shape/density/elevation tokens; `Theme::design(..)` + global `design()`/`set_design(..)` (reactive), `Theme::{compact,tailwind,material}()` presets; every component re-skins radius/padding/height. Default = **Compact** |
 | `palette` | ✅ | foundation color set |
 | Sweep gradient | ✅ | `Gradient::sweep` / `sweep_arc` (conic fills) |
 | Scoped theme override (`theme_override`) | ✅ | per-subtree `Theme` swap; global stays the default |
@@ -200,15 +205,17 @@ remote-URL images) and their per-platform status live in
 
 | Capability | Status | Notes |
 |-----------|--------|-------|
-| Reactivity (signals, memo, `Store`, resource, `spawn`) | ✅ | `select_memo` convenience (E4) open; tokio feature (F3) open |
+| Reactivity (signals, memo, `Store`, resource, `spawn`) | ✅ | `select_memo` (E4 ✅) — `Store`'s deduped, field-scoped selector → `Signal<R>`, lazy, `PartialEq`-cut; tokio feature (F3) open |
 | Focus (Tab traversal, activate, editor routing, focus ring) | ✅ | scoped `FocusScope`/focus-trap primitive ✅ |
 | Keyboard | ✅ | Alt/Meta modifiers (B1) + app shortcut map (B2, `create_shortcut`) done; native menu bar (B3, `native-menus` feat, macOS/Windows) + global hotkeys (B4, `global-hotkeys` feat) implemented behind default-off features (pending build-verify) |
 | Animation (`animated`, `animate_to`, loops, keyed timeouts, timer-wake) | ✅ 🔶H1 | curves/springs/`transition()` presence (H1) open |
 | Clipboard · IME preedit | ✅ | |
+| Router (`pebbles_core::router`) | ✅ | `Location` (path + parsed `?query`) history driven by a reactive signal: `navigate`/`replace`/`back`/`forward`/`can_back`/`can_forward`, `path`/`location`/`query`/`set_query`/`remove_query`/`update_query`, `add_guard`/`remove_guard` (`NavGuard`), `set_title`/`title`, `save_scroll`/`saved_scroll` (scroll restoration). One in-memory model everywhere; on web the shell installs a `UrlSync` bridge (deep links + Back/Forward + `popstate`). Path params matched at the widget layer (`RouteView`) |
+| Offscreen capture (`pebbles_shell::capture`) | ✅ | render any widget tree to pixels with no window/display: `capture_png`/`capture_rgba` (settles animations to their final frame first) — the export primitive for charts/reports, SSR, golden-image tests. Desktop + `vello-hybrid` backend only (needs an offscreen GPU device) |
 | Accessibility (AccessKit: read + focus announce) | ✅ 🔶D1/C7 | AT-driven actions (D1), long-tail roles (C7) open |
-| RTL / `TextDirection` threading | ⬜D2 | enum exists, unused |
-| Custom drawing (`canvas`) | ⬜H2 | prerequisite for Charts (H3) |
-| Lifecycle & memory hygiene | ✅ | teardown verified 2026-09-01 (screens fully unmount; zero frames/timers after navigation — `performance-standards.md` §0-1). E6 ✅ DONE 2026-09-02: `text_edit` leak fixed, `scroll_metrics` audited clean, census accessors + a slim in-repo lifecycle leak-soak (`tests/suite/lifecycle_soak.rs`); the full route-hopping soak moved to the pebbles-landing gallery |
+| RTL / `TextDirection` threading | ✅ D2 | `set_text_direction`/`text_direction` ship (prelude); `Row`/text/alignment mirror on RTL |
+| Custom drawing (`canvas`) | ✅ H2 | immediate-mode vector surface: `stroke_line`/`stroke_path`, `fill_path`, `fill_path_gradient`, dashed strokes (`stroke_line_dashed`); the substrate Charts build on — `pebbles-charts` is its own repo |
+| Lifecycle & memory hygiene | ✅ | teardown verified 2026-09-01 (screens fully unmount; zero frames/timers after navigation — `performance-standards.md` §0-1). E6 ✅ DONE 2026-09-02: `text_edit` leak fixed, `scroll_metrics` audited clean, census accessors + a slim in-repo lifecycle leak-soak (`tests/suite/lifecycle_soak.rs`); the full route-hopping soak moved to the pebbles-docs gallery |
 
 ## 8. Open items — add-to-track (🆕 not in the p2 roadmap yet)
 

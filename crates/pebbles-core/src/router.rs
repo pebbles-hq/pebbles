@@ -65,15 +65,40 @@ impl Location {
     }
 }
 
-/// Normalize a path: leading `/`, drop a trailing `/` (root stays `/`).
+/// Normalize a path: leading `/`, drop a trailing `/` (root stays `/`). A router path is
+/// same-origin only, so a scheme-bearing (`javascript:`, `https:`) or protocol-relative
+/// (`//host/…`) input is coerced to root — the browser would treat those as a cross-origin
+/// navigation and reject the history update with a (swallowed) `SecurityError`, silently
+/// desyncing the address bar.
 fn normalize_path(p: &str) -> String {
     let p = p.trim();
-    if p.is_empty() || p == "/" {
+    if p.contains("://") || has_scheme_prefix(p) {
         return "/".to_string();
     }
-    let with_lead = if p.starts_with('/') { p } else { return format!("/{}", p.trim_end_matches('/')) };
+    if p.is_empty() || p.bytes().all(|b| b == b'/') {
+        return "/".to_string();
+    }
+    let with_lead = if p.starts_with('/') { p.to_string() } else { format!("/{p}") };
+    // Collapse a leading run of slashes so `//x` can't be read as protocol-relative.
+    let with_lead = format!("/{}", with_lead.trim_start_matches('/'));
     let trimmed = with_lead.trim_end_matches('/');
     if trimmed.is_empty() { "/".to_string() } else { trimmed.to_string() }
+}
+
+/// True if `s` begins with a URL scheme (`scheme:`) rather than a bare path.
+fn has_scheme_prefix(s: &str) -> bool {
+    let mut it = s.chars();
+    if !it.next().is_some_and(|c| c.is_ascii_alphabetic()) {
+        return false;
+    }
+    for c in it {
+        match c {
+            ':' => return true,
+            c if c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.') => {}
+            _ => return false,
+        }
+    }
+    false
 }
 
 /// Minimal percent-decode (`%XX` + `+`→space) for query keys/values.
@@ -342,12 +367,18 @@ thread_local! {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct GuardHandle(u64);
 
-/// Register a navigation guard consulted on every [`navigate`] / [`replace`] (and the
-/// in-memory [`back`] / [`forward`]): it receives the target [`Location`] and returns
-/// [`NavGuard`] to allow, redirect, or block. Guards run in registration order; the
-/// first non-`Allow` verdict wins. Use it for auth gating, `/old`→`/new` redirects, and
-/// unsaved-changes blocking. Pair with [`remove_guard`] on teardown (a component can do
-/// so in `create_cleanup`).
+/// Register a navigation guard: it receives the target [`Location`] and returns [`NavGuard`]
+/// to allow, redirect, or block. Guards run in registration order; the first non-`Allow`
+/// verdict wins. Good for `/old`→`/new` redirects and unsaved-changes blocking.
+///
+/// **Web caveat (important for auth).** A guard fully blocks/redirects only *in-app*
+/// navigations ([`navigate`]/[`replace`] and the in-memory [`back`]/[`forward`]). On the web
+/// target, the browser Back/Forward buttons and a typed/deep-linked URL move history *before*
+/// the router sees them; the guard then runs on `restore`/`install_url_sync` and can only
+/// **redirect** after the fact (a `Block` there cannot undo the move). So a guard is a
+/// navigation-flow tool, **not** a security boundary — treat auth as a redirect to `/login`,
+/// and never rely on a guard alone to keep protected *data* off the client (fetch/authorize
+/// server-side). Pair with [`remove_guard`] on teardown (e.g. in `create_cleanup`).
 pub fn add_guard(f: impl Fn(&Location) -> NavGuard + 'static) -> GuardHandle {
     let id = NEXT_GUARD.with(|n| {
         let id = n.get();
@@ -534,6 +565,12 @@ pub fn install_url_sync(sync: Rc<dyn UrlSync>, initial_url: &str) {
     set_current(loc.clone());
     // Stamp the current entry with index 0 so a later Back lands on real state.
     sync.replace(&loc.to_url(), 0);
+    // A deep link can land directly on a guarded route. The initial load can't be *blocked*,
+    // but an auth/redirect guard must still fire — otherwise a typed URL straight to a
+    // guarded route slips past. Honor a `Redirect`; a `Block` is meaningless on the seed load.
+    if let NavGuard::Redirect(target) = run_guards(&loc) {
+        replace(&target);
+    }
 }
 
 /// A browser `popstate` (Back/Forward or a manual URL edit): restore to the given
@@ -551,7 +588,14 @@ pub fn restore(index: usize, url: &str) {
             c.index = c.entries.len() - 1;
         }
     });
-    set_current(loc);
+    set_current(loc.clone());
+    // The browser has already moved (this is a popstate from Back/Forward or a manual URL
+    // edit), so a guard can't *block* the move — but it must still run, or Back/Forward into a
+    // guarded route would bypass it entirely. Honor a `Redirect` (the auth pattern); a `Block`
+    // can't undo a completed history move, so it's treated as allow.
+    if let NavGuard::Redirect(target) = run_guards(&loc) {
+        replace(&target);
+    }
 }
 
 #[cfg(test)]

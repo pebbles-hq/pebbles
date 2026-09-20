@@ -8,8 +8,9 @@ the widget catalog is [WIDGETS.md](WIDGETS.md).)
 ## The one-paragraph version
 
 Pebbles pairs **Flutter's widget model** (Widget → Element → RenderObject, constraints
-down / sizes up) with **SolidJS-style signals** for state, painted by **Vello** on wgpu
-and shaped by **Parley**. A component is a plain function; reading a signal inside it
+down / sizes up) with **SolidJS-style signals** for state, painted through a swappable
+render backend on wgpu — **Vello Hybrid** (low-power CPU+GPU) by default, classic
+**Vello** (GPU compute) as an opt-in — and shaped by **Parley**. A component is a plain function; reading a signal inside it
 subscribes it; writing a signal re-renders only the components that read it. The shell
 crate owns the winit event loop and feeds input down / draws scenes up.
 
@@ -18,24 +19,36 @@ crate owns the winit event loop and feeds input down / draws scenes up.
 Strictly bottom-up; a crate never depends on one above it:
 
 ```
-pebbles-foundation   geometry, color, layout enums (Rect, Offset, Size, EdgeInsets, …)
+pebbles-foundation   geometry, color, layout enums (Rect, Offset, Size, EdgeInsets, …),
+                     compile-time platform detection (`platform`), the diagnostic `log`
 pebbles-icons        generated Tabler icon data (outline + filled; see scripts/gen-tabler.mjs)
 pebbles-render       RenderObject trait + the built-in render objects, text (Parley),
-                     vello Scene painting, hit-test tree
+                     the Painter seam (backend-neutral paint verbs with two backends —
+                     paint/{mod,vello_backend,hybrid_backend}.rs), hit-test tree
 pebbles-core         reactivity (signals/memos/effects/stores), the Element tree +
                      reconciler, components, input (focus/keyboard/shortcuts/scroll),
                      the router, animation, bounds
 pebbles-widgets      the widget catalog: Flutter-style primitive widgets (grouped by
                      concern) + the shadcn-style component set, theming, overlays,
                      windows API
-pebbles-shell        the app runner: winit event loop, wgpu surface, vello Renderer,
+pebbles-shell        the app runner: winit event loop, wgpu surface, the dual GPU host
+                     (gpu/{mod,vello_host,hybrid_host}.rs) + an offscreen capture path,
                      AccessKit a11y, native menus / global hotkeys (feature-gated)
 pebbles-macros       the #[component] proc-macro
 pebbles              the umbrella crate: re-exports + `pebbles::prelude`
+
+# --- off the strict lib DAG ---
+pebbles-testing      headless test harness (`Harness`): depends on core + foundation +
+                     render + widgets — NOT shell (no window, no GPU)
+pebbles-cli          the `pebbles` binary (new / run / doctor): drives the workspace,
+                     outside the lib DAG
 ```
 
-`examples/*` (counter, todo, temperature, stopwatch) are workspace members that consume only the umbrella
-crate — they are the consumer-facing API check.
+`examples/*` (counter, todo, temperature, stopwatch, mobile, desktop, landing) are
+workspace members that consume the umbrella crate at runtime — the consumer-facing API
+check. The larger samples (`desktop`, `landing`) additionally dev-dep the harness crates
+(`pebbles-testing` + `pebbles-render`/`pebbles-widgets`) for smoke tests and forward the
+render backend to them.
 
 ## Module organization
 
@@ -125,12 +138,25 @@ SolidJS semantics in `pebbles-core/src/reactive/`:
 `ApplicationHandler` engine lives in its child module `app/runner/` — `mod.rs`
 (state + the handler), `input.rs` (event → intent translation), `render.rs` (the
 frame pipeline, bounds publishing, F2 inspector outline), `windows.rs` (secondary
-OS windows). AccessKit lives in `a11y.rs`.
+OS windows), and `storm.rs` (the `PEBBLES_INPUT_STORM` synthetic-input
+monkey-tester). AccessKit lives in `a11y.rs` (`a11y_stub.rs` is the no-op wasm
+stand-in). The rest of the shell's top-level modules cover the offscreen and
+non-desktop surfaces: `capture.rs` (offscreen widget → PNG/RGBA with no window),
+`web_router.rs` (the browser-history bridge for the core router), `hotkeys.rs`
+(system-wide global hotkeys, feature-gated), and `web_ime.rs` (the hidden-`<input>`
+IME / soft-keyboard bridge for wasm).
 
-Optional integrations are **default-off cargo features**, forwarded through the
-umbrella crate: `native-menus`, `global-hotkeys` (shell), `image-view`
-(`ImageView` + `image_from_*`; Avatar `src` degrades to initials without it), and
-`file-dialogs` (`pick_folder`).
+Two render-backend features select the rasterizer, forwarded through the whole
+graph: `vello-hybrid` (low-power CPU+GPU) is the **default**; `vello` (GPU compute,
+heavy vector) is the opt-in (`--no-default-features --features vello`). Exactly one
+is enabled per build.
+
+The remaining integrations are **default-off cargo features**, forwarded through the
+umbrella crate: `native-menus`, `global-hotkeys` (shell), `image-view` (`ImageView` +
+`image_from_*`; Avatar `src` degrades to initials without it), `file-dialogs`
+(`pick_folder`), `tokio` (the runtime's `create_resource_future` / `spawn_future`),
+and the Android base-class pair `android-native-activity` / `android-game-activity`
+(winit needs exactly one on Android).
 
 ## Where a change belongs
 

@@ -66,6 +66,14 @@
 //! * [`use_bounds`](pebbles_core::use_bounds) — the laid-out rect of a widget, after layout.
 //! * [`use_scroll_controller`](pebbles_widgets::use_scroll_controller) — drive/observe a scroll view.
 //! * [`use_carousel_controller`](pebbles_widgets::use_carousel_controller) — drive/observe a carousel.
+//! * [`use_scroll_restoration`](pebbles_widgets::use_scroll_restoration) — save/restore a scroll
+//!   view's offset across navigations (pairs with the router's scroll restoration).
+//!
+//! ### Routing
+//! * [`use_match`](pebbles_widgets::components::use_match) — whether the current route matches a
+//!   pattern (for active-link styling).
+//! * [`use_route_focus`](pebbles_widgets::components::use_route_focus) — move focus to a node on
+//!   navigation (accessibility: focus the new view on route change).
 
 // --- state -----------------------------------------------------------------
 pub use pebbles_core::{RootDisposer, create_root, create_root_signal, create_signal, create_store};
@@ -90,3 +98,6 @@ pub use pebbles_core::{create_focus, create_focus_scope, create_shortcut, create
 // --- measurement & controllers ---------------------------------------------
 pub use pebbles_core::use_bounds;
 pub use pebbles_widgets::{use_carousel_controller, use_scroll_controller, use_scroll_restoration};
+
+// --- routing ---------------------------------------------------------------
+pub use pebbles_widgets::components::{use_match, use_route_focus};

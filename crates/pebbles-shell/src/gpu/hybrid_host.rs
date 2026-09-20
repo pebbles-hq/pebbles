@@ -1,16 +1,19 @@
-//! The Vello Hybrid GPU host. It reuses `vello::util` for the backend-agnostic parts —
-//! the wgpu instance/adapter/device pool (`RenderContext`), the swapchain surface, and the
-//! `TextureBlitter` that copies the intermediate target to the swapchain — and changes only
-//! two things:
+//! The Vello Hybrid GPU host. It reuses `vello::util` for the backend-agnostic parts — the
+//! wgpu instance/adapter/device pool (`RenderContext`) and the swapchain surface — and differs
+//! from the Vello-compute host in two ways:
 //!
-//!   1. the intermediate target texture is `RENDER_ATTACHMENT | TEXTURE_BINDING` (Vello
-//!      Hybrid rasterizes into a render attachment; Vello-compute wrote a storage texture),
-//!   2. the [`Renderer`] flushes the recorded op-list into a `vello_hybrid::Scene` and
-//!      rasterizes it with `vello_hybrid::Renderer` instead of `vello::Renderer`.
+//!   1. it rasterizes **straight into the swapchain** — the [`Renderer`] flushes the recorded
+//!      op-list into a `vello_hybrid::Scene` and renders it directly to the presented texture,
+//!      so there is no intermediate render-attachment target and no `TextureBlitter` copy,
+//!   2. the `vello_hybrid::Renderer` + its `Resources` (glyph/image atlas) are built **once**,
+//!      lazily on the first frame when the target format + size are known, and reused at every
+//!      size — recreating them on resize wiped the atlas and caused the resize "christmas-light"
+//!      flicker (see [`Renderer::render_to_texture`]).
 //!
-//! Everything else in the runner's frame loop (surface creation, resize, the blit + present)
-//! is unchanged. NOTE: this path is compiled but has NOT been run in a window yet — the
-//! agent's sandbox is headless; the flush itself is GPU-verified in `spikes/renderer-bench`.
+//! The windowed frame loop reaches the GPU through [`Renderer::render_to_texture`], which
+//! resolves the swapchain format from [`SURFACE_FORMAT`]. The headless `capture` path has no
+//! surface, so both funnel through [`Renderer::render_offscreen`] — the single place the flush,
+//! the base-color clear and the `draw_image` texture binding are defined.
 
 use std::ops::Deref;
 use std::sync::OnceLock;
@@ -79,6 +82,12 @@ impl Deref for RenderContext {
     }
 }
 
+impl std::ops::DerefMut for RenderContext {
+    fn deref_mut(&mut self) -> &mut VelloCtx {
+        &mut self.0
+    }
+}
+
 /// The hybrid renderer: the `vello_hybrid::Renderer` + its `Resources`, built once (lazily,
 /// on the first frame) and reused at EVERY size. `render_to_texture` mirrors
 /// `vello::Renderer`'s signature so the runner calls it identically.
@@ -98,6 +107,9 @@ pub(crate) fn new_renderer(_device: &wgpu::Device, _queue: &wgpu::Queue) -> Rend
 }
 
 impl Renderer {
+    /// The windowed frame loop's entry point: resolve the swapchain format captured at surface
+    /// creation, then render through [`Self::render_offscreen`]. Errors only if no surface has
+    /// been created yet (impossible from the runner, which creates one before the first frame).
     pub(crate) fn render_to_texture(
         &mut self,
         device: &wgpu::Device,
@@ -107,7 +119,32 @@ impl Renderer {
         params: &RenderParams,
     ) -> Result<(), String> {
         let format = *SURFACE_FORMAT.get().ok_or("pebbles(vello-hybrid): surface format not yet known")?;
-        let size = (params.width.max(1), params.height.max(1));
+        self.render_offscreen(
+            device,
+            queue,
+            scene,
+            target,
+            params.base_color,
+            (params.width, params.height),
+            format,
+        )
+    }
+
+    /// Render `scene` into an owned `target` view of a known `format`, with no swapchain and no
+    /// dependence on the windowed surface. Both the windowed [`Self::render_to_texture`] and the
+    /// headless `capture` path funnel through here, so the renderer-once construction, the flush,
+    /// the base-color clear and the `draw_image` texture binding are all defined exactly once.
+    pub(crate) fn render_offscreen(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        scene: &Scene,
+        target: &wgpu::TextureView,
+        base_color: peniko::Color,
+        size: (u32, u32),
+        format: wgpu::TextureFormat,
+    ) -> Result<(), String> {
+        let size = (size.0.max(1), size.1.max(1));
         // Build the renderer + its Resources (glyph/image atlas) ONCE and reuse them at every
         // size: `render()` takes the size per frame and grows its internal targets as needed.
         // Recreating them on resize wiped the atlas and rendered a fresh renderer's first frame
@@ -123,7 +160,7 @@ impl Renderer {
 
         // Build the backend scene: clear to the base color, then flush the recorded op-list.
         let mut hyb = HybScene::new(size.0.min(u16::MAX as u32) as u16, size.1.min(u16::MAX as u32) as u16);
-        hyb.set_paint(params.base_color);
+        hyb.set_paint(base_color);
         hyb.fill_rect(&kurbo::Rect::new(0.0, 0.0, f64::from(size.0), f64::from(size.1)));
         scene.flush(&mut hyb, resources);
 

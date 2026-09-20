@@ -33,11 +33,24 @@ struct WebHistory {
 impl pebbles_core::router::UrlSync for WebHistory {
     fn push(&self, url: &str, index: usize) {
         let state = JsValue::from_f64(index as f64);
-        let _ = self.history.push_state_with_url(&state, "", Some(url));
+        if let Err(e) = self.history.push_state_with_url(&state, "", Some(url)) {
+            // A cross-origin/protocol-relative URL trips the browser's same-origin check
+            // (SecurityError). The router coerces such paths to root before we get here, so
+            // this should be unreachable — log it rather than swallow a silent address-bar desync.
+            pebbles_core::log::warn(
+                pebbles_core::log::Cat::General,
+                format!("history.pushState({url}) failed: {e:?}"),
+            );
+        }
     }
     fn replace(&self, url: &str, index: usize) {
         let state = JsValue::from_f64(index as f64);
-        let _ = self.history.replace_state_with_url(&state, "", Some(url));
+        if let Err(e) = self.history.replace_state_with_url(&state, "", Some(url)) {
+            pebbles_core::log::warn(
+                pebbles_core::log::Cat::General,
+                format!("history.replaceState({url}) failed: {e:?}"),
+            );
+        }
     }
     fn go(&self, delta: i32) {
         let _ = self.history.go_with_delta(delta);

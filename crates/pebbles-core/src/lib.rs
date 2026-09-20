@@ -1,7 +1,7 @@
 //! # pebbles-core
 //!
 //! The runtime layer — the framework engine every widget is built on, with **no**
-//! catalog of its own. It owns three things:
+//! catalog of its own. It owns four things:
 //!
 //! * **Reactivity** — the Solid-style [`Signal`]/[`create_memo`]/[`create_effect`]/
 //!   [`create_store`] primitives. State is a signal you read and write directly;
@@ -13,6 +13,9 @@
 //! * **The reconciling engine** — [`Ui`], the element arena keyed by [`ElementId`]
 //!   that turns a widget tree into a [`pebbles_render`] tree each frame, plus the
 //!   [`focus`] system and the [`Callback`] handle.
+//! * **Navigation** — the imperative [`router`] runtime (history, guards, query
+//!   parameters, title and scroll restoration) that the route widgets one layer up
+//!   are built on.
 //!
 //! The widget catalog lives one layer up in `pebbles-widgets`; the GPU/windowing
 //! shell lives in `pebbles-shell`. This crate depends only on `pebbles-foundation`

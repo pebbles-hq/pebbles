@@ -6,7 +6,15 @@
 //! Async model: a network load runs in the background via [`pebbles_core::spawn`];
 //! the decoded result is delivered back on the UI thread (drained by the shared task
 //! pump once per frame) into the result signal, so the view re-renders.
+//!
+//! **Security:** every source path funnels through [`decode`], which caps both the
+//! compressed byte length ([`MAX_IMAGE_BYTES`]) and the decoded pixel dimensions
+//! ([`MAX_IMAGE_DIM`]) so a "dimension-bomb" image can't force a huge allocation. URL
+//! *trust* is the application's responsibility: `ImageView::network` follows redirects and
+//! does no SSRF filtering, so do not hand it a URL derived from untrusted input without
+//! validating the host yourself.
 
+use std::io::Cursor;
 #[cfg(not(target_family = "wasm"))]
 use std::io::Read;
 #[cfg(not(target_family = "wasm"))]
@@ -35,9 +43,27 @@ pub enum ImageState {
     Failed(String),
 }
 
-/// Decode PNG/JPEG/GIF/WebP bytes into a paintable [`Image`].
+/// Max compressed bytes accepted for decode — bounds every source path (URL / base64 /
+/// memory / web fetch) so a runaway response or `data:` URI can't exhaust memory.
+pub const MAX_IMAGE_BYTES: usize = 32 * 1024 * 1024;
+
+/// Max decoded dimension per side. A small compressed file can declare an enormous canvas
+/// (a "dimension bomb"); the decoder is told to refuse anything larger before it allocates.
+pub const MAX_IMAGE_DIM: u32 = 16_384;
+
+/// Decode PNG/JPEG/GIF/WebP bytes into a paintable [`Image`], bounded by [`MAX_IMAGE_BYTES`]
+/// (compressed) and [`MAX_IMAGE_DIM`] (decoded, enforced by the decoder before allocation).
 fn decode(bytes: &[u8]) -> Result<Image, String> {
-    let rgba = image::load_from_memory(bytes).map_err(|e| e.to_string())?.to_rgba8();
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return Err(format!("image exceeds the {} MB size limit", MAX_IMAGE_BYTES / (1024 * 1024)));
+    }
+    let mut reader =
+        image::ImageReader::new(Cursor::new(bytes)).with_guessed_format().map_err(|e| e.to_string())?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_IMAGE_DIM);
+    limits.max_image_height = Some(MAX_IMAGE_DIM);
+    reader.limits(limits);
+    let rgba = reader.decode().map_err(|e| e.to_string())?.to_rgba8();
     let (w, h) = rgba.dimensions();
     Ok(image_from_rgba8(w, h, rgba.into_raw()))
 }
@@ -58,7 +84,7 @@ fn fetch(url: &str) -> Result<Image, String> {
     let resp = agent.get(url).call().map_err(|e| e.to_string())?;
     let mut bytes = Vec::new();
     resp.into_reader()
-        .take(32 * 1024 * 1024) // 32 MB cap
+        .take(MAX_IMAGE_BYTES as u64) // wire-byte cap (shared with the base64 + web paths)
         .read_to_end(&mut bytes)
         .map_err(|e| e.to_string())?;
     decode(&bytes)
@@ -85,7 +111,14 @@ async fn fetch(url: String) -> Result<Image, String> {
     let buffer = JsFuture::from(resp.array_buffer().map_err(|e| format!("no body: {e:?}"))?)
         .await
         .map_err(|e| format!("reading body failed: {e:?}"))?;
-    let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
+    // Cap the body before copying it into a Rust Vec — the browser fetch is otherwise
+    // unbounded (no `ureq` `.take()` on wasm). `Uint8Array::new` is a view, so `.length()`
+    // is checked before `.to_vec()` copies.
+    let view = js_sys::Uint8Array::new(&buffer);
+    if view.length() as usize > MAX_IMAGE_BYTES {
+        return Err(format!("image exceeds the {} MB size limit", MAX_IMAGE_BYTES / (1024 * 1024)));
+    }
+    let bytes = view.to_vec();
     decode(&bytes)
 }
 

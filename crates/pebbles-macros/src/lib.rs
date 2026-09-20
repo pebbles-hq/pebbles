@@ -90,7 +90,7 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// ```
 ///
 /// Cross-platform incl. Android — put it on `run()` in `lib.rs` (a `cdylib`), with a
-/// thin `main.rs` calling `my_app::run()` for desktop (see documentations/android-support.md):
+/// thin `main.rs` calling `my_app::run()` for desktop:
 /// ```ignore
 /// #[pebbles::main]
 /// pub fn run() -> Result<(), Box<dyn std::error::Error>> { App::new(component(app)).run() }

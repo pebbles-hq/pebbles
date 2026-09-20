@@ -1,5 +1,5 @@
 //! Slim lifecycle leak-soak — the framework's leak tripwire, kept in-repo after the
-//! full route-hopping gallery soak moved to the pebbles-landing repo.
+//! full route-hopping gallery soak moved to the pebbles-docs repo.
 //!
 //! Mounts a representative widget set (buttons, text field, checkbox, slider,
 //! tooltip, a virtualized list), unmounts it, exercises the overlay + passive

@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
 description = "The Pebbles catalog: Flutter-style widgets, shadcn-style components, theme and styling."
 
 [features]
@@ -63,5 +67,8 @@ web-sys = { version = "0.3", optional = true, features = ["Window", "Response"] 
 [lints]
 workspace = true
 
+# Path-only (NO `version`) so `cargo package` strips it: pebbles-testing depends on
+# pebbles-widgets, so a versioned dev-dep back on pebbles-testing would deadlock the
+# first crates.io publish in either order. Dev-deps aren't needed by downstream users.
 [dev-dependencies]
-pebbles-testing.workspace = true
+pebbles-testing = { path = "../pebbles-testing", default-features = false }

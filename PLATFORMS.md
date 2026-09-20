@@ -46,6 +46,7 @@ that touch the OS in a platform-specific way have restrictions:
 | System font discovery | (bundled fonts always work) | ✅ | ✅ | ✅ | ❌⁸ | 🔶⁸ | 🔶⁸ |
 | `tokio` async | `create_resource_future` (`tokio`) | ✅ | ✅ | ✅ | ❌⁹ | ✅ | ✅ |
 | Background work | `spawn`, `create_resource` | ✅ | ✅ | ✅ | 🔶⁹ | ✅ | ✅ |
+| Offscreen capture (widget→PNG/RGBA) | `capture_png`/`capture_rgba` | ✅ | ✅ | ✅ | ❌¹⁰ | 🔶¹⁰ | 🔶¹⁰ |
 
 **Notes**
 
@@ -73,6 +74,10 @@ that touch the OS in a platform-specific way have restrictions:
 9. **Web async** has no OS threads: `spawn`/`create_resource` run the work inline
    and still deliver the result through the per-frame pump (the reactive contract
    holds). `tokio` (`create_resource_future`) is native-only; on web use `spawn`.
+10. **Offscreen capture** needs the default `vello-hybrid` backend and an offscreen
+    GPU device. It is unavailable on the web (no headless device) and under the
+    classic `vello` backend; it compiles on Android/iOS but is desktop-first and not
+    runtime-verified on mobile.
 
 ## Detecting the platform in code
 

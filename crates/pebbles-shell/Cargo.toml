@@ -6,7 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-description = "The desktop shell for Pebbles: winit windowing, the wgpu surface and the Vello GPU renderer."
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+description = "The desktop shell for Pebbles: winit windowing, the wgpu surface, and the swappable GPU render backend."
 
 [dependencies]
 pebbles-foundation.workspace = true
@@ -24,8 +28,6 @@ wgpu.workspace = true
 winit.workspace = true
 raw-window-handle.workspace = true
 pollster.workspace = true
-# PNG encoding for the offscreen `capture` API (render any widget tree to a PNG).
-png = "0.18"
 # A std::time drop-in that works on wasm too: on native it IS std::time (zero
 # cost); on wasm `Instant` uses `performance.now()` instead of panicking. winit
 # already uses it for `ControlFlow::WaitUntil`.
@@ -54,6 +56,8 @@ vello-hybrid = [
     "pebbles-core/vello-hybrid",
     "pebbles-widgets/vello-hybrid",
     "dep:vello_hybrid",
+    # `capture` (native + hybrid only) needs PNG encoding; pull it in exactly there.
+    "dep:png",
 ]
 # Wire an `App::menu(menu_bar([...]))` native bar via `muda` (B3).
 native-menus = ["dep:muda"]
@@ -89,6 +93,11 @@ arboard = { version = "3", default-features = false }
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 accesskit = "0.25"
 accesskit_winit = "0.34.0"
+# PNG encoding for the offscreen `capture` API. Optional + declared only off-wasm and
+# enabled by the `vello-hybrid` feature, so it compiles exactly where `capture` does
+# (`cfg(all(not(wasm), feature = "vello-hybrid"))`) — never under `--features vello`
+# alone, and never on wasm.
+png = { version = "0.18", optional = true }
 
 # Web (wasm) runtime deps. The web GPU device request is inherently async and must
 # not block the main thread, so the surface is built off an async task and handed

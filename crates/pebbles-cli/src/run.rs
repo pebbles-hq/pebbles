@@ -563,7 +563,7 @@ fn run_android(member_dir: &Path, bin: &str, o: &Opts) -> ExitCode {
     term::hot("building the APK and launching on your device/emulator (Ctrl+C to stop)…");
     term::step(
         "Android uses NativeActivity here (no soft keyboard yet) and needs Vulkan (Android 7+). \
-         The crate must be crate-type=[\"cdylib\"] + #[pebbles::main] — see documentations/android-support.md.",
+         The crate must be crate-type=[\"cdylib\"] + #[pebbles::main].",
     );
     cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
     match cmd.status() {
@@ -580,7 +580,7 @@ fn run_android(member_dir: &Path, bin: &str, o: &Opts) -> ExitCode {
 fn run_ios() -> ExitCode {
     term::banner("pebbles run — ios");
     if cfg!(target_os = "macos") {
-        term::step("iOS run is driven by cargo-mobile2 (see documentations/ios-support.md):");
+        term::step("iOS run is driven by cargo-mobile2:");
         println!("    1. cargo install cargo-mobile2");
         println!("    2. cargo mobile init      (generates the Xcode project)");
         println!("    3. cargo apple run        (Simulator, or a signed device)");
