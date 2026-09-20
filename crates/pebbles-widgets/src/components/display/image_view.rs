@@ -7,8 +7,8 @@
 //! the decoded result is delivered back on the UI thread (drained by the shared task
 //! pump once per frame) into the result signal, so the view re-renders.
 //!
-//! **Security:** every source path funnels through [`decode`], which caps both the
-//! compressed byte length ([`MAX_IMAGE_BYTES`]) and the decoded pixel dimensions
+//! **Security:** every source path funnels through the internal `decode`, which caps both
+//! the compressed byte length ([`MAX_IMAGE_BYTES`]) and the decoded pixel dimensions
 //! ([`MAX_IMAGE_DIM`]) so a "dimension-bomb" image can't force a huge allocation. URL
 //! *trust* is the application's responsibility: `ImageView::network` follows redirects and
 //! does no SSRF filtering, so do not hand it a URL derived from untrusted input without
