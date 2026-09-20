@@ -565,13 +565,29 @@ impl FileExplorer {
                 None => false,
             }
         });
-        // Delete — delete the selection.
+        // Delete — delete the selection. On disk this is an irreversible recursive
+        // remove (no trash, no undo), so confirm first; a single Delete keypress must
+        // not be able to destroy user data. Model-only mode deletes immediately.
         create_shortcut_if("Delete", move || {
             let ids = self.selected.peek().clone();
             if ids.is_empty() {
                 return false;
             }
-            self.delete_nodes(&ids);
+            if self.fs_root.get().is_some() {
+                let count = ids.len();
+                let noun = if count == 1 { "item" } else { "items" };
+                crate::alert_dialog(format!("Delete {count} {noun}?"))
+                    .description(
+                        "This permanently deletes the selected files and folders from disk. \
+                         This can't be undone.",
+                    )
+                    .destructive(true)
+                    .confirm("Delete")
+                    .on_confirm(move || self.delete_nodes(&ids))
+                    .open();
+            } else {
+                self.delete_nodes(&ids);
+            }
             true
         });
         // Mod+A — select every visible node, from idle too (a focused editor's

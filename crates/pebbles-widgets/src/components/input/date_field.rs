@@ -465,3 +465,44 @@ fn readable(d: Date) -> String {
     // Guard: clamp month to 1..=12 so an out-of-range month can't index OOB.
     format!("{} {}, {}", &MONTHS[(d.1.clamp(1, 12) - 1) as usize][..3], d.2, d.0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn days_in_month_handles_leap_years() {
+        assert_eq!(days_in_month(2024, 2), 29); // divisible by 4
+        assert_eq!(days_in_month(2025, 2), 28); // not a leap year
+        assert_eq!(days_in_month(2000, 2), 29); // divisible by 400
+        assert_eq!(days_in_month(1900, 2), 28); // divisible by 100, not 400
+        assert_eq!(days_in_month(2026, 4), 30);
+        assert_eq!(days_in_month(2026, 1), 31);
+        assert_eq!(days_in_month(2026, 13), 0); // out of range
+    }
+
+    #[test]
+    fn parse_rejects_calendar_impossible_dates() {
+        let f = DateFormat::MDY;
+        // Feb 30 / Apr 31 / month 13 must not parse, even though day <= 31.
+        assert_eq!(f.parse("02/30/2026"), None);
+        assert_eq!(f.parse("04/31/2026"), None);
+        assert_eq!(f.parse("13/01/2026"), None);
+        // Valid dates, including a leap-day, still parse.
+        assert_eq!(f.parse("02/29/2024"), Some((2024, 2, 29)));
+        assert_eq!(f.parse("02/28/2025"), Some((2025, 2, 28)));
+        assert_eq!(f.parse("12/31/2026"), Some((2026, 12, 31)));
+        // Feb 29 on a non-leap year is rejected.
+        assert_eq!(f.parse("02/29/2025"), None);
+        // Incomplete / non-4-digit year is rejected.
+        assert_eq!(f.parse("1/1/26"), None);
+    }
+
+    #[test]
+    fn parse_honors_field_order() {
+        assert_eq!(DateFormat::DMY.parse("31/12/2026"), Some((2026, 12, 31)));
+        assert_eq!(DateFormat::YMD.parse("2026-12-31"), Some((2026, 12, 31)));
+        // DMY with an impossible day is still rejected.
+        assert_eq!(DateFormat::DMY.parse("30/02/2026"), None);
+    }
+}
