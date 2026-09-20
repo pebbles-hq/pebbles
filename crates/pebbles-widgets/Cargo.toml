@@ -59,7 +59,7 @@ ureq = { version = "2", optional = true }
 # `--features file-dialogs` on a mobile target used to fail to build. Narrow it to non-wasm,
 # non-mobile; `pick_folder` resolves as cancelled on the excluded targets (see tree.rs).
 [target.'cfg(not(any(target_family = "wasm", target_os = "android", target_os = "ios")))'.dependencies]
-rfd = { version = "0.15", default-features = false, features = ["xdg-portal", "async-std"], optional = true }
+rfd = { version = "0.16", default-features = false, features = ["xdg-portal", "async-std"], optional = true }
 
 # Web `image-view` network loading: the browser's own `fetch` + ArrayBuffer readback,
 # decoded by the same pure-Rust `image` codecs. These replace `ureq` on wasm.
