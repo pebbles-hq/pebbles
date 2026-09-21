@@ -6,10 +6,11 @@
 use pebbles_core::{IntoWidget, Ui, component};
 use pebbles_foundation::{Size, palette};
 use pebbles_render::{SemanticsRole, TextEnv};
+use pebbles_testing::draw_frame as frame;
 use pebbles_widgets::components::{TabsVariant, list_tile, progress, tabs};
 use pebbles_widgets::{
-    ListView, View, block_semantics, button, checkbox, column, container, exclude_semantics, merge_semantics,
-    select, semantics, slider, stack, switch, text, text_field,
+    ListView, OverlayHost, View, block_semantics, button, checkbox, column, container, exclude_semantics,
+    merge_semantics, select, semantics, slider, stack, switch, text, text_field,
 };
 
 fn root() -> impl IntoWidget {
@@ -270,4 +271,32 @@ fn block_semantics_drops_the_lower_layers() {
     let tree = ui.render_tree().semantics_tree();
     assert!(tree.iter().any(|n| n.props.label == "Front"), "the barrier's own content is announced");
     assert!(!tree.iter().any(|n| n.props.label == "Behind"), "the layer below is blocked");
+}
+
+#[test]
+fn an_open_modal_blocks_the_page_semantics_behind_it() {
+    pebbles_widgets::overlay::init();
+    pebbles_widgets::dialog::init();
+    pebbles_core::focus::init();
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 400.0);
+    ui.mount_root(
+        View::new(palette::WHITE, component(|| OverlayHost::wrap(button("Behind Modal")))).into_widget(),
+    );
+    ui.layout(&mut env, win);
+    // No modal yet: the page button is announced.
+    let tree = ui.render_tree().semantics_tree();
+    assert!(tree.iter().any(|n| n.props.label == "Behind Modal"), "page button announced when no modal");
+
+    // Open a modal dialog over the page.
+    pebbles_widgets::dialog(button("Inside Modal")).open();
+    frame(&mut ui, &mut env, win);
+    let tree = ui.render_tree().semantics_tree();
+    assert!(
+        !tree.iter().any(|n| n.props.label == "Behind Modal"),
+        "the page behind an open modal is a11y-blocked so a screen reader can't walk it"
+    );
+    assert!(tree.iter().any(|n| n.props.role == SemanticsRole::Dialog), "the modal itself is announced");
+    assert!(tree.iter().any(|n| n.props.label == "Inside Modal"), "the modal's own content is announced");
 }

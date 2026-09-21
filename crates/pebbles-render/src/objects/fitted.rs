@@ -4,7 +4,8 @@
 //! transform, so pointer events land on the child exactly where it appears.
 
 use kurbo::Affine;
-use pebbles_foundation::{Alignment, Axis, BoxFit, Offset, Size};
+use pebbles_foundation::{Alignment, Axis, BoxFit, Offset, Rect, Size};
+use peniko::{Fill, Mix};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;
@@ -118,8 +119,20 @@ impl RenderObject for RenderFittedBox {
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         if let Some(child) = cx.children().first().copied() {
-            cx.paint_child(child, offset);
+            // Clip the scaled child to this box — Cover / None / Fill can paint the
+            // child larger than the box, and Flutter's FittedBox clips that overflow
+            // (`clipBehavior: Clip.hardEdge`). The clip is a rect in the box's own
+            // space; the child's scale transform applies inside `paint_child_clipped`.
+            let bounds = Rect::from_origin_size(offset.to_point(), cx.size());
+            cx.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &bounds);
+            cx.paint_child_clipped(child, offset, bounds);
+            cx.scene.pop_layer();
         }
+    }
+
+    fn clips_children(&self) -> bool {
+        // The clip layer bounds the (scaled) subtree's ink to this box.
+        true
     }
 
     fn transform(&self, _size: Size) -> Option<Affine> {

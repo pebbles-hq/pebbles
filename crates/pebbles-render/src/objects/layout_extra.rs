@@ -19,6 +19,22 @@ use crate::tree::{LayoutCx, PaintCx};
 fn first_child(cx: &LayoutCx<'_>) -> Option<RenderId> {
     cx.children().first().copied()
 }
+
+/// Replace a NaN/±inf scalar with `0.0` (mirrors the `is_finite`/`max(0.0)` guard
+/// used for factors in `fractional.rs`).
+fn finite_or_zero(v: f64) -> f64 {
+    if v.is_finite() { v } else { 0.0 }
+}
+/// Sanitize a delegate-supplied SIZE before it feeds layout: each axis finite and
+/// non-negative (a NaN or negative extent would poison the constraint math).
+fn sanitize_size(s: Size) -> Size {
+    Size::new(finite_or_zero(s.width).max(0.0), finite_or_zero(s.height).max(0.0))
+}
+/// Sanitize a delegate-supplied OFFSET before it positions a child: finite on each
+/// axis (offsets may be negative, so no clamp).
+fn sanitize_offset(o: Offset) -> Offset {
+    Offset::new(finite_or_zero(o.x), finite_or_zero(o.y))
+}
 fn first_child_paint(cx: &PaintCx<'_>) -> Option<RenderId> {
     cx.children().first().copied()
 }
@@ -498,11 +514,11 @@ pub struct RenderCustomSingleChild {
 
 impl RenderObject for RenderCustomSingleChild {
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
-        let size = constraints.constrain((self.size_fn)(constraints));
+        let size = constraints.constrain(sanitize_size((self.size_fn)(constraints)));
         if let Some(child) = first_child(cx) {
             let cc = (self.child_constraints_fn)(constraints);
             let child_size = cx.layout_child(child, cc);
-            cx.set_child_offset(child, (self.position_fn)(size, child_size));
+            cx.set_child_offset(child, sanitize_offset((self.position_fn)(size, child_size)));
         }
         size
     }
@@ -528,12 +544,12 @@ pub struct RenderCustomMultiChild {
 
 impl RenderObject for RenderCustomMultiChild {
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
-        let size = constraints.constrain((self.size_fn)(constraints));
+        let size = constraints.constrain(sanitize_size((self.size_fn)(constraints)));
         let children: Vec<RenderId> = cx.children().to_vec();
         for (i, &child) in children.iter().enumerate() {
             let cc = (self.child_constraints_fn)(i, constraints);
             let child_size = cx.layout_child(child, cc);
-            cx.set_child_offset(child, (self.position_fn)(i, size, child_size));
+            cx.set_child_offset(child, sanitize_offset((self.position_fn)(i, size, child_size)));
         }
         size
     }
@@ -565,7 +581,7 @@ pub struct RenderFlow {
 
 impl RenderObject for RenderFlow {
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
-        let size = constraints.constrain((self.size_fn)(constraints));
+        let size = constraints.constrain(sanitize_size((self.size_fn)(constraints)));
         let children: Vec<RenderId> = cx.children().to_vec();
         for (i, &child) in children.iter().enumerate() {
             let cc = (self.child_constraints_fn)(i, constraints);

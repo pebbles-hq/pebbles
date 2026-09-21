@@ -373,6 +373,15 @@ fn render_panel_guard(p: &GuardProps) -> AnyWidget {
 
 fn render_host(p: &Props) -> crate::widgets::Stack {
     let mut kids: Vec<AnyWidget> = vec![p.child.clone()];
+    // A11y modal barrier: while a dialog or sheet is open, drop the app content's
+    // semantics so a screen reader can't walk the page behind the modal. This marker
+    // carries a `block_semantics` boundary — the semantics collector truncates every
+    // EARLIER sibling in this stack when it reaches a Block child (the modal panels,
+    // any popover floating above them, and toasts are added after this marker, so they
+    // stay announced). Pairs with the focus trap (Dialog/Sheet `focus_scope`).
+    if crate::dialog::is_open() || crate::sheet::is_open() {
+        kids.push(crate::widgets::block_semantics(crate::widgets::SizedBox::shrink()).into_widget());
+    }
     // Modal surfaces (dialogs + sheets) stack by OPEN ORDER, not by a fixed layer:
     // the most-recently-opened paints last (on top). A confirmation dialog opened
     // from inside a sheet must sit ABOVE the sheet; a sheet opened from inside a

@@ -11,12 +11,14 @@ use crate::widgets::ignore_pointer;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// Assemble a list tile with a trailing (display-only) control.
+#[allow(clippy::too_many_arguments)]
 fn compose(
     title: String,
     subtitle: Option<String>,
     secondary: Option<AnyWidget>,
     control: AnyWidget,
     on_changed: Option<Rc<dyn Fn()>>,
+    disabled: bool,
 ) -> AnyWidget {
     let mut t = list_tile(title);
     if let Some(s) = subtitle {
@@ -28,6 +30,9 @@ fn compose(
     // The control never handles the tap itself — the row does, so the hit target
     // is the full width (Flutter's ListTile semantics).
     t = t.trailing(ignore_pointer(control));
+    // Dim + disable the row exactly like list_tile's own disabled path (the inner
+    // control is disabled by the caller); a disabled row also drops its tap.
+    t = t.disabled(disabled);
     if let Some(f) = on_changed {
         t = t.on_tap(move || f());
     }
@@ -47,6 +52,7 @@ pub struct CheckboxListTile {
     value: bool,
     secondary: Option<AnyWidget>,
     on_changed: Option<Rc<dyn Fn()>>,
+    disabled: bool,
 }
 
 /// A row whose trailing control is a checkbox reflecting `value`.
@@ -69,6 +75,11 @@ impl CheckboxListTile {
         self.on_changed = Some(Rc::new(f));
         self
     }
+    /// Dim the row + checkbox and drop the tap (default `false`).
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
 }
 
 impl IntoWidget for CheckboxListTile {
@@ -77,8 +88,9 @@ impl IntoWidget for CheckboxListTile {
             self.title,
             self.subtitle,
             self.secondary,
-            checkbox(self.value).into_widget(),
+            checkbox(self.value).disabled(self.disabled).into_widget(),
             self.on_changed,
+            self.disabled,
         )
     }
 }
@@ -96,6 +108,7 @@ pub struct RadioListTile {
     selected: bool,
     secondary: Option<AnyWidget>,
     on_changed: Option<Rc<dyn Fn()>>,
+    disabled: bool,
 }
 
 /// A row whose trailing control is a radio reflecting `selected`.
@@ -118,6 +131,11 @@ impl RadioListTile {
         self.on_changed = Some(Rc::new(f));
         self
     }
+    /// Dim the row + radio and drop the tap (default `false`).
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
 }
 
 impl IntoWidget for RadioListTile {
@@ -126,8 +144,9 @@ impl IntoWidget for RadioListTile {
             self.title,
             self.subtitle,
             self.secondary,
-            radio(self.selected).into_widget(),
+            radio(self.selected).disabled(self.disabled).into_widget(),
             self.on_changed,
+            self.disabled,
         )
     }
 }
@@ -145,6 +164,7 @@ pub struct SwitchListTile {
     value: bool,
     secondary: Option<AnyWidget>,
     on_changed: Option<Rc<dyn Fn()>>,
+    disabled: bool,
 }
 
 /// A row whose trailing control is a switch reflecting `value`.
@@ -167,10 +187,22 @@ impl SwitchListTile {
         self.on_changed = Some(Rc::new(f));
         self
     }
+    /// Dim the row + switch and drop the tap (default `false`).
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
 }
 
 impl IntoWidget for SwitchListTile {
     fn into_widget(self) -> AnyWidget {
-        compose(self.title, self.subtitle, self.secondary, switch(self.value).into_widget(), self.on_changed)
+        compose(
+            self.title,
+            self.subtitle,
+            self.secondary,
+            switch(self.value).disabled(self.disabled).into_widget(),
+            self.on_changed,
+            self.disabled,
+        )
     }
 }

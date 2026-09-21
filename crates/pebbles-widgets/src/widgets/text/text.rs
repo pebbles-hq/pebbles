@@ -967,8 +967,17 @@ fn render_keyboard_rich(p: &KeyboardRichProps) -> AnyWidget {
 
 impl IntoWidget for RichText {
     fn into_widget(self) -> AnyWidget {
-        if self.keyboard && !self.selectable {
-            return pebbles_core::component_props(
+        // Accessibility: expose a `Link` node for the paragraph's primary (first)
+        // interactive link span, labeled with that span's text. NOTE: per-span Link
+        // nodes aren't feasible with a small diff — a RichText is ONE shaped layout
+        // whose links resolve by GEOMETRY (published link boxes hit-tested by the tap
+        // handler), not a widget-per-span composition — so a single whole-paragraph
+        // Link node annotates it. A node is emitted only when the paragraph is truly
+        // interactive: it has a tap handler AND at least one link span.
+        let link_label =
+            self.on_link.as_ref().and(self.spans.iter().find(|s| s.link.is_some())).map(|s| s.text.clone());
+        let inner: AnyWidget = if self.keyboard && !self.selectable {
+            pebbles_core::component_props(
                 render_keyboard_rich,
                 KeyboardRichProps {
                     base: self.base,
@@ -977,10 +986,9 @@ impl IntoWidget for RichText {
                     on_link_hover: self.on_link_hover,
                 },
             )
-            .into_widget();
-        }
-        if self.selectable {
-            return pebbles_core::component_props(
+            .into_widget()
+        } else if self.selectable {
+            pebbles_core::component_props(
                 render_selectable_rich,
                 SelectableRichProps {
                     base: self.base,
@@ -991,26 +999,35 @@ impl IntoWidget for RichText {
                     group: self.group,
                 },
             )
-            .into_widget();
+            .into_widget()
+        } else {
+            let (text, rspans, urls) = resolve_spans(&self.spans);
+            // Link geometry is needed for tap AND/OR hover; publish boxes if either is wired.
+            let interactive = (self.on_link.is_some() || self.on_link_hover.is_some()) && !urls.is_empty();
+            let boxes = interactive.then(|| std::rc::Rc::new(std::cell::RefCell::new(Vec::new())));
+            let leaf = RichTextLeaf {
+                text,
+                style: self.base,
+                spans: rspans,
+                boxes: boxes.clone(),
+                select_id: None,
+                selection: None,
+                focused_link: None,
+            };
+            match boxes {
+                None => leaf.into_widget(),
+                Some(boxes) => {
+                    let gd = crate::widgets::GestureDetector::new(leaf);
+                    let gd = wire_links(gd, boxes, std::rc::Rc::new(urls), self.on_link, self.on_link_hover);
+                    gd.cursor(pebbles_render::Cursor::Default).into_widget()
+                }
+            }
+        };
+        match link_label {
+            Some(label) => {
+                crate::widgets::semantics(crate::widgets::SemanticsRole::Link, label, inner).into_widget()
+            }
+            None => inner,
         }
-        let (text, rspans, urls) = resolve_spans(&self.spans);
-        // Link geometry is needed for tap AND/OR hover; publish boxes if either is wired.
-        let interactive = (self.on_link.is_some() || self.on_link_hover.is_some()) && !urls.is_empty();
-        let boxes = interactive.then(|| std::rc::Rc::new(std::cell::RefCell::new(Vec::new())));
-        let leaf = RichTextLeaf {
-            text,
-            style: self.base,
-            spans: rspans,
-            boxes: boxes.clone(),
-            select_id: None,
-            selection: None,
-            focused_link: None,
-        };
-        let Some(boxes) = boxes else {
-            return leaf.into_widget();
-        };
-        let gd = crate::widgets::GestureDetector::new(leaf);
-        let gd = wire_links(gd, boxes, std::rc::Rc::new(urls), self.on_link, self.on_link_hover);
-        gd.cursor(pebbles_render::Cursor::Default).into_widget()
     }
 }

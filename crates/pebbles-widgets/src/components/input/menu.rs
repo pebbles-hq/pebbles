@@ -3,6 +3,7 @@
 //! optional icons, keyboard-shortcut hints, destructive styling, disabled state,
 //! section labels, separators, and checkbox items. Opened in the global overlay.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, MainAxisSize};
@@ -18,7 +19,7 @@ use pebbles_core::focus::create_focus;
 use pebbles_core::keyboard::{KeyInput, Motion};
 use pebbles_core::reactive::Signal;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{action_event, animated, children, component_props, create_signal};
+use pebbles_core::{action_event, animated, children, component_props, create_signal, create_signal_with};
 
 type HoverCbs = (Rc<dyn Fn()>, Rc<dyn Fn()>);
 
@@ -294,10 +295,21 @@ fn render_dropdown(p: &Props) -> AnyWidget {
     let child_ctx = create_signal::<Option<Rc<ChildCtx>>>(None);
 
     // A custom trigger is used verbatim; the default one gets button-like hover.
-    let trigger = p
+    let mut trigger = p
         .trigger
         .clone()
         .unwrap_or_else(|| default_trigger(&p.label, p.width, hovered.get(), p.style.clone()));
+    // Focus ring when the trigger holds keyboard focus (the keyboard-open affordance).
+    if node.is_focused() {
+        trigger = Container::new()
+            .decoration(
+                BoxDecoration::new()
+                    .border(Border::new(theme().colors.ring, 2.0))
+                    .radius(BorderRadius::all(theme().radius)),
+            )
+            .child(trigger)
+            .into_widget();
+    }
 
     // The menu entries are consumed into a fresh menu widget on each open. We can't
     // clone the closures generically, so rebuild the menu from a shared blueprint.
@@ -311,7 +323,59 @@ fn render_dropdown(p: &Props) -> AnyWidget {
     let navigable = blueprint.navigable();
     let sub_rows = blueprint.sub_rows();
     let handles = SubMenuHandles { nav: child_nav, ctx: child_ctx, subs: Rc::new(sub_rows.clone()) };
-    node.register(Rc::new(|| {}), None, false);
+
+    // The trigger's window rect, reported each paint so keyboard-open can anchor the
+    // menu with no pointer event (see the position_probe below). Non-reactive `Rc<Cell>`
+    // — the probe fires during paint, so a signal write there would dirty the frame.
+    let trigger_rect = create_signal_with(|| Rc::new(Cell::new(None::<(f64, f64, f64, f64)>))).peek();
+
+    // Open the menu anchored to a trigger's window top-left. Shared by the pointer tap
+    // and keyboard-open. The trigger keeps focus and drives the open menu's nav (the
+    // Select model — the open menu has no field of its own).
+    let open_menu: Rc<dyn Fn(f64, f64)> = {
+        let blueprint = blueprint.clone();
+        let actions = actions.clone();
+        let handles = handles.clone();
+        Rc::new(move |trigger_left: f64, trigger_top: f64| {
+            let (left, top) = anchor_below(trigger_left, trigger_top, control_h, width, menu_h);
+            let menu = component_props(
+                render_dd_menu,
+                DdMenuProps {
+                    blueprint: blueprint.clone(),
+                    width,
+                    nav,
+                    actions: actions.clone(),
+                    handles: handles.clone(),
+                },
+            );
+            show_overlay_guarded(menu.into_widget(), left, top, width, menu_h, move || nav.is_alive());
+            node.request_focus();
+        })
+    };
+    // Keyboard-open using the probe-reported rect (top-left fallback only before the
+    // first paint — in practice the trigger is always on screen by then).
+    let open_kbd: Rc<dyn Fn()> = {
+        let open_menu = open_menu.clone();
+        let trigger_rect = trigger_rect.clone();
+        Rc::new(move || {
+            let (l, t) = trigger_rect.get().map(|(l, t, _, _)| (l, t)).unwrap_or((8.0, 8.0));
+            open_menu(l, t);
+        })
+    };
+
+    // Enter/Space activation opens the menu when it is closed.
+    node.register(
+        {
+            let open_kbd = open_kbd.clone();
+            Rc::new(move || {
+                if !crate::overlay::is_open() {
+                    open_kbd();
+                }
+            })
+        },
+        None,
+        false,
+    );
     {
         let actions = actions.clone();
         let navigable = navigable.clone();
@@ -329,7 +393,20 @@ fn render_dropdown(p: &Props) -> AnyWidget {
             },
             hide_overlay,
         );
-        node.register_editor(Rc::new(move |k: KeyInput| {
+        let open_kbd = open_kbd.clone();
+        // register_keys (NOT register_editor, which swallows every key while focused):
+        // while the menu is closed, Down/Up/Enter open it and every other key falls
+        // through to shortcuts / Tab; while open, this node drives the menu's nav.
+        node.register_keys(Rc::new(move |k: KeyInput| {
+            if !crate::overlay::is_open() {
+                return match k {
+                    KeyInput::Move { motion: Motion::Down | Motion::Up, .. } | KeyInput::Enter => {
+                        open_kbd();
+                        true
+                    }
+                    _ => false,
+                };
+            }
             // The child menu owns the keyboard while its panel is open: Up/Down/
             // Enter drive it, Left closes it, Escape closes everything. (The panel
             // check drops a stale context after a pick closed the whole overlay.)
@@ -351,7 +428,7 @@ fn render_dropdown(p: &Props) -> AnyWidget {
                         }
                     }
                 }
-                return;
+                return true;
             }
             // Right opens the submenu under the active row (if it is one).
             if let KeyInput::Move { motion: Motion::Right, .. } = k
@@ -360,38 +437,26 @@ fn render_dropdown(p: &Props) -> AnyWidget {
                 && let Some((bp, top)) = sub_rows.get(*si)
             {
                 open_sub_child(bp, *top, child_nav, child_ctx, None);
-                return;
+                return true;
             }
-            let _ = pick(k);
+            pick(k)
         }));
     }
 
-    let open_menu = {
-        let blueprint = blueprint.clone();
-        move |e: PointerEvent| {
-            let trigger_left = e.global.x - e.position.x;
-            let trigger_top = e.global.y - e.position.y;
-            let (left, top) = anchor_below(trigger_left, trigger_top, control_h, width, menu_h);
-            let menu = component_props(
-                render_dd_menu,
-                DdMenuProps {
-                    blueprint: blueprint.clone(),
-                    width,
-                    nav,
-                    actions: actions.clone(),
-                    handles: handles.clone(),
-                },
-            );
-            show_overlay_guarded(menu.into_widget(), left, top, width, menu_h, move || nav.is_alive());
-            node.request_focus();
-        }
-    };
-
-    GestureDetector::new(trigger)
+    let open_tap = open_menu.clone();
+    let control = GestureDetector::new(trigger)
         .cursor(Cursor::Pointer)
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false))
-        .on_tap(action_event(open_menu))
+        .on_tap(action_event(move |e: PointerEvent| {
+            // Pointer open uses the live click rect; keyboard open uses the probe rect.
+            open_tap(e.global.x - e.position.x, e.global.y - e.position.y);
+        }))
+        .into_widget();
+
+    // Report the trigger's window rect every paint so keyboard-open can anchor the menu.
+    let sink = trigger_rect.clone();
+    crate::widgets::position_probe(move |o, s| sink.set(Some((o.x, o.y, s.width, s.height))), control)
         .into_widget()
 }
 

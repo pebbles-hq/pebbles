@@ -148,6 +148,12 @@ impl IntoWidget for Popover {
                         )
                     }
                 };
+                // A popover is a non-modal floating container: expose it as a Group
+                // (NOT a Dialog, which would imply a modal focus trap) so assistive
+                // tech announces the surface and its contents as one region.
+                let surface =
+                    crate::widgets::semantics(crate::widgets::SemanticsRole::Group, String::new(), surface)
+                        .into_widget();
                 show_overlay_guarded(surface, left, top, width, height, move || owner.alive());
             }))
             .into_widget()
