@@ -48,7 +48,7 @@ pub use layout_extra::{
     RenderOffstage, RenderRotatedBox, RenderSizedOverflowBox, RenderTable, SizeFn, TableColumnWidth,
 };
 pub use list::RenderList;
-pub use measure::RenderMeasureProbe;
+pub use measure::{RenderMeasureProbe, RenderPositionProbe};
 pub use overflow::{RenderLimitedBox, RenderOverflowBox};
 pub use paragraph::{ParagraphStyle, RenderParagraph, TextSpanStyle};
 #[cfg(debug_assertions)]

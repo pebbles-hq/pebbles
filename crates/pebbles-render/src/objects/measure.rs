@@ -79,3 +79,47 @@ impl RenderObject for RenderMeasureProbe {
         "RenderMeasureProbe"
     }
 }
+
+/// Lays its child out unchanged and reports its own **window-space rect** (paint
+/// offset + laid-out size) after each paint. A node's global offset is only known
+/// at paint time (the parent positions it after its own layout), so this is where
+/// the rect becomes available. The basis for opening a menu/popover anchored to a
+/// trigger via the **keyboard**, where there is no pointer event to derive the
+/// trigger rect from.
+pub struct RenderPositionProbe {
+    pub report: Option<Rc<dyn Fn(Offset, Size)>>,
+    size: Size,
+}
+
+impl RenderPositionProbe {
+    pub fn new(report: Option<Rc<dyn Fn(Offset, Size)>>) -> Self {
+        RenderPositionProbe { report, size: Size::new(0.0, 0.0) }
+    }
+}
+
+impl RenderObject for RenderPositionProbe {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
+        let Some(child) = cx.children().first().copied() else {
+            return constraints.constrain(constraints.biggest());
+        };
+        let size = cx.layout_child(child, constraints);
+        cx.set_child_offset(child, Offset::ZERO);
+        self.size = size;
+        size
+    }
+
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
+        // `offset` is this node's absolute window-space top-left (accumulated down
+        // the tree), so it plus the laid-out size is the trigger's window rect.
+        if let Some(report) = &self.report {
+            report(offset, self.size);
+        }
+        if let Some(child) = cx.children().first().copied() {
+            cx.paint_child(child, offset + cx.child_offset(child));
+        }
+    }
+
+    fn debug_name(&self) -> &'static str {
+        "RenderPositionProbe"
+    }
+}

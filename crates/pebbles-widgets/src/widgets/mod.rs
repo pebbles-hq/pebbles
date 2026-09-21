@@ -49,7 +49,7 @@ pub use mobile_runtime::{
     PopScope, SystemUiOverlayStyle, back_is_blocked, dispatch_back, pop_scope, set_system_ui_overlay_style,
     system_ui_overlay_style,
 };
-pub use probe::{ExtentProbe, extent_probe};
+pub use probe::{ExtentProbe, PositionProbe, extent_probe, position_probe};
 pub use semantics::{
     Semantics, SemanticsBoundary, SemanticsExt, block_semantics, exclude_semantics, merge_semantics,
     semantics,

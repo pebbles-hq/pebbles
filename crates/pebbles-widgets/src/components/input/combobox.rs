@@ -3,21 +3,24 @@
 //! box over the option list; typing filters it, with a "no results" empty state.
 //! [`Combobox`] closes on pick; [`MultiSelect`] stays open and toggles.
 
+use std::cell::Cell;
 use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, EdgeInsets, MainAxisSize};
-use pebbles_render::{Border, Cursor, IconKind, PointerEvent};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconKind, PointerEvent};
 
 use super::list_nav::list_nav;
 use super::menu::{ActionRowProps, action_row};
 use super::popover::{anchor_below, popover_surface};
 use super::text_field::text_field;
 use crate::components::icon;
-use crate::overlay::{hide_overlay, show_overlay_guarded};
+use crate::overlay::{hide_overlay, is_open as overlay_is_open, show_overlay_guarded};
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, SingleChildScrollView, column, gap_h, row, spacer, text};
+use pebbles_core::focus::create_focus;
+use pebbles_core::keyboard::{KeyInput, Motion};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Signal, action_event, children, component_props, create_signal};
+use pebbles_core::{Signal, action_event, children, component_props, create_signal, create_signal_with};
 
 type ChangedCb = Rc<dyn Fn(usize, &str)>;
 type SelectionCb = Rc<dyn Fn(&[usize])>;
@@ -271,16 +274,32 @@ fn render_combobox(p: &ComboProps) -> AnyWidget {
     };
     let has_value = selected.get().is_some();
     let name = label.clone();
-    let trigger = trigger_box(label, has_value, width, p.style.clone());
+    let node = create_focus();
+    // The trigger's window rect, reported each paint so keyboard-open can anchor the
+    // menu with no pointer event (see the position_probe below).
+    let trigger_rect = create_signal_with(|| Rc::new(Cell::new(None::<(f64, f64, f64, f64)>))).peek();
+    let mut trigger = trigger_box(label, has_value, width, p.style.clone());
+    // Focus ring when the trigger holds keyboard focus.
+    if node.is_focused() {
+        trigger = Container::new()
+            .decoration(
+                BoxDecoration::new()
+                    .border(Border::new(theme().colors.ring, 2.0))
+                    .radius(BorderRadius::all(theme().radius)),
+            )
+            .child(trigger)
+            .into_widget();
+    }
 
-    let menu_options = options.clone();
-    let control =
-        GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(move |e: PointerEvent| {
-            let trigger_left = e.global.x - e.position.x;
-            let trigger_top = e.global.y - e.position.y;
+    // Open the searchable menu anchored below a trigger top-left. Shared by the pointer
+    // tap and keyboard-open. The menu's own search field autofocuses and drives nav, so
+    // once open the trigger loses focus and the search box owns the keyboard.
+    let open_menu: Rc<dyn Fn(f64, f64)> = {
+        let menu_options = options.clone();
+        let on_changed = on_changed.clone();
+        Rc::new(move |trigger_left: f64, trigger_top: f64| {
             let est = (menu_options.len().min(6) as f64) * 34.0 + 60.0;
             let (left, top) = anchor_below(trigger_left, trigger_top, trigger_h, width, est);
-
             let opts = menu_options.clone();
             let is_selected: Rc<dyn Fn(usize) -> bool> = Rc::new(move |i| selected.peek() == Some(i));
             let oc = on_changed.clone();
@@ -300,11 +319,54 @@ fn render_combobox(p: &ComboProps) -> AnyWidget {
                 est,
                 move || selected.alive(),
             );
+            // Blur the trigger so the menu's autofocused search field takes focus and
+            // owns the keyboard (autofocus only grabs when nothing else is focused).
+            pebbles_core::focus::set_focus(None);
+        })
+    };
+    let open_kbd: Rc<dyn Fn()> = {
+        let open_menu = open_menu.clone();
+        let trigger_rect = trigger_rect.clone();
+        Rc::new(move || {
+            let (l, t) = trigger_rect.get().map(|(l, t, _, _)| (l, t)).unwrap_or((8.0, 8.0));
+            open_menu(l, t);
+        })
+    };
+    // Enter/Space opens; register_keys so Down/Up also open and every other key falls
+    // through (not swallowed). The open menu's search field owns keys once open.
+    node.register(
+        {
+            let open_kbd = open_kbd.clone();
+            Rc::new(move || {
+                if !overlay_is_open() {
+                    open_kbd();
+                }
+            })
+        },
+        None,
+        false,
+    );
+    node.register_keys(Rc::new(move |k| match k {
+        KeyInput::Move { motion: Motion::Down | Motion::Up, .. } | KeyInput::Enter => {
+            if !overlay_is_open() {
+                open_kbd();
+            }
+            true
+        }
+        _ => false,
+    }));
+
+    let control =
+        GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(move |e: PointerEvent| {
+            open_menu(e.global.x - e.position.x, e.global.y - e.position.y);
         }));
 
     // Accessibility: a combo box announcing its name + current value (mirrors Select).
-    crate::widgets::semantics(pebbles_render::SemanticsRole::ComboBox, name.clone(), control)
+    let labelled = crate::widgets::semantics(pebbles_render::SemanticsRole::ComboBox, name.clone(), control)
         .value(if has_value { name } else { String::new() })
+        .into_widget();
+    let sink = trigger_rect.clone();
+    crate::widgets::position_probe(move |o, s| sink.set(Some((o.x, o.y, s.width, s.height))), labelled)
         .into_widget()
 }
 

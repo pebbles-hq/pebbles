@@ -27,7 +27,8 @@ use crate::widgets::{
 use pebbles_core::focus::create_focus;
 use pebbles_core::keyboard::{KeyInput, Motion};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{Signal, action_event, animated, component_props, create_signal};
+use pebbles_core::{Signal, action_event, animated, component_props, create_signal, create_signal_with};
+use std::cell::Cell;
 
 type ChangedCb = Rc<dyn Fn(usize, &str)>;
 
@@ -385,12 +386,11 @@ fn render_select(p: &Props) -> AnyWidget {
     // the active row, Escape dismisses.
     let enabled: Vec<usize> =
         options.iter().enumerate().filter(|(_, o)| !o.disabled).map(|(i, _)| i).collect();
-    // The trigger's last-known window-space top-left, captured when it is opened by
-    // pointer so keyboard-open can anchor the menu without a pointer event. Falls back
-    // to the top-left corner if the trigger has never been pointed at (pure-keyboard,
-    // never-hovered) — degraded but functional; a layout-reported rect is the proper
-    // fix (tracked in the Platform doc).
-    let trigger_rect = create_signal::<Option<(f64, f64)>>(None);
+    // The trigger's window-space rect (left, top, width, height), reported every paint
+    // by a `position_probe` wrapping the trigger. Kept in a non-reactive `Rc<Cell>`
+    // (the probe fires during paint — a signal write there would dirty the frame), so
+    // keyboard-open can anchor the menu with no pointer event, even for a Tab-only user.
+    let trigger_rect = create_signal_with(|| Rc::new(Cell::new(None::<(f64, f64, f64, f64)>))).peek();
 
     // Open the menu anchored to a trigger's window-space top-left (flip up when there
     // is no room below; shift horizontally to stay on-screen). Shared by the pointer
@@ -425,11 +425,13 @@ fn render_select(p: &Props) -> AnyWidget {
             node.request_focus();
         })
     };
-    // Keyboard-open using the captured trigger rect (or the top-left fallback).
+    // Keyboard-open using the probe-reported trigger rect (top-left fallback only if a
+    // frame hasn't painted yet — in practice the trigger is always on screen by then).
     let open_kbd: Rc<dyn Fn()> = {
         let open_menu = open_menu.clone();
+        let trigger_rect = trigger_rect.clone();
         Rc::new(move || {
-            let (l, t) = trigger_rect.peek().unwrap_or((8.0, 8.0));
+            let (l, t) = trigger_rect.get().map(|(l, t, _, _)| (l, t)).unwrap_or((8.0, 8.0));
             open_menu(l, t);
         })
     };
@@ -545,17 +547,20 @@ fn render_select(p: &Props) -> AnyWidget {
 
     let control =
         GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(move |e: PointerEvent| {
-            // The trigger's window-space top-left = click global − click local. Cache it
-            // so a later keyboard-open anchors to the same place, then open.
+            // Pointer open uses the live click rect (most precise); keyboard open uses
+            // the probe-reported rect below.
             let trigger_left = e.global.x - e.position.x;
             let trigger_top = e.global.y - e.position.y;
-            trigger_rect.set(Some((trigger_left, trigger_top)));
             open_menu(trigger_left, trigger_top);
         }));
 
     // Accessibility: a combo box announcing its name + current value.
     let name = label.clone();
-    crate::widgets::semantics(pebbles_render::SemanticsRole::ComboBox, name.clone(), control)
+    let labelled = crate::widgets::semantics(pebbles_render::SemanticsRole::ComboBox, name.clone(), control)
         .value(if has_value { name } else { String::new() })
+        .into_widget();
+    // Report the trigger's window rect every paint so keyboard-open can anchor the menu.
+    let sink = trigger_rect.clone();
+    crate::widgets::position_probe(move |o, s| sink.set(Some((o.x, o.y, s.width, s.height))), labelled)
         .into_widget()
 }

@@ -99,7 +99,7 @@ pub use widgets::{
 };
 // `ExtentProbe`/`extent_probe` live in `widgets/` like every other widget; re-exported
 // here so the crate root stays the single flat surface (`pebbles_widgets::ExtentProbe`).
-pub use widgets::{ExtentProbe, extent_probe};
+pub use widgets::{ExtentProbe, PositionProbe, extent_probe, position_probe};
 // async builder (Flutter's StreamBuilder, over the reactive Channel)
 pub use widgets::{StreamBuilder, stream_builder};
 // control flow (SolidJS-style For / Suspense / ErrorBoundary)

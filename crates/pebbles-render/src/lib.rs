@@ -49,11 +49,12 @@ pub use objects::{
     RenderFittedBox, RenderFlex, RenderFlow, RenderFractionalTranslation, RenderFractionallySizedBox,
     RenderIcon, RenderIntrinsicHeight, RenderIntrinsicWidth, RenderLimitedBox, RenderList,
     RenderMeasureProbe, RenderOffstage, RenderOpacity, RenderOverflowBox, RenderPadding, RenderParagraph,
-    RenderPointerBarrier, RenderPointerListener, RenderRotatedBox, RenderScroll, RenderSemanticsBoundary,
-    RenderShaderMask, RenderSizedOverflowBox, RenderSpinner, RenderStack, RenderTable, RenderTextField,
-    RenderTransform, RenderView, RenderWrap, ScrollEvent, ScrollHandle, ScrollMetrics, ScrollNotification,
-    ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps, SemanticsRole, SizeFn,
-    StackFit, StackParentData, TableColumnWidth, TapCallback, TextFieldStyle, TextSpanStyle, tabler,
+    RenderPointerBarrier, RenderPointerListener, RenderPositionProbe, RenderRotatedBox, RenderScroll,
+    RenderSemanticsBoundary, RenderShaderMask, RenderSizedOverflowBox, RenderSpinner, RenderStack,
+    RenderTable, RenderTextField, RenderTransform, RenderView, RenderWrap, ScrollEvent, ScrollHandle,
+    ScrollMetrics, ScrollNotification, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode,
+    SemanticsProps, SemanticsRole, SizeFn, StackFit, StackParentData, TableColumnWidth, TapCallback,
+    TextFieldStyle, TextSpanStyle, tabler,
 };
 pub use text::TextEnv;
 pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};
