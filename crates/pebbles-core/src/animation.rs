@@ -11,7 +11,9 @@
 //! only when the target actually changes. Perfect for "animate the switch thumb
 //! whenever the boolean flips":
 //!
-//! ```ignore
+//! ```no_run
+//! use pebbles_core::animated;
+//! let on = true;
 //! let pos = animated(if on { 1.0 } else { 0.0 }, 0.16); // 0.0..=1.0, smooth
 //! ```
 

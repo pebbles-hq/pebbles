@@ -61,11 +61,16 @@ fn detect_reduced_motion_uncached() -> bool {
 
 /// A Pebbles desktop application. Configure it fluently, then [`run`](App::run).
 ///
-/// ```ignore
-/// App::new(my_root_widget())
-///     .title("Counter")
-///     .size(480, 320)
-///     .run()?;
+/// ```no_run
+/// use pebbles_shell::App;
+/// use pebbles_widgets::text;
+///
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     App::new(text("Counter"))
+///         .title("Counter")
+///         .size(480, 320)
+///         .run()
+/// }
 /// ```
 pub struct App {
     title: String,
@@ -179,11 +184,12 @@ impl App {
     /// menu bar — use the cross-platform in-window
     /// [`menubar`](pebbles_widgets::components::menubar) instead. See `PLATFORMS.md`.
     ///
-    /// ```ignore
-    /// use pebbles_widgets::{menu, menu_bar};
-    /// App::new(root).menu(menu_bar([
+    /// ```no_run
+    /// use pebbles_shell::App;
+    /// use pebbles_widgets::{menu, menu_bar, menu_item, text};
+    /// let app = App::new(text("root")).menu(menu_bar([
     ///     menu("File", [menu_item("Quit").shortcut("Mod+Q").into()]),
-    /// ]))
+    /// ]));
     /// ```
     pub fn menu(mut self, bar: MenuBar) -> Self {
         self.menu = Some(bar);

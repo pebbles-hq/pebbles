@@ -22,14 +22,21 @@
 //! Drive the view from the framework router's path so browser URLs, Back/Forward,
 //! and deep links all flow through (query values read via `router::query(..)`):
 //!
-//! ```ignore
-//! route_view(pebbles::core::router::path())
+//! ```no_run
+//! use pebbles_core::{component, component_props, router};
+//! use pebbles_widgets::{Text, route_view, text};
+//!
+//! fn home_page() -> Text { text("home") }
+//! fn not_found() -> Text { text("not found") }
+//! fn user_page(id: &String) -> Text { text(format!("user {id}")) }
+//!
+//! let view = route_view(router::path())
 //!     .route("/", || component(home_page))
 //!     .param_route("/user/:id", |p| {
 //!         let id = p.get("id").unwrap_or_default().to_string();
-//!         component(move || user_page(&id))
+//!         component_props(user_page, id)
 //!     })
-//!     .fallback(|| component(not_found))
+//!     .fallback(|| component(not_found));
 //! ```
 //!
 //! Matching is **registration order, first match wins** — register a literal
@@ -454,8 +461,13 @@ fn link_render(p: &LinkProps) -> AnyWidget {
 /// receives whether the link is **active** (its target is the current path) so it can
 /// style itself. Reactive — the active state updates on navigation.
 ///
-/// ```ignore
-/// link("/inbox", |active| text("Inbox").color(if active { ACCENT } else { FG }))
+/// ```no_run
+/// use pebbles_foundation::Color;
+/// use pebbles_widgets::{link, text};
+///
+/// let accent = Color::from_rgba8(37, 99, 235, 255);
+/// let fg = Color::from_rgba8(100, 116, 139, 255);
+/// let inbox = link("/inbox", move |active| text("Inbox").color(if active { accent } else { fg }));
 /// ```
 ///
 /// For prefix-active (a section link active on any child route), gate the styling on
@@ -492,7 +504,8 @@ pub fn redirect(to: impl Into<String>) -> Component {
 /// active-link styling or conditional UI. Supports the same `:param` / `*wildcard`
 /// patterns as [`RouteView::param_route`].
 ///
-/// ```ignore
+/// ```no_run
+/// use pebbles_widgets::use_match;
 /// let on_settings = use_match("/settings/*rest"); // active on any settings sub-page
 /// ```
 pub fn use_match(pattern: impl AsRef<str>) -> bool {
@@ -504,7 +517,10 @@ pub fn use_match(pattern: impl AsRef<str>) -> bool {
 /// (from `create_focus()`) to the routed content container and call this once at the
 /// top of the component that owns the router view.
 ///
-/// ```ignore
+/// ```no_run
+/// use pebbles_core::create_focus;
+/// use pebbles_widgets::use_route_focus;
+///
 /// let content_focus = create_focus();
 /// use_route_focus(&content_focus);
 /// // …attach content_focus to the main content region…

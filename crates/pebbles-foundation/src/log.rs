@@ -8,8 +8,9 @@
 //! on-screen overlay.
 //!
 //! ## Usage
-//! ```ignore
-//! use pebbles_core::log;
+//! ```no_run
+//! use pebbles_foundation::log;
+//! let n = 1;
 //! log::info(log::Cat::Nav, "route → markdown");
 //! log::logf(log::Level::Warn, log::Cat::Gpu, format_args!("reset #{n}"));
 //! ```

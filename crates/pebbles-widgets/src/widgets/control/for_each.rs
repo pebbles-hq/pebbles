@@ -6,8 +6,12 @@ use pebbles_core::widget::{AnyWidget, IntoWidget};
 /// Map `items` to widgets, each tagged with a reconciliation [`Key`] (SolidJS
 /// `<For>`). Drop the result straight into a `column`/`row`/list:
 ///
-/// ```ignore
-/// column(for_each(todos.get(), |t| t.id, |t| todo_row(t)))
+/// ```no_run
+/// use pebbles_core::create_signal;
+/// use pebbles_widgets::{column, for_each, text};
+///
+/// let todos = create_signal(vec![1u64, 2, 3]);
+/// let list = column(for_each(todos.get(), |t| *t, |t| text(format!("todo {t}"))));
 /// ```
 ///
 /// Because every child is [`keyed`](crate::widgets::keyed), inserting, removing, or

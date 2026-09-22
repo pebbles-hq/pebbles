@@ -54,8 +54,9 @@ impl<F: Fn() + 'static> IntoCallback for F {
 
 /// Wrap a closure that receives the [`PointerEvent`] (position + button).
 ///
-/// ```ignore
-/// gesture.on_tap_down(action_event(move |e| println!("tapped at {:?}", e.position)))
+/// ```no_run
+/// use pebbles_core::action_event;
+/// let callback = action_event(move |e| println!("tapped at {:?}", e.position));
 /// ```
 pub fn action_event(f: impl Fn(PointerEvent) + 'static) -> Callback {
     Callback::Event(Rc::new(f))

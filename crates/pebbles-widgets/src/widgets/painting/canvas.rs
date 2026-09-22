@@ -2,12 +2,16 @@
 //! into a [`Canvas`] each paint; signals read **in the owning component** (not inside
 //! the painter) drive re-renders, so reactivity is free. Unblocks charts + Gravel.
 //!
-//! ```ignore
-//! canvas(move |c: &mut Canvas<'_>| {
+//! ```no_run
+//! use pebbles_foundation::Rect;
+//! use pebbles_widgets::theme::theme;
+//! use pebbles_widgets::{Canvas, canvas};
+//!
+//! let widget = canvas(move |c: &mut Canvas<'_>| {
 //!     c.fill_rrect(Rect::new(0.0, 0.0, 80.0, 40.0), 8.0, theme().colors.primary);
 //! })
 //! .width(320.0)
-//! .height(180.0) // unsized → fills the parent constraints
+//! .height(180.0); // unsized → fills the parent constraints
 //! ```
 
 use std::rc::Rc;

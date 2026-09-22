@@ -46,8 +46,9 @@ fn safe_fallback(fallback: &Rc<dyn Fn() -> AnyWidget>) -> AnyWidget {
 /// Contain errors in a subtree and show `fallback` instead of crashing the app
 /// (SolidJS `<ErrorBoundary>`).
 ///
-/// ```ignore
-/// error_boundary(|| risky_view(data), || text("Something went wrong"))
+/// ```no_run
+/// use pebbles_widgets::{error_boundary, text};
+/// let boundary = error_boundary(|| text("content"), || text("Something went wrong"));
 /// ```
 ///
 /// Catches **both** kinds of failure:
@@ -59,9 +60,12 @@ fn safe_fallback(fallback: &Rc<dyn Fn() -> AnyWidget>) -> AnyWidget {
 /// it by reading the handle from context and calling
 /// [`reset`](pebbles_core::ErrorBoundaryHandle::reset):
 ///
-/// ```ignore
+/// ```no_run
+/// use pebbles_core::{ErrorBoundaryHandle, consume_context};
+/// use pebbles_widgets::button;
+///
 /// if let Some(b) = consume_context::<ErrorBoundaryHandle>() {
-///     button("Retry").on_pressed(move || b.reset());
+///     let _retry = button("Retry").on_pressed(move || b.reset());
 /// }
 /// ```
 ///

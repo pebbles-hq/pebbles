@@ -8,9 +8,13 @@
 //! The public surface is deliberately tiny — build a widget tree and hand it to
 //! [`App`]:
 //!
-//! ```ignore
+//! ```no_run
 //! use pebbles_shell::App;
-//! App::new(my_root()).title("Hello").size(480, 320).run()?;
+//! use pebbles_widgets::text;
+//!
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     App::new(text("Hello")).title("Hello").size(480, 320).run()
+//! }
 //! ```
 //!
 //! The render backend is chosen by a feature that forwards to `pebbles-render`

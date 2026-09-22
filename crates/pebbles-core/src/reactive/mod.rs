@@ -853,8 +853,12 @@ pub fn create_memo<T: 'static + Clone + PartialEq>(f: impl Fn() -> T + 'static) 
 /// `Rc<BigThing>` memo that cuts on pointer identity so a recompute producing the
 /// same `Rc` never wakes readers, without a deep compare:
 ///
-/// ```ignore
-/// let doc = create_memo_with(move || parse(src.get()), |a, b| Rc::ptr_eq(a, b));
+/// ```no_run
+/// use std::rc::Rc;
+/// use pebbles_core::{create_memo_with, create_signal};
+///
+/// let src = create_signal(0u32);
+/// let doc = create_memo_with(move || Rc::new(src.get()), |a, b| Rc::ptr_eq(a, b));
 /// ```
 pub fn create_memo_with<T: 'static + Clone>(
     f: impl Fn() -> T + 'static,
@@ -915,8 +919,11 @@ pub fn create_memo_with<T: 'static + Clone>(
 /// *untracked* — reads inside `f` never subscribe. Use it when the body touches
 /// signals it must NOT react to, or to state the trigger precisely:
 ///
-/// ```ignore
-/// on(move || query.get(), move |q| { spawn_search(&q); }); // re-runs on `query` only
+/// ```no_run
+/// use pebbles_core::{create_signal, on};
+///
+/// let query = create_signal(String::new());
+/// on(move || query.get(), move |q| { let _ = &q; }); // re-runs on `query` only
 /// ```
 pub fn on<D: 'static, F: Fn(D) + 'static>(deps: impl Fn() -> D + 'static, f: F) {
     create_effect(move || {

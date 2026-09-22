@@ -18,13 +18,16 @@ fn erase(cbs: &[Callback]) -> Vec<TapCallback> {
 
 /// Wraps a child and reports pointer interactions. Configure fluently:
 ///
-/// ```ignore
+/// ```no_run
+/// use pebbles_core::create_signal;
+/// use pebbles_widgets::{GestureDetector, text};
+///
 /// let count = create_signal(0);
 /// let hovered = create_signal(false);
-/// GestureDetector::new(my_child)
+/// let detector = GestureDetector::new(text("tap me"))
 ///     .on_tap(move || count.update(|c| *c += 1))
 ///     .on_hover_enter(move || hovered.set(true))
-///     .on_hover_exit(move || hovered.set(false))
+///     .on_hover_exit(move || hovered.set(false));
 /// ```
 #[derive(Clone, Default)]
 pub struct GestureDetector {

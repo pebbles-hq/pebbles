@@ -5,9 +5,12 @@
 //! before the first message, `Some(v)` after each `send`. Drop it in anywhere a widget
 //! goes; no component boilerplate.
 //!
-//! ```ignore
+//! ```no_run
+//! use pebbles_core::channel;
+//! use pebbles_widgets::{stream_builder, text};
+//!
 //! let ticks = channel::<u32>();
-//! stream_builder(ticks.clone(), |v| text(format!("latest: {:?}", v)))
+//! let builder = stream_builder(ticks, |v| text(format!("latest: {:?}", v)));
 //! ```
 
 use std::rc::Rc;

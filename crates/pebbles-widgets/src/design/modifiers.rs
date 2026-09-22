@@ -7,8 +7,9 @@
 //!
 //! write
 //!
-//! ```ignore
-//! child.clipped(8.0).padded(12.0).centered()
+//! ```no_run
+//! use pebbles_widgets::{ModifierExt, text};
+//! let styled = text("hi").clipped(8.0).padded(12.0).centered();
 //! ```
 //!
 //! Each modifier returns the wrapping widget (which is itself `IntoWidget`), so they

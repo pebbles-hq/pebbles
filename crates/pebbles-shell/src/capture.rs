@@ -12,10 +12,17 @@
 //! functions take over the thread-local *current* `Ui` while they run, so do **not** call
 //! them from a live app's UI thread — use a background thread or a dedicated headless process.
 //!
-//! ```ignore
+//! ```no_run
+//! use pebbles_core::IntoWidget;
+//! use pebbles_foundation::palette;
 //! use pebbles_shell::capture;
-//! let png = capture::capture_png(my_chart().into_widget(), 800, 400, palette::WHITE)?;
-//! std::fs::write("chart.png", png)?;
+//! use pebbles_widgets::text;
+//!
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let png = capture::capture_png(text("chart").into_widget(), 800, 400, palette::WHITE)?;
+//!     std::fs::write("chart.png", png)?;
+//!     Ok(())
+//! }
 //! ```
 
 use std::error::Error;

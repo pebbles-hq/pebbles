@@ -11,6 +11,7 @@
 //! Deliberately std-only — no clap, no notify. Arg parsing is hand-rolled, file
 //! watching is a light mtime poll, process control is `std::process`.
 
+mod build;
 mod doctor;
 mod new;
 mod run;
@@ -37,6 +38,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 enum Cmd {
     New,
     Run,
+    Build,
     Doctor,
     Version,
     Help,
@@ -49,6 +51,7 @@ fn classify(cmd: Option<&str>) -> Cmd {
     match cmd {
         Some("new") | Some("create") => Cmd::New,
         Some("run") | Some("dev") => Cmd::Run,
+        Some("build") => Cmd::Build,
         Some("doctor") => Cmd::Doctor,
         Some("--version") | Some("-V") | Some("version") => Cmd::Version,
         Some("--help") | Some("-h") | Some("help") | None => Cmd::Help,
@@ -62,6 +65,7 @@ fn main() -> ExitCode {
     match classify(args.first().map(String::as_str)) {
         Cmd::New => new::run(&args[1..]),
         Cmd::Run => run::run(&args[1..]),
+        Cmd::Build => build::run(&args[1..]),
         Cmd::Doctor => doctor::run(&args[1..]),
         Cmd::Version => {
             println!("pebbles {VERSION}");
@@ -93,6 +97,8 @@ fn print_help() {
                       (alias: {CYAN}new{RESET})
     {CYAN}run{RESET}               Build + run the app in dev mode, with rich logs and
                       hot-restart on every file save
+    {CYAN}build{RESET}             Build an optimized release artifact (native binary,
+                      or a static wasm bundle with -d web)
     {CYAN}doctor{RESET}            Check your toolchain and environment
     {CYAN}help{RESET}              Show this help
 
@@ -124,6 +130,14 @@ fn print_help() {
                       defaults to <tempdir>/pebbles-<app>.log
     --                Everything after `--` is passed to the app
 
+{BOLD}pebbles build OPTIONS{RESET}  {DIM}(always builds optimized/release){RESET}
+    -d, --device <t>  Target: desktop (default) → target/release/<bin>; web →
+                      a static wasm bundle in ./dist; android | ios → guidance.
+    -r, --renderer <r> Render backend: hybrid (default) | vello — same features
+                      as `run`, forwarded to cargo (and Trunk on web).
+    -p, --package <n> Build a specific workspace member by name
+                      (aliases: --example, --bin)
+
 {BOLD}EXAMPLES{RESET}
     pebbles create hello && cd hello && pebbles run
     pebbles create --template widget my-widget   {DIM}# a reusable widget package{RESET}
@@ -133,6 +147,8 @@ fn print_help() {
     pebbles run -p desktop --watch crates   {DIM}# also hot-restart on framework edits{RESET}
     pebbles run --renderer vello    {DIM}# run on the GPU-compute backend{RESET}
     pebbles run --release --renderer vello   {DIM}# optimized release on vello{RESET}
+    pebbles build                   {DIM}# release binary → target/release/<bin>{RESET}
+    pebbles build -d web            {DIM}# static wasm bundle → ./dist (deployable){RESET}
     pebbles create app2 --renderer vello     {DIM}# scaffold defaulting to vello{RESET}
     cd examples/counter && pebbles run
     pebbles run --log trace
@@ -151,6 +167,7 @@ mod tests {
         assert_eq!(classify(Some("create")), Cmd::New); // alias
         assert_eq!(classify(Some("run")), Cmd::Run);
         assert_eq!(classify(Some("dev")), Cmd::Run); // alias
+        assert_eq!(classify(Some("build")), Cmd::Build);
         assert_eq!(classify(Some("doctor")), Cmd::Doctor);
     }
 

@@ -162,8 +162,9 @@ fn key_token(token: &str) -> Result<ShortcutKey, String> {
 /// binding is a compile-time constant in practice, so this surfaces the typo loudly rather
 /// than silently never firing. Keep bindings as string literals.
 ///
-/// ```ignore
-/// create_shortcut("Mod+K", move || palette.open());
+/// ```no_run
+/// use pebbles_core::create_shortcut;
+/// create_shortcut("Mod+K", move || { /* open the command palette */ });
 /// ```
 pub fn create_shortcut(binding: &str, cb: impl Fn() + 'static) {
     register(binding, move || {
@@ -303,8 +304,9 @@ pub fn accelerator_string(mods: Mods, key: ShortcutKey) -> String {
 /// — the exact form `muda` / `global-hotkey` accept via their `FromStr`. Returns
 /// the same parse error as [`parse`].
 ///
-/// ```ignore
-/// let accel = to_accelerator("Mod+S")?; // "Control+KeyS" on Win/Linux, "Super+KeyS" on macOS
+/// ```no_run
+/// use pebbles_core::shortcuts::to_accelerator;
+/// let accel = to_accelerator("Mod+S").unwrap(); // "Control+KeyS" on Win/Linux, "Super+KeyS" on macOS
 /// ```
 pub fn to_accelerator(binding: &str) -> Result<String, String> {
     let (mods, key) = parse(binding)?;

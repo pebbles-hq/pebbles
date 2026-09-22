@@ -27,10 +27,13 @@ use super::create_memo;
 ///   reuse, so every call leaks a fresh, never-disposed signal + memo. It is correct there
 ///   (the test below relies on that) but only for a bounded, one-shot set of keys.
 ///
-/// ```ignore
+/// ```no_run
+/// use pebbles_core::{create_selector, create_signal};
+///
+/// let selected = create_signal(0u32);
 /// let is_selected = create_selector(move || selected.get());
 /// // inside each row component:
-/// let active = is_selected(row.id);
+/// let active = is_selected(1u32);
 /// ```
 pub fn create_selector<K>(source: impl Fn() -> K + 'static) -> impl Fn(K) -> bool + Clone
 where

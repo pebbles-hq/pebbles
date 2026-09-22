@@ -233,8 +233,12 @@ impl Theme {
     /// preserved**, and any field you set *after* this wins — so the flow is
     /// "pick a base, then customize":
     ///
-    /// ```ignore
+    /// ```no_run
+    /// use pebbles_foundation::Color;
+    /// use pebbles_widgets::theme::{DesignLanguage, Theme};
+    ///
     /// // Material base, but with the app's own radius and palette.
+    /// let brand_blue = Color::from_rgba8(37, 99, 235, 255);
     /// let mut t = Theme::light().design(DesignLanguage::Material);
     /// t.radius = 10.0;
     /// t.colors.primary = brand_blue;

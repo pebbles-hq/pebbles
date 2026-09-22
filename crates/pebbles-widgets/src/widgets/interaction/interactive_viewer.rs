@@ -4,8 +4,9 @@
 //! child is transformed (translate × scale) and clipped to the viewer's bounds, so
 //! panned/zoomed content never spills outside. Scale is clamped to `[min, max]`.
 //!
-//! ```ignore
-//! interactive_viewer(big_diagram()).min_scale(0.5).max_scale(5.0)
+//! ```no_run
+//! use pebbles_widgets::{interactive_viewer, text};
+//! let viewer = interactive_viewer(text("big diagram")).min_scale(0.5).max_scale(5.0);
 //! ```
 
 use pebbles_render::{Affine, BorderRadius};

@@ -29,7 +29,7 @@ struct Opts {
 /// (`vello-hybrid` — the low-power path). `Some(_)` pins it explicitly, passing
 /// `--no-default-features --features <feature>` to cargo so exactly one backend is on.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Renderer {
+pub(crate) enum Renderer {
     /// `vello_hybrid` — hybrid CPU+GPU raster, low power. Pebbles' default.
     Hybrid,
     /// `vello` — GPU compute raster; the opt-in for heavy vector (design tools).
@@ -37,7 +37,7 @@ enum Renderer {
 }
 
 impl Renderer {
-    fn parse(s: &str) -> Option<Renderer> {
+    pub(crate) fn parse(s: &str) -> Option<Renderer> {
         match s.to_ascii_lowercase().as_str() {
             "hybrid" | "vello-hybrid" | "vello_hybrid" | "default" => Some(Renderer::Hybrid),
             "vello" | "compute" | "classic" => Some(Renderer::Vello),
@@ -46,7 +46,7 @@ impl Renderer {
     }
 
     /// The cargo feature that selects this backend.
-    fn feature(self) -> &'static str {
+    pub(crate) fn feature(self) -> &'static str {
         match self {
             Renderer::Hybrid => "vello-hybrid",
             Renderer::Vello => "vello",
@@ -55,7 +55,7 @@ impl Renderer {
 }
 
 /// Human label for the banner. `None` = the crate default (hybrid).
-fn renderer_label(r: Option<Renderer>) -> &'static str {
+pub(crate) fn renderer_label(r: Option<Renderer>) -> &'static str {
     match r {
         None => "hybrid (default)",
         Some(Renderer::Hybrid) => "hybrid",
@@ -65,7 +65,7 @@ fn renderer_label(r: Option<Renderer>) -> &'static str {
 
 /// The target Pebbles runs on — Flutter's `-d`. Default is the host desktop.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Platform {
+pub(crate) enum Platform {
     /// The host OS (Linux / macOS / Windows) — a native window. Default.
     Desktop,
     /// A WebGPU browser (Chrome / Edge / Safari / Firefox), served by Trunk.
@@ -77,7 +77,7 @@ enum Platform {
 impl Platform {
     /// Map a `-d` value to a platform. Accepts Flutter-ish synonyms (`chrome` = web,
     /// `linux`/`macos`/`windows` = desktop). Returns `None` for an unknown value.
-    fn parse(s: &str) -> Option<Platform> {
+    pub(crate) fn parse(s: &str) -> Option<Platform> {
         match s.to_ascii_lowercase().as_str() {
             "desktop" | "native" | "host" | "linux" | "macos" | "mac" | "osx" | "windows" | "win" => {
                 Some(Platform::Desktop)
@@ -208,36 +208,10 @@ pub fn run(args: &[String]) -> ExitCode {
     let workspace_root = find_workspace_root(&cwd);
 
     // Resolve which package to run and its source directory.
-    let (member_dir, bin) = match &o.package {
-        Some(name) => {
-            let search_root = workspace_root.clone().unwrap_or_else(|| cwd.clone());
-            match find_member(&search_root, name) {
-                Some(dir) => (dir, name.clone()),
-                None => {
-                    term::error(&format!("no package `{name}` in this workspace"));
-                    list_members(&search_root);
-                    return ExitCode::FAILURE;
-                }
-            }
-        }
-        None => {
-            let Some(project) = find_project(&cwd) else {
-                term::error(
-                    "no Cargo.toml found here — run this inside a Pebbles project (or `pebbles new <name>`)",
-                );
-                return ExitCode::FAILURE;
-            };
-            match package_name(&project) {
-                Some(name) => (project, name),
-                None => {
-                    // A workspace root (no [package]) — the user must pick a member.
-                    term::error("this is a Cargo workspace — choose a package to run:");
-                    list_members(&project);
-                    println!("  e.g. pebbles run -p gallery");
-                    return ExitCode::FAILURE;
-                }
-            }
-        }
+    let Some((member_dir, bin)) =
+        resolve_member(&cwd, workspace_root.as_deref(), o.package.as_deref(), "run")
+    else {
+        return ExitCode::FAILURE;
     };
 
     // `pebbles.toml` `[dev] log` sets the default level; an explicit `--log`/`-q`
@@ -440,7 +414,7 @@ fn run_web(member_dir: &Path, bin: &str, o: &Opts) -> ExitCode {
     }
 }
 
-fn rustup_target_installed(target: &str) -> bool {
+pub(crate) fn rustup_target_installed(target: &str) -> bool {
     Command::new("rustup")
         .args(["target", "list", "--installed"])
         .output()
@@ -449,7 +423,7 @@ fn rustup_target_installed(target: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn tool_available(tool: &str) -> bool {
+pub(crate) fn tool_available(tool: &str) -> bool {
     Command::new(tool)
         .arg("--version")
         .stdout(Stdio::null())
@@ -462,7 +436,7 @@ fn tool_available(tool: &str) -> bool {
 /// `index.html`, use it untouched. Otherwise write a managed full-viewport page
 /// to `<member>/.pebbles/web/index.html` (regenerated each run) that mounts the
 /// app's `<bin>` crate onto a canvas.
-fn ensure_index_html(member_dir: &Path, bin: &str) -> std::io::Result<PathBuf> {
+pub(crate) fn ensure_index_html(member_dir: &Path, bin: &str) -> std::io::Result<PathBuf> {
     let project_index = member_dir.join("index.html");
     if project_index.is_file() {
         return Ok(project_index);
@@ -652,7 +626,7 @@ fn cargo_apk_subcommand() -> Option<&'static str> {
     None
 }
 
-fn cargo_build(run_dir: &Path, package: &str, release: bool, renderer: Option<Renderer>) -> bool {
+pub(crate) fn cargo_build(run_dir: &Path, package: &str, release: bool, renderer: Option<Renderer>) -> bool {
     // `-p <package>` works whether `run_dir` is a workspace root or a standalone
     // package, so a sample builds the same way as a scaffolded app.
     let mut cmd = Command::new("cargo");
@@ -872,14 +846,14 @@ fn dev_log_from(text: &str) -> Option<String> {
     (!val.is_empty()).then(|| val.to_string())
 }
 
-fn target_bin(target_root: &Path, bin: &str, release: bool) -> PathBuf {
+pub(crate) fn target_bin(target_root: &Path, bin: &str, release: bool) -> PathBuf {
     let profile = if release { "release" } else { "debug" };
     target_root.join("target").join(profile).join(bin)
 }
 
 /// The nearest ancestor whose Cargo.toml declares `[workspace]` — a member's
 /// binary is built into THAT directory's `target/`, not the member's own.
-fn find_workspace_root(start: &Path) -> Option<PathBuf> {
+pub(crate) fn find_workspace_root(start: &Path) -> Option<PathBuf> {
     let mut dir = Some(start);
     while let Some(d) = dir {
         let manifest = d.join("Cargo.toml");
@@ -905,6 +879,50 @@ fn find_member(root: &Path, name: &str) -> Option<PathBuf> {
         }
     });
     found
+}
+
+/// Resolve which workspace member to act on and its source directory, shared by
+/// `pebbles run` and `pebbles build`. With an explicit `-p <name>` it looks that
+/// member up under the workspace (or cwd); without one it uses the nearest
+/// `[package]` Cargo.toml. Prints an actionable error and returns `None` when it
+/// can't decide — the `cmd` word ("run" / "build") tailors the hint. Reads only.
+pub(crate) fn resolve_member(
+    cwd: &Path,
+    workspace_root: Option<&Path>,
+    package: Option<&str>,
+    cmd: &str,
+) -> Option<(PathBuf, String)> {
+    match package {
+        Some(name) => {
+            let search_root = workspace_root.map(Path::to_path_buf).unwrap_or_else(|| cwd.to_path_buf());
+            match find_member(&search_root, name) {
+                Some(dir) => Some((dir, name.to_string())),
+                None => {
+                    term::error(&format!("no package `{name}` in this workspace"));
+                    list_members(&search_root);
+                    None
+                }
+            }
+        }
+        None => {
+            let Some(project) = find_project(cwd) else {
+                term::error(
+                    "no Cargo.toml found here — run this inside a Pebbles project (or `pebbles new <name>`)",
+                );
+                return None;
+            };
+            match package_name(&project) {
+                Some(name) => Some((project, name)),
+                None => {
+                    // A workspace root (no [package]) — the user must pick a member.
+                    term::error("this is a Cargo workspace — choose a package:");
+                    list_members(&project);
+                    println!("  e.g. pebbles {cmd} -p gallery");
+                    None
+                }
+            }
+        }
+    }
 }
 
 /// Print every runnable package under `root` (for error hints).

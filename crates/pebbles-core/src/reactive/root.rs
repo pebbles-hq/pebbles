@@ -64,10 +64,12 @@ impl RootDisposer {
 /// scope-owned, not component-local) and reads are untracked (so a stray read can't
 /// subscribe an enclosing component).
 ///
-/// ```ignore
+/// ```no_run
+/// use pebbles_core::{create_effect, create_root, create_signal};
+///
 /// let (value, dispose) = create_root(|dispose| {
 ///     let n = create_signal(0);
-///     create_effect(move || log(n.get()));
+///     create_effect(move || println!("{}", n.get()));
 ///     (n, dispose)
 /// });
 /// // …use `value`…
