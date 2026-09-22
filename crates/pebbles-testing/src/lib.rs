@@ -317,6 +317,53 @@ impl Harness {
     pub fn size_of(&self, id: pebbles_render::RenderId) -> Size {
         self.ui.render_tree().size_of(id)
     }
+
+    // ----- resize / focus / accessibility ----------------------------------
+
+    /// Re-layout the tree at a new window size — a real window resize / device
+    /// rotation. Mirrors the [`window`](Self::window) builder followed by a settled
+    /// [`draw`](Self::draw), so callers observe geometry at the new size.
+    pub fn resize(&mut self, w: f64, h: f64) {
+        self.window = Size::new(w, h);
+        self.draw();
+    }
+
+    /// Move keyboard focus forward one stop — the harness analog of pressing Tab in
+    /// the shell where nothing is a code editor (there, Tab traverses focus; a focused
+    /// code editor would instead indent, which this deliberately does not model). With
+    /// nothing focused yet this lands on the first focusable, matching the shell's
+    /// `Ui::focus_move(true)` call for Tab.
+    pub fn press_tab(&mut self) {
+        self.ui.make_current();
+        self.ui.focus_move(true);
+        self.frame();
+    }
+
+    /// The accessibility (semantics) tree a screen reader sees: every
+    /// [`SemanticsNode`](pebbles_render::SemanticsNode) with its role, label, and
+    /// window-space bounds. The read side of what [`find_text`](Self::find_text) queries.
+    pub fn semantics_tree(&self) -> Vec<pebbles_render::SemanticsNode> {
+        self.ui.render_tree().semantics_tree()
+    }
+
+    /// Whether any semantics node's accessible label is exactly `label` — the
+    /// harness "is this text on screen (to a screen reader)?" query. Matches the
+    /// announced name (a button's text, a labeled field), not raw glyph runs.
+    pub fn find_text(&self, label: &str) -> bool {
+        self.semantics_tree().iter().any(|n| n.props.label == label)
+    }
+
+    /// Feed a run of text the way an IME commit does — compose it as preedit
+    /// (underlined), clear the composition, then commit it as an insert: exactly the
+    /// [`Preedit`](pebbles_core::KeyInput::Preedit) → `Preedit("")` →
+    /// [`Insert`](pebbles_core::KeyInput::Insert) sequence the shell forwards from
+    /// `Ime::Preedit` / `Ime::Commit`. Use this for CJK / dead-key input so the
+    /// preedit path is exercised, not just a raw `key(Insert(..))`.
+    pub fn ime(&mut self, text: &str) {
+        self.key(pebbles_core::KeyInput::Preedit(text.to_string()));
+        self.key(pebbles_core::KeyInput::Preedit(String::new()));
+        self.key(pebbles_core::KeyInput::Insert(text.to_string()));
+    }
 }
 
 /// `Ui::make_current` takes `&self`; keep the call in one place so `new` can run
@@ -339,7 +386,7 @@ mod tests {
     use pebbles_foundation::{Offset, Size, palette};
     use pebbles_render::{BoxConstraints, LayoutCx, PaintCx, RenderObject};
     use pebbles_widgets::{
-        ScrollController, container, gesture_detector, text, text_field, use_scroll_controller,
+        ScrollController, button, container, gesture_detector, text, text_field, use_scroll_controller,
     };
 
     use super::Harness;
@@ -472,5 +519,95 @@ mod tests {
         let mut h = Harness::new();
         h.mount_widget(Oscillator);
         h.draw(); // never settles → bounded loop panics
+    }
+
+    // ----- resize re-lays-out at the new size ------------------------------
+
+    #[test]
+    fn resize_relays_out_at_the_new_window_size() {
+        let mut h = Harness::new();
+        h.mount(plain);
+        h.draw();
+        h.resize(320.0, 240.0);
+        assert_eq!(h.window, Size::new(320.0, 240.0), "resize updates the window size");
+        assert!(h.element_count() > 0, "the tree survives a resize + re-layout");
+    }
+
+    // ----- semantics / find_text -------------------------------------------
+
+    fn labeled_button() -> impl IntoWidget {
+        button("Save")
+    }
+
+    #[test]
+    fn semantics_tree_exposes_labels_and_find_text_matches() {
+        let mut h = Harness::new();
+        h.mount(|| component(labeled_button));
+        h.draw();
+        assert!(!h.semantics_tree().is_empty(), "a mounted button produces a semantics node");
+        assert!(h.find_text("Save"), "find_text matches the button's accessible label");
+        assert!(!h.find_text("Cancel"), "find_text does not match an absent label");
+    }
+
+    // ----- press_tab moves focus -------------------------------------------
+
+    thread_local! {
+        static TAB_VAL: RefCell<Option<Signal<String>>> = const { RefCell::new(None) };
+    }
+
+    fn tab_bound() -> Signal<String> {
+        TAB_VAL.with(|c| {
+            let mut c = c.borrow_mut();
+            if c.is_none() {
+                *c = Some(create_signal(String::new()));
+            }
+            c.unwrap()
+        })
+    }
+
+    fn tab_probe() -> impl IntoWidget {
+        // No autofocus: focus is empty until press_tab lands it on this field.
+        text_field().bind(tab_bound()).width(200.0)
+    }
+
+    #[test]
+    fn press_tab_moves_focus_onto_the_first_field() {
+        TAB_VAL.with(|c| *c.borrow_mut() = None);
+        let mut h = Harness::new();
+        h.mount(|| component(tab_probe));
+        h.draw(); // nothing focused yet
+        h.press_tab(); // focus lands on the first focusable
+        h.key(KeyInput::Insert("z".into()));
+        assert_eq!(tab_bound().get(), "z", "press_tab focused the field, so typing reaches it");
+    }
+
+    // ----- ime feeds the preedit → commit path -----------------------------
+
+    thread_local! {
+        static IME_VAL: RefCell<Option<Signal<String>>> = const { RefCell::new(None) };
+    }
+
+    fn ime_bound() -> Signal<String> {
+        IME_VAL.with(|c| {
+            let mut c = c.borrow_mut();
+            if c.is_none() {
+                *c = Some(create_signal(String::new()));
+            }
+            c.unwrap()
+        })
+    }
+
+    fn ime_probe() -> impl IntoWidget {
+        text_field().bind(ime_bound()).autofocus().width(200.0)
+    }
+
+    #[test]
+    fn ime_commits_composed_text_into_the_editor() {
+        IME_VAL.with(|c| *c.borrow_mut() = None);
+        let mut h = Harness::new();
+        h.mount(|| component(ime_probe));
+        h.draw(); // autofocus lands
+        h.ime("あ");
+        assert_eq!(ime_bound().get(), "あ", "ime() composes then commits the text into the field");
     }
 }

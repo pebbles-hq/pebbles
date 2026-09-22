@@ -31,23 +31,47 @@ pub fn pebbles_repo_root() -> std::path::PathBuf {
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// The subcommand an invocation selects, parsed from `argv[1]`. Pure — `main`
+/// turns it into the actual action, so the arg parsing is testable on its own.
+#[derive(Debug, PartialEq, Eq)]
+enum Cmd {
+    New,
+    Run,
+    Doctor,
+    Version,
+    Help,
+    Unknown(String),
+}
+
+/// Map the first CLI argument (the command word) to a [`Cmd`]. `None` (no args) is
+/// `Help`, matching Cargo-style bare invocation.
+fn classify(cmd: Option<&str>) -> Cmd {
+    match cmd {
+        Some("new") | Some("create") => Cmd::New,
+        Some("run") | Some("dev") => Cmd::Run,
+        Some("doctor") => Cmd::Doctor,
+        Some("--version") | Some("-V") | Some("version") => Cmd::Version,
+        Some("--help") | Some("-h") | Some("help") | None => Cmd::Help,
+        Some(other) => Cmd::Unknown(other.to_string()),
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let cmd = args.first().map(String::as_str);
 
-    match cmd {
-        Some("new") | Some("create") => new::run(&args[1..]),
-        Some("run") | Some("dev") => run::run(&args[1..]),
-        Some("doctor") => doctor::run(&args[1..]),
-        Some("--version") | Some("-V") | Some("version") => {
+    match classify(args.first().map(String::as_str)) {
+        Cmd::New => new::run(&args[1..]),
+        Cmd::Run => run::run(&args[1..]),
+        Cmd::Doctor => doctor::run(&args[1..]),
+        Cmd::Version => {
             println!("pebbles {VERSION}");
             ExitCode::SUCCESS
         }
-        Some("--help") | Some("-h") | Some("help") | None => {
+        Cmd::Help => {
             print_help();
             ExitCode::SUCCESS
         }
-        Some(other) => {
+        Cmd::Unknown(other) => {
             term::error(&format!("unknown command `{other}`"));
             print_help();
             ExitCode::FAILURE
@@ -115,4 +139,43 @@ fn print_help() {
     pebbles doctor
 "
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cmd, classify, pebbles_repo_root};
+
+    #[test]
+    fn classify_maps_commands_and_aliases() {
+        assert_eq!(classify(Some("new")), Cmd::New);
+        assert_eq!(classify(Some("create")), Cmd::New); // alias
+        assert_eq!(classify(Some("run")), Cmd::Run);
+        assert_eq!(classify(Some("dev")), Cmd::Run); // alias
+        assert_eq!(classify(Some("doctor")), Cmd::Doctor);
+    }
+
+    #[test]
+    fn classify_version_and_help_flags() {
+        for v in ["--version", "-V", "version"] {
+            assert_eq!(classify(Some(v)), Cmd::Version, "{v} is the version command");
+        }
+        for h in ["--help", "-h", "help"] {
+            assert_eq!(classify(Some(h)), Cmd::Help, "{h} is the help command");
+        }
+        // No argument at all defaults to help.
+        assert_eq!(classify(None), Cmd::Help);
+    }
+
+    #[test]
+    fn classify_unknown_command_carries_the_name() {
+        assert_eq!(classify(Some("frobnicate")), Cmd::Unknown("frobnicate".to_string()));
+    }
+
+    #[test]
+    fn repo_root_is_two_levels_above_the_cli_manifest() {
+        // <repo>/crates/pebbles-cli is the manifest dir; the root is two parents up,
+        // so joining back down reaches this crate again.
+        let root = pebbles_repo_root();
+        assert_eq!(root.join("crates").join("pebbles-cli"), std::path::Path::new(env!("CARGO_MANIFEST_DIR")));
+    }
 }

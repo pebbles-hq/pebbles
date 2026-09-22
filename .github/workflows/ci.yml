@@ -171,10 +171,13 @@ jobs:
         with:
           key: coverage
       - name: Coverage summary
+        # `--ignore-run-fail`: still emit the coverage summary even if a test flakes
+        # under llvm-cov's instrumentation (it slows the frame clock, which can trip a
+        # timing-sensitive settle). Tests are gated by the real `Test` job, not here.
         run: |
           echo '## Coverage (`cargo llvm-cov`)' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cargo llvm-cov --workspace --all-features --summary-only >> "$GITHUB_STEP_SUMMARY"
+          cargo llvm-cov --workspace --all-features --ignore-run-fail --summary-only >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
   clippy:

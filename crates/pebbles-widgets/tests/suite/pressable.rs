@@ -15,12 +15,10 @@ thread_local! {
     static TAPS: Cell<u32> = const { Cell::new(0) };
 }
 
-fn frame(ui: &mut Ui, env: &mut TextEnv, win: Size) {
-    ui.rebuild_if_dirty();
-    ui.layout(env, win);
-    let mut scene = pebbles_render::Scene::new();
-    ui.paint(env, &mut scene);
-}
+// The frame lifecycle is the harness's single definition — reconcile + layout +
+// paint, settling the corrective-relayout loop. Aliased to `frame` so the call
+// sites read unchanged.
+use pebbles_testing::draw_frame as frame;
 
 fn well_root() -> impl IntoWidget {
     OverlayHost::wrap(

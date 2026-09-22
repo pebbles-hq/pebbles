@@ -207,13 +207,16 @@ fn tool_version(bin: &str, args: &[&str]) -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    // Some tools print the version on stderr (e.g. `java -version`).
-    let text = if out.stdout.is_empty() {
-        String::from_utf8_lossy(&out.stderr)
-    } else {
-        String::from_utf8_lossy(&out.stdout)
-    };
-    Some(text.lines().next().unwrap_or("").trim().to_string())
+    Some(version_line(&out.stdout, &out.stderr))
+}
+
+/// Pick the version string from a tool's captured output: prefer stdout, fall back
+/// to stderr (some tools — `java -version` — print the version there), then take the
+/// first line, trimmed. Pure, so the parsing is testable without spawning a process.
+fn version_line(stdout: &[u8], stderr: &[u8]) -> String {
+    let text =
+        if stdout.is_empty() { String::from_utf8_lossy(stderr) } else { String::from_utf8_lossy(stdout) };
+    text.lines().next().unwrap_or("").trim().to_string()
 }
 
 fn have(bin: &str) -> bool {
@@ -239,7 +242,14 @@ fn installed_targets() -> &'static str {
 }
 
 fn rustup_target_installed(target: &str) -> bool {
-    installed_targets().lines().any(|l| l.trim() == target)
+    target_in_list(installed_targets(), target)
+}
+
+/// Whether `target` appears (as a whole, trimmed line) in a `rustup target list
+/// --installed` dump. Pure decision helper — exact match, so a prefix like
+/// `aarch64-linux-android` doesn't spuriously satisfy a longer query.
+fn target_in_list(list: &str, target: &str) -> bool {
+    list.lines().any(|l| l.trim() == target)
 }
 
 fn host_os() -> &'static str {
@@ -292,4 +302,48 @@ fn android_ndk(sdk: Option<&Path>) -> Option<PathBuf> {
         std::fs::read_dir(&ndk_root).ok()?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
     versions.sort();
     versions.pop() // newest by lexical version
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{host_os, target_in_list, version_line};
+
+    #[test]
+    fn version_line_prefers_stdout_and_trims() {
+        // Normal case: first stdout line, trimmed.
+        assert_eq!(version_line(b"cargo 1.89.0 (abc)\n", b""), "cargo 1.89.0 (abc)");
+        assert_eq!(version_line(b"  rustc 1.89.0  \n2nd line", b""), "rustc 1.89.0");
+    }
+
+    #[test]
+    fn version_line_falls_back_to_stderr_when_stdout_empty() {
+        // e.g. `java -version` prints to stderr.
+        assert_eq!(version_line(b"", b"openjdk version \"21\"\n"), "openjdk version \"21\"");
+        // Both empty → empty string, not a panic.
+        assert_eq!(version_line(b"", b""), "");
+    }
+
+    #[test]
+    fn target_in_list_is_an_exact_whole_line_match() {
+        let list = "aarch64-apple-ios\n  wasm32-unknown-unknown  \nx86_64-unknown-linux-gnu\n";
+        assert!(target_in_list(list, "wasm32-unknown-unknown"), "trimmed whole-line match hits");
+        assert!(target_in_list(list, "aarch64-apple-ios"));
+        // A prefix / substring must NOT satisfy a different query.
+        assert!(!target_in_list(list, "aarch64-apple-ios-sim"));
+        assert!(!target_in_list(list, "wasm32"));
+        assert!(!target_in_list("", "any-target"));
+    }
+
+    #[test]
+    fn host_os_reports_the_current_platform() {
+        let os = host_os();
+        // Non-empty, and consistent with the compile target.
+        assert!(!os.is_empty());
+        #[cfg(target_os = "linux")]
+        assert_eq!(os, "Linux");
+        #[cfg(target_os = "macos")]
+        assert_eq!(os, "macOS");
+        #[cfg(target_os = "windows")]
+        assert_eq!(os, "Windows");
+    }
 }

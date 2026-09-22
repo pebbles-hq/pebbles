@@ -35,7 +35,7 @@ mod render;
 mod storm;
 mod windows;
 
-use input::{to_command, to_shortcut_key, to_winit_cursor, wheel_with_overlay};
+use input::{editor_chord_intent, to_command, to_shortcut_key, to_winit_cursor, wheel_with_overlay};
 
 /// Max interval between two primary clicks to count as a double-tap.
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
@@ -956,6 +956,12 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     return;
                 }
                 if event.state == ElementState::Pressed {
+                    let mods = pebbles_core::Mods {
+                        shift: self.shift_down,
+                        ctrl: self.ctrl_down,
+                        alt: self.alt_down,
+                        meta: self.meta_down,
+                    };
                     // F2: Mod+Shift+I toggles the widget inspector (devtools v1).
                     if (self.ctrl_down || self.meta_down)
                         && self.shift_down
@@ -983,9 +989,8 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                         return;
                     }
                     // Shift+Alt+F: format the focused code editor via its format provider.
-                    if self.shift_down
-                        && self.alt_down
-                        && to_shortcut_key(&event) == Some(pebbles_core::ShortcutKey::Char('f'))
+                    if to_shortcut_key(&event).and_then(|sk| editor_chord_intent(mods, sk, false))
+                        == Some(KeyInput::Format)
                         && self.ui.dispatch_key(KeyInput::Format)
                     {
                         self.request_redraw();
@@ -1019,12 +1024,6 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     // this brings the editor call site in line.
                     let cmd = self.ctrl_down || (cfg!(target_os = "macos") && self.meta_down);
                     let intent = to_command(&event, cmd, self.shift_down);
-                    let mods = pebbles_core::Mods {
-                        shift: self.shift_down,
-                        ctrl: self.ctrl_down,
-                        alt: self.alt_down,
-                        meta: self.meta_down,
-                    };
                     // Track WHICH stage claimed the key, for the dev trace.
                     let mut stage = "unhandled";
                     let mut handled = if intent.is_some_and(|ki| self.ui.dispatch_key(ki)) {
@@ -1038,13 +1037,19 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     } else if event.logical_key == Key::Named(NamedKey::Tab) {
                         // A focused code editor consumes Tab/Shift+Tab for indent/outdent;
                         // anywhere else (incl. single-line text fields) Tab traverses focus.
-                        if pebbles_core::focus::focused_wants_tab() {
-                            stage = "editor-indent";
-                            let ki = if self.shift_down { KeyInput::Outdent } else { KeyInput::Indent };
-                            self.ui.dispatch_key(ki)
-                        } else {
-                            stage = "focus-move";
-                            self.ui.focus_move(!self.shift_down)
+                        match editor_chord_intent(
+                            mods,
+                            pebbles_core::ShortcutKey::Tab,
+                            pebbles_core::focus::focused_wants_tab(),
+                        ) {
+                            Some(ki) => {
+                                stage = "editor-indent";
+                                self.ui.dispatch_key(ki)
+                            }
+                            None => {
+                                stage = "focus-move";
+                                self.ui.focus_move(!self.shift_down)
+                            }
                         }
                     } else if matches!(
                         event.logical_key.as_ref(),
