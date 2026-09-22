@@ -116,8 +116,14 @@ pebbles create --list                     # the available templates
 cd hello && pebbles run                   # rich logs; hot-restarts on save
 pebbles run --renderer vello              # run on the Vello (GPU-compute) backend
 pebbles run -d web                        # build to wasm + open a WebGPU browser
+pebbles build                             # optimized release binary (target/release/<name>)
+pebbles build -d web                      # static wasm bundle → dist/ (deploy anywhere)
 pebbles doctor                            # check the toolchain/environment
 ```
+
+**Shipping a built app** (a `.desktop` file on Linux, hiding the console + an icon
+on Windows, an `.app` bundle + codesign on macOS, `dist/` on any static host for the
+web) is walked through per target in [`DISTRIBUTING.md`](DISTRIBUTING.md).
 
 Generated projects depend on Pebbles by git, so they build on any machine. Pass
 `--path` instead to point at a local checkout — that is for working *on* the

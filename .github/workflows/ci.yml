@@ -130,6 +130,17 @@ jobs:
       - name: umbrella + tokio on wasm (tokio is native-only → no-op here)
         if: matrix.target == 'wasm32-unknown-unknown'
         run: cargo check -p pebbles --target ${{ matrix.target }} --features tokio
+      # The examples are a claimed web run mode (`pebbles run -d web`). They were only
+      # swept host-target before, so a web-breaking example change landed green. Gate
+      # all seven on wasm so that can't happen.
+      - name: Examples compile for wasm (web run mode)
+        if: matrix.target == 'wasm32-unknown-unknown'
+        run: |
+          for ex in counter todo temperature stopwatch landing desktop mobile; do
+            echo "::group::$ex"
+            cargo check -p "$ex" --target ${{ matrix.target }}
+            echo "::endgroup::"
+          done
 
   # ───────────────────────────────────────────────────────────────────────────
   # The classic `vello` backend. Every other job resolves to `vello-hybrid` (the
@@ -184,6 +195,34 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cargo llvm-cov --workspace --all-features --ignore-run-fail --summary-only >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # GPU / rasterization path on a SOFTWARE Vulkan device (Mesa lavapipe). The
+  # offscreen-capture API (`pebbles-shell/tests/capture.rs`) is `#[ignore]`d
+  # ("requires a GPU"), so the whole rasterize→readback→encode path otherwise runs
+  # on no CI machine. lavapipe gives a headless, deterministic-enough software GPU
+  # to exercise it. NON-BLOCKING for now (driver setup varies); promote once proven.
+  # ───────────────────────────────────────────────────────────────────────────
+  gpu-raster:
+    name: GPU path (software raster)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: System deps (fontconfig + Mesa lavapipe software Vulkan)
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev mesa-vulkan-drivers vulkan-tools
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: gpu-raster
+      - name: Run the #[ignore]d GPU/capture tests on lavapipe
+        env:
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          WGPU_BACKEND: vulkan
+        run: cargo test -p pebbles-shell -- --ignored
 
   clippy:
     name: Clippy

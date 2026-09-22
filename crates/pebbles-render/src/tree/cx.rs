@@ -302,7 +302,7 @@ impl PaintCx<'_> {
 
     /// Like [`paint_child`](Self::paint_child), but narrows the visible window to
     /// `clip` for the child's whole subtree. Clipping render objects (scroll
-    /// viewports, clip-rrects, opacity layers) call this alongside their vello
+    /// viewports, clip-rrects, opacity layers) call this alongside their backend
     /// clip layer so culling matches what the layer would clip away anyway.
     pub fn paint_child_clipped(&mut self, child: RenderId, absolute_offset: Offset, clip: Rect) {
         let saved = self.visible;

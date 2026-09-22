@@ -353,6 +353,16 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
         }
         cards.push(component_props(render_toast_card, CardProps { entry: (*e).clone() }).into_widget());
     }
+    // C7: only MAX_VISIBLE toasts render a card, so a screen reader would never hear the
+    // queued overflow. Announce the hidden count as an Alert (invisible, zero-size child).
+    let queued = toasts.len().saturating_sub(MAX_VISIBLE);
+    if queued > 0 {
+        let label = format!("{queued} more notification{}", if queued == 1 { "" } else { "s" });
+        cards.insert(
+            0,
+            crate::widgets::semantics(pebbles_render::SemanticsRole::Alert, label, gap_h(0.0)).into_widget(),
+        );
+    }
     let stack = column(cards).cross_axis_alignment(CrossAxisAlignment::End).main_axis_size(MainAxisSize::Min);
     // Anchor bottom-right; window_size gives the current window's logical bounds.
     let (ww, _wh) = window_size();

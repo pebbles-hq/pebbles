@@ -11,9 +11,13 @@
 //!      flicker (see [`Renderer::render_to_texture`]).
 //!
 //! The windowed frame loop reaches the GPU through [`Renderer::render_to_texture`], which
-//! resolves the swapchain format from [`SURFACE_FORMAT`]. The headless `capture` path has no
-//! surface, so both funnel through [`Renderer::render_offscreen`] — the single place the flush,
-//! the base-color clear and the `draw_image` texture binding are defined.
+//! resolves the swapchain format from [`SURFACE_FORMAT`] and renders into the swapchain's own
+//! texture view. Both it and the headless `capture` path (which has no surface) funnel through
+//! the shared, target-agnostic [`Renderer::render_offscreen`] — the single place the flush, the
+//! base-color clear and the `draw_image` texture binding are defined. "Offscreen" names the
+//! seam, not the destination: it renders into whatever target view the caller hands it (the
+//! swapchain view for a window, an owned texture for capture), so the windowed path still
+//! rasterizes straight into the swapchain with no intermediate target.
 
 use std::ops::Deref;
 use std::sync::OnceLock;

@@ -147,6 +147,8 @@ remote-URL images) and their per-platform status live in
 | `ImageView` | ✅ | `asset`/`network`/`memory`/`base64`/`image` + `ImageFit`; reactive source (`image-view` feature) |
 | `fade_in_image` (FadeInImage) | ✅ | shows a placeholder, then cross-fades in the loaded network image; `.fade(secs)` (`image-view` feature) |
 | `markdown` / `markdown_editor` | ✅ 📦 | Obsidian-style GFM reader + editor — now a **separate package**, [`pebbles-markdown`](https://github.com/pebbles-hq/pebbles-markdown): tables, task lists with source-rewriting checkboxes, code (JetBrains Mono), links, quotes, images; Edit/Split/Read via an app-owned mode signal; themable `MarkdownStyle`. The reference third-party widget crate — add it alongside `pebbles`. |
+| `pebbles-charts` (charts) | ✅ 📦 | Composable, themeable **chart widgets** (bar/line/area/pie/donut + radial/dense/flow/compact) drawn on the GPU `canvas`: config-driven palette, a real value axis, cursor-following tooltips, an interactive legend, keyboard nav. Its own repo, [`pebbles-charts`](https://github.com/pebbles-hq/pebbles-charts) — add it alongside `pebbles`. |
+| `pebbles-code-editor` (code editor) | ✅ 📦 | Embeddable, syntax-highlighting **code editor** widget: a custom editing engine with pluggable languages, multi-cursor, folding, soft wrap, IntelliSense provider hooks, an extension API, and full theming — the foundation to build an IDE on. Its own repo, [`pebbles-code-editor`](https://github.com/pebbles-hq/pebbles-code-editor) — add it alongside `pebbles`. |
 | `Carousel` | ✅ | snap-paged slides, dots, arrows (hidden at ends), autoplay w/ hover-pause, `CarouselController` (A6 ✅) |
 
 ## 4. Layout & navigation components (`components/layout/`, `components/navigation/`)
@@ -172,7 +174,7 @@ remote-URL images) and their per-platform status live in
 | `StickyList` / `sticky_section` · `CollapsingHeader` | ✅ | pinned section headers with push-off; collapsing hero driven by scroll progress `t` (A3 ✅) |
 | `nested_scroll_view` (NestedScrollView) | ✅ | header over a scrolling body — scroll-away (shared scroll position) or `.pinned(true)` (fixed header, body scrolls beneath) |
 | `Toolbar` · `StatusBar` | ✅ 🔶C8f | work; dedicated gallery screen (C8f) open |
-| `NavStack` / `RouteView` (`route_view`) | ✅ 🔶C8h | push/replace/pop history + fallback; `route`/`param_route` (`/user/:id` → `RouteParams`, first-match-wins), `nest`+`outlet` (nested layouts), `transition(secs)`; `link`/`redirect` builders. Widget layer over `pebbles_core::router`. Dedicated gallery screen (C8h) open |
+| `NavStack` / `RouteView` (`route_view`) | ✅ 🔶C8h | push/replace/pop history + fallback; `route`/`param_route` (`/user/:id` → `RouteParams`, first-match-wins), `nest`+`outlet` (nested layouts), `transition(secs)`; `link`/`redirect` builders. Widget layer over `pebbles_core::router` — inherits nav guards, `?query` parse/update, `set_title`, and scroll restoration, and on the web a `UrlSync` bridge (deep links + Back/Forward via `popstate`). Dedicated gallery screen (C8h) open |
 | `link` / `redirect` / `outlet` | ✅ | `link(to, builder)` navigates on tap; `redirect(to)` swaps route on mount; `outlet()` renders the matched child of the enclosing `RouteView::nest` layout (SolidJS `<Outlet>`) |
 
 ## 5. App services (`crates/pebbles-widgets/src/services/`)

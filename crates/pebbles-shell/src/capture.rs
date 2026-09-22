@@ -26,6 +26,7 @@
 //! ```
 
 use std::error::Error;
+use std::time::Duration;
 
 use pebbles_core::{AnyWidget, IntoWidget, Ui, prefers_reduced_motion, set_prefers_reduced_motion};
 use pebbles_foundation::{Color, Size};
@@ -44,6 +45,11 @@ use crate::gpu::{self, RenderContext};
 /// the readback offset math well inside `u32`.
 pub const MAX_CAPTURE_DIM: u32 = 16_384;
 
+/// Upper bound on how long the readback poll waits for the GPU before returning `Err`. A
+/// bounded wait (vs. `PollType::wait_indefinitely`) keeps a wedged or lost driver from
+/// hanging the calling thread forever; the round-trip normally completes in milliseconds.
+pub const GPU_POLL_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Restores the global reduced-motion preference on drop, so a `?` early-return or a panic
 /// mid-capture can't leave the process permanently stuck in reduced-motion.
 struct ReducedMotionGuard(bool);
@@ -59,6 +65,13 @@ impl Drop for ReducedMotionGuard {
 ///
 /// Animations are settled to their final frame first, so entry/transition animations don't
 /// leave a half-drawn capture.
+///
+/// # Blocking
+///
+/// This call **blocks the calling thread for a full GPU round-trip** (submit + map + readback)
+/// — potentially tens of milliseconds, and up to [`GPU_POLL_TIMEOUT`] on a stalled driver
+/// before it returns `Err`. Do **not** call it from a hot event handler or the live UI thread;
+/// use a background thread or a dedicated headless process (see the module docs).
 pub fn capture_rgba(
     root: AnyWidget,
     width: u32,
@@ -95,6 +108,11 @@ pub fn capture_rgba(
 }
 
 /// Render `root` at `width`×`height` on `background` and return PNG bytes.
+///
+/// # Blocking
+///
+/// Like [`capture_rgba`] (which it wraps), this **blocks the calling thread for a full GPU
+/// round-trip** and PNG encode. Don't call it from a hot event handler or the live UI thread.
 pub fn capture_png(
     root: AnyWidget,
     width: u32,
@@ -211,8 +229,11 @@ impl Gpu {
         slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx.send(r);
         });
+        // Bounded wait: a wedged/lost driver returns `PollError::Timeout` instead of hanging
+        // the calling thread forever (an indefinite wait is the UI-freeze vector documented on
+        // the public entry points).
         self.device
-            .poll(wgpu::PollType::wait_indefinitely())
+            .poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(GPU_POLL_TIMEOUT) })
             .map_err(|e| format!("capture GPU poll failed: {e:?}"))?;
         rx.recv()
             .map_err(|_| "capture readback channel closed")?

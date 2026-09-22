@@ -10,7 +10,7 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme = "README.md"
-description = "Pebbles — a GUI framework for Rust, built from handpicked ideas. Umbrella crate + prelude."
+description = "Pebbles — a GUI framework for Rust built from handpicked ideas: Flutter-style widgets, SolidJS-style reactivity, Tailwind-style styling, and pure-Rust Vello rendering. The umbrella crate + prelude."
 
 [dependencies]
 pebbles-foundation.workspace = true

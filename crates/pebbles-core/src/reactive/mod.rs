@@ -494,7 +494,9 @@ impl<T: 'static + Clone> Signal<T> {
     /// # Panics
     /// Panics if the signal has been disposed (its owning component unmounted) — this
     /// catches a callback that outlived its component. Use [`try_peek`](Self::try_peek) in
-    /// timers/closures that can fire after unmount.
+    /// timers/closures that can fire after unmount. Also panics on a **reentrant read** —
+    /// reading a signal inside its own [`update`](Self::update) closure, where the value is
+    /// temporarily moved out; read it before `update()` or use a separate signal.
     pub fn get(&self) -> T {
         // If this signal is a memo's output, PULL it first (lazy evaluation) —
         // done outside the read borrow, since a recompute runs user code.
@@ -537,7 +539,8 @@ impl<T: 'static + Clone> Signal<T> {
     /// current).
     ///
     /// # Panics
-    /// Panics if the signal has been disposed — same contract as [`get`](Self::get). Use
+    /// Panics if the signal has been disposed, or on a reentrant read inside its own
+    /// [`update`](Self::update) closure — same contract as [`get`](Self::get). Use
     /// [`try_peek`](Self::try_peek) where the signal may already be gone.
     pub fn peek(&self) -> T {
         self.pull_if_memo();
@@ -556,6 +559,11 @@ impl<T: 'static + Clone> Signal<T> {
     /// THE safe read for timer callbacks and any closure that can outlive its
     /// component (mirrors how [`set`](Self::set)/[`update`](Self::update) no-op
     /// after dispose).
+    ///
+    /// # Panics
+    /// The dispose case is handled (returns `None`), but this still panics on a reentrant
+    /// read — calling it on a signal from inside that same signal's [`update`](Self::update)
+    /// closure, where the value is temporarily moved out.
     pub fn try_peek(&self) -> Option<T> {
         self.pull_if_memo();
         with_rt(|rt| rt.signals.get(self.id).map(|s| s.value.downcast_ref::<T>().unwrap().clone()))
@@ -619,6 +627,10 @@ impl<T: 'static + Clone> Signal<T> {
     }
 
     /// Read via a borrow, subscribing.
+    ///
+    /// # Panics
+    /// Same as [`get`](Self::get): panics if the signal has been disposed or is read
+    /// reentrantly inside its own [`update`](Self::update) closure.
     pub fn with<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         let value = self.get();
         f(&value)
@@ -1155,10 +1167,18 @@ pub fn create_store<S: 'static + Clone>(initial: S) -> Store<S> {
 
 impl<S: 'static + Clone> Store<S> {
     /// Read the whole state (subscribing).
+    ///
+    /// # Panics
+    /// Inherits [`Signal::get`]'s contract: panics if the store was disposed, or if read
+    /// reentrantly inside its own [`update`](Self::update) closure.
     pub fn get(&self) -> S {
         self.signal.get()
     }
     /// Select a slice of the state (subscribing).
+    ///
+    /// # Panics
+    /// Same as [`get`](Self::get) — panics if the store was disposed or read reentrantly
+    /// inside its own [`update`](Self::update) closure.
     pub fn select<R>(&self, f: impl FnOnce(&S) -> R) -> R {
         self.signal.with(f)
     }

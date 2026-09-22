@@ -153,6 +153,10 @@ pub struct FocusNode {
 /// Create (or recover) the focus node for the current component. Automatically
 /// unregisters from the focus system when the component unmounts, so navigation
 /// never leaves stale nodes (whose callbacks would touch freed signals) behind.
+///
+/// # Panics
+/// Panics if called outside a component render (there is no current owner to bind the
+/// node to) — this is a hook, so call it at the top level of a component.
 pub fn create_focus() -> FocusNode {
     let id = current_owner().expect("create_focus must be called inside a component");
     crate::reactive::create_cleanup(move || unregister(id));
@@ -165,6 +169,10 @@ pub fn create_focus() -> FocusNode {
 /// keyboard traversal inside a dialog or sheet. Scopes nest: a node belongs to
 /// the innermost enclosing scope. Call at the top level of a component (a hook);
 /// on unmount the scope and any surviving member entries are removed.
+///
+/// # Panics
+/// Panics if called outside a component render (no current owner) — like
+/// [`create_focus`], it is a hook and must be called at a component's top level.
 pub fn create_focus_scope() -> ScopeTag {
     let window = current_window();
     let element = current_owner().expect("create_focus_scope must be called inside a component");

@@ -4,12 +4,20 @@
 > macOS · Windows · Web**. See [PLATFORMS.md](PLATFORMS.md) for per-capability
 > support.
 >
-> **There is no `pebbles build` / bundle command yet.** `pebbles run` is a dev
-> runner (build + watch + hot-restart), not a packager. Everything below is the
-> **manual** 0.1.0 path — plain `cargo build --release` and per-OS packaging done
-> by hand. A one-command `pebbles build` is planned.
+> **`pebbles build` compiles the release artifact; it is not yet a bundler.** It runs
+> the optimized build for a target — `pebbles build` (desktop → `target/release/<name>`)
+> or `pebbles build -d web` (a static wasm bundle → `dist/`) — but the per-OS *packaging*
+> below (`.desktop` file, `.app` bundle, icon embedding, code-signing) is still the
+> **manual** 0.1.0 path. A one-command bundler is planned.
 
-A scaffolded app (`pebbles new`) is a normal Cargo binary. The release build is:
+A scaffolded app (`pebbles new`) is a normal Cargo binary. Build the optimized release
+with the CLI (which wraps `cargo`/Trunk and prints the artifact path + size):
+
+```bash
+pebbles build                    # desktop → target/release/<name>
+```
+
+or drop to Cargo directly for the same result:
 
 ```bash
 cargo build --release            # → target/release/<name>
@@ -156,8 +164,16 @@ Pebbles builds to WebAssembly and runs in **WebGPU** browsers (Chrome/Edge,
 Safari 26+, Firefox with WebGPU on). There is **no WebGL2 fallback** — a browser
 without WebGPU shows a "needs WebGPU" message, not your app.
 
-The build is driven by [Trunk](https://trunkrs.dev) — the same toolchain
-`pebbles run -d web` uses. Ship a static bundle with:
+The one-command path is `pebbles build -d web` — it checks the wasm target and Trunk,
+then emits a static bundle to `dist/` and prints its size:
+
+```bash
+pebbles build -d web                          # → dist/ (deploy anywhere static)
+```
+
+Under the hood it drives [Trunk](https://trunkrs.dev) — the same toolchain
+`pebbles run -d web` uses. To run the equivalent by hand (e.g. to override the
+`--public-url` for a sub-path deploy):
 
 ```bash
 rustup target add wasm32-unknown-unknown      # once

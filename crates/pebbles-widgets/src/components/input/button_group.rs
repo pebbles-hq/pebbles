@@ -6,11 +6,11 @@
 
 use pebbles_foundation::Axis;
 use pebbles_foundation::MainAxisSize;
-use pebbles_render::{Border, BorderRadius, BoxDecoration};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, SemanticsRole};
 
 use super::button::Button;
 use crate::theme::theme;
-use crate::widgets::{Container, column, row};
+use crate::widgets::{Container, column, row, semantics};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 /// A joined group of buttons. Build with [`button_group`].
@@ -51,7 +51,8 @@ impl IntoWidget for ButtonGroup {
             } else {
                 column(kids).main_axis_size(MainAxisSize::Min).spacing(self.spacing).into_widget()
             };
-            return line;
+            // Expose the set as a single group to assistive tech (like the joined path below).
+            return semantics(SemanticsRole::Group, "", line).into_widget();
         }
 
         // Joined segmented control: flatten each button's radius, divide with a
@@ -77,14 +78,15 @@ impl IntoWidget for ButtonGroup {
                 .main_axis_size(MainAxisSize::Min)
                 .into_widget()
         };
-        Container::new()
+        let group = Container::new()
             .decoration(
                 BoxDecoration::new()
                     .border(Border::new(th.colors.border, th.border_width))
                     .radius(BorderRadius::all(th.radius)),
             )
             .clip()
-            .child(line)
-            .into_widget()
+            .child(line);
+        // Expose the segmented control as a single group to assistive tech.
+        semantics(SemanticsRole::Group, "", group).into_widget()
     }
 }

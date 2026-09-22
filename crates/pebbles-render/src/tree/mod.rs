@@ -163,6 +163,12 @@ impl RenderTree {
         self.nodes.len()
     }
 
+    /// The laid-out size of the node `id`.
+    ///
+    /// # Panics
+    /// Panics if `id` is not a live node in this tree (a stale/disposed `RenderId`) — it
+    /// indexes directly. Use [`children_of`](Self::children_of)/[`try_object_mut`](Self::try_object_mut)
+    /// style access if the id may be gone.
     pub fn size_of(&self, id: RenderId) -> Size {
         self.nodes[id].size
     }
@@ -264,6 +270,11 @@ impl RenderTree {
         out
     }
 
+    /// The node's offset relative to its parent.
+    ///
+    /// # Panics
+    /// Panics if `id` is not a live node in this tree (a stale/disposed `RenderId`) — it
+    /// indexes directly.
     pub fn offset_of(&self, id: RenderId) -> Offset {
         self.nodes[id].offset
     }
@@ -271,10 +282,20 @@ impl RenderTree {
     /// Replace the boxed render object at `id` in place, preserving its structural
     /// links. Used by the widget layer when a widget updates its render object's
     /// properties without changing the tree shape.
+    ///
+    /// # Panics
+    /// Panics if `id` is not a live node (a stale `RenderId`), or if the object is
+    /// currently taken out of the tree (i.e. called during that node's own layout pass).
+    /// Use [`try_object_mut`](Self::try_object_mut) when the node may be gone.
     pub fn object_mut(&mut self, id: RenderId) -> &mut dyn RenderObject {
         self.nodes[id].object.as_deref_mut().expect("object present outside of layout")
     }
 
+    /// A shared borrow of the render object at `id`.
+    ///
+    /// # Panics
+    /// Panics if `id` is not a live node (a stale `RenderId`), or if the object is
+    /// currently taken out of the tree (i.e. called during that node's own paint pass).
     pub fn object_ref(&self, id: RenderId) -> &dyn RenderObject {
         self.nodes[id].object.as_deref().expect("object present outside of paint")
     }

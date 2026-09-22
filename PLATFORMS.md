@@ -80,7 +80,10 @@ that touch the OS in a platform-specific way have restrictions:
    JNI backend is a follow-up). The core's in-process fallback still keeps **intra-app**
    copy/paste working. iOS (✅) uses the system pasteboard.
 7. **Web / iOS accessibility** — the semantics tree is still built in memory, just
-   not published: there is no AccessKit adapter for those platforms yet (upstream).
+   not published: there is no AccessKit adapter for those platforms yet (upstream). On
+   **web** the AccessKit bridge is a **no-op stub**, so screen-reader features that ride on
+   a published tree — focus announcements, the modal-barrier "announced-behind-modal"
+   behavior, live regions — work on **desktop only**.
 8. **Soft keyboard / IME** is full on desktop; on mobile/web it is wired but not
    yet runtime-hardened. On **web**, CJK/dead-key composition and the mobile soft
    keyboard need `App::web_ime(true)` (see the out-of-scope note below).
@@ -88,7 +91,11 @@ that touch the OS in a platform-specific way have restrictions:
    Space Grotesk, Lora, plus any you register with `App::font`) **and** the bundled
    **Tabler** icon set (~5100 outline `tabler::*` + ~1050 filled `tabler::filled::*`,
    which replaced the previous Lucide set) are compiled in and render on every platform.
-   Only *system-font discovery* is desktop-only for now.
+   Only *system-font discovery* is desktop-only for now. **Icon binary-size footgun:**
+   naming a glyph by its `const` (`tabler::CAMERA`) lets the linker drop every icon you
+   don't reference; calling `tabler::by_name` or iterating `tabler::ALL` links the whole
+   ~6,184-glyph table into the binary (the lookup can reach any of them), so use `by_name`
+   only when the name is genuinely dynamic.
 10. **Web async** has no OS threads: `spawn`/`create_resource` run the work inline
     and still deliver the result through the per-frame pump (the reactive contract
     holds). `tokio` (`create_resource_future`) is native-only; on web use `spawn`.
@@ -133,6 +140,11 @@ Not implemented yet — call sites that expect these will find nothing wired:
   there is no grid-fitting at small sizes (subpixel positions ride as-is). Fine on
   HiDPI; slightly softer than a hinted renderer at low DPI. Configurable hinting is a
   follow-up.
+- **Form / validation framework** — there is **no** built-in form-state or validation
+  layer, and this is a **deliberate** 0.1.0 non-feature (parked, see [`WIDGETS.md`](WIDGETS.md)
+  §10), not a gap. Drive validation with plain signals: a `Signal` per field plus a derived
+  error `Signal`/memo, and gate submit on it. The input widgets already expose `.error(..)`
+  slots to render the result.
 
 ## Detecting the platform in code
 

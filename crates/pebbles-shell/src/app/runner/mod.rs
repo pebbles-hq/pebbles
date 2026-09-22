@@ -626,6 +626,11 @@ impl Runner {
             }
             (MouseButton::Middle, ElementState::Pressed) => self.ui.dispatch_tertiary_down(cursor),
             (MouseButton::Middle, ElementState::Released) => self.ui.dispatch_tertiary_up(cursor),
+            // The desktop Back/Forward mouse buttons drive router history. `back`/`forward`
+            // self-guard on `can_back`/`can_forward` and return whether they moved, so we
+            // only report the press as consumed (→ redraw) when history actually advanced.
+            (MouseButton::Back, ElementState::Pressed) => pebbles_core::router::back(),
+            (MouseButton::Forward, ElementState::Pressed) => pebbles_core::router::forward(),
             _ => false,
         }
     }

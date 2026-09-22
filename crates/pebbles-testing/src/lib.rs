@@ -72,6 +72,10 @@ pub fn frame(ui: &mut Ui, env: &mut TextEnv, window: Size) {
 
 /// Reconcile + lay out + paint, looping the corrective-relayout settle (see
 /// [`Harness::draw`]) and discarding the scene.
+///
+/// # Panics
+/// Panics if layout/paint does not settle within 8 passes — geometry is oscillating (a
+/// bug in a widget that never reaches a stable size). Fails loudly rather than hanging.
 pub fn draw_frame(ui: &mut Ui, env: &mut TextEnv, window: Size) {
     for _ in 0..8 {
         ui.make_current();
@@ -165,6 +169,10 @@ impl Harness {
     /// pass would read unsettled geometry, so this pumps until paint stops
     /// asking — bounded, so a genuinely oscillating tree fails loudly rather
     /// than hanging.
+    ///
+    /// # Panics
+    /// Panics if the geometry does not settle within 8 layout/paint passes (an
+    /// oscillating tree) — by design, so the bug surfaces instead of hanging the test.
     pub fn draw(&mut self) -> Scene {
         for _ in 0..8 {
             self.ui.make_current();
@@ -304,7 +312,11 @@ impl Harness {
         self.ui.render_tree().find_all::<T>()
     }
 
-    /// Read a typed render object out of the tree (panics if `id` is not a `T`).
+    /// Read a typed render object out of the tree.
+    ///
+    /// # Panics
+    /// Panics if `id` is not a live node (a stale `RenderId`) or if its render object is
+    /// not of type `T` (wrong-type downcast).
     pub fn object<T: pebbles_render::RenderObject>(&self, id: pebbles_render::RenderId) -> &T {
         self.ui
             .render_tree()
@@ -314,6 +326,9 @@ impl Harness {
     }
 
     /// The laid-out size of a render node.
+    ///
+    /// # Panics
+    /// Panics if `id` is not a live node (a stale `RenderId`).
     pub fn size_of(&self, id: pebbles_render::RenderId) -> Size {
         self.ui.render_tree().size_of(id)
     }

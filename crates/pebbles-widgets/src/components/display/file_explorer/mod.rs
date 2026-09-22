@@ -352,7 +352,8 @@ impl FileExplorer {
     }
 
     /// Rename a node — on disk in filesystem mode, in the model otherwise.
-    pub fn rename_node(&self, id: u64, name: String) -> bool {
+    pub fn rename_node(&self, id: u64, name: impl Into<String>) -> bool {
+        let name = name.into();
         let name = name.trim().to_string();
         if name.is_empty() {
             self.renaming.set(None);

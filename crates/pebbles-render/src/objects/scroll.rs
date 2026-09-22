@@ -368,6 +368,22 @@ impl RenderScroll {
         }
     }
 
+    /// Emit a self-contained, balanced `Start → Update → End` triple for a programmatic
+    /// scroll (`scroll_to`/`ensure_visible`), which snaps directly instead of animating.
+    /// Any activity already open is closed first (its `Start` was emitted earlier), so a
+    /// listener pairing `Start`/`End` never sees an `End` without a matching `Start`.
+    fn notify_programmatic(&mut self, delta: f64) {
+        if self.was_moving {
+            self.was_moving = false;
+            self.emit(ScrollEvent::End);
+        }
+        self.was_moving = true;
+        self.emit(ScrollEvent::Start);
+        self.emit(ScrollEvent::Update { delta });
+        self.was_moving = false;
+        self.emit(ScrollEvent::End);
+    }
+
     /// Move the scroll *target* by `delta` (the spring eases the offset there).
     /// Returns whether the target moved (false when already pinned at an edge — the
     /// caller uses that to bubble the scroll to a parent). An explicit scroll stops
@@ -758,10 +774,7 @@ impl RenderObject for RenderScroll {
             self.target = t;
             self.velocity = 0.0;
             if delta.abs() > 1e-9 {
-                self.begin_activity();
-                self.emit(ScrollEvent::Update { delta });
-                self.was_moving = false;
-                self.emit(ScrollEvent::End);
+                self.notify_programmatic(delta);
             }
         }
 
@@ -934,6 +947,43 @@ mod tests {
             "60 Hz vs 144 Hz land together: {} vs {}",
             a.offset,
             b.offset
+        );
+    }
+
+    #[test]
+    fn programmatic_scroll_notifications_are_balanced() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let log: Rc<RefCell<Vec<ScrollEvent>>> = Rc::new(RefCell::new(Vec::new()));
+        let sink = log.clone();
+        let mut s = mk(5000.0);
+        s.on_scroll = Some(Rc::new(move |n| sink.borrow_mut().push(n.event)));
+
+        // From idle: a programmatic snap emits its own Start → Update → End.
+        s.notify_programmatic(120.0);
+        // With an activity already open (a Start with no End yet), the programmatic snap
+        // must close it and still end balanced — never an End without a matching Start.
+        s.begin_activity();
+        s.notify_programmatic(80.0);
+
+        let ev = log.borrow();
+        let mut depth = 0i32;
+        for e in ev.iter() {
+            match e {
+                ScrollEvent::Start => depth += 1,
+                ScrollEvent::End => {
+                    depth -= 1;
+                    assert!(depth >= 0, "End with no matching Start: {:?}", *ev);
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(depth, 0, "unbalanced Start/End: {:?}", *ev);
+        assert!(
+            ev.iter().any(|e| matches!(e, ScrollEvent::Update { .. })),
+            "programmatic scroll emitted an Update: {:?}",
+            *ev
         );
     }
 

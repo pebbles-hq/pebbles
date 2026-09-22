@@ -7,9 +7,11 @@
 //! .on_close(..).open()` returns a [`WindowId`]; [`close_window`] closes it. `winit`
 //! stays hidden — the shell drains these requests and manages the windows.
 //!
-//! The first (main) window is created by `App::run` in the shell crate. Popovers and
-//! modal dialogs currently target the **main** window only; secondary windows host
-//! the core widget set.
+//! The first (main) window is created by `App::run` in the shell crate. Overlays are
+//! per-window: popovers, dropdowns, dialogs, and sheets are keyed by
+//! [`current_window`](pebbles_core::reactive::current_window), so each window hosts its
+//! own transient-overlay and modal stacks (a dialog opened from a secondary window
+//! stays in that window). Escape dismisses the topmost surface of the focused window.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
