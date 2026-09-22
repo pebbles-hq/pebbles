@@ -35,8 +35,7 @@ per history entry, wired by `use_scroll_restoration`) plus **focus-on-navigation
 **`use_match`** (`useMatch`), **typed params** (`RouteParams::get_as::<T>`),
 **`*wildcard`** catch-all segments, and **route transitions** (`RouteView::transition`,
 a path-keyed cross-fade). The shell applies the route title to the main window
-(`app/runner/windows.rs`, winit `set_title` → OS title / `document.title`), and mobile
-hardware **Back** falls through to `router::back()` (`mobile_runtime.rs`). Excluded by
+(`app/runner/windows.rs`, winit `set_title` → OS title / `document.title`). Excluded by
 design: SSR/form `action`/`cache`, `<HashRouter>`/`base`, and lazy route code-splitting.
 
 ### Added — offscreen capture
@@ -75,7 +74,7 @@ catch both build-time and descendant-render panics.
 `pebbles-widgets/src/widgets/` (35 flat files) is now grouped by concern —
 `layout/`, `animation/`, `interaction/`, `scrolling/`, `painting/`, `text/` — with
 genuine singletons (`view`, `media`, `semantics`, `keyed`, `probe`, `spinner`,
-`stream_builder`, `mobile_runtime`) left loose. `pebbles-core` gains `input/`
+`stream_builder`) left loose. `pebbles-core` gains `input/`
 (focus, keyboard, key, shortcuts, scroll), re-exported to the crate root so
 `pebbles_core::focus` etc. are unchanged. Public paths are byte-identical
 (`pebbles_widgets::<Item>` / `pebbles_core::<module>`); this is a file-tree move
@@ -87,7 +86,7 @@ front door" organizing rule. The reactive core and core's root vocabulary
 `pebbles_core::router` is a history stack of `Location`s (path + parsed `?query`)
 with `navigate` / `replace` / `back` / `forward`, driven by a global reactive signal
 so any component that reads `location()` / `path()` / `query()` re-renders on
-navigation. **One model, every platform:** desktop & mobile keep it purely
+navigation. **One model, every platform:** desktop keeps it purely
 in-memory (no URL); on **web** the shell installs a `UrlSync` bridge so the same
 navigation mirrors to the browser — deep-linkable URLs, working Back/Forward, and
 `popstate` fed back in — with the history `index` carried in `history.state` so it
@@ -118,8 +117,8 @@ reconciler restores the ancestor chain's contexts before an independent re-rende
 A single switch reshapes the whole catalog, like Flutter's Material vs Cupertino.
 `Theme` gained a base [`DesignLanguage`] — **`Compact`** (the new default: flat,
 square, dense — for desktop / power-user tools), **`Tailwind`** (the original
-shadcn-inspired look), and **`Material`** (Material 3: rounded, roomy, elevated —
-the closest base for a mobile app). It seeds shape/density/elevation tokens
+shadcn-inspired look), and **`Material`** (Material 3: rounded, roomy, elevated).
+It seeds shape/density/elevation tokens
 (`radius` + `radius_sm/md`, `spacing`, `control_pad_x/y`, `control_height`,
 `border_width`, `elevation`, `density`) plus helpers (`design(lang)`, `pad()`,
 `elevation_shadow()`, `Theme::compact()/tailwind()/material()`). Colors stay
@@ -166,30 +165,6 @@ now wraps its surface in a tap-consuming `GestureDetector` (Flutter's modal cont
 absorbs pointer events); only a tap on the scrim *outside* the panel dismisses.
 Regression-tested (`tests/suite/sheet_dismiss.rs`).
 
-### Added — `mobile`: direct messaging + delete-your-post
-Grew the social sample further: a **direct-messaging** surface (a full-screen
-takeover with a conversation list + threads, chat bubbles, an input bar, a faked
-reply, and an unread badge on a **top-right messages button**), a **dog logo** on
-the top bar's leading edge, and **delete-your-own-post** via the `⋯` menu → an
-alert-dialog confirm. More `store.rs` state + `screens/messages.rs` +
-`components/post_menu.rs`.
-
-### Added — `mobile` is now a full social app
-The `mobile` example grew from a layout sketch into a **fully functional** social
-app, driven entirely by in-memory state (no server — the illusion is all
-`store.rs`). It's the reference for a real, multi-file Pebbles app + a stress test
-of the state manager and the catalog (sheets, toasts, network images):
-
-- **Feed** with network media (Lorem Picsum) + avatars (pravatar); **like**,
-  **bookmark**, **follow**, and a **comment** bottom sheet — all update live.
-- **Compose** a post from a bottom sheet (text + an attachable photo) → prepends
-  to the feed + a toast.
-- **Notifications** tab with an unread **badge** on the nav item + "Mark all read".
-- **Profile**: editable name/bio (bottom sheet), stats, the user's own posts, and
-  a **live dark-mode toggle** (`toggle_theme`).
-- Organized into `store.rs` (state manager) + `screens/` (feed/notifications/
-  profile) + `components/` (post card, compose, comments), heavily commented.
-
 ### Fixed / Changed — starter examples reworked
 The starter examples (`counter`, `todo`, `temperature`, `stopwatch`) were made
 actually-working, prettier (themed cards), and reorganized as teaching codebases:
@@ -212,13 +187,9 @@ actually-working, prettier (themed cards), and reorganized as teaching codebases
   single-files. All heavily commented so the codebase reads as a how-to.
 
 ### Added — showcase sample apps
-Three larger structural samples alongside the starters (counter/todo/temperature/
+Two larger structural samples alongside the starters (counter/todo/temperature/
 stopwatch), each a single-file `examples/` app:
 
-- **`mobile`** — a mobile app shell at phone size (390×844): a `Scaffold` with a top
-  app bar, **bottom navigation** switching per-tab screens (a like-toggling feed, a
-  discover grid, a profile), and a FAB. How a mobile app is normally structured
-  (desktop-run for now — only the window size differs).
 - **`desktop`** — a desktop dashboard: a collapsible `SideNav` rail + top bar +
   content (stat cards, recent-activity list).
 - **`landing`** — a scrolling marketing landing page (hero / features / code /
@@ -248,9 +219,6 @@ A batch of buildable-now Flutter-parity widgets:
   scroll-away (header + body share one scroll position) or `.pinned(true)` (fixed
   header, body scrolls beneath). The sliver-style collapse-then-scroll stays
   `CollapsingHeader`/`StickyList`.
-- **`Tooltip` long-press on touch** — a long-press shows the tooltip on touch
-  devices (no hover); lifting or ending the press hides it.
-
 - **`ScrollNotification` + `scroll_view(..).on_scroll(cb)`** — a scroll view's
   notification callback carrying live `ScrollMetrics` (pixels / max / viewport /
   fraction) and Start/Update/End/Overscroll events. Pebbles' direct, reactive
@@ -267,14 +235,13 @@ A batch of buildable-now Flutter-parity widgets:
   non-modal panel above the bottom bar).
 - **`fade_in_image`** (FadeInImage) — shows a placeholder, then cross-fades in the
   loaded network image; `.fade(secs)` (`image-view` feature).
-- **Mobile-runtime hooks** (framework side; the mobile shell drives them on-device):
-  `Scaffold::resize_to_avoid_bottom_inset` lifts the shell above the soft keyboard by
+- **Window-inset & system hooks** (framework side; the shell drives them):
+  `Scaffold::resize_to_avoid_bottom_inset` lifts the shell above a bottom inset by
   a now-reactive `MediaQuery.view_insets` (`set_view_insets`/`set_safe_area_padding`/
   `set_device_pixel_ratio`/`set_text_scale`); `pop_scope` + `dispatch_back` intercept
-  the Android back button (Flutter's `PopScope`); `set_system_ui_overlay_style`
+  a system Back request (Flutter's `PopScope`); `set_system_ui_overlay_style`
   (`SystemUiOverlayStyle`) requests status/nav-bar styling (Flutter's `SystemChrome`).
-  All desktop-tested; on-device wiring (keyboard height, back button, chrome apply) is
-  the mobile shell's remaining step.
+  All desktop-tested.
 - **`default_text_style` / `animated_default_text_style`** (DefaultTextStyle) — an
   ambient text style for a subtree. A descendant `Text` inherits each property it
   didn't set explicitly; nested providers compose; the animated variant eases font

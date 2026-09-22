@@ -17,8 +17,8 @@ ratified · **🚫 decided OUT** (p2 §J — do not "helpfully" add).
 
 The interactive gallery (~50 screens, one per component family) lives in its own repo, [pebbles-hq/pebbles-docs](https://github.com/pebbles-hq/pebbles-docs) (the in-repo `examples/landing` keeps its name).
 
-**Platform support:** every widget here works on all six platforms (Linux, macOS,
-Windows, web, Android, iOS) — the catalog is universal. The few OS-specific
+**Platform support:** every widget here works on all four platforms (Linux, macOS,
+Windows, web) — the catalog is universal. The few OS-specific
 capabilities (multi-window, native menu bar, global hotkeys, native folder picker,
 remote-URL images) and their per-platform status live in
 [`PLATFORMS.md`](PLATFORMS.md), and you can branch on the target in code with
@@ -82,7 +82,7 @@ remote-URL images) and their per-platform status live in
 | Implicit `Animated*` (`AnimatedOpacity`/`Scale`/`Rotation`/`Slide`/`Align`/`Padding`) | ✅ | one-property implicit tweens (siblings of `AnimatedContainer`) |
 | Explicit `*Transition` (`Fade`/`Scale`/`Rotation`/`Slide`/`Size`/`Positioned`/`DecoratedBox`) | ✅ | `Signal`-driven (controller-style); `SizeTransition` via `Align` height/width-factor; `PositionedTransition` tracks a `Signal<Rect>`; `DecoratedBoxTransition` lerps a `BoxDecoration` (color/radius/border/shadow) by a `Signal<f64>` |
 | `AnimatedSwitcher` · `AnimatedCrossFade` | ✅ | cross-fade on key-change / between two children |
-| `Dismissible` | ✅ | swipe-to-dismiss (drag + touch) → `on_dismissed` |
+| `Dismissible` | ✅ | swipe-to-dismiss (drag) → `on_dismissed` |
 | `Align` width/height-factor | ✅ | `.width_factor()`/`.height_factor()` (shrink-wrap scaled) |
 | `keyed` / `Keyed` (KeyedSubtree) | ✅ | attach a reconciliation key to any child; the reconciler now matches keyed children BY KEY across positions (insert/remove/reorder preserves element state) — prerequisite for AnimatedList + reorderable lists |
 | `AnimatedList` · `AnimatedGrid` | ✅ | items animate in on add / out on remove (`animated_list`/`animated_grid`, `(u64,child)` pairs); removed items kept for one exit tween then dropped. List = size+fade (column); grid = scale+fade (flowing `Wrap`) |
@@ -137,7 +137,7 @@ remote-URL images) and their per-platform status live in
 | `banner` (MaterialBanner) | ✅ | full-width message bar: leading icon + trailing actions + bottom divider; persistent/inline (unlike a toast) |
 | `placeholder` | ✅ | Canvas-backed dev box (border + diagonal X); `.size()`/`.color()`/`.stroke_width()` — the "not built yet" marker |
 | `Progress` | ✅ | determinate bar; indeterminate = `Spinner` |
-| `Tooltip` | ✅ | delay/rich/style, `.side()` + flip + lateral clamp, show-on-focus (a11y), and long-press-to-show on touch |
+| `Tooltip` | ✅ | delay/rich/style, `.side()` + flip + lateral clamp, show-on-focus (a11y) |
 | `HoverCard` | ✅ | delay + stays-open-over-card grace |
 | `Table` (data table) | ✅ | sort (multi, configurable glyph), selection + select-all, striped, hover, empty state |
 | `ListTile` | ✅ | style/tap/selected/dense |
@@ -159,14 +159,14 @@ remote-URL images) and their per-platform status live in
 | `Accordion` · `Collapsible` | ✅ | single/multiple, default-open, events |
 | `Scaffold` · `TopPanel` · `SideNav` · `BottomNav` | ✅ 🔶C8g | top/side/body/bottom + `.fab()` + `.persistent_footer()` + `.drawer()`/`.end_drawer()` + `.bottom_sheet()` + `.resize_to_avoid_bottom_inset()`; SideNav rail-collapse (`.collapsible()`) done; dedicated chrome gallery screen (C8g) open |
 | `Scaffold::drawer` / `end_drawer` · `Scaffold::bottom_sheet` | ✅ | left/right drawer slots opened by `open_drawer()`/`open_end_drawer()` or the `drawer_button()` hamburger (slide in as a sheet); a persistent non-modal `bottom_sheet` panel above the bottom bar |
-| `Scaffold::resize_to_avoid_bottom_inset` | ✅ | lifts the shell above the soft keyboard by `MediaQuery.view_insets.bottom` (reactive; default on). Zero on desktop; driven by `set_view_insets` |
+| `Scaffold::resize_to_avoid_bottom_inset` | ✅ | lifts the shell above the bottom `view_inset` by `MediaQuery.view_insets.bottom` (reactive; default on). Zero on desktop; driven by `set_view_insets` |
 | `draggable_scrollable_sheet` | ✅ | a bottom-anchored panel sized as a fraction of the available space; drag the top handle to resize between `.min`/`.max` (snapping to `.snap` stops); the body scrolls when it overflows |
-| `media_query` (`MediaQueryData`) | ✅ | window metrics — size / orientation / safe-area `padding` / keyboard `view_insets` / dpr / text scale; mobile insets fill in with the mobile shell (zero on desktop) |
-| `safe_area` (SafeArea) | ✅ | inset past notch/status-bar/home-indicator (`.top/.bottom/.left/.right`); a no-op on desktop (zero insets), real with the mobile shell |
+| `media_query` (`MediaQueryData`) | ✅ | window metrics — size / orientation / safe-area `padding` / keyboard `view_insets` / dpr / text scale; insets fill in when the shell reports them (zero on desktop) |
+| `safe_area` (SafeArea) | ✅ | inset past reserved screen edges (`.top/.bottom/.left/.right`); a no-op on desktop (zero insets) |
 | `orientation_builder` (OrientationBuilder) | ✅ | rebuild Portrait/Landscape from the box it's given (reactive to its bounds) |
-| `pop_scope` (PopScope) + `dispatch_back` | ✅ | intercept the Android hardware back button; `.blocking()`/`.on_pop()`; the shell calls `dispatch_back()` (consumed when a `pop_scope` is blocking) |
-| `set_system_ui_overlay_style` (SystemChrome) | ✅ | request status/nav-bar styling (`SystemUiOverlayStyle`); the mobile shell applies it, desktop no-op |
-| `set_view_insets` / `set_safe_area_padding` / `set_device_pixel_ratio` / `set_text_scale` | ✅ | the mobile shell reports metrics into the reactive `MediaQuery` (drives `SafeArea` / `resize_to_avoid_bottom_inset`) |
+| `pop_scope` (PopScope) + `dispatch_back` | ✅ | intercept a system Back request; `.blocking()`/`.on_pop()`; the shell calls `dispatch_back()` (consumed when a `pop_scope` is blocking) |
+| `set_system_ui_overlay_style` (SystemChrome) | ✅ | request status/nav-bar styling (`SystemUiOverlayStyle`); the shell applies it where supported, desktop no-op |
+| `set_view_insets` / `set_safe_area_padding` / `set_device_pixel_ratio` / `set_text_scale` | ✅ | the shell reports metrics into the reactive `MediaQuery` (drives `SafeArea` / `resize_to_avoid_bottom_inset`) |
 | `Tabs` | ✅ | design variants, disabled tabs, keyboard, focus ring |
 | `Breadcrumb` | ✅ | `.max_visible` middle-collapse |
 | `Pagination` | ✅ | Numbers/Simple/Arrows designs; full control — first/last jump (double-chevrons, `.edges(true)` default), prev/next arrows, numbered pills with ellipses; every control is a bordered button, disables at the bounds; unified `on_page` |

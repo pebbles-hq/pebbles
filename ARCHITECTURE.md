@@ -44,7 +44,7 @@ pebbles-cli          the `pebbles` binary (new / run / doctor): drives the works
                      outside the lib DAG
 ```
 
-`examples/*` (counter, todo, temperature, stopwatch, mobile, desktop, landing) are
+`examples/*` (counter, todo, temperature, stopwatch, desktop, landing) are
 workspace members that consume the umbrella crate at runtime — the consumer-facing API
 check. The larger samples (`desktop`, `landing`) additionally dev-dep the harness crates
 (`pebbles-testing` + `pebbles-render`/`pebbles-widgets`) for smoke tests and forward the
@@ -75,7 +75,7 @@ Concretely, the two large crates:
   explicit `*Transition`), `interaction/` (gesture, pointer, drag-and-drop, focus),
   `scrolling/`, `painting/` (canvas, clip, effects), `text/`, `control/` (SolidJS-style
   `for_each`/`suspense`/`error_boundary`). Cross-cutting singletons (`view`, `media`,
-  `semantics`, `keyed`, `probe`, `spinner`, `stream_builder`, `mobile_runtime`) stay
+  `semantics`, `keyed`, `probe`, `spinner`, `stream_builder`) stay
   loose. The higher-level catalog is separately under
   `components/{input,display,layout,navigation}/`.
 - **`pebbles-core/src/`** keeps its public vocabulary at the root (`widget`,
@@ -154,9 +154,7 @@ is enabled per build.
 The remaining integrations are **default-off cargo features**, forwarded through the
 umbrella crate: `native-menus`, `global-hotkeys` (shell), `image-view` (`ImageView` +
 `image_from_*`; Avatar `src` degrades to initials without it), `file-dialogs`
-(`pick_folder`), `tokio` (the runtime's `create_resource_future` / `spawn_future`),
-and the Android base-class pair `android-native-activity` / `android-game-activity`
-(winit needs exactly one on Android).
+(`pick_folder`), and `tokio` (the runtime's `create_resource_future` / `spawn_future`).
 
 ## Where a change belongs
 
@@ -166,7 +164,7 @@ and the Android base-class pair `android-native-activity` / `android-game-activi
 | add a primitive widget | `pebbles-widgets/src/widgets/<concern>/` (layout, animation, interaction, scrolling, painting, text) — or a loose file if it's a genuine singleton |
 | add a catalog component | `pebbles-widgets/src/components/{input,display,layout,navigation}/` |
 | change input handling (focus/keyboard/shortcuts/scroll) | `pebbles-core/src/input/` |
-| change routing | model + guards/query/title/scroll in `pebbles-core/src/router.rs`, browser bridge in `pebbles-shell/src/web_router.rs`, `RouteView`/`nest`/`outlet`/`link`/`redirect`/`use_match` in `pebbles-widgets/src/components/navigation/routing.rs`; title application in `pebbles-shell/src/app/runner/windows.rs`, mobile Back in `pebbles-widgets/.../mobile_runtime.rs` |
+| change routing | model + guards/query/title/scroll in `pebbles-core/src/router.rs`, browser bridge in `pebbles-shell/src/web_router.rs`, `RouteView`/`nest`/`outlet`/`link`/`redirect`/`use_match` in `pebbles-widgets/src/components/navigation/routing.rs`; title application in `pebbles-shell/src/app/runner/windows.rs` |
 | change theming / the style system | `pebbles-widgets/src/design/` (theme, style, modifiers, fonts, text direction) |
 | change an overlay layer | `pebbles-widgets/src/services/` (overlay, dialog, sheet, toast, global menu) |
 | change window / native-menu behavior | `pebbles-widgets/src/platform/` |

@@ -16,7 +16,7 @@ App::new(my_root()).title("Hello").size(480, 320).run()?;
 The render backend is chosen by a feature that forwards to `pebbles-render`
 (`vello-hybrid` default, `vello` opt-in); the GPU host for each lives behind a
 backend-agnostic frame loop. Also handles global hotkeys, offscreen
-widget→PNG/RGBA capture, and the wasm/Android entry-point plumbing (the OS-side
+widget→PNG/RGBA capture, and the wasm entry-point plumbing (the OS-side
 glue behind `#[pebbles::main]`).
 
 Shell sits at the top of the layered stack in the 10-crate framework

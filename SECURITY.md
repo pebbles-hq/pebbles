@@ -35,7 +35,7 @@ boundary. What is in scope:
 
 - **Memory safety.** The framework's only `unsafe` block is the Windows
   native-menu FFI bridge (`pebbles-shell/src/native_menu.rs`); the proc-macro
-  additionally emits one `#[unsafe(no_mangle)]` for the Android entry point. Any
+  additionally emits one `#[unsafe(no_mangle)]` for the app's native entry point. Any
   UB there is a real vulnerability class; Miri runs in CI for exactly this reason.
   (The reactive runtime contains no `unsafe`.)
 - **Untrusted *content*.** A widget must not crash, hang, or corrupt memory on

@@ -89,7 +89,6 @@ cargo run -p temperature    # two-way binding (°C ↔ °F)
 cargo run -p stopwatch      # start / stop / reset — a ticking loop
 
 # showcase layouts — how real apps are structured
-cargo run -p mobile         # a mobile app shell (phone size): top bar + bottom nav + FAB
 cargo run -p desktop        # a desktop dashboard: side rail + top bar + content
 cargo run -p landing        # a scrolling landing page (hero / features / code / footer)
 ```
@@ -154,7 +153,7 @@ one is compiled at a time.
 
 | Backend | Feature | Technique | Best for |
 |---------|---------|-----------|----------|
-| **Vello Hybrid** *(default)* | `vello-hybrid` | Hybrid CPU-preprocess + GPU raster ("sparse strips") | Every normal app; battery-sensitive and mobile targets |
+| **Vello Hybrid** *(default)* | `vello-hybrid` | Hybrid CPU-preprocess + GPU raster ("sparse strips") | Every normal app; battery-sensitive targets |
 | **Vello** *(opt-in)* | `vello` | GPU-compute rasterization | Vector-heavy, continuously animated surfaces — design tools, node/graph canvases |
 
 **Vello Hybrid is the default** — it's the lower-power path and the right choice for
@@ -164,7 +163,7 @@ flag — no code changes.
 
 ### Selecting a backend
 
-With the CLI — the selection applies on **desktop, web, and Android**:
+With the CLI — the selection applies on **desktop and web**:
 
 ```bash
 pebbles run                              # Vello Hybrid (default)
@@ -198,25 +197,17 @@ claim — the platform builds and passes the headless test suites in
 | **Linux** (X11 + Wayland) | ✅ Supported | The primary development platform: built, tested and run daily, including GPU device-loss recovery and long input-storm soaks. |
 | **Windows** | ✅ Supported | Builds and passes the full suite on `windows-latest` in CI. Native window menu behind `native-menus`. Less interactive polish than Linux — visual/input reports welcome. |
 | **macOS** | ✅ Supported | Builds and passes the full suite on `macos-latest` in CI. Has the most platform-specific code (global menu bar, `Mod`→⌘ shortcut mapping). Same interactive-polish caveat as Windows. |
-| **Web** (wasm) | 🟢 Runs (WebGPU) | `pebbles run -d web` builds the wasm bundle, serves it (via Trunk), and opens the browser — GPU init is async (no main-thread block), the canvas entry uses winit `spawn_app`, and touch/pointer input works. `--renderer` selects the backend here too. Requires a **WebGPU** browser (the Vello renderers target WebGPU; no WebGL2 fallback) — Chrome/Edge, Safari 26+, or Firefox with WebGPU. Fully buildable from Linux. |
-| **Android** | 🟡 Compiles (entry + runner ready) | Framework **and shell** compile for `aarch64-linux-android` (CI-gated). The `android_main` entry (`#[pebbles::main]`), touch input, and a one-command runner (`pebbles run -d android`, via cargo-apk2) are in place. Requires **Vulkan** (universal on Android 7+). The on-device APK build/run needs the NDK + a device (check `pebbles doctor`); surface suspend/resume + soft keyboard are follow-ups. AccessKit ships an Android adapter, so TalkBack is reachable. |
-| **iOS** | 🟡 Compiles | Framework **and shell** compile for `aarch64-apple-ios` (Metal — no GPU caveat), gated on the CI macOS runner. **Touch input works** (shared with Android). Not yet a running app: needs the app-bundle entry and the on-device build, which **requires a Mac + Xcode** (Apple's constraint — no Linux/Windows path). |
+| **Web** (wasm) | 🟢 Runs (WebGPU) | `pebbles run -d web` builds the wasm bundle, serves it (via Trunk), and opens the browser — GPU init is async (no main-thread block), the canvas entry uses winit `spawn_app`, and pointer input works. `--renderer` selects the backend here too. Requires a **WebGPU** browser (the Vello renderers target WebGPU; no WebGL2 fallback) — Chrome/Edge, Safari 26+, or Firefox with WebGPU. Fully buildable from Linux. |
 
-Legend: ✅ built + tested in CI · 🟢 runs (WebGPU browser) · 🟡 compiles in CI,
-not yet runnable · ⛔ not supported.
+Legend: ✅ built + tested in CI · 🟢 runs (WebGPU browser) · ⛔ not supported.
 
 Run on any target with a familiar `-d` device flag: `pebbles run` (desktop, the default),
 `pebbles run -d web` (needs [Trunk](https://trunkrs.dev): `cargo install --locked
 trunk`). **Per-capability compatibility** (which widgets/features run where, and
 how to detect the platform in code) is documented in
-[`PLATFORMS.md`](PLATFORMS.md). The desktop rows are produced by the CI matrix, and the web/Android/iOS
-**compile** status by the [`cross-platform`](.github/workflows/ci.yml) gate, on
-every push — so this table cannot silently drift. Android and iOS say "compiles"
-rather than "runs" honestly: the source + dependency graph build and touch input
-is wired, but a *running* app still needs each one's entry point and a build
-toolchain this project doesn't bundle (an NDK + device for Android, a Mac for
-iOS). The remaining work is tracked in full, honest checklists in the project's
-platform design docs.
+[`PLATFORMS.md`](PLATFORMS.md). The desktop rows are produced by the CI matrix, and the web
+**compile/run** status by the [`cross-platform`](.github/workflows/ci.yml) gate, on
+every push — so this table cannot silently drift.
 
 ## Programming model
 
@@ -483,9 +474,6 @@ Open, roughly in order:
   editor pane is still reader-only.
 - **`SetValue` accessibility actions** (slider/text), following the shipped
   Focus/Click ones.
-- **Mobile**, if it happens: the framework crates already compile for iOS and
-  Android — what is missing is touch/gesture input, app lifecycle, and a
-  clipboard backend. See [Platform support](#platform-support).
 
 > **Update granularity:** re-renders are per-component (Solid's model), not
 > per-signal-binding — a signal write re-runs the components that read it. AT-driven

@@ -12,24 +12,21 @@ Platform runtime status (see [README](README.md#platform-support) for detail):
 **Linux** is the primary target — built, tested and **run daily**. **macOS · Windows**
 build and pass the **headless** suites in CI on `macos-latest`/`windows-latest`, but
 they are **not run in a window** there, so interactive polish is unverified (visual/input
-reports welcome). **Web** runs (`pebbles run -d web`, WebGPU browsers). **Android · iOS**
-compile and are CI-gated but are **compile-only** — not yet a verified running app:
-Android's one-command runner (`pebbles run -d android`) is wired but an on-device run
-still needs an NDK + a device, and iOS needs a Mac + Xcode. Their marks below describe
-the *coded* support, runtime-verified only on desktop + web so far.
+reports welcome). **Web** runs (`pebbles run -d web`, WebGPU browsers). The marks below
+describe the *coded* support, runtime-verified on desktop + web.
 
 ---
 
 ## The core is universal
 
-Everything in the widget catalog paints and responds on **all six** platforms —
+Everything in the widget catalog paints and responds on **all four** platforms —
 there is no per-platform widget set. That includes:
 
 - All layout & primitives, every input/display/feedback/navigation component, the
   full theme + styling system.
 - The reactive runtime (signals, effects, memos, resources), animations, timers.
-- GPU rendering (Vello), scrolling & fling physics, gestures.
-- **Pointer *and* touch input** — the same widgets work under mouse and finger.
+- GPU rendering (Vello), scrolling & fling physics.
+- **Pointer input** — mouse and trackpad, including trackpad gestures.
 - Text shaping, rich text, bidi/RTL, and in-field IME/composition.
 
 If a widget isn't in the table below, it works everywhere. Only the capabilities
@@ -37,22 +34,22 @@ that touch the OS in a platform-specific way have restrictions:
 
 ## Capability matrix
 
-| Capability | API / feature | Linux | macOS | Windows | Web | Android | iOS |
-|---|---|:--:|:--:|:--:|:--:|:--:|:--:|
-| Secondary / multiple windows | `window()`, `monitors()` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Native OS menu bar | `App::menu` (`native-menus`) | 🔶¹ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| System-wide global hotkeys | `register_global_hotkey` (`global-hotkeys`) | 🔶² | ✅ | ✅ | ❌ | ❌ | ❌ |
-| Native folder picker | `pick_folder` (`file-dialogs`) | ✅ | ✅ | ✅ | ❌ | 🔶³ | 🔶³ |
-| Network images (remote URL) | `ImageView::network` (`image-view`) | ✅ | ✅ | ✅ | ✅⁴ | ✅ | ✅ |
-| System clipboard (cross-app) | copy/cut/paste | ✅ | ✅ | ✅ | 🔶⁵ | ❌⁶ | ✅ |
-| Screen-reader accessibility | `Semantics` (published tree) | ✅ | ✅ | ✅ | ❌⁷ | ✅ | ❌⁷ |
-| Soft keyboard / IME | text fields | ✅ | ✅ | ✅ | 🔶⁸ | 🔶⁸ | 🔶⁸ |
-| System font discovery | (bundled fonts + icons always work) | ✅ | ✅ | ✅ | ❌⁹ | 🔶⁹ | 🔶⁹ |
-| `tokio` async | `create_resource_future` (`tokio`) | ✅ | ✅ | ✅ | ❌¹⁰ | ✅ | ✅ |
-| Background work | `spawn`, `create_resource` | ✅ | ✅ | ✅ | 🔶¹⁰ | ✅ | ✅ |
-| Offscreen capture (widget→PNG/RGBA) | `capture_png`/`capture_rgba` | ✅ | ✅ | ✅ | ❌¹¹ | ❌¹¹ | ❌¹¹ |
-| Router / history | `pebbles_core::router`, `route_view`/`link` | 🔶¹² | 🔶¹² | 🔶¹² | ✅¹² | 🔶¹² | 🔶¹² |
-| Reduced-motion query | `prefers_reduced_motion()` | 🔶¹³ | ❌¹³ | ❌¹³ | ✅¹³ | ❌¹³ | ❌¹³ |
+| Capability | API / feature | Linux | macOS | Windows | Web |
+|---|---|:--:|:--:|:--:|:--:|
+| Secondary / multiple windows | `window()`, `monitors()` | ✅ | ✅ | ✅ | ❌ |
+| Native OS menu bar | `App::menu` (`native-menus`) | 🔶¹ | ✅ | ✅ | ❌ |
+| System-wide global hotkeys | `register_global_hotkey` (`global-hotkeys`) | 🔶² | ✅ | ✅ | ❌ |
+| Native folder picker | `pick_folder` (`file-dialogs`) | ✅ | ✅ | ✅ | ❌³ |
+| Network images (remote URL) | `ImageView::network` (`image-view`) | ✅ | ✅ | ✅ | ✅⁴ |
+| System clipboard (cross-app) | copy/cut/paste | ✅ | ✅ | ✅ | 🔶⁵ |
+| Screen-reader accessibility | `Semantics` (published tree) | ✅ | ✅ | ✅ | ❌⁶ |
+| Soft keyboard / IME | text fields | ✅ | ✅ | ✅ | 🔶⁷ |
+| System font discovery | (bundled fonts + icons always work) | ✅ | ✅ | ✅ | ❌⁸ |
+| `tokio` async | `create_resource_future` (`tokio`) | ✅ | ✅ | ✅ | ❌⁹ |
+| Background work | `spawn`, `create_resource` | ✅ | ✅ | ✅ | 🔶⁹ |
+| Offscreen capture (widget→PNG/RGBA) | `capture_png`/`capture_rgba` | ✅ | ✅ | ✅ | ❌¹⁰ |
+| Router / history | `pebbles_core::router`, `route_view`/`link` | 🔶¹¹ | 🔶¹¹ | 🔶¹¹ | ✅¹¹ |
+| Reduced-motion query | `prefers_reduced_motion()` | 🔶¹² | ❌¹² | ❌¹² | ✅¹² |
 
 **Notes**
 
@@ -61,9 +58,8 @@ that touch the OS in a platform-specific way have restrictions:
    The in-window `menubar` works on every platform.
 2. **Wayland** returns a graceful error for global hotkeys (X11 works); the app
    keeps running.
-3. **Mobile folder picker** — coded via `rfd`, but not yet runtime-verified on a
-   device. On **web** `pick_folder` resolves as *cancelled* (a `<input type=file>`
-   backend is a follow-up).
+3. **Web folder picker** — on **web** `pick_folder` resolves as *cancelled* (a
+   `<input type=file>` backend is a follow-up).
 4. **Web network images** — asset, in-memory, base64, and `data:` URIs work fully, and
    a remote `http(s)://` URL now loads via the **browser's own `fetch`** (read as an
    ArrayBuffer, decoded by the same pure-Rust `image` codecs). **CORS caveat:** a
@@ -75,19 +71,15 @@ that touch the OS in a platform-specific way have restrictions:
    Paste-**in** from another app is still **app-local** — a *synchronous* read of the OS
    clipboard isn't possible on the web (`readText` is async + permission-gated), so
    cross-app paste *into* Pebbles is a follow-up. Intra-app copy/paste works fully.
-6. **Android clipboard** is a **true no-op against the OS clipboard** — there is no
-   `arboard`/JNI backend yet, so nothing crosses the app boundary in either direction (a
-   JNI backend is a follow-up). The core's in-process fallback still keeps **intra-app**
-   copy/paste working. iOS (✅) uses the system pasteboard.
-7. **Web / iOS accessibility** — the semantics tree is still built in memory, just
-   not published: there is no AccessKit adapter for those platforms yet (upstream). On
-   **web** the AccessKit bridge is a **no-op stub**, so screen-reader features that ride on
+6. **Web accessibility** — the semantics tree is still built in memory, just
+   not published: there is no AccessKit adapter for the web yet (upstream). The
+   AccessKit bridge is a **no-op stub**, so screen-reader features that ride on
    a published tree — focus announcements, the modal-barrier "announced-behind-modal"
    behavior, live regions — work on **desktop only**.
-8. **Soft keyboard / IME** is full on desktop; on mobile/web it is wired but not
-   yet runtime-hardened. On **web**, CJK/dead-key composition and the mobile soft
-   keyboard need `App::web_ime(true)` (see the out-of-scope note below).
-9. **Bundled assets always work.** The built-in font families (Inter, JetBrains Mono,
+7. **Soft keyboard / IME** is full on desktop; on **web** it is wired but not
+   yet runtime-hardened — CJK/dead-key composition needs `App::web_ime(true)`
+   (see the out-of-scope note below).
+8. **Bundled assets always work.** The built-in font families (Inter, JetBrains Mono,
    Space Grotesk, Lora, plus any you register with `App::font`) **and** the bundled
    **Tabler** icon set (~5100 outline `tabler::*` + ~1050 filled `tabler::filled::*`,
    which replaced the previous Lucide set) are compiled in and render on every platform.
@@ -96,29 +88,28 @@ that touch the OS in a platform-specific way have restrictions:
    don't reference; calling `tabler::by_name` or iterating `tabler::ALL` links the whole
    ~6,184-glyph table into the binary (the lookup can reach any of them), so use `by_name`
    only when the name is genuinely dynamic.
-10. **Web async** has no OS threads: `spawn`/`create_resource` run the work inline
-    and still deliver the result through the per-frame pump (the reactive contract
-    holds). `tokio` (`create_resource_future`) is native-only; on web use `spawn`.
-11. **Offscreen capture** renders headlessly through an **offscreen GPU device**, so it
+9. **Web async** has no OS threads: `spawn`/`create_resource` run the work inline
+   and still deliver the result through the per-frame pump (the reactive contract
+   holds). `tokio` (`create_resource_future`) is native-only; on web use `spawn`.
+10. **Offscreen capture** renders headlessly through an **offscreen GPU device**, so it
     needs the default **`vello-hybrid`** backend — it is unavailable under the classic
     `vello` opt-in. This is the **first capability gated on the render *backend*** rather
-    than the OS. It is **desktop-only**: the web has no headless device, and mobile is
-    unsupported (❌, not merely unverified).
-12. **Router / history** is one API on every platform, but only the **web** target syncs
+    than the OS. It is **desktop-only**: the web has no headless device.
+11. **Router / history** is one API on every platform, but only the **web** target syncs
     it to the browser: deep-linkable URLs, working **Back/Forward** buttons, and
-    `popstate` fed back in (the history `index` rides in `history.state`). On **desktop
-    and mobile** it is pure **in-memory** history — no URL bar, no deep links, and
+    `popstate` fed back in (the history `index` rides in `history.state`). On **desktop**
+    it is pure **in-memory** history — no URL bar, no deep links, and
     **no built-in Back affordance** (there is no browser chrome, so wire your own Back
     button over `router::back()` / `can_back()`). Navigation **guards** are a
     navigation-flow tool, **not** a security boundary: on web Back/Forward (and a typed
     deep link) the browser moves history *before* the router sees it, so the guard runs as
     a **post-move redirect** (it can redirect but cannot hard-**block**). Treat auth as a
     redirect to `/login` and authorize *data* server-side.
-13. **Reduced-motion** is sampled **once at startup** (`prefers_reduced_motion()`), so
+12. **Reduced-motion** is sampled **once at startup** (`prefers_reduced_motion()`), so
     widgets can default entry/transition animations off. **Web** reads the real
     `(prefers-reduced-motion: reduce)` media query; **Linux** reads GNOME's
     `gsettings … enable-animations` (other desktops report `false`); **macOS/Windows**
-    currently hardcode `false` (native detection is a follow-up); **mobile** is not wired.
+    currently hardcode `false` (native detection is a follow-up).
     The `PEBBLES_REDUCED_MOTION` env var forces it on any platform (tests, kiosks,
     headless captures).
 
@@ -132,10 +123,10 @@ Not implemented yet — call sites that expect these will find nothing wired:
   handled, so dropping a file onto the window does nothing.
 - **Color emoji** — no emoji font is bundled (the built-ins are Inter, JetBrains Mono,
   Space Grotesk, Lora). On desktop the platform *may* fall back to a system emoji font,
-  but that is **unverified**; there is no web/mobile fallback.
+  but that is **unverified**; there is no web fallback.
 - **CJK on web needs `App::web_ime(true)`** — winit can't drive IME on a `<canvas>`
-  (winit#4424), so CJK/dead-key composition and the mobile soft keyboard on the web
-  require opting into the hidden-input bridge.
+  (winit#4424), so CJK/dead-key composition on the web
+  requires opting into the hidden-input bridge.
 - **Font hinting** — glyphs render **unhinted** for 0.1.0; hinting is unconfigured, so
   there is no grid-fitting at small sizes (subpixel positions ride as-is). Fine on
   HiDPI; slightly softer than a hinted renderer at low DPI. Configurable hinting is a
@@ -168,9 +159,9 @@ let save_hint = match platform::current() {
 
 Available in `pebbles_foundation::platform` (re-exported in the prelude):
 
-- `current() -> Platform` — the enum `Linux · MacOS · Windows · Web · Android · Ios`.
-- Family checks: `is_desktop()`, `is_mobile()`, `is_web()`.
-- Exact checks: `is_linux()`, `is_macos()`, `is_windows()`, `is_android()`, `is_ios()`.
+- `current() -> Platform` — the enum `Linux · MacOS · Windows · Web`.
+- Family checks: `is_desktop()`, `is_web()`.
+- Exact checks: `is_linux()`, `is_macos()`, `is_windows()`.
 - `Platform::name()` — a lowercase name for logs.
 
 This is the "check first, don't trip it" path. Even if you *don't* check, Pebbles
@@ -181,7 +172,7 @@ still won't crash — it degrades as described next.
 Pebbles **degrades gracefully — it does not crash.** Calling a capability on a
 platform that lacks it does the sensible thing and logs a one-line warning:
 
-- `window()` on web/mobile → ignored (single surface), warning logged.
+- `window()` on web → ignored (single surface), warning logged.
 - `pick_folder` on web → resolves as cancelled.
 - `register_global_hotkey` on Wayland → returns an error you can handle.
 - `router::back()` on desktop with no history → returns `false` (nothing to undo).
@@ -192,7 +183,7 @@ simply inert. Where a capability is behind a Cargo feature (`native-menus`,
 few are target-specific** — enable each on the targets it supports, not blindly on all.
 In particular **`tokio` is native-only** (enabling it breaks the wasm build), and
 **`file-dialogs` is desktop-only** (`rfd` pulls a desktop dialog backend that doesn't
-apply on Android/iOS). `image-view` is cross-target (native uses a blocking HTTP client,
+apply on the web). `image-view` is cross-target (native uses a blocking HTTP client,
 web the browser `fetch`). Match the feature to the target rather than assuming any
 feature compiles everywhere.
 
