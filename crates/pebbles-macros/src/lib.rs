@@ -22,6 +22,13 @@ use syn::{FnArg, ItemFn, Pat, PatType, parse_macro_input};
 /// ctor `fn name(args…) -> Element`. Rules: every arg is required, becomes an owned
 /// `Clone` props field, and is handed to the body **by value** (a clone). Generics,
 /// lifetimes and `self` are rejected with a clean error.
+///
+/// **Dependency constraint:** the expansion emits absolute `::pebbles::core::…` paths,
+/// so it only compiles in a crate that depends on the umbrella crate under its real
+/// name `pebbles`. Renaming the dependency (`pebbles = { package = "pebbles", … }` under
+/// a different key) breaks the generated code. Supporting a renamed dep would require
+/// resolving the crate name at macro-expansion time via the `proc-macro-crate` crate
+/// (a future enhancement) — for 0.1.0 the umbrella must be a direct dep named `pebbles`.
 #[proc_macro_attribute]
 pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let func = parse_macro_input!(item as ItemFn);

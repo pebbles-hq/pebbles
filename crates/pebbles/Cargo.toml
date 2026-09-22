@@ -52,6 +52,9 @@ tokio = ["pebbles-core/tokio"]
 # Forward the Android base-class selection (winit needs exactly one on Android).
 # `pebbles run -d android` passes native-activity (NDK-only, no Gradle); GameActivity
 # is the production step-up (soft keyboard, needs the AAR). See android-support.md.
+# These two are MUTUALLY EXCLUSIVE — enabling both selects conflicting winit
+# android-activity backends and fails to compile. Pick exactly one; this is why the
+# cross-platform CI job cannot use `--all-features` (see .github/workflows/ci.yml).
 android-native-activity = ["pebbles-shell/android-native-activity"]
 android-game-activity = ["pebbles-shell/android-game-activity"]
 # NOTE: Markdown moved to its own package, `pebbles-markdown` — add it alongside

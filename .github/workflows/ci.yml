@@ -76,6 +76,11 @@ jobs:
   # NDK / browser / Mac — see documentations/<platform>-support.md). Android uses
   # NativeActivity here because GameActivity's build script compiles C++ and needs
   # the NDK; a production Android build enables `android-game-activity`.
+  # NOTE: `android-native-activity` and `android-game-activity` are MUTUALLY
+  # EXCLUSIVE (they select conflicting winit android-activity backends), so this
+  # job passes exactly ONE via `shell_args` and can never switch to
+  # `--all-features` — enabling both at once fails to compile. Do not "simplify"
+  # the android row to `--all-features`. See crates/pebbles/Cargo.toml.
   # ───────────────────────────────────────────────────────────────────────────
   cross-platform:
     name: Compile (${{ matrix.target }})

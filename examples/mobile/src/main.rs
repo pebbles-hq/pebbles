@@ -9,6 +9,12 @@
 //!   components/      → post card, ⋯ menu, and the compose / comments bottom sheets
 //!   main.rs         → the Scaffold shell: dog-logo leading, messages button (top
 //!                     right, with a badge), bottom nav + the compose FAB
+//!
+//! **Android note (v0.2.0 prep):** this example's `Cargo.toml` declares no
+//! `crate-type = ["cdylib"]`, so it builds only as a desktop/web binary. An on-device
+//! Android run needs the shared library the loader `dlopen`s, so `pebbles run -d android`
+//! can't yet produce the required `.so` from this crate — adding the `cdylib` crate-type
+//! (and a `#[pebbles::main]` entry) is part of the v0.2.0 mobile-run work.
 
 mod components;
 mod net;

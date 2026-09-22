@@ -226,7 +226,7 @@ stopwatch), each a single-file `examples/` app:
 
 ### Changed — the gallery moved to its own repo
 The full interactive **gallery / showcase** (every widget, live) moved out of
-`examples/gallery` into [`pebbles-hq/pebbles-landing`](https://github.com/pebbles-hq/pebbles-landing),
+`examples/gallery` into [`pebbles-hq/pebbles-docs`](https://github.com/pebbles-hq/pebbles-docs) (originally `pebbles-landing`, since renamed),
 which backs the landing site's learn/docs section. The framework repo now keeps
 only small starter examples — `counter`, `todo`, `temperature`, `stopwatch` — the
 quick "how easy is it" set. The gallery depends on `pebbles` by git, so it builds

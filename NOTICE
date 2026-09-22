@@ -15,6 +15,10 @@ Tabler Icons (crates/pebbles-icons/src/tabler.rs)
   @tabler/icons package's tabler-nodes-{outline,filled}.json. Tabler Icons is
   distributed under the MIT License:
 
+  upstream: @tabler/icons vX.Y.Z (record the exact release on every regenerate; the
+  checked-in tabler.rs is 5130 outline + 1054 filled = 6184 glyphs — see the
+  "Reproducible regeneration" header in scripts/gen-tabler.mjs).
+
     MIT License
 
     Copyright (c) 2020-2024 Paweł Kuna

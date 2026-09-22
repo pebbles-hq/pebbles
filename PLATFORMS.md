@@ -129,6 +129,10 @@ Not implemented yet — call sites that expect these will find nothing wired:
 - **CJK on web needs `App::web_ime(true)`** — winit can't drive IME on a `<canvas>`
   (winit#4424), so CJK/dead-key composition and the mobile soft keyboard on the web
   require opting into the hidden-input bridge.
+- **Font hinting** — glyphs render **unhinted** for 0.1.0; hinting is unconfigured, so
+  there is no grid-fitting at small sizes (subpixel positions ride as-is). Fine on
+  HiDPI; slightly softer than a hinted renderer at low DPI. Configurable hinting is a
+  follow-up.
 
 ## Detecting the platform in code
 

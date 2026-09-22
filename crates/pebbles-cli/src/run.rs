@@ -861,6 +861,12 @@ fn read_watch_dirs(project: &Path) -> Vec<PathBuf> {
 /// mirrors `read_watch_dirs`).
 fn read_dev_log(project: &Path) -> Option<String> {
     let text = std::fs::read_to_string(project.join("pebbles.toml")).ok()?;
+    dev_log_from(&text)
+}
+
+/// The `[dev] log` value from pebbles.toml text (naive, dep-free; mirrors
+/// `package_name_from`). `None` if unset or empty.
+fn dev_log_from(text: &str) -> Option<String> {
     let line = text.lines().find(|l| l.trim_start().starts_with("log"))?;
     let val = line.split('=').nth(1)?.trim().trim_matches('"').trim();
     (!val.is_empty()).then(|| val.to_string())
@@ -992,6 +998,16 @@ mod tests {
         assert_eq!(Renderer::parse("nonsense"), None);
         assert_eq!(Renderer::Vello.feature(), "vello");
         assert_eq!(Renderer::Hybrid.feature(), "vello-hybrid");
+    }
+
+    #[test]
+    fn dev_log_parsing() {
+        // `[dev] log` supplies the default level the runner starts the app at.
+        assert_eq!(dev_log_from("[dev]\nlog = \"trace\"\n").as_deref(), Some("trace"));
+        assert_eq!(dev_log_from("[dev]\nlog=\"warn\"").as_deref(), Some("warn"));
+        // Unset or empty → None (the built-in default stands).
+        assert_eq!(dev_log_from("[dev]\nwatch = [\"src\"]"), None);
+        assert_eq!(dev_log_from("[dev]\nlog = \"\""), None);
     }
 
     #[test]

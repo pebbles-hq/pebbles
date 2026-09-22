@@ -58,14 +58,16 @@ impl Location {
     pub fn query_all(&self) -> &BTreeMap<String, String> {
         &self.query
     }
-    /// Render back to a `path?query` string (query keys sorted, values encoded).
+    /// Render back to a `path?query` string (path percent-encoded per segment,
+    /// query keys sorted + values encoded).
     pub fn to_url(&self) -> String {
+        let path = encode_path(&self.path);
         if self.query.is_empty() {
-            self.path.clone()
+            path
         } else {
             let q: Vec<String> =
                 self.query.iter().map(|(k, v)| format!("{}={}", encode(k), encode(v))).collect();
-            format!("{}?{}", self.path, q.join("&"))
+            format!("{path}?{}", q.join("&"))
         }
     }
 }
@@ -144,6 +146,21 @@ fn encode(s: &str) -> String {
     for b in s.bytes() {
         match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => out.push(b as char),
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// Percent-encode a path for the history URL: like [`encode`] but keeps `/` as the
+/// segment separator. Without this a path containing a space or `#` (e.g.
+/// `/files/My Doc`) produces a malformed `pushState` URL. A path with no reserved
+/// characters is returned unchanged.
+fn encode_path(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => out.push(b as char),
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
@@ -624,6 +641,15 @@ mod tests {
         assert_eq!(l.query("q"), Some("a b"));
         let round = Location::parse(&l.to_url());
         assert_eq!(round, l);
+    }
+
+    #[test]
+    fn to_url_percent_encodes_the_path() {
+        // A path with a space / `#` must not produce a malformed pushState URL.
+        let l = Location::parse("/files/My Doc#1");
+        assert_eq!(l.to_url(), "/files/My%20Doc%231", "space + # are encoded, `/` preserved");
+        // An ordinary path is unchanged (no double-encoding of already-safe chars).
+        assert_eq!(Location::parse("/user/42").to_url(), "/user/42");
     }
 
     #[test]
