@@ -24,6 +24,15 @@ use runner::{PebblesUserEvent, Runner};
 ///   pulling either heavy dep in just for a startup boolean; apps that need it on those two
 ///   platforms should set `PEBBLES_REDUCED_MOTION`. Wiring the native queries is a follow-up.
 fn detect_reduced_motion() -> bool {
+    // Cache the result: the Linux path forks a `gsettings` subprocess, so a repeat call
+    // (a second window, a re-run) is free rather than paying the fork/dbus round-trip
+    // again. The preference is read once at startup and treated as stable for the run.
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<bool> = OnceLock::new();
+    *CACHE.get_or_init(detect_reduced_motion_uncached)
+}
+
+fn detect_reduced_motion_uncached() -> bool {
     if let Ok(v) = std::env::var("PEBBLES_REDUCED_MOTION") {
         return matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on");
     }

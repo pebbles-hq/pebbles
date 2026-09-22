@@ -20,7 +20,7 @@ fn render(p: &ErrorBoundaryProps) -> AnyWidget {
     provide_context(handle);
 
     if handle.errored() {
-        (p.fallback)()
+        safe_fallback(&p.fallback)
     } else {
         // Build-time guard: a panic while constructing the content subtree flips the
         // boundary and shows the fallback this frame too.
@@ -28,10 +28,19 @@ fn render(p: &ErrorBoundaryProps) -> AnyWidget {
             Ok(widget) => widget,
             Err(_) => {
                 errored.set(true);
-                (p.fallback)()
+                safe_fallback(&p.fallback)
             }
         }
     }
+}
+
+/// Render the fallback under its own `catch_unwind`: a fallback that itself panics
+/// must not escape to the app or recurse into this boundary — render nothing instead
+/// (the boundary already caught the primary error; a broken fallback is a bug, not a
+/// crash).
+fn safe_fallback(fallback: &Rc<dyn Fn() -> AnyWidget>) -> AnyWidget {
+    catch_unwind(AssertUnwindSafe(|| fallback()))
+        .unwrap_or_else(|_| crate::widgets::SizedBox::shrink().into_widget())
 }
 
 /// Contain errors in a subtree and show `fallback` instead of crashing the app
