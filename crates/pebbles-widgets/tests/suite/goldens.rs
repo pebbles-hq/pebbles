@@ -14,7 +14,7 @@ use pebbles_foundation::{Size, palette};
 use pebbles_render::{RenderId, RenderTree, TextEnv};
 use pebbles_testing::draw_frame;
 use pebbles_widgets::theme::{DesignLanguage, Theme, set_design, set_theme};
-use pebbles_widgets::{OverlayHost, View, button, dialog, tabs, text};
+use pebbles_widgets::{OverlayHost, View, button, tabs, text};
 
 /// A canonical string fingerprint of the laid-out render tree.
 fn fingerprint(tree: &RenderTree) -> String {
@@ -108,7 +108,7 @@ fn golden_dialog_over_overlay() {
     let win = Size::new(400.0, 300.0);
     ui.mount_root(View::new(palette::WHITE, component(dialog_over_page)).into_widget());
     ui.layout(&mut env, win);
-    dialog(button("OK")).open();
+    pebbles_widgets::dialog(button("OK")).open();
     for _ in 0..2 {
         draw_frame(&mut ui, &mut env, win);
     }
