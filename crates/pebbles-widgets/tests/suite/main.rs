@@ -29,6 +29,7 @@ mod file_explorer;
 mod fonts;
 mod forms;
 mod global_menu;
+mod goldens;
 mod hovercard_menubar;
 mod ime;
 mod interactions;

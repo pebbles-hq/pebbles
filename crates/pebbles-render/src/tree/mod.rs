@@ -167,6 +167,12 @@ impl RenderTree {
         self.nodes[id].size
     }
 
+    /// The child render ids of `id`, in paint order (for tree walks — the scene-graph
+    /// golden serializer, the inspector, diagnostics).
+    pub fn children_of(&self, id: RenderId) -> &[RenderId] {
+        self.nodes.get(id).map(|n| n.children.as_slice()).unwrap_or(&[])
+    }
+
     /// The render object's `debug_name` (for the F2 inspector / diagnostics).
     pub fn debug_name(&self, id: RenderId) -> &'static str {
         self.nodes.get(id).and_then(|n| n.object.as_ref()).map(|o| o.debug_name()).unwrap_or("<taken>")
