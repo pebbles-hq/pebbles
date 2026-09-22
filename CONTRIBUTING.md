@@ -13,9 +13,13 @@ automatically.
 ```bash
 cargo check --workspace          # fast type-check, no linking
 cargo test -p pebbles-widgets    # the consolidated suite (ONE test binary)
-cargo clippy --workspace         # warn-only lints from [workspace.lints]
+cargo clippy --workspace --all-targets --all-features -- -D warnings  # CI gates on this
 cargo fmt --check                # style (max_width = 110, see rustfmt.toml)
 ```
+
+> CI runs clippy with `-D warnings` (a new lint fails the build) and rustfmt as a
+> separate blocking gate — run both before pushing. CI floats on `stable`, so
+> `rustup update stable` first if a lint disagrees with your local toolchain.
 
 > Avoid `cargo build --workspace --all-targets` on small disks: it links every
 > test binary with the full vello/parley graph embedded.
@@ -34,6 +38,21 @@ cargo fmt --check                # style (max_width = 110, see rustfmt.toml)
 - New public API must be re-exported from `pebbles::prelude`.
 - Optional OS integrations are default-off cargo features forwarded through the
   umbrella crate (see `native-menus` / `global-hotkeys` for the pattern).
+
+## Test discipline (no flaky tests)
+
+CI tests must be **deterministic**. Do not:
+
+- **Sleep or assert on wall-clock time.** Drive time explicitly through the harness
+  (`tick(dt)` / `settle()`); never `std::thread::sleep` or compare against
+  `Instant::now()`. Time-dependent behavior is advanced by the harness clock, not the OS.
+- **Assert on a wall-clock *budget*** (e.g. "renders in < 5ms"). Bound *work* instead —
+  node counts, fragment/encode counts, recompute counts — which are machine-independent.
+- **Depend on external state** — the network, the real filesystem outside a temp dir,
+  environment, or a real GPU/window (tests are headless).
+
+If a test is flaky, it is a bug in the test, not the CI: fix the nondeterminism. A
+genuinely infra-timeout-prone job (not a logic failure) is re-run, not weakened.
 
 ## Publish checklist (future)
 

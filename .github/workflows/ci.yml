@@ -148,6 +148,35 @@ jobs:
       - name: Widget suite on the vello backend (headless)
         run: cargo test -p pebbles-widgets --no-default-features --features vello
 
+  # ───────────────────────────────────────────────────────────────────────────
+  # Line coverage — NON-BLOCKING for now. Publishes a per-crate summary to the job
+  # page so we can see which modules lack coverage; gate on a threshold later.
+  # ───────────────────────────────────────────────────────────────────────────
+  coverage:
+    name: Coverage (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: System deps (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        with:
+          tool: cargo-llvm-cov
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: coverage
+      - name: Coverage summary
+        run: |
+          echo '## Coverage (`cargo llvm-cov`)' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cargo llvm-cov --workspace --all-features --summary-only >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
