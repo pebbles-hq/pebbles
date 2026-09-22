@@ -156,8 +156,20 @@ impl Harness {
     /// assert geometry or state.
     pub fn frame(&mut self) {
         self.ui.make_current();
+        self.publish_window();
         self.ui.rebuild_if_dirty();
         self.ui.layout(&mut self.env, self.window);
+    }
+
+    /// Publish the window size to the reactive window/media-query signals, exactly as
+    /// the shell does each render frame. Without this, `window_size()` /
+    /// `media_query().size` / `breakpoint()` / popover on-screen clamping all read
+    /// their `(0, 0)` default in tests — so a component that sizes itself from the
+    /// window (a fixed-height panel, a responsive breakpoint) collapses under test.
+    /// `set_window_size` only writes on an actual change, so calling it every frame is
+    /// cheap and matches the shell's per-frame call.
+    fn publish_window(&self) {
+        pebbles_widgets::overlay::set_window_size(self.window.width, self.window.height);
     }
 
     /// A full frame: reconcile → layout → paint, looping the
@@ -174,6 +186,7 @@ impl Harness {
     /// Panics if the geometry does not settle within 8 layout/paint passes (an
     /// oscillating tree) — by design, so the bug surfaces instead of hanging the test.
     pub fn draw(&mut self) -> Scene {
+        self.publish_window();
         for _ in 0..8 {
             self.ui.make_current();
             self.ui.rebuild_if_dirty();

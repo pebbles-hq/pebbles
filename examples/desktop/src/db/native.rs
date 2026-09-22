@@ -23,6 +23,7 @@ thread_local! {
 }
 
 /// Where the database file lives (`$XDG_DATA_HOME`/`~/.local/share`/cwd fallback).
+#[cfg_attr(test, allow(dead_code))] // tests open an in-memory DB and never touch the file
 fn db_path() -> PathBuf {
     let base = std::env::var("XDG_DATA_HOME")
         .ok()
@@ -40,7 +41,15 @@ pub fn init() {
         if slot.borrow().is_some() {
             return;
         }
-        match Connection::open(db_path()).and_then(|c| {
+        // Tests run against a private in-memory database — never the developer's real
+        // on-disk inventory. The suite must be hermetic (a fresh seeded catalogue every
+        // run, so `open_product_detail(1)` always finds product 1) and must not read or
+        // mutate `~/.local/share/pebbles-inventory/inventory.db`.
+        #[cfg(test)]
+        let opened = Connection::open_in_memory();
+        #[cfg(not(test))]
+        let opened = Connection::open(db_path());
+        match opened.and_then(|c| {
             c.execute_batch(SCHEMA)?;
             Ok(c)
         }) {
