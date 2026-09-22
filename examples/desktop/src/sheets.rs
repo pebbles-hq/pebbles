@@ -896,7 +896,11 @@ mod tests {
 
         let added = h.element_count().saturating_sub(base);
         let scroll_h = max_scroll_height(&h);
-        assert!(added > 20, "{label} sheet rendered little content (added {added} elements)");
+        // The empty-sheet bug adds ~0 content elements; a rendered sheet adds many. The
+        // exact count is platform-fragile — the content is a virtualized list whose
+        // visible-item count depends on text-metric-driven row heights (different on
+        // Windows vs Linux) — so guard the intent ("not empty"), not a precise number.
+        assert!(added > 10, "{label} sheet rendered little content (added {added} elements)");
         assert!(scroll_h > 100.0, "{label} sheet scroll viewport collapsed (height {scroll_h})");
     }
 
