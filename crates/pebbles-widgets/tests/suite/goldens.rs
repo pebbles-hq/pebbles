@@ -57,7 +57,15 @@ fn render_fingerprint<W: IntoWidget + 'static>(win: Size, root: fn() -> W) -> St
 
 /// Compare `actual` to `tests/suite/goldens/<name>.txt`, or write it when
 /// `PEBBLES_UPDATE_GOLDENS` is set.
+///
+/// Baselined on Linux (the runner that also runs the full suite + coverage). Text
+/// shaping produces sub-pixel-different advances across OS font stacks, so the exact
+/// geometry only round-trips on the baseline platform; on Windows/macOS the assert is
+/// skipped (the structural/design-language signal is fully exercised on Linux).
 fn check_golden(name: &str, actual: &str) {
+    if !cfg!(target_os = "linux") && std::env::var("PEBBLES_UPDATE_GOLDENS").is_err() {
+        return;
+    }
     let dir = format!("{}/tests/suite/goldens", env!("CARGO_MANIFEST_DIR"));
     let path = format!("{dir}/{name}.txt");
     if std::env::var("PEBBLES_UPDATE_GOLDENS").is_ok() {
