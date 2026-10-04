@@ -24,8 +24,8 @@ pebbles-macros.workspace = true
 # Render backend, forwarded through the whole graph. `vello-hybrid` (low-power) is the
 # default; build on classic `vello` (GPU compute, heavy vector) with
 # `--no-default-features --features vello`. See documentations/renderer-backend-plan.md.
-# Note: the offscreen `capture` API (`pebbles::shell::capture`) is available only under
-# the `vello-hybrid` backend (and off-wasm) — it needs an offscreen hybrid GPU device.
+# Note: the offscreen `capture` API (`pebbles::shell::capture`) is available under
+# `vello-hybrid` or `wgpu` (off-wasm) — it needs an offscreen GPU device.
 default = ["vello-hybrid"]
 wgpu = [
     "pebbles-render/wgpu",

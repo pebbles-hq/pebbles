@@ -39,8 +39,10 @@ lyon = { workspace = true, optional = true }
 bytemuck = { workspace = true, optional = true }
 
 [features]
-# Exactly ONE backend must be on. `vello-hybrid` is the default (low-power); `vello`
-# (GPU compute) and `wgpu` are opt-in. `paint.rs` gives `wgpu` transition precedence.
+# Exactly ONE backend must be on. `vello-hybrid` is the default; `vello` (GPU compute)
+# and `wgpu` (first-party) are opt-in. `vello-hybrid` wins whenever it is enabled
+# (DR-10); select wgpu with `--no-default-features --features wgpu`. The seam is
+# paint/mod.rs.
 default = ["vello-hybrid"]
 wgpu = ["dep:lyon", "dep:bytemuck"]
 vello = ["dep:vello"]

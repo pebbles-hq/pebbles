@@ -20,6 +20,8 @@ jobs:
   # The support matrix. This job IS the platform-support claim in the README:
   # a supported platform is one that builds and passes the headless suites
   # here. Tests need no window and no GPU, so they run on every runner.
+  # `--all-features` resolves to vello-hybrid until the Phase-6 flip (DR-10);
+  # the wgpu chain is covered by `wgpu-backend`.
   # ───────────────────────────────────────────────────────────────────────────
   test:
     name: Test (${{ matrix.os }})
@@ -141,6 +143,43 @@ jobs:
             cargo check -p "$ex" --target ${{ matrix.target }}
             echo "::endgroup::"
           done
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # The first-party wgpu renderer chain (05 V35). `--all-features` resolves to
+  # vello-hybrid until the Phase-6 flip (DR-10), so wgpu is selected explicitly.
+  # Folded into `test` at Phase 7 (V34).
+  # ─────────────────────────────────────────────────────────────────────────
+  wgpu-backend:
+    name: wgpu backend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: System deps (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: wgpu-backend-${{ matrix.os }}
+      - name: CHECK-WGPU
+        run: cargo check -p pebbles-render -p pebbles-core -p pebbles-widgets -p pebbles-shell -p pebbles --all-targets --no-default-features --features wgpu
+      - name: TEST-RENDER
+        run: cargo test -p pebbles-render --no-default-features --features wgpu
+      - name: TEST-WIDGETS-WGPU
+        run: cargo test -p pebbles-widgets --no-default-features --features wgpu
+      - name: TEST-SHELL-WGPU
+        run: cargo test -p pebbles-shell --no-default-features --features wgpu
+      - name: CLIPPY-WGPU
+        if: runner.os == 'Linux'
+        run: cargo clippy -p pebbles-render -p pebbles-shell -p pebbles --all-targets --no-default-features --features wgpu -- -D warnings
+      - name: DOC-WGPU
+        if: runner.os == 'Linux'
+        env:
+          RUSTDOCFLAGS: "-D rustdoc::broken_intra_doc_links -D rustdoc::private_intra_doc_links"
+        run: cargo doc -p pebbles-render -p pebbles-shell --no-deps --no-default-features --features wgpu
 
   # ───────────────────────────────────────────────────────────────────────────
   # The classic `vello` backend. Every other job resolves to `vello-hybrid` (the
