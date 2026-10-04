@@ -5,6 +5,8 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+use crate::gpu::{GPU_ERRORS, PresentOutcome, present_frame};
+
 use kurbo::Stroke;
 use peniko::Brush;
 
@@ -67,10 +69,9 @@ impl Runner {
                 wgpu::PresentMode::AutoVsync,
             )) {
                 Ok(surface) => {
-                    self.renderers.resize_with(self.context.as_ref().unwrap().devices.len(), || None);
-                    let dh = &self.context.as_ref().unwrap().devices[surface.dev_id];
-                    install_error_handler(&dh.device);
-                    self.renderers[surface.dev_id] = Some(new_renderer(&dh.device, &dh.queue));
+                    self.renderers.resize_with(self.context.as_ref().unwrap().device_count(), || None);
+                    let idx = surface.device_index();
+                    self.renderers[idx] = self.context.as_ref().unwrap().new_renderer(idx);
                     active.surface = surface;
                 }
                 Err(e) => eprintln!("pebbles: GPU reset could not recreate the main surface: {e}"),
@@ -86,11 +87,10 @@ impl Runner {
                 wgpu::PresentMode::AutoVsync,
             )) {
                 Ok(surface) => {
-                    self.renderers.resize_with(self.context.as_ref().unwrap().devices.len(), || None);
-                    let dh = &self.context.as_ref().unwrap().devices[surface.dev_id];
-                    install_error_handler(&dh.device);
-                    if self.renderers[surface.dev_id].is_none() {
-                        self.renderers[surface.dev_id] = Some(new_renderer(&dh.device, &dh.queue));
+                    self.renderers.resize_with(self.context.as_ref().unwrap().device_count(), || None);
+                    let idx = surface.device_index();
+                    if self.renderers[idx].is_none() {
+                        self.renderers[idx] = self.context.as_ref().unwrap().new_renderer(idx);
                     }
                     w.surface = surface;
                 }
@@ -168,7 +168,7 @@ impl Runner {
         // so we never render into a stale 1×1 target (which shows as a grey box).
         // Only on size change, to avoid the known wasm dpr resize feedback loop.
         #[cfg(target_family = "wasm")]
-        if active.surface.config.width != phys.width || active.surface.config.height != phys.height {
+        if active.surface.size() != (phys.width, phys.height) {
             self.context.as_mut().unwrap().resize_surface(&mut active.surface, phys.width, phys.height);
         }
         let logical = Size::new(phys.width as f64 / scale, phys.height as f64 / scale);
@@ -273,31 +273,26 @@ impl Runner {
             eprintln!("[pebbles reactive] {}", pebbles_core::reactive_stats::summary());
         }
 
-        // 4. Render + present. Backend-split (see `present_frame`): Vello renders to an
-        // intermediate storage target and blits it to the swapchain; Vello Hybrid renders
-        // straight to the swapchain. NOTHING here may panic — on failure it logs, bumps
-        // GPU_ERRORS (the reset picks it up), and skips THIS frame.
+        // 4. Render + present. The host's `present_frame` acquires the swapchain image,
+        // renders straight into it and presents. NOTHING here may panic — on failure the
+        // host logs, bumps GPU_ERRORS (the reset picks it up), and skips THIS frame.
         let surface = &active.surface;
-        let device_handle = &self.context.as_ref().unwrap().devices[surface.dev_id];
-        let renderer = match self.renderers[surface.dev_id].as_mut() {
+        let idx = surface.device_index();
+        let renderer = match self.renderers[idx].as_mut() {
             Some(r) => r,
-            None => self.renderers[surface.dev_id]
-                .insert(new_renderer(&device_handle.device, &device_handle.queue)),
+            None => self.renderers[idx]
+                .insert(self.context.as_ref().unwrap().new_renderer(idx).expect("renderer")),
         };
-        let params = RenderParams {
-            base_color: self.background,
-            width: phys.width,
-            height: phys.height,
-            antialiasing_method: AaConfig::Area,
-        };
-        if !present_frame(
-            renderer,
-            &device_handle.device,
-            &device_handle.queue,
-            surface,
-            &self.frame,
-            &params,
-            &active.window,
+        if matches!(
+            present_frame(
+                self.context.as_ref().unwrap(),
+                renderer,
+                surface,
+                &self.frame,
+                self.background,
+                &active.window,
+            ),
+            PresentOutcome::Skipped
         ) {
             return;
         }
@@ -368,10 +363,10 @@ impl Runner {
                 phys.height.max(1),
                 wgpu::PresentMode::AutoVsync,
             )) {
-                self.renderers.resize_with(self.context.as_ref().unwrap().devices.len(), || None);
-                let dh = &self.context.as_ref().unwrap().devices[surface.dev_id];
-                if self.renderers[surface.dev_id].is_none() {
-                    self.renderers[surface.dev_id] = Some(new_renderer(&dh.device, &dh.queue));
+                self.renderers.resize_with(self.context.as_ref().unwrap().device_count(), || None);
+                let idx = surface.device_index();
+                if self.renderers[idx].is_none() {
+                    self.renderers[idx] = self.context.as_ref().unwrap().new_renderer(idx);
                 }
                 w.surface = surface;
             }
@@ -403,28 +398,24 @@ impl Runner {
         self.text.finish_frame();
 
         let surface = &w.surface;
-        let device_handle = &self.context.as_ref().unwrap().devices[surface.dev_id];
+        let idx = surface.device_index();
         // Same no-panic policy as render(): recreate a missing renderer, skip the
         // frame (and schedule the GPU reset) on a render failure.
-        let renderer = match self.renderers[surface.dev_id].as_mut() {
+        let renderer = match self.renderers[idx].as_mut() {
             Some(r) => r,
-            None => self.renderers[surface.dev_id]
-                .insert(new_renderer(&device_handle.device, &device_handle.queue)),
+            None => self.renderers[idx]
+                .insert(self.context.as_ref().unwrap().new_renderer(idx).expect("renderer")),
         };
-        let params = RenderParams {
-            base_color: w.background,
-            width: phys.width,
-            height: phys.height,
-            antialiasing_method: AaConfig::Area,
-        };
-        if !present_frame(
-            renderer,
-            &device_handle.device,
-            &device_handle.queue,
-            surface,
-            &self.frame,
-            &params,
-            &w.window,
+        if matches!(
+            present_frame(
+                self.context.as_ref().unwrap(),
+                renderer,
+                surface,
+                &self.frame,
+                w.background,
+                &w.window,
+            ),
+            PresentOutcome::Skipped
         ) {
             return;
         }
@@ -433,39 +424,4 @@ impl Runner {
             w.window.request_redraw();
         }
     }
-}
-
-/// Render `frame` and present it on `surface`; returns `false` if the frame was skipped
-/// (a GPU error or an unavailable surface texture — the caller then bails out for this
-/// frame). No panics: a GPU hiccup logs, bumps [`GPU_ERRORS`] so the reset path rebuilds
-/// the stack, and skips one frame.
-///
-/// Both the hybrid and wgpu hosts render **straight to the swapchain** — no intermediate,
-/// no blit. Besides being simpler and cheaper, this removes the extra render target (and
-/// its per-resize recreation) that caused multicolored flicker while resizing on the web.
-fn present_frame(
-    renderer: &mut Renderer,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    surface: &RenderSurface<'_>,
-    frame: &Scene,
-    params: &RenderParams,
-    window: &Window,
-) -> bool {
-    // Acquire the swapchain image and rasterize straight into it (no intermediate/blit).
-    let surface_texture = match surface.surface.get_current_texture() {
-        wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
-        _ => return false,
-    };
-    let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
-    if let Err(e) = renderer.render_to_texture(device, queue, frame, &view, params) {
-        eprintln!("pebbles: hybrid render failed (skipping frame, scheduling GPU reset): {e}");
-        GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        window.request_redraw();
-        return false;
-    }
-    let _ = device.poll(wgpu::PollType::Poll);
-    window.pre_present_notify();
-    surface_texture.present();
-    true
 }

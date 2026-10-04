@@ -2475,26 +2475,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lyon"
-version = "1.0.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd0578bdecb7d6d88987b8b2b1e3a4e2f81df9d0ece1078623324a567904e7b7"
-dependencies = [
- "lyon_algorithms",
- "lyon_tessellation",
-]
-
-[[package]]
-name = "lyon_algorithms"
-version = "1.0.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdfa8785f95e57914ddb35e3b59994aeba6f5e79e9cfd03da1c269f010f36009"
-dependencies = [
- "lyon_path",
- "num-traits",
-]
-
-[[package]]
 name = "lyon_geom"
 version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3182,6 +3162,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "pebbles-gpu"
+version = "0.0.1"
+dependencies = [
+ "bytemuck",
+ "cosmic-text",
+ "fontdb",
+ "kurbo",
+ "lyon_tessellation",
+ "pebbles-foundation",
+ "pebbles-render",
+ "peniko",
+ "web-time",
+ "wgpu",
+]
+
+[[package]]
 name = "pebbles-icons"
 version = "0.0.1"
 
@@ -3198,10 +3194,8 @@ dependencies = [
 name = "pebbles-render"
 version = "0.0.1"
 dependencies = [
- "bytemuck",
  "glifo",
  "kurbo",
- "lyon",
  "parley",
  "pebbles-foundation",
  "pebbles-icons",
@@ -3220,15 +3214,13 @@ dependencies = [
  "accesskit",
  "accesskit_winit",
  "arboard",
- "bytemuck",
  "console_error_panic_hook",
- "cosmic-text",
- "fontdb",
  "global-hotkey",
  "kurbo",
  "muda",
  "pebbles-core",
  "pebbles-foundation",
+ "pebbles-gpu",
  "pebbles-render",
  "pebbles-widgets",
  "peniko",

@@ -23,13 +23,3 @@ pub use display_list::{Glyph, NormalizedCoord, Painter, Scene, scene};
 // (feature `vello-hybrid`; deleted whole at Phase 7, X01).
 #[cfg(feature = "vello-hybrid")]
 mod hybrid_flush;
-
-// Transitional wgpu consumer: tessellates the display list into GPU-ready types
-// (feature `wgpu`; moved into pebbles-gpu by C05).
-#[cfg(feature = "wgpu")]
-#[doc(hidden)]
-pub mod wgpu_backend;
-#[cfg(feature = "wgpu")]
-pub use wgpu_backend::{
-    Batch, GlyphRun, ImageQuad, ImageUpload, ImageVertex, Mesh, Scissor, ShadowVertex, SolidMesh, Vertex,
-};

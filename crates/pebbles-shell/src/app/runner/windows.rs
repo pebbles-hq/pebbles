@@ -177,10 +177,9 @@ impl Runner {
                 return;
             }
         };
-        self.renderers.resize_with(self.context.as_ref().unwrap().devices.len(), || None);
-        install_error_handler(&self.context.as_ref().unwrap().devices[surface.dev_id].device);
-        let dh = &self.context.as_ref().unwrap().devices[surface.dev_id];
-        self.renderers[surface.dev_id].get_or_insert_with(|| new_renderer(&dh.device, &dh.queue));
+        self.renderers.resize_with(self.context.as_ref().unwrap().device_count(), || None);
+        let idx = surface.device_index();
+        self.renderers[idx].get_or_insert_with(|| self.context.as_ref().unwrap().new_renderer(idx).unwrap());
         // A fresh Ui → a fresh window_id in the shared runtime. Wrap the root in an
         // OverlayHost so this window has its own popover/menu/dialog layer (the overlay
         // + dialog signals are namespaced per window id).

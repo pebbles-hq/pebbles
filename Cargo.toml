@@ -47,6 +47,7 @@ pebbles-shell = { path = "crates/pebbles-shell", version = "0.0.1", default-feat
 pebbles-macros = { path = "crates/pebbles-macros", version = "0.0.1" }
 pebbles = { path = "crates/pebbles", version = "0.0.1", default-features = false }
 pebbles-testing = { path = "crates/pebbles-testing", version = "0.0.1", default-features = false }
+pebbles-gpu = { path = "crates/pebbles-gpu", version = "0.0.1" }
 
 # --- Linebender 2D stack ---
 # Two swappable rasterizer backends, both pure-Rust Vello-family, picked by a
@@ -82,6 +83,7 @@ web-time = "1.1"
 slotmap = "1"
 smallvec = "1"
 lyon = "1.0"
+lyon_tessellation = "1.0"
 bytemuck = { version = "1", features = ["derive"] }
 
 [profile.dev]

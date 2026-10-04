@@ -25,9 +25,7 @@ vello = { workspace = true, default-features = true, optional = true }
 # GPU `Renderer`; `text` gives glyph runs (the flush resolves glyphs against its atlas).
 vello_hybrid = { workspace = true, optional = true, features = ["wgpu", "text"] }
 wgpu.workspace = true
-bytemuck = { workspace = true, optional = true }
-cosmic-text = { workspace = true, optional = true }
-fontdb = { workspace = true, optional = true }
+pebbles-gpu = { workspace = true, optional = true }
 winit.workspace = true
 raw-window-handle.workspace = true
 pollster.workspace = true
@@ -58,10 +56,8 @@ wgpu = [
     "pebbles-render/wgpu",
     "pebbles-core/wgpu",
     "pebbles-widgets/wgpu",
+    "dep:pebbles-gpu",
     "dep:png",
-    "dep:bytemuck",
-    "dep:cosmic-text",
-    "dep:fontdb",
 ]
 vello-hybrid = [
     "pebbles-render/vello-hybrid",

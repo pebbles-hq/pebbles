@@ -39,7 +39,9 @@ use wgpu::{
     TextureDimension, TextureFormat, TextureUsages,
 };
 
-use crate::gpu::{self, RenderContext};
+use crate::gpu;
+#[cfg(feature = "vello-hybrid")]
+use crate::gpu::RenderContext;
 
 /// Maximum capture dimension per side. A capture allocates a `width×height×4` GPU texture
 /// plus a 256-byte-row-padded readback buffer, so an unbounded size is a memory-exhaustion
@@ -160,11 +162,26 @@ impl Gpu {
     fn new() -> Result<Self, Box<dyn Error>> {
         // Acquire an offscreen device through the SAME `gpu/` host seam the runner uses — no
         // second wgpu path. The renderer is built lazily on the first `render_offscreen`.
-        let mut ctx = RenderContext::new();
-        let dev_id = pollster::block_on(ctx.device(None)).ok_or("no compatible GPU device for capture")?;
-        let handle = ctx.devices.remove(dev_id);
-        let renderer = gpu::new_renderer(&handle.device, &handle.queue);
-        Ok(Gpu { device: handle.device, queue: handle.queue, renderer })
+        #[cfg(feature = "vello-hybrid")]
+        {
+            let mut ctx = RenderContext::new();
+            let dev_id =
+                pollster::block_on(ctx.device(None)).ok_or("no compatible GPU device for capture")?;
+            let handle = ctx.devices.remove(dev_id);
+            let renderer = gpu::new_renderer(&handle.device, &handle.queue);
+            Ok(Gpu { device: handle.device, queue: handle.queue, renderer })
+        }
+        #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
+        {
+            let mut ctx = pebbles_gpu::GpuContext::new();
+            let dev_id =
+                pollster::block_on(ctx.request_device(None)).ok_or("no compatible GPU device for capture")?;
+            let dev = ctx.device(dev_id).ok_or("no compatible GPU device for capture")?;
+            let device = dev.device().clone();
+            let queue = dev.queue().clone();
+            let renderer = pebbles_gpu::Renderer::new(dev, dev_id);
+            Ok(Gpu { device, queue, renderer })
+        }
     }
 
     fn rasterize(&mut self, scene: &Scene, w: u32, h: u32, base: Color) -> Result<Vec<u8>, Box<dyn Error>> {

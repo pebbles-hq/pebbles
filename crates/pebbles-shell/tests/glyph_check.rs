@@ -1,3 +1,5 @@
+#![cfg(all(not(target_family = "wasm"), any(feature = "vello-hybrid", feature = "wgpu")))]
+
 //! Headless regression checks for the wgpu glyph pipeline:
 //!   1. glyphs land on one baseline (not scattered) — catches the `placement.top`
 //!      sign error,

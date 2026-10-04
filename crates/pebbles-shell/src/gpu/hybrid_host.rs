@@ -1,30 +1,13 @@
 //! The Vello Hybrid GPU host. It reuses `vello::util` for the backend-agnostic parts — the
-//! wgpu instance/adapter/device pool (`RenderContext`) and the swapchain surface — and differs
-//! from the Vello-compute host in two ways:
-//!
-//!   1. it rasterizes **straight into the swapchain** — the [`Renderer`] flushes the recorded
-//!      op-list into a `vello_hybrid::Scene` and renders it directly to the presented texture,
-//!      so there is no intermediate render-attachment target and no `TextureBlitter` copy,
-//!   2. the `vello_hybrid::Renderer` + its `Resources` (glyph/image atlas) are built **once**,
-//!      lazily on the first frame when the target format + size are known, and reused at every
-//!      size — recreating them on resize wiped the atlas and caused the resize "christmas-light"
-//!      flicker (see [`Renderer::render_to_texture`]).
-//!
-//! The windowed frame loop reaches the GPU through [`Renderer::render_to_texture`], which
-//! resolves the swapchain format from [`SURFACE_FORMAT`] and renders into the swapchain's own
-//! texture view. Both it and the headless `capture` path (which has no surface) funnel through
-//! the shared, target-agnostic [`Renderer::render_offscreen`] — the single place the flush, the
-//! base-color clear and the `draw_image` texture binding are defined. "Offscreen" names the
-//! seam, not the destination: it renders into whatever target view the caller hands it (the
-//! swapchain view for a window, an owned texture for capture), so the windowed path still
-//! rasterizes straight into the swapchain with no intermediate target.
+//! wgpu instance/adapter/device pool (`RenderContext`) and the swapchain surface — and
+//! rasterizes **straight into the swapchain** (no intermediate/blit) by flushing the
+//! recorded op-list into a `vello_hybrid::Scene` and rendering it directly.
 
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::OnceLock;
 
-use std::collections::HashMap;
 use vello::util::RenderContext as VelloCtx;
-pub(crate) use vello::util::RenderSurface;
 
 use vello_hybrid::{
     RenderSize, RenderTargetConfig, Renderer as HybRenderer, Resources, Scene as HybScene, TextureBindings,
@@ -32,40 +15,37 @@ use vello_hybrid::{
 };
 
 use pebbles_render::Scene;
+use peniko::Color;
 
-/// The swapchain texture format chosen by `vello::util` (Rgba8Unorm / Bgra8Unorm). Captured
-/// once at surface creation so the lazily-built `vello_hybrid::Renderer` targets the right one.
+use super::{GPU_ERRORS, PresentOutcome, install_error_handler};
+
+/// The swapchain texture format chosen by `vello::util`. Captured once at surface creation.
 static SURFACE_FORMAT: OnceLock<wgpu::TextureFormat> = OnceLock::new();
 
-/// Antialiasing selector — the hybrid backend antialiases internally, so this only exists to
-/// mirror the Vello host's `RenderParams` shape (the runner names `AaConfig::Area`).
+/// Antialiasing selector — the hybrid backend antialiases internally.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum AaConfig {
     Area,
 }
 
-/// Per-frame render parameters — same fields the runner fills for the Vello host.
+/// Per-frame render parameters — same fields the runner fills for the wgpu host.
 pub(crate) struct RenderParams {
-    pub base_color: peniko::Color,
+    pub base_color: Color,
     pub width: u32,
     pub height: u32,
-    // The hybrid backend antialiases internally, so this field is never read here — it exists
-    // only to mirror the Vello host's `RenderParams` shape so the runner fills both identically.
     #[allow(dead_code)]
     pub antialiasing_method: AaConfig,
 }
 
-/// The wgpu context — a thin wrapper over `vello::util::RenderContext` whose only job is to
-/// capture the swapchain format at surface creation (for the lazily-built
-/// `vello_hybrid::Renderer`). It does NOT swap the intermediate target: the hybrid path
-/// rasterizes straight into the swapchain (see `render.rs::present_frame`), so no
-/// render-attachment intermediate is needed. `Deref` exposes the inner context —
-/// `devices`, `resize_surface`, etc. — unchanged.
-pub(crate) struct RenderContext(VelloCtx);
+/// The wgpu context — a thin wrapper over `vello::util::RenderContext`.
+pub(crate) struct RenderContext {
+    inner: VelloCtx,
+    errors_seen: u64,
+}
 
 impl RenderContext {
     pub(crate) fn new() -> Self {
-        Self(VelloCtx::new())
+        Self { inner: VelloCtx::new(), errors_seen: GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed) }
     }
 
     pub(crate) async fn create_surface<'w>(
@@ -75,47 +55,72 @@ impl RenderContext {
         height: u32,
         present_mode: wgpu::PresentMode,
     ) -> Result<RenderSurface<'w>, vello::Error> {
-        let surface = self.0.create_surface(window, width, height, present_mode).await?;
+        let surface = self.inner.create_surface(window, width, height, present_mode).await?;
         SURFACE_FORMAT.get_or_init(|| surface.config.format);
-        Ok(surface)
+        install_error_handler(&self.inner.devices[surface.dev_id].device);
+        Ok(RenderSurface(surface))
+    }
+
+    pub(crate) fn resize_surface(&self, surface: &mut RenderSurface<'_>, width: u32, height: u32) {
+        let device = &self.inner.devices[surface.0.dev_id].device;
+        surface.0.config.width = width.max(1);
+        surface.0.config.height = height.max(1);
+        surface.0.surface.configure(device, &surface.0.config);
+    }
+
+    pub(crate) fn device_count(&self) -> usize {
+        self.inner.devices.len()
+    }
+
+    pub(crate) fn new_renderer(&self, device: usize) -> Option<Renderer> {
+        let dh = self.inner.devices.get(device)?;
+        Some(new_renderer(&dh.device, &dh.queue))
+    }
+
+    #[allow(dead_code)] // first caller: C18 (08 §6.5 step 1)
+    pub(crate) fn needs_reset(&self) -> bool {
+        GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed) != self.errors_seen
     }
 }
 
 impl Deref for RenderContext {
     type Target = VelloCtx;
     fn deref(&self) -> &VelloCtx {
-        &self.0
+        &self.inner
     }
 }
 
 impl std::ops::DerefMut for RenderContext {
     fn deref_mut(&mut self) -> &mut VelloCtx {
-        &mut self.0
+        &mut self.inner
     }
 }
 
-/// The hybrid renderer: the `vello_hybrid::Renderer` + its `Resources`, built once (lazily,
-/// on the first frame) and reused at EVERY size. `render_to_texture` mirrors
-/// `vello::Renderer`'s signature so the runner calls it identically.
+/// Thin wrapper over `vello::util::RenderSurface`.
+pub(crate) struct RenderSurface<'w>(vello::util::RenderSurface<'w>);
+
+impl RenderSurface<'_> {
+    pub(crate) fn device_index(&self) -> usize {
+        self.0.dev_id
+    }
+
+    pub(crate) fn size(&self) -> (u32, u32) {
+        (self.0.config.width, self.0.config.height)
+    }
+}
+
+/// The hybrid renderer: the `vello_hybrid::Renderer` + its `Resources`, built once.
 pub(crate) struct Renderer {
     inner: Option<HybRenderer>,
     resources: Option<Resources>,
-    /// GPU textures for `draw_image` content, keyed by source-pixel identity so an image
-    /// isn't re-uploaded every frame. (Grows with distinct images seen; a real eviction
-    /// policy is a follow-up — fine for typical screens.)
     image_cache: HashMap<u64, wgpu::Texture>,
 }
 
-/// Construct an (empty) hybrid renderer; the inner GPU renderer is built on first frame, when
-/// the target format + size are known (the runner has no size at `new_renderer` time).
 pub(crate) fn new_renderer(_device: &wgpu::Device, _queue: &wgpu::Queue) -> Renderer {
     Renderer { inner: None, resources: None, image_cache: HashMap::new() }
 }
 
 impl Renderer {
-    /// The windowed frame loop's entry point: resolve the swapchain format captured at surface
-    /// creation, then render through [`Self::render_offscreen`]. Errors only if no surface has
-    /// been created yet (impossible from the runner, which creates one before the first frame).
     pub(crate) fn render_to_texture(
         &mut self,
         device: &wgpu::Device,
@@ -136,12 +141,6 @@ impl Renderer {
         )
     }
 
-    /// Render `scene` into an owned `target` view of a known `format`, with no swapchain and no
-    /// dependence on the windowed surface. Both the windowed [`Self::render_to_texture`] and the
-    /// headless `capture` path funnel through here, so the renderer-once construction, the flush,
-    /// the base-color clear and the `draw_image` texture binding are all defined exactly once.
-    // A GPU render entry legitimately takes device+queue+scene+target+color+size+format; a
-    // params struct here would only obscure a flat, single-call-site signature.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn render_offscreen(
         &mut self,
@@ -149,15 +148,11 @@ impl Renderer {
         queue: &wgpu::Queue,
         scene: &Scene,
         target: &wgpu::TextureView,
-        base_color: peniko::Color,
+        base_color: Color,
         size: (u32, u32),
         format: wgpu::TextureFormat,
     ) -> Result<(), String> {
         let size = (size.0.max(1), size.1.max(1));
-        // Build the renderer + its Resources (glyph/image atlas) ONCE and reuse them at every
-        // size: `render()` takes the size per frame and grows its internal targets as needed.
-        // Recreating them on resize wiped the atlas and rendered a fresh renderer's first frame
-        // each time — that was the "christmas lights" flicker while dragging the window.
         if self.inner.is_none() {
             let (renderer, resources) =
                 HybRenderer::new(device, &RenderTargetConfig { format, width: size.0, height: size.1 });
@@ -168,15 +163,11 @@ impl Renderer {
         let resources =
             self.resources.as_mut().expect("hybrid resources built just above when inner was None");
 
-        // Build the backend scene: clear to the base color, then flush the recorded op-list.
         let mut hyb = HybScene::new(size.0.min(u16::MAX as u32) as u16, size.1.min(u16::MAX as u32) as u16);
         hyb.set_paint(base_color);
         hyb.fill_rect(&kurbo::Rect::new(0.0, 0.0, f64::from(size.0), f64::from(size.1)));
         scene.flush(&mut hyb, resources);
 
-        // Bind the external textures the flush references (`draw_image` content). Upload order
-        // matches the flush's `TextureId(index)`; textures are cached by source identity so an
-        // unchanged image isn't re-uploaded next frame.
         let uploads = scene.image_uploads();
         let mut bindings = TextureBindings::new();
         for (i, up) in uploads.iter().enumerate() {
@@ -234,4 +225,34 @@ impl Renderer {
         queue.submit([encoder.finish()]);
         Ok(())
     }
+}
+
+/// Acquire the swapchain image, render `scene` straight into it, and present.
+pub(crate) fn present_frame(
+    ctx: &RenderContext,
+    renderer: &mut Renderer,
+    surface: &RenderSurface<'_>,
+    scene: &Scene,
+    base_color: Color,
+    window: &winit::window::Window,
+) -> PresentOutcome {
+    let device = &ctx.inner.devices[surface.0.dev_id].device;
+    let queue = &ctx.inner.devices[surface.0.dev_id].queue;
+    let surface_texture = match surface.0.surface.get_current_texture() {
+        wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
+        _ => return PresentOutcome::Skipped,
+    };
+    let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let (w, h) = surface.size();
+    let params = RenderParams { base_color, width: w, height: h, antialiasing_method: AaConfig::Area };
+    if let Err(e) = renderer.render_to_texture(device, queue, scene, &view, &params) {
+        eprintln!("pebbles: hybrid render failed (skipping frame, scheduling GPU reset): {e}");
+        GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        window.request_redraw();
+        return PresentOutcome::Skipped;
+    }
+    let _ = device.poll(wgpu::PollType::Poll);
+    window.pre_present_notify();
+    surface_texture.present();
+    PresentOutcome::Presented
 }

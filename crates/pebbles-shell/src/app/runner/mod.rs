@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use web_time::Instant;
 
-use crate::gpu::{AaConfig, RenderContext, RenderParams, RenderSurface, Renderer, Scene, new_renderer};
+use crate::gpu::{GPU_ERRORS, RenderContext, RenderSurface, Renderer, Scene};
 use kurbo::Affine;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
 use pebbles_foundation::{Color, Offset, Size, TextDirection};
@@ -44,72 +44,6 @@ const LONG_PRESS: Duration = Duration::from_millis(500);
 /// Logical pixels scrolled per wheel notch/line. Matched to browsers (Chrome/Firefox
 /// scroll ~100 px per notch); the previous 48 was GTK-ish and felt about half-speed.
 const LINE_SCROLL: f64 = 100.0;
-
-/// Global count of uncaptured GPU errors — the render loop compares it per
-/// frame and REBUILDS the poisoned GPU state (vello renderer + surface target)
-/// when it moved. See [`install_error_handler`].
-pub(super) static GPU_ERRORS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// A GUI shell must not die on a GPU hiccup, but it must ALSO not overreact.
-///
-/// wgpu's DEFAULT uncaptured-error handler panics the process; we never want
-/// that. But there are two very different kinds of error, and conflating them
-/// is what caused the markdown-screen "black screen":
-///
-/// * **Validation errors** are NON-FATAL here. On this vello 0.10 + Intel/Vulkan
-///   combination the markdown scene emits a spurious per-frame `create_view`
-///   validation error, yet the frame still renders correctly (measured: 125 fps
-///   straight through the errors). Rebuilding the whole GPU stack on each one
-///   cost ~3 s a pop, so the app spent ALL its time resetting — ~1 frame every
-///   3 s — which reads as a frozen black window. So: log validation errors
-///   (throttled) and otherwise IGNORE them. Do not trigger recovery.
-/// * **Out-of-memory / internal / device-lost** errors DO poison the device.
-///   Those bump [`GPU_ERRORS`], and the render loop rebuilds the GPU stack.
-pub(super) fn install_error_handler(device: &wgpu::Device) {
-    use std::sync::atomic::AtomicU64;
-    static VALIDATION_SEEN: AtomicU64 = AtomicU64::new(0);
-    device.on_uncaptured_error(Arc::new(|e: wgpu::Error| {
-        let fatal = !matches!(e, wgpu::Error::Validation { .. });
-        if fatal {
-            let n = GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            pebbles_core::log::error(
-                pebbles_core::log::Cat::Gpu,
-                format!("FATAL wgpu error #{n} (device poisoned — scheduling reset): {e}"),
-            );
-            eprintln!("pebbles: fatal wgpu error #{n} — rebuilding the GPU state: {e}");
-        } else {
-            // Non-fatal validation error: do NOT reset — frames keep rendering.
-            let n = VALIDATION_SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            let text = e.to_string();
-            // The known vello-0.10 glyph-atlas quirk on some Vulkan drivers (Intel):
-            // an internal `create_view` on the text atlas reports "Texture … is
-            // invalid" while the frame STILL renders correctly (proven: no Pebbles
-            // draw produces it, and frames complete through it). Explain it ONCE and
-            // then suppress entirely — it is not a Pebbles bug and not actionable.
-            let benign_atlas =
-                text.contains("Validation") && (text.contains("create_view") || text.contains("Texture"));
-            if benign_atlas {
-                if n == 1 {
-                    pebbles_core::log::warn(
-                        pebbles_core::log::Cat::Gpu,
-                        "vello glyph-atlas validation warning from the GPU driver (vello 0.10 on \
-                         this Vulkan driver) — text still renders correctly; this is a driver/vello \
-                         quirk, not a Pebbles error. Suppressing further repeats."
-                            .to_string(),
-                    );
-                }
-            } else if n <= 3 || n.is_multiple_of(600) {
-                pebbles_core::log::warn(
-                    pebbles_core::log::Cat::Gpu,
-                    format!("non-fatal wgpu validation error (x{n}, ignored): {e}"),
-                );
-            }
-        }
-        if std::env::var("PEBBLES_GPU_TRACE").is_ok() {
-            eprintln!("{}", std::backtrace::Backtrace::force_capture());
-        }
-    }));
-}
 
 /// Wire the OS clipboard into `pebbles_core::clipboard`. Falls back to the core's
 /// in-process clipboard if the platform clipboard can't be opened (e.g. headless).
@@ -471,10 +405,9 @@ impl Runner {
             }
         }
         // Ensure a renderer exists for this surface's device.
-        self.renderers.resize_with(self.context.as_ref().unwrap().devices.len(), || None);
-        install_error_handler(&self.context.as_ref().unwrap().devices[surface.dev_id].device);
-        let dh = &self.context.as_ref().unwrap().devices[surface.dev_id];
-        self.renderers[surface.dev_id].get_or_insert_with(|| new_renderer(&dh.device, &dh.queue));
+        self.renderers.resize_with(self.context.as_ref().unwrap().device_count(), || None);
+        let idx = surface.device_index();
+        self.renderers[idx].get_or_insert_with(|| self.context.as_ref().unwrap().new_renderer(idx).unwrap());
 
         // Mount the widget tree once, wrapped in the root View.
         if !self.mounted {

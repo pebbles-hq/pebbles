@@ -1,0 +1,31 @@
+[package]
+name = "pebbles-gpu"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+description = "The first-party wgpu 2D renderer for Pebbles: display-list preparation and GPU execution. Implementation crate — apps use pebbles::shell."
+
+[dependencies]
+pebbles-foundation.workspace = true
+# Display-list types ONLY. NEVER add features here — enabling a pebbles-render feature
+# from pebbles-gpu would flip the shell's backend through Cargo feature unification.
+pebbles-render.workspace = true
+wgpu.workspace = true
+kurbo.workspace = true
+peniko.workspace = true
+lyon_tessellation.workspace = true
+bytemuck.workspace = true
+web-time.workspace = true
+# Temporary — the moved glyph path still uses cosmic-text + fontdb (removed by C09).
+cosmic-text.workspace = true
+fontdb.workspace = true
+
+[lints]
+workspace = true

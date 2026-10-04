@@ -1,3 +1,5 @@
+#![cfg(all(not(target_family = "wasm"), any(feature = "vello-hybrid", feature = "wgpu")))]
+
 //! Headless regression checks for the wgpu image + shadow pipelines (Phase 3).
 //! `#[ignore]` because they need a GPU (run with `-- --ignored`).
 
