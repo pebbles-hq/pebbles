@@ -440,48 +440,9 @@ impl Runner {
 /// frame). No panics: a GPU hiccup logs, bumps [`GPU_ERRORS`] so the reset path rebuilds
 /// the stack, and skips one frame.
 ///
-/// Backend-split, because presenting differs by rasterizer:
-/// * **Vello** (compute) can't write a swapchain image directly, so it renders into an
-///   intermediate storage target and blits that to the swapchain.
-/// * **Vello Hybrid** (raster) renders **straight to the swapchain** — no intermediate, no
-///   blit. Besides being simpler and cheaper, this removes the extra render target (and its
-///   per-resize recreation) that caused multicolored flicker while resizing on the web.
-#[cfg(all(feature = "vello", not(any(feature = "vello-hybrid", feature = "wgpu"))))]
-fn present_frame(
-    renderer: &mut Renderer,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    surface: &RenderSurface<'_>,
-    frame: &Scene,
-    params: &RenderParams,
-    window: &Window,
-) -> bool {
-    if let Err(e) = renderer.render_to_texture(device, queue, frame, &surface.target_view, params) {
-        eprintln!("pebbles: vello render failed (skipping frame, scheduling GPU reset): {e}");
-        GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        window.request_redraw();
-        return false;
-    }
-    // DRIVER WORKAROUND — process completed GPU work without WAITING before touching the
-    // swapchain (a blocking `Wait` froze markdown-heavy scenes on Intel; the swapchain +
-    // AutoVsync already pace us). See the git history for the full rationale.
-    let _ = device.poll(wgpu::PollType::Poll);
-    let surface_texture = match surface.surface.get_current_texture() {
-        wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
-        // Timeout / occluded / outdated / lost — skip this frame and try again.
-        _ => return false,
-    };
-    let mut encoder =
-        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.blit") });
-    let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
-    surface.blitter.copy(device, &mut encoder, &surface.target_view, &view);
-    queue.submit([encoder.finish()]);
-    window.pre_present_notify();
-    surface_texture.present();
-    true
-}
-
-#[cfg(any(feature = "vello-hybrid", feature = "wgpu"))]
+/// Both the hybrid and wgpu hosts render **straight to the swapchain** — no intermediate,
+/// no blit. Besides being simpler and cheaper, this removes the extra render target (and
+/// its per-resize recreation) that caused multicolored flicker while resizing on the web.
 fn present_frame(
     renderer: &mut Renderer,
     device: &wgpu::Device,

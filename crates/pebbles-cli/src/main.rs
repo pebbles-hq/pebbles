@@ -104,9 +104,9 @@ fn print_help() {
 
 {BOLD}pebbles create OPTIONS{RESET}
     -t, --template <k> app | widget      (default: app)
-    -r, --renderer <r> hybrid | vello | wgpu   (default: hybrid) — the app's
-                      default render backend (hybrid = low-power; vello = GPU
-                      compute; wgpu = the first-party 2D renderer). All are
+    -r, --renderer <r> hybrid | wgpu   (default: hybrid) — the app's
+                      default render backend (hybrid = Vello Hybrid, today's
+                      default; wgpu = the first-party renderer). Both are
                       wired either way, switchable at run time.
     --list            List the templates and exit
     --path            Depend on the local Pebbles checkout instead of git —
@@ -116,9 +116,8 @@ fn print_help() {
     -d, --device <t>  Target platform: desktop (default) | web | android | ios
                       (aliases: chrome/safari/firefox = web; linux/macos/windows
                       = desktop). Web serves a WebGPU build with live reload.
-    -r, --renderer <r> Render backend: hybrid (default, low-power) | vello (GPU
-                      compute, for heavy vector) | wgpu (first-party 2D).
-                      Pins it via cargo features.
+    -r, --renderer <r> Render backend: hybrid (default) | wgpu (first-party,
+                      experimental). Pins it via cargo features.
     --port <n>        Dev-server port for -d web (default: 8080)
     -p, --package <n> Run a specific workspace member / sample by name
                       (aliases: --example, --bin)
@@ -135,7 +134,7 @@ fn print_help() {
 {BOLD}pebbles build OPTIONS{RESET}  {DIM}(always builds optimized/release){RESET}
     -d, --device <t>  Target: desktop (default) → target/release/<bin>; web →
                       a static wasm bundle in ./dist; android | ios → guidance.
-    -r, --renderer <r> Render backend: hybrid (default) | vello | wgpu — same
+    -r, --renderer <r> Render backend: hybrid (default) | wgpu — same
                       features as `run`, forwarded to cargo (and Trunk on web).
     -p, --package <n> Build a specific workspace member by name
                       (aliases: --example, --bin)
@@ -147,11 +146,11 @@ fn print_help() {
     pebbles run -d web              {DIM}# build to wasm + open in a WebGPU browser{RESET}
     pebbles run -p counter -d web   {DIM}# run a specific sample on the web{RESET}
     pebbles run -p desktop --watch crates   {DIM}# also hot-restart on framework edits{RESET}
-    pebbles run --renderer vello    {DIM}# run on the GPU-compute backend{RESET}
-    pebbles run --release --renderer vello   {DIM}# optimized release on vello{RESET}
+    pebbles run --renderer wgpu     {DIM}# run on the first-party wgpu renderer{RESET}
+    pebbles run --release --renderer wgpu   {DIM}# optimized release on wgpu{RESET}
     pebbles build                   {DIM}# release binary → target/release/<bin>{RESET}
     pebbles build -d web            {DIM}# static wasm bundle → ./dist (deployable){RESET}
-    pebbles create app2 --renderer vello     {DIM}# scaffold defaulting to vello{RESET}
+    pebbles create app2 --renderer wgpu     {DIM}# scaffold defaulting to wgpu{RESET}
     cd examples/counter && pebbles run
     pebbles run --log trace
     pebbles doctor

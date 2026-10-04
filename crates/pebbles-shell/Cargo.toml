@@ -50,10 +50,9 @@ global-hotkey = { version = "0.8", optional = true }
 
 [features]
 # Render backend (wgpu migration). `vello-hybrid` is the default; `wgpu` (first-party)
-# and `vello` (GPU compute) are opt-in. All three forward the selection to
-# pebbles-render/-core/-widgets. `vello-hybrid` wins whenever it is enabled (DR-10);
-# select wgpu with `--no-default-features --features wgpu`. The hybrid GPU host lives
-# in gpu/hybrid_host.rs.
+# is opt-in. Both forward the selection to pebbles-render/-core/-widgets. `vello-hybrid`
+# wins whenever it is enabled (DR-10); select wgpu with
+# `--no-default-features --features wgpu`. The hybrid GPU host lives in gpu/hybrid_host.rs.
 default = ["vello-hybrid"]
 wgpu = [
     "pebbles-render/wgpu",
@@ -64,7 +63,6 @@ wgpu = [
     "dep:cosmic-text",
     "dep:fontdb",
 ]
-vello = ["pebbles-render/vello", "pebbles-core/vello", "pebbles-widgets/vello", "dep:vello"]
 vello-hybrid = [
     "pebbles-render/vello-hybrid",
     "pebbles-core/vello-hybrid",

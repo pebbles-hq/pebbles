@@ -182,28 +182,6 @@ jobs:
         run: cargo doc -p pebbles-render -p pebbles-shell --no-deps --no-default-features --features wgpu
 
   # ───────────────────────────────────────────────────────────────────────────
-  # The classic `vello` backend. Every other job resolves to `vello-hybrid` (the
-  # default, which also wins under `--all-features`), so `paint/vello_backend.rs` +
-  # `gpu/vello_host.rs` — the backend the CLI offers as `pebbles run --renderer
-  # vello` — would otherwise never be compiled or tested. This job is that gate:
-  # the shell on the vello host, plus one headless run of the widget suite on it.
-  # ───────────────────────────────────────────────────────────────────────────
-  vello-backend:
-    name: Vello backend (opt-in)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: System deps (Linux)
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: vello-backend
-      - name: Shell compiles on the vello host
-        run: cargo check -p pebbles-shell --no-default-features --features vello
-      - name: Widget suite on the vello backend (headless)
-        run: cargo test -p pebbles-widgets --no-default-features --features vello
-
-  # ───────────────────────────────────────────────────────────────────────────
   # Line coverage — NON-BLOCKING for now. Publishes a per-crate summary to the job
   # page so we can see which modules lack coverage; gate on a threshold later.
   # ───────────────────────────────────────────────────────────────────────────

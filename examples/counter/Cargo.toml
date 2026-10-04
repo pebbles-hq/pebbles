@@ -8,10 +8,9 @@ publish = false
 pebbles = { workspace = true }
 
 [features]
-# Render backend, forwarded to the pebbles umbrella. `vello-hybrid` (low-power) is the
-# default; build classic vello with `--no-default-features --features vello`.
+# Render backend, forwarded to the pebbles umbrella. `vello-hybrid` is the default;
+# the first-party `wgpu` renderer is opt-in.
 default = ["vello-hybrid"]
-vello = ["pebbles/vello"]
 vello-hybrid = ["pebbles/vello-hybrid"]
 wgpu = ["pebbles/wgpu"]
 

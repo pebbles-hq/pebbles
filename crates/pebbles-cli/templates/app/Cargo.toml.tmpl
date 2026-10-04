@@ -9,14 +9,11 @@ publish = false
 {{dep_nodefault.pebbles}}
 
 [features]
-# Render backend. `vello-hybrid` (low-power, hybrid CPU+GPU raster) is Pebbles' default;
-# `vello` (GPU compute) is the opt-in for heavy vector work (design tools / node canvases);
-# `wgpu` is the first-party 2D renderer. All are wired here — switch at run time without
-# editing this file:
+# Render backend. `vello-hybrid` is Pebbles' current default; `wgpu` is the first-party
+# renderer (experimental until it becomes the default). Both are wired here — switch at
+# run time without editing this file:
 #   pebbles run                    # uses `default` below
-#   pebbles run --renderer vello   # force the compute backend
 #   pebbles run --renderer wgpu    # force the first-party renderer
 default = ["{{renderer}}"]
-vello = ["pebbles/vello"]
 vello-hybrid = ["pebbles/vello-hybrid"]
 wgpu = ["pebbles/wgpu"]

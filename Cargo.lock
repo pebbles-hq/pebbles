@@ -3208,7 +3208,6 @@ dependencies = [
  "peniko",
  "slotmap",
  "smallvec",
- "vello",
  "vello_common",
  "vello_hybrid",
  "web-time",

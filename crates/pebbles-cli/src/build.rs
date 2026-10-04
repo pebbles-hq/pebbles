@@ -35,17 +35,17 @@ fn parse_args(args: &[String]) -> Result<BuildOpts, String> {
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
-            // Pin the render backend: `--renderer vello` | `hybrid` (default: hybrid).
+            // Pin the render backend: `--renderer hybrid` | `wgpu` (default: hybrid).
             "-r" | "--renderer" | "--backend" => {
-                let v = it.next().ok_or("`--renderer` needs a value: hybrid | vello | wgpu")?;
+                let v = it.next().ok_or("`--renderer` needs a value: hybrid | wgpu")?;
                 o.renderer = Some(
                     Renderer::parse(v)
-                        .ok_or_else(|| format!("unknown renderer `{v}` — use: hybrid | vello | wgpu"))?,
+                        .ok_or_else(|| format!("unknown renderer `{v}` — use: hybrid | wgpu"))?,
                 );
             }
             s if s.starts_with("--renderer=") => {
                 let v = &s["--renderer=".len()..];
-                o.renderer = Some(Renderer::parse(v).ok_or("unknown renderer — use: hybrid | vello | wgpu")?);
+                o.renderer = Some(Renderer::parse(v).ok_or("unknown renderer — use: hybrid | wgpu")?);
             }
             // Flutter-style target selection: `pebbles build -d web` (default: desktop).
             "-d" | "--device" | "--platform" => {
@@ -285,9 +285,9 @@ mod tests {
 
     #[test]
     fn parse_selects_renderer() {
-        assert_eq!(parse_args(&argv(&["-r", "vello"])).unwrap().renderer, Some(Renderer::Vello));
+        assert_eq!(parse_args(&argv(&["-r", "hybrid"])).unwrap().renderer, Some(Renderer::Hybrid));
         assert_eq!(parse_args(&argv(&["--renderer", "hybrid"])).unwrap().renderer, Some(Renderer::Hybrid));
-        assert_eq!(parse_args(&argv(&["--renderer=vello"])).unwrap().renderer, Some(Renderer::Vello));
+        assert_eq!(parse_args(&argv(&["--renderer=wgpu"])).unwrap().renderer, Some(Renderer::Wgpu));
         assert_eq!(parse_args(&argv(&["--renderer", "wgpu"])).unwrap().renderer, Some(Renderer::Wgpu));
     }
 
@@ -299,13 +299,13 @@ mod tests {
 
     #[test]
     fn parse_combines_flags() {
-        let o = parse_args(&argv(&["-p", "gallery", "-d", "web", "--renderer", "vello"])).unwrap();
+        let o = parse_args(&argv(&["-p", "gallery", "-d", "web", "--renderer", "wgpu"])).unwrap();
         assert_eq!(
             o,
             BuildOpts {
                 package: Some("gallery".into()),
                 platform: Platform::Web,
-                renderer: Some(Renderer::Vello),
+                renderer: Some(Renderer::Wgpu),
             }
         );
     }
@@ -317,6 +317,7 @@ mod tests {
         assert!(parse_args(&argv(&["--nope"])).is_err());
         assert!(parse_args(&argv(&["-d", "toaster"])).is_err());
         assert!(parse_args(&argv(&["-r", "crayon"])).is_err());
+        assert!(parse_args(&argv(&["--renderer", "vello"])).is_err());
         assert!(parse_args(&argv(&["counter"])).is_err());
         assert!(parse_args(&argv(&["-d"])).is_err());
         assert!(parse_args(&argv(&["-r"])).is_err());

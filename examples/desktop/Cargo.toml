@@ -29,10 +29,9 @@ pebbles-render.workspace = true
 pebbles-widgets.workspace = true
 
 [features]
-# Render backend, forwarded to the umbrella + test-harness crates. `vello-hybrid` is default;
-# build/test classic vello with `--no-default-features --features vello`.
+# Render backend, forwarded to the umbrella + test-harness crates. `vello-hybrid` is
+# default; the first-party `wgpu` renderer is opt-in.
 default = ["vello-hybrid"]
-vello = ["pebbles/vello", "pebbles-testing/vello", "pebbles-render/vello", "pebbles-widgets/vello"]
 vello-hybrid = [
     "pebbles/vello-hybrid",
     "pebbles-testing/vello-hybrid",

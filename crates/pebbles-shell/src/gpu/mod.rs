@@ -3,7 +3,6 @@
 //! (`RenderContext`, `RenderSurface`, `Renderer`, `RenderParams`, `AaConfig`,
 //! `new_renderer`, `Scene`), so the runner's frame loop is backend-agnostic.
 //!
-//! - `vello`  — thin re-export of `vello::util` + `vello::Renderer` (GPU compute).
 //! - `vello-hybrid` — reuses `vello::util` for the backend-agnostic surface/blit
 //!   plumbing, swaps the intermediate target to a `RENDER_ATTACHMENT` texture, and
 //!   drives a `vello_hybrid::Renderer` that flushes the recorded op-list and rasterizes.
@@ -14,17 +13,15 @@
 //! `--no-default-features --features wgpu` (the CLI's `--renderer wgpu` does exactly this).
 //! The scene type is always `pebbles_render::Scene` (backend-correct by construction).
 
+#[cfg(not(any(feature = "wgpu", feature = "vello-hybrid")))]
+compile_error!("pebbles-shell: enable a GPU host — `vello-hybrid` (default) or `wgpu`");
+
 // Mirror pebbles-render's transition precedence: `vello-hybrid` wins whenever it is
 // enabled (DR-10), so `--all-features` keeps testing the shipping default.
 #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
 mod wgpu_host;
 #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
 pub(crate) use wgpu_host::{AaConfig, RenderContext, RenderParams, RenderSurface, Renderer, new_renderer};
-
-#[cfg(all(feature = "vello", not(any(feature = "vello-hybrid", feature = "wgpu"))))]
-mod vello_host;
-#[cfg(all(feature = "vello", not(any(feature = "vello-hybrid", feature = "wgpu"))))]
-pub(crate) use vello_host::{AaConfig, RenderContext, RenderParams, RenderSurface, Renderer, new_renderer};
 
 #[cfg(feature = "vello-hybrid")]
 mod hybrid_host;
@@ -39,12 +36,9 @@ pub(crate) const HOST: &str = "vello-hybrid";
 #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
 #[allow(dead_code)]
 pub(crate) const HOST: &str = "wgpu";
-#[cfg(all(feature = "vello", not(any(feature = "vello-hybrid", feature = "wgpu"))))]
-#[allow(dead_code)]
-pub(crate) const HOST: &str = "vello";
 
 /// The retained scene the runner paints into and presents — always the backend-correct
-/// `pebbles-render` type (a `vello::Scene` under `vello`, a recorded op-list under hybrid).
+/// `pebbles-render` type.
 pub(crate) use pebbles_render::Scene;
 
 #[cfg(test)]

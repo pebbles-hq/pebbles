@@ -32,8 +32,6 @@ struct Opts {
 pub(crate) enum Renderer {
     /// `vello_hybrid` — hybrid CPU+GPU raster, low power. Pebbles' default.
     Hybrid,
-    /// `vello` — GPU compute raster; the opt-in for heavy vector (design tools).
-    Vello,
     /// `wgpu` — the first-party 2D renderer (migration backend).
     Wgpu,
 }
@@ -42,7 +40,6 @@ impl Renderer {
     pub(crate) fn parse(s: &str) -> Option<Renderer> {
         match s.to_ascii_lowercase().as_str() {
             "hybrid" | "vello-hybrid" | "vello_hybrid" | "default" => Some(Renderer::Hybrid),
-            "vello" | "compute" | "classic" => Some(Renderer::Vello),
             "wgpu" => Some(Renderer::Wgpu),
             _ => None,
         }
@@ -52,7 +49,6 @@ impl Renderer {
     pub(crate) fn feature(self) -> &'static str {
         match self {
             Renderer::Hybrid => "vello-hybrid",
-            Renderer::Vello => "vello",
             Renderer::Wgpu => "wgpu",
         }
     }
@@ -63,7 +59,6 @@ pub(crate) fn renderer_label(r: Option<Renderer>) -> &'static str {
     match r {
         None => "hybrid (default)",
         Some(Renderer::Hybrid) => "hybrid",
-        Some(Renderer::Vello) => "vello",
         Some(Renderer::Wgpu) => "wgpu",
     }
 }
@@ -116,16 +111,16 @@ pub fn run(args: &[String]) -> ExitCode {
         match a.as_str() {
             "--release" => o.release = true,
             "--no-reload" => o.reload = false,
-            // Pin the render backend: `--renderer vello` | `hybrid` (default: hybrid).
+            // Pin the render backend: --renderer hybrid | wgpu (default: hybrid).
             "-r" | "--renderer" | "--backend" => {
                 let Some(v) = it.next() else {
-                    term::error("`--renderer` needs a value: hybrid | vello | wgpu");
+                    term::error("`--renderer` needs a value: hybrid | wgpu");
                     return ExitCode::FAILURE;
                 };
                 match Renderer::parse(v) {
                     Some(r) => o.renderer = Some(r),
                     None => {
-                        term::error(&format!("unknown renderer `{v}` — use: hybrid | vello | wgpu"));
+                        term::error(&format!("unknown renderer `{v}` — use: hybrid | wgpu"));
                         return ExitCode::FAILURE;
                     }
                 }
@@ -133,7 +128,7 @@ pub fn run(args: &[String]) -> ExitCode {
             s if s.starts_with("--renderer=") => match Renderer::parse(&s["--renderer=".len()..]) {
                 Some(r) => o.renderer = Some(r),
                 None => {
-                    term::error("unknown renderer — use: hybrid | vello | wgpu");
+                    term::error("unknown renderer — use: hybrid | wgpu");
                     return ExitCode::FAILURE;
                 }
             },
@@ -1015,12 +1010,12 @@ mod tests {
 
     #[test]
     fn renderer_parsing() {
-        assert_eq!(Renderer::parse("vello"), Some(Renderer::Vello));
+        assert_eq!(Renderer::parse("vello"), None);
+        assert_eq!(Renderer::parse("classic"), None);
         assert_eq!(Renderer::parse("HYBRID"), Some(Renderer::Hybrid));
         assert_eq!(Renderer::parse("vello_hybrid"), Some(Renderer::Hybrid));
         assert_eq!(Renderer::parse("wgpu"), Some(Renderer::Wgpu));
         assert_eq!(Renderer::parse("nonsense"), None);
-        assert_eq!(Renderer::Vello.feature(), "vello");
         assert_eq!(Renderer::Hybrid.feature(), "vello-hybrid");
         assert_eq!(Renderer::Wgpu.feature(), "wgpu");
     }

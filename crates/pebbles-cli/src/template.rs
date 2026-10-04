@@ -14,12 +14,11 @@
 //!
 //! * `{{name}}` — the project name as given (`my-widget`)
 //! * `{{name_snake}}` — the same, underscored, for Rust paths (`my_widget`)
-//! * `{{renderer}}` — the chosen default render backend feature
-//!   (`vello-hybrid` | `vello`)
+//! * `{{renderer}}` — the chosen default render backend feature (`vello-hybrid` | `wgpu`)
 //! * `{{dep.<crate>}}` — a Cargo dependency line for a Pebbles crate, resolved
 //!   to either a git or a path source (see [`Source`])
 //! * `{{dep_nodefault.<crate>}}` — the same, but with `default-features = false`
-//!   (so the app's own `default`/`vello`/`vello-hybrid` features drive the backend)
+//!   (so the app's own `default`/`vello-hybrid`/`wgpu` features drive the backend)
 //!
 //! An unknown placeholder is left untouched rather than silently blanked, so a
 //! typo shows up in the generated file instead of vanishing.
@@ -183,6 +182,15 @@ mod tests {
     #[test]
     fn survives_an_unterminated_placeholder() {
         assert_eq!(render("head {{name", "x", "vello-hybrid", &dep), "head {{name");
+    }
+
+    #[test]
+    fn app_template_offers_no_classic_vello() {
+        let app = ALL.iter().find(|t| t.name == "app").expect("app template");
+        let manifest = app.files.iter().find(|f| f.path == "Cargo.toml").expect("manifest");
+        assert!(!manifest.contents.contains("pebbles/vello\""), "classic vello is gone (C02)");
+        assert!(manifest.contents.contains("pebbles/vello-hybrid"));
+        assert!(manifest.contents.contains("pebbles/wgpu"));
     }
 
     #[test]
