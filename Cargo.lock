@@ -3173,6 +3173,7 @@ dependencies = [
  "pebbles-foundation",
  "pebbles-render",
  "peniko",
+ "pollster 1.0.1",
  "web-time",
  "wgpu",
 ]

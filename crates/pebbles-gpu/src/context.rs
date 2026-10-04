@@ -1,5 +1,7 @@
 //! The wgpu instance, adapter and device pool.
 
+use super::error::GpuError;
+
 /// Index of a device in its [`GpuContext`]. Invalid after the context is dropped/rebuilt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DeviceId(usize);
@@ -54,23 +56,23 @@ impl GpuContext {
         width: u32,
         height: u32,
         present_mode: wgpu::PresentMode,
-    ) -> Result<super::surface::RenderSurface<'window>, String> {
-        let surface = self.instance.create_surface(window).map_err(|error| error.to_string())?;
+    ) -> Result<super::surface::RenderSurface<'window>, GpuError> {
+        let surface = self.instance.create_surface(window).map_err(GpuError::from)?;
         super::surface::RenderSurface::configure_new(self, surface, width, height, present_mode).await
     }
 
-    /// Reuse a compatible device, or request a new one. Returns its index.
+    /// Reuse a compatible device, or request a new one.
     pub async fn request_device(
         &mut self,
         compatible_surface: Option<&wgpu::Surface<'_>>,
-    ) -> Option<DeviceId> {
+    ) -> Result<DeviceId, GpuError> {
         if let Some(index) = compatible_surface.and_then(|surface| {
             self.devices.iter().position(|device| device.adapter.is_surface_supported(surface))
         }) {
-            return Some(DeviceId(index));
+            return Ok(DeviceId(index));
         }
         if compatible_surface.is_none() && !self.devices.is_empty() {
-            return Some(DeviceId(0));
+            return Ok(DeviceId(0));
         }
         let adapter = self
             .instance
@@ -80,7 +82,13 @@ impl GpuContext {
                 force_fallback_adapter: false,
             })
             .await
-            .ok()?;
+            .map_err(|source| GpuError::NoAdapter {
+                backends: wgpu::Backends::all(),
+                software_only: false,
+                enumerated: 0,
+                source: Some(source),
+            })?;
+        let info = adapter.get_info();
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("pebbles.gpu.device"),
@@ -89,9 +97,9 @@ impl GpuContext {
                 ..Default::default()
             })
             .await
-            .ok()?;
+            .map_err(|source| GpuError::RequestDevice { adapter: info.name.clone(), source })?;
         self.devices.push(GpuDevice { adapter, device, queue });
-        Some(DeviceId(self.devices.len() - 1))
+        Ok(DeviceId(self.devices.len() - 1))
     }
 
     /// The device at `id`, if any.

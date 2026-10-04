@@ -8,12 +8,12 @@ use wgpu::util::DeviceExt;
 use pebbles_render::paint::Scene;
 
 use super::context::{DeviceId, GpuDevice};
+use super::error::GpuError;
 use super::execute::pipelines::{GlyphPipeline, ImagePipeline, ShadowPipeline, make_pipeline};
 use super::execute::resources::Atlas;
 use super::execute::{draw_glyphs, draw_images, draw_shadows, scissor_params};
 use super::frame_targets::create_msaa;
 use super::prepare::mesh;
-use super::surface::SURFACE_FORMAT;
 
 /// Antialiasing selector — `Area` maps to 4× MSAA.
 #[derive(Clone, Copy, Debug)]
@@ -43,7 +43,7 @@ pub struct RenderParams {
 
 /// Pipelines + caches for ONE device. Shared by every surface/target on that device.
 pub struct Renderer {
-    pipeline: Option<(wgpu::TextureFormat, wgpu::RenderPipeline, wgpu::Buffer, wgpu::BindGroup)>,
+    pipeline: HashMap<(wgpu::TextureFormat, u32), (wgpu::RenderPipeline, wgpu::Buffer, wgpu::BindGroup)>,
     msaa: Option<(wgpu::TextureFormat, u32, u32, wgpu::Texture)>,
     pub(crate) sample_count: u32,
     pub(crate) fonts: Option<FontSystem>,
@@ -51,11 +51,11 @@ pub struct Renderer {
     pub(crate) font_ids: HashMap<(u64, u32), fontdb::ID>,
     pub(crate) atlas: Option<Atlas>,
     pub(crate) color_atlas: Option<Atlas>,
-    pub(crate) glyph_pipeline: Option<(wgpu::TextureFormat, GlyphPipeline)>,
-    pub(crate) color_pipeline: Option<(wgpu::TextureFormat, GlyphPipeline)>,
+    pub(crate) glyph_pipeline: HashMap<(wgpu::TextureFormat, u32), GlyphPipeline>,
+    pub(crate) color_pipeline: HashMap<(wgpu::TextureFormat, u32), GlyphPipeline>,
     pub(crate) image_cache: HashMap<u64, wgpu::Texture>,
-    pub(crate) image_pipeline: Option<(wgpu::TextureFormat, ImagePipeline)>,
-    pub(crate) shadow_pipeline: Option<(wgpu::TextureFormat, ShadowPipeline)>,
+    pub(crate) image_pipeline: HashMap<(wgpu::TextureFormat, u32), ImagePipeline>,
+    pub(crate) shadow_pipeline: HashMap<(wgpu::TextureFormat, u32), ShadowPipeline>,
 }
 
 impl Renderer {
@@ -63,7 +63,7 @@ impl Renderer {
     /// built lazily on the first frame).
     pub fn new(_gpu: &GpuDevice, _id: DeviceId) -> Self {
         Renderer {
-            pipeline: None,
+            pipeline: HashMap::new(),
             msaa: None,
             sample_count: aa_sample_count(AaConfig::Area),
             fonts: None,
@@ -71,25 +71,24 @@ impl Renderer {
             font_ids: HashMap::new(),
             atlas: None,
             color_atlas: None,
-            glyph_pipeline: None,
-            color_pipeline: None,
+            glyph_pipeline: HashMap::new(),
+            color_pipeline: HashMap::new(),
             image_cache: HashMap::new(),
-            image_pipeline: None,
-            shadow_pipeline: None,
+            image_pipeline: HashMap::new(),
+            shadow_pipeline: HashMap::new(),
         }
     }
 
-    /// The windowed frame loop's entry point: resolve the surface format captured at
-    /// surface creation, then render through [`Self::render_offscreen`].
+    /// The windowed frame loop's entry point: render `scene` into `target` of `format`.
     pub fn render_to_texture(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         scene: &Scene,
         target: &wgpu::TextureView,
+        format: wgpu::TextureFormat,
         params: &RenderParams,
-    ) -> Result<(), String> {
-        let format = *SURFACE_FORMAT.get().ok_or("pebbles(wgpu): surface format not yet known")?;
+    ) -> Result<(), GpuError> {
         self.sample_count = aa_sample_count(params.antialiasing_method);
         self.render_offscreen(
             device,
@@ -113,12 +112,14 @@ impl Renderer {
         base_color: peniko::Color,
         size: (u32, u32),
         format: wgpu::TextureFormat,
-    ) -> Result<(), String> {
+    ) -> Result<(), GpuError> {
         let size = (size.0.max(1), size.1.max(1));
-        if self.pipeline.as_ref().is_none_or(|p| p.0 != format) {
-            self.pipeline = Some(make_pipeline(device, format, self.sample_count));
+        let key = (format, self.sample_count);
+        if !self.pipeline.contains_key(&key) {
+            let (_, p, u, bg) = make_pipeline(device, format, self.sample_count);
+            self.pipeline.insert(key, (p, u, bg));
         }
-        let (.., pipeline, uniform, bind_group) = self.pipeline.as_ref().expect("pipeline just initialized");
+        let (pipeline, uniform, bind_group) = self.pipeline.get(&key).expect("pipeline just initialized");
         queue.write_buffer(uniform, 0, bytemuck::cast_slice(&[size.0 as f32, size.1 as f32, 0.0, 0.0]));
         if self.msaa.as_ref().is_none_or(|m| m.0 != format || m.1 != size.0 || m.2 != size.1) {
             let texture = create_msaa(device, format, size.0, size.1, self.sample_count);

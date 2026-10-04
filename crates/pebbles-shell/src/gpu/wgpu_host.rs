@@ -24,7 +24,11 @@ impl RenderContext {
         height: u32,
         present_mode: wgpu::PresentMode,
     ) -> Result<RenderSurface<'w>, String> {
-        let surface = self.inner.create_surface(window, width, height, present_mode).await?;
+        let surface = self
+            .inner
+            .create_surface(window, width, height, present_mode)
+            .await
+            .map_err(|e| e.to_string())?;
         let device = surface.device_id();
         install_error_handler(self.inner.device(device).expect("device just created").device());
         Ok(RenderSurface(surface))
@@ -84,8 +88,9 @@ pub(crate) fn present_frame(
     };
     let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
     let (w, h) = surface.0.size();
+    let format = surface.0.format();
     let params = RenderParams { base_color, width: w, height: h, antialiasing_method: AaConfig::Area };
-    if let Err(e) = renderer.render_to_texture(device, queue, scene, &view, &params) {
+    if let Err(e) = renderer.render_to_texture(device, queue, scene, &view, format, &params) {
         eprintln!("pebbles: wgpu render failed (skipping frame, scheduling GPU reset): {e}");
         GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         window.request_redraw();

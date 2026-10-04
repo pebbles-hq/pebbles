@@ -174,8 +174,8 @@ impl Gpu {
         #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
         {
             let mut ctx = pebbles_gpu::GpuContext::new();
-            let dev_id =
-                pollster::block_on(ctx.request_device(None)).ok_or("no compatible GPU device for capture")?;
+            let dev_id = pollster::block_on(ctx.request_device(None))
+                .map_err(|e| -> Box<dyn Error> { e.to_string().into() })?;
             let dev = ctx.device(dev_id).ok_or("no compatible GPU device for capture")?;
             let device = dev.device().clone();
             let queue = dev.queue().clone();

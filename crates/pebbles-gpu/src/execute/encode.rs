@@ -136,20 +136,22 @@ pub(crate) fn draw_glyphs(
     let (coverage, color) = build_glyphs(renderer, device, queue, runs);
     if !coverage.is_empty() {
         let atlas = renderer.atlas.as_ref().expect("atlas built by build_glyphs");
-        if renderer.glyph_pipeline.as_ref().is_none_or(|p| p.0 != format) {
+        let key = (format, renderer.sample_count);
+        if !renderer.glyph_pipeline.contains_key(&key) {
             let gp = make_glyph_pipeline(device, format, atlas, renderer.sample_count, false);
-            renderer.glyph_pipeline = Some((format, gp));
+            renderer.glyph_pipeline.insert(key, gp);
         }
-        let (_, gp) = renderer.glyph_pipeline.as_ref().expect("glyph pipeline just built");
+        let gp = renderer.glyph_pipeline.get(&key).expect("glyph pipeline just built");
         draw_glyph_set(device, queue, pass, &coverage, gp, width, height);
     }
     if !color.is_empty() {
         let atlas = renderer.color_atlas.as_ref().expect("color atlas built by build_glyphs");
-        if renderer.color_pipeline.as_ref().is_none_or(|p| p.0 != format) {
+        let key = (format, renderer.sample_count);
+        if !renderer.color_pipeline.contains_key(&key) {
             let gp = make_glyph_pipeline(device, format, atlas, renderer.sample_count, true);
-            renderer.color_pipeline = Some((format, gp));
+            renderer.color_pipeline.insert(key, gp);
         }
-        let (_, gp) = renderer.color_pipeline.as_ref().expect("color pipeline just built");
+        let gp = renderer.color_pipeline.get(&key).expect("color pipeline just built");
         draw_glyph_set(device, queue, pass, &color, gp, width, height);
     }
 }
@@ -166,11 +168,11 @@ pub(crate) fn draw_shadows(
     width: u32,
     height: u32,
 ) {
-    if renderer.shadow_pipeline.as_ref().is_none_or(|p| p.0 != format) {
-        renderer.shadow_pipeline =
-            Some((format, make_shadow_pipeline(device, format, renderer.sample_count)));
+    let key = (format, renderer.sample_count);
+    if !renderer.shadow_pipeline.contains_key(&key) {
+        renderer.shadow_pipeline.insert(key, make_shadow_pipeline(device, format, renderer.sample_count));
     }
-    let (_, sp) = renderer.shadow_pipeline.as_ref().expect("shadow pipeline just built");
+    let sp = renderer.shadow_pipeline.get(&key).expect("shadow pipeline just built");
     queue.write_buffer(&sp.uniform, 0, bytemuck::cast_slice(&[width as f32, height as f32, 0.0, 0.0]));
     let vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("pebbles.gpu.shadow.vertices"),
@@ -200,10 +202,11 @@ pub(crate) fn draw_images(
     if uploads.is_empty() {
         return;
     }
-    if renderer.image_pipeline.as_ref().is_none_or(|p| p.0 != format) {
-        renderer.image_pipeline = Some((format, make_image_pipeline(device, format, renderer.sample_count)));
+    let key = (format, renderer.sample_count);
+    if !renderer.image_pipeline.contains_key(&key) {
+        renderer.image_pipeline.insert(key, make_image_pipeline(device, format, renderer.sample_count));
     }
-    let (_, ip) = renderer.image_pipeline.as_ref().expect("image pipeline just built");
+    let ip = renderer.image_pipeline.get(&key).expect("image pipeline just built");
     queue.write_buffer(&ip.uniform, 0, bytemuck::cast_slice(&[width as f32, height as f32, 0.0, 0.0]));
     for quad in images {
         let Some(upload) = uploads.get(quad.image_index as usize) else { continue };

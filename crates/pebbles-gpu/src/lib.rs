@@ -16,6 +16,7 @@
 #![warn(clippy::print_stdout, clippy::print_stderr)]
 
 mod context;
+mod error;
 mod execute;
 mod frame_targets;
 #[allow(unsafe_code)] // bytemuck derives expand to `unsafe impl Pod`; no hand-written unsafe
@@ -26,5 +27,6 @@ mod renderer;
 mod surface;
 
 pub use context::{DeviceId, GpuContext, GpuDevice};
+pub use error::{AcquireError, CaptureError, GpuError};
 pub use renderer::{AaConfig, RenderParams, Renderer};
 pub use surface::RenderSurface;

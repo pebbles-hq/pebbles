@@ -1,19 +1,13 @@
 //! Surface configuration: the swapchain format and per-surface state.
 
-use std::sync::OnceLock;
-
 use super::context::{DeviceId, GpuContext, GpuDevice};
-
-/// The swapchain texture format chosen at surface creation. Captured once so the
-/// lazily-built solid pipeline targets the right format (deleted by C06).
-pub(crate) static SURFACE_FORMAT: OnceLock<wgpu::TextureFormat> = OnceLock::new();
+use super::error::GpuError;
 
 /// A configured presentation surface.
 pub struct RenderSurface<'window> {
     pub(crate) surface: wgpu::Surface<'window>,
     pub(crate) config: wgpu::SurfaceConfiguration,
     dev_id: DeviceId,
-    #[allow(dead_code)]
     format: wgpu::TextureFormat,
 }
 
@@ -28,10 +22,16 @@ impl<'window> RenderSurface<'window> {
         (self.config.width, self.config.height)
     }
 
-    /// Reconfigure to `width`×`height` (clamped to `>= 1`).
+    /// The render (view) format.
+    pub fn format(&self) -> wgpu::TextureFormat {
+        self.format
+    }
+
+    /// Reconfigure to `width`×`height` (clamped to `1..=max_texture_dimension_2d`).
     pub fn resize(&mut self, gpu: &GpuDevice, width: u32, height: u32) {
-        self.config.width = width.max(1);
-        self.config.height = height.max(1);
+        let max = gpu.device().limits().max_texture_dimension_2d;
+        self.config.width = width.clamp(1, max);
+        self.config.height = height.clamp(1, max);
         self.surface.configure(gpu.device(), &self.config);
     }
 
@@ -46,9 +46,9 @@ impl<'window> RenderSurface<'window> {
         width: u32,
         height: u32,
         present_mode: wgpu::PresentMode,
-    ) -> Result<RenderSurface<'window>, String> {
-        let dev_id = ctx.request_device(Some(&surface)).await.ok_or("no compatible GPU device")?;
-        let device = ctx.device(dev_id).ok_or("no compatible GPU device")?;
+    ) -> Result<RenderSurface<'window>, GpuError> {
+        let dev_id = ctx.request_device(Some(&surface)).await?;
+        let device = ctx.device(dev_id).expect("invariant: request_device just created this device");
         let capabilities = surface.get_capabilities(device.adapter());
         let format = capabilities
             .formats
@@ -56,9 +56,8 @@ impl<'window> RenderSurface<'window> {
             .copied()
             .find(wgpu::TextureFormat::is_srgb)
             .or_else(|| capabilities.formats.first().copied())
-            .ok_or("surface exposes no supported texture format")?;
+            .ok_or(GpuError::NoSurfaceFormat { offered: capabilities.formats.clone() })?;
         let alpha_mode = capabilities.alpha_modes.first().copied().unwrap_or(wgpu::CompositeAlphaMode::Auto);
-        SURFACE_FORMAT.get_or_init(|| format);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,

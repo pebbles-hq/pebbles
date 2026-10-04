@@ -27,5 +27,8 @@ web-time.workspace = true
 cosmic-text.workspace = true
 fontdb.workspace = true
 
+[dev-dependencies]
+pollster.workspace = true
+
 [lints]
 workspace = true
