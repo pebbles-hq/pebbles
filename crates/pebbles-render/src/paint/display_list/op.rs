@@ -33,7 +33,7 @@ pub enum Geometry {
     Rect(Rect),
     RoundedRect(RoundedRect),
     Circle(Circle),
-    /// Any other shape, flattened once at record time with tolerance [`TOL`].
+    /// Any other shape, flattened once at record time with tolerance `TOL`.
     Path(BezPath),
 }
 

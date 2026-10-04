@@ -1,7 +1,7 @@
 //! The **render-backend seam**. RenderObjects paint into a [`Painter`], never a
 //! concrete GPU scene — so the rasterizer is swappable without touching a single
 //! widget. The display list ([`display_list`]) is backend-neutral and shared by every
-//! consumer (DR-02): the vello-hybrid host flushes it ([`hybrid_flush`], until Phase 7),
+//! consumer (DR-02): the vello-hybrid host flushes it (`hybrid_flush`, until Phase 7),
 //! and the wgpu backend reads it via `wgpu_backend` (until C05 moves it into pebbles-gpu).
 //!
 //! `vello-hybrid` wins whenever it is enabled (DR-10); select wgpu with
