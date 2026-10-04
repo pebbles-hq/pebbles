@@ -247,6 +247,17 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
           WGPU_BACKEND: vulkan
         run: cargo test -p pebbles-shell -- --ignored
+      # The first-party wgpu renderer's GPU tests (TEST-SHELL-GPU): render_check + glyph_check
+      # under `--no-default-features --features wgpu`. Gives the wgpu path its own lavapipe
+      # coverage (C05 AC2/AC4; superseded by the dedicated V30 lane once V01/C21 land).
+      - name: Run the wgpu #[ignore]d GPU tests on lavapipe
+        if: always()
+        env:
+          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          WGPU_BACKEND: vulkan
+        run: cargo test -p pebbles-shell --no-default-features --features wgpu -- --ignored
 
   clippy:
     name: Clippy
