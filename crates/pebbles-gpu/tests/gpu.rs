@@ -55,7 +55,11 @@ fn two_formats_alternate_without_validation_errors() {
 
         let bytes = readback(device, queue, &texture);
         let px = &bytes[((32 * 64 + 32) * 4)..((32 * 64 + 32) * 4 + 4)];
-        assert_eq!(px, [255, 0, 0, 255], "center pixel {format:?}: {px:?}");
+        // The center pixel is RED in both targets; the byte order differs by format
+        // (Bgra8Unorm stores B,G,R,A).
+        let expected: [u8; 4] =
+            if format == wgpu::TextureFormat::Bgra8Unorm { [0, 0, 255, 255] } else { [255, 0, 0, 255] };
+        assert_eq!(px, expected, "center pixel {format:?}: {px:?}");
     }
 }
 
