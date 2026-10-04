@@ -15,20 +15,6 @@ use super::execute::{draw_glyphs, draw_images, draw_shadows, scissor_params};
 use super::frame_targets::create_msaa;
 use super::prepare::mesh;
 
-/// Antialiasing selector — `Area` maps to 4× MSAA.
-#[derive(Clone, Copy, Debug)]
-pub enum AaConfig {
-    /// The Phase-1 area-antialiasing path.
-    Area,
-}
-
-/// Multisample count for the given antialiasing config.
-const fn aa_sample_count(aa: AaConfig) -> u32 {
-    match aa {
-        AaConfig::Area => 4,
-    }
-}
-
 /// Per-frame render parameters.
 pub struct RenderParams {
     /// The clear (base) color.
@@ -37,8 +23,6 @@ pub struct RenderParams {
     pub width: u32,
     /// Render size in physical pixels.
     pub height: u32,
-    /// The antialiasing method.
-    pub antialiasing_method: AaConfig,
 }
 
 /// Pipelines + caches for ONE device. Shared by every surface/target on that device.
@@ -60,12 +44,13 @@ pub struct Renderer {
 
 impl Renderer {
     /// Create an empty renderer for a device (the device is not yet used; resources are
-    /// built lazily on the first frame).
-    pub fn new(_gpu: &GpuDevice, _id: DeviceId) -> Self {
+    /// built lazily on the first frame). The MSAA sample count comes from the device's
+    /// [`GpuCaps`](super::context::GpuCaps).
+    pub fn new(gpu: &GpuDevice, _id: DeviceId) -> Self {
         Renderer {
             pipeline: HashMap::new(),
             msaa: None,
-            sample_count: aa_sample_count(AaConfig::Area),
+            sample_count: gpu.caps().msaa_samples,
             fonts: None,
             swash: None,
             font_ids: HashMap::new(),
@@ -89,7 +74,6 @@ impl Renderer {
         format: wgpu::TextureFormat,
         params: &RenderParams,
     ) -> Result<(), GpuError> {
-        self.sample_count = aa_sample_count(params.antialiasing_method);
         self.render_offscreen(
             device,
             queue,

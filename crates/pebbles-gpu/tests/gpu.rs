@@ -1,7 +1,7 @@
 //! GPU integration tests (pebbles-gpu). Each is `#[ignore = "gpu"]` and skips gracefully
 //! without an adapter (DR-15). V01's harness replaces the test-local helpers after C15.
 
-use pebbles_gpu::{AaConfig, GpuContext, RenderParams, Renderer};
+use pebbles_gpu::{GpuContext, GpuInit, RenderParams, Renderer};
 
 /// One `Renderer`, rendered alternately into an `Rgba8Unorm` and a `Bgra8Unorm` target:
 /// every render is inside a `Validation` error scope, each pop is `None`, and the center
@@ -9,7 +9,7 @@ use pebbles_gpu::{AaConfig, GpuContext, RenderParams, Renderer};
 #[test]
 #[ignore = "gpu"]
 fn two_formats_alternate_without_validation_errors() {
-    let mut ctx = GpuContext::new();
+    let mut ctx = pollster::block_on(GpuContext::new(&GpuInit::headless()));
     let id = match pollster::block_on(ctx.request_device(None)) {
         Ok(id) => id,
         Err(e) => {
@@ -47,12 +47,7 @@ fn two_formats_alternate_without_validation_errors() {
         );
 
         let guard = device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let params = RenderParams {
-            base_color: peniko::Color::WHITE,
-            width: 64,
-            height: 64,
-            antialiasing_method: AaConfig::Area,
-        };
+        let params = RenderParams { base_color: peniko::Color::WHITE, width: 64, height: 64 };
         renderer.render_to_texture(device, queue, &scene, &view, format, &params).expect("render");
         queue.submit([]);
         let err = pollster::block_on(guard.pop());

@@ -21,12 +21,14 @@ mod execute;
 mod frame_targets;
 #[allow(unsafe_code)] // bytemuck derives expand to `unsafe impl Pod`; no hand-written unsafe
 mod gpu_types;
+mod init;
 mod prepare;
 mod raster;
 mod renderer;
 mod surface;
 
-pub use context::{DeviceId, GpuContext, GpuDevice};
+pub use context::{DeviceId, GpuCaps, GpuContext, GpuDevice};
 pub use error::{AcquireError, CaptureError, GpuError};
-pub use renderer::{AaConfig, RenderParams, Renderer};
+pub use init::{GpuInit, GpuPower, HostOs};
+pub use renderer::{RenderParams, Renderer};
 pub use surface::RenderSurface;

@@ -45,7 +45,6 @@ impl<'window> RenderSurface<'window> {
         surface: wgpu::Surface<'window>,
         width: u32,
         height: u32,
-        present_mode: wgpu::PresentMode,
     ) -> Result<RenderSurface<'window>, GpuError> {
         let dev_id = ctx.request_device(Some(&surface)).await?;
         let device = ctx.device(dev_id).expect("invariant: request_device just created this device");
@@ -63,8 +62,8 @@ impl<'window> RenderSurface<'window> {
             format,
             width: width.max(1),
             height: height.max(1),
-            present_mode,
-            desired_maximum_frame_latency: 2,
+            present_mode: ctx.init().present_mode,
+            desired_maximum_frame_latency: ctx.init().max_frame_latency,
             alpha_mode,
             view_formats: vec![],
         };

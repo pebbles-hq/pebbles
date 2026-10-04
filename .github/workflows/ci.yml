@@ -258,6 +258,16 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
           WGPU_BACKEND: vulkan
         run: cargo test -p pebbles-shell --no-default-features --features wgpu -- --ignored
+      # pebbles-gpu's own GPU tests (TEST-GPU-LAVAPIPE): C21's GpuInit env path + the
+      # C06 per-format render test, against the lavapipe software device (D14/C21 fix).
+      - name: Run the pebbles-gpu #[ignore]d GPU tests on lavapipe
+        if: always()
+        env:
+          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          WGPU_BACKEND: vulkan
+        run: cargo test -p pebbles-gpu -- --ignored
 
   clippy:
     name: Clippy

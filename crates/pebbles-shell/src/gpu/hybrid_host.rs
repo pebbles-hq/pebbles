@@ -53,9 +53,8 @@ impl RenderContext {
         window: impl Into<wgpu::SurfaceTarget<'w>>,
         width: u32,
         height: u32,
-        present_mode: wgpu::PresentMode,
     ) -> Result<RenderSurface<'w>, vello::Error> {
-        let surface = self.inner.create_surface(window, width, height, present_mode).await?;
+        let surface = self.inner.create_surface(window, width, height, wgpu::PresentMode::AutoVsync).await?;
         SURFACE_FORMAT.get_or_init(|| surface.config.format);
         install_error_handler(&self.inner.devices[surface.dev_id].device);
         Ok(RenderSurface(surface))

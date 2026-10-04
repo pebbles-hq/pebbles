@@ -56,7 +56,8 @@ impl Runner {
         eprintln!("pebbles: resetting the GPU stack (device + surfaces + renderers)…");
 
         // A fresh instance/adapter/device pool; the old one may be lost.
-        self.context = Some(RenderContext::new());
+        let Some(init) = self.host_init.as_ref() else { return false };
+        self.context = Some(pollster::block_on(new_context(init)));
         self.renderers = Vec::new();
 
         // Recreate the main window's surface + renderer on the new device.
@@ -66,7 +67,6 @@ impl Runner {
                 active.window.clone(),
                 phys.width.max(1),
                 phys.height.max(1),
-                wgpu::PresentMode::AutoVsync,
             )) {
                 Ok(surface) => {
                     self.renderers.resize_with(self.context.as_ref().unwrap().device_count(), || None);
@@ -84,7 +84,6 @@ impl Runner {
                 w.window.clone(),
                 phys.width.max(1),
                 phys.height.max(1),
-                wgpu::PresentMode::AutoVsync,
             )) {
                 Ok(surface) => {
                     self.renderers.resize_with(self.context.as_ref().unwrap().device_count(), || None);
@@ -361,7 +360,6 @@ impl Runner {
                 w.window.clone(),
                 phys.width.max(1),
                 phys.height.max(1),
-                wgpu::PresentMode::AutoVsync,
             )) {
                 self.renderers.resize_with(self.context.as_ref().unwrap().device_count(), || None);
                 let idx = surface.device_index();

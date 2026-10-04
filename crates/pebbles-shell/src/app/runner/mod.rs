@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use web_time::Instant;
 
-use crate::gpu::{GPU_ERRORS, RenderContext, RenderSurface, Renderer, Scene};
+use crate::gpu::{GPU_ERRORS, HostInit, RenderContext, RenderSurface, Renderer, Scene, new_context};
 use kurbo::Affine;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
 use pebbles_foundation::{Color, Offset, Size, TextDirection};
@@ -187,6 +187,9 @@ pub(super) struct Runner {
     /// Access with `self.context.as_ref()/as_mut().unwrap()` — it is only `None`
     /// during that async gap, when no frame renders (see the `active`-None guard).
     context: Option<RenderContext>,
+    /// The shell-wide platform policy (display handle + env-resolved GPU settings), built
+    /// once on the first `resumed` and reused by every recovery.
+    host_init: Option<HostInit>,
     /// (web) The proxy used by the async GPU-init task to deliver the finished
     /// surface back into the loop. `None` on desktop — set in `App::run` on wasm.
     #[cfg(target_family = "wasm")]
@@ -281,7 +284,8 @@ impl Runner {
             inspect_rect: None,
             #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
             native_menu: None,
-            context: Some(RenderContext::new()),
+            context: None,
+            host_init: None,
             #[cfg(target_family = "wasm")]
             proxy: None,
             #[cfg(target_family = "wasm")]
@@ -611,11 +615,12 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         // install the surface right here — behavior identical to before.
         #[cfg(not(target_family = "wasm"))]
         {
+            let init = self.host_init.get_or_insert_with(|| HostInit::new(event_loop));
+            self.context = Some(pollster::block_on(new_context(init)));
             let surface = match pollster::block_on(self.context.as_mut().unwrap().create_surface(
                 window.clone(),
                 w,
                 h,
-                wgpu::PresentMode::AutoVsync,
             )) {
                 Ok(s) => s,
                 Err(e) => {
@@ -640,19 +645,19 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         #[cfg(target_family = "wasm")]
         {
             self.gpu_pending = true;
-            let mut context = self.context.take().expect("render context");
+            let init = self.host_init.get_or_insert_with(|| HostInit::new(event_loop)).clone();
             let proxy = self.proxy.clone().expect("event loop proxy set in App::run");
             wasm_bindgen_futures::spawn_local(async move {
+                let mut context = new_context(&init).await;
                 // A failure here is almost always "no WebGPU adapter" — spell out the
                 // fix rather than panicking with a cryptic `NoCompatibleDevice`, since
                 // this is THE first-run web blocker. console_error_panic_hook surfaces it.
-                let surface =
-                    context.create_surface(window.clone(), w, h, wgpu::PresentMode::AutoVsync).await.expect(
-                        "Pebbles could not get a WebGPU device. Enable WebGPU in your browser: \
+                let surface = context.create_surface(window.clone(), w, h).await.expect(
+                    "Pebbles could not get a WebGPU device. Enable WebGPU in your browser: \
                          chrome://flags → \"Unsafe WebGPU Support\" (on Linux also \"Vulkan\"), then \
                          relaunch and check chrome://gpu. Firefox: about:config dom.webgpu.enabled. \
                          Pebbles is WebGPU-only — see PLATFORMS.md",
-                    );
+                );
                 let _ = proxy.send_event(PebblesUserEvent::SurfaceReady { context, surface, window });
             });
         }

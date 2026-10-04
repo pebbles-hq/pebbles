@@ -166,7 +166,6 @@ impl Runner {
             window.clone(),
             physical.width.max(1),
             physical.height.max(1),
-            wgpu::PresentMode::AutoVsync,
         )) {
             Ok(s) => s,
             Err(e) => {
