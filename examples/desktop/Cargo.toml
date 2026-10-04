@@ -39,6 +39,12 @@ vello-hybrid = [
     "pebbles-render/vello-hybrid",
     "pebbles-widgets/vello-hybrid",
 ]
+wgpu = [
+    "pebbles/wgpu",
+    "pebbles-testing/wgpu",
+    "pebbles-render/wgpu",
+    "pebbles-widgets/wgpu",
+]
 
 [lints]
 workspace = true

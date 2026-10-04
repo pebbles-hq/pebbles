@@ -16,6 +16,7 @@ description = "The Pebbles catalog: Flutter-style widgets, shadcn-style componen
 # Render backend, forwarded to pebbles-render + pebbles-core. `vello-hybrid` is the
 # default; `vello` (GPU compute) is opt-in.
 default = ["vello-hybrid"]
+wgpu = ["pebbles-render/wgpu", "pebbles-core/wgpu"]
 vello = ["pebbles-render/vello", "pebbles-core/vello"]
 vello-hybrid = ["pebbles-render/vello-hybrid", "pebbles-core/vello-hybrid"]
 # `ImageView` + `image_from_bytes`/`image_from_path` (pulls in the image codecs and,

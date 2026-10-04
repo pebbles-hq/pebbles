@@ -4,7 +4,9 @@
 //! runner does, and read the pixels back. Handy for chart/report export, server-side
 //! rendering, and golden-image tests.
 //!
-//! Desktop + the default `vello-hybrid` backend only (it needs an offscreen GPU device).
+//! Desktop only, and gated on an offscreen GPU device — available under both the default
+//! `vello-hybrid` backend and the opt-in `wgpu` backend (the `gpu/` seam routes either to
+//! its host's `render_offscreen`).
 //!
 //! Dimensions are capped at [`MAX_CAPTURE_DIM`]² — an unbounded size asks the GPU for a
 //! multi-gigabyte texture + readback buffer, a memory-exhaustion vector (relevant for the

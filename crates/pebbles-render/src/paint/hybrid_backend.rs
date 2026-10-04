@@ -74,6 +74,10 @@ enum Op {
     Glyphs {
         font: FontData,
         font_size: f32,
+        // Recorded for the wgpu backend's rasterization; the hybrid flush uses
+        // `normalized_coords` instead, so this field is never read here.
+        #[allow(dead_code)]
+        font_weight: u16,
         normalized_coords: Vec<NormalizedCoord>,
         brush: Brush,
         transform: Affine,
@@ -248,6 +252,7 @@ impl<'a> Painter<'a> {
         &mut self,
         font: &FontData,
         font_size: f32,
+        font_weight: u16,
         normalized_coords: &[NormalizedCoord],
         brush: &Brush,
         transform: Affine,
@@ -258,6 +263,7 @@ impl<'a> Painter<'a> {
         self.scene.ops.push(Op::Glyphs {
             font: font.clone(),
             font_size,
+            font_weight,
             normalized_coords: normalized_coords.to_vec(),
             brush: brush.clone(),
             transform,
@@ -426,6 +432,7 @@ fn emit(
             glyph_transform,
             style,
             glyphs,
+            ..
         } => {
             out.set_transform(outer * *transform);
             out.set_fill_rule(*style);

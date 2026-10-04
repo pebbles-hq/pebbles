@@ -115,6 +115,7 @@ impl<'a> Painter<'a> {
         &mut self,
         font: &FontData,
         font_size: f32,
+        font_weight: u16,
         normalized_coords: &[NormalizedCoord],
         brush: &Brush,
         transform: Affine,
@@ -122,6 +123,7 @@ impl<'a> Painter<'a> {
         style: Fill,
         glyphs: impl Iterator<Item = Glyph>,
     ) {
+        let _ = font_weight;
         self.scene
             .draw_glyphs(font)
             .brush(brush)

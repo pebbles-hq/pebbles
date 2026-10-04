@@ -34,6 +34,8 @@ pub(crate) enum Renderer {
     Hybrid,
     /// `vello` — GPU compute raster; the opt-in for heavy vector (design tools).
     Vello,
+    /// `wgpu` — the first-party 2D renderer (migration backend).
+    Wgpu,
 }
 
 impl Renderer {
@@ -41,6 +43,7 @@ impl Renderer {
         match s.to_ascii_lowercase().as_str() {
             "hybrid" | "vello-hybrid" | "vello_hybrid" | "default" => Some(Renderer::Hybrid),
             "vello" | "compute" | "classic" => Some(Renderer::Vello),
+            "wgpu" => Some(Renderer::Wgpu),
             _ => None,
         }
     }
@@ -50,6 +53,7 @@ impl Renderer {
         match self {
             Renderer::Hybrid => "vello-hybrid",
             Renderer::Vello => "vello",
+            Renderer::Wgpu => "wgpu",
         }
     }
 }
@@ -60,6 +64,7 @@ pub(crate) fn renderer_label(r: Option<Renderer>) -> &'static str {
         None => "hybrid (default)",
         Some(Renderer::Hybrid) => "hybrid",
         Some(Renderer::Vello) => "vello",
+        Some(Renderer::Wgpu) => "wgpu",
     }
 }
 
@@ -114,13 +119,13 @@ pub fn run(args: &[String]) -> ExitCode {
             // Pin the render backend: `--renderer vello` | `hybrid` (default: hybrid).
             "-r" | "--renderer" | "--backend" => {
                 let Some(v) = it.next() else {
-                    term::error("`--renderer` needs a value: hybrid | vello");
+                    term::error("`--renderer` needs a value: hybrid | vello | wgpu");
                     return ExitCode::FAILURE;
                 };
                 match Renderer::parse(v) {
                     Some(r) => o.renderer = Some(r),
                     None => {
-                        term::error(&format!("unknown renderer `{v}` — use: hybrid | vello"));
+                        term::error(&format!("unknown renderer `{v}` — use: hybrid | vello | wgpu"));
                         return ExitCode::FAILURE;
                     }
                 }
@@ -128,7 +133,7 @@ pub fn run(args: &[String]) -> ExitCode {
             s if s.starts_with("--renderer=") => match Renderer::parse(&s["--renderer=".len()..]) {
                 Some(r) => o.renderer = Some(r),
                 None => {
-                    term::error("unknown renderer — use: hybrid | vello");
+                    term::error("unknown renderer — use: hybrid | vello | wgpu");
                     return ExitCode::FAILURE;
                 }
             },
@@ -1013,9 +1018,11 @@ mod tests {
         assert_eq!(Renderer::parse("vello"), Some(Renderer::Vello));
         assert_eq!(Renderer::parse("HYBRID"), Some(Renderer::Hybrid));
         assert_eq!(Renderer::parse("vello_hybrid"), Some(Renderer::Hybrid));
+        assert_eq!(Renderer::parse("wgpu"), Some(Renderer::Wgpu));
         assert_eq!(Renderer::parse("nonsense"), None);
         assert_eq!(Renderer::Vello.feature(), "vello");
         assert_eq!(Renderer::Hybrid.feature(), "vello-hybrid");
+        assert_eq!(Renderer::Wgpu.feature(), "wgpu");
     }
 
     #[test]

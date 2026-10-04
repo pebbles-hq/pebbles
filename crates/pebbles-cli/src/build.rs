@@ -37,15 +37,15 @@ fn parse_args(args: &[String]) -> Result<BuildOpts, String> {
         match a.as_str() {
             // Pin the render backend: `--renderer vello` | `hybrid` (default: hybrid).
             "-r" | "--renderer" | "--backend" => {
-                let v = it.next().ok_or("`--renderer` needs a value: hybrid | vello")?;
+                let v = it.next().ok_or("`--renderer` needs a value: hybrid | vello | wgpu")?;
                 o.renderer = Some(
                     Renderer::parse(v)
-                        .ok_or_else(|| format!("unknown renderer `{v}` — use: hybrid | vello"))?,
+                        .ok_or_else(|| format!("unknown renderer `{v}` — use: hybrid | vello | wgpu"))?,
                 );
             }
             s if s.starts_with("--renderer=") => {
                 let v = &s["--renderer=".len()..];
-                o.renderer = Some(Renderer::parse(v).ok_or("unknown renderer — use: hybrid | vello")?);
+                o.renderer = Some(Renderer::parse(v).ok_or("unknown renderer — use: hybrid | vello | wgpu")?);
             }
             // Flutter-style target selection: `pebbles build -d web` (default: desktop).
             "-d" | "--device" | "--platform" => {
@@ -288,6 +288,7 @@ mod tests {
         assert_eq!(parse_args(&argv(&["-r", "vello"])).unwrap().renderer, Some(Renderer::Vello));
         assert_eq!(parse_args(&argv(&["--renderer", "hybrid"])).unwrap().renderer, Some(Renderer::Hybrid));
         assert_eq!(parse_args(&argv(&["--renderer=vello"])).unwrap().renderer, Some(Renderer::Vello));
+        assert_eq!(parse_args(&argv(&["--renderer", "wgpu"])).unwrap().renderer, Some(Renderer::Wgpu));
     }
 
     #[test]

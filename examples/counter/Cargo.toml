@@ -13,6 +13,7 @@ pebbles = { workspace = true }
 default = ["vello-hybrid"]
 vello = ["pebbles/vello"]
 vello-hybrid = ["pebbles/vello-hybrid"]
+wgpu = ["pebbles/wgpu"]
 
 [lints]
 workspace = true

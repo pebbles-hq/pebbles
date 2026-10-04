@@ -20,11 +20,14 @@ pebbles-widgets.workspace = true
 # vello WITH default features here → pulls in the wgpu-backed GPU `Renderer`. Kept a
 # dependency under BOTH backends: the hybrid host (gpu/hybrid_host.rs) reuses
 # `vello::util`'s backend-agnostic surface/blit plumbing and swaps only the renderer.
-vello = { workspace = true, default-features = true }
+vello = { workspace = true, default-features = true, optional = true }
 # The Vello Hybrid GPU renderer, enabled by the `vello-hybrid` feature. `wgpu` gives the
 # GPU `Renderer`; `text` gives glyph runs (the flush resolves glyphs against its atlas).
 vello_hybrid = { workspace = true, optional = true, features = ["wgpu", "text"] }
 wgpu.workspace = true
+bytemuck = { workspace = true, optional = true }
+cosmic-text = { workspace = true, optional = true }
+fontdb = { workspace = true, optional = true }
 winit.workspace = true
 raw-window-handle.workspace = true
 pollster.workspace = true
@@ -50,11 +53,21 @@ global-hotkey = { version = "0.8", optional = true }
 # Both forward the selection to pebbles-render/-core/-widgets. The hybrid GPU host lives
 # in gpu/hybrid_host.rs. See renderer-backend-plan.md.
 default = ["vello-hybrid"]
-vello = ["pebbles-render/vello", "pebbles-core/vello", "pebbles-widgets/vello"]
+wgpu = [
+    "pebbles-render/wgpu",
+    "pebbles-core/wgpu",
+    "pebbles-widgets/wgpu",
+    "dep:png",
+    "dep:bytemuck",
+    "dep:cosmic-text",
+    "dep:fontdb",
+]
+vello = ["pebbles-render/vello", "pebbles-core/vello", "pebbles-widgets/vello", "dep:vello"]
 vello-hybrid = [
     "pebbles-render/vello-hybrid",
     "pebbles-core/vello-hybrid",
     "pebbles-widgets/vello-hybrid",
+    "dep:vello",
     "dep:vello_hybrid",
     # `capture` (native + hybrid only) needs PNG encoding; pull it in exactly there.
     "dep:png",

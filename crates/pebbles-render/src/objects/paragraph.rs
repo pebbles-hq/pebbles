@@ -558,6 +558,7 @@ impl RenderObject for RenderParagraph {
                 cx.scene.draw_glyphs(
                     run.font(),
                     run.font_size(),
+                    run.font_attrs().weight.value().round() as u16,
                     run.normalized_coords(),
                     &glyph_run.style().brush,
                     transform,

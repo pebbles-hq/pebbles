@@ -43,19 +43,19 @@ pub fn run(args: &[String]) -> ExitCode {
                 Some(v) => match parse_renderer(v) {
                     Some(r) => renderer = r,
                     None => {
-                        term::error(&format!("unknown renderer `{v}` — use: hybrid | vello"));
+                        term::error(&format!("unknown renderer `{v}` — use: hybrid | vello | wgpu"));
                         return ExitCode::FAILURE;
                     }
                 },
                 None => {
-                    term::error("`--renderer` needs a value: hybrid | vello");
+                    term::error("`--renderer` needs a value: hybrid | vello | wgpu");
                     return ExitCode::FAILURE;
                 }
             },
             s if s.starts_with("--renderer=") => match parse_renderer(&s["--renderer=".len()..]) {
                 Some(r) => renderer = r,
                 None => {
-                    term::error("unknown renderer — use: hybrid | vello");
+                    term::error("unknown renderer — use: hybrid | vello | wgpu");
                     return ExitCode::FAILURE;
                 }
             },
@@ -192,6 +192,7 @@ fn parse_renderer(s: &str) -> Option<&'static str> {
     match s.to_ascii_lowercase().as_str() {
         "hybrid" | "vello-hybrid" | "vello_hybrid" | "default" => Some("vello-hybrid"),
         "vello" | "compute" | "classic" => Some("vello"),
+        "wgpu" => Some("wgpu"),
         _ => None,
     }
 }

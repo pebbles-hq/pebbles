@@ -14,26 +14,34 @@
 //! [`Stroke`], [`Brush`], …) is `kurbo`/`peniko` — renderer-neutral, re-exported here and
 //! imported by RenderObjects from `crate::paint` rather than from any backend crate.
 
-// Pick a backend. A real app enables exactly one; if BOTH are on at once — as
-// `--all-features` tooling (CI, docs.rs) does — the hybrid backend wins (it's the
-// default), so `--all-features` builds instead of erroring. Enabling neither is the
-// one true error.
-#[cfg(not(any(feature = "vello", feature = "vello-hybrid")))]
-compile_error!("pebbles-render: enable a render backend feature — `vello-hybrid` (default) or `vello`");
+// Pick a backend. During the transition `wgpu` wins if several are selected, which
+// keeps `--all-features` deterministic while leaving the existing default untouched.
+#[cfg(not(any(feature = "wgpu", feature = "vello", feature = "vello-hybrid")))]
+compile_error!(
+    "pebbles-render: enable a render backend feature — `vello-hybrid` (default), `vello`, or `wgpu`"
+);
 
 // ---- backend-neutral vocabulary (identical types for both backends) --------
 pub use kurbo::{self, Affine, BezPath, Circle, Point, Rect, Shape, Stroke};
 pub use peniko::{self, Brush, BrushRef, Color, Fill, FontData};
 
 // ---- the active backend supplies Scene / scene() / Painter / Glyph ----------
-// `vello` compiles only when `vello-hybrid` is NOT also enabled, so exactly one backend
-// module is ever built (no duplicate `Scene`/`Painter`), and `--all-features` → hybrid.
-#[cfg(all(feature = "vello", not(feature = "vello-hybrid")))]
+// `wgpu` has transition precedence. Otherwise `vello` compiles only when hybrid is
+// absent, so exactly one backend module is ever built.
+#[cfg(feature = "wgpu")]
+mod wgpu_backend;
+#[cfg(feature = "wgpu")]
+pub use wgpu_backend::{
+    Batch, Glyph, GlyphRun, ImageQuad, ImageUpload, ImageVertex, Mesh, NormalizedCoord, Painter, Scene,
+    Scissor, ShadowVertex, SolidMesh, Vertex, scene,
+};
+
+#[cfg(all(feature = "vello", not(any(feature = "vello-hybrid", feature = "wgpu"))))]
 mod vello_backend;
-#[cfg(all(feature = "vello", not(feature = "vello-hybrid")))]
+#[cfg(all(feature = "vello", not(any(feature = "vello-hybrid", feature = "wgpu"))))]
 pub use vello_backend::{Glyph, NormalizedCoord, Painter, Scene, scene};
 
-#[cfg(feature = "vello-hybrid")]
+#[cfg(all(feature = "vello-hybrid", not(feature = "wgpu")))]
 mod hybrid_backend;
-#[cfg(feature = "vello-hybrid")]
+#[cfg(all(feature = "vello-hybrid", not(feature = "wgpu")))]
 pub use hybrid_backend::{Glyph, NormalizedCoord, Painter, Scene, scene};

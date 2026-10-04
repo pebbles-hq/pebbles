@@ -104,9 +104,10 @@ fn print_help() {
 
 {BOLD}pebbles create OPTIONS{RESET}
     -t, --template <k> app | widget      (default: app)
-    -r, --renderer <r> hybrid | vello    (default: hybrid) — the app's default
-                      render backend (hybrid = low-power; vello = GPU compute).
-                      Both are wired either way, switchable at run time.
+    -r, --renderer <r> hybrid | vello | wgpu   (default: hybrid) — the app's
+                      default render backend (hybrid = low-power; vello = GPU
+                      compute; wgpu = the first-party 2D renderer). All are
+                      wired either way, switchable at run time.
     --list            List the templates and exit
     --path            Depend on the local Pebbles checkout instead of git —
                       for developing the framework itself
@@ -116,7 +117,8 @@ fn print_help() {
                       (aliases: chrome/safari/firefox = web; linux/macos/windows
                       = desktop). Web serves a WebGPU build with live reload.
     -r, --renderer <r> Render backend: hybrid (default, low-power) | vello (GPU
-                      compute, for heavy vector). Pins it via cargo features.
+                      compute, for heavy vector) | wgpu (first-party 2D).
+                      Pins it via cargo features.
     --port <n>        Dev-server port for -d web (default: 8080)
     -p, --package <n> Run a specific workspace member / sample by name
                       (aliases: --example, --bin)
@@ -133,8 +135,8 @@ fn print_help() {
 {BOLD}pebbles build OPTIONS{RESET}  {DIM}(always builds optimized/release){RESET}
     -d, --device <t>  Target: desktop (default) → target/release/<bin>; web →
                       a static wasm bundle in ./dist; android | ios → guidance.
-    -r, --renderer <r> Render backend: hybrid (default) | vello — same features
-                      as `run`, forwarded to cargo (and Trunk on web).
+    -r, --renderer <r> Render backend: hybrid (default) | vello | wgpu — same
+                      features as `run`, forwarded to cargo (and Trunk on web).
     -p, --package <n> Build a specific workspace member by name
                       (aliases: --example, --bin)
 

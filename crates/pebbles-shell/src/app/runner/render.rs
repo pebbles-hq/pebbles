@@ -446,7 +446,7 @@ impl Runner {
 /// * **Vello Hybrid** (raster) renders **straight to the swapchain** — no intermediate, no
 ///   blit. Besides being simpler and cheaper, this removes the extra render target (and its
 ///   per-resize recreation) that caused multicolored flicker while resizing on the web.
-#[cfg(all(feature = "vello", not(feature = "vello-hybrid")))]
+#[cfg(all(feature = "vello", not(any(feature = "vello-hybrid", feature = "wgpu"))))]
 fn present_frame(
     renderer: &mut Renderer,
     device: &wgpu::Device,
@@ -481,7 +481,7 @@ fn present_frame(
     true
 }
 
-#[cfg(feature = "vello-hybrid")]
+#[cfg(any(feature = "vello-hybrid", feature = "wgpu"))]
 fn present_frame(
     renderer: &mut Renderer,
     device: &wgpu::Device,

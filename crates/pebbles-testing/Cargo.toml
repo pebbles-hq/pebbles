@@ -21,6 +21,7 @@ pebbles-widgets.workspace = true
 [features]
 # Render backend, forwarded to the backend-selectable crates. `vello-hybrid` is default.
 default = ["vello-hybrid"]
+wgpu = ["pebbles-render/wgpu", "pebbles-core/wgpu", "pebbles-widgets/wgpu"]
 vello = ["pebbles-render/vello", "pebbles-core/vello", "pebbles-widgets/vello"]
 vello-hybrid = [
     "pebbles-render/vello-hybrid",

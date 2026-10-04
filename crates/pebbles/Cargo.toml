@@ -27,6 +27,12 @@ pebbles-macros.workspace = true
 # Note: the offscreen `capture` API (`pebbles::shell::capture`) is available only under
 # the `vello-hybrid` backend (and off-wasm) — it needs an offscreen hybrid GPU device.
 default = ["vello-hybrid"]
+wgpu = [
+    "pebbles-render/wgpu",
+    "pebbles-core/wgpu",
+    "pebbles-widgets/wgpu",
+    "pebbles-shell/wgpu",
+]
 vello = [
     "pebbles-render/vello",
     "pebbles-core/vello",
