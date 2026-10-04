@@ -1,12 +1,8 @@
 //! The **render-backend seam**. RenderObjects paint into a [`Painter`], never a
 //! concrete GPU scene — so the rasterizer is swappable without touching a single
-//! widget. Each backend lives in its own file (mirroring the shell's `gpu/` split):
-//!
-//! - `hybrid_backend` (`vello-hybrid` feature, **default**) — `Scene` is a retained,
-//!   backend-neutral op-list; the `Painter` verbs record ops (owning their `kurbo`/`peniko`
-//!   inputs), and the shell flushes the list into a `vello_hybrid::Scene`. Low-power hybrid
-//!   CPU+GPU raster.
-//! - `wgpu_backend` (`wgpu` feature, opt-in) — the first-party renderer (wgpu migration).
+//! widget. The display list ([`display_list`]) is backend-neutral and shared by every
+//! consumer (DR-02): the vello-hybrid host flushes it ([`hybrid_flush`], until Phase 7),
+//! and the wgpu backend reads it via `wgpu_backend` (until C05 moves it into pebbles-gpu).
 //!
 //! `vello-hybrid` wins whenever it is enabled (DR-10); select wgpu with
 //! `--no-default-features --features wgpu` (the CLI's `--renderer wgpu` does exactly this).
@@ -15,28 +11,25 @@
 //! [`Stroke`], [`Brush`], …) is `kurbo`/`peniko` — renderer-neutral, re-exported here and
 //! imported by RenderObjects from `crate::paint` rather than from any backend crate.
 
-// Pick a backend. `vello-hybrid` wins whenever it is enabled (DR-10), so
-// `--all-features` keeps testing the shipping default; select wgpu with
-// `--no-default-features --features wgpu`.
-#[cfg(not(any(feature = "wgpu", feature = "vello-hybrid")))]
-compile_error!("pebbles-render: enable a render backend feature — `vello-hybrid` (default) or `wgpu`");
-
-// ---- backend-neutral vocabulary (identical types for both backends) --------
+// ---- backend-neutral vocabulary (identical types for all consumers) --------
 pub use kurbo::{self, Affine, BezPath, Circle, Point, Rect, Shape, Stroke};
 pub use peniko::{self, Brush, BrushRef, Color, Fill, FontData};
 
-// ---- the active backend supplies Scene / scene() / Painter / Glyph ----------
-// `vello-hybrid` wins whenever it is enabled (DR-10), so exactly one backend
-// module is ever built.
-#[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
-mod wgpu_backend;
-#[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
-pub use wgpu_backend::{
-    Batch, Glyph, GlyphRun, ImageQuad, ImageUpload, ImageVertex, Mesh, NormalizedCoord, Painter, Scene,
-    Scissor, ShadowVertex, SolidMesh, Vertex, scene,
-};
+// ---- the shared display list (DR-02) ----------------------------------------
+pub mod display_list;
+pub use display_list::{Glyph, NormalizedCoord, Painter, Scene, scene};
 
+// Transitional consumer: replays the display list into a live `vello_hybrid::Scene`
+// (feature `vello-hybrid`; deleted whole at Phase 7, X01).
 #[cfg(feature = "vello-hybrid")]
-mod hybrid_backend;
-#[cfg(feature = "vello-hybrid")]
-pub use hybrid_backend::{Glyph, NormalizedCoord, Painter, Scene, scene};
+mod hybrid_flush;
+
+// Transitional wgpu consumer: tessellates the display list into GPU-ready types
+// (feature `wgpu`; moved into pebbles-gpu by C05).
+#[cfg(feature = "wgpu")]
+#[doc(hidden)]
+pub mod wgpu_backend;
+#[cfg(feature = "wgpu")]
+pub use wgpu_backend::{
+    Batch, GlyphRun, ImageQuad, ImageUpload, ImageVertex, Mesh, Scissor, ShadowVertex, SolidMesh, Vertex,
+};

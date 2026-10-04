@@ -240,7 +240,7 @@ impl Renderer {
         }
         let msaa = &self.msaa.as_ref().expect("msaa just initialized").3;
 
-        let mesh = scene.mesh();
+        let mesh = pebbles_render::paint::wgpu_backend::mesh(scene);
         let [r, g, b, a] = base_color.components;
         let mut encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.wgpu.render") });
@@ -521,7 +521,7 @@ impl Renderer {
         width: u32,
         height: u32,
     ) {
-        let uploads = scene.image_uploads();
+        let uploads = pebbles_render::paint::wgpu_backend::image_uploads(scene);
         if uploads.is_empty() {
             return;
         }

@@ -1,10 +1,10 @@
-//! The transition wgpu paint backend. It keeps the backend-neutral retained op-list
-//! intact; the shell owns all GPU state and will consume these operations in later
-//! renderer phases.
+//! The transition wgpu paint consumer. The shared display list lives in
+//! `paint::display_list` (C03); this module keeps the GPU-facing types and the
+//! tessellation the shell drives, as free functions over the shared `Scene`, until C05
+//! moves them into `pebbles-gpu`.
 
-use std::rc::Rc;
-
-use super::{Affine, BezPath, Brush, BrushRef, Color, Fill, FontData, Rect, Shape, Stroke, peniko};
+use super::display_list::{Glyph, Op, Scene, TOL};
+use super::{Affine, BezPath, Brush, Color, Fill, FontData, Rect, Stroke, peniko};
 use bytemuck::{Pod, Zeroable};
 use lyon::math::point;
 use lyon::path::Path;
@@ -12,21 +12,10 @@ use lyon::tessellation::{
     BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, FillVertexConstructor, VertexBuffers,
 };
 
-/// Path-flattening tolerance for recorded shapes (logical px).
-const TOL: f64 = 0.1;
 /// Tessellation tolerance for screen-space geometry (physical px).
 const TESS_TOL: f32 = 0.1;
 /// Stroke-outline expansion tolerance (physical px).
 const STROKE_TOL: f64 = 0.1;
-
-#[derive(Clone, Copy, Debug)]
-pub struct Glyph {
-    pub id: u32,
-    pub x: f32,
-    pub y: f32,
-}
-
-pub type NormalizedCoord = i16;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -123,7 +112,7 @@ pub struct ImageVertex {
     pub uv: [f32; 2],
 }
 
-/// One image draw: the image index (into [`Scene::image_uploads`]) + a quad in
+/// One image draw: the image index (into [`image_uploads`]) + a quad in
 /// physical-pixel space (with the image's affine applied to the source rect).
 pub struct ImageQuad {
     pub image_index: u32,
@@ -143,111 +132,22 @@ pub struct ShadowVertex {
     pub color: [f32; 4],
 }
 
-fn clip_fill_rule(style: peniko::StyleRef<'_>) -> Fill {
-    match style {
-        peniko::StyleRef::Fill(fill) => fill,
-        peniko::StyleRef::Stroke(_) => Fill::NonZero,
-    }
+/// Tessellate the Phase-1 solid subset of `scene` into GPU-ready triangles, batched
+/// by scissor rect, plus the Phase-2 glyph runs, Phase-3 image quads and shadow
+/// quads. Gradients and non-rect clips remain in Phase 4.
+pub fn mesh(scene: &Scene) -> Mesh {
+    let mut tess = Tess::new();
+    emit(scene.ops(), Affine::IDENTITY, &mut tess);
+    tess.finish()
 }
 
-/// The rasterization contract shared by the current hybrid backend and wgpu.
-#[derive(Clone)]
-#[allow(dead_code)]
-enum Op {
-    Fill {
-        style: Fill,
-        transform: Affine,
-        brush: Brush,
-        brush_transform: Option<Affine>,
-        path: BezPath,
-    },
-    Stroke {
-        style: Stroke,
-        transform: Affine,
-        brush: Brush,
-        brush_transform: Option<Affine>,
-        path: BezPath,
-    },
-    PushLayer {
-        clip_fill: Fill,
-        blend: peniko::BlendMode,
-        alpha: f32,
-        transform: Affine,
-        clip: BezPath,
-    },
-    PopLayer,
-    Image {
-        image: peniko::ImageBrush,
-        transform: Affine,
-    },
-    BlurredRect {
-        transform: Affine,
-        rect: Rect,
-        brush: Color,
-        radius: f64,
-        std_dev: f64,
-    },
-    Glyphs {
-        font: FontData,
-        font_size: f32,
-        font_weight: u16,
-        normalized_coords: Vec<NormalizedCoord>,
-        brush: Brush,
-        transform: Affine,
-        glyph_transform: Option<Affine>,
-        style: Fill,
-        glyphs: Vec<Glyph>,
-    },
-    Fragment {
-        transform: Option<Affine>,
-        ops: Rc<Vec<Op>>,
-    },
-}
-
-/// A retained, backend-neutral paint command buffer.
-#[derive(Default, Clone)]
-pub struct Scene {
-    ops: Vec<Op>,
-}
-
-impl Scene {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn reset(&mut self) {
-        self.ops.clear();
-    }
-
-    pub fn len(&self) -> usize {
-        self.ops.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.ops.is_empty()
-    }
-
-    pub fn append(&mut self, fragment: &Scene, transform: Option<Affine>) {
-        self.ops.push(Op::Fragment { transform, ops: Rc::new(fragment.ops.clone()) });
-    }
-
-    /// Tessellate the Phase-1 solid subset into GPU-ready triangles, batched by
-    /// scissor rect, plus the Phase-2 glyph runs, Phase-3 image quads and shadow
-    /// quads. Gradients and non-rect clips remain in Phase 4.
-    pub fn mesh(&self) -> Mesh {
-        let mut tess = Tess::new();
-        emit(&self.ops, Affine::IDENTITY, &mut tess);
-        tess.finish()
-    }
-
-    /// The CPU pixel data for every image op, in the SAME order the mesh visits
-    /// them — so `image_uploads()[i]` is the texture the mesh references as image
-    /// index `i`. Zero-size images are skipped in BOTH walks so the indices align.
-    pub fn image_uploads(&self) -> Vec<ImageUpload> {
-        let mut out = Vec::new();
-        collect_images(&self.ops, &mut out);
-        out
-    }
+/// The CPU pixel data for every image op in `scene`, in the SAME order [`mesh`] visits
+/// them — so `image_uploads()[i]` is the texture the mesh references as image index
+/// `i`. Zero-size images are skipped in BOTH walks so the indices align.
+pub fn image_uploads(scene: &Scene) -> Vec<ImageUpload> {
+    let mut out = Vec::new();
+    collect_images(scene.ops(), &mut out);
+    out
 }
 
 fn image_to_upload(img: &peniko::ImageBrush) -> ImageUpload {
@@ -476,15 +376,18 @@ impl Tess {
 fn emit(ops: &[Op], outer: Affine, tess: &mut Tess) {
     for op in ops {
         match op {
-            Op::Fill { style, transform, brush: Brush::Solid(color), path, .. } => {
-                tess.fill(path, outer * *transform, *style, *color);
+            Op::Fill { style, transform, brush: Brush::Solid(color), shape, .. } => {
+                let path = shape.to_path(TOL);
+                tess.fill(&path, outer * *transform, *style, *color);
             }
-            Op::Stroke { style, transform, brush: Brush::Solid(color), path, .. } => {
-                tess.stroke(path, outer * *transform, style, *color);
+            Op::Stroke { style, transform, brush: Brush::Solid(color), shape, .. } => {
+                let path = shape.to_path(TOL);
+                tess.stroke(&path, outer * *transform, style, *color);
             }
             Op::PushLayer { blend, alpha, transform, clip, .. } => {
                 let scissor = if *blend == peniko::BlendMode::default() && *alpha >= 1.0 {
-                    scissor_rect(clip, outer * *transform)
+                    let clip_path = clip.to_path(TOL);
+                    scissor_rect(&clip_path, outer * *transform)
                 } else {
                     None
                 };
@@ -625,155 +528,10 @@ impl FillVertexConstructor<Vertex> for SolidVertex {
     }
 }
 
-pub fn scene() -> Scene {
-    Scene::new()
-}
-
-/// The unchanged RenderObject-facing recording API. Only consumption of `Op` is
-/// backend-specific, keeping later tessellation work out of widgets and layout.
-pub struct Painter<'a> {
-    scene: &'a mut Scene,
-}
-
-impl<'a> Painter<'a> {
-    pub fn new(scene: &'a mut Scene) -> Self {
-        Self { scene }
-    }
-
-    pub fn reborrow(&mut self) -> Painter<'_> {
-        Painter { scene: self.scene }
-    }
-
-    pub fn scene_mut(&mut self) -> &mut Scene {
-        self.scene
-    }
-
-    pub fn reset(&mut self) {
-        self.scene.reset();
-    }
-
-    pub fn fill<'b>(
-        &mut self,
-        style: Fill,
-        transform: Affine,
-        brush: impl Into<BrushRef<'b>>,
-        brush_transform: Option<Affine>,
-        shape: &impl Shape,
-    ) {
-        self.scene.ops.push(Op::Fill {
-            style,
-            transform,
-            brush: brush.into().to_owned(),
-            brush_transform,
-            path: shape.to_path(TOL),
-        });
-    }
-
-    pub fn stroke<'b>(
-        &mut self,
-        style: &Stroke,
-        transform: Affine,
-        brush: impl Into<BrushRef<'b>>,
-        brush_transform: Option<Affine>,
-        shape: &impl Shape,
-    ) {
-        self.scene.ops.push(Op::Stroke {
-            style: style.clone(),
-            transform,
-            brush: brush.into().to_owned(),
-            brush_transform,
-            path: shape.to_path(TOL),
-        });
-    }
-
-    pub fn push_layer<'s>(
-        &mut self,
-        clip_style: impl Into<peniko::StyleRef<'s>>,
-        blend: impl Into<peniko::BlendMode>,
-        alpha: f32,
-        transform: Affine,
-        clip: &impl Shape,
-    ) {
-        self.scene.ops.push(Op::PushLayer {
-            clip_fill: clip_fill_rule(clip_style.into()),
-            blend: blend.into(),
-            alpha,
-            transform,
-            clip: clip.to_path(TOL),
-        });
-    }
-
-    pub fn pop_layer(&mut self) {
-        self.scene.ops.push(Op::PopLayer);
-    }
-
-    pub fn draw_image<'b>(&mut self, image: impl Into<peniko::ImageBrushRef<'b>>, transform: Affine) {
-        self.scene.ops.push(Op::Image { image: image.into().to_owned(), transform });
-    }
-
-    pub fn draw_blurred_rounded_rect(
-        &mut self,
-        transform: Affine,
-        rect: Rect,
-        brush: Color,
-        radius: f64,
-        std_dev: f64,
-    ) {
-        self.scene.ops.push(Op::BlurredRect { transform, rect, brush, radius, std_dev });
-    }
-
-    pub fn append(&mut self, fragment: &Scene, transform: Option<Affine>) {
-        self.scene.ops.push(Op::Fragment { transform, ops: Rc::new(fragment.ops.clone()) });
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw_glyphs(
-        &mut self,
-        font: &FontData,
-        font_size: f32,
-        font_weight: u16,
-        normalized_coords: &[NormalizedCoord],
-        brush: &Brush,
-        transform: Affine,
-        glyph_transform: Option<Affine>,
-        style: Fill,
-        glyphs: impl Iterator<Item = Glyph>,
-    ) {
-        self.scene.ops.push(Op::Glyphs {
-            font: font.clone(),
-            font_size,
-            font_weight,
-            normalized_coords: normalized_coords.to_vec(),
-            brush: brush.clone(),
-            transform,
-            glyph_transform,
-            style,
-            glyphs: glyphs.collect(),
-        });
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use super::super::Painter;
     use super::*;
-
-    #[test]
-    fn appended_fragment_remains_a_single_retained_operation() {
-        let mut fragment = Scene::new();
-        Painter::new(&mut fragment).fill(
-            Fill::NonZero,
-            Affine::IDENTITY,
-            Color::from_rgba8(0, 0, 0, 255),
-            None,
-            &Rect::new(0.0, 0.0, 10.0, 10.0),
-        );
-
-        let mut scene = Scene::new();
-        scene.append(&fragment, Some(Affine::translate((4.0, 8.0))));
-
-        assert_eq!(fragment.len(), 1);
-        assert_eq!(scene.len(), 1);
-    }
 
     #[test]
     fn solid_fill_tessellates_to_a_single_unclipped_batch() {
@@ -786,7 +544,7 @@ mod tests {
             &Rect::new(0.0, 0.0, 10.0, 10.0),
         );
 
-        let mesh = scene.mesh().solid;
+        let mesh = mesh(&scene).solid;
         assert!(!mesh.is_empty());
         assert_eq!(mesh.batches.len(), 1);
         assert_eq!(mesh.batches[0].scissor, None);
@@ -822,7 +580,7 @@ mod tests {
             &Rect::new(0.0, 0.0, 10.0, 10.0),
         );
 
-        let mesh = scene.mesh().solid;
+        let mesh = mesh(&scene).solid;
         assert_eq!(mesh.batches.len(), 2);
         let clipped = &mesh.batches[0];
         let unclipped = &mesh.batches[1];
@@ -851,7 +609,7 @@ mod tests {
         );
         p.pop_layer();
 
-        let mesh = scene.mesh().solid;
+        let mesh = mesh(&scene).solid;
         assert_eq!(mesh.batches.len(), 1);
         assert_eq!(mesh.batches[0].scissor, None);
     }
@@ -868,7 +626,7 @@ mod tests {
             &Rect::new(0.0, 0.0, 100.0, 40.0),
         );
 
-        let mesh = scene.mesh().solid;
+        let mesh = mesh(&scene).solid;
         assert!(!mesh.is_empty());
         // Dashes split the outline into multiple disjoint pieces, so the vertex
         // count exceeds the 4 corners a plain rect stroke would produce.

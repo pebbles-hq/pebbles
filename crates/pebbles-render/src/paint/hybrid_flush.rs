@@ -1,282 +1,14 @@
-//! Backend B — Vello Hybrid (low-power). The [`Painter`] records each verb into a
-//! retained, backend-neutral op-list; [`Scene::flush`] replays it into a
-//! `vello_hybrid::Scene` on the GPU and [`Scene::image_uploads`] hands the shell the
-//! pixels to bind as external textures. Selected by the `vello-hybrid` feature.
+//! The **transitional** hybrid consumer (feature `vello-hybrid`): replays the shared
+//! display list into a live `vello_hybrid::Scene`. Kept as inherent `Scene` methods
+//! (`flush`, `image_uploads`) because sibling demo capture harnesses call them until K10;
+//! deleted whole at Phase 7 (X01).
 
-use std::rc::Rc;
-
-use super::{Affine, BezPath, Brush, BrushRef, Color, Fill, FontData, Rect, Shape, Stroke, peniko};
-
-/// Path-flattening tolerance for recorded shapes (px). The hybrid backend keeps
-/// paths, not compute encodings, so we flatten once at record time.
-const TOL: f64 = 0.1;
-
-/// A shaped glyph — same `{id, x, y}` layout the widget layer builds for vello,
-/// so the call sites are identical. Resolved to `vello_hybrid`'s glyph run at flush.
-#[derive(Clone, Copy, Debug)]
-pub struct Glyph {
-    pub id: u32,
-    pub x: f32,
-    pub y: f32,
-}
-
-/// A font variation coordinate (skrifa/vello both define this as `i16`).
-pub type NormalizedCoord = i16;
-
-/// The fill-rule for a recorded layer's clip path. Pebbles only ever clips with a fill
-/// rule (never a stroked-outline clip), and `vello_hybrid`'s `push_layer` clip is a filled
-/// path regardless — so a stroked clip-style degrades to `NonZero` at record time.
-fn clip_fill_rule(s: peniko::StyleRef<'_>) -> Fill {
-    match s {
-        peniko::StyleRef::Fill(f) => f,
-        peniko::StyleRef::Stroke(_) => Fill::NonZero,
-    }
-}
-
-/// One recorded paint verb, owning its inputs. `Scene::flush` walks these into a live
-/// `vello_hybrid::Scene` (resolving glyphs against `Resources` and images against bound
-/// external textures), so every field is read there.
-#[derive(Clone)]
-enum Op {
-    Fill {
-        style: Fill,
-        transform: Affine,
-        brush: Brush,
-        brush_transform: Option<Affine>,
-        path: BezPath,
-    },
-    Stroke {
-        style: Stroke,
-        transform: Affine,
-        brush: Brush,
-        brush_transform: Option<Affine>,
-        path: BezPath,
-    },
-    PushLayer {
-        clip_fill: Fill,
-        blend: peniko::BlendMode,
-        alpha: f32,
-        transform: Affine,
-        clip: BezPath,
-    },
-    PopLayer,
-    Image {
-        image: peniko::ImageBrush,
-        transform: Affine,
-    },
-    BlurredRect {
-        transform: Affine,
-        rect: Rect,
-        brush: Color,
-        radius: f64,
-        std_dev: f64,
-    },
-    Glyphs {
-        font: FontData,
-        font_size: f32,
-        // Recorded for the wgpu backend's rasterization; the hybrid flush uses
-        // `normalized_coords` instead, so this field is never read here.
-        #[allow(dead_code)]
-        font_weight: u16,
-        normalized_coords: Vec<NormalizedCoord>,
-        brush: Brush,
-        transform: Affine,
-        glyph_transform: Option<Affine>,
-        style: Fill,
-        glyphs: Vec<Glyph>,
-    },
-    /// A retained fragment appended under `transform` (repaint boundaries,
-    /// transformed subtrees). The ops are shared so re-appending each frame is cheap.
-    Fragment {
-        transform: Option<Affine>,
-        ops: Rc<Vec<Op>>,
-    },
-}
-
-/// A retained drawing buffer — a backend-neutral op-list. Filled by the [`Painter`];
-/// the shell flushes it to a `vello_hybrid::Scene` on the GPU (Phase 4).
-#[derive(Default, Clone)]
-pub struct Scene {
-    ops: Vec<Op>,
-}
-
-impl Scene {
-    /// Create an empty [`Scene`].
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Clear all recorded ops (reuse the buffer for a fresh frame/fragment).
-    pub fn reset(&mut self) {
-        self.ops.clear();
-    }
-
-    /// Number of recorded ops (a fragment's re-append cost is one op).
-    pub fn len(&self) -> usize {
-        self.ops.len()
-    }
-
-    /// Whether anything has been recorded.
-    pub fn is_empty(&self) -> bool {
-        self.ops.is_empty()
-    }
-
-    /// Append another retained scene as a fragment under `transform` — the
-    /// `Scene`-level twin of [`Painter::append`], used by the shell to compose the
-    /// per-frame logical scene into the DPI-scaled frame. Mirrors `vello::Scene::append`.
-    pub fn append(&mut self, fragment: &Scene, transform: Option<Affine>) {
-        self.ops.push(Op::Fragment { transform, ops: Rc::new(fragment.ops.clone()) });
-    }
-}
-
-/// Create an empty [`Scene`].
-pub fn scene() -> Scene {
-    Scene::new()
-}
-
-/// The drawing surface RenderObjects paint into — records each verb as an `Op`
-/// on the retained list. Signatures mirror the vello backend exactly.
-pub struct Painter<'a> {
-    scene: &'a mut Scene,
-}
-
-impl<'a> Painter<'a> {
-    /// Wrap a mutable scene as a painter.
-    pub fn new(scene: &'a mut Scene) -> Self {
-        Painter { scene }
-    }
-
-    /// Reborrow as a shorter-lived painter (for sub-scenes / recursion).
-    pub fn reborrow(&mut self) -> Painter<'_> {
-        Painter { scene: self.scene }
-    }
-
-    /// The underlying scene (for the shell's flush + fragment plumbing).
-    pub fn scene_mut(&mut self) -> &mut Scene {
-        self.scene
-    }
-
-    /// Clear all recorded content.
-    pub fn reset(&mut self) {
-        self.scene.reset();
-    }
-
-    /// Fill `shape` with `brush`.
-    pub fn fill<'b>(
-        &mut self,
-        style: Fill,
-        transform: Affine,
-        brush: impl Into<BrushRef<'b>>,
-        brush_transform: Option<Affine>,
-        shape: &impl Shape,
-    ) {
-        self.scene.ops.push(Op::Fill {
-            style,
-            transform,
-            brush: brush.into().to_owned(),
-            brush_transform,
-            path: shape.to_path(TOL),
-        });
-    }
-
-    /// Stroke `shape` with `brush`.
-    pub fn stroke<'b>(
-        &mut self,
-        style: &Stroke,
-        transform: Affine,
-        brush: impl Into<BrushRef<'b>>,
-        brush_transform: Option<Affine>,
-        shape: &impl Shape,
-    ) {
-        self.scene.ops.push(Op::Stroke {
-            style: style.clone(),
-            transform,
-            brush: brush.into().to_owned(),
-            brush_transform,
-            path: shape.to_path(TOL),
-        });
-    }
-
-    /// Push a clip/blend layer (`clip_style` picks fill-rule vs. stroked-outline clip).
-    pub fn push_layer<'s>(
-        &mut self,
-        clip_style: impl Into<peniko::StyleRef<'s>>,
-        blend: impl Into<peniko::BlendMode>,
-        alpha: f32,
-        transform: Affine,
-        clip: &impl Shape,
-    ) {
-        self.scene.ops.push(Op::PushLayer {
-            clip_fill: clip_fill_rule(clip_style.into()),
-            blend: blend.into(),
-            alpha,
-            transform,
-            clip: clip.to_path(TOL),
-        });
-    }
-
-    /// Pop the most recent layer.
-    pub fn pop_layer(&mut self) {
-        self.scene.ops.push(Op::PopLayer);
-    }
-
-    /// Draw an image (already positioned by `transform`).
-    pub fn draw_image<'b>(&mut self, image: impl Into<peniko::ImageBrushRef<'b>>, transform: Affine) {
-        self.scene.ops.push(Op::Image { image: image.into().to_owned(), transform });
-    }
-
-    /// A GPU-accelerated blurred rounded rectangle (drop shadow).
-    pub fn draw_blurred_rounded_rect(
-        &mut self,
-        transform: Affine,
-        rect: Rect,
-        brush: Color,
-        radius: f64,
-        std_dev: f64,
-    ) {
-        self.scene.ops.push(Op::BlurredRect { transform, rect, brush, radius, std_dev });
-    }
-
-    /// Append a retained [`Scene`] fragment, translated by `transform`. The
-    /// fragment's ops are shared (an `Rc`) so re-appending each frame is cheap.
-    pub fn append(&mut self, fragment: &Scene, transform: Option<Affine>) {
-        self.scene.ops.push(Op::Fragment { transform, ops: Rc::new(fragment.ops.clone()) });
-    }
-
-    /// Record a shaped glyph run (owned; the flush resolves glyphs against the
-    /// hybrid atlas in `Resources`).
-    // Mirrors the vello backend's `draw_glyphs` signature exactly (backend parity); the flat
-    // font+size+coords+brush+transforms+style+glyphs list is the call contract, not a smell.
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw_glyphs(
-        &mut self,
-        font: &FontData,
-        font_size: f32,
-        font_weight: u16,
-        normalized_coords: &[NormalizedCoord],
-        brush: &Brush,
-        transform: Affine,
-        glyph_transform: Option<Affine>,
-        style: Fill,
-        glyphs: impl Iterator<Item = Glyph>,
-    ) {
-        self.scene.ops.push(Op::Glyphs {
-            font: font.clone(),
-            font_size,
-            font_weight,
-            normalized_coords: normalized_coords.to_vec(),
-            brush: brush.clone(),
-            transform,
-            glyph_transform,
-            style,
-            glyphs: glyphs.collect(),
-        });
-    }
-}
+use super::display_list::{Op, TOL};
+use super::{Affine, Brush, peniko};
 
 // ----- the flush: recorded op-list -> a live `vello_hybrid::Scene` (Phase 4) ---
 
-impl Scene {
+impl super::Scene {
     /// Replay the recorded op-list into a live `vello_hybrid::Scene` — the shell's
     /// GPU host then rasterizes THAT. This is the hybrid analogue of a `vello::Scene`
     /// already being GPU-ready: our `Scene` is a CPU command buffer, and `flush`
@@ -289,7 +21,7 @@ impl Scene {
         // Image ops draw an EXTERNAL texture keyed by its visit index; the shell binds
         // `TextureId(index)` from `image_uploads()` (same walk order) before rendering.
         let mut img_idx: u32 = 0;
-        for op in &self.ops {
+        for op in self.ops() {
             emit(op, Affine::IDENTITY, out, resources, &mut img_idx);
         }
     }
@@ -300,7 +32,7 @@ impl Scene {
     /// images are skipped in BOTH walks so the indices stay aligned.
     pub fn image_uploads(&self) -> Vec<ImageUpload> {
         let mut out = Vec::new();
-        collect_images(&self.ops, &mut out);
+        collect_images(self.ops(), &mut out);
         out
     }
 }
@@ -373,28 +105,31 @@ fn emit(
     img_idx: &mut u32,
 ) {
     match op {
-        Op::Fill { style, transform, brush, brush_transform, path } => {
+        Op::Fill { style, transform, brush, brush_transform, shape } => {
             out.set_transform(outer * *transform);
             out.set_fill_rule(*style);
             apply_paint_transform(out, *brush_transform);
             if apply_paint(out, brush) {
-                out.fill_path(path);
+                let path = shape.to_path(TOL);
+                out.fill_path(&path);
             }
             out.reset_paint_transform();
         }
-        Op::Stroke { style, transform, brush, brush_transform, path } => {
+        Op::Stroke { style, transform, brush, brush_transform, shape } => {
             out.set_transform(outer * *transform);
             out.set_stroke(style.clone());
             apply_paint_transform(out, *brush_transform);
             if apply_paint(out, brush) {
-                out.stroke_path(path);
+                let path = shape.to_path(TOL);
+                out.stroke_path(&path);
             }
             out.reset_paint_transform();
         }
         Op::PushLayer { clip_fill, blend, alpha, transform, clip } => {
             out.set_transform(outer * *transform);
             out.set_fill_rule(*clip_fill);
-            out.push_layer(Some(clip), Some(*blend), Some(*alpha), None, None);
+            let clip_path = clip.to_path(TOL);
+            out.push_layer(Some(&clip_path), Some(*blend), Some(*alpha), None, None);
         }
         Op::PopLayer => out.pop_layer(),
         Op::Image { image, transform } => {
@@ -511,14 +246,14 @@ mod tests {
     /// would bind the wrong texture to each draw. This is the load-bearing invariant.
     #[test]
     fn image_uploads_follow_flush_visit_order_through_fragments() {
-        let mut fragment = Scene::new();
+        let mut fragment = super::super::Scene::new();
         {
-            let mut p = Painter::new(&mut fragment);
+            let mut p = super::super::Painter::new(&mut fragment);
             p.draw_image(&tagged_image(20, 2, 2), Affine::IDENTITY);
         }
-        let mut scene = Scene::new();
+        let mut scene = super::super::Scene::new();
         {
-            let mut p = Painter::new(&mut scene);
+            let mut p = super::super::Painter::new(&mut scene);
             p.draw_image(&tagged_image(10, 2, 2), Affine::IDENTITY); // TextureId(0)
             p.append(&fragment, None); // the fragment's image → TextureId(1)
             p.draw_image(&tagged_image(30, 2, 2), Affine::IDENTITY); // TextureId(2)
@@ -532,9 +267,9 @@ mod tests {
     /// stay aligned (a skipped image must not consume a `TextureId`).
     #[test]
     fn zero_size_images_are_skipped_consistently() {
-        let mut scene = Scene::new();
+        let mut scene = super::super::Scene::new();
         {
-            let mut p = Painter::new(&mut scene);
+            let mut p = super::super::Painter::new(&mut scene);
             p.draw_image(&tagged_image(5, 0, 0), Affine::IDENTITY); // skipped
             p.draw_image(&tagged_image(7, 2, 2), Affine::IDENTITY); // TextureId(0)
         }
@@ -557,9 +292,9 @@ mod tests {
             height: 1,
             alpha_type: peniko::ImageAlphaType::Alpha,
         };
-        let mut scene = Scene::new();
+        let mut scene = super::super::Scene::new();
         {
-            let mut p = Painter::new(&mut scene);
+            let mut p = super::super::Painter::new(&mut scene);
             p.draw_image(&img, Affine::IDENTITY);
         }
         let uploads = scene.image_uploads();
