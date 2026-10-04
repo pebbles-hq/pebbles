@@ -234,40 +234,45 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: gpu-raster
-      - name: Confirm lavapipe is the visible Vulkan device
+      - name: Locate the lavapipe ICD and confirm it is visible
         run: |
-          ls -1 /usr/share/vulkan/icd.d/ || true
-          VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json vulkaninfo --summary 2>/dev/null | grep -iE "deviceName|llvmpipe|lavapipe" || true
+          LVP=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json 2>/dev/null | head -1)
+          echo "lavapipe ICD: ${LVP:-<not found>}"
+          echo "LAVAPIPE_ICD=$LVP" >> "$GITHUB_ENV"
+          VK_DRIVER_FILES="$LVP" vulkaninfo --summary 2>/dev/null | grep -iE "deviceName|llvmpipe|lavapipe" || true
       - name: Run the #[ignore]d GPU/capture tests on lavapipe
         env:
           # Newer Vulkan loaders (1.3.275+) use VK_DRIVER_FILES; keep VK_ICD_FILENAMES
           # too for older loaders. Point both at Mesa's lavapipe (software) ICD.
-          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
           LIBGL_ALWAYS_SOFTWARE: "1"
           WGPU_BACKEND: vulkan
-        run: cargo test -p pebbles-shell -- --ignored
+        run: |
+          export VK_DRIVER_FILES="$LAVAPIPE_ICD"
+          export VK_ICD_FILENAMES="$LAVAPIPE_ICD"
+          cargo test -p pebbles-shell -- --ignored
       # The first-party wgpu renderer's GPU tests (TEST-SHELL-GPU): render_check + glyph_check
       # under `--no-default-features --features wgpu`. Gives the wgpu path its own lavapipe
       # coverage (C05 AC2/AC4; superseded by the dedicated V30 lane once V01/C21 land).
       - name: Run the wgpu #[ignore]d GPU tests on lavapipe
         if: always()
         env:
-          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
           LIBGL_ALWAYS_SOFTWARE: "1"
           WGPU_BACKEND: vulkan
-        run: cargo test -p pebbles-shell --no-default-features --features wgpu -- --ignored
+        run: |
+          export VK_DRIVER_FILES="$LAVAPIPE_ICD"
+          export VK_ICD_FILENAMES="$LAVAPIPE_ICD"
+          cargo test -p pebbles-shell --no-default-features --features wgpu -- --ignored
       # pebbles-gpu's own GPU tests (TEST-GPU-LAVAPIPE): C21's GpuInit env path + the
       # C06 per-format render test, against the lavapipe software device (D14/C21 fix).
       - name: Run the pebbles-gpu #[ignore]d GPU tests on lavapipe
         if: always()
         env:
-          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
           LIBGL_ALWAYS_SOFTWARE: "1"
           WGPU_BACKEND: vulkan
-        run: cargo test -p pebbles-gpu -- --ignored
+        run: |
+          export VK_DRIVER_FILES="$LAVAPIPE_ICD"
+          export VK_ICD_FILENAMES="$LAVAPIPE_ICD"
+          cargo test -p pebbles-gpu -- --ignored
 
   clippy:
     name: Clippy
