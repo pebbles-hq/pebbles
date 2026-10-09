@@ -258,6 +258,7 @@ jobs:
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
           WGPU_BACKEND: vulkan
+          PEBBLES_DEBUG_PLAN: "1"
         run: |
           export VK_DRIVER_FILES="$LAVAPIPE_ICD"
           export VK_ICD_FILENAMES="$LAVAPIPE_ICD"

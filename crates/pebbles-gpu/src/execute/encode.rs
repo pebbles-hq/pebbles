@@ -54,6 +54,20 @@ pub(crate) fn encode(
     let cmds = renderer.scratch.plan.cmds.clone();
     let uploads = image_uploads(scene);
 
+    if std::env::var("PEBBLES_DEBUG_PLAN").is_ok() {
+        eprintln!(
+            "encode: cmds={} solid_v={} shadows={} glyph_runs={} images={}",
+            cmds.len(),
+            renderer.scratch.plan.solid_vertices.len(),
+            renderer.scratch.plan.shadows.len(),
+            renderer.scratch.plan.glyph_runs.len(),
+            renderer.scratch.plan.images.len(),
+        );
+        for (i, cmd) in cmds.iter().enumerate() {
+            eprintln!("  cmd[{i}] = {cmd:?}");
+        }
+    }
+
     for cmd in &cmds {
         match cmd {
             DrawCmd::Solid { indices, clip } => {
