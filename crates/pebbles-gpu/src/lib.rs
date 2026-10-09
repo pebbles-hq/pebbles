@@ -26,6 +26,8 @@ mod prepare;
 mod raster;
 mod renderer;
 mod surface;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 pub use context::{DeviceId, GpuCaps, GpuContext, GpuDevice};
 pub use error::{AcquireError, CaptureError, GpuError};
