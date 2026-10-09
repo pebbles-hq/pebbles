@@ -20,6 +20,7 @@ pub(crate) fn scissor_params(scissor: ScissorRect, width: u32, height: u32) -> (
 }
 
 /// Draw every command of the renderer's current plan, in order, into `pass`.
+#[allow(clippy::print_stderr)] // temporary PEBBLES_DEBUG_PLAN diagnostic
 pub(crate) fn encode(
     renderer: &mut Renderer,
     device: &wgpu::Device,
@@ -56,7 +57,7 @@ pub(crate) fn encode(
 
     if std::env::var("PEBBLES_DEBUG_PLAN").is_ok() {
         eprintln!(
-            "encode: cmds={} solid_v={} shadows={} glyph_runs={} images={}",
+            "encode: size={size:?} cmds={} solid_v={} shadows={} glyph_runs={} images={}",
             cmds.len(),
             renderer.scratch.plan.solid_vertices.len(),
             renderer.scratch.plan.shadows.len(),
@@ -65,6 +66,12 @@ pub(crate) fn encode(
         );
         for (i, cmd) in cmds.iter().enumerate() {
             eprintln!("  cmd[{i}] = {cmd:?}");
+        }
+        for (i, s) in renderer.scratch.plan.shadows.iter().enumerate() {
+            eprintln!("  shadow[{i}] rect={:?} color={:?} params={:?}", s.rect, s.color, s.params);
+        }
+        for (i, v) in renderer.scratch.plan.solid_vertices.iter().enumerate() {
+            eprintln!("  solid_v[{i}] pos={:?} color={:?}", v.pos, v.color);
         }
     }
 
