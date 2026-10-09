@@ -43,6 +43,8 @@ fn check_snapshot(name: &str, actual: &str) {
     }
     let expected =
         std::fs::read_to_string(&path).expect("read golden (set PEBBLES_UPDATE_GOLDENS=1 to write)");
+    // Git may check the golden out with CRLF on Windows — normalize before comparing.
+    let expected = expected.replace("\r\n", "\n");
     assert_eq!(
         actual.trim(),
         expected.trim(),
