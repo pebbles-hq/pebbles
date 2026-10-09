@@ -18,13 +18,16 @@ struct O {
 @vertex
 fn vs(i: I, @builtin(vertex_index) vi: u32) -> O {
     let extend = 3.0 * i.params.y;
-    let corners = array<vec2<f32>, 4>(
-        vec2<f32>(i.rect.x - extend, i.rect.y - extend),
-        vec2<f32>(i.rect.z + extend, i.rect.y - extend),
-        vec2<f32>(i.rect.x - extend, i.rect.w + extend),
-        vec2<f32>(i.rect.z + extend, i.rect.w + extend),
-    );
-    let p = corners[vi];
+    var p: vec2<f32>;
+    if vi == 0u {
+        p = vec2<f32>(i.rect.x - extend, i.rect.y - extend);
+    } else if vi == 1u {
+        p = vec2<f32>(i.rect.z + extend, i.rect.y - extend);
+    } else if vi == 2u {
+        p = vec2<f32>(i.rect.x - extend, i.rect.w + extend);
+    } else {
+        p = vec2<f32>(i.rect.z + extend, i.rect.w + extend);
+    }
     var o: O;
     o.clip = vec4((p.x / size.x) * 2.0 - 1.0, 1.0 - (p.y / size.y) * 2.0, 0.0, 1.0);
     o.p = p;

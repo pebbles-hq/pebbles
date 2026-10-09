@@ -135,6 +135,9 @@ fn shadow_does_not_cover_its_card() {
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (140, 100), Color::WHITE);
     let c = pixel(&rgba, 140, 70, 50);
     assert!(is_white(c), "card center covered by shadow: {c:?}");
+    // The shadow must render as a dark halo just below the card (blur + offset).
+    let halo = pixel(&rgba, 140, 70, 82);
+    assert!(halo[0] < 240 && halo[1] < 240 && halo[2] < 240, "shadow did not render: {halo:?}");
 }
 
 /// D01 regression: page text under a scrim and an opaque dialog must be hidden inside the dialog.
