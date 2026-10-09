@@ -3,17 +3,17 @@
 use std::collections::HashMap;
 
 use cosmic_text::{FontSystem, SwashCache};
-use wgpu::util::DeviceExt;
+use kurbo::Affine;
 
 use pebbles_render::paint::Scene;
 
 use super::context::{DeviceId, GpuDevice};
 use super::error::GpuError;
-use super::execute::pipelines::{GlyphPipeline, ImagePipeline, ShadowPipeline, make_pipeline};
+use super::execute::encode;
+use super::execute::pipelines::{GlyphPipeline, ImagePipeline, ShadowPipeline};
 use super::execute::resources::Atlas;
-use super::execute::{draw_glyphs, draw_images, draw_shadows, scissor_params};
 use super::frame_targets::create_msaa;
-use super::prepare::mesh;
+use super::prepare::{PrepareInput, PrepareScratch, prepare};
 
 /// Per-frame render parameters.
 pub struct RenderParams {
@@ -27,7 +27,8 @@ pub struct RenderParams {
 
 /// Pipelines + caches for ONE device. Shared by every surface/target on that device.
 pub struct Renderer {
-    pipeline: HashMap<(wgpu::TextureFormat, u32), (wgpu::RenderPipeline, wgpu::Buffer, wgpu::BindGroup)>,
+    pub(crate) pipeline:
+        HashMap<(wgpu::TextureFormat, u32), (wgpu::RenderPipeline, wgpu::Buffer, wgpu::BindGroup)>,
     msaa: Option<(wgpu::TextureFormat, u32, u32, wgpu::Texture)>,
     pub(crate) sample_count: u32,
     pub(crate) fonts: Option<FontSystem>,
@@ -40,6 +41,7 @@ pub struct Renderer {
     pub(crate) image_cache: HashMap<u64, wgpu::Texture>,
     pub(crate) image_pipeline: HashMap<(wgpu::TextureFormat, u32), ImagePipeline>,
     pub(crate) shadow_pipeline: HashMap<(wgpu::TextureFormat, u32), ShadowPipeline>,
+    pub(crate) scratch: PrepareScratch,
 }
 
 impl Renderer {
@@ -61,6 +63,7 @@ impl Renderer {
             image_cache: HashMap::new(),
             image_pipeline: HashMap::new(),
             shadow_pipeline: HashMap::new(),
+            scratch: PrepareScratch::default(),
         }
     }
 
@@ -98,20 +101,15 @@ impl Renderer {
         format: wgpu::TextureFormat,
     ) -> Result<(), GpuError> {
         let size = (size.0.max(1), size.1.max(1));
-        let key = (format, self.sample_count);
-        if !self.pipeline.contains_key(&key) {
-            let (_, p, u, bg) = make_pipeline(device, format, self.sample_count);
-            self.pipeline.insert(key, (p, u, bg));
-        }
-        let (pipeline, uniform, bind_group) = self.pipeline.get(&key).expect("pipeline just initialized");
-        queue.write_buffer(uniform, 0, bytemuck::cast_slice(&[size.0 as f32, size.1 as f32, 0.0, 0.0]));
         if self.msaa.as_ref().is_none_or(|m| m.0 != format || m.1 != size.0 || m.2 != size.1) {
             let texture = create_msaa(device, format, size.0, size.1, self.sample_count);
             self.msaa = Some((format, size.0, size.1, texture));
         }
         let msaa = &self.msaa.as_ref().expect("msaa just initialized").3;
 
-        let mesh = mesh(scene);
+        let input = PrepareInput { target_size: size, root_transform: Affine::IDENTITY };
+        prepare(scene, &input, &mut self.scratch);
+
         let [r, g, b, a] = base_color.components;
         let mut encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.gpu.encoder") });
@@ -138,38 +136,10 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            if !mesh.solid.is_empty() {
-                let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("pebbles.gpu.buffer.vertices"),
-                    contents: bytemuck::cast_slice(&mesh.solid.vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-                let indices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some("pebbles.gpu.buffer.indices"),
-                    contents: bytemuck::cast_slice(&mesh.solid.indices),
-                    usage: wgpu::BufferUsages::INDEX,
-                });
-                pass.set_pipeline(pipeline);
-                pass.set_bind_group(0, bind_group, &[]);
-                pass.set_vertex_buffer(0, vertices.slice(..));
-                pass.set_index_buffer(indices.slice(..), wgpu::IndexFormat::Uint32);
-                for batch in &mesh.solid.batches {
-                    let (x, y, w, h) = scissor_params(batch.scissor, size.0, size.1);
-                    pass.set_scissor_rect(x, y, w, h);
-                    pass.draw_indexed(batch.range.clone(), 0, 0..1);
-                }
-            }
-            if !mesh.glyphs.is_empty() {
-                draw_glyphs(self, device, queue, &mut pass, &mesh.glyphs, format, size.0, size.1);
-            }
-            if !mesh.shadows.is_empty() {
-                draw_shadows(self, device, queue, &mut pass, &mesh.shadows, format, size.0, size.1);
-            }
-            if !mesh.images.is_empty() {
-                draw_images(self, device, queue, &mut pass, &mesh.images, scene, format, size.0, size.1);
-            }
+            encode(self, device, queue, &mut pass, scene, format, size);
         }
         queue.submit([encoder.finish()]);
+        self.scratch.plan.release_refs();
         Ok(())
     }
 }

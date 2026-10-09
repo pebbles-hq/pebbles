@@ -1,11 +1,9 @@
 @group(0) @binding(0) var<uniform> size: vec4<f32>;
 
 struct I {
-    @location(0) p: vec2<f32>,
-    @location(1) rect: vec4<f32>,
-    @location(2) radius: f32,
-    @location(3) sigma: f32,
-    @location(4) color: vec4<f32>,
+    @location(0) rect: vec4<f32>,
+    @location(1) color: vec4<f32>,
+    @location(2) params: vec4<f32>,
 }
 
 struct O {
@@ -18,13 +16,21 @@ struct O {
 }
 
 @vertex
-fn vs(i: I) -> O {
+fn vs(i: I, @builtin(vertex_index) vi: u32) -> O {
+    let extend = 3.0 * i.params.y;
+    let corners = array<vec2<f32>, 4>(
+        vec2<f32>(i.rect.x - extend, i.rect.y - extend),
+        vec2<f32>(i.rect.z + extend, i.rect.y - extend),
+        vec2<f32>(i.rect.x - extend, i.rect.w + extend),
+        vec2<f32>(i.rect.z + extend, i.rect.w + extend),
+    );
+    let p = corners[vi];
     var o: O;
-    o.clip = vec4((i.p.x / size.x) * 2.0 - 1.0, 1.0 - (i.p.y / size.y) * 2.0, 0.0, 1.0);
-    o.p = i.p;
+    o.clip = vec4((p.x / size.x) * 2.0 - 1.0, 1.0 - (p.y / size.y) * 2.0, 0.0, 1.0);
+    o.p = p;
     o.rect = i.rect;
-    o.radius = i.radius;
-    o.sigma = i.sigma;
+    o.radius = i.params.x;
+    o.sigma = i.params.y;
     o.color = i.color;
     return o;
 }

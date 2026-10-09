@@ -1,4 +1,11 @@
-//! Test-only helpers: a seeded RNG and a property-loop runner (DR-15 — no `proptest`).
+//! Test-only helpers: a seeded RNG, a property-loop runner, and a bundled-font source
+//! (DR-15 — no `proptest`).
+
+/// The bundled Inter variable font as a `FontData` (for glyph-run CPU tests).
+pub(crate) fn bundled_font() -> peniko::FontData {
+    let bytes = pebbles_render::fonts::builtin_fonts()[0].1;
+    peniko::FontData::new(peniko::Blob::from(bytes.to_vec()), 0)
+}
 
 /// xorshift64 (13, 7, 17). Deterministic, dependency-free.
 pub(crate) struct XorShift64(u64);

@@ -1,24 +1,45 @@
 //! Glyph resolution: rasterize each glyph once (cached) into the coverage/color atlas
-//! and emit the quad geometry.
+//! and emit the quad geometry for one glyph command.
 
 use cosmic_text::{CacheKey, CacheKeyFlags, FontSystem, SwashCache, SwashContent};
 
 use super::super::prepare::GlyphRun;
 use super::super::renderer::Renderer;
-use super::encode::{GlyphDraw, glyph_quad};
 use super::resources::{ATLAS_SIZE, Atlas};
+use crate::gpu_types::GlyphVertex;
 use crate::raster::font_id;
 
-/// Rasterize each glyph once (cached), pack it into the coverage or color atlas,
-/// and emit the quad geometry, batched per scissor rect.
+/// Vertex/index geometry for one glyph pipeline (coverage or color).
+pub(crate) struct GlyphGeometry {
+    pub(crate) vertices: Vec<GlyphVertex>,
+    pub(crate) indices: Vec<u32>,
+}
+
+impl GlyphGeometry {
+    fn new() -> Self {
+        Self { vertices: Vec::new(), indices: Vec::new() }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.indices.is_empty()
+    }
+    fn push_quad(&mut self, quad: [GlyphVertex; 4]) {
+        let base = self.vertices.len() as u32;
+        self.vertices.extend_from_slice(&quad);
+        self.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+}
+
+/// Rasterize each glyph once (cached), pack it into the coverage or color atlas, and emit
+/// the quad geometry (coverage and color separately).
 pub(crate) fn build_glyphs(
     renderer: &mut Renderer,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     runs: &[GlyphRun],
-) -> (GlyphDraw, GlyphDraw) {
-    let mut coverage = GlyphDraw::new();
-    let mut color = GlyphDraw::new();
+) -> (GlyphGeometry, GlyphGeometry) {
+    let mut coverage = GlyphGeometry::new();
+    let mut color = GlyphGeometry::new();
     if renderer.fonts.is_none() {
         renderer.fonts = Some(FontSystem::new_with_fonts(Vec::<fontdb::Source>::new()));
     }
@@ -78,7 +99,7 @@ pub(crate) fn build_glyphs(
                     );
                     let quad =
                         glyph_quad(region, w, h, x, y, image.placement.left, image.placement.top, run.color);
-                    coverage.push_quad(quad, run.scissor);
+                    coverage.push_quad(quad);
                 }
                 SwashContent::Color => {
                     let Some(region) =
@@ -111,11 +132,40 @@ pub(crate) fn build_glyphs(
                         image.placement.top,
                         [1.0, 1.0, 1.0, 1.0],
                     );
-                    color.push_quad(quad, run.scissor);
+                    color.push_quad(quad);
                 }
                 SwashContent::SubpixelMask => continue,
             }
         }
     }
     (coverage, color)
+}
+
+/// Build the four vertices of a glyph quad: physical-pixel position + atlas UVs.
+#[allow(clippy::too_many_arguments)]
+fn glyph_quad(
+    region: super::resources::AtlasRegion,
+    w: u32,
+    h: u32,
+    x: i32,
+    y: i32,
+    placement_left: i32,
+    placement_top: i32,
+    tint: [f32; 4],
+) -> [GlyphVertex; 4] {
+    let s = ATLAS_SIZE as f32;
+    let u0 = region.x as f32 / s;
+    let v0 = region.y as f32 / s;
+    let u1 = (region.x + w) as f32 / s;
+    let v1 = (region.y + h) as f32 / s;
+    let left = x as f32 + placement_left as f32;
+    let top = y as f32 - placement_top as f32;
+    let right = left + w as f32;
+    let bottom = top + h as f32;
+    [
+        GlyphVertex { position: [left, top], uv: [u0, v0], color: tint },
+        GlyphVertex { position: [right, top], uv: [u1, v0], color: tint },
+        GlyphVertex { position: [right, bottom], uv: [u1, v1], color: tint },
+        GlyphVertex { position: [left, bottom], uv: [u0, v1], color: tint },
+    ]
 }

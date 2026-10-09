@@ -2,51 +2,63 @@
 
 use kurbo::Affine;
 
-use super::Tess;
+use super::plan::{ClipState, ScissorRect};
 
-/// An axis-aligned clip rectangle in physical-pixel space, for `set_scissor_rect`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) struct Scissor {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
+/// The full-target scissor.
+pub(crate) fn full(target: (u32, u32)) -> ScissorRect {
+    ScissorRect { x0: 0, y0: 0, x1: target.0, y1: target.1 }
 }
 
-impl Scissor {
-    fn intersect(self, other: Scissor) -> Scissor {
-        let x0 = self.x.max(other.x);
-        let y0 = self.y.max(other.y);
-        let x1 = (self.x + self.width).min(other.x + other.width);
-        let y1 = (self.y + self.height).min(other.y + other.height);
-        if x1 <= x0 || y1 <= y0 {
-            Scissor { x: 0, y: 0, width: 0, height: 0 }
-        } else {
-            Scissor { x: x0, y: y0, width: x1 - x0, height: y1 - y0 }
+/// Corner max/min intersection. Empty (non-covering) when `x1 <= x0 || y1 <= y0`.
+pub(crate) fn intersect(a: ScissorRect, b: ScissorRect) -> ScissorRect {
+    ScissorRect { x0: a.x0.max(b.x0), y0: a.y0.max(b.y0), x1: a.x1.min(b.x1), y1: a.y1.min(b.y1) }
+}
+
+/// The clip stack: the current (intersected) scissor plus the saved scissor at each
+/// `PushLayer`. An unmatched `PopLayer` is ignored (the current clip is unchanged).
+#[derive(Default)]
+pub(crate) struct ClipStack {
+    stack: Vec<ScissorRect>,
+    current: ScissorRect,
+}
+
+impl ClipStack {
+    /// Reset for a new frame (full-target scissor).
+    pub(crate) fn reset(&mut self, target: (u32, u32)) {
+        self.stack.clear();
+        self.current = full(target);
+    }
+
+    /// The current clip state.
+    pub(crate) fn current(&self) -> ClipState {
+        ClipState { scissor: self.current }
+    }
+
+    /// The current scissor is empty — every draw in the subtree is culled.
+    pub(crate) fn is_culled(&self) -> bool {
+        self.current.x1 <= self.current.x0 || self.current.y1 <= self.current.y0
+    }
+
+    /// Push a clip; `None` means "no rect scissor" (keep the current clip).
+    pub(crate) fn push(&mut self, scissor: Option<ScissorRect>) {
+        self.stack.push(self.current);
+        if let Some(s) = scissor {
+            self.current = intersect(self.current, s);
         }
     }
-}
 
-impl Tess {
-    pub(crate) fn push_clip(&mut self, scissor: Option<Scissor>) {
-        self.clip_stack.push(self.scissor);
-        self.scissor = match (self.scissor, scissor) {
-            (None, None) => None,
-            (Some(a), None) => Some(a),
-            (None, Some(b)) => Some(b),
-            (Some(a), Some(b)) => Some(a.intersect(b)),
-        };
-    }
-
-    pub(crate) fn pop_clip(&mut self) {
-        self.scissor = self.clip_stack.pop().unwrap_or(None);
+    /// Pop the matching clip; an unmatched pop is ignored.
+    pub(crate) fn pop(&mut self) {
+        if let Some(prev) = self.stack.pop() {
+            self.current = prev;
+        }
     }
 }
 
 /// If `path` (a recorded rect clip) maps to another axis-aligned rectangle under
 /// `transform` (translate + scale, no rotation/shear), return its physical-pixel
 /// scissor rect; otherwise `None` (non-rect clips are Phase 4's job).
-pub(crate) fn scissor_rect(path: &kurbo::BezPath, transform: Affine) -> Option<Scissor> {
+pub(crate) fn scissor_rect(path: &kurbo::BezPath, transform: Affine) -> Option<ScissorRect> {
     let elements = path.elements();
     if elements.len() != 5 {
         return None;
@@ -80,10 +92,10 @@ pub(crate) fn scissor_rect(path: &kurbo::BezPath, transform: Affine) -> Option<S
     let max_x = a.x.max(b.x).max(c.x).max(d.x);
     let min_y = a.y.min(b.y).min(c.y).min(d.y);
     let max_y = a.y.max(b.y).max(c.y).max(d.y);
-    Some(Scissor {
-        x: min_x.floor().max(0.0) as u32,
-        y: min_y.floor().max(0.0) as u32,
-        width: (max_x.ceil() - min_x.floor()).max(0.0) as u32,
-        height: (max_y.ceil() - min_y.floor()).max(0.0) as u32,
+    Some(ScissorRect {
+        x0: min_x.floor().max(0.0) as u32,
+        y0: min_y.floor().max(0.0) as u32,
+        x1: (max_x.ceil().max(0.0)) as u32,
+        y1: (max_y.ceil().max(0.0)) as u32,
     })
 }

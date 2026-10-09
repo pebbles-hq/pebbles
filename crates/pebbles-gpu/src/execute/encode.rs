@@ -1,213 +1,214 @@
-//! The ordered draw/encode helpers: glyph quads, scissor clamps and the draw functions.
+//! The single ordered encode pass: iterate `plan.cmds` and draw each command in painter's order.
 
 use pebbles_render::paint::Scene;
 use wgpu::util::DeviceExt;
 
-use super::super::prepare::{GlyphRun, ImageQuad, Scissor, image_uploads};
+use super::super::prepare::{DrawCmd, ImageQuad, ScissorRect, image_uploads};
 use super::super::renderer::Renderer;
-use super::pipelines::{GlyphPipeline, make_glyph_pipeline, make_image_pipeline, make_shadow_pipeline};
-use super::resolve::build_glyphs;
-use super::resources::ATLAS_SIZE;
-use crate::gpu_types::{GlyphVertex, ShadowVertex};
+use super::pipelines::{
+    GlyphPipeline, make_glyph_pipeline, make_image_pipeline, make_pipeline, make_shadow_pipeline,
+};
+use super::resolve::{GlyphGeometry, build_glyphs};
 
-/// An index range into the glyph vertex/index buffers plus the scissor rect active
-/// while drawing it.
-struct GlyphBatch {
-    range: std::ops::Range<u32>,
-    scissor: Option<Scissor>,
+/// Clamp a scissor rect (physical-pixel corners) to the render-target bounds.
+pub(crate) fn scissor_params(scissor: ScissorRect, width: u32, height: u32) -> (u32, u32, u32, u32) {
+    let x0 = scissor.x0.min(width);
+    let y0 = scissor.y0.min(height);
+    let x1 = scissor.x1.min(width);
+    let y1 = scissor.y1.min(height);
+    (x0, y0, x1.saturating_sub(x0), y1.saturating_sub(y0))
 }
 
-/// Vertex/index geometry for one glyph pipeline (coverage or color), batched by
-/// scissor rect.
-pub(crate) struct GlyphDraw {
-    vertices: Vec<GlyphVertex>,
-    indices: Vec<u32>,
-    batches: Vec<GlyphBatch>,
-}
-
-impl GlyphDraw {
-    pub(crate) fn new() -> Self {
-        Self { vertices: Vec::new(), indices: Vec::new(), batches: Vec::new() }
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.indices.is_empty()
-    }
-
-    pub(crate) fn push_quad(&mut self, quad: [GlyphVertex; 4], scissor: Option<Scissor>) {
-        if self.batches.last().is_none_or(|b| b.scissor != scissor) {
-            let start = self.indices.len() as u32;
-            self.batches.push(GlyphBatch { range: start..start, scissor });
-        }
-        let base = self.vertices.len() as u32;
-        self.vertices.extend_from_slice(&quad);
-        self.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
-        self.batches.last_mut().expect("batch just pushed").range.end = self.indices.len() as u32;
-    }
-}
-
-/// Clamp a scissor rect (physical-pixel space) to the render-target bounds.
-pub(crate) fn scissor_params(scissor: Option<Scissor>, width: u32, height: u32) -> (u32, u32, u32, u32) {
-    match scissor {
-        None => (0, 0, width, height),
-        Some(s) => {
-            let x = s.x.min(width);
-            let y = s.y.min(height);
-            let w = s.width.min(width - x);
-            let h = s.height.min(height - y);
-            (x, y, w, h)
-        }
-    }
-}
-
-/// Build the four vertices of a glyph quad: physical-pixel position + atlas UVs.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn glyph_quad(
-    region: super::resources::AtlasRegion,
-    w: u32,
-    h: u32,
-    x: i32,
-    y: i32,
-    placement_left: i32,
-    placement_top: i32,
-    tint: [f32; 4],
-) -> [GlyphVertex; 4] {
-    let s = ATLAS_SIZE as f32;
-    let u0 = region.x as f32 / s;
-    let v0 = region.y as f32 / s;
-    let u1 = (region.x + w) as f32 / s;
-    let v1 = (region.y + h) as f32 / s;
-    let left = x as f32 + placement_left as f32;
-    let top = y as f32 - placement_top as f32;
-    let right = left + w as f32;
-    let bottom = top + h as f32;
-    [
-        GlyphVertex { position: [left, top], uv: [u0, v0], color: tint },
-        GlyphVertex { position: [right, top], uv: [u1, v0], color: tint },
-        GlyphVertex { position: [right, bottom], uv: [u1, v1], color: tint },
-        GlyphVertex { position: [left, bottom], uv: [u0, v1], color: tint },
-    ]
-}
-
-/// Draw one glyph set (coverage or color) with its pipeline.
-pub(crate) fn draw_glyph_set(
+/// Draw every command of the renderer's current plan, in order, into `pass`.
+pub(crate) fn encode(
+    renderer: &mut Renderer,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     pass: &mut wgpu::RenderPass<'_>,
-    draw: &GlyphDraw,
-    gp: &GlyphPipeline,
-    width: u32,
-    height: u32,
+    scene: &Scene,
+    format: wgpu::TextureFormat,
+    size: (u32, u32),
 ) {
-    queue.write_buffer(&gp.uniform, 0, bytemuck::cast_slice(&[width as f32, height as f32, 0.0, 0.0]));
+    // Upload the shared geometry once (borrows end here).
+    let solid_vertices = (!renderer.scratch.plan.solid_vertices.is_empty()).then(|| {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("pebbles.gpu.buffer.vertices"),
+            contents: bytemuck::cast_slice(&renderer.scratch.plan.solid_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        })
+    });
+    let solid_indices = (!renderer.scratch.plan.solid_indices.is_empty()).then(|| {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("pebbles.gpu.buffer.indices"),
+            contents: bytemuck::cast_slice(&renderer.scratch.plan.solid_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        })
+    });
+    let shadow_instances = (!renderer.scratch.plan.shadows.is_empty()).then(|| {
+        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("pebbles.gpu.buffer.shadows"),
+            contents: bytemuck::cast_slice(&renderer.scratch.plan.shadows),
+            usage: wgpu::BufferUsages::VERTEX,
+        })
+    });
+    let cmds = renderer.scratch.plan.cmds.clone();
+    let uploads = image_uploads(scene);
+
+    for cmd in &cmds {
+        match cmd {
+            DrawCmd::Solid { indices, clip } => {
+                let (pipeline, uniform, bind_group) = solid_pipeline(renderer, device, format);
+                queue.write_buffer(
+                    uniform,
+                    0,
+                    bytemuck::cast_slice(&[size.0 as f32, size.1 as f32, 0.0, 0.0]),
+                );
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, bind_group, &[]);
+                pass.set_vertex_buffer(0, solid_vertices.as_ref().expect("solid vertices").slice(..));
+                pass.set_index_buffer(
+                    solid_indices.as_ref().expect("solid indices").slice(..),
+                    wgpu::IndexFormat::Uint32,
+                );
+                set_scissor(pass, clip.scissor, size);
+                pass.draw_indexed(indices.clone(), 0, 0..1);
+            }
+            DrawCmd::Shadows { instances, clip } => {
+                let sp = shadow_pipeline(renderer, device, format);
+                queue.write_buffer(
+                    &sp.uniform,
+                    0,
+                    bytemuck::cast_slice(&[size.0 as f32, size.1 as f32, 0.0, 0.0]),
+                );
+                pass.set_pipeline(&sp.pipeline);
+                pass.set_bind_group(0, &sp.bind_group, &[]);
+                pass.set_vertex_buffer(0, shadow_instances.as_ref().expect("shadow instances").slice(..));
+                set_scissor(pass, clip.scissor, size);
+                pass.draw(0..4, instances.clone());
+            }
+            DrawCmd::Glyphs { glyphs, clip } => {
+                let runs =
+                    renderer.scratch.plan.glyph_runs[glyphs.start as usize..glyphs.end as usize].to_vec();
+                draw_glyphs(renderer, device, queue, pass, &runs, clip.scissor, format, size);
+            }
+            DrawCmd::Images { images, clip } => {
+                let imgs = renderer.scratch.plan.images[images.start as usize..images.end as usize].to_vec();
+                draw_images(renderer, device, queue, pass, &imgs, &uploads, clip.scissor, format, size);
+            }
+        }
+    }
+}
+
+fn set_scissor(pass: &mut wgpu::RenderPass<'_>, scissor: ScissorRect, size: (u32, u32)) {
+    let (x, y, w, h) = scissor_params(scissor, size.0, size.1);
+    pass.set_scissor_rect(x, y, w, h);
+}
+
+fn solid_pipeline<'a>(
+    renderer: &'a mut Renderer,
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+) -> (&'a wgpu::RenderPipeline, &'a wgpu::Buffer, &'a wgpu::BindGroup) {
+    let key = (format, renderer.sample_count);
+    if !renderer.pipeline.contains_key(&key) {
+        let (_, p, u, bg) = make_pipeline(device, format, renderer.sample_count);
+        renderer.pipeline.insert(key, (p, u, bg));
+    }
+    let (p, u, bg) = renderer.pipeline.get(&key).expect("pipeline just built");
+    (p, u, bg)
+}
+
+fn shadow_pipeline<'a>(
+    renderer: &'a mut Renderer,
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+) -> &'a super::pipelines::ShadowPipeline {
+    let key = (format, renderer.sample_count);
+    if !renderer.shadow_pipeline.contains_key(&key) {
+        renderer.shadow_pipeline.insert(key, make_shadow_pipeline(device, format, renderer.sample_count));
+    }
+    renderer.shadow_pipeline.get(&key).expect("shadow pipeline just built")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_glyphs(
+    renderer: &mut Renderer,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    pass: &mut wgpu::RenderPass<'_>,
+    runs: &[super::super::prepare::GlyphRun],
+    scissor: ScissorRect,
+    format: wgpu::TextureFormat,
+    size: (u32, u32),
+) {
+    let (coverage, color) = build_glyphs(renderer, device, queue, runs);
+    let key = (format, renderer.sample_count);
+    if !coverage.is_empty() {
+        let atlas = renderer.atlas.as_ref().expect("atlas built by build_glyphs");
+        if !renderer.glyph_pipeline.contains_key(&key) {
+            let gp = make_glyph_pipeline(device, format, atlas, renderer.sample_count, false);
+            renderer.glyph_pipeline.insert(key, gp);
+        }
+        let gp = renderer.glyph_pipeline.get(&key).expect("glyph pipeline just built");
+        draw_glyph_geometry(device, queue, pass, &coverage, gp, scissor, size);
+    }
+    if !color.is_empty() {
+        let atlas = renderer.color_atlas.as_ref().expect("color atlas built by build_glyphs");
+        if !renderer.color_pipeline.contains_key(&key) {
+            let gp = make_glyph_pipeline(device, format, atlas, renderer.sample_count, true);
+            renderer.color_pipeline.insert(key, gp);
+        }
+        let gp = renderer.color_pipeline.get(&key).expect("color pipeline just built");
+        draw_glyph_geometry(device, queue, pass, &color, gp, scissor, size);
+    }
+}
+
+fn draw_glyph_geometry(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    pass: &mut wgpu::RenderPass<'_>,
+    geom: &GlyphGeometry,
+    gp: &GlyphPipeline,
+    scissor: ScissorRect,
+    size: (u32, u32),
+) {
+    queue.write_buffer(&gp.uniform, 0, bytemuck::cast_slice(&[size.0 as f32, size.1 as f32, 0.0, 0.0]));
     let vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("pebbles.gpu.glyph.vertices"),
-        contents: bytemuck::cast_slice(&draw.vertices),
+        contents: bytemuck::cast_slice(&geom.vertices),
         usage: wgpu::BufferUsages::VERTEX,
     });
     let ibuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("pebbles.gpu.glyph.indices"),
-        contents: bytemuck::cast_slice(&draw.indices),
+        contents: bytemuck::cast_slice(&geom.indices),
         usage: wgpu::BufferUsages::INDEX,
     });
     pass.set_pipeline(&gp.pipeline);
     pass.set_bind_group(0, &gp.bind_group, &[]);
     pass.set_vertex_buffer(0, vbuf.slice(..));
     pass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
-    for batch in &draw.batches {
-        let (x, y, w, h) = scissor_params(batch.scissor, width, height);
-        pass.set_scissor_rect(x, y, w, h);
-        pass.draw_indexed(batch.range.clone(), 0, 0..1);
-    }
+    set_scissor(pass, scissor, size);
+    pass.draw_indexed(0..geom.indices.len() as u32, 0, 0..1);
 }
 
-/// Rasterize the frame's glyphs and draw them as tinted textured quads.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn draw_glyphs(
-    renderer: &mut Renderer,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    pass: &mut wgpu::RenderPass<'_>,
-    runs: &[GlyphRun],
-    format: wgpu::TextureFormat,
-    width: u32,
-    height: u32,
-) {
-    let (coverage, color) = build_glyphs(renderer, device, queue, runs);
-    if !coverage.is_empty() {
-        let atlas = renderer.atlas.as_ref().expect("atlas built by build_glyphs");
-        let key = (format, renderer.sample_count);
-        if !renderer.glyph_pipeline.contains_key(&key) {
-            let gp = make_glyph_pipeline(device, format, atlas, renderer.sample_count, false);
-            renderer.glyph_pipeline.insert(key, gp);
-        }
-        let gp = renderer.glyph_pipeline.get(&key).expect("glyph pipeline just built");
-        draw_glyph_set(device, queue, pass, &coverage, gp, width, height);
-    }
-    if !color.is_empty() {
-        let atlas = renderer.color_atlas.as_ref().expect("color atlas built by build_glyphs");
-        let key = (format, renderer.sample_count);
-        if !renderer.color_pipeline.contains_key(&key) {
-            let gp = make_glyph_pipeline(device, format, atlas, renderer.sample_count, true);
-            renderer.color_pipeline.insert(key, gp);
-        }
-        let gp = renderer.color_pipeline.get(&key).expect("color pipeline just built");
-        draw_glyph_set(device, queue, pass, &color, gp, width, height);
-    }
-}
-
-/// Draw the analytic rounded-rect shadows (one draw call).
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn draw_shadows(
-    renderer: &mut Renderer,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    pass: &mut wgpu::RenderPass<'_>,
-    shadows: &[ShadowVertex],
-    format: wgpu::TextureFormat,
-    width: u32,
-    height: u32,
-) {
-    let key = (format, renderer.sample_count);
-    if !renderer.shadow_pipeline.contains_key(&key) {
-        renderer.shadow_pipeline.insert(key, make_shadow_pipeline(device, format, renderer.sample_count));
-    }
-    let sp = renderer.shadow_pipeline.get(&key).expect("shadow pipeline just built");
-    queue.write_buffer(&sp.uniform, 0, bytemuck::cast_slice(&[width as f32, height as f32, 0.0, 0.0]));
-    let vbuf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("pebbles.gpu.shadow.vertices"),
-        contents: bytemuck::cast_slice(shadows),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
-    pass.set_pipeline(&sp.pipeline);
-    pass.set_bind_group(0, &sp.bind_group, &[]);
-    pass.set_vertex_buffer(0, vbuf.slice(..));
-    pass.draw(0..shadows.len() as u32, 0..1);
-}
-
-/// Upload image pixels (cached by id) and draw each image quad with its texture.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn draw_images(
+fn draw_images(
     renderer: &mut Renderer,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     pass: &mut wgpu::RenderPass<'_>,
     images: &[ImageQuad],
-    scene: &Scene,
+    uploads: &[super::super::prepare::ImageUpload],
+    scissor: ScissorRect,
     format: wgpu::TextureFormat,
-    width: u32,
-    height: u32,
+    size: (u32, u32),
 ) {
-    let uploads = image_uploads(scene);
-    if uploads.is_empty() {
-        return;
-    }
     let key = (format, renderer.sample_count);
     if !renderer.image_pipeline.contains_key(&key) {
         renderer.image_pipeline.insert(key, make_image_pipeline(device, format, renderer.sample_count));
     }
     let ip = renderer.image_pipeline.get(&key).expect("image pipeline just built");
-    queue.write_buffer(&ip.uniform, 0, bytemuck::cast_slice(&[width as f32, height as f32, 0.0, 0.0]));
+    queue.write_buffer(&ip.uniform, 0, bytemuck::cast_slice(&[size.0 as f32, size.1 as f32, 0.0, 0.0]));
     for quad in images {
         let Some(upload) = uploads.get(quad.image_index as usize) else { continue };
         let cache = &mut renderer.image_cache;
@@ -258,8 +259,7 @@ pub(crate) fn draw_images(
             contents: bytemuck::cast_slice(&quad.vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        let (x, y, w, h) = scissor_params(quad.scissor, width, height);
-        pass.set_scissor_rect(x, y, w, h);
+        set_scissor(pass, scissor, size);
         pass.set_pipeline(&ip.pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
         pass.set_vertex_buffer(0, vbuf.slice(..));

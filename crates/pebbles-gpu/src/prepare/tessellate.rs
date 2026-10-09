@@ -1,4 +1,6 @@
-//! Fill tessellation: lyon fill tessellation of device-space outlines.
+//! Fill tessellation: lyon fill tessellation of device-space outlines into the solid arena.
+
+use std::ops::Range;
 
 use kurbo::{Affine, BezPath};
 use lyon_tessellation::math::point;
@@ -8,30 +10,44 @@ use lyon_tessellation::{
 };
 use peniko::Color;
 
-use super::Tess;
 use super::color::premul;
+use super::plan::FramePlan;
 use crate::gpu_types::SolidVertex;
 
 /// Tessellation tolerance for screen-space geometry (physical px).
 pub(crate) const FILL_TOLERANCE_PX: f32 = 0.1;
 
-impl Tess {
-    pub(crate) fn fill(&mut self, path: &BezPath, transform: Affine, style: peniko::Fill, color: Color) {
-        let screen = transformed(path, transform);
-        let lyon = to_lyon_path(&screen);
-        let mut geometry = VertexBuffers::new();
-        let mut tess = FillTessellator::new();
-        let options = FillOptions::default().with_tolerance(FILL_TOLERANCE_PX).with_fill_rule(match style {
-            peniko::Fill::EvenOdd => FillRule::EvenOdd,
-            peniko::Fill::NonZero => FillRule::NonZero,
-        });
-        let _ = tess.tessellate_path(
-            &lyon,
-            &options,
-            &mut BuffersBuilder::new(&mut geometry, SolidVertexCtor(premul(color))),
-        );
-        self.append(geometry);
-    }
+/// Tessellate `path` under `transform` and append to the solid arenas, returning the index range.
+pub(crate) fn fill(
+    plan: &mut FramePlan,
+    path: &BezPath,
+    transform: Affine,
+    style: peniko::Fill,
+    color: Color,
+) -> Range<u32> {
+    let screen = transformed(path, transform);
+    let lyon = to_lyon_path(&screen);
+    let mut geometry = VertexBuffers::new();
+    let mut tess = FillTessellator::new();
+    let options = FillOptions::default().with_tolerance(FILL_TOLERANCE_PX).with_fill_rule(match style {
+        peniko::Fill::EvenOdd => FillRule::EvenOdd,
+        peniko::Fill::NonZero => FillRule::NonZero,
+    });
+    let _ = tess.tessellate_path(
+        &lyon,
+        &options,
+        &mut BuffersBuilder::new(&mut geometry, SolidVertexCtor(premul(color))),
+    );
+    append(plan, geometry)
+}
+
+/// Append tessellated geometry to the solid arenas, rebasing indices.
+pub(crate) fn append(plan: &mut FramePlan, geometry: VertexBuffers<SolidVertex, u32>) -> Range<u32> {
+    let start = plan.solid_indices.len() as u32;
+    let base = plan.solid_vertices.len() as u32;
+    plan.solid_vertices.extend(geometry.vertices);
+    plan.solid_indices.extend(geometry.indices.into_iter().map(|index| base + index));
+    start..plan.solid_indices.len() as u32
 }
 
 pub(crate) fn transformed(path: &BezPath, transform: Affine) -> BezPath {

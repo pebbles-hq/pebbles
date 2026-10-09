@@ -5,4 +5,4 @@ pub(crate) mod pipelines;
 pub(crate) mod resolve;
 pub(crate) mod resources;
 
-pub(crate) use encode::{draw_glyphs, draw_images, draw_shadows, scissor_params};
+pub(crate) use encode::encode;

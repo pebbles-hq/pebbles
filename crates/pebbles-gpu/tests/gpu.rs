@@ -1,7 +1,65 @@
 //! GPU integration tests (pebbles-gpu). Each is `#[ignore = "gpu"]` and skips gracefully
 //! without an adapter (DR-15). V01's harness replaces the test-local helpers after C15.
 
+use kurbo::{Affine, Rect, Stroke};
+use pebbles_render::paint::{Glyph, Painter, Scene};
+use peniko::{Brush, Color, Fill};
+
 use pebbles_gpu::{GpuContext, GpuInit, RenderParams, Renderer};
+
+/// Acquire a headless device + renderer, printing a skip note and returning `None` without an adapter.
+fn setup(name: &str) -> Option<(wgpu::Device, wgpu::Queue, Renderer)> {
+    let mut ctx = pollster::block_on(GpuContext::new(&GpuInit::headless()));
+    let id = match pollster::block_on(ctx.request_device(None)) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("SKIP {name}: {e}");
+            return None;
+        }
+    };
+    let gpu = ctx.device(id).expect("device just requested");
+    let device = gpu.device().clone();
+    let queue = gpu.queue().clone();
+    let renderer = Renderer::new(gpu, id);
+    Some((device, queue, renderer))
+}
+
+/// Render `scene` into a fresh `size` target and read the pixels back.
+fn render_scene(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    renderer: &mut Renderer,
+    scene: &Scene,
+    size: (u32, u32),
+    base: Color,
+) -> Vec<u8> {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pebbles.gpu.test.target"),
+        size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let params = RenderParams { base_color: base, width: size.0, height: size.1 };
+    renderer
+        .render_to_texture(device, queue, scene, &view, wgpu::TextureFormat::Rgba8Unorm, &params)
+        .expect("render");
+    queue.submit([]);
+    readback(device, queue, &texture)
+}
+
+fn pixel(rgba: &[u8], w: u32, x: u32, y: u32) -> [u8; 4] {
+    let i = ((y * w + x) * 4) as usize;
+    [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]]
+}
+
+fn is_white(c: [u8; 4]) -> bool {
+    (c[0] as i32 - 255).abs() <= 1 && (c[1] as i32 - 255).abs() <= 1 && (c[2] as i32 - 255).abs() <= 1
+}
 
 /// One `Renderer`, rendered alternately into an `Rgba8Unorm` and a `Bgra8Unorm` target:
 /// every render is inside a `Validation` error scope, each pop is `None`, and the center
@@ -37,17 +95,17 @@ fn two_formats_alternate_without_validation_errors() {
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut scene = pebbles_render::paint::Scene::new();
-        pebbles_render::paint::Painter::new(&mut scene).fill(
-            peniko::Fill::NonZero,
-            kurbo::Affine::IDENTITY,
-            peniko::Color::from_rgba8(255, 0, 0, 255),
+        let mut scene = Scene::new();
+        Painter::new(&mut scene).fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::from_rgba8(255, 0, 0, 255),
             None,
-            &kurbo::Rect::new(8.0, 8.0, 56.0, 56.0),
+            &Rect::new(8.0, 8.0, 56.0, 56.0),
         );
 
         let guard = device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let params = RenderParams { base_color: peniko::Color::WHITE, width: 64, height: 64 };
+        let params = RenderParams { base_color: Color::WHITE, width: 64, height: 64 };
         renderer.render_to_texture(device, queue, &scene, &view, format, &params).expect("render");
         queue.submit([]);
         let err = pollster::block_on(guard.pop());
@@ -60,6 +118,61 @@ fn two_formats_alternate_without_validation_errors() {
         let expected: [u8; 4] =
             if format == wgpu::TextureFormat::Bgra8Unorm { [0, 0, 255, 255] } else { [255, 0, 0, 255] };
         assert_eq!(px, expected, "center pixel {format:?}: {px:?}");
+    }
+}
+
+/// D01 regression: a shadow recorded before its card must not cover the card's center.
+#[test]
+#[ignore = "gpu"]
+fn shadow_does_not_cover_its_card() {
+    let Some((device, queue, mut renderer)) = setup("shadow_does_not_cover_its_card") else { return };
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    p.draw_blurred_rounded_rect(Affine::IDENTITY, Rect::new(20.0, 24.0, 120.0, 84.0), Color::BLACK, 8.0, 8.0);
+    p.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &Rect::new(20.0, 20.0, 120.0, 80.0));
+    p.stroke(&Stroke::new(1.0), Affine::IDENTITY, Color::BLACK, None, &Rect::new(20.0, 20.0, 120.0, 80.0));
+
+    let rgba = render_scene(&device, &queue, &mut renderer, &scene, (140, 100), Color::WHITE);
+    let c = pixel(&rgba, 140, 70, 50);
+    assert!(is_white(c), "card center covered by shadow: {c:?}");
+}
+
+/// D01 regression: page text under a scrim and an opaque dialog must be hidden inside the dialog.
+#[test]
+#[ignore = "gpu"]
+fn dialog_scrim_hides_page_text() {
+    let Some((device, queue, mut renderer)) = setup("dialog_scrim_hides_page_text") else { return };
+    let bytes = pebbles_render::fonts::builtin_fonts()[0].1;
+    let font = peniko::FontData::new(peniko::Blob::from(bytes.to_vec()), 0);
+
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    p.draw_glyphs(
+        &font,
+        24.0,
+        400,
+        &[],
+        &Brush::Solid(Color::BLACK),
+        Affine::IDENTITY,
+        None,
+        Fill::NonZero,
+        std::iter::once(Glyph { id: 36, x: 20.0, y: 40.0 }),
+    );
+    p.fill(
+        Fill::NonZero,
+        Affine::IDENTITY,
+        Color::from_rgba8(0, 0, 0, 128),
+        None,
+        &Rect::new(0.0, 0.0, 200.0, 120.0),
+    );
+    p.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &Rect::new(60.0, 30.0, 180.0, 100.0));
+
+    let rgba = render_scene(&device, &queue, &mut renderer, &scene, (200, 120), Color::WHITE);
+    for y in 32..98 {
+        for x in 62..178 {
+            let c = pixel(&rgba, 200, x, y);
+            assert!(is_white(c), "dialog pixel ({x},{y}) not white: {c:?}");
+        }
     }
 }
 

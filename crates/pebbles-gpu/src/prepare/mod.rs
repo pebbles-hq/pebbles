@@ -1,94 +1,83 @@
-//! Prepare: walk the shared display list into GPU-ready geometry on the CPU (no device).
+//! Prepare: walk the shared display list into an ordered [`FramePlan`] on the CPU (no device).
 
 use kurbo::Affine;
 
 use pebbles_render::paint::Scene;
 use pebbles_render::paint::display_list::Op;
 
-use crate::gpu_types::SolidVertex;
-
 mod clip;
 mod color;
 mod glyphs;
 mod images;
 mod plan;
+#[cfg(test)]
+mod property_tests;
 mod shadows;
+#[cfg(test)]
+mod snapshot_tests;
 mod stroke;
 mod tessellate;
 
-pub(crate) use clip::Scissor;
-pub(crate) use images::image_uploads;
-pub(crate) use plan::{Batch, GlyphRun, ImageQuad, Mesh, SolidMesh};
+pub(crate) use images::{ImageUpload, image_uploads};
+pub(crate) use plan::{DrawCmd, FramePlan, GlyphRun, ImageQuad, ScissorRect};
 
 /// Path-flattening tolerance for recorded shapes (logical px) — a local copy, because
 /// `display_list::TOL` is `pub(crate)` to pebbles-render.
 pub(crate) const TOL: f64 = 0.1;
 
-/// CPU tessellation context: accumulates flat vertex/index buffers and partitions
-/// them into draw batches keyed by the current scissor rect (rect clips from
-/// `push_layer`). Non-rect clips and blend/opacity layers are ignored for now —
-/// Phase 4 handles the general case.
-pub(crate) struct Tess {
-    pub(crate) vertices: Vec<SolidVertex>,
-    pub(crate) indices: Vec<u32>,
-    pub(crate) batch_starts: Vec<(u32, Option<Scissor>)>,
-    pub(crate) scissor: Option<Scissor>,
-    pub(crate) clip_stack: Vec<Option<Scissor>>,
-    pub(crate) glyphs: Vec<GlyphRun>,
-    pub(crate) images: Vec<ImageQuad>,
-    pub(crate) shadows: Vec<crate::gpu_types::ShadowVertex>,
-    pub(crate) img_idx: u32,
+/// Per-frame prepare inputs.
+pub(crate) struct PrepareInput {
+    pub target_size: (u32, u32),
+    /// Logical → device transform for the whole scene (identity during the transition).
+    pub root_transform: Affine,
 }
 
-impl Tess {
-    fn new() -> Self {
-        Self {
-            vertices: Vec::new(),
-            indices: Vec::new(),
-            batch_starts: Vec::new(),
-            scissor: None,
-            clip_stack: Vec::new(),
-            glyphs: Vec::new(),
-            images: Vec::new(),
-            shadows: Vec::new(),
-            img_idx: 0,
-        }
-    }
-
-    fn finish(self) -> Mesh {
-        let mut batches = Vec::with_capacity(self.batch_starts.len());
-        for (i, (start, scissor)) in self.batch_starts.iter().enumerate() {
-            let end = self.batch_starts.get(i + 1).map(|(s, _)| *s).unwrap_or(self.indices.len() as u32);
-            batches.push(Batch { range: *start..end, scissor: *scissor });
-        }
-        Mesh {
-            solid: SolidMesh { vertices: self.vertices, indices: self.indices, batches },
-            glyphs: self.glyphs,
-            images: self.images,
-            shadows: self.shadows,
-        }
-    }
+/// Reusable per-Renderer prepare state (zero steady-state allocation).
+#[derive(Default)]
+pub(crate) struct PrepareScratch {
+    pub plan: FramePlan,
+    pub clips: clip::ClipStack,
 }
 
-/// Tessellate the Phase-1 solid subset of `scene` into GPU-ready triangles, batched
-/// by scissor rect, plus the Phase-2 glyph runs, Phase-3 image quads and shadow
-/// quads. Gradients and non-rect clips remain in Phase 4.
-pub(crate) fn mesh(scene: &Scene) -> Mesh {
-    let mut tess = Tess::new();
-    emit(scene.ops(), Affine::IDENTITY, &mut tess);
-    tess.finish()
+/// Walk `scene` in painter's order into `scratch.plan` and return it.
+pub(crate) fn prepare<'s>(
+    scene: &Scene,
+    input: &PrepareInput,
+    scratch: &'s mut PrepareScratch,
+) -> &'s FramePlan {
+    scratch.plan.clear();
+    scratch.plan.target_size = input.target_size;
+    scratch.clips.reset(input.target_size);
+    let mut visit = 0u32;
+    emit(scene.ops(), input.root_transform, &mut scratch.plan, &mut scratch.clips, &mut visit);
+    &scratch.plan
 }
 
-fn emit(ops: &[Op], outer: Affine, tess: &mut Tess) {
+fn emit(ops: &[Op], outer: Affine, plan: &mut FramePlan, clips: &mut clip::ClipStack, visit: &mut u32) {
     for op in ops {
+        *visit += 1;
+        let idx = *visit;
+        plan.stats.ops += 1;
         match op {
             Op::Fill { style, transform, brush: peniko::Brush::Solid(color), shape, .. } => {
+                if clips.is_culled() {
+                    plan.stats.culled += 1;
+                    continue;
+                }
                 let path = shape.to_path(TOL);
-                tess.fill(&path, outer * *transform, *style, *color);
+                let indices = tessellate::fill(plan, &path, outer * *transform, *style, *color);
+                plan.stats.tess_calls += 1;
+                push_cmd(plan, DrawCmd::Solid { indices, clip: clips.current() }, idx);
             }
             Op::Stroke { style, transform, brush: peniko::Brush::Solid(color), shape, .. } => {
+                if clips.is_culled() {
+                    plan.stats.culled += 1;
+                    continue;
+                }
                 let path = shape.to_path(TOL);
-                tess.stroke(&path, outer * *transform, style, *color);
+                let indices = stroke::stroke(plan, &path, outer * *transform, style, *color);
+                plan.stats.tess_calls += 1;
+                push_cmd(plan, DrawCmd::Solid { indices, clip: clips.current() }, idx);
             }
             Op::PushLayer { blend, alpha, transform, clip, .. } => {
                 let scissor = if *blend == peniko::BlendMode::default() && *alpha >= 1.0 {
@@ -97,13 +86,18 @@ fn emit(ops: &[Op], outer: Affine, tess: &mut Tess) {
                 } else {
                     None
                 };
-                tess.push_clip(scissor);
+                clips.push(scissor);
             }
-            Op::PopLayer => tess.pop_clip(),
+            Op::PopLayer => clips.pop(),
             Op::Glyphs {
                 font, font_size, font_weight, brush, transform, glyph_transform, glyphs, ..
             } => {
-                tess.glyph_run(
+                if clips.is_culled() {
+                    plan.stats.culled += 1;
+                    continue;
+                }
+                if let Some(range) = glyphs::glyph_run(
+                    plan,
                     font,
                     *font_size,
                     *font_weight,
@@ -111,17 +105,28 @@ fn emit(ops: &[Op], outer: Affine, tess: &mut Tess) {
                     outer * *transform,
                     *glyph_transform,
                     glyphs,
-                );
+                ) {
+                    push_cmd(plan, DrawCmd::Glyphs { glyphs: range, clip: clips.current() }, idx);
+                }
             }
             Op::Fragment { transform, ops, .. } => {
-                emit(ops, outer * transform.unwrap_or(Affine::IDENTITY), tess);
+                emit(ops, outer * transform.unwrap_or(Affine::IDENTITY), plan, clips, visit);
             }
             Op::Image { image, transform, .. } if image.image.width != 0 && image.image.height != 0 => {
-                tess.image(image, outer * *transform, tess.img_idx);
-                tess.img_idx += 1;
+                if clips.is_culled() {
+                    plan.stats.culled += 1;
+                    continue;
+                }
+                let range = images::image(plan, image, outer * *transform, plan.images.len() as u32);
+                push_cmd(plan, DrawCmd::Images { images: range, clip: clips.current() }, idx);
             }
             Op::BlurredRect { transform, rect, brush, radius, std_dev, .. } => {
-                tess.shadow(rect, outer * *transform, *radius, *std_dev, *brush);
+                if clips.is_culled() {
+                    plan.stats.culled += 1;
+                    continue;
+                }
+                let range = shadows::shadow(plan, rect, outer * *transform, *radius, *std_dev, *brush);
+                push_cmd(plan, DrawCmd::Shadows { instances: range, clip: clips.current() }, idx);
             }
             _ => {}
         }
@@ -129,27 +134,239 @@ fn emit(ops: &[Op], outer: Affine, tess: &mut Tess) {
 }
 
 #[cfg(test)]
+fn push_cmd(plan: &mut FramePlan, cmd: DrawCmd, visit: u32) {
+    if plan.push_draw(cmd) {
+        plan.cmd_ops.push(visit);
+    }
+}
+
+#[cfg(not(test))]
+fn push_cmd(plan: &mut FramePlan, cmd: DrawCmd, _visit: u32) {
+    plan.push_draw(cmd);
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use pebbles_render::paint::{Painter, Stroke};
-    use peniko::Color;
+    use pebbles_render::paint::{Glyph, Painter, Stroke};
+    use peniko::{Brush, Color, Fill};
+
+    fn plan_of(scene: &Scene, size: (u32, u32)) -> FramePlan {
+        let mut scratch = PrepareScratch::default();
+        let input = PrepareInput { target_size: size, root_transform: Affine::IDENTITY };
+        prepare(scene, &input, &mut scratch);
+        scratch.plan
+    }
+
+    fn full(size: (u32, u32)) -> ScissorRect {
+        ScissorRect { x0: 0, y0: 0, x1: size.0, y1: size.1 }
+    }
+
+    fn glyph() -> Glyph {
+        Glyph { id: 36, x: 10.0, y: 10.0 }
+    }
 
     #[test]
-    fn solid_fill_tessellates_to_a_single_unclipped_batch() {
+    fn shadow_draws_before_card_fill() {
         let mut scene = Scene::new();
-        Painter::new(&mut scene).fill(
-            peniko::Fill::NonZero,
+        let mut p = Painter::new(&mut scene);
+        p.draw_blurred_rounded_rect(
+            Affine::IDENTITY,
+            kurbo::Rect::new(20.0, 20.0, 180.0, 120.0),
+            Color::BLACK,
+            12.0,
+            8.0,
+        );
+        p.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::WHITE,
+            None,
+            &kurbo::Rect::new(20.0, 20.0, 180.0, 120.0),
+        );
+
+        let plan = plan_of(&scene, (200, 160));
+        assert_eq!(plan.cmds.len(), 2);
+        assert!(matches!(plan.cmds[0], DrawCmd::Shadows { .. }));
+        assert!(matches!(plan.cmds[1], DrawCmd::Solid { .. }));
+    }
+
+    #[test]
+    fn text_after_scrim_draws_after_it() {
+        let font = crate::test_support::bundled_font();
+        let mut scene = Scene::new();
+        let mut p = Painter::new(&mut scene);
+        p.draw_glyphs(
+            &font,
+            32.0,
+            400,
+            &[],
+            &Brush::Solid(Color::BLACK),
+            Affine::IDENTITY,
+            None,
+            Fill::NonZero,
+            std::iter::once(glyph()),
+        );
+        p.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::from_rgba8(0, 0, 0, 128),
+            None,
+            &kurbo::Rect::new(0.0, 0.0, 200.0, 160.0),
+        );
+        p.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::WHITE,
+            None,
+            &kurbo::Rect::new(40.0, 40.0, 160.0, 120.0),
+        );
+        p.draw_glyphs(
+            &font,
+            32.0,
+            400,
+            &[],
+            &Brush::Solid(Color::BLACK),
+            Affine::IDENTITY,
+            None,
+            Fill::NonZero,
+            std::iter::once(Glyph { id: 36, x: 50.0, y: 50.0 }),
+        );
+
+        let plan = plan_of(&scene, (200, 160));
+        assert_eq!(plan.cmds.len(), 3);
+        assert!(matches!(plan.cmds[0], DrawCmd::Glyphs { .. }));
+        assert!(matches!(plan.cmds[1], DrawCmd::Solid { .. }));
+        assert!(matches!(plan.cmds[2], DrawCmd::Glyphs { .. }));
+    }
+
+    #[test]
+    fn image_between_fills_keeps_its_slot() {
+        let image = peniko::ImageData {
+            data: peniko::Blob::from(vec![255u8; 100]),
+            format: peniko::ImageFormat::Rgba8,
+            alpha_type: peniko::ImageAlphaType::AlphaPremultiplied,
+            width: 5,
+            height: 5,
+        };
+        let mut scene = Scene::new();
+        let mut p = Painter::new(&mut scene);
+        p.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0));
+        p.draw_image(&peniko::ImageBrush::new(image), Affine::IDENTITY);
+        p.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::WHITE,
+            None,
+            &kurbo::Rect::new(20.0, 20.0, 30.0, 30.0),
+        );
+
+        let plan = plan_of(&scene, (100, 100));
+        assert_eq!(plan.cmds.len(), 3);
+        assert!(matches!(plan.cmds[0], DrawCmd::Solid { .. }));
+        assert!(matches!(plan.cmds[1], DrawCmd::Images { .. }));
+        assert!(matches!(plan.cmds[2], DrawCmd::Solid { .. }));
+    }
+
+    #[test]
+    fn merge_only_adjacent_same_kind() {
+        let mut scene = Scene::new();
+        let mut p = Painter::new(&mut scene);
+        p.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0));
+        p.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::WHITE,
+            None,
+            &kurbo::Rect::new(20.0, 20.0, 30.0, 30.0),
+        );
+        let font = crate::test_support::bundled_font();
+        p.draw_glyphs(
+            &font,
+            32.0,
+            400,
+            &[],
+            &Brush::Solid(Color::BLACK),
+            Affine::IDENTITY,
+            None,
+            Fill::NonZero,
+            std::iter::once(glyph()),
+        );
+        p.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::WHITE,
+            None,
+            &kurbo::Rect::new(40.0, 40.0, 50.0, 50.0),
+        );
+
+        let plan = plan_of(&scene, (100, 100));
+        assert_eq!(plan.cmds.len(), 3);
+        assert!(matches!(plan.cmds[0], DrawCmd::Solid { .. }));
+        assert!(matches!(plan.cmds[1], DrawCmd::Glyphs { .. }));
+        assert!(matches!(plan.cmds[2], DrawCmd::Solid { .. }));
+    }
+
+    #[test]
+    fn unbalanced_pop_is_ignored_and_counted() {
+        let mut scene = Scene::new();
+        let mut p = Painter::new(&mut scene);
+        p.pop_layer();
+        p.fill(
+            Fill::NonZero,
             Affine::IDENTITY,
             Color::from_rgba8(255, 0, 0, 255),
             None,
             &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0),
         );
 
-        let mesh = mesh(&scene).solid;
-        assert!(!mesh.is_empty());
-        assert_eq!(mesh.batches.len(), 1);
-        assert_eq!(mesh.batches[0].scissor, None);
-        assert!(mesh.batches[0].range.end > mesh.batches[0].range.start);
+        let plan = plan_of(&scene, (100, 100));
+        assert_eq!(plan.cmds.len(), 1);
+        assert!(matches!(plan.cmds[0], DrawCmd::Solid { .. }));
+        assert_eq!(plan.stats.ops, 2); // the unmatched pop + the fill
+    }
+
+    #[test]
+    fn fragment_transform_composes() {
+        let mut inner = Scene::new();
+        Painter::new(&mut inner).fill(
+            Fill::NonZero,
+            Affine::translate((10.0, 20.0)),
+            Color::from_rgba8(255, 0, 0, 255),
+            None,
+            &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0),
+        );
+        let mut scene = Scene::new();
+        Painter::new(&mut scene).append(&inner, Some(Affine::translate((5.0, 7.0))));
+
+        let plan = plan_of(&scene, (100, 100));
+        assert_eq!(plan.cmds.len(), 1);
+        assert!(matches!(plan.cmds[0], DrawCmd::Solid { .. }));
+        let min_x = plan.solid_vertices.iter().map(|v| v.pos[0]).fold(f32::MAX, f32::min);
+        let min_y = plan.solid_vertices.iter().map(|v| v.pos[1]).fold(f32::MAX, f32::min);
+        assert!((min_x - 15.0).abs() < 0.5, "composed x should be ~15, got {min_x}");
+        assert!((min_y - 27.0).abs() < 0.5, "composed y should be ~27, got {min_y}");
+    }
+
+    // — rewritten C05 tests (06 §12.2 row B45) —
+
+    #[test]
+    fn solid_fill_tessellates_to_a_single_unclipped_batch() {
+        let mut scene = Scene::new();
+        Painter::new(&mut scene).fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::from_rgba8(255, 0, 0, 255),
+            None,
+            &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0),
+        );
+
+        let plan = plan_of(&scene, (100, 100));
+        assert_eq!(plan.cmds.len(), 1);
+        match &plan.cmds[0] {
+            DrawCmd::Solid { clip, .. } => assert_eq!(clip.scissor, full((100, 100))),
+            _ => panic!("expected a Solid command"),
+        }
     }
 
     #[test]
@@ -157,14 +374,14 @@ mod tests {
         let mut scene = Scene::new();
         let mut p = Painter::new(&mut scene);
         p.push_layer(
-            peniko::Fill::NonZero,
+            Fill::NonZero,
             peniko::BlendMode::default(),
             1.0,
             Affine::IDENTITY,
             &kurbo::Rect::new(0.0, 0.0, 100.0, 50.0),
         );
         p.fill(
-            peniko::Fill::NonZero,
+            Fill::NonZero,
             Affine::IDENTITY,
             Color::from_rgba8(0, 255, 0, 255),
             None,
@@ -172,18 +389,25 @@ mod tests {
         );
         p.pop_layer();
         p.fill(
-            peniko::Fill::NonZero,
+            Fill::NonZero,
             Affine::IDENTITY,
             Color::from_rgba8(0, 0, 255, 255),
             None,
             &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0),
         );
 
-        let mesh = mesh(&scene).solid;
-        assert_eq!(mesh.batches.len(), 2);
-        assert_eq!(mesh.batches[1].scissor, None);
-        let scissor = mesh.batches[0].scissor.expect("clipped batch has a scissor");
-        assert_eq!((scissor.x, scissor.y, scissor.width, scissor.height), (0, 0, 100, 50));
+        let plan = plan_of(&scene, (200, 200));
+        assert_eq!(plan.cmds.len(), 2);
+        match &plan.cmds[0] {
+            DrawCmd::Solid { clip, .. } => {
+                assert_eq!(clip.scissor, ScissorRect { x0: 0, y0: 0, x1: 100, y1: 50 })
+            }
+            _ => panic!("expected a clipped Solid"),
+        }
+        match &plan.cmds[1] {
+            DrawCmd::Solid { clip, .. } => assert_eq!(clip.scissor, full((200, 200))),
+            _ => panic!("expected an unclipped Solid"),
+        }
     }
 
     #[test]
@@ -191,14 +415,14 @@ mod tests {
         let mut scene = Scene::new();
         let mut p = Painter::new(&mut scene);
         p.push_layer(
-            peniko::Fill::NonZero,
+            Fill::NonZero,
             peniko::BlendMode::default(),
             1.0,
             Affine::rotate(std::f64::consts::FRAC_PI_4),
             &kurbo::Rect::new(0.0, 0.0, 100.0, 50.0),
         );
         p.fill(
-            peniko::Fill::NonZero,
+            Fill::NonZero,
             Affine::IDENTITY,
             Color::from_rgba8(0, 255, 0, 255),
             None,
@@ -206,9 +430,12 @@ mod tests {
         );
         p.pop_layer();
 
-        let mesh = mesh(&scene).solid;
-        assert_eq!(mesh.batches.len(), 1);
-        assert_eq!(mesh.batches[0].scissor, None);
+        let plan = plan_of(&scene, (200, 200));
+        assert_eq!(plan.cmds.len(), 1);
+        match &plan.cmds[0] {
+            DrawCmd::Solid { clip, .. } => assert_eq!(clip.scissor, full((200, 200))),
+            _ => panic!("expected a Solid"),
+        }
     }
 
     #[test]
@@ -223,8 +450,7 @@ mod tests {
             &kurbo::Rect::new(0.0, 0.0, 100.0, 40.0),
         );
 
-        let mesh = mesh(&scene).solid;
-        assert!(!mesh.is_empty());
-        assert!(mesh.vertices.len() > 4);
+        let plan = plan_of(&scene, (200, 200));
+        assert!(plan.solid_vertices.len() > 4);
     }
 }

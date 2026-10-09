@@ -1,10 +1,12 @@
 //! Image preparation: the CPU pixel data for each image op, and the image quads.
 
+use std::ops::Range;
+
 use kurbo::Affine;
 use pebbles_render::paint::Scene;
 use pebbles_render::paint::display_list::Op;
 
-use super::Tess;
+use super::plan::{FramePlan, ImageQuad};
 use crate::gpu_types::ImageVertex;
 
 /// CPU pixel data for one recorded image, handed to the shell for GPU upload.
@@ -17,7 +19,7 @@ pub(crate) struct ImageUpload {
     pub rgba8: Vec<u8>,
 }
 
-/// The CPU pixel data for every image op in `scene`, in the SAME order [`super::mesh`]
+/// The CPU pixel data for every image op in `scene`, in the SAME order the prepare walk
 /// visits them. Zero-size images are skipped in BOTH walks so the indices align.
 pub(crate) fn image_uploads(scene: &Scene) -> Vec<ImageUpload> {
     let mut out = Vec::new();
@@ -49,20 +51,26 @@ fn collect_images(ops: &[Op], out: &mut Vec<ImageUpload>) {
     }
 }
 
-impl Tess {
-    pub(crate) fn image(&mut self, image: &peniko::ImageBrush, transform: Affine, index: u32) {
-        let w = image.image.width as f64;
-        let h = image.image.height as f64;
-        let c00 = transform * kurbo::Point::new(0.0, 0.0);
-        let c10 = transform * kurbo::Point::new(w, 0.0);
-        let c11 = transform * kurbo::Point::new(w, h);
-        let c01 = transform * kurbo::Point::new(0.0, h);
-        let vertices = [
-            ImageVertex { position: [c00.x as f32, c00.y as f32], uv: [0.0, 0.0] },
-            ImageVertex { position: [c10.x as f32, c10.y as f32], uv: [1.0, 0.0] },
-            ImageVertex { position: [c11.x as f32, c11.y as f32], uv: [1.0, 1.0] },
-            ImageVertex { position: [c01.x as f32, c01.y as f32], uv: [0.0, 1.0] },
-        ];
-        self.images.push(super::plan::ImageQuad { image_index: index, vertices, scissor: self.scissor });
-    }
+/// Append one image quad (physical-pixel space) and return its arena range.
+pub(crate) fn image(
+    plan: &mut FramePlan,
+    image: &peniko::ImageBrush,
+    transform: Affine,
+    index: u32,
+) -> Range<u32> {
+    let w = image.image.width as f64;
+    let h = image.image.height as f64;
+    let c00 = transform * kurbo::Point::new(0.0, 0.0);
+    let c10 = transform * kurbo::Point::new(w, 0.0);
+    let c11 = transform * kurbo::Point::new(w, h);
+    let c01 = transform * kurbo::Point::new(0.0, h);
+    let vertices = [
+        ImageVertex { position: [c00.x as f32, c00.y as f32], uv: [0.0, 0.0] },
+        ImageVertex { position: [c10.x as f32, c10.y as f32], uv: [1.0, 0.0] },
+        ImageVertex { position: [c11.x as f32, c11.y as f32], uv: [1.0, 1.0] },
+        ImageVertex { position: [c01.x as f32, c01.y as f32], uv: [0.0, 1.0] },
+    ];
+    let start = plan.images.len() as u32;
+    plan.images.push(ImageQuad { image_index: index, vertices });
+    start..start + 1
 }

@@ -1,8 +1,8 @@
-//! The shadow pipeline: an analytic rounded-rect gaussian shadow (`erf` coverage).
+//! The shadow pipeline: instanced analytic rounded-rect gaussian shadows (`erf` coverage).
 
 use std::mem::size_of;
 
-use crate::gpu_types::ShadowVertex;
+use crate::gpu_types::ShadowInstance;
 
 pub(crate) struct ShadowPipeline {
     pub(crate) pipeline: wgpu::RenderPipeline,
@@ -56,33 +56,23 @@ pub(crate) fn make_shadow_pipeline(
             entry_point: Some("vs"),
             compilation_options: Default::default(),
             buffers: &[wgpu::VertexBufferLayout {
-                array_stride: size_of::<ShadowVertex>() as u64,
-                step_mode: wgpu::VertexStepMode::Vertex,
+                array_stride: size_of::<ShadowInstance>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
                 attributes: &[
                     wgpu::VertexAttribute {
-                        format: wgpu::VertexFormat::Float32x2,
+                        format: wgpu::VertexFormat::Float32x4,
                         offset: 0,
                         shader_location: 0,
                     },
                     wgpu::VertexAttribute {
                         format: wgpu::VertexFormat::Float32x4,
-                        offset: 8,
+                        offset: 16,
                         shader_location: 1,
-                    },
-                    wgpu::VertexAttribute {
-                        format: wgpu::VertexFormat::Float32,
-                        offset: 24,
-                        shader_location: 2,
-                    },
-                    wgpu::VertexAttribute {
-                        format: wgpu::VertexFormat::Float32,
-                        offset: 28,
-                        shader_location: 3,
                     },
                     wgpu::VertexAttribute {
                         format: wgpu::VertexFormat::Float32x4,
                         offset: 32,
-                        shader_location: 4,
+                        shader_location: 2,
                     },
                 ],
             }],
@@ -97,7 +87,10 @@ pub(crate) fn make_shadow_pipeline(
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
-        primitive: Default::default(),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleStrip,
+            ..Default::default()
+        },
         depth_stencil: None,
         multisample: wgpu::MultisampleState { count: sample_count, ..Default::default() },
         multiview_mask: None,
