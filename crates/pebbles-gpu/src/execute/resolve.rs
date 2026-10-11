@@ -4,6 +4,7 @@
 use cosmic_text::{CacheKey, CacheKeyFlags, FontSystem, SwashCache, SwashContent};
 
 use super::super::prepare::GlyphRun;
+use super::super::prepare::num::index_u32;
 use super::super::renderer::Renderer;
 use super::resources::{ATLAS_SIZE, Atlas};
 use crate::gpu_types::GlyphVertex;
@@ -24,7 +25,7 @@ impl GlyphGeometry {
         self.indices.is_empty()
     }
     fn push_quad(&mut self, quad: [GlyphVertex; 4]) {
-        let base = self.vertices.len() as u32;
+        let base = index_u32(self.vertices.len());
         self.vertices.extend_from_slice(&quad);
         self.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }
@@ -56,9 +57,10 @@ pub(crate) fn build_glyphs(
         let Some(font_id) = font_id(renderer, &run.font) else { continue };
         let flags = if run.synthesize_italic { CacheKeyFlags::FAKE_ITALIC } else { CacheKeyFlags::empty() };
         for glyph in &run.glyphs {
+            let Ok(glyph_id) = u16::try_from(glyph.id) else { continue };
             let (key, x, y) = CacheKey::new(
                 font_id,
-                glyph.id as u16,
+                glyph_id,
                 run.font_size,
                 (glyph.x, glyph.y.trunc()),
                 fontdb::Weight(run.font_weight),

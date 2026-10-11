@@ -6,6 +6,7 @@ use kurbo::{Affine, Rect};
 use peniko::Color;
 
 use super::color::premul;
+use super::num::{index_u32, to_f32};
 use super::plan::FramePlan;
 use crate::gpu_types::ShadowInstance;
 
@@ -25,15 +26,15 @@ pub(crate) fn shadow(
     let c10 = transform * kurbo::Point::new(rect.x1, rect.y0);
     let c01 = transform * kurbo::Point::new(rect.x0, rect.y1);
     let bounds = [
-        c00.x.min(c10.x).min(c11.x).min(c01.x) as f32,
-        c00.y.min(c10.y).min(c11.y).min(c01.y) as f32,
-        c00.x.max(c10.x).max(c11.x).max(c01.x) as f32,
-        c00.y.max(c10.y).max(c11.y).max(c01.y) as f32,
+        to_f32(c00.x.min(c10.x).min(c11.x).min(c01.x)).unwrap_or(0.0),
+        to_f32(c00.y.min(c10.y).min(c11.y).min(c01.y)).unwrap_or(0.0),
+        to_f32(c00.x.max(c10.x).max(c11.x).max(c01.x)).unwrap_or(0.0),
+        to_f32(c00.y.max(c10.y).max(c11.y).max(c01.y)).unwrap_or(0.0),
     ];
-    let radius = (radius * scale) as f32;
-    let sigma = (std_dev * scale) as f32;
+    let radius = to_f32(radius * scale).unwrap_or(0.0);
+    let sigma = to_f32(std_dev * scale).unwrap_or(0.0);
     let color = premul(color);
-    let start = plan.shadows.len() as u32;
+    let start = index_u32(plan.shadows.len());
     plan.shadows.push(ShadowInstance { rect: bounds, color, params: [radius, sigma, 0.0, 0.0] });
     start..start + 1
 }

@@ -6,6 +6,7 @@ use kurbo::Affine;
 use pebbles_render::paint::Scene;
 use pebbles_render::paint::display_list::Op;
 
+use super::num::{index_u32, to_f32};
 use super::plan::{FramePlan, ImageQuad};
 use crate::gpu_types::ImageVertex;
 
@@ -64,13 +65,14 @@ pub(crate) fn image(
     let c10 = transform * kurbo::Point::new(w, 0.0);
     let c11 = transform * kurbo::Point::new(w, h);
     let c01 = transform * kurbo::Point::new(0.0, h);
+    let px = |p: kurbo::Point| [to_f32(p.x).unwrap_or(0.0), to_f32(p.y).unwrap_or(0.0)];
     let vertices = [
-        ImageVertex { position: [c00.x as f32, c00.y as f32], uv: [0.0, 0.0] },
-        ImageVertex { position: [c10.x as f32, c10.y as f32], uv: [1.0, 0.0] },
-        ImageVertex { position: [c11.x as f32, c11.y as f32], uv: [1.0, 1.0] },
-        ImageVertex { position: [c01.x as f32, c01.y as f32], uv: [0.0, 1.0] },
+        ImageVertex { position: px(c00), uv: [0.0, 0.0] },
+        ImageVertex { position: px(c10), uv: [1.0, 0.0] },
+        ImageVertex { position: px(c11), uv: [1.0, 1.0] },
+        ImageVertex { position: px(c01), uv: [0.0, 1.0] },
     ];
-    let start = plan.images.len() as u32;
+    let start = index_u32(plan.images.len());
     plan.images.push(ImageQuad { image_index: index, vertices });
     start..start + 1
 }

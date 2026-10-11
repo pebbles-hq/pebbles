@@ -3,6 +3,7 @@
 use pebbles_render::paint::Scene;
 use wgpu::util::DeviceExt;
 
+use super::super::prepare::num::index_u32;
 use super::super::prepare::{DrawCmd, ImageQuad, ScissorRect, image_uploads};
 use super::super::renderer::Renderer;
 use super::pipelines::{
@@ -10,13 +11,23 @@ use super::pipelines::{
 };
 use super::resolve::{GlyphGeometry, build_glyphs};
 
-/// Clamp a scissor rect (physical-pixel corners) to the render-target bounds.
-pub(crate) fn scissor_params(scissor: ScissorRect, width: u32, height: u32) -> (u32, u32, u32, u32) {
-    let x0 = scissor.x0.min(width);
-    let y0 = scissor.y0.min(height);
-    let x1 = scissor.x1.min(width);
-    let y1 = scissor.y1.min(height);
-    (x0, y0, x1.saturating_sub(x0), y1.saturating_sub(y0))
+/// Tracks the render pass's current scissor so redundant `set_scissor_rect` calls are elided.
+struct PassState {
+    scissor: Option<(u32, u32, u32, u32)>,
+}
+
+impl PassState {
+    fn new() -> Self {
+        Self { scissor: None }
+    }
+
+    fn set_scissor(&mut self, pass: &mut wgpu::RenderPass<'_>, scissor: ScissorRect) {
+        let rect = (scissor.x0, scissor.y0, scissor.width(), scissor.height());
+        if self.scissor != Some(rect) {
+            pass.set_scissor_rect(rect.0, rect.1, rect.2, rect.3);
+            self.scissor = Some(rect);
+        }
+    }
 }
 
 /// Draw every command of the renderer's current plan, in order, into `pass`.
@@ -53,6 +64,7 @@ pub(crate) fn encode(
     });
     let cmds = renderer.scratch.plan.cmds.clone();
     let uploads = image_uploads(scene);
+    let mut state = PassState::new();
 
     for cmd in &cmds {
         match cmd {
@@ -70,7 +82,7 @@ pub(crate) fn encode(
                     solid_indices.as_ref().expect("solid indices").slice(..),
                     wgpu::IndexFormat::Uint32,
                 );
-                set_scissor(pass, clip.scissor, size);
+                state.set_scissor(pass, clip.scissor);
                 pass.draw_indexed(indices.clone(), 0, 0..1);
             }
             DrawCmd::Shadows { instances, clip } => {
@@ -83,25 +95,22 @@ pub(crate) fn encode(
                 pass.set_pipeline(&sp.pipeline);
                 pass.set_bind_group(0, &sp.bind_group, &[]);
                 pass.set_vertex_buffer(0, shadow_instances.as_ref().expect("shadow instances").slice(..));
-                set_scissor(pass, clip.scissor, size);
+                state.set_scissor(pass, clip.scissor);
                 pass.draw(0..4, instances.clone());
             }
             DrawCmd::Glyphs { glyphs, clip } => {
                 let runs =
                     renderer.scratch.plan.glyph_runs[glyphs.start as usize..glyphs.end as usize].to_vec();
-                draw_glyphs(renderer, device, queue, pass, &runs, clip.scissor, format, size);
+                state.set_scissor(pass, clip.scissor);
+                draw_glyphs(renderer, device, queue, pass, &runs, format, size);
             }
             DrawCmd::Images { images, clip } => {
                 let imgs = renderer.scratch.plan.images[images.start as usize..images.end as usize].to_vec();
-                draw_images(renderer, device, queue, pass, &imgs, &uploads, clip.scissor, format, size);
+                state.set_scissor(pass, clip.scissor);
+                draw_images(renderer, device, queue, pass, &imgs, &uploads, format, size);
             }
         }
     }
-}
-
-fn set_scissor(pass: &mut wgpu::RenderPass<'_>, scissor: ScissorRect, size: (u32, u32)) {
-    let (x, y, w, h) = scissor_params(scissor, size.0, size.1);
-    pass.set_scissor_rect(x, y, w, h);
 }
 
 fn solid_pipeline<'a>(
@@ -137,7 +146,6 @@ fn draw_glyphs(
     queue: &wgpu::Queue,
     pass: &mut wgpu::RenderPass<'_>,
     runs: &[super::super::prepare::GlyphRun],
-    scissor: ScissorRect,
     format: wgpu::TextureFormat,
     size: (u32, u32),
 ) {
@@ -150,7 +158,7 @@ fn draw_glyphs(
             renderer.glyph_pipeline.insert(key, gp);
         }
         let gp = renderer.glyph_pipeline.get(&key).expect("glyph pipeline just built");
-        draw_glyph_geometry(device, queue, pass, &coverage, gp, scissor, size);
+        draw_glyph_geometry(device, queue, pass, &coverage, gp, size);
     }
     if !color.is_empty() {
         let atlas = renderer.color_atlas.as_ref().expect("color atlas built by build_glyphs");
@@ -159,7 +167,7 @@ fn draw_glyphs(
             renderer.color_pipeline.insert(key, gp);
         }
         let gp = renderer.color_pipeline.get(&key).expect("color pipeline just built");
-        draw_glyph_geometry(device, queue, pass, &color, gp, scissor, size);
+        draw_glyph_geometry(device, queue, pass, &color, gp, size);
     }
 }
 
@@ -169,7 +177,6 @@ fn draw_glyph_geometry(
     pass: &mut wgpu::RenderPass<'_>,
     geom: &GlyphGeometry,
     gp: &GlyphPipeline,
-    scissor: ScissorRect,
     size: (u32, u32),
 ) {
     queue.write_buffer(&gp.uniform, 0, bytemuck::cast_slice(&[size.0 as f32, size.1 as f32, 0.0, 0.0]));
@@ -187,8 +194,7 @@ fn draw_glyph_geometry(
     pass.set_bind_group(0, &gp.bind_group, &[]);
     pass.set_vertex_buffer(0, vbuf.slice(..));
     pass.set_index_buffer(ibuf.slice(..), wgpu::IndexFormat::Uint32);
-    set_scissor(pass, scissor, size);
-    pass.draw_indexed(0..geom.indices.len() as u32, 0, 0..1);
+    pass.draw_indexed(0..index_u32(geom.indices.len()), 0, 0..1);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -199,7 +205,6 @@ fn draw_images(
     pass: &mut wgpu::RenderPass<'_>,
     images: &[ImageQuad],
     uploads: &[super::super::prepare::ImageUpload],
-    scissor: ScissorRect,
     format: wgpu::TextureFormat,
     size: (u32, u32),
 ) {
@@ -259,7 +264,6 @@ fn draw_images(
             contents: bytemuck::cast_slice(&quad.vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        set_scissor(pass, scissor, size);
         pass.set_pipeline(&ip.pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
         pass.set_vertex_buffer(0, vbuf.slice(..));

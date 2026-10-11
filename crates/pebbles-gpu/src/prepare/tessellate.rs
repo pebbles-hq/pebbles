@@ -11,6 +11,7 @@ use lyon_tessellation::{
 use peniko::Color;
 
 use super::color::premul;
+use super::num::{index_u32, to_f32};
 use super::plan::FramePlan;
 use crate::gpu_types::SolidVertex;
 
@@ -56,17 +57,22 @@ pub(crate) fn fill_premul(
 
 /// Append tessellated geometry to the solid arenas, rebasing indices.
 pub(crate) fn append(plan: &mut FramePlan, geometry: VertexBuffers<SolidVertex, u32>) -> Range<u32> {
-    let start = plan.solid_indices.len() as u32;
-    let base = plan.solid_vertices.len() as u32;
+    let start = index_u32(plan.solid_indices.len());
+    let base = index_u32(plan.solid_vertices.len());
     plan.solid_vertices.extend(geometry.vertices);
     plan.solid_indices.extend(geometry.indices.into_iter().map(|index| base + index));
-    start..plan.solid_indices.len() as u32
+    start..index_u32(plan.solid_indices.len())
 }
 
 pub(crate) fn transformed(path: &BezPath, transform: Affine) -> BezPath {
     let mut screen = path.clone();
     screen.apply_affine(transform);
     screen
+}
+
+/// A kurbo point narrowed to lyon's f32 point (non-finite → 0, R02 handles degenerate geometry).
+fn pt(p: kurbo::Point) -> lyon_tessellation::math::Point {
+    point(to_f32(p.x).unwrap_or(0.0), to_f32(p.y).unwrap_or(0.0))
 }
 
 pub(crate) fn to_lyon_path(path: &BezPath) -> Path {
@@ -78,24 +84,17 @@ pub(crate) fn to_lyon_path(path: &BezPath) -> Path {
                 if open {
                     builder.end(false);
                 }
-                builder.begin(point(to.x as f32, to.y as f32));
+                builder.begin(pt(to));
                 open = true;
             }
             kurbo::PathEl::LineTo(to) if open => {
-                builder.line_to(point(to.x as f32, to.y as f32));
+                builder.line_to(pt(to));
             }
             kurbo::PathEl::QuadTo(ctrl, to) if open => {
-                builder.quadratic_bezier_to(
-                    point(ctrl.x as f32, ctrl.y as f32),
-                    point(to.x as f32, to.y as f32),
-                );
+                builder.quadratic_bezier_to(pt(ctrl), pt(to));
             }
             kurbo::PathEl::CurveTo(a, b, to) if open => {
-                builder.cubic_bezier_to(
-                    point(a.x as f32, a.y as f32),
-                    point(b.x as f32, b.y as f32),
-                    point(to.x as f32, to.y as f32),
-                );
+                builder.cubic_bezier_to(pt(a), pt(b), pt(to));
             }
             kurbo::PathEl::ClosePath if open => {
                 builder.end(true);

@@ -5,6 +5,7 @@ use std::ops::Range;
 use kurbo::{Affine, BezPath, Stroke};
 use lyon_tessellation::{BuffersBuilder, FillOptions, FillRule, FillTessellator, VertexBuffers};
 
+use super::num::to_f32;
 use super::plan::FramePlan;
 use super::tessellate::{SolidVertexCtor, append, to_lyon_path};
 
@@ -42,7 +43,7 @@ pub(crate) fn expand(
     }
     // Hairline rule: stroke at exactly 1 device px and fold the width into alpha.
     let (local_width, alpha) =
-        if wd > 0.0 && wd < 1.0 { (style.width / wd, wd as f32) } else { (style.width, 1.0) };
+        if wd > 0.0 && wd < 1.0 { (style.width / wd, to_f32(wd).unwrap_or(0.0)) } else { (style.width, 1.0) };
     let s = transform.spectral_norm().max(1e-6);
     let mut style_adj = style.clone();
     style_adj.width = local_width;
@@ -161,8 +162,8 @@ mod tests {
         let mut hi = f32::MIN;
         for v in &plan.solid_vertices {
             let proj = (v.pos[0] as f64) * n.x + (v.pos[1] as f64) * n.y;
-            lo = lo.min(proj as f32);
-            hi = hi.max(proj as f32);
+            lo = lo.min(to_f32(proj).unwrap_or(0.0));
+            hi = hi.max(to_f32(proj).unwrap_or(0.0));
         }
         assert!((hi - lo - 2.0).abs() < 0.05, "width {}", hi - lo);
     }

@@ -3,16 +3,52 @@
 use pebbles_render::paint::Glyph;
 use peniko::FontData;
 
+use super::num::{ceil_px, floor_px};
 use crate::gpu_types::{ImageVertex, ShadowInstance, SolidVertex};
 
 /// Device-pixel rectangle `[x0, x1) × [y0, y1)`, stored as corners so intersection never
-/// adds (no overflow). Fields only — C11 adds the methods.
+/// adds (no overflow).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) struct ScissorRect {
     pub x0: u32,
     pub y0: u32,
     pub x1: u32,
     pub y1: u32,
+}
+
+impl ScissorRect {
+    /// The full-target scissor.
+    pub(crate) fn full(target: (u32, u32)) -> Self {
+        Self { x0: 0, y0: 0, x1: target.0, y1: target.1 }
+    }
+
+    /// Floor/ceil device bounds into the target; `None` if NaN or empty.
+    pub(crate) fn from_device_bounds(x0: f64, y0: f64, x1: f64, y1: f64, target: (u32, u32)) -> Option<Self> {
+        let (x0, y0) = (floor_px(x0, target.0)?, floor_px(y0, target.1)?);
+        let (x1, y1) = (ceil_px(x1, target.0)?, ceil_px(y1, target.1)?);
+        (x0 < x1 && y0 < y1).then_some(Self { x0, y0, x1, y1 })
+    }
+
+    /// Corner max/min intersection. `None` when empty.
+    pub(crate) fn intersect(self, other: Self) -> Option<Self> {
+        let s = Self {
+            x0: self.x0.max(other.x0),
+            y0: self.y0.max(other.y0),
+            x1: self.x1.min(other.x1),
+            y1: self.y1.min(other.y1),
+        };
+        (s.x0 < s.x1 && s.y0 < s.y1).then_some(s)
+    }
+
+    /// `x1 - x0` (invariant `x0 <= x1`).
+    pub(crate) fn width(self) -> u32 {
+        self.x1 - self.x0
+    }
+
+    /// `y1 - y0`.
+    pub(crate) fn height(self) -> u32 {
+        self.y1 - self.y0
+    }
 }
 
 /// The clip a drawing command executes under. Every drawing `DrawCmd` carries its own copy;

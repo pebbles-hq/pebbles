@@ -21,9 +21,9 @@ fn random_scene(rng: &mut XorShift64) -> Scene {
     };
     let color = |rng: &mut XorShift64| {
         Color::from_rgba8(
-            rng.range_u32(0, 255) as u8,
-            rng.range_u32(0, 255) as u8,
-            rng.range_u32(0, 255) as u8,
+            u8::try_from(rng.range_u32(0, 255)).unwrap_or(0),
+            u8::try_from(rng.range_u32(0, 255)).unwrap_or(0),
+            u8::try_from(rng.range_u32(0, 255)).unwrap_or(0),
             255,
         )
     };
@@ -48,7 +48,7 @@ fn random_scene(rng: &mut XorShift64) -> Scene {
             ),
             5 => p.draw_glyphs(
                 &font,
-                rng.range_f64(8.0, 48.0) as f32,
+                super::num::to_f32(rng.range_f64(8.0, 48.0)).unwrap_or(0.0),
                 400,
                 &[],
                 &peniko::Brush::Solid(color(rng)),
@@ -57,8 +57,8 @@ fn random_scene(rng: &mut XorShift64) -> Scene {
                 Fill::NonZero,
                 std::iter::once(Glyph {
                     id: rng.range_u32(33, 127),
-                    x: rng.range_f64(0.0, 256.0) as f32,
-                    y: rng.range_f64(0.0, 256.0) as f32,
+                    x: super::num::to_f32(rng.range_f64(0.0, 256.0)).unwrap_or(0.0),
+                    y: super::num::to_f32(rng.range_f64(0.0, 256.0)).unwrap_or(0.0),
                 }),
             ),
             _ => p.pop_layer(),

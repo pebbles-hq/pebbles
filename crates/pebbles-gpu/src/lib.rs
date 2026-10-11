@@ -14,6 +14,7 @@
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(clippy::print_stdout, clippy::print_stderr)]
+#![warn(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 
 mod context;
 mod error;

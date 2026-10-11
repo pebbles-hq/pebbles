@@ -1,21 +1,81 @@
 //! Rect-clip classification (scissor) and the clip stack.
 
 use kurbo::Affine;
+use pebbles_render::paint::display_list::Geometry;
 
 use super::plan::{ClipState, ScissorRect};
 
-/// The full-target scissor.
-pub(crate) fn full(target: (u32, u32)) -> ScissorRect {
-    ScissorRect { x0: 0, y0: 0, x1: target.0, y1: target.1 }
+/// How a clip is realised. Phase C produces only these four; L01 deletes `Bounds`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ClipKind {
+    /// The clip contains the current scissor: nothing changes.
+    Noop,
+    /// Empty intersection or non-finite input: cull until the matching pop.
+    Cull,
+    /// Axis-aligned rect after transform (incl. zero-radius rounded rects): scissor alone is exact.
+    Scissor,
+    /// Any other clip → scissor to its device bounding box (C17 logs it).
+    Bounds,
 }
 
-/// Corner max/min intersection. Empty (non-covering) when `x1 <= x0 || y1 <= y0`.
-pub(crate) fn intersect(a: ScissorRect, b: ScissorRect) -> ScissorRect {
-    ScissorRect { x0: a.x0.max(b.x0), y0: a.y0.max(b.y0), x1: a.x1.min(b.x1), y1: a.y1.min(b.y1) }
+/// The result of classifying a clip geometry.
+pub(crate) struct ClipDecision {
+    pub kind: ClipKind,
+    /// The scissor to apply (`cur.scissor` for `Noop`/`Cull`).
+    pub scissor: ScissorRect,
+}
+
+/// Classify a clip geometry under `xf` against the current clip (09 §2.2, Phase-C rows only).
+pub(crate) fn classify_clip(geom: &Geometry, xf: Affine, cur: &ClipState) -> ClipDecision {
+    let c = xf.as_coeffs();
+    // A rect (or zero-radius rounded rect) under an axis-preserving transform → scissor.
+    let rect = match geom {
+        Geometry::Rect(r) => Some(*r),
+        Geometry::RoundedRect(rr) => {
+            let radii = rr.radii();
+            let zero = radii.top_left.abs() <= 1e-9
+                && radii.top_right.abs() <= 1e-9
+                && radii.bottom_right.abs() <= 1e-9
+                && radii.bottom_left.abs() <= 1e-9;
+            zero.then_some(rr.rect())
+        }
+        _ => None,
+    };
+    let axis_preserving =
+        (c[1].abs() < 1e-9 && c[2].abs() < 1e-9) || (c[0].abs() < 1e-9 && c[3].abs() < 1e-9);
+    let bbox = |geom: &Geometry| xf.transform_rect_bbox(geom.bounding_box());
+    if let Some(rect) = rect {
+        if axis_preserving {
+            let b = xf.transform_rect_bbox(rect);
+            return finish(b, cur, ClipKind::Scissor);
+        }
+        // A rotated rect clip → bounds (bbox scissor).
+        return finish(bbox(geom), cur, ClipKind::Bounds);
+    }
+    // Circles, paths, and any non-finite geometry → bounds.
+    if !c.iter().all(|v| v.is_finite()) {
+        return ClipDecision { kind: ClipKind::Cull, scissor: cur.scissor };
+    }
+    finish(bbox(geom), cur, ClipKind::Bounds)
+}
+
+fn finish(b: kurbo::Rect, cur: &ClipState, kind: ClipKind) -> ClipDecision {
+    let Some(scissor) =
+        ScissorRect::from_device_bounds(b.x0, b.y0, b.x1, b.y1, (cur.scissor.x1, cur.scissor.y1))
+    else {
+        return ClipDecision { kind: ClipKind::Cull, scissor: cur.scissor };
+    };
+    match scissor.intersect(cur.scissor) {
+        None => ClipDecision { kind: ClipKind::Cull, scissor: cur.scissor },
+        Some(intersected) if intersected == cur.scissor => {
+            ClipDecision { kind: ClipKind::Noop, scissor: cur.scissor }
+        }
+        Some(intersected) => ClipDecision { kind, scissor: intersected },
+    }
 }
 
 /// The clip stack: the current (intersected) scissor plus the saved scissor at each
-/// `PushLayer`. An unmatched `PopLayer` is ignored (the current clip is unchanged).
+/// `PushLayer`. An unmatched `PopLayer` is ignored.
 #[derive(Default)]
 pub(crate) struct ClipStack {
     stack: Vec<ScissorRect>,
@@ -26,10 +86,10 @@ impl ClipStack {
     /// Reset for a new frame (full-target scissor).
     pub(crate) fn reset(&mut self, target: (u32, u32)) {
         self.stack.clear();
-        self.current = full(target);
+        self.current = ScissorRect::full(target);
     }
 
-    /// The current clip state.
+    /// The current clip state (only valid when not culled).
     pub(crate) fn current(&self) -> ClipState {
         ClipState { scissor: self.current }
     }
@@ -39,12 +99,14 @@ impl ClipStack {
         self.current.x1 <= self.current.x0 || self.current.y1 <= self.current.y0
     }
 
-    /// Push a clip; `None` means "no rect scissor" (keep the current clip).
-    pub(crate) fn push(&mut self, scissor: Option<ScissorRect>) {
+    /// Apply a classified clip, intersecting with the parent. A `Cull` decision empties the
+    /// current scissor so the whole subtree is culled until the matching pop.
+    pub(crate) fn push(&mut self, decision: ClipDecision) {
         self.stack.push(self.current);
-        if let Some(s) = scissor {
-            self.current = intersect(self.current, s);
-        }
+        self.current = match decision.kind {
+            ClipKind::Cull => ScissorRect { x0: 0, y0: 0, x1: 0, y1: 0 },
+            _ => decision.scissor,
+        };
     }
 
     /// Pop the matching clip; an unmatched pop is ignored.
@@ -55,47 +117,58 @@ impl ClipStack {
     }
 }
 
-/// If `path` (a recorded rect clip) maps to another axis-aligned rectangle under
-/// `transform` (translate + scale, no rotation/shear), return its physical-pixel
-/// scissor rect; otherwise `None` (non-rect clips are Phase 4's job).
-pub(crate) fn scissor_rect(path: &kurbo::BezPath, transform: Affine) -> Option<ScissorRect> {
-    let elements = path.elements();
-    if elements.len() != 5 {
-        return None;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kurbo::Rect;
+
+    fn cur(size: (u32, u32)) -> ClipState {
+        ClipState { scissor: ScissorRect::full(size) }
     }
-    let corner = |el: &kurbo::PathEl| -> Option<kurbo::Point> {
-        match *el {
-            kurbo::PathEl::MoveTo(p) | kurbo::PathEl::LineTo(p) => Some(p),
-            _ => None,
-        }
-    };
-    let p0 = corner(&elements[0])?;
-    let p1 = corner(&elements[1])?;
-    let p2 = corner(&elements[2])?;
-    let p3 = corner(&elements[3])?;
-    if !matches!(elements[4], kurbo::PathEl::ClosePath) {
-        return None;
+
+    #[test]
+    fn negative_origin_clamps_to_zero() {
+        let s = ScissorRect::from_device_bounds(-50.0, -10.0, 100.0, 40.0, (200, 100)).unwrap();
+        assert_eq!(s, ScissorRect { x0: 0, y0: 0, x1: 100, y1: 40 });
     }
-    let a = transform * p0;
-    let b = transform * p1;
-    let c = transform * p2;
-    let d = transform * p3;
-    const EPS: f64 = 1e-3;
-    if (a.y - b.y).abs() > EPS
-        || (c.y - d.y).abs() > EPS
-        || (b.x - c.x).abs() > EPS
-        || (d.x - a.x).abs() > EPS
-    {
-        return None;
+
+    #[test]
+    fn fully_offscreen_clip_culls_subtree() {
+        let geom = Geometry::Rect(Rect::new(300.0, 0.0, 400.0, 100.0));
+        let d = classify_clip(&geom, Affine::IDENTITY, &cur((100, 100)));
+        assert_eq!(d.kind, ClipKind::Cull);
     }
-    let min_x = a.x.min(b.x).min(c.x).min(d.x);
-    let max_x = a.x.max(b.x).max(c.x).max(d.x);
-    let min_y = a.y.min(b.y).min(c.y).min(d.y);
-    let max_y = a.y.max(b.y).max(c.y).max(d.y);
-    Some(ScissorRect {
-        x0: min_x.floor().max(0.0) as u32,
-        y0: min_y.floor().max(0.0) as u32,
-        x1: (max_x.ceil().max(0.0)) as u32,
-        y1: (max_y.ceil().max(0.0)) as u32,
-    })
+
+    #[test]
+    fn nan_bounds_cull() {
+        assert!(ScissorRect::from_device_bounds(f64::NAN, 0.0, 100.0, 100.0, (100, 100)).is_none());
+    }
+
+    #[test]
+    fn rotated_90_rect_is_scissor_clip() {
+        let geom = Geometry::Rect(Rect::new(0.0, 0.0, 100.0, 50.0));
+        let d = classify_clip(&geom, Affine::rotate(std::f64::consts::FRAC_PI_2), &cur((200, 200)));
+        assert_eq!(d.kind, ClipKind::Scissor);
+    }
+
+    #[test]
+    fn rotated_30_rect_is_bounds_clip() {
+        let geom = Geometry::Rect(Rect::new(0.0, 0.0, 100.0, 50.0));
+        let d = classify_clip(&geom, Affine::rotate(std::f64::consts::FRAC_PI_6), &cur((200, 200)));
+        assert_eq!(d.kind, ClipKind::Bounds);
+    }
+
+    #[test]
+    fn zero_radius_rrect_is_scissor_clip() {
+        let rr = kurbo::RoundedRect::from_rect(Rect::new(0.0, 0.0, 100.0, 50.0), 0.0);
+        let d = classify_clip(&Geometry::RoundedRect(rr), Affine::IDENTITY, &cur((200, 200)));
+        assert_eq!(d.kind, ClipKind::Scissor);
+    }
+
+    #[test]
+    fn huge_rect_intersection_does_not_overflow() {
+        let geom = Geometry::Rect(Rect::new(10.0, 10.0, 1e12, 1e12));
+        let d = classify_clip(&geom, Affine::IDENTITY, &cur((100, 100)));
+        assert_eq!(d.scissor, ScissorRect { x0: 10, y0: 10, x1: 100, y1: 100 });
+    }
 }

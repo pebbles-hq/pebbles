@@ -9,6 +9,7 @@ mod clip;
 pub(crate) mod color;
 mod glyphs;
 mod images;
+pub(crate) mod num;
 mod plan;
 #[cfg(test)]
 mod property_tests;
@@ -99,14 +100,11 @@ fn emit(
                     push_cmd(plan, DrawCmd::Solid { indices, clip: clips.current() }, idx);
                 }
             }
-            Op::PushLayer { blend, alpha, transform, clip, .. } => {
-                let scissor = if *blend == peniko::BlendMode::default() && *alpha >= 1.0 {
-                    let clip_path = clip.to_path(TOL);
-                    clip::scissor_rect(&clip_path, outer * *transform)
-                } else {
-                    None
-                };
-                clips.push(scissor);
+            Op::PushLayer { transform, clip, .. } => {
+                // Every layer's clip is pushed — including alpha < 1 or a non-default blend
+                // (defect D06's "layer clip lost").
+                let decision = clip::classify_clip(clip, outer * *transform, &clips.current());
+                clips.push(decision);
             }
             Op::PopLayer => clips.pop(),
             Op::Glyphs {
@@ -137,7 +135,7 @@ fn emit(
                     plan.stats.culled += 1;
                     continue;
                 }
-                let range = images::image(plan, image, outer * *transform, plan.images.len() as u32);
+                let range = images::image(plan, image, outer * *transform, num::index_u32(plan.images.len()));
                 push_cmd(plan, DrawCmd::Images { images: range, clip: clips.current() }, idx);
             }
             Op::BlurredRect { transform, rect, brush, radius, std_dev, .. } => {
@@ -431,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn rotated_clip_is_not_scissored() {
+    fn rotated_clip_is_bounds_clipped() {
         let mut scene = Scene::new();
         let mut p = Painter::new(&mut scene);
         p.push_layer(
@@ -453,7 +451,40 @@ mod tests {
         let plan = plan_of(&scene, (200, 200));
         assert_eq!(plan.cmds.len(), 1);
         match &plan.cmds[0] {
-            DrawCmd::Solid { clip, .. } => assert_eq!(clip.scissor, full((200, 200))),
+            // A rotated rect is not a pure scissor: it clips to its device bounding box.
+            DrawCmd::Solid { clip, .. } => {
+                assert_eq!(clip.scissor, ScissorRect { x0: 0, y0: 0, x1: 71, y1: 107 })
+            }
+            _ => panic!("expected a Solid"),
+        }
+    }
+
+    #[test]
+    fn alpha_layer_keeps_its_clip() {
+        let mut scene = Scene::new();
+        let mut p = Painter::new(&mut scene);
+        p.push_layer(
+            Fill::NonZero,
+            peniko::BlendMode::default(),
+            0.5,
+            Affine::IDENTITY,
+            &kurbo::Rect::new(0.0, 0.0, 50.0, 50.0),
+        );
+        p.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::from_rgba8(255, 0, 0, 255),
+            None,
+            &kurbo::Rect::new(0.0, 0.0, 100.0, 100.0),
+        );
+        p.pop_layer();
+
+        let plan = plan_of(&scene, (100, 100));
+        assert_eq!(plan.cmds.len(), 1);
+        match &plan.cmds[0] {
+            DrawCmd::Solid { clip, .. } => {
+                assert_eq!(clip.scissor, ScissorRect { x0: 0, y0: 0, x1: 50, y1: 50 })
+            }
             _ => panic!("expected a Solid"),
         }
     }

@@ -8,6 +8,7 @@ use peniko::{Brush, FontData};
 use pebbles_render::paint::Glyph;
 
 use super::color::premul;
+use super::num::{index_u32, to_f32};
 use super::plan::{FramePlan, GlyphRun};
 
 /// Append one glyph run (transformed to physical-pixel space) and return its arena range.
@@ -28,15 +29,15 @@ pub(crate) fn glyph_run(
         _ => return None,
     };
     let coeffs = transform.as_coeffs();
-    let scale = (coeffs[0] * coeffs[0] + coeffs[1] * coeffs[1]).sqrt().max(1e-6) as f32;
+    let scale = to_f32((coeffs[0] * coeffs[0] + coeffs[1] * coeffs[1]).sqrt().max(1e-6)).unwrap_or(0.0);
     let glyphs = glyphs
         .iter()
         .map(|g| {
             let p = transform * kurbo::Point::new(f64::from(g.x), f64::from(g.y));
-            Glyph { id: g.id, x: p.x as f32, y: p.y as f32 }
+            Glyph { id: g.id, x: to_f32(p.x).unwrap_or(0.0), y: to_f32(p.y).unwrap_or(0.0) }
         })
         .collect();
-    let start = plan.glyph_runs.len() as u32;
+    let start = index_u32(plan.glyph_runs.len());
     plan.glyph_runs.push(GlyphRun {
         font: font.clone(),
         font_size: font_size * scale,
