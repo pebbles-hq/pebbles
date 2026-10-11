@@ -179,6 +179,68 @@ fn dialog_scrim_hides_page_text() {
     }
 }
 
+/// C08: clearing `#808080` stores exactly 128 (sRGB-encoded, no linearization).
+#[test]
+#[ignore = "gpu"]
+fn clear_is_exact_srgb() {
+    let Some((device, queue, mut renderer)) = setup("clear_is_exact_srgb") else { return };
+    let scene = Scene::new();
+    let rgba = render_scene(
+        &device,
+        &queue,
+        &mut renderer,
+        &scene,
+        (64, 64),
+        Color::from_rgba8(0x80, 0x80, 0x80, 0xff),
+    );
+    for px in rgba.as_chunks::<4>().0 {
+        assert!(
+            (px[0] as i32 - 128).abs() <= 1
+                && (px[1] as i32 - 128).abs() <= 1
+                && (px[2] as i32 - 128).abs() <= 1,
+            "pixel {px:?}"
+        );
+    }
+}
+
+/// C08: 50 % white over black blends in gamma space → 128 (linear would give ≈188).
+#[test]
+#[ignore = "gpu"]
+fn half_alpha_white_over_black_is_gamma_space() {
+    let Some((device, queue, mut renderer)) = setup("half_alpha_white_over_black_is_gamma_space") else {
+        return;
+    };
+    let mut scene = Scene::new();
+    Painter::new(&mut scene).fill(
+        Fill::NonZero,
+        Affine::IDENTITY,
+        Color::from_rgba8(255, 255, 255, 128),
+        None,
+        &Rect::new(0.0, 0.0, 64.0, 64.0),
+    );
+    let rgba = render_scene(&device, &queue, &mut renderer, &scene, (64, 64), Color::BLACK);
+    let c = pixel(&rgba, 64, 32, 32);
+    assert!(
+        (c[0] as i32 - 128).abs() <= 1 && (c[1] as i32 - 128).abs() <= 1 && (c[2] as i32 - 128).abs() <= 1,
+        "pixel {c:?}"
+    );
+}
+
+/// C08: clearing `rgba(255,0,0,0.5)` premultiplies → readback `(128,0,0,128)`.
+#[test]
+#[ignore = "gpu"]
+fn premultiplied_clear_with_alpha() {
+    let Some((device, queue, mut renderer)) = setup("premultiplied_clear_with_alpha") else { return };
+    let scene = Scene::new();
+    let rgba =
+        render_scene(&device, &queue, &mut renderer, &scene, (64, 64), Color::from_rgba8(255, 0, 0, 128));
+    let c = pixel(&rgba, 64, 32, 32);
+    assert!(
+        (c[0] as i32 - 128).abs() <= 1 && c[1] <= 1 && c[2] <= 1 && (c[3] as i32 - 128).abs() <= 1,
+        "pixel {c:?}"
+    );
+}
+
 /// Copy a texture's rows (padded to 256 bytes) into an unpadded byte buffer.
 fn readback(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<u8> {
     let width = texture.width();

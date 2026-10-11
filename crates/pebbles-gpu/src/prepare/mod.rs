@@ -6,7 +6,7 @@ use pebbles_render::paint::Scene;
 use pebbles_render::paint::display_list::Op;
 
 mod clip;
-mod color;
+pub(crate) mod color;
 mod glyphs;
 mod images;
 mod plan;

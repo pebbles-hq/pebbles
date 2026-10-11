@@ -84,9 +84,11 @@ pub(crate) fn present_frame(
         wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
         _ => return PresentOutcome::Skipped,
     };
-    let view = surface_texture.texture.create_view(&wgpu::TextureViewDescriptor::default());
     let (w, h) = surface.0.size();
-    let format = surface.0.format();
+    let format = surface.0.view_format();
+    let view = surface_texture
+        .texture
+        .create_view(&wgpu::TextureViewDescriptor { format: Some(format), ..Default::default() });
     let params = RenderParams { base_color, width: w, height: h };
     if let Err(e) = renderer.render_to_texture(device, queue, scene, &view, format, &params) {
         eprintln!("pebbles: wgpu render failed (skipping frame, scheduling GPU reset): {e}");

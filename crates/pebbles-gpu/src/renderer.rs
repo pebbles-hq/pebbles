@@ -110,7 +110,7 @@ impl Renderer {
         let input = PrepareInput { target_size: size, root_transform: Affine::IDENTITY };
         prepare(scene, &input, &mut self.scratch);
 
-        let [r, g, b, a] = base_color.components;
+        let clear = super::prepare::color::clear_color(base_color);
         let mut encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.gpu.encoder") });
         {
@@ -121,15 +121,7 @@ impl Renderer {
                     view: &msaa_view,
                     depth_slice: None,
                     resolve_target: Some(target),
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: f64::from(r),
-                            g: f64::from(g),
-                            b: f64::from(b),
-                            a: f64::from(a),
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear), store: wgpu::StoreOp::Store },
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
