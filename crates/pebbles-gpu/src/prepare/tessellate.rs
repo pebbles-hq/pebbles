@@ -25,18 +25,31 @@ pub(crate) fn fill(
     style: peniko::Fill,
     color: Color,
 ) -> Range<u32> {
+    let rule = match style {
+        peniko::Fill::EvenOdd => FillRule::EvenOdd,
+        peniko::Fill::NonZero => FillRule::NonZero,
+    };
+    fill_premul(plan, path, transform, rule, premul(color))
+}
+
+/// Tessellate `path` under `transform` with an already-premultiplied color, appending to the
+/// solid arenas and returning the index range.
+pub(crate) fn fill_premul(
+    plan: &mut FramePlan,
+    path: &BezPath,
+    transform: Affine,
+    rule: FillRule,
+    color: [f32; 4],
+) -> Range<u32> {
     let screen = transformed(path, transform);
     let lyon = to_lyon_path(&screen);
     let mut geometry = VertexBuffers::new();
     let mut tess = FillTessellator::new();
-    let options = FillOptions::default().with_tolerance(FILL_TOLERANCE_PX).with_fill_rule(match style {
-        peniko::Fill::EvenOdd => FillRule::EvenOdd,
-        peniko::Fill::NonZero => FillRule::NonZero,
-    });
+    let options = FillOptions::default().with_tolerance(FILL_TOLERANCE_PX).with_fill_rule(rule);
     let _ = tess.tessellate_path(
         &lyon,
         &options,
-        &mut BuffersBuilder::new(&mut geometry, SolidVertexCtor(premul(color))),
+        &mut BuffersBuilder::new(&mut geometry, SolidVertexCtor(color)),
     );
     append(plan, geometry)
 }

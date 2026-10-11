@@ -37,6 +37,7 @@ pub(crate) struct PrepareInput {
 pub(crate) struct PrepareScratch {
     pub plan: FramePlan,
     pub clips: clip::ClipStack,
+    pub stroke: stroke::StrokeScratch,
 }
 
 /// Walk `scene` in painter's order into `scratch.plan` and return it.
@@ -49,11 +50,26 @@ pub(crate) fn prepare<'s>(
     scratch.plan.target_size = input.target_size;
     scratch.clips.reset(input.target_size);
     let mut visit = 0u32;
-    emit(scene.ops(), input.root_transform, &mut scratch.plan, &mut scratch.clips, &mut visit);
+    emit(
+        scene.ops(),
+        input.root_transform,
+        &mut scratch.plan,
+        &mut scratch.clips,
+        &mut scratch.stroke,
+        &mut visit,
+    );
     &scratch.plan
 }
 
-fn emit(ops: &[Op], outer: Affine, plan: &mut FramePlan, clips: &mut clip::ClipStack, visit: &mut u32) {
+#[allow(clippy::too_many_arguments)]
+fn emit(
+    ops: &[Op],
+    outer: Affine,
+    plan: &mut FramePlan,
+    clips: &mut clip::ClipStack,
+    stroke: &mut stroke::StrokeScratch,
+    visit: &mut u32,
+) {
     for op in ops {
         *visit += 1;
         let idx = *visit;
@@ -75,9 +91,13 @@ fn emit(ops: &[Op], outer: Affine, plan: &mut FramePlan, clips: &mut clip::ClipS
                     continue;
                 }
                 let path = shape.to_path(TOL);
-                let indices = stroke::stroke(plan, &path, outer * *transform, style, *color);
-                plan.stats.tess_calls += 1;
-                push_cmd(plan, DrawCmd::Solid { indices, clip: clips.current() }, idx);
+                let outcome = stroke::expand(&path, style, outer * *transform, stroke);
+                if outcome.drew {
+                    let premul = color::premul_scaled(*color, outcome.alpha);
+                    let indices = stroke::fill_outline(plan, stroke, premul);
+                    plan.stats.tess_calls += 1;
+                    push_cmd(plan, DrawCmd::Solid { indices, clip: clips.current() }, idx);
+                }
             }
             Op::PushLayer { blend, alpha, transform, clip, .. } => {
                 let scissor = if *blend == peniko::BlendMode::default() && *alpha >= 1.0 {
@@ -110,7 +130,7 @@ fn emit(ops: &[Op], outer: Affine, plan: &mut FramePlan, clips: &mut clip::ClipS
                 }
             }
             Op::Fragment { transform, ops, .. } => {
-                emit(ops, outer * transform.unwrap_or(Affine::IDENTITY), plan, clips, visit);
+                emit(ops, outer * transform.unwrap_or(Affine::IDENTITY), plan, clips, stroke, visit);
             }
             Op::Image { image, transform, .. } if image.image.width != 0 && image.image.height != 0 => {
                 if clips.is_culled() {

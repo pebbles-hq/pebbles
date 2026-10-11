@@ -241,6 +241,25 @@ fn premultiplied_clear_with_alpha() {
     );
 }
 
+/// C10: a 1-logical-px border under `scale_factor` 2 renders 2 device px wide (D04).
+#[test]
+#[ignore = "gpu"]
+fn border_is_two_device_px_at_scale_2() {
+    let Some((device, queue, mut renderer)) = setup("border_is_two_device_px_at_scale_2") else { return };
+    let mut scene = Scene::new();
+    Painter::new(&mut scene).stroke(
+        &Stroke::new(1.0),
+        Affine::scale(2.0),
+        Color::BLACK,
+        None,
+        &kurbo::Line::new(kurbo::Point::new(0.0, 25.0), kurbo::Point::new(50.0, 25.0)),
+    );
+    let rgba = render_scene(&device, &queue, &mut renderer, &scene, (100, 100), Color::WHITE);
+    // The 1-logical-px stroke at scale 2 is a 2-device-px band centered on y=50; probe column x=50.
+    let dark = (0..100).filter(|&y| pixel(&rgba, 100, 50, y)[0] < 128).count();
+    assert!((2..=3).contains(&dark), "border should be ~2 device px, got {dark}");
+}
+
 /// Copy a texture's rows (padded to 256 bytes) into an unpadded byte buffer.
 fn readback(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<u8> {
     let width = texture.width();
