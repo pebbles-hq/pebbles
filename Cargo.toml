@@ -58,7 +58,7 @@ pebbles-testing = { path = "crates/pebbles-testing", version = "0.0.1", default-
 #  · `vello_hybrid` — hybrid CPU-preprocess + GPU-raster ("sparse strips"). Low-power;
 #                     the battery-first default candidate. `vello_common` is its shared
 #                     paint/geometry crate (both backends sit on the same kurbo/peniko).
-vello = { version = "0.10", default-features = false }
+vello = { version = "0.11", default-features = false }
 vello_hybrid = { version = "0.2", default-features = false }
 vello_common = { version = "0.2", default-features = false }
 peniko = "0.6"
@@ -66,7 +66,7 @@ kurbo = "0.13"
 parley = "0.11"
 
 # --- windowing / gpu (shell only) ---
-wgpu = "29"
+wgpu = "30"
 winit = "0.30"
 raw-window-handle = "0.6"
 pollster = "1"
