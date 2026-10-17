@@ -2,7 +2,7 @@
 //! requested size. `#[ignore]` because it needs a GPU (run locally with
 //! `cargo test -p pebbles-shell --test capture -- --ignored`).
 
-#![cfg(all(not(target_family = "wasm"), feature = "vello-hybrid"))]
+#![cfg(all(not(target_family = "wasm"), any(feature = "vello-hybrid", feature = "wgpu")))]
 
 use pebbles_core::IntoWidget;
 use pebbles_foundation::{Color, palette};

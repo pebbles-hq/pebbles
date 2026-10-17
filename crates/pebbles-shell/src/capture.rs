@@ -34,6 +34,7 @@ use pebbles_core::{AnyWidget, IntoWidget, Ui, prefers_reduced_motion, set_prefer
 use pebbles_foundation::{Color, Size};
 use pebbles_render::{Scene, TextEnv};
 use pebbles_widgets::{OverlayHost, View};
+#[cfg(feature = "vello-hybrid")]
 use wgpu::{
     Extent3d, TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, TextureDescriptor,
     TextureDimension, TextureFormat, TextureUsages,
@@ -152,17 +153,18 @@ fn scene_for(ui: &mut Ui, env: &mut TextEnv, w: u32, h: u32) -> Scene {
     scene
 }
 
+#[cfg(feature = "vello-hybrid")]
 struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
     renderer: gpu::Renderer,
 }
 
+#[cfg(feature = "vello-hybrid")]
 impl Gpu {
     fn new() -> Result<Self, Box<dyn Error>> {
         // Acquire an offscreen device through the SAME `gpu/` host seam the runner uses — no
         // second wgpu path. The renderer is built lazily on the first `render_offscreen`.
-        #[cfg(feature = "vello-hybrid")]
         {
             let mut ctx = RenderContext::new();
             let dev_id =
@@ -170,17 +172,6 @@ impl Gpu {
             let handle = ctx.devices.remove(dev_id);
             let renderer = gpu::new_renderer(&handle.device, &handle.queue);
             Ok(Gpu { device: handle.device, queue: handle.queue, renderer })
-        }
-        #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
-        {
-            let mut ctx = pollster::block_on(pebbles_gpu::GpuContext::new(&gpu::HostInit::headless().gpu));
-            let dev_id = pollster::block_on(ctx.request_device(None))
-                .map_err(|e| -> Box<dyn Error> { e.to_string().into() })?;
-            let dev = ctx.device(dev_id).ok_or("no compatible GPU device for capture")?;
-            let device = dev.device().clone();
-            let queue = dev.queue().clone();
-            let renderer = pebbles_gpu::Renderer::new(dev, dev_id);
-            Ok(Gpu { device, queue, renderer })
         }
     }
 
@@ -202,7 +193,6 @@ impl Gpu {
         // contain images rasterize correctly (the old bespoke path bound no image textures).
         let [r, g, b, _] = base.components;
         let opaque = Color::new([r, g, b, 1.0]);
-        #[cfg(feature = "vello-hybrid")]
         self.renderer
             .render_offscreen(
                 &self.device,
@@ -214,15 +204,6 @@ impl Gpu {
                 TextureFormat::Rgba8Unorm,
             )
             .map_err(|e| format!("capture render failed: {e}"))?;
-        #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
-        {
-            // One capture = one target; C15 replaces this with `OffscreenRenderer`.
-            let mut targets = pebbles_gpu::FrameTargets::new();
-            let target = pebbles_gpu::RenderTarget::new(&view, TextureFormat::Rgba8Unorm, &mut targets);
-            self.renderer
-                .render(target, scene, &pebbles_gpu::FrameParams::new(opaque))
-                .map_err(|e| format!("capture render failed: {e}"))?;
-        }
 
         // Offset math in `usize` (the `MAX_CAPTURE_DIM` cap already keeps it inside `u32`, but
         // this is the readback that would OOB-panic on a wrapped index — be explicit).
@@ -279,3 +260,27 @@ impl Gpu {
         Ok(out)
     }
 }
+
+/// The wgpu capture path: pebbles-gpu's public headless renderer (C15). One per capture call —
+/// never cached in a static (00 §6 rule 4).
+#[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
+struct Gpu(OffscreenRenderer);
+
+#[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
+impl Gpu {
+    fn new() -> Result<Self, Box<dyn Error>> {
+        Ok(Gpu(OffscreenRenderer::with_init(gpu::HostInit::headless().gpu)?))
+    }
+
+    fn rasterize(&mut self, scene: &Scene, w: u32, h: u32, base: Color) -> Result<Vec<u8>, Box<dyn Error>> {
+        // Force an opaque background, as the hybrid path does.
+        let [r, g, b, _] = base.components;
+        let image = self.0.render_rgba(scene, (w, h), Color::new([r, g, b, 1.0]), 1.0)?;
+        Ok(image.pixels)
+    }
+}
+
+#[cfg(feature = "wgpu")]
+pub use pebbles_gpu::{CaptureError, OffscreenRenderer, RgbaImage};
+#[cfg(feature = "wgpu")]
+const _: () = assert!(MAX_CAPTURE_DIM == OffscreenRenderer::MAX_DIM);

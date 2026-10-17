@@ -24,8 +24,12 @@ mod frame_targets;
 #[allow(unsafe_code)] // bytemuck derives expand to `unsafe impl Pod`; no hand-written unsafe
 mod gpu_types;
 mod init;
+#[cfg(not(target_family = "wasm"))]
+mod offscreen;
 mod prepare;
 mod raster;
+#[cfg(not(target_family = "wasm"))]
+mod readback;
 mod renderer;
 mod stats;
 mod surface;
@@ -36,6 +40,8 @@ pub use context::{DeviceHealth, DeviceId, GpuCaps, GpuContext, GpuDevice};
 pub use error::{AcquireError, CaptureError, GpuError};
 pub use frame_targets::{FrameParams, FrameTargets, RenderTarget};
 pub use init::{GpuInit, GpuPower, HostOs};
+#[cfg(not(target_family = "wasm"))]
+pub use offscreen::{OffscreenRenderer, RgbaImage};
 pub use renderer::Renderer;
 pub use stats::{FrameStats, Unsupported};
 pub use surface::{Acquire, AcquireStatus, FrameAction, RenderSurface, SurfaceFrame, action_for};

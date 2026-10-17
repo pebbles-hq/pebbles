@@ -26,6 +26,9 @@ web-time.workspace = true
 swash.workspace = true
 guillotiere.workspace = true
 
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+pollster.workspace = true
+
 [dev-dependencies]
 pollster.workspace = true
 swash.workspace = true
