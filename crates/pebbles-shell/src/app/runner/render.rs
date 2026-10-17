@@ -5,6 +5,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+use super::gpu_log;
 use crate::gpu::{PresentOutcome, present_frame};
 
 use kurbo::Stroke;
@@ -36,7 +37,12 @@ impl Runner {
     /// lost device hands out invalid resources forever. UI state survives (no remount).
     /// Retries at most once per second. Returns whether a reset ran (the caller re-renders).
     pub(super) fn recover_gpu_if_poisoned(&mut self) -> bool {
-        use pebbles_foundation::log::{Cat, Level, logf};
+        use pebbles_foundation::log::Level;
+        // (web) An async recovery is already in flight.
+        #[cfg(target_family = "wasm")]
+        if self.gpu_pending {
+            return false;
+        }
         // 1. Poisoned?
         let poisoned = self.gpu_reset_requested || self.context.as_ref().is_some_and(|c| c.needs_reset());
         if !poisoned {
@@ -53,12 +59,27 @@ impl Runner {
         // 3. One line per lost device.
         let g = self.gpu_generation;
         for lost in self.context.as_ref().map(|c| c.lost_devices()).unwrap_or_default() {
-            logf(Level::Error, Cat::Gpu, format_args!("GPU device lost (generation={g}, {lost})"));
+            gpu_log(Level::Error, &format!("GPU device lost (generation={g}, {lost})"));
         }
-        // 4–5. Drop every renderer, then a fresh instance/adapter/device pool.
+        // 4. Drop every renderer.
         self.renderers = Vec::new();
-        self.context = Some(pollster::block_on(new_context(&init)));
-        // 6. Recreate the main window's and every secondary window's surface.
+        #[cfg(target_family = "wasm")]
+        {
+            self.start_web_recovery(init, started);
+            false
+        }
+        #[cfg(not(target_family = "wasm"))]
+        {
+            self.rebuild_gpu_native(&init, started);
+            true
+        }
+    }
+
+    /// 08 §6.5 steps 5–7 (native): a fresh context, every window's surface, redraw.
+    #[cfg(not(target_family = "wasm"))]
+    fn rebuild_gpu_native(&mut self, init: &HostInit, started: Instant) {
+        use pebbles_foundation::log::Level;
+        self.context = Some(pollster::block_on(new_context(init)));
         let mut failure: Option<String> = None;
         if let (Some(active), Some(ctx)) = (self.active.as_mut(), self.context.as_mut()) {
             let phys = active.window.inner_size();
@@ -90,27 +111,46 @@ impl Runner {
             self.gpu_reset_failures += 1;
             self.gpu_reset_requested = true;
             let n = self.gpu_reset_failures;
-            logf(
-                Level::Error,
-                Cat::Gpu,
-                format_args!("GPU stack rebuild failed (attempt {n}, retry in 1 s): {error}"),
-            );
+            gpu_log(Level::Error, &format!("GPU stack rebuild failed (attempt {n}, retry in 1 s): {error}"));
         } else {
             self.gpu_reset_failures = 0;
             self.gpu_generation += 1;
             let ms = started.elapsed().as_millis();
-            logf(
-                Level::Warn,
-                Cat::Gpu,
-                format_args!("GPU stack rebuilt (generation={}, {ms} ms)", self.gpu_generation),
-            );
+            gpu_log(Level::Warn, &format!("GPU stack rebuilt (generation={}, {ms} ms)", self.gpu_generation));
         }
-        // 7. Redraw everything (renderers are rebuilt lazily on the first frame).
         self.request_redraw();
         for w in self.windows.values() {
             w.window.request_redraw();
         }
-        true
+    }
+
+    /// 08 §6.6 (web): never block the browser thread — rebuild on a `spawn_local` task and hand
+    /// the result back through the event-loop proxy (`SurfaceReady` / `GpuRecoveryFailed`).
+    #[cfg(target_family = "wasm")]
+    fn start_web_recovery(&mut self, init: HostInit, started: Instant) {
+        use pebbles_foundation::log::Level;
+        let window = self.active.take().map(|a| a.window).or_else(|| self.recovery_window.take());
+        let (Some(window), Some(proxy)) = (window, self.proxy.clone()) else {
+            gpu_log(
+                Level::Error,
+                "GPU stack rebuild failed (attempt 1, retry in 1 s): no window or event-loop proxy",
+            );
+            self.gpu_reset_requested = true;
+            return;
+        };
+        self.gpu_pending = true;
+        self.context = None;
+        self.recovery_started = Some(started);
+        let phys = window.inner_size();
+        let (w, h) = (phys.width.max(1), phys.height.max(1));
+        wasm_bindgen_futures::spawn_local(async move {
+            let mut context = new_context(&init).await;
+            let event = match context.create_surface(window.clone(), w, h).await {
+                Ok(surface) => PebblesUserEvent::SurfaceReady { context, surface, window },
+                Err(e) => PebblesUserEvent::GpuRecoveryFailed { window, error: e.to_string() },
+            };
+            let _ = proxy.send_event(event);
+        });
     }
 
     pub(super) fn render(&mut self) {
@@ -380,7 +420,9 @@ impl Runner {
     /// renderers and GPU context).
     pub(super) fn render_window(&mut self, w: &mut WindowRuntime) {
         // NOTE: `w` is detached from `self.windows` during dispatch, so a reset
-        // here cannot refresh its surface in the map — recreate it directly.
+        // here cannot refresh its surface in the map — recreate it directly (native only:
+        // the web rebuild is async, 08 §6.6).
+        #[cfg(not(target_family = "wasm"))]
         if self.recover_gpu_if_poisoned() {
             let phys = w.window.inner_size();
             if let Ok(surface) = pollster::block_on(self.context.as_mut().unwrap().create_surface(

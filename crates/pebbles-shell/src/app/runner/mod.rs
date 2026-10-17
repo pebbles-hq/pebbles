@@ -121,6 +121,8 @@ pub(crate) enum PebblesUserEvent {
     /// (web) The browser URL changed (Back/Forward/popstate) — the router already
     /// updated its location; wake to re-render at the new route.
     RouteChanged,
+    /// (web) An async GPU recovery could not rebuild the context or surface (08 §6.6).
+    GpuRecoveryFailed { window: Arc<Window>, error: String },
 }
 
 /// The live window + its GPU surface.
@@ -213,6 +215,12 @@ pub(super) struct Runner {
     gpu_reset_requested: bool,
     /// 1 at startup, +1 per rebuilt GPU context (logged with every loss/rebuild line).
     gpu_generation: u64,
+    /// (web) The window whose surface a failed async recovery released; the retry uses it.
+    #[cfg(target_family = "wasm")]
+    recovery_window: Option<Arc<Window>>,
+    /// (web) When the in-flight async recovery started (None at startup).
+    #[cfg(target_family = "wasm")]
+    recovery_started: Option<Instant>,
     active: Option<ActiveWindow>,
     /// AccessKit platform bridge for the main window (accessibility tree + focus).
     a11y: Option<crate::a11y::Bridge>,
@@ -304,6 +312,10 @@ impl Runner {
             gpu_reset_failures: 0,
             gpu_reset_requested: false,
             gpu_generation: 1,
+            #[cfg(target_family = "wasm")]
+            recovery_window: None,
+            #[cfg(target_family = "wasm")]
+            recovery_started: None,
             active: None,
             a11y: None,
             ui: Ui::new(),
@@ -679,6 +691,36 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             PebblesUserEvent::SurfaceReady { context, surface, window } => {
                 self.context = Some(context);
                 self.on_gpu_ready(window, surface);
+                // After an async recovery (not the first bring-up): bump the generation, log.
+                #[cfg(target_family = "wasm")]
+                if let Some(started) = self.recovery_started.take() {
+                    self.gpu_generation += 1;
+                    self.gpu_reset_failures = 0;
+                    let line = format!(
+                        "GPU stack rebuilt (generation={}, {} ms)",
+                        self.gpu_generation,
+                        started.elapsed().as_millis()
+                    );
+                    gpu_log(pebbles_foundation::log::Level::Warn, &line);
+                }
+            }
+            PebblesUserEvent::GpuRecoveryFailed { window, error } => {
+                #[cfg(target_family = "wasm")]
+                {
+                    self.gpu_pending = false;
+                    self.recovery_started = None;
+                    self.recovery_window = Some(window);
+                    self.gpu_reset_requested = true;
+                    self.gpu_reset_failures += 1;
+                    self.gpu_retry_at = Some(Instant::now() + Duration::from_secs(1));
+                    let line = format!(
+                        "GPU stack rebuild failed (attempt {}, retry in 1 s): {error}",
+                        self.gpu_reset_failures
+                    );
+                    gpu_log(pebbles_foundation::log::Level::Error, &line);
+                }
+                #[cfg(not(target_family = "wasm"))]
+                let _ = (window, error);
             }
             // (web) The hidden-input IME bridge queued edit intents; drain them into
             // the focused editor. Never sent off wasm.
@@ -1179,6 +1221,11 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             match self.gpu_retry_at {
                 Some(t) if t > Instant::now() => event_loop.set_control_flow(ControlFlow::WaitUntil(t)),
                 _ => {
+                    // (web) A failed async recovery left no active window to redraw.
+                    #[cfg(target_family = "wasm")]
+                    if self.active.is_none() && !self.gpu_pending {
+                        self.recover_gpu_if_poisoned();
+                    }
                     self.request_redraw();
                     for w in self.windows.values() {
                         w.window.request_redraw();
@@ -1219,4 +1266,21 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(10)));
         }
     }
+}
+
+/// Log one GPU recovery line (11 §4.1). On wasm `pebbles_foundation::log` does not echo, so
+/// the line also goes to the browser console (C20 step 3b).
+pub(super) fn gpu_log(level: pebbles_foundation::log::Level, line: &str) {
+    use pebbles_foundation::log::{Cat, Level, logf};
+    logf(level, Cat::Gpu, format_args!("{line}"));
+    #[cfg(target_family = "wasm")]
+    {
+        let value = wasm_bindgen::JsValue::from_str(line);
+        match level {
+            Level::Error => web_sys::console::error_1(&value),
+            _ => web_sys::console::warn_1(&value),
+        }
+    }
+    #[cfg(not(target_family = "wasm"))]
+    let _ = Level::Error;
 }
