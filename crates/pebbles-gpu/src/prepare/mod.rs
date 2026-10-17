@@ -225,6 +225,9 @@ impl Walk<'_> {
                     }
                     let path = shape.to_path(TOL);
                     let outcome = stroke::expand(&path, style, xf, &mut self.tess.stroke_ctx);
+                    if let Some(kind) = outcome.dash_fallback {
+                        self.stats.record(kind);
+                    }
                     if outcome.drew {
                         let k = self.alpha();
                         let premul = color::premul_scaled(color, outcome.alpha * k);

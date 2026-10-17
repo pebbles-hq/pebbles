@@ -35,11 +35,15 @@ pub enum Unsupported {
     GlyphContent,
     /// Unknown pixel format or byte length ≠ size; image skipped.
     ImageMalformed,
+    /// Dash pattern with a negative entry or a period `<= 0`: stroked solid.
+    DashDegenerate,
+    /// More than `MAX_DASH_SEGMENTS` dashes: stroked solid with alpha × duty cycle.
+    DashCountCapped,
 }
 
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
-    pub const COUNT: usize = 15;
+    pub const COUNT: usize = 17;
     /// Every variant, in discriminant order.
     pub const ALL: [Unsupported; Self::COUNT] = [
         Self::NonRectClip,
@@ -57,6 +61,8 @@ impl Unsupported {
         Self::UnknownOp,
         Self::GlyphContent,
         Self::ImageMalformed,
+        Self::DashDegenerate,
+        Self::DashCountCapped,
     ];
 
     /// The variant's 11 §4.2 key, used in logs and stats dumps.
@@ -77,6 +83,8 @@ impl Unsupported {
             Self::UnknownOp => "unknown-op",
             Self::GlyphContent => "glyph-content-unsupported",
             Self::ImageMalformed => "image-malformed",
+            Self::DashDegenerate => "dash-pattern-degenerate",
+            Self::DashCountCapped => "dash-count-capped",
         }
     }
 }
