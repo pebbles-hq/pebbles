@@ -10,6 +10,7 @@ pub(crate) use pebbles_gpu::{FrameParams, FrameTargets, GpuContext, GpuInit, Ren
 mod capture;
 mod clip;
 mod color;
+mod gpu_color;
 mod images;
 mod order;
 mod targets;
