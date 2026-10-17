@@ -96,6 +96,8 @@ fn spawn_watchdog(watch: Arc<Watch>, dir: PathBuf, info: RunInfo) {
 }
 
 fn run(args: Args) -> ExitCode {
+    // Deterministic widget scenes: animations jump to their end state (as capture does).
+    pebbles_core::set_prefers_reduced_motion(true);
     let opts = RunOptions {
         reference: args.reference,
         smoke: args.smoke,
