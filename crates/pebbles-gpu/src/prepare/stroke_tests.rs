@@ -7,6 +7,9 @@ use crate::prepare::tessellate::PathTessellator;
 use crate::stats::FrameStats;
 use kurbo::{Affine, Cap, Point};
 
+/// A target large enough that no test stroke is width-clamped.
+const BIG: kurbo::Rect = kurbo::Rect::new(-1e4, -1e4, 1e4, 1e4);
+
 fn path() -> BezPath {
     BezPath::from_vec(vec![PathEl::MoveTo(Point::new(0.0, 0.0)), PathEl::LineTo(Point::new(10.0, 0.0))])
 }
@@ -14,7 +17,7 @@ fn path() -> BezPath {
 fn run_path(path: &BezPath, style: &Stroke, transform: Affine) -> (FramePlan, StrokeOutcome) {
     let mut plan = FramePlan::default();
     let mut tess = PathTessellator::default();
-    let outcome = expand(path, style, transform, &mut tess.stroke_ctx);
+    let outcome = expand(path, style, transform, BIG, &mut tess.stroke_ctx);
     if outcome.drew {
         let color = premul_scaled(peniko::Color::BLACK, outcome.alpha);
         tess.fill_stroke_outline(&mut plan, &mut FrameStats::default(), transform, color)
@@ -134,7 +137,7 @@ fn negative_dash_strokes_solid() {
     let degenerate = DashPlan::Solid { alpha: 1.0, kind: Unsupported::DashDegenerate };
     assert_eq!(plan_dashes(&style, &line(100.0), 1.0), degenerate);
     let mut ctx = kurbo::StrokeCtx::default();
-    let outcome = expand(&line(100.0), &style, Affine::IDENTITY, &mut ctx);
+    let outcome = expand(&line(100.0), &style, Affine::IDENTITY, BIG, &mut ctx);
     assert_eq!(outcome.dash_fallback, Some(Unsupported::DashDegenerate));
     assert_eq!(pieces(&ctx), 1, "solid");
 }
@@ -171,7 +174,7 @@ fn normal_dashes_unchanged() {
     let style = dashed(&[6.0, 3.0]);
     assert_eq!(plan_dashes(&style, &line(100.0), 1.0), DashPlan::Dashed);
     let mut ctx = kurbo::StrokeCtx::default();
-    let outcome = expand(&line(100.0), &style, Affine::IDENTITY, &mut ctx);
+    let outcome = expand(&line(100.0), &style, Affine::IDENTITY, BIG, &mut ctx);
     assert_eq!(outcome.dash_fallback, None);
     assert!(pieces(&ctx) >= 10, "{} pieces", pieces(&ctx));
     // Identical to kurbo's own dashing of the unmodified style.
@@ -202,4 +205,51 @@ fn odd_pattern_period_doubles() {
         plan_dashes(&style, &line(1500.0), 1.0),
         DashPlan::Solid { alpha: 0.5, kind: Unsupported::DashCountCapped }
     );
+}
+
+// ---- S04: stroke width clamp ----
+
+#[test]
+fn huge_width_still_covers_target() {
+    // A line 10 000 px right of a 100×100 target, width 1e12 (round caps: covers everything).
+    let far = BezPath::from_vec(vec![
+        PathEl::MoveTo(Point::new(10_100.0, 50.0)),
+        PathEl::LineTo(Point::new(10_200.0, 50.0)),
+    ]);
+    let mut scene = pebbles_render::paint::Scene::new();
+    pebbles_render::paint::Painter::new(&mut scene).stroke(
+        &Stroke::new(1e12),
+        Affine::IDENTITY,
+        peniko::Color::BLACK,
+        None,
+        &far,
+    );
+    let (plan, stats) = crate::prepare::test_util::prepare_scene(&scene, 100, 100);
+    assert_eq!(stats.unsupported[Unsupported::StrokeWidthClamped as usize], 1);
+    for corner in [(0.0, 0.0), (100.0, 0.0), (0.0, 100.0), (100.0, 100.0)] {
+        assert!(crate::prepare::test_util::covers(&plan, Point::new(corner.0, corner.1)), "{corner:?}");
+    }
+    assert!(plan.solid_vertices.len() < 10_000, "{} vertices", plan.solid_vertices.len());
+}
+
+#[test]
+fn normal_width_is_unchanged() {
+    let style = Stroke::new(2.0);
+    let (_, stats) = prepare_stroke(&style, &line(100.0));
+    assert_eq!(stats.unsupported[Unsupported::StrokeWidthClamped as usize], 0);
+    assert_eq!(stats.fallbacks, 0);
+    let target = kurbo::Rect::new(0.0, 0.0, 100.0, 100.0);
+    let mut ctx = kurbo::StrokeCtx::default();
+    let outcome = expand(&line(100.0), &style, Affine::IDENTITY, target, &mut ctx);
+    assert!(!outcome.width_clamped);
+    let mut direct = kurbo::StrokeCtx::default();
+    let opts = kurbo::StrokeOpts::default();
+    kurbo::stroke_with(
+        line(100.0).elements().iter().copied(),
+        &style,
+        &opts,
+        STROKE_TOLERANCE_PX,
+        &mut direct,
+    );
+    assert_eq!(ctx.output(), direct.output());
 }

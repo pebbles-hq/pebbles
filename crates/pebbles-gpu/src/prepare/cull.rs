@@ -38,7 +38,7 @@ pub(crate) fn blurred_bounds(rect: Rect, std_dev: f64, m: Affine) -> Rect {
 }
 
 /// The scissor as an f64 rect.
-fn scissor_rect(s: ScissorRect) -> Rect {
+pub(crate) fn scissor_rect(s: ScissorRect) -> Rect {
     Rect::new(f64::from(s.x0), f64::from(s.y0), f64::from(s.x1), f64::from(s.y1))
 }
 

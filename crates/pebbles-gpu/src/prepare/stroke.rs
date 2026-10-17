@@ -72,6 +72,29 @@ pub(crate) fn plan_dashes(style: &Stroke, path: &BezPath, s: f64) -> DashPlan {
     DashPlan::Dashed
 }
 
+/// (σmax, σmin) of the linear part of `t`.
+pub(crate) fn singular_values(t: &Affine) -> (f64, f64) {
+    let [a, b, c, d, _, _] = t.as_coeffs();
+    let s = a * a + b * b + c * c + d * d;
+    let det = a * d - b * c;
+    let root = (s * s - 4.0 * det * det).max(0.0).sqrt();
+    (((s + root) / 2.0).sqrt(), ((s - root) / 2.0).max(0.0).sqrt())
+}
+
+/// Largest LOCAL half-width that can still change coverage inside `target` (11 §2.4).
+pub(crate) fn max_useful_half_width(path: &BezPath, t: &Affine, target: kurbo::Rect) -> Option<f64> {
+    let first = path.elements().iter().find_map(|el| match *el {
+        PathEl::MoveTo(p) => Some(p),
+        _ => None,
+    })?;
+    let q = *t * first;
+    let dx = (target.x0 - q.x).max(0.0).max(q.x - target.x1);
+    let dy = (target.y0 - q.y).max(0.0).max(q.y - target.y1);
+    let reach = target.width().hypot(target.height()) + dx.hypot(dy);
+    let (_, s_min) = singular_values(t);
+    (s_min > 1e-9).then(|| reach / s_min)
+}
+
 /// The result of expanding a stroke in local space.
 pub(crate) struct StrokeOutcome {
     /// Fold this factor into the premultiplied brush color (1.0 unless a hairline).
@@ -80,26 +103,37 @@ pub(crate) struct StrokeOutcome {
     pub drew: bool,
     /// The dash guard's fallback, if it fired (the caller records it).
     pub dash_fallback: Option<Unsupported>,
+    /// The width was clamped to `2 · max_useful_half_width` (the caller records it).
+    pub width_clamped: bool,
 }
 
 /// Expand `path`'s stroke in **local** space into `ctx.output()`. Width, dashes, joins and
 /// caps are interpreted in the path's own space (02 §6.3); the caller fill-tessellates the
 /// outline under `transform` (`PathTessellator::fill_stroke_outline`) and folds `alpha` into
-/// the color.
+/// the color. `target` (device px, the target ∩ the current clip) bounds pathological widths
+/// (11 §2.4).
 pub(crate) fn expand(
     path: &BezPath,
     style: &Stroke,
     transform: Affine,
+    target: kurbo::Rect,
     ctx: &mut kurbo::StrokeCtx,
 ) -> StrokeOutcome {
+    // Width clamp (S04): a half-width beyond `h_max` cannot change coverage inside `target`.
+    let h_max = max_useful_half_width(path, &transform, target);
+    let width_clamped = h_max.is_some_and(|h| style.width / 2.0 > h);
+    let width = match h_max {
+        Some(h) if width_clamped => 2.0 * h,
+        _ => style.width,
+    };
     // Device width = the geometric mean under non-uniform scale (02 §5.5).
-    let wd = style.width * transform.determinant().abs().sqrt();
-    if !style.width.is_finite() || style.width <= 0.0 {
-        return StrokeOutcome { alpha: 1.0, drew: false, dash_fallback: None };
+    let wd = width * transform.determinant().abs().sqrt();
+    if !width.is_finite() || width <= 0.0 {
+        return StrokeOutcome { alpha: 1.0, drew: false, dash_fallback: None, width_clamped };
     }
     // Hairline rule: stroke at exactly 1 device px and fold the width into alpha.
     let (local_width, mut alpha) =
-        if wd > 0.0 && wd < 1.0 { (style.width / wd, to_f32(wd).unwrap_or(0.0)) } else { (style.width, 1.0) };
+        if wd > 0.0 && wd < 1.0 { (width / wd, to_f32(wd).unwrap_or(0.0)) } else { (width, 1.0) };
     let s = transform.spectral_norm().max(1e-6);
     let mut style_adj = style.clone();
     style_adj.width = local_width;
@@ -116,7 +150,7 @@ pub(crate) fn expand(
         STROKE_TOLERANCE_PX / s,
         ctx,
     );
-    StrokeOutcome { alpha, drew: true, dash_fallback }
+    StrokeOutcome { alpha, drew: true, dash_fallback, width_clamped }
 }
 
 #[cfg(test)]

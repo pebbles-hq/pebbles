@@ -39,11 +39,13 @@ pub enum Unsupported {
     DashDegenerate,
     /// More than `MAX_DASH_SEGMENTS` dashes: stroked solid with alpha × duty cycle.
     DashCountCapped,
+    /// Stroke wider than any visible effect: width clamped to `2 · max_useful_half_width`.
+    StrokeWidthClamped,
 }
 
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
-    pub const COUNT: usize = 17;
+    pub const COUNT: usize = 18;
     /// Every variant, in discriminant order.
     pub const ALL: [Unsupported; Self::COUNT] = [
         Self::NonRectClip,
@@ -63,6 +65,7 @@ impl Unsupported {
         Self::ImageMalformed,
         Self::DashDegenerate,
         Self::DashCountCapped,
+        Self::StrokeWidthClamped,
     ];
 
     /// The variant's 11 §4.2 key, used in logs and stats dumps.
@@ -85,6 +88,7 @@ impl Unsupported {
             Self::ImageMalformed => "image-malformed",
             Self::DashDegenerate => "dash-pattern-degenerate",
             Self::DashCountCapped => "dash-count-capped",
+            Self::StrokeWidthClamped => "stroke-width-clamped",
         }
     }
 }

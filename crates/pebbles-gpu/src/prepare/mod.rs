@@ -224,7 +224,11 @@ impl Walk<'_> {
                         continue;
                     }
                     let path = shape.to_path(TOL);
-                    let outcome = stroke::expand(&path, style, xf, &mut self.tess.stroke_ctx);
+                    let target = cull::scissor_rect(self.clips.current().scissor);
+                    let outcome = stroke::expand(&path, style, xf, target, &mut self.tess.stroke_ctx);
+                    if outcome.width_clamped {
+                        self.stats.record(Unsupported::StrokeWidthClamped);
+                    }
                     if let Some(kind) = outcome.dash_fallback {
                         self.stats.record(kind);
                     }
