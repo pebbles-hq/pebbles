@@ -114,6 +114,9 @@ pub(crate) struct ImageRequest {
 pub(crate) struct PrepareStats {
     pub ops: u32,
     pub culled: u32,
+    /// Ops culled because their device bounds miss the active scissor (R04; debug builds).
+    #[cfg(debug_assertions)]
+    pub culled_ops: u32,
     pub fast_rects: u32,
     pub tess_calls: u32,
 }

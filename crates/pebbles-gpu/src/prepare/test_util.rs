@@ -31,7 +31,6 @@ pub(crate) fn cmd_kinds(plan: &FramePlan) -> Vec<&'static str> {
 }
 
 /// Bounding box of the solid vertex arena (`Rect::ZERO` when empty).
-#[allow(dead_code)] // first caller: R04 (`huge_rect_is_clamped`)
 pub(crate) fn solid_bbox(plan: &FramePlan) -> Rect {
     let mut it = plan.solid_vertices.iter().map(|v| Point::new(f64::from(v.pos[0]), f64::from(v.pos[1])));
     let Some(first) = it.next() else { return Rect::ZERO };
@@ -39,7 +38,6 @@ pub(crate) fn solid_bbox(plan: &FramePlan) -> Rect {
 }
 
 /// Whether `p` lies inside any solid triangle (barycentric sign test, edges inclusive).
-#[allow(dead_code)] // first caller: R03 (`even_odd_donut_has_a_hole`)
 pub(crate) fn covers(plan: &FramePlan, p: Point) -> bool {
     let v = |i: u32| {
         let pos = plan.solid_vertices[i as usize].pos;

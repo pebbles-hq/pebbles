@@ -1,6 +1,6 @@
 //! Prepare: walk the shared display list into an ordered [`FramePlan`] on the CPU (no device).
 
-use kurbo::Affine;
+use kurbo::{Affine, Shape};
 
 use pebbles_render::paint::Scene;
 use pebbles_render::paint::display_list::Op;
@@ -10,6 +10,7 @@ use crate::stats::{FrameStats, Unsupported};
 
 mod clip;
 pub(crate) mod color;
+mod cull;
 mod glyphs;
 mod hygiene;
 mod images;
@@ -114,6 +115,19 @@ impl Walk<'_> {
         false
     }
 
+    /// Whether device bounds `b` miss the active scissor; counts the culled op (ORD-7).
+    fn culled(&mut self, b: kurbo::Rect) -> bool {
+        if !cull::is_outside(b, self.clips.current().scissor) {
+            return false;
+        }
+        self.plan.stats.culled += 1;
+        #[cfg(debug_assertions)]
+        {
+            self.plan.stats.culled_ops += 1;
+        }
+        true
+    }
+
     /// Group alpha for the current draw; records `LayerAlpha` when it folds a fraction.
     fn alpha(&mut self) -> f32 {
         let a = self.layers.group_alpha();
@@ -144,7 +158,10 @@ impl Walk<'_> {
                         self.skip_non_finite();
                         continue;
                     }
-                    if hygiene::geometry_is_empty(shape) || self.hidden() {
+                    if hygiene::geometry_is_empty(shape)
+                        || self.hidden()
+                        || self.culled(cull::device_bounds(shape, xf, None))
+                    {
                         continue;
                     }
                     let color = match brush {
@@ -161,10 +178,16 @@ impl Walk<'_> {
                     if self.vertex_budget_spent() {
                         continue;
                     }
-                    let path = shape.to_path(TOL);
                     let premul = color::premul_scaled(color, self.alpha());
-                    let els = path.elements().iter().copied();
-                    let fill = self.tess.fill(self.plan, self.stats, els, xf, *style, premul);
+                    let scissor = self.clips.current().scissor;
+                    let fill = if let Some(r) = cull::clamped_rect(shape, xf, scissor) {
+                        let els = r.path_elements(TOL);
+                        self.tess.fill(self.plan, self.stats, els, Affine::IDENTITY, *style, premul)
+                    } else {
+                        let path = shape.to_path(TOL);
+                        let els = path.elements().iter().copied();
+                        self.tess.fill(self.plan, self.stats, els, xf, *style, premul)
+                    };
                     self.plan.stats.tess_calls += 1;
                     if let Some(indices) = fill {
                         self.push(DrawCmd::Solid { indices, clip: self.clips.current() }, idx);
@@ -180,7 +203,10 @@ impl Walk<'_> {
                         self.skip_non_finite();
                         continue;
                     }
-                    if style.width == 0.0 || self.hidden() {
+                    if style.width == 0.0
+                        || self.hidden()
+                        || self.culled(cull::device_bounds(shape, xf, Some(style)))
+                    {
                         continue;
                     }
                     let color = match brush {
@@ -284,6 +310,9 @@ impl Walk<'_> {
                         self.skip_non_finite();
                         continue;
                     }
+                    if self.culled(cull::image_bounds(image.image.width, image.image.height, xf)) {
+                        continue;
+                    }
                     let s = &image.sampler;
                     if s.x_extend != peniko::Extend::Pad || s.y_extend != peniko::Extend::Pad {
                         self.stats.record(Unsupported::ImageExtend);
@@ -299,6 +328,9 @@ impl Walk<'_> {
                     let xf = outer * *transform;
                     if !xf.is_finite() || !rect.is_finite() || !radius.is_finite() || !std_dev.is_finite() {
                         self.skip_non_finite();
+                        continue;
+                    }
+                    if self.culled(cull::blurred_bounds(*rect, *std_dev, xf)) {
                         continue;
                     }
                     let k = self.alpha();
