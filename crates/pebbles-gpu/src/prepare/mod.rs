@@ -11,6 +11,7 @@ use crate::stats::{FrameStats, Unsupported};
 mod clip;
 pub(crate) mod color;
 mod glyphs;
+mod hygiene;
 mod images;
 mod layer;
 pub(crate) mod num;
@@ -22,6 +23,8 @@ mod shadows;
 mod snapshot_tests;
 mod stroke;
 mod tessellate;
+#[cfg(test)]
+mod test_util;
 
 pub(crate) use plan::{DrawCmd, FramePlan, ScissorRect};
 
@@ -91,15 +94,13 @@ struct Walk<'a> {
     out_of_vertices: bool,
 }
 
-fn finite_affine(xf: Affine) -> bool {
-    xf.as_coeffs().iter().all(|c| c.is_finite())
-}
-
-fn finite_rect(b: kurbo::Rect) -> bool {
-    [b.x0, b.y0, b.x1, b.y1].iter().all(|v| v.is_finite())
-}
-
 impl Walk<'_> {
+    /// Skip an op with non-finite input (02 §6.1): counted and recorded, never repaired.
+    fn skip_non_finite(&mut self) {
+        self.stats.non_finite_skipped += 1;
+        self.stats.record(Unsupported::NonFinite);
+    }
+
     /// Whether draws at the current position are hidden (culled clip or skipped layer).
     /// Counts culled ops.
     fn hidden(&mut self) -> bool {
@@ -138,10 +139,14 @@ impl Walk<'_> {
             self.plan.stats.ops += 1;
             match op {
                 Op::Fill { style, transform, brush, shape, .. } => {
-                    if self.hidden() {
+                    let xf = outer * *transform;
+                    if !xf.is_finite() || !hygiene::geometry_is_finite(shape) {
+                        self.skip_non_finite();
                         continue;
                     }
-                    let xf = outer * *transform;
+                    if hygiene::geometry_is_empty(shape) || self.hidden() {
+                        continue;
+                    }
                     let color = match brush {
                         peniko::Brush::Solid(c) => *c,
                         peniko::Brush::Gradient(_) => {
@@ -153,10 +158,6 @@ impl Walk<'_> {
                             continue;
                         }
                     };
-                    if !finite_affine(xf) || !finite_rect(shape.bounding_box()) {
-                        self.stats.record(Unsupported::NonFinite);
-                        continue;
-                    }
                     if self.vertex_budget_spent() {
                         continue;
                     }
@@ -177,10 +178,18 @@ impl Walk<'_> {
                     }
                 }
                 Op::Stroke { style, transform, brush, shape, .. } => {
-                    if self.hidden() {
+                    let xf = outer * *transform;
+                    if !xf.is_finite()
+                        || !hygiene::geometry_is_finite(shape)
+                        || !style.is_finite()
+                        || style.width < 0.0
+                    {
+                        self.skip_non_finite();
                         continue;
                     }
-                    let xf = outer * *transform;
+                    if style.width == 0.0 || self.hidden() {
+                        continue;
+                    }
                     let color = match brush {
                         peniko::Brush::Solid(c) => *c,
                         peniko::Brush::Gradient(_) => {
@@ -192,10 +201,6 @@ impl Walk<'_> {
                             continue;
                         }
                     };
-                    if !finite_affine(xf) || !finite_rect(shape.bounding_box()) || !style.width.is_finite() {
-                        self.stats.record(Unsupported::NonFinite);
-                        continue;
-                    }
                     if self.vertex_budget_spent() {
                         continue;
                     }
@@ -215,9 +220,18 @@ impl Walk<'_> {
                     }
                 }
                 Op::PushLayer { transform, clip, alpha, blend, .. } => {
+                    let xf = outer * *transform;
+                    if !xf.is_finite() || !hygiene::geometry_is_finite(clip) {
+                        // Keep the layer (stack balance) with an empty clip: its content is culled.
+                        self.skip_non_finite();
+                        let scissor = self.clips.current().scissor;
+                        self.clips.push(clip::ClipDecision { kind: clip::ClipKind::Cull, scissor });
+                        self.layers.push(1.0, false);
+                        continue;
+                    }
                     // Every layer's clip is pushed — including alpha < 1 or a non-default blend
                     // (defect D06's "layer clip lost").
-                    let decision = clip::classify_clip(clip, outer * *transform, &self.clips.current());
+                    let decision = clip::classify_clip(clip, xf, &self.clips.current());
                     if decision.kind == clip::ClipKind::Bounds && !self.layers.is_skipped() {
                         self.stats.record(Unsupported::NonRectClip);
                     }
@@ -252,8 +266,8 @@ impl Walk<'_> {
                         }
                     };
                     let xf = outer * *transform;
-                    if !finite_affine(xf) || !font_size.is_finite() {
-                        self.stats.record(Unsupported::NonFinite);
+                    if !xf.is_finite() || !font_size.is_finite() {
+                        self.skip_non_finite();
                         continue;
                     }
                     let k = self.alpha();
@@ -263,7 +277,12 @@ impl Walk<'_> {
                     self.push(DrawCmd::Glyphs { glyphs: range, clip: self.clips.current() }, idx);
                 }
                 Op::Fragment { transform, ops, .. } => {
-                    self.emit(ops, outer * transform.unwrap_or(Affine::IDENTITY));
+                    let xf = outer * transform.unwrap_or(Affine::IDENTITY);
+                    if !xf.is_finite() {
+                        self.skip_non_finite();
+                        continue;
+                    }
+                    self.emit(ops, xf);
                 }
                 Op::Image { image, transform, .. } => {
                     // Zero-size images are skipped silently in both walks (image_uploads aligns on this).
@@ -271,8 +290,8 @@ impl Walk<'_> {
                         continue;
                     }
                     let xf = outer * *transform;
-                    if !finite_affine(xf) {
-                        self.stats.record(Unsupported::NonFinite);
+                    if !xf.is_finite() {
+                        self.skip_non_finite();
                         continue;
                     }
                     let s = &image.sampler;
@@ -288,12 +307,8 @@ impl Walk<'_> {
                         continue;
                     }
                     let xf = outer * *transform;
-                    if !finite_affine(xf)
-                        || !finite_rect(*rect)
-                        || !radius.is_finite()
-                        || !std_dev.is_finite()
-                    {
-                        self.stats.record(Unsupported::NonFinite);
+                    if !xf.is_finite() || !rect.is_finite() || !radius.is_finite() || !std_dev.is_finite() {
+                        self.skip_non_finite();
                         continue;
                     }
                     let k = self.alpha();

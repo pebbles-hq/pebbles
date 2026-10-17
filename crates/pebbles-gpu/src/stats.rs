@@ -153,6 +153,8 @@ pub struct FrameStats {
     pub fallbacks: u32,
     /// Fallbacks per kind, indexed by `Unsupported as usize`.
     pub unsupported: [u32; Unsupported::COUNT],
+    /// Ops skipped for non-finite input (02 §6 input hygiene).
+    pub non_finite_skipped: u32,
 }
 
 impl FrameStats {
@@ -186,6 +188,7 @@ impl Default for FrameStats {
             image_evictions: 0,
             fallbacks: 0,
             unsupported: [0; Unsupported::COUNT],
+            non_finite_skipped: 0,
         }
     }
 }
