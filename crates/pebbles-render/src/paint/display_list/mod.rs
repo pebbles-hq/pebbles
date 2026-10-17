@@ -194,4 +194,25 @@ mod tests {
         assert_eq!(elements_of(&Geometry::from_shape(&circle)), circle.to_path(TOL).elements().to_vec());
         assert_eq!(elements_of(&Geometry::from_shape(&path)), path.to_path(TOL).elements().to_vec());
     }
+
+    /// C04: `Op::Glyphs` carries no weight; variable weight travels only in normalized coords.
+    #[test]
+    fn glyph_op_has_no_weight_field() {
+        let font = peniko::FontData::new(peniko::Blob::from(vec![0u8; 4]), 0);
+        let mut scene = Scene::new();
+        Painter::new(&mut scene).draw_glyphs(
+            &font,
+            16.0,
+            &[1 << 13],
+            &peniko::Brush::Solid(Color::BLACK),
+            Affine::IDENTITY,
+            None,
+            Fill::NonZero,
+            std::iter::once(Glyph { id: 1, x: 0.0, y: 0.0 }),
+        );
+        let Some(Op::Glyphs { font_size, normalized_coords, .. }) = scene.ops().first() else {
+            panic!("expected a glyph op");
+        };
+        assert_eq!((*font_size, normalized_coords.as_slice()), (16.0, [1 << 13].as_slice()));
+    }
 }

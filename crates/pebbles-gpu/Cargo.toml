@@ -28,6 +28,7 @@ guillotiere.workspace = true
 
 [dev-dependencies]
 pollster.workspace = true
+swash.workspace = true
 
 [lints]
 workspace = true

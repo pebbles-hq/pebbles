@@ -123,12 +123,11 @@ pub enum Op {
     },
     /// A shaped glyph run. `font` carries the bytes (`Blob` + face index); renderers
     /// rasterize from it directly (DR-07). Variable-font axes travel as
-    /// `normalized_coords`; `font_weight` is a transitional field removed by C04.
+    /// `normalized_coords` (weight included).
     #[non_exhaustive]
     Glyphs {
         font: FontData,
         font_size: f32,
-        font_weight: u16,
         normalized_coords: Vec<NormalizedCoord>,
         brush: Brush,
         transform: Affine,

@@ -137,7 +137,6 @@ impl<'a> Painter<'a> {
         &mut self,
         font: &FontData,
         font_size: f32,
-        font_weight: u16,
         normalized_coords: &[NormalizedCoord],
         brush: &Brush,
         transform: Affine,
@@ -148,7 +147,6 @@ impl<'a> Painter<'a> {
         self.scene.push(Op::Glyphs {
             font: font.clone(),
             font_size,
-            font_weight,
             normalized_coords: normalized_coords.to_vec(),
             brush: brush.clone(),
             transform,

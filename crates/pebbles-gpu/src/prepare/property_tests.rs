@@ -49,7 +49,6 @@ fn random_scene(rng: &mut XorShift64) -> Scene {
             5 => p.draw_glyphs(
                 &font,
                 super::num::to_f32(rng.range_f64(8.0, 48.0)).unwrap_or(0.0),
-                400,
                 &[],
                 &peniko::Brush::Solid(color(rng)),
                 Affine::IDENTITY,

@@ -377,7 +377,6 @@ mod tests {
         p.draw_glyphs(
             &font,
             32.0,
-            400,
             &[],
             &Brush::Solid(Color::BLACK),
             Affine::IDENTITY,
@@ -402,7 +401,6 @@ mod tests {
         p.draw_glyphs(
             &font,
             32.0,
-            400,
             &[],
             &Brush::Solid(Color::BLACK),
             Affine::IDENTITY,
@@ -462,7 +460,6 @@ mod tests {
         p.draw_glyphs(
             &font,
             32.0,
-            400,
             &[],
             &Brush::Solid(Color::BLACK),
             Affine::IDENTITY,
@@ -635,7 +632,6 @@ mod tests {
         Painter::new(&mut scene).draw_glyphs(
             &font,
             16.0,
-            400,
             &[],
             &Brush::Gradient(gradient()),
             Affine::IDENTITY,

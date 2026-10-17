@@ -153,7 +153,6 @@ fn dialog_scrim_hides_page_text() {
     p.draw_glyphs(
         &font,
         24.0,
-        400,
         &[],
         &Brush::Solid(Color::BLACK),
         Affine::IDENTITY,
@@ -323,7 +322,6 @@ fn clipped_text_then_shadow_elsewhere() {
     p.draw_glyphs(
         &font,
         24.0,
-        400,
         &[],
         &Brush::Solid(Color::BLACK),
         Affine::IDENTITY,
@@ -362,7 +360,6 @@ fn steady_state_frames_create_nothing() {
     p.draw_glyphs(
         &font,
         20.0,
-        400,
         &[],
         &Brush::Solid(Color::BLACK),
         Affine::IDENTITY,
@@ -477,7 +474,6 @@ fn glyphs_survive_500_frames() {
         Painter::new(&mut scene).draw_glyphs(
             &font,
             16.0,
-            400,
             &[],
             &Brush::Solid(Color::BLACK),
             Affine::IDENTITY,
@@ -501,6 +497,46 @@ fn glyphs_survive_500_frames() {
             }
         }
     }
+}
+
+/// C04: weight travels only in normalized coords — "HHHH" at 32 px renders bolder at wght 700
+/// than at wght 400 (bundled Inter Variable). Inter's 'H' advance barely varies with weight
+/// (23.78 → 23.91 px at 32 px, per swash and skrifa), so the run is not > 2 px wider as the card
+/// assumed; the assertion is on ink (thicker stems) and a non-narrower run instead.
+#[test]
+#[ignore = "gpu"]
+fn bold_run_is_wider_than_regular() {
+    let Some((device, queue, mut renderer)) = setup("bold_run_is_wider_than_regular") else { return };
+    let bytes = pebbles_render::fonts::builtin_fonts()[0].1;
+    let font = peniko::FontData::new(peniko::Blob::from(bytes.to_vec()), 0);
+    let f = swash::FontRef::from_index(bytes, 0).expect("Inter parses");
+    let h = f.charmap().map('H');
+    let ink = |renderer: &mut Renderer, weight: f32| -> (u32, u64) {
+        let coords: Vec<i16> =
+            f.variations().normalized_coords([(swash::tag_from_str_lossy("wght"), weight)]).collect();
+        let advance = f.glyph_metrics(&coords).scale(32.0).advance_width(h);
+        let mut scene = Scene::new();
+        Painter::new(&mut scene).draw_glyphs(
+            &font,
+            32.0,
+            &coords,
+            &Brush::Solid(Color::BLACK),
+            Affine::IDENTITY,
+            None,
+            Fill::NonZero,
+            (0..4).map(|i| Glyph { id: u32::from(h), x: 4.0 + advance * i as f32, y: 40.0 }),
+        );
+        let rgba = render_scene(&device, &queue, renderer, &scene, (200, 56), Color::WHITE);
+        let cols: Vec<u32> =
+            (0..200).filter(|&x| (0..56).any(|y| !is_white(pixel(&rgba, 200, x, y)))).collect();
+        let width = cols.last().map_or(0, |last| last - cols[0] + 1);
+        let coverage = rgba.as_chunks::<4>().0.iter().map(|p| u64::from(255 - p[0])).sum();
+        (width, coverage)
+    };
+    let (regular_w, regular_ink) = ink(&mut renderer, 400.0);
+    let (bold_w, bold_ink) = ink(&mut renderer, 700.0);
+    assert!(bold_w >= regular_w, "bold run {bold_w} px narrower than regular {regular_w} px");
+    assert!(bold_ink * 10 > regular_ink * 13, "bold ink {bold_ink} not > 1.3 × regular {regular_ink}");
 }
 
 /// Copy a texture's rows (padded to 256 bytes) into an unpadded byte buffer.
