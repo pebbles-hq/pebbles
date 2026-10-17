@@ -3091,6 +3091,7 @@ dependencies = [
  "guillotiere",
  "kurbo",
  "lyon_tessellation",
+ "naga",
  "pebbles-foundation",
  "pebbles-render",
  "peniko",

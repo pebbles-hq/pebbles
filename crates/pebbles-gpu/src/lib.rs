@@ -33,6 +33,7 @@ mod raster;
 #[cfg(not(target_family = "wasm"))]
 mod readback;
 mod renderer;
+mod shaders;
 mod stats;
 mod surface;
 #[cfg(test)]

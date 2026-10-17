@@ -54,19 +54,18 @@ pub(crate) struct ShaderModules {
 
 impl ShaderModules {
     pub(crate) fn new(device: &wgpu::Device) -> Self {
-        let module = |label: &str, body: &'static str| {
+        let module = |label: &str, source: &'static str| {
             device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some(label),
-                source: wgpu::ShaderSource::Wgsl(
-                    format!("{}\n{}", include_str!("../../shaders/prelude.wgsl"), body).into(),
-                ),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
             })
         };
+        use crate::shaders;
         Self {
-            solid: module("pebbles.gpu.shader.solid", include_str!("../../shaders/solid.wgsl")),
-            glyph: module("pebbles.gpu.shader.glyph", include_str!("../../shaders/glyph.wgsl")),
-            image: module("pebbles.gpu.shader.image", include_str!("../../shaders/image.wgsl")),
-            shadow: module("pebbles.gpu.shader.shadow", include_str!("../../shaders/shadow.wgsl")),
+            solid: module("pebbles.gpu.shader.solid", shaders::SOLID),
+            glyph: module("pebbles.gpu.shader.glyph", shaders::GLYPH),
+            image: module("pebbles.gpu.shader.image", shaders::IMAGE),
+            shadow: module("pebbles.gpu.shader.shadow", shaders::SHADOW),
         }
     }
 

@@ -31,6 +31,8 @@ pollster.workspace = true
 
 [dev-dependencies]
 pollster.workspace = true
+# V02: validate every shader and translate it to GLSL ES 300 (WebGL2) in CPU tests.
+naga = { version = "29.0.4", features = ["wgsl-in", "glsl-out", "hlsl-out", "msl-out"] }
 swash.workspace = true
 
 [lints]
