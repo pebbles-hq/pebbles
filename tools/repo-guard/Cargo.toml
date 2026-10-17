@@ -1,0 +1,10 @@
+[package]
+name = "repo-guard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Repository invariants for the wgpu migration (manifest features, dependency placement, forbidden names). Tests only."
+
+[lints]
+workspace = true
