@@ -54,9 +54,9 @@ pebbles-gpu = { path = "crates/pebbles-gpu", version = "0.0.1" }
 # vocabulary (DR-01). `vello`, `vello_hybrid` and `vello_common` serve ONLY the
 # transitional `vello-hybrid` backend (the transitional smoke reference) and are deleted at Phase 7
 # of the wgpu migration; the hybrid host still uses `vello::util` for surface plumbing.
-vello = { version = "0.10", default-features = false }
+vello = { version = "0.11", default-features = false }
 vello_hybrid = { version = "0.2", default-features = false }
-vello_common = { version = "0.2", default-features = false }
+vello_common = { version = "0.3", default-features = false }
 peniko = "0.6"
 kurbo = "0.13"
 parley = "0.11"
@@ -73,7 +73,7 @@ swash = "0.2.10"
 guillotiere = "0.7"
 
 # --- windowing / gpu (shell only) ---
-wgpu = "29"
+wgpu = "30"
 winit = "0.30"
 raw-window-handle = "0.6"
 pollster = "1"
