@@ -3652,6 +3652,7 @@ dependencies = [
  "pebbles-core",
  "pebbles-foundation",
  "pebbles-gpu",
+ "pebbles-icons",
  "pebbles-render",
  "pebbles-testing",
  "pebbles-widgets",

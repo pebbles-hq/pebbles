@@ -23,6 +23,7 @@ pebbles-core = { workspace = true, features = ["vello-hybrid"] }
 pebbles-widgets = { workspace = true, features = ["vello-hybrid"] }
 pebbles-testing = { workspace = true, features = ["vello-hybrid"] }
 pebbles-gpu.workspace = true
+pebbles-icons.workspace = true   # icon corpus cases (prim/icons)
 vello_hybrid = { workspace = true, features = ["wgpu", "text"] }   # transitional smoke renderer; deleted at Phase 7 (V43)
 wgpu.workspace = true
 pollster.workspace = true

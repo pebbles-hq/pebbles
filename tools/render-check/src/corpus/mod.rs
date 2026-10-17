@@ -2,21 +2,25 @@
 
 use pebbles_render::paint::{Painter, kurbo, peniko};
 
-use crate::case::{Case, Category, Slice, ops};
+use crate::case::Case;
+
+pub mod clip;
+pub mod prim;
+pub mod stroke;
+pub mod xform;
 
 /// Every case, in family order.
 pub fn all() -> Vec<Case> {
     let mut out = Vec::new();
-    out.extend(smoke());
+    out.extend(prim::cases());
+    out.extend(stroke::cases());
+    out.extend(xform::cases());
+    out.extend(clip::cases());
     out
 }
 
-/// The V01 rect: `#3366FF` over `(8,8)-(56,56)` on white, 64×64.
-fn smoke() -> Vec<Case> {
-    vec![ops("smoke/solid_rect", Category::Exact, Slice::P1, 64, 64, solid_rect)]
-}
-
-/// `smoke/solid_rect`.
+/// The V01 rect (`#3366FF` over (8,8)–(56,56), 64×64 on white). No longer a registered
+/// case (V20 removed the `smoke` family); the GPU smoke tests of V13/V14 still draw it.
 pub fn solid_rect(p: &mut Painter<'_>) {
     p.fill(
         peniko::Fill::NonZero,
@@ -25,4 +29,50 @@ pub fn solid_rect(p: &mut Painter<'_>) {
         None,
         &kurbo::Rect::new(8.0, 8.0, 56.0, 56.0),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+    use crate::case::Expect;
+
+    fn valid_card(id: &str) -> bool {
+        let b = id.as_bytes();
+        b.len() == 3 && b"CRLTMKPSV".contains(&b[0]) && b[1].is_ascii_digit() && b[2].is_ascii_digit()
+    }
+
+    #[test]
+    fn corpus_names_unique_and_valid() {
+        let families = ["prim", "stroke", "xform", "clip"];
+        let mut seen = HashSet::new();
+        for c in all() {
+            assert!(seen.insert(c.name.clone()), "duplicate {}", c.name);
+            assert!(
+                c.name
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'/'),
+                "bad chars in {}",
+                c.name
+            );
+            assert_eq!(c.name.matches('/').count(), 1, "{}", c.name);
+            let family = c.name.split('/').next().unwrap_or_default();
+            assert!(families.contains(&family), "{}: family is not a corpus module", c.name);
+            if let Expect::Xfail { until, .. } = c.expect {
+                assert!(valid_card(until), "{}: xfail card `{until}`", c.name);
+            }
+        }
+    }
+
+    #[test]
+    fn corpus_v1_counts() {
+        let all = all();
+        let n = |f: &str| all.iter().filter(|c| c.name.starts_with(f)).count();
+        assert!(n("prim/") >= 15, "prim/ {}", n("prim/"));
+        assert!(n("stroke/") >= 50, "stroke/ {}", n("stroke/"));
+        assert!(n("xform/") >= 7, "xform/ {}", n("xform/"));
+        assert!(n("clip/") >= 7, "clip/ {}", n("clip/"));
+        assert!(!all.iter().any(|c| c.name.starts_with("smoke/")), "the smoke family is removed");
+    }
 }
