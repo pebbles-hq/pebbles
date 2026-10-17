@@ -47,8 +47,7 @@ Each part is an idea we admired, brought to Rust:
   themed default design and live light/dark.
 - **Rendering** — GPU 2D rendering on **[Vello](https://vello.dev)** and the rest of the
   pure-Rust Linebender stack (kurbo · peniko · parley) — no platform toolkit underneath.
-  Two interchangeable backends ship: a low-power **Vello Hybrid** default and a
-  GPU-compute **Vello** opt-in for vector-heavy work (see [Render backends](#render-backends)).
+  A low-power **Vello Hybrid** backend is the default; the first-party **wgpu** renderer is opt-in while it completes its gates (see [Render backends](#render-backends)).
 
 We expect to keep picking — more good ideas, added over time.
 
@@ -109,11 +108,11 @@ cargo install --path crates/pebbles-cli   # or: cargo install --git <this repo> 
 
 pebbles create hello                      # a runnable desktop app
 pebbles create --template widget my-thing # a reusable widget package
-pebbles create hello --renderer vello     # default the app to the Vello backend
+pebbles create hello --renderer wgpu      # default the app to the first-party wgpu renderer
 pebbles create --list                     # the available templates
 
 cd hello && pebbles run                   # rich logs; hot-restarts on save
-pebbles run --renderer vello              # run on the Vello (GPU-compute) backend
+pebbles run --renderer wgpu               # run on the first-party wgpu renderer (experimental)
 pebbles run -d web                        # build to wasm + open a WebGPU browser
 pebbles build                             # optimized release binary (target/release/<name>)
 pebbles build -d web                      # static wasm bundle → dist/ (deploy anywhere)
@@ -147,18 +146,15 @@ that shape (library + example + headless tests).
 
 ## Render backends
 
-Pebbles rasterizes through the [Vello](https://vello.dev) family — pure-Rust,
-`wgpu`-based 2D renderers — and ships **two**, selected by a Cargo feature. Exactly
-one is compiled at a time.
+During the wgpu migration Pebbles ships two render backends, selected by a Cargo feature.
 
 | Backend | Feature | Technique | Best for |
 |---------|---------|-----------|----------|
 | **Vello Hybrid** *(default)* | `vello-hybrid` | Hybrid CPU-preprocess + GPU raster ("sparse strips") | Every normal app; battery-sensitive targets |
-| **Vello** *(opt-in)* | `vello` | GPU-compute rasterization | Vector-heavy, continuously animated surfaces — design tools, node/graph canvases |
+| **wgpu** *(opt-in, experimental)* | `wgpu` | First-party renderer on wgpu: tessellated paths + 4× MSAA, analytic shapes | Trying the renderer that becomes the default |
 
 **Vello Hybrid is the default** — it's the lower-power path and the right choice for
-typical UIs. Reach for **Vello** when a screen is dominated by large, dynamic vector
-content. Both are pure Rust and share the same paint API, so switching is a build-time
+typical UIs. Both are pure Rust and share the same paint API, so switching is a build-time
 flag — no code changes.
 
 ### Selecting a backend
@@ -167,20 +163,20 @@ With the CLI — the selection applies on **desktop and web**:
 
 ```bash
 pebbles run                              # Vello Hybrid (default)
-pebbles run --renderer vello             # Vello (GPU compute)
-pebbles run -d web --renderer vello      # …on the web (served via Trunk)
-pebbles run --release --renderer vello   # optimized release build
+pebbles run --renderer wgpu              # first-party wgpu renderer
+pebbles run -d web --renderer wgpu       # …on the web (served via Trunk)
+pebbles run --release --renderer wgpu    # optimized release build
 
 pebbles create myapp                     # scaffold defaulting to Vello Hybrid
-pebbles create myapp --renderer vello    # scaffold defaulting to Vello
+pebbles create myapp --renderer wgpu     # scaffold defaulting to the wgpu renderer
 ```
 
 Or directly with Cargo — the backend is a feature on your app crate, so turn the
-default off and pick one (enabling both at once is a compile error, by design):
+default off and pick one (if both are enabled, Vello Hybrid wins during the migration):
 
 ```bash
 cargo run                                          # Vello Hybrid (default)
-cargo run --no-default-features --features vello   # Vello
+cargo run --no-default-features --features wgpu    # first-party wgpu renderer
 ```
 
 `pebbles create` wires both features into the generated `Cargo.toml` and defaults to
@@ -351,8 +347,7 @@ Everything below is built and shown live in the [gallery](https://github.com/peb
   UI thread.
 - **Offscreen capture** — `pebbles_shell::capture::{capture_png, capture_rgba}` renders any
   widget tree to pixels with no window or display server — the export primitive for
-  chart/report export, server-side rendering, and golden-image tests. Desktop + the
-  `vello-hybrid` backend (it needs an offscreen GPU device).
+  chart/report export, server-side rendering, and golden-image tests. Desktop only (it needs an offscreen GPU device).
 - **Accessibility** — an AccessKit bridge (AT-SPI / UIA / VoiceOver): interactive widgets
   publish role/label/value/toggled/disabled + bounds, and keyboard focus is announced.
 - **Theming & styling** — a **reactive** global `Theme` (shadcn light/dark; `toggle_theme()`

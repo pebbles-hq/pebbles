@@ -2,7 +2,7 @@
 //!
 //! The desktop shell: the only crate that touches the GPU and the OS window. It
 //! wires [winit] windowing to a [wgpu] surface and the render backend (Vello
-//! Hybrid by default, classic Vello opt-in), and drives the
+//! Hybrid by default, the first-party wgpu renderer opt-in), and drives the
 //! [`Ui`](pebbles_core::Ui) engine each frame.
 //!
 //! The public surface is deliberately tiny — build a widget tree and hand it to
@@ -18,7 +18,7 @@
 //! ```
 //!
 //! The render backend is chosen by a feature that forwards to `pebbles-render`
-//! (`vello-hybrid` default, `vello` opt-in). The GPU host for each lives in `gpu`;
+//! (`vello-hybrid` default, `wgpu` opt-in). The GPU host for each lives in `gpu`;
 //! the runner's frame loop is backend-agnostic.
 
 // AccessKit has no web adapter yet, so wasm gets a no-op bridge with the same

@@ -3,7 +3,7 @@
 //! The render layer: the tree of [`RenderObject`]s that actually performs layout
 //! and painting. It sits between the widget layer (which builds and reconciles it)
 //! and the GPU shell (which rasterizes the backend-neutral [`Scene`] it paints into —
-//! a `vello::Scene` under the `vello` backend, a retained op-list under `vello-hybrid`).
+//! a recorded display list consumed by whichever backend the build selects).
 //!
 //! ## The box layout protocol
 //! Layout follows Flutter's model exactly: a parent passes each child

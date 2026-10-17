@@ -9,8 +9,7 @@ the widget catalog is [WIDGETS.md](WIDGETS.md).)
 
 Pebbles pairs **Flutter's widget model** (Widget → Element → RenderObject, constraints
 down / sizes up) with **SolidJS-style signals** for state, painted through a swappable
-render backend on wgpu — **Vello Hybrid** (low-power CPU+GPU) by default, classic
-**Vello** (GPU compute) as an opt-in — and shaped by **Parley**. A component is a plain function; reading a signal inside it
+render backend on wgpu — **Vello Hybrid** (low-power CPU+GPU) by default, the first-party **wgpu** renderer as an opt-in during the migration — and shaped by **Parley**. A component is a plain function; reading a signal inside it
 subscribes it; writing a signal re-renders only the components that read it. The shell
 crate owns the winit event loop and feeds input down / draws scenes up.
 
@@ -146,10 +145,7 @@ non-desktop surfaces: `capture.rs` (offscreen widget → PNG/RGBA with no window
 (system-wide global hotkeys, feature-gated), and `web_ime.rs` (the hidden-`<input>`
 IME / soft-keyboard bridge for wasm).
 
-Two render-backend features select the rasterizer, forwarded through the whole
-graph: `vello-hybrid` (low-power CPU+GPU) is the **default**; `vello` (GPU compute,
-heavy vector) is the opt-in (`--no-default-features --features vello`). Exactly one
-is enabled per build.
+Two render-backend features select the rasterizer during the wgpu migration, forwarded through the whole graph: `vello-hybrid` (low-power CPU+GPU) is the **default**; `wgpu` (first-party) is the opt-in (`--no-default-features --features wgpu`). If both are enabled, `vello-hybrid` wins.
 
 The remaining integrations are **default-off cargo features**, forwarded through the
 umbrella crate: `native-menus`, `global-hotkeys` (shell), `image-view` (`ImageView` +

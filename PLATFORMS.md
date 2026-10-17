@@ -91,10 +91,7 @@ that touch the OS in a platform-specific way have restrictions:
 9. **Web async** has no OS threads: `spawn`/`create_resource` run the work inline
    and still deliver the result through the per-frame pump (the reactive contract
    holds). `tokio` (`create_resource_future`) is native-only; on web use `spawn`.
-10. **Offscreen capture** renders headlessly through an **offscreen GPU device**, so it
-    needs the default **`vello-hybrid`** backend — it is unavailable under the classic
-    `vello` opt-in. This is the **first capability gated on the render *backend*** rather
-    than the OS. It is **desktop-only**: the web has no headless device.
+10. **Offscreen capture** renders headlessly through an **offscreen GPU device**, so it is **desktop-only**: the web has no headless device.
 11. **Router / history** is one API on every platform, but only the **web** target syncs
     it to the browser: deep-linkable URLs, working **Back/Forward** buttons, and
     `popstate` fed back in (the history `index` rides in `history.state`). On **desktop**
@@ -196,11 +193,7 @@ rustdoc, so the restriction is visible at the call site too:
 
 ## Troubleshooting the web build
 
-**Blank white page.** Pebbles is **WebGPU-only** — both Vello backends target `wgpu`
-with **no WebGL2 fallback compiled in** (wgpu's `webgl` feature is enabled nowhere), so
-the default **Vello Hybrid** (CPU-preprocess + GPU *raster*) and the `vello` opt-in
-(GPU compute) alike need a WebGPU adapter. A blank canvas almost always means the browser
-could not provide one, so enable it:
+**Blank white page.** Pebbles' default renderer (Vello Hybrid) is **WebGPU-only** — no WebGL2 fallback is compiled into it — so the browser must provide a WebGPU adapter. A blank canvas almost always means it could not, so enable it:
 
 - **Chrome/Edge:** `chrome://flags` → **Unsafe WebGPU Support** = Enabled; on
   **Linux** also enable **Vulkan** — then relaunch. Verify at `chrome://gpu`

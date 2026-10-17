@@ -6,6 +6,13 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Removed — the classic `vello` (GPU-compute) backend
+The opt-in `vello` render backend is gone (the `vello` Cargo feature on every crate, its
+host, and `pebbles run/build/create --renderer vello`). Vello Hybrid stays the default
+while the first-party `wgpu` renderer completes its gates. **Migration:** drop `--features vello`
+and `--renderer vello` (use the default, or `--renderer wgpu` to try the new renderer);
+in apps scaffolded by `pebbles create`, delete the line `vello = ["pebbles/vello"]`.
+
 ### Changed — bundled icon set: Lucide → Tabler (outline + filled)
 The default icon set is now **Tabler Icons** (MIT), replacing Lucide. Tabler is more
 complete and ships **two styles**: ~5100 **outline** glyphs at the `tabler` module root
