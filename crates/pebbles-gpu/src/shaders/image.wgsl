@@ -1,6 +1,5 @@
-@group(0) @binding(0) var<uniform> size: vec4<f32>;
-@group(0) @binding(1) var image: texture_2d<f32>;
-@group(0) @binding(2) var image_sampler: sampler;
+@group(1) @binding(0) var image: texture_2d<f32>;
+@group(1) @binding(1) var image_sampler: sampler;
 
 struct I {
     @location(0) p: vec2<f32>,
@@ -15,7 +14,7 @@ struct O {
 @vertex
 fn vs(i: I) -> O {
     var o: O;
-    o.p = vec4((i.p.x / size.x) * 2.0 - 1.0, 1.0 - (i.p.y / size.y) * 2.0, 0.0, 1.0);
+    o.p = to_clip(i.p);
     o.uv = i.uv;
     return o;
 }

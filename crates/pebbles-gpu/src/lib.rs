@@ -15,6 +15,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::print_stdout, clippy::print_stderr)]
 #![warn(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+#![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable))]
 
 mod context;
 mod error;
@@ -26,6 +27,7 @@ mod init;
 mod prepare;
 mod raster;
 mod renderer;
+mod stats;
 mod surface;
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -34,4 +36,5 @@ pub use context::{DeviceId, GpuCaps, GpuContext, GpuDevice};
 pub use error::{AcquireError, CaptureError, GpuError};
 pub use init::{GpuInit, GpuPower, HostOs};
 pub use renderer::{RenderParams, Renderer};
+pub use stats::FrameStats;
 pub use surface::RenderSurface;

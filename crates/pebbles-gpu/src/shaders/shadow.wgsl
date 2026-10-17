@@ -1,5 +1,3 @@
-@group(0) @binding(0) var<uniform> size: vec4<f32>;
-
 struct I {
     @location(0) rect: vec4<f32>,
     @location(1) color: vec4<f32>,
@@ -18,18 +16,11 @@ struct O {
 @vertex
 fn vs(i: I, @builtin(vertex_index) vi: u32) -> O {
     let extend = 3.0 * i.params.y;
-    var p: vec2<f32>;
-    if vi == 0u {
-        p = vec2<f32>(i.rect.x - extend, i.rect.y - extend);
-    } else if vi == 1u {
-        p = vec2<f32>(i.rect.z + extend, i.rect.y - extend);
-    } else if vi == 2u {
-        p = vec2<f32>(i.rect.x - extend, i.rect.w + extend);
-    } else {
-        p = vec2<f32>(i.rect.z + extend, i.rect.w + extend);
-    }
+    let c = quad_corner(vi);
+    let corner = vec2<f32>(i.rect.x + c.x * (i.rect.z - i.rect.x), i.rect.y + c.y * (i.rect.w - i.rect.y));
+    let p = corner + (c * 2.0 - 1.0) * extend;
     var o: O;
-    o.clip = vec4((p.x / size.x) * 2.0 - 1.0, 1.0 - (p.y / size.y) * 2.0, 0.0, 1.0);
+    o.clip = to_clip(p);
     o.p = p;
     o.rect = i.rect;
     o.radius = i.params.x;

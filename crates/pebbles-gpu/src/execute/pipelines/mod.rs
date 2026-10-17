@@ -1,11 +1,176 @@
-//! Render pipeline builders (one file per pipeline kind).
+//! Pipeline families, the pipeline cache and the once-per-Renderer shader modules.
 
-pub(crate) mod glyph;
-pub(crate) mod image;
-pub(crate) mod shadow;
-pub(crate) mod solid;
+use std::collections::{HashMap, HashSet};
 
-pub(crate) use glyph::{GlyphPipeline, make_glyph_pipeline};
-pub(crate) use image::{ImagePipeline, make_image_pipeline};
-pub(crate) use shadow::{ShadowPipeline, make_shadow_pipeline};
-pub(crate) use solid::make_pipeline;
+use super::resources::bind_groups::BindGroupLayouts;
+use crate::stats::FrameStats;
+
+mod glyph;
+mod image;
+mod shadow;
+mod solid;
+
+/// One render pipeline family. Each maps to exactly one `.wgsl` file (§9.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[allow(dead_code)] // later cards (R10, L30, L13, …) add their pipelines
+pub(crate) enum PipelineKind {
+    Solid,
+    Sdf,
+    Shadow,
+    Glyph,
+    Image,
+    Gradient,
+    CompositeOver,
+    CompositeCompose,
+    CompositeBackdrop,
+    Blit,
+    Vertices,
+    Sprite,
+    Blur,
+    ColorMatrix,
+    Morphology,
+    Projected,
+    ShaderBrush,
+    MaskMultiply,
+}
+
+impl PipelineKind {
+    /// Whether this kind is prewarmed on the first render to a `(format, sample_count)` pair (K3).
+    fn prewarm(self) -> bool {
+        matches!(self, PipelineKind::Solid | PipelineKind::Shadow | PipelineKind::Glyph | PipelineKind::Image)
+    }
+}
+
+/// Identity of one render pipeline (10 §3.2). No depth-stencil state (DR-20).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct PipelineKey {
+    pub kind: PipelineKind,
+    pub color_format: wgpu::TextureFormat,
+    pub sample_count: u32,
+    pub blend: u8,
+    pub variant: u8,
+}
+
+/// The once-per-Renderer shader modules (prelude prepended to each).
+pub(crate) struct ShaderModules {
+    pub solid: wgpu::ShaderModule,
+    pub glyph: wgpu::ShaderModule,
+    pub image: wgpu::ShaderModule,
+    pub shadow: wgpu::ShaderModule,
+}
+
+impl ShaderModules {
+    pub(crate) fn new(device: &wgpu::Device) -> Self {
+        let module = |label: &str, body: &'static str| {
+            device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some(label),
+                source: wgpu::ShaderSource::Wgsl(
+                    format!("{}\n{}", include_str!("../../shaders/prelude.wgsl"), body).into(),
+                ),
+            })
+        };
+        Self {
+            solid: module("pebbles.gpu.shader.solid", include_str!("../../shaders/solid.wgsl")),
+            glyph: module("pebbles.gpu.shader.glyph", include_str!("../../shaders/glyph.wgsl")),
+            image: module("pebbles.gpu.shader.image", include_str!("../../shaders/image.wgsl")),
+            shadow: module("pebbles.gpu.shader.shadow", include_str!("../../shaders/shadow.wgsl")),
+        }
+    }
+
+    pub(crate) fn for_kind(&self, kind: PipelineKind) -> &wgpu::ShaderModule {
+        match kind {
+            PipelineKind::Solid => &self.solid,
+            PipelineKind::Glyph => &self.glyph,
+            PipelineKind::Image => &self.image,
+            PipelineKind::Shadow => &self.shadow,
+            _ => &self.solid,
+        }
+    }
+}
+
+/// Caches render pipelines and per-kind pipeline layouts (10 §3.2).
+pub(crate) struct PipelineCache {
+    layouts: HashMap<PipelineKind, wgpu::PipelineLayout>,
+    pipelines: HashMap<PipelineKey, wgpu::RenderPipeline>,
+    prewarmed: HashSet<(wgpu::TextureFormat, u32)>,
+}
+
+impl PipelineCache {
+    pub(crate) fn new() -> Self {
+        Self { layouts: HashMap::new(), pipelines: HashMap::new(), prewarmed: HashSet::new() }
+    }
+
+    fn layout_for(&mut self, device: &wgpu::Device, kind: PipelineKind, layouts: &BindGroupLayouts) -> wgpu::PipelineLayout {
+        if let Some(l) = self.layouts.get(&kind) {
+            return l.clone();
+        }
+        let bgl = match kind {
+            PipelineKind::Glyph | PipelineKind::Image => {
+                vec![Some(&layouts.globals), Some(&layouts.texture)]
+            }
+            _ => vec![Some(&layouts.globals)],
+        };
+        let l = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("pebbles.gpu.layout.pipeline"),
+            bind_group_layouts: &bgl,
+            immediate_size: 0,
+        });
+        self.layouts.insert(kind, l.clone());
+        l
+    }
+
+    /// Build (and cache) the pipeline for `key` (K2: ensure, then encode).
+    pub(crate) fn ensure(
+        &mut self,
+        device: &wgpu::Device,
+        modules: &ShaderModules,
+        layouts: &BindGroupLayouts,
+        key: PipelineKey,
+        stats: &mut FrameStats,
+    ) {
+        if self.pipelines.contains_key(&key) {
+            return;
+        }
+        let pipeline_layout = self.layout_for(device, key.kind, layouts);
+        let shader = modules.for_kind(key.kind);
+        let pipeline = match key.kind {
+            PipelineKind::Solid => solid::build(device, shader, &pipeline_layout, key),
+            PipelineKind::Shadow => shadow::build(device, shader, &pipeline_layout, key),
+            PipelineKind::Glyph => glyph::build(device, shader, &pipeline_layout, key),
+            PipelineKind::Image => image::build(device, shader, &pipeline_layout, key),
+            // Later cards add their builders; never reached before then.
+            _ => return,
+        };
+        self.pipelines.insert(key, pipeline);
+        stats.pipelines_created += 1;
+    }
+
+    pub(crate) fn get(&self, key: PipelineKey) -> Option<&wgpu::RenderPipeline> {
+        self.pipelines.get(&key)
+    }
+
+    /// Prewarm every Phase 1–3 kind for `(format, sample_count)` on first use (K3).
+    pub(crate) fn prewarm(
+        &mut self,
+        device: &wgpu::Device,
+        modules: &ShaderModules,
+        layouts: &BindGroupLayouts,
+        format: wgpu::TextureFormat,
+        sample_count: u32,
+        stats: &mut FrameStats,
+    ) {
+        if !self.prewarmed.insert((format, sample_count)) {
+            return;
+        }
+        let key = |kind, variant| PipelineKey { kind, color_format: format, sample_count, blend: 0, variant };
+        for k in [
+            key(PipelineKind::Solid, 0),
+            key(PipelineKind::Shadow, 0),
+            key(PipelineKind::Glyph, 0),
+            key(PipelineKind::Glyph, 1),
+            key(PipelineKind::Image, 0),
+        ] {
+            self.ensure(device, modules, layouts, k, stats);
+        }
+    }
+}

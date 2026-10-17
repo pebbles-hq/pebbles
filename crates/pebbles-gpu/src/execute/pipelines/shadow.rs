@@ -2,57 +2,21 @@
 
 use std::mem::size_of;
 
+use super::{PipelineKey, PipelineKind};
 use crate::gpu_types::ShadowInstance;
 
-pub(crate) struct ShadowPipeline {
-    pub(crate) pipeline: wgpu::RenderPipeline,
-    pub(crate) bind_group: wgpu::BindGroup,
-    pub(crate) uniform: wgpu::Buffer,
-}
-
-pub(crate) fn make_shadow_pipeline(
+pub(crate) fn build(
     device: &wgpu::Device,
-    format: wgpu::TextureFormat,
-    sample_count: u32,
-) -> ShadowPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("pebbles.gpu.shader.shadow"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("../../shaders/shadow.wgsl").into()),
-    });
-    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: None,
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        }],
-    });
-    let uniform = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: 16,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
-        layout: &layout,
-        entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniform.as_entire_binding() }],
-    });
-    let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[Some(&layout)],
-        immediate_size: 0,
-    });
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    shader: &wgpu::ShaderModule,
+    layout: &wgpu::PipelineLayout,
+    key: PipelineKey,
+) -> wgpu::RenderPipeline {
+    debug_assert_eq!(key.kind, PipelineKind::Shadow);
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("pebbles.gpu.pipeline.shadow"),
-        layout: Some(&pl),
+        layout: Some(layout),
         vertex: wgpu::VertexState {
-            module: &shader,
+            module: shader,
             entry_point: Some("vs"),
             compilation_options: Default::default(),
             buffers: &[wgpu::VertexBufferLayout {
@@ -78,11 +42,11 @@ pub(crate) fn make_shadow_pipeline(
             }],
         },
         fragment: Some(wgpu::FragmentState {
-            module: &shader,
+            module: shader,
             entry_point: Some("fs"),
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState {
-                format,
+                format: key.color_format,
                 blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
@@ -92,9 +56,8 @@ pub(crate) fn make_shadow_pipeline(
             ..Default::default()
         },
         depth_stencil: None,
-        multisample: wgpu::MultisampleState { count: sample_count, ..Default::default() },
+        multisample: wgpu::MultisampleState { count: key.sample_count, ..Default::default() },
         multiview_mask: None,
         cache: None,
-    });
-    ShadowPipeline { pipeline, bind_group, uniform }
+    })
 }

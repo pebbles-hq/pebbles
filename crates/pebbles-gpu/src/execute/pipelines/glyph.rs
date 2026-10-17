@@ -1,85 +1,24 @@
 //! The glyph pipeline: a textured quad sampling the coverage atlas and tinted by the
-//! run color (premultiplied alpha).
+//! run color (premultiplied alpha). `variant` 0 = mask, 1 = color.
 
 use std::mem::size_of;
 
-use super::super::resources::Atlas;
+use super::{PipelineKey, PipelineKind};
 use crate::gpu_types::GlyphVertex;
 
-pub(crate) struct GlyphPipeline {
-    pub(crate) pipeline: wgpu::RenderPipeline,
-    pub(crate) bind_group: wgpu::BindGroup,
-    pub(crate) uniform: wgpu::Buffer,
-}
-
-pub(crate) fn make_glyph_pipeline(
+pub(crate) fn build(
     device: &wgpu::Device,
-    format: wgpu::TextureFormat,
-    atlas: &Atlas,
-    sample_count: u32,
-    color: bool,
-) -> GlyphPipeline {
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("pebbles.gpu.shader.glyph"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("../../shaders/glyph.wgsl").into()),
-    });
-    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: None,
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 2,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-        ],
-    });
-    let uniform = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: 16,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
-        layout: &layout,
-        entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: uniform.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&atlas.view) },
-            wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&atlas.sampler) },
-        ],
-    });
-    let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[Some(&layout)],
-        immediate_size: 0,
-    });
-    let entry_point = if color { "fs_color" } else { "fs_mask" };
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+    shader: &wgpu::ShaderModule,
+    layout: &wgpu::PipelineLayout,
+    key: PipelineKey,
+) -> wgpu::RenderPipeline {
+    debug_assert_eq!(key.kind, PipelineKind::Glyph);
+    let entry_point = if key.variant == 1 { "fs_color" } else { "fs_mask" };
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("pebbles.gpu.pipeline.glyph"),
-        layout: Some(&pl),
+        layout: Some(layout),
         vertex: wgpu::VertexState {
-            module: &shader,
+            module: shader,
             entry_point: Some("vs"),
             compilation_options: Default::default(),
             buffers: &[wgpu::VertexBufferLayout {
@@ -105,20 +44,19 @@ pub(crate) fn make_glyph_pipeline(
             }],
         },
         fragment: Some(wgpu::FragmentState {
-            module: &shader,
+            module: shader,
             entry_point: Some(entry_point),
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState {
-                format,
+                format: key.color_format,
                 blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
         primitive: Default::default(),
         depth_stencil: None,
-        multisample: wgpu::MultisampleState { count: sample_count, ..Default::default() },
+        multisample: wgpu::MultisampleState { count: key.sample_count, ..Default::default() },
         multiview_mask: None,
         cache: None,
-    });
-    GlyphPipeline { pipeline, bind_group, uniform }
+    })
 }
