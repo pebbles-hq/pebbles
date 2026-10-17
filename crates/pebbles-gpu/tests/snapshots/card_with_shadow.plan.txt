@@ -1,6 +1,7 @@
 # pebbles-gpu FramePlan v1
 target 200x160
-arenas solid_v=28 solid_i=102 shapes=0 shadows=1 glyphs=0 runs=0 images=0 layers=0 gradients=0
+arenas solid_v=24 solid_i=96 shapes=1 shadows=1 glyphs=0 runs=0 images=0 layers=0 gradients=0
 0 Shadows inst=0..1 clip=[0,0,200,160]
-1 Solid idx=0..102 clip=[0,0,200,160]
+1 Shapes inst=0..1 clip=[0,0,200,160]
+2 Solid idx=0..96 clip=[0,0,200,160]
 stats ops=3 culled=0 fast_rects=0 unsupported=-
