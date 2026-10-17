@@ -8,6 +8,7 @@ use pebbles_render::paint::display_list::Op;
 use crate::limits::RendererLimits;
 use crate::stats::{FrameStats, Unsupported};
 
+mod admit;
 mod clip;
 pub(crate) mod color;
 mod cull;
@@ -88,7 +89,6 @@ struct Walk<'a> {
     layers: &'a mut layer::LayerStack,
     tess: &'a mut tessellate::PathTessellator,
     stats: &'a mut FrameStats,
-    #[allow(dead_code)] // first reader: S02's coordinate-range check
     limits: &'a RendererLimits,
     visit: u32,
     vertex_limit: u32,
@@ -96,56 +96,6 @@ struct Walk<'a> {
 }
 
 impl Walk<'_> {
-    /// Skip an op with non-finite input (02 §6.1): counted and recorded, never repaired.
-    fn skip_non_finite(&mut self) {
-        self.stats.non_finite_skipped += 1;
-        self.stats.record(Unsupported::NonFinite);
-    }
-
-    /// Whether draws at the current position are hidden (culled clip or skipped layer).
-    /// Counts culled ops.
-    fn hidden(&mut self) -> bool {
-        if self.layers.is_skipped() {
-            return true;
-        }
-        if self.clips.is_culled() {
-            self.plan.stats.culled += 1;
-            return true;
-        }
-        false
-    }
-
-    /// Whether device bounds `b` miss the active scissor; counts the culled op (ORD-7).
-    fn culled(&mut self, b: kurbo::Rect) -> bool {
-        if !cull::is_outside(b, self.clips.current().scissor) {
-            return false;
-        }
-        self.plan.stats.culled += 1;
-        #[cfg(debug_assertions)]
-        {
-            self.plan.stats.culled_ops += 1;
-        }
-        true
-    }
-
-    /// Group alpha for the current draw; records `LayerAlpha` when it folds a fraction.
-    fn alpha(&mut self) -> f32 {
-        let a = self.layers.group_alpha();
-        if a < 1.0 {
-            self.stats.record(Unsupported::LayerAlpha);
-        }
-        a
-    }
-
-    /// Whether the frame's vertex budget is spent (records `VertexLimit` once per frame).
-    fn vertex_budget_spent(&mut self) -> bool {
-        if !self.out_of_vertices && self.plan.solid_vertices.len() as u64 >= u64::from(self.vertex_limit) {
-            self.out_of_vertices = true;
-            self.stats.record(Unsupported::VertexLimit);
-        }
-        self.out_of_vertices
-    }
-
     fn emit(&mut self, ops: &[Op], outer: Affine) {
         for op in ops {
             self.visit += 1;
@@ -158,23 +108,14 @@ impl Walk<'_> {
                         self.skip_non_finite();
                         continue;
                     }
-                    if hygiene::geometry_is_empty(shape)
+                    if !self.paint_is_sane(brush, xf)
+                        || hygiene::geometry_is_empty(shape)
                         || self.hidden()
                         || self.culled(cull::device_bounds(shape, xf, None))
                     {
                         continue;
                     }
-                    let color = match brush {
-                        peniko::Brush::Solid(c) => *c,
-                        peniko::Brush::Gradient(_) => {
-                            self.stats.record(Unsupported::GradientBrush);
-                            continue;
-                        }
-                        peniko::Brush::Image(_) => {
-                            self.stats.record(Unsupported::ImageBrush);
-                            continue;
-                        }
-                    };
+                    let Some(color) = self.solid_color(brush) else { continue };
                     if self.vertex_budget_spent() {
                         continue;
                     }
@@ -184,7 +125,7 @@ impl Walk<'_> {
                         let els = r.path_elements(TOL);
                         self.tess.fill(self.plan, self.stats, els, Affine::IDENTITY, *style, premul)
                     } else {
-                        let path = shape.to_path(TOL);
+                        let path = shape.to_path(TOL * self.tess.tol_scale);
                         let els = path.elements().iter().copied();
                         self.tess.fill(self.plan, self.stats, els, xf, *style, premul)
                     };
@@ -203,29 +144,26 @@ impl Walk<'_> {
                         self.skip_non_finite();
                         continue;
                     }
-                    if style.width == 0.0
+                    if !self.paint_is_sane(brush, xf)
+                        || style.width == 0.0
                         || self.hidden()
                         || self.culled(cull::device_bounds(shape, xf, Some(style)))
                     {
                         continue;
                     }
-                    let color = match brush {
-                        peniko::Brush::Solid(c) => *c,
-                        peniko::Brush::Gradient(_) => {
-                            self.stats.record(Unsupported::GradientBrush);
-                            continue;
-                        }
-                        peniko::Brush::Image(_) => {
-                            self.stats.record(Unsupported::ImageBrush);
-                            continue;
-                        }
-                    };
+                    let Some(color) = self.solid_color(brush) else { continue };
                     if self.vertex_budget_spent() {
                         continue;
                     }
-                    let path = shape.to_path(TOL);
+                    // Flatten at the scale of the path itself: S04 clamps a pathological width to
+                    // just cover the target, so the width must not coarsen the tolerance.
+                    let path_bounds = cull::device_bounds(shape, xf, None);
+                    let tol_scale = tessellate::tolerance_scale(path_bounds, self.limits.max_coord_px);
+                    self.tess.tol_scale = tol_scale;
+                    let path = shape.to_path(TOL * tol_scale);
                     let target = cull::scissor_rect(self.clips.current().scissor);
-                    let outcome = stroke::expand(&path, style, xf, target, &mut self.tess.stroke_ctx);
+                    let outcome =
+                        stroke::expand(&path, style, xf, target, tol_scale, &mut self.tess.stroke_ctx);
                     if outcome.width_clamped {
                         self.stats.record(Unsupported::StrokeWidthClamped);
                     }
@@ -263,8 +201,12 @@ impl Walk<'_> {
                     if blended && !self.layers.is_skipped() {
                         self.stats.record(Unsupported::LayerBlend);
                     }
-                    // alpha == 0 is exact (nothing visible), so it is skipped without a log.
-                    let alpha = if alpha.is_finite() { alpha.clamp(0.0, 1.0) } else { 1.0 };
+                    // alpha == 0 is exact (nothing visible), so it is skipped without a log; a
+                    // non-finite alpha becomes 0 and is recorded (S02). The layer is always kept.
+                    let (alpha, non_finite) = hygiene::sanitize_layer_alpha(*alpha);
+                    if non_finite {
+                        self.stats.record(Unsupported::NonFinite);
+                    }
                     self.layers.push(alpha, blended || alpha == 0.0);
                 }
                 Op::PopLayer => {
@@ -274,7 +216,12 @@ impl Walk<'_> {
                 }
                 // `glyph_transform` (synthetic oblique) is drawn upright until the outline route (R20).
                 Op::Glyphs { font, font_size, normalized_coords, brush, transform, glyphs, .. } => {
-                    if self.hidden() {
+                    let xf = outer * *transform;
+                    if !xf.is_finite() || !font_size.is_finite() {
+                        self.skip_non_finite();
+                        continue;
+                    }
+                    if !self.paint_is_sane(brush, xf) || self.hidden() {
                         continue;
                     }
                     let base = match brush {
@@ -288,11 +235,6 @@ impl Walk<'_> {
                             continue;
                         }
                     };
-                    let xf = outer * *transform;
-                    if !xf.is_finite() || !font_size.is_finite() {
-                        self.skip_non_finite();
-                        continue;
-                    }
                     let k = self.alpha();
                     let color = color::premul_scaled(base, k);
                     let range =
@@ -308,7 +250,7 @@ impl Walk<'_> {
                     self.emit(ops, xf);
                 }
                 Op::Image { image, transform, .. } => {
-                    // Zero-size images are skipped silently in both walks (image_uploads aligns on this).
+                    // Zero-size images are skipped silently.
                     if image.image.width == 0 || image.image.height == 0 || self.hidden() {
                         continue;
                     }
@@ -317,7 +259,9 @@ impl Walk<'_> {
                         self.skip_non_finite();
                         continue;
                     }
-                    if self.culled(cull::image_bounds(image.image.width, image.image.height, xf)) {
+                    if !self.transform_is_sane(xf)
+                        || self.culled(cull::image_bounds(image.image.width, image.image.height, xf))
+                    {
                         continue;
                     }
                     let s = &image.sampler;
@@ -337,7 +281,11 @@ impl Walk<'_> {
                         self.skip_non_finite();
                         continue;
                     }
-                    if self.culled(cull::blurred_bounds(*rect, *std_dev, xf)) {
+                    if !hygiene::color_is_finite(brush) {
+                        self.skip_non_finite();
+                        continue;
+                    }
+                    if !self.transform_is_sane(xf) || self.culled(cull::blurred_bounds(*rect, *std_dev, xf)) {
                         continue;
                     }
                     let k = self.alpha();

@@ -17,7 +17,7 @@ fn path() -> BezPath {
 fn run_path(path: &BezPath, style: &Stroke, transform: Affine) -> (FramePlan, StrokeOutcome) {
     let mut plan = FramePlan::default();
     let mut tess = PathTessellator::default();
-    let outcome = expand(path, style, transform, BIG, &mut tess.stroke_ctx);
+    let outcome = expand(path, style, transform, BIG, 1.0, &mut tess.stroke_ctx);
     if outcome.drew {
         let color = premul_scaled(peniko::Color::BLACK, outcome.alpha);
         tess.fill_stroke_outline(&mut plan, &mut FrameStats::default(), transform, color)
@@ -137,7 +137,7 @@ fn negative_dash_strokes_solid() {
     let degenerate = DashPlan::Solid { alpha: 1.0, kind: Unsupported::DashDegenerate };
     assert_eq!(plan_dashes(&style, &line(100.0), 1.0), degenerate);
     let mut ctx = kurbo::StrokeCtx::default();
-    let outcome = expand(&line(100.0), &style, Affine::IDENTITY, BIG, &mut ctx);
+    let outcome = expand(&line(100.0), &style, Affine::IDENTITY, BIG, 1.0, &mut ctx);
     assert_eq!(outcome.dash_fallback, Some(Unsupported::DashDegenerate));
     assert_eq!(pieces(&ctx), 1, "solid");
 }
@@ -174,7 +174,7 @@ fn normal_dashes_unchanged() {
     let style = dashed(&[6.0, 3.0]);
     assert_eq!(plan_dashes(&style, &line(100.0), 1.0), DashPlan::Dashed);
     let mut ctx = kurbo::StrokeCtx::default();
-    let outcome = expand(&line(100.0), &style, Affine::IDENTITY, BIG, &mut ctx);
+    let outcome = expand(&line(100.0), &style, Affine::IDENTITY, BIG, 1.0, &mut ctx);
     assert_eq!(outcome.dash_fallback, None);
     assert!(pieces(&ctx) >= 10, "{} pieces", pieces(&ctx));
     // Identical to kurbo's own dashing of the unmodified style.
@@ -240,7 +240,7 @@ fn normal_width_is_unchanged() {
     assert_eq!(stats.fallbacks, 0);
     let target = kurbo::Rect::new(0.0, 0.0, 100.0, 100.0);
     let mut ctx = kurbo::StrokeCtx::default();
-    let outcome = expand(&line(100.0), &style, Affine::IDENTITY, target, &mut ctx);
+    let outcome = expand(&line(100.0), &style, Affine::IDENTITY, target, 1.0, &mut ctx);
     assert!(!outcome.width_clamped);
     let mut direct = kurbo::StrokeCtx::default();
     let opts = kurbo::StrokeOpts::default();

@@ -41,11 +41,13 @@ pub enum Unsupported {
     DashCountCapped,
     /// Stroke wider than any visible effect: width clamped to `2 · max_useful_half_width`.
     StrokeWidthClamped,
+    /// A device coordinate beyond `RendererLimits::max_coord_px` (still tessellated).
+    CoordOutOfRange,
 }
 
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
-    pub const COUNT: usize = 18;
+    pub const COUNT: usize = 19;
     /// Every variant, in discriminant order.
     pub const ALL: [Unsupported; Self::COUNT] = [
         Self::NonRectClip,
@@ -66,6 +68,7 @@ impl Unsupported {
         Self::DashDegenerate,
         Self::DashCountCapped,
         Self::StrokeWidthClamped,
+        Self::CoordOutOfRange,
     ];
 
     /// The variant's 11 §4.2 key, used in logs and stats dumps.
@@ -89,6 +92,7 @@ impl Unsupported {
             Self::DashDegenerate => "dash-pattern-degenerate",
             Self::DashCountCapped => "dash-count-capped",
             Self::StrokeWidthClamped => "stroke-width-clamped",
+            Self::CoordOutOfRange => "coordinate-out-of-range",
         }
     }
 }
@@ -167,6 +171,8 @@ pub struct FrameStats {
     pub unsupported: [u32; Unsupported::COUNT],
     /// Ops skipped for non-finite input (02 §6 input hygiene).
     pub non_finite_skipped: u32,
+    /// Ops skipped silently for a singular transform (11 §2.3).
+    pub degenerate_skipped: u32,
 }
 
 impl FrameStats {
@@ -201,6 +207,7 @@ impl Default for FrameStats {
             fallbacks: 0,
             unsupported: [0; Unsupported::COUNT],
             non_finite_skipped: 0,
+            degenerate_skipped: 0,
         }
     }
 }

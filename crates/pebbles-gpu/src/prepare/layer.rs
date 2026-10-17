@@ -23,6 +23,12 @@ impl LayerStack {
         self.alpha = 1.0;
     }
 
+    /// Open entries (tests: the stack is balanced after a walk).
+    #[cfg(test)]
+    pub(crate) fn depth(&self) -> usize {
+        self.entries.len()
+    }
+
     /// Push a layer; `skip` hides its whole subtree.
     pub(crate) fn push(&mut self, alpha: f32, skip: bool) {
         self.entries.push(Entry { alpha, skip });

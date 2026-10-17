@@ -27,6 +27,22 @@ pub(crate) struct PathTessellator {
     pub stroke_ctx: kurbo::StrokeCtx,
     out: VertexBuffers<SolidVertex, u32>,
     events: Vec<PathEvent>,
+    /// Flattening-tolerance multiplier for the current op: 1.0, or larger for geometry whose
+    /// device bounds exceed `max_coord_px` (see [`tolerance_scale`]).
+    pub tol_scale: f64,
+}
+
+/// Tolerance multiplier for an op with device bounds `b`: 1.0 within `max_coord_px`, else the
+/// factor by which the bounds exceed it. Curves are flattened into O(sqrt(extent / tolerance))
+/// segments, so an out-of-range shape (e.g. a circle of radius 1e30, still drawn per S02) at
+/// the fixed 0.1 px tolerance would ask lyon for ~1e15 vertices and exhaust memory. The visible
+/// part of such a shape is a near-straight edge, so the coarser tolerance does not show.
+/// Kept in `f64`: a ratio past `f32::MAX` (e.g. radius 1.8e308) must still scale fully, or the
+/// path conversion itself (kurbo arcs) explodes.
+pub(crate) fn tolerance_scale(b: kurbo::Rect, max_coord_px: f32) -> f64 {
+    let extent = [b.x0, b.y0, b.x1, b.y1].iter().fold(0.0f64, |m, v| m.max(v.abs()));
+    let ratio = extent / f64::from(max_coord_px.max(1.0));
+    if ratio.is_finite() && ratio > 1.0 { ratio } else { 1.0 }
 }
 
 impl Default for PathTessellator {
@@ -36,6 +52,7 @@ impl Default for PathTessellator {
             stroke_ctx: kurbo::StrokeCtx::default(),
             out: VertexBuffers::new(),
             events: Vec::new(),
+            tol_scale: 1.0,
         }
     }
 }
@@ -136,7 +153,17 @@ impl PathTessellator {
         color: [f32; 4],
     ) -> Option<Range<u32>> {
         let mark = (plan.solid_vertices.len(), plan.solid_indices.len());
-        match self.tessellate(rule, color) {
+        // A coordinate that overflowed the f32 narrowing (or a NaN) is rejected here: lyon only
+        // `debug_assert!`s finite positions (fill.rs:849), so it would panic in debug builds.
+        let result = if self.events.iter().all(event_is_finite) {
+            self.tessellate(rule, color)
+        } else {
+            self.events.clear();
+            Err(TessellationError::UnsupportedParamater(
+                lyon_tessellation::UnsupportedParamater::PositionIsNaN,
+            ))
+        };
+        match result {
             Ok(()) => Some(self.append(plan)),
             Err(_) => {
                 plan.solid_vertices.truncate(mark.0);
@@ -150,7 +177,8 @@ impl PathTessellator {
     fn tessellate(&mut self, rule: peniko::Fill, color: [f32; 4]) -> Result<(), TessellationError> {
         self.out.vertices.clear();
         self.out.indices.clear();
-        let opts = fill_options(rule);
+        let tol = super::num::to_f32(f64::from(FILL_TOLERANCE_PX) * self.tol_scale).unwrap_or(f32::MAX);
+        let opts = fill_options(rule).with_tolerance(tol);
         self.fill.tessellate(
             self.events.drain(..),
             &opts,
@@ -179,3 +207,15 @@ impl FillVertexConstructor<SolidVertex> for SolidVertexCtor {
 #[cfg(test)]
 #[path = "tessellate_tests.rs"]
 mod tests;
+
+/// Every point of a lyon path event is finite.
+fn event_is_finite(e: &PathEvent) -> bool {
+    let ok = |p: Point| p.x.is_finite() && p.y.is_finite();
+    match *e {
+        PathEvent::Begin { at } => ok(at),
+        PathEvent::Line { from, to } => ok(from) && ok(to),
+        PathEvent::Quadratic { from, ctrl, to } => ok(from) && ok(ctrl) && ok(to),
+        PathEvent::Cubic { from, ctrl1, ctrl2, to } => ok(from) && ok(ctrl1) && ok(ctrl2) && ok(to),
+        PathEvent::End { last, first, .. } => ok(last) && ok(first),
+    }
+}

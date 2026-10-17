@@ -89,6 +89,12 @@ impl ClipStack {
         self.current = ScissorRect::full(target);
     }
 
+    /// Open entries (tests: the stack is balanced after a walk).
+    #[cfg(test)]
+    pub(crate) fn depth(&self) -> usize {
+        self.stack.len()
+    }
+
     /// The current clip state (only valid when not culled).
     pub(crate) fn current(&self) -> ClipState {
         ClipState { scissor: self.current }

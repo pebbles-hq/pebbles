@@ -117,6 +117,7 @@ pub(crate) fn expand(
     style: &Stroke,
     transform: Affine,
     target: kurbo::Rect,
+    tol_scale: f64,
     ctx: &mut kurbo::StrokeCtx,
 ) -> StrokeOutcome {
     // Width clamp (S04): a half-width beyond `h_max` cannot change coverage inside `target`.
@@ -147,7 +148,7 @@ pub(crate) fn expand(
         path.elements().iter().copied(),
         &style_adj,
         &kurbo::StrokeOpts::default(),
-        STROKE_TOLERANCE_PX / s,
+        STROKE_TOLERANCE_PX * tol_scale / s,
         ctx,
     );
     StrokeOutcome { alpha, drew: true, dash_fallback, width_clamped }

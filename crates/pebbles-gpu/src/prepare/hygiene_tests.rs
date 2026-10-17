@@ -1,5 +1,5 @@
-//! Input-hygiene tests (02 R02): non-finite input is skipped and counted, empty input is
-//! skipped silently, and the layer stack stays balanced.
+//! Input-hygiene tests (02 R02, 11 S02): non-finite input is skipped and counted, empty and
+//! singular input is skipped silently, and the layer stack stays balanced.
 
 use super::*;
 use crate::prepare::test_util::{cmd_kinds, prepare_scene};
@@ -108,3 +108,6 @@ fn nonfinite_fragment_transform_skips_fragment() {
     p.append(&fragment, None);
     check(&scene, 1, &["triangles"]);
 }
+
+// S02 cases live in their own file (400-line rule) but keep the `prepare::hygiene::tests::` path.
+include!("hygiene_s02_tests.rs");

@@ -47,6 +47,32 @@ pub(crate) fn geometry_is_empty(g: &Geometry) -> bool {
     }
 }
 
+/// Every component of a solid colour is finite.
+pub(crate) fn color_is_finite(c: &peniko::Color) -> bool {
+    c.components.iter().all(|v| v.is_finite())
+}
+
+/// Every component of every gradient stop colour is finite.
+pub(crate) fn stop_colors_are_finite(g: &peniko::Gradient) -> bool {
+    g.stops.iter().all(|s| s.color.components.iter().all(|v| v.is_finite()))
+}
+
+/// The op transform collapses area (a legitimate animation state: skipped silently).
+pub(crate) fn transform_is_singular(t: &kurbo::Affine) -> bool {
+    t.determinant().abs() < 1e-12
+}
+
+/// (sanitized alpha, was_non_finite): NaN/inf → (0.0, true); otherwise clamp to 0..=1.
+pub(crate) fn sanitize_layer_alpha(alpha: f32) -> (f32, bool) {
+    if alpha.is_finite() { (alpha.clamp(0.0, 1.0), false) } else { (0.0, true) }
+}
+
+/// Every corner of `device_bbox` lies within `±limits.max_coord_px`.
+pub(crate) fn coords_in_range(device_bbox: kurbo::Rect, limits: &crate::RendererLimits) -> bool {
+    let m = f64::from(limits.max_coord_px);
+    [device_bbox.x0, device_bbox.y0, device_bbox.x1, device_bbox.y1].iter().all(|v| v.abs() <= m)
+}
+
 #[cfg(test)]
 #[path = "hygiene_tests.rs"]
 mod tests;
