@@ -305,12 +305,14 @@ impl Harness {
     // ----- queries ---------------------------------------------------------
 
     /// Live element count (the reconciled widget tree).
+    #[cfg(debug_assertions)] // pebbles-core exposes the count only in debug builds
     pub fn element_count(&self) -> usize {
         self.ui.element_count()
     }
 
     /// Live render-node count (the layout/paint tree) — the virtualization
     /// tripwire: it must track the viewport, not the content.
+    #[cfg(debug_assertions)] // pebbles-core exposes the count only in debug builds
     pub fn render_node_count(&self) -> usize {
         self.ui.render_node_count()
     }
