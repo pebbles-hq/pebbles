@@ -23,6 +23,7 @@ mod plan;
 #[cfg(test)]
 mod property_tests;
 mod shadows;
+mod shapes;
 #[cfg(test)]
 mod snapshot_tests;
 mod stroke;
@@ -55,6 +56,8 @@ pub(crate) struct PrepareScratch {
     pub clips: clip::ClipStack,
     pub layers: layer::LayerStack,
     pub tess: tessellate::PathTessellator,
+    /// Debug switch (R10): draw Tier A shapes through tessellation instead (tests, render-check).
+    pub sdf_disabled: bool,
 }
 
 /// Walk `scene` in painter's order into `scratch.plan`, recording fallbacks into `stats`.
@@ -79,6 +82,7 @@ pub(crate) fn prepare<'s>(
         visit: 0,
         vertex_limit: input.vertex_limit,
         out_of_vertices: false,
+        sdf: !scratch.sdf_disabled,
     };
     walk.emit(scene.ops(), input.root_transform);
     &scratch.plan
@@ -95,6 +99,8 @@ struct Walk<'a> {
     visit: u32,
     vertex_limit: u32,
     out_of_vertices: bool,
+    /// Tier A analytic shapes enabled (R10).
+    sdf: bool,
 }
 
 impl Walk<'_> {
@@ -123,6 +129,23 @@ impl Walk<'_> {
                         continue;
                     }
                     let premul = color::premul_scaled(color, self.alpha());
+                    // Tier A (R10): an eligible rect / rounded rect / circle is one analytic quad.
+                    if self.sdf
+                        && let Some(mut inst) = shapes::fill_instance(shape, xf, premul)
+                    {
+                        // R04 for Tier A: a sharp-cornered quad is clamped to the scissor (+2 px, so
+                        // its AA edge is unchanged) so huge rects keep f32 precision in the shader.
+                        if inst.outer_radii == [0.0; 4] {
+                            shapes::clamp_outer(&mut inst, cull::scissor_rect(self.clips.current().scissor));
+                        }
+                        let start = num::index_u32(self.plan.shapes.len());
+                        self.plan.shapes.push(inst);
+                        self.push(
+                            DrawCmd::Shapes { instances: start..start + 1, clip: self.clips.current() },
+                            idx,
+                        );
+                        continue;
+                    }
                     let scissor = self.clips.current().scissor;
                     let fill = if let Some(r) = cull::clamped_rect(shape, xf, scissor) {
                         let els = r.path_elements(TOL);

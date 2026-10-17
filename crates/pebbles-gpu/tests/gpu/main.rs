@@ -11,6 +11,7 @@ mod capture;
 mod clip;
 mod color;
 mod gpu_color;
+mod gpu_geometry;
 mod gpu_smoke;
 mod images;
 mod order;

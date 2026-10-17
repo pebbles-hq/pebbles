@@ -9,7 +9,17 @@ use crate::stats::FrameStats;
 
 /// Prepare `scene` into a `w`×`h` target with an identity root transform and fresh stats.
 pub(crate) fn prepare_scene(scene: &Scene, w: u32, h: u32) -> (FramePlan, FrameStats) {
-    let mut scratch = PrepareScratch::default();
+    prepare_scene_with(scene, w, h, true)
+}
+
+/// Like [`prepare_scene`] but with Tier A shapes off: rects and circles go through the tessellated
+/// path (tests of walk/tessellation properties that use a rect as their fixture).
+pub(crate) fn prepare_scene_tessellated(scene: &Scene, w: u32, h: u32) -> (FramePlan, FrameStats) {
+    prepare_scene_with(scene, w, h, false)
+}
+
+fn prepare_scene_with(scene: &Scene, w: u32, h: u32, sdf: bool) -> (FramePlan, FrameStats) {
+    let mut scratch = PrepareScratch { sdf_disabled: !sdf, ..PrepareScratch::default() };
     let mut stats = FrameStats::default();
     let input =
         PrepareInput { target_size: (w, h), root_transform: Affine::IDENTITY, vertex_limit: u32::MAX };
@@ -23,6 +33,7 @@ pub(crate) fn cmd_kinds(plan: &FramePlan) -> Vec<&'static str> {
         .iter()
         .map(|cmd| match cmd {
             DrawCmd::Solid { .. } => "triangles",
+            DrawCmd::Shapes { .. } => "shapes",
             DrawCmd::Shadows { .. } => "shadows",
             DrawCmd::Glyphs { .. } => "glyphs",
             DrawCmd::Images { .. } => "images",

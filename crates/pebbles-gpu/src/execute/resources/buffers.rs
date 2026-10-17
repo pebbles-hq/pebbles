@@ -75,6 +75,7 @@ pub(crate) fn next_capacity(current: u64, needed: u64, max: u64) -> u64 {
 pub(crate) struct FrameArenas {
     pub solid_vertices: GpuArena,
     pub solid_indices: GpuArena,
+    pub shape_instances: GpuArena,
     pub shadow_instances: GpuArena,
     pub glyphs: GpuArena,
     pub images: GpuArena,
@@ -85,6 +86,7 @@ impl FrameArenas {
         Self {
             solid_vertices: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.vertices"),
             solid_indices: GpuArena::new(wgpu::BufferUsages::INDEX, "pebbles.gpu.buffer.indices"),
+            shape_instances: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.shapes"),
             shadow_instances: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.shadows"),
             glyphs: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.glyphs"),
             images: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.images"),

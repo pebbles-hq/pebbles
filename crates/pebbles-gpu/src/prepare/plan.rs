@@ -5,7 +5,7 @@ use peniko::FontData;
 use super::num::{ceil_px, floor_px};
 use crate::execute::resources::atlas_alloc::GlyphKey;
 use crate::execute::resources::image_cache::{ImageKey, SamplerKey};
-use crate::gpu_types::{QuadInstance, ShadowInstance, SolidVertex};
+use crate::gpu_types::{QuadInstance, ShadowInstance, ShapeInstance, SolidVertex};
 
 /// Device-pixel rectangle `[x0, x1) × [y0, y1)`, stored as corners so intersection never
 /// adds (no overflow).
@@ -66,6 +66,8 @@ pub(crate) struct ClipState {
 pub(crate) enum DrawCmd {
     /// Indexed triangles from `solid_indices` (base_vertex is always 0 — indices are pre-rebased).
     Solid { indices: std::ops::Range<u32>, clip: ClipState },
+    /// Instanced analytic rect/rrect/circle shapes from `shapes` (R10, Tier A).
+    Shapes { instances: std::ops::Range<u32>, clip: ClipState },
     /// Instanced shadow quads from `shadows`.
     Shadows { instances: std::ops::Range<u32>, clip: ClipState },
     /// Instanced glyph quads (mask and color, one pipeline) from `glyphs`.
@@ -128,6 +130,7 @@ pub(crate) struct FramePlan {
     // geometry arenas (each uploaded ONCE per frame)
     pub solid_vertices: Vec<SolidVertex>,
     pub solid_indices: Vec<u32>,
+    pub shapes: Vec<ShapeInstance>,
     pub shadows: Vec<ShadowInstance>,
     pub glyph_runs: Vec<GlyphRunInfo>,
     pub glyphs: Vec<GlyphRequest>,
@@ -148,6 +151,7 @@ impl FramePlan {
     pub(crate) fn clear(&mut self) {
         self.solid_vertices.clear();
         self.solid_indices.clear();
+        self.shapes.clear();
         self.shadows.clear();
         self.glyph_runs.clear();
         self.glyphs.clear();
@@ -191,9 +195,10 @@ impl FramePlan {
         let _ = writeln!(out, "target {w}x{h}");
         let _ = writeln!(
             out,
-            "arenas solid_v={} solid_i={} shapes=0 shadows={} glyphs={glyphs} runs={} images={} layers=0 gradients=0",
+            "arenas solid_v={} solid_i={} shapes={} shadows={} glyphs={glyphs} runs={} images={} layers=0 gradients=0",
             self.solid_vertices.len(),
             self.solid_indices.len(),
+            self.shapes.len(),
             self.shadows.len(),
             self.glyph_runs.len(),
             self.images.len(),
@@ -216,6 +221,9 @@ fn format_cmd(cmd: &DrawCmd) -> String {
     match cmd {
         DrawCmd::Solid { indices, clip } => {
             format!("Solid idx={}..{} {}", indices.start, indices.end, clip_str(clip))
+        }
+        DrawCmd::Shapes { instances, clip } => {
+            format!("Shapes inst={}..{} {}", instances.start, instances.end, clip_str(clip))
         }
         DrawCmd::Shadows { instances, clip } => {
             format!("Shadows inst={}..{} {}", instances.start, instances.end, clip_str(clip))
@@ -249,6 +257,11 @@ fn merge(last: &DrawCmd, new: &DrawCmd, images: &[ImageRequest]) -> Option<DrawC
             if ca == cb && a.end == b.start =>
         {
             Some(DrawCmd::Solid { indices: a.start..b.end, clip: *ca })
+        }
+        (DrawCmd::Shapes { instances: a, clip: ca }, DrawCmd::Shapes { instances: b, clip: cb })
+            if ca == cb && a.end == b.start =>
+        {
+            Some(DrawCmd::Shapes { instances: a.start..b.end, clip: *ca })
         }
         (DrawCmd::Shadows { instances: a, clip: ca }, DrawCmd::Shadows { instances: b, clip: cb })
             if ca == cb && a.end == b.start =>

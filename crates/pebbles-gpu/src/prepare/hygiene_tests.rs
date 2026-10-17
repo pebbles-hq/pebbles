@@ -2,7 +2,7 @@
 //! singular input is skipped silently, and the layer stack stays balanced.
 
 use super::*;
-use crate::prepare::test_util::{cmd_kinds, prepare_scene};
+use crate::prepare::test_util::{cmd_kinds, prepare_scene_tessellated};
 use crate::stats::Unsupported;
 use kurbo::{Affine, BezPath, Point, Rect, Stroke};
 use pebbles_render::paint::{Painter, Scene};
@@ -26,7 +26,7 @@ fn stroke_scene(style: &Stroke) -> Scene {
 
 /// Assert the expected skip count (and the matching `non-finite-geometry` records) and kinds.
 fn check(scene: &Scene, skipped: u32, kinds: &[&str]) {
-    let (plan, stats) = prepare_scene(scene, 100, 100);
+    let (plan, stats) = prepare_scene_tessellated(scene, 100, 100);
     assert_eq!(stats.non_finite_skipped, skipped);
     assert_eq!(stats.unsupported[Unsupported::NonFinite as usize], skipped);
     assert_eq!(cmd_kinds(&plan), kinds);
@@ -90,7 +90,7 @@ fn nonfinite_clip_clips_everything_and_stays_balanced() {
     fill(&mut p, Affine::IDENTITY, &Rect::new(10.0, 10.0, 50.0, 50.0));
     p.pop_layer();
     fill(&mut p, Affine::IDENTITY, &Rect::new(10.0, 10.0, 50.0, 50.0));
-    let (plan, _) = prepare_scene(&scene, 100, 100);
+    let (plan, _) = prepare_scene_tessellated(&scene, 100, 100);
     // Only the fill after `pop_layer` produced triangles, under the full-target scissor.
     assert_eq!(plan.cmds.len(), 1);
     let crate::prepare::DrawCmd::Solid { clip, .. } = &plan.cmds[0] else { panic!("{:?}", plan.cmds) };

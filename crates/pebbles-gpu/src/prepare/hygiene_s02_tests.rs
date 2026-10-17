@@ -17,7 +17,7 @@ fn nan_color_skips_op_and_records_non_finite() {
     p.stroke(&Stroke::new(2.0), Affine::IDENTITY, nan, None, &r);
     p.fill(Fill::NonZero, Affine::IDENTITY, &gradient, None, &r);
     p.draw_blurred_rounded_rect(Affine::IDENTITY, r, nan, 4.0, 2.0);
-    let (plan, stats) = prepare_scene(&scene, 100, 100);
+    let (plan, stats) = prepare_scene_tessellated(&scene, 100, 100);
     assert!(plan.cmds.is_empty());
     assert_eq!(stats.non_finite_skipped, 4);
     assert_eq!(stats.unsupported[Unsupported::NonFinite as usize], 4);
@@ -31,7 +31,7 @@ fn singular_transform_skips_silently() {
     let mut p = Painter::new(&mut scene);
     fill(&mut p, Affine::scale_non_uniform(1.0, 0.0), &Rect::new(10.0, 10.0, 50.0, 50.0));
     red_square(&mut p);
-    let (plan, stats) = prepare_scene(&scene, 100, 100);
+    let (plan, stats) = prepare_scene_tessellated(&scene, 100, 100);
     assert_eq!(cmd_kinds(&plan), ["triangles"]);
     assert_eq!(stats.degenerate_skipped, 1);
     assert_eq!(stats.fallbacks, 0, "no key");
@@ -46,7 +46,7 @@ fn nan_layer_alpha_becomes_zero_and_keeps_stack_balanced() {
     red_square(&mut p);
     p.pop_layer();
     red_square(&mut p);
-    let (plan, stats) = prepare_scene(&scene, 100, 100);
+    let (plan, stats) = prepare_scene_tessellated(&scene, 100, 100);
     // Alpha 0 hides the layer's content; the fill after the pop draws at full alpha, unclipped.
     assert_eq!(cmd_kinds(&plan), ["triangles"]);
     let crate::prepare::DrawCmd::Solid { clip, .. } = &plan.cmds[0] else { panic!("{:?}", plan.cmds) };
@@ -60,7 +60,7 @@ fn nan_layer_alpha_becomes_zero_and_keeps_stack_balanced() {
 fn huge_coordinates_record_coord_out_of_range() {
     let mut scene = Scene::new();
     fill(&mut Painter::new(&mut scene), Affine::IDENTITY, &Rect::new(10.0, 10.0, 1e7, 50.0));
-    let (plan, stats) = prepare_scene(&scene, 100, 100);
+    let (plan, stats) = prepare_scene_tessellated(&scene, 100, 100);
     assert_eq!(stats.unsupported[Unsupported::CoordOutOfRange as usize], 1);
     assert_eq!(cmd_kinds(&plan), ["triangles"], "still drawn");
 }
@@ -278,7 +278,7 @@ fn huge_out_of_range_circle_has_bounded_vertices() {
             None,
             &kurbo::Circle::new((100.0, 100.0), radius),
         );
-        let (plan, _) = prepare_scene(&scene, 200, 200);
+        let (plan, _) = prepare_scene_tessellated(&scene, 200, 200);
         assert!(plan.solid_vertices.len() < 20_000, "radius {radius}: {} vertices", plan.solid_vertices.len());
     }
 }

@@ -80,6 +80,19 @@ pub(crate) fn encode(
                 pass.draw_indexed(indices.clone(), 0, 0..1);
                 stats.draw_calls += 1;
             }
+            DrawCmd::Shapes { instances, clip } => {
+                let (Some(pipeline), Some(vb)) = (
+                    renderer.pipelines.get(key(PipelineKind::Sdf, 0)),
+                    renderer.arenas.shape_instances.buffer(),
+                ) else {
+                    continue;
+                };
+                pass.set_pipeline(pipeline);
+                pass.set_vertex_buffer(0, vb.slice(..));
+                state.set_scissor(pass, clip.scissor);
+                pass.draw(0..4, instances.clone());
+                stats.draw_calls += 1;
+            }
             DrawCmd::Shadows { instances, clip } => {
                 let (Some(pipeline), Some(vb)) = (
                     renderer.pipelines.get(key(PipelineKind::Shadow, 0)),

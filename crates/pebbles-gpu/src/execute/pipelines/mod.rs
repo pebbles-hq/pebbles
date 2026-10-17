@@ -7,6 +7,7 @@ use crate::stats::FrameStats;
 
 mod glyph;
 mod image;
+mod sdf;
 mod shadow;
 mod solid;
 
@@ -50,6 +51,7 @@ pub(crate) struct ShaderModules {
     pub glyph: wgpu::ShaderModule,
     pub image: wgpu::ShaderModule,
     pub shadow: wgpu::ShaderModule,
+    pub sdf: wgpu::ShaderModule,
 }
 
 impl ShaderModules {
@@ -66,6 +68,7 @@ impl ShaderModules {
             glyph: module("pebbles.gpu.shader.glyph", shaders::GLYPH),
             image: module("pebbles.gpu.shader.image", shaders::IMAGE),
             shadow: module("pebbles.gpu.shader.shadow", shaders::SHADOW),
+            sdf: module("pebbles.gpu.shader.sdf", shaders::SDF),
         }
     }
 
@@ -75,6 +78,7 @@ impl ShaderModules {
             PipelineKind::Glyph => &self.glyph,
             PipelineKind::Image => &self.image,
             PipelineKind::Shadow => &self.shadow,
+            PipelineKind::Sdf => &self.sdf,
             _ => &self.solid,
         }
     }
@@ -132,6 +136,7 @@ impl PipelineCache {
         let pipeline = match key.kind {
             PipelineKind::Solid => solid::build(device, shader, &pipeline_layout, key),
             PipelineKind::Shadow => shadow::build(device, shader, &pipeline_layout, key),
+            PipelineKind::Sdf => sdf::build(device, shader, &pipeline_layout, key),
             PipelineKind::Glyph => glyph::build(device, shader, &pipeline_layout, key),
             PipelineKind::Image => image::build(device, shader, &pipeline_layout, key),
             // Later cards add their builders; never reached before then.
@@ -162,6 +167,7 @@ impl PipelineCache {
         for k in [
             key(PipelineKind::Solid, 0),
             key(PipelineKind::Shadow, 0),
+            key(PipelineKind::Sdf, 0),
             key(PipelineKind::Glyph, 0),
             key(PipelineKind::Image, 0),
         ] {

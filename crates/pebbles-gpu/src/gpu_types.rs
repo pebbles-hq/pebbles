@@ -53,3 +53,33 @@ pub(crate) struct ShadowInstance {
 const _: () = assert!(size_of::<ShadowInstance>() == 48);
 const _: () = assert!(std::mem::offset_of!(ShadowInstance, color) == 16);
 const _: () = assert!(std::mem::offset_of!(ShadowInstance, params) == 32);
+
+/// Tier A analytic shape (02 §6.4): rect / rounded rect / circle, fill or uniform stroke, as one
+/// instanced quad with SDF coverage. WGSL: five `vec4<f32>` attributes at locations 0–4.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+pub(crate) struct ShapeInstance {
+    /// Device px: x0, y0, x1, y1.
+    pub outer: [f32; 4],
+    /// Device px: top-left, top-right, bottom-right, bottom-left.
+    pub outer_radii: [f32; 4],
+    /// Stroke: inner rect; fill: `[0.0; 4]`.
+    pub inner: [f32; 4],
+    pub inner_radii: [f32; 4],
+    /// Premultiplied sRGB-encoded (02 §3), hairline alpha folded in.
+    pub color: [f32; 4],
+}
+const _: () = assert!(size_of::<ShapeInstance>() == 80);
+
+impl ShapeInstance {
+    pub(crate) const ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4, 4 => Float32x4];
+
+    /// The instance-step vertex buffer layout (stride 80).
+    pub(crate) fn layout() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: size_of::<Self>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &Self::ATTRIBUTES,
+        }
+    }
+}

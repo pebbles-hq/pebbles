@@ -104,6 +104,13 @@ impl Renderer {
         &self.limits
     }
 
+    /// Debug switch (R10): `false` draws rect / rounded-rect / circle fills through the tessellated
+    /// path instead of Tier A analytic quads. Tests and the render-check tool only.
+    #[doc(hidden)]
+    pub fn set_sdf_enabled(&mut self, enabled: bool) {
+        self.scratch.sdf_disabled = !enabled;
+    }
+
     /// The `FrameStats` of the last render.
     pub fn last_stats(&self) -> FrameStats {
         self.stats
@@ -168,6 +175,12 @@ impl Renderer {
             device,
             queue,
             bytemuck::cast_slice(&self.scratch.plan.solid_indices),
+            &mut stats,
+        );
+        self.arenas.shape_instances.upload(
+            device,
+            queue,
+            bytemuck::cast_slice(&self.scratch.plan.shapes),
             &mut stats,
         );
         self.arenas.shadow_instances.upload(
