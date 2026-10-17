@@ -37,16 +37,6 @@ const _: () = assert!(core::mem::offset_of!(QuadInstance, uv) == 24);
 const _: () = assert!(core::mem::offset_of!(QuadInstance, color) == 40);
 const _: () = assert!(core::mem::offset_of!(QuadInstance, layer_kind) == 56);
 
-/// A textured quad vertex: physical-pixel position + source-image UV.
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-pub(crate) struct ImageVertex {
-    pub position: [f32; 2],
-    pub uv: [f32; 2],
-    /// Group alpha × sampler alpha, multiplied into the premultiplied sample (C17).
-    pub opacity: f32,
-}
-
 /// Blurred rounded-rect shadow; instanced strip, quad inflated by 3σ in the vertex shader.
 /// WGSL: `@location(0) rect: vec4<f32>, @location(1) color: vec4<f32>, @location(2) params: vec4<f32>`
 #[repr(C)]

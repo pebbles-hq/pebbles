@@ -77,7 +77,7 @@ pub(crate) struct FrameArenas {
     pub solid_indices: GpuArena,
     pub shadow_instances: GpuArena,
     pub glyphs: GpuArena,
-    pub image_vertices: GpuArena,
+    pub images: GpuArena,
 }
 
 impl FrameArenas {
@@ -87,7 +87,7 @@ impl FrameArenas {
             solid_indices: GpuArena::new(wgpu::BufferUsages::INDEX, "pebbles.gpu.buffer.indices"),
             shadow_instances: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.shadows"),
             glyphs: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.glyphs"),
-            image_vertices: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.image.vertices"),
+            images: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.images"),
         }
     }
 }

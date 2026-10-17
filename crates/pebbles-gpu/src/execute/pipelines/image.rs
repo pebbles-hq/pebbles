@@ -3,7 +3,7 @@
 use std::mem::size_of;
 
 use super::{PipelineKey, PipelineKind};
-use crate::gpu_types::ImageVertex;
+use crate::gpu_types::QuadInstance;
 
 pub(crate) fn build(
     device: &wgpu::Device,
@@ -20,25 +20,9 @@ pub(crate) fn build(
             entry_point: Some("vs"),
             compilation_options: Default::default(),
             buffers: &[wgpu::VertexBufferLayout {
-                array_stride: size_of::<ImageVertex>() as u64,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &[
-                    wgpu::VertexAttribute {
-                        format: wgpu::VertexFormat::Float32x2,
-                        offset: 0,
-                        shader_location: 0,
-                    },
-                    wgpu::VertexAttribute {
-                        format: wgpu::VertexFormat::Float32x2,
-                        offset: 8,
-                        shader_location: 1,
-                    },
-                    wgpu::VertexAttribute {
-                        format: wgpu::VertexFormat::Float32,
-                        offset: 16,
-                        shader_location: 2,
-                    },
-                ],
+                array_stride: size_of::<QuadInstance>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &super::glyph::QUAD_ATTRIBUTES,
             }],
         },
         fragment: Some(wgpu::FragmentState {
@@ -51,7 +35,10 @@ pub(crate) fn build(
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
-        primitive: Default::default(),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleStrip,
+            ..Default::default()
+        },
         depth_stencil: None,
         multisample: wgpu::MultisampleState { count: key.sample_count, ..Default::default() },
         multiview_mask: None,

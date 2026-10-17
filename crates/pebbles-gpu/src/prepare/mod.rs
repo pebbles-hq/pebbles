@@ -22,7 +22,6 @@ mod snapshot_tests;
 mod stroke;
 mod tessellate;
 
-pub(crate) use images::{ImageUpload, image_uploads};
 pub(crate) use plan::{DrawCmd, FramePlan, ScissorRect};
 
 /// Path-flattening tolerance for recorded shapes (logical px) — a local copy, because
@@ -276,8 +275,7 @@ impl Walk<'_> {
                         self.stats.record(Unsupported::ImageExtend);
                     }
                     let k = self.alpha() * s.alpha.clamp(0.0, 1.0);
-                    let index = num::index_u32(self.plan.images.len());
-                    let range = images::image(self.plan, image, xf, index, k);
+                    let range = images::image(self.plan, image, xf, k);
                     self.push(DrawCmd::Images { images: range, clip: self.clips.current() }, idx);
                 }
                 Op::BlurredRect { transform, rect, brush, radius, std_dev, .. } => {

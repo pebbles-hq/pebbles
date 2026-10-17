@@ -1,10 +1,7 @@
 //! One [`Renderer`] per device: the eager resource set (Globals, arenas, layouts, pipeline
 //! cache, glyph atlas).
 
-use std::collections::HashMap;
-
 use kurbo::Affine;
-use wgpu::util::DeviceExt;
 
 use pebbles_render::paint::Scene;
 
@@ -16,6 +13,7 @@ use super::execute::resources::bind_groups::BindGroupLayouts;
 use super::execute::resources::buffers::FrameArenas;
 use super::execute::resources::globals::Globals;
 use super::execute::resources::glyph_atlas::GlyphAtlas;
+use super::execute::resources::image_cache::ImageCache;
 use super::frame_targets::create_msaa;
 use super::gpu_types::QuadInstance;
 use super::prepare::{PrepareInput, PrepareScratch, VERTEX_LIMIT_NO_FULL_INDEX, prepare};
@@ -40,12 +38,11 @@ pub struct Renderer {
     globals_buffer: wgpu::Buffer,
     globals_bg: wgpu::BindGroup,
     pub(crate) arenas: FrameArenas,
-    pub(crate) image_sampler: wgpu::Sampler,
-    pub(crate) image_index_buffer: wgpu::Buffer,
     msaa: Option<(wgpu::TextureFormat, u32, u32, wgpu::Texture)>,
     pub(crate) glyph_atlas: GlyphAtlas,
     pub(crate) glyph_instances: Vec<QuadInstance>,
-    pub(crate) image_cache: HashMap<u64, (wgpu::Texture, wgpu::TextureView, wgpu::BindGroup)>,
+    pub(crate) image_cache: ImageCache,
+    pub(crate) image_instances: Vec<QuadInstance>,
     pub(crate) scratch: PrepareScratch,
     stats: FrameStats,
     warn_once: WarnOnce,
@@ -77,20 +74,6 @@ impl Renderer {
                 }),
             }],
         });
-        let image_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("pebbles.gpu.image.sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-        let image_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("pebbles.gpu.image.indices"),
-            contents: bytemuck::cast_slice(&[0u32, 1, 2, 0, 2, 3]),
-            usage: wgpu::BufferUsages::INDEX,
-        });
         Renderer {
             sample_count: gpu.caps().msaa_samples,
             shaders: ShaderModules::new(device),
@@ -99,12 +82,11 @@ impl Renderer {
             globals_buffer,
             globals_bg,
             arenas: FrameArenas::new(),
-            image_sampler,
-            image_index_buffer,
             msaa: None,
             glyph_atlas,
             glyph_instances: Vec::new(),
-            image_cache: HashMap::new(),
+            image_cache: ImageCache::new(device),
+            image_instances: Vec::new(),
             scratch: PrepareScratch::default(),
             stats: FrameStats::default(),
             warn_once: WarnOnce::default(),
@@ -211,7 +193,8 @@ impl Renderer {
 
         self.pipelines.prewarm(device, &self.shaders, &self.layouts, format, self.sample_count, &mut stats);
         self.glyph_atlas.begin_frame();
-        let frame = resolve_and_upload(self, device, queue, scene, &mut stats);
+        self.image_cache.begin_frame();
+        resolve_and_upload(self, device, queue, &mut stats);
 
         let clear = super::prepare::color::clear_color(base_color);
         let mut encoder = device
@@ -231,12 +214,13 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            encode(self, &frame, &mut pass, format, &mut stats);
+            encode(self, &mut pass, format, &mut stats);
             stats.render_passes += 1;
         }
         queue.submit([encoder.finish()]);
         self.scratch.plan.release_refs();
         self.glyph_atlas.end_frame();
+        self.image_cache.end_frame(&mut stats);
         self.end_frame(&stats);
         self.stats = stats;
         Ok(stats)

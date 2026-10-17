@@ -4,7 +4,8 @@ use peniko::FontData;
 
 use super::num::{ceil_px, floor_px};
 use crate::execute::resources::atlas_alloc::GlyphKey;
-use crate::gpu_types::{ImageVertex, ShadowInstance, SolidVertex};
+use crate::execute::resources::image_cache::{ImageKey, SamplerKey};
+use crate::gpu_types::{QuadInstance, ShadowInstance, SolidVertex};
 
 /// Device-pixel rectangle `[x0, x1) × [y0, y1)`, stored as corners so intersection never
 /// adds (no overflow).
@@ -69,7 +70,7 @@ pub(crate) enum DrawCmd {
     Shadows { instances: std::ops::Range<u32>, clip: ClipState },
     /// Instanced glyph quads (mask and color, one pipeline) from `glyphs`.
     Glyphs { glyphs: std::ops::Range<u32>, clip: ClipState },
-    /// Image quads from `images`; never merges until C13 adds `ImageKey`.
+    /// Instanced image quads from `images`; merges only with the same `ImageKey` + `SamplerKey`.
     Images { images: std::ops::Range<u32>, clip: ClipState },
 }
 
@@ -96,11 +97,15 @@ pub(crate) struct GlyphRequest {
     pub color: [f32; 4],
 }
 
-/// One image draw: the image index (into the scene's uploads) + a quad in physical-pixel space.
-#[derive(Clone, Copy)]
-pub(crate) struct ImageQuad {
-    pub image_index: u32,
-    pub vertices: [ImageVertex; 4],
+/// One image to draw.
+#[derive(Clone)]
+pub(crate) struct ImageRequest {
+    pub key: ImageKey,
+    pub sampler: SamplerKey,
+    /// `Blob` clone (refcount bump) — never a pixel copy. Released at end of frame.
+    pub image: peniko::ImageData,
+    /// Device-space placement and opacity.
+    pub quad: QuadInstance,
 }
 
 /// Plan-local counters (dedicated counters only — fallbacks are recorded through
@@ -125,7 +130,7 @@ pub(crate) struct FramePlan {
     pub glyphs: Vec<GlyphRequest>,
     /// Normalized variation coords of every run, indexed by `GlyphRunInfo::coords`.
     pub coords: Vec<i16>,
-    pub images: Vec<ImageQuad>,
+    pub images: Vec<ImageRequest>,
     // the ordered stream
     pub cmds: Vec<DrawCmd>,
     pub stats: PrepareStats,
@@ -160,7 +165,7 @@ impl FramePlan {
     /// was pushed (true) or merged (false).
     pub(crate) fn push_draw(&mut self, cmd: DrawCmd) -> bool {
         if let Some(last) = self.cmds.last_mut()
-            && let Some(merged) = merge(last, &cmd)
+            && let Some(merged) = merge(last, &cmd, &self.images)
         {
             *last = merged;
             return false;
@@ -225,7 +230,7 @@ fn clip_str(clip: &ClipState) -> String {
 }
 
 /// Merge `last` + `new` into one command when the exact merge rule holds, else `None`.
-fn merge(last: &DrawCmd, new: &DrawCmd) -> Option<DrawCmd> {
+fn merge(last: &DrawCmd, new: &DrawCmd, images: &[ImageRequest]) -> Option<DrawCmd> {
     // Images never merge until C13 adds `ImageKey`.
     if matches!(new, DrawCmd::Images { .. }) {
         return None;
@@ -249,6 +254,19 @@ fn merge(last: &DrawCmd, new: &DrawCmd) -> Option<DrawCmd> {
         {
             Some(DrawCmd::Glyphs { glyphs: a.start..b.end, clip: *ca })
         }
+        (DrawCmd::Images { images: a, clip: ca }, DrawCmd::Images { images: b, clip: cb })
+            if ca == cb && a.end == b.start && same_texture(images, a.start, b.start) =>
+        {
+            Some(DrawCmd::Images { images: a.start..b.end, clip: *ca })
+        }
         _ => None,
+    }
+}
+
+/// Whether image requests `a` and `b` sample the same texture with the same sampler.
+fn same_texture(images: &[ImageRequest], a: u32, b: u32) -> bool {
+    match (images.get(a as usize), images.get(b as usize)) {
+        (Some(x), Some(y)) => x.key == y.key && x.sampler == y.sampler,
+        _ => false,
     }
 }

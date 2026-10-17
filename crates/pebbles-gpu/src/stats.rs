@@ -145,6 +145,10 @@ pub struct FrameStats {
     pub texture_views_created: u32,
     /// Render pipelines created.
     pub pipelines_created: u32,
+    /// Images uploaded to the GPU (cache misses).
+    pub images_uploaded: u32,
+    /// Images dropped from the cache at end of frame.
+    pub image_evictions: u32,
     /// Fallbacks taken this frame (sum of `unsupported`).
     pub fallbacks: u32,
     /// Fallbacks per kind, indexed by `Unsupported as usize`.
@@ -178,6 +182,8 @@ impl Default for FrameStats {
             textures_created: 0,
             texture_views_created: 0,
             pipelines_created: 0,
+            images_uploaded: 0,
+            image_evictions: 0,
             fallbacks: 0,
             unsupported: [0; Unsupported::COUNT],
         }
