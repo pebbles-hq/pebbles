@@ -4,3 +4,4 @@ pub(crate) mod encode;
 pub(crate) mod pipelines;
 pub(crate) mod resolve;
 pub(crate) mod resources;
+pub(crate) mod targets;

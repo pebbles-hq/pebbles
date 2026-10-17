@@ -12,6 +12,7 @@ use super::execute::resources::buffers::FrameArenas;
 use super::execute::resources::globals::Globals;
 use super::execute::resources::glyph_atlas::GlyphAtlas;
 use super::execute::resources::image_cache::ImageCache;
+use super::execute::targets::{TargetCheck, check_target_size};
 use super::frame_targets::{FrameParams, RenderTarget, TargetKey};
 use super::gpu_types::QuadInstance;
 use super::limits::RendererLimits;
@@ -110,8 +111,9 @@ impl Renderer {
 
     /// Prepare → resolve → upload → encode → submit → end-of-frame, into `target`.
     ///
-    /// Errors: `DeviceLost` when the device's lost callback fired; `InvalidTargetSize` when a
-    /// side is 0 or above the device limit.
+    /// A zero-size target is a no-op (`Ok` with empty stats, no encoder; S07). Errors:
+    /// `DeviceLost` when the device's lost callback fired; `InvalidTargetSize` when a side is
+    /// above the device limit.
     pub fn render(
         &mut self,
         target: RenderTarget<'_>,
@@ -125,9 +127,12 @@ impl Renderer {
         let queue = self.queue.clone();
         let (device, queue) = (&device, &queue);
         let size = target.size();
-        let max = self.limits.max_texture_dim;
-        if size.0 == 0 || size.1 == 0 || size.0 > max || size.1 > max {
-            return Err(GpuError::InvalidTargetSize { width: size.0, height: size.1, max });
+        match check_target_size(size.0, size.1, &self.limits) {
+            TargetCheck::Skip => return Ok(FrameStats::default()),
+            TargetCheck::TooLarge { width, height, max } => {
+                return Err(GpuError::InvalidTargetSize { width, height, max });
+            }
+            TargetCheck::Ok => {}
         }
         let format = target.format();
         let mut stats = FrameStats::default();

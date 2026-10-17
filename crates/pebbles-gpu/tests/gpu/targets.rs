@@ -124,3 +124,20 @@ fn render_size_follows_each_target() {
         assert_eq!(pixel(&rgba, w, w / 2, h / 2), [255, 255, 255, 255], "center at {w}x{h}");
     }
 }
+
+/// S07: a zero-size offscreen request under strict validation is handled before any GPU work:
+/// a typed `InvalidSize` (C15's offscreen contract), no validation error, no panic.
+#[test]
+#[ignore = "gpu"]
+fn zero_size_offscreen_render_is_ok() {
+    let mut init = GpuInit::headless();
+    init.strict_validation = true;
+    let Ok(mut offscreen) = pebbles_gpu::OffscreenRenderer::with_init(init) else {
+        assert!(!std::env::var("PEBBLES_REQUIRE_GPU").is_ok_and(|v| v == "1"), "no GPU adapter");
+        return;
+    };
+    let scope = offscreen.device().push_error_scope(wgpu::ErrorFilter::Validation);
+    let result = offscreen.render_rgba(&Scene::new(), (0, 16), Color::WHITE, 1.0);
+    assert!(matches!(result, Err(pebbles_gpu::CaptureError::InvalidSize { .. })), "{result:?}");
+    assert!(pollster::block_on(scope.pop()).is_none(), "validation error");
+}
