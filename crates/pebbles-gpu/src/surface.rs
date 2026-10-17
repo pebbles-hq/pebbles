@@ -2,6 +2,7 @@
 
 use super::context::{DeviceId, GpuContext, GpuDevice};
 use super::error::GpuError;
+use crate::error::AcquireError;
 use crate::frame_targets::FrameTargets;
 
 /// How the renderer encodes colors before the hardware stores them (08 §4.1).
@@ -51,6 +52,102 @@ pub fn choose_surface_format(
     }
 }
 
+/// The acquire result without the texture (08 §5.2), for the pure mapping and for logging.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AcquireStatus {
+    /// A frame is ready.
+    Success,
+    /// A frame is ready, but the surface should be reconfigured after presenting it.
+    Suboptimal,
+    /// wgpu already waited 1 s for a frame.
+    Timeout,
+    /// The window is not visible.
+    Occluded,
+    /// The surface no longer matches the window.
+    Outdated,
+    /// The surface is gone and must be recreated.
+    Lost,
+    /// Acquiring raised an error (possibly a lost device).
+    Validation,
+}
+
+/// What the frame loop does for an [`AcquireStatus`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FrameAction {
+    /// Render and present.
+    Render,
+    /// Render and present, then reconfigure (texture dropped) and redraw.
+    RenderThenReconfigure,
+    /// No render; request a redraw.
+    SkipAndRedraw,
+    /// No render; mark the window occluded and wait for a visibility event.
+    SkipUntilVisible,
+    /// Reconfigure at the window's size and redraw.
+    ReconfigureAndRedraw,
+    /// Recreate the surface and redraw.
+    RecreateSurfaceAndRedraw,
+    /// Rebuild the whole GPU stack (P20 escalation only).
+    FullReset,
+}
+
+/// The 08 §5.1 table.
+pub const fn action_for(status: AcquireStatus) -> FrameAction {
+    match status {
+        AcquireStatus::Success => FrameAction::Render,
+        AcquireStatus::Suboptimal => FrameAction::RenderThenReconfigure,
+        AcquireStatus::Timeout => FrameAction::SkipAndRedraw,
+        AcquireStatus::Occluded => FrameAction::SkipUntilVisible,
+        AcquireStatus::Outdated | AcquireStatus::Validation => FrameAction::ReconfigureAndRedraw,
+        AcquireStatus::Lost => FrameAction::RecreateSurfaceAndRedraw,
+    }
+}
+
+impl AcquireError {
+    /// The status this error reports.
+    pub const fn status(self) -> AcquireStatus {
+        match self {
+            AcquireError::Timeout => AcquireStatus::Timeout,
+            AcquireError::Occluded => AcquireStatus::Occluded,
+            AcquireError::Outdated => AcquireStatus::Outdated,
+            AcquireError::Lost => AcquireStatus::Lost,
+            AcquireError::Validation => AcquireStatus::Validation,
+        }
+    }
+}
+
+/// One acquired swapchain frame, viewed in the surface's render format.
+pub struct SurfaceFrame {
+    texture: wgpu::SurfaceTexture,
+    view: wgpu::TextureView,
+    suboptimal: bool,
+}
+
+impl SurfaceFrame {
+    /// The view to render into (the surface's view format).
+    pub fn view(&self) -> &wgpu::TextureView {
+        &self.view
+    }
+
+    /// The status this frame was acquired with (`Success` or `Suboptimal`).
+    pub fn status(&self) -> AcquireStatus {
+        if self.suboptimal { AcquireStatus::Suboptimal } else { AcquireStatus::Success }
+    }
+
+    /// Present the frame (consumes it, so reconfiguring afterwards is safe — 08 §5.3 rule 1).
+    pub fn present(self) {
+        drop(self.view);
+        self.texture.present();
+    }
+}
+
+/// The outcome of [`RenderSurface::acquire`].
+pub enum Acquire {
+    /// A frame to render into.
+    Frame(SurfaceFrame),
+    /// No frame this time.
+    NotReady(AcquireError),
+}
+
 /// A configured presentation surface.
 pub struct RenderSurface<'window> {
     pub(crate) surface: wgpu::Surface<'window>,
@@ -86,6 +183,30 @@ impl<'window> RenderSurface<'window> {
         self.config.width = width.clamp(1, max);
         self.config.height = height.clamp(1, max);
         self.surface.configure(gpu.device(), &self.config);
+    }
+
+    /// Acquire the next frame — the ONLY place Pebbles matches `CurrentSurfaceTexture` (08 §5.2).
+    pub fn acquire(&mut self) -> Acquire {
+        let (texture, suboptimal) = match self.surface.get_current_texture() {
+            wgpu::CurrentSurfaceTexture::Success(t) => (t, false),
+            wgpu::CurrentSurfaceTexture::Suboptimal(t) => (t, true),
+            wgpu::CurrentSurfaceTexture::Timeout => return Acquire::NotReady(AcquireError::Timeout),
+            wgpu::CurrentSurfaceTexture::Occluded => return Acquire::NotReady(AcquireError::Occluded),
+            wgpu::CurrentSurfaceTexture::Outdated => return Acquire::NotReady(AcquireError::Outdated),
+            wgpu::CurrentSurfaceTexture::Lost => return Acquire::NotReady(AcquireError::Lost),
+            wgpu::CurrentSurfaceTexture::Validation => return Acquire::NotReady(AcquireError::Validation),
+        };
+        let view = texture.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.view_format),
+            ..Default::default()
+        });
+        Acquire::Frame(SurfaceFrame { texture, view, suboptimal })
+    }
+
+    /// Reconfigure at `width`×`height` even when the size is unchanged (Outdated/Suboptimal).
+    /// Never call while a [`SurfaceFrame`] of this surface is alive.
+    pub fn reconfigure(&mut self, gpu: &GpuDevice, width: u32, height: u32) {
+        self.resize(gpu, width, height);
     }
 
     /// This surface's target textures, for `RenderTarget::new`.
@@ -148,6 +269,41 @@ impl<'window> RenderSurface<'window> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn action_for_every_status() {
+        use AcquireStatus as S;
+        use FrameAction as A;
+        let table = [
+            (S::Success, A::Render),
+            (S::Suboptimal, A::RenderThenReconfigure),
+            (S::Timeout, A::SkipAndRedraw),
+            (S::Occluded, A::SkipUntilVisible),
+            (S::Outdated, A::ReconfigureAndRedraw),
+            (S::Lost, A::RecreateSurfaceAndRedraw),
+            (S::Validation, A::ReconfigureAndRedraw),
+        ];
+        for (status, action) in table {
+            assert_eq!(action_for(status), action, "{status:?}");
+        }
+        for e in [
+            AcquireError::Timeout,
+            AcquireError::Occluded,
+            AcquireError::Outdated,
+            AcquireError::Lost,
+            AcquireError::Validation,
+        ] {
+            assert_ne!(e.status(), S::Success, "a NotReady is never a frame");
+        }
+    }
+
+    /// Suboptimal still renders and presents; the reconfigure comes after the frame.
+    #[test]
+    fn suboptimal_presents_then_reconfigures() {
+        let action = action_for(AcquireStatus::Suboptimal);
+        assert_eq!(action, FrameAction::RenderThenReconfigure);
+        assert_ne!(action, FrameAction::ReconfigureAndRedraw, "must not drop a usable frame");
+    }
     use wgpu::TextureFormat::{Bgra8Unorm, Bgra8UnormSrgb, Rgba8Unorm, Rgba8UnormSrgb, Rgba16Float};
 
     fn choice(formats: &[wgpu::TextureFormat], view_formats: bool) -> Option<SurfaceFormatChoice> {

@@ -92,11 +92,24 @@ pub(crate) const HOST: &str = "vello-hybrid";
 #[allow(dead_code)]
 pub(crate) const HOST: &str = "wgpu";
 
-/// The outcome of `present_frame`. Only `Presented`/`Skipped` until C19 adds the rest.
+/// The outcome of `present_frame` (06 §3.5); the runner performs the follow-up (08 §5).
+/// The hybrid host only ever returns `Presented`/`Skipped`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "vello-hybrid", allow(dead_code))]
 pub(crate) enum PresentOutcome {
+    /// The frame was presented.
     Presented,
+    /// Nothing was presented; nothing else to do.
+    #[cfg_attr(not(feature = "vello-hybrid"), allow(dead_code))] // the hybrid host's skip
     Skipped,
+    /// Nothing was presented and a redraw is already scheduled.
+    RedrawRequested,
+    /// The window is not visible: stop rendering until a visibility event (08 §5.4).
+    Occluded,
+    /// The surface is lost: recreate it, then redraw.
+    RecreateSurface,
+    /// The device is poisoned: rebuild the GPU stack (08 §6.5).
+    ResetGpu,
 }
 
 #[cfg(test)]

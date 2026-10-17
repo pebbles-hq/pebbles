@@ -78,7 +78,8 @@ impl RenderSurface<'_> {
 
 pub(crate) type Renderer = GpuRenderer;
 
-/// Acquire the swapchain image, render `scene` straight into it, and present.
+/// Acquire the swapchain image, render `scene` straight into it, present, and act on every
+/// acquire outcome (08 §5.1). Reconfigures happen only after the frame is presented or dropped.
 pub(crate) fn present_frame(
     ctx: &RenderContext,
     renderer: &mut Renderer,
@@ -87,30 +88,58 @@ pub(crate) fn present_frame(
     base_color: Color,
     window: &winit::window::Window,
 ) -> PresentOutcome {
-    let Some(gpu) = ctx.inner.device(surface.0.device_id()) else { return PresentOutcome::Skipped };
-    let device = gpu.device();
-    let surface_texture = match surface.0.surface().get_current_texture() {
-        wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
-        _ => return PresentOutcome::Skipped,
+    use pebbles_foundation::log::{Cat, Level, logf};
+    use pebbles_gpu::{Acquire, FrameAction, action_for};
+    // 08 §5.3 rule 3: never acquire on a dead device.
+    if ctx.needs_reset() {
+        return PresentOutcome::ResetGpu;
+    }
+    let Some(gpu) = ctx.inner.device(surface.0.device_id()) else { return PresentOutcome::ResetGpu };
+    let id = surface.0.device_id().index();
+    let reconfigure = |surface: &mut RenderSurface<'_>| {
+        let size = window.inner_size();
+        surface.0.reconfigure(gpu, size.width.max(1), size.height.max(1));
+    };
+    let (frame, status) = match surface.0.acquire() {
+        Acquire::Frame(frame) => {
+            let status = frame.status();
+            (frame, status)
+        }
+        Acquire::NotReady(e) => {
+            return match action_for(e.status()) {
+                FrameAction::SkipUntilVisible => PresentOutcome::Occluded,
+                FrameAction::RecreateSurfaceAndRedraw => PresentOutcome::RecreateSurface,
+                FrameAction::FullReset => PresentOutcome::ResetGpu,
+                FrameAction::ReconfigureAndRedraw => {
+                    reconfigure(surface);
+                    logf(Level::Debug, Cat::Gpu, format_args!("surface #{id} {e:?} — reconfigured"));
+                    window.request_redraw();
+                    PresentOutcome::RedrawRequested
+                }
+                FrameAction::Render | FrameAction::RenderThenReconfigure | FrameAction::SkipAndRedraw => {
+                    window.request_redraw();
+                    PresentOutcome::RedrawRequested
+                }
+            };
+        }
     };
     let format = surface.0.view_format();
-    let view = surface_texture
-        .texture
-        .create_view(&wgpu::TextureViewDescriptor { format: Some(format), ..Default::default() });
     // The size comes from the acquired texture, never from the window (DR-12).
-    let target = RenderTarget::new(&view, format, surface.0.targets_mut());
+    let target = RenderTarget::new(frame.view(), format, surface.0.targets_mut());
     if let Err(e) = renderer.render(target, scene, &FrameParams::new(base_color)) {
         // A lost or poisoned device reaches the reset through `needs_reset()` (C18).
-        pebbles_foundation::log::logf(
-            pebbles_foundation::log::Level::Error,
-            pebbles_foundation::log::Cat::Gpu,
-            format_args!("wgpu render failed (frame skipped): {e}"),
-        );
+        logf(Level::Error, Cat::Gpu, format_args!("wgpu render failed (frame skipped): {e}"));
+        drop(frame);
         window.request_redraw();
-        return PresentOutcome::Skipped;
+        return PresentOutcome::RedrawRequested;
     }
-    let _ = device.poll(wgpu::PollType::Poll);
+    let _ = gpu.device().poll(wgpu::PollType::Poll);
     window.pre_present_notify();
-    surface_texture.present();
+    frame.present();
+    if action_for(status) == FrameAction::RenderThenReconfigure {
+        reconfigure(surface);
+        logf(Level::Debug, Cat::Gpu, format_args!("surface #{id} Suboptimal — reconfigured"));
+        window.request_redraw();
+    }
     PresentOutcome::Presented
 }

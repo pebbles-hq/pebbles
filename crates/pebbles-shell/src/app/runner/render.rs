@@ -162,6 +162,11 @@ impl Runner {
         pebbles_widgets::overlay::gc_dead();
 
         let Some(active) = self.active.as_mut() else { return };
+        // 08 §5.4: an occluded window renders nothing and requests no frames until a
+        // visibility event clears the flag (otherwise macOS spins on instant occluded acquires).
+        if !should_render(active.occluded) {
+            return;
+        }
 
         let stats = frame_stats_enabled();
 
@@ -298,17 +303,23 @@ impl Runner {
             None => self.renderers[idx]
                 .insert(self.context.as_ref().unwrap().new_renderer(idx).expect("renderer")),
         };
-        if matches!(
-            present_frame(
-                self.context.as_ref().unwrap(),
-                renderer,
-                surface,
-                &self.frame,
-                self.background,
+        let outcome = present_frame(
+            self.context.as_ref().unwrap(),
+            renderer,
+            surface,
+            &self.frame,
+            self.background,
+            &active.window,
+        );
+        if outcome != PresentOutcome::Presented {
+            follow_up(
+                outcome,
+                &mut self.context,
+                &mut self.gpu_reset_requested,
                 &active.window,
-            ),
-            PresentOutcome::Skipped
-        ) {
+                &mut active.surface,
+                &mut active.occluded,
+            );
             return;
         }
 
@@ -420,22 +431,97 @@ impl Runner {
             None => self.renderers[idx]
                 .insert(self.context.as_ref().unwrap().new_renderer(idx).expect("renderer")),
         };
-        if matches!(
-            present_frame(
-                self.context.as_ref().unwrap(),
-                renderer,
-                surface,
-                &self.frame,
-                w.background,
+        let outcome = present_frame(
+            self.context.as_ref().unwrap(),
+            renderer,
+            surface,
+            &self.frame,
+            w.background,
+            &w.window,
+        );
+        if outcome != PresentOutcome::Presented {
+            // Secondary windows track occlusion from P12; an occluded acquire just skips here.
+            let mut occluded = false;
+            follow_up(
+                outcome,
+                &mut self.context,
+                &mut self.gpu_reset_requested,
                 &w.window,
-            ),
-            PresentOutcome::Skipped
-        ) {
+                &mut w.surface,
+                &mut occluded,
+            );
             return;
         }
 
         if pending_tasks || corrective || pebbles_core::animation::active() {
             w.window.request_redraw();
         }
+    }
+}
+
+/// The occluded gate (08 §5.4): render only visible windows.
+fn should_render(occluded: bool) -> bool {
+    !occluded
+}
+
+/// The runner's follow-up for a frame that was not presented (08 §5.1, §5.6): every window ends
+/// presented, with a redraw scheduled, or occluded.
+fn follow_up(
+    outcome: PresentOutcome,
+    context: &mut Option<RenderContext>,
+    reset_requested: &mut bool,
+    window: &Arc<Window>,
+    surface: &mut RenderSurface<'static>,
+    occluded: &mut bool,
+) {
+    match outcome {
+        PresentOutcome::Presented | PresentOutcome::Skipped | PresentOutcome::RedrawRequested => {}
+        PresentOutcome::Occluded => *occluded = true,
+        PresentOutcome::RecreateSurface => {
+            let id = surface.device_index();
+            #[cfg(not(target_family = "wasm"))]
+            {
+                use pebbles_foundation::log::{Cat, Level, logf};
+                let phys = window.inner_size();
+                let recreated = context.as_mut().map(|ctx| {
+                    pollster::block_on(ctx.create_surface(
+                        window.clone(),
+                        phys.width.max(1),
+                        phys.height.max(1),
+                    ))
+                });
+                match recreated {
+                    Some(Ok(new)) => {
+                        *surface = new;
+                        logf(Level::Warn, Cat::Gpu, format_args!("surface #{id} lost — recreated"));
+                    }
+                    // Recreation failed: rebuild the whole stack (08 §5.1 `Lost` row).
+                    _ => *reset_requested = true,
+                }
+            }
+            // wasm recreates asynchronously through the GPU recovery path (C20).
+            #[cfg(target_family = "wasm")]
+            {
+                let _ = (context, id);
+                *reset_requested = true;
+            }
+            window.request_redraw();
+        }
+        PresentOutcome::ResetGpu => {
+            *reset_requested = true;
+            window.request_redraw();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_render;
+
+    /// 08 §5.7: an occluded window renders nothing (and so requests no frames).
+    #[test]
+    fn occluded_skips_frame() {
+        assert!(!should_render(true));
+        assert!(should_render(false));
     }
 }

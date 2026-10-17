@@ -127,6 +127,8 @@ pub(crate) enum PebblesUserEvent {
 struct ActiveWindow {
     window: Arc<Window>,
     surface: RenderSurface<'static>,
+    /// Not visible: render nothing until a visibility event (08 §5.4).
+    occluded: bool,
 }
 
 /// A secondary OS window opened via [`window`](fn@pebbles_widgets::window). It has its
@@ -436,7 +438,7 @@ impl Runner {
         }
 
         window.request_redraw();
-        self.active = Some(ActiveWindow { window, surface });
+        self.active = Some(ActiveWindow { window, surface, occluded: false });
 
         // B3: build + attach the native menu bar now that the window exists.
         #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
@@ -729,6 +731,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     && size.width > 0
                     && size.height > 0
                 {
+                    active.occluded = false;
                     self.context.as_mut().unwrap().resize_surface(
                         &mut active.surface,
                         size.width,
@@ -1066,6 +1069,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             WindowEvent::ScaleFactorChanged { .. } => {
                 pebbles_widgets::overlay::hide_overlay();
                 if let Some(active) = self.active.as_mut() {
+                    active.occluded = false;
                     let size = active.window.inner_size();
                     if size.width > 0 && size.height > 0 {
                         self.context.as_mut().unwrap().resize_surface(
@@ -1079,6 +1083,24 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             }
 
             WindowEvent::RedrawRequested => self.render(),
+
+            // 08 §5.4: stop rendering while hidden; redraw when visible again.
+            WindowEvent::Occluded(occluded) => {
+                if let Some(active) = self.active.as_mut() {
+                    active.occluded = occluded;
+                    if !occluded {
+                        active.window.request_redraw();
+                    }
+                }
+            }
+            WindowEvent::Focused(true) => {
+                if let Some(active) = self.active.as_mut()
+                    && active.occluded
+                {
+                    active.occluded = false;
+                    active.window.request_redraw();
+                }
+            }
 
             _ => {}
         }
