@@ -25,6 +25,7 @@ mod frame_targets;
 mod gpu_types;
 mod health;
 mod init;
+mod limits;
 #[cfg(not(target_family = "wasm"))]
 mod offscreen;
 mod prepare;
@@ -41,6 +42,7 @@ pub use context::{DeviceHealth, DeviceId, GpuCaps, GpuContext, GpuDevice};
 pub use error::{AcquireError, CaptureError, GpuError};
 pub use frame_targets::{FrameParams, FrameTargets, RenderTarget};
 pub use init::{GpuInit, GpuPower, HostOs};
+pub use limits::RendererLimits;
 #[cfg(not(target_family = "wasm"))]
 pub use offscreen::{OffscreenRenderer, RgbaImage};
 pub use renderer::Renderer;

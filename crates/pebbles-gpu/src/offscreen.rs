@@ -100,9 +100,9 @@ impl OffscreenRenderer {
         }
     }
 
-    /// `min(MAX_DIM, max_texture_dimension_2d)`.
+    /// `min(MAX_DIM, RendererLimits::max_texture_dim)`.
     pub fn max_size(&self) -> u32 {
-        Self::MAX_DIM.min(self.gpu().caps().limits.max_texture_dimension_2d)
+        Self::MAX_DIM.min(self.renderer.limits().max_texture_dim)
     }
 
     /// The adapter this renderer runs on.

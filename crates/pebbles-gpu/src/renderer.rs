@@ -14,6 +14,7 @@ use super::execute::resources::glyph_atlas::GlyphAtlas;
 use super::execute::resources::image_cache::ImageCache;
 use super::frame_targets::{FrameParams, RenderTarget, TargetKey};
 use super::gpu_types::QuadInstance;
+use super::limits::RendererLimits;
 use super::prepare::{PrepareInput, PrepareScratch, VERTEX_LIMIT_NO_FULL_INDEX, prepare};
 use super::stats::{FrameStats, Unsupported, WarnOnce};
 
@@ -37,6 +38,7 @@ pub struct Renderer {
     stats: FrameStats,
     warn_once: WarnOnce,
     vertex_limit: u32,
+    limits: RendererLimits,
 }
 
 impl Renderer {
@@ -79,6 +81,7 @@ impl Renderer {
             glyph_instances: Vec::new(),
             image_cache: ImageCache::new(device),
             image_instances: Vec::new(),
+            limits: RendererLimits::from_device_limits(&device.limits()),
             scratch: PrepareScratch::default(),
             stats: FrameStats::default(),
             warn_once: WarnOnce::default(),
@@ -93,6 +96,11 @@ impl Renderer {
                 VERTEX_LIMIT_NO_FULL_INDEX
             },
         }
+    }
+
+    /// The hard caps derived from this Renderer's device (11 §2.5).
+    pub fn limits(&self) -> &RendererLimits {
+        &self.limits
     }
 
     /// The `FrameStats` of the last render.
@@ -117,7 +125,7 @@ impl Renderer {
         let queue = self.queue.clone();
         let (device, queue) = (&device, &queue);
         let size = target.size();
-        let max = device.limits().max_texture_dimension_2d;
+        let max = self.limits.max_texture_dim;
         if size.0 == 0 || size.1 == 0 || size.0 > max || size.1 > max {
             return Err(GpuError::InvalidTargetSize { width: size.0, height: size.1, max });
         }
@@ -131,7 +139,7 @@ impl Renderer {
             root_transform: params.root_transform,
             vertex_limit: self.vertex_limit,
         };
-        prepare(scene, &input, &mut self.scratch, &mut stats);
+        prepare(scene, &input, &self.limits, &mut self.scratch, &mut stats);
         stats.ops = self.scratch.plan.stats.ops;
         stats.cmds = u32::try_from(self.scratch.plan.cmds.len()).unwrap_or(u32::MAX);
         stats.culled = self.scratch.plan.stats.culled;

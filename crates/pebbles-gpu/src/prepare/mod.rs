@@ -5,6 +5,7 @@ use kurbo::Affine;
 use pebbles_render::paint::Scene;
 use pebbles_render::paint::display_list::Op;
 
+use crate::limits::RendererLimits;
 use crate::stats::{FrameStats, Unsupported};
 
 mod clip;
@@ -53,6 +54,7 @@ pub(crate) struct PrepareScratch {
 pub(crate) fn prepare<'s>(
     scene: &Scene,
     input: &PrepareInput,
+    limits: &RendererLimits,
     scratch: &'s mut PrepareScratch,
     stats: &mut FrameStats,
 ) -> &'s FramePlan {
@@ -66,6 +68,7 @@ pub(crate) fn prepare<'s>(
         layers: &mut scratch.layers,
         stroke: &mut scratch.stroke,
         stats,
+        limits,
         visit: 0,
         vertex_limit: input.vertex_limit,
         out_of_vertices: false,
@@ -81,6 +84,8 @@ struct Walk<'a> {
     layers: &'a mut layer::LayerStack,
     stroke: &'a mut stroke::StrokeScratch,
     stats: &'a mut FrameStats,
+    #[allow(dead_code)] // first reader: S02's coordinate-range check
+    limits: &'a RendererLimits,
     visit: u32,
     vertex_limit: u32,
     out_of_vertices: bool,

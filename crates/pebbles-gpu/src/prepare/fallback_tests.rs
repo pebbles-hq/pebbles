@@ -13,7 +13,7 @@ fn plan_and_stats(scene: &Scene) -> (FramePlan, FrameStats) {
     let mut stats = FrameStats::default();
     let input =
         PrepareInput { target_size: (100, 100), root_transform: Affine::IDENTITY, vertex_limit: u32::MAX };
-    prepare(scene, &input, &mut scratch, &mut stats);
+    prepare(scene, &input, &crate::test_support::webgl2_limits(), &mut scratch, &mut stats);
     (scratch.plan, stats)
 }
 

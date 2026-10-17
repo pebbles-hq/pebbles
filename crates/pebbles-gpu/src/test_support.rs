@@ -7,6 +7,11 @@ pub(crate) fn bundled_font() -> peniko::FontData {
     peniko::FontData::new(peniko::Blob::from(bytes.to_vec()), 0)
 }
 
+/// `RendererLimits` of a WebGL2-default device (11 §2.5; tests never need a device).
+pub(crate) fn webgl2_limits() -> crate::RendererLimits {
+    crate::RendererLimits::from_device_limits(&wgpu::Limits::downlevel_webgl2_defaults())
+}
+
 /// xorshift64 (13, 7, 17). Deterministic, dependency-free.
 pub(crate) struct XorShift64(u64);
 
