@@ -227,6 +227,10 @@ fn delivered_features_render_without_fallback() {
     for &f in DELIVERED {
         let scene = fixture(f).unwrap_or_else(|| panic!("{f:?} delivered but has no fixture"));
         let (plan, _) = prepare_scene(&scene, 64, 64);
+        // "Do not crash" rows are delivered by skipping (and recording) their op (R02 step 3).
+        if NOT_CRASH.contains(&f) {
+            continue;
+        }
         assert!(!plan.fallback_features.contains(f), "{f:?} delivered but fell back");
         assert!(!plan.cmds.is_empty(), "{f:?} produced no draw");
     }

@@ -212,6 +212,7 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::ClipNested,
     F::LayerUnbalanced,
     F::FragmentAppend,
+    F::NonFinite, // R02
     F::ImageRgba8,
     F::ImageBgra8,
     F::ImagePremultiplied,
