@@ -11,8 +11,10 @@ mod capture;
 mod clip;
 mod color;
 mod gpu_color;
+mod gpu_smoke;
 mod images;
 mod order;
+mod support;
 mod targets;
 mod text;
 
