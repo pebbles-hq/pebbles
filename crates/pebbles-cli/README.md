@@ -13,8 +13,8 @@ pebbles doctor          check your environment
 It is deliberately std-only — no clap, no notify. Arg parsing is hand-rolled,
 file watching is a light mtime poll, and process control is `std::process`.
 
-This crate ships the `pebbles` binary. It is the CLI companion to the 10-crate
-framework whose libraries layer foundation → icons → render → core → widgets →
+This crate ships the `pebbles` binary. It is the CLI companion to the 11-crate
+framework whose libraries layer foundation → icons → render → {core → widgets, gpu} →
 shell → umbrella `pebbles`.
 
 Part of [Pebbles](https://github.com/pebbles-hq/pebbles).

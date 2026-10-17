@@ -21,8 +21,8 @@ and clipboard access.
 
 The widget catalog lives one layer up in `pebbles-widgets`; the GPU/windowing
 shell lives in `pebbles-shell`. This crate depends only on `pebbles-foundation`
-and `pebbles-render`, and sits in the middle of the 10-crate framework
-(foundation → icons → render → core → widgets → shell → umbrella `pebbles`).
+and `pebbles-render`, and sits in the middle of the 11-crate framework
+(foundation → icons → render → {core → widgets, gpu} → shell → umbrella `pebbles`).
 
 Part of [Pebbles](https://github.com/pebbles-hq/pebbles).
 Licensed under Apache-2.0.

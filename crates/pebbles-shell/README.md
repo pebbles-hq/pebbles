@@ -18,8 +18,8 @@ backend-agnostic frame loop. Also handles global hotkeys, offscreen
 widget→PNG/RGBA capture, and the wasm entry-point plumbing (the OS-side
 glue behind `#[pebbles::main]`).
 
-Shell sits at the top of the layered stack in the 10-crate framework
-(foundation → icons → render → core → widgets → shell → umbrella `pebbles`).
+Shell sits at the top of the layered stack in the 11-crate framework
+(foundation → icons → render → {core → widgets, gpu} → shell → umbrella `pebbles`).
 Most app authors reach `App` through the `pebbles` umbrella prelude.
 
 Part of [Pebbles](https://github.com/pebbles-hq/pebbles).

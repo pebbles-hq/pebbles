@@ -16,8 +16,8 @@ shell (which rasterizes the backend-neutral display list it paints into).
   padding, clip, transform, paragraph, text field, and more).
 
 The render backend is chosen by a feature (Vello Hybrid by default; the first-party wgpu renderer is opt-in during the migration). This crate sits above `pebbles-icons` and below `pebbles-core` in
-the 10-crate framework
-(foundation → icons → render → core → widgets → shell → umbrella `pebbles`).
+the 11-crate framework
+(foundation → icons → render → {core → widgets, gpu} → shell → umbrella `pebbles`).
 
 Bundles OFL fonts; see `NOTICE`.
 

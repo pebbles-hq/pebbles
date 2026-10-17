@@ -24,6 +24,9 @@ pebbles-icons        generated Tabler icon data (outline + filled; see scripts/g
 pebbles-render       RenderObject trait + the built-in render objects, text (Parley),
                      the Painter seam (backend-neutral paint verbs with two backends —
                      paint/{mod,vello_backend,hybrid_backend}.rs), hit-test tree
+pebbles-gpu          the first-party renderer on wgpu: PREPARE (display list → FramePlan,
+                     CPU-only, unit-testable) + EXECUTE (device, surfaces, pipelines, WGSL
+                     shaders, atlases, offscreen readback). Depends on render + foundation.
 pebbles-core         reactivity (signals/memos/effects/stores), the Element tree +
                      reconciler, components, input (focus/keyboard/shortcuts/scroll),
                      the router, animation, bounds

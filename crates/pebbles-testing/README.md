@@ -28,8 +28,8 @@ geometry. The harness is deliberately transparent: `ui` and `env` are public, so
 anything not wrapped here is still reachable, and free-function lifecycle helpers
 exist for tests that own their own `Ui` / `TextEnv`.
 
-A development/test-only crate in the 10-crate framework — not part of the runtime
-layering (foundation → icons → render → core → widgets → shell → umbrella
+A development/test-only crate in the 11-crate framework — not part of the runtime
+layering (foundation → icons → render → {core → widgets, gpu} → shell → umbrella
 `pebbles`).
 
 Part of [Pebbles](https://github.com/pebbles-hq/pebbles).

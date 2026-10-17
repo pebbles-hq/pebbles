@@ -17,8 +17,8 @@ Everything here is `Copy`, allocation-free, and cheap to pass by value. It also
 re-exports `kurbo` (2D geometry) and `peniko` (brushes, gradients, colors) so
 downstream code can reach the full APIs.
 
-Foundation sits at the base of the 10-crate framework
-(foundation → icons → render → core → widgets → shell → umbrella `pebbles`).
+Foundation sits at the base of the 11-crate framework
+(foundation → icons → render → {core → widgets, gpu} → shell → umbrella `pebbles`).
 Most app authors depend on the `pebbles` umbrella instead of this crate directly.
 
 Part of [Pebbles](https://github.com/pebbles-hq/pebbles).

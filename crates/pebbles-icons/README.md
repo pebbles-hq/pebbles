@@ -23,8 +23,8 @@ icon(tabler::CAMERA);         // any of the ~5100 bundled outline icons
 icon(tabler::filled::STAR);   // …or its solid variant
 ```
 
-Icons sits just above `pebbles-foundation` in the 10-crate framework
-(foundation → icons → render → core → widgets → shell → umbrella `pebbles`).
+Icons sits just above `pebbles-foundation` in the 11-crate framework
+(foundation → icons → render → {core → widgets, gpu} → shell → umbrella `pebbles`).
 
 The bundled glyphs are derived from Tabler Icons (MIT); see `NOTICE`.
 

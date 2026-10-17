@@ -281,6 +281,7 @@ Layered so the GPU stack is quarantined and the core compiles in seconds:
 | [`pebbles-foundation`](crates/pebbles-foundation) | geometry (kurbo), layout enums, color + the full Tailwind/shadcn palette |
 | [`pebbles-icons`](crates/pebbles-icons) | the icon data model + the bundled Tabler set (~5100 outline + ~1050 filled); pluggable — any `IconData` drops in |
 | [`pebbles-render`](crates/pebbles-render) | `BoxConstraints`, render tree, layout/paint, text (parley), icons, accessibility nodes |
+| [`pebbles-gpu`](crates/pebbles-gpu) | the first-party GPU renderer on wgpu: display list → ordered draw plan (tessellation, clips, glyph/image placement) → pipelines and atlases; window surfaces and offscreen rendering |
 | [`pebbles-core`](crates/pebbles-core) | the runtime: `Widget`/`Element`, reconciler, reactivity, focus, keyboard, animation, async tasks, IPC, clipboard, router |
 | [`pebbles-macros`](crates/pebbles-macros) | proc-macros: the `#[component]` authoring form (re-exported from the prelude) |
 | [`pebbles-widgets`](crates/pebbles-widgets) | the catalog: primitives + shadcn-style components, theme, styling, overlays, dialogs, windows, routing |

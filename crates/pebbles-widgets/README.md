@@ -21,8 +21,8 @@ The runtime that builds and reconciles them lives in `pebbles-core`
 inside them is re-exported flat (`pebbles_widgets::theme`,
 `pebbles_widgets::overlay`, …).
 
-Widgets sits above `pebbles-core` in the 10-crate framework
-(foundation → icons → render → core → widgets → shell → umbrella `pebbles`).
+Widgets sits above `pebbles-core` in the 11-crate framework
+(foundation → icons → render → {core → widgets, gpu} → shell → umbrella `pebbles`).
 
 Part of [Pebbles](https://github.com/pebbles-hq/pebbles).
 Licensed under Apache-2.0.
