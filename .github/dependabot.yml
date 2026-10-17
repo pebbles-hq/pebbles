@@ -9,10 +9,13 @@ updates:
       day: monday
     open-pull-requests-limit: 5
     groups:
-      # The GPU/windowing stack moves in lockstep (vello ↔ wgpu ↔ winit);
-      # upgrading them one at a time produces PRs that cannot compile.
+      # The GPU/windowing stack moves in lockstep (wgpu ↔ naga ↔ winit). The vello crates pin
+      # wgpu's major while the transitional vello-hybrid backend exists; X09 removes them.
       graphics-stack:
-        patterns: ["vello", "wgpu", "winit", "peniko", "kurbo", "parley", "raw-window-handle"]
+        patterns: ["wgpu", "naga", "winit", "raw-window-handle", "peniko", "kurbo", "lyon*", "guillotiere", "bytemuck", "vello", "vello_hybrid", "vello_common"]
+      # The text stack: cosmic-text pins fontdb, harfrust and skrifa; swash pins zeno.
+      text-stack:
+        patterns: ["cosmic-text", "swash", "zeno", "skrifa", "harfrust", "fontdb", "parley"]
       dev-dependencies:
         dependency-type: development
 
