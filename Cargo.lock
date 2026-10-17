@@ -3645,6 +3645,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "render-check"
+version = "0.0.1"
+dependencies = [
+ "kurbo",
+ "pebbles-core",
+ "pebbles-foundation",
+ "pebbles-gpu",
+ "pebbles-render",
+ "pebbles-testing",
+ "pebbles-widgets",
+ "peniko",
+ "png",
+ "pollster 1.0.1",
+ "vello_hybrid",
+ "wgpu",
+]
+
+[[package]]
 name = "renderdoc-sys"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
