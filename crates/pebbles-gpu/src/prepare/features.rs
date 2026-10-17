@@ -14,6 +14,18 @@ fn quarter_turn(xf: Affine) -> bool {
     (c[1].abs() < 1e-9 && c[2].abs() < 1e-9) || (c[0].abs() < 1e-9 && c[3].abs() < 1e-9)
 }
 
+/// A rect, or a rounded rect with zero radii.
+fn is_rect_like(g: &Geometry) -> bool {
+    match g {
+        Geometry::Rect(_) => true,
+        Geometry::RoundedRect(rr) => {
+            let r = rr.radii();
+            [r.top_left, r.top_right, r.bottom_right, r.bottom_left].iter().all(|v| v.abs() < 1e-9)
+        }
+        _ => false,
+    }
+}
+
 /// Translation + uniform positive scale (the glyph atlas route, 02 §7.5).
 fn uniform_scale(xf: Affine) -> bool {
     let [a, b, c, d, ..] = xf.as_coeffs();
@@ -71,30 +83,26 @@ impl Walk<'_> {
         }
     }
 
-    /// The clip rows of a layer clip.
+    /// The clip rows of a layer clip (quarter turns and zero-radius rounded rects are exact
+    /// scissors since R07).
     pub(super) fn note_clip(&mut self, clip: &Geometry, xf: Affine, fill: peniko::Fill) {
-        let turned = !(xf.as_coeffs()[1].abs() < 1e-9 && xf.as_coeffs()[2].abs() < 1e-9);
-        match clip {
-            Geometry::Rect(_) if !quarter_turn(xf) => self.fell_back(Feature::ClipRectRotated),
-            Geometry::Rect(_) if turned => self.fell_back(Feature::ClipRectQuarterTurn),
-            Geometry::Rect(_) => {}
-            Geometry::RoundedRect(r) if r.radii().as_single_radius().is_some_and(|v| v.abs() <= 1e-9) => {
-                self.fell_back(Feature::ClipRRectZeroRadius);
+        use super::clip::{ClipClass, clip_class};
+        match (clip_class(clip, xf), clip) {
+            (ClipClass::Scissor { .. }, _) => {}
+            (_, Geometry::Rect(_) | Geometry::RoundedRect(_)) if !quarter_turn(xf) && is_rect_like(clip) => {
+                self.fell_back(Feature::ClipRectRotated);
             }
-            Geometry::RoundedRect(_) => self.fell_back(Feature::ClipRRect),
-            Geometry::Circle(_) => self.fell_back(Feature::ClipCircle),
-            Geometry::Path(p) => {
+            (_, Geometry::RoundedRect(_)) => self.fell_back(Feature::ClipRRect),
+            (_, Geometry::Circle(_)) => self.fell_back(Feature::ClipCircle),
+            _ => {
                 self.fell_back(Feature::ClipPath);
                 // A path clip covering the whole target needs the GPU mask route (L09).
-                let b = xf.transform_rect_bbox(kurbo::Shape::bounding_box(p));
+                let b = xf.transform_rect_bbox(clip.bounding_box());
                 let (w, h) = self.plan.target_size;
                 if b.width() >= f64::from(w) && b.height() >= f64::from(h) {
                     self.fell_back(Feature::ClipGpuMask);
                 }
             }
-            // `Geometry` is `#[non_exhaustive]`: a future shape is an arbitrary path clip.
-            #[allow(unreachable_patterns)]
-            _ => self.fell_back(Feature::ClipPath),
         }
         if fill == peniko::Fill::EvenOdd && !matches!(clip, Geometry::Rect(_)) {
             self.fell_back(Feature::ClipEvenOdd);

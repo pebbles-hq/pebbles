@@ -210,6 +210,8 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::StrokeHairline,
     F::ClipRect,
     F::ClipNested,
+    F::ClipRectQuarterTurn, // R07
+    F::ClipRRectZeroRadius, // R07
     F::LayerUnbalanced,
     F::FragmentAppend,
     F::NonFinite, // R02

@@ -25,38 +25,92 @@ pub(crate) struct ClipDecision {
     pub scissor: ScissorRect,
 }
 
-/// Classify a clip geometry under `xf` against the current clip (09 §2.2, Phase-C rows only).
-pub(crate) fn classify_clip(geom: &Geometry, xf: Affine, cur: &ClipState) -> ClipDecision {
-    let c = xf.as_coeffs();
-    // A rect (or zero-radius rounded rect) under an axis-preserving transform → scissor.
-    let rect = match geom {
-        Geometry::Rect(r) => Some(*r),
-        Geometry::RoundedRect(rr) => {
-            let radii = rr.radii();
-            let zero = radii.top_left.abs() <= 1e-9
-                && radii.top_right.abs() <= 1e-9
-                && radii.bottom_right.abs() <= 1e-9
-                && radii.bottom_left.abs() <= 1e-9;
-            zero.then_some(rr.rect())
+/// The shape class of a clip under its device transform (R07).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum ClipClass {
+    /// An axis-aligned device rectangle: a scissor alone is exact. `aligned` = every edge is
+    /// within 1/256 px of an integer (no partial-pixel coverage at the edges).
+    Scissor { device: kurbo::Rect, aligned: bool },
+    /// A rounded rect with a radius > 0, or a circle (09).
+    RoundedRect,
+    /// Anything else (rotated rects, general paths).
+    Other,
+}
+
+/// `|b|,|c| ≤ 1e-9·max(|a|,|d|)` — scale/mirror only.
+fn axis_aligned(m: Affine) -> bool {
+    let [a, b, c, d, ..] = m.as_coeffs();
+    let s = a.abs().max(d.abs());
+    b.abs() <= 1e-9 * s && c.abs() <= 1e-9 * s
+}
+
+/// `|a|,|d| ≤ 1e-9·max(|b|,|c|)` — a 90°/270° turn, mirrored or not.
+fn quarter_turn(m: Affine) -> bool {
+    let [a, b, c, d, ..] = m.as_coeffs();
+    let s = b.abs().max(c.abs());
+    a.abs() <= 1e-9 * s && d.abs() <= 1e-9 * s
+}
+
+/// The legacy four-point rectangle path (`MoveTo, LineTo ×3[+1 back to start], ClosePath`) whose
+/// device edges are all horizontal or vertical.
+fn rect_path(p: &kurbo::BezPath, m: Affine) -> Option<kurbo::Rect> {
+    use kurbo::PathEl::{ClosePath, LineTo, MoveTo};
+    let els = p.elements();
+    let mut pts = Vec::with_capacity(5);
+    match els {
+        [MoveTo(a), LineTo(b), LineTo(c), LineTo(d), ClosePath] => pts.extend([*a, *b, *c, *d]),
+        [MoveTo(a), LineTo(b), LineTo(c), LineTo(d), LineTo(e), ClosePath] if e == a => {
+            pts.extend([*a, *b, *c, *d])
         }
-        _ => None,
-    };
-    let axis_preserving =
-        (c[1].abs() < 1e-9 && c[2].abs() < 1e-9) || (c[0].abs() < 1e-9 && c[3].abs() < 1e-9);
-    let bbox = |geom: &Geometry| xf.transform_rect_bbox(geom.bounding_box());
-    if let Some(rect) = rect {
-        if axis_preserving {
-            let b = xf.transform_rect_bbox(rect);
-            return finish(b, cur, ClipKind::Scissor);
-        }
-        // A rotated rect clip → bounds (bbox scissor).
-        return finish(bbox(geom), cur, ClipKind::Bounds);
+        _ => return None,
     }
-    // Circles, paths, and any non-finite geometry → bounds.
-    if !c.iter().all(|v| v.is_finite()) {
+    let dev: Vec<kurbo::Point> = pts.iter().map(|q| m * *q).collect();
+    let straight = (0..4).all(|i| {
+        let (p, q) = (dev[i], dev[(i + 1) % 4]);
+        (p.x - q.x).abs() <= 1e-3 || (p.y - q.y).abs() <= 1e-3
+    });
+    straight.then(|| dev.iter().skip(1).fold(kurbo::Rect::from_points(dev[0], dev[0]), |r, q| r.union_pt(*q)))
+}
+
+/// Classify a clip shape under `m` (02 §6.5, R07).
+pub(crate) fn clip_class(g: &Geometry, m: Affine) -> ClipClass {
+    let scissor = |device: kurbo::Rect| {
+        let on_px = |v: f64| (v - v.round()).abs() <= 1.0 / 256.0;
+        let aligned = on_px(device.x0) && on_px(device.y0) && on_px(device.x1) && on_px(device.y1);
+        ClipClass::Scissor { device, aligned }
+    };
+    let preserving = axis_aligned(m) || quarter_turn(m);
+    match g {
+        Geometry::Rect(r) if preserving => scissor(m.transform_rect_bbox(*r)),
+        Geometry::RoundedRect(rr) => {
+            let r = rr.radii();
+            let zero =
+                [r.top_left, r.top_right, r.bottom_right, r.bottom_left].iter().all(|v| v.abs() < 1e-9);
+            match (zero, preserving) {
+                (true, true) => scissor(m.transform_rect_bbox(rr.rect())),
+                (true, false) => ClipClass::Other,
+                (false, _) => ClipClass::RoundedRect,
+            }
+        }
+        Geometry::Circle(_) => ClipClass::RoundedRect,
+        Geometry::Path(p) => rect_path(p, m).map_or(ClipClass::Other, scissor),
+        _ => ClipClass::Other,
+    }
+}
+
+/// Classify a clip geometry under `xf` against the current clip (09 §2.2, Phase-C rows only):
+/// an R07 `Scissor` class goes through C11's snap + intersect; everything else is a bbox
+/// scissor (`Bounds`, C17) until L01.
+pub(crate) fn classify_clip(geom: &Geometry, xf: Affine, cur: &ClipState) -> ClipDecision {
+    if !xf.as_coeffs().iter().all(|v| v.is_finite()) {
         return ClipDecision { kind: ClipKind::Cull, scissor: cur.scissor };
     }
-    finish(bbox(geom), cur, ClipKind::Bounds)
+    match clip_class(geom, xf) {
+        ClipClass::Scissor { device, .. } => finish(device, cur, ClipKind::Scissor),
+        ClipClass::RoundedRect | ClipClass::Other => {
+            finish(xf.transform_rect_bbox(geom.bounding_box()), cur, ClipKind::Bounds)
+        }
+    }
 }
 
 fn finish(b: kurbo::Rect, cur: &ClipState, kind: ClipKind) -> ClipDecision {
@@ -176,5 +230,92 @@ mod tests {
         let geom = Geometry::Rect(Rect::new(10.0, 10.0, 1e12, 1e12));
         let d = classify_clip(&geom, Affine::IDENTITY, &cur((100, 100)));
         assert_eq!(d.scissor, ScissorRect { x0: 10, y0: 10, x1: 100, y1: 100 });
+    }
+
+    // ---- R07: clip shape classes ----
+
+    fn class(g: Geometry, m: Affine) -> ClipClass {
+        clip_class(&g, m)
+    }
+
+    fn is_scissor(c: ClipClass) -> bool {
+        matches!(c, ClipClass::Scissor { .. })
+    }
+
+    #[test]
+    fn rect_identity_is_scissor() {
+        let c = class(Geometry::Rect(Rect::new(10.0, 10.0, 50.0, 40.0)), Affine::IDENTITY);
+        assert_eq!(c, ClipClass::Scissor { device: Rect::new(10.0, 10.0, 50.0, 40.0), aligned: true });
+    }
+
+    #[test]
+    fn zero_radius_rrect_is_scissor() {
+        // decorated.rs:207's image clip: `rect.to_rounded_rect(0.0)`.
+        let rr = Rect::new(0.0, 0.0, 40.0, 40.0).to_rounded_rect(0.0);
+        assert!(is_scissor(class(Geometry::RoundedRect(rr), Affine::scale(2.0))));
+    }
+
+    #[test]
+    fn rrect_radius_4_is_rrect() {
+        let rr = Rect::new(0.0, 0.0, 40.0, 40.0).to_rounded_rect(4.0);
+        assert_eq!(class(Geometry::RoundedRect(rr), Affine::IDENTITY), ClipClass::RoundedRect);
+    }
+
+    #[test]
+    fn quarter_turn_rect_is_scissor() {
+        let m = Affine::rotate(std::f64::consts::FRAC_PI_2).then_translate((60.0, 0.0).into());
+        let ClipClass::Scissor { device, .. } = class(Geometry::Rect(Rect::new(0.0, 0.0, 100.0, 50.0)), m)
+        else {
+            panic!("not a scissor");
+        };
+        assert!((device.width() - 50.0).abs() < 1e-6 && (device.height() - 100.0).abs() < 1e-6, "{device:?}");
+    }
+
+    #[test]
+    fn mirrored_rect_is_scissor() {
+        let m = Affine::scale_non_uniform(-1.0, 1.0).then_translate((100.0, 0.0).into());
+        assert!(is_scissor(class(Geometry::Rect(Rect::new(10.0, 10.0, 50.0, 40.0)), m)));
+    }
+
+    #[test]
+    fn rotate_15_degrees_is_other() {
+        let m = Affine::rotate(15f64.to_radians());
+        assert_eq!(class(Geometry::Rect(Rect::new(10.0, 10.0, 50.0, 40.0)), m), ClipClass::Other);
+    }
+
+    #[test]
+    fn legacy_four_point_path_is_scissor() {
+        let mut p = kurbo::BezPath::new();
+        p.move_to((10.0, 10.0));
+        p.line_to((50.0, 10.0));
+        p.line_to((50.0, 40.0));
+        p.line_to((10.0, 40.0));
+        p.close_path();
+        assert_eq!(
+            class(Geometry::Path(p), Affine::IDENTITY),
+            ClipClass::Scissor { device: Rect::new(10.0, 10.0, 50.0, 40.0), aligned: true }
+        );
+    }
+
+    #[test]
+    fn triangle_path_is_other() {
+        let mut p = kurbo::BezPath::new();
+        p.move_to((10.0, 10.0));
+        p.line_to((50.0, 10.0));
+        p.line_to((30.0, 40.0));
+        p.close_path();
+        assert_eq!(class(Geometry::Path(p), Affine::IDENTITY), ClipClass::Other);
+    }
+
+    #[test]
+    fn circle_is_rrect() {
+        let c = Geometry::Circle(kurbo::Circle::new((20.0, 20.0), 10.0));
+        assert_eq!(class(c, Affine::IDENTITY), ClipClass::RoundedRect);
+    }
+
+    #[test]
+    fn fractional_rect_is_unaligned() {
+        let c = class(Geometry::Rect(Rect::new(10.5, 10.0, 50.0, 40.0)), Affine::IDENTITY);
+        assert!(matches!(c, ClipClass::Scissor { aligned: false, .. }), "{c:?}");
     }
 }
