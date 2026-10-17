@@ -17,10 +17,7 @@ pebbles-foundation.workspace = true
 pebbles-icons.workspace = true
 # wasm-safe clock for dev-log throttles (std::time::Instant panics on wasm).
 web-time.workspace = true
-# The two swappable rasterizer backends, selected by the features below. Both are
-# optional; the paint seam (`paint/mod.rs`) compiles exactly one. The geometry/brush
-# vocabulary (`kurbo`/`peniko`) is backend-neutral and always present, so the widget
-# layer imports it directly and never names a backend.
+# The transitional vello-hybrid backend (transitional smoke reference; deleted at Phase 7):
 #  · vello_hybrid + vello_common → the hybrid backend's retained op-list records
 #    against these, and `Scene::flush` walks it into a live `vello_hybrid::Scene`
 #    (the shell then rasterizes that on the GPU). `text` pulls in glyph runs;
@@ -35,9 +32,9 @@ slotmap.workspace = true
 smallvec = { workspace = true, features = ["union"] }
 
 [features]
-# Exactly ONE backend must be on. `vello-hybrid` is the default; `wgpu` (first-party)
-# is opt-in. `vello-hybrid` wins whenever it is enabled (DR-10); select wgpu with
-# `--no-default-features --features wgpu`. The seam is paint/mod.rs.
+# Render backend (wgpu migration). Exactly ONE must be on. `vello-hybrid` is the default;
+# `wgpu` is opt-in. With both enabled, `vello-hybrid` wins until the Phase-6 flip (DR-10).
+# The seam is paint/mod.rs.
 default = ["vello-hybrid"]
 wgpu = []
 vello-hybrid = ["dep:vello_hybrid", "vello_hybrid/text", "dep:vello_common", "dep:glifo"]

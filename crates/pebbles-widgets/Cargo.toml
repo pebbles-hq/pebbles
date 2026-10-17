@@ -13,8 +13,7 @@ readme = "README.md"
 description = "The Pebbles catalog: Flutter-style widgets, shadcn-style components, theme and styling."
 
 [features]
-# Render backend, forwarded to pebbles-render + pebbles-core. `vello-hybrid` is the
-# default; `wgpu` (first-party) is opt-in.
+# Render backend, forwarded to pebbles-render + pebbles-core. `vello-hybrid` is the default; `wgpu` is opt-in (wgpu migration).
 default = ["vello-hybrid"]
 wgpu = ["pebbles-render/wgpu", "pebbles-core/wgpu"]
 vello-hybrid = ["pebbles-render/vello-hybrid", "pebbles-core/vello-hybrid"]

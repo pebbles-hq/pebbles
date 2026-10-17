@@ -21,10 +21,10 @@ pebbles-shell.workspace = true
 pebbles-macros.workspace = true
 
 [features]
-# Render backend, forwarded through the whole graph. `vello-hybrid` is the default;
-# the first-party `wgpu` renderer is opt-in.
-# Note: the offscreen `capture` API (`pebbles::shell::capture`) is available under
-# `vello-hybrid` or `wgpu` (off-wasm) — it needs an offscreen GPU device.
+# Render backend, forwarded through the whole graph (wgpu migration): `vello-hybrid` is the
+# default; the first-party `wgpu` renderer is opt-in via `--no-default-features --features wgpu`.
+# With both enabled, `vello-hybrid` wins until the Phase-6 flip. The offscreen `capture` API
+# works off-wasm under either backend.
 default = ["vello-hybrid"]
 wgpu = [
     "pebbles-render/wgpu",
@@ -62,9 +62,7 @@ android-game-activity = ["pebbles-shell/android-game-activity"]
 [lints]
 workspace = true
 
-# docs.rs builds with every feature so the feature-gated API (ImageView, hotkeys,
-# `create_resource_future`, offscreen `capture`) appears. `--all-features` resolves to the
-# hybrid backend (hybrid wins over vello), so this is safe.
+# docs.rs builds with every feature so the feature-gated API (ImageView, hotkeys, create_resource_future, offscreen capture) appears. During the wgpu migration --all-features resolves to vello-hybrid (DR-10), so this is safe.
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

@@ -17,9 +17,7 @@ pebbles-foundation.workspace = true
 pebbles-render.workspace = true
 pebbles-core.workspace = true
 pebbles-widgets.workspace = true
-# vello WITH default features here → pulls in the wgpu-backed GPU `Renderer`. Kept a
-# dependency under BOTH backends: the hybrid host (gpu/hybrid_host.rs) reuses
-# `vello::util`'s backend-agnostic surface/blit plumbing and swaps only the renderer.
+# `vello` (default features) is used ONLY by the transitional hybrid host (gpu/hybrid_host.rs) for vello::util's surface plumbing. Deleted at Phase 7.
 vello = { workspace = true, default-features = true, optional = true }
 # The Vello Hybrid GPU renderer, enabled by the `vello-hybrid` feature. `wgpu` gives the
 # GPU `Renderer`; `text` gives glyph runs (the flush resolves glyphs against its atlas).
@@ -47,10 +45,7 @@ kurbo.workspace = true
 global-hotkey = { version = "0.8", optional = true }
 
 [features]
-# Render backend (wgpu migration). `vello-hybrid` is the default; `wgpu` (first-party)
-# is opt-in. Both forward the selection to pebbles-render/-core/-widgets. `vello-hybrid`
-# wins whenever it is enabled (DR-10); select wgpu with
-# `--no-default-features --features wgpu`. The hybrid GPU host lives in gpu/hybrid_host.rs.
+# Render backend (wgpu migration): `vello-hybrid` (default) or `wgpu` (opt-in). With both enabled, `vello-hybrid` wins until the Phase-6 flip (DR-10).
 default = ["vello-hybrid"]
 wgpu = [
     "pebbles-render/wgpu",
@@ -65,7 +60,7 @@ vello-hybrid = [
     "pebbles-widgets/vello-hybrid",
     "dep:vello",
     "dep:vello_hybrid",
-    # `capture` (native + hybrid only) needs PNG encoding; pull it in exactly there.
+    # `capture` (native) needs PNG encoding; pull it in exactly there.
     "dep:png",
 ]
 # Wire an `App::menu(menu_bar([...]))` native bar via `muda` (B3).
@@ -102,10 +97,7 @@ arboard = { version = "3", default-features = false }
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 accesskit = "0.25"
 accesskit_winit = "0.34.0"
-# PNG encoding for the offscreen `capture` API. Optional + declared only off-wasm and
-# enabled by the `vello-hybrid` feature, so it compiles exactly where `capture` does
-# (`cfg(all(not(wasm), feature = "vello-hybrid"))`) — never under `--features vello`
-# alone, and never on wasm.
+# PNG encoding for the offscreen `capture` API. Declared off-wasm only and enabled by both `vello-hybrid` and `wgpu` — exactly where `capture` compiles.
 png = { version = "0.18", optional = true }
 
 # Web (wasm) runtime deps. The web GPU device request is inherently async and must

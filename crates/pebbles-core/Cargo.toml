@@ -31,9 +31,7 @@ wasm-bindgen-futures = "0.4"
 tokio = { version = "1", optional = true, features = ["rt", "rt-multi-thread"] }
 
 [features]
-# Render backend, forwarded to pebbles-render. `vello-hybrid` is the default.
-# `vello-hybrid` (low-power) is default; `vello` opt-in. (Core has no backend-specific
-# code — it just needs pebbles-render to have one selected.)
+# Render backend, forwarded to pebbles-render. `vello-hybrid` is the default; `wgpu` is opt-in (wgpu migration).
 default = ["vello-hybrid"]
 wgpu = ["pebbles-render/wgpu"]
 vello-hybrid = ["pebbles-render/vello-hybrid"]
