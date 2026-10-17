@@ -8,6 +8,8 @@ pub mod case;
 pub mod corpus;
 pub mod metric;
 pub mod png_io;
+pub mod readback;
+pub mod reference;
 pub mod report;
 pub mod rng;
 pub mod status;
