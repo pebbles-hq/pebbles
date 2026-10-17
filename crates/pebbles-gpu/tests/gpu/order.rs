@@ -182,3 +182,33 @@ fn steady_state_frames_create_nothing() {
         }
     }
 }
+
+/// D01: page text drawn BEFORE a dialog stays under it even when the glyph sits inside the
+/// dialog — a renderer that batches by kind (solids, then glyphs) would draw it on top.
+#[test]
+#[ignore = "gpu"]
+fn text_under_dialog_stays_covered() {
+    let Some((device, queue, mut renderer)) = setup("text_under_dialog_stays_covered") else { return };
+    let bytes = pebbles_render::fonts::builtin_fonts()[0].1;
+    let font = peniko::FontData::new(peniko::Blob::from(bytes.to_vec()), 0);
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    p.draw_glyphs(
+        &font,
+        32.0,
+        &[],
+        &Brush::Solid(Color::BLACK),
+        Affine::IDENTITY,
+        None,
+        Fill::NonZero,
+        std::iter::once(Glyph { id: 36, x: 100.0, y: 80.0 }),
+    );
+    p.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &Rect::new(60.0, 30.0, 180.0, 100.0));
+    let rgba = render_scene(&device, &queue, &mut renderer, &scene, (200, 120), Color::WHITE);
+    for y in 32..98 {
+        for x in 62..178 {
+            let c = pixel(&rgba, 200, x, y);
+            assert!(is_white(c), "page text shows through the dialog at ({x},{y}): {c:?}");
+        }
+    }
+}

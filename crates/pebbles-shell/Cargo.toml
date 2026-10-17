@@ -26,7 +26,6 @@ wgpu.workspace = true
 pebbles-gpu = { workspace = true, optional = true }
 winit.workspace = true
 raw-window-handle.workspace = true
-pollster.workspace = true
 # A std::time drop-in that works on wasm too: on native it IS std::time (zero
 # cost); on wasm `Instant` uses `performance.now()` instead of panicking. winit
 # already uses it for `ControlFlow::WaitUntil`.
@@ -97,6 +96,9 @@ arboard = { version = "3", default-features = false }
 # on macOS, the Java API on Android). No web adapter yet, so excluded on wasm; on
 # iOS it compiles as a no-op until the iOS adapter ships.
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
+# Blocking GPU init/recovery is native-only (D17): on wasm the browser thread must never block,
+# so `pollster` is not even a dependency there and any wasm-reachable `block_on` fails to compile.
+pollster.workspace = true
 accesskit = "0.25"
 accesskit_winit = "0.34.0"
 # PNG encoding for the offscreen `capture` API. Declared off-wasm only and enabled by both `vello-hybrid` and `wgpu` — exactly where `capture` compiles.

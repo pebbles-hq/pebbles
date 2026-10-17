@@ -94,3 +94,33 @@ fn validation_error_with_texture_text_is_reported() {
     assert_eq!(gpu.health().validation_errors(), before + 1);
     assert!(!gpu.health().is_poisoned(), "validation errors never poison the device");
 }
+
+/// D23: one `FrameTargets` reused across targets of different sizes renders each at ITS
+/// texture's size (never a stale or window size): a fill in the bottom-right corner lands there.
+#[test]
+#[ignore = "gpu"]
+fn render_size_follows_each_target() {
+    let Some((device, queue, mut renderer)) = setup("render_size_follows_each_target") else { return };
+    let mut targets = FrameTargets::new();
+    for (w, h) in [(64u32, 48u32), (160, 120), (64, 48)] {
+        let texture = target_texture(&device, w, h);
+        let view = texture.create_view(&Default::default());
+        let mut scene = Scene::new();
+        let corner = Rect::new(f64::from(w) - 8.0, f64::from(h) - 8.0, f64::from(w), f64::from(h));
+        Painter::new(&mut scene).fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::from_rgba8(255, 0, 0, 255),
+            None,
+            &corner,
+        );
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let target = RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut targets);
+        renderer.render(target, &scene, &FrameParams::new(Color::WHITE)).expect("render");
+        assert!(pollster::block_on(scope.pop()).is_none(), "validation error at {w}x{h}");
+        queue.submit([]);
+        let rgba = readback(&device, &queue, &texture);
+        assert_eq!(pixel(&rgba, w, w - 4, h - 4), [255, 0, 0, 255], "corner at {w}x{h}");
+        assert_eq!(pixel(&rgba, w, w / 2, h / 2), [255, 255, 255, 255], "center at {w}x{h}");
+    }
+}

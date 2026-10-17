@@ -192,3 +192,13 @@ fn rank_macos_software_is_empty() {
     let ranked = rank_adapters(&cands, &init);
     assert!(ranked.order.is_empty());
 }
+
+/// D14: the env override reaches the wiring, not just the pure helper — `WGPU_BACKEND=gl`
+/// through `from_env_with` and into the instance descriptor.
+#[test]
+fn wgpu_backend_env_reaches_the_instance_descriptor() {
+    let init = GpuInit::from_env_with(HostOs::Linux, get(&env(&[("WGPU_BACKEND", "gl")])));
+    let compiled = wgpu::Instance::enabled_backend_features();
+    assert_eq!(init.backends, wgpu::Backends::GL & compiled);
+    assert_eq!(crate::context::instance_descriptor(&init).backends, init.backends);
+}
