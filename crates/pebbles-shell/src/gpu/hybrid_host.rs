@@ -230,7 +230,7 @@ impl Renderer {
 pub(crate) fn present_frame(
     ctx: &RenderContext,
     renderer: &mut Renderer,
-    surface: &RenderSurface<'_>,
+    surface: &mut RenderSurface<'_>,
     scene: &Scene,
     base_color: Color,
     window: &winit::window::Window,

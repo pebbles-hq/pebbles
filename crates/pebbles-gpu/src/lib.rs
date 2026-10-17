@@ -34,7 +34,8 @@ pub(crate) mod test_support;
 
 pub use context::{DeviceId, GpuCaps, GpuContext, GpuDevice};
 pub use error::{AcquireError, CaptureError, GpuError};
+pub use frame_targets::{FrameParams, FrameTargets, RenderTarget};
 pub use init::{GpuInit, GpuPower, HostOs};
-pub use renderer::{RenderParams, Renderer};
+pub use renderer::Renderer;
 pub use stats::{FrameStats, Unsupported};
 pub use surface::RenderSurface;

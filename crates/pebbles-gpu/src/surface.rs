@@ -2,6 +2,7 @@
 
 use super::context::{DeviceId, GpuContext, GpuDevice};
 use super::error::GpuError;
+use crate::frame_targets::FrameTargets;
 
 /// How the renderer encodes colors before the hardware stores them (08 §4.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,6 +60,8 @@ pub struct RenderSurface<'window> {
     /// The encoding contract the shaders must honor (R13 reads it into `Globals::color_flags`).
     #[allow(dead_code)] // first consumer: R13 (after C12)
     pub(crate) encoding: OutputEncoding,
+    /// This surface's own MSAA target (10 §4, E3).
+    targets: FrameTargets,
 }
 
 impl<'window> RenderSurface<'window> {
@@ -83,6 +86,11 @@ impl<'window> RenderSurface<'window> {
         self.config.width = width.clamp(1, max);
         self.config.height = height.clamp(1, max);
         self.surface.configure(gpu.device(), &self.config);
+    }
+
+    /// This surface's target textures, for `RenderTarget::new`.
+    pub fn targets_mut(&mut self) -> &mut FrameTargets {
+        &mut self.targets
     }
 
     /// The underlying wgpu surface (for the shell's acquire/present).
@@ -132,6 +140,7 @@ impl<'window> RenderSurface<'window> {
             dev_id,
             view_format: choice.view_format,
             encoding: choice.encoding,
+            targets: FrameTargets::new(),
         })
     }
 }

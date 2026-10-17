@@ -275,7 +275,7 @@ impl Runner {
         // 4. Render + present. The host's `present_frame` acquires the swapchain image,
         // renders straight into it and presents. NOTHING here may panic — on failure the
         // host logs, bumps GPU_ERRORS (the reset picks it up), and skips THIS frame.
-        let surface = &active.surface;
+        let surface = &mut active.surface;
         let idx = surface.device_index();
         let renderer = match self.renderers[idx].as_mut() {
             Some(r) => r,
@@ -395,7 +395,7 @@ impl Runner {
         self.frame.append(&self.scene, Some(Affine::scale(scale)));
         self.text.finish_frame();
 
-        let surface = &w.surface;
+        let surface = &mut w.surface;
         let idx = surface.device_index();
         // Same no-panic policy as render(): recreate a missing renderer, skip the
         // frame (and schedule the GPU reset) on a render failure.

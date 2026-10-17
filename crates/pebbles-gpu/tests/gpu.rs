@@ -5,7 +5,7 @@ use kurbo::{Affine, Rect, Stroke};
 use pebbles_render::paint::{Glyph, Painter, Scene};
 use peniko::{Brush, Color, Fill};
 
-use pebbles_gpu::{GpuContext, GpuInit, RenderParams, Renderer};
+use pebbles_gpu::{FrameParams, FrameTargets, GpuContext, GpuInit, RenderTarget, Renderer};
 
 /// Acquire a headless device + renderer, printing a skip note and returning `None` without an adapter.
 fn setup(name: &str) -> Option<(wgpu::Device, wgpu::Queue, Renderer)> {
@@ -44,10 +44,9 @@ fn render_scene(
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let params = RenderParams { base_color: base, width: size.0, height: size.1 };
-    renderer
-        .render_to_texture(device, queue, scene, &view, wgpu::TextureFormat::Rgba8Unorm, &params)
-        .expect("render");
+    let mut targets = FrameTargets::new();
+    let target = RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut targets);
+    renderer.render(target, scene, &FrameParams::new(base)).expect("render");
     queue.submit([]);
     readback(device, queue, &texture)
 }
@@ -105,8 +104,9 @@ fn two_formats_alternate_without_validation_errors() {
         );
 
         let guard = device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let params = RenderParams { base_color: Color::WHITE, width: 64, height: 64 };
-        renderer.render_to_texture(device, queue, &scene, &view, format, &params).expect("render");
+        let mut targets = FrameTargets::new();
+        let target = RenderTarget::new(&view, format, &mut targets);
+        renderer.render(target, &scene, &FrameParams::new(Color::WHITE)).expect("render");
         queue.submit([]);
         let err = pollster::block_on(guard.pop());
         assert!(err.is_none(), "validation error: {err:?}");
@@ -350,7 +350,7 @@ fn clipped_text_then_shadow_elsewhere() {
 #[test]
 #[ignore = "gpu"]
 fn steady_state_frames_create_nothing() {
-    let Some((device, queue, mut renderer)) = setup("steady_state_frames_create_nothing") else { return };
+    let Some((device, _queue, mut renderer)) = setup("steady_state_frames_create_nothing") else { return };
     let bytes = pebbles_render::fonts::builtin_fonts()[0].1;
     let font = peniko::FontData::new(peniko::Blob::from(bytes.to_vec()), 0);
     let mut scene = Scene::new();
@@ -387,10 +387,11 @@ fn steady_state_frames_create_nothing() {
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let params = RenderParams { base_color: Color::WHITE, width: 160, height: 120 };
+    let params = FrameParams::new(Color::WHITE);
+    let mut targets = FrameTargets::new();
     for frame in 1..=20 {
         let stats = renderer
-            .render_to_texture(&device, &queue, &scene, &view, wgpu::TextureFormat::Rgba8Unorm, &params)
+            .render(RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut targets), &scene, &params)
             .expect("render");
         if frame >= 3 {
             assert_eq!(
@@ -463,7 +464,8 @@ fn glyphs_survive_500_frames() {
         view_formats: &[],
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let params = RenderParams { base_color: Color::WHITE, width: w, height: h };
+    let params = FrameParams::new(Color::WHITE);
+    let mut targets = FrameTargets::new();
     // Ink of the first glyph's cell (x in 0..16).
     let first_ink = |rgba: &[u8]| {
         (0..h)
@@ -486,7 +488,7 @@ fn glyphs_survive_500_frames() {
             ids.enumerate().map(|(i, id)| Glyph { id, x: 2.0 + 15.5 * i as f32, y: 30.0 }),
         );
         let stats = renderer
-            .render_to_texture(&device, &queue, &scene, &view, wgpu::TextureFormat::Rgba8Unorm, &params)
+            .render(RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut targets), &scene, &params)
             .expect("render");
         if frame == 1 || frame == 500 {
             queue.submit([]);
@@ -651,6 +653,90 @@ fn oversize_image_is_downscaled_not_rejected() {
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (64, 16), Color::WHITE);
     assert_eq!(pixel(&rgba, 64, 32, 8), [0, 0, 255, 255]);
     assert_eq!(renderer.last_stats().unsupported[pebbles_gpu::Unsupported::ImageTooLarge as usize], 1);
+}
+
+fn target_texture(device: &wgpu::Device, w: u32, h: u32) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pebbles.gpu.test.target"),
+        size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    })
+}
+
+/// C14: one `Renderer`, a 300×200 and a 500×400 target, 20 alternations → exactly 2 MSAA
+/// textures, and from frame 3 on no textures or views are created.
+#[test]
+#[ignore = "gpu"]
+fn two_targets_alternating_allocate_msaa_twice() {
+    let Some((device, _queue, mut renderer)) = setup("two_targets_alternating_allocate_msaa_twice") else {
+        return;
+    };
+
+    let mut scene = Scene::new();
+    Painter::new(&mut scene).fill(
+        Fill::NonZero,
+        Affine::IDENTITY,
+        Color::BLACK,
+        None,
+        &Rect::new(0.0, 0.0, 50.0, 50.0),
+    );
+    let small = target_texture(&device, 300, 200);
+    let large = target_texture(&device, 500, 400);
+    let (small_view, large_view) =
+        (small.create_view(&Default::default()), large.create_view(&Default::default()));
+    let (mut small_targets, mut large_targets) = (FrameTargets::new(), FrameTargets::new());
+    let params = FrameParams::new(Color::WHITE);
+    let mut created = 0;
+    for frame in 1..=40 {
+        let target = if frame % 2 == 1 {
+            RenderTarget::new(&small_view, wgpu::TextureFormat::Rgba8Unorm, &mut small_targets)
+        } else {
+            RenderTarget::new(&large_view, wgpu::TextureFormat::Rgba8Unorm, &mut large_targets)
+        };
+        let stats = renderer.render(target, &scene, &params).expect("render");
+        created += stats.textures_created;
+        if frame >= 3 {
+            assert_eq!(
+                (stats.textures_created, stats.texture_views_created),
+                (0, 0),
+                "frame {frame}: {stats:?}"
+            );
+        }
+    }
+    // The glyph atlas pages are created with the Renderer, so every texture counted here is MSAA.
+    assert_eq!(created, 2);
+}
+
+/// C14: the render size comes from the target texture; rendering through it is valid.
+#[test]
+#[ignore = "gpu"]
+fn render_target_size_comes_from_texture() {
+    let Some((device, queue, mut renderer)) = setup("render_target_size_comes_from_texture") else { return };
+    let texture = target_texture(&device, 200, 100);
+    let view = texture.create_view(&Default::default());
+    let mut targets = FrameTargets::new();
+    let target = RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut targets);
+    assert_eq!(target.size(), (200, 100));
+    let mut scene = Scene::new();
+    Painter::new(&mut scene).fill(
+        Fill::NonZero,
+        Affine::IDENTITY,
+        Color::from_rgba8(255, 0, 0, 255),
+        None,
+        &Rect::new(150.0, 50.0, 200.0, 100.0),
+    );
+    let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    renderer.render(target, &scene, &FrameParams::new(Color::WHITE)).expect("render");
+    assert!(pollster::block_on(scope.pop()).is_none(), "validation error");
+    queue.submit([]);
+    let rgba = readback(&device, &queue, &texture);
+    assert_eq!(pixel(&rgba, 200, 190, 90), [255, 0, 0, 255]);
+    assert_eq!(pixel(&rgba, 200, 10, 10), [255, 255, 255, 255]);
 }
 
 /// Copy a texture's rows (padded to 256 bytes) into an unpadded byte buffer.

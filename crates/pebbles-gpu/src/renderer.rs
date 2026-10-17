@@ -1,8 +1,6 @@
 //! One [`Renderer`] per device: the eager resource set (Globals, arenas, layouts, pipeline
 //! cache, glyph atlas).
 
-use kurbo::Affine;
-
 use pebbles_render::paint::Scene;
 
 use super::context::{DeviceId, GpuDevice};
@@ -14,20 +12,10 @@ use super::execute::resources::buffers::FrameArenas;
 use super::execute::resources::globals::Globals;
 use super::execute::resources::glyph_atlas::GlyphAtlas;
 use super::execute::resources::image_cache::ImageCache;
-use super::frame_targets::create_msaa;
+use super::frame_targets::{FrameParams, RenderTarget, TargetKey};
 use super::gpu_types::QuadInstance;
 use super::prepare::{PrepareInput, PrepareScratch, VERTEX_LIMIT_NO_FULL_INDEX, prepare};
 use super::stats::{FrameStats, Unsupported, WarnOnce};
-
-/// Per-frame render parameters.
-pub struct RenderParams {
-    /// The clear color.
-    pub base_color: peniko::Color,
-    /// Target width in physical pixels.
-    pub width: u32,
-    /// Target height in physical pixels.
-    pub height: u32,
-}
 
 /// Pipelines + caches for ONE device. Shared by every surface/target on that device.
 pub struct Renderer {
@@ -38,7 +26,8 @@ pub struct Renderer {
     globals_buffer: wgpu::Buffer,
     globals_bg: wgpu::BindGroup,
     pub(crate) arenas: FrameArenas,
-    msaa: Option<(wgpu::TextureFormat, u32, u32, wgpu::Texture)>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
     pub(crate) glyph_atlas: GlyphAtlas,
     pub(crate) glyph_instances: Vec<QuadInstance>,
     pub(crate) image_cache: ImageCache,
@@ -82,7 +71,8 @@ impl Renderer {
             globals_buffer,
             globals_bg,
             arenas: FrameArenas::new(),
-            msaa: None,
+            device: device.clone(),
+            queue: gpu.queue().clone(),
             glyph_atlas,
             glyph_instances: Vec::new(),
             image_cache: ImageCache::new(device),
@@ -108,57 +98,34 @@ impl Renderer {
         self.stats
     }
 
-    /// Render `scene` into `target` (a view of a `format` texture of `params` size).
-    pub fn render_to_texture(
+    /// Prepare → resolve → upload → encode → submit → end-of-frame, into `target`.
+    ///
+    /// Errors: `InvalidTargetSize` when a side is 0 or above the device limit.
+    pub fn render(
         &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        target: RenderTarget<'_>,
         scene: &Scene,
-        target: &wgpu::TextureView,
-        format: wgpu::TextureFormat,
-        params: &RenderParams,
+        params: &FrameParams,
     ) -> Result<FrameStats, GpuError> {
-        self.render_offscreen(
-            device,
-            queue,
-            scene,
-            target,
-            params.base_color,
-            (params.width, params.height),
-            format,
-        )
-    }
-
-    /// Render `scene` into `target`, clearing to `base_color` first.
-    #[allow(clippy::too_many_arguments)]
-    pub fn render_offscreen(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        scene: &Scene,
-        target: &wgpu::TextureView,
-        base_color: peniko::Color,
-        size: (u32, u32),
-        format: wgpu::TextureFormat,
-    ) -> Result<FrameStats, GpuError> {
-        let size = (size.0.max(1), size.1.max(1));
-        let msaa = match &self.msaa {
-            Some((f, w, h, texture)) if *f == format && (*w, *h) == size => texture.clone(),
-            _ => {
-                let texture = create_msaa(device, format, size.0, size.1, self.sample_count);
-                self.msaa = Some((format, size.0, size.1, texture.clone()));
-                texture
-            }
-        };
-
+        let device = self.device.clone();
+        let queue = self.queue.clone();
+        let (device, queue) = (&device, &queue);
+        let size = target.size();
+        let max = device.limits().max_texture_dimension_2d;
+        if size.0 == 0 || size.1 == 0 || size.0 > max || size.1 > max {
+            return Err(GpuError::InvalidTargetSize { width: size.0, height: size.1, max });
+        }
+        let format = target.format();
         let mut stats = FrameStats::default();
+        let key = TargetKey { width: size.0, height: size.1, format, sample_count: self.sample_count };
+        let msaa = target.targets.msaa_view(device, key, &mut stats).cloned();
+
         let input = PrepareInput {
             target_size: size,
-            root_transform: Affine::IDENTITY,
+            root_transform: params.root_transform,
             vertex_limit: self.vertex_limit,
         };
         prepare(scene, &input, &mut self.scratch, &mut stats);
-
         stats.ops = self.scratch.plan.stats.ops;
         stats.cmds = u32::try_from(self.scratch.plan.cmds.len()).unwrap_or(u32::MAX);
         stats.culled = self.scratch.plan.stats.culled;
@@ -196,17 +163,21 @@ impl Renderer {
         self.image_cache.begin_frame();
         resolve_and_upload(self, device, queue, &mut stats);
 
-        let clear = super::prepare::color::clear_color(base_color);
+        let clear = super::prepare::color::clear_color(params.base_color);
         let mut encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.gpu.encoder") });
         {
-            let msaa_view = msaa.create_view(&wgpu::TextureViewDescriptor::default());
+            // Single-sampled devices draw straight into the target (no resolve).
+            let (view, resolve_target) = match &msaa {
+                Some(m) => (m, Some(target.view)),
+                None => (target.view, None),
+            };
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("pebbles.gpu.pass.root"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &msaa_view,
+                    view,
                     depth_slice: None,
-                    resolve_target: Some(target),
+                    resolve_target,
                     ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear), store: wgpu::StoreOp::Store },
                 })],
                 depth_stencil_attachment: None,

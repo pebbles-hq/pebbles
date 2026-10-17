@@ -201,17 +201,28 @@ impl Gpu {
         // — this reuses the runner's flush + `draw_image` binding, so captured widgets that
         // contain images rasterize correctly (the old bespoke path bound no image textures).
         let [r, g, b, _] = base.components;
+        let opaque = Color::new([r, g, b, 1.0]);
+        #[cfg(feature = "vello-hybrid")]
         self.renderer
             .render_offscreen(
                 &self.device,
                 &self.queue,
                 scene,
                 &view,
-                Color::new([r, g, b, 1.0]),
+                opaque,
                 (w, h),
                 TextureFormat::Rgba8Unorm,
             )
             .map_err(|e| format!("capture render failed: {e}"))?;
+        #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
+        {
+            // One capture = one target; C15 replaces this with `OffscreenRenderer`.
+            let mut targets = pebbles_gpu::FrameTargets::new();
+            let target = pebbles_gpu::RenderTarget::new(&view, TextureFormat::Rgba8Unorm, &mut targets);
+            self.renderer
+                .render(target, scene, &pebbles_gpu::FrameParams::new(opaque))
+                .map_err(|e| format!("capture render failed: {e}"))?;
+        }
 
         // Offset math in `usize` (the `MAX_CAPTURE_DIM` cap already keeps it inside `u32`, but
         // this is the readback that would OOB-panic on a wrapped index — be explicit).

@@ -1,6 +1,8 @@
 //! The wgpu host: a thin adapter over `pebbles-gpu`, matching the shell's host seam.
 
-use pebbles_gpu::{GpuContext, RenderParams, RenderSurface as GpuSurface, Renderer as GpuRenderer};
+use pebbles_gpu::{
+    FrameParams, GpuContext, RenderSurface as GpuSurface, RenderTarget, Renderer as GpuRenderer,
+};
 use pebbles_render::Scene;
 use peniko::Color;
 
@@ -60,7 +62,7 @@ impl RenderSurface<'_> {
         self.0.device_id().index()
     }
 
-    #[allow(dead_code)] // the seam contract; present_frame reads the inner size directly
+    #[allow(dead_code)] // the seam contract; present_frame sizes from the acquired texture
     pub(crate) fn size(&self) -> (u32, u32) {
         self.0.size()
     }
@@ -72,25 +74,24 @@ pub(crate) type Renderer = GpuRenderer;
 pub(crate) fn present_frame(
     ctx: &RenderContext,
     renderer: &mut Renderer,
-    surface: &RenderSurface<'_>,
+    surface: &mut RenderSurface<'_>,
     scene: &Scene,
     base_color: Color,
     window: &winit::window::Window,
 ) -> PresentOutcome {
-    let gpu = ctx.inner.device(surface.0.device_id()).expect("device");
+    let Some(gpu) = ctx.inner.device(surface.0.device_id()) else { return PresentOutcome::Skipped };
     let device = gpu.device();
-    let queue = gpu.queue();
     let surface_texture = match surface.0.surface().get_current_texture() {
         wgpu::CurrentSurfaceTexture::Success(t) | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
         _ => return PresentOutcome::Skipped,
     };
-    let (w, h) = surface.0.size();
     let format = surface.0.view_format();
     let view = surface_texture
         .texture
         .create_view(&wgpu::TextureViewDescriptor { format: Some(format), ..Default::default() });
-    let params = RenderParams { base_color, width: w, height: h };
-    if let Err(e) = renderer.render_to_texture(device, queue, scene, &view, format, &params) {
+    // The size comes from the acquired texture, never from the window (DR-12).
+    let target = RenderTarget::new(&view, format, surface.0.targets_mut());
+    if let Err(e) = renderer.render(target, scene, &FrameParams::new(base_color)) {
         eprintln!("pebbles: wgpu render failed (skipping frame, scheduling GPU reset): {e}");
         GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         window.request_redraw();
