@@ -347,6 +347,65 @@ fn clipped_text_then_shadow_elsewhere() {
     assert!(halo[0] < 240 && halo[1] < 240 && halo[2] < 240, "card shadow not visible: {halo:?}");
 }
 
+/// C12: after warm-up, rendering the same scene (fills, text, a shadow) creates no buffers,
+/// bind groups, textures or pipelines.
+#[test]
+#[ignore = "gpu"]
+fn steady_state_frames_create_nothing() {
+    let Some((device, queue, mut renderer)) = setup("steady_state_frames_create_nothing") else { return };
+    let bytes = pebbles_render::fonts::builtin_fonts()[0].1;
+    let font = peniko::FontData::new(peniko::Blob::from(bytes.to_vec()), 0);
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    p.draw_blurred_rounded_rect(Affine::IDENTITY, Rect::new(20.0, 24.0, 120.0, 84.0), Color::BLACK, 8.0, 8.0);
+    p.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &Rect::new(20.0, 20.0, 120.0, 80.0));
+    p.draw_glyphs(
+        &font,
+        20.0,
+        400,
+        &[],
+        &Brush::Solid(Color::BLACK),
+        Affine::IDENTITY,
+        None,
+        Fill::NonZero,
+        [36u32, 37, 38].into_iter().enumerate().map(|(i, id)| Glyph {
+            id,
+            x: 30.0 + 14.0 * i as f32,
+            y: 56.0,
+        }),
+    );
+
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pebbles.gpu.test.target"),
+        size: wgpu::Extent3d { width: 160, height: 120, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let params = RenderParams { base_color: Color::WHITE, width: 160, height: 120 };
+    for frame in 1..=20 {
+        let stats = renderer
+            .render_to_texture(&device, &queue, &scene, &view, wgpu::TextureFormat::Rgba8Unorm, &params)
+            .expect("render");
+        if frame >= 3 {
+            assert_eq!(
+                (
+                    stats.buffers_created,
+                    stats.bind_groups_created,
+                    stats.textures_created,
+                    stats.pipelines_created
+                ),
+                (0, 0, 0, 0),
+                "frame {frame} created resources: {stats:?}"
+            );
+        }
+    }
+}
+
 /// Copy a texture's rows (padded to 256 bytes) into an unpadded byte buffer.
 fn readback(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<u8> {
     let width = texture.width();

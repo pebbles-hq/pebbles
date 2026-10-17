@@ -20,7 +20,7 @@ mod stroke;
 mod tessellate;
 
 pub(crate) use images::{ImageUpload, image_uploads};
-pub(crate) use plan::{DrawCmd, FramePlan, GlyphRun, ImageQuad, ScissorRect};
+pub(crate) use plan::{DrawCmd, FramePlan, GlyphRun, ScissorRect};
 
 /// Path-flattening tolerance for recorded shapes (logical px) — a local copy, because
 /// `display_list::TOL` is `pub(crate)` to pebbles-render.

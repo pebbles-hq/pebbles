@@ -142,8 +142,10 @@ impl FramePlan {
     /// contiguous ranges. `Images` never merges (until C13). Returns whether a new command
     /// was pushed (true) or merged (false).
     pub(crate) fn push_draw(&mut self, cmd: DrawCmd) -> bool {
-        if let Some(merged) = self.cmds.last().and_then(|last| merge(last, &cmd)) {
-            *self.cmds.last_mut().expect("last cmd") = merged;
+        if let Some(last) = self.cmds.last_mut()
+            && let Some(merged) = merge(last, &cmd)
+        {
+            *last = merged;
             return false;
         }
         self.cmds.push(cmd);

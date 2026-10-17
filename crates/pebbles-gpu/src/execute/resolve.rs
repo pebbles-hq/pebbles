@@ -9,21 +9,16 @@ use super::super::renderer::Renderer;
 use super::resources::{ATLAS_SIZE, Atlas};
 use crate::gpu_types::GlyphVertex;
 use crate::raster::font_id;
+use crate::stats::FrameStats;
 
 /// Vertex/index geometry for one glyph pipeline (coverage or color).
+#[derive(Default)]
 pub(crate) struct GlyphGeometry {
     pub(crate) vertices: Vec<GlyphVertex>,
     pub(crate) indices: Vec<u32>,
 }
 
 impl GlyphGeometry {
-    fn new() -> Self {
-        Self { vertices: Vec::new(), indices: Vec::new() }
-    }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.indices.is_empty()
-    }
     fn push_quad(&mut self, quad: [GlyphVertex; 4]) {
         let base = index_u32(self.vertices.len());
         self.vertices.extend_from_slice(&quad);
@@ -32,26 +27,25 @@ impl GlyphGeometry {
 }
 
 /// Rasterize each glyph once (cached), pack it into the coverage or color atlas, and emit
-/// the quad geometry (coverage and color separately).
+/// the quad geometry into `coverage` and `color` (appended, so one frame shares one arena each).
 pub(crate) fn build_glyphs(
     renderer: &mut Renderer,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     runs: &[GlyphRun],
-) -> (GlyphGeometry, GlyphGeometry) {
-    let mut coverage = GlyphGeometry::new();
-    let mut color = GlyphGeometry::new();
-    if renderer.fonts.is_none() {
-        renderer.fonts = Some(FontSystem::new_with_fonts(Vec::<fontdb::Source>::new()));
-    }
-    if renderer.swash.is_none() {
-        renderer.swash = Some(SwashCache::new());
-    }
+    coverage: &mut GlyphGeometry,
+    color: &mut GlyphGeometry,
+    stats: &mut FrameStats,
+) {
+    renderer.fonts.get_or_insert_with(|| FontSystem::new_with_fonts(Vec::<fontdb::Source>::new()));
+    renderer.swash.get_or_insert_with(SwashCache::new);
     if renderer.atlas.is_none() {
         renderer.atlas = Some(Atlas::new(device, ATLAS_SIZE, wgpu::TextureFormat::R8Unorm));
+        stats.textures_created += 1;
     }
     if renderer.color_atlas.is_none() {
         renderer.color_atlas = Some(Atlas::new(device, ATLAS_SIZE, wgpu::TextureFormat::Rgba8Unorm));
+        stats.textures_created += 1;
     }
     for run in runs {
         let Some(font_id) = font_id(renderer, &run.font) else { continue };
@@ -66,13 +60,10 @@ pub(crate) fn build_glyphs(
                 fontdb::Weight(run.font_weight),
                 flags,
             );
-            let Some(image) = renderer
-                .swash
-                .as_mut()
-                .expect("swash initialized")
-                .get_image(renderer.fonts.as_mut().expect("fonts initialized"), key)
-                .clone()
-            else {
+            let (Some(swash), Some(fonts)) = (renderer.swash.as_mut(), renderer.fonts.as_mut()) else {
+                return;
+            };
+            let Some(image) = swash.get_image(fonts, key).clone() else {
                 continue;
             };
             let (w, h) = (image.placement.width, image.placement.height);
@@ -81,12 +72,13 @@ pub(crate) fn build_glyphs(
             }
             match image.content {
                 SwashContent::Mask => {
-                    let Some(region) = renderer.atlas.as_mut().expect("atlas initialized").pack(w, h) else {
+                    let Some(atlas) = renderer.atlas.as_mut() else { return };
+                    let Some(region) = atlas.pack(w, h) else {
                         continue;
                     };
                     queue.write_texture(
                         wgpu::TexelCopyTextureInfo {
-                            texture: &renderer.atlas.as_ref().expect("atlas initialized").texture,
+                            texture: &atlas.texture,
                             mip_level: 0,
                             origin: wgpu::Origin3d { x: region.x, y: region.y, z: 0 },
                             aspect: wgpu::TextureAspect::All,
@@ -104,14 +96,13 @@ pub(crate) fn build_glyphs(
                     coverage.push_quad(quad);
                 }
                 SwashContent::Color => {
-                    let Some(region) =
-                        renderer.color_atlas.as_mut().expect("color atlas initialized").pack(w, h)
-                    else {
+                    let Some(atlas) = renderer.color_atlas.as_mut() else { return };
+                    let Some(region) = atlas.pack(w, h) else {
                         continue;
                     };
                     queue.write_texture(
                         wgpu::TexelCopyTextureInfo {
-                            texture: &renderer.color_atlas.as_ref().expect("color atlas initialized").texture,
+                            texture: &atlas.texture,
                             mip_level: 0,
                             origin: wgpu::Origin3d { x: region.x, y: region.y, z: 0 },
                             aspect: wgpu::TextureAspect::All,
@@ -140,7 +131,6 @@ pub(crate) fn build_glyphs(
             }
         }
     }
-    (coverage, color)
 }
 
 /// Build the four vertices of a glyph quad: physical-pixel position + atlas UVs.

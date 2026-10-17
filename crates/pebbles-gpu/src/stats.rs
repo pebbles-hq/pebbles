@@ -5,24 +5,40 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct FrameStats {
+    /// Display-list ops walked.
     pub ops: u32,
+    /// Draw commands in the frame plan.
     pub cmds: u32,
+    /// Draw calls issued.
     pub draw_calls: u32,
+    /// Pipeline changes in the pass.
     pub pipeline_switches: u32,
+    /// Render passes begun.
     pub render_passes: u32,
+    /// Ops culled as offscreen.
     pub culled: u32,
+    /// Glyphs rasterized this frame (atlas misses).
     pub glyphs_rasterized: u32,
+    /// Bytes written to GPU buffers.
     pub bytes_uploaded: u64,
+    /// CPU prepare time, microseconds.
     pub prepare_us: u32,
+    /// Encode + submit time, microseconds.
     pub execute_us: u32,
     // creations — all 0 in steady state (P1)
+    /// GPU buffers created.
     pub buffers_created: u32,
+    /// Bind groups created.
     pub bind_groups_created: u32,
+    /// Textures created.
     pub textures_created: u32,
+    /// Texture views created.
     pub texture_views_created: u32,
+    /// Render pipelines created.
     pub pipelines_created: u32,
 }
 
+#[allow(clippy::derivable_impls)] // hand-written per 10 §9.1
 impl Default for FrameStats {
     fn default() -> Self {
         FrameStats {

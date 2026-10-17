@@ -97,7 +97,7 @@ impl<'window> RenderSurface<'window> {
         height: u32,
     ) -> Result<RenderSurface<'window>, GpuError> {
         let dev_id = ctx.request_device(Some(&surface)).await?;
-        let device = ctx.device(dev_id).expect("invariant: request_device just created this device");
+        let device = ctx.device(dev_id).ok_or(GpuError::DeviceLost)?;
         let capabilities = surface.get_capabilities(device.adapter());
         let surface_view_formats = device
             .adapter()

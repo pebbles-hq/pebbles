@@ -34,13 +34,6 @@ pub(crate) enum PipelineKind {
     MaskMultiply,
 }
 
-impl PipelineKind {
-    /// Whether this kind is prewarmed on the first render to a `(format, sample_count)` pair (K3).
-    fn prewarm(self) -> bool {
-        matches!(self, PipelineKind::Solid | PipelineKind::Shadow | PipelineKind::Glyph | PipelineKind::Image)
-    }
-}
-
 /// Identity of one render pipeline (10 §3.2). No depth-stencil state (DR-20).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct PipelineKey {
@@ -100,7 +93,12 @@ impl PipelineCache {
         Self { layouts: HashMap::new(), pipelines: HashMap::new(), prewarmed: HashSet::new() }
     }
 
-    fn layout_for(&mut self, device: &wgpu::Device, kind: PipelineKind, layouts: &BindGroupLayouts) -> wgpu::PipelineLayout {
+    fn layout_for(
+        &mut self,
+        device: &wgpu::Device,
+        kind: PipelineKind,
+        layouts: &BindGroupLayouts,
+    ) -> wgpu::PipelineLayout {
         if let Some(l) = self.layouts.get(&kind) {
             return l.clone();
         }

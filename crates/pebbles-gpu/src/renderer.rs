@@ -11,20 +11,23 @@ use pebbles_render::paint::Scene;
 
 use super::context::{DeviceId, GpuDevice};
 use super::error::GpuError;
+use super::execute::encode::{encode, resolve_and_upload};
 use super::execute::pipelines::{PipelineCache, ShaderModules};
+use super::execute::resources::Atlas;
 use super::execute::resources::bind_groups::BindGroupLayouts;
 use super::execute::resources::buffers::FrameArenas;
 use super::execute::resources::globals::Globals;
-use super::execute::resources::Atlas;
-use super::execute::encode;
 use super::frame_targets::create_msaa;
 use super::prepare::{PrepareInput, PrepareScratch, prepare};
 use super::stats::FrameStats;
 
 /// Per-frame render parameters.
 pub struct RenderParams {
+    /// The clear color.
     pub base_color: peniko::Color,
+    /// Target width in physical pixels.
     pub width: u32,
+    /// Target height in physical pixels.
     pub height: u32,
 }
 
@@ -59,7 +62,7 @@ impl Renderer {
         let device = gpu.device();
         let globals_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("pebbles.gpu.buffer.globals"),
-            size: std::mem::size_of::<Globals>() as u64,
+            size: size_of::<Globals>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -72,7 +75,7 @@ impl Renderer {
                 resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                     buffer: &globals_buffer,
                     offset: 0,
-                    size: wgpu::BufferSize::new(std::mem::size_of::<Globals>() as u64),
+                    size: wgpu::BufferSize::new(size_of::<Globals>() as u64),
                 }),
             }],
         });
@@ -119,6 +122,7 @@ impl Renderer {
         self.stats
     }
 
+    /// Render `scene` into `target` (a view of a `format` texture of `params` size).
     pub fn render_to_texture(
         &mut self,
         device: &wgpu::Device,
@@ -139,6 +143,7 @@ impl Renderer {
         )
     }
 
+    /// Render `scene` into `target`, clearing to `base_color` first.
     #[allow(clippy::too_many_arguments)]
     pub fn render_offscreen(
         &mut self,
@@ -151,18 +156,21 @@ impl Renderer {
         format: wgpu::TextureFormat,
     ) -> Result<FrameStats, GpuError> {
         let size = (size.0.max(1), size.1.max(1));
-        if self.msaa.as_ref().is_none_or(|m| m.0 != format || m.1 != size.0 || m.2 != size.1) {
-            let texture = create_msaa(device, format, size.0, size.1, self.sample_count);
-            self.msaa = Some((format, size.0, size.1, texture));
-        }
-        let msaa = self.msaa.as_ref().expect("msaa just initialized").3.clone();
+        let msaa = match &self.msaa {
+            Some((f, w, h, texture)) if *f == format && (*w, *h) == size => texture.clone(),
+            _ => {
+                let texture = create_msaa(device, format, size.0, size.1, self.sample_count);
+                self.msaa = Some((format, size.0, size.1, texture.clone()));
+                texture
+            }
+        };
 
         let input = PrepareInput { target_size: size, root_transform: Affine::IDENTITY };
         prepare(scene, &input, &mut self.scratch);
 
         let mut stats = FrameStats::default();
         stats.ops = self.scratch.plan.stats.ops;
-        stats.cmds = self.scratch.plan.cmds.len() as u32;
+        stats.cmds = u32::try_from(self.scratch.plan.cmds.len()).unwrap_or(u32::MAX);
         stats.culled = self.scratch.plan.stats.culled;
 
         let globals = Globals {
@@ -194,6 +202,7 @@ impl Renderer {
         );
 
         self.pipelines.prewarm(device, &self.shaders, &self.layouts, format, self.sample_count, &mut stats);
+        let frame = resolve_and_upload(self, device, queue, scene, &mut stats);
 
         let clear = super::prepare::color::clear_color(base_color);
         let mut encoder = device
@@ -213,7 +222,7 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            encode(self, device, queue, &mut pass, scene, format, &mut stats);
+            encode(self, &frame, &mut pass, format, &mut stats);
             stats.render_passes += 1;
         }
         queue.submit([encoder.finish()]);

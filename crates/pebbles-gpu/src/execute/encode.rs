@@ -2,7 +2,10 @@
 
 use pebbles_render::paint::Scene;
 
-use super::super::prepare::{DrawCmd, ImageQuad, ScissorRect, image_uploads};
+use std::ops::Range;
+
+use super::super::prepare::num::index_u32;
+use super::super::prepare::{DrawCmd, ImageUpload, ScissorRect, image_uploads};
 use super::super::renderer::Renderer;
 use super::pipelines::{PipelineKey, PipelineKind};
 use super::resolve::{GlyphGeometry, build_glyphs};
@@ -27,93 +30,198 @@ impl PassState {
     }
 }
 
-/// Draw every command of the renderer's current plan, in order, into `pass`.
-pub(crate) fn encode(
+/// Per-command ranges into the frame's resolved glyph and image geometry.
+#[derive(Clone, Default)]
+enum Resolved {
+    #[default]
+    None,
+    Glyphs {
+        coverage: Range<u32>,
+        color: Range<u32>,
+    },
+    Images {
+        first_quad: u32,
+        textures: Vec<u64>,
+    },
+}
+
+/// Everything resolved before the pass: glyph quads and image quads for the whole frame,
+/// so each arena is written exactly once per submit (10 §2).
+#[derive(Default)]
+pub(crate) struct ResolvedFrame {
+    per_cmd: Vec<Resolved>,
+    coverage: GlyphGeometry,
+    color: GlyphGeometry,
+    image_vertices: Vec<crate::gpu_types::ImageVertex>,
+}
+
+/// Resolve glyphs and images for every command, then upload each arena once.
+pub(crate) fn resolve_and_upload(
     renderer: &mut Renderer,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    pass: &mut wgpu::RenderPass<'_>,
     scene: &Scene,
+    stats: &mut FrameStats,
+) -> ResolvedFrame {
+    let mut frame = ResolvedFrame::default();
+    let uploads = image_uploads(scene);
+    let cmds = std::mem::take(&mut renderer.scratch.plan.cmds);
+    for cmd in &cmds {
+        let resolved = match cmd {
+            DrawCmd::Glyphs { glyphs, .. } => {
+                let runs = std::mem::take(&mut renderer.scratch.plan.glyph_runs);
+                let range = glyphs.start as usize..glyphs.end as usize;
+                let (cov0, col0) =
+                    (index_u32(frame.coverage.indices.len()), index_u32(frame.color.indices.len()));
+                if let Some(slice) = runs.get(range) {
+                    build_glyphs(
+                        renderer,
+                        device,
+                        queue,
+                        slice,
+                        &mut frame.coverage,
+                        &mut frame.color,
+                        stats,
+                    );
+                }
+                renderer.scratch.plan.glyph_runs = runs;
+                Resolved::Glyphs {
+                    coverage: cov0..index_u32(frame.coverage.indices.len()),
+                    color: col0..index_u32(frame.color.indices.len()),
+                }
+            }
+            DrawCmd::Images { images, .. } => {
+                let first_quad = index_u32(frame.image_vertices.len() / 4);
+                let mut textures = Vec::new();
+                let quads = renderer.scratch.plan.images.get(images.start as usize..images.end as usize);
+                for quad in quads.unwrap_or_default().to_vec() {
+                    let Some(upload) = uploads.get(quad.image_index as usize) else { continue };
+                    ensure_image(renderer, device, queue, upload, stats);
+                    frame.image_vertices.extend_from_slice(&quad.vertices);
+                    textures.push(upload.id);
+                }
+                Resolved::Images { first_quad, textures }
+            }
+            _ => Resolved::None,
+        };
+        frame.per_cmd.push(resolved);
+    }
+    renderer.scratch.plan.cmds = cmds;
+    let arenas = &mut renderer.arenas;
+    arenas.glyph_vertices.upload(device, queue, bytemuck::cast_slice(&frame.coverage.vertices), stats);
+    arenas.glyph_indices.upload(device, queue, bytemuck::cast_slice(&frame.coverage.indices), stats);
+    arenas.color_glyph_vertices.upload(device, queue, bytemuck::cast_slice(&frame.color.vertices), stats);
+    arenas.color_glyph_indices.upload(device, queue, bytemuck::cast_slice(&frame.color.indices), stats);
+    arenas.image_vertices.upload(device, queue, bytemuck::cast_slice(&frame.image_vertices), stats);
+    for color in [false, true] {
+        glyph_bind_group(renderer, device, color, stats);
+    }
+    frame
+}
+
+/// Draw every command of the renderer's current plan, in order, into `pass`.
+pub(crate) fn encode(
+    renderer: &Renderer,
+    frame: &ResolvedFrame,
+    pass: &mut wgpu::RenderPass<'_>,
     format: wgpu::TextureFormat,
     stats: &mut FrameStats,
 ) {
     pass.set_bind_group(0, renderer.globals_bg(), &[0]);
-
-    let cmds = renderer.scratch.plan.cmds.clone();
-    let uploads = image_uploads(scene);
     let sample_count = renderer.sample_count;
+    let key = |kind, variant| PipelineKey { kind, color_format: format, sample_count, blend: 0, variant };
     let mut state = PassState::new();
 
-    for cmd in &cmds {
-        match cmd {
-            DrawCmd::Solid { indices, clip } => {
-                let key = PipelineKey {
-                    kind: PipelineKind::Solid,
-                    color_format: format,
-                    sample_count,
-                    blend: 0,
-                    variant: 0,
+    for (cmd, resolved) in renderer.scratch.plan.cmds.iter().zip(&frame.per_cmd) {
+        match (cmd, resolved) {
+            (DrawCmd::Solid { indices, clip }, _) => {
+                let (Some(pipeline), Some(vb), Some(ib)) = (
+                    renderer.pipelines.get(key(PipelineKind::Solid, 0)),
+                    renderer.arenas.solid_vertices.buffer(),
+                    renderer.arenas.solid_indices.buffer(),
+                ) else {
+                    continue;
                 };
-                let Some(pipeline) = renderer.pipelines.get(key).cloned() else { continue };
-                pass.set_pipeline(&pipeline);
-                if let Some(vb) = renderer.arenas.solid_vertices.buffer() {
-                    pass.set_vertex_buffer(0, vb.slice(..));
-                }
-                if let Some(ib) = renderer.arenas.solid_indices.buffer() {
-                    pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-                }
+                pass.set_pipeline(pipeline);
+                pass.set_vertex_buffer(0, vb.slice(..));
+                pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
                 state.set_scissor(pass, clip.scissor);
                 pass.draw_indexed(indices.clone(), 0, 0..1);
                 stats.draw_calls += 1;
             }
-            DrawCmd::Shadows { instances, clip } => {
-                let key = PipelineKey {
-                    kind: PipelineKind::Shadow,
-                    color_format: format,
-                    sample_count,
-                    blend: 0,
-                    variant: 0,
+            (DrawCmd::Shadows { instances, clip }, _) => {
+                let (Some(pipeline), Some(vb)) = (
+                    renderer.pipelines.get(key(PipelineKind::Shadow, 0)),
+                    renderer.arenas.shadow_instances.buffer(),
+                ) else {
+                    continue;
                 };
-                let Some(pipeline) = renderer.pipelines.get(key).cloned() else { continue };
-                pass.set_pipeline(&pipeline);
-                if let Some(vb) = renderer.arenas.shadow_instances.buffer() {
-                    pass.set_vertex_buffer(0, vb.slice(..));
-                }
+                pass.set_pipeline(pipeline);
+                pass.set_vertex_buffer(0, vb.slice(..));
                 state.set_scissor(pass, clip.scissor);
                 pass.draw(0..4, instances.clone());
                 stats.draw_calls += 1;
             }
-            DrawCmd::Glyphs { glyphs, clip } => {
-                let runs =
-                    renderer.scratch.plan.glyph_runs[glyphs.start as usize..glyphs.end as usize].to_vec();
+            (DrawCmd::Glyphs { clip, .. }, Resolved::Glyphs { coverage, color }) => {
                 state.set_scissor(pass, clip.scissor);
-                draw_glyphs(renderer, device, queue, pass, &runs, format, stats);
+                let arenas = &renderer.arenas;
+                for (is_color, range, vb, ib) in [
+                    (false, coverage, &arenas.glyph_vertices, &arenas.glyph_indices),
+                    (true, color, &arenas.color_glyph_vertices, &arenas.color_glyph_indices),
+                ] {
+                    if range.is_empty() {
+                        continue;
+                    }
+                    let (Some(pipeline), Some(bg), Some(vb), Some(ib)) = (
+                        renderer.pipelines.get(key(PipelineKind::Glyph, u8::from(is_color))),
+                        renderer.glyph_bg(is_color),
+                        vb.buffer(),
+                        ib.buffer(),
+                    ) else {
+                        continue;
+                    };
+                    pass.set_pipeline(pipeline);
+                    pass.set_bind_group(1, bg, &[]);
+                    pass.set_vertex_buffer(0, vb.slice(..));
+                    pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                    pass.draw_indexed(range.clone(), 0, 0..1);
+                    stats.draw_calls += 1;
+                }
             }
-            DrawCmd::Images { images, clip } => {
-                let imgs = renderer.scratch.plan.images[images.start as usize..images.end as usize].to_vec();
+            (DrawCmd::Images { clip, .. }, Resolved::Images { first_quad, textures }) => {
+                let (Some(pipeline), Some(vb)) = (
+                    renderer.pipelines.get(key(PipelineKind::Image, 0)),
+                    renderer.arenas.image_vertices.buffer(),
+                ) else {
+                    continue;
+                };
                 state.set_scissor(pass, clip.scissor);
-                draw_images(renderer, device, queue, pass, &imgs, &uploads, format, stats);
+                pass.set_pipeline(pipeline);
+                pass.set_vertex_buffer(0, vb.slice(..));
+                // The static index buffer [0,1,2,0,2,3] with base_vertex = 4*quad selects each quad.
+                pass.set_index_buffer(renderer.image_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                for (i, id) in textures.iter().enumerate() {
+                    let Some(entry) = renderer.image_cache.get(id) else { continue };
+                    let Ok(base) = i32::try_from((first_quad + index_u32(i)) * 4) else { continue };
+                    pass.set_bind_group(1, &entry.2, &[]);
+                    pass.draw_indexed(0..6, base, 0..1);
+                    stats.draw_calls += 1;
+                }
             }
+            _ => {}
         }
     }
 }
 
-fn glyph_key(format: wgpu::TextureFormat, sample_count: u32, variant: u8) -> PipelineKey {
-    PipelineKey { kind: PipelineKind::Glyph, color_format: format, sample_count, blend: 0, variant }
-}
-
-fn glyph_bind_group(
-    renderer: &mut Renderer,
-    device: &wgpu::Device,
-    color: bool,
-    stats: &mut FrameStats,
-) -> Option<wgpu::BindGroup> {
-    if let Some(bg) = renderer.glyph_bg(color) {
-        return Some(bg.clone());
+/// Create (once) the cached bind group for the coverage or color glyph atlas.
+fn glyph_bind_group(renderer: &mut Renderer, device: &wgpu::Device, color: bool, stats: &mut FrameStats) {
+    if renderer.glyph_bg(color).is_some() {
+        return;
     }
-    let atlas = if color { renderer.color_atlas.as_ref()? } else { renderer.atlas.as_ref()? };
+    let atlas = if color { renderer.color_atlas.as_ref() } else { renderer.atlas.as_ref() };
+    let Some(atlas) = atlas else { return };
     let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
+        label: Some("pebbles.gpu.bind.glyph"),
         layout: &renderer.layouts.texture,
         entries: &[
             wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&atlas.view) },
@@ -121,145 +229,63 @@ fn glyph_bind_group(
         ],
     });
     stats.bind_groups_created += 1;
-    renderer.set_glyph_bg(color, bg.clone());
-    Some(bg)
+    renderer.set_glyph_bg(color, bg);
 }
 
-fn draw_glyphs(
+/// Upload an image once and cache its texture, view and bind group by blob id.
+fn ensure_image(
     renderer: &mut Renderer,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    pass: &mut wgpu::RenderPass<'_>,
-    runs: &[super::super::prepare::GlyphRun],
-    format: wgpu::TextureFormat,
+    upload: &ImageUpload,
     stats: &mut FrameStats,
 ) {
-    let (coverage, color) = build_glyphs(renderer, device, queue, runs, stats);
-    let sample_count = renderer.sample_count;
-    if !coverage.is_empty() {
-        if let Some(bg) = glyph_bind_group(renderer, device, false, stats)
-            && let Some(pipeline) = renderer.pipelines.get(glyph_key(format, sample_count, 0)).cloned()
-        {
-            draw_glyph_geometry(renderer, device, queue, pass, &coverage, &pipeline, &bg, stats);
-        }
-    }
-    if !color.is_empty() {
-        if let Some(bg) = glyph_bind_group(renderer, device, true, stats)
-            && let Some(pipeline) = renderer.pipelines.get(glyph_key(format, sample_count, 1)).cloned()
-        {
-            draw_glyph_geometry(renderer, device, queue, pass, &color, &pipeline, &bg, stats);
-        }
-    }
-}
-
-fn draw_glyph_geometry(
-    renderer: &mut Renderer,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    pass: &mut wgpu::RenderPass<'_>,
-    geom: &GlyphGeometry,
-    pipeline: &wgpu::RenderPipeline,
-    bind_group: &wgpu::BindGroup,
-    stats: &mut FrameStats,
-) {
-    renderer.arenas.glyph_vertices.upload(device, queue, bytemuck::cast_slice(&geom.vertices), stats);
-    renderer.arenas.glyph_indices.upload(device, queue, bytemuck::cast_slice(&geom.indices), stats);
-    let Some(vb) = renderer.arenas.glyph_vertices.buffer() else { return };
-    let Some(ib) = renderer.arenas.glyph_indices.buffer() else { return };
-    pass.set_pipeline(pipeline);
-    pass.set_bind_group(1, bind_group, &[]);
-    pass.set_vertex_buffer(0, vb.slice(..));
-    pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-    pass.draw_indexed(0..super::super::prepare::num::index_u32(geom.indices.len()), 0, 0..1);
-    stats.draw_calls += 1;
-}
-
-fn image_key(format: wgpu::TextureFormat, sample_count: u32) -> PipelineKey {
-    PipelineKey { kind: PipelineKind::Image, color_format: format, sample_count, blend: 0, variant: 0 }
-}
-
-fn draw_images(
-    renderer: &mut Renderer,
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    pass: &mut wgpu::RenderPass<'_>,
-    images: &[ImageQuad],
-    uploads: &[super::super::prepare::ImageUpload],
-    format: wgpu::TextureFormat,
-    stats: &mut FrameStats,
-) {
-    if images.is_empty() {
+    if renderer.image_cache.contains_key(&upload.id) {
         return;
     }
-    let Some(pipeline) = renderer.pipelines.get(image_key(format, renderer.sample_count)).cloned() else {
-        return;
-    };
-    // Flatten all quads into one vertex array for the arena.
-    let mut vertices: Vec<crate::gpu_types::ImageVertex> = Vec::with_capacity(images.len() * 4);
-    for quad in images {
-        vertices.extend_from_slice(&quad.vertices);
-    }
-    renderer.arenas.image_vertices.upload(device, queue, bytemuck::cast_slice(&vertices), stats);
-    let Some(vb) = renderer.arenas.image_vertices.buffer() else { return };
-
-    for (i, quad) in images.iter().enumerate() {
-        let Some(upload) = uploads.get(quad.image_index as usize) else { continue };
-        let entry = renderer.image_cache.entry(upload.id).or_insert_with(|| {
-            let texture = device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("pebbles.gpu.image"),
-                size: wgpu::Extent3d {
-                    width: upload.width.max(1),
-                    height: upload.height.max(1),
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-            });
-            stats.textures_created += 1;
-            queue.write_texture(
-                wgpu::TexelCopyTextureInfo {
-                    texture: &texture,
-                    mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
-                    aspect: wgpu::TextureAspect::All,
-                },
-                &upload.rgba8,
-                wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(upload.width * 4),
-                    rows_per_image: Some(upload.height),
-                },
-                wgpu::Extent3d { width: upload.width, height: upload.height, depth_or_array_layers: 1 },
-            );
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-            stats.texture_views_created += 1;
-            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: None,
-                layout: &renderer.layouts.texture,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(&view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&renderer.image_sampler),
-                    },
-                ],
-            });
-            stats.bind_groups_created += 1;
-            (texture, view, bind_group)
-        });
-        pass.set_pipeline(&pipeline);
-        pass.set_bind_group(1, &entry.2, &[]);
-        pass.set_vertex_buffer(0, vb.slice(..));
-        // The static index buffer [0,1,2,0,2,3] with base_vertex = 4*i selects this quad.
-        pass.set_index_buffer(renderer.image_index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        pass.draw_indexed(0..6, (i as i32) * 4, 0..1);
-        stats.draw_calls += 1;
-    }
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pebbles.gpu.image"),
+        size: wgpu::Extent3d {
+            width: upload.width.max(1),
+            height: upload.height.max(1),
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    stats.textures_created += 1;
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        &upload.rgba8,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(upload.width * 4),
+            rows_per_image: Some(upload.height),
+        },
+        wgpu::Extent3d { width: upload.width, height: upload.height, depth_or_array_layers: 1 },
+    );
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    stats.texture_views_created += 1;
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("pebbles.gpu.bind.image"),
+        layout: &renderer.layouts.texture,
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(&renderer.image_sampler),
+            },
+        ],
+    });
+    stats.bind_groups_created += 1;
+    renderer.image_cache.insert(upload.id, (texture, view, bind_group));
 }

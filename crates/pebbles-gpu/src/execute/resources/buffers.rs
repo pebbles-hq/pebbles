@@ -35,10 +35,10 @@ impl GpuArena {
         if len == 0 {
             return;
         }
-        debug_assert_eq!(len % wgpu::COPY_BUFFER_ALIGNMENT as u64, 0);
-        if len > self.capacity {
+        let padded = len.next_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT);
+        if padded > self.capacity {
             let max = device.limits().max_buffer_size;
-            let new_capacity = next_capacity(self.capacity, len, max);
+            let new_capacity = next_capacity(self.capacity, padded, max);
             self.buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(self.label),
                 size: new_capacity,
@@ -49,7 +49,18 @@ impl GpuArena {
             stats.buffers_created += 1;
         }
         if let Some(buffer) = &self.buffer {
-            queue.write_buffer(buffer, 0, bytes);
+            let rem = (len % wgpu::COPY_BUFFER_ALIGNMENT) as usize;
+            if rem == 0 {
+                queue.write_buffer(buffer, 0, bytes);
+            } else {
+                // Pad the tail to COPY_BUFFER_ALIGNMENT; the extra bytes are never read.
+                let split = bytes.len() - rem;
+                queue.write_buffer(buffer, 0, &bytes[..split]);
+                let mut tail = [0u8; 4];
+                const _: () = assert!(wgpu::COPY_BUFFER_ALIGNMENT == 4);
+                tail[..rem].copy_from_slice(&bytes[split..]);
+                queue.write_buffer(buffer, split as u64, &tail);
+            }
         }
         stats.bytes_uploaded += len;
     }
@@ -67,6 +78,8 @@ pub(crate) struct FrameArenas {
     pub shadow_instances: GpuArena,
     pub glyph_vertices: GpuArena,
     pub glyph_indices: GpuArena,
+    pub color_glyph_vertices: GpuArena,
+    pub color_glyph_indices: GpuArena,
     pub image_vertices: GpuArena,
 }
 
@@ -78,6 +91,14 @@ impl FrameArenas {
             shadow_instances: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.shadows"),
             glyph_vertices: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.glyph.vertices"),
             glyph_indices: GpuArena::new(wgpu::BufferUsages::INDEX, "pebbles.gpu.buffer.glyph.indices"),
+            color_glyph_vertices: GpuArena::new(
+                wgpu::BufferUsages::VERTEX,
+                "pebbles.gpu.buffer.glyph.color.vertices",
+            ),
+            color_glyph_indices: GpuArena::new(
+                wgpu::BufferUsages::INDEX,
+                "pebbles.gpu.buffer.glyph.color.indices",
+            ),
             image_vertices: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.image.vertices"),
         }
     }
