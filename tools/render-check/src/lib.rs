@@ -7,6 +7,7 @@ pub mod args;
 pub mod candidate;
 pub mod case;
 pub mod corpus;
+pub mod golden;
 pub mod metric;
 pub mod png_io;
 pub mod probe;
@@ -38,6 +39,8 @@ pub enum CheckError {
     Io(String),
     /// PNG encode/decode error.
     Png(String),
+    /// The golden model does not implement this op yet (V45/V46); reported as PROBE_FAIL.
+    GoldenUnsupported(&'static str),
 }
 
 impl fmt::Display for CheckError {
@@ -50,6 +53,7 @@ impl fmt::Display for CheckError {
             Self::Readback(e) => write!(f, "readback: {e}"),
             Self::Io(e) => write!(f, "I/O: {e}"),
             Self::Png(e) => write!(f, "PNG: {e}"),
+            Self::GoldenUnsupported(op) => write!(f, "golden model does not support {op}"),
         }
     }
 }
