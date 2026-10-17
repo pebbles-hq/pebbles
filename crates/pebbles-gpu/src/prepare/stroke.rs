@@ -1,23 +1,11 @@
 //! Stroke expansion: outline the path in local space, then transform; hairline rule.
 
-use std::ops::Range;
-
 use kurbo::{Affine, BezPath, Stroke};
-use lyon_tessellation::{BuffersBuilder, FillOptions, FillRule, FillTessellator, VertexBuffers};
 
 use super::num::to_f32;
-use super::plan::FramePlan;
-use super::tessellate::{SolidVertexCtor, append, to_lyon_path};
 
 /// Stroke-outline expansion tolerance (device px).
 pub(crate) const STROKE_TOLERANCE_PX: f64 = 0.1;
-
-/// Reusable stroke-expansion scratch (zero steady-state allocation).
-#[derive(Default)]
-pub(crate) struct StrokeScratch {
-    pub ctx: kurbo::StrokeCtx,
-    pub outline: BezPath,
-}
 
 /// The result of expanding a stroke in local space.
 pub(crate) struct StrokeOutcome {
@@ -27,14 +15,15 @@ pub(crate) struct StrokeOutcome {
     pub drew: bool,
 }
 
-/// Expand `path`'s stroke in **local** space and store the device-space outline in
-/// `scratch.outline`. Width, dashes, joins and caps are interpreted in the path's own space
-/// (02 §6.3); the caller fill-tessellates `scratch.outline` and folds `alpha` into the color.
+/// Expand `path`'s stroke in **local** space into `ctx.output()`. Width, dashes, joins and
+/// caps are interpreted in the path's own space (02 §6.3); the caller fill-tessellates the
+/// outline under `transform` (`PathTessellator::fill_stroke_outline`) and folds `alpha` into
+/// the color.
 pub(crate) fn expand(
     path: &BezPath,
     style: &Stroke,
     transform: Affine,
-    scratch: &mut StrokeScratch,
+    ctx: &mut kurbo::StrokeCtx,
 ) -> StrokeOutcome {
     // Device width = the geometric mean under non-uniform scale (02 §5.5).
     let wd = style.width * transform.determinant().abs().sqrt();
@@ -52,36 +41,18 @@ pub(crate) fn expand(
         &style_adj,
         &kurbo::StrokeOpts::default(),
         STROKE_TOLERANCE_PX / s,
-        &mut scratch.ctx,
+        ctx,
     );
-    scratch.outline = scratch.ctx.output().clone();
-    scratch.outline.apply_affine(transform);
     StrokeOutcome { alpha, drew: true }
-}
-
-/// Fill-tessellate `scratch.outline` (already device-space) with a premultiplied color,
-/// appending to the solid arenas and returning the index range.
-/// Returns `None` (appending nothing) when lyon fails.
-pub(crate) fn fill_outline(
-    plan: &mut FramePlan,
-    scratch: &StrokeScratch,
-    color: [f32; 4],
-) -> Option<Range<u32>> {
-    let lyon = to_lyon_path(&scratch.outline);
-    let mut geometry = VertexBuffers::new();
-    let mut tess = FillTessellator::new();
-    let options = FillOptions::default()
-        .with_tolerance(super::tessellate::FILL_TOLERANCE_PX)
-        .with_fill_rule(FillRule::NonZero);
-    tess.tessellate_path(&lyon, &options, &mut BuffersBuilder::new(&mut geometry, SolidVertexCtor(color)))
-        .ok()?;
-    Some(append(plan, geometry))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::prepare::color::premul_scaled;
+    use crate::prepare::plan::FramePlan;
+    use crate::prepare::tessellate::PathTessellator;
+    use crate::stats::FrameStats;
     use kurbo::{Affine, Cap, Point};
 
     fn path() -> BezPath {
@@ -91,15 +62,20 @@ mod tests {
         ])
     }
 
-    fn run(style: &Stroke, transform: Affine) -> (FramePlan, StrokeOutcome) {
+    fn run_path(path: &BezPath, style: &Stroke, transform: Affine) -> (FramePlan, StrokeOutcome) {
         let mut plan = FramePlan::default();
-        let mut scratch = StrokeScratch::default();
-        let outcome = expand(&path(), style, transform, &mut scratch);
+        let mut tess = PathTessellator::default();
+        let outcome = expand(path, style, transform, &mut tess.stroke_ctx);
         if outcome.drew {
             let color = premul_scaled(peniko::Color::BLACK, outcome.alpha);
-            fill_outline(&mut plan, &scratch, color).expect("tessellates");
+            tess.fill_stroke_outline(&mut plan, &mut FrameStats::default(), transform, color)
+                .expect("tessellates");
         }
         (plan, outcome)
+    }
+
+    fn run(style: &Stroke, transform: Affine) -> (FramePlan, StrokeOutcome) {
+        run_path(&path(), style, transform)
     }
 
     fn bbox(plan: &FramePlan) -> (f32, f32, f32, f32) {
@@ -125,16 +101,12 @@ mod tests {
     fn dash_lengths_scale_with_transform() {
         let style = Stroke::new(1.0).with_caps(Cap::Butt).with_dashes(0.0, [4.0, 4.0]);
         // A line of length 4 under dashes [4,4] yields a single 4-unit dash (butt caps).
-        let mut plan = FramePlan::default();
-        let mut scratch = StrokeScratch::default();
         let short = BezPath::from_vec(vec![
             kurbo::PathEl::MoveTo(Point::new(0.0, 0.0)),
             kurbo::PathEl::LineTo(Point::new(4.0, 0.0)),
         ]);
-        let outcome = expand(&short, &style, Affine::scale(2.0), &mut scratch);
+        let (plan, outcome) = run_path(&short, &style, Affine::scale(2.0));
         assert!(outcome.drew);
-        fill_outline(&mut plan, &scratch, premul_scaled(peniko::Color::BLACK, outcome.alpha))
-            .expect("tessellates");
         let (min_x, _, max_x, _) = bbox(&plan);
         assert!((max_x - min_x - 8.0).abs() < 0.1, "first dash x-extent {}", max_x - min_x);
     }

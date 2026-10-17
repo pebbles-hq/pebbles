@@ -50,7 +50,7 @@ pub(crate) struct PrepareScratch {
     pub plan: FramePlan,
     pub clips: clip::ClipStack,
     pub layers: layer::LayerStack,
-    pub stroke: stroke::StrokeScratch,
+    pub tess: tessellate::PathTessellator,
 }
 
 /// Walk `scene` in painter's order into `scratch.plan`, recording fallbacks into `stats`.
@@ -69,7 +69,7 @@ pub(crate) fn prepare<'s>(
         plan: &mut scratch.plan,
         clips: &mut scratch.clips,
         layers: &mut scratch.layers,
-        stroke: &mut scratch.stroke,
+        tess: &mut scratch.tess,
         stats,
         limits,
         visit: 0,
@@ -85,7 +85,7 @@ struct Walk<'a> {
     plan: &'a mut FramePlan,
     clips: &'a mut clip::ClipStack,
     layers: &'a mut layer::LayerStack,
-    stroke: &'a mut stroke::StrokeScratch,
+    tess: &'a mut tessellate::PathTessellator,
     stats: &'a mut FrameStats,
     #[allow(dead_code)] // first reader: S02's coordinate-range check
     limits: &'a RendererLimits,
@@ -162,19 +162,12 @@ impl Walk<'_> {
                         continue;
                     }
                     let path = shape.to_path(TOL);
-                    let rule = match style {
-                        peniko::Fill::EvenOdd => lyon_tessellation::FillRule::EvenOdd,
-                        peniko::Fill::NonZero => lyon_tessellation::FillRule::NonZero,
-                    };
-                    let k = self.alpha();
-                    let fill =
-                        tessellate::fill_premul(self.plan, &path, xf, rule, color::premul_scaled(color, k));
+                    let premul = color::premul_scaled(color, self.alpha());
+                    let els = path.elements().iter().copied();
+                    let fill = self.tess.fill(self.plan, self.stats, els, xf, *style, premul);
                     self.plan.stats.tess_calls += 1;
-                    match fill {
-                        Some(indices) => {
-                            self.push(DrawCmd::Solid { indices, clip: self.clips.current() }, idx)
-                        }
-                        None => self.stats.record(Unsupported::TessError),
+                    if let Some(indices) = fill {
+                        self.push(DrawCmd::Solid { indices, clip: self.clips.current() }, idx);
                     }
                 }
                 Op::Stroke { style, transform, brush, shape, .. } => {
@@ -205,17 +198,14 @@ impl Walk<'_> {
                         continue;
                     }
                     let path = shape.to_path(TOL);
-                    let outcome = stroke::expand(&path, style, xf, self.stroke);
+                    let outcome = stroke::expand(&path, style, xf, &mut self.tess.stroke_ctx);
                     if outcome.drew {
                         let k = self.alpha();
                         let premul = color::premul_scaled(color, outcome.alpha * k);
-                        let fill = stroke::fill_outline(self.plan, self.stroke, premul);
+                        let fill = self.tess.fill_stroke_outline(self.plan, self.stats, xf, premul);
                         self.plan.stats.tess_calls += 1;
-                        match fill {
-                            Some(indices) => {
-                                self.push(DrawCmd::Solid { indices, clip: self.clips.current() }, idx)
-                            }
-                            None => self.stats.record(Unsupported::TessError),
+                        if let Some(indices) = fill {
+                            self.push(DrawCmd::Solid { indices, clip: self.clips.current() }, idx);
                         }
                     }
                 }

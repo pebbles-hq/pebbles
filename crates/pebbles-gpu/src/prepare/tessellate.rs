@@ -1,93 +1,170 @@
-//! Fill tessellation: lyon fill tessellation of device-space outlines into the solid arena.
+//! Fill tessellation: one reusable lyon `FillTessellator` fed device-space path events
+//! directly (no `lyon::path::Path`), appending to the solid arena.
 
 use std::ops::Range;
 
-use kurbo::{Affine, BezPath};
-use lyon_tessellation::math::point;
-use lyon_tessellation::path::Path;
+use kurbo::{Affine, PathEl};
+use lyon_tessellation::math::{Point, point};
+use lyon_tessellation::path::PathEvent;
 use lyon_tessellation::{
-    BuffersBuilder, FillOptions, FillRule, FillTessellator, FillVertex, FillVertexConstructor, VertexBuffers,
+    BuffersBuilder, FillOptions, FillTessellator, FillVertex, FillVertexConstructor, TessellationError,
+    VertexBuffers,
 };
 
-use super::num::{index_u32, to_f32};
+use super::num::{index_u32, narrow_f32};
 use super::plan::FramePlan;
 use crate::gpu_types::SolidVertex;
+use crate::stats::{FrameStats, Unsupported};
 
 /// Tessellation tolerance for screen-space geometry (physical px).
 pub(crate) const FILL_TOLERANCE_PX: f32 = 0.1;
 
-/// Tessellate `path` under `transform` with an already-premultiplied color, appending to the
-/// solid arenas and returning the index range. Returns `None` (appending nothing, so the
-/// arenas keep their length before the op) when lyon fails.
-pub(crate) fn fill_premul(
-    plan: &mut FramePlan,
-    path: &BezPath,
-    transform: Affine,
-    rule: FillRule,
-    color: [f32; 4],
-) -> Option<Range<u32>> {
-    let screen = transformed(path, transform);
-    let lyon = to_lyon_path(&screen);
-    let mut geometry = VertexBuffers::new();
-    let mut tess = FillTessellator::new();
-    let options = FillOptions::default().with_tolerance(FILL_TOLERANCE_PX).with_fill_rule(rule);
-    tess.tessellate_path(&lyon, &options, &mut BuffersBuilder::new(&mut geometry, SolidVertexCtor(color)))
-        .ok()?;
-    Some(append(plan, geometry))
+/// Reusable tessellation state, owned by the Renderer (via `PrepareScratch`) and reused
+/// across ops and frames: buffers are cleared per op, their capacity kept.
+pub(crate) struct PathTessellator {
+    pub fill: FillTessellator,
+    pub stroke_ctx: kurbo::StrokeCtx,
+    out: VertexBuffers<SolidVertex, u32>,
+    events: Vec<PathEvent>,
 }
 
-/// Append tessellated geometry to the solid arenas, rebasing indices.
-pub(crate) fn append(plan: &mut FramePlan, geometry: VertexBuffers<SolidVertex, u32>) -> Range<u32> {
-    let start = index_u32(plan.solid_indices.len());
-    let base = index_u32(plan.solid_vertices.len());
-    plan.solid_vertices.extend(geometry.vertices);
-    plan.solid_indices.extend(geometry.indices.into_iter().map(|index| base + index));
-    start..index_u32(plan.solid_indices.len())
+impl Default for PathTessellator {
+    fn default() -> Self {
+        Self {
+            fill: FillTessellator::new(),
+            stroke_ctx: kurbo::StrokeCtx::default(),
+            out: VertexBuffers::new(),
+            events: Vec::new(),
+        }
+    }
 }
 
-pub(crate) fn transformed(path: &BezPath, transform: Affine) -> BezPath {
-    let mut screen = path.clone();
-    screen.apply_affine(transform);
-    screen
+/// The lyon options for a fill rule. The rule is always explicit (never lyon's default options).
+pub(crate) fn fill_options(rule: peniko::Fill) -> FillOptions {
+    match rule {
+        peniko::Fill::NonZero => FillOptions::non_zero(),
+        peniko::Fill::EvenOdd => FillOptions::even_odd(),
+    }
+    .with_tolerance(FILL_TOLERANCE_PX)
 }
 
-/// A kurbo point narrowed to lyon's f32 point (non-finite → 0, R02 handles degenerate geometry).
-fn pt(p: kurbo::Point) -> lyon_tessellation::math::Point {
-    point(to_f32(p.x).unwrap_or(0.0), to_f32(p.y).unwrap_or(0.0))
-}
-
-pub(crate) fn to_lyon_path(path: &BezPath) -> Path {
-    let mut builder = Path::builder();
-    let mut open = false;
-    for element in path.elements() {
-        match *element {
-            kurbo::PathEl::MoveTo(to) => {
-                if open {
-                    builder.end(false);
+/// Convert kurbo elements to lyon events, every point mapped through `m` (narrowed to f32
+/// without repair: a NaN stays NaN so lyon rejects it). Drawing elements before the first
+/// `MoveTo` are ignored; an open subpath is ended with `close: false`.
+pub(crate) fn push_events(events: &mut Vec<PathEvent>, els: impl Iterator<Item = PathEl>, m: Affine) {
+    let p = |q: kurbo::Point| {
+        let q = m * q;
+        point(narrow_f32(q.x), narrow_f32(q.y))
+    };
+    // (first, current) of the open subpath.
+    let mut open: Option<(Point, Point)> = None;
+    for el in els {
+        match (el, open) {
+            (PathEl::MoveTo(to), _) => {
+                if let Some((first, cur)) = open {
+                    events.push(PathEvent::End { last: cur, first, close: false });
                 }
-                builder.begin(pt(to));
-                open = true;
+                let at = p(to);
+                events.push(PathEvent::Begin { at });
+                open = Some((at, at));
             }
-            kurbo::PathEl::LineTo(to) if open => {
-                builder.line_to(pt(to));
+            (PathEl::LineTo(to), Some((first, from))) => {
+                let to = p(to);
+                events.push(PathEvent::Line { from, to });
+                open = Some((first, to));
             }
-            kurbo::PathEl::QuadTo(ctrl, to) if open => {
-                builder.quadratic_bezier_to(pt(ctrl), pt(to));
+            (PathEl::QuadTo(c, to), Some((first, from))) => {
+                let (ctrl, to) = (p(c), p(to));
+                events.push(PathEvent::Quadratic { from, ctrl, to });
+                open = Some((first, to));
             }
-            kurbo::PathEl::CurveTo(a, b, to) if open => {
-                builder.cubic_bezier_to(pt(a), pt(b), pt(to));
+            (PathEl::CurveTo(c1, c2, to), Some((first, from))) => {
+                let (ctrl1, ctrl2, to) = (p(c1), p(c2), p(to));
+                events.push(PathEvent::Cubic { from, ctrl1, ctrl2, to });
+                open = Some((first, to));
             }
-            kurbo::PathEl::ClosePath if open => {
-                builder.end(true);
-                open = false;
+            (PathEl::ClosePath, Some((first, cur))) => {
+                events.push(PathEvent::End { last: cur, first, close: true });
+                open = None;
             }
             _ => {}
         }
     }
-    if open {
-        builder.end(false);
+    if let Some((first, cur)) = open {
+        events.push(PathEvent::End { last: cur, first, close: false });
     }
-    builder.build()
+}
+
+impl PathTessellator {
+    /// Tessellate `els` under `m` with `rule` and an already-premultiplied color into the
+    /// solid arenas. On a lyon error the arenas are truncated back to their length before the
+    /// op, `tessellation-error` is recorded, and `None` is returned (no command).
+    pub(crate) fn fill(
+        &mut self,
+        plan: &mut FramePlan,
+        stats: &mut FrameStats,
+        els: impl Iterator<Item = PathEl>,
+        m: Affine,
+        rule: peniko::Fill,
+        color: [f32; 4],
+    ) -> Option<Range<u32>> {
+        self.events.clear();
+        push_events(&mut self.events, els, m);
+        self.fill_events(plan, stats, rule, color)
+    }
+
+    /// Fill the device-space outline left in `stroke_ctx` by `kurbo::stroke_with` (local
+    /// space) mapped through `m`, NonZero.
+    pub(crate) fn fill_stroke_outline(
+        &mut self,
+        plan: &mut FramePlan,
+        stats: &mut FrameStats,
+        m: Affine,
+        color: [f32; 4],
+    ) -> Option<Range<u32>> {
+        self.events.clear();
+        push_events(&mut self.events, self.stroke_ctx.output().elements().iter().copied(), m);
+        self.fill_events(plan, stats, peniko::Fill::NonZero, color)
+    }
+
+    fn fill_events(
+        &mut self,
+        plan: &mut FramePlan,
+        stats: &mut FrameStats,
+        rule: peniko::Fill,
+        color: [f32; 4],
+    ) -> Option<Range<u32>> {
+        let mark = (plan.solid_vertices.len(), plan.solid_indices.len());
+        match self.tessellate(rule, color) {
+            Ok(()) => Some(self.append(plan)),
+            Err(_) => {
+                plan.solid_vertices.truncate(mark.0);
+                plan.solid_indices.truncate(mark.1);
+                stats.record(Unsupported::TessError);
+                None
+            }
+        }
+    }
+
+    fn tessellate(&mut self, rule: peniko::Fill, color: [f32; 4]) -> Result<(), TessellationError> {
+        self.out.vertices.clear();
+        self.out.indices.clear();
+        let opts = fill_options(rule);
+        self.fill.tessellate(
+            self.events.drain(..),
+            &opts,
+            &mut BuffersBuilder::new(&mut self.out, SolidVertexCtor(color)),
+        )
+    }
+
+    /// Append `out` to the solid arenas, rebasing indices.
+    fn append(&mut self, plan: &mut FramePlan) -> Range<u32> {
+        let start = index_u32(plan.solid_indices.len());
+        let base = index_u32(plan.solid_vertices.len());
+        plan.solid_vertices.extend_from_slice(&self.out.vertices);
+        plan.solid_indices.extend(self.out.indices.iter().map(|index| base + index));
+        start..index_u32(plan.solid_indices.len())
+    }
 }
 
 pub(crate) struct SolidVertexCtor(pub(crate) [f32; 4]);
@@ -97,3 +174,7 @@ impl FillVertexConstructor<SolidVertex> for SolidVertexCtor {
         SolidVertex { pos: [p.x, p.y], color: self.0 }
     }
 }
+
+#[cfg(test)]
+#[path = "tessellate_tests.rs"]
+mod tests;

@@ -10,6 +10,12 @@ pub(crate) fn to_f32(v: f64) -> Option<f32> {
     f.is_finite().then_some(f)
 }
 
+/// f64 → f32 narrowing with NO repair (NaN stays NaN, overflow becomes ±inf): for values that
+/// must reach a validator such as lyon unchanged.
+pub(crate) fn narrow_f32(v: f64) -> f32 {
+    v as f32
+}
+
 /// Floor into `0..=max`; `None` for NaN.
 pub(crate) fn floor_px(v: f64, max: u32) -> Option<u32> {
     if v.is_nan() {
