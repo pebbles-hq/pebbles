@@ -1,7 +1,7 @@
 //! [`RenderDecoratedBox`] — paints a [`BoxDecoration`] (shadows, background,
 //! border, rounded corners) behind and around its child.
 
-use kurbo::{Affine, BezPath, Circle, Point, Shape, Stroke};
+use kurbo::{Affine, BezPath, Circle, Point, Stroke};
 use pebbles_foundation::{Alignment, Axis, Offset, Rect, Size};
 use peniko::Fill;
 
@@ -115,7 +115,7 @@ impl RenderObject for RenderDecoratedBox {
         }
 
         // 2. Background fill + image.
-        fill_surface(cx, rect, size, &path, d);
+        fill_surface(cx, rect, size, path, d);
 
         // 3. Child, painted on top of the background.
         if let Some(child) = cx.children().first().copied() {
@@ -124,13 +124,13 @@ impl RenderObject for RenderDecoratedBox {
 
         // 4. Border. A uniform border strokes the outline crisply; a per-side border
         // strokes each edge as a straight inset line.
-        border_surface(cx, rect, &path, d);
+        border_surface(cx, rect, path, d);
 
         // 5. Foreground decoration — painted over the child and border.
         if let Some(fg) = &self.foreground {
             let (fg_path, _) = outline(fg, size, rect);
-            fill_surface(cx, rect, size, &fg_path, fg);
-            border_surface(cx, rect, &fg_path, fg);
+            fill_surface(cx, rect, size, fg_path, fg);
+            border_surface(cx, rect, fg_path, fg);
         }
     }
 
@@ -139,25 +139,62 @@ impl RenderObject for RenderDecoratedBox {
     }
 }
 
-/// The outline path for a decoration, plus an equivalent corner radius for shadows.
-fn outline(d: &BoxDecoration, size: Size, rect: Rect) -> (BezPath, f64) {
+/// A decoration's outline as a shape primitive (R09): the display list keeps the shape's
+/// identity, so renderers can draw it analytically and classify its clips exactly.
+#[derive(Clone, Copy)]
+enum Outline {
+    RRect(kurbo::RoundedRect),
+    Circle(Circle),
+}
+
+/// The outline for a decoration, plus an equivalent corner radius for shadows.
+fn outline(d: &BoxDecoration, size: Size, rect: Rect) -> (Outline, f64) {
     match d.shape {
         BoxShape::Circle => {
             let r = size.width.min(size.height) / 2.0;
             let center = Point::new(rect.x0 + size.width / 2.0, rect.y0 + size.height / 2.0);
-            (Circle::new(center, r).to_path(0.1), r)
+            (Outline::Circle(Circle::new(center, r)), r)
         }
-        BoxShape::Rectangle => (rect.to_rounded_rect(d.radius.to_radii()).to_path(0.1), d.radius.max()),
+        BoxShape::Rectangle => (Outline::RRect(rect.to_rounded_rect(d.radius.to_radii())), d.radius.max()),
+    }
+}
+
+/// Fill `o` with `brush` (kurbo `Shape` is not dyn-compatible, hence the `match`).
+fn fill_outline<'b>(cx: &mut PaintCx<'_>, brush: impl Into<peniko::BrushRef<'b>>, o: Outline) {
+    match o {
+        Outline::RRect(r) => cx.scene.fill(Fill::NonZero, Affine::IDENTITY, brush, None, &r),
+        Outline::Circle(c) => cx.scene.fill(Fill::NonZero, Affine::IDENTITY, brush, None, &c),
+    }
+}
+
+/// Stroke `o` with `stroke` and `brush`.
+fn stroke_outline<'b>(
+    cx: &mut PaintCx<'_>,
+    stroke: &Stroke,
+    brush: impl Into<peniko::BrushRef<'b>>,
+    o: Outline,
+) {
+    match o {
+        Outline::RRect(r) => cx.scene.stroke(stroke, Affine::IDENTITY, brush, None, &r),
+        Outline::Circle(c) => cx.scene.stroke(stroke, Affine::IDENTITY, brush, None, &c),
+    }
+}
+
+/// Push a layer clipped to `o`.
+fn push_layer_outline(cx: &mut PaintCx<'_>, blend: impl Into<peniko::BlendMode>, o: Outline) {
+    match o {
+        Outline::RRect(r) => cx.scene.push_layer(Fill::NonZero, blend, 1.0, Affine::IDENTITY, &r),
+        Outline::Circle(c) => cx.scene.push_layer(Fill::NonZero, blend, 1.0, Affine::IDENTITY, &c),
     }
 }
 
 /// Paint a decoration's background fill + image (no shadow, no border).
-fn fill_surface(cx: &mut PaintCx<'_>, rect: Rect, size: Size, path: &BezPath, d: &BoxDecoration) {
+fn fill_surface(cx: &mut PaintCx<'_>, rect: Rect, size: Size, path: Outline, d: &BoxDecoration) {
     let has_fill = d.gradient.is_some() || d.color.is_some();
     if has_fill {
         let layered = d.blend.is_some();
         if let Some(blend) = d.blend {
-            cx.scene.push_layer(Fill::NonZero, blend, 1.0, Affine::IDENTITY, path);
+            push_layer_outline(cx, blend, path);
         }
         if let Some(gradient) = &d.gradient {
             if pebbles_foundation::log::dev_mode() {
@@ -170,9 +207,9 @@ fn fill_surface(cx: &mut PaintCx<'_>, rect: Rect, size: Size, path: &BezPath, d:
                 );
             }
             let brush = gradient_brush(gradient, rect);
-            cx.scene.fill(Fill::NonZero, Affine::IDENTITY, &brush, None, path);
+            fill_outline(cx, &brush, path);
         } else if let Some(color) = d.color {
-            cx.scene.fill(Fill::NonZero, Affine::IDENTITY, color, None, path);
+            fill_outline(cx, color, path);
         }
         if layered {
             cx.scene.pop_layer();
@@ -204,7 +241,7 @@ fn fill_surface(cx: &mut PaintCx<'_>, rect: Rect, size: Size, path: &BezPath, d:
                     format!("paint image {}×{} (src)", image.image.width, image.image.height),
                 );
             }
-            cx.scene.push_layer(Fill::NonZero, BlendMode::Normal, 1.0, Affine::IDENTITY, path);
+            push_layer_outline(cx, BlendMode::Normal, path);
             cx.scene.draw_image(image, placement);
             cx.scene.pop_layer();
         }
@@ -212,12 +249,12 @@ fn fill_surface(cx: &mut PaintCx<'_>, rect: Rect, size: Size, path: &BezPath, d:
 }
 
 /// Stroke a decoration's border (uniform strokes the outline; per-side strokes insets).
-fn border_surface(cx: &mut PaintCx<'_>, rect: Rect, path: &BezPath, d: &BoxDecoration) {
+fn border_surface(cx: &mut PaintCx<'_>, rect: Rect, path: Outline, d: &BoxDecoration) {
     if let Some(border) = d.border {
         if border.is_uniform() {
             let side = border.top;
             if side.width > 0.0 {
-                cx.scene.stroke(&Stroke::new(side.width), Affine::IDENTITY, side.color, None, path);
+                stroke_outline(cx, &Stroke::new(side.width), side.color, path);
             }
         } else {
             paint_side(
@@ -282,4 +319,67 @@ fn paint_side(cx: &mut PaintCx<'_>, side: BorderSide, p0: (f64, f64), p1: (f64, 
     line.move_to(p0);
     line.line_to(p1);
     cx.scene.stroke(&Stroke::new(side.width), Affine::IDENTITY, side.color, None, &line);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::decoration::{Border, BorderRadius, image_from_rgba8};
+    use crate::paint::Scene;
+    use crate::paint::display_list::{Geometry, Op};
+    use crate::text::TextEnv;
+    use crate::tree::RenderTree;
+    use pebbles_foundation::Color;
+
+    /// Paint one 100×50 `RenderDecoratedBox` and return its ops.
+    fn ops_of(d: BoxDecoration) -> Vec<Op> {
+        let mut tree = RenderTree::new();
+        let id = tree.insert(Box::new(RenderDecoratedBox::new(d)));
+        tree.root = Some(id);
+        let mut text = TextEnv::new();
+        tree.layout(&mut text, BoxConstraints::tight(Size::new(100.0, 50.0)));
+        let mut scene = Scene::new();
+        tree.paint(&mut text, &mut scene);
+        scene.ops().to_vec()
+    }
+
+    fn decoration(shape: BoxShape) -> BoxDecoration {
+        BoxDecoration::new()
+            .color(Color::from_rgba8(200, 0, 0, 255))
+            .radius(BorderRadius::all(8.0))
+            .border(Border::all(BorderSide::new(Color::from_rgba8(0, 0, 0, 255), 2.0)))
+            .image(image_from_rgba8(2, 2, vec![255; 16]))
+            .shape(shape)
+    }
+
+    fn geometries(ops: &[Op]) -> Vec<(&'static str, &Geometry)> {
+        ops.iter()
+            .filter_map(|op| match op {
+                Op::Fill { shape, .. } => Some(("fill", shape)),
+                Op::Stroke { shape, .. } => Some(("stroke", shape)),
+                Op::PushLayer { clip, .. } => Some(("layer", clip)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn decoration_records_shape_primitives() {
+        let ops = ops_of(decoration(BoxShape::Rectangle));
+        let g = geometries(&ops);
+        for kind in ["fill", "stroke", "layer"] {
+            assert!(
+                g.iter().any(|(k, s)| *k == kind && matches!(s, Geometry::RoundedRect(_))),
+                "rectangle {kind} is not a RoundedRect: {g:?}"
+            );
+        }
+        let ops = ops_of(decoration(BoxShape::Circle));
+        let g = geometries(&ops);
+        for kind in ["fill", "stroke", "layer"] {
+            assert!(
+                g.iter().any(|(k, s)| *k == kind && matches!(s, Geometry::Circle(_))),
+                "circle {kind} is not a Circle: {g:?}"
+            );
+        }
+    }
 }
