@@ -85,7 +85,7 @@ android-native-activity = ["winit/android-native-activity"]
 # Linux used to pull gtk → glib-sys and require system GTK dev packages to
 # build, for code that is never compiled there.
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
-muda = { version = "0.19", optional = true }
+muda = { version = "0.21", optional = true }
 
 # System clipboard (text only — the heavy image feature is dropped). arboard has
 # no wasm, Android, or iOS backend (on iOS it would compile its Linux X11/Wayland
