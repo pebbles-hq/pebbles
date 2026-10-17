@@ -26,3 +26,26 @@ fn capture_png_produces_a_decodable_image() {
     let info = reader.info();
     assert_eq!((info.width, info.height), (120, 80));
 }
+
+#[test]
+#[ignore = "requires a GPU"]
+fn offscreen_capture_reuses_one_device_across_frames() {
+    let mut gpu = capture::OffscreenCapture::new().expect("device");
+    let red = Color::from_rgba8(255, 0, 0, 255);
+    let a = gpu.render_scene(&pebbles_render::Scene::new(), 64, 32, red).expect("frame 1");
+    assert_eq!(a.len(), 64 * 32 * 4);
+    assert!(a.as_chunks::<4>().0.iter().all(|p| *p == [255, 0, 0, 255]));
+    let green = Color::from_rgba8(0, 255, 0, 255);
+    let b = gpu.render_scene(&pebbles_render::Scene::new(), 16, 8, green).expect("frame 2");
+    assert_eq!(b.len(), 16 * 8 * 4);
+    assert!(b.as_chunks::<4>().0.iter().all(|p| *p == [0, 255, 0, 255]));
+}
+
+#[test]
+#[ignore = "requires a GPU"]
+fn offscreen_capture_rejects_zero_and_oversized_frames() {
+    let mut gpu = capture::OffscreenCapture::new().expect("device");
+    let s = pebbles_render::Scene::new();
+    assert!(gpu.render_scene(&s, 0, 10, palette::WHITE).is_err());
+    assert!(gpu.render_scene(&s, capture::MAX_CAPTURE_DIM + 1, 1, palette::WHITE).is_err());
+}

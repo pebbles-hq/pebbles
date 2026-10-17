@@ -6,6 +6,10 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — `capture::OffscreenCapture`
+A reusable headless renderer (one device for many frames/windows) with typed `CaptureError`s;
+`capture_rgba`/`capture_png` now use it. Capture works under every render backend.
+
 ### Removed — the classic `vello` (GPU-compute) backend
 The opt-in `vello` render backend is gone (the `vello` Cargo feature on every crate, its
 host, and `pebbles run/build/create --renderer vello`). Vello Hybrid stays the default

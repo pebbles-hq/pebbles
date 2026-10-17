@@ -4,9 +4,9 @@
 //! runner does, and read the pixels back. Handy for chart/report export, server-side
 //! rendering, and golden-image tests.
 //!
-//! Desktop only, and gated on an offscreen GPU device — available under both the default
-//! `vello-hybrid` backend and the opt-in `wgpu` backend (the `gpu/` seam routes either to
-//! its host's `render_offscreen`).
+//! Desktop only: it needs an offscreen GPU device, and the web has no headless device. Works
+//! under whichever render backend the build selects. [`OffscreenCapture`] keeps one device for
+//! many frames; [`capture_rgba`]/[`capture_png`] create one per call.
 //!
 //! Dimensions are capped at [`MAX_CAPTURE_DIM`]² — an unbounded size asks the GPU for a
 //! multi-gigabyte texture + readback buffer, a memory-exhaustion vector (relevant for the
@@ -101,7 +101,7 @@ pub fn capture_rgba(
     let _reduced = ReducedMotionGuard(prefers_reduced_motion());
     set_prefers_reduced_motion(true);
 
-    let mut gpu = Gpu::new()?;
+    let mut gpu = OffscreenCapture::new()?;
     let mut env = TextEnv::new();
     let mut ui = Ui::new();
     ui.make_current();
@@ -109,7 +109,7 @@ pub fn capture_rgba(
     pebbles_widgets::overlay::set_window_size(f64::from(width), f64::from(height));
 
     let scene = scene_for(&mut ui, &mut env, width, height);
-    gpu.rasterize(&scene, width, height, background)
+    Ok(gpu.render_scene(&scene, width, height, background)?)
 }
 
 /// Render `root` at `width`×`height` on `background` and return PNG bytes.
@@ -154,28 +154,28 @@ fn scene_for(ui: &mut Ui, env: &mut TextEnv, w: u32, h: u32) -> Scene {
 }
 
 #[cfg(feature = "vello-hybrid")]
-struct Gpu {
+struct HybridCapture {
     device: wgpu::Device,
     queue: wgpu::Queue,
     renderer: gpu::Renderer,
 }
 
 #[cfg(feature = "vello-hybrid")]
-impl Gpu {
-    fn new() -> Result<Self, Box<dyn Error>> {
+impl HybridCapture {
+    fn new() -> Result<Self, CaptureError> {
         // Acquire an offscreen device through the SAME `gpu/` host seam the runner uses — no
         // second wgpu path. The renderer is built lazily on the first `render_offscreen`.
         {
             let mut ctx = RenderContext::new();
-            let dev_id =
-                pollster::block_on(ctx.device(None)).ok_or("no compatible GPU device for capture")?;
+            let dev_id = pollster::block_on(ctx.device(None))
+                .ok_or_else(|| CaptureError::Backend("no compatible GPU device for capture".into()))?;
             let handle = ctx.devices.remove(dev_id);
             let renderer = gpu::new_renderer(&handle.device, &handle.queue);
-            Ok(Gpu { device: handle.device, queue: handle.queue, renderer })
+            Ok(HybridCapture { device: handle.device, queue: handle.queue, renderer })
         }
     }
 
-    fn rasterize(&mut self, scene: &Scene, w: u32, h: u32, base: Color) -> Result<Vec<u8>, Box<dyn Error>> {
+    fn render(&mut self, scene: &Scene, w: u32, h: u32, base: Color) -> Result<Vec<u8>, CaptureError> {
         let texture = self.device.create_texture(&TextureDescriptor {
             label: Some("capture"),
             size: Extent3d { width: w, height: h, depth_or_array_layers: 1 },
@@ -203,7 +203,7 @@ impl Gpu {
                 (w, h),
                 TextureFormat::Rgba8Unorm,
             )
-            .map_err(|e| format!("capture render failed: {e}"))?;
+            .map_err(|e| CaptureError::Backend(format!("render failed: {e}")))?;
 
         // Offset math in `usize` (the `MAX_CAPTURE_DIM` cap already keeps it inside `u32`, but
         // this is the readback that would OOB-panic on a wrapped index — be explicit).
@@ -245,10 +245,8 @@ impl Gpu {
         // the public entry points).
         self.device
             .poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(GPU_POLL_TIMEOUT) })
-            .map_err(|e| format!("capture GPU poll failed: {e:?}"))?;
-        rx.recv()
-            .map_err(|_| "capture readback channel closed")?
-            .map_err(|e| format!("capture buffer map failed: {e:?}"))?;
+            .map_err(CaptureError::Poll)?;
+        rx.recv().map_err(|_| CaptureError::ReadbackAborted)?.map_err(CaptureError::Map)?;
         let mapped = slice.get_mapped_range();
         let mut out = Vec::with_capacity(unpadded * h as usize);
         for row in 0..h as usize {
@@ -261,26 +259,90 @@ impl Gpu {
     }
 }
 
-/// The wgpu capture path: pebbles-gpu's public headless renderer (C15). One per capture call —
-/// never cached in a static (00 §6 rule 4).
+/// The wgpu backend's inner renderer: pebbles-gpu's public headless renderer (C15).
 #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
-struct Gpu(OffscreenRenderer);
+struct WgpuCapture(OffscreenRenderer);
 
 #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
-impl Gpu {
-    fn new() -> Result<Self, Box<dyn Error>> {
-        Ok(Gpu(OffscreenRenderer::with_init(gpu::HostInit::headless().gpu)?))
+impl WgpuCapture {
+    fn new() -> Result<Self, CaptureError> {
+        Ok(WgpuCapture(OffscreenRenderer::with_init(gpu::HostInit::headless().gpu)?))
     }
 
-    fn rasterize(&mut self, scene: &Scene, w: u32, h: u32, base: Color) -> Result<Vec<u8>, Box<dyn Error>> {
-        // Force an opaque background, as the hybrid path does.
-        let [r, g, b, _] = base.components;
-        let image = self.0.render_rgba(scene, (w, h), Color::new([r, g, b, 1.0]), 1.0)?;
-        Ok(image.pixels)
+    fn render(&mut self, scene: &Scene, w: u32, h: u32, base: Color) -> Result<Vec<u8>, CaptureError> {
+        Ok(self.0.render_rgba(scene, (w, h), base, 1.0)?.pixels)
     }
 }
 
+/// A reusable headless renderer: one headless GPU device + renderer kept alive across
+/// frames. Reuse one instance for multi-frame or multi-window capture — pipelines and atlases
+/// stay cached. Works under whichever render backend the build selects.
+///
+/// Desktop only: the web has no headless device.
+///
+/// # Blocking
+///
+/// Each [`render_scene`](Self::render_scene) **blocks the calling thread for a full GPU
+/// round-trip** (submit + map + readback) — potentially tens of milliseconds, and up to
+/// [`GPU_POLL_TIMEOUT`] on a stalled driver before it returns `Err`. Do **not** call it from a
+/// hot event handler or the live UI thread; use a background thread or a dedicated headless
+/// process.
+///
+/// ```no_run
+/// use pebbles_foundation::palette;
+/// use pebbles_render::Scene;
+/// use pebbles_shell::capture::OffscreenCapture;
+///
+/// let mut gpu = OffscreenCapture::new()?;
+/// let scene = Scene::new(); // paint into it with a Ui, exactly as the shell does
+/// let rgba = gpu.render_scene(&scene, 64, 32, palette::WHITE)?;
+/// assert_eq!(rgba.len(), 64 * 32 * 4);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+pub struct OffscreenCapture {
+    #[cfg(feature = "vello-hybrid")]
+    inner: HybridCapture,
+    #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
+    inner: WgpuCapture,
+}
+
+impl std::fmt::Debug for OffscreenCapture {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OffscreenCapture").finish_non_exhaustive()
+    }
+}
+
+impl OffscreenCapture {
+    /// Acquire a headless GPU device and renderer. Blocks.
+    pub fn new() -> Result<Self, CaptureError> {
+        #[cfg(feature = "vello-hybrid")]
+        let inner = HybridCapture::new()?;
+        #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
+        let inner = WgpuCapture::new()?;
+        Ok(Self { inner })
+    }
+
+    /// Render `scene` at `width`×`height` on an opaque `background` and return tightly packed,
+    /// **unmultiplied RGBA8** (row-major, `width*height*4` bytes). A side of 0 or above
+    /// [`MAX_CAPTURE_DIM`] is [`CaptureError::InvalidSize`].
+    pub fn render_scene(
+        &mut self,
+        scene: &Scene,
+        width: u32,
+        height: u32,
+        background: Color,
+    ) -> Result<Vec<u8>, CaptureError> {
+        if width == 0 || height == 0 || width > MAX_CAPTURE_DIM || height > MAX_CAPTURE_DIM {
+            return Err(CaptureError::InvalidSize { width, height, max: MAX_CAPTURE_DIM });
+        }
+        // Force an opaque background on every backend.
+        let [r, g, b, _] = background.components;
+        self.inner.render(scene, width, height, Color::new([r, g, b, 1.0]))
+    }
+}
+
+pub use pebbles_gpu::CaptureError;
 #[cfg(feature = "wgpu")]
-pub use pebbles_gpu::{CaptureError, OffscreenRenderer, RgbaImage};
-#[cfg(feature = "wgpu")]
-const _: () = assert!(MAX_CAPTURE_DIM == OffscreenRenderer::MAX_DIM);
+pub use pebbles_gpu::{OffscreenRenderer, RgbaImage};
+#[allow(unused_qualifications)] // unqualified only when the wgpu re-export is compiled
+const _: () = assert!(MAX_CAPTURE_DIM == pebbles_gpu::OffscreenRenderer::MAX_DIM);

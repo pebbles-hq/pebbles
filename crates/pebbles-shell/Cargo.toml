@@ -62,6 +62,8 @@ vello-hybrid = [
     "dep:vello_hybrid",
     # `capture` (native) needs PNG encoding; pull it in exactly there.
     "dep:png",
+    # `capture::CaptureError` is pebbles-gpu's on every backend (K05).
+    "dep:pebbles-gpu",
 ]
 # Wire an `App::menu(menu_bar([...]))` native bar via `muda` (B3).
 native-menus = ["dep:muda"]
