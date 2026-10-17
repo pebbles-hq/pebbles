@@ -23,6 +23,7 @@ mod execute;
 mod frame_targets;
 #[allow(unsafe_code)] // bytemuck derives expand to `unsafe impl Pod`; no hand-written unsafe
 mod gpu_types;
+mod health;
 mod init;
 #[cfg(not(target_family = "wasm"))]
 mod offscreen;

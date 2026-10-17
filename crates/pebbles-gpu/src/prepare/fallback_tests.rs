@@ -1,0 +1,138 @@
+//! C17 fallback tests: layer alpha, blend layers, unsupported brushes, WarnOnce.
+
+use super::*;
+use pebbles_render::paint::{Glyph, Painter};
+use peniko::{Brush, Color, Fill};
+
+fn glyph() -> Glyph {
+    Glyph { id: 36, x: 10.0, y: 10.0 }
+}
+
+fn plan_and_stats(scene: &Scene) -> (FramePlan, FrameStats) {
+    let mut scratch = PrepareScratch::default();
+    let mut stats = FrameStats::default();
+    let input =
+        PrepareInput { target_size: (100, 100), root_transform: Affine::IDENTITY, vertex_limit: u32::MAX };
+    prepare(scene, &input, &mut scratch, &mut stats);
+    (scratch.plan, stats)
+}
+
+fn layer(p: &mut Painter<'_>, blend: impl Into<peniko::BlendMode>, alpha: f32) {
+    p.push_layer(Fill::NonZero, blend, alpha, Affine::IDENTITY, &kurbo::Rect::new(0.0, 0.0, 100.0, 100.0));
+}
+
+fn red_square(p: &mut Painter<'_>) {
+    p.fill(
+        Fill::NonZero,
+        Affine::IDENTITY,
+        Color::from_rgba8(255, 0, 0, 255),
+        None,
+        &kurbo::Rect::new(10.0, 10.0, 20.0, 20.0),
+    );
+}
+
+fn gradient() -> peniko::Gradient {
+    peniko::Gradient::new_linear((0.0, 0.0), (10.0, 0.0))
+        .with_stops([Color::from_rgba8(0, 0, 255, 255), Color::from_rgba8(0, 255, 0, 255)].as_slice())
+}
+
+#[test]
+fn opacity_zero_layer_draws_nothing() {
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    layer(&mut p, peniko::Mix::Normal, 0.0);
+    red_square(&mut p);
+    p.pop_layer();
+    let (plan, stats) = plan_and_stats(&scene);
+    assert!(plan.cmds.is_empty());
+    assert_eq!(stats.fallbacks, 0, "alpha 0 is exact, never logged");
+}
+
+#[test]
+fn half_alpha_layer_multiplies_draw_alpha() {
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    layer(&mut p, peniko::Mix::Normal, 0.5);
+    red_square(&mut p);
+    p.pop_layer();
+    let (plan, stats) = plan_and_stats(&scene);
+    assert_eq!(plan.solid_vertices[0].color, [0.5, 0.0, 0.0, 0.5]);
+    assert_eq!(stats.unsupported[Unsupported::LayerAlpha as usize], 1);
+}
+
+#[test]
+fn nested_alpha_layers_multiply() {
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    layer(&mut p, peniko::Mix::Normal, 0.5);
+    layer(&mut p, peniko::Mix::Normal, 0.5);
+    red_square(&mut p);
+    p.pop_layer();
+    red_square(&mut p);
+    p.pop_layer();
+    let (plan, _) = plan_and_stats(&scene);
+    let alphas: Vec<f32> = plan.solid_vertices.iter().map(|v| v.color[3]).collect();
+    assert_eq!(alphas.first(), Some(&0.25));
+    assert_eq!(alphas.last(), Some(&0.5));
+}
+
+#[test]
+fn blend_layer_content_is_skipped_and_counted() {
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    layer(&mut p, peniko::Mix::Multiply, 1.0);
+    red_square(&mut p);
+    p.pop_layer();
+    red_square(&mut p);
+    let (plan, stats) = plan_and_stats(&scene);
+    assert_eq!(plan.cmds.len(), 1, "only the square after the blend layer draws");
+    assert_eq!(stats.unsupported[Unsupported::LayerBlend as usize], 1);
+}
+
+#[test]
+fn gradient_fill_is_skipped_and_counted() {
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    p.fill(Fill::NonZero, Affine::IDENTITY, &gradient(), None, &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0));
+    let (plan, stats) = plan_and_stats(&scene);
+    assert!(plan.cmds.is_empty());
+    assert_eq!(stats.unsupported[Unsupported::GradientBrush as usize], 1);
+}
+
+#[test]
+fn gradient_text_uses_first_stop() {
+    let font = crate::test_support::bundled_font();
+    let mut scene = Scene::new();
+    Painter::new(&mut scene).draw_glyphs(
+        &font,
+        16.0,
+        &[],
+        &Brush::Gradient(gradient()),
+        Affine::IDENTITY,
+        None,
+        Fill::NonZero,
+        std::iter::once(glyph()),
+    );
+    let (plan, stats) = plan_and_stats(&scene);
+    assert_eq!(plan.glyphs[0].color, [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(stats.unsupported[Unsupported::GradientText as usize], 1);
+}
+
+#[test]
+fn warn_once_logs_once_per_kind() {
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    for _ in 0..100 {
+        p.fill(Fill::NonZero, Affine::IDENTITY, &gradient(), None, &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0));
+    }
+    let mut warn = crate::stats::WarnOnce::default();
+    let mut lines = 0;
+    for _frame in 0..3 {
+        let (_, stats) = plan_and_stats(&scene);
+        assert_eq!(stats.unsupported[Unsupported::GradientBrush as usize], 100);
+        for kind in Unsupported::ALL {
+            lines += u32::from(warn.report(kind, stats.unsupported[kind as usize]));
+        }
+    }
+    assert_eq!(lines, 1);
+}
