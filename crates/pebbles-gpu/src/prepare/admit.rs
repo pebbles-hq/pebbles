@@ -9,6 +9,7 @@ use crate::stats::Unsupported;
 impl Walk<'_> {
     /// Skip an op with non-finite input (02 §6.1): counted and recorded, never repaired.
     pub(super) fn skip_non_finite(&mut self) {
+        self.plan.fallback_features.insert(super::coverage::Feature::NonFinite);
         self.stats.non_finite_skipped += 1;
         self.stats.record(Unsupported::NonFinite);
     }

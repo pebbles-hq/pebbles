@@ -11,7 +11,9 @@ use crate::stats::{FrameStats, Unsupported};
 mod admit;
 mod clip;
 pub(crate) mod color;
+pub(crate) mod coverage;
 mod cull;
+mod features;
 mod glyphs;
 mod hygiene;
 mod images;
@@ -102,7 +104,7 @@ impl Walk<'_> {
             let idx = self.visit;
             self.plan.stats.ops += 1;
             match op {
-                Op::Fill { style, transform, brush, shape, .. } => {
+                Op::Fill { style, transform, brush, brush_transform, shape, .. } => {
                     let xf = outer * *transform;
                     if !xf.is_finite() || !hygiene::geometry_is_finite(shape) {
                         self.skip_non_finite();
@@ -115,6 +117,7 @@ impl Walk<'_> {
                     {
                         continue;
                     }
+                    self.note_paint(brush, *brush_transform, false);
                     let Some(color) = self.solid_color(brush) else { continue };
                     if self.vertex_budget_spent() {
                         continue;
@@ -134,7 +137,7 @@ impl Walk<'_> {
                         self.push(DrawCmd::Solid { indices, clip: self.clips.current() }, idx);
                     }
                 }
-                Op::Stroke { style, transform, brush, shape, .. } => {
+                Op::Stroke { style, transform, brush, brush_transform, shape, .. } => {
                     let xf = outer * *transform;
                     if !xf.is_finite()
                         || !hygiene::geometry_is_finite(shape)
@@ -151,6 +154,8 @@ impl Walk<'_> {
                     {
                         continue;
                     }
+                    self.note_paint(brush, *brush_transform, true);
+                    self.note_stroke(style);
                     let Some(color) = self.solid_color(brush) else { continue };
                     if self.vertex_budget_spent() {
                         continue;
@@ -180,7 +185,7 @@ impl Walk<'_> {
                         }
                     }
                 }
-                Op::PushLayer { transform, clip, alpha, blend, .. } => {
+                Op::PushLayer { transform, clip, alpha, blend, clip_fill, .. } => {
                     let xf = outer * *transform;
                     if !xf.is_finite() || !hygiene::geometry_is_finite(clip) {
                         // Keep the layer (stack balance) with an empty clip: its content is culled.
@@ -193,6 +198,10 @@ impl Walk<'_> {
                     // Every layer's clip is pushed — including alpha < 1 or a non-default blend
                     // (defect D06's "layer clip lost").
                     let decision = clip::classify_clip(clip, xf, &self.clips.current());
+                    if !self.layers.is_skipped() {
+                        self.note_clip(clip, xf, *clip_fill);
+                        self.note_layer(*alpha, *blend);
+                    }
                     if decision.kind == clip::ClipKind::Bounds && !self.layers.is_skipped() {
                         self.stats.record(Unsupported::NonRectClip);
                     }
@@ -215,7 +224,16 @@ impl Walk<'_> {
                     }
                 }
                 // `glyph_transform` (synthetic oblique) is drawn upright until the outline route (R20).
-                Op::Glyphs { font, font_size, normalized_coords, brush, transform, glyphs, .. } => {
+                Op::Glyphs {
+                    font,
+                    font_size,
+                    normalized_coords,
+                    brush,
+                    transform,
+                    glyph_transform,
+                    glyphs,
+                    ..
+                } => {
                     let xf = outer * *transform;
                     if !xf.is_finite() || !font_size.is_finite() {
                         self.skip_non_finite();
@@ -224,6 +242,7 @@ impl Walk<'_> {
                     if !self.paint_is_sane(brush, xf) || self.hidden() {
                         continue;
                     }
+                    self.note_glyphs(brush, *glyph_transform, xf, *font_size);
                     let base = match brush {
                         peniko::Brush::Solid(c) => *c,
                         peniko::Brush::Gradient(g) => {
@@ -264,6 +283,7 @@ impl Walk<'_> {
                     {
                         continue;
                     }
+                    self.note_image(image, xf);
                     let s = &image.sampler;
                     if s.x_extend != peniko::Extend::Pad || s.y_extend != peniko::Extend::Pad {
                         self.stats.record(Unsupported::ImageExtend);
@@ -288,6 +308,7 @@ impl Walk<'_> {
                     if !self.transform_is_sane(xf) || self.culled(cull::blurred_bounds(*rect, *std_dev, xf)) {
                         continue;
                     }
+                    self.note_shadow(xf);
                     let k = self.alpha();
                     let range =
                         shadows::shadow(self.plan, rect, xf, *radius, *std_dev, brush.multiply_alpha(k));

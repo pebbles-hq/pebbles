@@ -136,6 +136,8 @@ pub(crate) struct FramePlan {
     pub images: Vec<ImageRequest>,
     // the ordered stream
     pub cmds: Vec<DrawCmd>,
+    /// OC rows (R01) that fell back in this plan.
+    pub fallback_features: super::coverage::FeatureSet,
     pub stats: PrepareStats,
     /// Visit index of the op that produced each cmd (test builds only; order invariant).
     #[cfg(test)]
@@ -152,6 +154,7 @@ impl FramePlan {
         self.coords.clear();
         self.images.clear();
         self.cmds.clear();
+        self.fallback_features = super::coverage::FeatureSet::default();
         self.stats = PrepareStats::default();
         #[cfg(test)]
         self.cmd_ops.clear();
