@@ -140,3 +140,61 @@ fn shape_carries_its_clip_and_huge_rect_is_clamped() {
     assert_eq!((clip.scissor.x1, clip.scissor.y1), (32, 16));
     assert_eq!(plan.shapes[0].outer, [-2.0, -2.0, 34.0, 18.0], "clamped to the scissor + 2 px");
 }
+
+// ---- R11: strokes ----
+
+use super::stroke_instance;
+use kurbo::{Join, Stroke};
+
+#[test]
+fn uniform_rrect_border_is_sdf() {
+    let i = stroke_instance(&rrect(), Affine::IDENTITY, &Stroke::new(2.0), C).expect("eligible");
+    assert_eq!(i.outer, [9.0, 9.0, 51.0, 41.0]);
+    assert_eq!(i.inner, [11.0, 11.0, 49.0, 39.0]);
+    assert_eq!(i.outer_radii, [7.0; 4]);
+    assert_eq!(i.inner_radii, [5.0; 4]);
+}
+
+#[test]
+fn dashed_border_is_tessellated() {
+    assert!(
+        stroke_instance(&rrect(), Affine::IDENTITY, &Stroke::new(2.0).with_dashes(0.0, [4.0, 2.0]), C)
+            .is_none()
+    );
+}
+
+#[test]
+fn bevel_join_zero_radius_is_tessellated() {
+    let s = Stroke::new(2.0).with_join(Join::Bevel);
+    assert!(stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &s, C).is_none());
+}
+
+#[test]
+fn round_join_zero_radius_outer_radius_is_half_width() {
+    let s = Stroke::new(4.0).with_join(Join::Round);
+    let i = stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &s, C).expect("eligible");
+    assert_eq!(i.outer_radii, [2.0; 4]);
+    assert_eq!(i.inner_radii, [0.0; 4]);
+}
+
+#[test]
+fn miter_join_zero_radius_outer_radius_is_zero() {
+    let s = Stroke::new(4.0).with_join(Join::Miter);
+    let i = stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &s, C).expect("eligible");
+    assert_eq!(i.outer_radii, [0.0; 4]);
+}
+
+#[test]
+fn thick_stroke_inner_empty_draws_filled() {
+    // R is 40×30: a width of 30 consumes the shortest side.
+    let i = stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &Stroke::new(30.0), C).expect("eligible");
+    assert_eq!(i.inner, [0.0; 4]);
+}
+
+#[test]
+fn hairline_border_alpha_scaled() {
+    let i = stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &Stroke::new(0.25), [1.0, 0.0, 0.0, 1.0])
+        .expect("eligible");
+    assert_eq!(i.color, [0.25, 0.0, 0.0, 0.25]);
+    assert_eq!(i.outer, [9.5, 9.5, 50.5, 40.5], "drawn 1 px wide");
+}

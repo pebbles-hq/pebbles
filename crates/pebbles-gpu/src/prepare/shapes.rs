@@ -70,6 +70,58 @@ pub(crate) fn fill_instance(g: &Geometry, m: Affine, color: [f32; 4]) -> Option<
     })
 }
 
+/// A Tier A stroke instance (R11): a uniform, undashed stroke of `g` under `m`, or `None`.
+/// Hairline rule (02 §5.5): a device width below 1 px draws 1 px with the colour scaled by it.
+pub(crate) fn stroke_instance(
+    g: &Geometry,
+    m: Affine,
+    style: &kurbo::Stroke,
+    color: [f32; 4],
+) -> Option<ShapeInstance> {
+    if !style.width.is_finite() || style.width <= 0.0 || !style.dash_pattern.is_empty() {
+        return None;
+    }
+    let (rect, radii) = device_shape(g, m)?;
+    // Sharp corners need a round join, or a miter that a 90° corner does not exceed (√2).
+    let round = style.join == kurbo::Join::Round;
+    let miter = style.join == kurbo::Join::Miter && style.miter_limit >= std::f64::consts::SQRT_2;
+    if radii.contains(&0.0) && !round && !miter {
+        return None;
+    }
+    let a = m.as_coeffs()[0];
+    let mut h = a * style.width / 2.0;
+    let mut color = color;
+    if 2.0 * h < 1.0 {
+        let k = to_f32(2.0 * h)?;
+        color = color.map(|c| c * k);
+        h = 0.5;
+    }
+    let outer = rect.inflate(h, h);
+    let inner = rect.inflate(-h, -h);
+    let inner = if inner.width() > 0.0 && inner.height() > 0.0 {
+        [inner.x0, inner.y0, inner.x1, inner.y1]
+    } else {
+        [0.0; 4]
+    };
+    let outer_radii = radii.map(|r| {
+        if r > 0.0 {
+            r + h
+        } else if round {
+            h
+        } else {
+            0.0
+        }
+    });
+    let inner_radii = radii.map(|r| if r > 0.0 { (r - h).max(0.0) } else { 0.0 });
+    Some(ShapeInstance {
+        outer: f4([outer.x0, outer.y0, outer.x1, outer.y1])?,
+        outer_radii: f4(outer_radii)?,
+        inner: f4(inner)?,
+        inner_radii: f4(inner_radii)?,
+        color,
+    })
+}
+
 /// Clamp a sharp-cornered instance's outer rect to `scissor` inflated by 2 px.
 pub(crate) fn clamp_outer(inst: &mut ShapeInstance, scissor: Rect) {
     let s = scissor.inflate(2.0, 2.0);

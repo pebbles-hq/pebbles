@@ -183,6 +183,33 @@ impl Walk<'_> {
                     if self.vertex_budget_spent() {
                         continue;
                     }
+                    // Tier A (R11): a uniform, undashed stroke of a rect / rrect / circle is one
+                    // analytic quad. Bounds past max_coord_px stay on the tessellated path (S04).
+                    if self.sdf
+                        && let Some(inst) = shapes::stroke_instance(
+                            shape,
+                            xf,
+                            style,
+                            color::premul_scaled(color, self.alpha()),
+                        )
+                        && hygiene::coords_in_range(
+                            kurbo::Rect::new(
+                                f64::from(inst.outer[0]),
+                                f64::from(inst.outer[1]),
+                                f64::from(inst.outer[2]),
+                                f64::from(inst.outer[3]),
+                            ),
+                            self.limits,
+                        )
+                    {
+                        let start = num::index_u32(self.plan.shapes.len());
+                        self.plan.shapes.push(inst);
+                        self.push(
+                            DrawCmd::Shapes { instances: start..start + 1, clip: self.clips.current() },
+                            idx,
+                        );
+                        continue;
+                    }
                     // Flatten at the scale of the path itself: S04 clamps a pathological width to
                     // just cover the target, so the width must not coarsen the tolerance.
                     let path_bounds = cull::device_bounds(shape, xf, None);
