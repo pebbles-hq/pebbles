@@ -763,6 +763,28 @@ fn msaa_resolve_ignores_last_clip() {
     assert_eq!(pixel(&rgba, 160, 80, 100), [255, 255, 255, 255], "outside the clip keeps the clear color");
 }
 
+/// C16: on a pebbles-gpu device a validation error mentioning `Texture`/`create_view` is
+/// reported (counted by `DeviceHealth`), never swallowed by the hybrid host's Vello filter.
+#[test]
+#[ignore = "gpu"]
+fn validation_error_with_texture_text_is_reported() {
+    let mut init = GpuInit::headless();
+    init.strict_validation = false;
+    let mut ctx = pollster::block_on(GpuContext::new(&init));
+    let Ok(id) = pollster::block_on(ctx.request_device(None)) else {
+        assert!(!std::env::var("PEBBLES_REQUIRE_GPU").is_ok_and(|v| v == "1"), "no GPU adapter");
+        return;
+    };
+    let gpu = ctx.device(id).expect("device just requested");
+    let texture = target_texture(gpu.device(), 4, 4);
+    let before = gpu.health().validation_errors();
+    // A view of mip level 3 on a 1-mip texture: a Texture / create_view validation error.
+    let _view = texture.create_view(&wgpu::TextureViewDescriptor { base_mip_level: 3, ..Default::default() });
+    let _ = gpu.device().poll(wgpu::PollType::Poll);
+    assert_eq!(gpu.health().validation_errors(), before + 1);
+    assert!(!gpu.health().is_poisoned(), "validation errors never poison the device");
+}
+
 /// Copy a texture's rows (padded to 256 bytes) into an unpadded byte buffer.
 fn readback(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<u8> {
     let width = texture.width();

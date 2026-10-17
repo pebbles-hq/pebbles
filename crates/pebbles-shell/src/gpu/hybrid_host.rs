@@ -17,7 +17,7 @@ use vello_hybrid::{
 use pebbles_render::Scene;
 use peniko::Color;
 
-use super::{GPU_ERRORS, PresentOutcome, install_error_handler};
+use super::PresentOutcome;
 
 /// The swapchain texture format chosen by `vello::util`. Captured once at surface creation.
 static SURFACE_FORMAT: OnceLock<wgpu::TextureFormat> = OnceLock::new();
@@ -76,9 +76,19 @@ impl RenderContext {
         Some(new_renderer(&dh.device, &dh.queue))
     }
 
-    #[allow(dead_code)] // first caller: C18 (08 §6.5 step 1)
+    /// Fatal uncaptured errors landed since this context was built (08 §6.5 step 1).
     pub(crate) fn needs_reset(&self) -> bool {
         GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed) != self.errors_seen
+    }
+
+    /// The hybrid host has no loss callback; its devices report through `needs_reset` only.
+    pub(crate) fn lost_devices(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Soak tool (`PEBBLES_SYNTH_GPU_LOSS`): poison the stack as a fatal error would.
+    pub(crate) fn inject_synthetic_loss(&self) {
+        GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -254,4 +264,52 @@ pub(crate) fn present_frame(
     window.pre_present_notify();
     surface_texture.present();
     PresentOutcome::Presented
+}
+
+/// Global count of uncaptured GPU errors — the render loop compares it per frame and
+/// rebuilds the poisoned GPU state when it moved (see [`install_error_handler`]).
+static GPU_ERRORS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// A GUI shell must not die on a GPU hiccup. wgpu's default uncaptured-error handler
+/// panics; this one logs (throttled) and only bumps [`GPU_ERRORS`] for fatal errors.
+/// Hybrid host only (C16): pebbles-gpu devices install their own hooks (`DeviceHealth`, C18), and
+/// the "benign atlas" filter below is a Vello quirk workaround (deleted with the hybrid host, X01).
+fn install_error_handler(device: &wgpu::Device) {
+    use std::sync::atomic::AtomicU64;
+    static VALIDATION_SEEN: AtomicU64 = AtomicU64::new(0);
+    device.on_uncaptured_error(std::sync::Arc::new(|e: wgpu::Error| {
+        let fatal = !matches!(e, wgpu::Error::Validation { .. });
+        if fatal {
+            let n = GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            pebbles_core::log::error(
+                pebbles_core::log::Cat::Gpu,
+                format!("FATAL wgpu error #{n} (device poisoned — scheduling reset): {e}"),
+            );
+            eprintln!("pebbles: fatal wgpu error #{n} — rebuilding the GPU state: {e}");
+        } else {
+            let n = VALIDATION_SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            let text = e.to_string();
+            let benign_atlas =
+                text.contains("Validation") && (text.contains("create_view") || text.contains("Texture"));
+            if benign_atlas {
+                if n == 1 {
+                    pebbles_core::log::warn(
+                        pebbles_core::log::Cat::Gpu,
+                        "vello glyph-atlas validation warning from the GPU driver (vello 0.10 on \
+                         this Vulkan driver) — text still renders correctly; this is a driver/vello \
+                         quirk, not a Pebbles error. Suppressing further repeats."
+                            .to_string(),
+                    );
+                }
+            } else if n <= 3 || n.is_multiple_of(600) {
+                pebbles_core::log::warn(
+                    pebbles_core::log::Cat::Gpu,
+                    format!("non-fatal wgpu validation error (x{n}, ignored): {e}"),
+                );
+            }
+        }
+        if std::env::var("PEBBLES_GPU_TRACE").is_ok() {
+            eprintln!("{}", std::backtrace::Backtrace::force_capture());
+        }
+    }));
 }

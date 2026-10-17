@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use web_time::Instant;
 
-use crate::gpu::{GPU_ERRORS, HostInit, RenderContext, RenderSurface, Renderer, Scene, new_context};
+use crate::gpu::{HostInit, RenderContext, RenderSurface, Renderer, Scene, new_context};
 use kurbo::Affine;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
 use pebbles_foundation::{Color, Offset, Size, TextDirection};
@@ -202,10 +202,15 @@ pub(super) struct Runner {
     #[cfg(target_family = "wasm")]
     web_ime: bool,
     renderers: Vec<Option<Renderer>>,
-    /// The [`GPU_ERRORS`] count already recovered from (see `recover_gpu_if_poisoned`).
-    gpu_errors_seen: u64,
-    /// When the last full GPU reset ran (recovery is throttled to ~1/second).
-    last_gpu_reset: Option<Instant>,
+    /// No GPU reset starts before this instant (1 s after each started or failed reset;
+    /// P19 swaps in the backoff).
+    gpu_retry_at: Option<Instant>,
+    /// Consecutive failed rebuilds (0 after a success).
+    gpu_reset_failures: u32,
+    /// A reset was asked for outside `needs_reset()` (a failed rebuild, C19's `ResetGpu`, P20).
+    gpu_reset_requested: bool,
+    /// 1 at startup, +1 per rebuilt GPU context (logged with every loss/rebuild line).
+    gpu_generation: u64,
     active: Option<ActiveWindow>,
     /// AccessKit platform bridge for the main window (accessibility tree + focus).
     a11y: Option<crate::a11y::Bridge>,
@@ -293,8 +298,10 @@ impl Runner {
             #[cfg(target_family = "wasm")]
             web_ime: app.web_ime,
             renderers: Vec::new(),
-            gpu_errors_seen: 0,
-            last_gpu_reset: None,
+            gpu_retry_at: None,
+            gpu_reset_failures: 0,
+            gpu_reset_requested: false,
+            gpu_generation: 1,
             active: None,
             a11y: None,
             ui: Ui::new(),
@@ -1127,15 +1134,6 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 .collect();
             pebbles_widgets::set_monitors(list);
         }
-        // GPU errors landed this turn? Wake the render loop so the recovery
-        // reset actually runs (an idle `Wait` loop would otherwise sit on a
-        // poisoned device until the next input event).
-        if GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed) != self.gpu_errors_seen {
-            self.request_redraw();
-            for w in self.windows.values() {
-                w.window.request_redraw();
-            }
-        }
         // Open/close any secondary windows requested since the last turn.
         self.pump_windows(event_loop);
         // A reactive write (from an effect, timer, etc.) requests a new frame — on the
@@ -1153,6 +1151,19 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         // re-requests frames while animations/scroll springs/background tasks are
         // live, and a pending long-press overrides this with `WaitUntil` below.
         event_loop.set_control_flow(ControlFlow::Wait);
+        // A poisoned GPU (or a pending retry): wake when the retry is due, then redraw so
+        // `recover_gpu_if_poisoned` runs — an idle `Wait` loop would sit on a dead device.
+        if self.gpu_reset_requested || self.context.as_ref().is_some_and(|c| c.needs_reset()) {
+            match self.gpu_retry_at {
+                Some(t) if t > Instant::now() => event_loop.set_control_flow(ControlFlow::WaitUntil(t)),
+                _ => {
+                    self.request_redraw();
+                    for w in self.windows.values() {
+                        w.window.request_redraw();
+                    }
+                }
+            }
+        }
         // Recognize a long press once held past the deadline: fires on_long_press +
         // on_long_press_start, then the gesture becomes "active" (moves/end follow).
         if let Some(deadline) = self.press_deadline {

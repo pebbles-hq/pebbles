@@ -6,20 +6,16 @@ use pebbles_gpu::{
 use pebbles_render::Scene;
 use peniko::Color;
 
-use super::{GPU_ERRORS, PresentOutcome, install_error_handler};
+use super::PresentOutcome;
 
 /// Thin wrapper over `pebbles_gpu::GpuContext`.
 pub(crate) struct RenderContext {
     inner: GpuContext,
-    errors_seen: u64,
 }
 
 impl RenderContext {
     pub(crate) async fn new(init: &pebbles_gpu::GpuInit) -> Self {
-        Self {
-            inner: GpuContext::new(init).await,
-            errors_seen: GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed),
-        }
+        Self { inner: GpuContext::new(init).await }
     }
 
     pub(crate) async fn create_surface<'w>(
@@ -29,14 +25,14 @@ impl RenderContext {
         height: u32,
     ) -> Result<RenderSurface<'w>, String> {
         let surface = self.inner.create_surface(window, width, height).await.map_err(|e| e.to_string())?;
-        let device = surface.device_id();
-        install_error_handler(self.inner.device(device).expect("device just created").device());
+        // pebbles-gpu installed its device hooks (`DeviceHealth`) in `request_device` (C18).
         Ok(RenderSurface(surface))
     }
 
     pub(crate) fn resize_surface(&self, surface: &mut RenderSurface<'_>, width: u32, height: u32) {
-        let gpu = self.inner.device(surface.0.device_id()).expect("device");
-        surface.0.resize(gpu, width, height);
+        if let Some(gpu) = self.inner.device(surface.0.device_id()) {
+            surface.0.resize(gpu, width, height);
+        }
     }
 
     pub(crate) fn device_count(&self) -> usize {
@@ -48,10 +44,22 @@ impl RenderContext {
         Some(GpuRenderer::new(gpu, id))
     }
 
-    #[allow(dead_code)] // first caller: C18 (08 §6.5 step 1)
+    /// Any device lost or hit a fatal error (08 §6.5 step 1).
     pub(crate) fn needs_reset(&self) -> bool {
-        GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed) != self.errors_seen
+        self.inner.any_device_poisoned()
     }
+
+    /// One line per lost device: `reason=…: message` (08 §6.5 step 3).
+    pub(crate) fn lost_devices(&self) -> Vec<String> {
+        self.inner
+            .lost_devices()
+            .into_iter()
+            .map(|(_, reason, message)| format!("reason={reason:?}: {message}"))
+            .collect()
+    }
+
+    /// Soak tool (`PEBBLES_SYNTH_GPU_LOSS`): a no-op until P10 destroys the devices.
+    pub(crate) fn inject_synthetic_loss(&self) {}
 }
 
 /// Thin wrapper over `pebbles_gpu::RenderSurface`.
@@ -92,8 +100,12 @@ pub(crate) fn present_frame(
     // The size comes from the acquired texture, never from the window (DR-12).
     let target = RenderTarget::new(&view, format, surface.0.targets_mut());
     if let Err(e) = renderer.render(target, scene, &FrameParams::new(base_color)) {
-        eprintln!("pebbles: wgpu render failed (skipping frame, scheduling GPU reset): {e}");
-        GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // A lost or poisoned device reaches the reset through `needs_reset()` (C18).
+        pebbles_foundation::log::logf(
+            pebbles_foundation::log::Level::Error,
+            pebbles_foundation::log::Cat::Gpu,
+            format_args!("wgpu render failed (frame skipped): {e}"),
+        );
         window.request_redraw();
         return PresentOutcome::Skipped;
     }

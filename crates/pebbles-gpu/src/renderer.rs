@@ -28,6 +28,7 @@ pub struct Renderer {
     pub(crate) arenas: FrameArenas,
     device: wgpu::Device,
     queue: wgpu::Queue,
+    health: std::sync::Arc<super::context::DeviceHealth>,
     pub(crate) glyph_atlas: GlyphAtlas,
     pub(crate) glyph_instances: Vec<QuadInstance>,
     pub(crate) image_cache: ImageCache,
@@ -73,6 +74,7 @@ impl Renderer {
             arenas: FrameArenas::new(),
             device: device.clone(),
             queue: gpu.queue().clone(),
+            health: std::sync::Arc::clone(gpu.health()),
             glyph_atlas,
             glyph_instances: Vec::new(),
             image_cache: ImageCache::new(device),
@@ -100,13 +102,17 @@ impl Renderer {
 
     /// Prepare → resolve → upload → encode → submit → end-of-frame, into `target`.
     ///
-    /// Errors: `InvalidTargetSize` when a side is 0 or above the device limit.
+    /// Errors: `DeviceLost` when the device's lost callback fired; `InvalidTargetSize` when a
+    /// side is 0 or above the device limit.
     pub fn render(
         &mut self,
         target: RenderTarget<'_>,
         scene: &Scene,
         params: &FrameParams,
     ) -> Result<FrameStats, GpuError> {
+        if self.health.is_lost() {
+            return Err(GpuError::DeviceLost);
+        }
         let device = self.device.clone();
         let queue = self.queue.clone();
         let (device, queue) = (&device, &queue);
@@ -208,5 +214,38 @@ impl Renderer {
 
     pub(crate) fn globals_bg(&self) -> &wgpu::BindGroup {
         &self.globals_bg
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context::tests::gpu_or_skip;
+    use crate::frame_targets::FrameTargets;
+    use crate::init::GpuInit;
+
+    #[test]
+    #[ignore = "gpu"]
+    fn render_after_loss_returns_device_lost() {
+        let Some((ctx, id)) = gpu_or_skip(&GpuInit::headless()) else { return };
+        let gpu = ctx.device(id).expect("device");
+        let mut renderer = Renderer::new(gpu, id);
+        let texture = gpu.device().create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d { width: 8, height: 8, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        gpu.device().destroy();
+        let _ = gpu.device().poll(wgpu::PollType::Poll);
+        let mut targets = FrameTargets::new();
+        let target = RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut targets);
+        let result = renderer.render(target, &Scene::new(), &FrameParams::new(peniko::Color::WHITE));
+        assert!(matches!(result, Err(GpuError::DeviceLost)), "{result:?}");
     }
 }

@@ -5,7 +5,7 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-use crate::gpu::{GPU_ERRORS, PresentOutcome, present_frame};
+use crate::gpu::{PresentOutcome, present_frame};
 
 use kurbo::Stroke;
 use peniko::Brush;
@@ -31,70 +31,84 @@ fn synth_gpu_loss_every() -> u64 {
 }
 
 impl Runner {
-    /// Reconcile any dirty subtrees, lay out to the window, paint, and present.
-    /// If uncaptured GPU errors landed since the last check, rebuild the WHOLE
-    /// GPU stack — instance, adapter, device, every surface, every renderer.
-    /// A renderer-level rebuild is not enough: a lost/errored DEVICE hands out
-    /// invalid resources forever (observed as `Buffer 'vello.scene' is invalid`
-    /// straight after a fresh renderer). Throttled to ~1/second so a
-    /// persistently broken driver logs steadily instead of thrashing. Returns
-    /// whether a reset ran (the caller re-renders immediately after).
+    /// Rebuild the WHOLE GPU stack — instance, adapter, device, every surface, every renderer —
+    /// when a device is lost or poisoned (08 §6.5). A renderer-level rebuild is not enough: a
+    /// lost device hands out invalid resources forever. UI state survives (no remount).
+    /// Retries at most once per second. Returns whether a reset ran (the caller re-renders).
     pub(super) fn recover_gpu_if_poisoned(&mut self) -> bool {
-        let errs = GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed);
-        if errs == self.gpu_errors_seen {
+        use pebbles_foundation::log::{Cat, Level, logf};
+        // 1. Poisoned?
+        let poisoned = self.gpu_reset_requested || self.context.as_ref().is_some_and(|c| c.needs_reset());
+        if !poisoned {
             return false;
         }
-        if self.last_gpu_reset.is_some_and(|t| t.elapsed() < Duration::from_secs(1)) {
-            return false; // let the pending reset settle before judging it
+        // 2. Throttle.
+        if self.gpu_retry_at.is_some_and(|t| t > Instant::now()) {
+            return false;
         }
-        self.gpu_errors_seen = errs;
-        self.last_gpu_reset = Some(Instant::now());
-        pebbles_core::log::warn(
-            pebbles_core::log::Cat::Gpu,
-            format!("resetting GPU stack (device + surfaces + renderers) after {errs} errors"),
-        );
-        eprintln!("pebbles: resetting the GPU stack (device + surfaces + renderers)…");
-
-        // A fresh instance/adapter/device pool; the old one may be lost.
-        let Some(init) = self.host_init.as_ref() else { return false };
-        self.context = Some(pollster::block_on(new_context(init)));
+        let Some(init) = self.host_init.clone() else { return false };
+        self.gpu_reset_requested = false;
+        let started = Instant::now();
+        self.gpu_retry_at = Some(started + Duration::from_secs(1));
+        // 3. One line per lost device.
+        let g = self.gpu_generation;
+        for lost in self.context.as_ref().map(|c| c.lost_devices()).unwrap_or_default() {
+            logf(Level::Error, Cat::Gpu, format_args!("GPU device lost (generation={g}, {lost})"));
+        }
+        // 4–5. Drop every renderer, then a fresh instance/adapter/device pool.
         self.renderers = Vec::new();
-
-        // Recreate the main window's surface + renderer on the new device.
-        if let Some(active) = self.active.as_mut() {
+        self.context = Some(pollster::block_on(new_context(&init)));
+        // 6. Recreate the main window's and every secondary window's surface.
+        let mut failure: Option<String> = None;
+        if let (Some(active), Some(ctx)) = (self.active.as_mut(), self.context.as_mut()) {
             let phys = active.window.inner_size();
-            match pollster::block_on(self.context.as_mut().unwrap().create_surface(
+            match pollster::block_on(ctx.create_surface(
                 active.window.clone(),
                 phys.width.max(1),
                 phys.height.max(1),
             )) {
-                Ok(surface) => {
-                    self.renderers.resize_with(self.context.as_ref().unwrap().device_count(), || None);
-                    let idx = surface.device_index();
-                    self.renderers[idx] = self.context.as_ref().unwrap().new_renderer(idx);
-                    active.surface = surface;
-                }
-                Err(e) => eprintln!("pebbles: GPU reset could not recreate the main surface: {e}"),
+                Ok(surface) => active.surface = surface,
+                Err(e) => failure = Some(e.to_string()),
             }
         }
-        // And every secondary window's surface.
         for w in self.windows.values_mut() {
+            let Some(ctx) = self.context.as_mut() else { break };
             let phys = w.window.inner_size();
-            match pollster::block_on(self.context.as_mut().unwrap().create_surface(
+            match pollster::block_on(ctx.create_surface(
                 w.window.clone(),
                 phys.width.max(1),
                 phys.height.max(1),
             )) {
-                Ok(surface) => {
-                    self.renderers.resize_with(self.context.as_ref().unwrap().device_count(), || None);
-                    let idx = surface.device_index();
-                    if self.renderers[idx].is_none() {
-                        self.renderers[idx] = self.context.as_ref().unwrap().new_renderer(idx);
-                    }
-                    w.surface = surface;
-                }
-                Err(e) => eprintln!("pebbles: GPU reset could not recreate a window surface: {e}"),
+                Ok(surface) => w.surface = surface,
+                Err(e) => failure = failure.or(Some(e.to_string())),
             }
+        }
+        if let Some(ctx) = self.context.as_ref() {
+            self.renderers.resize_with(ctx.device_count(), || None);
+        }
+        if let Some(error) = failure {
+            self.gpu_reset_failures += 1;
+            self.gpu_reset_requested = true;
+            let n = self.gpu_reset_failures;
+            logf(
+                Level::Error,
+                Cat::Gpu,
+                format_args!("GPU stack rebuild failed (attempt {n}, retry in 1 s): {error}"),
+            );
+        } else {
+            self.gpu_reset_failures = 0;
+            self.gpu_generation += 1;
+            let ms = started.elapsed().as_millis();
+            logf(
+                Level::Warn,
+                Cat::Gpu,
+                format_args!("GPU stack rebuilt (generation={}, {ms} ms)", self.gpu_generation),
+            );
+        }
+        // 7. Redraw everything (renderers are rebuilt lazily on the first frame).
+        self.request_redraw();
+        for w in self.windows.values() {
+            w.window.request_redraw();
         }
         true
     }
@@ -114,7 +128,9 @@ impl Runner {
         let synth = synth_gpu_loss_every();
         if synth > 0 && self.frame_no.is_multiple_of(synth) {
             eprintln!("pebbles: SYNTH device loss injected (frame {fno})");
-            GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if let Some(ctx) = self.context.as_ref() {
+                ctx.inject_synthetic_loss();
+            }
         }
         if self.recover_gpu_if_poisoned() {
             // Render fresh state this same frame; also repaint secondary windows.
@@ -274,7 +290,7 @@ impl Runner {
 
         // 4. Render + present. The host's `present_frame` acquires the swapchain image,
         // renders straight into it and presents. NOTHING here may panic — on failure the
-        // host logs, bumps GPU_ERRORS (the reset picks it up), and skips THIS frame.
+        // host logs and skips THIS frame; a poisoned device reaches the reset via `needs_reset()`.
         let surface = &mut active.surface;
         let idx = surface.device_index();
         let renderer = match self.renderers[idx].as_mut() {

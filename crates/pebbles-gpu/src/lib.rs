@@ -32,7 +32,7 @@ mod surface;
 #[cfg(test)]
 pub(crate) mod test_support;
 
-pub use context::{DeviceId, GpuCaps, GpuContext, GpuDevice};
+pub use context::{DeviceHealth, DeviceId, GpuCaps, GpuContext, GpuDevice};
 pub use error::{AcquireError, CaptureError, GpuError};
 pub use frame_targets::{FrameParams, FrameTargets, RenderTarget};
 pub use init::{GpuInit, GpuPower, HostOs};

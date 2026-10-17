@@ -99,53 +99,6 @@ pub(crate) enum PresentOutcome {
     Skipped,
 }
 
-/// Global count of uncaptured GPU errors — the render loop compares it per frame and
-/// rebuilds the poisoned GPU state when it moved (see [`install_error_handler`]).
-pub(crate) static GPU_ERRORS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// A GUI shell must not die on a GPU hiccup. wgpu's default uncaptured-error handler
-/// panics; this one logs (throttled) and only bumps [`GPU_ERRORS`] for fatal errors.
-/// (The vello "benign atlas" filter is scoped to the hybrid host by C16.)
-pub(crate) fn install_error_handler(device: &wgpu::Device) {
-    use std::sync::atomic::AtomicU64;
-    static VALIDATION_SEEN: AtomicU64 = AtomicU64::new(0);
-    device.on_uncaptured_error(std::sync::Arc::new(|e: wgpu::Error| {
-        let fatal = !matches!(e, wgpu::Error::Validation { .. });
-        if fatal {
-            let n = GPU_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            pebbles_core::log::error(
-                pebbles_core::log::Cat::Gpu,
-                format!("FATAL wgpu error #{n} (device poisoned — scheduling reset): {e}"),
-            );
-            eprintln!("pebbles: fatal wgpu error #{n} — rebuilding the GPU state: {e}");
-        } else {
-            let n = VALIDATION_SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            let text = e.to_string();
-            let benign_atlas =
-                text.contains("Validation") && (text.contains("create_view") || text.contains("Texture"));
-            if benign_atlas {
-                if n == 1 {
-                    pebbles_core::log::warn(
-                        pebbles_core::log::Cat::Gpu,
-                        "vello glyph-atlas validation warning from the GPU driver (vello 0.10 on \
-                         this Vulkan driver) — text still renders correctly; this is a driver/vello \
-                         quirk, not a Pebbles error. Suppressing further repeats."
-                            .to_string(),
-                    );
-                }
-            } else if n <= 3 || n.is_multiple_of(600) {
-                pebbles_core::log::warn(
-                    pebbles_core::log::Cat::Gpu,
-                    format!("non-fatal wgpu validation error (x{n}, ignored): {e}"),
-                );
-            }
-        }
-        if std::env::var("PEBBLES_GPU_TRACE").is_ok() {
-            eprintln!("{}", std::backtrace::Backtrace::force_capture());
-        }
-    }));
-}
-
 #[cfg(test)]
 mod tests {
     #[test]
