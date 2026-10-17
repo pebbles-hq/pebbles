@@ -92,6 +92,17 @@ fn tessellation_error_truncates() {
 }
 
 #[test]
+fn lyon_error_records_tessellation_error() {
+    let mut stats = FrameStats::default();
+    let (plan, bad, before) = fill_after_good(&mut stats);
+    assert!(bad.is_none());
+    assert_eq!((plan.solid_vertices.len(), plan.solid_indices.len()), before);
+    assert!(plan.cmds.is_empty());
+    assert_eq!(stats.unsupported[Unsupported::TessError as usize], 1);
+    assert_eq!(stats.fallbacks, 1);
+}
+
+#[test]
 fn tessellator_is_reused() {
     let mut plan = FramePlan::default();
     let mut tess = PathTessellator::default();

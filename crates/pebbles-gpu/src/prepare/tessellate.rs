@@ -18,6 +18,7 @@ use crate::stats::{FrameStats, Unsupported};
 
 /// Tessellation tolerance for screen-space geometry (physical px).
 pub(crate) const FILL_TOLERANCE_PX: f32 = 0.1;
+const _: () = assert!(FILL_TOLERANCE_PX > 0.0 && super::stroke::STROKE_TOLERANCE_PX > 0.0);
 
 /// Reusable tessellation state, owned by the Renderer (via `PrepareScratch`) and reused
 /// across ops and frames: buffers are cleared per op, their capacity kept.
