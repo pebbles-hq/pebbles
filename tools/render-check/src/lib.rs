@@ -4,14 +4,18 @@
 use std::fmt;
 
 pub mod args;
+pub mod candidate;
 pub mod case;
 pub mod corpus;
 pub mod metric;
 pub mod png_io;
+pub mod probe;
 pub mod readback;
 pub mod reference;
 pub mod report;
 pub mod rng;
+pub mod run;
+pub mod scene;
 pub mod status;
 pub mod thresholds;
 
