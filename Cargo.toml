@@ -58,12 +58,19 @@ vello = { version = "0.10", default-features = false }
 vello_hybrid = { version = "0.2", default-features = false }
 vello_common = { version = "0.2", default-features = false }
 peniko = "0.6"
-swash = "0.2.10"
-guillotiere = "0.7"
 kurbo = "0.13"
 parley = "0.11"
-cosmic-text = "0.19"
-fontdb = "0.23"
+
+# --- text (pebbles-render only; DR-08) ---
+# No `swash` feature (text never rasterizes; pebbles-gpu depends on swash directly, DR-07) and no `peniko` (03 §3.10: as_peniko()
+# mints a new Blob per face); fontdb is re-exported as cosmic_text::fontdb, so no crate names
+# fontdb directly. wasm adds `wasm-web` per crate. If T04 already wrote this line, keep it.
+cosmic-text = { version = "0.19", default-features = false, features = ["std", "fontconfig"] }
+
+# --- renderer (pebbles-gpu only; DR-03) ---
+lyon_tessellation = "1.0"
+swash = "0.2.10"
+guillotiere = "0.7"
 
 # --- windowing / gpu (shell only) ---
 wgpu = "29"
@@ -79,8 +86,6 @@ web-time = "1.1"
 # --- data structures / util ---
 slotmap = "1"
 smallvec = "1"
-lyon = "1.0"
-lyon_tessellation = "1.0"
 bytemuck = { version = "1", features = ["derive"] }
 
 [profile.dev]

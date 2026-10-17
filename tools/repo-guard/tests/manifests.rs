@@ -81,3 +81,33 @@ fn no_manifest_declares_the_classic_vello_feature() {
         assert!(!feature_keys(&read(&m)).iter().any(|k| k == "vello"), "{m} still has `vello` (C02)");
     }
 }
+
+#[test]
+fn no_manifest_names_fontdb_directly() {
+    assert!(!dependency_keys(&read("Cargo.toml")).iter().any(|k| k == "fontdb"), "workspace");
+    for m in member_manifests() {
+        assert!(!dependency_keys(&read(&m)).iter().any(|k| k == "fontdb"), "{m}: use cosmic_text::fontdb");
+    }
+}
+
+#[test]
+fn renderer_only_deps_live_in_pebbles_gpu() {
+    for dep in ["lyon", "lyon_tessellation", "swash", "zeno", "skrifa", "guillotiere", "bytemuck"] {
+        for m in member_manifests() {
+            if m == "crates/pebbles-gpu/Cargo.toml" || m.starts_with("tools/") {
+                continue;
+            }
+            assert!(!dependency_keys(&read(&m)).iter().any(|k| k == dep), "{dep} must not be in {m}");
+        }
+    }
+}
+
+#[test]
+fn cosmic_text_lives_only_in_pebbles_render() {
+    for m in member_manifests() {
+        if m == "crates/pebbles-render/Cargo.toml" {
+            continue;
+        }
+        assert!(!dependency_keys(&read(&m)).iter().any(|k| k == "cosmic-text"), "{m}");
+    }
+}
