@@ -61,10 +61,9 @@ fn check_snapshot(name: &str, actual: &str) {
 #[test]
 fn card_with_shadow_snapshot() {
     let plan = card_with_shadow();
-    // Shadow, then the card fill as a Tier A shape (R10), then its stroke (tessellated until R11).
-    assert_eq!(plan.cmds.len(), 3);
+    // Shadow, then the card fill (R10) and its border (R11) as Tier A shapes, merged.
+    assert_eq!(plan.cmds.len(), 2);
     assert!(matches!(plan.cmds[0], DrawCmd::Shadows { .. }));
     assert!(matches!(plan.cmds[1], DrawCmd::Shapes { .. }));
-    assert!(matches!(plan.cmds[2], DrawCmd::Solid { .. }));
     check_snapshot("card_with_shadow", &plan.debug_dump());
 }
