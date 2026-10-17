@@ -739,6 +739,30 @@ fn render_target_size_comes_from_texture() {
     assert_eq!(pixel(&rgba, 200, 10, 10), [255, 255, 255, 255]);
 }
 
+/// A frame whose LAST draw is clipped still resolves the whole target. wgpu's GL backend
+/// resolves MSAA with `glBlitFramebuffer` under the current scissor, so without a full-target
+/// scissor at the end of the pass every row outside the last clip stayed transparent black
+/// (found running this suite with `WGPU_BACKEND=gl`).
+#[test]
+#[ignore = "gpu"]
+fn msaa_resolve_ignores_last_clip() {
+    let Some((device, queue, mut renderer)) = setup("msaa_resolve_ignores_last_clip") else { return };
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    p.push_layer(
+        Fill::NonZero,
+        peniko::BlendMode::default(),
+        1.0,
+        Affine::IDENTITY,
+        &Rect::new(0.0, 0.0, 160.0, 100.0),
+    );
+    p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &Rect::new(0.0, 0.0, 160.0, 160.0));
+    p.pop_layer();
+    let rgba = render_scene(&device, &queue, &mut renderer, &scene, (160, 160), Color::WHITE);
+    assert_eq!(pixel(&rgba, 160, 80, 99), [0, 0, 0, 255], "inside the clip");
+    assert_eq!(pixel(&rgba, 160, 80, 100), [255, 255, 255, 255], "outside the clip keeps the clear color");
+}
+
 /// Copy a texture's rows (padded to 256 bytes) into an unpadded byte buffer.
 fn readback(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<u8> {
     let width = texture.width();

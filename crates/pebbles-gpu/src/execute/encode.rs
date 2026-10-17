@@ -124,4 +124,8 @@ pub(crate) fn encode(
             }
         }
     }
+    // Leave the pass with a full-target scissor: wgpu's GL backend resolves MSAA with
+    // glBlitFramebuffer under the last scissor, which would drop every pixel outside the last
+    // clip (Vulkan/Metal/DX12 resolves ignore the scissor).
+    state.set_scissor(pass, ScissorRect::full(renderer.scratch.plan.target_size));
 }
