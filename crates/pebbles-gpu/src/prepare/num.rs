@@ -30,3 +30,9 @@ pub(crate) fn ceil_px(v: f64, max: u32) -> Option<u32> {
 pub(crate) fn index_u32(len: usize) -> u32 {
     u32::try_from(len).unwrap_or(u32::MAX)
 }
+
+/// Non-negative f32 → nearest u32; `None` if not finite, negative or above `u32::MAX`.
+pub(crate) fn to_u32_round(v: f32) -> Option<u32> {
+    let r = v.round();
+    (r.is_finite() && r >= 0.0 && r <= u32::MAX as f32).then_some(r as u32)
+}

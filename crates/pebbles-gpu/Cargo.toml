@@ -23,9 +23,8 @@ peniko.workspace = true
 lyon_tessellation.workspace = true
 bytemuck.workspace = true
 web-time.workspace = true
-# Temporary — the moved glyph path still uses cosmic-text + fontdb (removed by C09).
-cosmic-text.workspace = true
-fontdb.workspace = true
+swash.workspace = true
+guillotiere.workspace = true
 
 [dev-dependencies]
 pollster.workspace = true

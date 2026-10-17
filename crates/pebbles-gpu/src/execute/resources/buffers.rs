@@ -76,10 +76,7 @@ pub(crate) struct FrameArenas {
     pub solid_vertices: GpuArena,
     pub solid_indices: GpuArena,
     pub shadow_instances: GpuArena,
-    pub glyph_vertices: GpuArena,
-    pub glyph_indices: GpuArena,
-    pub color_glyph_vertices: GpuArena,
-    pub color_glyph_indices: GpuArena,
+    pub glyphs: GpuArena,
     pub image_vertices: GpuArena,
 }
 
@@ -89,16 +86,7 @@ impl FrameArenas {
             solid_vertices: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.vertices"),
             solid_indices: GpuArena::new(wgpu::BufferUsages::INDEX, "pebbles.gpu.buffer.indices"),
             shadow_instances: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.shadows"),
-            glyph_vertices: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.glyph.vertices"),
-            glyph_indices: GpuArena::new(wgpu::BufferUsages::INDEX, "pebbles.gpu.buffer.glyph.indices"),
-            color_glyph_vertices: GpuArena::new(
-                wgpu::BufferUsages::VERTEX,
-                "pebbles.gpu.buffer.glyph.color.vertices",
-            ),
-            color_glyph_indices: GpuArena::new(
-                wgpu::BufferUsages::INDEX,
-                "pebbles.gpu.buffer.glyph.color.indices",
-            ),
+            glyphs: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.glyphs"),
             image_vertices: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.image.vertices"),
         }
     }

@@ -1,163 +1,72 @@
-//! Glyph resolution: rasterize each glyph once (cached) into the coverage/color atlas
-//! and emit the quad geometry for one glyph command.
+//! Glyph resolution: each `GlyphRequest` → one `QuadInstance`, rasterizing and uploading only
+//! on an atlas miss. A glyph with no slot becomes a zero-area quad so ranges stay valid.
 
-use cosmic_text::{CacheKey, CacheKeyFlags, FontSystem, SwashCache, SwashContent};
+use super::resources::atlas_alloc::{AtlasKind, AtlasSlot};
+use super::resources::glyph_atlas::{GlyphAtlas, GlyphLookup};
+use crate::gpu_types::QuadInstance;
+use crate::prepare::FramePlan;
+use crate::raster::swash::RasterRequest;
+use crate::stats::{FrameStats, Unsupported};
 
-use super::super::prepare::GlyphRun;
-use super::super::prepare::num::index_u32;
-use super::super::renderer::Renderer;
-use super::resources::{ATLAS_SIZE, Atlas};
-use crate::gpu_types::GlyphVertex;
-use crate::raster::font_id;
-use crate::stats::FrameStats;
-
-/// Vertex/index geometry for one glyph pipeline (coverage or color).
-#[derive(Default)]
-pub(crate) struct GlyphGeometry {
-    pub(crate) vertices: Vec<GlyphVertex>,
-    pub(crate) indices: Vec<u32>,
-}
-
-impl GlyphGeometry {
-    fn push_quad(&mut self, quad: [GlyphVertex; 4]) {
-        let base = index_u32(self.vertices.len());
-        self.vertices.extend_from_slice(&quad);
-        self.indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
-    }
-}
-
-/// Rasterize each glyph once (cached), pack it into the coverage or color atlas, and emit
-/// the quad geometry into `coverage` and `color` (appended, so one frame shares one arena each).
-pub(crate) fn build_glyphs(
-    renderer: &mut Renderer,
-    device: &wgpu::Device,
+/// Resolve every glyph request of `plan` into `out` (index-aligned with `plan.glyphs`).
+pub(crate) fn resolve_glyphs(
+    atlas: &mut GlyphAtlas,
     queue: &wgpu::Queue,
-    runs: &[GlyphRun],
-    coverage: &mut GlyphGeometry,
-    color: &mut GlyphGeometry,
+    plan: &FramePlan,
+    out: &mut Vec<QuadInstance>,
     stats: &mut FrameStats,
 ) {
-    renderer.fonts.get_or_insert_with(|| FontSystem::new_with_fonts(Vec::<fontdb::Source>::new()));
-    renderer.swash.get_or_insert_with(SwashCache::new);
-    if renderer.atlas.is_none() {
-        renderer.atlas = Some(Atlas::new(device, ATLAS_SIZE, wgpu::TextureFormat::R8Unorm));
-        stats.textures_created += 1;
-    }
-    if renderer.color_atlas.is_none() {
-        renderer.color_atlas = Some(Atlas::new(device, ATLAS_SIZE, wgpu::TextureFormat::Rgba8Unorm));
-        stats.textures_created += 1;
-    }
-    for run in runs {
-        let Some(font_id) = font_id(renderer, &run.font) else { continue };
-        let flags = if run.synthesize_italic { CacheKeyFlags::FAKE_ITALIC } else { CacheKeyFlags::empty() };
-        for glyph in &run.glyphs {
-            let Ok(glyph_id) = u16::try_from(glyph.id) else { continue };
-            let (key, x, y) = CacheKey::new(
-                font_id,
-                glyph_id,
-                run.font_size,
-                (glyph.x, glyph.y.trunc()),
-                fontdb::Weight(run.font_weight),
-                flags,
-            );
-            let (Some(swash), Some(fonts)) = (renderer.swash.as_mut(), renderer.fonts.as_mut()) else {
-                return;
-            };
-            let Some(image) = swash.get_image(fonts, key).clone() else {
-                continue;
-            };
-            let (w, h) = (image.placement.width, image.placement.height);
-            if w == 0 || h == 0 {
-                continue;
+    out.clear();
+    for req in &plan.glyphs {
+        let Some(run) = plan.glyph_runs.get(req.run as usize) else {
+            out.push(QuadInstance::zeroed());
+            continue;
+        };
+        let coords = plan.coords.get(run.coords.start as usize..run.coords.end as usize).unwrap_or_default();
+        let raster = RasterRequest {
+            font: &run.font,
+            glyph_id: req.key.glyph_id,
+            size_px: run.size_px,
+            subpx_x: req.key.subpx_x,
+            coords,
+        };
+        let (lookup, rasterized) = atlas.lookup(queue, req.key, &raster);
+        stats.glyphs_rasterized += u32::from(rasterized);
+        let quad = match lookup {
+            GlyphLookup::Slot(slot) => glyph_quad(slot, req.origin, req.color),
+            GlyphLookup::Empty => QuadInstance::zeroed(),
+            GlyphLookup::Full => {
+                stats.record(Unsupported::AtlasFull);
+                QuadInstance::zeroed()
             }
-            match image.content {
-                SwashContent::Mask => {
-                    let Some(atlas) = renderer.atlas.as_mut() else { return };
-                    let Some(region) = atlas.pack(w, h) else {
-                        continue;
-                    };
-                    queue.write_texture(
-                        wgpu::TexelCopyTextureInfo {
-                            texture: &atlas.texture,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d { x: region.x, y: region.y, z: 0 },
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        &image.data,
-                        wgpu::TexelCopyBufferLayout {
-                            offset: 0,
-                            bytes_per_row: Some(w),
-                            rows_per_image: Some(h),
-                        },
-                        wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-                    );
-                    let quad =
-                        glyph_quad(region, w, h, x, y, image.placement.left, image.placement.top, run.color);
-                    coverage.push_quad(quad);
-                }
-                SwashContent::Color => {
-                    let Some(atlas) = renderer.color_atlas.as_mut() else { return };
-                    let Some(region) = atlas.pack(w, h) else {
-                        continue;
-                    };
-                    queue.write_texture(
-                        wgpu::TexelCopyTextureInfo {
-                            texture: &atlas.texture,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d { x: region.x, y: region.y, z: 0 },
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        &image.data,
-                        wgpu::TexelCopyBufferLayout {
-                            offset: 0,
-                            bytes_per_row: Some(w * 4),
-                            rows_per_image: Some(h),
-                        },
-                        wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-                    );
-                    let quad = glyph_quad(
-                        region,
-                        w,
-                        h,
-                        x,
-                        y,
-                        image.placement.left,
-                        image.placement.top,
-                        [1.0, 1.0, 1.0, 1.0],
-                    );
-                    color.push_quad(quad);
-                }
-                SwashContent::SubpixelMask => continue,
+            GlyphLookup::Unsupported => {
+                stats.record(Unsupported::GlyphContent);
+                QuadInstance::zeroed()
             }
-        }
+        };
+        out.push(quad);
     }
 }
 
-/// Build the four vertices of a glyph quad: physical-pixel position + atlas UVs.
-#[allow(clippy::too_many_arguments)]
-fn glyph_quad(
-    region: super::resources::AtlasRegion,
-    w: u32,
-    h: u32,
-    x: i32,
-    y: i32,
-    placement_left: i32,
-    placement_top: i32,
-    tint: [f32; 4],
-) -> [GlyphVertex; 4] {
-    let s = ATLAS_SIZE as f32;
-    let u0 = region.x as f32 / s;
-    let v0 = region.y as f32 / s;
-    let u1 = (region.x + w) as f32 / s;
-    let v1 = (region.y + h) as f32 / s;
-    let left = x as f32 + placement_left as f32;
-    let top = y as f32 - placement_top as f32;
-    let right = left + w as f32;
-    let bottom = top + h as f32;
-    [
-        GlyphVertex { position: [left, top], uv: [u0, v0], color: tint },
-        GlyphVertex { position: [right, top], uv: [u1, v0], color: tint },
-        GlyphVertex { position: [right, bottom], uv: [u1, v1], color: tint },
-        GlyphVertex { position: [left, bottom], uv: [u0, v1], color: tint },
-    ]
+/// Place a resident glyph: `x0 = ix + left`, `y0 = iy − top`, size = bitmap size (02 §7.4).
+fn glyph_quad(slot: AtlasSlot, origin: [f32; 2], color: [f32; 4]) -> QuadInstance {
+    let (w, h) = (f32::from(slot.w), f32::from(slot.h));
+    let (x, y) = (f32::from(slot.x), f32::from(slot.y));
+    QuadInstance {
+        xform: [w, 0.0, 0.0, h],
+        origin: [origin[0] + f32::from(slot.left), origin[1] - f32::from(slot.top)],
+        uv: [x, y, x + w, y + h],
+        color,
+        layer_kind: [u32::from(slot.layer), u32::from(slot.kind == AtlasKind::Color)],
+    }
+}
+
+trait Zeroed {
+    fn zeroed() -> Self;
+}
+
+impl Zeroed for QuadInstance {
+    fn zeroed() -> Self {
+        bytemuck::Zeroable::zeroed()
+    }
 }

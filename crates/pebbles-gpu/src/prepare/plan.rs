@@ -1,9 +1,9 @@
 //! The frame plan: the ordered `DrawCmd` stream, geometry arenas and the merge rule.
 
-use pebbles_render::paint::Glyph;
 use peniko::FontData;
 
 use super::num::{ceil_px, floor_px};
+use crate::execute::resources::atlas_alloc::GlyphKey;
 use crate::gpu_types::{ImageVertex, ShadowInstance, SolidVertex};
 
 /// Device-pixel rectangle `[x0, x1) × [y0, y1)`, stored as corners so intersection never
@@ -67,21 +67,33 @@ pub(crate) enum DrawCmd {
     Solid { indices: std::ops::Range<u32>, clip: ClipState },
     /// Instanced shadow quads from `shadows`.
     Shadows { instances: std::ops::Range<u32>, clip: ClipState },
-    /// Glyph runs from `glyph_runs` (mask and color).
+    /// Instanced glyph quads (mask and color, one pipeline) from `glyphs`.
     Glyphs { glyphs: std::ops::Range<u32>, clip: ClipState },
     /// Image quads from `images`; never merges until C13 adds `ImageKey`.
     Images { images: std::ops::Range<u32>, clip: ClipState },
 }
 
-/// A shaped glyph run, transformed to physical-pixel space, ready for the glyph atlas.
+/// One glyph run's shared data; `GlyphRequest::run` indexes this.
 #[derive(Clone)]
-pub(crate) struct GlyphRun {
+pub(crate) struct GlyphRunInfo {
+    /// Font bytes (`Blob` clone = refcount bump). Released at end of frame.
     pub font: FontData,
-    pub font_size: f32,
-    pub font_weight: u16,
+    /// Range into `FramePlan::coords`.
+    pub coords: std::ops::Range<u32>,
+    /// Device raster size in px.
+    pub size_px: f32,
+}
+
+/// One glyph to draw from an atlas. Resolved 1:1 into a `QuadInstance` by `execute/resolve.rs`
+/// (a glyph that cannot be rasterized or placed becomes a zero-area quad so ranges stay valid).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct GlyphRequest {
+    pub key: GlyphKey,
+    pub run: u32,
+    /// Integer device-pixel pen origin; the fractional x lives in `key.subpx_x` (02 §7.4).
+    pub origin: [f32; 2],
+    /// Premultiplied tint (mask glyphs); color glyphs use only `.a` as opacity.
     pub color: [f32; 4],
-    pub glyphs: Vec<Glyph>,
-    pub synthesize_italic: bool,
 }
 
 /// One image draw: the image index (into the scene's uploads) + a quad in physical-pixel space.
@@ -109,7 +121,10 @@ pub(crate) struct FramePlan {
     pub solid_vertices: Vec<SolidVertex>,
     pub solid_indices: Vec<u32>,
     pub shadows: Vec<ShadowInstance>,
-    pub glyph_runs: Vec<GlyphRun>,
+    pub glyph_runs: Vec<GlyphRunInfo>,
+    pub glyphs: Vec<GlyphRequest>,
+    /// Normalized variation coords of every run, indexed by `GlyphRunInfo::coords`.
+    pub coords: Vec<i16>,
     pub images: Vec<ImageQuad>,
     // the ordered stream
     pub cmds: Vec<DrawCmd>,
@@ -125,6 +140,8 @@ impl FramePlan {
         self.solid_indices.clear();
         self.shadows.clear();
         self.glyph_runs.clear();
+        self.glyphs.clear();
+        self.coords.clear();
         self.images.clear();
         self.cmds.clear();
         self.stats = PrepareStats::default();
@@ -157,7 +174,7 @@ impl FramePlan {
     pub(crate) fn debug_dump(&self) -> String {
         use std::fmt::Write;
         let (w, h) = self.target_size;
-        let glyphs: usize = self.glyph_runs.iter().map(|r| r.glyphs.len()).sum();
+        let glyphs = self.glyphs.len();
         let mut out = String::new();
         let _ = writeln!(out, "# pebbles-gpu FramePlan v1");
         let _ = writeln!(out, "target {w}x{h}");

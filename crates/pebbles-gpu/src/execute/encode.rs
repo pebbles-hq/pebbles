@@ -2,13 +2,11 @@
 
 use pebbles_render::paint::Scene;
 
-use std::ops::Range;
-
 use super::super::prepare::num::index_u32;
 use super::super::prepare::{DrawCmd, ImageUpload, ScissorRect, image_uploads};
 use super::super::renderer::Renderer;
 use super::pipelines::{PipelineKey, PipelineKind};
-use super::resolve::{GlyphGeometry, build_glyphs};
+use super::resolve::resolve_glyphs;
 use crate::stats::FrameStats;
 
 /// Tracks the render pass's current scissor so redundant `set_scissor_rect` calls are elided.
@@ -30,15 +28,11 @@ impl PassState {
     }
 }
 
-/// Per-command ranges into the frame's resolved glyph and image geometry.
+/// Per-command image data resolved before the pass.
 #[derive(Clone, Default)]
 enum Resolved {
     #[default]
     None,
-    Glyphs {
-        coverage: Range<u32>,
-        color: Range<u32>,
-    },
     Images {
         first_quad: u32,
         textures: Vec<u64>,
@@ -50,8 +44,6 @@ enum Resolved {
 #[derive(Default)]
 pub(crate) struct ResolvedFrame {
     per_cmd: Vec<Resolved>,
-    coverage: GlyphGeometry,
-    color: GlyphGeometry,
     image_vertices: Vec<crate::gpu_types::ImageVertex>,
 }
 
@@ -68,28 +60,6 @@ pub(crate) fn resolve_and_upload(
     let cmds = std::mem::take(&mut renderer.scratch.plan.cmds);
     for cmd in &cmds {
         let resolved = match cmd {
-            DrawCmd::Glyphs { glyphs, .. } => {
-                let runs = std::mem::take(&mut renderer.scratch.plan.glyph_runs);
-                let range = glyphs.start as usize..glyphs.end as usize;
-                let (cov0, col0) =
-                    (index_u32(frame.coverage.indices.len()), index_u32(frame.color.indices.len()));
-                if let Some(slice) = runs.get(range) {
-                    build_glyphs(
-                        renderer,
-                        device,
-                        queue,
-                        slice,
-                        &mut frame.coverage,
-                        &mut frame.color,
-                        stats,
-                    );
-                }
-                renderer.scratch.plan.glyph_runs = runs;
-                Resolved::Glyphs {
-                    coverage: cov0..index_u32(frame.coverage.indices.len()),
-                    color: col0..index_u32(frame.color.indices.len()),
-                }
-            }
             DrawCmd::Images { images, .. } => {
                 let first_quad = index_u32(frame.image_vertices.len() / 4);
                 let mut textures = Vec::new();
@@ -107,15 +77,16 @@ pub(crate) fn resolve_and_upload(
         frame.per_cmd.push(resolved);
     }
     renderer.scratch.plan.cmds = cmds;
+    resolve_glyphs(
+        &mut renderer.glyph_atlas,
+        queue,
+        &renderer.scratch.plan,
+        &mut renderer.glyph_instances,
+        stats,
+    );
     let arenas = &mut renderer.arenas;
-    arenas.glyph_vertices.upload(device, queue, bytemuck::cast_slice(&frame.coverage.vertices), stats);
-    arenas.glyph_indices.upload(device, queue, bytemuck::cast_slice(&frame.coverage.indices), stats);
-    arenas.color_glyph_vertices.upload(device, queue, bytemuck::cast_slice(&frame.color.vertices), stats);
-    arenas.color_glyph_indices.upload(device, queue, bytemuck::cast_slice(&frame.color.indices), stats);
+    arenas.glyphs.upload(device, queue, bytemuck::cast_slice(&renderer.glyph_instances), stats);
     arenas.image_vertices.upload(device, queue, bytemuck::cast_slice(&frame.image_vertices), stats);
-    for color in [false, true] {
-        glyph_bind_group(renderer, device, color, stats);
-    }
     frame
 }
 
@@ -162,31 +133,18 @@ pub(crate) fn encode(
                 pass.draw(0..4, instances.clone());
                 stats.draw_calls += 1;
             }
-            (DrawCmd::Glyphs { clip, .. }, Resolved::Glyphs { coverage, color }) => {
+            (DrawCmd::Glyphs { glyphs, clip }, _) => {
+                let (Some(pipeline), Some(vb)) =
+                    (renderer.pipelines.get(key(PipelineKind::Glyph, 0)), renderer.arenas.glyphs.buffer())
+                else {
+                    continue;
+                };
                 state.set_scissor(pass, clip.scissor);
-                let arenas = &renderer.arenas;
-                for (is_color, range, vb, ib) in [
-                    (false, coverage, &arenas.glyph_vertices, &arenas.glyph_indices),
-                    (true, color, &arenas.color_glyph_vertices, &arenas.color_glyph_indices),
-                ] {
-                    if range.is_empty() {
-                        continue;
-                    }
-                    let (Some(pipeline), Some(bg), Some(vb), Some(ib)) = (
-                        renderer.pipelines.get(key(PipelineKind::Glyph, u8::from(is_color))),
-                        renderer.glyph_bg(is_color),
-                        vb.buffer(),
-                        ib.buffer(),
-                    ) else {
-                        continue;
-                    };
-                    pass.set_pipeline(pipeline);
-                    pass.set_bind_group(1, bg, &[]);
-                    pass.set_vertex_buffer(0, vb.slice(..));
-                    pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-                    pass.draw_indexed(range.clone(), 0, 0..1);
-                    stats.draw_calls += 1;
-                }
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(1, &renderer.glyph_atlas.bind_group, &[]);
+                pass.set_vertex_buffer(0, vb.slice(..));
+                pass.draw(0..4, glyphs.clone());
+                stats.draw_calls += 1;
             }
             (DrawCmd::Images { clip, .. }, Resolved::Images { first_quad, textures }) => {
                 let (Some(pipeline), Some(vb)) = (
@@ -211,25 +169,6 @@ pub(crate) fn encode(
             _ => {}
         }
     }
-}
-
-/// Create (once) the cached bind group for the coverage or color glyph atlas.
-fn glyph_bind_group(renderer: &mut Renderer, device: &wgpu::Device, color: bool, stats: &mut FrameStats) {
-    if renderer.glyph_bg(color).is_some() {
-        return;
-    }
-    let atlas = if color { renderer.color_atlas.as_ref() } else { renderer.atlas.as_ref() };
-    let Some(atlas) = atlas else { return };
-    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("pebbles.gpu.bind.glyph"),
-        layout: &renderer.layouts.texture,
-        entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&atlas.view) },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&atlas.sampler) },
-        ],
-    });
-    stats.bind_groups_created += 1;
-    renderer.set_glyph_bg(color, bg);
 }
 
 /// Upload an image once and cache its texture, view and bind group by blob id.

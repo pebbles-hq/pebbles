@@ -103,9 +103,8 @@ impl PipelineCache {
             return l.clone();
         }
         let bgl = match kind {
-            PipelineKind::Glyph | PipelineKind::Image => {
-                vec![Some(&layouts.globals), Some(&layouts.texture)]
-            }
+            PipelineKind::Glyph => vec![Some(&layouts.globals), Some(&layouts.glyph)],
+            PipelineKind::Image => vec![Some(&layouts.globals), Some(&layouts.texture)],
             _ => vec![Some(&layouts.globals)],
         };
         let l = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -165,7 +164,6 @@ impl PipelineCache {
             key(PipelineKind::Solid, 0),
             key(PipelineKind::Shadow, 0),
             key(PipelineKind::Glyph, 0),
-            key(PipelineKind::Glyph, 1),
             key(PipelineKind::Image, 0),
         ] {
             self.ensure(device, modules, layouts, k, stats);

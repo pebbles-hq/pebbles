@@ -442,6 +442,67 @@ fn color_filtered_child_stays_visible() {
     assert_eq!(renderer.last_stats().unsupported[pebbles_gpu::Unsupported::LayerBlend as usize], 1);
 }
 
+/// C09: a 40-glyph label whose last glyph changes every frame for 500 frames keeps its first
+/// glyph (no disappearing text), and steady-state frames rasterize at most 2 glyphs.
+#[test]
+#[ignore = "gpu"]
+fn glyphs_survive_500_frames() {
+    let Some((device, queue, mut renderer)) = setup("glyphs_survive_500_frames") else { return };
+    let bytes = pebbles_render::fonts::builtin_fonts()[0].1;
+    let font = peniko::FontData::new(peniko::Blob::from(bytes.to_vec()), 0);
+    let (w, h) = (640u32, 48u32);
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pebbles.gpu.test.target"),
+        size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let params = RenderParams { base_color: Color::WHITE, width: w, height: h };
+    // Ink of the first glyph's cell (x in 0..16).
+    let first_ink = |rgba: &[u8]| {
+        (0..h)
+            .flat_map(|y| (0..16).map(move |x| (x, y)))
+            .filter(|&(x, y)| !is_white(pixel(rgba, w, x, y)))
+            .count()
+    };
+    let mut first = 0usize;
+    for frame in 1..=500u32 {
+        let mut scene = Scene::new();
+        let ids = (0..39u32).map(|i| 36 + i % 26).chain(std::iter::once(36 + frame % 26));
+        Painter::new(&mut scene).draw_glyphs(
+            &font,
+            16.0,
+            400,
+            &[],
+            &Brush::Solid(Color::BLACK),
+            Affine::IDENTITY,
+            None,
+            Fill::NonZero,
+            ids.enumerate().map(|(i, id)| Glyph { id, x: 2.0 + 15.5 * i as f32, y: 30.0 }),
+        );
+        let stats = renderer
+            .render_to_texture(&device, &queue, &scene, &view, wgpu::TextureFormat::Rgba8Unorm, &params)
+            .expect("render");
+        if frame == 1 || frame == 500 {
+            queue.submit([]);
+            let ink = first_ink(&readback(&device, &queue, &texture));
+            if frame == 1 {
+                assert!(ink > 10, "first glyph has no ink in frame 1");
+                first = ink;
+            } else {
+                let diff = (ink as f64 - first as f64).abs() / first as f64;
+                assert!(diff <= 0.02, "first glyph ink {first} -> {ink}");
+                assert!(stats.glyphs_rasterized <= 2, "frame 500 rasterized {}", stats.glyphs_rasterized);
+            }
+        }
+    }
+}
+
 /// Copy a texture's rows (padded to 256 bytes) into an unpadded byte buffer.
 fn readback(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<u8> {
     let width = texture.width();

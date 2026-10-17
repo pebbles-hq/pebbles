@@ -1,5 +1,3 @@
-//! Glyph rasterization (cosmic-text during the transition; swash directly from C09).
+//! Glyph rasterization: swash directly from the op's font bytes (DR-07).
 
 pub(crate) mod swash;
-
-pub(crate) use swash::font_id;

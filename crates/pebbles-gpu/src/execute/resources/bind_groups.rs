@@ -5,6 +5,8 @@
 pub(crate) struct BindGroupLayouts {
     pub globals: wgpu::BindGroupLayout,
     pub texture: wgpu::BindGroupLayout,
+    /// Glyph group 1: mask array, color array, filtering sampler (06 §9.4).
+    pub glyph: wgpu::BindGroupLayout,
 }
 
 impl BindGroupLayouts {
@@ -43,6 +45,29 @@ impl BindGroupLayouts {
                 },
             ],
         });
-        Self { globals, texture }
+        let array = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2Array,
+                multisampled: false,
+            },
+            count: None,
+        };
+        let glyph = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("pebbles.gpu.layout.glyph"),
+            entries: &[
+                array(0),
+                array(1),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        Self { globals, texture, glyph }
     }
 }

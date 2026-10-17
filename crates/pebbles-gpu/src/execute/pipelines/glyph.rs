@@ -1,10 +1,15 @@
-//! The glyph pipeline: a textured quad sampling the coverage atlas and tinted by the
-//! run color (premultiplied alpha). `variant` 0 = mask, 1 = color.
+//! The glyph pipeline: instanced `QuadInstance` quads sampling the mask and color atlases
+//! (one pipeline; the fragment selects on `layer_kind.y`, 06 §9.4).
 
 use std::mem::size_of;
 
 use super::{PipelineKey, PipelineKind};
-use crate::gpu_types::GlyphVertex;
+use crate::gpu_types::QuadInstance;
+
+/// `QuadInstance` attributes (06 §4.5).
+pub(crate) const QUAD_ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![
+    0 => Float32x4, 1 => Float32x2, 2 => Float32x4, 3 => Float32x4, 4 => Uint32x2
+];
 
 pub(crate) fn build(
     device: &wgpu::Device,
@@ -13,7 +18,6 @@ pub(crate) fn build(
     key: PipelineKey,
 ) -> wgpu::RenderPipeline {
     debug_assert_eq!(key.kind, PipelineKind::Glyph);
-    let entry_point = if key.variant == 1 { "fs_color" } else { "fs_mask" };
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("pebbles.gpu.pipeline.glyph"),
         layout: Some(layout),
@@ -22,30 +26,14 @@ pub(crate) fn build(
             entry_point: Some("vs"),
             compilation_options: Default::default(),
             buffers: &[wgpu::VertexBufferLayout {
-                array_stride: size_of::<GlyphVertex>() as u64,
-                step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &[
-                    wgpu::VertexAttribute {
-                        format: wgpu::VertexFormat::Float32x2,
-                        offset: 0,
-                        shader_location: 0,
-                    },
-                    wgpu::VertexAttribute {
-                        format: wgpu::VertexFormat::Float32x2,
-                        offset: 8,
-                        shader_location: 1,
-                    },
-                    wgpu::VertexAttribute {
-                        format: wgpu::VertexFormat::Float32x4,
-                        offset: 16,
-                        shader_location: 2,
-                    },
-                ],
+                array_stride: size_of::<QuadInstance>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &QUAD_ATTRIBUTES,
             }],
         },
         fragment: Some(wgpu::FragmentState {
             module: shader,
-            entry_point: Some(entry_point),
+            entry_point: Some("fs_main"),
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState {
                 format: key.color_format,
@@ -53,7 +41,10 @@ pub(crate) fn build(
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
-        primitive: Default::default(),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleStrip,
+            ..Default::default()
+        },
         depth_stencil: None,
         multisample: wgpu::MultisampleState { count: key.sample_count, ..Default::default() },
         multiview_mask: None,

@@ -1,9 +1,8 @@
 //! One [`Renderer`] per device: the eager resource set (Globals, arenas, layouts, pipeline
-//! cache) plus the lazy pre-C09 glyph system.
+//! cache, glyph atlas).
 
 use std::collections::HashMap;
 
-use cosmic_text::{FontSystem, SwashCache};
 use kurbo::Affine;
 use wgpu::util::DeviceExt;
 
@@ -13,11 +12,12 @@ use super::context::{DeviceId, GpuDevice};
 use super::error::GpuError;
 use super::execute::encode::{encode, resolve_and_upload};
 use super::execute::pipelines::{PipelineCache, ShaderModules};
-use super::execute::resources::Atlas;
 use super::execute::resources::bind_groups::BindGroupLayouts;
 use super::execute::resources::buffers::FrameArenas;
 use super::execute::resources::globals::Globals;
+use super::execute::resources::glyph_atlas::GlyphAtlas;
 use super::frame_targets::create_msaa;
+use super::gpu_types::QuadInstance;
 use super::prepare::{PrepareInput, PrepareScratch, VERTEX_LIMIT_NO_FULL_INDEX, prepare};
 use super::stats::{FrameStats, Unsupported, WarnOnce};
 
@@ -43,13 +43,8 @@ pub struct Renderer {
     pub(crate) image_sampler: wgpu::Sampler,
     pub(crate) image_index_buffer: wgpu::Buffer,
     msaa: Option<(wgpu::TextureFormat, u32, u32, wgpu::Texture)>,
-    pub(crate) fonts: Option<FontSystem>,
-    pub(crate) swash: Option<SwashCache>,
-    pub(crate) font_ids: HashMap<(u64, u32), fontdb::ID>,
-    pub(crate) atlas: Option<Atlas>,
-    pub(crate) color_atlas: Option<Atlas>,
-    glyph_mask_bg: Option<wgpu::BindGroup>,
-    glyph_color_bg: Option<wgpu::BindGroup>,
+    pub(crate) glyph_atlas: GlyphAtlas,
+    pub(crate) glyph_instances: Vec<QuadInstance>,
     pub(crate) image_cache: HashMap<u64, (wgpu::Texture, wgpu::TextureView, wgpu::BindGroup)>,
     pub(crate) scratch: PrepareScratch,
     stats: FrameStats,
@@ -69,6 +64,7 @@ impl Renderer {
             mapped_at_creation: false,
         });
         let layouts = BindGroupLayouts::new(device);
+        let glyph_atlas = GlyphAtlas::new(device, &layouts.glyph);
         let globals_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("pebbles.gpu.bind.globals"),
             layout: &layouts.globals,
@@ -106,13 +102,8 @@ impl Renderer {
             image_sampler,
             image_index_buffer,
             msaa: None,
-            fonts: None,
-            swash: None,
-            font_ids: HashMap::new(),
-            atlas: None,
-            color_atlas: None,
-            glyph_mask_bg: None,
-            glyph_color_bg: None,
+            glyph_atlas,
+            glyph_instances: Vec::new(),
             image_cache: HashMap::new(),
             scratch: PrepareScratch::default(),
             stats: FrameStats::default(),
@@ -219,6 +210,7 @@ impl Renderer {
         );
 
         self.pipelines.prewarm(device, &self.shaders, &self.layouts, format, self.sample_count, &mut stats);
+        self.glyph_atlas.begin_frame();
         let frame = resolve_and_upload(self, device, queue, scene, &mut stats);
 
         let clear = super::prepare::color::clear_color(base_color);
@@ -244,6 +236,7 @@ impl Renderer {
         }
         queue.submit([encoder.finish()]);
         self.scratch.plan.release_refs();
+        self.glyph_atlas.end_frame();
         self.end_frame(&stats);
         self.stats = stats;
         Ok(stats)
@@ -260,17 +253,5 @@ impl Renderer {
 
     pub(crate) fn globals_bg(&self) -> &wgpu::BindGroup {
         &self.globals_bg
-    }
-
-    pub(crate) fn glyph_bg(&self, color: bool) -> Option<&wgpu::BindGroup> {
-        if color { self.glyph_color_bg.as_ref() } else { self.glyph_mask_bg.as_ref() }
-    }
-
-    pub(crate) fn set_glyph_bg(&mut self, color: bool, bg: wgpu::BindGroup) {
-        if color {
-            self.glyph_color_bg = Some(bg);
-        } else {
-            self.glyph_mask_bg = Some(bg);
-        }
     }
 }

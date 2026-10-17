@@ -23,7 +23,7 @@ mod stroke;
 mod tessellate;
 
 pub(crate) use images::{ImageUpload, image_uploads};
-pub(crate) use plan::{DrawCmd, FramePlan, GlyphRun, ScissorRect};
+pub(crate) use plan::{DrawCmd, FramePlan, ScissorRect};
 
 /// Path-flattening tolerance for recorded shapes (logical px) — a local copy, because
 /// `display_list::TOL` is `pub(crate)` to pebbles-render.
@@ -231,16 +231,8 @@ impl Walk<'_> {
                         self.clips.pop();
                     }
                 }
-                Op::Glyphs {
-                    font,
-                    font_size,
-                    font_weight,
-                    brush,
-                    transform,
-                    glyph_transform,
-                    glyphs,
-                    ..
-                } => {
+                // `glyph_transform` (synthetic oblique) is drawn upright until the outline route (R20).
+                Op::Glyphs { font, font_size, normalized_coords, brush, transform, glyphs, .. } => {
                     if self.hidden() {
                         continue;
                     }
@@ -262,16 +254,8 @@ impl Walk<'_> {
                     }
                     let k = self.alpha();
                     let color = color::premul_scaled(base, k);
-                    let range = glyphs::glyph_run(
-                        self.plan,
-                        font,
-                        *font_size,
-                        *font_weight,
-                        color,
-                        xf,
-                        *glyph_transform,
-                        glyphs,
-                    );
+                    let range =
+                        glyphs::glyph_run(self.plan, font, *font_size, normalized_coords, color, xf, glyphs);
                     self.push(DrawCmd::Glyphs { glyphs: range, clip: self.clips.current() }, idx);
                 }
                 Op::Fragment { transform, ops, .. } => {
@@ -660,7 +644,7 @@ mod tests {
             std::iter::once(glyph()),
         );
         let (plan, stats) = plan_and_stats(&scene);
-        assert_eq!(plan.glyph_runs[0].color, [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(plan.glyphs[0].color, [0.0, 0.0, 1.0, 1.0]);
         assert_eq!(stats.unsupported[Unsupported::GradientText as usize], 1);
     }
 
