@@ -18,8 +18,8 @@ use super::execute::resources::bind_groups::BindGroupLayouts;
 use super::execute::resources::buffers::FrameArenas;
 use super::execute::resources::globals::Globals;
 use super::frame_targets::create_msaa;
-use super::prepare::{PrepareInput, PrepareScratch, prepare};
-use super::stats::FrameStats;
+use super::prepare::{PrepareInput, PrepareScratch, VERTEX_LIMIT_NO_FULL_INDEX, prepare};
+use super::stats::{FrameStats, Unsupported, WarnOnce};
 
 /// Per-frame render parameters.
 pub struct RenderParams {
@@ -53,6 +53,8 @@ pub struct Renderer {
     pub(crate) image_cache: HashMap<u64, (wgpu::Texture, wgpu::TextureView, wgpu::BindGroup)>,
     pub(crate) scratch: PrepareScratch,
     stats: FrameStats,
+    warn_once: WarnOnce,
+    vertex_limit: u32,
 }
 
 impl Renderer {
@@ -114,6 +116,17 @@ impl Renderer {
             image_cache: HashMap::new(),
             scratch: PrepareScratch::default(),
             stats: FrameStats::default(),
+            warn_once: WarnOnce::default(),
+            vertex_limit: if gpu
+                .adapter()
+                .get_downlevel_capabilities()
+                .flags
+                .contains(wgpu::DownlevelFlags::FULL_DRAW_INDEX_UINT32)
+            {
+                u32::MAX
+            } else {
+                VERTEX_LIMIT_NO_FULL_INDEX
+            },
         }
     }
 
@@ -165,10 +178,14 @@ impl Renderer {
             }
         };
 
-        let input = PrepareInput { target_size: size, root_transform: Affine::IDENTITY };
-        prepare(scene, &input, &mut self.scratch);
-
         let mut stats = FrameStats::default();
+        let input = PrepareInput {
+            target_size: size,
+            root_transform: Affine::IDENTITY,
+            vertex_limit: self.vertex_limit,
+        };
+        prepare(scene, &input, &mut self.scratch, &mut stats);
+
         stats.ops = self.scratch.plan.stats.ops;
         stats.cmds = u32::try_from(self.scratch.plan.cmds.len()).unwrap_or(u32::MAX);
         stats.culled = self.scratch.plan.stats.culled;
@@ -227,12 +244,20 @@ impl Renderer {
         }
         queue.submit([encoder.finish()]);
         self.scratch.plan.release_refs();
+        self.end_frame(&stats);
         self.stats = stats;
         Ok(stats)
     }
 }
 
 impl Renderer {
+    /// After the last submit: log each fallback kind the first time it occurs (06 §6.3).
+    fn end_frame(&mut self, stats: &FrameStats) {
+        for kind in Unsupported::ALL {
+            self.warn_once.report(kind, stats.unsupported[kind as usize]);
+        }
+    }
+
     pub(crate) fn globals_bg(&self) -> &wgpu::BindGroup {
         &self.globals_bg
     }

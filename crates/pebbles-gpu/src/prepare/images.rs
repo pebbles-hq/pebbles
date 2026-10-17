@@ -58,6 +58,7 @@ pub(crate) fn image(
     image: &peniko::ImageBrush,
     transform: Affine,
     index: u32,
+    opacity: f32,
 ) -> Range<u32> {
     let w = image.image.width as f64;
     let h = image.image.height as f64;
@@ -67,10 +68,10 @@ pub(crate) fn image(
     let c01 = transform * kurbo::Point::new(0.0, h);
     let px = |p: kurbo::Point| [to_f32(p.x).unwrap_or(0.0), to_f32(p.y).unwrap_or(0.0)];
     let vertices = [
-        ImageVertex { position: px(c00), uv: [0.0, 0.0] },
-        ImageVertex { position: px(c10), uv: [1.0, 0.0] },
-        ImageVertex { position: px(c11), uv: [1.0, 1.0] },
-        ImageVertex { position: px(c01), uv: [0.0, 1.0] },
+        ImageVertex { position: px(c00), uv: [0.0, 0.0], opacity },
+        ImageVertex { position: px(c10), uv: [1.0, 0.0], opacity },
+        ImageVertex { position: px(c11), uv: [1.0, 1.0], opacity },
+        ImageVertex { position: px(c01), uv: [0.0, 1.0], opacity },
     ];
     let start = index_u32(plan.images.len());
     plan.images.push(ImageQuad { image_index: index, vertices });

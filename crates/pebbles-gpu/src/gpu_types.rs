@@ -29,6 +29,8 @@ pub(crate) struct GlyphVertex {
 pub(crate) struct ImageVertex {
     pub position: [f32; 2],
     pub uv: [f32; 2],
+    /// Group alpha × sampler alpha, multiplied into the premultiplied sample (C17).
+    pub opacity: f32,
 }
 
 /// Blurred rounded-rect shadow; instanced strip, quad inflated by 3σ in the vertex shader.

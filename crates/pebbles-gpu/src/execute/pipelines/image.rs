@@ -33,6 +33,11 @@ pub(crate) fn build(
                         offset: 8,
                         shader_location: 1,
                     },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32,
+                        offset: 16,
+                        shader_location: 2,
+                    },
                 ],
             }],
         },

@@ -3,11 +3,10 @@
 use std::ops::Range;
 
 use kurbo::Affine;
-use peniko::{Brush, FontData};
+use peniko::FontData;
 
 use pebbles_render::paint::Glyph;
 
-use super::color::premul;
 use super::num::{index_u32, to_f32};
 use super::plan::{FramePlan, GlyphRun};
 
@@ -18,16 +17,11 @@ pub(crate) fn glyph_run(
     font: &FontData,
     font_size: f32,
     font_weight: u16,
-    brush: &Brush,
+    color: [f32; 4],
     transform: Affine,
     glyph_transform: Option<Affine>,
     glyphs: &[Glyph],
-) -> Option<Range<u32>> {
-    let color = match brush {
-        Brush::Solid(c) => premul(*c),
-        // Gradient/image text is Phase 4; skip the run rather than tint it wrong.
-        _ => return None,
-    };
+) -> Range<u32> {
     let coeffs = transform.as_coeffs();
     let scale = to_f32((coeffs[0] * coeffs[0] + coeffs[1] * coeffs[1]).sqrt().max(1e-6)).unwrap_or(0.0);
     let glyphs = glyphs
@@ -46,5 +40,5 @@ pub(crate) fn glyph_run(
         glyphs,
         synthesize_italic: glyph_transform.is_some(),
     });
-    Some(start..start + 1)
+    start..start + 1
 }

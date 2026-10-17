@@ -36,5 +36,5 @@ pub use context::{DeviceId, GpuCaps, GpuContext, GpuDevice};
 pub use error::{AcquireError, CaptureError, GpuError};
 pub use init::{GpuInit, GpuPower, HostOs};
 pub use renderer::{RenderParams, Renderer};
-pub use stats::FrameStats;
+pub use stats::{FrameStats, Unsupported};
 pub use surface::RenderSurface;

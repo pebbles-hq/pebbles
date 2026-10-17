@@ -8,8 +8,8 @@ use pebbles_render::paint::{Painter, Scene, Stroke};
 
 fn plan_of(scene: &Scene, size: (u32, u32)) -> FramePlan {
     let mut scratch = PrepareScratch::default();
-    let input = PrepareInput { target_size: size, root_transform: Affine::IDENTITY };
-    prepare(scene, &input, &mut scratch);
+    let input = PrepareInput { target_size: size, root_transform: Affine::IDENTITY, vertex_limit: u32::MAX };
+    prepare(scene, &input, &mut scratch, &mut crate::stats::FrameStats::default());
     scratch.plan
 }
 

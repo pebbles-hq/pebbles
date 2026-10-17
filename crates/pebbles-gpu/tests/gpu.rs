@@ -406,6 +406,42 @@ fn steady_state_frames_create_nothing() {
     }
 }
 
+/// C17: a child inside a blend layer (a `ColorFiltered`-style Multiply group): the filter rect
+/// that the blend layer draws is skipped with the layer, so it no longer covers the child,
+/// and the child drawn after the layer stays visible.
+#[test]
+#[ignore = "gpu"]
+fn color_filtered_child_stays_visible() {
+    let Some((device, queue, mut renderer)) = setup("color_filtered_child_stays_visible") else { return };
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    p.fill(
+        Fill::NonZero,
+        Affine::IDENTITY,
+        Color::from_rgba8(255, 0, 0, 255),
+        None,
+        &Rect::new(20.0, 20.0, 60.0, 60.0),
+    );
+    p.push_layer(
+        Fill::NonZero,
+        peniko::Mix::Multiply,
+        1.0,
+        Affine::IDENTITY,
+        &Rect::new(0.0, 0.0, 80.0, 80.0),
+    );
+    p.fill(
+        Fill::NonZero,
+        Affine::IDENTITY,
+        Color::from_rgba8(0, 0, 255, 255),
+        None,
+        &Rect::new(0.0, 0.0, 80.0, 80.0),
+    );
+    p.pop_layer();
+    let rgba = render_scene(&device, &queue, &mut renderer, &scene, (80, 80), Color::WHITE);
+    assert_eq!(pixel(&rgba, 80, 40, 40), [255, 0, 0, 255], "child covered by the filter rect");
+    assert_eq!(renderer.last_stats().unsupported[pebbles_gpu::Unsupported::LayerBlend as usize], 1);
+}
+
 /// Copy a texture's rows (padded to 256 bytes) into an unpadded byte buffer.
 fn readback(device: &wgpu::Device, queue: &wgpu::Queue, texture: &wgpu::Texture) -> Vec<u8> {
     let width = texture.width();

@@ -61,19 +61,21 @@ pub(crate) fn expand(
 
 /// Fill-tessellate `scratch.outline` (already device-space) with a premultiplied color,
 /// appending to the solid arenas and returning the index range.
-pub(crate) fn fill_outline(plan: &mut FramePlan, scratch: &StrokeScratch, color: [f32; 4]) -> Range<u32> {
+/// Returns `None` (appending nothing) when lyon fails.
+pub(crate) fn fill_outline(
+    plan: &mut FramePlan,
+    scratch: &StrokeScratch,
+    color: [f32; 4],
+) -> Option<Range<u32>> {
     let lyon = to_lyon_path(&scratch.outline);
     let mut geometry = VertexBuffers::new();
     let mut tess = FillTessellator::new();
     let options = FillOptions::default()
         .with_tolerance(super::tessellate::FILL_TOLERANCE_PX)
         .with_fill_rule(FillRule::NonZero);
-    let _ = tess.tessellate_path(
-        &lyon,
-        &options,
-        &mut BuffersBuilder::new(&mut geometry, SolidVertexCtor(color)),
-    );
-    append(plan, geometry)
+    tess.tessellate_path(&lyon, &options, &mut BuffersBuilder::new(&mut geometry, SolidVertexCtor(color)))
+        .ok()?;
+    Some(append(plan, geometry))
 }
 
 #[cfg(test)]
@@ -95,7 +97,7 @@ mod tests {
         let outcome = expand(&path(), style, transform, &mut scratch);
         if outcome.drew {
             let color = premul_scaled(peniko::Color::BLACK, outcome.alpha);
-            fill_outline(&mut plan, &scratch, color);
+            fill_outline(&mut plan, &scratch, color).expect("tessellates");
         }
         (plan, outcome)
     }
@@ -131,7 +133,8 @@ mod tests {
         ]);
         let outcome = expand(&short, &style, Affine::scale(2.0), &mut scratch);
         assert!(outcome.drew);
-        fill_outline(&mut plan, &scratch, premul_scaled(peniko::Color::BLACK, outcome.alpha));
+        fill_outline(&mut plan, &scratch, premul_scaled(peniko::Color::BLACK, outcome.alpha))
+            .expect("tessellates");
         let (min_x, _, max_x, _) = bbox(&plan);
         assert!((max_x - min_x - 8.0).abs() < 0.1, "first dash x-extent {}", max_x - min_x);
     }
