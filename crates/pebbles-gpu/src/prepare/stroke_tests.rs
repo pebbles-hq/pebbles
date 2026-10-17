@@ -253,3 +253,6 @@ fn normal_width_is_unchanged() {
     );
     assert_eq!(ctx.output(), direct.output());
 }
+
+#[path = "stroke_matrix_tests.rs"]
+mod matrix;
