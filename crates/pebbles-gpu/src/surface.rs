@@ -155,9 +155,8 @@ pub struct RenderSurface<'window> {
     dev_id: DeviceId,
     view_format: wgpu::TextureFormat,
     /// The encoding contract the shaders must honor (R13 reads it into `Globals::color_flags`).
-    #[allow(dead_code)] // first consumer: R13 (after C12)
     pub(crate) encoding: OutputEncoding,
-    /// This surface's own MSAA target (10 §4, E3).
+    /// This surface's own targets (the Tier C / layer pool, 10 §4, E3).
     targets: FrameTargets,
 }
 
@@ -209,6 +208,12 @@ impl<'window> RenderSurface<'window> {
         self.resize(gpu, width, height);
     }
 
+    /// Whether frames must decode sRGB in the shader (GL sRGB-only surface, 02 §3.8): pass to
+    /// [`RenderTarget::with_decode_srgb_output`](crate::RenderTarget::with_decode_srgb_output).
+    pub fn decode_srgb_output(&self) -> bool {
+        self.encoding == OutputEncoding::SrgbHardware
+    }
+
     /// This surface's target textures, for `RenderTarget::new`.
     pub fn targets_mut(&mut self) -> &mut FrameTargets {
         &mut self.targets
@@ -239,7 +244,9 @@ impl<'window> RenderSurface<'window> {
             pebbles_foundation::log::logf(
                 pebbles_foundation::log::Level::Warn,
                 pebbles_foundation::log::Cat::Gpu,
-                format_args!("sRGB-only surface — colors decoded in the shader (R13)"),
+                format_args!(
+                    "sRGB-only surface without view formats — colors decoded in the shader (R13); opaque colors match, translucent pixels, AA edges and glyph coverage blend in linear light (documented deviation, 02 §3.8)"
+                ),
             );
         }
         let alpha_mode = capabilities.alpha_modes.first().copied().unwrap_or(wgpu::CompositeAlphaMode::Auto);

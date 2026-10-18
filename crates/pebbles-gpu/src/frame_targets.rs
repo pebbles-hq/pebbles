@@ -33,6 +33,8 @@ pub struct RenderTarget<'a> {
     format: wgpu::TextureFormat,
     size: (u32, u32),
     pub(crate) targets: &'a mut FrameTargets,
+    /// GL sRGB-only surface: shaders decode sRGB before the hardware re-encodes (02 §3.8, R13).
+    pub(crate) decode_srgb_output: bool,
 }
 
 impl<'a> RenderTarget<'a> {
@@ -44,7 +46,16 @@ impl<'a> RenderTarget<'a> {
         targets: &'a mut FrameTargets,
     ) -> Self {
         let texture = view.texture();
-        Self { view, format, size: (texture.width(), texture.height()), targets }
+        Self { view, format, size: (texture.width(), texture.height()), targets, decode_srgb_output: false }
+    }
+
+    /// Mark the target as a GL sRGB-only surface (02 §3.8; from
+    /// [`RenderSurface::decode_srgb_output`](crate::RenderSurface::decode_srgb_output)). Never set
+    /// it for offscreen Unorm targets.
+    #[must_use]
+    pub fn with_decode_srgb_output(mut self, on: bool) -> Self {
+        self.decode_srgb_output = on;
+        self
     }
 
     /// Size in device pixels, from the target texture.

@@ -17,7 +17,6 @@ const _: () = assert!(core::mem::offset_of!(Globals, inv_target_size) == 16);
 const _: () = assert!(core::mem::offset_of!(Globals, color_flags) == 24);
 
 /// Bit 0 of `Globals::color_flags`: decode sRGB output for the GL sRGB-only fallback (DR-05).
-#[allow(dead_code)] // first caller: the GL sRGB-only fallback (C21)
 pub(crate) const COLOR_FLAG_DECODE_SRGB_OUTPUT: u32 = 1;
 
 #[cfg(test)]

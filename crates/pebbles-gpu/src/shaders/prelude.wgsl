@@ -11,6 +11,25 @@ const COLOR_FLAG_DECODE_SRGB_OUTPUT: u32 = 1u;
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 
+fn srgb_to_linear(c: f32) -> f32 {
+    return select(pow((c + 0.055) / 1.055, 2.4), c / 12.92, c <= 0.04045);
+}
+
+// Identity on the contract path. On a GL sRGB-only surface, convert the premultiplied encoded
+// color to premultiplied linear, so the hardware's linear→sRGB store reproduces the encoded value
+// for opaque pixels (02 §3.8, R13).
+fn finish_color(premul: vec4<f32>) -> vec4<f32> {
+    if ((globals.color_flags & COLOR_FLAG_DECODE_SRGB_OUTPUT) == 0u) {
+        return premul;
+    }
+    if (premul.a <= 0.0) {
+        return vec4<f32>(0.0);
+    }
+    let straight = premul.rgb / premul.a;
+    let lin = vec3<f32>(srgb_to_linear(straight.r), srgb_to_linear(straight.g), srgb_to_linear(straight.b));
+    return vec4<f32>(lin * premul.a, premul.a);
+}
+
 // Device px (y down) -> clip space for the current pass target (10 §2.6 owns this function).
 fn to_clip(p: vec2<f32>) -> vec4<f32> {
     let q = (p - globals.target_origin) * globals.inv_target_size;

@@ -44,5 +44,5 @@ fn fs(i: O) -> @location(0) vec4<f32> {
     let q = abs(i.p - center) - half + vec2<f32>(i.radius, i.radius);
     let sdf = length(max(q, vec2<f32>(0.0, 0.0))) + min(max(q.x, q.y), 0.0) - i.radius;
     let coverage = 0.5 * (1.0 + erf(-sdf / (i.sigma * 1.41421356)));
-    return vec4(i.color.rgb * coverage, i.color.a * coverage);
+    return finish_color(vec4(i.color.rgb * coverage, i.color.a * coverage));
 }

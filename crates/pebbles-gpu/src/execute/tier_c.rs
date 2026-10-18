@@ -135,7 +135,7 @@ pub(crate) fn encode_runs(
             target_size: [size.0 as f32, size.1 as f32],
             target_origin: [run.bounds.x0 as f32, run.bounds.y0 as f32],
             inv_target_size: [1.0 / size.0 as f32, 1.0 / size.1 as f32],
-            color_flags: 0,
+            color_flags: renderer.color_flags(),
             _pad0: 0,
         };
         let globals_offset = (k64 + 1) * stride;

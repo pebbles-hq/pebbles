@@ -150,3 +150,40 @@ fn srgb_storage_with_unorm_view() {
     let got = render_into(&device, &queue, &mut r, &half_black_scene(), Color::WHITE, s, u);
     assert!(got == want, "sRGB storage through a Unorm view must store the same bytes");
 }
+
+/// R13 AC1: on a GL-style sRGB-only target (`Rgba8UnormSrgb`, no view formats) with
+/// `decode_srgb_output`, opaque colors read back as the encoded values; translucent pixels blend
+/// in linear light (the documented deviation, 02 §3.8: half-black on white ≈ 188, not 128).
+#[test]
+#[ignore = "gpu"]
+fn gl_srgb_fallback_opaque_matches() {
+    let Some((device, queue, mut r)) = setup("gl_srgb_fallback_opaque_matches") else { return };
+    let render = |r: &mut Renderer, scene: &Scene| {
+        let f = wgpu::TextureFormat::Rgba8UnormSrgb;
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("pebbles.gpu.test.srgb_fallback"),
+            size: wgpu::Extent3d { width: W, height: W, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: f,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut targets = FrameTargets::new();
+        let target = RenderTarget::new(&view, f, &mut targets).with_decode_srgb_output(true);
+        r.render(target, scene, &FrameParams::new(Color::WHITE)).expect("render");
+        queue.submit([]);
+        readback(&device, &queue, &texture)
+    };
+    let mut opaque = Scene::new();
+    fill(&mut Painter::new(&mut opaque), BOX, Color::from_rgba8(0x33, 0x66, 0xCC, 0xFF));
+    let px = render(&mut r, &opaque);
+    let c = pixel(&px, W, 30, 30);
+    assert!(near(c, [0x33, 0x66, 0xCC], 1), "opaque fill {c:?}");
+    assert!(near(pixel(&px, W, 2, 2), [255, 255, 255], 1), "white base");
+    let px = render(&mut r, &half_black_scene());
+    let c = pixel(&px, W, 30, 30);
+    assert!((0..3).all(|i| (180..=195).contains(&c[i])), "half-black blends in linear light: {c:?}");
+}

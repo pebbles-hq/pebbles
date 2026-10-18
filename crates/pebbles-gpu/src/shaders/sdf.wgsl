@@ -69,6 +69,5 @@ fn rrect_coverage(p: vec2<f32>, rect: vec4<f32>, radii: vec4<f32>) -> f32 {
         // A border is the ring between nested shapes: outer minus inner area.
         coverage = max(coverage - rrect_coverage(in.p, in.inner, in.inner_radii), 0.0);
     }
-    // `finish_color` (the GL sRGB-only decode) arrives with R13.
-    return in.color * coverage;
+    return finish_color(in.color * coverage);
 }

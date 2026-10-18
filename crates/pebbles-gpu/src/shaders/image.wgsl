@@ -29,5 +29,5 @@ fn vs(i: QuadIn, @builtin(vertex_index) vi: u32) -> QuadOut {
 
 @fragment
 fn fs(i: QuadOut) -> @location(0) vec4<f32> {
-    return textureSample(image, image_sampler, i.uv) * i.opacity;
+    return finish_color(textureSample(image, image_sampler, i.uv) * i.opacity);
 }

@@ -120,3 +120,22 @@ fn shader_table_is_complete() {
         }
     }
 }
+
+/// R13: every fragment entry point returns through `finish_color(..)` — except `fs_over`, whose
+/// layer texels already passed through it when they were drawn.
+#[test]
+fn every_fragment_calls_finish_color() {
+    for (name, src) in ALL {
+        let module = naga::front::wgsl::parse_str(src).unwrap_or_else(|e| panic!("{name}: {e}"));
+        for ep in module.entry_points.iter().filter(|e| e.stage == naga::ShaderStage::Fragment) {
+            if ep.name == "fs_over" {
+                continue;
+            }
+            let start =
+                src.find(&format!("fn {}(", ep.name)).unwrap_or_else(|| panic!("{name}: {}", ep.name));
+            let body = &src[start..];
+            let end = body.find("\n}").unwrap_or(body.len());
+            assert!(body[..end].contains("finish_color("), "{name}::{} does not call finish_color", ep.name);
+        }
+    }
+}

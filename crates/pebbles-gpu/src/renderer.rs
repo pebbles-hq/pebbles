@@ -34,6 +34,8 @@ pub struct Renderer {
     /// One `CompositeParams` slot per Tier C run (R17).
     composite_buffer: wgpu::Buffer,
     composite_slots: u64,
+    /// This frame's `Globals::color_flags`.
+    color_flags: u32,
     pub(crate) runs: Vec<super::execute::tier_c::Run>,
     pub(crate) arenas: FrameArenas,
     device: wgpu::Device,
@@ -76,6 +78,7 @@ impl Renderer {
             globals_slots: 1,
             composite_buffer,
             composite_slots: 1,
+            color_flags: 0,
             runs: Vec::new(),
             arenas: FrameArenas::new(),
             device: device.clone(),
@@ -165,7 +168,11 @@ impl Renderer {
             target_size: [size.0 as f32, size.1 as f32],
             target_origin: [0.0, 0.0],
             inv_target_size: [1.0 / size.0 as f32, 1.0 / size.1 as f32],
-            color_flags: 0,
+            color_flags: if target.decode_srgb_output {
+                super::execute::resources::globals::COLOR_FLAG_DECODE_SRGB_OUTPUT
+            } else {
+                0
+            },
             _pad0: 0,
         };
         queue.write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
@@ -200,7 +207,11 @@ impl Renderer {
         self.image_cache.begin_frame();
         resolve_and_upload(self, device, queue, &mut stats);
 
-        let clear = super::prepare::color::clear_color(params.base_color);
+        self.color_flags = globals.color_flags;
+        let mut clear = super::prepare::color::clear_color(params.base_color);
+        if target.decode_srgb_output {
+            clear = super::prepare::color::linearize_clear(clear);
+        }
         let mut encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.gpu.encoder") });
         encoder.push_debug_group("pebbles.gpu.frame");
@@ -253,6 +264,11 @@ impl Renderer {
 
     pub(crate) fn globals_bg(&self) -> &wgpu::BindGroup {
         &self.globals_bg
+    }
+
+    /// `Globals::color_flags` of the current frame (slot 0), reused by Tier C run slots.
+    pub(crate) fn color_flags(&self) -> u32 {
+        self.color_flags
     }
 
     pub(crate) fn globals_buffer(&self) -> &wgpu::Buffer {

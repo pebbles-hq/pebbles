@@ -20,7 +20,9 @@ fn layer_texel(p: vec2<f32>) -> vec4<f32> {
     return textureLoad(layer_tex, vec2<i32>(floor(p - comp.bounds.xy)), 0);
 }
 
-// CompositeOver: premultiplied source-over (BlendState::PREMULTIPLIED_ALPHA_BLENDING).
+// CompositeOver: premultiplied source-over (BlendState::PREMULTIPLIED_ALPHA_BLENDING). The only
+// fragment without `finish_color`: the layer's texels already passed through it when they were
+// drawn, so a second decode would double-convert on the GL sRGB path (R13).
 // `clip_coverage` arrives with L04 and `clip_mask_coverage` with L08.
 @fragment
 fn fs_over(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
