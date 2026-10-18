@@ -11,8 +11,31 @@ use crate::CheckError;
 /// A brush ready to evaluate at device pixel centers.
 pub enum Paint {
     Solid([f64; 4]),
-    Gradient { inv: Affine, kind: GradientKind, extend: Extend, ramp: Ramp, alpha: f64 },
-    Image { inv: Affine, img: Texels, x_extend: Extend, y_extend: Extend, nearest: bool, alpha: f64 },
+    Gradient {
+        inv: Affine,
+        kind: GradientKind,
+        extend: Extend,
+        ramp: Ramp,
+        alpha: f64,
+    },
+    Image {
+        inv: Affine,
+        img: Texels,
+        x_extend: Extend,
+        y_extend: Extend,
+        nearest: bool,
+        alpha: f64,
+    },
+    /// A minified `Medium`/`High` image (R35): the mip chain and the per-draw LOD.
+    Mipped {
+        inv: Affine,
+        levels: Vec<Texels>,
+        x_extend: Extend,
+        y_extend: Extend,
+        lod: f64,
+        trilinear: bool,
+        alpha: f64,
+    },
 }
 
 fn premul_color(c: peniko::Color) -> [f64; 4] {
@@ -45,6 +68,23 @@ impl Paint {
             Paint::Image { inv, img, x_extend, y_extend, nearest, alpha } => {
                 let uv = *inv * Point::new(x, y);
                 img.sample(uv.x, uv.y, *x_extend, *y_extend, *nearest).map(|v| v * alpha)
+            }
+            Paint::Mipped { inv, levels, x_extend, y_extend, lod, trilinear, alpha } => {
+                let uv = *inv * Point::new(x, y);
+                let at = |l: usize| {
+                    let (base, lv) = (&levels[0], &levels[l.min(levels.len() - 1)]);
+                    let (sx, sy) = (f64::from(lv.w) / f64::from(base.w), f64::from(lv.h) / f64::from(base.h));
+                    lv.sample(uv.x * sx, uv.y * sy, *x_extend, *y_extend, false)
+                };
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // lod ≥ 0, small
+                let c = if *trilinear {
+                    let (l0, f) = (lod.floor(), lod - lod.floor());
+                    let (a, b) = (at(l0 as usize), at(l0 as usize + 1));
+                    std::array::from_fn(|k| a[k] * (1.0 - f) + b[k] * f)
+                } else {
+                    at(lod.round() as usize)
+                };
+                c.map(|v| v * alpha)
             }
         }
     }
@@ -296,10 +336,69 @@ impl Texels {
     }
 }
 
+/// R35 LOD: with `L` the 2×2 linear part of the image → device map, `ρ = 1 / σ_min(L)`
+/// (texels per device px along the most minified axis), `lod = max(0, log2 ρ)`.
+pub fn lod(p: Affine) -> f64 {
+    let [a, b, c, d, ..] = p.as_coeffs();
+    // Singular values of [[a, c], [b, d]].
+    let s1 = a * a + b * b + c * c + d * d;
+    let det = (a * d - b * c).abs();
+    let disc = (s1 * s1 - 4.0 * det * det).max(0.0).sqrt();
+    let smin = ((s1 - disc) / 2.0).max(0.0).sqrt();
+    if smin <= 0.0 { f64::INFINITY } else { (1.0 / smin).log2().max(0.0) }
+}
+
+/// R35 mip chain: each level halves each side (`max(1, n / 2)`); a texel is
+/// `(a + b + c + d + 2) >> 2` per channel of its 2×2 block on premultiplied RGBA8 (odd sizes
+/// clamp to edge). Level 0 is `base` itself.
+pub fn mip_chain(base: &Texels) -> Vec<Texels> {
+    let q = |v: f64| -> u32 {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 0..=255
+        let v = (v.clamp(0.0, 1.0) * 255.0).round() as u32;
+        v
+    };
+    let mut levels = vec![Texels { w: base.w, h: base.h, px: base.px.clone() }];
+    let mut cur: Vec<[u32; 4]> = base.px.iter().map(|p| p.map(q)).collect();
+    let (mut w, mut h) = (base.w, base.h);
+    while w > 1 || h > 1 {
+        let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
+        let at = |x: u32, y: u32| cur[(y.min(h - 1) * w + x.min(w - 1)) as usize];
+        let next: Vec<[u32; 4]> = (0..nh)
+            .flat_map(|y| (0..nw).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                let (a, b, c, d) =
+                    (at(2 * x, 2 * y), at(2 * x + 1, 2 * y), at(2 * x, 2 * y + 1), at(2 * x + 1, 2 * y + 1));
+                std::array::from_fn(|k| (a[k] + b[k] + c[k] + d[k] + 2) >> 2)
+            })
+            .collect();
+        levels.push(Texels {
+            w: nw,
+            h: nh,
+            px: next.iter().map(|p| p.map(|v| f64::from(v) / 255.0)).collect(),
+        });
+        (cur, w, h) = (next, nw, nh);
+    }
+    levels
+}
+
 /// An image brush: `None` when degenerate (zero size, singular transform).
 fn image(i: &ImageBrush, p: Affine, alpha: f64) -> Option<Paint> {
     if i.image.width == 0 || i.image.height == 0 || !p.is_finite() || p.determinant().abs() < 1e-12 {
         return None;
+    }
+    let l = lod(p);
+    if i.sampler.quality != ImageQuality::Low && l > 0.0 {
+        // R35: Medium = the nearest level (bilinear in it), High = trilinear.
+        let levels = mip_chain(&Texels::of(&i.image));
+        return Some(Paint::Mipped {
+            inv: p.inverse(),
+            levels,
+            x_extend: i.sampler.x_extend,
+            y_extend: i.sampler.y_extend,
+            lod: l,
+            trilinear: i.sampler.quality == ImageQuality::High,
+            alpha: alpha * f64::from(i.sampler.alpha),
+        });
     }
     Some(Paint::Image {
         inv: p.inverse(),

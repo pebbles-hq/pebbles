@@ -8,10 +8,12 @@
 //! (R36), dynamic images (R37), blurred masks (R42), bitmap-strike glyph resampling (R23) and
 //! COLR glyphs (R29); by V52: effects, backdrop filters, projected layers, meshes, sprites.
 
+pub mod blur;
 pub mod colr;
 pub mod compose;
 pub mod coverage;
 pub mod layers;
+pub mod nine;
 pub mod paint;
 pub mod shadow;
 pub mod shapes;

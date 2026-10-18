@@ -504,3 +504,85 @@ fn box_resample_preserves_mean() {
     let (a, b) = (mean(&src), mean(&out));
     assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-12), "{a:?} vs {b:?}");
 }
+
+// ---- V51 (steps 1–3): mip chains, nine-slice, blur ----
+
+#[test]
+fn mip_of_constant_is_constant() {
+    use render_check::golden::paint::mip_chain;
+    let c = [0.2, 0.4, 0.6, 0.8];
+    let base = Texels { w: 37, h: 12, px: vec![c; 37 * 12] };
+    let levels = mip_chain(&base);
+    // 37×12 → 18×6 → 9×3 → 4×1 → 2×1 → 1×1.
+    assert_eq!(
+        levels.iter().map(|l| (l.w, l.h)).collect::<Vec<_>>(),
+        vec![(37, 12), (18, 6), (9, 3), (4, 1), (2, 1), (1, 1)]
+    );
+    let q = c.map(|v| (v * 255.0_f64).round() / 255.0);
+    for l in &levels[1..] {
+        assert!(l.px.iter().all(|p| close(*p, q, 1e-12)), "level {}×{}", l.w, l.h);
+    }
+}
+
+#[test]
+fn lod_matches_r35_examples() {
+    use render_check::golden::paint::lod;
+    assert!((lod(Affine::scale(0.25)) - 2.0).abs() < 1e-6);
+    assert!((lod(Affine::rotate(std::f64::consts::FRAC_PI_4) * Affine::scale(0.5)) - 1.0).abs() < 1e-6);
+    assert_eq!(lod(Affine::scale(3.0)), 0.0, "magnification has no LOD");
+    // Non-uniform: the most minified axis decides.
+    assert!((lod(Affine::scale_non_uniform(1.0, 0.125)) - 3.0).abs() < 1e-6);
+}
+
+#[test]
+fn nine_slice_rects_match_r36() {
+    use render_check::golden::nine::nine_slice_rects;
+    // R36 step 5's case: 64×64 image, center 16..48, dst 200×100.
+    let rects =
+        nine_slice_rects(64.0, 64.0, Rect::new(16.0, 16.0, 48.0, 48.0), Rect::new(0.0, 0.0, 200.0, 100.0));
+    assert_eq!(rects.len(), 9);
+    let dst: Vec<Rect> = rects.iter().map(|r| r.1).collect();
+    assert_eq!(dst[0], Rect::new(0.0, 0.0, 16.0, 16.0), "top-left corner keeps its size");
+    assert_eq!(dst[4], Rect::new(16.0, 16.0, 184.0, 84.0), "center stretches");
+    assert_eq!(dst[8], Rect::new(184.0, 84.0, 200.0, 100.0));
+    assert_eq!(rects[4].0, Rect::new(16.0, 16.0, 48.0, 48.0));
+    // Too small for the corners: they scale and the center column/row is dropped.
+    let small =
+        nine_slice_rects(64.0, 64.0, Rect::new(16.0, 16.0, 48.0, 48.0), Rect::new(0.0, 0.0, 20.0, 20.0));
+    assert_eq!(small.len(), 4);
+    assert_eq!(small[0].1, Rect::new(0.0, 0.0, 10.0, 10.0));
+}
+
+#[test]
+fn blur_kernel_sums_to_one() {
+    use render_check::golden::blur::{gaussian_weights, level};
+    for sigma in [0.3, 1.0, 1.99, 2.0, 3.7, 8.0, 40.0] {
+        let (k, sk) = level(sigma);
+        assert!(k <= 3 && (sk <= 2.0 || k == 3), "σ {sigma}: level {k}, σk {sk}");
+        let w = gaussian_weights(sk);
+        assert!((w.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        assert_eq!(w.len() % 2, 1, "symmetric");
+    }
+}
+
+#[test]
+fn blur_styles_partition_normal() {
+    use render_check::golden::blur::{BlurStyle, blur, style};
+    // A 24×24 square in a 48×48 mask, blurred with σ 3.
+    let (w, h) = (48usize, 48usize);
+    let cov: Vec<f64> = (0..w * h)
+        .map(|i| if (12..36).contains(&(i % w)) && (12..36).contains(&(i / w)) { 1.0 } else { 0.0 })
+        .collect();
+    let b = blur(&cov, w, h, 3.0, true);
+    for i in 0..w * h {
+        let normal = style(BlurStyle::Normal, cov[i], b[i]);
+        let parts = style(BlurStyle::Inner, cov[i], b[i]) + style(BlurStyle::Outer, cov[i], b[i]);
+        assert!(
+            (parts - normal).abs() <= 1.0 / 255.0 + 1e-12,
+            "pixel {i}: inner + outer {parts} vs normal {normal}"
+        );
+        assert!(style(BlurStyle::Solid, cov[i], b[i]) >= normal);
+    }
+    // The blur spreads ink outside the square and keeps the center near full.
+    assert!(b[6 * w + 24] > 0.0 && b[24 * w + 24] > 0.9);
+}
