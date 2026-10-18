@@ -434,3 +434,73 @@ fn glyph_outline_area_matches_mask_sum() {
         }
     }
 }
+
+// ---- V51 (steps 4, 4b): bitmap-glyph resampling and COLR glyphs ----
+
+fn colr_font() -> peniko::FontData {
+    let bytes =
+        std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/fonts/colr-test.ttf")).expect("colr-test.ttf");
+    peniko::FontData::new(peniko::Blob::from(bytes), 0)
+}
+
+/// Glyph `ch` of the COLR test font, 100 px, pen at (10, 110), over white on 120×120.
+fn colr_render(ch: char, color: Color) -> render_check::metric::Rgba8 {
+    let font = colr_font();
+    let gid = {
+        let f = swash::FontRef::from_index(font.data.data(), 0).unwrap();
+        u32::from(f.charmap().map(ch))
+    };
+    let mut scene = Scene::new();
+    let g = [pebbles_render::paint::Glyph { id: gid, x: 10.0, y: 110.0 }];
+    Painter::new(&mut scene).draw_glyphs(
+        &font,
+        100.0,
+        &[],
+        &Brush::Solid(color),
+        Affine::IDENTITY,
+        None,
+        Fill::NonZero,
+        g.into_iter(),
+    );
+    Golden::render(&scene, 120, 120, Color::WHITE).expect("COLR is supported")
+}
+
+#[test]
+fn colr_v0_layers_composite_in_order() {
+    // Glyph A: red square (font 100..700) then blue circle (r 280 at 500,500): blue on top.
+    let img = colr_render('A', Color::BLACK);
+    // Font (500, 500) → device (10 + 50, 110 − 50); center of both layers.
+    assert_eq!(img.px(60, 60), [0, 0, 255, 255], "blue over red where they overlap");
+    // Font (150, 150): inside the square, outside the circle → red.
+    assert_eq!(img.px(25, 95), [255, 0, 0, 255]);
+    // Outside both: background.
+    assert_eq!(img.px(5, 5), [255, 255, 255, 255]);
+}
+
+#[test]
+fn colr_foreground_uses_run_color() {
+    let green = Color::from_rgba8(0, 160, 64, 255);
+    let img = colr_render('D', green);
+    assert_eq!(img.px(60, 60), [0, 160, 64, 255], "palette index 0xFFFF = the run color");
+}
+
+#[test]
+fn box_resample_preserves_mean() {
+    use render_check::golden::text::box_downscale;
+    let (w, h) = (12u32, 9u32);
+    let src: Vec<[f64; 4]> = (0..w * h)
+        .map(|i| {
+            let v = f64::from((i * 37) % 101) / 100.0;
+            [v * 0.5, v * 0.25, v, v]
+        })
+        .collect();
+    let mean = |px: &[[f64; 4]]| -> [f64; 4] {
+        let n = px.len() as f64;
+        std::array::from_fn(|k| px.iter().map(|p| p[k]).sum::<f64>() / n)
+    };
+    // s = 1/3 divides both sides: every output averages an equal-area block → same mean.
+    let (out, ow, oh) = box_downscale(&src, w, h, 1.0 / 3.0);
+    assert_eq!((ow, oh), (4, 3));
+    let (a, b) = (mean(&src), mean(&out));
+    assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-12), "{a:?} vs {b:?}");
+}

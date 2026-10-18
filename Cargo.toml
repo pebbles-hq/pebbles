@@ -70,6 +70,8 @@ cosmic-text = { version = "0.19", default-features = false, features = ["std", "
 # --- renderer (pebbles-gpu only; DR-03) ---
 lyon_tessellation = "1.0"
 swash = "0.2.10"
+# COLR paint graphs (02 R29, DR-23); the version swash/parley already lock.
+skrifa = { version = "0.44", default-features = false, features = ["std"] }
 zeno = "0.3"
 guillotiere = "0.7"
 

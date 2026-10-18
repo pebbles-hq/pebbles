@@ -30,7 +30,8 @@ pollster.workspace = true
 peniko.workspace = true
 kurbo.workspace = true
 png = "0.18"
-swash.workspace = true   # golden model: glyph outlines only (05 §6.7a)
+swash.workspace = true   # golden model: glyph outlines and bitmap strikes (05 §6.7a)
+skrifa.workspace = true  # golden model: COLR paint graphs (V51)
 
 [lints]
 workspace = true

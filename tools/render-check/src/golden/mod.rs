@@ -8,6 +8,7 @@
 //! (R36), dynamic images (R37), blurred masks (R42), bitmap-strike glyph resampling (R23) and
 //! COLR glyphs (R29); by V52: effects, backdrop filters, projected layers, meshes, sprites.
 
+pub mod colr;
 pub mod compose;
 pub mod coverage;
 pub mod layers;
@@ -79,6 +80,20 @@ impl Target {
         }
     }
 
+    /// Source-over a premultiplied color image (× `alpha`) into the current layer (or the root).
+    fn composite_image(&mut self, img: &[[f64; 4]], alpha: f64) {
+        let buf = match self.layers.last_mut() {
+            Some(l) => &mut l.px,
+            None => &mut self.px,
+        };
+        for (dst, s) in buf.iter_mut().zip(img) {
+            let s = s.map(|v| v * alpha);
+            for ch in 0..4 {
+                dst[ch] = s[ch] + dst[ch] * (1.0 - s[3]);
+            }
+        }
+    }
+
     fn walk(&mut self, ops: &[Op], outer: Affine) -> Result<(), CheckError> {
         for op in ops {
             self.op(op, outer)?;
@@ -145,9 +160,18 @@ impl Target {
             } => {
                 let (t, g, w, h) = (outer * *transform, *glyph_transform, self.w, self.h);
                 let Some(paint) = Paint::new(brush, t, 1.0)? else { return Ok(()) };
-                let hint = self.hint;
-                for cov in text::run_coverage(font, *font_size, normalized_coords, t, g, glyphs, w, h, hint) {
-                    self.composite(&paint, &cov);
+                // 02 §7.7: color glyphs use only the run's alpha; COLR `0xFFFF` = the run color.
+                let (fg, run_alpha) = match brush {
+                    peniko::Brush::Solid(c) => (*c, f64::from(c.components[3])),
+                    peniko::Brush::Image(i) => (Color::BLACK, f64::from(i.sampler.alpha)),
+                    peniko::Brush::Gradient(_) => (Color::BLACK, 1.0),
+                };
+                let (hint, coords) = (self.hint, normalized_coords);
+                for out in text::run_coverage(font, *font_size, coords, t, g, glyphs, w, h, hint, fg) {
+                    match out {
+                        text::GlyphOut::Coverage(cov) => self.composite(&paint, &cov),
+                        text::GlyphOut::Color(img) => self.composite_image(&img, run_alpha),
+                    }
                 }
             }
             _ => return Err(CheckError::GoldenUnsupported("unknown-op")),

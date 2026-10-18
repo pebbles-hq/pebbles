@@ -85,8 +85,16 @@ fn atlas_scale(m: Affine, glyph_transform: Option<Affine>, font_size: f32) -> Op
     (uniform && f64::from(font_size) * a <= MAX_ATLAS_GLYPH_PX).then_some(a)
 }
 
-/// Coverage of one run over a `w × h` target, accumulated as the union of the glyph fills
-/// (glyph quads draw source-over one after another, so each glyph is returned separately).
+/// One glyph's contribution: coverage painted by the run's brush, or a premultiplied color
+/// image over transparent (COLR and bitmap glyphs, 02 §7.7) drawn at the run's alpha.
+pub enum GlyphOut {
+    Coverage(Vec<f64>),
+    Color(Vec<[f64; 4]>),
+}
+
+/// The glyphs of one run over a `w × h` target, in glyph order (each glyph is returned
+/// separately: glyph quads draw source-over one after another). Per glyph, the 02 §7.7 source
+/// order: COLR → bitmap strike → outline. `foreground` = the run color (COLR index `0xFFFF`).
 #[allow(clippy::too_many_arguments)]
 pub fn run_coverage(
     font: &FontData,
@@ -98,7 +106,8 @@ pub fn run_coverage(
     w: u32,
     h: u32,
     hint: (f64, Option<bool>),
-) -> Vec<Vec<f64>> {
+    foreground: peniko::Color,
+) -> Vec<GlyphOut> {
     let Some(face) = swash::FontRef::from_index(font.data.data(), font.index as usize) else {
         return Vec::new();
     };
@@ -110,23 +119,180 @@ pub fn run_coverage(
     }
     // 02 §7.8: the atlas route hints below 2× and up to 48 ppem; the outline route never.
     let hinted = atlas.is_some() && hint.1.unwrap_or(hint.0 < 2.0 && size <= 48.0);
+    let upem = f64::from(face.metrics(&[]).units_per_em.max(1));
+    let g_xf = glyph_transform.unwrap_or(Affine::IDENTITY);
     let mut ctx = ScaleContext::new();
-    let mut scaler =
-        ctx.builder(face).size(size as f32).hint(hinted).normalized_coords(coords.iter().copied()).build();
     let mut out = Vec::new();
     for g in glyphs {
         let Ok(id) = u16::try_from(g.id) else { continue };
+        let pen = Affine::translate((f64::from(g.x), f64::from(g.y)));
+        // COLR: font units (y-up) → device under M · translate(pen) · G · scale(size/upem) · FLIP_Y.
+        let k = f64::from(font_size) / upem;
+        let colr_t = t * pen * g_xf * Affine::scale_non_uniform(k, -k);
+        if let Some(img) = super::colr::colr_glyph_image(font, id, coords, colr_t, foreground, w, h) {
+            out.push(GlyphOut::Color(img));
+            continue;
+        }
+        if let Some(img) = bitmap_glyph(
+            face,
+            &mut ctx,
+            id,
+            atlas.is_some(),
+            size,
+            f64::from(font_size),
+            t * pen * g_xf,
+            w,
+            h,
+        ) {
+            out.push(GlyphOut::Color(img));
+            continue;
+        }
+        let mut scaler = ctx
+            .builder(face)
+            .size(size as f32)
+            .hint(hinted)
+            .normalized_coords(coords.iter().copied())
+            .build();
         let Some(outline) = scaler.scale_outline(id) else { continue };
         let path = if atlas.is_some() {
             outline_path(&outline, placement(t * Point::new(f64::from(g.x), f64::from(g.y))))
         } else {
             // device = M · ((g.x, g.y) + G · FLIP_Y · outline_point)
-            let m = t
-                * Affine::translate((f64::from(g.x), f64::from(g.y)))
-                * glyph_transform.unwrap_or(Affine::IDENTITY);
-            m * outline_path(&outline, Point::ZERO)
+            (t * pen * g_xf) * outline_path(&outline, Point::ZERO)
         };
-        out.push(fill_coverage(&path, Affine::IDENTITY, Fill::NonZero, w, h));
+        out.push(GlyphOut::Coverage(fill_coverage(&path, Affine::IDENTITY, Fill::NonZero, w, h)));
     }
     out
+}
+
+/// Exact box filter of premultiplied texels by `s` (`0 < s < 1`, 02 §7.7 / R23): output pixel
+/// `(x, y)` = the area-weighted mean of the source texels under `[x/s, (x+1)/s) × [y/s, (y+1)/s)`
+/// clipped to the source. Written from the R23 spec text.
+pub fn box_downscale(src: &[[f64; 4]], w: u32, h: u32, s: f64) -> (Vec<[f64; 4]>, u32, u32) {
+    let out_dim = |n: u32| -> u32 {
+        let v = (f64::from(n) * s - 1e-4).ceil().max(1.0);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // ≤ n
+        let v = v as u32;
+        v
+    };
+    let (ow, oh) = (out_dim(w), out_dim(h));
+    let mut out = vec![[0.0; 4]; ow as usize * oh as usize];
+    for oy in 0..oh {
+        let (y0, y1) = (f64::from(oy) / s, (f64::from(oy + 1) / s).min(f64::from(h)));
+        for ox in 0..ow {
+            let (x0, x1) = (f64::from(ox) / s, (f64::from(ox + 1) / s).min(f64::from(w)));
+            let (mut acc, mut area) = ([0.0; 4], 0.0);
+            for sy in 0..h {
+                let wy = (f64::from(sy + 1).min(y1) - f64::from(sy).max(y0)).max(0.0);
+                if wy == 0.0 {
+                    continue;
+                }
+                for sx in 0..w {
+                    let wx = (f64::from(sx + 1).min(x1) - f64::from(sx).max(x0)).max(0.0);
+                    if wx == 0.0 {
+                        continue;
+                    }
+                    let t = src[(sy * w + sx) as usize];
+                    for k in 0..4 {
+                        acc[k] += t[k] * wx * wy;
+                    }
+                    area += wx * wy;
+                }
+            }
+            if area > 0.0 {
+                out[(oy * ow + ox) as usize] = acc.map(|v| v / area);
+            }
+        }
+    }
+    (out, ow, oh)
+}
+
+/// A bitmap-strike color glyph (V51 step 4, 02 §7.7, R23): decoded at the strike's own ppem,
+/// premultiplied, then (atlas route) box-downscaled to the device ppem or drawn as a scaled quad,
+/// or (outline route) the largest strike as a transformed quad under `m = M · translate(pen) · G`.
+#[allow(clippy::too_many_arguments)]
+fn bitmap_glyph(
+    face: swash::FontRef<'_>,
+    ctx: &mut ScaleContext,
+    id: u16,
+    atlas_route: bool,
+    ppem: f64,
+    font_size: f64,
+    m: Affine,
+    w: u32,
+    h: u32,
+) -> Option<Vec<[f64; 4]>> {
+    use swash::scale::{Render, Source, StrikeWith};
+    let strikes = face.color_strikes();
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // ppem ≤ MAX_ATLAS_GLYPH_PX
+    let strike = if atlas_route {
+        strikes.find_by_nearest_ppem(ppem.ceil().clamp(1.0, 65535.0) as u16, id)?
+    } else {
+        strikes.find_by_largest_ppem(id)?
+    };
+    let sp = f64::from(strike.ppem());
+    #[allow(clippy::cast_possible_truncation)] // strike ppem ≤ 65535
+    let mut scaler = ctx.builder(face).size(sp as f32).build();
+    let img = Render::new(&[Source::ColorBitmap(StrikeWith::ExactSize)])
+        .format(swash::zeno::Format::Alpha)
+        .render(&mut scaler, id)?;
+    let pl = img.placement;
+    let texels: Vec<[f64; 4]> = img
+        .data
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|p| {
+            let a = f64::from(p[3]) / 255.0;
+            [f64::from(p[0]) / 255.0 * a, f64::from(p[1]) / 255.0 * a, f64::from(p[2]) / 255.0 * a, a]
+        })
+        .collect();
+    let (left, top) = (f64::from(pl.left), f64::from(pl.top));
+    // (texels, width, height, texel → device): the quad is the texel rect `(0, 0, w, h)`.
+    let (texels, tw, th, texel_to_device) = if atlas_route {
+        let s = ppem / sp;
+        let pen = m * Point::ZERO;
+        // 02 §7.4: x to the quarter pixel, whose integer part places the bitmap; y to a whole pixel.
+        let (ix, iy) = (((pen.x * 4.0).round() / 4.0).floor(), pen.y.round());
+        let (x0, y0) = (ix + (left * s).round(), iy - (top * s).round());
+        if s < 1.0 {
+            // Downscaled in premultiplied space and drawn 1:1.
+            let (t2, tw, th) = box_downscale(&texels, pl.width, pl.height, s);
+            (t2, tw, th, Affine::translate((x0, y0)))
+        } else {
+            // A smaller strike: uploaded as is, drawn as a quad of rounded size (R23 1b).
+            let (qw, qh) = ((f64::from(pl.width) * s).round(), (f64::from(pl.height) * s).round());
+            let map = Affine::translate((x0, y0))
+                * Affine::scale_non_uniform(qw / f64::from(pl.width), qh / f64::from(pl.height));
+            (texels, pl.width, pl.height, map)
+        }
+    } else {
+        // The native strike under M · translate(pen) · G · scale(font_size / strike ppem).
+        let map = m * Affine::scale(font_size / sp) * Affine::translate((left, -top));
+        (texels, pl.width, pl.height, map)
+    };
+    let quad = kurbo::Rect::new(0.0, 0.0, f64::from(tw), f64::from(th));
+    let tex = super::paint::Texels { w: tw, h: th, px: texels };
+    let paint = super::paint::Paint::Image {
+        inv: texel_to_device.inverse(),
+        img: tex,
+        x_extend: peniko::Extend::Pad,
+        y_extend: peniko::Extend::Pad,
+        nearest: false,
+        alpha: 1.0,
+    };
+    let cov = fill_coverage(&kurbo::Shape::to_path(&quad, 0.0), texel_to_device, Fill::NonZero, w, h);
+    let wu = w as usize;
+    Some(
+        cov.iter()
+            .enumerate()
+            .map(|(i, &k)| {
+                if k == 0.0 {
+                    return [0.0; 4];
+                }
+                #[allow(clippy::cast_precision_loss)] // pixel indices < 2^24
+                paint.at((i % wu) as f64 + 0.5, (i / wu) as f64 + 0.5).map(|v| v * k)
+            })
+            .collect(),
+    )
 }
