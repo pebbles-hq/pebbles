@@ -215,6 +215,7 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::LayerUnbalanced,
     F::FragmentAppend,
     F::NonFinite, // R02
+    F::Offscreen, // R04
     F::ImageRgba8,
     F::ImageBgra8,
     F::ImagePremultiplied,

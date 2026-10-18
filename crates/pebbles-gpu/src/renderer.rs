@@ -154,7 +154,9 @@ impl Renderer {
             root_transform: params.root_transform,
             vertex_limit: self.vertex_limit,
         };
+        let started = web_time::Instant::now();
         prepare(scene, &input, &self.limits, &mut self.scratch, &mut stats);
+        stats.prepare_us = u32::try_from(started.elapsed().as_micros()).unwrap_or(u32::MAX);
         stats.ops = self.scratch.plan.stats.ops;
         stats.cmds = u32::try_from(self.scratch.plan.cmds.len()).unwrap_or(u32::MAX);
         stats.culled = self.scratch.plan.stats.culled;
