@@ -21,6 +21,16 @@ impl FrameTargets {
         Self::default()
     }
 
+    /// Census fields owned by one render target (M05).
+    #[cfg(debug_assertions)]
+    pub(crate) fn census_into(&self, c: &mut crate::census::GpuCensus) {
+        let bytes = self.pool.bytes();
+        c.frame_target_entries += 1;
+        c.frame_target_bytes += bytes;
+        c.layer_pool_textures += self.pool.len();
+        c.layer_pool_bytes += bytes;
+    }
+
     /// Bytes of GPU textures this target owns beyond its own color texture (census, 10 §9).
     pub fn frame_target_bytes(&self) -> u64 {
         self.pool.bytes()

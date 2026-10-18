@@ -18,6 +18,8 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable))]
 
 mod budgets;
+#[cfg(debug_assertions)]
+mod census;
 mod context;
 mod error;
 mod execute;
@@ -41,6 +43,8 @@ mod surface;
 pub(crate) mod test_support;
 
 pub use budgets::{BudgetPlatform, GpuBudgets};
+#[cfg(debug_assertions)]
+pub use census::GpuCensus;
 pub use context::{DeviceHealth, DeviceId, GpuCaps, GpuContext, GpuDevice};
 pub use error::{AcquireError, CaptureError, GpuError};
 pub use frame_targets::{FrameParams, FrameTargets, RenderTarget};

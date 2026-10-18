@@ -36,18 +36,24 @@ pub(crate) struct RasterGlyph<'a> {
     pub data: &'a [u8],
 }
 
+/// swash scaler-cache entries (§5.11): the maximum swash allows; the default 8 thrashes.
+pub(crate) const SCALE_CONTEXT_MAX_ENTRIES: usize = 64;
+
+/// Frames between sweeps of dead font entries (§5.11).
+const FONT_SWEEP_EVERY_FRAMES: u64 = 256;
+
 /// Per font face: liveness of the bytes and the swash lookup data, built once.
-struct FontEntry {
+struct RasterFont {
     blob: peniko::WeakBlob<u8>,
     offset: u32,
     key: swash::CacheKey,
 }
 
 /// The glyph rasterizer: one swash `ScaleContext` plus one reused scratch image.
-#[derive(Default)]
 pub(crate) struct GlyphRaster {
+    frame: u64,
     ctx: ScaleContext,
-    fonts: HashMap<(u64, u32), FontEntry>,
+    fonts: HashMap<(u64, u32), RasterFont>,
     scratch: Image,
     outline: swash::scale::outline::Outline,
     path: kurbo::BezPath,
@@ -64,6 +70,21 @@ pub(crate) struct RasterRequest<'a> {
     pub coords: &'a [i16],
 }
 
+impl Default for GlyphRaster {
+    fn default() -> Self {
+        Self {
+            frame: 0,
+            ctx: ScaleContext::with_max_entries(SCALE_CONTEXT_MAX_ENTRIES),
+            fonts: HashMap::new(),
+            scratch: Image::new(),
+            outline: swash::scale::outline::Outline::new(),
+            path: kurbo::BezPath::new(),
+            coverage: super::coverage::CoverageRasterizer::default(),
+            mask: super::coverage::MaskBuf::default(),
+        }
+    }
+}
+
 impl GlyphRaster {
     /// Rasterize one glyph. `None` when the font cannot be parsed or swash has no
     /// representation for the glyph.
@@ -74,7 +95,7 @@ impl GlyphRaster {
             std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
             std::collections::hash_map::Entry::Vacant(v) => {
                 let font = swash::FontRef::from_index(bytes, req.font.index as usize)?;
-                v.insert(FontEntry { blob: req.font.data.downgrade(), offset: font.offset, key: font.key })
+                v.insert(RasterFont { blob: req.font.data.downgrade(), offset: font.offset, key: font.key })
             }
         };
         let font = swash::FontRef { data: bytes, offset: entry.offset, key: entry.key };
@@ -161,13 +182,27 @@ impl GlyphRaster {
         })
     }
 
-    /// Drop fonts whose bytes are gone (end of frame).
+    /// End of frame: every `FONT_SWEEP_EVERY_FRAMES` frames, drop fonts whose bytes are gone.
     pub(crate) fn end_frame(&mut self) {
+        self.frame += 1;
+        if self.frame.is_multiple_of(FONT_SWEEP_EVERY_FRAMES) {
+            self.sweep();
+        }
+    }
+
+    /// Drop fonts whose bytes are gone (the census reads the count, 10 §9.2 `raster_fonts`).
+    fn sweep(&mut self) {
         self.fonts.retain(|_, e| e.blob.upgrade().is_some());
     }
 
-    /// Faces currently known (for tests and the census).
+    /// The swash cache key used for `font` (tests).
     #[cfg(test)]
+    fn key_of(&self, font: &peniko::FontData) -> Option<swash::CacheKey> {
+        self.fonts.get(&(font.data.id(), font.index)).map(|e| e.key)
+    }
+
+    /// Faces currently known (for tests and the census, `raster_fonts`).
+    #[cfg(any(test, debug_assertions))]
     pub(crate) fn font_count(&self) -> usize {
         self.fonts.len()
     }
@@ -218,12 +253,28 @@ mod tests {
         assert!(bold > regular, "bold {bold} <= regular {regular}");
     }
 
+    fn rasterize_h(raster: &mut GlyphRaster, font: &peniko::FontData) {
+        let req = RasterRequest { font, glyph_id: glyph_h(font), size_px: 16.0, subpx_x: 0, coords: &[] };
+        raster.rasterize(&req);
+    }
+
     #[test]
-    fn dead_fonts_are_dropped_at_end_of_frame() {
+    fn font_ref_key_is_reused() {
+        let font = inter();
+        let mut raster = GlyphRaster::default();
+        rasterize_h(&mut raster, &font);
+        let first = raster.key_of(&font).unwrap();
+        rasterize_h(&mut raster, &font.clone());
+        assert_eq!(raster.key_of(&font), Some(first));
+        assert_eq!(raster.font_count(), 1);
+    }
+
+    #[test]
+    fn font_ref_cache_drops_dead_blobs() {
         let mut raster = GlyphRaster::default();
         {
+            // A fresh blob (its own id), dropped at the end of the block.
             let font = inter();
-            let font = peniko::FontData::new(peniko::Blob::from(font.data.data().to_vec()), 0);
             let req = RasterRequest {
                 font: &font,
                 glyph_id: glyph_h(&font),
@@ -232,9 +283,13 @@ mod tests {
                 coords: &[],
             };
             raster.rasterize(&req);
-            raster.end_frame();
+            raster.sweep();
             assert_eq!(raster.font_count(), 1);
         }
+        for _ in 0..FONT_SWEEP_EVERY_FRAMES - 1 {
+            raster.end_frame();
+        }
+        assert_eq!(raster.font_count(), 1, "swept only every 256 frames");
         raster.end_frame();
         assert_eq!(raster.font_count(), 0);
     }

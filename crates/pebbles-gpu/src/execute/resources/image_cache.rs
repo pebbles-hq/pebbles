@@ -48,6 +48,9 @@ struct ImageEntry {
     bind_groups: Vec<(SamplerKey, wgpu::BindGroup)>,
     weak: peniko::WeakBlob<u8>,
     last_used: u64,
+    /// Texture bytes (`w · h · 4`; read by the debug census).
+    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    bytes: u64,
 }
 
 /// Uploaded images by key.
@@ -55,11 +58,24 @@ pub(crate) struct ImageCache {
     entries: HashMap<ImageKey, ImageEntry>,
     scratch: Vec<u8>,
     frame: u64,
+    /// Running totals for the census (10 §9.2: O(1) reads, never iteration).
+    #[cfg(debug_assertions)]
+    total_bytes: u64,
+    #[cfg(debug_assertions)]
+    total_bind_groups: usize,
 }
 
 impl ImageCache {
     pub(crate) fn new() -> Self {
-        Self { entries: HashMap::new(), scratch: Vec::new(), frame: 0 }
+        Self {
+            entries: HashMap::new(),
+            scratch: Vec::new(),
+            frame: 0,
+            #[cfg(debug_assertions)]
+            total_bytes: 0,
+            #[cfg(debug_assertions)]
+            total_bind_groups: 0,
+        }
     }
 
     pub(crate) fn begin_frame(&mut self) {
@@ -99,6 +115,18 @@ impl ImageCache {
         });
         stats.bind_groups_created += 1;
         entry.bind_groups.push((sampler, group));
+        #[cfg(debug_assertions)]
+        {
+            self.total_bind_groups += 1;
+        }
+    }
+
+    /// Census fields owned by the image cache (M05).
+    #[cfg(debug_assertions)]
+    pub(crate) fn census_into(&self, c: &mut crate::census::GpuCensus) {
+        c.image_entries = self.entries.len();
+        c.image_bytes = self.total_bytes;
+        c.image_bind_groups = self.total_bind_groups;
     }
 
     /// Make `image` resident (uploading on a miss). Returns false when it cannot be drawn.
@@ -165,6 +193,11 @@ impl ImageCache {
         stats.images_uploaded += 1;
         stats.textures_created += 1;
         stats.texture_views_created += 1;
+        let bytes = u64::from(w) * u64::from(h) * 4;
+        #[cfg(debug_assertions)]
+        {
+            self.total_bytes += bytes;
+        }
         self.entries.insert(
             key,
             ImageEntry {
@@ -173,6 +206,7 @@ impl ImageCache {
                 bind_groups: Vec::new(),
                 weak: image.data.downgrade(),
                 last_used: self.frame,
+                bytes,
             },
         );
         true
@@ -181,7 +215,21 @@ impl ImageCache {
     /// After the last submit: drop every image the app no longer holds.
     pub(crate) fn end_frame(&mut self, stats: &mut FrameStats) {
         let before = self.entries.len();
-        self.entries.retain(|_, e| e.weak.upgrade().is_some());
+        #[cfg(debug_assertions)]
+        let (mut bytes, mut groups) = (self.total_bytes, self.total_bind_groups);
+        self.entries.retain(|_, e| {
+            let live = e.weak.upgrade().is_some();
+            #[cfg(debug_assertions)]
+            if !live {
+                bytes -= e.bytes;
+                groups -= e.bind_groups.len();
+            }
+            live
+        });
+        #[cfg(debug_assertions)]
+        {
+            (self.total_bytes, self.total_bind_groups) = (bytes, groups);
+        }
         stats.image_evictions += u32::try_from(before - self.entries.len()).unwrap_or(u32::MAX);
     }
 }

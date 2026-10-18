@@ -12,6 +12,12 @@ pub(crate) struct GpuArena {
 }
 
 impl GpuArena {
+    /// Allocated buffer bytes (census).
+    #[cfg(debug_assertions)]
+    pub(crate) fn capacity(&self) -> u64 {
+        self.capacity
+    }
+
     pub(crate) const INITIAL_BYTES: u64 = 64 * 1024;
 
     pub(crate) fn new(usage: wgpu::BufferUsages, label: &'static str) -> Self {
@@ -82,6 +88,22 @@ pub(crate) struct FrameArenas {
 }
 
 impl FrameArenas {
+    /// Σ arena capacities (census).
+    #[cfg(debug_assertions)]
+    pub(crate) fn capacity_bytes(&self) -> u64 {
+        [
+            &self.solid_vertices,
+            &self.solid_indices,
+            &self.shape_instances,
+            &self.shadow_instances,
+            &self.glyphs,
+            &self.images,
+        ]
+        .iter()
+        .map(|a| a.capacity())
+        .sum()
+    }
+
     pub(crate) fn new() -> Self {
         Self {
             solid_vertices: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.vertices"),

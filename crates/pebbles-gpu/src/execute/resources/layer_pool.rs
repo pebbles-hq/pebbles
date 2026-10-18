@@ -176,6 +176,12 @@ impl LayerPool {
         }
     }
 
+    /// Pooled target count (census).
+    #[cfg(debug_assertions)]
+    pub(crate) fn len(&self) -> usize {
+        self.textures.len()
+    }
+
     pub(crate) fn textures(&self, i: usize) -> &LayerTextures {
         &self.textures[i]
     }

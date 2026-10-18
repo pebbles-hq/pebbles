@@ -141,6 +141,12 @@ pub(crate) struct SamplerCache {
 }
 
 impl SamplerCache {
+    /// Cached sampler count (census).
+    #[cfg(debug_assertions)]
+    pub(crate) fn len(&self) -> usize {
+        self.samplers.len()
+    }
+
     /// The sampler for `key`, created on first use (`stats.samplers_created`).
     pub(crate) fn get_or_create(
         &mut self,

@@ -182,6 +182,17 @@ impl GlyphAtlas {
         self.staging.clear();
     }
 
+    /// Census fields owned by the glyph/coverage atlas (M05).
+    #[cfg(debug_assertions)]
+    pub(crate) fn census_into(&self, c: &mut crate::census::GpuCensus) {
+        c.glyph_entries = self.cpu.len();
+        c.glyph_mask_side = self.cpu.mask.side;
+        c.glyph_mask_layers = self.cpu.mask.physical_layers;
+        c.glyph_color_side = self.cpu.color.side;
+        c.glyph_color_layers = self.cpu.color.physical_layers;
+        c.raster_fonts = self.raster.font_count();
+    }
+
     pub(crate) fn end_frame(&mut self, stats: &mut FrameStats) {
         self.cpu.end_frame(stats);
         self.raster.end_frame();
@@ -191,41 +202,58 @@ impl GlyphAtlas {
     pub(crate) fn bind_group(&self) -> Option<&wgpu::BindGroup> {
         self.bind_group.as_ref().map(|g| &g.group)
     }
+}
 
-    /// Stage a padded (zero gutter) copy of `data` (`w`×`h`, tight) for `slot`.
-    fn stage(&mut self, slot: AtlasSlot, data: &[u8], premultiply: bool) {
+/// Premultiply straight-alpha RGBA8 in place: `c' = (c·a + 127) / 255` (M14; only
+/// `Source::ColorBitmap` rasters are straight — COLR output is already premultiplied).
+pub(crate) fn premultiply_rgba8_in_place(px: &mut [u8]) {
+    for px in px.as_chunks_mut::<4>().0 {
+        let a = u16::from(px[3]);
+        for c in &mut px[..3] {
+            *c = u8::try_from((u16::from(*c) * a + 127) / 255).unwrap_or(u8::MAX);
+        }
+    }
+}
+
+/// Stage a padded (zero gutter) copy of `data` (`w`×`h`, tight) for `slot` (§5.8): written
+/// straight from the rasterizer's scratch into `staging`, no per-glyph allocation.
+fn stage(
+    staging: &mut Vec<u8>,
+    uploads: &mut Vec<GlyphUpload>,
+    slot: AtlasSlot,
+    data: &[u8],
+    premultiply: bool,
+) {
+    {
         let bpp = format_of(slot.kind).1 as usize;
         let (w, h) = (usize::from(slot.w), usize::from(slot.h));
         let g = GLYPH_GUTTER_PX as usize;
         let (pw, ph) = (w + 2 * g, h + 2 * g);
-        let start = self.staging.len();
-        self.staging.resize(start + pw * ph * bpp, 0);
+        let start = staging.len();
+        staging.resize(start + pw * ph * bpp, 0);
         for row in 0..h {
             let Some(src) = data.get(row * w * bpp..(row + 1) * w * bpp) else { break };
             let dst = start + ((row + g) * pw + g) * bpp;
-            self.staging[dst..dst + w * bpp].copy_from_slice(src);
+            staging[dst..dst + w * bpp].copy_from_slice(src);
         }
         if premultiply {
-            for px in self.staging[start..].as_chunks_mut::<4>().0 {
-                let a = u16::from(px[3]);
-                for c in &mut px[..3] {
-                    *c = u8::try_from((u16::from(*c) * a + 127) / 255).unwrap_or(u8::MAX);
-                }
-            }
+            premultiply_rgba8_in_place(&mut staging[start..]);
         }
         let gutter = u16::try_from(GLYPH_GUTTER_PX).unwrap_or(1);
         let to16 = |v: usize| u16::try_from(v).unwrap_or(u16::MAX);
-        self.uploads.push(GlyphUpload {
+        uploads.push(GlyphUpload {
             kind: slot.kind,
             layer: slot.layer,
             x: slot.x - gutter,
             y: slot.y - gutter,
             w: to16(pw),
             h: to16(ph),
-            bytes: start..self.staging.len(),
+            bytes: start..staging.len(),
         });
     }
+}
 
+impl GlyphAtlas {
     /// Find glyph `key`, rasterizing and staging it on a miss. Returns the lookup and whether a
     /// glyph was rasterized.
     pub(crate) fn lookup(
@@ -252,11 +280,9 @@ impl GlyphAtlas {
         }
         let premultiply = glyph.content == RasterContent::Color && !glyph.premultiplied;
         let (w, h, left, top) = (glyph.width, glyph.height, glyph.left, glyph.top);
-        // `glyph` borrows the rasterizer's scratch; copy before staging.
-        let data = glyph.data.to_vec();
         match self.cpu.insert(key, atlas, w, h, left, top, stats) {
             Ok(slot) => {
-                self.stage(slot, &data, premultiply);
+                stage(&mut self.staging, &mut self.uploads, slot, glyph.data, premultiply);
                 (GlyphLookup::Slot(slot), true)
             }
             Err(_) => (GlyphLookup::Full, true),
@@ -298,9 +324,7 @@ impl GlyphAtlas {
         let (w, h) = (self.mask_buf.width, self.mask_buf.height);
         match self.cpu.insert(key, AtlasKind::Mask, w, h, left.into(), top.into(), stats) {
             Ok(slot) => {
-                let data = std::mem::take(&mut self.mask_buf.data);
-                self.stage(slot, &data, false);
-                self.mask_buf.data = data;
+                stage(&mut self.staging, &mut self.uploads, slot, &self.mask_buf.data, false);
                 (GlyphLookup::Slot(slot), true)
             }
             Err(_) => (GlyphLookup::Full, true),
@@ -393,4 +417,12 @@ fn rasterize_anywhere(
     let top = i32::try_from(crate::prepare::num::to_u64_sat(y0.abs())).ok()?;
     let (left, top) = (if x0 < 0.0 { -left } else { left }, if y0 < 0.0 { -top } else { top });
     Some((left + p.left, top + p.top))
+}
+
+#[cfg(test)]
+#[test]
+fn premultiply_rgba8_in_place_is_exact() {
+    let mut px = [255, 0, 0, 128, 10, 20, 30, 255, 200, 100, 50, 0];
+    premultiply_rgba8_in_place(&mut px);
+    assert_eq!(px, [128, 0, 0, 128, 10, 20, 30, 255, 0, 0, 0, 0]);
 }

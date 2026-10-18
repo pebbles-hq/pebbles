@@ -381,7 +381,7 @@ impl CoverageAtlas {
     }
 
     /// Resident + empty entries.
-    #[cfg(test)]
+    #[cfg(any(test, debug_assertions))]
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }

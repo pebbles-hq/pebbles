@@ -158,6 +158,12 @@ pub(crate) struct PipelineCache {
 }
 
 impl PipelineCache {
+    /// Created pipeline count (census).
+    #[cfg(debug_assertions)]
+    pub(crate) fn len(&self) -> usize {
+        self.pipelines.len()
+    }
+
     pub(crate) fn new() -> Self {
         Self { layouts: HashMap::new(), pipelines: HashMap::new(), prewarmed: HashSet::new() }
     }

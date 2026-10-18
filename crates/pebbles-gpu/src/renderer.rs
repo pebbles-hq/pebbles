@@ -57,6 +57,19 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    /// Debug-only, count-only cache sizes of this device (10 §9.2, M05). O(1): `len()` reads
+    /// and running totals. The per-target fields stay 0 (see [`GpuCensus`](crate::GpuCensus)).
+    #[cfg(debug_assertions)]
+    pub fn census(&self) -> crate::census::GpuCensus {
+        let mut c = crate::census::GpuCensus::default();
+        self.glyph_atlas.census_into(&mut c);
+        self.image_cache.census_into(&mut c);
+        c.samplers = self.samplers.len();
+        c.pipelines = self.pipelines.len();
+        c.arena_capacity_bytes = self.arenas.capacity_bytes();
+        c
+    }
+
     /// The MSAA sample count negotiated for the last target format (02 §5.4; 1 or 4).
     pub fn msaa_sample_count(&self) -> u32 {
         self.sample_count

@@ -127,6 +127,14 @@ impl OffscreenRenderer {
         self.renderer.set_sdf_enabled(enabled);
     }
 
+    /// Debug-only, count-only cache sizes (10 §9.2, M05): the renderer's plus this target's.
+    #[cfg(debug_assertions)]
+    pub fn census(&self) -> crate::census::GpuCensus {
+        let mut c = self.renderer.census();
+        self.targets.census_into(&mut c);
+        c
+    }
+
     /// The `FrameStats` of the last render.
     pub fn last_frame_stats(&self) -> FrameStats {
         self.last_stats
