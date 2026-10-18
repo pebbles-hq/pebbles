@@ -45,13 +45,94 @@ pub(crate) fn classify_run(m: Affine, glyph_transform: Option<Affine>, font_size
     GlyphRoute::Atlas { scale: a }
 }
 
-/// swash outlines for the outline route (one reused scale context).
+/// Most cached glyph outlines kept past a frame (R21).
+pub(crate) const GLYPH_OUTLINE_CACHE_MAX: usize = 4096;
+
+/// Identity of a cached outline (R21): logical size in 1/64 px.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct OutlineKey {
+    pub font_blob: u64,
+    pub font_index: u32,
+    pub glyph_id: u16,
+    pub size_q: u32,
+    pub coords_hash: u64,
+}
+
+/// swash outlines for the outline route: one reused scale context plus a bounded LRU cache of
+/// extracted outlines (`Arc`: the `Renderer` stays `Send`, DR-26). A glyph without an outline
+/// is cached as an empty path.
 #[derive(Default)]
 pub(crate) struct OutlineSource {
     ctx: ScaleContext,
+    map: std::collections::HashMap<OutlineKey, (std::sync::Arc<BezPath>, u64)>,
+    frame: u64,
+    /// Outline extractions (cache misses), for tests.
+    #[cfg(test)]
+    pub(crate) extracted: usize,
 }
 
 impl OutlineSource {
+    /// The cached outline of `id` at `size` (y-up), extracting it on a miss. `None` if the glyph
+    /// has no outline (bitmap/COLR-only) or the font cannot be parsed.
+    pub(crate) fn cached(
+        &mut self,
+        font: &peniko::FontData,
+        id: u16,
+        size: f32,
+        coords: &[i16],
+    ) -> Option<std::sync::Arc<BezPath>> {
+        let key = OutlineKey {
+            font_blob: font.data.id(),
+            font_index: font.index,
+            glyph_id: id,
+            size_q: super::num::to_u32_round(size * 64.0)?,
+            coords_hash: if coords.is_empty() {
+                0
+            } else {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                coords.hash(&mut h);
+                h.finish().max(1)
+            },
+        };
+        let frame = self.frame;
+        if let Some((path, used)) = self.map.get_mut(&key) {
+            *used = frame;
+            return (!path.elements().is_empty()).then(|| std::sync::Arc::clone(path));
+        }
+        let mut path = BezPath::new();
+        let ok = self.outline(font, id, size, coords, &mut path);
+        #[cfg(test)]
+        {
+            self.extracted += 1;
+        }
+        let path = std::sync::Arc::new(if ok { path } else { BezPath::new() });
+        self.map.insert(key, (std::sync::Arc::clone(&path), frame));
+        (ok && !path.elements().is_empty()).then_some(path)
+    }
+
+    /// End of frame: above `GLYPH_OUTLINE_CACHE_MAX`, drop entries not used this frame, oldest
+    /// first, until at the cap. Entries used this frame are never dropped.
+    pub(crate) fn end_frame(&mut self) {
+        if self.map.len() > GLYPH_OUTLINE_CACHE_MAX {
+            let frame = self.frame;
+            let mut stale: Vec<(u64, OutlineKey)> =
+                self.map.iter().filter(|(_, (_, u))| *u < frame).map(|(k, (_, u))| (*u, *k)).collect();
+            stale.sort_unstable_by_key(|s| s.0);
+            let excess = self.map.len() - GLYPH_OUTLINE_CACHE_MAX;
+            for (_, k) in stale.into_iter().take(excess) {
+                self.map.remove(&k);
+            }
+        }
+        self.frame += 1;
+    }
+
+    /// Cached outline count (census, 10 §9.2 `glyph_outlines`; wired when `GpuCensus` lands).
+    #[cfg(test)]
+    pub(crate) fn census(&self) -> usize {
+        self.map.len()
+    }
+
     /// Glyph `id`'s outline at `size` px into `out`, y-up (font convention). `false` if the font
     /// cannot be parsed or the glyph has no outline (bitmap/COLR-only).
     pub(crate) fn outline(
@@ -138,12 +219,14 @@ impl Walk<'_> {
                 self.plan.stats.culled_glyphs += 1;
                 continue;
             }
-            if !self.outlines.outline(font, id, font_size, coords, &mut path) {
+            let Some(cached) = self.outlines.cached(font, id, font_size, coords) else {
                 // Bitmap-only / COLR glyphs on this route arrive with R23 / R29.
                 self.fell_back(super::coverage::Feature::GlyphsColorRotated);
                 self.stats.record(crate::stats::Unsupported::ColorGlyphTransform);
                 continue;
-            }
+            };
+            path.truncate(0);
+            path.extend(cached.elements().iter().copied());
             let t = m * Affine::translate((f64::from(glyph.x), f64::from(glyph.y))) * g * FLIP_Y;
             let shape = Geometry::Path(std::mem::take(&mut path));
             let masked = mask_area(&shape, t, None) <= MASK_MAX_AREA

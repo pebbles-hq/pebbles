@@ -98,6 +98,7 @@ pub(crate) fn prepare<'s>(
         sdf: !scratch.sdf_disabled,
     };
     walk.emit(scene.ops(), input.root_transform);
+    scratch.outlines.end_frame();
     &scratch.plan
 }
 
