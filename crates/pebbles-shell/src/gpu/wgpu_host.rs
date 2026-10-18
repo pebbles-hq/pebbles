@@ -133,7 +133,9 @@ pub(crate) fn present_frame(
     let decode = surface.0.decode_srgb_output();
     let target =
         RenderTarget::new(frame.view(), format, surface.0.targets_mut()).with_decode_srgb_output(decode);
-    if let Err(e) = renderer.render(target, scene, &FrameParams::new(base_color)) {
+    // The device-pixel ratio drives the 02 §7.8 hinting policy (R27).
+    let params = FrameParams::new(base_color).with_scale_factor(window.scale_factor());
+    if let Err(e) = renderer.render(target, scene, &params) {
         // A lost or poisoned device reaches the reset through `needs_reset()` (C18).
         logf(Level::Error, Cat::Gpu, format_args!("wgpu render failed (frame skipped): {e}"));
         drop(frame);

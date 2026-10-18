@@ -52,6 +52,12 @@ pub(crate) fn glyph_culled(pen: kurbo::Point, ppem: f64, linear: Affine, scissor
 /// Append one atlas-route glyph run's requests (pens in device space) and return their range.
 /// Degenerate glyphs are skipped and counted (R22); glyphs outside `scissor` are culled before
 /// any atlas work (R25).
+/// 02 §7.8: hint vertically below 2× density and up to 48 ppem. `scale_factor` =
+/// `PrepareInput::scale_factor`; `ppem` = the atlas-route ppem (`font_size · a`, §7.5).
+pub(crate) fn hint_policy(scale_factor: f64, ppem: f32) -> bool {
+    scale_factor < 2.0 && ppem <= 48.0
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn glyph_run(
     plan: &mut FramePlan,
@@ -63,6 +69,8 @@ pub(crate) fn glyph_run(
     color: [f32; 4],
     transform: Affine,
     glyphs: &[Glyph],
+    hint_override: Option<bool>,
+    scale_factor: f64,
 ) -> Range<u32> {
     let start = index_u32(plan.glyphs.len());
     let coeffs = transform.as_coeffs();
@@ -76,6 +84,7 @@ pub(crate) fn glyph_run(
     if size_q == 0 {
         return start..start;
     }
+    let hint = hint_override.unwrap_or_else(|| hint_policy(scale_factor, size_px));
     let run = index_u32(plan.glyph_runs.len());
     let c0 = index_u32(plan.coords.len());
     plan.coords.extend_from_slice(coords);
@@ -109,7 +118,7 @@ pub(crate) fn glyph_run(
             glyph_id,
             size_q,
             subpx_x,
-            hint: false,
+            hint,
             coords_hash: hash,
         };
         #[allow(clippy::cast_precision_loss)] // |ix|, |iy| ≤ 2^24: exact in f32

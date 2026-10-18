@@ -97,6 +97,7 @@ pub fn run_coverage(
     glyphs: &[Glyph],
     w: u32,
     h: u32,
+    hint: (f64, Option<bool>),
 ) -> Vec<Vec<f64>> {
     let Some(face) = swash::FontRef::from_index(font.data.data(), font.index as usize) else {
         return Vec::new();
@@ -107,9 +108,11 @@ pub fn run_coverage(
     if !(size.is_finite() && size > 0.0) {
         return Vec::new();
     }
+    // 02 §7.8: the atlas route hints below 2× and up to 48 ppem; the outline route never.
+    let hinted = atlas.is_some() && hint.1.unwrap_or(hint.0 < 2.0 && size <= 48.0);
     let mut ctx = ScaleContext::new();
     let mut scaler =
-        ctx.builder(face).size(size as f32).hint(false).normalized_coords(coords.iter().copied()).build();
+        ctx.builder(face).size(size as f32).hint(hinted).normalized_coords(coords.iter().copied()).build();
     let mut out = Vec::new();
     for g in glyphs {
         let Ok(id) = u16::try_from(g.id) else { continue };

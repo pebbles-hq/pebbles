@@ -132,6 +132,8 @@ fn outline_cached_across_frames() {
         target_size: (64, 64),
         root_transform: Affine::IDENTITY,
         vertex_limit: u32::MAX,
+        scale_factor: 1.0,
+        glyph_hint: None,
     };
     let limits = crate::test_support::webgl2_limits();
     let mut stats = crate::stats::FrameStats::default();

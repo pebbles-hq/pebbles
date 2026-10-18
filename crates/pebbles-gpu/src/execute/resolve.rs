@@ -41,6 +41,7 @@ pub(crate) fn resolve_glyphs(
             size_px: run.size_px,
             subpx_x: key.subpx_x,
             coords,
+            hint: key.hint,
             native_strike: req.linear.is_some(),
         };
         let (lookup, rasterized) = atlas.lookup(key, &raster, stats);

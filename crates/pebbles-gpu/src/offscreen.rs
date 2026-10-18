@@ -53,6 +53,8 @@ pub struct OffscreenRenderer {
     renderer: Renderer,
     targets: FrameTargets,
     last_stats: FrameStats,
+    /// `set_glyph_hint_inputs`: (scale-factor override, hint override).
+    hint_inputs: (Option<f64>, Option<bool>),
     /// Test-only: issue a bad `write_texture` inside the error scopes.
     #[cfg(test)]
     inject_validation_error: bool,
@@ -87,6 +89,7 @@ impl OffscreenRenderer {
             renderer,
             targets: FrameTargets::new(),
             last_stats: FrameStats::default(),
+            hint_inputs: (None, None),
             #[cfg(test)]
             inject_validation_error: false,
         })
@@ -125,6 +128,13 @@ impl OffscreenRenderer {
     /// (render-check `--tier-a off` measures the pre-card error).
     pub fn set_sdf_enabled(&mut self, enabled: bool) {
         self.renderer.set_sdf_enabled(enabled);
+    }
+
+    /// Hinting inputs for scenes already scaled to device px (render-check): `scale_factor`
+    /// replaces the render scale as the 02 §7.8 device-pixel ratio, `hint` forces hinting on/off.
+    /// `None` restores the defaults (R27).
+    pub fn set_glyph_hint_inputs(&mut self, scale_factor: Option<f64>, hint: Option<bool>) {
+        self.hint_inputs = (scale_factor, hint);
     }
 
     /// Debug-only, count-only cache sizes (10 §9.2, M05): the renderer's plus this target's.
@@ -174,7 +184,10 @@ impl OffscreenRenderer {
         });
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let target = RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut self.targets);
-        let params = FrameParams::new(base_color).with_root_transform(kurbo::Affine::scale(scale));
+        let params = FrameParams::new(base_color)
+            .with_root_transform(kurbo::Affine::scale(scale))
+            .with_scale_factor(self.hint_inputs.0.unwrap_or(scale))
+            .with_glyph_hint(self.hint_inputs.1);
         let rendered = self.renderer.render(target, scene, &params);
         #[cfg(test)]
         if self.inject_validation_error {

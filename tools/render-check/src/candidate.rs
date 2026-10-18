@@ -50,6 +50,11 @@ impl Candidate {
         Ok(Rgba8 { width: img.width, height: img.height, data: img.pixels })
     }
 
+    /// Hinting inputs (R27): the case's device scale and the `--glyph-hint` override.
+    pub fn set_glyph_hint_inputs(&mut self, scale_factor: f64, hint: Option<bool>) {
+        self.r.set_glyph_hint_inputs(Some(scale_factor), hint);
+    }
+
     /// Tier A on/off (debug: off reproduces the pre-R10 tessellated path).
     pub fn set_tier_a(&mut self, on: bool) {
         self.r.set_sdf_enabled(on);

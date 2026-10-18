@@ -182,6 +182,8 @@ impl Renderer {
             target_size: size,
             root_transform: params.root_transform,
             vertex_limit: self.vertex_limit,
+            scale_factor: params.scale_factor,
+            glyph_hint: params.glyph_hint,
         };
         let started = web_time::Instant::now();
         prepare(scene, &input, &self.limits, &mut self.scratch, &mut stats);

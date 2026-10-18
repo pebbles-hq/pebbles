@@ -7,7 +7,13 @@ use peniko::{Brush, Color, Fill};
 /// The tessellated tier (Tier A off): these tests use rects as fixtures for walk properties.
 fn plan_of(scene: &Scene, size: (u32, u32)) -> FramePlan {
     let mut scratch = PrepareScratch { sdf_disabled: true, ..PrepareScratch::default() };
-    let input = PrepareInput { target_size: size, root_transform: Affine::IDENTITY, vertex_limit: u32::MAX };
+    let input = PrepareInput {
+        target_size: size,
+        root_transform: Affine::IDENTITY,
+        vertex_limit: u32::MAX,
+        scale_factor: 1.0,
+        glyph_hint: None,
+    };
     prepare(scene, &input, &crate::test_support::webgl2_limits(), &mut scratch, &mut FrameStats::default());
     scratch.plan
 }

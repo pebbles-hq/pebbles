@@ -87,18 +87,37 @@ pub struct FrameParams {
     pub base_color: peniko::Color,
     /// Applied to the whole scene (DPI scale in the end state; identity in the transition).
     pub root_transform: kurbo::Affine,
+    /// The target's device-pixel ratio (02 §7.8 hinting policy; R27). Default 1.0.
+    pub scale_factor: f64,
+    /// Force glyph hinting on/off for experiments (render-check `--glyph-hint`); `None` = the
+    /// 02 §7.8 policy.
+    pub glyph_hint: Option<bool>,
 }
 
 impl FrameParams {
     /// Clear to `base_color`, identity root transform.
     pub fn new(base_color: peniko::Color) -> Self {
-        Self { base_color, root_transform: kurbo::Affine::IDENTITY }
+        Self { base_color, root_transform: kurbo::Affine::IDENTITY, scale_factor: 1.0, glyph_hint: None }
     }
 
     /// Replace the root transform.
     #[must_use]
     pub fn with_root_transform(mut self, root_transform: kurbo::Affine) -> Self {
         self.root_transform = root_transform;
+        self
+    }
+
+    /// Set the device-pixel ratio (R27).
+    #[must_use]
+    pub fn with_scale_factor(mut self, scale_factor: f64) -> Self {
+        self.scale_factor = scale_factor;
+        self
+    }
+
+    /// Force glyph hinting on or off; `None` restores the policy (R27 experiments).
+    #[must_use]
+    pub fn with_glyph_hint(mut self, hint: Option<bool>) -> Self {
+        self.glyph_hint = hint;
         self
     }
 }

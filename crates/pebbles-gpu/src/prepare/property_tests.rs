@@ -75,6 +75,8 @@ fn cmd_ops_are_non_decreasing() {
             target_size: (256, 256),
             root_transform: Affine::IDENTITY,
             vertex_limit: u32::MAX,
+            scale_factor: 1.0,
+            glyph_hint: None,
         };
         prepare(
             &scene,

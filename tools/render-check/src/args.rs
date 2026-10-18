@@ -69,6 +69,8 @@ pub struct Args {
     pub tier_a: bool,
     /// Write candidate images of passing `in_refs` cases here (V12).
     pub write_refs: Option<PathBuf>,
+    /// `--glyph-hint auto|on|off` (R27): `None` = the 02 §7.8 policy.
+    pub glyph_hint: Option<bool>,
     /// Print usage and exit 0.
     pub help: bool,
 }
@@ -89,6 +91,7 @@ impl Default for Args {
             keep_images: false,
             tier_a: true,
             write_refs: None,
+            glyph_hint: None,
             help: false,
         }
     }
@@ -113,6 +116,7 @@ usage: render-check [options]
   --smoke <on|off>                transitional vello-hybrid smoke check (default on)
   --reference-dir <DIR>           committed self-goldens
   --tolerance <canonical|relaxed> threshold set (default canonical)
+  --glyph-hint <auto|on|off>  glyph hinting (default auto = the 02 §7.8 policy)
   --platform-tag <TAG>            output subdir and report label
   --determinism                   render every candidate twice; differences are UNSTABLE
   --tier-a on|off                 off: tessellate Tier A shapes (pre-R10 baseline, debug)
@@ -152,6 +156,14 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
                     "canonical" => Tolerance::Canonical,
                     "relaxed" => Tolerance::Relaxed,
                     v => return Err(format!("--tolerance: expected canonical|relaxed, got `{v}`")),
+                }
+            }
+            "--glyph-hint" => {
+                out.glyph_hint = match value("--glyph-hint")?.as_str() {
+                    "auto" => None,
+                    "on" => Some(true),
+                    "off" => Some(false),
+                    v => return Err(format!("--glyph-hint: expected auto|on|off, got `{v}`")),
                 }
             }
             "--platform-tag" => out.platform_tag = Some(value("--platform-tag")?),

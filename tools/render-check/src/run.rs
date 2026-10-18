@@ -28,6 +28,8 @@ pub struct RunOptions {
     pub determinism: bool,
     pub keep_images: bool,
     pub tier_a: bool,
+    /// `--glyph-hint` (R27): `None` = the policy.
+    pub glyph_hint: Option<bool>,
     /// `<out>/<tag>/cases`; `None` = write no artifacts.
     pub cases_dir: Option<PathBuf>,
 }
@@ -43,6 +45,7 @@ impl Default for RunOptions {
             determinism: false,
             keep_images: false,
             tier_a: true,
+            glyph_hint: None,
             cases_dir: None,
         }
     }
@@ -114,6 +117,7 @@ impl Runner {
         let built = catch_unwind(|| frame_scene(&logical_scene(case, frame), scale))
             .map_err(|p| (Status::Panic, format!("build: {}", panic_message(&*p))))?;
         let cand = &mut self.candidate;
+        cand.set_glyph_hint_inputs(scale, self.opts.glyph_hint);
         catch_unwind(AssertUnwindSafe(|| cand.render_rgba(&built, size, bg, 1.0)))
             .map_err(|p| (Status::Panic, format!("candidate: {}", panic_message(&*p))))?
             .map_err(|e| (Status::GpuError, e.to_string()))
@@ -211,6 +215,7 @@ impl Runner {
         }
         let mut fresh = Candidate::new().map_err(|e| (Status::GpuError, e.to_string()))?;
         fresh.set_tier_a(self.opts.tier_a);
+        fresh.set_glyph_hint_inputs(case.scale, self.opts.glyph_hint);
         let built = catch_unwind(|| frame_scene(&logical_scene(case, last), case.scale))
             .map_err(|p| (Status::Panic, format!("build: {}", panic_message(&*p))))?;
         let again = catch_unwind(AssertUnwindSafe(|| {
@@ -242,7 +247,8 @@ impl Runner {
         let (w, h) = case.device_size();
         let built = catch_unwind(|| frame_scene(&logical_scene(case, 0), case.scale))
             .map_err(|p| (Status::Panic, format!("build: {}", panic_message(&*p))))?;
-        catch_unwind(AssertUnwindSafe(|| Golden::render(&built, w, h, case.background)))
+        let hint = (case.scale, self.opts.glyph_hint);
+        catch_unwind(AssertUnwindSafe(|| Golden::render_hinted(&built, w, h, case.background, hint)))
             .map_err(|p| (Status::Panic, format!("golden: {}", panic_message(&*p))))?
             .map_err(|e| (Status::ProbeFail, e.to_string()))
     }

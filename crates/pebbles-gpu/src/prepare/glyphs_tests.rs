@@ -140,3 +140,36 @@ fn culling_keeps_order() {
     assert_eq!(kinds, [false, true, false]);
     assert_eq!(plan.glyphs.len(), 1, "the glyph outside the clip is culled");
 }
+
+/// R27 AC1: 02 §7.8 — hinted at 1× / 16 px; never at 2× or 64 px.
+#[test]
+fn hint_policy_matrix() {
+    use super::hint_policy;
+    assert!(hint_policy(1.0, 16.0));
+    assert!(hint_policy(1.75, 48.0));
+    assert!(!hint_policy(2.0, 16.0));
+    assert!(!hint_policy(1.0, 64.0));
+}
+
+/// R27: atlas-route keys carry the policy's hint flag; the 2× root transform turns it off.
+#[test]
+fn atlas_keys_follow_hint_policy() {
+    let key_hint = |scale: f64| {
+        let mut s = Scene::new();
+        run(&mut s, 16.0, &[], Affine::scale(scale), vec![g(40, 0.0)]);
+        let input = crate::prepare::PrepareInput {
+            target_size: (128, 128),
+            root_transform: Affine::IDENTITY,
+            vertex_limit: u32::MAX,
+            scale_factor: scale,
+            glyph_hint: None,
+        };
+        let (plan, _) = crate::prepare::test_util::prepare_with(&s, &input);
+        match plan.glyphs[0].key {
+            crate::execute::resources::atlas_alloc::CoverageKey::Glyph(k) => k.hint,
+            crate::execute::resources::atlas_alloc::CoverageKey::Path(_) => panic!("glyph expected"),
+        }
+    };
+    assert!(key_hint(1.0));
+    assert!(!key_hint(2.0));
+}

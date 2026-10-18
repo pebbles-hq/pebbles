@@ -106,6 +106,7 @@ fn run(args: Args) -> ExitCode {
         determinism: args.determinism,
         keep_images: args.keep_images,
         tier_a: args.tier_a,
+        glyph_hint: args.glyph_hint,
         cases_dir: None,
     };
     let mut runner = match Runner::new(opts) {

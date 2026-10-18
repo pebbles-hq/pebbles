@@ -21,9 +21,22 @@ pub(crate) fn prepare_scene_tessellated(scene: &Scene, w: u32, h: u32) -> (Frame
 fn prepare_scene_with(scene: &Scene, w: u32, h: u32, sdf: bool) -> (FramePlan, FrameStats) {
     let mut scratch = PrepareScratch { sdf_disabled: !sdf, ..PrepareScratch::default() };
     let mut stats = FrameStats::default();
-    let input =
-        PrepareInput { target_size: (w, h), root_transform: Affine::IDENTITY, vertex_limit: u32::MAX };
+    let input = PrepareInput {
+        target_size: (w, h),
+        root_transform: Affine::IDENTITY,
+        vertex_limit: u32::MAX,
+        scale_factor: 1.0,
+        glyph_hint: None,
+    };
     prepare(scene, &input, &crate::test_support::webgl2_limits(), &mut scratch, &mut stats);
+    (scratch.plan, stats)
+}
+
+/// Prepare `scene` with an explicit input (scale factor / hint override tests).
+pub(crate) fn prepare_with(scene: &Scene, input: &PrepareInput) -> (FramePlan, FrameStats) {
+    let mut scratch = PrepareScratch::default();
+    let mut stats = FrameStats::default();
+    prepare(scene, input, &crate::test_support::webgl2_limits(), &mut scratch, &mut stats);
     (scratch.plan, stats)
 }
 

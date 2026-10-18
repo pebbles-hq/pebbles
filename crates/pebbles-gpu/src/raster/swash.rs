@@ -89,6 +89,8 @@ pub(crate) struct RasterRequest<'a> {
     pub size_px: f32,
     pub subpx_x: u8,
     pub coords: &'a [i16],
+    /// Vertical hinting (02 §7.8, `GlyphKey::hint`).
+    pub hint: bool,
     /// Bitmap strikes: keep the largest strike at native size (the outline route draws it as a
     /// transformed quad, R23 step 2a).
     pub native_strike: bool,
@@ -143,7 +145,7 @@ impl GlyphRaster {
             .ctx
             .builder(font)
             .size(req.size_px)
-            .hint(false)
+            .hint(req.hint)
             .normalized_coords(req.coords.iter().copied())
             .build();
         let dx = f32::from(req.subpx_x) * 0.25;
@@ -167,7 +169,7 @@ impl GlyphRaster {
                     .ctx
                     .builder(font)
                     .size(req.size_px)
-                    .hint(false)
+                    .hint(req.hint)
                     .normalized_coords(req.coords.iter().copied())
                     .build();
             }
@@ -312,8 +314,15 @@ mod tests {
 
     fn coverage_sum(raster: &mut GlyphRaster, font: &peniko::FontData, coords: &[i16]) -> u64 {
         let id = glyph_h(font);
-        let req =
-            RasterRequest { font, glyph_id: id, size_px: 32.0, subpx_x: 0, coords, native_strike: false };
+        let req = RasterRequest {
+            font,
+            glyph_id: id,
+            size_px: 32.0,
+            subpx_x: 0,
+            coords,
+            hint: false,
+            native_strike: false,
+        };
         raster.rasterize(&req).unwrap().data.iter().map(|&b| u64::from(b)).sum()
     }
 
@@ -327,6 +336,7 @@ mod tests {
             size_px: 16.0,
             subpx_x: 0,
             coords: &[],
+            hint: false,
             native_strike: false,
         };
         let g = raster.rasterize(&req).unwrap();
@@ -356,6 +366,7 @@ mod tests {
             size_px: 16.0,
             subpx_x: 0,
             coords: &[],
+            hint: false,
             native_strike: false,
         };
         raster.rasterize(&req);
@@ -391,6 +402,65 @@ mod tests {
         assert_eq!(color_upload_bytes(&img, &mut scratch), &[200, 100, 50, 255]);
     }
 
+    /// Over the pangram's glyphs: `Σ (c[x][y+1] − c[x][y])²` (vertical gradient energy) per
+    /// unit of ink `Σ c`. Normalized because hinting snaps x-height/cap height, changing the
+    /// number of rows: the raw sum rewards blur spread over more rows (an 11-px 'e' has 8
+    /// blurred rows unhinted, 6 crisp ones hinted).
+    fn row_sharpness(raster: &mut GlyphRaster, font: &peniko::FontData, ppem: f32, hint: bool) -> f64 {
+        let f = swash::FontRef::from_index(font.data.data(), 0).unwrap();
+        let mut total = 0.0;
+        let mut ink = 0.0;
+        for ch in
+            "The quick brown fox jumps over the lazy dog 0123456789".chars().filter(|c| !c.is_whitespace())
+        {
+            let req = RasterRequest {
+                font,
+                glyph_id: f.charmap().map(ch),
+                size_px: ppem,
+                subpx_x: 0,
+                coords: &[],
+                hint,
+                native_strike: false,
+            };
+            let Some(g) = raster.rasterize(&req) else { continue };
+            let w = g.width as usize;
+            // Zero rows above and below: the mask's own top/bottom edges are transitions too
+            // (a crisp hinted edge sits exactly there).
+            let zero = vec![0u8; w];
+            let rows: Vec<&[u8]> = std::iter::once(zero.as_slice())
+                .chain(g.data.chunks(w.max(1)))
+                .chain(std::iter::once(zero.as_slice()))
+                .collect();
+            total += rows
+                .windows(2)
+                .flat_map(|p| p[0].iter().zip(p[1]).map(|(a, b)| (f64::from(*b) - f64::from(*a)).powi(2)))
+                .sum::<f64>();
+            ink += g.data.iter().map(|&c| f64::from(c)).sum::<f64>();
+        }
+        total / ink
+    }
+
+    /// R27 AC3 / step 4: vertical hinting sharpens horizontal features at 1× for 11–16 px
+    /// (`auto` = hinted there) and is never worse; the table is printed for the evidence.
+    #[test]
+    #[allow(clippy::print_stderr)] // the measurement table is the evidence (R27 step 4)
+    fn hinting_sharpens_rows() {
+        let font = inter();
+        let mut raster = GlyphRaster::default();
+        for scale in [1.0f32, 1.25] {
+            for size in [10.0f32, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 24.0] {
+                let ppem = size * scale;
+                let off = row_sharpness(&mut raster, &font, ppem, false);
+                let auto_hint = crate::prepare::glyphs::hint_policy(f64::from(scale), ppem);
+                let auto = row_sharpness(&mut raster, &font, ppem, auto_hint);
+                eprintln!("scale {scale} size {size}: auto {auto:.2} off {off:.2} ratio {:.3}", auto / off);
+                if scale == 1.0 && (11.0..=16.0).contains(&size) {
+                    assert!(auto >= off, "size {size}: auto {auto} < off {off}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn font_ref_key_is_reused() {
         let font = inter();
@@ -414,6 +484,7 @@ mod tests {
                 size_px: 16.0,
                 subpx_x: 0,
                 coords: &[],
+                hint: false,
                 native_strike: false,
             };
             raster.rasterize(&req);

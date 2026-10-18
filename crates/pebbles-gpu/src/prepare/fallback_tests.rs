@@ -12,8 +12,13 @@ fn plan_and_stats(scene: &Scene) -> (FramePlan, FrameStats) {
     // The tessellated tier (Tier A off): these tests read alpha from solid vertices.
     let mut scratch = PrepareScratch { sdf_disabled: true, ..PrepareScratch::default() };
     let mut stats = FrameStats::default();
-    let input =
-        PrepareInput { target_size: (100, 100), root_transform: Affine::IDENTITY, vertex_limit: u32::MAX };
+    let input = PrepareInput {
+        target_size: (100, 100),
+        root_transform: Affine::IDENTITY,
+        vertex_limit: u32::MAX,
+        scale_factor: 1.0,
+        glyph_hint: None,
+    };
     prepare(scene, &input, &crate::test_support::webgl2_limits(), &mut scratch, &mut stats);
     (scratch.plan, stats)
 }

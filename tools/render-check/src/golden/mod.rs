@@ -28,6 +28,8 @@ struct Target {
     clips: Vec<Vec<f64>>,
     /// `Some` forces a policy for every op; `None` honors each op's `PixelSnap` (02 §5.3).
     force_snap: Option<Snap>,
+    /// (device-pixel ratio, hint override) for the 02 §7.8 glyph hinting policy (R27).
+    hint: (f64, Option<bool>),
 }
 
 fn premul(c: Color) -> [f64; 4] {
@@ -116,7 +118,8 @@ impl Target {
             } => {
                 let src = solid(brush)?;
                 let (t, g, w, h) = (outer * *transform, *glyph_transform, self.w, self.h);
-                for cov in text::run_coverage(font, *font_size, normalized_coords, t, g, glyphs, w, h) {
+                let hint = self.hint;
+                for cov in text::run_coverage(font, *font_size, normalized_coords, t, g, glyphs, w, h, hint) {
                     self.composite(src, &cov);
                 }
             }
@@ -140,6 +143,18 @@ impl Golden {
         Self::render_snapped(scene, w, h, background, None)
     }
 
+    /// [`Golden::render`] for a case at device-pixel ratio `hint.0` with the `--glyph-hint`
+    /// override `hint.1` (R27: hinted glyph outlines, same flag as the renderer).
+    pub fn render_hinted(
+        scene: &Scene,
+        w: u32,
+        h: u32,
+        background: Color,
+        hint: (f64, Option<bool>),
+    ) -> Result<Rgba8, CheckError> {
+        Self::render_full(scene, w, h, background, None, hint)
+    }
+
     /// Render with one snap policy forced for every op.
     pub fn render_with(
         scene: &Scene,
@@ -158,11 +173,23 @@ impl Golden {
         background: Color,
         force_snap: Option<Snap>,
     ) -> Result<Rgba8, CheckError> {
+        Self::render_full(scene, w, h, background, force_snap, (1.0, None))
+    }
+
+    fn render_full(
+        scene: &Scene,
+        w: u32,
+        h: u32,
+        background: Color,
+        force_snap: Option<Snap>,
+        hint: (f64, Option<bool>),
+    ) -> Result<Rgba8, CheckError> {
         if w == 0 || h == 0 {
             return Err(CheckError::Size { width: w, height: h });
         }
         let bg = premul(background);
-        let mut t = Target { w, h, px: vec![bg; w as usize * h as usize], clips: Vec::new(), force_snap };
+        let mut t =
+            Target { w, h, px: vec![bg; w as usize * h as usize], clips: Vec::new(), force_snap, hint };
         t.walk(scene.ops(), Affine::IDENTITY)?;
         let data = t.px.iter().flat_map(|p| p.map(quantize)).collect();
         Ok(Rgba8 { width: w, height: h, data })

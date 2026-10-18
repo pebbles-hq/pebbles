@@ -19,7 +19,7 @@ pub(crate) mod coverage;
 mod cull;
 mod features;
 mod glyph_outline;
-mod glyphs;
+pub(crate) mod glyphs;
 mod hygiene;
 mod images;
 mod layer;
@@ -54,6 +54,10 @@ pub(crate) struct PrepareInput {
     pub root_transform: Affine,
     /// Most vertices one frame may hold: `u32::MAX` with `FULL_DRAW_INDEX_UINT32`, else 2^24 − 1.
     pub vertex_limit: u32,
+    /// Device-pixel ratio of the target (02 §7.8; `FrameParams::scale_factor`).
+    pub scale_factor: f64,
+    /// Hinting override (`FrameParams::glyph_hint`); `None` = `hint_policy`.
+    pub glyph_hint: Option<bool>,
 }
 
 /// Vertex limit on devices without `FULL_DRAW_INDEX_UINT32` (WebGL2).
@@ -94,6 +98,8 @@ pub(crate) fn prepare<'s>(
         limits,
         visit: 0,
         vertex_limit: input.vertex_limit,
+        scale_factor: input.scale_factor,
+        glyph_hint: input.glyph_hint,
         out_of_vertices: false,
         sdf: !scratch.sdf_disabled,
     };
@@ -113,6 +119,8 @@ struct Walk<'a> {
     limits: &'a RendererLimits,
     visit: u32,
     vertex_limit: u32,
+    scale_factor: f64,
+    glyph_hint: Option<bool>,
     out_of_vertices: bool,
     /// Tier A analytic shapes enabled (R10).
     sdf: bool,
@@ -310,6 +318,8 @@ impl Walk<'_> {
                                 color,
                                 xf,
                                 glyphs,
+                                self.glyph_hint,
+                                self.scale_factor,
                             );
                             self.push(DrawCmd::Glyphs { glyphs: range, clip: self.clips.current() }, idx);
                         }
