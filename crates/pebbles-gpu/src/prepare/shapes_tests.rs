@@ -79,11 +79,15 @@ fn triangle() -> BezPath {
 fn order_shapes_interleave_with_triangles() {
     let mut scene = Scene::new();
     let p = &mut Painter::new(&mut scene);
+    // Volatile paths are tessellated (Tier C, R16); an Auto path is a coverage mask (Tier B).
+    p.set_path_hint(pebbles_render::paint::display_list::PathHint::Volatile);
     p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &triangle());
     p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &RoundedRect::from_rect(R, 6.0));
     p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &triangle());
+    p.set_path_hint(pebbles_render::paint::display_list::PathHint::Auto);
+    p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &triangle());
     let (plan, _) = prepare_scene(&scene, 64, 64);
-    assert_eq!(cmd_kinds(&plan), ["triangles", "shapes", "triangles"]);
+    assert_eq!(cmd_kinds(&plan), ["triangles", "shapes", "triangles", "glyphs"]);
 }
 
 #[test]

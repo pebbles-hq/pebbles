@@ -42,3 +42,14 @@ pub(crate) fn to_u32_round(v: f32) -> Option<u32> {
     let r = v.round();
     (r.is_finite() && r >= 0.0 && r <= u32::MAX as f32).then_some(r as u32)
 }
+
+/// Non-negative f64 → u64, saturating (NaN and negatives → 0, +inf → `u64::MAX`).
+pub(crate) fn to_u64_sat(v: f64) -> u64 {
+    if v.is_nan() || v <= 0.0 {
+        0
+    } else if v >= 18_446_744_073_709_551_615.0 {
+        u64::MAX
+    } else {
+        v as u64
+    }
+}

@@ -16,6 +16,7 @@ mod gpu_geometry;
 mod gpu_smoke;
 mod images;
 mod order;
+mod path_masks;
 mod support;
 mod targets;
 mod text;

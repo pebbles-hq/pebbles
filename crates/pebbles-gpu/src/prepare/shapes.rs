@@ -122,6 +122,12 @@ pub(crate) fn stroke_instance(
     })
 }
 
+/// The outer rect of an instance, in f64 device px.
+pub(crate) fn outer_rect(inst: &ShapeInstance) -> Rect {
+    let [x0, y0, x1, y1] = inst.outer.map(f64::from);
+    Rect::new(x0, y0, x1, y1)
+}
+
 /// Clamp a sharp-cornered instance's outer rect to `scissor` inflated by 2 px.
 pub(crate) fn clamp_outer(inst: &mut ShapeInstance, scissor: Rect) {
     let s = scissor.inflate(2.0, 2.0);

@@ -2,7 +2,11 @@
 //! each a 2-layer array texture (WebGL2 rule W1; only layer 0 is allocated until M01). Texels
 //! are uploaded only when a glyph is inserted — never on a hit (10 §5).
 
-use super::atlas_alloc::{AtlasAllocator, AtlasFull, AtlasKind, AtlasSlot, GLYPH_GUTTER_PX, GlyphKey};
+use super::atlas_alloc::{
+    AtlasAllocator, AtlasFull, AtlasKind, AtlasSlot, GLYPH_GUTTER_PX, GlyphKey, MaskKey,
+};
+use crate::prepare::path_masks::MaskSource;
+use crate::raster::coverage::{CoverageRasterizer, MaskBuf};
 use crate::raster::swash::{GlyphRaster, RasterContent, RasterRequest};
 
 /// Page side cap (10 §5.4); the device limit may lower it.
@@ -111,6 +115,8 @@ pub(crate) struct GlyphAtlas {
     mask: Page,
     color: Page,
     raster: GlyphRaster,
+    paths: CoverageRasterizer,
+    mask_buf: MaskBuf,
     staging: Vec<u8>,
     pub(crate) bind_group: wgpu::BindGroup,
 }
@@ -141,7 +147,15 @@ impl GlyphAtlas {
                 wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&sampler) },
             ],
         });
-        Self { mask, color, raster: GlyphRaster::default(), staging: Vec::new(), bind_group }
+        Self {
+            mask,
+            color,
+            raster: GlyphRaster::default(),
+            paths: CoverageRasterizer::default(),
+            mask_buf: MaskBuf::default(),
+            staging: Vec::new(),
+            bind_group,
+        }
     }
 
     pub(crate) fn begin_frame(&mut self) {
@@ -163,7 +177,7 @@ impl GlyphAtlas {
     ) -> (GlyphLookup, bool) {
         // A key lives in exactly one page; check both.
         for page in [&mut self.mask, &mut self.color] {
-            if let Some(hit) = page.alloc.get(&key) {
+            if let Some(hit) = page.alloc.get(key) {
                 return (hit.map_or(GlyphLookup::Empty, GlyphLookup::Slot), false);
             }
         }
@@ -189,4 +203,68 @@ impl GlyphAtlas {
             Err(AtlasFull) => (GlyphLookup::Full, true),
         }
     }
+
+    /// Find a Tier B path mask, rasterizing (R14) and uploading it on a miss. The slot's
+    /// `left`/`top` place it relative to the request origin like a glyph (`x + left`, `y − top`).
+    pub(crate) fn lookup_path(
+        &mut self,
+        queue: &wgpu::Queue,
+        key: MaskKey,
+        src: &MaskSource,
+    ) -> (GlyphLookup, bool) {
+        if let Some(hit) = self.mask.alloc.get(key) {
+            return (hit.map_or(GlyphLookup::Empty, GlyphLookup::Slot), false);
+        }
+        let outline;
+        let path = match &src.stroke {
+            None => &src.path,
+            Some(style) => {
+                let tol = crate::prepare::path_masks::GEOMETRY_TOL_PX / src.device.spectral_norm().max(1e-9);
+                outline = kurbo::stroke(
+                    src.path.elements().iter().copied(),
+                    style,
+                    &kurbo::StrokeOpts::default(),
+                    tol,
+                );
+                &outline
+            }
+        };
+        let Some(placement) = rasterize_anywhere(&mut self.paths, path, src, &mut self.mask_buf) else {
+            self.mask.alloc.insert_empty(key);
+            return (GlyphLookup::Empty, true);
+        };
+        let (Ok(left), Ok(top)) = (i16::try_from(placement.0), i16::try_from(-placement.1)) else {
+            return (GlyphLookup::Unsupported, true);
+        };
+        match self.mask.alloc.insert(key, self.mask_buf.width, self.mask_buf.height, left.into(), top.into())
+        {
+            Ok(slot) => {
+                self.mask.upload(queue, &mut self.staging, slot, &self.mask_buf.data, false);
+                (GlyphLookup::Slot(slot), true)
+            }
+            Err(AtlasFull) => (GlyphLookup::Full, true),
+        }
+    }
+}
+
+/// Rasterize `path` under `src.device` wherever it lies: the mask is computed in a space shifted
+/// by the floor of its device bounds, which are returned as `(left, top)`.
+fn rasterize_anywhere(
+    r: &mut CoverageRasterizer,
+    path: &kurbo::BezPath,
+    src: &MaskSource,
+    out: &mut MaskBuf,
+) -> Option<(i32, i32)> {
+    use kurbo::Shape as _;
+    let b = src.device.transform_rect_bbox(path.bounding_box());
+    let (x0, y0) = (b.x0.floor(), b.y0.floor());
+    let w = crate::prepare::num::ceil_px(b.x1 - x0, u32::from(u16::MAX))?;
+    let h = crate::prepare::num::ceil_px(b.y1 - y0, u32::from(u16::MAX))?;
+    let shift = kurbo::Affine::translate((-x0, -y0)) * src.device;
+    let clip = crate::prepare::ScissorRect { x0: 0, y0: 0, x1: w, y1: h };
+    let p = r.rasterize(path, shift, src.rule, clip, out)?;
+    let left = i32::try_from(crate::prepare::num::to_u64_sat(x0.abs())).ok()?;
+    let top = i32::try_from(crate::prepare::num::to_u64_sat(y0.abs())).ok()?;
+    let (left, top) = (if x0 < 0.0 { -left } else { left }, if y0 < 0.0 { -top } else { top });
+    Some((left + p.left, top + p.top))
 }

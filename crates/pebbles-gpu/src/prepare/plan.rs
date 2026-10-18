@@ -3,7 +3,7 @@
 use peniko::FontData;
 
 use super::num::{ceil_px, floor_px};
-use crate::execute::resources::atlas_alloc::GlyphKey;
+use crate::execute::resources::atlas_alloc::CoverageKey;
 use crate::execute::resources::image_cache::{ImageKey, SamplerKey};
 use crate::gpu_types::{QuadInstance, ShadowInstance, ShapeInstance, SolidVertex};
 
@@ -91,9 +91,12 @@ pub(crate) struct GlyphRunInfo {
 /// (a glyph that cannot be rasterized or placed becomes a zero-area quad so ranges stay valid).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct GlyphRequest {
-    pub key: GlyphKey,
+    /// A glyph, or a Tier B path mask (R15) — both live in the coverage atlas.
+    pub key: CoverageKey,
+    /// Glyphs: index into `glyph_runs`; path masks: index into `mask_sources`.
     pub run: u32,
-    /// Integer device-pixel pen origin; the fractional x lives in `key.subpx_x` (02 §7.4).
+    /// Integer device-pixel pen origin; the fractional x lives in `key.subpx_x` (02 §7.4). Path
+    /// masks: the integer part of the device translation (the fraction is in the key).
     pub origin: [f32; 2],
     /// Premultiplied tint (mask glyphs); color glyphs use only `.a` as opacity.
     pub color: [f32; 4],
@@ -134,6 +137,8 @@ pub(crate) struct FramePlan {
     pub shadows: Vec<ShadowInstance>,
     pub glyph_runs: Vec<GlyphRunInfo>,
     pub glyphs: Vec<GlyphRequest>,
+    /// What to rasterize on a path-mask atlas miss (R15), indexed by `GlyphRequest::run`.
+    pub mask_sources: Vec<super::path_masks::MaskSource>,
     /// Normalized variation coords of every run, indexed by `GlyphRunInfo::coords`.
     pub coords: Vec<i16>,
     pub images: Vec<ImageRequest>,
@@ -155,6 +160,7 @@ impl FramePlan {
         self.shadows.clear();
         self.glyph_runs.clear();
         self.glyphs.clear();
+        self.mask_sources.clear();
         self.coords.clear();
         self.images.clear();
         self.cmds.clear();

@@ -10,7 +10,7 @@ use kurbo::Affine;
 pub mod op;
 pub mod painter;
 
-pub use op::{Geometry, Glyph, NormalizedCoord, Op};
+pub use op::{Geometry, Glyph, NormalizedCoord, Op, PathHint};
 pub use painter::Painter;
 
 /// Path-flattening tolerance for recorded non-primitive shapes (logical px).

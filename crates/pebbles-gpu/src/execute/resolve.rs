@@ -1,7 +1,7 @@
 //! Glyph resolution: each `GlyphRequest` → one `QuadInstance`, rasterizing and uploading only
 //! on an atlas miss. A glyph with no slot becomes a zero-area quad so ranges stay valid.
 
-use super::resources::atlas_alloc::{AtlasKind, AtlasSlot};
+use super::resources::atlas_alloc::{AtlasKind, AtlasSlot, CoverageKey};
 use super::resources::glyph_atlas::{GlyphAtlas, GlyphLookup};
 use crate::gpu_types::QuadInstance;
 use crate::prepare::FramePlan;
@@ -18,6 +18,19 @@ pub(crate) fn resolve_glyphs(
 ) {
     out.clear();
     for req in &plan.glyphs {
+        let key = match req.key {
+            CoverageKey::Glyph(k) => k,
+            CoverageKey::Path(k) => {
+                let Some(src) = plan.mask_sources.get(req.run as usize) else {
+                    out.push(QuadInstance::zeroed());
+                    continue;
+                };
+                let (lookup, rasterized) = atlas.lookup_path(queue, k, src);
+                stats.masks_rasterized += u32::from(rasterized);
+                out.push(quad_for(lookup, req.origin, req.color, stats));
+                continue;
+            }
+        };
         let Some(run) = plan.glyph_runs.get(req.run as usize) else {
             out.push(QuadInstance::zeroed());
             continue;
@@ -25,26 +38,29 @@ pub(crate) fn resolve_glyphs(
         let coords = plan.coords.get(run.coords.start as usize..run.coords.end as usize).unwrap_or_default();
         let raster = RasterRequest {
             font: &run.font,
-            glyph_id: req.key.glyph_id,
+            glyph_id: key.glyph_id,
             size_px: run.size_px,
-            subpx_x: req.key.subpx_x,
+            subpx_x: key.subpx_x,
             coords,
         };
-        let (lookup, rasterized) = atlas.lookup(queue, req.key, &raster);
+        let (lookup, rasterized) = atlas.lookup(queue, key, &raster);
         stats.glyphs_rasterized += u32::from(rasterized);
-        let quad = match lookup {
-            GlyphLookup::Slot(slot) => glyph_quad(slot, req.origin, req.color),
-            GlyphLookup::Empty => QuadInstance::zeroed(),
-            GlyphLookup::Full => {
-                stats.record(Unsupported::AtlasFull);
-                QuadInstance::zeroed()
-            }
-            GlyphLookup::Unsupported => {
-                stats.record(Unsupported::GlyphContent);
-                QuadInstance::zeroed()
-            }
-        };
-        out.push(quad);
+        out.push(quad_for(lookup, req.origin, req.color, stats));
+    }
+}
+
+fn quad_for(lookup: GlyphLookup, origin: [f32; 2], color: [f32; 4], stats: &mut FrameStats) -> QuadInstance {
+    match lookup {
+        GlyphLookup::Slot(slot) => glyph_quad(slot, origin, color),
+        GlyphLookup::Empty => QuadInstance::zeroed(),
+        GlyphLookup::Full => {
+            stats.record(Unsupported::AtlasFull);
+            QuadInstance::zeroed()
+        }
+        GlyphLookup::Unsupported => {
+            stats.record(Unsupported::GlyphContent);
+            QuadInstance::zeroed()
+        }
     }
 }
 

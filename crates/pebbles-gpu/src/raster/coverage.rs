@@ -25,7 +25,7 @@ pub(crate) struct MaskPlacement {
 }
 
 /// Device-space flattening tolerance for curves (px).
-pub(crate) const FLATTEN_TOL_PX: f64 = 1.0 / 64.0;
+pub(crate) const FLATTEN_TOL_PX: f64 = 1.0 / 512.0;
 
 /// Reusable rasterizer state; capacities never shrink below their high-water mark.
 #[derive(Default)]
@@ -150,7 +150,8 @@ impl CoverageRasterizer {
         }
         let (w, h) = (x1 - x0, y1 - y0);
         let m = Affine::translate((-f64::from(x0), -f64::from(y0))) * device;
-        // Curves are flattened here at `FLATTEN_TOL_PX` (zeno's own subdivision loses ~0.2 % of
+        // Curves are flattened here at `FLATTEN_TOL_PX` (chords sit inside the curve, so the error is
+        // a one-sided ≤ 1/512 px ≈ 0.5 LSB; zeno's own subdivision loses ~0.2 % of
         // a circle's area, beyond the ≤ 1 LSB budget of 02 §5.2); every line is then clipped to
         // the mask box (see `ClampedPath`).
         self.cmds.clear();

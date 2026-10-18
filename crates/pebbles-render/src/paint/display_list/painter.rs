@@ -7,7 +7,7 @@ use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{Brush, BrushRef, Color, Fill, FontData};
 
 use super::Scene;
-use super::op::{Geometry, Glyph, NormalizedCoord, Op};
+use super::op::{Geometry, Glyph, NormalizedCoord, Op, PathHint};
 
 /// The fill-rule for a recorded layer's clip path. Pebbles only ever clips with a fill
 /// rule (never a stroked-outline clip), and `vello_hybrid`'s `push_layer` clip is a filled
@@ -23,22 +23,28 @@ fn clip_fill_rule(s: peniko::StyleRef<'_>) -> Fill {
 /// retained list. Signatures mirror the old vello backend exactly.
 pub struct Painter<'a> {
     scene: &'a mut Scene,
+    hint: PathHint,
 }
 
 impl<'a> Painter<'a> {
     /// Wrap a mutable scene as a painter.
     pub fn new(scene: &'a mut Scene) -> Self {
-        Painter { scene }
+        Painter { scene, hint: PathHint::Auto }
     }
 
     /// Reborrow as a shorter-lived painter (for sub-scenes / recursion).
     pub fn reborrow(&mut self) -> Painter<'_> {
-        Painter { scene: self.scene }
+        Painter { scene: self.scene, hint: self.hint }
     }
 
     /// The underlying scene (for the shell's flush + fragment plumbing).
     pub fn scene_mut(&mut self) -> &mut Scene {
         self.scene
+    }
+
+    /// Set the [`PathHint`] recorded on every following fill/stroke until changed again.
+    pub fn set_path_hint(&mut self, hint: PathHint) {
+        self.hint = hint;
     }
 
     /// Clear all recorded content.
@@ -61,6 +67,7 @@ impl<'a> Painter<'a> {
             brush: brush.into().to_owned(),
             brush_transform,
             shape: Geometry::from_shape(shape),
+            hint: self.hint,
         });
     }
 
@@ -79,6 +86,7 @@ impl<'a> Painter<'a> {
             brush: brush.into().to_owned(),
             brush_transform,
             shape: Geometry::from_shape(shape),
+            hint: self.hint,
         });
     }
 

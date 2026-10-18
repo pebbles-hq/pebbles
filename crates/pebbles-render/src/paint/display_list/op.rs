@@ -77,6 +77,17 @@ impl Geometry {
 /// **Renderer contract, not app API.** Produced only by [`Painter`](super::Painter);
 /// consumed by `pebbles-gpu` and (until Phase 7) the hybrid flush. New variants and new
 /// fields are added in minor releases — always match with `..` and a wildcard arm.
+/// How the renderer may rasterize a path fill/stroke (02 §5.2, R16).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum PathHint {
+    /// The renderer picks the tier: small paths become cached coverage masks (Tier B).
+    #[default]
+    Auto,
+    /// The path changes every frame (animated canvases): skip the CPU mask rasterizer.
+    Volatile,
+}
+
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Op {
@@ -87,6 +98,7 @@ pub enum Op {
         brush: Brush,
         brush_transform: Option<Affine>,
         shape: Geometry,
+        hint: PathHint,
     },
     #[non_exhaustive]
     Stroke {
@@ -95,6 +107,7 @@ pub enum Op {
         brush: Brush,
         brush_transform: Option<Affine>,
         shape: Geometry,
+        hint: PathHint,
     },
     /// Clip to `clip` (filled with `clip_fill`) and composite the layer with `blend` at
     /// `alpha`.

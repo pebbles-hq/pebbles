@@ -144,6 +144,14 @@ pub struct FrameStats {
     pub culled: u32,
     /// Glyphs rasterized this frame (atlas misses).
     pub glyphs_rasterized: u32,
+    /// Tier B path masks rasterized this frame (atlas misses, R15).
+    pub masks_rasterized: u32,
+    /// Ops drawn as Tier A analytic shapes this frame (02 §5.2, R16).
+    pub tier_a_draws: u32,
+    /// Ops drawn as Tier B coverage masks this frame.
+    pub tier_b_draws: u32,
+    /// Ops drawn as Tier C meshes this frame.
+    pub tier_c_draws: u32,
     /// Bytes written to GPU buffers.
     pub bytes_uploaded: u64,
     /// CPU prepare time, microseconds.
@@ -194,6 +202,10 @@ impl Default for FrameStats {
             render_passes: 0,
             culled: 0,
             glyphs_rasterized: 0,
+            masks_rasterized: 0,
+            tier_a_draws: 0,
+            tier_b_draws: 0,
+            tier_c_draws: 0,
             bytes_uploaded: 0,
             prepare_us: 0,
             execute_us: 0,

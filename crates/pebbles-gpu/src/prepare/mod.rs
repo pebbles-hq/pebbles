@@ -5,6 +5,9 @@ use kurbo::{Affine, Shape};
 use pebbles_render::paint::Scene;
 use pebbles_render::paint::display_list::Op;
 
+use path_strategy::Tier;
+use peniko::Fill;
+
 use crate::limits::RendererLimits;
 use crate::stats::{FrameStats, Unsupported};
 
@@ -19,6 +22,8 @@ mod hygiene;
 mod images;
 mod layer;
 pub(crate) mod num;
+pub(crate) mod path_masks;
+pub(crate) mod path_strategy;
 mod plan;
 #[cfg(test)]
 mod property_tests;
@@ -129,8 +134,12 @@ impl Walk<'_> {
                         continue;
                     }
                     let premul = color::premul_scaled(color, self.alpha());
+                    let tier = self.tier(op, xf);
+                    if tier == Tier::B && self.draw_mask(shape, xf, *style, None, premul, idx) {
+                        continue;
+                    }
                     // Tier A (R10): an eligible rect / rounded rect / circle is one analytic quad.
-                    if self.sdf
+                    if tier == Tier::A
                         && let Some(mut inst) = shapes::fill_instance(shape, xf, premul)
                     {
                         // R04 for Tier A: a sharp-cornered quad is clamped to the scissor (+2 px, so
@@ -140,6 +149,7 @@ impl Walk<'_> {
                         }
                         let start = num::index_u32(self.plan.shapes.len());
                         self.plan.shapes.push(inst);
+                        self.stats.tier_a_draws += 1;
                         self.push(
                             DrawCmd::Shapes { instances: start..start + 1, clip: self.clips.current() },
                             idx,
@@ -157,6 +167,7 @@ impl Walk<'_> {
                     };
                     self.plan.stats.tess_calls += 1;
                     if let Some(indices) = fill {
+                        self.stats.tier_c_draws += 1;
                         self.push(DrawCmd::Solid { indices, clip: self.clips.current() }, idx);
                     }
                 }
@@ -183,27 +194,20 @@ impl Walk<'_> {
                     if self.vertex_budget_spent() {
                         continue;
                     }
+                    let tier = self.tier(op, xf);
+                    let premul = color::premul_scaled(color, self.alpha());
+                    if tier == Tier::B && self.draw_mask(shape, xf, Fill::NonZero, Some(style), premul, idx) {
+                        continue;
+                    }
                     // Tier A (R11): a uniform, undashed stroke of a rect / rrect / circle is one
                     // analytic quad. Bounds past max_coord_px stay on the tessellated path (S04).
-                    if self.sdf
-                        && let Some(inst) = shapes::stroke_instance(
-                            shape,
-                            xf,
-                            style,
-                            color::premul_scaled(color, self.alpha()),
-                        )
-                        && hygiene::coords_in_range(
-                            kurbo::Rect::new(
-                                f64::from(inst.outer[0]),
-                                f64::from(inst.outer[1]),
-                                f64::from(inst.outer[2]),
-                                f64::from(inst.outer[3]),
-                            ),
-                            self.limits,
-                        )
+                    if tier == Tier::A
+                        && let Some(inst) = shapes::stroke_instance(shape, xf, style, premul)
+                        && hygiene::coords_in_range(shapes::outer_rect(&inst), self.limits)
                     {
                         let start = num::index_u32(self.plan.shapes.len());
                         self.plan.shapes.push(inst);
+                        self.stats.tier_a_draws += 1;
                         self.push(
                             DrawCmd::Shapes { instances: start..start + 1, clip: self.clips.current() },
                             idx,
@@ -231,6 +235,7 @@ impl Walk<'_> {
                         let fill = self.tess.fill_stroke_outline(self.plan, self.stats, xf, premul);
                         self.plan.stats.tess_calls += 1;
                         if let Some(indices) = fill {
+                            self.stats.tier_c_draws += 1;
                             self.push(DrawCmd::Solid { indices, clip: self.clips.current() }, idx);
                         }
                     }

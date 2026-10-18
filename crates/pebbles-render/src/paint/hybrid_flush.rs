@@ -105,7 +105,7 @@ fn emit(
     img_idx: &mut u32,
 ) {
     match op {
-        Op::Fill { style, transform, brush, brush_transform, shape } => {
+        Op::Fill { style, transform, brush, brush_transform, shape, .. } => {
             out.set_transform(outer * *transform);
             out.set_fill_rule(*style);
             apply_paint_transform(out, *brush_transform);
@@ -115,7 +115,7 @@ fn emit(
             }
             out.reset_paint_transform();
         }
-        Op::Stroke { style, transform, brush, brush_transform, shape } => {
+        Op::Stroke { style, transform, brush, brush_transform, shape, .. } => {
             out.set_transform(outer * *transform);
             out.set_stroke(style.clone());
             apply_paint_transform(out, *brush_transform);

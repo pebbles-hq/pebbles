@@ -1,6 +1,6 @@
 //! Tier A primitives as exact kurbo geometry (05 §6.7a) with 02 §5.3 pixel snapping.
 
-use kurbo::{Affine, BezPath, Ellipse, Rect, RoundedRect, Shape, Stroke};
+use kurbo::{Affine, BezPath, Rect, RoundedRect, Shape, Stroke};
 use pebbles_render::paint::display_list::Geometry;
 use peniko::Fill;
 
@@ -57,12 +57,10 @@ fn device_rounded(g: &Geometry, t: Affine) -> Option<RoundedRect> {
     Some(RoundedRect::from_rect(b, radii))
 }
 
+/// The op's own path (`Geometry::to_path`): dashes start where the recorded geometry starts.
 fn shape_path(g: &Geometry, t: Affine) -> BezPath {
     let tol = FLATTEN_TOL_PX / t.spectral_norm().max(1e-12);
-    match g {
-        Geometry::Circle(c) => Ellipse::new(c.center, (c.radius, c.radius), 0.0).to_path(tol),
-        other => other.to_path(tol).into_owned(),
-    }
+    g.to_path(tol).into_owned()
 }
 
 /// Fill coverage of a display-list geometry. Rects and rounded rects under an axis-aligned

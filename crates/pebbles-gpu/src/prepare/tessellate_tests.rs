@@ -2,7 +2,7 @@
 //! discard and tessellator reuse.
 
 use super::*;
-use crate::prepare::test_util::{covers, prepare_scene};
+use crate::prepare::test_util::{covers, prepare_scene_tessellated as prepare_scene};
 use kurbo::{BezPath, Point, Rect, Shape};
 use lyon_tessellation::FillRule;
 use pebbles_render::paint::{Painter, Scene};
