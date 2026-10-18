@@ -274,6 +274,37 @@ jobs:
           export VK_ICD_FILENAMES="$LAVAPIPE_ICD"
           cargo test -p pebbles-gpu -- --ignored
 
+  # wgpu GPU path on Mesa lavapipe (05 V30). Separate from `gpu-raster` (hybrid,
+  # informative) so this job can be required. Promotion: 05 §10.5.
+  gpu-wgpu-linux:
+    name: wgpu GPU tests (Linux lavapipe)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    continue-on-error: true   # removed at the Phase-C exit (05 §10.3)
+    env:
+      VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+      VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      WGPU_BACKEND: vulkan
+      WGPU_ADAPTER_NAME: llvmpipe
+      PEBBLES_REQUIRE_GPU: "1"
+      PEBBLES_GPU_STRICT: "1"
+      WGPU_VALIDATION: "1"        # Khronos validation layer on (11 §4.6; S56 counts its errors)
+      PEBBLES_EXPECT_ADAPTER: llvmpipe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: System deps (fontconfig + Mesa lavapipe + Vulkan validation layers)
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev mesa-vulkan-drivers vulkan-tools vulkan-validationlayers
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: gpu-wgpu-linux
+      - name: Record the Vulkan device
+        run: vulkaninfo --summary 2>/dev/null | grep -iE "deviceName|driverInfo|apiVersion" || true
+      - name: TEST-GPU-GPU (pebbles-gpu)
+        run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
+      - name: TEST-SHELL-GPU (capture / glyph / render checks on wgpu)
+        run: cargo test -p pebbles-shell --no-default-features --features wgpu -- --ignored --test-threads=1
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
