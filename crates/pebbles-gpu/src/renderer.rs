@@ -22,6 +22,8 @@ use super::stats::{FrameStats, Unsupported, WarnOnce};
 /// Pipelines + caches for ONE device. Shared by every surface/target on that device.
 pub struct Renderer {
     pub(crate) sample_count: u32,
+    adapter: wgpu::Adapter,
+    msaa: super::frame_targets::MsaaCache,
     pub(crate) shaders: ShaderModules,
     pub(crate) layouts: BindGroupLayouts,
     pub(crate) pipelines: PipelineCache,
@@ -43,6 +45,11 @@ pub struct Renderer {
 }
 
 impl Renderer {
+    /// The MSAA sample count negotiated for the last target format (02 §5.4; 1 or 4).
+    pub fn msaa_sample_count(&self) -> u32 {
+        self.sample_count
+    }
+
     /// Build the eager resource set (Globals, arenas, layouts, shader modules, samplers).
     /// The pre-C09 glyph system and image cache stay lazy.
     pub fn new(gpu: &GpuDevice, _id: DeviceId) -> Self {
@@ -69,6 +76,8 @@ impl Renderer {
         });
         Renderer {
             sample_count: gpu.caps().msaa_samples,
+            adapter: gpu.adapter().clone(),
+            msaa: super::frame_targets::MsaaCache::default(),
             shaders: ShaderModules::new(device),
             layouts,
             pipelines: PipelineCache::new(),
@@ -143,6 +152,7 @@ impl Renderer {
         }
         let format = target.format();
         let mut stats = FrameStats::default();
+        self.sample_count = self.msaa.get(&self.adapter, format, None);
         let key = TargetKey { width: size.0, height: size.1, format, sample_count: self.sample_count };
         let msaa = target.targets.msaa_view(device, key, &mut stats).cloned();
 

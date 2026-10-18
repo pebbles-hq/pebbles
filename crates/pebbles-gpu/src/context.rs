@@ -223,10 +223,10 @@ impl GpuContext {
         let downlevel = adapter.get_downlevel_capabilities();
         let surface_view_formats = downlevel.flags.contains(wgpu::DownlevelFlags::SURFACE_VIEW_FORMATS);
         let is_gl = info.backend == wgpu::Backend::Gl;
-        let supports_4x =
-            |f: wgpu::TextureFormat| adapter.get_texture_format_features(f).flags.sample_count_supported(4);
+        // The common-format summary; renderers negotiate per format through `MsaaCache` (R12).
+        let count = |f| super::frame_targets::sample_count_for(adapter, f, None);
         let msaa_samples = pick_msaa(
-            supports_4x(wgpu::TextureFormat::Bgra8Unorm) && supports_4x(wgpu::TextureFormat::Rgba8Unorm),
+            count(wgpu::TextureFormat::Bgra8Unorm) == 4 && count(wgpu::TextureFormat::Rgba8Unorm) == 4,
         );
         let caps = GpuCaps {
             info: info.clone(),

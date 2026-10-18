@@ -119,3 +119,110 @@ impl FrameParams {
         self
     }
 }
+
+/// 4 when the color format supports 4× + resolve and the depth format (if the target
+/// has one, R62) supports 4×; otherwise 1. Never 8 (DR-06; 02 §5.4).
+pub(crate) fn negotiate_sample_count(
+    color: wgpu::TextureFormatFeatureFlags,
+    depth: Option<wgpu::TextureFormatFeatureFlags>,
+) -> u32 {
+    let color_ok = color.sample_count_supported(4)
+        && color.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE);
+    let depth_ok = depth.is_none_or(|f| f.sample_count_supported(4));
+    if color_ok && depth_ok { 4 } else { 1 }
+}
+
+/// The negotiated count for `color` (+ optional `depth`) on `adapter` (02 §5.4).
+pub(crate) fn sample_count_for(
+    adapter: &wgpu::Adapter,
+    color: wgpu::TextureFormat,
+    depth: Option<wgpu::TextureFormat>,
+) -> u32 {
+    negotiate_sample_count(
+        adapter.get_texture_format_features(color).flags,
+        depth.map(|f| adapter.get_texture_format_features(f).flags),
+    )
+}
+
+/// Per-device cache of [`sample_count_for`] decisions keyed by `(color, depth)` (10 §4.3), so
+/// Tier C runs, GPU clip masks (`R8Unorm`, L09) and depth targets (R62) share one cache.
+#[derive(Debug, Default)]
+pub(crate) struct MsaaCache {
+    decided: std::collections::HashMap<(wgpu::TextureFormat, Option<wgpu::TextureFormat>), u32>,
+}
+
+impl MsaaCache {
+    /// The sample count for `(color, depth)`, logged on the first decision per pair.
+    pub(crate) fn get(
+        &mut self,
+        adapter: &wgpu::Adapter,
+        color: wgpu::TextureFormat,
+        depth: Option<wgpu::TextureFormat>,
+    ) -> u32 {
+        *self.decided.entry((color, depth)).or_insert_with(|| {
+            let n = sample_count_for(adapter, color, depth);
+            log_decision(adapter, color, depth, n);
+            n
+        })
+    }
+}
+
+fn log_decision(
+    adapter: &wgpu::Adapter,
+    color: wgpu::TextureFormat,
+    depth: Option<wgpu::TextureFormat>,
+    n: u32,
+) {
+    use pebbles_foundation::log::{Cat, Level, logf};
+    if n == 1 {
+        logf(
+            Level::Warn,
+            Cat::Gpu,
+            format_args!("MSAA unavailable for {color:?}; rendering without multisampling"),
+        );
+        return;
+    }
+    let flags = adapter.get_texture_format_features(color).flags;
+    let a = flags.sample_count_supported(4)
+        && flags.contains(wgpu::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE);
+    let b = depth.is_none_or(|d| adapter.get_texture_format_features(d).flags.sample_count_supported(4));
+    logf(
+        Level::Info,
+        Cat::Gpu,
+        format_args!("MSAA: {color:?} → {n}× (color 4×+resolve: {a}, depth 4×: {b})"),
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::negotiate_sample_count;
+    use wgpu::TextureFormatFeatureFlags as F;
+
+    #[test]
+    fn x4_with_resolve_and_depth() {
+        assert_eq!(
+            negotiate_sample_count(F::MULTISAMPLE_X4 | F::MULTISAMPLE_RESOLVE, Some(F::MULTISAMPLE_X4)),
+            4
+        );
+    }
+
+    #[test]
+    fn x4_without_resolve() {
+        assert_eq!(negotiate_sample_count(F::MULTISAMPLE_X4, None), 1);
+    }
+
+    #[test]
+    fn depth_without_x4() {
+        assert_eq!(negotiate_sample_count(F::MULTISAMPLE_X4 | F::MULTISAMPLE_RESOLVE, Some(F::empty())), 1);
+    }
+
+    #[test]
+    fn no_depth() {
+        assert_eq!(negotiate_sample_count(F::MULTISAMPLE_X4 | F::MULTISAMPLE_RESOLVE, None), 4);
+    }
+
+    #[test]
+    fn only_x8() {
+        assert_eq!(negotiate_sample_count(F::MULTISAMPLE_X8 | F::MULTISAMPLE_RESOLVE, None), 1);
+    }
+}
