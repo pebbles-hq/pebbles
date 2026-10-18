@@ -125,7 +125,13 @@ fn base(name: &str, category: Category, slice: Slice, w: u32, h: u32, build: Bui
         scale: 1.0,
         background: palette::WHITE,
         build,
-        reference: Reference::Golden,
+        // §6.1 / V47: op-level cases are judged by the golden model; widget/, screen/ and
+        // stress/ (categories Screen and Stress) by committed self-goldens (V12).
+        reference: if matches!(category, Category::Screen | Category::Stress) {
+            Reference::SelfGolden
+        } else {
+            Reference::Golden
+        },
         probes: Vec::new(),
         expect: Expect::Pass,
         frames: 1,

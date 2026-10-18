@@ -6,7 +6,9 @@ use crate::case::Case;
 
 pub mod clip;
 pub mod prim;
+pub mod screen;
 pub mod stroke;
+pub mod widget;
 pub mod xform;
 
 /// Every case, in family order.
@@ -16,6 +18,8 @@ pub fn all() -> Vec<Case> {
     out.extend(stroke::cases());
     out.extend(xform::cases());
     out.extend(clip::cases());
+    out.extend(widget::cases());
+    out.extend(screen::cases());
     out
 }
 
@@ -45,7 +49,7 @@ mod tests {
 
     #[test]
     fn corpus_names_unique_and_valid() {
-        let families = ["prim", "stroke", "xform", "clip"];
+        let families = ["prim", "stroke", "xform", "clip", "widget", "screen"];
         let mut seen = HashSet::new();
         for c in all() {
             assert!(seen.insert(c.name.clone()), "duplicate {}", c.name);
