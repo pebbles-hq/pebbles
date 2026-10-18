@@ -62,7 +62,7 @@ impl GpuArena {
                 queue.write_buffer(buffer, split as u64, &tail);
             }
         }
-        stats.bytes_uploaded += len;
+        stats.buffer_bytes_uploaded += len;
     }
 }
 

@@ -173,7 +173,7 @@ fn huge_glyph_uses_outline() {
     let mut s = Scene::new();
     draw_run(&mut s, 2000.0, Affine::translate((-200.0, 1500.0)), "W");
     let _ = render_scene(&device, &queue, &mut r, &s, (256, 256), Color::WHITE);
-    let stats = r.last_stats();
+    let stats = r.last_frame_stats();
     assert_eq!(stats.glyphs_rasterized, 0, "no atlas raster for a 2000-px glyph");
     assert!(stats.tier_b_draws + stats.tier_c_draws >= 1, "{stats:?}");
 }

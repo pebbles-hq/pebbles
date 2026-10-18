@@ -78,6 +78,11 @@ impl RenderSurface<'_> {
 
 pub(crate) type Renderer = GpuRenderer;
 
+/// The `[pebbles gpu]` stats line (10 §9.1 `Display`), for `PEBBLES_FRAME_STATS` (06 §3.5 seam).
+pub(crate) fn frame_stats_line(renderer: &Renderer) -> Option<String> {
+    Some(renderer.last_frame_stats().to_string())
+}
+
 /// Acquire the swapchain image, render `scene` straight into it, present, and act on every
 /// acquire outcome (08 §5.1). Reconfigures happen only after the frame is presented or dropped.
 pub(crate) fn present_frame(

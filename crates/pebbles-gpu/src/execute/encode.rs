@@ -9,16 +9,31 @@ use crate::stats::FrameStats;
 /// Tracks the render pass's current scissor so redundant `set_scissor_rect` calls are elided.
 struct PassState {
     scissor: Option<(u32, u32, u32, u32)>,
+    scissor_changes: u32,
+    /// Address of the bound pipeline (identity only, never dereferenced).
+    pipeline: Option<*const wgpu::RenderPipeline>,
+    pipeline_switches: u32,
 }
 
 impl PassState {
+    /// Bind `pipeline`, counting a switch when it differs from the bound one (10 §9.1).
+    fn set_pipeline(&mut self, pass: &mut wgpu::RenderPass<'_>, pipeline: &wgpu::RenderPipeline) {
+        let id: *const wgpu::RenderPipeline = pipeline;
+        if self.pipeline != Some(id) {
+            self.pipeline = Some(id);
+            self.pipeline_switches += 1;
+        }
+        pass.set_pipeline(pipeline);
+    }
+
     fn new() -> Self {
-        Self { scissor: None }
+        Self { scissor: None, scissor_changes: 0, pipeline: None, pipeline_switches: 0 }
     }
 
     fn set_scissor(&mut self, pass: &mut wgpu::RenderPass<'_>, scissor: ScissorRect) {
         let rect = (scissor.x0, scissor.y0, scissor.width(), scissor.height());
         if self.scissor != Some(rect) {
+            self.scissor_changes += 1;
             pass.insert_debug_marker("pebbles.gpu.clip.scissor");
             pass.set_scissor_rect(rect.0, rect.1, rect.2, rect.3);
             self.scissor = Some(rect);
@@ -86,6 +101,7 @@ pub(crate) fn encode(
     composites: &[super::tier_c::Composite],
 ) {
     pass.set_bind_group(0, renderer.globals_bg(), &[0]);
+    stats.bind_group_switches += 1;
     // The main pass is single-sampled (R17).
     let sample_count = 1;
     let key = |kind, variant| PipelineKey { kind, color_format: format, sample_count, blend: 0, variant };
@@ -119,8 +135,9 @@ pub(crate) fn encode(
                 continue;
             };
             state.set_scissor(pass, c.run.scissor);
-            pass.set_pipeline(pipeline);
+            state.set_pipeline(pass, pipeline);
             pass.set_bind_group(1, bg, &[c.params_offset]);
+            stats.bind_group_switches += 1;
             pass.draw(0..4, 0..1);
             stats.draw_calls += 1;
             continue;
@@ -134,7 +151,7 @@ pub(crate) fn encode(
                 ) else {
                     continue;
                 };
-                pass.set_pipeline(pipeline);
+                state.set_pipeline(pass, pipeline);
                 pass.set_vertex_buffer(0, vb.slice(..));
                 pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
                 state.set_scissor(pass, clip.scissor);
@@ -148,7 +165,7 @@ pub(crate) fn encode(
                 ) else {
                     continue;
                 };
-                pass.set_pipeline(pipeline);
+                state.set_pipeline(pass, pipeline);
                 pass.set_vertex_buffer(0, vb.slice(..));
                 state.set_scissor(pass, clip.scissor);
                 pass.draw(0..4, instances.clone());
@@ -161,7 +178,7 @@ pub(crate) fn encode(
                 ) else {
                     continue;
                 };
-                pass.set_pipeline(pipeline);
+                state.set_pipeline(pass, pipeline);
                 pass.set_vertex_buffer(0, vb.slice(..));
                 state.set_scissor(pass, clip.scissor);
                 pass.draw(0..4, instances.clone());
@@ -174,8 +191,9 @@ pub(crate) fn encode(
                     continue;
                 };
                 state.set_scissor(pass, clip.scissor);
-                pass.set_pipeline(pipeline);
+                state.set_pipeline(pass, pipeline);
                 pass.set_bind_group(1, &renderer.glyph_atlas.bind_group, &[]);
+                stats.bind_group_switches += 1;
                 pass.set_vertex_buffer(0, vb.slice(..));
                 pass.draw(0..4, glyphs.clone());
                 stats.draw_calls += 1;
@@ -190,8 +208,9 @@ pub(crate) fn encode(
                     continue;
                 };
                 state.set_scissor(pass, clip.scissor);
-                pass.set_pipeline(pipeline);
+                state.set_pipeline(pass, pipeline);
                 pass.set_bind_group(1, bg, &[]);
+                stats.bind_group_switches += 1;
                 pass.set_vertex_buffer(0, vb.slice(..));
                 pass.draw(0..4, images.clone());
                 stats.draw_calls += 1;
@@ -201,6 +220,8 @@ pub(crate) fn encode(
     if open {
         pass.pop_debug_group();
     }
+    stats.scissor_changes += state.scissor_changes;
+    stats.pipeline_switches += state.pipeline_switches;
     // Leave the pass with a full-target scissor: wgpu's GL backend resolves MSAA with
     // glBlitFramebuffer under the last scissor, which would drop every pixel outside the last
     // clip (Vulkan/Metal/DX12 resolves ignore the scissor).

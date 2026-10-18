@@ -18,6 +18,7 @@ mod images;
 mod order;
 mod path_masks;
 mod pixel_snap;
+mod steady_state;
 mod support;
 mod targets;
 mod text;

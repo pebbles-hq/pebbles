@@ -116,5 +116,5 @@ fn color_filtered_child_stays_visible() {
     p.pop_layer();
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (80, 80), Color::WHITE);
     assert_eq!(pixel(&rgba, 80, 40, 40), [255, 0, 0, 255], "child covered by the filter rect");
-    assert_eq!(renderer.last_stats().unsupported[pebbles_gpu::Unsupported::LayerBlend as usize], 1);
+    assert_eq!(renderer.last_frame_stats().unsupported[pebbles_gpu::Unsupported::LayerBlend as usize], 1);
 }

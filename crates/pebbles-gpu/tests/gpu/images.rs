@@ -10,9 +10,9 @@ fn same_image_two_frames_uploads_once() {
     let image = rgba_image(4, 4, [255, 0, 0, 255]);
     let scene = image_scene(&image, Affine::translate((8.0, 8.0)));
     render_scene(&device, &queue, &mut renderer, &scene, (32, 32), Color::WHITE);
-    let first = renderer.last_stats();
+    let first = renderer.last_frame_stats();
     render_scene(&device, &queue, &mut renderer, &scene, (32, 32), Color::WHITE);
-    let second = renderer.last_stats();
+    let second = renderer.last_frame_stats();
     assert_eq!((first.images_uploaded, second.images_uploaded), (1, 0));
     assert_eq!(second.bind_groups_created, 0);
 }
@@ -28,7 +28,7 @@ fn dropped_image_is_evicted_next_frame() {
     drop(scene);
     drop(image);
     render_scene(&device, &queue, &mut renderer, &Scene::new(), (16, 16), Color::WHITE);
-    assert_eq!(renderer.last_stats().image_evictions, 1);
+    assert_eq!(renderer.last_frame_stats().image_evictions, 1);
 }
 
 /// C13: a new image of the same size after a drop shows its own pixels (no ABA by pointer).
@@ -92,5 +92,5 @@ fn oversize_image_is_downscaled_not_rejected() {
     let scene = image_scene(&image, Affine::scale_non_uniform(64.0 / f64::from(w), 16.0));
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (64, 16), Color::WHITE);
     assert_eq!(pixel(&rgba, 64, 32, 8), [0, 0, 255, 255]);
-    assert_eq!(renderer.last_stats().unsupported[pebbles_gpu::Unsupported::ImageTooLarge as usize], 1);
+    assert_eq!(renderer.last_frame_stats().unsupported[pebbles_gpu::Unsupported::ImageTooLarge as usize], 1);
 }

@@ -128,7 +128,7 @@ impl Renderer {
     }
 
     /// The `FrameStats` of the last render.
-    pub fn last_stats(&self) -> FrameStats {
+    pub fn last_frame_stats(&self) -> FrameStats {
         self.stats
     }
 
@@ -173,6 +173,16 @@ impl Renderer {
         stats.ops = self.scratch.plan.stats.ops;
         stats.cmds = u32::try_from(self.scratch.plan.cmds.len()).unwrap_or(u32::MAX);
         stats.culled = self.scratch.plan.stats.culled;
+        {
+            let plan = &self.scratch.plan;
+            let n = |v: usize| u32::try_from(v).unwrap_or(u32::MAX);
+            stats.vertices = n(plan.solid_vertices.len());
+            stats.indices = n(plan.solid_indices.len());
+            stats.instances =
+                n(plan.shapes.len() + plan.shadows.len() + plan.glyphs.len() + plan.images.len());
+            stats.segments = plan.stats.tess_calls;
+        }
+        let upload_started = web_time::Instant::now();
 
         let globals = Globals {
             target_size: [size.0 as f32, size.1 as f32],
@@ -216,6 +226,8 @@ impl Renderer {
         self.glyph_atlas.begin_frame();
         self.image_cache.begin_frame();
         resolve_and_upload(self, device, queue, &mut stats);
+        stats.upload_us = u32::try_from(upload_started.elapsed().as_micros()).unwrap_or(u32::MAX);
+        let encode_started = web_time::Instant::now();
 
         self.color_flags = globals.color_flags;
         let mut clear = super::prepare::color::clear_color(params.base_color);
@@ -253,8 +265,13 @@ impl Renderer {
             stats.render_passes += 1;
         }
         encoder.pop_debug_group();
-        queue.submit([encoder.finish()]);
+        let command_buffer = encoder.finish();
+        stats.encode_us = u32::try_from(encode_started.elapsed().as_micros()).unwrap_or(u32::MAX);
+        let submit_started = web_time::Instant::now();
+        queue.submit([command_buffer]);
+        stats.submit_us = u32::try_from(submit_started.elapsed().as_micros()).unwrap_or(u32::MAX);
         target.targets.pool.end_frame(self.budgets.layer_pool_bytes);
+        stats.layer_pool_bytes = target.targets.pool.bytes();
         self.scratch.plan.release_refs();
         self.glyph_atlas.end_frame();
         self.image_cache.end_frame(&mut stats);

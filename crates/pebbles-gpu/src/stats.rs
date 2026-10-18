@@ -134,63 +134,135 @@ impl WarnOnce {
     }
 }
 
-/// Per-frame counters. Reset at the top of every render; read with `Renderer::last_stats()`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Per-frame renderer counters (10 §9.1). Reset at the top of every render call; read with
+/// `Renderer::last_frame_stats()`. Cheap (integer adds + a few `Instant::now()`).
+#[derive(Clone, Copy, Debug, PartialEq)] // `Default` is hand-written (std arrays only up to 32)
 #[non_exhaustive]
 pub struct FrameStats {
-    /// Display-list ops walked.
-    pub ops: u32,
-    /// Draw commands in the frame plan.
-    pub cmds: u32,
+    // work
     /// Draw calls issued.
     pub draw_calls: u32,
-    /// Pipeline changes in the pass.
+    /// `set_pipeline` with a different pipeline than the previous.
     pub pipeline_switches: u32,
+    /// `set_bind_group` calls.
+    pub bind_group_switches: u32,
+    /// `set_scissor_rect` calls.
+    pub scissor_changes: u32,
     /// Render passes begun.
     pub render_passes: u32,
-    /// Ops culled as offscreen.
-    pub culled: u32,
+    /// Path segments tessellated (plan).
+    pub segments: u32,
+    /// Vertices in the plan's solid arena.
+    pub vertices: u32,
+    /// Indices in the plan's solid arena.
+    pub indices: u32,
+    /// Instances (shapes, shadows, glyphs, images) in the plan.
+    pub instances: u32,
+    // uploads
+    /// Bytes written to GPU buffers.
+    pub buffer_bytes_uploaded: u64,
+    /// Bytes written to GPU textures.
+    pub texture_bytes_uploaded: u64,
     /// Glyphs rasterized this frame (atlas misses).
     pub glyphs_rasterized: u32,
-    /// Tier B path masks rasterized this frame (atlas misses, R15).
+    /// Tier B path + clip masks rasterized this frame (R15, L08).
     pub masks_rasterized: u32,
-    /// Ops drawn as Tier A analytic shapes this frame (02 §5.2, R16).
+    // raster tiers (DR-20, R16)
+    /// Ops drawn as Tier A analytic shapes.
     pub tier_a_draws: u32,
-    /// Ops drawn as Tier B coverage masks this frame.
+    /// Ops drawn as Tier B coverage masks.
     pub tier_b_draws: u32,
-    /// Ops drawn as Tier C meshes this frame.
+    /// Ops drawn as Tier C meshes.
     pub tier_c_draws: u32,
-    /// Tier C runs drawn without MSAA because the format negotiated 1 sample (R12, R17).
+    /// Tier C runs drawn without MSAA (4× unsupported).
     pub tier_c_aliased: u32,
-    /// Bytes written to GPU buffers.
-    pub bytes_uploaded: u64,
-    /// CPU prepare time, microseconds.
-    pub prepare_us: u32,
-    /// Encode + submit time, microseconds.
-    pub execute_us: u32,
+    /// Images uploaded (cache misses).
+    pub images_uploaded: u32,
+    /// Gradient LUT rows uploaded (L34).
+    pub gradient_rows_uploaded: u32,
     // creations — all 0 in steady state (P1)
     /// GPU buffers created.
     pub buffers_created: u32,
-    /// Bind groups created.
-    pub bind_groups_created: u32,
     /// Textures created.
     pub textures_created: u32,
     /// Texture views created.
     pub texture_views_created: u32,
+    /// Bind groups created.
+    pub bind_groups_created: u32,
+    /// Samplers created.
+    pub samplers_created: u32,
     /// Render pipelines created.
     pub pipelines_created: u32,
-    /// Images uploaded to the GPU (cache misses).
-    pub images_uploaded: u32,
+    // caches
+    /// Mask atlas: occupied px × 100 / (side² × active layers).
+    pub glyph_atlas_occupancy_pct: u8,
+    /// Color atlas occupancy, percent.
+    pub color_atlas_occupancy_pct: u8,
+    /// Glyphs evicted from the atlas.
+    pub glyph_evictions: u32,
+    /// Glyphs that found no atlas room.
+    pub glyph_overflow: u32,
+    /// Atlas side doublings / layer additions.
+    pub atlas_grows: u32,
+    /// Bytes held by the image cache.
+    pub image_cache_bytes: u64,
     /// Images dropped from the cache at end of frame.
     pub image_evictions: u32,
-    /// Fallbacks taken this frame (sum of `unsupported`).
+    // hygiene
+    /// = sum of `unsupported`; only `FrameStats::record` changes it (06 §4.6).
     pub fallbacks: u32,
-    /// Fallbacks per kind, indexed by `Unsupported as usize`.
+    /// Per-kind fallback counts, indexed by `Unsupported as usize` (keys in 11 §4.2).
     pub unsupported: [u32; Unsupported::COUNT],
+    /// Ops dropped for exceeding a device limit (§2.5).
+    pub oversize_ops_dropped: u32,
     /// Ops skipped for non-finite input (02 §6 input hygiene).
     pub non_finite_skipped: u32,
-    /// Ops skipped silently for a singular transform (11 §2.3).
+    /// Ops skipped silently for a singular transform (11 §2.3, S02).
     pub degenerate_skipped: u32,
+    // counters owned by later cards
+    /// GPU clip masks rendered (09 L09).
+    pub gpu_masks: u32,
+    /// GPU masks drawn without MSAA (09 §2.9).
+    pub gpu_masks_aliased: u32,
+    /// Backdrop copies for blend modes (09 L24).
+    pub backdrop_copies: u32,
+    /// Bytes held by this target's layer pool (09 §3.8).
+    pub layer_pool_bytes: u64,
+    /// Layer pool over its budget after the end-of-frame trim (09 §3.8).
+    pub layer_budget_exceeded: u32,
+    /// Gradient ramps baked on the CPU this frame (09 §5.3).
+    pub lut_bakes: u32,
+    /// COLR glyphs rendered into the color atlas (02 R39).
+    pub color_glyph_renders: u32,
+    /// Ops re-prepared this frame (M29 retained prepare).
+    pub ops_prepared: u32,
+    /// Damaged pixels redrawn (M30).
+    pub damage_px: u64,
+    /// Frames redrawn in full (M30).
+    pub full_redraws: u32,
+    /// §4.4 E5.
+    pub frame_target_budget_exceeded: u32,
+    /// Threaded live resize timed out (08 §17.4).
+    pub resize_sync_timeouts: u32,
+    /// App shader-brush programs that failed to compile (09 L43).
+    pub shader_errors: u32,
+    /// Display-list ops walked (C07).
+    pub ops: u32,
+    /// Draw commands in the frame plan (C07).
+    pub cmds: u32,
+    /// Ops culled as offscreen (R04).
+    pub culled: u32,
+    // timing, µs (web_time::Instant)
+    /// CPU prepare.
+    pub prepare_us: u32,
+    /// SYNC step 2 + arena uploads.
+    pub upload_us: u32,
+    /// Encoding.
+    pub encode_us: u32,
+    /// Queue submit.
+    pub submit_us: u32,
+    /// M22; `None` without TIMESTAMP_QUERY (always `None` on WebGL2).
+    pub gpu_us: Option<u32>,
 }
 
 impl FrameStats {
@@ -205,32 +277,148 @@ impl FrameStats {
 impl Default for FrameStats {
     fn default() -> Self {
         FrameStats {
-            ops: 0,
-            cmds: 0,
             draw_calls: 0,
             pipeline_switches: 0,
+            bind_group_switches: 0,
+            scissor_changes: 0,
             render_passes: 0,
-            culled: 0,
+            segments: 0,
+            vertices: 0,
+            indices: 0,
+            instances: 0,
+            buffer_bytes_uploaded: 0,
+            texture_bytes_uploaded: 0,
             glyphs_rasterized: 0,
             masks_rasterized: 0,
             tier_a_draws: 0,
             tier_b_draws: 0,
             tier_c_draws: 0,
             tier_c_aliased: 0,
-            bytes_uploaded: 0,
-            prepare_us: 0,
-            execute_us: 0,
+            images_uploaded: 0,
+            gradient_rows_uploaded: 0,
             buffers_created: 0,
-            bind_groups_created: 0,
             textures_created: 0,
             texture_views_created: 0,
+            bind_groups_created: 0,
+            samplers_created: 0,
             pipelines_created: 0,
-            images_uploaded: 0,
+            glyph_atlas_occupancy_pct: 0,
+            color_atlas_occupancy_pct: 0,
+            glyph_evictions: 0,
+            glyph_overflow: 0,
+            atlas_grows: 0,
+            image_cache_bytes: 0,
             image_evictions: 0,
             fallbacks: 0,
             unsupported: [0; Unsupported::COUNT],
+            oversize_ops_dropped: 0,
             non_finite_skipped: 0,
             degenerate_skipped: 0,
+            gpu_masks: 0,
+            gpu_masks_aliased: 0,
+            backdrop_copies: 0,
+            layer_pool_bytes: 0,
+            layer_budget_exceeded: 0,
+            lut_bakes: 0,
+            color_glyph_renders: 0,
+            ops_prepared: 0,
+            damage_px: 0,
+            full_redraws: 0,
+            frame_target_budget_exceeded: 0,
+            resize_sync_timeouts: 0,
+            shader_errors: 0,
+            ops: 0,
+            cmds: 0,
+            culled: 0,
+            prepare_us: 0,
+            upload_us: 0,
+            encode_us: 0,
+            submit_us: 0,
+            gpu_us: None,
         }
+    }
+}
+
+impl std::fmt::Display for FrameStats {
+    /// The exact one-line §9.1 format printed on the runner's `[pebbles gpu]` line.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ms = |us: u32| f64::from(us) / 1000.0;
+        write!(
+            f,
+            "prepare={:.2}ms upload={:.2}ms encode={:.2}ms submit={:.2}ms gpu=",
+            ms(self.prepare_us),
+            ms(self.upload_us),
+            ms(self.encode_us),
+            ms(self.submit_us)
+        )?;
+        match self.gpu_us {
+            Some(us) => write!(f, "{:.2}ms", ms(us))?,
+            None => write!(f, "n/a")?,
+        }
+        #[allow(clippy::cast_precision_loss)] // display only
+        let img = self.image_cache_bytes as f64 / 1_048_576.0;
+        write!(
+            f,
+            " draws={} switches={} passes={} segs={} verts={} inst={} buf_up={}KiB tex_up={}KiB raster={} \
+             new=buf:{},tex:{},view:{},bg:{},smp:{},pipe:{} atlas={}%/{}% evict={} overflow={} img={:.1}MiB fallbacks={}",
+            self.draw_calls,
+            self.pipeline_switches,
+            self.render_passes,
+            self.segments,
+            self.vertices,
+            self.instances,
+            self.buffer_bytes_uploaded / 1024,
+            self.texture_bytes_uploaded / 1024,
+            self.glyphs_rasterized,
+            self.buffers_created,
+            self.textures_created,
+            self.texture_views_created,
+            self.bind_groups_created,
+            self.samplers_created,
+            self.pipelines_created,
+            self.glyph_atlas_occupancy_pct,
+            self.color_atlas_occupancy_pct,
+            self.glyph_evictions,
+            self.glyph_overflow,
+            img,
+            self.fallbacks
+        )
+    }
+}
+
+#[cfg(test)]
+mod display_tests {
+    use super::FrameStats;
+
+    #[test]
+    fn display_format_is_stable() {
+        let s = FrameStats {
+            prepare_us: 420,
+            upload_us: 30,
+            encode_us: 110,
+            submit_us: 50,
+            gpu_us: None,
+            draw_calls: 37,
+            pipeline_switches: 9,
+            render_passes: 1,
+            segments: 1,
+            vertices: 12034,
+            instances: 842,
+            buffer_bytes_uploaded: 196 * 1024,
+            texture_bytes_uploaded: 0,
+            glyphs_rasterized: 0,
+            glyph_atlas_occupancy_pct: 12,
+            color_atlas_occupancy_pct: 0,
+            image_cache_bytes: 12_897_485,
+            ..FrameStats::default()
+        };
+        assert_eq!(
+            s.to_string(),
+            "prepare=0.42ms upload=0.03ms encode=0.11ms submit=0.05ms gpu=n/a draws=37 switches=9 passes=1 \
+             segs=1 verts=12034 inst=842 buf_up=196KiB tex_up=0KiB raster=0 new=buf:0,tex:0,view:0,bg:0,smp:0,pipe:0 \
+             atlas=12%/0% evict=0 overflow=0 img=12.3MiB fallbacks=0"
+        );
+        let timed = FrameStats { gpu_us: Some(1234), ..FrameStats::default() };
+        assert!(timed.to_string().contains("gpu=1.23ms"));
     }
 }

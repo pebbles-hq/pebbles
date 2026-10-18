@@ -179,11 +179,13 @@ pub(crate) fn encode_runs(
             };
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, renderer.globals_bg(), &[u32::try_from(globals_offset).unwrap_or(0)]);
+            stats.bind_group_switches += 1;
             pass.set_vertex_buffer(0, vb.slice(..));
             pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
             // The run shares one clip: scissor = clip ∩ bounds, in run-texture space.
             let s = intersect(run.scissor, run.bounds);
             pass.set_scissor_rect(s.x0 - b.x0, s.y0 - b.y0, s.x1 - s.x0, s.y1 - s.y0);
+            stats.scissor_changes += 1;
             pass.push_debug_group(PipelineKind::Solid.debug_label());
             for cmd in &renderer.scratch.plan.cmds[run.cmds.clone()] {
                 if let DrawCmd::Solid { indices, .. } = cmd {

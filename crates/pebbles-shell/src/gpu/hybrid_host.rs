@@ -118,6 +118,11 @@ impl RenderSurface<'_> {
     }
 }
 
+/// The hybrid backend has no renderer counters (06 §3.5 seam; unconditional at X02).
+pub(crate) fn frame_stats_line(_renderer: &Renderer) -> Option<String> {
+    None
+}
+
 /// The hybrid renderer: the `vello_hybrid::Renderer` + its `Resources`, built once.
 pub(crate) struct Renderer {
     inner: Option<HybRenderer>,

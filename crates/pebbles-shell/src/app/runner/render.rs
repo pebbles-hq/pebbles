@@ -351,6 +351,9 @@ impl Runner {
             self.background,
             &active.window,
         );
+        if stats && let Some(line) = crate::gpu::frame_stats_line(renderer) {
+            eprintln!("[pebbles gpu] {line}");
+        }
         if outcome != PresentOutcome::Presented {
             follow_up(
                 outcome,
@@ -481,6 +484,11 @@ impl Runner {
             w.background,
             &w.window,
         );
+        if frame_stats_enabled()
+            && let Some(line) = crate::gpu::frame_stats_line(renderer)
+        {
+            eprintln!("[pebbles gpu] {line}");
+        }
         if outcome != PresentOutcome::Presented {
             // Secondary windows track occlusion from P12; an occluded acquire just skips here.
             let mut occluded = false;
