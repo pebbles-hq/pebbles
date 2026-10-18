@@ -11,6 +11,7 @@ pub mod prim;
 pub mod screen;
 pub mod stress;
 pub mod stroke;
+pub mod text;
 pub mod widget;
 pub mod xform;
 
@@ -21,6 +22,7 @@ pub fn all() -> Vec<Case> {
     out.extend(stroke::cases());
     out.extend(xform::cases());
     out.extend(clip::cases());
+    out.extend(text::cases());
     out.extend(widget::cases());
     out.extend(screen::cases());
     out.extend(stress::cases());
@@ -55,8 +57,18 @@ mod tests {
 
     #[test]
     fn corpus_names_unique_and_valid() {
-        let families =
-            ["prim", "stroke", "xform", "clip", "widget", "screen", "stress", "adversarial", "frames"];
+        let families = [
+            "prim",
+            "stroke",
+            "xform",
+            "clip",
+            "text",
+            "widget",
+            "screen",
+            "stress",
+            "adversarial",
+            "frames",
+        ];
         let mut seen = HashSet::new();
         for c in all() {
             assert!(seen.insert(c.name.clone()), "duplicate {}", c.name);

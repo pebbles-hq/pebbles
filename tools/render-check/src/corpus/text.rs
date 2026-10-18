@@ -1,0 +1,182 @@
+//! text/ Latin — Slice P2 (glyph rendering), §7.2, V21. Bundled families only (Inter,
+//! JetBrains Mono, Space Grotesk, Lora); judged against the golden model's glyph outlines.
+
+use pebbles_core::IntoWidget as _;
+use pebbles_foundation::{Color, EdgeInsets};
+use pebbles_render::paint::{Painter, kurbo, peniko};
+use pebbles_testing::Harness;
+use pebbles_widgets::{column, container, span, text, text_field, text_rich, transform};
+
+use kurbo::Affine;
+
+use crate::case::{Case, Category::Text, Slice::P2, harness, ops, with_scale_variants};
+
+const W: u32 = 480;
+const H: u32 = 320;
+const PANGRAM: &str = "The quick brown fox jumps over the lazy dog 0123456789";
+const LOREM: &str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor \
+    incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation \
+    ullamco laboris nisi ut aliquip ex ea commodo consequat. ";
+
+pub fn cases() -> Vec<Case> {
+    let mut v = with_scale_variants(harness("text/latin_sizes", Text, P2, W, H, latin_sizes));
+    v.extend([
+        harness("text/large_96", Text, P2, 640, 160, large_96),
+        harness("text/weights", Text, P2, W, H, weights),
+        harness("text/italic_synth", Text, P2, W, H, italic_synth),
+        harness("text/mono_tabs", Text, P2, W, H, mono_tabs),
+        harness("text/serif", Text, P2, W, H, serif),
+        harness("text/colored_runs", Text, P2, W, H, colored_runs),
+        harness("text/decorations", Text, P2, W, H, decorations),
+        harness("text/ellipsis_maxlines", Text, P2, W, H, ellipsis_maxlines),
+        harness("text/partially_offscreen_top", Text, P2, W, H, partially_offscreen_top),
+    ]);
+    v.extend(with_scale_variants(harness("text/subpixel_positions", Text, P2, W, H, subpixel_positions)));
+    v.extend([
+        harness("text/tiny_6px", Text, P2, W, H, tiny_6px),
+        harness("text/dense_paragraph", Text, P2, W, H, dense_paragraph),
+        harness("text/rotated_30", Text, P2, W, H, rotated_30),
+        harness("text/scaled_transform_3x", Text, P2, W, H, scaled_transform_3x),
+        harness("text/selection_caret", Text, P2, W, H, selection_caret),
+        ops("text/glyph_run_synthetic", Text, P2, W, H, glyph_run_synthetic),
+    ]);
+    v
+}
+
+fn page(h: &mut Harness, child: impl pebbles_core::IntoWidget) {
+    h.mount_widget(container().padding(EdgeInsets::all(16.0)).child(child));
+}
+
+fn latin_sizes(h: &mut Harness) {
+    let rows: Vec<_> =
+        [10.0, 12.0, 14.0, 16.0, 24.0].iter().map(|s| text(PANGRAM).size(*s).into_widget()).collect();
+    page(h, column(rows).spacing(8.0));
+}
+
+fn large_96(h: &mut Harness) {
+    page(h, text("Hamburgefonstiv").size(96.0));
+}
+
+fn weights(h: &mut Harness) {
+    let rows: Vec<_> = (1..=9)
+        .map(|k| text(format!("Weight {} — Hamburgefonstiv", k * 100)).weight(k as f32 * 100.0).into_widget())
+        .collect();
+    page(h, column(rows).spacing(4.0));
+}
+
+fn italic_synth(h: &mut Harness) {
+    page(h, text("Synthetic italic").font_family("Space Grotesk").italic().size(28.0));
+}
+
+fn mono_tabs(h: &mut Harness) {
+    page(h, text("fn main() {\n\tlet x = 1;\n}").font_family("JetBrains Mono").size(16.0));
+}
+
+fn serif(h: &mut Harness) {
+    page(h, text(LOREM).font_family("Lora").size(16.0));
+}
+
+fn colored_runs(h: &mut Harness) {
+    page(
+        h,
+        text_rich(vec![
+            span("red ").color(Color::from_rgb8(0xEF, 0x44, 0x44)),
+            span("green ").color(Color::from_rgb8(0x10, 0xB9, 0x81)),
+            span("blue").color(Color::from_rgb8(0x3B, 0x82, 0xF6)),
+        ])
+        .size(28.0),
+    );
+}
+
+fn decorations(h: &mut Harness) {
+    page(
+        h,
+        column(vec![
+            text("Underlined text").underline().size(20.0).into_widget(),
+            text("Struck-through text").strikethrough().size(20.0).into_widget(),
+        ])
+        .spacing(12.0),
+    );
+}
+
+fn ellipsis_maxlines(h: &mut Harness) {
+    let long: String = LOREM.repeat(4).chars().take(400).collect();
+    page(h, container().width(200.0).child(text(long).max_lines(2).ellipsis()));
+}
+
+fn partially_offscreen_top(h: &mut Harness) {
+    h.mount_widget(transform(Affine::translate((0.0, -10.0)), text("Partially offscreen").size(24.0)));
+}
+
+fn subpixel_positions(h: &mut Harness) {
+    let rows: Vec<_> = [10.0, 10.25, 10.5, 10.75]
+        .iter()
+        .map(|x| transform(Affine::translate((*x, 0.0)), text("Ill1|").size(16.0)).into_widget())
+        .collect();
+    page(h, column(rows).spacing(4.0));
+}
+
+fn tiny_6px(h: &mut Harness) {
+    page(h, text(PANGRAM).size(6.0));
+}
+
+fn dense_paragraph(h: &mut Harness) {
+    let long: String = LOREM.repeat(9).chars().take(2000).collect();
+    h.mount_widget(container().padding(EdgeInsets::all(10.0)).width(480.0).child(text(long).size(12.0)));
+}
+
+#[allow(clippy::approx_constant)] // 0.5236 is the §7.2 construction verbatim, not FRAC_PI_6
+fn rotated_30(h: &mut Harness) {
+    // A fixed 200×60 box well inside the canvas: the transform rotates about its center.
+    let boxed = container().width(200.0).height(60.0).child(text("Rotated").size(32.0));
+    h.mount_widget(
+        container().padding(EdgeInsets::all(120.0)).child(transform(Affine::rotate(0.5236), boxed)),
+    );
+}
+
+fn scaled_transform_3x(h: &mut Harness) {
+    page(h, transform(Affine::scale(3.0), text("Scaled").size(12.0)));
+}
+
+fn selection_caret(h: &mut Harness) {
+    page(h, text_field().value("Hello world"));
+    h.press_tab();
+}
+
+/// Bundled Inter glyph ids 36..=60 at 12/24/48 px with no shaping (P2 is independent of
+/// Track T).
+fn glyph_run_synthetic(p: &mut Painter<'_>) {
+    let font =
+        peniko::FontData::new(peniko::Blob::from(pebbles_render::fonts::builtin_fonts()[0].1.to_vec()), 0);
+    let ink = peniko::Brush::Solid(peniko::Color::from_rgb8(17, 24, 39));
+    for (row, size) in [12.0f32, 24.0, 48.0].into_iter().enumerate() {
+        let y = 40.0 + 90.0 * row as f32;
+        let glyphs = (36u32..=60).enumerate().map(|(i, id)| pebbles_render::paint::Glyph {
+            id,
+            x: 10.0 + i as f32 * size * 0.62,
+            y,
+        });
+        p.draw_glyphs(&font, size, &[], &ink, Affine::IDENTITY, None, peniko::Fill::NonZero, glyphs);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::scene::logical_scene;
+
+    /// V21 AC2: building each text case twice yields the same op sequence.
+    #[test]
+    fn text_cases_are_deterministic() {
+        for c in super::cases() {
+            let (a, b) = (logical_scene(&c, 0), logical_scene(&c, 0));
+            assert_eq!(a.ops().len(), b.ops().len(), "{}", c.name);
+            let kinds = |s: &pebbles_render::paint::Scene| {
+                s.ops()
+                    .iter()
+                    .map(|o| format!("{o:?}").split([' ', '{']).next().unwrap_or_default().to_string())
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(kinds(&a), kinds(&b), "{}", c.name);
+        }
+    }
+}

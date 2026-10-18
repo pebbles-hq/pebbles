@@ -26,15 +26,8 @@ fn is_rect_like(g: &Geometry) -> bool {
     }
 }
 
-/// Translation + uniform positive scale (the glyph atlas route, 02 §7.5).
-fn uniform_scale(xf: Affine) -> bool {
-    let [a, b, c, d, ..] = xf.as_coeffs();
-    let s = a.abs().max(d.abs());
-    b.abs() <= 1e-6 * s && c.abs() <= 1e-6 * s && a > 0.0 && d > 0.0 && (a - d).abs() <= 1e-6 * a
-}
-
 impl Walk<'_> {
-    fn fell_back(&mut self, f: Feature) {
+    pub(super) fn fell_back(&mut self, f: Feature) {
         self.plan.fallback_features.insert(f);
     }
 
@@ -114,23 +107,11 @@ impl Walk<'_> {
     }
 
     /// Glyph-run rows decided in prepare (colour glyphs are only known at raster time).
-    pub(super) fn note_glyphs(
-        &mut self,
-        brush: &peniko::Brush,
-        glyph_xf: Option<Affine>,
-        xf: Affine,
-        size: f32,
-    ) {
+    /// Non-solid glyph brushes (L36). Transformed, rotated and huge runs take the outline
+    /// route since R20.
+    pub(super) fn note_glyphs(&mut self, brush: &peniko::Brush) {
         if !matches!(brush, peniko::Brush::Solid(_)) {
             self.fell_back(Feature::GlyphsNonSolidBrush);
-        }
-        if glyph_xf.is_some_and(|g| g != Affine::IDENTITY) {
-            self.fell_back(Feature::GlyphsTransform);
-        }
-        if !uniform_scale(xf) {
-            self.fell_back(Feature::GlyphsRotated);
-        } else if f64::from(size) * xf.as_coeffs()[0] > 256.0 {
-            self.fell_back(Feature::GlyphsLarge);
         }
     }
 

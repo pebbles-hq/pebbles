@@ -43,11 +43,13 @@ pub enum Unsupported {
     StrokeWidthClamped,
     /// A device coordinate beyond `RendererLimits::max_coord_px` (still tessellated).
     CoordOutOfRange,
+    /// A color (bitmap/COLR) glyph on the outline route: skipped until R23 / R29.
+    ColorGlyphTransform,
 }
 
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
-    pub const COUNT: usize = 19;
+    pub const COUNT: usize = 20;
     /// Every variant, in discriminant order.
     pub const ALL: [Unsupported; Self::COUNT] = [
         Self::NonRectClip,
@@ -69,6 +71,7 @@ impl Unsupported {
         Self::DashCountCapped,
         Self::StrokeWidthClamped,
         Self::CoordOutOfRange,
+        Self::ColorGlyphTransform,
     ];
 
     /// The variant's 11 §4.2 key, used in logs and stats dumps.
@@ -93,6 +96,7 @@ impl Unsupported {
             Self::DashCountCapped => "dash-count-capped",
             Self::StrokeWidthClamped => "stroke-width-clamped",
             Self::CoordOutOfRange => "coordinate-out-of-range",
+            Self::ColorGlyphTransform => "color-glyph-transform-unsupported",
         }
     }
 }

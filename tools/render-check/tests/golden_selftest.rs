@@ -194,16 +194,113 @@ fn render_composites_premultiplied_and_reports_unsupported() {
     );
     let img = Golden::render(&snapped, 8, 8, Color::WHITE).expect("supported");
     assert_eq!(img.px(6, 3), [255, 127, 127, 255]);
+    // Gradients arrive with V45: reported, never guessed.
     let mut scene = Scene::new();
-    Painter::new(&mut scene).draw_blurred_rounded_rect(
+    let grad = peniko::Gradient::new_linear((0.0, 0.0), (8.0, 0.0))
+        .with_stops([Color::BLACK, Color::WHITE].as_slice());
+    Painter::new(&mut scene).fill(
+        Fill::NonZero,
         Affine::IDENTITY,
-        Rect::new(1.0, 1.0, 5.0, 5.0),
-        Color::BLACK,
-        2.0,
-        1.0,
+        &peniko::Brush::Gradient(grad),
+        None,
+        &Rect::new(1.0, 1.0, 5.0, 5.0),
     );
     assert!(matches!(
         Golden::render(&scene, 8, 8, Color::WHITE),
-        Err(render_check::CheckError::GoldenUnsupported("blurred-rect"))
+        Err(render_check::CheckError::GoldenUnsupported("gradient"))
     ));
+}
+
+// ---- V46: shadows and glyph outlines ----
+
+use render_check::golden::shadow::shadow_coverage;
+
+#[test]
+fn sigma_to_zero_equals_rect() {
+    let r = Rect::new(8.0, 10.0, 30.0, 26.0);
+    let exact = fill_coverage(&rect_path(r), Affine::IDENTITY, Fill::NonZero, W, H);
+    for sigma in [0.0, 1e-4] {
+        let s = shadow_coverage(Affine::IDENTITY, r, 0.0, sigma, W, H);
+        let max = s.iter().zip(&exact).map(|(a, b)| (a - b).abs()).fold(0.0, f64::max);
+        assert!(max < 1e-6, "σ = {sigma}: max |shadow − rect| = {max}");
+    }
+}
+
+#[test]
+fn wide_shadow_center_value() {
+    // A 200×200 shadow (σ = 4): the center is fully covered; a pixel centered on an edge line
+    // averages ½(1 + erf(·)) symmetrically about the edge, i.e. 0.5 (closed form).
+    let (w, h) = (240, 240);
+    let r = Rect::new(20.0, 20.0, 220.5, 220.0);
+    let s = shadow_coverage(Affine::IDENTITY, r, 0.0, 4.0, w, h);
+    let at = |x: u32, y: u32| s[(y * w + x) as usize];
+    assert!((at(120, 120) - 1.0).abs() < 1e-6, "center {}", at(120, 120));
+    assert!((at(220, 120) - 0.5).abs() < 2e-3, "edge {}", at(220, 120));
+    assert!(at(239, 120) < 1e-3, "beyond 4σ: {}", at(239, 120));
+}
+
+#[test]
+fn glyph_outline_area_matches_mask_sum() {
+    use swash::scale::{Render, ScaleContext, Source};
+    use swash::zeno::Format;
+    let font =
+        peniko::FontData::new(peniko::Blob::from(pebbles_render::fonts::builtin_fonts()[0].1.to_vec()), 0);
+    let face = swash::FontRef::from_index(font.data.data(), font.index as usize).expect("Inter");
+    for hint in [false, true] {
+        for ch in ['H', 'o', 'g'] {
+            let id = face.charmap().map(ch);
+            let golden = render_check::golden::text::glyph_coverage(
+                &font,
+                id,
+                16.0,
+                hint,
+                Point::new(16.0, 32.0),
+                48,
+                48,
+            )
+            .expect("outline");
+            let gold: f64 = golden.iter().sum();
+            let mut ctx = ScaleContext::new();
+            let mut scaler = ctx.builder(face).size(16.0).hint(hint).build();
+            let img =
+                Render::new(&[Source::Outline]).format(Format::Alpha).render(&mut scaler, id).expect("mask");
+            let mask: f64 = img.data.iter().map(|&v| f64::from(v) / 255.0).sum();
+            // swash's own mask renderer subdivides curves coarsely and loses area on small
+            // glyphs (≈ 1 % on a 16-px 'o'); the renderer rasterizes outlines through the Tier B
+            // pipeline instead, so swash's mask gets a looser bound and the renderer raster 0.5 %.
+            let rel = (gold - mask).abs() / mask;
+            assert!(
+                rel < 0.015,
+                "{ch} hint={hint}: golden {gold:.2} vs swash mask {mask:.2} ({:.3} %)",
+                rel * 100.0
+            );
+            let outline = scaler.scale_outline(id).expect("outline");
+            let (pts, mut path, mut i) = (outline.points(), BezPath::new(), 0);
+            let q = |k: usize| Point::new(16.0 + f64::from(pts[k].x), 32.0 - f64::from(pts[k].y));
+            for verb in outline.verbs() {
+                use swash::zeno::Verb;
+                match verb {
+                    Verb::MoveTo => path.move_to(q(i)),
+                    Verb::LineTo => path.line_to(q(i)),
+                    Verb::QuadTo => path.quad_to(q(i), q(i + 1)),
+                    Verb::CurveTo => path.curve_to(q(i), q(i + 1), q(i + 2)),
+                    Verb::Close => path.close_path(),
+                }
+                i += match verb {
+                    Verb::MoveTo | Verb::LineTo => 1,
+                    Verb::QuadTo => 2,
+                    Verb::CurveTo => 3,
+                    Verb::Close => 0,
+                };
+            }
+            let raster = pebbles_gpu::__tier_b_mask_for_check(&path, Affine::IDENTITY, Fill::NonZero, 48, 48);
+            let tier_b: f64 = raster.iter().map(|&v| f64::from(v) / 255.0).sum();
+            let rel = (gold - tier_b).abs() / tier_b;
+            assert!(
+                rel < 0.005,
+                "{ch} hint={hint}: golden {gold:.2} vs renderer raster {tier_b:.2} ({:.3} %)",
+                rel * 100.0
+            );
+        }
+    }
 }

@@ -102,3 +102,78 @@ fn bold_run_is_wider_than_regular() {
     assert!(bold_w >= regular_w, "bold run {bold_w} px narrower than regular {regular_w} px");
     assert!(bold_ink * 10 > regular_ink * 13, "bold ink {bold_ink} not > 1.3 × regular {regular_ink}");
 }
+
+// ---- R20: the glyph outline route ----
+
+fn inter() -> peniko::FontData {
+    peniko::FontData::new(peniko::Blob::from(pebbles_render::fonts::builtin_fonts()[0].1.to_vec()), 0)
+}
+
+fn glyph_id(ch: char) -> u32 {
+    let f = inter();
+    u32::from(swash::FontRef::from_index(f.data.data(), 0).expect("Inter").charmap().map(ch))
+}
+
+/// Ink bounding box `(x0, y0, x1, y1)` (inclusive) of non-white pixels.
+fn ink_bbox(rgba: &[u8], w: u32, h: u32) -> Option<(u32, u32, u32, u32)> {
+    let mut b: Option<(u32, u32, u32, u32)> = None;
+    for y in 0..h {
+        for x in 0..w {
+            if !is_white(pixel(rgba, w, x, y)) {
+                b = Some(b.map_or((x, y, x, y), |(a, c, e, f)| (a.min(x), c.min(y), e.max(x), f.max(y))));
+            }
+        }
+    }
+    b
+}
+
+fn draw_run(scene: &mut Scene, size: f32, t: Affine, text: &str) {
+    let glyphs: Vec<Glyph> = text
+        .chars()
+        .enumerate()
+        .map(|(i, c)| Glyph { id: glyph_id(c), x: i as f32 * size * 0.3, y: 0.0 })
+        .collect();
+    let brush = Brush::Solid(Color::BLACK);
+    Painter::new(scene).draw_glyphs(&inter(), size, &[], &brush, t, None, Fill::NonZero, glyphs.into_iter());
+}
+
+#[test]
+#[ignore = "gpu"]
+fn rotated_text_is_rotated() {
+    let Some((device, queue, mut r)) = setup("rotated_text_is_rotated") else { return };
+    let mut s = Scene::new();
+    draw_run(
+        &mut s,
+        32.0,
+        Affine::translate((80.0, 20.0)) * Affine::rotate(std::f64::consts::FRAC_PI_2),
+        "IIII",
+    );
+    let px = render_scene(&device, &queue, &mut r, &s, (160, 160), Color::WHITE);
+    let (x0, y0, x1, y1) = ink_bbox(&px, 160, 160).expect("ink");
+    assert!(y1 - y0 > x1 - x0, "ink bbox {x0},{y0}–{x1},{y1} must be taller than wide");
+}
+
+#[test]
+#[ignore = "gpu"]
+fn rotated_text_is_not_upscaled_bitmap() {
+    let Some((device, queue, mut r)) = setup("rotated_text_is_not_upscaled_bitmap") else { return };
+    let mut s = Scene::new();
+    draw_run(&mut s, 32.0, Affine::translate((10.0, 150.0)) * Affine::scale(4.0) * Affine::rotate(0.01), "I");
+    let px = render_scene(&device, &queue, &mut r, &s, (200, 200), Color::WHITE);
+    let opaque = (0..200)
+        .flat_map(|y| (0..200).map(move |x| (x, y)))
+        .any(|(x, y)| pixel(&px, 200, x, y)[..3] == [0, 0, 0]);
+    assert!(opaque, "a crisp stem has fully opaque ink pixels");
+}
+
+#[test]
+#[ignore = "gpu"]
+fn huge_glyph_uses_outline() {
+    let Some((device, queue, mut r)) = setup("huge_glyph_uses_outline") else { return };
+    let mut s = Scene::new();
+    draw_run(&mut s, 2000.0, Affine::translate((-200.0, 1500.0)), "W");
+    let _ = render_scene(&device, &queue, &mut r, &s, (256, 256), Color::WHITE);
+    let stats = r.last_stats();
+    assert_eq!(stats.glyphs_rasterized, 0, "no atlas raster for a 2000-px glyph");
+    assert!(stats.tier_b_draws + stats.tier_c_draws >= 1, "{stats:?}");
+}

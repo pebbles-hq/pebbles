@@ -18,6 +18,7 @@ pub(crate) mod color;
 pub(crate) mod coverage;
 mod cull;
 mod features;
+mod glyph_outline;
 mod glyphs;
 mod hygiene;
 mod images;
@@ -65,6 +66,8 @@ pub(crate) struct PrepareScratch {
     pub clips: clip::ClipStack,
     pub layers: layer::LayerStack,
     pub tess: tessellate::PathTessellator,
+    /// swash outlines for the glyph outline route (R20).
+    pub outlines: glyph_outline::OutlineSource,
     /// Debug switch (R10): draw Tier A shapes through tessellation instead (tests, render-check).
     pub sdf_disabled: bool,
 }
@@ -86,6 +89,7 @@ pub(crate) fn prepare<'s>(
         clips: &mut scratch.clips,
         layers: &mut scratch.layers,
         tess: &mut scratch.tess,
+        outlines: &mut scratch.outlines,
         stats,
         limits,
         visit: 0,
@@ -103,6 +107,7 @@ struct Walk<'a> {
     clips: &'a mut clip::ClipStack,
     layers: &'a mut layer::LayerStack,
     tess: &'a mut tessellate::PathTessellator,
+    outlines: &'a mut glyph_outline::OutlineSource,
     stats: &'a mut FrameStats,
     limits: &'a RendererLimits,
     visit: u32,
@@ -257,7 +262,6 @@ impl Walk<'_> {
                         self.clips.pop();
                     }
                 }
-                // `glyph_transform` (synthetic oblique) is drawn upright until the outline route (R20).
                 Op::Glyphs {
                     font,
                     font_size,
@@ -276,7 +280,7 @@ impl Walk<'_> {
                     if !self.paint_is_sane(brush, xf) || self.hidden() {
                         continue;
                     }
-                    self.note_glyphs(brush, *glyph_transform, xf, *font_size);
+                    self.note_glyphs(brush);
                     let base = match brush {
                         peniko::Brush::Solid(c) => *c,
                         peniko::Brush::Gradient(g) => {
@@ -290,9 +294,25 @@ impl Walk<'_> {
                     };
                     let k = self.alpha();
                     let color = color::premul_scaled(base, k);
-                    let range =
-                        glyphs::glyph_run(self.plan, font, *font_size, normalized_coords, color, xf, glyphs);
-                    self.push(DrawCmd::Glyphs { glyphs: range, clip: self.clips.current() }, idx);
+                    match glyph_outline::classify_run(xf, *glyph_transform, *font_size) {
+                        glyph_outline::GlyphRoute::Atlas { .. } => {
+                            let range = glyphs::glyph_run(
+                                self.plan,
+                                font,
+                                *font_size,
+                                normalized_coords,
+                                color,
+                                xf,
+                                glyphs,
+                            );
+                            self.push(DrawCmd::Glyphs { glyphs: range, clip: self.clips.current() }, idx);
+                        }
+                        glyph_outline::GlyphRoute::Outline => {
+                            let (g, c) = (*glyph_transform, normalized_coords);
+                            self.draw_glyph_outlines(font, *font_size, c, color, xf, g, glyphs, idx);
+                        }
+                        glyph_outline::GlyphRoute::Skip => {}
+                    }
                 }
                 Op::Fragment { transform, ops, .. } => {
                     let xf = outer * transform.unwrap_or(Affine::IDENTITY);

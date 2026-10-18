@@ -2,6 +2,7 @@
 //! written for exactness, not speed. Shares no rasterization code with pebbles-gpu.
 
 pub mod coverage;
+pub mod shadow;
 pub mod shapes;
 pub mod stroke;
 pub mod text;
@@ -98,12 +99,24 @@ impl Target {
                 self.walk(ops, outer * transform.unwrap_or(Affine::IDENTITY))?;
             }
             Op::Image { .. } => return Err(CheckError::GoldenUnsupported("image")),
-            Op::BlurredRect { .. } => return Err(CheckError::GoldenUnsupported("blurred-rect")),
-            Op::Glyphs { font, font_size, normalized_coords, brush, transform, glyphs, .. } => {
+            Op::BlurredRect { transform, rect, brush, radius, std_dev, .. } => {
+                let cov =
+                    shadow::shadow_coverage(outer * *transform, *rect, *radius, *std_dev, self.w, self.h);
+                self.composite(premul(*brush), &cov);
+            }
+            Op::Glyphs {
+                font,
+                font_size,
+                normalized_coords,
+                brush,
+                transform,
+                glyph_transform,
+                glyphs,
+                ..
+            } => {
                 let src = solid(brush)?;
-                let t = outer * *transform;
-                for cov in text::run_coverage(font, *font_size, normalized_coords, t, glyphs, self.w, self.h)
-                {
+                let (t, g, w, h) = (outer * *transform, *glyph_transform, self.w, self.h);
+                for cov in text::run_coverage(font, *font_size, normalized_coords, t, g, glyphs, w, h) {
                     self.composite(src, &cov);
                 }
             }
