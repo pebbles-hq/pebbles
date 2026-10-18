@@ -55,6 +55,12 @@ impl Candidate {
         self.r.set_glyph_hint_inputs(Some(scale_factor), hint);
     }
 
+    /// Debug-only cache census of the candidate (10 §9.2) — the G2-5 stability check.
+    #[cfg(debug_assertions)]
+    pub fn census(&self) -> pebbles_gpu::GpuCensus {
+        self.r.census()
+    }
+
     /// Tier A on/off (debug: off reproduces the pre-R10 tessellated path).
     pub fn set_tier_a(&mut self, on: bool) {
         self.r.set_sdf_enabled(on);
