@@ -122,9 +122,10 @@ pub(crate) struct GlyphAtlas {
 }
 
 impl GlyphAtlas {
-    pub(crate) fn new(device: &wgpu::Device, layout: &wgpu::BindGroupLayout) -> Self {
+    pub(crate) fn new(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, path_mask_bytes: u64) -> Self {
         let side = GLYPH_ATLAS_SIDE.min(device.limits().max_texture_dimension_2d);
-        let mask = Page::new(device, AtlasKind::Mask, side);
+        let mut mask = Page::new(device, AtlasKind::Mask, side);
+        mask.alloc.set_path_budget(path_mask_bytes);
         let color = Page::new(device, AtlasKind::Color, side);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("pebbles.gpu.atlas.sampler"),

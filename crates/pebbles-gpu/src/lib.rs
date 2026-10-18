@@ -17,6 +17,7 @@
 #![warn(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 #![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable))]
 
+mod budgets;
 mod context;
 mod error;
 mod execute;
@@ -39,6 +40,7 @@ mod surface;
 #[cfg(test)]
 pub(crate) mod test_support;
 
+pub use budgets::{BudgetPlatform, GpuBudgets};
 pub use context::{DeviceHealth, DeviceId, GpuCaps, GpuContext, GpuDevice};
 pub use error::{AcquireError, CaptureError, GpuError};
 pub use frame_targets::{FrameParams, FrameTargets, RenderTarget};

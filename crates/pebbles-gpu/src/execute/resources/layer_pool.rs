@@ -5,8 +5,6 @@
 pub(crate) const LAYER_BUCKET_PX: u32 = 64;
 /// Free targets unused for this many frames are dropped.
 pub(crate) const LAYER_IDLE_FRAMES: u64 = 120;
-/// Pool byte budget (10 §8 `layer_pool_bytes`: 96 MiB native).
-pub(crate) const LAYER_POOL_BYTES: u64 = 96 << 20;
 
 /// Round `v` up to the bucket, at least one bucket, at most `max`.
 pub(crate) fn bucket(v: u32, max: u32) -> u32 {
@@ -179,9 +177,9 @@ impl LayerPool {
         &self.textures[i]
     }
 
-    /// Release everything and evict per 09 §3.8.
-    pub(crate) fn end_frame(&mut self) {
-        for i in self.book.end_frame(LAYER_POOL_BYTES) {
+    /// Release everything and evict per 09 §3.8 under `budget` (`GpuBudgets::layer_pool_bytes`).
+    pub(crate) fn end_frame(&mut self, budget: u64) {
+        for i in self.book.end_frame(budget) {
             self.textures.remove(i);
         }
     }

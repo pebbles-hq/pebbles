@@ -22,6 +22,8 @@ use super::stats::{FrameStats, Unsupported, WarnOnce};
 /// Pipelines + caches for ONE device. Shared by every surface/target on that device.
 pub struct Renderer {
     pub(crate) sample_count: u32,
+    /// Resource budgets, read once (10 §8, M03).
+    pub(crate) budgets: super::budgets::GpuBudgets,
     adapter: wgpu::Adapter,
     msaa: super::frame_targets::MsaaCache,
     pub(crate) shaders: ShaderModules,
@@ -60,14 +62,22 @@ impl Renderer {
 
     /// Build the eager resource set (Globals, arenas, layouts, shader modules, samplers).
     /// The pre-C09 glyph system and image cache stay lazy.
-    pub fn new(gpu: &GpuDevice, _id: DeviceId) -> Self {
+    pub fn new(gpu: &GpuDevice, id: DeviceId) -> Self {
+        let budgets = super::budgets::GpuBudgets::from_env(&gpu.device().limits());
+        Self::with_budgets(gpu, id, budgets)
+    }
+
+    /// `new` with explicit budgets (tests; fields set here are never clamped, 10 §8 M03).
+    #[doc(hidden)]
+    pub fn with_budgets(gpu: &GpuDevice, _id: DeviceId, budgets: super::budgets::GpuBudgets) -> Self {
         let device = gpu.device();
         let layouts = BindGroupLayouts::new(device);
-        let glyph_atlas = GlyphAtlas::new(device, &layouts.glyph);
+        let glyph_atlas = GlyphAtlas::new(device, &layouts.glyph, budgets.path_mask_bytes);
         let (globals_buffer, globals_bg) = globals_slots(device, &layouts, 1);
         let composite_buffer = uniform_buffer(device, "pebbles.gpu.buffer.composite", 1);
         Renderer {
             sample_count: gpu.caps().msaa_samples,
+            budgets,
             adapter: gpu.adapter().clone(),
             msaa: super::frame_targets::MsaaCache::default(),
             shaders: ShaderModules::new(device),
@@ -244,7 +254,7 @@ impl Renderer {
         }
         encoder.pop_debug_group();
         queue.submit([encoder.finish()]);
-        target.targets.pool.end_frame();
+        target.targets.pool.end_frame(self.budgets.layer_pool_bytes);
         self.scratch.plan.release_refs();
         self.glyph_atlas.end_frame();
         self.image_cache.end_frame(&mut stats);

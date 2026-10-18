@@ -77,9 +77,6 @@ impl CoverageKey {
     }
 }
 
-/// Default byte budget for path masks (10 §8 `path_mask_bytes`, desktop: 8 MiB).
-pub(crate) const PATH_MASK_BYTES: u64 = 8 << 20;
-
 /// Which atlas page a glyph lives in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum AtlasKind {
@@ -139,7 +136,7 @@ impl AtlasAllocator {
             entries: HashMap::new(),
             frame: 0,
             path_bytes: 0,
-            path_budget: PATH_MASK_BYTES,
+            path_budget: 8 << 20, // replaced by GpuBudgets::path_mask_bytes
         }
     }
 
@@ -239,8 +236,7 @@ impl AtlasAllocator {
         self.path_bytes
     }
 
-    /// Override the path-mask budget (tests; `GpuBudgets` wiring is M28).
-    #[cfg(test)]
+    /// Set the path-mask budget (`GpuBudgets::path_mask_bytes`).
     pub(crate) fn set_path_budget(&mut self, bytes: u64) {
         self.path_budget = bytes;
     }
