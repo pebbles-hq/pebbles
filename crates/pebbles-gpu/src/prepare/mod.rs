@@ -273,7 +273,9 @@ impl Walk<'_> {
                     ..
                 } => {
                     let xf = outer * *transform;
-                    if !xf.is_finite() || !font_size.is_finite() {
+                    // R22: non-finite size/transform or out-of-range variation coords skip the run.
+                    let coords_ok = normalized_coords.iter().all(|c| (-16384..=16384).contains(c));
+                    if !xf.is_finite() || !font_size.is_finite() || !coords_ok {
                         self.skip_non_finite();
                         continue;
                     }
@@ -296,8 +298,11 @@ impl Walk<'_> {
                     let color = color::premul_scaled(base, k);
                     match glyph_outline::classify_run(xf, *glyph_transform, *font_size) {
                         glyph_outline::GlyphRoute::Atlas { .. } => {
+                            let scissor = self.clips.current().scissor;
                             let range = glyphs::glyph_run(
                                 self.plan,
+                                self.stats,
+                                scissor,
                                 font,
                                 *font_size,
                                 normalized_coords,

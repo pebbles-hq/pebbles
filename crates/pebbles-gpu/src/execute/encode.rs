@@ -40,6 +40,7 @@ pub(crate) fn resolve_and_upload(
         &mut renderer.glyph_instances,
         stats,
     );
+    super::resolve::cull_resolved(&renderer.scratch.plan, &mut renderer.glyph_instances);
     renderer.image_instances.clear();
     for req in &renderer.scratch.plan.images {
         let drawable =

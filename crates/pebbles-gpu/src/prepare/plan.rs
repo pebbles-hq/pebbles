@@ -124,6 +124,8 @@ pub(crate) struct PrepareStats {
     pub culled_ops: u32,
     pub fast_rects: u32,
     pub tess_calls: u32,
+    /// Glyphs culled against the active scissor before any atlas work (R25).
+    pub culled_glyphs: u32,
 }
 
 /// Everything one frame draws, in order. Reused across frames: `clear()` keeps every capacity.

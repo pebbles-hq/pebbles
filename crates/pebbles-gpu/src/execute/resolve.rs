@@ -49,6 +49,26 @@ pub(crate) fn resolve_glyphs(
     }
 }
 
+/// R25 step 2: a resolved glyph quad that misses its command's scissor becomes zero-area (the
+/// exact quad of a resident glyph is known only after the atlas lookup).
+pub(crate) fn cull_resolved(plan: &FramePlan, out: &mut [QuadInstance]) {
+    for cmd in &plan.cmds {
+        let crate::prepare::DrawCmd::Glyphs { glyphs, clip } = cmd else { continue };
+        let s = clip.scissor;
+        for q in out.get_mut(glyphs.start as usize..glyphs.end as usize).unwrap_or_default() {
+            let (x0, y0) = (q.origin[0], q.origin[1]);
+            let (x1, y1) = (x0 + q.xform[0] + q.xform[2], y0 + q.xform[1] + q.xform[3]);
+            let (lo_x, hi_x, lo_y, hi_y) = (x0.min(x1), x0.max(x1), y0.min(y1), y0.max(y1));
+            #[allow(clippy::cast_precision_loss)] // scissor edges ≤ 2^24
+            let miss =
+                hi_x <= s.x0 as f32 || lo_x >= s.x1 as f32 || hi_y <= s.y0 as f32 || lo_y >= s.y1 as f32;
+            if miss {
+                *q = QuadInstance::zeroed();
+            }
+        }
+    }
+}
+
 fn quad_for(lookup: GlyphLookup, origin: [f32; 2], color: [f32; 4], stats: &mut FrameStats) -> QuadInstance {
     match lookup {
         GlyphLookup::Slot(slot) => glyph_quad(slot, origin, color),

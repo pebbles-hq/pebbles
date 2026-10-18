@@ -116,8 +116,28 @@ impl Walk<'_> {
     ) {
         let g = glyph_transform.unwrap_or(Affine::IDENTITY);
         let mut path = BezPath::new();
+        let scissor = self.clips.current().scissor;
+        let linear = Affine::new({
+            let [a, b, c, d, ..] = m.as_coeffs();
+            [a, b, c, d, 0.0, 0.0]
+        }) * g;
         for glyph in glyphs {
-            let Ok(id) = u16::try_from(glyph.id) else { continue };
+            let Ok(id) = u16::try_from(glyph.id) else {
+                self.fell_back(super::coverage::Feature::GlyphsDegenerate);
+                self.stats.record(crate::stats::Unsupported::GlyphIdRange);
+                continue;
+            };
+            let pen = m * kurbo::Point::new(f64::from(glyph.x), f64::from(glyph.y));
+            if !(pen.x.is_finite() && pen.y.is_finite()) {
+                self.stats.non_finite_skipped += 1;
+                self.stats.record(crate::stats::Unsupported::NonFinite);
+                continue;
+            }
+            // R25: cull before extracting the outline.
+            if super::glyphs::glyph_culled(pen, f64::from(font_size), linear, scissor) {
+                self.plan.stats.culled_glyphs += 1;
+                continue;
+            }
             if !self.outlines.outline(font, id, font_size, coords, &mut path) {
                 // Bitmap-only / COLR glyphs on this route arrive with R23 / R29.
                 self.fell_back(super::coverage::Feature::GlyphsColorRotated);

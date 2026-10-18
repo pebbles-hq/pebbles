@@ -10,8 +10,9 @@ use peniko::FontData;
 use pebbles_render::paint::Glyph;
 
 use super::num::{index_u32, to_f32};
-use super::plan::{FramePlan, GlyphRequest, GlyphRunInfo};
+use super::plan::{FramePlan, GlyphRequest, GlyphRunInfo, ScissorRect};
 use crate::execute::resources::atlas_alloc::GlyphKey;
+use crate::stats::{FrameStats, Unsupported};
 
 /// Device pen x → (whole pixel, quarter-pixel bin 0..=3). Nearest quarter; a bin of 4 carries.
 #[allow(clippy::cast_possible_truncation)] // bounded by the |x| ≤ 2^24 guard
@@ -39,9 +40,23 @@ fn coords_hash(coords: &[i16]) -> u64 {
     h.finish().max(1)
 }
 
-/// Append one glyph run's requests (pens in device space) and return their range.
+/// R25: whether a glyph's conservative device box `[x − 2·ppem, x + 3·ppem] × [y ± 2·ppem]`
+/// around `pen` (mapped by `linear` for the outline route) misses `scissor`.
+pub(crate) fn glyph_culled(pen: kurbo::Point, ppem: f64, linear: Affine, scissor: ScissorRect) -> bool {
+    let local = kurbo::Rect::new(-2.0 * ppem, -2.0 * ppem, 3.0 * ppem, 2.0 * ppem);
+    let b = linear.transform_rect_bbox(local) + pen.to_vec2();
+    let s = super::cull::scissor_rect(scissor);
+    b.x1 <= s.x0 || b.x0 >= s.x1 || b.y1 <= s.y0 || b.y0 >= s.y1
+}
+
+/// Append one atlas-route glyph run's requests (pens in device space) and return their range.
+/// Degenerate glyphs are skipped and counted (R22); glyphs outside `scissor` are culled before
+/// any atlas work (R25).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn glyph_run(
     plan: &mut FramePlan,
+    stats: &mut FrameStats,
+    scissor: ScissorRect,
     font: &FontData,
     font_size: f32,
     coords: &[i16],
@@ -53,6 +68,10 @@ pub(crate) fn glyph_run(
     let coeffs = transform.as_coeffs();
     let scale = to_f32((coeffs[0] * coeffs[0] + coeffs[1] * coeffs[1]).sqrt().max(1e-6)).unwrap_or(0.0);
     let size_px = font_size * scale;
+    // R22 step 2: below half a device pixel nothing is visible.
+    if size_px < 0.5 {
+        return start..start;
+    }
     let Some(size_q) = super::num::to_u32_round(size_px * 64.0) else { return start..start };
     if size_q == 0 {
         return start..start;
@@ -67,14 +86,23 @@ pub(crate) fn glyph_run(
     });
     let hash = coords_hash(coords);
     for g in glyphs {
-        // Ids above u16::MAX are skipped (R22 adds `glyph-id-out-of-range`).
-        let Ok(glyph_id) = u16::try_from(g.id) else { continue };
+        let Ok(glyph_id) = u16::try_from(g.id) else {
+            plan.fallback_features.insert(super::coverage::Feature::GlyphsDegenerate);
+            stats.record(Unsupported::GlyphIdRange);
+            continue;
+        };
         let pen = transform * kurbo::Point::new(f64::from(g.x), f64::from(g.y));
         let (Some((ix, subpx_x)), Some(iy)) =
             (to_f32(pen.x).and_then(subpixel_bin), to_f32(pen.y).and_then(snap_baseline))
         else {
+            stats.non_finite_skipped += 1;
+            stats.record(Unsupported::NonFinite);
             continue;
         };
+        if glyph_culled(pen, f64::from(size_px), Affine::IDENTITY, scissor) {
+            plan.stats.culled_glyphs += 1;
+            continue;
+        }
         let key = GlyphKey {
             font_blob: font.data.id(),
             font_index: font.index,
@@ -90,6 +118,10 @@ pub(crate) fn glyph_run(
     }
     start..index_u32(plan.glyphs.len())
 }
+
+#[cfg(test)]
+#[path = "glyphs_tests.rs"]
+mod run_tests;
 
 #[cfg(test)]
 mod tests {

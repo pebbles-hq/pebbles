@@ -224,9 +224,10 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::ImageOversize,
     F::GlyphsSolid,
     F::GlyphsVariable,
-    F::GlyphsTransform, // R20
-    F::GlyphsRotated,   // R20
-    F::GlyphsLarge,     // R20
+    F::GlyphsTransform,  // R20
+    F::GlyphsRotated,    // R20
+    F::GlyphsLarge,      // R20
+    F::GlyphsDegenerate, // R22
 ];
 
 #[cfg(test)]

@@ -45,11 +45,13 @@ pub enum Unsupported {
     CoordOutOfRange,
     /// A color (bitmap/COLR) glyph on the outline route: skipped until R23 / R29.
     ColorGlyphTransform,
+    /// A glyph id above `u16::MAX` (no font has one): glyph skipped (R22).
+    GlyphIdRange,
 }
 
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
-    pub const COUNT: usize = 20;
+    pub const COUNT: usize = 21;
     /// Every variant, in discriminant order.
     pub const ALL: [Unsupported; Self::COUNT] = [
         Self::NonRectClip,
@@ -72,6 +74,7 @@ impl Unsupported {
         Self::StrokeWidthClamped,
         Self::CoordOutOfRange,
         Self::ColorGlyphTransform,
+        Self::GlyphIdRange,
     ];
 
     /// The variant's 11 §4.2 key, used in logs and stats dumps.
@@ -97,6 +100,7 @@ impl Unsupported {
             Self::StrokeWidthClamped => "stroke-width-clamped",
             Self::CoordOutOfRange => "coordinate-out-of-range",
             Self::ColorGlyphTransform => "color-glyph-transform-unsupported",
+            Self::GlyphIdRange => "glyph-id-out-of-range",
         }
     }
 }
