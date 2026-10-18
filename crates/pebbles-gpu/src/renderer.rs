@@ -65,6 +65,7 @@ impl Renderer {
         self.glyph_atlas.census_into(&mut c);
         self.image_cache.census_into(&mut c);
         c.samplers = self.samplers.len();
+        c.color_glyph_fragments = self.scratch.colr.len();
         c.pipelines = self.pipelines.len();
         c.arena_capacity_bytes = self.arenas.capacity_bytes();
         c

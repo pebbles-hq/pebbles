@@ -397,3 +397,59 @@ fn rotated_bitmap_glyph_draws_as_quad() {
     let ink = px.as_chunks::<4>().0.iter().filter(|p| p[3] > 128).count();
     assert!(ink > 500, "rotated emoji ink {ink}");
 }
+
+// ---- R29: COLR glyphs drawn by our pipeline ----
+
+fn colr_font() -> peniko::FontData {
+    let bytes = include_bytes!("../../../../tools/render-check/fonts/colr-test.ttf");
+    peniko::FontData::new(peniko::Blob::from(bytes.to_vec()), 0)
+}
+
+/// R29: glyph `A` of the COLR test font (red square under a blue circle) rotated 30° about
+/// the canvas center: both colors are drawn, and every inked pixel lies inside the rotated
+/// glyph box (font units 0..800 → 0..80 px at 100 px).
+#[test]
+#[ignore = "gpu"]
+fn color_glyph_renders_under_rotation() {
+    let Some((device, queue, mut r)) = setup("color_glyph_renders_under_rotation") else { return };
+    let font = colr_font();
+    let id = {
+        let f = swash::FontRef::from_index(font.data.data(), 0).expect("colr-test");
+        u32::from(f.charmap().map('A'))
+    };
+    let t = Affine::rotate_about(std::f64::consts::FRAC_PI_6, kurbo::Point::new(80.0, 80.0));
+    let mut s = Scene::new();
+    let g = [Glyph { id, x: 40.0, y: 120.0 }];
+    Painter::new(&mut s).draw_glyphs(
+        &font,
+        100.0,
+        &[],
+        &Brush::Solid(Color::BLACK),
+        t,
+        None,
+        Fill::NonZero,
+        g.into_iter(),
+    );
+    let px = render_scene(&device, &queue, &mut r, &s, (160, 160), Color::WHITE);
+    let stats = r.last_frame_stats();
+    assert_eq!(stats.unsupported[pebbles_gpu::Unsupported::ColorGlyphTransform as usize], 0);
+    let (mut red, mut blue) = (0, 0);
+    // The glyph box: pen (40, 120), font units 0..800 at k = 0.1 → x 40..120, y 40..120 (y-down).
+    let inv = t.inverse();
+    for y in 0..160u32 {
+        for x in 0..160u32 {
+            let p = pixel(&px, 160, x, y);
+            if is_white(p) {
+                continue;
+            }
+            red += u32::from(p[0] > 200 && p[1] < 60 && p[2] < 60);
+            blue += u32::from(p[2] > 200 && p[0] < 60 && p[1] < 60);
+            let q = inv * kurbo::Point::new(f64::from(x) + 0.5, f64::from(y) + 0.5);
+            assert!(
+                (39.0..=121.0).contains(&q.x) && (39.0..=121.0).contains(&q.y),
+                "ink {p:?} at ({x},{y}) outside the rotated glyph box"
+            );
+        }
+    }
+    assert!(red > 100 && blue > 100, "red {red} blue {blue}");
+}

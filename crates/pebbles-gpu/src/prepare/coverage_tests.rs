@@ -23,7 +23,6 @@ const NOT_PRODUCIBLE: &[(F, &str)] = &[
     (F::ProjectedLayer, "no Op::PushProjectedLayer yet (L65)"),
     (F::ShaderBrush, "no Op::ShaderFill yet (L43)"),
     (F::GlyphsColor, "no colour font is bundled; colour content is known only at raster (R23/R29)"),
-    (F::GlyphsColorRotated, "no colour font is bundled (R29)"),
     (F::ClipEllipse, "Geometry has no Ellipse variant: an oval clip arrives as a Path (OC-24, L01)"),
 ];
 
@@ -200,6 +199,14 @@ fn fixture(f: F) -> Option<Scene> {
         F::GlyphsNonSolidBrush => glyphs(p, 16.0, &Brush::Gradient(gradient()), id, None, Fill::NonZero),
         F::GlyphsEvenOdd => glyphs(p, 16.0, &Brush::Solid(RED), id, None, Fill::EvenOdd),
         F::GlyphsDegenerate => glyphs(p, f32::NAN, &Brush::Solid(RED), id, None, Fill::NonZero),
+        F::GlyphsColorRotated => {
+            // R29: the committed COLR test font's glyph `A`, rotated.
+            use crate::raster::color_glyph::tests::{colr_font, gid};
+            let font = colr_font();
+            let g = Glyph { id: u32::from(gid(&font, 'A')), x: 8.0, y: 40.0 };
+            let brush = Brush::Solid(RED);
+            p.draw_glyphs(&font, 32.0, &[], &brush, rot, None, Fill::NonZero, std::iter::once(g));
+        }
         F::FragmentAppend => {
             let mut inner = Scene::new();
             Painter::new(&mut inner).fill(Fill::NonZero, id, RED, None, &R);

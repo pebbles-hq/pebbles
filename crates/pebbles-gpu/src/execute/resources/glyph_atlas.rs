@@ -264,7 +264,6 @@ impl GlyphAtlas {
         let atlas = match glyph.content {
             RasterContent::Mask => AtlasKind::Mask,
             RasterContent::Color => AtlasKind::Color,
-            RasterContent::Subpixel => return (GlyphLookup::Unsupported, true),
         };
         if glyph.width == 0 || glyph.height == 0 {
             self.cpu.insert_empty(key);

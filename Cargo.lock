@@ -3096,6 +3096,7 @@ dependencies = [
  "pebbles-render",
  "peniko",
  "pollster 1.0.1",
+ "skrifa",
  "swash",
  "web-time",
  "wgpu",

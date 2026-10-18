@@ -18,7 +18,7 @@ pub(crate) mod color;
 pub(crate) mod coverage;
 mod cull;
 mod features;
-mod glyph_outline;
+pub(crate) mod glyph_outline;
 pub(crate) mod glyphs;
 mod hygiene;
 mod images;
@@ -72,6 +72,8 @@ pub(crate) struct PrepareScratch {
     pub tess: tessellate::PathTessellator,
     /// swash outlines for the glyph outline route (R20).
     pub outlines: glyph_outline::OutlineSource,
+    /// COLR glyph fragments (R29).
+    pub colr: crate::raster::color_glyph::ColorGlyphCache,
     /// Debug switch (R10): draw Tier A shapes through tessellation instead (tests, render-check).
     pub sdf_disabled: bool,
 }
@@ -94,6 +96,7 @@ pub(crate) fn prepare<'s>(
         layers: &mut scratch.layers,
         tess: &mut scratch.tess,
         outlines: &mut scratch.outlines,
+        colr: &mut scratch.colr,
         stats,
         limits,
         visit: 0,
@@ -105,6 +108,8 @@ pub(crate) fn prepare<'s>(
     };
     walk.emit(scene.ops(), input.root_transform);
     scratch.outlines.end_frame();
+    scratch.colr.end_frame();
+    scratch.colr.end_frame();
     &scratch.plan
 }
 
@@ -115,6 +120,7 @@ struct Walk<'a> {
     layers: &'a mut layer::LayerStack,
     tess: &'a mut tessellate::PathTessellator,
     outlines: &'a mut glyph_outline::OutlineSource,
+    colr: &'a mut crate::raster::color_glyph::ColorGlyphCache,
     stats: &'a mut FrameStats,
     limits: &'a RendererLimits,
     visit: u32,
@@ -126,7 +132,104 @@ struct Walk<'a> {
     sdf: bool,
 }
 
+/// One glyph run's drawing inputs (R29 splits a run around its COLR glyphs).
+struct GlyphRunArgs<'r> {
+    font: &'r peniko::FontData,
+    font_size: f32,
+    coords: &'r [i16],
+    /// The run color (straight); COLR palette index `0xFFFF` uses it (02 §7.7).
+    base: peniko::Color,
+    /// Premultiplied tint × fold alpha.
+    color: [f32; 4],
+    xf: Affine,
+    glyph_transform: Option<Affine>,
+}
+
 impl Walk<'_> {
+    /// Glyphs with no COLR representation: the atlas or outline route (§7.5).
+    fn draw_glyph_segment(
+        &mut self,
+        run: &GlyphRunArgs<'_>,
+        glyphs: &[pebbles_render::paint::Glyph],
+        idx: u32,
+    ) {
+        if glyphs.is_empty() {
+            return;
+        }
+        match glyph_outline::classify_run(run.xf, run.glyph_transform, run.font_size) {
+            glyph_outline::GlyphRoute::Atlas { .. } => {
+                let scissor = self.clips.current().scissor;
+                let range = glyphs::glyph_run(
+                    self.plan,
+                    self.stats,
+                    scissor,
+                    run.font,
+                    run.font_size,
+                    run.coords,
+                    run.color,
+                    run.xf,
+                    glyphs,
+                    self.glyph_hint,
+                    self.scale_factor,
+                );
+                self.push(DrawCmd::Glyphs { glyphs: range, clip: self.clips.current() }, idx);
+            }
+            glyph_outline::GlyphRoute::Outline => {
+                let (g, c) = (run.glyph_transform, run.coords);
+                self.draw_glyph_outlines(run.font, run.font_size, c, run.color, run.xf, g, glyphs, idx);
+            }
+            glyph_outline::GlyphRoute::Skip => {}
+        }
+    }
+
+    /// R29: a run whose font has COLR — each COLR glyph splices its fragment under
+    /// `M · translate(pen) · G · scale(k, −k)` (`k = font_size / upem`; any transform), the
+    /// other glyphs keep their route, in glyph order (§7.7).
+    fn draw_colr_run(&mut self, run: &GlyphRunArgs<'_>, glyphs: &[pebbles_render::paint::Glyph], idx: u32) {
+        let upem = skrifa::raw::TableProvider::head(&match skrifa::FontRef::from_index(
+            run.font.data.data(),
+            run.font.index,
+        ) {
+            Ok(f) => f,
+            Err(_) => return self.draw_glyph_segment(run, glyphs, idx),
+        })
+        .map_or(1000.0, |h| f64::from(h.units_per_em().max(1)));
+        let k = f64::from(run.font_size) / upem;
+        // Tint (§7.7): color glyphs use only the run alpha (× fold alpha); index 0xFFFF the
+        // run color at full alpha (the alpha applies once, through the layer).
+        let alpha = run.color[3];
+        let foreground = run.base.with_alpha(1.0);
+        let mut start = 0;
+        for (i, g) in glyphs.iter().enumerate() {
+            let Ok(id) = u16::try_from(g.id) else { continue };
+            let Some(frag) = self.colr.fragment(run.font, id, run.coords, foreground) else { continue };
+            self.draw_glyph_segment(run, glyphs.get(start..i).unwrap_or_default(), idx);
+            start = i + 1;
+            let m = run.xf
+                * Affine::translate((f64::from(g.x), f64::from(g.y)))
+                * run.glyph_transform.unwrap_or(Affine::IDENTITY)
+                * Affine::scale_non_uniform(k, -k);
+            if alpha >= 1.0 {
+                self.emit(frag.scene.ops(), m);
+            } else {
+                // A group-opacity layer around the fragment (R29 step 5).
+                let mut wrapped = Scene::new();
+                let mut p = pebbles_render::paint::Painter::new(&mut wrapped);
+                p.push_layer(
+                    Fill::NonZero,
+                    peniko::BlendMode::default(),
+                    alpha,
+                    Affine::IDENTITY,
+                    &frag.bounds,
+                );
+                p.append(&frag.scene, None);
+                p.pop_layer();
+                self.emit(wrapped.ops(), m);
+            }
+        }
+        self.draw_glyph_segment(run, glyphs.get(start..).unwrap_or_default(), idx);
+    }
+
     fn emit(&mut self, ops: &[Op], outer: Affine) {
         for op in ops {
             self.visit += 1;
@@ -305,29 +408,19 @@ impl Walk<'_> {
                     };
                     let k = self.alpha();
                     let color = color::premul_scaled(base, k);
-                    match glyph_outline::classify_run(xf, *glyph_transform, *font_size) {
-                        glyph_outline::GlyphRoute::Atlas { .. } => {
-                            let scissor = self.clips.current().scissor;
-                            let range = glyphs::glyph_run(
-                                self.plan,
-                                self.stats,
-                                scissor,
-                                font,
-                                *font_size,
-                                normalized_coords,
-                                color,
-                                xf,
-                                glyphs,
-                                self.glyph_hint,
-                                self.scale_factor,
-                            );
-                            self.push(DrawCmd::Glyphs { glyphs: range, clip: self.clips.current() }, idx);
-                        }
-                        glyph_outline::GlyphRoute::Outline => {
-                            let (g, c) = (*glyph_transform, normalized_coords);
-                            self.draw_glyph_outlines(font, *font_size, c, color, xf, g, glyphs, idx);
-                        }
-                        glyph_outline::GlyphRoute::Skip => {}
+                    let run = GlyphRunArgs {
+                        font,
+                        font_size: *font_size,
+                        coords: normalized_coords,
+                        base,
+                        color,
+                        xf,
+                        glyph_transform: *glyph_transform,
+                    };
+                    if self.colr.font_has_colr(font) {
+                        self.draw_colr_run(&run, glyphs, idx);
+                    } else {
+                        self.draw_glyph_segment(&run, glyphs, idx);
                     }
                 }
                 Op::Fragment { transform, ops, .. } => {

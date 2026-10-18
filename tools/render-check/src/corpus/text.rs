@@ -39,6 +39,14 @@ pub fn cases() -> Vec<Case> {
         harness("text/scaled_transform_3x", Text, P2, W, H, scaled_transform_3x),
         harness("text/selection_caret", Text, P2, W, H, selection_caret),
         ops("text/glyph_run_synthetic", Text, P2, W, H, glyph_run_synthetic),
+        // COLR (R29): the committed colr-test.ttf, judged by the golden COLR evaluator (V51).
+        ops("text/colr_v0_layers", Text, P2, 160, 160, colr_v0_layers),
+        ops("text/colr_v0_rotated", Text, P2, 160, 160, colr_v0_rotated),
+        ops("text/colr_foreground", Text, P2, 160, 160, colr_foreground),
+        ops("text/colr_v1_gradient", Text, P2, 160, 160, colr_v1_gradient)
+            .xfail("L30", "COLRv1 gradients take the C17 fallback until gradients ship (L30)"),
+        ops("text/colr_v1_composite", Text, P2, 160, 160, colr_v1_composite)
+            .xfail("L20", "COLRv1 composite modes take the C17 fallback until L20"),
     ]);
     v
 }
@@ -158,6 +166,40 @@ fn glyph_run_synthetic(p: &mut Painter<'_>) {
         });
         p.draw_glyphs(&font, size, &[], &ink, Affine::IDENTITY, None, peniko::Fill::NonZero, glyphs);
     }
+}
+
+fn colr_font() -> peniko::FontData {
+    let bytes = include_bytes!("../../fonts/colr-test.ttf");
+    peniko::FontData::new(peniko::Blob::from(bytes.to_vec()), 0)
+}
+
+/// COLR test glyph `ch` at 100 px, pen (30, 130), under `t`, in the run color `color`.
+fn colr_glyph(p: &mut Painter<'_>, ch: char, t: Affine, color: Color) {
+    let font = colr_font();
+    let id = u32::from(swash::FontRef::from_index(font.data.data(), 0).map_or(0, |f| f.charmap().map(ch)));
+    let g = pebbles_render::paint::Glyph { id, x: 30.0, y: 130.0 };
+    let brush = peniko::Brush::Solid(color);
+    p.draw_glyphs(&font, 100.0, &[], &brush, t, None, peniko::Fill::NonZero, std::iter::once(g));
+}
+
+fn colr_v0_layers(p: &mut Painter<'_>) {
+    colr_glyph(p, 'A', Affine::IDENTITY, Color::BLACK);
+}
+
+fn colr_v0_rotated(p: &mut Painter<'_>) {
+    colr_glyph(p, 'A', Affine::rotate_about(0.5, kurbo::Point::new(80.0, 80.0)), Color::BLACK);
+}
+
+fn colr_foreground(p: &mut Painter<'_>) {
+    colr_glyph(p, 'D', Affine::IDENTITY, Color::from_rgba8(0x10, 0xB9, 0x81, 0xFF));
+}
+
+fn colr_v1_gradient(p: &mut Painter<'_>) {
+    colr_glyph(p, 'B', Affine::IDENTITY, Color::BLACK);
+}
+
+fn colr_v1_composite(p: &mut Painter<'_>) {
+    colr_glyph(p, 'C', Affine::IDENTITY, Color::BLACK);
 }
 
 #[cfg(test)]

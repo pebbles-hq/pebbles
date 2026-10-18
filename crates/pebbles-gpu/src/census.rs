@@ -21,6 +21,8 @@ pub struct GpuCensus {
     pub glyph_color_layers: u32,
     /// `RasterFont` cache entries (§5.11).
     pub raster_fonts: usize,
+    /// Cached COLR glyph fragments (R29).
+    pub color_glyph_fragments: usize,
     /// Cached images.
     pub image_entries: usize,
     /// Cached image texture bytes.

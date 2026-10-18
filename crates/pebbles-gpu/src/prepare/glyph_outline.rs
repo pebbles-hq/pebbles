@@ -221,6 +221,7 @@ impl Walk<'_> {
                 continue;
             }
             let Some(cached) = self.outlines.cached(font, id, font_size, coords) else {
+                // COLR glyphs never get here: R29 splices them first, under any transform.
                 if has_color_strike(font, id) {
                     // R23 2a: no vector form — a transformed quad of the native strike.
                     self.draw_strike_quad(
@@ -234,10 +235,6 @@ impl Walk<'_> {
                         &mut strike_run,
                         idx,
                     );
-                } else {
-                    // COLR glyphs on this route arrive with R29.
-                    self.fell_back(super::coverage::Feature::GlyphsColorRotated);
-                    self.stats.record(crate::stats::Unsupported::ColorGlyphTransform);
                 }
                 continue;
             };

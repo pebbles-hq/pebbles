@@ -24,6 +24,7 @@ lyon_tessellation.workspace = true
 bytemuck.workspace = true
 web-time.workspace = true
 swash.workspace = true
+skrifa.workspace = true   # COLR paint graphs (02 R29, DR-23)
 guillotiere.workspace = true
 zeno.workspace = true
 

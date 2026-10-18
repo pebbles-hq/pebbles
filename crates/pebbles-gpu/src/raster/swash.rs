@@ -3,16 +3,15 @@
 
 use std::collections::HashMap;
 
-use swash::scale::image::{Content, Image};
+use swash::scale::image::Image;
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
-use swash::zeno::{Format, Vector};
+use swash::zeno::Format;
 
-/// Color raster sources in priority order: COLR at the requested size, then bitmap strikes at
-/// their own ppem (R23: never resampled by swash, whose Mitchell filter runs on straight alpha).
-/// Plain outlines are not rendered by swash: they go through the Tier B coverage rasterizer
-/// (`outline_mask`), so glyph and path edges get identical, winding-exact coverage (DR-23) —
-/// swash's own mask renderer double-counts the overlapping contours variable fonts keep.
-const COLR_SOURCES: &[Source] = &[Source::ColorOutline(0)];
+/// swash renders only bitmap strikes, at their own ppem (R23: never resampled by swash, whose
+/// Mitchell filter runs on straight alpha). COLR glyphs are fragments drawn by our pipeline (R29).
+/// Plain outlines go through the Tier B coverage rasterizer (`outline_mask`), so glyph and path
+/// edges get identical, winding-exact coverage (DR-23) — swash's own mask renderer
+/// double-counts the overlapping contours variable fonts keep.
 /// A strike decoded at exactly the scaler's size (= the strike's ppem): no swash resize.
 const STRIKE_SOURCES: &[Source] = &[Source::ColorBitmap(StrikeWith::ExactSize)];
 
@@ -37,8 +36,6 @@ pub(crate) enum RasterContent {
     Mask,
     /// RGBA8 per pixel.
     Color,
-    /// A subpixel mask (never requested).
-    Subpixel,
 }
 
 /// One rasterized glyph, borrowed from the rasterizer's scratch image.
@@ -105,7 +102,7 @@ fn strike_ppem(font: &swash::FontRef<'_>, req: &RasterRequest<'_>) -> Option<u16
         strikes.find_by_largest_ppem(gid)
     } else {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // ≤ MAX_ATLAS_GLYPH_PX
-        strikes.find_by_nearest_ppem(req.size_px.round().clamp(1.0, 65535.0) as u16, gid)
+        strikes.find_by_nearest_ppem(req.size_px.ceil().clamp(1.0, 65535.0) as u16, gid)
     }?;
     (strike.ppem() > 0).then(|| strike.ppem())
 }
@@ -141,6 +138,21 @@ impl GlyphRaster {
             }
         };
         let font = swash::FontRef { data: bytes, offset: entry.offset, key: entry.key };
+        let dx = f32::from(req.subpx_x) * 0.25;
+        // Source order (02 §7.2, end state): COLR glyphs never reach the rasterizer (R29 draws
+        // them as fragments); (2) a color strike at its own ppem (R23); (3) the outline.
+        if let Some(ppem) = strike_ppem(&font, req) {
+            let mut strike = self.ctx.builder(font).size(f32::from(ppem)).build();
+            // The scratch image is reused: clear it, since swash only resizes it (02 §7.2).
+            self.scratch.clear();
+            if Render::new(STRIKE_SOURCES).format(Format::Alpha).render_into(
+                &mut strike,
+                req.glyph_id,
+                &mut self.scratch,
+            ) {
+                return self.strike(ppem, req);
+            }
+        }
         let mut scaler = self
             .ctx
             .builder(font)
@@ -148,51 +160,11 @@ impl GlyphRaster {
             .hint(req.hint)
             .normalized_coords(req.coords.iter().copied())
             .build();
-        let dx = f32::from(req.subpx_x) * 0.25;
-        let mut render = Render::new(COLR_SOURCES);
-        render.format(Format::Alpha).offset(Vector::new(dx, 0.0));
-        // The scratch image is reused: clear it, since swash only resizes it and zeno
-        // writes only covered cells (02 §7.2).
-        self.scratch.clear();
-        if !render.render_into(&mut scaler, req.glyph_id, &mut self.scratch) {
-            if let Some(ppem) = strike_ppem(&font, req) {
-                let mut strike = self.ctx.builder(font).size(f32::from(ppem)).build();
-                self.scratch.clear();
-                if Render::new(STRIKE_SOURCES).format(Format::Alpha).render_into(
-                    &mut strike,
-                    req.glyph_id,
-                    &mut self.scratch,
-                ) {
-                    return self.strike(ppem, req);
-                }
-                scaler = self
-                    .ctx
-                    .builder(font)
-                    .size(req.size_px)
-                    .hint(req.hint)
-                    .normalized_coords(req.coords.iter().copied())
-                    .build();
-            }
-            self.outline.clear();
-            if !scaler.scale_outline_into(req.glyph_id, &mut self.outline) {
-                return None;
-            }
-            return self.outline_mask(f64::from(dx));
+        self.outline.clear();
+        if !scaler.scale_outline_into(req.glyph_id, &mut self.outline) {
+            return None;
         }
-        let img = &self.scratch;
-        Some(RasterGlyph {
-            left: img.placement.left,
-            top: img.placement.top,
-            width: img.placement.width,
-            height: img.placement.height,
-            content: match img.content {
-                Content::Mask => RasterContent::Mask,
-                Content::Color => RasterContent::Color,
-                Content::SubpixelMask => RasterContent::Subpixel,
-            },
-            strike_ppem: 0,
-            data: &img.data,
-        })
+        self.outline_mask(f64::from(dx))
     }
 
     /// The strike in `self.scratch` (decoded at `ppem`) premultiplied; box-downscaled to the
@@ -373,6 +345,7 @@ mod tests {
     }
 
     fn image(source: Source, px: [u8; 4]) -> Image {
+        use swash::scale::image::Content;
         let mut img = Image::new();
         img.source = source;
         img.content = Content::Color;
