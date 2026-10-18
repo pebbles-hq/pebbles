@@ -2,23 +2,25 @@
 
 use super::*;
 
-/// C14: one `Renderer`, a 300×200 and a 500×400 target, 20 alternations → exactly 2 MSAA
-/// textures, and from frame 3 on no textures or views are created.
+/// C14 + R17: one `Renderer`, a 300×200 and a 500×400 target, 20 alternations of a scene with
+/// one Tier C run → each target's layer pool creates its run textures once (MSAA + resolve, or
+/// one texture when MSAA is unavailable), and from frame 3 on no textures or views are created.
 #[test]
 #[ignore = "gpu"]
-fn two_targets_alternating_allocate_msaa_twice() {
-    let Some((device, _queue, mut renderer)) = setup("two_targets_alternating_allocate_msaa_twice") else {
+fn two_targets_alternating_allocate_pools_once() {
+    let Some((device, _queue, mut renderer)) = setup("two_targets_alternating_allocate_pools_once") else {
         return;
     };
 
     let mut scene = Scene::new();
-    Painter::new(&mut scene).fill(
-        Fill::NonZero,
-        Affine::IDENTITY,
-        Color::BLACK,
-        None,
-        &Rect::new(0.0, 0.0, 50.0, 50.0),
-    );
+    let mut p = Painter::new(&mut scene);
+    p.set_path_hint(pebbles_render::paint::display_list::PathHint::Volatile);
+    let mut tri = kurbo::BezPath::new();
+    tri.move_to((0.0, 0.0));
+    tri.line_to((50.0, 0.0));
+    tri.line_to((0.0, 50.0));
+    tri.close_path();
+    p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &tri);
     let small = target_texture(&device, 300, 200);
     let large = target_texture(&device, 500, 400);
     let (small_view, large_view) =
@@ -42,8 +44,10 @@ fn two_targets_alternating_allocate_msaa_twice() {
             );
         }
     }
-    // The glyph atlas pages are created with the Renderer, so every texture counted here is MSAA.
-    assert_eq!(created, 2);
+    // The glyph atlas pages are created with the Renderer, so every texture counted here is a
+    // pooled Tier C target: one pool per FrameTargets.
+    let per_target = if renderer.msaa_sample_count() > 1 { 2 } else { 1 };
+    assert_eq!(created, 2 * per_target);
 }
 
 /// C14: the render size comes from the target texture; rendering through it is valid.

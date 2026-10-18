@@ -13,7 +13,7 @@ use super::execute::resources::globals::Globals;
 use super::execute::resources::glyph_atlas::GlyphAtlas;
 use super::execute::resources::image_cache::ImageCache;
 use super::execute::targets::{TargetCheck, check_target_size};
-use super::frame_targets::{FrameParams, RenderTarget, TargetKey};
+use super::frame_targets::{FrameParams, RenderTarget};
 use super::gpu_types::QuadInstance;
 use super::limits::RendererLimits;
 use super::prepare::{PrepareInput, PrepareScratch, VERTEX_LIMIT_NO_FULL_INDEX, prepare};
@@ -29,6 +29,12 @@ pub struct Renderer {
     pub(crate) pipelines: PipelineCache,
     globals_buffer: wgpu::Buffer,
     globals_bg: wgpu::BindGroup,
+    /// Dynamic-offset slots in `globals_buffer` (slot 0 = main pass, then one per Tier C run).
+    globals_slots: u64,
+    /// One `CompositeParams` slot per Tier C run (R17).
+    composite_buffer: wgpu::Buffer,
+    composite_slots: u64,
+    pub(crate) runs: Vec<super::execute::tier_c::Run>,
     pub(crate) arenas: FrameArenas,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -54,26 +60,10 @@ impl Renderer {
     /// The pre-C09 glyph system and image cache stay lazy.
     pub fn new(gpu: &GpuDevice, _id: DeviceId) -> Self {
         let device = gpu.device();
-        let globals_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("pebbles.gpu.buffer.globals"),
-            size: size_of::<Globals>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
         let layouts = BindGroupLayouts::new(device);
         let glyph_atlas = GlyphAtlas::new(device, &layouts.glyph);
-        let globals_bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("pebbles.gpu.bind.globals"),
-            layout: &layouts.globals,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &globals_buffer,
-                    offset: 0,
-                    size: wgpu::BufferSize::new(size_of::<Globals>() as u64),
-                }),
-            }],
-        });
+        let (globals_buffer, globals_bg) = globals_slots(device, &layouts, 1);
+        let composite_buffer = uniform_buffer(device, "pebbles.gpu.buffer.composite", 1);
         Renderer {
             sample_count: gpu.caps().msaa_samples,
             adapter: gpu.adapter().clone(),
@@ -83,6 +73,10 @@ impl Renderer {
             pipelines: PipelineCache::new(),
             globals_buffer,
             globals_bg,
+            globals_slots: 1,
+            composite_buffer,
+            composite_slots: 1,
+            runs: Vec::new(),
             arenas: FrameArenas::new(),
             device: device.clone(),
             queue: gpu.queue().clone(),
@@ -152,9 +146,8 @@ impl Renderer {
         }
         let format = target.format();
         let mut stats = FrameStats::default();
+        // The main pass is single-sampled; the negotiated count is for Tier C runs (R12, R17).
         self.sample_count = self.msaa.get(&self.adapter, format, None);
-        let key = TargetKey { width: size.0, height: size.1, format, sample_count: self.sample_count };
-        let msaa = target.targets.msaa_view(device, key, &mut stats).cloned();
 
         let input = PrepareInput {
             target_size: size,
@@ -200,7 +193,7 @@ impl Renderer {
             &mut stats,
         );
 
-        self.pipelines.prewarm(device, &self.shaders, &self.layouts, format, self.sample_count, &mut stats);
+        self.pipelines.prewarm(device, &self.shaders, &self.layouts, format, 1, &mut stats);
         self.glyph_atlas.begin_frame();
         self.image_cache.begin_frame();
         resolve_and_upload(self, device, queue, &mut stats);
@@ -208,12 +201,17 @@ impl Renderer {
         let clear = super::prepare::color::clear_color(params.base_color);
         let mut encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.gpu.encoder") });
+        let composites = super::execute::tier_c::encode_runs(
+            self,
+            device,
+            queue,
+            &mut encoder,
+            target.targets,
+            format,
+            &mut stats,
+        );
         {
-            // Single-sampled devices draw straight into the target (no resolve).
-            let (view, resolve_target) = match &msaa {
-                Some(m) => (m, Some(target.view)),
-                None => (target.view, None),
-            };
+            let (view, resolve_target) = (target.view, None);
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("pebbles.gpu.pass.root"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -227,10 +225,11 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            encode(self, &mut pass, format, &mut stats);
+            encode(self, &mut pass, format, &mut stats, &composites);
             stats.render_passes += 1;
         }
         queue.submit([encoder.finish()]);
+        target.targets.pool.end_frame();
         self.scratch.plan.release_refs();
         self.glyph_atlas.end_frame();
         self.image_cache.end_frame(&mut stats);
@@ -251,6 +250,66 @@ impl Renderer {
     pub(crate) fn globals_bg(&self) -> &wgpu::BindGroup {
         &self.globals_bg
     }
+
+    pub(crate) fn globals_buffer(&self) -> &wgpu::Buffer {
+        &self.globals_buffer
+    }
+
+    pub(crate) fn composite_buffer(&self) -> &wgpu::Buffer {
+        &self.composite_buffer
+    }
+
+    /// Grow the globals / composite uniform buffers to hold at least the given slot counts.
+    pub(crate) fn ensure_uniform_slots(&mut self, device: &wgpu::Device, globals: u64, composites: u64) {
+        if globals > self.globals_slots {
+            let n = globals.next_power_of_two();
+            let (buffer, bg) = globals_slots(device, &self.layouts, n);
+            // Slot 0 (the main pass) was written this frame already: copy it over.
+            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("pebbles.gpu.encoder.globals_grow"),
+            });
+            enc.copy_buffer_to_buffer(&self.globals_buffer, 0, &buffer, 0, size_of::<Globals>() as u64);
+            self.queue.submit([enc.finish()]);
+            (self.globals_buffer, self.globals_bg, self.globals_slots) = (buffer, bg, n);
+        }
+        if composites > self.composite_slots {
+            let n = composites.next_power_of_two();
+            self.composite_buffer = uniform_buffer(device, "pebbles.gpu.buffer.composite", n);
+            self.composite_slots = n;
+        }
+    }
+}
+
+/// A uniform buffer of `slots` dynamic-offset slots.
+fn uniform_buffer(device: &wgpu::Device, label: &'static str, slots: u64) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: slots * super::execute::tier_c::slot_stride(device),
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    })
+}
+
+/// The Globals buffer with `slots` slots and its bind group (32-byte window, dynamic offset).
+fn globals_slots(
+    device: &wgpu::Device,
+    layouts: &BindGroupLayouts,
+    slots: u64,
+) -> (wgpu::Buffer, wgpu::BindGroup) {
+    let buffer = uniform_buffer(device, "pebbles.gpu.buffer.globals", slots);
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("pebbles.gpu.bind.globals"),
+        layout: &layouts.globals,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: &buffer,
+                offset: 0,
+                size: wgpu::BufferSize::new(size_of::<Globals>() as u64),
+            }),
+        }],
+    });
+    (buffer, bg)
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use super::resources::bind_groups::BindGroupLayouts;
 use crate::stats::FrameStats;
 
+mod composite;
 mod glyph;
 mod image;
 mod sdf;
@@ -52,6 +53,7 @@ pub(crate) struct ShaderModules {
     pub image: wgpu::ShaderModule,
     pub shadow: wgpu::ShaderModule,
     pub sdf: wgpu::ShaderModule,
+    pub composite: wgpu::ShaderModule,
 }
 
 impl ShaderModules {
@@ -69,6 +71,7 @@ impl ShaderModules {
             image: module("pebbles.gpu.shader.image", shaders::IMAGE),
             shadow: module("pebbles.gpu.shader.shadow", shaders::SHADOW),
             sdf: module("pebbles.gpu.shader.sdf", shaders::SDF),
+            composite: module("pebbles.gpu.shader.composite", shaders::COMPOSITE),
         }
     }
 
@@ -79,6 +82,7 @@ impl ShaderModules {
             PipelineKind::Image => &self.image,
             PipelineKind::Shadow => &self.shadow,
             PipelineKind::Sdf => &self.sdf,
+            PipelineKind::CompositeOver => &self.composite,
             _ => &self.solid,
         }
     }
@@ -108,6 +112,7 @@ impl PipelineCache {
         let bgl = match kind {
             PipelineKind::Glyph => vec![Some(&layouts.globals), Some(&layouts.glyph)],
             PipelineKind::Image => vec![Some(&layouts.globals), Some(&layouts.texture)],
+            PipelineKind::CompositeOver => vec![Some(&layouts.globals), Some(&layouts.composite)],
             _ => vec![Some(&layouts.globals)],
         };
         let l = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -139,6 +144,7 @@ impl PipelineCache {
             PipelineKind::Sdf => sdf::build(device, shader, &pipeline_layout, key),
             PipelineKind::Glyph => glyph::build(device, shader, &pipeline_layout, key),
             PipelineKind::Image => image::build(device, shader, &pipeline_layout, key),
+            PipelineKind::CompositeOver => composite::build(device, shader, &pipeline_layout, key),
             // Later cards add their builders; never reached before then.
             _ => return,
         };

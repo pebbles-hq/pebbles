@@ -57,13 +57,33 @@ pub(crate) fn encode(
     pass: &mut wgpu::RenderPass<'_>,
     format: wgpu::TextureFormat,
     stats: &mut FrameStats,
+    composites: &[super::tier_c::Composite],
 ) {
     pass.set_bind_group(0, renderer.globals_bg(), &[0]);
-    let sample_count = renderer.sample_count;
+    // The main pass is single-sampled (R17).
+    let sample_count = 1;
     let key = |kind, variant| PipelineKey { kind, color_format: format, sample_count, blend: 0, variant };
     let mut state = PassState::new();
 
-    for cmd in &renderer.scratch.plan.cmds {
+    let mut runs = composites.iter().peekable();
+    let mut i = 0;
+    while let Some(cmd) = renderer.scratch.plan.cmds.get(i) {
+        i += 1;
+        // A Tier C run is drawn as its composite at the position of its first cmd (R17).
+        if let Some(c) = runs.next_if(|c| c.run.cmds.start == i - 1) {
+            i = c.run.cmds.end;
+            let (Some(pipeline), Some(bg)) =
+                (renderer.pipelines.get(key(PipelineKind::CompositeOver, 0)), &c.bind_group)
+            else {
+                continue;
+            };
+            state.set_scissor(pass, c.run.scissor);
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(1, bg, &[c.params_offset]);
+            pass.draw(0..4, 0..1);
+            stats.draw_calls += 1;
+            continue;
+        }
         match cmd {
             DrawCmd::Solid { indices, clip } => {
                 let (Some(pipeline), Some(vb), Some(ib)) = (

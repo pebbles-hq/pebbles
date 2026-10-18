@@ -83,3 +83,33 @@ impl ShapeInstance {
         }
     }
 }
+
+/// Per-composite uniform (09 §3.7): one 256-byte-aligned slot per composited Tier C run / layer.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+pub(crate) struct CompositeParams {
+    /// Device px x0, y0, x1, y1 (= layer bounds).
+    pub bounds: [f32; 4],
+    /// Group opacity (0, 1].
+    pub alpha: f32,
+    /// `peniko::Mix as u8 as u32`.
+    pub mix_mode: u32,
+    /// `peniko::Compose as u8 as u32`.
+    pub compose: u32,
+    pub _pad: u32,
+}
+const _: () = assert!(size_of::<CompositeParams>() == 32);
+
+#[cfg(test)]
+mod tests {
+    use super::CompositeParams;
+
+    #[test]
+    fn composite_params_layout() {
+        assert_eq!(size_of::<CompositeParams>(), 32);
+        assert_eq!(core::mem::offset_of!(CompositeParams, alpha), 16);
+        assert_eq!(core::mem::offset_of!(CompositeParams, mix_mode), 20);
+        assert_eq!(core::mem::offset_of!(CompositeParams, compose), 24);
+        assert_eq!(core::mem::offset_of!(CompositeParams, _pad), 28);
+    }
+}

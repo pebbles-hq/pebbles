@@ -20,6 +20,7 @@ mod path_masks;
 mod support;
 mod targets;
 mod text;
+mod tier_c;
 
 /// Acquire a headless device + renderer, printing a skip note and returning `None` without an adapter.
 pub(crate) fn setup(name: &str) -> Option<(wgpu::Device, wgpu::Queue, Renderer)> {

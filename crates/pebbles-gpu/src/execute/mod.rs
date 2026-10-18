@@ -5,3 +5,4 @@ pub(crate) mod pipelines;
 pub(crate) mod resolve;
 pub(crate) mod resources;
 pub(crate) mod targets;
+pub(crate) mod tier_c;

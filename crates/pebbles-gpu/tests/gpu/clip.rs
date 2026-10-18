@@ -135,3 +135,29 @@ fn square_image_box_is_clipped() {
     assert_eq!(pixel(&rgba, 100, 60, 60), [255, 255, 255, 255], "outside the clip");
     assert_eq!(pixel(&rgba, 100, 20, 20), [255, 0, 0, 255], "inside the clip");
 }
+
+/// An integer rect clip is a hard scissor on every edge: nothing at row/column 19 of
+/// [20, 100) (render-check clip/rect_scissor against the golden model).
+#[test]
+#[ignore = "gpu"]
+fn integer_clip_is_hard_on_every_edge() {
+    let Some((device, queue, mut renderer)) = setup("integer_clip_is_hard_on_every_edge") else { return };
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    p.push_layer(
+        Fill::NonZero,
+        peniko::BlendMode::default(),
+        1.0,
+        Affine::IDENTITY,
+        &Rect::new(20.0, 20.0, 100.0, 100.0),
+    );
+    p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &Rect::new(0.0, 0.0, 128.0, 128.0));
+    p.pop_layer();
+    let rgba = render_scene(&device, &queue, &mut renderer, &scene, (128, 128), Color::WHITE);
+    for i in 0..128 {
+        for (x, y) in [(19, i), (i, 19), (100, i), (i, 100)] {
+            assert!(is_white(pixel(&rgba, 128, x, y)), "({x},{y}) leaked: {:?}", pixel(&rgba, 128, x, y));
+        }
+    }
+    assert_eq!(pixel(&rgba, 128, 20, 20)[..3], [0, 0, 0]);
+}

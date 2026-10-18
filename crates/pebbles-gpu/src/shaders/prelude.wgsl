@@ -21,3 +21,8 @@ fn to_clip(p: vec2<f32>) -> vec4<f32> {
 fn quad_corner(vertex_index: u32) -> vec2<f32> {
     return vec2<f32>(f32(vertex_index & 1u), f32((vertex_index >> 1u) & 1u));
 }
+
+// Fragment @builtin(position) -> device px of the frame (adds the pass target's origin).
+fn device_pos(frag_coord: vec4<f32>) -> vec2<f32> {
+    return frag_coord.xy + globals.target_origin;
+}

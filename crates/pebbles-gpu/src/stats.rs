@@ -152,6 +152,8 @@ pub struct FrameStats {
     pub tier_b_draws: u32,
     /// Ops drawn as Tier C meshes this frame.
     pub tier_c_draws: u32,
+    /// Tier C runs drawn without MSAA because the format negotiated 1 sample (R12, R17).
+    pub tier_c_aliased: u32,
     /// Bytes written to GPU buffers.
     pub bytes_uploaded: u64,
     /// CPU prepare time, microseconds.
@@ -206,6 +208,7 @@ impl Default for FrameStats {
             tier_a_draws: 0,
             tier_b_draws: 0,
             tier_c_draws: 0,
+            tier_c_aliased: 0,
             bytes_uploaded: 0,
             prepare_us: 0,
             execute_us: 0,

@@ -7,6 +7,9 @@ pub(crate) struct BindGroupLayouts {
     pub texture: wgpu::BindGroupLayout,
     /// Glyph group 1: mask array, color array, filtering sampler (06 §9.4).
     pub glyph: wgpu::BindGroupLayout,
+    /// Composite group 1: the layer texture (non-filterable, `textureLoad`) + `CompositeParams`
+    /// (uniform, dynamic offset) (09 §3.7).
+    pub composite: wgpu::BindGroupLayout,
 }
 
 impl BindGroupLayouts {
@@ -68,6 +71,31 @@ impl BindGroupLayouts {
                 },
             ],
         });
-        Self { globals, texture, glyph }
+        let composite = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("pebbles.gpu.layout.composite"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(32),
+                    },
+                    count: None,
+                },
+            ],
+        });
+        Self { globals, texture, glyph, composite }
     }
 }
