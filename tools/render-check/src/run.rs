@@ -9,6 +9,7 @@ use crate::CheckError;
 use crate::args::{RefMode, Tolerance};
 use crate::candidate::Candidate;
 use crate::case::{Case, Category, Expect, Reference};
+use crate::golden::Golden;
 use crate::metric::{Rgba8, compare, smoke_compare};
 use crate::reference::HybridReference;
 use crate::report::{CaseResult, diff_image, side_by_side};
@@ -197,6 +198,17 @@ impl Runner {
         Ok(Rgba8 { width: w, height: h, data })
     }
 
+    /// Render the case with the golden model (§6.7a). An op the model does not support yet
+    /// (V45/V46) is a `PROBE_FAIL`, never a pass.
+    fn render_golden(&self, case: &Case) -> Result<Rgba8, (Status, String)> {
+        let (w, h) = case.device_size();
+        let built = catch_unwind(|| frame_scene(&logical_scene(case, 0), case.scale))
+            .map_err(|p| (Status::Panic, format!("build: {}", panic_message(&*p))))?;
+        catch_unwind(AssertUnwindSafe(|| Golden::render(&built, w, h, case.background)))
+            .map_err(|p| (Status::Panic, format!("golden: {}", panic_message(&*p))))?
+            .map_err(|e| (Status::ProbeFail, e.to_string()))
+    }
+
     /// Apply the spec reference; returns the reference image when one exists.
     fn judge(&self, case: &Case, cand: &Rgba8, r: &mut CaseResult) -> Option<Rgba8> {
         let probe_fails = probe::run_probes(case, cand, &mut r.probes);
@@ -227,7 +239,14 @@ impl Runner {
                     Err(_) => None,
                 }
             }
-            (Reference::Golden, false) => None,
+            (Reference::Golden, false) => match self.render_golden(case) {
+                Ok(img) => Some(img),
+                Err((status, note)) => {
+                    r.status = status;
+                    r.note = note;
+                    return None;
+                }
+            },
         };
         let Some(reference_img) = reference_img else {
             r.status = if probe_fails > 0 { verdict(false, case.expect) } else { Status::Unjudged };
@@ -237,7 +256,7 @@ impl Runner {
             if r.status == Status::Unjudged {
                 r.note = match case.reference {
                     Reference::SelfGolden => "no self-golden yet (V12); smoke only".into(),
-                    _ => "golden model not implemented yet (V44-V47); smoke only".into(),
+                    _ => "no reference image; smoke only".into(),
                 };
             }
             return None;

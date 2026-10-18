@@ -47,10 +47,27 @@ fn sd_rrect(p: vec2<f32>, rect: vec4<f32>, radii: vec4<f32>) -> f32 {
     return length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - r;
 }
 
+// Area of the pixel box [p - 0.5, p + 0.5]² inside `rect`: exact for a sharp rect, and an upper
+// bound of a rounded rect's area (rounded corners are cut by the SDF term).
+fn box_overlap(p: vec2<f32>, rect: vec4<f32>) -> f32 {
+    let lo = max(rect.xy, p - vec2<f32>(0.5));
+    let hi = min(rect.zw, p + vec2<f32>(0.5));
+    let o = clamp(hi - lo, vec2<f32>(0.0), vec2<f32>(1.0));
+    return o.x * o.y;
+}
+
+// Coverage of the pixel at `p` by a rounded rect (02 §5.1): exact on straight edges and sharp
+// corners, SDF-estimated on corner arcs.
+fn rrect_coverage(p: vec2<f32>, rect: vec4<f32>, radii: vec4<f32>) -> f32 {
+    let sdf = clamp(0.5 - sd_rrect(p, rect, radii), 0.0, 1.0);
+    return min(box_overlap(p, rect), sdf);
+}
+
 @fragment fn fs_shape(in: ShapeOut) -> @location(0) vec4<f32> {
-    var coverage = clamp(0.5 - sd_rrect(in.p, in.outer, in.outer_radii), 0.0, 1.0);
+    var coverage = rrect_coverage(in.p, in.outer, in.outer_radii);
     if (in.inner.z > in.inner.x && in.inner.w > in.inner.y) {
-        coverage = coverage * clamp(0.5 + sd_rrect(in.p, in.inner, in.inner_radii), 0.0, 1.0);
+        // A border is the ring between nested shapes: outer minus inner area.
+        coverage = max(coverage - rrect_coverage(in.p, in.inner, in.inner_radii), 0.0);
     }
     // `finish_color` (the GL sRGB-only decode) arrives with R13.
     return in.color * coverage;
