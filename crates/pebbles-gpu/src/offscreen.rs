@@ -121,6 +121,13 @@ impl OffscreenRenderer {
     }
 
     /// The `FrameStats` of the last `render_rgba`.
+    /// Debug switch (R10): draw Tier A shapes through tessellation instead, as before R10
+    /// (render-check `--tier-a off` measures the pre-card error).
+    pub fn set_sdf_enabled(&mut self, enabled: bool) {
+        self.renderer.set_sdf_enabled(enabled);
+    }
+
+    /// The `FrameStats` of the last render.
     pub fn last_frame_stats(&self) -> FrameStats {
         self.last_stats
     }

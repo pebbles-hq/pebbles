@@ -27,6 +27,7 @@ pub struct RunOptions {
     pub tolerance: Tolerance,
     pub determinism: bool,
     pub keep_images: bool,
+    pub tier_a: bool,
     /// `<out>/<tag>/cases`; `None` = write no artifacts.
     pub cases_dir: Option<PathBuf>,
 }
@@ -41,6 +42,7 @@ impl Default for RunOptions {
             tolerance: a.tolerance,
             determinism: false,
             keep_images: false,
+            tier_a: true,
             cases_dir: None,
         }
     }
@@ -92,7 +94,8 @@ fn bg_rgba8(c: peniko::Color) -> [u8; 4] {
 impl Runner {
     /// A runner on a new device; `Err(NoAdapter)` means exit 3.
     pub fn new(opts: RunOptions) -> Result<Self, CheckError> {
-        let candidate = Candidate::new()?;
+        let mut candidate = Candidate::new()?;
+        candidate.set_tier_a(opts.tier_a);
         let smoke = HybridReference::new(candidate.device().clone(), candidate.queue().clone());
         Ok(Self { candidate, smoke, opts })
     }
@@ -100,6 +103,7 @@ impl Runner {
     /// New device for both sides (after a PANIC or GPU_ERROR).
     pub fn recreate(&mut self) -> Result<(), CheckError> {
         self.candidate.recreate()?;
+        self.candidate.set_tier_a(self.opts.tier_a);
         self.smoke = HybridReference::new(self.candidate.device().clone(), self.candidate.queue().clone());
         Ok(())
     }

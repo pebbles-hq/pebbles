@@ -50,6 +50,11 @@ impl Candidate {
         Ok(Rgba8 { width: img.width, height: img.height, data: img.pixels })
     }
 
+    /// Tier A on/off (debug: off reproduces the pre-R10 tessellated path).
+    pub fn set_tier_a(&mut self, on: bool) {
+        self.r.set_sdf_enabled(on);
+    }
+
     /// The `FrameStats` of the last render.
     pub fn last_frame_stats(&self) -> FrameStats {
         self.r.last_frame_stats()

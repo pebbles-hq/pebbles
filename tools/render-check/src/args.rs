@@ -65,6 +65,8 @@ pub struct Args {
     pub determinism: bool,
     /// Write PNGs for passing cases too.
     pub keep_images: bool,
+    /// `--tier-a off`: tessellate Tier A shapes (pre-R10 baseline, debug).
+    pub tier_a: bool,
     /// Write candidate images of passing `in_refs` cases here (V12).
     pub write_refs: Option<PathBuf>,
     /// Print usage and exit 0.
@@ -85,6 +87,7 @@ impl Default for Args {
             platform_tag: None,
             determinism: false,
             keep_images: false,
+            tier_a: true,
             write_refs: None,
             help: false,
         }
@@ -112,6 +115,7 @@ usage: render-check [options]
   --tolerance <canonical|relaxed> threshold set (default canonical)
   --platform-tag <TAG>            output subdir and report label
   --determinism                   render every candidate twice; differences are UNSTABLE
+  --tier-a on|off                 off: tessellate Tier A shapes (pre-R10 baseline, debug)
   --keep-images                   also write PNGs for passing cases
   --write-refs <DIR>              write passing in_refs candidates (llvmpipe only)
   -h, --help                      this text
@@ -153,6 +157,13 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
             "--platform-tag" => out.platform_tag = Some(value("--platform-tag")?),
             "--determinism" => out.determinism = true,
             "--keep-images" => out.keep_images = true,
+            "--tier-a" => {
+                out.tier_a = match value("--tier-a")?.as_str() {
+                    "on" => true,
+                    "off" => false,
+                    other => return Err(format!("--tier-a expects on|off, got {other:?}")),
+                }
+            }
             "--write-refs" => out.write_refs = Some(PathBuf::from(value("--write-refs")?)),
             "-h" | "--help" => out.help = true,
             other => return Err(format!("unknown flag `{other}`")),
