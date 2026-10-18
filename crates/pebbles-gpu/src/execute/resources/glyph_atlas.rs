@@ -1,36 +1,60 @@
-//! The glyph atlas: one `R8Unorm` mask page and one `Rgba8Unorm` (premultiplied) color page,
-//! each a 2-layer array texture (WebGL2 rule W1; only layer 0 is allocated until M01). Texels
-//! are uploaded only when a glyph is inserted — never on a hit (10 §5).
+//! The coverage atlas, GPU side (10 §5.7–§5.9; M01): one `R8Unorm` mask texture and one
+//! `Rgba8Unorm` (premultiplied) color texture, each a D2 array with ≥ 2 layers (W1, W2), grown by
+//! `AtlasTexture::sync` (a separate submit before the frame's uploads, rule O1). Misses are
+//! rasterized during resolve and staged as padded bitmaps; `flush` syncs then uploads them.
 
 use super::atlas_alloc::{
-    AtlasAllocator, AtlasFull, AtlasKind, AtlasSlot, GLYPH_GUTTER_PX, GlyphKey, MaskKey,
+    AtlasKind, AtlasPages, AtlasSlot, CoverageAtlas, GLYPH_GUTTER_PX, GlyphKey, MaskKey,
 };
+use super::bind_groups::{GenBindGroup, refresh};
+use crate::budgets::GpuBudgets;
 use crate::prepare::path_masks::MaskSource;
 use crate::raster::coverage::{CoverageRasterizer, MaskBuf};
 use crate::raster::swash::{GlyphRaster, RasterContent, RasterRequest};
+use crate::stats::FrameStats;
 
-/// Page side cap (10 §5.4); the device limit may lower it.
-pub(crate) const GLYPH_ATLAS_SIDE: u32 = 2048;
-/// Physical array layers per page (≥ 2, never a multiple of 6 — W1/W2).
-const PHYSICAL_LAYERS: u32 = 2;
-
-/// One atlas page: the texture, its array view and the allocator.
-struct Page {
-    texture: wgpu::Texture,
-    view: wgpu::TextureView,
-    alloc: AtlasAllocator,
-    bytes_per_pixel: u32,
+/// One pending `write_texture` (10 §5.3).
+pub(crate) struct GlyphUpload {
+    pub kind: AtlasKind,
+    pub layer: u16,
+    /// Top-left of the PADDED region (gutter included).
+    pub x: u16,
+    pub y: u16,
+    /// Padded size.
+    pub w: u16,
+    pub h: u16,
+    pub bytes: std::ops::Range<usize>,
 }
 
-impl Page {
-    fn new(device: &wgpu::Device, kind: AtlasKind, side: u32) -> Self {
-        let (format, bytes_per_pixel, label) = match kind {
-            AtlasKind::Mask => (wgpu::TextureFormat::R8Unorm, 1, "pebbles.gpu.atlas.mask"),
-            AtlasKind::Color => (wgpu::TextureFormat::Rgba8Unorm, 4, "pebbles.gpu.atlas.color"),
-        };
+/// The GPU texture of one kind's pages (10 §5.7).
+pub(crate) struct AtlasTexture {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    side: u32,
+    /// Physical layers.
+    layers: u32,
+    /// The `AtlasPages::generation` this texture matches.
+    pub generation: u64,
+}
+
+fn format_of(kind: AtlasKind) -> (wgpu::TextureFormat, u32, &'static str) {
+    match kind {
+        AtlasKind::Mask => (wgpu::TextureFormat::R8Unorm, 1, "pebbles.gpu.atlas.mask"),
+        AtlasKind::Color => (wgpu::TextureFormat::Rgba8Unorm, 4, "pebbles.gpu.atlas.color"),
+    }
+}
+
+impl AtlasTexture {
+    fn create(
+        device: &wgpu::Device,
+        kind: AtlasKind,
+        side: u32,
+        layers: u32,
+    ) -> (wgpu::Texture, wgpu::TextureView) {
+        let (format, _, label) = format_of(kind);
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some(label),
-            size: wgpu::Extent3d { width: side, height: side, depth_or_array_layers: PHYSICAL_LAYERS },
+            size: wgpu::Extent3d { width: side, height: side, depth_or_array_layers: layers },
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
@@ -40,180 +64,214 @@ impl Page {
                 | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
         });
+        // W3: explicit array dimension and layer count.
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
             label: Some(label),
             dimension: Some(wgpu::TextureViewDimension::D2Array),
-            array_layer_count: Some(PHYSICAL_LAYERS),
+            array_layer_count: Some(layers),
             ..Default::default()
         });
-        Self { texture, view, alloc: AtlasAllocator::new(kind, side), bytes_per_pixel }
+        (texture, view)
     }
 
-    /// Upload a padded (zero gutter) copy of `data` (`w`×`h`, tightly packed) at `slot`.
-    fn upload(
-        &self,
+    fn new(device: &wgpu::Device, pages: &AtlasPages) -> Self {
+        let (texture, view) = Self::create(device, pages.kind, pages.side, pages.physical_layers);
+        Self { texture, view, side: pages.side, layers: pages.physical_layers, generation: pages.generation }
+    }
+
+    /// SYNC step 2a: recreate at the pages' size when it changed, copying every old layer one
+    /// layer per copy (W4), and submit that copy immediately (O1). Returns whether it was recreated.
+    pub(crate) fn sync(
+        &mut self,
+        device: &wgpu::Device,
         queue: &wgpu::Queue,
-        staging: &mut Vec<u8>,
-        slot: AtlasSlot,
-        data: &[u8],
-        premultiply: bool,
-    ) {
-        let bpp = self.bytes_per_pixel as usize;
+        pages: &AtlasPages,
+        stats: &mut FrameStats,
+    ) -> bool {
+        if self.side == pages.side && self.layers == pages.physical_layers {
+            self.generation = pages.generation;
+            return false;
+        }
+        let (texture, view) = Self::create(device, pages.kind, pages.side, pages.physical_layers);
+        stats.textures_created += 1;
+        stats.texture_views_created += 1;
+        let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("pebbles.gpu.encoder.atlas_grow"),
+        });
+        for l in 0..self.layers.min(pages.physical_layers) {
+            let at = |t| wgpu::TexelCopyTextureInfo {
+                texture: t,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: 0, y: 0, z: l },
+                aspect: wgpu::TextureAspect::All,
+            };
+            enc.copy_texture_to_texture(
+                at(&self.texture),
+                at(&texture),
+                wgpu::Extent3d { width: self.side, height: self.side, depth_or_array_layers: 1 },
+            );
+        }
+        queue.submit([enc.finish()]);
+        (self.texture, self.view, self.side, self.layers, self.generation) =
+            (texture, view, pages.side, pages.physical_layers, pages.generation);
+        true
+    }
+}
+
+/// Outcome of looking up one entry.
+pub(crate) enum GlyphLookup {
+    /// Resident (hit or freshly inserted; texels land in this frame's flush).
+    Slot(AtlasSlot),
+    /// Empty bitmap (a space) or no representation: draw nothing.
+    Empty,
+    /// No room after the whole ladder (counted as `AtlasFull`).
+    Full,
+    /// swash returned a subpixel mask (counted as `GlyphContent`).
+    Unsupported,
+}
+
+/// The coverage atlas: CPU residency + both textures + the rasterizers + the bind group.
+pub(crate) struct GlyphAtlas {
+    pub(crate) cpu: CoverageAtlas,
+    mask: AtlasTexture,
+    color: AtlasTexture,
+    raster: GlyphRaster,
+    paths: CoverageRasterizer,
+    mask_buf: MaskBuf,
+    uploads: Vec<GlyphUpload>,
+    staging: Vec<u8>,
+    sampler: wgpu::Sampler,
+    bind_group: Option<GenBindGroup>,
+}
+
+impl GlyphAtlas {
+    pub(crate) fn new(device: &wgpu::Device, budgets: &GpuBudgets) -> Self {
+        let max_side = budgets.glyph_atlas_max_side.min(device.limits().max_texture_dimension_2d);
+        let cpu = CoverageAtlas::new(
+            max_side,
+            budgets.glyph_mask_max_layers,
+            budgets.glyph_color_max_layers,
+            budgets.path_mask_bytes,
+        );
+        let mask = AtlasTexture::new(device, &cpu.mask);
+        let color = AtlasTexture::new(device, &cpu.color);
+        // 10 §3.5: glyph atlases sample { Linear, ClampToEdge, ClampToEdge }.
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("pebbles.gpu.atlas.sampler"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        Self {
+            cpu,
+            mask,
+            color,
+            raster: GlyphRaster::default(),
+            paths: CoverageRasterizer::default(),
+            mask_buf: MaskBuf::default(),
+            uploads: Vec::new(),
+            staging: Vec::new(),
+            sampler,
+            bind_group: None,
+        }
+    }
+
+    pub(crate) fn begin_frame(&mut self) {
+        self.cpu.begin_frame();
+        self.uploads.clear();
+        self.staging.clear();
+    }
+
+    pub(crate) fn end_frame(&mut self, stats: &mut FrameStats) {
+        self.cpu.end_frame(stats);
+        self.raster.end_frame();
+    }
+
+    /// The bind group of the current textures (after `flush`).
+    pub(crate) fn bind_group(&self) -> Option<&wgpu::BindGroup> {
+        self.bind_group.as_ref().map(|g| &g.group)
+    }
+
+    /// Stage a padded (zero gutter) copy of `data` (`w`×`h`, tight) for `slot`.
+    fn stage(&mut self, slot: AtlasSlot, data: &[u8], premultiply: bool) {
+        let bpp = format_of(slot.kind).1 as usize;
         let (w, h) = (usize::from(slot.w), usize::from(slot.h));
         let g = GLYPH_GUTTER_PX as usize;
         let (pw, ph) = (w + 2 * g, h + 2 * g);
-        staging.clear();
-        staging.resize(pw * ph * bpp, 0);
+        let start = self.staging.len();
+        self.staging.resize(start + pw * ph * bpp, 0);
         for row in 0..h {
-            let src = &data[row * w * bpp..(row + 1) * w * bpp];
-            let dst = ((row + g) * pw + g) * bpp;
-            staging[dst..dst + w * bpp].copy_from_slice(src);
+            let Some(src) = data.get(row * w * bpp..(row + 1) * w * bpp) else { break };
+            let dst = start + ((row + g) * pw + g) * bpp;
+            self.staging[dst..dst + w * bpp].copy_from_slice(src);
         }
         if premultiply {
-            for px in staging.as_chunks_mut::<4>().0 {
+            for px in self.staging[start..].as_chunks_mut::<4>().0 {
                 let a = u16::from(px[3]);
                 for c in &mut px[..3] {
                     *c = u8::try_from((u16::from(*c) * a + 127) / 255).unwrap_or(u8::MAX);
                 }
             }
         }
-        let gutter = u32::from(slot.x) - GLYPH_GUTTER_PX;
-        let top = u32::from(slot.y) - GLYPH_GUTTER_PX;
-        let (pw, ph) = (u32::from(slot.w) + 2 * GLYPH_GUTTER_PX, u32::from(slot.h) + 2 * GLYPH_GUTTER_PX);
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d { x: gutter, y: top, z: u32::from(slot.layer) },
-                aspect: wgpu::TextureAspect::All,
-            },
-            staging,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(pw * self.bytes_per_pixel),
-                rows_per_image: None,
-            },
-            wgpu::Extent3d { width: pw, height: ph, depth_or_array_layers: 1 },
-        );
-    }
-}
-
-/// Outcome of looking up one glyph.
-pub(crate) enum GlyphLookup {
-    /// Resident (hit or freshly inserted).
-    Slot(AtlasSlot),
-    /// Empty bitmap (a space) or no representation: draw nothing.
-    Empty,
-    /// No room this frame (counted as `AtlasFull`).
-    Full,
-    /// swash returned a subpixel mask (counted as `GlyphContent`).
-    Unsupported,
-}
-
-/// Both atlas pages, the rasterizer, and the bind group that samples them.
-pub(crate) struct GlyphAtlas {
-    mask: Page,
-    color: Page,
-    raster: GlyphRaster,
-    paths: CoverageRasterizer,
-    mask_buf: MaskBuf,
-    staging: Vec<u8>,
-    pub(crate) bind_group: wgpu::BindGroup,
-}
-
-impl GlyphAtlas {
-    pub(crate) fn new(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, path_mask_bytes: u64) -> Self {
-        let side = GLYPH_ATLAS_SIDE.min(device.limits().max_texture_dimension_2d);
-        let mut mask = Page::new(device, AtlasKind::Mask, side);
-        mask.alloc.set_path_budget(path_mask_bytes);
-        let color = Page::new(device, AtlasKind::Color, side);
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("pebbles.gpu.atlas.sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
+        let gutter = u16::try_from(GLYPH_GUTTER_PX).unwrap_or(1);
+        let to16 = |v: usize| u16::try_from(v).unwrap_or(u16::MAX);
+        self.uploads.push(GlyphUpload {
+            kind: slot.kind,
+            layer: slot.layer,
+            x: slot.x - gutter,
+            y: slot.y - gutter,
+            w: to16(pw),
+            h: to16(ph),
+            bytes: start..self.staging.len(),
         });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("pebbles.gpu.bind.glyph"),
-            layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&mask.view) },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&color.view),
-                },
-                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&sampler) },
-            ],
-        });
-        Self {
-            mask,
-            color,
-            raster: GlyphRaster::default(),
-            paths: CoverageRasterizer::default(),
-            mask_buf: MaskBuf::default(),
-            staging: Vec::new(),
-            bind_group,
-        }
     }
 
-    pub(crate) fn begin_frame(&mut self) {
-        self.mask.alloc.begin_frame();
-        self.color.alloc.begin_frame();
-    }
-
-    pub(crate) fn end_frame(&mut self) {
-        self.raster.end_frame();
-    }
-
-    /// Find `key`, rasterizing and uploading it on a miss. Returns the lookup and whether a
+    /// Find glyph `key`, rasterizing and staging it on a miss. Returns the lookup and whether a
     /// glyph was rasterized.
     pub(crate) fn lookup(
         &mut self,
-        queue: &wgpu::Queue,
         key: GlyphKey,
         req: &RasterRequest<'_>,
+        stats: &mut FrameStats,
     ) -> (GlyphLookup, bool) {
-        // A key lives in exactly one page; check both.
-        for page in [&mut self.mask, &mut self.color] {
-            if let Some(hit) = page.alloc.get(key) {
-                return (hit.map_or(GlyphLookup::Empty, GlyphLookup::Slot), false);
-            }
+        if let Some(hit) = self.cpu.get(key) {
+            return (hit.map_or(GlyphLookup::Empty, GlyphLookup::Slot), false);
         }
         let Some(glyph) = self.raster.rasterize(req) else {
-            self.mask.alloc.insert_empty(key);
+            self.cpu.insert_empty(key);
             return (GlyphLookup::Empty, true);
         };
-        let page = match glyph.content {
-            RasterContent::Mask => &mut self.mask,
-            RasterContent::Color => &mut self.color,
+        let atlas = match glyph.content {
+            RasterContent::Mask => AtlasKind::Mask,
+            RasterContent::Color => AtlasKind::Color,
             RasterContent::Subpixel => return (GlyphLookup::Unsupported, true),
         };
         if glyph.width == 0 || glyph.height == 0 {
-            page.alloc.insert_empty(key);
+            self.cpu.insert_empty(key);
             return (GlyphLookup::Empty, true);
         }
-        match page.alloc.insert(key, glyph.width, glyph.height, glyph.left, glyph.top) {
+        let premultiply = glyph.content == RasterContent::Color && !glyph.premultiplied;
+        let (w, h, left, top) = (glyph.width, glyph.height, glyph.left, glyph.top);
+        // `glyph` borrows the rasterizer's scratch; copy before staging.
+        let data = glyph.data.to_vec();
+        match self.cpu.insert(key, atlas, w, h, left, top, stats) {
             Ok(slot) => {
-                let premultiply = glyph.content == RasterContent::Color && !glyph.premultiplied;
-                page.upload(queue, &mut self.staging, slot, glyph.data, premultiply);
+                self.stage(slot, &data, premultiply);
                 (GlyphLookup::Slot(slot), true)
             }
-            Err(AtlasFull) => (GlyphLookup::Full, true),
+            Err(_) => (GlyphLookup::Full, true),
         }
     }
 
-    /// Find a Tier B path mask, rasterizing (R14) and uploading it on a miss. The slot's
+    /// Find a Tier B path mask, rasterizing (R14) and staging it on a miss. The slot's
     /// `left`/`top` place it relative to the request origin like a glyph (`x + left`, `y − top`).
     pub(crate) fn lookup_path(
         &mut self,
-        queue: &wgpu::Queue,
         key: MaskKey,
         src: &MaskSource,
+        stats: &mut FrameStats,
     ) -> (GlyphLookup, bool) {
-        if let Some(hit) = self.mask.alloc.get(key) {
+        if let Some(hit) = self.cpu.get(key) {
             return (hit.map_or(GlyphLookup::Empty, GlyphLookup::Slot), false);
         }
         let outline;
@@ -231,20 +289,87 @@ impl GlyphAtlas {
             }
         };
         let Some(placement) = rasterize_anywhere(&mut self.paths, path, src, &mut self.mask_buf) else {
-            self.mask.alloc.insert_empty(key);
+            self.cpu.insert_empty(key);
             return (GlyphLookup::Empty, true);
         };
         let (Ok(left), Ok(top)) = (i16::try_from(placement.0), i16::try_from(-placement.1)) else {
             return (GlyphLookup::Unsupported, true);
         };
-        match self.mask.alloc.insert(key, self.mask_buf.width, self.mask_buf.height, left.into(), top.into())
-        {
+        let (w, h) = (self.mask_buf.width, self.mask_buf.height);
+        match self.cpu.insert(key, AtlasKind::Mask, w, h, left.into(), top.into(), stats) {
             Ok(slot) => {
-                self.mask.upload(queue, &mut self.staging, slot, &self.mask_buf.data, false);
+                let data = std::mem::take(&mut self.mask_buf.data);
+                self.stage(slot, &data, false);
+                self.mask_buf.data = data;
                 (GlyphLookup::Slot(slot), true)
             }
-            Err(AtlasFull) => (GlyphLookup::Full, true),
+            Err(_) => (GlyphLookup::Full, true),
         }
+    }
+
+    /// SYNC (10 §5.7–§5.8): grow the textures (separate submit), then upload this frame's staged
+    /// entries, then refresh the bind group keyed by both generations (M12).
+    pub(crate) fn flush(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        layout: &wgpu::BindGroupLayout,
+        stats: &mut FrameStats,
+    ) {
+        self.mask.sync(device, queue, &self.cpu.mask, stats);
+        self.color.sync(device, queue, &self.cpu.color, stats);
+        for u in &self.uploads {
+            let (tex, bpp) = match u.kind {
+                AtlasKind::Mask => (&self.mask.texture, 1),
+                AtlasKind::Color => (&self.color.texture, 4),
+            };
+            let Some(bytes) = self.staging.get(u.bytes.clone()) else { continue };
+            queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: tex,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d { x: u32::from(u.x), y: u32::from(u.y), z: u32::from(u.layer) },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(u32::from(u.w) * bpp),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d { width: u32::from(u.w), height: u32::from(u.h), depth_or_array_layers: 1 },
+            );
+            stats.texture_bytes_uploaded += bytes.len() as u64;
+        }
+        stats.glyph_atlas_occupancy_pct = self.cpu.mask.occupancy_pct();
+        stats.color_atlas_occupancy_pct = self.cpu.color.occupancy_pct();
+        let key = (self.mask.generation << 32) ^ self.color.generation;
+        let (mask_view, color_view, sampler) = (&self.mask.view, &self.color.view, &self.sampler);
+        refresh(
+            &mut self.bind_group,
+            key,
+            || {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("pebbles.gpu.bind.glyph"),
+                    layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(mask_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::TextureView(color_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 2,
+                            resource: wgpu::BindingResource::Sampler(sampler),
+                        },
+                    ],
+                })
+            },
+            stats,
+        );
     }
 }
 

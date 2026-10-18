@@ -7,6 +7,7 @@ pub(crate) use peniko::{Brush, Color, Fill};
 
 pub(crate) use pebbles_gpu::{FrameParams, FrameTargets, GpuContext, GpuInit, RenderTarget, Renderer};
 
+mod atlas_gpu;
 mod capture;
 mod clip;
 mod color;
@@ -39,6 +40,27 @@ pub(crate) fn setup(name: &str) -> Option<(wgpu::Device, wgpu::Queue, Renderer)>
     let queue = gpu.queue().clone();
     let renderer = Renderer::new(gpu, id);
     Some((device, queue, renderer))
+}
+
+/// `setup` with explicit budgets (M01 tests force tiny atlases).
+pub(crate) fn setup_with_budgets(
+    name: &str,
+    tweak: impl FnOnce(&mut pebbles_gpu::GpuBudgets),
+) -> Option<(wgpu::Device, wgpu::Queue, Renderer)> {
+    let mut ctx = pollster::block_on(GpuContext::new(&GpuInit::headless()));
+    let id = match pollster::block_on(ctx.request_device(None)) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("SKIP {name}: {e}");
+            return None;
+        }
+    };
+    let gpu = ctx.device(id).expect("device just requested");
+    let mut budgets =
+        pebbles_gpu::GpuBudgets::defaults(pebbles_gpu::BudgetPlatform::Native, &gpu.device().limits());
+    tweak(&mut budgets);
+    let (device, queue) = (gpu.device().clone(), gpu.queue().clone());
+    Some((device, queue, Renderer::with_budgets(gpu, id, budgets)))
 }
 
 /// Render `scene` into a fresh `size` target and read the pixels back.

@@ -11,7 +11,6 @@ use crate::stats::{FrameStats, Unsupported};
 /// Resolve every glyph request of `plan` into `out` (index-aligned with `plan.glyphs`).
 pub(crate) fn resolve_glyphs(
     atlas: &mut GlyphAtlas,
-    queue: &wgpu::Queue,
     plan: &FramePlan,
     out: &mut Vec<QuadInstance>,
     stats: &mut FrameStats,
@@ -25,7 +24,7 @@ pub(crate) fn resolve_glyphs(
                     out.push(QuadInstance::zeroed());
                     continue;
                 };
-                let (lookup, rasterized) = atlas.lookup_path(queue, k, src);
+                let (lookup, rasterized) = atlas.lookup_path(k, src, stats);
                 stats.masks_rasterized += u32::from(rasterized);
                 out.push(quad_for(lookup, req.origin, req.color, stats));
                 continue;
@@ -43,7 +42,7 @@ pub(crate) fn resolve_glyphs(
             subpx_x: key.subpx_x,
             coords,
         };
-        let (lookup, rasterized) = atlas.lookup(queue, key, &raster);
+        let (lookup, rasterized) = atlas.lookup(key, &raster, stats);
         stats.glyphs_rasterized += u32::from(rasterized);
         out.push(quad_for(lookup, req.origin, req.color, stats));
     }

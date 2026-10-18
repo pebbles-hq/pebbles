@@ -48,14 +48,10 @@ pub(crate) fn resolve_and_upload(
     queue: &wgpu::Queue,
     stats: &mut FrameStats,
 ) {
-    resolve_glyphs(
-        &mut renderer.glyph_atlas,
-        queue,
-        &renderer.scratch.plan,
-        &mut renderer.glyph_instances,
-        stats,
-    );
+    resolve_glyphs(&mut renderer.glyph_atlas, &renderer.scratch.plan, &mut renderer.glyph_instances, stats);
     super::resolve::cull_resolved(&renderer.scratch.plan, &mut renderer.glyph_instances);
+    // SYNC (10 §5.7): grow (separate submit) before this frame's uploads, then refresh the bind group.
+    renderer.glyph_atlas.flush(device, queue, &renderer.layouts.glyph, stats);
     renderer.image_instances.clear();
     for req in &renderer.scratch.plan.images {
         let drawable = renderer.image_cache.ensure(device, queue, &req.image, stats);
@@ -214,15 +210,16 @@ pub(crate) fn encode(
                 stats.draw_calls += 1;
             }
             DrawCmd::Glyphs { glyphs, clip } => {
-                let (Some(pipeline), Some(vb)) = (
+                let (Some(pipeline), Some(vb), Some(bg)) = (
                     renderer.pipelines.get_ensured(key(PipelineKind::Glyph, 0)),
                     renderer.arenas.glyphs.buffer(),
+                    renderer.glyph_atlas.bind_group(),
                 ) else {
                     continue;
                 };
                 state.set_scissor(pass, clip.scissor);
                 state.set_pipeline(pass, pipeline);
-                pass.set_bind_group(1, &renderer.glyph_atlas.bind_group, &[]);
+                pass.set_bind_group(1, bg, &[]);
                 stats.bind_group_switches += 1;
                 pass.set_vertex_buffer(0, vb.slice(..));
                 pass.draw(0..4, glyphs.clone());

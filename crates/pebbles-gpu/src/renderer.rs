@@ -74,7 +74,7 @@ impl Renderer {
     pub fn with_budgets(gpu: &GpuDevice, _id: DeviceId, budgets: super::budgets::GpuBudgets) -> Self {
         let device = gpu.device();
         let layouts = BindGroupLayouts::new(device);
-        let glyph_atlas = GlyphAtlas::new(device, &layouts.glyph, budgets.path_mask_bytes);
+        let glyph_atlas = GlyphAtlas::new(device, &budgets);
         let (globals_buffer, globals_bg) = globals_slots(device, &layouts, 1);
         let composite_buffer = uniform_buffer(device, "pebbles.gpu.buffer.composite", 1);
         Renderer {
@@ -283,7 +283,7 @@ impl Renderer {
         target.targets.pool.end_frame(self.budgets.layer_pool_bytes);
         stats.layer_pool_bytes = target.targets.pool.bytes();
         self.scratch.plan.release_refs();
-        self.glyph_atlas.end_frame();
+        self.glyph_atlas.end_frame(&mut stats);
         self.image_cache.end_frame(&mut stats);
         self.end_frame(&stats);
         self.stats = stats;
