@@ -88,6 +88,17 @@ pub enum PathHint {
     Volatile,
 }
 
+/// Whether an op's edges snap to the device pixel grid (02 §5.3, R18).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum PixelSnap {
+    /// Snap axis-aligned rect / rounded-rect edges, border widths and unit-scale image origins.
+    #[default]
+    Auto,
+    /// Exact sub-pixel placement (animated content).
+    Off,
+}
+
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Op {
@@ -99,6 +110,7 @@ pub enum Op {
         brush_transform: Option<Affine>,
         shape: Geometry,
         hint: PathHint,
+        snap: PixelSnap,
     },
     #[non_exhaustive]
     Stroke {
@@ -108,6 +120,7 @@ pub enum Op {
         brush_transform: Option<Affine>,
         shape: Geometry,
         hint: PathHint,
+        snap: PixelSnap,
     },
     /// Clip to `clip` (filled with `clip_fill`) and composite the layer with `blend` at
     /// `alpha`.
@@ -124,6 +137,7 @@ pub enum Op {
     Image {
         image: ImageBrush,
         transform: Affine,
+        snap: PixelSnap,
     },
     /// Analytic blurred rounded rect (shadow).
     #[non_exhaustive]

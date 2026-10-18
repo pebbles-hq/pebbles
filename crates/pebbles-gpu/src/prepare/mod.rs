@@ -35,6 +35,7 @@ mod stroke;
 mod tessellate;
 #[cfg(test)]
 mod test_util;
+mod tier_a;
 
 pub(crate) use plan::{DrawCmd, FramePlan, ScissorRect};
 
@@ -139,21 +140,7 @@ impl Walk<'_> {
                         continue;
                     }
                     // Tier A (R10): an eligible rect / rounded rect / circle is one analytic quad.
-                    if tier == Tier::A
-                        && let Some(mut inst) = shapes::fill_instance(shape, xf, premul)
-                    {
-                        // R04 for Tier A: a sharp-cornered quad is clamped to the scissor (+2 px, so
-                        // its AA edge is unchanged) so huge rects keep f32 precision in the shader.
-                        if inst.outer_radii == [0.0; 4] {
-                            shapes::clamp_outer(&mut inst, cull::scissor_rect(self.clips.current().scissor));
-                        }
-                        let start = num::index_u32(self.plan.shapes.len());
-                        self.plan.shapes.push(inst);
-                        self.stats.tier_a_draws += 1;
-                        self.push(
-                            DrawCmd::Shapes { instances: start..start + 1, clip: self.clips.current() },
-                            idx,
-                        );
+                    if tier == Tier::A && self.draw_tier_a_fill(op, shape, xf, premul, idx) {
                         continue;
                     }
                     let scissor = self.clips.current().scissor;
@@ -201,17 +188,7 @@ impl Walk<'_> {
                     }
                     // Tier A (R11): a uniform, undashed stroke of a rect / rrect / circle is one
                     // analytic quad. Bounds past max_coord_px stay on the tessellated path (S04).
-                    if tier == Tier::A
-                        && let Some(inst) = shapes::stroke_instance(shape, xf, style, premul)
-                        && hygiene::coords_in_range(shapes::outer_rect(&inst), self.limits)
-                    {
-                        let start = num::index_u32(self.plan.shapes.len());
-                        self.plan.shapes.push(inst);
-                        self.stats.tier_a_draws += 1;
-                        self.push(
-                            DrawCmd::Shapes { instances: start..start + 1, clip: self.clips.current() },
-                            idx,
-                        );
+                    if tier == Tier::A && self.draw_tier_a_stroke(op, shape, style, xf, premul, idx) {
                         continue;
                     }
                     // Flatten at the scale of the path itself: S04 clamps a pathological width to
@@ -344,7 +321,7 @@ impl Walk<'_> {
                         self.stats.record(Unsupported::ImageExtend);
                     }
                     let k = self.alpha() * s.alpha.clamp(0.0, 1.0);
-                    let range = images::image(self.plan, image, xf, k);
+                    let range = images::image(self.plan, image, xf, k, tier_a::snaps(op));
                     self.push(DrawCmd::Images { images: range, clip: self.clips.current() }, idx);
                 }
                 Op::BlurredRect { transform, rect, brush, radius, std_dev, .. } => {

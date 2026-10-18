@@ -106,7 +106,10 @@ fn translucent_overlap() {
 fn half_covered_edge_column() {
     let Some((device, queue, mut r)) = setup("half_covered_edge_column") else { return };
     let mut s = Scene::new();
-    fill(&mut Painter::new(&mut s), Rect::new(10.5, 8.0, 30.0, 56.0), Color::BLACK);
+    let mut p = Painter::new(&mut s);
+    // Exact coverage, not the pixel-grid policy (R18 snaps this edge under `Auto`).
+    p.set_pixel_snap(pebbles_render::paint::display_list::PixelSnap::Off);
+    fill(&mut p, Rect::new(10.5, 8.0, 30.0, 56.0), Color::BLACK);
     let px = rgba(&device, &queue, &mut r, &s, Color::WHITE);
     for y in 9..=54 {
         let edge = pixel(&px, W, 10, y);

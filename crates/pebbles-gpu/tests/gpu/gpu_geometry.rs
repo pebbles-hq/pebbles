@@ -24,7 +24,11 @@ fn black(p: &mut Painter<'_>, shape: &impl kurbo::Shape) {
 #[ignore = "gpu"]
 fn sdf_fractional_edge_is_half_covered() {
     let Some((device, queue, mut r)) = setup("sdf_fractional_edge_is_half_covered") else { return };
-    let px = draw(&mut r, &device, &queue, |p| black(p, &Rect::new(10.5, 8.0, 30.0, 56.0)));
+    let px = draw(&mut r, &device, &queue, |p| {
+        // Exact coverage, not the pixel-grid policy (R18 snaps this edge under `Auto`).
+        p.set_pixel_snap(pebbles_render::paint::display_list::PixelSnap::Off);
+        black(p, &Rect::new(10.5, 8.0, 30.0, 56.0));
+    });
     for y in 9..=54 {
         let c = pixel(&px, W, 10, y);
         assert!((0..3).all(|i| (125..=130).contains(&c[i])), "column 10 row {y}: {c:?}");

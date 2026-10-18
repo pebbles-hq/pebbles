@@ -40,6 +40,20 @@ pub fn axis_aligned(t: Affine) -> bool {
     (b == 0.0 && c == 0.0) || (a == 0.0 && d == 0.0)
 }
 
+/// Whether §5.3 snapping applies to `g` under `t` (it snaps Tier A shapes only, 02 §5.2): a
+/// positive axis scale, uniform for strokes and for shapes with a corner radius. Quarter turns
+/// and mirrors are not Tier A in pebbles-gpu yet, so they are drawn exactly.
+fn snappable(g: &Geometry, t: Affine, stroke: bool) -> bool {
+    let [a, b, c, d, _, _] = t.as_coeffs();
+    let positive = b == 0.0 && c == 0.0 && a > 0.0 && d > 0.0;
+    let uniform = (a - d).abs() <= 1e-6 * a;
+    let rounded = matches!(g, Geometry::RoundedRect(rr) if {
+        let r = rr.radii();
+        [r.top_left, r.top_right, r.bottom_right, r.bottom_left].iter().any(|v| *v > 0.0)
+    });
+    positive && (uniform || (!stroke && !rounded))
+}
+
 /// The device-space rounded rect of a Tier A geometry under an axis-aligned `t`, if the
 /// geometry is a rect or a rounded rect (circles keep exact geometry: §5.3 snaps rect edges).
 fn device_rounded(g: &Geometry, t: Affine) -> Option<RoundedRect> {
@@ -67,7 +81,7 @@ fn shape_path(g: &Geometry, t: Affine) -> BezPath {
 /// transform with `Snap::Auto` are snapped in device space first.
 pub fn fill_geometry(g: &Geometry, t: Affine, rule: Fill, snap: Snap, w: u32, h: u32) -> Vec<f64> {
     if snap == Snap::Auto
-        && axis_aligned(t)
+        && snappable(g, t, false)
         && let Some(rr) = device_rounded(g, t)
     {
         let snapped = RoundedRect::from_rect(snap_rect(rr.rect()), rr.radii());
@@ -84,26 +98,43 @@ pub fn stroke_geometry(g: &Geometry, style: &Stroke, t: Affine, snap: Snap, w: u
     let wd = device_width(style.width, t);
     let dashed = !style.dash_pattern.is_empty();
     if snap == Snap::Auto
-        && axis_aligned(t)
-        && wd >= 1.0
+        && snappable(g, t, true)
+        && wd > 0.0
         && !dashed
         && let Some(rr) = device_rounded(g, t)
     {
         // The border is the ring between the snapped outer box and the box inset by the
         // rounded width (corner radii grow / shrink by half the width about the center line).
-        let width = round_half_up(wd);
+        // wd < 1: the hairline rule (02 §5.5) — a 1-px ring, coverage scaled by wd.
+        let width = round_half_up(wd).max(1.0);
+        let alpha = wd.min(1.0);
+        let round_join = style.join == kurbo::Join::Round;
         let outer = snap_rect(rr.rect().inflate(wd / 2.0, wd / 2.0));
         let inner = outer.inset(-width);
         let r = rr.radii();
         let grow = |d: f64| {
-            let f = |v: f64| if v > 0.0 { (v + d).max(0.0) } else { 0.0 };
+            // A square corner keeps a sharp inner corner; its outer corner is rounded only by a
+            // round join.
+            let f = |v: f64| {
+                if v > 0.0 {
+                    (v + d).max(0.0)
+                } else if round_join && d > 0.0 {
+                    d
+                } else {
+                    0.0
+                }
+            };
             kurbo::RoundedRectRadii::new(f(r.top_left), f(r.top_right), f(r.bottom_right), f(r.bottom_left))
         };
         let mut ring = RoundedRect::from_rect(outer, grow(width / 2.0)).to_path(FLATTEN_TOL_PX);
         if inner.width() > 0.0 && inner.height() > 0.0 {
             ring.extend(RoundedRect::from_rect(inner, grow(-width / 2.0)).to_path(FLATTEN_TOL_PX));
         }
-        return fill_coverage(&ring, Affine::IDENTITY, Fill::EvenOdd, w, h);
+        let mut cov = fill_coverage(&ring, Affine::IDENTITY, Fill::EvenOdd, w, h);
+        if alpha < 1.0 {
+            cov.iter_mut().for_each(|c| *c *= alpha);
+        }
+        return cov;
     }
     stroke_coverage(&shape_path(g, t), style, t, w, h)
 }

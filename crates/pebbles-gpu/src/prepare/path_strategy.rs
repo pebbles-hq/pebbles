@@ -55,13 +55,13 @@ pub(crate) fn segment_count(g: &Geometry, device: Affine) -> u32 {
 pub(crate) fn choose_tier(op: &Op, device: Affine) -> Tier {
     let (shape, stroke, hint) = match op {
         Op::Fill { shape, hint, .. } => {
-            if shapes::fill_instance(shape, device, [0.0; 4]).is_some() {
+            if shapes::fill_instance(shape, device, [0.0; 4], false).is_some() {
                 return Tier::A;
             }
             (shape, None, *hint)
         }
         Op::Stroke { shape, style, hint, .. } => {
-            if shapes::stroke_instance(shape, device, style, [0.0; 4]).is_some() {
+            if shapes::stroke_instance(shape, device, style, [0.0; 4], false).is_some() {
                 return Tier::A;
             }
             (shape, Some(style), *hint)

@@ -17,6 +17,7 @@ mod gpu_smoke;
 mod images;
 mod order;
 mod path_masks;
+mod pixel_snap;
 mod support;
 mod targets;
 mod text;

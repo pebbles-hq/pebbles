@@ -132,7 +132,7 @@ fn emit(
             out.push_layer(Some(&clip_path), Some(*blend), Some(*alpha), None, None);
         }
         Op::PopLayer => out.pop_layer(),
-        Op::Image { image, transform } => {
+        Op::Image { image, transform, .. } => {
             let (w, h) = (image.image.width, image.image.height);
             if w != 0 && h != 0 {
                 // The source rect (the whole image) maps to the destination by the op's

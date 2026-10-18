@@ -7,7 +7,7 @@ use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{Brush, BrushRef, Color, Fill, FontData};
 
 use super::Scene;
-use super::op::{Geometry, Glyph, NormalizedCoord, Op, PathHint};
+use super::op::{Geometry, Glyph, NormalizedCoord, Op, PathHint, PixelSnap};
 
 /// The fill-rule for a recorded layer's clip path. Pebbles only ever clips with a fill
 /// rule (never a stroked-outline clip), and `vello_hybrid`'s `push_layer` clip is a filled
@@ -24,17 +24,18 @@ fn clip_fill_rule(s: peniko::StyleRef<'_>) -> Fill {
 pub struct Painter<'a> {
     scene: &'a mut Scene,
     hint: PathHint,
+    snap: PixelSnap,
 }
 
 impl<'a> Painter<'a> {
     /// Wrap a mutable scene as a painter.
     pub fn new(scene: &'a mut Scene) -> Self {
-        Painter { scene, hint: PathHint::Auto }
+        Painter { scene, hint: PathHint::Auto, snap: PixelSnap::Auto }
     }
 
     /// Reborrow as a shorter-lived painter (for sub-scenes / recursion).
     pub fn reborrow(&mut self) -> Painter<'_> {
-        Painter { scene: self.scene, hint: self.hint }
+        Painter { scene: self.scene, hint: self.hint, snap: self.snap }
     }
 
     /// The underlying scene (for the shell's flush + fragment plumbing).
@@ -45,6 +46,11 @@ impl<'a> Painter<'a> {
     /// Set the [`PathHint`] recorded on every following fill/stroke until changed again.
     pub fn set_path_hint(&mut self, hint: PathHint) {
         self.hint = hint;
+    }
+
+    /// Set the [`PixelSnap`] recorded on every following fill/stroke/image until changed again.
+    pub fn set_pixel_snap(&mut self, snap: PixelSnap) {
+        self.snap = snap;
     }
 
     /// Clear all recorded content.
@@ -68,6 +74,7 @@ impl<'a> Painter<'a> {
             brush_transform,
             shape: Geometry::from_shape(shape),
             hint: self.hint,
+            snap: self.snap,
         });
     }
 
@@ -87,6 +94,7 @@ impl<'a> Painter<'a> {
             brush_transform,
             shape: Geometry::from_shape(shape),
             hint: self.hint,
+            snap: self.snap,
         });
     }
 
@@ -115,7 +123,7 @@ impl<'a> Painter<'a> {
 
     /// Draw an image (already positioned by `transform`).
     pub fn draw_image<'b>(&mut self, image: impl Into<peniko::ImageBrushRef<'b>>, transform: Affine) {
-        self.scene.push(Op::Image { image: image.into().to_owned(), transform });
+        self.scene.push(Op::Image { image: image.into().to_owned(), transform, snap: self.snap });
     }
 
     /// A GPU-accelerated blurred rounded rectangle (drop shadow).

@@ -17,7 +17,7 @@ fn rrect() -> Geometry {
 
 #[test]
 fn rect_identity_is_sdf() {
-    let i = fill_instance(&Geometry::Rect(R), Affine::IDENTITY, C).expect("eligible");
+    let i = fill_instance(&Geometry::Rect(R), Affine::IDENTITY, C, false).expect("eligible");
     assert_eq!(i.outer, [10.0, 10.0, 50.0, 40.0]);
     assert_eq!(i.outer_radii, [0.0; 4]);
     assert_eq!(i.inner, [0.0; 4]);
@@ -25,27 +25,31 @@ fn rect_identity_is_sdf() {
 
 #[test]
 fn rrect_uniform_scale_is_sdf() {
-    let i =
-        fill_instance(&rrect(), Affine::scale(2.0).then_translate((5.0, 0.0).into()), C).expect("eligible");
+    let i = fill_instance(&rrect(), Affine::scale(2.0).then_translate((5.0, 0.0).into()), C, false)
+        .expect("eligible");
     assert_eq!(i.outer, [25.0, 20.0, 105.0, 80.0]);
     assert_eq!(i.outer_radii, [12.0; 4]);
 }
 
 #[test]
 fn rrect_nonuniform_scale_is_tessellated() {
-    assert!(fill_instance(&rrect(), Affine::scale_non_uniform(2.0, 1.0), C).is_none());
+    assert!(fill_instance(&rrect(), Affine::scale_non_uniform(2.0, 1.0), C, false).is_none());
 }
 
 #[test]
 fn rect_nonuniform_scale_is_sdf() {
-    let i = fill_instance(&Geometry::Rect(R), Affine::scale_non_uniform(2.0, 0.5), C).expect("eligible");
+    let i =
+        fill_instance(&Geometry::Rect(R), Affine::scale_non_uniform(2.0, 0.5), C, false).expect("eligible");
     assert_eq!(i.outer, [20.0, 5.0, 100.0, 20.0]);
 }
 
 #[test]
 fn rotated_rect_is_tessellated() {
-    assert!(fill_instance(&Geometry::Rect(R), Affine::rotate(0.1), C).is_none());
-    assert!(fill_instance(&Geometry::Rect(R), Affine::scale_non_uniform(-1.0, 1.0), C).is_none(), "mirror");
+    assert!(fill_instance(&Geometry::Rect(R), Affine::rotate(0.1), C, false).is_none());
+    assert!(
+        fill_instance(&Geometry::Rect(R), Affine::scale_non_uniform(-1.0, 1.0), C, false).is_none(),
+        "mirror"
+    );
 }
 
 #[test]
@@ -60,7 +64,7 @@ fn gradient_brush_is_tessellated_or_fallback() {
 
 #[test]
 fn circle_instance_radii_equal_radius() {
-    let i = fill_instance(&Geometry::Circle(Circle::new((32.0, 32.0), 10.0)), Affine::scale(2.0), C)
+    let i = fill_instance(&Geometry::Circle(Circle::new((32.0, 32.0), 10.0)), Affine::scale(2.0), C, false)
         .expect("eligible");
     assert_eq!(i.outer, [44.0, 44.0, 84.0, 84.0]);
     assert_eq!(i.outer_radii, [20.0; 4]);
@@ -152,7 +156,7 @@ use kurbo::{Join, Stroke};
 
 #[test]
 fn uniform_rrect_border_is_sdf() {
-    let i = stroke_instance(&rrect(), Affine::IDENTITY, &Stroke::new(2.0), C).expect("eligible");
+    let i = stroke_instance(&rrect(), Affine::IDENTITY, &Stroke::new(2.0), C, false).expect("eligible");
     assert_eq!(i.outer, [9.0, 9.0, 51.0, 41.0]);
     assert_eq!(i.inner, [11.0, 11.0, 49.0, 39.0]);
     assert_eq!(i.outer_radii, [7.0; 4]);
@@ -162,7 +166,7 @@ fn uniform_rrect_border_is_sdf() {
 #[test]
 fn dashed_border_is_tessellated() {
     assert!(
-        stroke_instance(&rrect(), Affine::IDENTITY, &Stroke::new(2.0).with_dashes(0.0, [4.0, 2.0]), C)
+        stroke_instance(&rrect(), Affine::IDENTITY, &Stroke::new(2.0).with_dashes(0.0, [4.0, 2.0]), C, false)
             .is_none()
     );
 }
@@ -170,13 +174,13 @@ fn dashed_border_is_tessellated() {
 #[test]
 fn bevel_join_zero_radius_is_tessellated() {
     let s = Stroke::new(2.0).with_join(Join::Bevel);
-    assert!(stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &s, C).is_none());
+    assert!(stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &s, C, false).is_none());
 }
 
 #[test]
 fn round_join_zero_radius_outer_radius_is_half_width() {
     let s = Stroke::new(4.0).with_join(Join::Round);
-    let i = stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &s, C).expect("eligible");
+    let i = stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &s, C, false).expect("eligible");
     assert_eq!(i.outer_radii, [2.0; 4]);
     assert_eq!(i.inner_radii, [0.0; 4]);
 }
@@ -184,21 +188,63 @@ fn round_join_zero_radius_outer_radius_is_half_width() {
 #[test]
 fn miter_join_zero_radius_outer_radius_is_zero() {
     let s = Stroke::new(4.0).with_join(Join::Miter);
-    let i = stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &s, C).expect("eligible");
+    let i = stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &s, C, false).expect("eligible");
     assert_eq!(i.outer_radii, [0.0; 4]);
 }
 
 #[test]
 fn thick_stroke_inner_empty_draws_filled() {
     // R is 40×30: a width of 30 consumes the shortest side.
-    let i = stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &Stroke::new(30.0), C).expect("eligible");
+    let i = stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &Stroke::new(30.0), C, false)
+        .expect("eligible");
     assert_eq!(i.inner, [0.0; 4]);
 }
 
 #[test]
 fn hairline_border_alpha_scaled() {
-    let i = stroke_instance(&Geometry::Rect(R), Affine::IDENTITY, &Stroke::new(0.25), [1.0, 0.0, 0.0, 1.0])
-        .expect("eligible");
+    let i = stroke_instance(
+        &Geometry::Rect(R),
+        Affine::IDENTITY,
+        &Stroke::new(0.25),
+        [1.0, 0.0, 0.0, 1.0],
+        false,
+    )
+    .expect("eligible");
     assert_eq!(i.color, [0.25, 0.0, 0.0, 0.25]);
     assert_eq!(i.outer, [9.5, 9.5, 50.5, 40.5], "drawn 1 px wide");
+}
+
+#[test]
+fn snapped_fill_edges_round_half_up_and_never_collapse() {
+    let r = Geometry::Rect(Rect::new(10.25, 20.5, 30.75, 20.9));
+    let i = fill_instance(&r, Affine::IDENTITY, C, true).expect("eligible");
+    assert_eq!(
+        i.outer,
+        [10.0, 20.0, 31.0, 21.0],
+        "x: 10.25→10, 30.75→31; y: 20.5 and 20.9 → 21 collapse → 1 px at 20"
+    );
+    let off = fill_instance(&r, Affine::IDENTITY, C, false).expect("eligible");
+    assert_eq!(off.outer, [10.25, 20.5, 30.75, 20.9]);
+}
+
+#[test]
+fn snapped_border_is_round_wd_whole_pixels() {
+    for s in [1.0, 1.25, 1.5, 1.75, 2.0] {
+        let i = stroke_instance(
+            &Geometry::Rect(Rect::new(10.0, 10.0, 40.0, 30.0)),
+            Affine::scale(s),
+            &Stroke::new(1.0),
+            C,
+            true,
+        )
+        .expect("eligible");
+        let w: f32 = if s < 1.5 { 1.0 } else { 2.0 }; // round_half_up(s)
+        assert!(
+            i.outer.iter().chain(&i.inner).all(|v| v.fract() == 0.0),
+            "scale {s}: {:?} {:?}",
+            i.outer,
+            i.inner
+        );
+        assert_eq!(i.inner[0] - i.outer[0], w, "scale {s}");
+    }
 }

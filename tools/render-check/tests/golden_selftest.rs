@@ -152,7 +152,8 @@ fn nonzero_opposite_winding_hole_exact() {
 fn snapped_border_is_whole_pixels() {
     let g = Geometry::Rect(Rect::new(5.3, 6.6, 30.2, 25.45));
     for width in [1.0, 1.4, 2.0, 2.6, 3.0] {
-        let cov = stroke_geometry(&g, &Stroke::new(width), Affine::IDENTITY, Snap::Auto, W, H);
+        let style = Stroke::new(width).with_join(kurbo::Join::Miter);
+        let cov = stroke_geometry(&g, &style, Affine::IDENTITY, Snap::Auto, W, H);
         assert!(cov.iter().all(|&c| c.abs() < 1e-12 || (c - 1.0).abs() < 1e-12), "width {width}");
         assert!(cov.iter().any(|&c| c > 0.5));
     }
@@ -169,6 +170,7 @@ fn render_composites_premultiplied_and_reports_unsupported() {
     use render_check::golden::Golden;
     let mut scene = Scene::new();
     let mut p = Painter::new(&mut scene);
+    p.set_pixel_snap(pebbles_render::paint::display_list::PixelSnap::Off);
     p.fill(
         Fill::NonZero,
         Affine::IDENTITY,
@@ -181,6 +183,17 @@ fn render_composites_premultiplied_and_reports_unsupported() {
     assert_eq!(img.px(3, 3), [255, 127, 127, 255]);
     assert_eq!(img.px(6, 3), [255, 191, 191, 255]);
     assert_eq!(img.px(7, 7), [255, 255, 255, 255]);
+    // The same rect with the default PixelSnap::Auto: x1 = 6.5 rounds half up to 7.
+    let mut snapped = Scene::new();
+    Painter::new(&mut snapped).fill(
+        Fill::NonZero,
+        Affine::IDENTITY,
+        Color::from_rgba8(255, 0, 0, 128),
+        None,
+        &Rect::new(2.0, 2.0, 6.5, 6.0),
+    );
+    let img = Golden::render(&snapped, 8, 8, Color::WHITE).expect("supported");
+    assert_eq!(img.px(6, 3), [255, 127, 127, 255]);
     let mut scene = Scene::new();
     Painter::new(&mut scene).draw_blurred_rounded_rect(
         Affine::IDENTITY,
