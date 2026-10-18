@@ -7,11 +7,28 @@ use swash::scale::image::{Content, Image};
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::{Format, Vector};
 
-/// Color raster sources in priority order: COLR, then bitmap strikes. Plain outlines are not
-/// rendered by swash: they go through the Tier B coverage rasterizer (`outline_mask`), so glyph
-/// and path edges get identical, winding-exact coverage (DR-23) — swash's own mask renderer
-/// double-counts the overlapping contours variable fonts keep.
-const COLOR_SOURCES: &[Source] = &[Source::ColorOutline(0), Source::ColorBitmap(StrikeWith::BestFit)];
+/// Color raster sources in priority order: COLR at the requested size, then bitmap strikes at
+/// their own ppem (R23: never resampled by swash, whose Mitchell filter runs on straight alpha).
+/// Plain outlines are not rendered by swash: they go through the Tier B coverage rasterizer
+/// (`outline_mask`), so glyph and path edges get identical, winding-exact coverage (DR-23) —
+/// swash's own mask renderer double-counts the overlapping contours variable fonts keep.
+const COLR_SOURCES: &[Source] = &[Source::ColorOutline(0)];
+/// A strike decoded at exactly the scaler's size (= the strike's ppem): no swash resize.
+const STRIKE_SOURCES: &[Source] = &[Source::ColorBitmap(StrikeWith::ExactSize)];
+
+/// The bytes to upload for a swash image: premultiplied RGBA into `scratch` for
+/// `Source::ColorBitmap` (PNG strikes are straight alpha), else the image data unchanged (COLR
+/// output and masks are already premultiplied / coverage; 10 §5.8).
+pub(crate) fn color_upload_bytes<'a>(image: &'a Image, scratch: &'a mut Vec<u8>) -> &'a [u8] {
+    if matches!(image.source, Source::ColorBitmap(_)) {
+        scratch.clear();
+        scratch.extend_from_slice(&image.data);
+        crate::execute::resources::glyph_atlas::premultiply_rgba8_in_place(scratch);
+        scratch
+    } else {
+        &image.data
+    }
+}
 
 /// Whether a raster is coverage or premultiplied-or-straight RGBA.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,8 +48,9 @@ pub(crate) struct RasterGlyph<'a> {
     pub width: u32,
     pub height: u32,
     pub content: RasterContent,
-    /// False only for `Source::ColorBitmap` (PNG strikes are straight alpha).
-    pub premultiplied: bool,
+    /// A bitmap strike kept at its native size: draw it `font_size / strike_ppem` × (R23).
+    /// 0 = draw at bitmap size. Data is always premultiplied (or coverage).
+    pub strike_ppem: u16,
     pub data: &'a [u8],
 }
 
@@ -59,6 +77,9 @@ pub(crate) struct GlyphRaster {
     path: kurbo::BezPath,
     coverage: super::coverage::CoverageRasterizer,
     mask: super::coverage::MaskBuf,
+    /// Premultiplied strike bytes, then their box-downscaled copy (R23).
+    color: Vec<u8>,
+    down: Vec<u8>,
 }
 
 /// What to rasterize.
@@ -68,6 +89,23 @@ pub(crate) struct RasterRequest<'a> {
     pub size_px: f32,
     pub subpx_x: u8,
     pub coords: &'a [i16],
+    /// Bitmap strikes: keep the largest strike at native size (the outline route draws it as a
+    /// transformed quad, R23 step 2a).
+    pub native_strike: bool,
+}
+
+/// The color strike to decode for `req`: the largest for the outline route, else the nearest
+/// to the requested ppem. `None` when the glyph has no color bitmap.
+fn strike_ppem(font: &swash::FontRef<'_>, req: &RasterRequest<'_>) -> Option<u16> {
+    let strikes = font.color_strikes();
+    let gid = req.glyph_id;
+    let strike = if req.native_strike {
+        strikes.find_by_largest_ppem(gid)
+    } else {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // ≤ MAX_ATLAS_GLYPH_PX
+        strikes.find_by_nearest_ppem(req.size_px.round().clamp(1.0, 65535.0) as u16, gid)
+    }?;
+    (strike.ppem() > 0).then(|| strike.ppem())
 }
 
 impl Default for GlyphRaster {
@@ -81,6 +119,8 @@ impl Default for GlyphRaster {
             path: kurbo::BezPath::new(),
             coverage: super::coverage::CoverageRasterizer::default(),
             mask: super::coverage::MaskBuf::default(),
+            color: Vec::new(),
+            down: Vec::new(),
         }
     }
 }
@@ -107,12 +147,30 @@ impl GlyphRaster {
             .normalized_coords(req.coords.iter().copied())
             .build();
         let dx = f32::from(req.subpx_x) * 0.25;
-        let mut render = Render::new(COLOR_SOURCES);
+        let mut render = Render::new(COLR_SOURCES);
         render.format(Format::Alpha).offset(Vector::new(dx, 0.0));
         // The scratch image is reused: clear it, since swash only resizes it and zeno
         // writes only covered cells (02 §7.2).
         self.scratch.clear();
         if !render.render_into(&mut scaler, req.glyph_id, &mut self.scratch) {
+            if let Some(ppem) = strike_ppem(&font, req) {
+                let mut strike = self.ctx.builder(font).size(f32::from(ppem)).build();
+                self.scratch.clear();
+                if Render::new(STRIKE_SOURCES).format(Format::Alpha).render_into(
+                    &mut strike,
+                    req.glyph_id,
+                    &mut self.scratch,
+                ) {
+                    return self.strike(ppem, req);
+                }
+                scaler = self
+                    .ctx
+                    .builder(font)
+                    .size(req.size_px)
+                    .hint(false)
+                    .normalized_coords(req.coords.iter().copied())
+                    .build();
+            }
             self.outline.clear();
             if !scaler.scale_outline_into(req.glyph_id, &mut self.outline) {
                 return None;
@@ -130,8 +188,39 @@ impl GlyphRaster {
                 Content::Color => RasterContent::Color,
                 Content::SubpixelMask => RasterContent::Subpixel,
             },
-            premultiplied: !matches!(img.source, Source::ColorBitmap(_)),
+            strike_ppem: 0,
             data: &img.data,
+        })
+    }
+
+    /// The strike in `self.scratch` (decoded at `ppem`) premultiplied; box-downscaled to the
+    /// requested size when larger, else kept native with `strike_ppem` set (§7.2, R23 1b).
+    fn strike(&mut self, ppem: u16, req: &RasterRequest<'_>) -> Option<RasterGlyph<'_>> {
+        let p = self.scratch.placement;
+        let premul = color_upload_bytes(&self.scratch, &mut self.color);
+        let s = req.size_px / f32::from(ppem);
+        if req.native_strike || s >= 1.0 {
+            return Some(RasterGlyph {
+                left: p.left,
+                top: p.top,
+                width: p.width,
+                height: p.height,
+                content: RasterContent::Color,
+                strike_ppem: ppem,
+                data: premul,
+            });
+        }
+        let (width, height) = super::bitmap::downscale_premul(premul, p.width, p.height, s, &mut self.down);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)] // bearings ≤ 2^16
+        let round = |v: i32| (v as f32 * s).round() as i32;
+        Some(RasterGlyph {
+            left: round(p.left),
+            top: round(p.top),
+            width,
+            height,
+            content: RasterContent::Color,
+            strike_ppem: 0,
+            data: &self.down,
         })
     }
 
@@ -177,7 +266,7 @@ impl GlyphRaster {
             width: self.mask.width,
             height: self.mask.height,
             content: RasterContent::Mask,
-            premultiplied: true,
+            strike_ppem: 0,
             data: &self.mask.data,
         })
     }
@@ -223,7 +312,8 @@ mod tests {
 
     fn coverage_sum(raster: &mut GlyphRaster, font: &peniko::FontData, coords: &[i16]) -> u64 {
         let id = glyph_h(font);
-        let req = RasterRequest { font, glyph_id: id, size_px: 32.0, subpx_x: 0, coords };
+        let req =
+            RasterRequest { font, glyph_id: id, size_px: 32.0, subpx_x: 0, coords, native_strike: false };
         raster.rasterize(&req).unwrap().data.iter().map(|&b| u64::from(b)).sum()
     }
 
@@ -231,8 +321,14 @@ mod tests {
     fn rasterize_h_has_coverage() {
         let font = inter();
         let mut raster = GlyphRaster::default();
-        let req =
-            RasterRequest { font: &font, glyph_id: glyph_h(&font), size_px: 16.0, subpx_x: 0, coords: &[] };
+        let req = RasterRequest {
+            font: &font,
+            glyph_id: glyph_h(&font),
+            size_px: 16.0,
+            subpx_x: 0,
+            coords: &[],
+            native_strike: false,
+        };
         let g = raster.rasterize(&req).unwrap();
         assert_eq!(g.content, RasterContent::Mask);
         assert!((8..=14).contains(&g.width), "width {}", g.width);
@@ -254,8 +350,45 @@ mod tests {
     }
 
     fn rasterize_h(raster: &mut GlyphRaster, font: &peniko::FontData) {
-        let req = RasterRequest { font, glyph_id: glyph_h(font), size_px: 16.0, subpx_x: 0, coords: &[] };
+        let req = RasterRequest {
+            font,
+            glyph_id: glyph_h(font),
+            size_px: 16.0,
+            subpx_x: 0,
+            coords: &[],
+            native_strike: false,
+        };
         raster.rasterize(&req);
+    }
+
+    fn image(source: Source, px: [u8; 4]) -> Image {
+        let mut img = Image::new();
+        img.source = source;
+        img.content = Content::Color;
+        img.placement = zeno::Placement { left: 0, top: 1, width: 1, height: 1 };
+        img.data = px.to_vec();
+        img
+    }
+
+    #[test]
+    fn color_bitmap_is_premultiplied() {
+        let img = image(Source::ColorBitmap(StrikeWith::ExactSize), [200, 100, 50, 128]);
+        let mut scratch = Vec::new();
+        assert_eq!(color_upload_bytes(&img, &mut scratch), &[100, 50, 25, 128]);
+    }
+
+    #[test]
+    fn colr_output_is_uploaded_unchanged() {
+        let img = image(Source::ColorOutline(0), [100, 50, 25, 128]);
+        let mut scratch = Vec::new();
+        assert_eq!(color_upload_bytes(&img, &mut scratch), &[100, 50, 25, 128]);
+    }
+
+    #[test]
+    fn opaque_bitmap_is_unchanged() {
+        let img = image(Source::ColorBitmap(StrikeWith::ExactSize), [200, 100, 50, 255]);
+        let mut scratch = Vec::new();
+        assert_eq!(color_upload_bytes(&img, &mut scratch), &[200, 100, 50, 255]);
     }
 
     #[test]
@@ -281,6 +414,7 @@ mod tests {
                 size_px: 16.0,
                 subpx_x: 0,
                 coords: &[],
+                native_strike: false,
             };
             raster.rasterize(&req);
             raster.sweep();

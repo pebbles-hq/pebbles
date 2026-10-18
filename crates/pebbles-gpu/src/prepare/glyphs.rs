@@ -114,7 +114,7 @@ pub(crate) fn glyph_run(
         };
         #[allow(clippy::cast_precision_loss)] // |ix|, |iy| ≤ 2^24: exact in f32
         let origin = [ix as f32, iy as f32];
-        plan.glyphs.push(GlyphRequest { key: key.into(), run, origin, color });
+        plan.glyphs.push(GlyphRequest { key: key.into(), run, origin, color, linear: None });
     }
     start..index_u32(plan.glyphs.len())
 }

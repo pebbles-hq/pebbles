@@ -205,7 +205,8 @@ impl GlyphAtlas {
 }
 
 /// Premultiply straight-alpha RGBA8 in place: `c' = (c·a + 127) / 255` (M14; only
-/// `Source::ColorBitmap` rasters are straight — COLR output is already premultiplied).
+/// `Source::ColorBitmap` rasters are straight — COLR output is already premultiplied). Applied
+/// by the rasterizer before any resize (`raster::swash::color_upload_bytes`, R23).
 pub(crate) fn premultiply_rgba8_in_place(px: &mut [u8]) {
     for px in px.as_chunks_mut::<4>().0 {
         let a = u16::from(px[3]);
@@ -217,13 +218,7 @@ pub(crate) fn premultiply_rgba8_in_place(px: &mut [u8]) {
 
 /// Stage a padded (zero gutter) copy of `data` (`w`×`h`, tight) for `slot` (§5.8): written
 /// straight from the rasterizer's scratch into `staging`, no per-glyph allocation.
-fn stage(
-    staging: &mut Vec<u8>,
-    uploads: &mut Vec<GlyphUpload>,
-    slot: AtlasSlot,
-    data: &[u8],
-    premultiply: bool,
-) {
+fn stage(staging: &mut Vec<u8>, uploads: &mut Vec<GlyphUpload>, slot: AtlasSlot, data: &[u8]) {
     {
         let bpp = format_of(slot.kind).1 as usize;
         let (w, h) = (usize::from(slot.w), usize::from(slot.h));
@@ -235,9 +230,6 @@ fn stage(
             let Some(src) = data.get(row * w * bpp..(row + 1) * w * bpp) else { break };
             let dst = start + ((row + g) * pw + g) * bpp;
             staging[dst..dst + w * bpp].copy_from_slice(src);
-        }
-        if premultiply {
-            premultiply_rgba8_in_place(&mut staging[start..]);
         }
         let gutter = u16::try_from(GLYPH_GUTTER_PX).unwrap_or(1);
         let to16 = |v: usize| u16::try_from(v).unwrap_or(u16::MAX);
@@ -278,11 +270,15 @@ impl GlyphAtlas {
             self.cpu.insert_empty(key);
             return (GlyphLookup::Empty, true);
         }
-        let premultiply = glyph.content == RasterContent::Color && !glyph.premultiplied;
         let (w, h, left, top) = (glyph.width, glyph.height, glyph.left, glyph.top);
         match self.cpu.insert(key, atlas, w, h, left, top, stats) {
             Ok(slot) => {
-                stage(&mut self.staging, &mut self.uploads, slot, glyph.data, premultiply);
+                // The rasterizer already premultiplied straight strikes (R23).
+                stage(&mut self.staging, &mut self.uploads, slot, glyph.data);
+                let slot = match glyph.strike_ppem {
+                    0 => slot,
+                    ppem => self.cpu.set_strike_ppem(key, ppem).unwrap_or(slot),
+                };
                 (GlyphLookup::Slot(slot), true)
             }
             Err(_) => (GlyphLookup::Full, true),
@@ -324,7 +320,7 @@ impl GlyphAtlas {
         let (w, h) = (self.mask_buf.width, self.mask_buf.height);
         match self.cpu.insert(key, AtlasKind::Mask, w, h, left.into(), top.into(), stats) {
             Ok(slot) => {
-                stage(&mut self.staging, &mut self.uploads, slot, &self.mask_buf.data, false);
+                stage(&mut self.staging, &mut self.uploads, slot, &self.mask_buf.data);
                 (GlyphLookup::Slot(slot), true)
             }
             Err(_) => (GlyphLookup::Full, true),

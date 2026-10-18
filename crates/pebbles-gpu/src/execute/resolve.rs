@@ -41,10 +41,17 @@ pub(crate) fn resolve_glyphs(
             size_px: run.size_px,
             subpx_x: key.subpx_x,
             coords,
+            native_strike: req.linear.is_some(),
         };
         let (lookup, rasterized) = atlas.lookup(key, &raster, stats);
         stats.glyphs_rasterized += u32::from(rasterized);
-        out.push(quad_for(lookup, req.origin, req.color, stats));
+        let quad = match lookup {
+            GlyphLookup::Slot(slot) if req.linear.is_some() || slot.strike_ppem > 0 => {
+                strike_quad(slot, req, run.size_px)
+            }
+            other => quad_for(other, req.origin, req.color, stats),
+        };
+        out.push(quad);
     }
 }
 
@@ -55,9 +62,15 @@ pub(crate) fn cull_resolved(plan: &FramePlan, out: &mut [QuadInstance]) {
         let crate::prepare::DrawCmd::Glyphs { glyphs, clip } = cmd else { continue };
         let s = clip.scissor;
         for q in out.get_mut(glyphs.start as usize..glyphs.end as usize).unwrap_or_default() {
-            let (x0, y0) = (q.origin[0], q.origin[1]);
-            let (x1, y1) = (x0 + q.xform[0] + q.xform[2], y0 + q.xform[1] + q.xform[3]);
-            let (lo_x, hi_x, lo_y, hi_y) = (x0.min(x1), x0.max(x1), y0.min(y1), y0.max(y1));
+            // All four corners: transformed strike quads (R23) are parallelograms.
+            let [ox, oy] = q.origin;
+            let [a, b, c, d] = q.xform;
+            let xs = [ox, ox + a, ox + c, ox + a + c];
+            let ys = [oy, oy + b, oy + d, oy + b + d];
+            let (lo_x, hi_x) =
+                (xs.iter().copied().fold(f32::MAX, f32::min), xs.iter().copied().fold(f32::MIN, f32::max));
+            let (lo_y, hi_y) =
+                (ys.iter().copied().fold(f32::MAX, f32::min), ys.iter().copied().fold(f32::MIN, f32::max));
             #[allow(clippy::cast_precision_loss)] // scissor edges ≤ 2^24
             let miss =
                 hi_x <= s.x0 as f32 || lo_x >= s.x1 as f32 || hi_y <= s.y0 as f32 || lo_y >= s.y1 as f32;
@@ -80,6 +93,45 @@ fn quad_for(lookup: GlyphLookup, origin: [f32; 2], color: [f32; 4], stats: &mut 
             stats.record(Unsupported::GlyphContent);
             QuadInstance::zeroed()
         }
+    }
+}
+
+/// A native-size strike (R23): scaled `size / strike_ppem`; on the outline route also mapped by
+/// the run's linear part about the unsnapped pen (step 2a), else an axis-aligned quad with
+/// rounded edges (step 1b).
+fn strike_quad(slot: AtlasSlot, req: &crate::prepare::GlyphRequest, size: f32) -> QuadInstance {
+    let s = if slot.strike_ppem > 0 { size / f32::from(slot.strike_ppem) } else { 1.0 };
+    let (w, h) = (f32::from(slot.w), f32::from(slot.h));
+    let (x, y) = (f32::from(slot.x), f32::from(slot.y));
+    let uv = [x, y, x + w, y + h];
+    let layer_kind = [u32::from(slot.layer), u32::from(slot.kind == AtlasKind::Color)];
+    let [ox, oy] = req.origin;
+    let Some([a, b, c, d]) = req.linear else {
+        let [x0, y0, x1, y1] = crate::raster::bitmap::scaled_strike_quad(
+            ox,
+            oy,
+            slot.left.into(),
+            slot.top.into(),
+            slot.w.into(),
+            slot.h.into(),
+            s,
+        );
+        return QuadInstance {
+            xform: [x1 - x0, 0.0, 0.0, y1 - y0],
+            origin: [x0, y0],
+            uv,
+            color: req.color,
+            layer_kind,
+        };
+    };
+    // Glyph space (y-down): the bitmap's top-left is at (left, −top)·s from the pen.
+    let (lx, ly) = (f32::from(slot.left) * s, -f32::from(slot.top) * s);
+    QuadInstance {
+        xform: [a * w * s, b * w * s, c * h * s, d * h * s],
+        origin: [ox + a * lx + c * ly, oy + b * lx + d * ly],
+        uv,
+        color: req.color,
+        layer_kind,
     }
 }
 
@@ -133,7 +185,8 @@ mod tests {
             plan.cmds.iter().filter(|c| matches!(c, crate::prepare::DrawCmd::Glyphs { .. })).collect();
         assert_eq!(cmds.len(), 1);
         assert_eq!(plan.glyphs.len(), 3);
-        let slot = |kind| AtlasSlot { kind, layer: 1, x: 10, y: 20, w: 8, h: 9, left: 0, top: 9 };
+        let slot =
+            |kind| AtlasSlot { kind, layer: 1, x: 10, y: 20, w: 8, h: 9, left: 0, top: 9, strike_ppem: 0 };
         let kinds = [AtlasKind::Mask, AtlasKind::Color, AtlasKind::Mask]
             .map(|k| glyph_quad(slot(k), [0.0, 0.0], [1.0; 4]).layer_kind);
         assert_eq!(kinds, [[1, 0], [1, 1], [1, 0]]);

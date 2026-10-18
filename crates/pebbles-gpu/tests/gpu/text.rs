@@ -291,3 +291,109 @@ fn text_survives_300_frames() {
     }
     assert_eq!(count(&render_run(&mut r, (420, 110), scene)), first);
 }
+
+// ---- R23: color glyphs (system color font; never bundled) ----
+
+/// The first font under `/usr/share/fonts` with a `COLR` or `CBDT` table, and its glyph for 😀.
+fn system_color_font() -> Option<(peniko::FontData, u32)> {
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else if p.extension().is_some_and(|x| x == "ttf" || x == "otf") {
+                out.push(p);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    walk(std::path::Path::new("/usr/share/fonts"), &mut files);
+    files.sort();
+    for path in files {
+        let Ok(bytes) = std::fs::read(&path) else { continue };
+        let Some(f) = swash::FontRef::from_index(&bytes, 0) else { continue };
+        let color = [b"COLR", b"CBDT"].iter().any(|t| f.table(swash::tag_from_bytes(t)).is_some());
+        let id = f.charmap().map('😀');
+        if color && id != 0 {
+            return Some((peniko::FontData::new(peniko::Blob::from(bytes), 0), u32::from(id)));
+        }
+    }
+    None
+}
+
+fn emoji_scene(font: &peniko::FontData, id: u32, alpha: f32, t: Affine) -> Scene {
+    let mut s = Scene::new();
+    let brush = Brush::Solid(Color::BLACK.multiply_alpha(alpha));
+    let g = [Glyph { id, x: 8.0, y: 56.0 }];
+    Painter::new(&mut s).draw_glyphs(font, 48.0, &[], &brush, t, None, Fill::NonZero, g.into_iter());
+    s
+}
+
+/// R23: color glyphs are uploaded premultiplied (no RGB above alpha over a transparent base)
+/// and keep their colors.
+#[test]
+#[ignore = "requires a GPU and a system color-emoji font"]
+fn color_glyph_is_premultiplied() {
+    let Some((font, id)) = system_color_font() else {
+        eprintln!("color_glyph_is_premultiplied: no system color font, skipped");
+        return;
+    };
+    let Some((device, queue, mut r)) = setup("color_glyph_is_premultiplied") else { return };
+    let px = render_scene(
+        &device,
+        &queue,
+        &mut r,
+        &emoji_scene(&font, id, 1.0, Affine::IDENTITY),
+        (72, 72),
+        Color::TRANSPARENT,
+    );
+    let px = px.as_chunks::<4>().0;
+    assert!(px.iter().all(|p| p[0] <= p[3] && p[1] <= p[3] && p[2] <= p[3]), "a channel exceeds alpha");
+    let saturated = px
+        .iter()
+        .filter(|p| {
+            let (mx, mn) = (p[0].max(p[1]).max(p[2]), p[0].min(p[1]).min(p[2]));
+            mx > 0 && f32::from(mx - mn) / f32::from(mx) > 0.3
+        })
+        .count();
+    assert!(saturated >= 50, "only {saturated} saturated pixels");
+}
+
+/// R23: a run at alpha 0.5 draws its color glyphs at half opacity.
+#[test]
+#[ignore = "requires a GPU and a system color-emoji font"]
+fn color_glyph_follows_run_alpha() {
+    let Some((font, id)) = system_color_font() else {
+        eprintln!("color_glyph_follows_run_alpha: no system color font, skipped");
+        return;
+    };
+    let Some((device, queue, mut r)) = setup("color_glyph_follows_run_alpha") else { return };
+    let px = render_scene(
+        &device,
+        &queue,
+        &mut r,
+        &emoji_scene(&font, id, 0.5, Affine::IDENTITY),
+        (72, 72),
+        Color::TRANSPARENT,
+    );
+    let max_a = px.as_chunks::<4>().0.iter().map(|p| p[3]).max().unwrap_or(0);
+    assert!((120..=136).contains(&max_a), "max alpha {max_a}");
+}
+
+/// R23 2a: a rotated bitmap-only color glyph draws as a transformed quad (no fallback).
+#[test]
+#[ignore = "requires a GPU and a system color-emoji font"]
+fn rotated_bitmap_glyph_draws_as_quad() {
+    let Some((font, id)) = system_color_font() else {
+        eprintln!("rotated_bitmap_glyph_draws_as_quad: no system color font, skipped");
+        return;
+    };
+    let Some((device, queue, mut r)) = setup("rotated_bitmap_glyph_draws_as_quad") else { return };
+    let t = Affine::rotate_about(0.5, kurbo::Point::new(36.0, 36.0));
+    let px =
+        render_scene(&device, &queue, &mut r, &emoji_scene(&font, id, 1.0, t), (72, 72), Color::TRANSPARENT);
+    let stats = r.last_frame_stats();
+    assert_eq!(stats.unsupported[pebbles_gpu::Unsupported::ColorGlyphTransform as usize], 0);
+    let ink = px.as_chunks::<4>().0.iter().filter(|p| p[3] > 128).count();
+    assert!(ink > 500, "rotated emoji ink {ink}");
+}

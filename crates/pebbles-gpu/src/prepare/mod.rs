@@ -41,7 +41,7 @@ mod tier_a;
 
 #[cfg(test)]
 pub(crate) use plan::ClipState;
-pub(crate) use plan::{DrawCmd, FramePlan, ScissorRect};
+pub(crate) use plan::{DrawCmd, FramePlan, GlyphRequest, ScissorRect};
 
 /// Path-flattening tolerance for recorded shapes (logical px) — a local copy, because
 /// `display_list::TOL` is `pub(crate)` to pebbles-render.

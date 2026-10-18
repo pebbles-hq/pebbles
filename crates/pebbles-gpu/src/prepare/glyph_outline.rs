@@ -197,6 +197,7 @@ impl Walk<'_> {
     ) {
         let g = glyph_transform.unwrap_or(Affine::IDENTITY);
         let mut path = BezPath::new();
+        let mut strike_run = None;
         let scissor = self.clips.current().scissor;
         let linear = Affine::new({
             let [a, b, c, d, ..] = m.as_coeffs();
@@ -220,9 +221,24 @@ impl Walk<'_> {
                 continue;
             }
             let Some(cached) = self.outlines.cached(font, id, font_size, coords) else {
-                // Bitmap-only / COLR glyphs on this route arrive with R23 / R29.
-                self.fell_back(super::coverage::Feature::GlyphsColorRotated);
-                self.stats.record(crate::stats::Unsupported::ColorGlyphTransform);
+                if has_color_strike(font, id) {
+                    // R23 2a: no vector form — a transformed quad of the native strike.
+                    self.draw_strike_quad(
+                        font,
+                        font_size,
+                        coords,
+                        premul,
+                        pen,
+                        linear,
+                        id,
+                        &mut strike_run,
+                        idx,
+                    );
+                } else {
+                    // COLR glyphs on this route arrive with R29.
+                    self.fell_back(super::coverage::Feature::GlyphsColorRotated);
+                    self.stats.record(crate::stats::Unsupported::ColorGlyphTransform);
+                }
                 continue;
             };
             path.truncate(0);
@@ -246,6 +262,64 @@ impl Walk<'_> {
                 path = p;
             }
         }
+    }
+}
+
+/// Whether glyph `id` has a color bitmap strike (CBDT/sbix).
+fn has_color_strike(font: &peniko::FontData, id: u16) -> bool {
+    swash::FontRef::from_index(font.data.data(), font.index as usize)
+        .is_some_and(|f| f.color_strikes().find_by_largest_ppem(id).is_some())
+}
+
+impl Walk<'_> {
+    /// One bitmap-only glyph on the outline route (R23 2a): a `glyphs` command of one
+    /// transformed quad, keeping its place in painter's order. `run` is this op's glyph run,
+    /// registered on first use.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_strike_quad(
+        &mut self,
+        font: &peniko::FontData,
+        font_size: f32,
+        coords: &[i16],
+        premul: [f32; 4],
+        pen: kurbo::Point,
+        linear: Affine,
+        id: u16,
+        run: &mut Option<u32>,
+        idx: u32,
+    ) {
+        use super::num::index_u32;
+        let run = *run.get_or_insert_with(|| {
+            let c0 = index_u32(self.plan.coords.len());
+            self.plan.coords.extend_from_slice(coords);
+            self.plan.glyph_runs.push(super::plan::GlyphRunInfo {
+                font: font.clone(),
+                coords: c0..index_u32(self.plan.coords.len()),
+                size_px: font_size,
+            });
+            index_u32(self.plan.glyph_runs.len() - 1)
+        });
+        let key = crate::execute::resources::atlas_alloc::GlyphKey {
+            font_blob: font.data.id(),
+            font_index: font.index,
+            glyph_id: id,
+            // 0 = the native strike (never a real raster size).
+            size_q: 0,
+            subpx_x: 0,
+            hint: false,
+            coords_hash: 0,
+        };
+        let f = |v: f64| super::num::to_f32(v).unwrap_or(0.0);
+        let [a, b, c, d, ..] = linear.as_coeffs();
+        let start = index_u32(self.plan.glyphs.len());
+        self.plan.glyphs.push(super::plan::GlyphRequest {
+            key: key.into(),
+            run,
+            origin: [f(pen.x), f(pen.y)],
+            color: premul,
+            linear: Some([f(a), f(b), f(c), f(d)]),
+        });
+        self.push(DrawCmd::Glyphs { glyphs: start..start + 1, clip: self.clips.current() }, idx);
     }
 }
 

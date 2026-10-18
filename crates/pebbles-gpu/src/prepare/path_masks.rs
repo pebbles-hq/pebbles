@@ -152,7 +152,7 @@ impl Walk<'_> {
         self.plan.mask_sources.push(source);
         let start = num::index_u32(self.plan.glyphs.len());
         let color = premul.map(|v| v * alpha);
-        self.plan.glyphs.push(GlyphRequest { key: key.into(), run, origin, color });
+        self.plan.glyphs.push(GlyphRequest { key: key.into(), run, origin, color, linear: None });
         self.stats.tier_b_draws += 1;
         self.push(DrawCmd::Glyphs { glyphs: start..start + 1, clip: self.clips.current() }, idx);
         true

@@ -111,6 +111,9 @@ pub(crate) struct AtlasSlot {
     /// Placement bearing.
     pub left: i16,
     pub top: i16,
+    /// Bitmap-strike color glyphs uploaded at their native size: the strike's ppem, so the quad
+    /// is drawn `font_size / strike_ppem` × the bitmap (R23). 0 = drawn at bitmap size.
+    pub strike_ppem: u16,
 }
 
 struct Entry {
@@ -256,6 +259,13 @@ impl CoverageAtlas {
         Some(e.slot.map(|s| s.0))
     }
 
+    /// Mark `key`'s resident slot as a native-size strike of `ppem` (R23); returns the slot.
+    pub(crate) fn set_strike_ppem(&mut self, key: impl Into<CoverageKey>, ppem: u16) -> Option<AtlasSlot> {
+        let (slot, _) = self.entries.get_mut(&key.into())?.slot.as_mut()?;
+        slot.strike_ppem = ppem;
+        Some(*slot)
+    }
+
     /// Record an empty entry (zero-size bitmap) so it is never rasterized again.
     pub(crate) fn insert_empty(&mut self, key: impl Into<CoverageKey>) {
         self.entries.insert(key.into(), Entry { slot: None, last_used: self.frame, area: 0 });
@@ -371,6 +381,7 @@ impl CoverageAtlas {
             h: u16::try_from(h).map_err(|_| Overflow)?,
             left: i16::try_from(left).unwrap_or(0),
             top: i16::try_from(top).unwrap_or(0),
+            strike_ppem: 0,
         };
         self.pages(atlas).occupied_px += area;
         if key.kind() == MaskKind::Path {

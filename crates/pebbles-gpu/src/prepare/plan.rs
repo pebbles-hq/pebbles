@@ -100,6 +100,10 @@ pub(crate) struct GlyphRequest {
     pub origin: [f32; 2],
     /// Premultiplied tint (mask glyphs); color glyphs use only `.a` as opacity.
     pub color: [f32; 4],
+    /// Outline-route bitmap glyphs (R23 step 2a): the run's linear map `[a, b, c, d]` (kurbo
+    /// order) — the native strike is drawn as a transformed quad at the unsnapped device pen
+    /// `origin`, scaled `font_size / strike_ppem`. `None`: an axis-aligned atlas quad.
+    pub linear: Option<[f32; 4]>,
 }
 
 /// One image to draw.
