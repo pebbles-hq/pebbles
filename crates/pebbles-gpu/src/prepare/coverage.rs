@@ -229,6 +229,7 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::GlyphsLarge,        // R20
     F::GlyphsDegenerate,   // R22
     F::GlyphsColorRotated, // R29
+    F::GlyphsColor,        // R39
 ];
 
 #[cfg(test)]

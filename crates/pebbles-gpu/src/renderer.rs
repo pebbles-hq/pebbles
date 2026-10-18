@@ -51,6 +51,10 @@ pub struct Renderer {
     pub(crate) image_instances: Vec<QuadInstance>,
     pub(crate) scratch: PrepareScratch,
     stats: FrameStats,
+    /// True inside an R39 pre-pass render (no per-frame atlas/image bookkeeping, no pre-pass).
+    nested: bool,
+    /// Reused R39 job list.
+    colr_jobs: Vec<super::prepare::ColrAtlasJob>,
     warn_once: WarnOnce,
     vertex_limit: u32,
     limits: RendererLimits,
@@ -118,6 +122,8 @@ impl Renderer {
             limits: RendererLimits::from_device_limits(&device.limits()),
             scratch: PrepareScratch::default(),
             stats: FrameStats::default(),
+            nested: false,
+            colr_jobs: Vec::new(),
             warn_once: WarnOnce::default(),
             vertex_limit: if gpu
                 .adapter()
@@ -176,6 +182,13 @@ impl Renderer {
         }
         let format = target.format();
         let mut stats = FrameStats::default();
+        let nested = self.nested;
+        if !nested {
+            self.glyph_atlas.begin_frame();
+            self.image_cache.begin_frame();
+            // R39: COLR glyphs missing from the color atlas are rendered into it first.
+            self.render_colr_misses(scene, params, &mut stats)?;
+        }
         // The main pass is single-sampled; the negotiated count is for Tier C runs (R12, R17).
         self.sample_count = self.msaa.get(&self.adapter, format, None);
 
@@ -242,8 +255,6 @@ impl Renderer {
         );
 
         self.pipelines.prewarm(device, &self.shaders, &self.layouts, format, 1, &mut stats);
-        self.glyph_atlas.begin_frame();
-        self.image_cache.begin_frame();
         resolve_and_upload(self, device, queue, &mut stats);
         stats.upload_us = u32::try_from(upload_started.elapsed().as_micros()).unwrap_or(u32::MAX);
         let encode_started = web_time::Instant::now();
@@ -299,8 +310,10 @@ impl Renderer {
         target.targets.pool.end_frame(self.budgets.layer_pool_bytes);
         stats.layer_pool_bytes = target.targets.pool.bytes();
         self.scratch.plan.release_refs();
-        self.glyph_atlas.end_frame(&mut stats);
-        self.image_cache.end_frame(&mut stats);
+        if !nested {
+            self.glyph_atlas.end_frame(&mut stats);
+            self.image_cache.end_frame(&mut stats);
+        }
         self.end_frame(&stats);
         self.stats = stats;
         Ok(stats)
@@ -308,6 +321,114 @@ impl Renderer {
 }
 
 impl Renderer {
+    /// R39 pre-pass: render every atlas-route COLR glyph of `scene` that misses the color atlas
+    /// into its slot — once, with the normal pipelines, into a scratch `Rgba8Unorm` target that
+    /// is copied into the page (pages are not render attachments). A frame with no misses does
+    /// no extra work.
+    fn render_colr_misses(
+        &mut self,
+        scene: &Scene,
+        params: &FrameParams,
+        stats: &mut FrameStats,
+    ) -> Result<(), GpuError> {
+        let mut jobs = std::mem::take(&mut self.colr_jobs);
+        jobs.clear();
+        if !self.scratch.colr_vector_only {
+            super::prepare::scan_colr_atlas(
+                scene.ops(),
+                params.root_transform,
+                &mut self.scratch.colr,
+                &mut jobs,
+            );
+        }
+        let mut todo = Vec::new();
+        for (i, job) in jobs.iter().enumerate() {
+            let key = job.glyph.key;
+            if self.glyph_atlas.cpu.get(key).is_some() {
+                continue; // a hit (now pinned for this frame)
+            }
+            let (k, bin, b) = (job.glyph.k, job.glyph.bin_dx, job.fragment.bounds);
+            // Fragment space is font units, y-up: device = (bin + x·k, −y·k) from the pen.
+            let (x0, x1) = ((bin + b.x0 * k).floor() - 1.0, (bin + b.x1 * k).ceil() + 1.0);
+            let (y0, y1) = ((-b.y1 * k).floor() - 1.0, (-b.y0 * k).ceil() + 1.0);
+            let to_i = |v: f64| super::prepare::num::to_i32_sat(v);
+            let (Ok(w), Ok(h)) = (u32::try_from(to_i(x1 - x0)), u32::try_from(to_i(y1 - y0))) else {
+                continue;
+            };
+            if w == 0 || h == 0 {
+                continue;
+            }
+            if let Some(slot) = self.glyph_atlas.insert_colr(key, w, h, to_i(x0), to_i(-y0), stats) {
+                todo.push((i, slot, x0, y0));
+            }
+        }
+        if !todo.is_empty() {
+            let (device, queue) = (self.device.clone(), self.queue.clone());
+            self.glyph_atlas.flush(&device, &queue, &self.layouts.glyph, stats);
+            for (i, slot, x0, y0) in todo {
+                let Some(job) = jobs.get(i) else { continue };
+                let (w, h) = (u32::from(slot.w), u32::from(slot.h));
+                let texture = device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("pebbles.gpu.colr.scratch"),
+                    size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                    view_formats: &[],
+                });
+                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                stats.textures_created += 1;
+                stats.texture_views_created += 1;
+                let m = kurbo::Affine::translate((-x0, -y0))
+                    * kurbo::Affine::translate((job.glyph.bin_dx, 0.0))
+                    * kurbo::Affine::scale_non_uniform(job.glyph.k, -job.glyph.k);
+                let mut glyph_scene = Scene::new();
+                pebbles_render::paint::Painter::new(&mut glyph_scene).append(&job.fragment.scene, Some(m));
+                let mut targets = super::frame_targets::FrameTargets::new();
+                let target = RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut targets);
+                self.nested = true;
+                let rendered =
+                    self.render(target, &glyph_scene, &FrameParams::new(peniko::Color::TRANSPARENT));
+                self.nested = false;
+                rendered?;
+                let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("pebbles.gpu.encoder.colr_copy"),
+                });
+                enc.copy_texture_to_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::TexelCopyTextureInfo {
+                        texture: self.glyph_atlas.color_texture(),
+                        mip_level: 0,
+                        origin: wgpu::Origin3d {
+                            x: u32::from(slot.x),
+                            y: u32::from(slot.y),
+                            z: u32::from(slot.layer),
+                        },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+                );
+                queue.submit([enc.finish()]);
+                stats.color_glyph_renders += 1;
+            }
+        }
+        self.colr_jobs = jobs;
+        Ok(())
+    }
+
+    /// Debug switch (R39 tests): draw atlas-route COLR glyphs as vector fragments instead.
+    #[doc(hidden)]
+    pub fn set_colr_atlas_enabled(&mut self, enabled: bool) {
+        self.scratch.colr_vector_only = !enabled;
+    }
+
     /// After the last submit: log each fallback kind the first time it occurs (06 §6.3).
     fn end_frame(&mut self, stats: &FrameStats) {
         for kind in Unsupported::ALL {

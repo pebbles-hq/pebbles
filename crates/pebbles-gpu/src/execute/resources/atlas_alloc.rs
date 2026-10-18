@@ -36,6 +36,9 @@ pub(crate) struct GlyphKey {
     pub hint: bool,
     /// 0 when the run has no normalized coords, else a 64-bit hash of them.
     pub coords_hash: u64,
+    /// COLR glyphs rendered into the color atlas (R39): the foreground color (palette index
+    /// `0xFFFF`, RGBA8; palette 0). `None` for rasterized glyphs.
+    pub colr_fg: Option<[u8; 4]>,
 }
 
 /// Tier B path-mask key (02 R15). Exact, collision-free fields only — no pointers.

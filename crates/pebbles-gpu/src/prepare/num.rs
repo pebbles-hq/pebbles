@@ -53,3 +53,8 @@ pub(crate) fn to_u64_sat(v: f64) -> u64 {
         v as u64
     }
 }
+
+/// f64 → i32, rounded toward zero and saturated (NaN → 0); for already-integral pixel values.
+pub(crate) fn to_i32_sat(v: f64) -> i32 {
+    if v.is_nan() { 0 } else { v.clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32 }
+}

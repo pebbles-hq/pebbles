@@ -52,6 +52,53 @@ pub(crate) fn glyph_culled(pen: kurbo::Point, ppem: f64, linear: Affine, scissor
 /// Append one atlas-route glyph run's requests (pens in device space) and return their range.
 /// Degenerate glyphs are skipped and counted (R22); glyphs outside `scissor` are culled before
 /// any atlas work (R25).
+/// One COLR glyph on the atlas route (R39): its color-atlas key, the integer device pen
+/// (`ix`, `iy`, the quad origin) and the fragment's placement (`k` = device px per font unit,
+/// `bin_dx` = the quarter-pixel pen offset). Shared by prepare and the renderer's pre-pass so
+/// both compute the same key.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct ColrAtlasGlyph {
+    pub key: GlyphKey,
+    pub origin: [f32; 2],
+    pub k: f64,
+    pub bin_dx: f64,
+}
+
+/// [`ColrAtlasGlyph`] for glyph `g` of a run under `transform` (atlas route: uniform positive
+/// scale), or `None` when the pen is not finite or the size rounds to nothing.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn colr_atlas_glyph(
+    font: &FontData,
+    glyph_id: u16,
+    coords: &[i16],
+    font_size: f32,
+    upem: f64,
+    transform: Affine,
+    g: &Glyph,
+    foreground: peniko::Color,
+) -> Option<ColrAtlasGlyph> {
+    let coeffs = transform.as_coeffs();
+    let scale = to_f32((coeffs[0] * coeffs[0] + coeffs[1] * coeffs[1]).sqrt().max(1e-6))?;
+    let size_px = font_size * scale;
+    let size_q = super::num::to_u32_round(size_px * 64.0).filter(|&q| q > 0)?;
+    let pen = transform * kurbo::Point::new(f64::from(g.x), f64::from(g.y));
+    let (ix, subpx_x) = to_f32(pen.x).and_then(subpixel_bin)?;
+    let iy = to_f32(pen.y).and_then(snap_baseline)?;
+    let key = GlyphKey {
+        font_blob: font.data.id(),
+        font_index: font.index,
+        glyph_id,
+        size_q,
+        subpx_x,
+        hint: false,
+        coords_hash: coords_hash(coords),
+        colr_fg: Some(foreground.to_rgba8().to_u8_array()),
+    };
+    #[allow(clippy::cast_precision_loss)] // |ix|, |iy| ≤ 2^24: exact in f32
+    let origin = [ix as f32, iy as f32];
+    Some(ColrAtlasGlyph { key, origin, k: f64::from(size_px) / upem, bin_dx: f64::from(subpx_x) * 0.25 })
+}
+
 /// 02 §7.8: hint vertically below 2× density and up to 48 ppem. `scale_factor` =
 /// `PrepareInput::scale_factor`; `ppem` = the atlas-route ppem (`font_size · a`, §7.5).
 pub(crate) fn hint_policy(scale_factor: f64, ppem: f32) -> bool {
@@ -120,6 +167,7 @@ pub(crate) fn glyph_run(
             subpx_x,
             hint,
             coords_hash: hash,
+            colr_fg: None,
         };
         #[allow(clippy::cast_precision_loss)] // |ix|, |iy| ≤ 2^24: exact in f32
         let origin = [ix as f32, iy as f32];

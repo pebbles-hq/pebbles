@@ -453,3 +453,69 @@ fn color_glyph_renders_under_rotation() {
     }
     assert!(red > 100 && blue > 100, "red {red} blue {blue}");
 }
+
+// ---- R39: COLR glyphs cached in the color atlas ----
+
+fn colr_label(font: &peniko::FontData, ch: char, x: f32) -> Scene {
+    let id = {
+        let f = swash::FontRef::from_index(font.data.data(), 0).expect("colr-test");
+        u32::from(f.charmap().map(ch))
+    };
+    let mut s = Scene::new();
+    let g = [Glyph { id, x, y: 90.0 }];
+    Painter::new(&mut s).draw_glyphs(
+        font,
+        64.0,
+        &[],
+        &Brush::Solid(Color::BLACK),
+        Affine::IDENTITY,
+        None,
+        Fill::NonZero,
+        g.into_iter(),
+    );
+    s
+}
+
+/// R39: frame 1 renders the COLR glyph into the color atlas once; frame 2 of the same label
+/// only draws a quad (no extra pass, nothing rasterized).
+#[test]
+#[ignore = "gpu"]
+fn color_glyph_atlas_hit_has_no_extra_pass() {
+    let Some((device, queue, mut r)) = setup("color_glyph_atlas_hit_has_no_extra_pass") else { return };
+    let font = colr_font();
+    let s = colr_label(&font, 'A', 12.25);
+    let first = render_scene(&device, &queue, &mut r, &s, (96, 96), Color::WHITE);
+    assert_eq!(r.last_frame_stats().color_glyph_renders, 1);
+    let second = render_scene(&device, &queue, &mut r, &s, (96, 96), Color::WHITE);
+    let stats = r.last_frame_stats();
+    assert_eq!(stats.color_glyph_renders, 0, "frame 2 hits the atlas");
+    assert_eq!(stats.render_passes, 1, "no extra pass on a hit");
+    assert_eq!(first, second);
+    assert!(first.as_chunks::<4>().0.iter().any(|p| p[2] > 200 && p[0] < 60), "blue layer drawn");
+}
+
+/// R39: the atlas route matches the vector route of the same glyph at the same position within
+/// the Text limits (max channel delta ≤ 3 on ≥ 99 % of pixels).
+#[test]
+#[ignore = "gpu"]
+fn atlas_colr_matches_vector() {
+    let Some((device, queue, mut r)) = setup("atlas_colr_matches_vector") else { return };
+    let font = colr_font();
+    for (ch, x) in [('A', 12.0), ('A', 12.5), ('D', 13.25)] {
+        let s = colr_label(&font, ch, x);
+        r.set_colr_atlas_enabled(true);
+        let atlas = render_scene(&device, &queue, &mut r, &s, (96, 96), Color::WHITE);
+        r.set_colr_atlas_enabled(false);
+        let vector = render_scene(&device, &queue, &mut r, &s, (96, 96), Color::WHITE);
+        let (a, v) = (atlas.as_chunks::<4>().0, vector.as_chunks::<4>().0);
+        let over =
+            a.iter().zip(v).filter(|(p, q)| p.iter().zip(q.iter()).any(|(x, y)| x.abs_diff(*y) > 3)).count();
+        let max = a
+            .iter()
+            .zip(v)
+            .flat_map(|(p, q)| p.iter().zip(q.iter()).map(|(x, y)| x.abs_diff(*y)))
+            .max()
+            .unwrap_or(0);
+        assert!(over * 100 <= a.len(), "{ch} at x {x}: {over} pixels over 3 (max Δ {max})");
+    }
+}

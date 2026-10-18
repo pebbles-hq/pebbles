@@ -257,6 +257,11 @@ impl GlyphAtlas {
         if let Some(hit) = self.cpu.get(key) {
             return (hit.map_or(GlyphLookup::Empty, GlyphLookup::Slot), false);
         }
+        if key.colr_fg.is_some() {
+            // COLR glyphs are rendered by the pre-pass (R39), never rasterized; a miss here
+            // means the color atlas overflowed.
+            return (GlyphLookup::Full, false);
+        }
         let Some(glyph) = self.raster.rasterize(req) else {
             self.cpu.insert_empty(key);
             return (GlyphLookup::Empty, true);
@@ -282,6 +287,29 @@ impl GlyphAtlas {
             }
             Err(_) => (GlyphLookup::Full, true),
         }
+    }
+
+    /// R39: reserve a color-atlas slot for a COLR glyph and stage a transparent fill of it
+    /// (gutter included), so the copy of the rendered fragment lands on a clean slot. `None`
+    /// when the atlas is full or the size does not fit.
+    pub(crate) fn insert_colr(
+        &mut self,
+        key: GlyphKey,
+        w: u32,
+        h: u32,
+        left: i32,
+        top: i32,
+        stats: &mut FrameStats,
+    ) -> Option<AtlasSlot> {
+        let slot = self.cpu.insert(key, AtlasKind::Color, w, h, left, top, stats).ok()?;
+        let zeros = vec![0u8; w as usize * h as usize * 4];
+        stage(&mut self.staging, &mut self.uploads, slot, &zeros);
+        Some(slot)
+    }
+
+    /// The color pages' texture (R39 copies rendered COLR glyphs into it).
+    pub(crate) fn color_texture(&self) -> &wgpu::Texture {
+        &self.color.texture
     }
 
     /// Find a Tier B path mask, rasterizing (R14) and staging it on a miss. The slot's
@@ -360,6 +388,10 @@ impl GlyphAtlas {
             );
             stats.texture_bytes_uploaded += bytes.len() as u64;
         }
+        // Written: a later flush this frame (R39 pre-pass, then the main frame) must not
+        // re-upload them over GPU-rendered content.
+        self.uploads.clear();
+        self.staging.clear();
         stats.glyph_atlas_occupancy_pct = self.cpu.mask.occupancy_pct();
         stats.color_atlas_occupancy_pct = self.cpu.color.occupancy_pct();
         let key = (self.mask.generation << 32) ^ self.color.generation;

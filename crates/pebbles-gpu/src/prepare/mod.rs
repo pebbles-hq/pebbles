@@ -74,6 +74,8 @@ pub(crate) struct PrepareScratch {
     pub outlines: glyph_outline::OutlineSource,
     /// COLR glyph fragments (R29).
     pub colr: crate::raster::color_glyph::ColorGlyphCache,
+    /// Debug switch (R39 tests): draw atlas-route COLR glyphs as vector fragments too.
+    pub colr_vector_only: bool,
     /// Debug switch (R10): draw Tier A shapes through tessellation instead (tests, render-check).
     pub sdf_disabled: bool,
 }
@@ -97,6 +99,7 @@ pub(crate) fn prepare<'s>(
         tess: &mut scratch.tess,
         outlines: &mut scratch.outlines,
         colr: &mut scratch.colr,
+        colr_vector_only: scratch.colr_vector_only,
         stats,
         limits,
         visit: 0,
@@ -121,6 +124,7 @@ struct Walk<'a> {
     tess: &'a mut tessellate::PathTessellator,
     outlines: &'a mut glyph_outline::OutlineSource,
     colr: &'a mut crate::raster::color_glyph::ColorGlyphCache,
+    colr_vector_only: bool,
     stats: &'a mut FrameStats,
     limits: &'a RendererLimits,
     visit: u32,
@@ -130,6 +134,68 @@ struct Walk<'a> {
     out_of_vertices: bool,
     /// Tier A analytic shapes enabled (R10).
     sdf: bool,
+}
+
+/// One COLR glyph the renderer must render into the color atlas before the frame (R39).
+pub(crate) struct ColrAtlasJob {
+    pub glyph: glyphs::ColrAtlasGlyph,
+    pub fragment: crate::raster::color_glyph::ColorGlyphFragment,
+}
+
+/// R39 pre-pass: every atlas-route COLR glyph of `ops` (under `outer`), deduplicated by key.
+/// Mirrors the Glyphs arm's route decision and key computation exactly.
+pub(crate) fn scan_colr_atlas(
+    ops: &[Op],
+    outer: Affine,
+    colr: &mut crate::raster::color_glyph::ColorGlyphCache,
+    out: &mut Vec<ColrAtlasJob>,
+) {
+    for op in ops {
+        match op {
+            Op::Fragment { transform, ops, .. } => {
+                scan_colr_atlas(ops, outer * transform.unwrap_or(Affine::IDENTITY), colr, out);
+            }
+            Op::Glyphs {
+                font,
+                font_size,
+                normalized_coords,
+                brush,
+                transform,
+                glyph_transform,
+                glyphs,
+                ..
+            } => {
+                let xf = outer * *transform;
+                let peniko::Brush::Solid(base) = brush else { continue };
+                if !xf.is_finite() || !colr.font_has_colr(font) {
+                    continue;
+                }
+                if !matches!(
+                    glyph_outline::classify_run(xf, *glyph_transform, *font_size),
+                    glyph_outline::GlyphRoute::Atlas { .. }
+                ) {
+                    continue;
+                }
+                let Ok(face) = skrifa::FontRef::from_index(font.data.data(), font.index) else { continue };
+                let upem = skrifa::raw::TableProvider::head(&face)
+                    .map_or(1000.0, |h| f64::from(h.units_per_em().max(1)));
+                let fg = base.with_alpha(1.0);
+                for g in glyphs {
+                    let Ok(id) = u16::try_from(g.id) else { continue };
+                    let Some(fragment) = colr.fragment(font, id, normalized_coords, fg) else { continue };
+                    let Some(glyph) =
+                        glyphs::colr_atlas_glyph(font, id, normalized_coords, *font_size, upem, xf, g, fg)
+                    else {
+                        continue;
+                    };
+                    if !out.iter().any(|j| j.glyph.key == glyph.key) {
+                        out.push(ColrAtlasJob { glyph, fragment });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// One glyph run's drawing inputs (R29 splits a run around its COLR glyphs).
@@ -199,12 +265,55 @@ impl Walk<'_> {
         // run color at full alpha (the alpha applies once, through the layer).
         let alpha = run.color[3];
         let foreground = run.base.with_alpha(1.0);
+        // R39: on the atlas route a COLR glyph is a color-atlas quad (rendered once by the
+        // renderer's pre-pass); the outline route keeps the vector fragment.
+        let atlas = !self.colr_vector_only
+            && matches!(
+                glyph_outline::classify_run(run.xf, run.glyph_transform, run.font_size),
+                glyph_outline::GlyphRoute::Atlas { .. }
+            );
+        let mut atlas_run = None;
         let mut start = 0;
         for (i, g) in glyphs.iter().enumerate() {
             let Ok(id) = u16::try_from(g.id) else { continue };
             let Some(frag) = self.colr.fragment(run.font, id, run.coords, foreground) else { continue };
             self.draw_glyph_segment(run, glyphs.get(start..i).unwrap_or_default(), idx);
             start = i + 1;
+            if atlas {
+                let placed = glyphs::colr_atlas_glyph(
+                    run.font,
+                    id,
+                    run.coords,
+                    run.font_size,
+                    upem,
+                    run.xf,
+                    g,
+                    foreground,
+                );
+                if let Some(c) = placed {
+                    let r = *atlas_run.get_or_insert_with(|| {
+                        let c0 = num::index_u32(self.plan.coords.len());
+                        self.plan.coords.extend_from_slice(run.coords);
+                        self.plan.glyph_runs.push(plan::GlyphRunInfo {
+                            font: run.font.clone(),
+                            coords: c0..num::index_u32(self.plan.coords.len()),
+                            size_px: run.font_size,
+                        });
+                        num::index_u32(self.plan.glyph_runs.len() - 1)
+                    });
+                    let s = num::index_u32(self.plan.glyphs.len());
+                    let req = GlyphRequest {
+                        key: c.key.into(),
+                        run: r,
+                        origin: c.origin,
+                        color: run.color,
+                        linear: None,
+                    };
+                    self.plan.glyphs.push(req);
+                    self.push(DrawCmd::Glyphs { glyphs: s..s + 1, clip: self.clips.current() }, idx);
+                }
+                continue;
+            }
             let m = run.xf
                 * Affine::translate((f64::from(g.x), f64::from(g.y)))
                 * run.glyph_transform.unwrap_or(Affine::IDENTITY)
