@@ -73,15 +73,6 @@ const _: () = assert!(size_of::<ShapeInstance>() == 80);
 
 impl ShapeInstance {
     pub(crate) const ATTRIBUTES: [wgpu::VertexAttribute; 5] = wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4, 4 => Float32x4];
-
-    /// The instance-step vertex buffer layout (stride 80).
-    pub(crate) fn layout() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: size_of::<Self>() as u64,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &Self::ATTRIBUTES,
-        }
-    }
 }
 
 /// Per-composite uniform (09 §3.7): one 256-byte-aligned slot per composited Tier C run / layer.

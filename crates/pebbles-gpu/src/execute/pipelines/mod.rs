@@ -5,12 +5,7 @@ use std::collections::{HashMap, HashSet};
 use super::resources::bind_groups::BindGroupLayouts;
 use crate::stats::FrameStats;
 
-mod composite;
-mod glyph;
-mod image;
-mod sdf;
-mod shadow;
-mod solid;
+pub(crate) mod descs;
 
 /// One render pipeline family. Each maps to exactly one `.wgsl` file (§9.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -37,6 +32,19 @@ pub(crate) enum PipelineKind {
 }
 
 impl PipelineKind {
+    /// `pebbles.gpu.pipeline.<kind>` descriptor label (S51); static.
+    pub(crate) const fn pipeline_label(self) -> &'static str {
+        match self {
+            Self::Solid => "pebbles.gpu.pipeline.solid",
+            Self::Sdf => "pebbles.gpu.pipeline.sdf",
+            Self::Shadow => "pebbles.gpu.pipeline.shadow",
+            Self::Glyph => "pebbles.gpu.pipeline.glyph",
+            Self::Image => "pebbles.gpu.pipeline.image",
+            Self::CompositeOver => "pebbles.gpu.pipeline.composite_over",
+            _ => "pebbles.gpu.pipeline.other",
+        }
+    }
+
     /// `pebbles.gpu.draw.<kind>` debug-group label (11 §4.4); static, never allocated per frame.
     pub(crate) const fn debug_label(self) -> &'static str {
         match self {
@@ -129,18 +137,22 @@ impl PipelineCache {
     fn layout_for(
         &mut self,
         device: &wgpu::Device,
-        kind: PipelineKind,
+        desc: &descs::PipelineDesc,
         layouts: &BindGroupLayouts,
     ) -> wgpu::PipelineLayout {
+        let kind = desc.kind;
         if let Some(l) = self.layouts.get(&kind) {
             return l.clone();
         }
-        let bgl = match kind {
-            PipelineKind::Glyph => vec![Some(&layouts.globals), Some(&layouts.glyph)],
-            PipelineKind::Image => vec![Some(&layouts.globals), Some(&layouts.texture)],
-            PipelineKind::CompositeOver => vec![Some(&layouts.globals), Some(&layouts.composite)],
-            _ => vec![Some(&layouts.globals)],
+        let group1 = match kind {
+            PipelineKind::Glyph => Some(&layouts.glyph),
+            PipelineKind::Image => Some(&layouts.texture),
+            PipelineKind::CompositeOver => Some(&layouts.composite),
+            _ => None,
         };
+        debug_assert_eq!(group1.is_some(), desc.group1, "{kind:?}: group 1 disagrees with 02 §9");
+        let bgl: Vec<_> =
+            std::iter::once(Some(&layouts.globals)).chain(group1.filter(|_| desc.group1).map(Some)).collect();
         let l = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("pebbles.gpu.layout.pipeline"),
             bind_group_layouts: &bgl,
@@ -162,18 +174,12 @@ impl PipelineCache {
         if self.pipelines.contains_key(&key) {
             return;
         }
-        let pipeline_layout = self.layout_for(device, key.kind, layouts);
         let shader = modules.for_kind(key.kind);
-        let pipeline = match key.kind {
-            PipelineKind::Solid => solid::build(device, shader, &pipeline_layout, key),
-            PipelineKind::Shadow => shadow::build(device, shader, &pipeline_layout, key),
-            PipelineKind::Sdf => sdf::build(device, shader, &pipeline_layout, key),
-            PipelineKind::Glyph => glyph::build(device, shader, &pipeline_layout, key),
-            PipelineKind::Image => image::build(device, shader, &pipeline_layout, key),
-            PipelineKind::CompositeOver => composite::build(device, shader, &pipeline_layout, key),
-            // Later cards add their builders; never reached before then.
-            _ => return,
-        };
+        // Kinds without a §9 row in code yet are never reached (later cards add them).
+        let Some(desc) = descs::desc_of(key.kind) else { return };
+        debug_assert!(crate::shaders::ALL.iter().any(|(n, _)| desc.wgsl.trim_end_matches(".wgsl") == *n));
+        let pipeline_layout = self.layout_for(device, &desc, layouts);
+        let pipeline = descs::build(device, shader, &pipeline_layout, key, &desc);
         self.pipelines.insert(key, pipeline);
         stats.pipelines_created += 1;
     }
