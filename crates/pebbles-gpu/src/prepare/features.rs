@@ -72,17 +72,6 @@ impl Walk<'_> {
         }
     }
 
-    /// Dashes and non-default joins/caps/miter limit (R05/R06 deliver them).
-    pub(super) fn note_stroke(&mut self, style: &kurbo::Stroke) {
-        if !style.dash_pattern.is_empty() {
-            self.fell_back(Feature::StrokeDashes);
-        }
-        let d = kurbo::Stroke::default();
-        if style.join != d.join || style.start_cap != d.start_cap || style.end_cap != d.end_cap {
-            self.fell_back(Feature::StrokeJoinsCaps);
-        }
-    }
-
     /// The clip rows of a layer clip (quarter turns and zero-radius rounded rects are exact
     /// scissors since R07).
     pub(super) fn note_clip(&mut self, clip: &Geometry, xf: Affine, fill: peniko::Fill) {

@@ -179,7 +179,6 @@ impl Walk<'_> {
                         continue;
                     }
                     self.note_paint(brush, *brush_transform, true);
-                    self.note_stroke(style);
                     let Some(color) = self.solid_color(brush) else { continue };
                     if self.vertex_budget_spent() {
                         continue;
