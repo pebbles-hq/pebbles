@@ -246,6 +246,13 @@ impl Renderer {
             format,
             &mut stats,
         );
+        super::execute::encode::ensure_plan_pipelines(
+            self,
+            device,
+            format,
+            !composites.is_empty(),
+            &mut stats,
+        );
         {
             let (view, resolve_target) = (target.view, None);
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

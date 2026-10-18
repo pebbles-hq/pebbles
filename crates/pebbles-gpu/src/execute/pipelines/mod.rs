@@ -32,6 +32,34 @@ pub(crate) enum PipelineKind {
 }
 
 impl PipelineKind {
+    /// Every kind, in declaration order.
+    pub(crate) const ALL: [PipelineKind; 18] = [
+        Self::Solid,
+        Self::Sdf,
+        Self::Shadow,
+        Self::Glyph,
+        Self::Image,
+        Self::Gradient,
+        Self::CompositeOver,
+        Self::CompositeCompose,
+        Self::CompositeBackdrop,
+        Self::Blit,
+        Self::Vertices,
+        Self::Sprite,
+        Self::Blur,
+        Self::ColorMatrix,
+        Self::Morphology,
+        Self::Projected,
+        Self::ShaderBrush,
+        Self::MaskMultiply,
+    ];
+
+    /// K3: created on the first render to a `(format, sample_count)` (the Phase 1–3 kinds);
+    /// Phase-4 kinds are created lazily.
+    pub(crate) const fn prewarm(self) -> bool {
+        matches!(self, Self::Solid | Self::Glyph | Self::Image | Self::Shadow | Self::Sdf)
+    }
+
     /// `pebbles.gpu.pipeline.<kind>` descriptor label (S51); static.
     pub(crate) const fn pipeline_label(self) -> &'static str {
         match self {
@@ -184,10 +212,6 @@ impl PipelineCache {
         stats.pipelines_created += 1;
     }
 
-    pub(crate) fn get(&self, key: PipelineKey) -> Option<&wgpu::RenderPipeline> {
-        self.pipelines.get(&key)
-    }
-
     /// Prewarm every Phase 1–3 kind for `(format, sample_count)` on first use (K3).
     pub(crate) fn prewarm(
         &mut self,
@@ -201,15 +225,24 @@ impl PipelineCache {
         if !self.prewarmed.insert((format, sample_count)) {
             return;
         }
-        let key = |kind, variant| PipelineKey { kind, color_format: format, sample_count, blend: 0, variant };
-        for k in [
-            key(PipelineKind::Solid, 0),
-            key(PipelineKind::Shadow, 0),
-            key(PipelineKind::Sdf, 0),
-            key(PipelineKind::Glyph, 0),
-            key(PipelineKind::Image, 0),
-        ] {
-            self.ensure(device, modules, layouts, k, stats);
+        for kind in PipelineKind::ALL.into_iter().filter(|k| k.prewarm()) {
+            let key = PipelineKey { kind, color_format: format, sample_count, blend: 0, variant: 0 };
+            self.ensure(device, modules, layouts, key, stats);
         }
+    }
+
+    /// K2: the pipeline for `key`, which `ensure` must have created before the pass opened. A
+    /// miss is an internal invariant violation: asserted in debug, logged, and the draw skipped.
+    pub(crate) fn get_ensured(&self, key: PipelineKey) -> Option<&wgpu::RenderPipeline> {
+        let p = self.pipelines.get(&key);
+        if p.is_none() {
+            debug_assert!(false, "pipeline {key:?} was not ensured before encoding (K2)");
+            pebbles_foundation::log::logf(
+                pebbles_foundation::log::Level::Error,
+                pebbles_foundation::log::Cat::Gpu,
+                format_args!("pipeline {key:?} missing at encode; draw skipped (K2)"),
+            );
+        }
+        p
     }
 }

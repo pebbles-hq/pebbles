@@ -23,3 +23,54 @@ fn stats_count_draws_and_passes() {
     assert!(st.buffer_bytes_uploaded > 0, "{st}");
     assert_eq!(st.instances, 10_000, "{st}");
 }
+
+/// M09 AC1: alternating Rgba8Unorm and Bgra8Unorm targets for 6 frames creates each prewarm
+/// pipeline once per format, nothing from frame 3 on, and no validation error.
+#[test]
+#[ignore = "gpu"]
+fn two_formats_create_pipelines_once() {
+    let Some((device, queue, mut r)) = setup("two_formats_create_pipelines_once") else { return };
+    let mut s = Scene::new();
+    let mut p = Painter::new(&mut s);
+    p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &Rect::new(4.0, 4.0, 20.0, 20.0));
+    p.fill(
+        Fill::NonZero,
+        Affine::IDENTITY,
+        Color::BLACK,
+        None,
+        &kurbo::RoundedRect::new(24.0, 4.0, 40.0, 20.0, 4.0),
+    );
+    let formats = [wgpu::TextureFormat::Rgba8Unorm, wgpu::TextureFormat::Bgra8Unorm];
+    let textures = formats.map(|f| {
+        device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("pebbles.gpu.test.formats"),
+            size: wgpu::Extent3d { width: 64, height: 32, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: f,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        })
+    });
+    let mut targets = [FrameTargets::new(), FrameTargets::new()];
+    let prewarm_set = 5; // solid, sdf, shadow, glyph, image (K3)
+    let mut total = 0;
+    for frame in 1..=6usize {
+        let i = frame % 2;
+        let view = textures[i].create_view(&wgpu::TextureViewDescriptor::default());
+        let st = r
+            .render(
+                RenderTarget::new(&view, formats[i], &mut targets[i]),
+                &s,
+                &FrameParams::new(Color::WHITE),
+            )
+            .expect("render");
+        total += st.pipelines_created;
+        if frame >= 3 {
+            assert_eq!(st.pipelines_created, 0, "frame {frame}: {st}");
+        }
+    }
+    queue.submit([]);
+    assert_eq!(total, 2 * prewarm_set);
+}

@@ -80,6 +80,32 @@ pub(crate) fn cmd_kind(cmd: &DrawCmd) -> PipelineKind {
     }
 }
 
+/// K2: ensure every pipeline the main pass of `plan` will bind (before any pass opens).
+pub(crate) fn ensure_plan_pipelines(
+    renderer: &mut Renderer,
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    composites: bool,
+    stats: &mut FrameStats,
+) {
+    let mut seen = [false; PipelineKind::ALL.len()];
+    let kinds = renderer
+        .scratch
+        .plan
+        .cmds
+        .iter()
+        .map(cmd_kind)
+        .chain(composites.then_some(PipelineKind::CompositeOver));
+    for kind in kinds {
+        let i = PipelineKind::ALL.iter().position(|k| *k == kind).unwrap_or(0);
+        if std::mem::replace(&mut seen[i], true) {
+            continue;
+        }
+        let key = PipelineKey { kind, color_format: format, sample_count: 1, blend: 0, variant: 0 };
+        renderer.pipelines.ensure(device, &renderer.shaders, &renderer.layouts, key, stats);
+    }
+}
+
 /// Maximal runs of consecutive same-kind draw commands with their debug labels (S52).
 pub(crate) fn debug_group_runs(cmds: &[DrawCmd]) -> Vec<(std::ops::Range<usize>, &'static str)> {
     let mut out: Vec<(std::ops::Range<usize>, &'static str)> = Vec::new();
@@ -130,7 +156,7 @@ pub(crate) fn encode(
         if let Some(c) = runs.next_if(|c| c.run.cmds.start == i - 1) {
             i = c.run.cmds.end;
             let (Some(pipeline), Some(bg)) =
-                (renderer.pipelines.get(key(PipelineKind::CompositeOver, 0)), &c.bind_group)
+                (renderer.pipelines.get_ensured(key(PipelineKind::CompositeOver, 0)), &c.bind_group)
             else {
                 continue;
             };
@@ -145,7 +171,7 @@ pub(crate) fn encode(
         match cmd {
             DrawCmd::Solid { indices, clip } => {
                 let (Some(pipeline), Some(vb), Some(ib)) = (
-                    renderer.pipelines.get(key(PipelineKind::Solid, 0)),
+                    renderer.pipelines.get_ensured(key(PipelineKind::Solid, 0)),
                     renderer.arenas.solid_vertices.buffer(),
                     renderer.arenas.solid_indices.buffer(),
                 ) else {
@@ -160,7 +186,7 @@ pub(crate) fn encode(
             }
             DrawCmd::Shapes { instances, clip } => {
                 let (Some(pipeline), Some(vb)) = (
-                    renderer.pipelines.get(key(PipelineKind::Sdf, 0)),
+                    renderer.pipelines.get_ensured(key(PipelineKind::Sdf, 0)),
                     renderer.arenas.shape_instances.buffer(),
                 ) else {
                     continue;
@@ -173,7 +199,7 @@ pub(crate) fn encode(
             }
             DrawCmd::Shadows { instances, clip } => {
                 let (Some(pipeline), Some(vb)) = (
-                    renderer.pipelines.get(key(PipelineKind::Shadow, 0)),
+                    renderer.pipelines.get_ensured(key(PipelineKind::Shadow, 0)),
                     renderer.arenas.shadow_instances.buffer(),
                 ) else {
                     continue;
@@ -185,9 +211,10 @@ pub(crate) fn encode(
                 stats.draw_calls += 1;
             }
             DrawCmd::Glyphs { glyphs, clip } => {
-                let (Some(pipeline), Some(vb)) =
-                    (renderer.pipelines.get(key(PipelineKind::Glyph, 0)), renderer.arenas.glyphs.buffer())
-                else {
+                let (Some(pipeline), Some(vb)) = (
+                    renderer.pipelines.get_ensured(key(PipelineKind::Glyph, 0)),
+                    renderer.arenas.glyphs.buffer(),
+                ) else {
                     continue;
                 };
                 state.set_scissor(pass, clip.scissor);
@@ -201,7 +228,7 @@ pub(crate) fn encode(
             DrawCmd::Images { images, clip } => {
                 let first = renderer.scratch.plan.images.get(images.start as usize);
                 let (Some(pipeline), Some(vb), Some(bg)) = (
-                    renderer.pipelines.get(key(PipelineKind::Image, 0)),
+                    renderer.pipelines.get_ensured(key(PipelineKind::Image, 0)),
                     renderer.arenas.images.buffer(),
                     first.and_then(|r| renderer.image_cache.bind_group(&r.key, r.sampler)),
                 ) else {

@@ -171,7 +171,7 @@ pub(crate) fn encode_runs(
                 multiview_mask: None,
             });
             let (Some(pipeline), Some(vb), Some(ib)) = (
-                renderer.pipelines.get(solid),
+                renderer.pipelines.get_ensured(solid),
                 renderer.arenas.solid_vertices.buffer(),
                 renderer.arenas.solid_indices.buffer(),
             ) else {
