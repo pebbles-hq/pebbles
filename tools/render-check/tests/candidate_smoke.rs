@@ -43,15 +43,14 @@ fn candidate_renders_solid_rect() {
     assert_eq!(img.px(2, 2), [255, 255, 255, 255]);
 }
 
-/// The spec's `exact_rect_passes_end_to_end` asserts `PASS`, which needs the golden model
-/// (V44). Until then the runner must carry the case through every stage with no hard
-/// status: UNJUDGED, a passing Smoke metric, and the expected candidate pixels.
+/// V14 AC3: the exact rect passes end to end — judged against the golden model (V44/V47), with
+/// a passing Smoke metric and the expected candidate pixels.
 #[test]
 #[ignore = "gpu"]
-fn exact_rect_runs_end_to_end() {
+fn exact_rect_passes_end_to_end() {
     let Some(mut runner) = gpu_or_skip(Runner::new(RunOptions::default())) else { return };
     let out = runner.run_case(&smoke_case());
-    assert_eq!(out.result.status, Status::Unjudged, "{}", out.result.note);
+    assert_eq!(out.result.status, Status::Pass, "{}", out.result.note);
     assert!(out.result.smoke.expect("smoke on by default").passes(), "{:?}", out.result.smoke);
     let img = out.candidate.expect("candidate image");
     assert!(near(img.px(32, 32), [0x33, 0x66, 0xFF, 255], 1));
@@ -68,5 +67,5 @@ fn panicking_build_is_a_panic_and_the_next_case_runs() {
     assert_eq!(out.result.status, Status::Panic);
     assert!(out.result.note.contains("deliberate build panic"), "{}", out.result.note);
     runner.recreate().expect("recreate");
-    assert_eq!(runner.run_case(&smoke_case()).result.status, Status::Unjudged);
+    assert_eq!(runner.run_case(&smoke_case()).result.status, Status::Pass);
 }

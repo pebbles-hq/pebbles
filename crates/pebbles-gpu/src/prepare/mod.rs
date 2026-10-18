@@ -33,7 +33,7 @@ mod shapes;
 #[cfg(test)]
 mod snapshot_tests;
 mod stroke;
-mod tessellate;
+pub(crate) mod tessellate;
 #[cfg(test)]
 mod test_util;
 mod tier_a;

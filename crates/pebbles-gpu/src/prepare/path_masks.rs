@@ -65,15 +65,20 @@ fn hash_stroke(s: &Stroke) -> u64 {
     h.finish() | 1 // 0 is reserved for fills
 }
 
-/// Split a device translation into an integer origin and a quarter-pixel bin (0..=3).
-fn split_translation(t: f64) -> Option<(f64, u8)> {
-    let q = (t * 4.0).round();
-    if !q.is_finite() || q.abs() > 4.0e9 {
+/// Subpixel bins per device px for a mask's translation: 1/4096 px, finer than zeno's own
+/// 1/256-px fixed point, so binning never adds a second rounding. Quarter-pixel bins shifted
+/// edges by up to 1/8 px (≈ 30 LSB against the golden model).
+const SUBPX_BINS: f64 = 4096.0;
+
+/// Split a device translation into an integer origin and a 1/4096-px bin (0..=4095).
+fn split_translation(t: f64) -> Option<(f64, u16)> {
+    let q = (t * SUBPX_BINS).round();
+    if !q.is_finite() || q.abs() > 1.0e12 {
         return None;
     }
-    let origin = (q / 4.0).floor();
-    let bin = q - origin * 4.0;
-    Some((origin, u8::try_from(num::to_u64_sat(bin)).ok()?))
+    let origin = (q / SUBPX_BINS).floor();
+    let bin = q - origin * SUBPX_BINS;
+    Some((origin, u16::try_from(num::to_u64_sat(bin)).ok()?))
 }
 
 /// The key, source, origin and color scale of a Tier B request; `None` when the op must stay
@@ -91,7 +96,7 @@ fn build(
         i32::try_from(num::to_u64_sat((v * 1024.0).round().abs())).ok().map(|m| if v < 0.0 { -m } else { m })
     };
     let linear_q = [q(a)?, q(b)?, q(c)?, q(d)?];
-    let device = Affine::new([a, b, c, d, f64::from(bx) / 4.0, f64::from(by) / 4.0]);
+    let device = Affine::new([a, b, c, d, f64::from(bx) / SUBPX_BINS, f64::from(by) / SUBPX_BINS]);
     let s = xf.spectral_norm().max(1e-9);
     // 1/1024 device px: the converted curves (and so dash positions) match the spec's geometry.
     let path = shape.to_path(GEOMETRY_TOL_PX / s).into_owned();

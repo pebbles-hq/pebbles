@@ -280,7 +280,12 @@ impl Runner {
             (Reference::Golden, false) => match self.render_golden(case) {
                 Ok(img) => Some(img),
                 Err((status, note)) => {
-                    r.status = status;
+                    // An op the golden model cannot judge yet is a failed judgement: an XFAIL
+                    // case stays XFAIL (its reason names the card that adds the op).
+                    r.status = if status == Status::ProbeFail { verdict(false, case.expect) } else { status };
+                    if r.status == Status::Fail {
+                        r.status = Status::ProbeFail;
+                    }
                     r.note = note;
                     return None;
                 }

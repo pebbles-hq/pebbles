@@ -207,6 +207,8 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::FillSolid,
     F::FillEvenOdd, // R03
     F::StrokeSolid,
+    F::StrokeDashes,    // R06
+    F::StrokeJoinsCaps, // R06
     F::StrokeHairline,
     F::ClipRect,
     F::ClipNested,

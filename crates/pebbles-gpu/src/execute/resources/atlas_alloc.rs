@@ -34,8 +34,8 @@ pub(crate) struct MaskKey {
     pub geometry_hash: u64,
     /// The device transform's 2×2 part × 1024, rounded.
     pub linear_q: [i32; 4],
-    /// Fractional device translation in quarter pixels (x, y), 0..=3 each.
-    pub subpx: (u8, u8),
+    /// Fractional device translation in 1/4096 px (x, y), 0..=4095 each.
+    pub subpx: (u16, u16),
     /// 0 = non-zero, 1 = even-odd.
     pub rule: u8,
     /// Hash of width / joins / caps / dashes; 0 for fills.

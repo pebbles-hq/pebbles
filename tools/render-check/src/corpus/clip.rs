@@ -17,7 +17,15 @@ use crate::probe;
 /// Every `clip/` scissor case.
 pub fn cases() -> Vec<Case> {
     let mut v = vec![ops("clip/rect_scissor", Geometry, P1, 128, 128, rect_scissor)];
-    v.extend(with_scale_variants(ops("clip/rect_fractional", Geometry, P1, 128, 128, rect_fractional)));
+    // 09 §2: a fractional rect clip is a scissor rounded out until the SDF clip (L03/L04); the
+    // golden model clips exactly, so these fail by design until then.
+    v.extend(
+        with_scale_variants(ops("clip/rect_fractional", Geometry, P1, 128, 128, rect_fractional))
+            .into_iter()
+            .map(|c| {
+                c.xfail("L04", "fractional rect clips are scissors rounded out until the SDF clip (09 §2)")
+            }),
+    );
     v.extend([
         ops("clip/rect_negative_origin", Geometry, P1, 128, 128, rect_negative_origin),
         ops("clip/rect_offscreen", Category::Analytic, P1, 128, 128, rect_offscreen)
@@ -27,7 +35,8 @@ pub fn cases() -> Vec<Case> {
         ops("clip/empty_intersection", Category::Analytic, P1, 128, 128, empty_intersection)
             .analytic()
             .probe("all_background", probe::all_background),
-        harness("clip/scroll_viewport", Geometry, P1, 240, 200, scroll_viewport),
+        harness("clip/scroll_viewport", Geometry, P1, 240, 200, scroll_viewport)
+            .xfail("V46", "the golden model renders glyph runs from V46"),
     ]);
     v
 }

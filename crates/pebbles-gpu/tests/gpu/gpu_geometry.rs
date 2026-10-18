@@ -92,7 +92,10 @@ fn sdf_matches_tessellated_within_edge_tolerance() {
             edge_max = edge_max.max(delta);
         }
     }
-    assert!(edge_max <= 64, "max edge delta {edge_max}");
+    // The tessellated reference is MSAA-4: its own edge error is one sample quantum (64). The
+    // exact check is the golden model (render-check prim/rrect_*); here: quantum + the 2-LSB
+    // Tier A curve budget (02 §5.2).
+    assert!(edge_max <= 64 + 2, "max edge delta {edge_max}");
 }
 
 // ---- R11: analytic strokes ----
@@ -188,7 +191,10 @@ fn sdf_border_matches_tessellated() {
             edge_max = edge_max.max((0..3).map(|i| a[i].abs_diff(b[i])).max().unwrap_or(0));
         }
     }
-    assert!(edge_max <= 64, "max edge delta {edge_max}");
+    // The tessellated reference is MSAA-4: its own edge error is one sample quantum (64). The
+    // exact check is the golden model (render-check prim/rrect_*); here: quantum + the 2-LSB
+    // Tier A curve budget (02 §5.2).
+    assert!(edge_max <= 64 + 2, "max edge delta {edge_max}");
     eprintln!(
         "sdf_border_matches_tessellated: {reference_outliers} pixels where the MSAA reference is the outlier"
     );

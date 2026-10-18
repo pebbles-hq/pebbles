@@ -1,9 +1,8 @@
 //! R14: zeno Tier B masks against the golden model (V44), 300 seeded random polygons.
 //!
-//! Simple (star-shaped) polygons must be within ±1 LSB on ≥ 99.9 % of pixels. Self-intersecting
-//! polygons are measured too: an area-accumulation rasterizer cannot resolve winding where a
-//! path overlaps itself inside one pixel (V44's `nonzero_opposite_winding_hole_exact` is that
-//! case), so those only report their agreement and must stay ≥ 98 %.
+//! Simple (star-shaped) polygons must be within ±1 LSB on ≥ 99.9 % of pixels; self-intersecting
+//! ones on ≥ 99.8 % (lyon resolves the winding into disjoint triangles before zeno integrates
+//! area — without it, overlaps inside one pixel were double-counted: 99.64 %, max Δ 218).
 
 use kurbo::{Affine, BezPath};
 use peniko::Fill;
@@ -79,5 +78,5 @@ fn random_simple_polygons_match_golden() {
 fn random_self_intersecting_polygons_are_close() {
     let (frac, max) = agreement(0x5EED_0015, 300, arbitrary);
     println!("tier B vs golden (self-intersecting): {frac:.5} within ±1 LSB, max delta {max}");
-    assert!(frac >= 0.98, "{frac} within ±1 LSB (max {max})");
+    assert!(frac >= 0.998, "{frac} within ±1 LSB (max {max})");
 }

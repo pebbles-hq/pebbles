@@ -28,10 +28,27 @@ pub(crate) struct MaskPlacement {
 pub(crate) const FLATTEN_TOL_PX: f64 = 1.0 / 512.0;
 
 /// Reusable rasterizer state; capacities never shrink below their high-water mark.
-#[derive(Default)]
 pub(crate) struct CoverageRasterizer {
     cmds: Vec<Command>,
     scratch: Scratch,
+    /// Winding resolution (see `resolve_winding`): lyon events, triangles, triangle commands.
+    events: Vec<lyon_tessellation::path::PathEvent>,
+    tess: lyon_tessellation::FillTessellator,
+    tris: lyon_tessellation::VertexBuffers<lyon_tessellation::math::Point, u32>,
+    tri_cmds: Vec<Command>,
+}
+
+impl Default for CoverageRasterizer {
+    fn default() -> Self {
+        Self {
+            cmds: Vec::new(),
+            scratch: Scratch::new(),
+            events: Vec::new(),
+            tess: lyon_tessellation::FillTessellator::new(),
+            tris: lyon_tessellation::VertexBuffers::new(),
+            tri_cmds: Vec::new(),
+        }
+    }
 }
 
 impl std::fmt::Debug for CoverageRasterizer {
@@ -168,16 +185,24 @@ impl CoverageRasterizer {
             PathEl::ClosePath => out_path.close(),
         });
         out_path.close();
-        let fill = match rule {
-            peniko::Fill::NonZero => zeno::Fill::NonZero,
-            peniko::Fill::EvenOdd => zeno::Fill::EvenOdd,
+        // Resolve the fill rule into disjoint triangles first: zeno sums signed area, which
+        // double-counts wherever contours overlap inside one pixel (stroke joins, abutting dash
+        // pieces, self-intersecting paths). Disjoint triangles make that sum exact.
+        let (cmds, fill) = if self.resolve_winding(rule) {
+            (&self.tri_cmds, zeno::Fill::NonZero)
+        } else {
+            let fill = match rule {
+                peniko::Fill::NonZero => zeno::Fill::NonZero,
+                peniko::Fill::EvenOdd => zeno::Fill::EvenOdd,
+            };
+            (&self.cmds, fill)
         };
         let len = usize::try_from(u64::from(w) * u64::from(h)).ok()?;
         out.data.clear();
         out.data.resize(len, 0);
         out.width = w;
         out.height = h;
-        Mask::with_scratch(&self.cmds, &mut self.scratch)
+        Mask::with_scratch(cmds, &mut self.scratch)
             .style(fill)
             .format(Format::Alpha)
             .size(w, h)
@@ -185,6 +210,74 @@ impl CoverageRasterizer {
         let left = i32::try_from(x0).ok()?;
         let top = i32::try_from(y0).ok()?;
         Some(MaskPlacement { left, top, width: w, height: h })
+    }
+
+    /// Tessellate `self.cmds` under `rule` with lyon into disjoint triangles, written to
+    /// `self.tri_cmds` as closed contours of one orientation. `false` if lyon rejects the input
+    /// (the caller then rasterizes `self.cmds` directly).
+    fn resolve_winding(&mut self, rule: peniko::Fill) -> bool {
+        use lyon_tessellation::math::point;
+        use lyon_tessellation::path::PathEvent;
+        // Tessellate in a 16× space: lyon's absolute epsilons then cost ≤ 1/16 of the precision.
+        const UP: f32 = 16.0;
+        self.events.clear();
+        let mut first = None;
+        let mut cur = point(0.0, 0.0);
+        for c in &self.cmds {
+            match *c {
+                Command::MoveTo(p) => {
+                    let p = point(p.x * UP, p.y * UP);
+                    self.events.push(PathEvent::Begin { at: p });
+                    (first, cur) = (Some(p), p);
+                }
+                Command::LineTo(p) => {
+                    let p = point(p.x * UP, p.y * UP);
+                    self.events.push(PathEvent::Line { from: cur, to: p });
+                    cur = p;
+                }
+                Command::Close => {
+                    if let Some(f) = first.take() {
+                        self.events.push(PathEvent::End { last: cur, first: f, close: true });
+                        cur = f;
+                    }
+                }
+                // ClampedPath emits only MoveTo / LineTo / Close.
+                Command::QuadTo(..) | Command::CurveTo(..) => return false,
+            }
+        }
+        if let Some(f) = first {
+            self.events.push(PathEvent::End { last: cur, first: f, close: true });
+        }
+        self.tris.vertices.clear();
+        self.tris.indices.clear();
+        let opts = crate::prepare::tessellate::fill_options(rule);
+        let mut builder =
+            lyon_tessellation::BuffersBuilder::new(&mut self.tris, |v: lyon_tessellation::FillVertex<'_>| {
+                v.position()
+            });
+        if self.tess.tessellate(self.events.drain(..), &opts, &mut builder).is_err() {
+            return false;
+        }
+        self.tri_cmds.clear();
+        let v = &self.tris.vertices;
+        for t in self.tris.indices.as_chunks::<3>().0 {
+            let (Some(a), Some(b), Some(c)) =
+                (v.get(t[0] as usize), v.get(t[1] as usize), v.get(t[2] as usize))
+            else {
+                return false;
+            };
+            // One orientation for every triangle, so abutting triangles cancel exactly.
+            let cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+            let (b, c) = if cross < 0.0 { (c, b) } else { (b, c) };
+            let z = |p: &lyon_tessellation::math::Point| zeno::Point::new(p.x / UP, p.y / UP);
+            self.tri_cmds.extend([
+                Command::MoveTo(z(a)),
+                Command::LineTo(z(b)),
+                Command::LineTo(z(c)),
+                Command::Close,
+            ]);
+        }
+        true
     }
 
     /// `(cmds, …)` capacity, for the no-allocation-after-warm-up test.
