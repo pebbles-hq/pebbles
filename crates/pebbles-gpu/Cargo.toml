@@ -25,6 +25,7 @@ bytemuck.workspace = true
 web-time.workspace = true
 swash.workspace = true
 guillotiere.workspace = true
+zeno.workspace = true
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 pollster.workspace = true

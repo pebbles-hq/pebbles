@@ -1,3 +1,4 @@
-//! Glyph rasterization: swash directly from the op's font bytes (DR-07).
+//! CPU rasterization: glyphs with swash (DR-07), Tier B path masks with zeno (R14).
 
+pub(crate) mod coverage;
 pub(crate) mod swash;

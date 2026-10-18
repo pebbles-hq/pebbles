@@ -48,4 +48,15 @@ pub use limits::RendererLimits;
 pub use offscreen::{OffscreenRenderer, RgbaImage};
 pub use renderer::Renderer;
 pub use stats::{FrameStats, Unsupported};
+/// R14's seeded oracle check in render-check: the Tier B mask of `path` over a `w × h` target.
+#[doc(hidden)]
+pub fn __tier_b_mask_for_check(
+    path: &kurbo::BezPath,
+    device: kurbo::Affine,
+    rule: peniko::Fill,
+    w: u32,
+    h: u32,
+) -> Vec<u8> {
+    raster::coverage::full_mask(path, device, rule, w, h)
+}
 pub use surface::{Acquire, AcquireStatus, FrameAction, RenderSurface, SurfaceFrame, action_for};
