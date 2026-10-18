@@ -17,29 +17,27 @@ const W: u32 = 128;
 const H: u32 = 128;
 
 pub fn cases() -> Vec<Case> {
-    let r30 = |c: Case| c.xfail("R30", "image quality / brush alpha / extend modes land with R30");
-    // The golden model samples images from V45; until then these cases cannot be judged.
-    let v45 = |c: Case| c.xfail("V45", "golden model image sampling lands with V45");
-    let mut v = vec![v45(ops("img/aligned_1x", crate::case::Category::Exact, P3, W, H, aligned_1x))];
-    v.extend(
-        with_scale_variants(ops("img/scaled_up_3x", Image, P3, W, H, scaled_up_3x)).into_iter().map(v45),
-    );
+    let mut v = vec![ops("img/aligned_1x", crate::case::Category::Exact, P3, W, H, aligned_1x)];
+    v.extend(with_scale_variants(ops("img/scaled_up_3x", Image, P3, W, H, scaled_up_3x)));
     v.extend([
-        v45(ops("img/scaled_down_quarter", Image, P3, W, H, scaled_down_quarter)),
-        v45(ops("img/nonuniform_scale", Image, P3, W, H, nonuniform_scale)),
-        v45(ops("img/rotated_30", Image, P3, W, H, rotated_30)),
-        r30(ops("img/quality_low_nearest", Image, P3, W, H, quality_low_nearest)),
-        v45(ops("img/straight_alpha", Image, P3, W, H, straight_alpha)),
-        v45(ops("img/premultiplied_alpha", Image, P3, W, H, premultiplied_alpha)),
-        v45(ops("img/bgra8_source", Image, P3, W, H, bgra8_source)),
-        r30(ops("img/brush_alpha_0_5", Image, P3, W, H, brush_alpha_0_5)),
-        r30(ops("img/edge_sampling", Image, P3, W, H, edge_sampling)),
+        ops("img/scaled_down_quarter", Image, P3, W, H, scaled_down_quarter),
+        ops("img/nonuniform_scale", Image, P3, W, H, nonuniform_scale),
+        // Interior texels match the golden model (Δ ≤ 3); the rotated quad's edges are not
+        // antialiased yet (Δ 113 on the edge pixels).
+        ops("img/rotated_30", Image, P3, W, H, rotated_30)
+            .xfail("R31", "rotated image quad edges are not antialiased until R31"),
+        ops("img/quality_low_nearest", Image, P3, W, H, quality_low_nearest),
+        ops("img/straight_alpha", Image, P3, W, H, straight_alpha),
+        ops("img/premultiplied_alpha", Image, P3, W, H, premultiplied_alpha),
+        ops("img/bgra8_source", Image, P3, W, H, bgra8_source),
+        ops("img/brush_alpha_0_5", Image, P3, W, H, brush_alpha_0_5),
+        ops("img/edge_sampling", Image, P3, W, H, edge_sampling),
         harness("img/fit_cover_rrect", Image, P3, 200, 120, fit_cover_rrect)
             .xfail("L01", "rounded-rect clip of a decoration image lands with L01"),
         ops("img/huge_10000x300", Analytic, P3, 1000, 30, huge_10000x300)
             .analytic()
             .probe("huge_image_downscaled_red", probe::huge_image_downscaled_red),
-        v45(ops("img/many_200_distinct", Image, P3, 256, 256, many_200_distinct)),
+        ops("img/many_200_distinct", Image, P3, 256, 256, many_200_distinct),
         ops("img/under_clip_and_opacity", Image, P3, W, H, under_clip_and_opacity)
             .xfail("L10", "exact group opacity lands with L10"),
     ]);

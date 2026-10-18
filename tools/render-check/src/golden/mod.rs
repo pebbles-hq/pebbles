@@ -1,7 +1,17 @@
 //! The golden model (05 §6.7a, DR-21): an independent CPU implementation of the raster spec,
 //! written for exactness, not speed. Shares no rasterization code with pebbles-gpu.
+//!
+//! Op coverage (02 §2 matrix, V45 AC2): `Fill`/`Stroke` with solid, gradient (every kind and
+//! extend, DR-05 interpolation) and image brushes; `PushLayer`/`PopLayer` with every clip
+//! geometry, group alpha and every `Mix` × `Compose`; `Image`; `BlurredRect`; `Glyphs` (outline
+//! and atlas routes, hinting, any brush); `Fragment`. Added by V51: mip chains (R35), nine-slice
+//! (R36), dynamic images (R37), blurred masks (R42), bitmap-strike glyph resampling (R23) and
+//! COLR glyphs (R29); by V52: effects, backdrop filters, projected layers, meshes, sprites.
 
+pub mod compose;
 pub mod coverage;
+pub mod layers;
+pub mod paint;
 pub mod shadow;
 pub mod shapes;
 pub mod stroke;
@@ -10,10 +20,12 @@ pub mod text;
 use kurbo::Affine;
 use pebbles_render::paint::Scene;
 use pebbles_render::paint::display_list::{Op, PixelSnap};
-use peniko::{BlendMode, Brush, Color, Compose, Mix};
+use peniko::Color;
 
 use crate::CheckError;
 use crate::metric::Rgba8;
+use layers::Layer;
+use paint::Paint;
 use shapes::{Snap, fill_geometry, stroke_geometry};
 
 /// The golden renderer.
@@ -22,10 +34,10 @@ pub struct Golden;
 struct Target {
     w: u32,
     h: u32,
-    /// Premultiplied, sRGB-encoded, `f64` (02 §3).
+    /// The root target: premultiplied, sRGB-encoded, `f64` (02 §3).
     px: Vec<[f64; 4]>,
-    /// Clip masks of the open layers (each the product with its parent).
-    clips: Vec<Vec<f64>>,
+    /// Open layers, innermost last (09 §3; `layers.rs`).
+    layers: Vec<Layer>,
     /// `Some` forces a policy for every op; `None` honors each op's `PixelSnap` (02 §5.3).
     force_snap: Option<Snap>,
     /// (device-pixel ratio, hint override) for the 02 §7.8 glyph hinting policy (R27).
@@ -47,14 +59,19 @@ impl Target {
         self.force_snap.unwrap_or(if op_snap == PixelSnap::Auto { Snap::Auto } else { Snap::Off })
     }
 
-    /// Source-over `src · cov · clip` into every pixel.
-    fn composite(&mut self, src: [f64; 4], cov: &[f64]) {
-        let clip = self.clips.last();
-        for (i, (dst, &c)) in self.px.iter_mut().zip(cov).enumerate() {
-            let k = c * clip.map_or(1.0, |m| m[i]);
+    /// Source-over `paint(p) · cov` into the current layer (or the root), `p` = pixel center.
+    fn composite(&mut self, paint: &Paint, cov: &[f64]) {
+        let w = self.w as usize;
+        let buf = match self.layers.last_mut() {
+            Some(l) => &mut l.px,
+            None => &mut self.px,
+        };
+        for (i, (dst, &k)) in buf.iter_mut().zip(cov).enumerate() {
             if k == 0.0 {
                 continue;
             }
+            #[allow(clippy::cast_precision_loss)] // pixel indices < 2^24
+            let src = paint.at((i % w) as f64 + 0.5, (i / w) as f64 + 0.5);
             let inv = 1.0 - src[3] * k;
             for ch in 0..4 {
                 dst[ch] = src[ch] * k + dst[ch] * inv;
@@ -71,40 +88,50 @@ impl Target {
 
     fn op(&mut self, op: &Op, outer: Affine) -> Result<(), CheckError> {
         match op {
-            Op::Fill { style, transform, brush, shape, snap, .. } => {
-                let src = solid(brush)?;
+            Op::Fill { style, transform, brush, brush_transform, shape, snap, .. } => {
+                let p = outer * *transform * brush_transform.unwrap_or(Affine::IDENTITY);
+                let Some(paint) = Paint::new(brush, p, 1.0)? else { return Ok(()) };
                 let cov = fill_geometry(shape, outer * *transform, *style, self.snap(*snap), self.w, self.h);
-                self.composite(src, &cov);
+                self.composite(&paint, &cov);
             }
-            Op::Stroke { style, transform, brush, shape, snap, .. } => {
-                let src = solid(brush)?;
+            Op::Stroke { style, transform, brush, brush_transform, shape, snap, .. } => {
+                let p = outer * *transform * brush_transform.unwrap_or(Affine::IDENTITY);
+                let Some(paint) = Paint::new(brush, p, 1.0)? else { return Ok(()) };
                 let cov = stroke_geometry(shape, style, outer * *transform, self.snap(*snap), self.w, self.h);
-                self.composite(src, &cov);
+                self.composite(&paint, &cov);
             }
             Op::PushLayer { clip_fill, blend, alpha, transform, clip, .. } => {
-                if *blend != BlendMode::new(Mix::Normal, Compose::SrcOver) {
-                    return Err(CheckError::GoldenUnsupported("layer-blend"));
-                }
-                if *alpha != 1.0 {
-                    return Err(CheckError::GoldenUnsupported("layer-alpha"));
-                }
-                let mut mask = fill_geometry(clip, outer * *transform, *clip_fill, Snap::Off, self.w, self.h);
-                if let Some(parent) = self.clips.last() {
-                    mask.iter_mut().zip(parent).for_each(|(m, p)| *m *= p);
-                }
-                self.clips.push(mask);
+                let mask = fill_geometry(clip, outer * *transform, *clip_fill, Snap::Off, self.w, self.h);
+                let n = self.px.len();
+                self.layers.push(Layer::new(n, mask, *blend, f64::from(*alpha).clamp(0.0, 1.0)));
             }
             Op::PopLayer => {
-                self.clips.pop();
+                if let Some(layer) = self.layers.pop() {
+                    match self.layers.last_mut() {
+                        Some(parent) => layer.pop_into(&mut parent.px),
+                        None => layer.pop_into(&mut self.px),
+                    }
+                }
             }
             Op::Fragment { transform, ops, .. } => {
                 self.walk(ops, outer * transform.unwrap_or(Affine::IDENTITY))?;
             }
-            Op::Image { .. } => return Err(CheckError::GoldenUnsupported("image")),
+            Op::Image { image, transform, snap, .. } => {
+                // The image rect `(0, 0, w, h)` under the transform, painted by the image (02 §8).
+                let t = outer * *transform;
+                let Some(paint) = Paint::new(&peniko::Brush::Image(image.clone()), t, 1.0)? else {
+                    return Ok(());
+                };
+                let r =
+                    kurbo::Rect::new(0.0, 0.0, f64::from(image.image.width), f64::from(image.image.height));
+                let shape = pebbles_render::paint::display_list::Geometry::Rect(r);
+                let cov = fill_geometry(&shape, t, peniko::Fill::NonZero, self.snap(*snap), self.w, self.h);
+                self.composite(&paint, &cov);
+            }
             Op::BlurredRect { transform, rect, brush, radius, std_dev, .. } => {
                 let cov =
                     shadow::shadow_coverage(outer * *transform, *rect, *radius, *std_dev, self.w, self.h);
-                self.composite(premul(*brush), &cov);
+                self.composite(&Paint::Solid(premul(*brush)), &cov);
             }
             Op::Glyphs {
                 font,
@@ -116,24 +143,16 @@ impl Target {
                 glyphs,
                 ..
             } => {
-                let src = solid(brush)?;
                 let (t, g, w, h) = (outer * *transform, *glyph_transform, self.w, self.h);
+                let Some(paint) = Paint::new(brush, t, 1.0)? else { return Ok(()) };
                 let hint = self.hint;
                 for cov in text::run_coverage(font, *font_size, normalized_coords, t, g, glyphs, w, h, hint) {
-                    self.composite(src, &cov);
+                    self.composite(&paint, &cov);
                 }
             }
             _ => return Err(CheckError::GoldenUnsupported("unknown-op")),
         }
         Ok(())
-    }
-}
-
-fn solid(brush: &Brush) -> Result<[f64; 4], CheckError> {
-    match brush {
-        Brush::Solid(c) => Ok(premul(*c)),
-        Brush::Gradient(_) => Err(CheckError::GoldenUnsupported("gradient")),
-        Brush::Image(_) => Err(CheckError::GoldenUnsupported("image-brush")),
     }
 }
 
@@ -189,8 +208,15 @@ impl Golden {
         }
         let bg = premul(background);
         let mut t =
-            Target { w, h, px: vec![bg; w as usize * h as usize], clips: Vec::new(), force_snap, hint };
+            Target { w, h, px: vec![bg; w as usize * h as usize], layers: Vec::new(), force_snap, hint };
         t.walk(scene.ops(), Affine::IDENTITY)?;
+        // Unbalanced pushes close at the end of the scene (09 §7.2).
+        while let Some(layer) = t.layers.pop() {
+            match t.layers.last_mut() {
+                Some(parent) => layer.pop_into(&mut parent.px),
+                None => layer.pop_into(&mut t.px),
+            }
+        }
         let data = t.px.iter().flat_map(|p| p.map(quantize)).collect();
         Ok(Rgba8 { width: w, height: h, data })
     }

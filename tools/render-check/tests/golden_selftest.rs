@@ -165,7 +165,7 @@ fn snapped_border_is_whole_pixels() {
 }
 
 #[test]
-fn render_composites_premultiplied_and_reports_unsupported() {
+fn render_composites_premultiplied() {
     use pebbles_render::paint::{Color, Painter, Scene};
     use render_check::golden::Golden;
     let mut scene = Scene::new();
@@ -194,21 +194,151 @@ fn render_composites_premultiplied_and_reports_unsupported() {
     );
     let img = Golden::render(&snapped, 8, 8, Color::WHITE).expect("supported");
     assert_eq!(img.px(6, 3), [255, 127, 127, 255]);
-    // Gradients arrive with V45: reported, never guessed.
+    // Gradients are judged since V45 (previously reported as GoldenUnsupported).
     let mut scene = Scene::new();
-    let grad = peniko::Gradient::new_linear((0.0, 0.0), (8.0, 0.0))
-        .with_stops([Color::BLACK, Color::WHITE].as_slice());
+    let grad =
+        Gradient::new_linear((0.0, 0.0), (8.0, 0.0)).with_stops([Color::BLACK, Color::WHITE].as_slice());
     Painter::new(&mut scene).fill(
         Fill::NonZero,
         Affine::IDENTITY,
-        &peniko::Brush::Gradient(grad),
+        &Brush::Gradient(grad),
         None,
         &Rect::new(1.0, 1.0, 5.0, 5.0),
     );
-    assert!(matches!(
-        Golden::render(&scene, 8, 8, Color::WHITE),
-        Err(render_check::CheckError::GoldenUnsupported("gradient"))
-    ));
+    assert!(Golden::render(&scene, 8, 8, Color::WHITE).is_ok());
+}
+
+// ---- V45: paint, compose, clips and layers ----
+
+use pebbles_render::paint::{Painter, Scene};
+use peniko::{BlendMode, Brush, Color, Compose, Extend, Gradient, Mix};
+use render_check::golden::Golden;
+use render_check::golden::compose::composite;
+use render_check::golden::paint::{Paint, Texels, apply_extend};
+
+fn gradient_paint(g: Gradient) -> Paint {
+    Paint::new(&Brush::Gradient(g), Affine::IDENTITY, 1.0).unwrap().unwrap()
+}
+
+fn close(a: [f64; 4], b: [f64; 4], tol: f64) -> bool {
+    a.iter().zip(&b).all(|(x, y)| (x - y).abs() <= tol)
+}
+
+#[test]
+fn uniform_gradient_is_flat() {
+    let red = Color::from_rgba8(200, 30, 40, 255);
+    let g = Gradient::new_linear((0.0, 0.0), (10.0, 0.0)).with_stops([red, red].as_slice());
+    let p = gradient_paint(g);
+    let want = p.at(0.5, 0.5);
+    for x in 0..20 {
+        assert!(close(p.at(f64::from(x) + 0.5, 3.5), want, 1e-12));
+    }
+}
+
+#[test]
+fn linear_gradient_midpoint() {
+    let g = Gradient::new_linear((0.0, 0.0), (10.0, 0.0)).with_stops([Color::BLACK, Color::WHITE].as_slice());
+    let c = gradient_paint(g).at(5.0, 0.0);
+    assert!(close(c, [0.5, 0.5, 0.5, 1.0], 1e-9), "{c:?}");
+}
+
+#[test]
+fn pad_repeat_reflect_periods() {
+    for t in [-1.25, -0.5, 0.0, 0.3, 0.999, 1.0, 1.7, 2.4, 3.6] {
+        let pad = apply_extend(t, Extend::Pad);
+        assert!((pad - t.clamp(0.0, 1.0)).abs() < 1e-12);
+        let rep = apply_extend(t, Extend::Repeat);
+        assert!((rep - apply_extend(t + 1.0, Extend::Repeat)).abs() < 1e-9, "repeat period 1 at {t}");
+        let refl = apply_extend(t, Extend::Reflect);
+        assert!((refl - apply_extend(t + 2.0, Extend::Reflect)).abs() < 1e-9, "reflect period 2 at {t}");
+        assert!((refl - apply_extend(-t, Extend::Reflect)).abs() < 1e-9, "reflect is even at {t}");
+        assert!((0.0..=1.0).contains(&refl));
+    }
+}
+
+#[test]
+fn bilinear_2x2_center_is_average() {
+    let px: Vec<u8> = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255], [255, 255, 255, 255]].concat();
+    let data = peniko::ImageData {
+        data: peniko::Blob::from(px),
+        format: peniko::ImageFormat::Rgba8,
+        alpha_type: peniko::ImageAlphaType::Alpha,
+        width: 2,
+        height: 2,
+    };
+    let c = Texels::of(&data).sample(1.0, 1.0, Extend::Pad, Extend::Pad, false);
+    assert!(close(c, [0.5, 0.5, 0.5, 1.0], 1e-12), "{c:?}");
+}
+
+#[test]
+fn multiply_white_is_identity() {
+    let s = [0.3, 0.12, 0.05, 0.6];
+    let white = [1.0, 1.0, 1.0, 1.0];
+    let normal = composite(white, s, Mix::Normal, Compose::SrcOver);
+    assert!(close(composite(white, s, Mix::Multiply, Compose::SrcOver), normal, 1e-12));
+}
+
+#[test]
+fn screen_black_is_identity() {
+    let s = [0.3, 0.12, 0.05, 0.6];
+    let black = [0.0, 0.0, 0.0, 1.0];
+    let normal = composite(black, s, Mix::Normal, Compose::SrcOver);
+    assert!(close(composite(black, s, Mix::Screen, Compose::SrcOver), normal, 1e-12));
+}
+
+fn render(f: impl FnOnce(&mut Painter<'_>)) -> render_check::metric::Rgba8 {
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    p.set_pixel_snap(pebbles_render::paint::display_list::PixelSnap::Off);
+    f(&mut p);
+    Golden::render(&scene, 16, 16, Color::WHITE).expect("supported")
+}
+
+#[test]
+fn opacity_layer_equals_alpha_scaled_content() {
+    let (a, b) = (Rect::new(1.0, 1.0, 7.0, 7.0), Rect::new(9.0, 9.0, 15.0, 15.0));
+    let (ca, cb) = (Color::from_rgba8(200, 20, 20, 255), Color::from_rgba8(20, 20, 200, 255));
+    let layered = render(|p| {
+        p.push_layer(
+            Fill::NonZero,
+            BlendMode::default(),
+            0.5,
+            Affine::IDENTITY,
+            &Rect::new(0.0, 0.0, 16.0, 16.0),
+        );
+        p.fill(Fill::NonZero, Affine::IDENTITY, ca, None, &a);
+        p.fill(Fill::NonZero, Affine::IDENTITY, cb, None, &b);
+        p.pop_layer();
+    });
+    let scaled = render(|p| {
+        p.fill(Fill::NonZero, Affine::IDENTITY, ca.multiply_alpha(0.5), None, &a);
+        p.fill(Fill::NonZero, Affine::IDENTITY, cb.multiply_alpha(0.5), None, &b);
+    });
+    assert_eq!(layered.data, scaled.data);
+}
+
+#[test]
+fn clip_path_equals_coverage_product() {
+    let clip = Circle::new((8.0, 8.0), 6.3);
+    let rect = Rect::new(2.25, 3.5, 13.75, 12.0);
+    let red = Color::from_rgba8(255, 0, 0, 255);
+    let img = render(|p| {
+        p.push_layer(Fill::NonZero, BlendMode::default(), 1.0, Affine::IDENTITY, &clip);
+        p.fill(Fill::NonZero, Affine::IDENTITY, red, None, &rect);
+        p.pop_layer();
+    });
+    let shape = |g| fill_geometry(&g, Affine::IDENTITY, Fill::NonZero, Snap::Off, 16, 16);
+    let cc = shape(Geometry::Path(clip.to_path(0.01)));
+    let rc = shape(Geometry::Rect(rect));
+    for y in 0..16u32 {
+        for x in 0..16u32 {
+            let k = cc[(y * 16 + x) as usize] * rc[(y * 16 + x) as usize];
+            // Red over white with coverage k: G = B = 1 − k.
+            let want = ((1.0 - k).clamp(0.0, 1.0) * 255.0 + 0.5).floor() as u8;
+            let got = img.px(x, y);
+            assert!(got[1].abs_diff(want) <= 1, "({x},{y}) {got:?} want G {want}");
+        }
+    }
 }
 
 // ---- V46: shadows and glyph outlines ----
