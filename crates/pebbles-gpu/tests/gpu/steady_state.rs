@@ -74,3 +74,59 @@ fn two_formats_create_pipelines_once() {
     queue.submit([]);
     assert_eq!(total, 2 * prewarm_set);
 }
+
+/// M12 AC1: text + 3 images + 2 sampler modes — frames 3–10 create no bind group and no sampler.
+#[test]
+#[ignore = "gpu"]
+fn bind_groups_not_recreated() {
+    let Some((device, queue, mut r)) = setup("bind_groups_not_recreated") else { return };
+    let font =
+        peniko::FontData::new(peniko::Blob::from(pebbles_render::fonts::builtin_fonts()[0].1.to_vec()), 0);
+    let images: Vec<peniko::ImageData> = (0..3u8).map(|i| rgba_image(4, 4, [i * 80, 40, 200, 255])).collect();
+    let mut targets = FrameTargets::new();
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pebbles.gpu.test.steady"),
+        size: wgpu::Extent3d { width: 128, height: 64, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    for frame in 1..=10u32 {
+        let mut s = Scene::new();
+        let mut p = Painter::new(&mut s);
+        let glyphs = (0..8u32).map(|i| Glyph { id: 36 + i, x: 4.0 + i as f32 * 9.0, y: 50.0 });
+        p.draw_glyphs(
+            &font,
+            14.0,
+            &[],
+            &Brush::Solid(Color::BLACK),
+            Affine::IDENTITY,
+            None,
+            Fill::NonZero,
+            glyphs,
+        );
+        for (i, img) in images.iter().enumerate() {
+            let mut brush = peniko::ImageBrush::new(img.clone());
+            // Two sampler modes: Low (nearest) for the first image, the default for the others.
+            if i == 0 {
+                brush.sampler.quality = peniko::ImageQuality::Low;
+            }
+            p.draw_image(&brush, Affine::translate((4.0 + i as f64 * 20.0, 4.0)) * Affine::scale(4.0));
+        }
+        let st = r
+            .render(
+                RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut targets),
+                &s,
+                &FrameParams::new(Color::WHITE),
+            )
+            .expect("render");
+        if frame >= 3 {
+            assert_eq!((st.bind_groups_created, st.samplers_created), (0, 0), "frame {frame}: {st}");
+        }
+    }
+    queue.submit([]);
+}

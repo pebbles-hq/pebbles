@@ -101,7 +101,7 @@ pub(crate) fn encode_runs(
     }
     let stride = slot_stride(device);
     let n = runs.len() as u64;
-    renderer.ensure_uniform_slots(device, n + 1, n);
+    renderer.ensure_uniform_slots(device, n + 1, n, stats);
     let solid = PipelineKey {
         kind: PipelineKind::Solid,
         color_format: format,
@@ -196,24 +196,38 @@ pub(crate) fn encode_runs(
             pass.pop_debug_group();
             stats.render_passes += 1;
         }
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("pebbles.gpu.bind.composite"),
-            layout: &renderer.layouts.composite,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&tex.color.1),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: renderer.composite_buffer(),
-                        offset: 0,
-                        size: wgpu::BufferSize::new(32),
-                    }),
-                },
-            ],
-        });
+        // 10 §3.4: one composite bind group per pool slot, rebuilt only when the params buffer
+        // is recreated (its slot count is the generation).
+        let (layout, params, generation) =
+            (&renderer.layouts.composite, renderer.composite_buffer(), renderer.composite_generation());
+        let tex = targets.pool.textures_mut(slot);
+        let view = &tex.color.1;
+        let group = super::resources::bind_groups::refresh(
+            &mut tex.composite_bg,
+            generation,
+            || {
+                device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("pebbles.gpu.bind.composite"),
+                    layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                                buffer: params,
+                                offset: 0,
+                                size: wgpu::BufferSize::new(32),
+                            }),
+                        },
+                    ],
+                })
+            },
+            stats,
+        );
+        let bind_group = group.clone();
         out.push(Composite { run: run.clone(), bind_group: Some(bind_group), params_offset });
     }
     renderer.runs = runs;

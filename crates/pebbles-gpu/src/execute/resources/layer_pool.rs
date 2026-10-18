@@ -118,6 +118,9 @@ pub(crate) struct LayerTextures {
     pub msaa: Option<(wgpu::Texture, wgpu::TextureView)>,
     /// The resolve target (samples > 1) or the render target (samples == 1).
     pub color: (wgpu::Texture, wgpu::TextureView),
+    /// The composite bind group of this layer (10 §3.4 "Layer source"), keyed by the composite
+    /// params buffer's generation.
+    pub composite_bg: Option<super::bind_groups::GenBindGroup>,
 }
 
 /// The pool: `LayerPoolBook` paired index-for-index with textures.
@@ -167,7 +170,7 @@ impl LayerPool {
                 );
                 stats.textures_created += 1 + u32::from(msaa.is_some());
                 stats.texture_views_created += 1 + u32::from(msaa.is_some());
-                self.textures.push(LayerTextures { msaa, color });
+                self.textures.push(LayerTextures { msaa, color, composite_bg: None });
                 i
             }
         }
@@ -175,6 +178,10 @@ impl LayerPool {
 
     pub(crate) fn textures(&self, i: usize) -> &LayerTextures {
         &self.textures[i]
+    }
+
+    pub(crate) fn textures_mut(&mut self, i: usize) -> &mut LayerTextures {
+        &mut self.textures[i]
     }
 
     /// Release everything and evict per 09 §3.8 under `budget` (`GpuBudgets::layer_pool_bytes`).

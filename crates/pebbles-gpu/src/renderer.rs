@@ -46,6 +46,8 @@ pub struct Renderer {
     pub(crate) glyph_atlas: GlyphAtlas,
     pub(crate) glyph_instances: Vec<QuadInstance>,
     pub(crate) image_cache: ImageCache,
+    /// Samplers by key (10 §3.5, M12).
+    pub(crate) samplers: super::execute::resources::bind_groups::SamplerCache,
     pub(crate) image_instances: Vec<QuadInstance>,
     pub(crate) scratch: PrepareScratch,
     stats: FrameStats,
@@ -96,7 +98,8 @@ impl Renderer {
             health: std::sync::Arc::clone(gpu.health()),
             glyph_atlas,
             glyph_instances: Vec::new(),
-            image_cache: ImageCache::new(device),
+            image_cache: ImageCache::new(),
+            samplers: super::execute::resources::bind_groups::SamplerCache::default(),
             image_instances: Vec::new(),
             limits: RendererLimits::from_device_limits(&device.limits()),
             scratch: PrepareScratch::default(),
@@ -313,8 +316,19 @@ impl Renderer {
         &self.composite_buffer
     }
 
+    /// Generation of the composite params buffer (its slot count only grows).
+    pub(crate) fn composite_generation(&self) -> u64 {
+        self.composite_slots
+    }
+
     /// Grow the globals / composite uniform buffers to hold at least the given slot counts.
-    pub(crate) fn ensure_uniform_slots(&mut self, device: &wgpu::Device, globals: u64, composites: u64) {
+    pub(crate) fn ensure_uniform_slots(
+        &mut self,
+        device: &wgpu::Device,
+        globals: u64,
+        composites: u64,
+        stats: &mut FrameStats,
+    ) {
         if globals > self.globals_slots {
             let n = globals.next_power_of_two();
             let (buffer, bg) = globals_slots(device, &self.layouts, n);
@@ -325,11 +339,14 @@ impl Renderer {
             enc.copy_buffer_to_buffer(&self.globals_buffer, 0, &buffer, 0, size_of::<Globals>() as u64);
             self.queue.submit([enc.finish()]);
             (self.globals_buffer, self.globals_bg, self.globals_slots) = (buffer, bg, n);
+            stats.buffers_created += 1;
+            stats.bind_groups_created += 1;
         }
         if composites > self.composite_slots {
             let n = composites.next_power_of_two();
             self.composite_buffer = uniform_buffer(device, "pebbles.gpu.buffer.composite", n);
             self.composite_slots = n;
+            stats.buffers_created += 1;
         }
     }
 }
@@ -379,17 +396,7 @@ mod tests {
         let Some((ctx, id)) = gpu_or_skip(&GpuInit::headless()) else { return };
         let gpu = ctx.device(id).expect("device");
         let mut renderer = Renderer::new(gpu, id);
-        let texture = gpu.device().create_texture(&wgpu::TextureDescriptor {
-            label: Some("pebbles.gpu.test.device_lost"),
-            size: wgpu::Extent3d { width: 8, height: 8, depth_or_array_layers: 1 },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let (_texture, view) = crate::test_support::target_8x8(gpu.device());
         gpu.device().destroy();
         let _ = gpu.device().poll(wgpu::PollType::Poll);
         let mut targets = FrameTargets::new();

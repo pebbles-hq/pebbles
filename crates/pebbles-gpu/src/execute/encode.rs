@@ -58,8 +58,11 @@ pub(crate) fn resolve_and_upload(
     super::resolve::cull_resolved(&renderer.scratch.plan, &mut renderer.glyph_instances);
     renderer.image_instances.clear();
     for req in &renderer.scratch.plan.images {
-        let drawable =
-            renderer.image_cache.ensure(device, queue, &renderer.layouts.texture, &req.image, stats);
+        let drawable = renderer.image_cache.ensure(device, queue, &req.image, stats);
+        if drawable {
+            let (layout, samplers) = (&renderer.layouts.texture, &mut renderer.samplers);
+            renderer.image_cache.ensure_bind_group(device, layout, &req.key, req.sampler, samplers, stats);
+        }
         // An image that cannot be drawn becomes a zero-area quad so ranges stay valid.
         renderer.image_instances.push(if drawable { req.quad } else { bytemuck::Zeroable::zeroed() });
     }

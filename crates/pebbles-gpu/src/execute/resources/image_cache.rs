@@ -35,16 +35,17 @@ impl ImageKey {
     }
 }
 
-/// Sampler identity. Phase C samples every image linear + clamp; R30 maps quality/extend.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub(crate) struct SamplerKey;
+use super::bind_groups::SamplerCache;
+pub(crate) use super::bind_groups::SamplerKey;
 
 /// Scratch buffers above this are released after an upload (10 §6.2).
 const IMAGE_SCRATCH_RETAIN_BYTES: usize = 16 << 20;
 
 struct ImageEntry {
     _texture: wgpu::Texture,
-    bind_group: wgpu::BindGroup,
+    view: wgpu::TextureView,
+    /// One bind group per sampler key used with this image (≤ 27, 10 §3.4).
+    bind_groups: Vec<(SamplerKey, wgpu::BindGroup)>,
     weak: peniko::WeakBlob<u8>,
     last_used: u64,
 }
@@ -52,32 +53,52 @@ struct ImageEntry {
 /// Uploaded images by key.
 pub(crate) struct ImageCache {
     entries: HashMap<ImageKey, ImageEntry>,
-    sampler: wgpu::Sampler,
     scratch: Vec<u8>,
     frame: u64,
 }
 
 impl ImageCache {
-    pub(crate) fn new(device: &wgpu::Device) -> Self {
-        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("pebbles.gpu.image.sampler"),
-            address_mode_u: wgpu::AddressMode::ClampToEdge,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
-            ..Default::default()
-        });
-        Self { entries: HashMap::new(), sampler, scratch: Vec::new(), frame: 0 }
+    pub(crate) fn new() -> Self {
+        Self { entries: HashMap::new(), scratch: Vec::new(), frame: 0 }
     }
 
     pub(crate) fn begin_frame(&mut self) {
         self.frame += 1;
     }
 
-    /// The bind group for `key`, if resident.
-    pub(crate) fn bind_group(&self, key: &ImageKey, _sampler: SamplerKey) -> Option<&wgpu::BindGroup> {
-        self.entries.get(key).map(|e| &e.bind_group)
+    /// The bind group for `key` sampled with `sampler`, if `ensure_bind_group` made it.
+    pub(crate) fn bind_group(&self, key: &ImageKey, sampler: SamplerKey) -> Option<&wgpu::BindGroup> {
+        self.entries.get(key)?.bind_groups.iter().find(|(k, _)| *k == sampler).map(|(_, g)| g)
+    }
+
+    /// Create the `(key, sampler)` bind group on first use (before any pass opens).
+    pub(crate) fn ensure_bind_group(
+        &mut self,
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        key: &ImageKey,
+        sampler: SamplerKey,
+        samplers: &mut SamplerCache,
+        stats: &mut FrameStats,
+    ) {
+        let Some(entry) = self.entries.get_mut(key) else { return };
+        if entry.bind_groups.iter().any(|(k, _)| *k == sampler) {
+            return;
+        }
+        let s = samplers.get_or_create(device, sampler, stats);
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("pebbles.gpu.bind.image"),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&entry.view),
+                },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(s) },
+            ],
+        });
+        stats.bind_groups_created += 1;
+        entry.bind_groups.push((sampler, group));
     }
 
     /// Make `image` resident (uploading on a miss). Returns false when it cannot be drawn.
@@ -85,7 +106,6 @@ impl ImageCache {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        layout: &wgpu::BindGroupLayout,
         image: &peniko::ImageData,
         stats: &mut FrameStats,
     ) -> bool {
@@ -139,24 +159,21 @@ impl ImageCache {
             wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
         );
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("pebbles.gpu.bind.image"),
-            layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
-            ],
-        });
         if self.scratch.capacity() > IMAGE_SCRATCH_RETAIN_BYTES {
             self.scratch = Vec::new();
         }
         stats.images_uploaded += 1;
         stats.textures_created += 1;
         stats.texture_views_created += 1;
-        stats.bind_groups_created += 1;
         self.entries.insert(
             key,
-            ImageEntry { _texture: texture, bind_group, weak: image.data.downgrade(), last_used: self.frame },
+            ImageEntry {
+                _texture: texture,
+                view,
+                bind_groups: Vec::new(),
+                weak: image.data.downgrade(),
+                last_used: self.frame,
+            },
         );
         true
     }

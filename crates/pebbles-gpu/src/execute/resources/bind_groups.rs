@@ -99,3 +99,111 @@ impl BindGroupLayouts {
         Self { globals, texture, glyph, composite }
     }
 }
+
+/// Sampler identity (10 §3.5): ≤ 27 combinations by construction.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct SamplerKey {
+    /// mag = min = this (Low: Nearest; Medium, High: Linear — 02 §8.1).
+    pub filter: wgpu::FilterMode,
+    /// Nearest for Low and Medium, Linear for High (R35; one level until then).
+    pub mipmap: wgpu::MipmapFilterMode,
+    pub address_u: wgpu::AddressMode,
+    pub address_v: wgpu::AddressMode,
+}
+
+impl Default for SamplerKey {
+    fn default() -> Self {
+        Self::of(peniko::ImageSampler::default())
+    }
+}
+
+impl SamplerKey {
+    /// The §3.5 mapping of a peniko image sampler.
+    pub(crate) fn of(s: peniko::ImageSampler) -> Self {
+        let address = |e: peniko::Extend| match e {
+            peniko::Extend::Pad => wgpu::AddressMode::ClampToEdge,
+            peniko::Extend::Repeat => wgpu::AddressMode::Repeat,
+            peniko::Extend::Reflect => wgpu::AddressMode::MirrorRepeat,
+        };
+        let (filter, mipmap) = match s.quality {
+            peniko::ImageQuality::Low => (wgpu::FilterMode::Nearest, wgpu::MipmapFilterMode::Nearest),
+            peniko::ImageQuality::Medium => (wgpu::FilterMode::Linear, wgpu::MipmapFilterMode::Nearest),
+            peniko::ImageQuality::High => (wgpu::FilterMode::Linear, wgpu::MipmapFilterMode::Linear),
+        };
+        Self { filter, mipmap, address_u: address(s.x_extend), address_v: address(s.y_extend) }
+    }
+}
+
+/// Samplers by key, created once per Renderer (10 §3.5).
+#[derive(Default)]
+pub(crate) struct SamplerCache {
+    samplers: std::collections::HashMap<SamplerKey, wgpu::Sampler>,
+}
+
+impl SamplerCache {
+    /// The sampler for `key`, created on first use (`stats.samplers_created`).
+    pub(crate) fn get_or_create(
+        &mut self,
+        device: &wgpu::Device,
+        key: SamplerKey,
+        stats: &mut crate::stats::FrameStats,
+    ) -> &wgpu::Sampler {
+        self.samplers.entry(key).or_insert_with(|| {
+            stats.samplers_created += 1;
+            device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("pebbles.gpu.sampler"),
+                address_mode_u: key.address_u,
+                address_mode_v: key.address_v,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: key.filter,
+                min_filter: key.filter,
+                mipmap_filter: key.mipmap,
+                ..Default::default()
+            })
+        })
+    }
+}
+
+/// A bind group valid for one key (a resource generation); rebuilt only when the key changes.
+pub(crate) struct GenBindGroup {
+    pub key: u64,
+    pub group: wgpu::BindGroup,
+}
+
+/// Rebuild `slot` only when `key` differs from the cached one (`stats.bind_groups_created`).
+pub(crate) fn refresh<'a>(
+    slot: &'a mut Option<GenBindGroup>,
+    key: u64,
+    create: impl FnOnce() -> wgpu::BindGroup,
+    stats: &mut crate::stats::FrameStats,
+) -> &'a wgpu::BindGroup {
+    if slot.as_ref().is_some_and(|g| g.key != key) {
+        *slot = None;
+    }
+    &slot
+        .get_or_insert_with(|| {
+            stats.bind_groups_created += 1;
+            GenBindGroup { key, group: create() }
+        })
+        .group
+}
+
+#[cfg(test)]
+mod sampler_tests {
+    use super::SamplerKey;
+
+    #[test]
+    fn sampler_key_maps_quality_and_extend() {
+        let s = peniko::ImageSampler {
+            quality: peniko::ImageQuality::Low,
+            x_extend: peniko::Extend::Repeat,
+            y_extend: peniko::Extend::Reflect,
+            ..peniko::ImageSampler::default()
+        };
+        let k = SamplerKey::of(s);
+        assert_eq!(k.filter, wgpu::FilterMode::Nearest);
+        assert_eq!((k.address_u, k.address_v), (wgpu::AddressMode::Repeat, wgpu::AddressMode::MirrorRepeat));
+        let high = peniko::ImageSampler { quality: peniko::ImageQuality::High, ..s };
+        assert_eq!(SamplerKey::of(high).mipmap, wgpu::MipmapFilterMode::Linear);
+    }
+}

@@ -7,6 +7,23 @@ pub(crate) fn bundled_font() -> peniko::FontData {
     peniko::FontData::new(peniko::Blob::from(bytes.to_vec()), 0)
 }
 
+/// An 8×8 `Rgba8Unorm` render target and its view (GPU tests; keeps views out of renderer.rs,
+/// 10 M12 AC2).
+pub(crate) fn target_8x8(device: &wgpu::Device) -> (wgpu::Texture, wgpu::TextureView) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pebbles.gpu.test.target"),
+        size: wgpu::Extent3d { width: 8, height: 8, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    (texture, view)
+}
+
 /// `RendererLimits` of a WebGL2-default device (11 §2.5; tests never need a device).
 pub(crate) fn webgl2_limits() -> crate::RendererLimits {
     crate::RendererLimits::from_device_limits(&wgpu::Limits::downlevel_webgl2_defaults())

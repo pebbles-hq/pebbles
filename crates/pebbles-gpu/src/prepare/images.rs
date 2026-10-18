@@ -42,7 +42,7 @@ pub(crate) fn image(
     let start = index_u32(plan.images.len());
     plan.images.push(ImageRequest {
         key: ImageKey::of(&image.image),
-        sampler: SamplerKey,
+        sampler: SamplerKey::of(image.sampler),
         image: image.image.clone(),
         quad,
     });
