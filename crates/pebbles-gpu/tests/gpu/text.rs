@@ -177,3 +177,117 @@ fn huge_glyph_uses_outline() {
     assert_eq!(stats.glyphs_rasterized, 0, "no atlas raster for a 2000-px glyph");
     assert!(stats.tier_b_draws + stats.tier_c_draws >= 1, "{stats:?}");
 }
+
+// ---- R26: text quality (physical-size raster, subpixel bins, baseline snap) ----
+
+/// `text` as a run, pen x advanced 10 px per glyph from `x`, baseline `y`.
+fn pen_run(scene: &mut Scene, size: f32, t: Affine, coords: &[i16], text: &str, x: f32, y: f32) {
+    let glyphs: Vec<Glyph> =
+        text.chars().enumerate().map(|(i, c)| Glyph { id: glyph_id(c), x: x + 10.0 * i as f32, y }).collect();
+    let brush = Brush::Solid(Color::BLACK);
+    Painter::new(scene).draw_glyphs(
+        &inter(),
+        size,
+        coords,
+        &brush,
+        t,
+        None,
+        Fill::NonZero,
+        glyphs.into_iter(),
+    );
+}
+
+fn render_run(
+    r: &mut (wgpu::Device, wgpu::Queue, Renderer),
+    size: (u32, u32),
+    f: impl FnOnce(&mut Scene),
+) -> Vec<u8> {
+    let mut s = Scene::new();
+    f(&mut s);
+    render_scene(&r.0, &r.1, &mut r.2, &s, size, Color::WHITE)
+}
+
+/// R26: "Hamburg" at 16 px under `scale(2)` is rasterized at 32 px device size: twice the ink
+/// height, with solid stems (an up-scaled 16-px bitmap would have no near-black pixels).
+#[test]
+#[ignore = "gpu"]
+fn hidpi_glyphs_are_rasterized_at_device_size() {
+    let Some(mut r) = setup("hidpi_glyphs_are_rasterized_at_device_size") else { return };
+    let a = render_run(&mut r, (200, 40), |s| pen_run(s, 16.0, Affine::IDENTITY, &[], "Hamburg", 4.0, 28.0));
+    let b =
+        render_run(&mut r, (400, 80), |s| pen_run(s, 16.0, Affine::scale(2.0), &[], "Hamburg", 4.0, 28.0));
+    let (_, ay0, _, ay1) = ink_bbox(&a, 200, 40).expect("ink at 1x");
+    let (_, by0, _, by1) = ink_bbox(&b, 400, 80).expect("ink at 2x");
+    let (ha, hb) = (f64::from(ay1 - ay0 + 1), f64::from(by1 - by0 + 1));
+    assert!((hb / ha - 2.0).abs() <= 0.3, "ink heights {ha} -> {hb}");
+    let dark = b.as_chunks::<4>().0.iter().filter(|p| p[0] <= 10 && p[1] <= 10 && p[2] <= 10).count();
+    assert!(dark >= 20, "only {dark} near-black pixels at 2x");
+}
+
+/// R26: pen x 10.0 vs 10.25 land in different subpixel bins; 10.0 vs 10.05 in the same one.
+#[test]
+#[ignore = "gpu"]
+fn subpixel_bins_differ() {
+    let Some(mut r) = setup("subpixel_bins_differ") else { return };
+    let at = |r: &mut _, x: f32| {
+        render_run(r, (40, 32), |s| pen_run(s, 16.0, Affine::IDENTITY, &[], "i", x, 24.0))
+    };
+    let base = at(&mut r, 10.0);
+    assert_ne!(base, at(&mut r, 10.25), "quarter-pixel shift must change the raster");
+    assert_eq!(base, at(&mut r, 10.05), "same bin must render identically");
+}
+
+/// R26: baselines snap to whole pixels: y 20.3 renders like 20.0; 20.6 like 21.0 (one row down).
+#[test]
+#[ignore = "gpu"]
+fn baseline_snaps_to_whole_pixels() {
+    let Some(mut r) = setup("baseline_snaps_to_whole_pixels") else { return };
+    let (w, h) = (40u32, 40u32);
+    let at =
+        |r: &mut _, y: f32| render_run(r, (w, h), |s| pen_run(s, 16.0, Affine::IDENTITY, &[], "H", 10.0, y));
+    let base = at(&mut r, 20.0);
+    assert_eq!(base, at(&mut r, 20.3));
+    let down = at(&mut r, 20.6);
+    let row = (w * 4) as usize;
+    assert_eq!(&down[row..], &base[..base.len() - row], "20.6 must be 20.0 shifted down one row");
+    assert!(ink_bbox(&base, w, h).is_some());
+}
+
+/// R26: Inter 'H' at wght 700 has ≥ 15% more ink pixels than at wght 400.
+#[test]
+#[ignore = "gpu"]
+fn variable_weight_changes_ink() {
+    let Some(mut r) = setup("variable_weight_changes_ink") else { return };
+    let font = inter();
+    let f = swash::FontRef::from_index(font.data.data(), 0).expect("Inter");
+    let coords = |w: f32| -> Vec<i16> {
+        f.variations().normalized_coords([(swash::tag_from_str_lossy("wght"), w)]).collect()
+    };
+    let ink = |r: &mut _, c: &[i16]| {
+        let px = render_run(r, (64, 48), |s| pen_run(s, 32.0, Affine::IDENTITY, c, "H", 8.0, 38.0));
+        px.as_chunks::<4>().0.iter().filter(|p| !is_white(**p)).count()
+    };
+    let (regular, bold) = (ink(&mut r, &coords(400.0)), ink(&mut r, &coords(700.0)));
+    assert!(bold * 100 >= regular * 115, "bold {bold} vs regular {regular}");
+}
+
+/// R26: one Renderer renders a 200-glyph scene 300 times; frame 300's ink equals frame 1's.
+#[test]
+#[ignore = "gpu"]
+fn text_survives_300_frames() {
+    let Some(mut r) = setup("text_survives_300_frames") else { return };
+    let text: String = "The quick brown fox jumps over the lazy dog ".chars().cycle().take(200).collect();
+    let scene = |s: &mut Scene| {
+        for (line, chunk) in text.as_bytes().chunks(40).enumerate() {
+            let chunk = std::str::from_utf8(chunk).expect("ascii");
+            pen_run(s, 14.0, Affine::IDENTITY, &[], chunk, 4.0, 20.0 + 20.0 * line as f32);
+        }
+    };
+    let count = |px: &[u8]| px.as_chunks::<4>().0.iter().filter(|p| !is_white(**p)).count();
+    let first = count(&render_run(&mut r, (420, 110), scene));
+    assert!(first > 500, "frame 1 ink {first}");
+    for _ in 2..300 {
+        render_run(&mut r, (420, 110), scene);
+    }
+    assert_eq!(count(&render_run(&mut r, (420, 110), scene)), first);
+}

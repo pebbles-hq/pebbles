@@ -105,3 +105,38 @@ impl Zeroed for QuadInstance {
         bytemuck::Zeroable::zeroed()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kurbo::Affine;
+    use pebbles_render::paint::{Glyph, Painter, Scene};
+
+    /// R24: one run is one `glyphs` command whatever each glyph's kind; the kind is per instance
+    /// (glyph 2 stubbed as a color-atlas slot) and the UVs stay in atlas pixels.
+    #[test]
+    fn mixed_mask_color_run_is_one_command() {
+        let mut s = Scene::new();
+        let glyphs = [40u32, 41, 42].map(|id| Glyph { id, x: f32::from(u8::try_from(id).unwrap()), y: 20.0 });
+        Painter::new(&mut s).draw_glyphs(
+            &crate::test_support::bundled_font(),
+            16.0,
+            &[],
+            &peniko::Brush::Solid(peniko::Color::BLACK),
+            Affine::IDENTITY,
+            None,
+            peniko::Fill::NonZero,
+            glyphs.into_iter(),
+        );
+        let (plan, _) = crate::prepare::test_util::prepare_scene(&s, 128, 64);
+        let cmds: Vec<_> =
+            plan.cmds.iter().filter(|c| matches!(c, crate::prepare::DrawCmd::Glyphs { .. })).collect();
+        assert_eq!(cmds.len(), 1);
+        assert_eq!(plan.glyphs.len(), 3);
+        let slot = |kind| AtlasSlot { kind, layer: 1, x: 10, y: 20, w: 8, h: 9, left: 0, top: 9 };
+        let kinds = [AtlasKind::Mask, AtlasKind::Color, AtlasKind::Mask]
+            .map(|k| glyph_quad(slot(k), [0.0, 0.0], [1.0; 4]).layer_kind);
+        assert_eq!(kinds, [[1, 0], [1, 1], [1, 0]]);
+        assert_eq!(glyph_quad(slot(AtlasKind::Color), [0.0, 0.0], [1.0; 4]).uv, [10.0, 20.0, 18.0, 29.0]);
+    }
+}

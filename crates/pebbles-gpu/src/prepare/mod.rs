@@ -36,7 +36,7 @@ mod snapshot_tests;
 mod stroke;
 pub(crate) mod tessellate;
 #[cfg(test)]
-mod test_util;
+pub(crate) mod test_util;
 mod tier_a;
 
 #[cfg(test)]
