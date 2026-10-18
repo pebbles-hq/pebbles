@@ -4,9 +4,12 @@ use pebbles_render::paint::{Painter, kurbo, peniko};
 
 use crate::case::Case;
 
+pub mod adversarial;
 pub mod clip;
+pub mod frames;
 pub mod prim;
 pub mod screen;
+pub mod stress;
 pub mod stroke;
 pub mod widget;
 pub mod xform;
@@ -20,6 +23,9 @@ pub fn all() -> Vec<Case> {
     out.extend(clip::cases());
     out.extend(widget::cases());
     out.extend(screen::cases());
+    out.extend(stress::cases());
+    out.extend(adversarial::cases());
+    out.extend(frames::cases());
     out
 }
 
@@ -49,7 +55,8 @@ mod tests {
 
     #[test]
     fn corpus_names_unique_and_valid() {
-        let families = ["prim", "stroke", "xform", "clip", "widget", "screen"];
+        let families =
+            ["prim", "stroke", "xform", "clip", "widget", "screen", "stress", "adversarial", "frames"];
         let mut seen = HashSet::new();
         for c in all() {
             assert!(seen.insert(c.name.clone()), "duplicate {}", c.name);

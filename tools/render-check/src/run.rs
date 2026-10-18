@@ -143,7 +143,7 @@ impl Runner {
             millis_candidate: 0,
         };
         let t = Instant::now();
-        let cand = match self.render_candidate(case, 0) {
+        let mut cand = match self.render_candidate(case, 0) {
             Ok(img) => img,
             Err((status, note)) => {
                 r.status = status;
@@ -153,6 +153,14 @@ impl Runner {
             }
         };
         r.fallbacks = self.candidate.last_fallbacks();
+        if case.stability == crate::case::Stability::LastVsFresh {
+            if let Err((status, note)) = self.last_vs_fresh(case, &mut cand) {
+                r.status = status;
+                r.note = note;
+            }
+            r.millis_candidate = t.elapsed().as_millis();
+            return Outcome { result: r, candidate: Some(cand) };
+        }
         // Stability: frames 1..n of a FrameOps case, then the --determinism re-render.
         let reruns = (1..case.frames).chain(self.opts.determinism.then_some(0));
         for frame in reruns {
@@ -172,7 +180,10 @@ impl Runner {
         r.millis_candidate = t.elapsed().as_millis();
 
         let t = Instant::now();
-        let smoke_img = if self.opts.smoke {
+        // The transitional vello smoke reference cannot survive the Robustness slice's hostile
+        // input (a 1e-6 dash pattern exhausts memory inside vello_hybrid); Smoke never decides
+        // a status, so it is skipped there.
+        let smoke_img = if self.opts.smoke && case.slice != crate::case::Slice::Robustness {
             match self.render_smoke(case) {
                 Ok(img) => Some(img),
                 Err((status, note)) => {
@@ -189,6 +200,29 @@ impl Runner {
         r.millis_reference = t.elapsed().as_millis();
         self.write_artifacts(case, reference.as_ref().or(smoke_img.as_ref()), &cand, &mut r);
         Outcome { result: r, candidate: Some(cand) }
+    }
+
+    /// `Stability::LastVsFresh`: render frames 1..n on the warm renderer (`cand` becomes the
+    /// last), then the last frame on a fresh renderer; they must be byte-equal.
+    fn last_vs_fresh(&mut self, case: &Case, cand: &mut Rgba8) -> Result<(), (Status, String)> {
+        let last = case.frames - 1;
+        for frame in 1..case.frames {
+            *cand = self.render_candidate(case, frame)?;
+        }
+        let mut fresh = Candidate::new().map_err(|e| (Status::GpuError, e.to_string()))?;
+        fresh.set_tier_a(self.opts.tier_a);
+        let built = catch_unwind(|| frame_scene(&logical_scene(case, last), case.scale))
+            .map_err(|p| (Status::Panic, format!("build: {}", panic_message(&*p))))?;
+        let again = catch_unwind(AssertUnwindSafe(|| {
+            fresh.render_rgba(&built, case.device_size(), case.background, 1.0)
+        }))
+        .map_err(|p| (Status::Panic, format!("fresh candidate: {}", panic_message(&*p))))?
+        .map_err(|e| (Status::GpuError, e.to_string()))?;
+        if again == *cand {
+            Ok(())
+        } else {
+            Err((Status::Unstable, format!("frame {last} differs from a fresh renderer's")))
+        }
     }
 
     fn render_smoke(&mut self, case: &Case) -> Result<Rgba8, (Status, String)> {

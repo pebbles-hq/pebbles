@@ -49,7 +49,7 @@ fn linear(p0: Point, p1: Point, stops: [peniko::Color; 2]) -> peniko::Gradient {
     peniko::Gradient::new_linear(p0, p1).with_stops(stops.as_slice())
 }
 
-fn dashboard(p: &mut Painter<'_>) {
+pub(crate) fn dashboard(p: &mut Painter<'_>) {
     let id = Affine::IDENTITY;
     p.fill(Fill::NonZero, id, rgb(15, 17, 26), None, &Rect::new(0.0, 0.0, DW, 800.0));
     let hero = linear(Point::ZERO, Point::new(DW, 220.0), [rgb(99, 102, 241), rgb(236, 72, 153)]);

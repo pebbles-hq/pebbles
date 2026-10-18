@@ -132,6 +132,17 @@ pub fn emoji_has_color(img: &Rgba8, scale: f64) -> Result<(), String> {
     if ink >= 20 && chroma >= 1 { Ok(()) } else { Err(format!("{ink} ink / {chroma} chromatic pixels")) }
 }
 
+/// Every pixel is opaque (the canvas is opaque: anything else is NaN/undefined blending).
+pub fn all_opaque(img: &Rgba8, _scale: f64) -> Result<(), String> {
+    match img.data.as_chunks::<4>().0.iter().position(|p| p[3] != 255) {
+        Some(i) => {
+            let i = i as u32;
+            Err(format!("pixel ({},{}) not opaque", i % img.width, i / img.width))
+        }
+        None => Ok(()),
+    }
+}
+
 /// `adversarial/*`: invalid input must not leak garbage. Every pixel is opaque (the canvas
 /// is opaque, so non-opaque output means NaN/undefined blending) and the 4 × 4 corner
 /// patches — outside every valid shape the cases draw — stay white.

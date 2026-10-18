@@ -114,6 +114,18 @@ pub struct Case {
     pub frames: u32,
     /// Committed by V12?
     pub in_refs: bool,
+    /// How a stability case (`frames > 1`, or `LastVsFresh`) is judged.
+    pub stability: Stability,
+}
+
+/// How a stability case is judged (§7.2 frames/).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stability {
+    /// Every frame byte-equals frame 0.
+    EveryFrame,
+    /// Frames 0..n run on the shared (warm) renderer; the last one byte-equals the same frame
+    /// rendered by a fresh renderer (atlas / image-cache / FrameTargets staleness).
+    LastVsFresh,
 }
 
 fn base(name: &str, category: Category, slice: Slice, w: u32, h: u32, build: Build) -> Case {
@@ -136,6 +148,7 @@ fn base(name: &str, category: Category, slice: Slice, w: u32, h: u32, build: Bui
         expect: Expect::Pass,
         frames: 1,
         in_refs: true,
+        stability: Stability::EveryFrame,
     }
 }
 
@@ -192,6 +205,13 @@ impl Case {
         self.frames = n.max(1);
         self.reference = Reference::SelfConsistency;
         self.in_refs = false;
+        self
+    }
+
+    /// `n` frames on the warm renderer; the last compared with a fresh renderer's render.
+    pub fn last_vs_fresh(mut self, n: u32) -> Self {
+        self = self.frames(n);
+        self.stability = Stability::LastVsFresh;
         self
     }
 
