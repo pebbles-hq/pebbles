@@ -35,8 +35,7 @@ pub fn cases() -> Vec<Case> {
         ops("clip/empty_intersection", Category::Analytic, P1, 128, 128, empty_intersection)
             .analytic()
             .probe("all_background", probe::all_background),
-        harness("clip/scroll_viewport", Geometry, P1, 240, 200, scroll_viewport)
-            .xfail("V46", "the golden model renders glyph runs from V46"),
+        harness("clip/scroll_viewport", Geometry, P1, 240, 200, scroll_viewport),
     ]);
     v
 }

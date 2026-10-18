@@ -4,6 +4,7 @@
 pub mod coverage;
 pub mod shapes;
 pub mod stroke;
+pub mod text;
 
 use kurbo::Affine;
 use pebbles_render::paint::Scene;
@@ -98,7 +99,14 @@ impl Target {
             }
             Op::Image { .. } => return Err(CheckError::GoldenUnsupported("image")),
             Op::BlurredRect { .. } => return Err(CheckError::GoldenUnsupported("blurred-rect")),
-            Op::Glyphs { .. } => return Err(CheckError::GoldenUnsupported("glyphs")),
+            Op::Glyphs { font, font_size, normalized_coords, brush, transform, glyphs, .. } => {
+                let src = solid(brush)?;
+                let t = outer * *transform;
+                for cov in text::run_coverage(font, *font_size, normalized_coords, t, glyphs, self.w, self.h)
+                {
+                    self.composite(src, &cov);
+                }
+            }
             _ => return Err(CheckError::GoldenUnsupported("unknown-op")),
         }
         Ok(())

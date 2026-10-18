@@ -7,9 +7,11 @@ use swash::scale::image::{Content, Image};
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::{Format, Vector};
 
-/// Raster sources in priority order: COLR, bitmap strikes, then outlines.
-const SOURCES: &[Source] =
-    &[Source::ColorOutline(0), Source::ColorBitmap(StrikeWith::BestFit), Source::Outline];
+/// Color raster sources in priority order: COLR, then bitmap strikes. Plain outlines are not
+/// rendered by swash: they go through the Tier B coverage rasterizer (`outline_mask`), so glyph
+/// and path edges get identical, winding-exact coverage (DR-23) — swash's own mask renderer
+/// double-counts the overlapping contours variable fonts keep.
+const COLOR_SOURCES: &[Source] = &[Source::ColorOutline(0), Source::ColorBitmap(StrikeWith::BestFit)];
 
 /// Whether a raster is coverage or premultiplied-or-straight RGBA.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,6 +49,10 @@ pub(crate) struct GlyphRaster {
     ctx: ScaleContext,
     fonts: HashMap<(u64, u32), FontEntry>,
     scratch: Image,
+    outline: swash::scale::outline::Outline,
+    path: kurbo::BezPath,
+    coverage: super::coverage::CoverageRasterizer,
+    mask: super::coverage::MaskBuf,
 }
 
 /// What to rasterize.
@@ -79,13 +85,18 @@ impl GlyphRaster {
             .hint(false)
             .normalized_coords(req.coords.iter().copied())
             .build();
-        let mut render = Render::new(SOURCES);
-        render.format(Format::Alpha).offset(Vector::new(f32::from(req.subpx_x) * 0.25, 0.0));
+        let dx = f32::from(req.subpx_x) * 0.25;
+        let mut render = Render::new(COLOR_SOURCES);
+        render.format(Format::Alpha).offset(Vector::new(dx, 0.0));
         // The scratch image is reused: clear it, since swash only resizes it and zeno
         // writes only covered cells (02 §7.2).
         self.scratch.clear();
         if !render.render_into(&mut scaler, req.glyph_id, &mut self.scratch) {
-            return None;
+            self.outline.clear();
+            if !scaler.scale_outline_into(req.glyph_id, &mut self.outline) {
+                return None;
+            }
+            return self.outline_mask(f64::from(dx));
         }
         let img = &self.scratch;
         Some(RasterGlyph {
@@ -100,6 +111,53 @@ impl GlyphRaster {
             },
             premultiplied: !matches!(img.source, Source::ColorBitmap(_)),
             data: &img.data,
+        })
+    }
+
+    /// Rasterize `self.outline` (y-up, pen-relative) shifted right by `dx` px into `self.mask`,
+    /// placed like swash's images: `left` px right of the pen, `top` px above the baseline.
+    fn outline_mask(&mut self, dx: f64) -> Option<RasterGlyph<'_>> {
+        use swash::zeno::Verb;
+        let pts = self.outline.points();
+        let p = |i: usize| pts.get(i).map(|q| kurbo::Point::new(dx + f64::from(q.x), -f64::from(q.y)));
+        self.path.truncate(0);
+        let mut i = 0;
+        for verb in self.outline.verbs() {
+            match verb {
+                Verb::MoveTo => self.path.move_to(p(i)?),
+                Verb::LineTo => self.path.line_to(p(i)?),
+                Verb::QuadTo => self.path.quad_to(p(i)?, p(i + 1)?),
+                Verb::CurveTo => self.path.curve_to(p(i)?, p(i + 1)?, p(i + 2)?),
+                Verb::Close => self.path.close_path(),
+            }
+            i += match verb {
+                Verb::MoveTo | Verb::LineTo => 1,
+                Verb::QuadTo => 2,
+                Verb::CurveTo => 3,
+                Verb::Close => 0,
+            };
+        }
+        use kurbo::Shape as _;
+        let b = self.path.bounding_box();
+        let (x0, y0) = (b.x0.floor(), b.y0.floor());
+        let w = crate::prepare::num::ceil_px(b.x1 - x0, u32::from(u16::MAX))?;
+        let h = crate::prepare::num::ceil_px(b.y1 - y0, u32::from(u16::MAX))?;
+        let shift = kurbo::Affine::translate((-x0, -y0));
+        let clip = crate::prepare::ScissorRect { x0: 0, y0: 0, x1: w, y1: h };
+        let placed =
+            self.coverage.rasterize(&self.path, shift, peniko::Fill::NonZero, clip, &mut self.mask)?;
+        let left = i32::try_from(crate::prepare::num::to_u64_sat(x0.abs())).ok()?;
+        let top = i32::try_from(crate::prepare::num::to_u64_sat(y0.abs())).ok()?;
+        let left = if x0 < 0.0 { -left } else { left } + placed.left;
+        let top = -(if y0 < 0.0 { -top } else { top } + placed.top);
+        Some(RasterGlyph {
+            left,
+            top,
+            width: self.mask.width,
+            height: self.mask.height,
+            content: RasterContent::Mask,
+            premultiplied: true,
+            data: &self.mask.data,
         })
     }
 

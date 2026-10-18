@@ -3661,6 +3661,7 @@ dependencies = [
  "peniko",
  "png",
  "pollster 1.0.1",
+ "swash",
  "vello_hybrid",
  "wgpu",
 ]
