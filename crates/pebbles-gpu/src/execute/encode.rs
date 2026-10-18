@@ -19,6 +19,7 @@ impl PassState {
     fn set_scissor(&mut self, pass: &mut wgpu::RenderPass<'_>, scissor: ScissorRect) {
         let rect = (scissor.x0, scissor.y0, scissor.width(), scissor.height());
         if self.scissor != Some(rect) {
+            pass.insert_debug_marker("pebbles.gpu.clip.scissor");
             pass.set_scissor_rect(rect.0, rect.1, rect.2, rect.3);
             self.scissor = Some(rect);
         }
@@ -52,6 +53,30 @@ pub(crate) fn resolve_and_upload(
 }
 
 /// Draw every command of the renderer's current plan, in order, into `pass`.
+/// The pipeline family a draw command uses.
+pub(crate) fn cmd_kind(cmd: &DrawCmd) -> PipelineKind {
+    match cmd {
+        DrawCmd::Solid { .. } => PipelineKind::Solid,
+        DrawCmd::Shapes { .. } => PipelineKind::Sdf,
+        DrawCmd::Shadows { .. } => PipelineKind::Shadow,
+        DrawCmd::Glyphs { .. } => PipelineKind::Glyph,
+        DrawCmd::Images { .. } => PipelineKind::Image,
+    }
+}
+
+/// Maximal runs of consecutive same-kind draw commands with their debug labels (S52).
+pub(crate) fn debug_group_runs(cmds: &[DrawCmd]) -> Vec<(std::ops::Range<usize>, &'static str)> {
+    let mut out: Vec<(std::ops::Range<usize>, &'static str)> = Vec::new();
+    for (i, cmd) in cmds.iter().enumerate() {
+        let label = cmd_kind(cmd).debug_label();
+        match out.last_mut() {
+            Some((r, l)) if *l == label && r.end == i => r.end = i + 1,
+            _ => out.push((i..i + 1, label)),
+        }
+    }
+    out
+}
+
 pub(crate) fn encode(
     renderer: &Renderer,
     pass: &mut wgpu::RenderPass<'_>,
@@ -66,8 +91,23 @@ pub(crate) fn encode(
     let mut state = PassState::new();
 
     let mut runs = composites.iter().peekable();
+    // Debug groups (S52): one per maximal run of same-kind draws; balanced within the pass.
+    let groups = debug_group_runs(&renderer.scratch.plan.cmds);
+    let (mut g, mut open) = (0, false);
     let mut i = 0;
     while let Some(cmd) = renderer.scratch.plan.cmds.get(i) {
+        if open && groups.get(g).is_some_and(|(r, _)| i >= r.end) {
+            pass.pop_debug_group();
+            open = false;
+        }
+        while groups.get(g).is_some_and(|(r, _)| r.end <= i) {
+            g += 1;
+        }
+        if !open && let Some((r, label)) = groups.get(g).filter(|(r, _)| r.contains(&i)) {
+            let _ = r;
+            pass.push_debug_group(label);
+            open = true;
+        }
         i += 1;
         // A Tier C run is drawn as its composite at the position of its first cmd (R17).
         if let Some(c) = runs.next_if(|c| c.run.cmds.start == i - 1) {
@@ -157,8 +197,42 @@ pub(crate) fn encode(
             }
         }
     }
+    if open {
+        pass.pop_debug_group();
+    }
     // Leave the pass with a full-target scissor: wgpu's GL backend resolves MSAA with
     // glBlitFramebuffer under the last scissor, which would drop every pixel outside the last
     // clip (Vulkan/Metal/DX12 resolves ignore the scissor).
     state.set_scissor(pass, ScissorRect::full(renderer.scratch.plan.target_size));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cmd_kind, debug_group_runs};
+    use crate::prepare::{DrawCmd, ScissorRect};
+
+    #[test]
+    fn debug_group_runs_partition_commands() {
+        let clip = crate::prepare::ClipState { scissor: ScissorRect::full((8, 8)) };
+        let cmds = vec![
+            DrawCmd::Solid { indices: 0..3, clip },
+            DrawCmd::Solid { indices: 3..6, clip },
+            DrawCmd::Shapes { instances: 0..1, clip },
+            DrawCmd::Glyphs { glyphs: 0..2, clip },
+            DrawCmd::Glyphs { glyphs: 2..4, clip },
+            DrawCmd::Solid { indices: 6..9, clip },
+        ];
+        let runs = debug_group_runs(&cmds);
+        assert_eq!(runs.iter().map(|r| r.0.clone()).collect::<Vec<_>>(), [0..2, 2..3, 3..5, 5..6]);
+        assert_eq!(runs[0].0.start, 0);
+        assert_eq!(runs.last().map(|r| r.0.end), Some(cmds.len()));
+        for w in runs.windows(2) {
+            assert_eq!(w[0].0.end, w[1].0.start, "contiguous");
+            assert_ne!(w[0].1, w[1].1, "adjacent runs differ in kind");
+        }
+        for (r, label) in &runs {
+            assert!(r.clone().all(|i| cmd_kind(&cmds[i]).debug_label() == *label));
+        }
+        assert!(debug_group_runs(&[]).is_empty());
+    }
 }

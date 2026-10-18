@@ -55,21 +55,18 @@ fn quarter_turn(m: Affine) -> bool {
 /// device edges are all horizontal or vertical.
 fn rect_path(p: &kurbo::BezPath, m: Affine) -> Option<kurbo::Rect> {
     use kurbo::PathEl::{ClosePath, LineTo, MoveTo};
-    let els = p.elements();
-    let mut pts = Vec::with_capacity(5);
-    match els {
-        [MoveTo(a), LineTo(b), LineTo(c), LineTo(d), ClosePath] => pts.extend([*a, *b, *c, *d]),
-        [MoveTo(a), LineTo(b), LineTo(c), LineTo(d), LineTo(e), ClosePath] if e == a => {
-            pts.extend([*a, *b, *c, *d])
-        }
+    let pts = match p.elements() {
+        [MoveTo(a), LineTo(b), LineTo(c), LineTo(d), ClosePath] => [*a, *b, *c, *d],
+        [MoveTo(a), LineTo(b), LineTo(c), LineTo(d), LineTo(e), ClosePath] if e == a => [*a, *b, *c, *d],
         _ => return None,
-    }
-    let dev: Vec<kurbo::Point> = pts.iter().map(|q| m * *q).collect();
-    let straight = (0..4).all(|i| {
-        let (p, q) = (dev[i], dev[(i + 1) % 4]);
-        (p.x - q.x).abs() <= 1e-3 || (p.y - q.y).abs() <= 1e-3
-    });
-    straight.then(|| dev.iter().skip(1).fold(kurbo::Rect::from_points(dev[0], dev[0]), |r, q| r.union_pt(*q)))
+    };
+    let dev = pts.map(|q| m * q);
+    let straight = dev
+        .iter()
+        .zip(dev.iter().cycle().skip(1))
+        .all(|(p, q)| (p.x - q.x).abs() <= 1e-3 || (p.y - q.y).abs() <= 1e-3);
+    let [first, rest @ ..] = dev;
+    straight.then(|| rest.iter().fold(kurbo::Rect::from_points(first, first), |r, q| r.union_pt(*q)))
 }
 
 /// Classify a clip shape under `m` (02 §6.5, R07).

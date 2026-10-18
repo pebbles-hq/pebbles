@@ -204,7 +204,10 @@ impl OffscreenRenderer {
 }
 
 #[cold]
-#[allow(clippy::panic)] // a DeviceId minted by this context always resolves in it
+#[cfg_attr(
+    not(test),
+    expect(clippy::panic, reason = "INVARIANT: a DeviceId minted by this context always resolves in it")
+)]
 fn unreachable_device() -> ! {
     panic!("OffscreenRenderer: its own device id no longer resolves")
 }

@@ -1,4 +1,5 @@
 //! Prepare: walk the shared display list into an ordered [`FramePlan`] on the CPU (no device).
+#![cfg_attr(not(test), warn(clippy::indexing_slicing))]
 
 use kurbo::{Affine, Shape};
 
@@ -37,6 +38,8 @@ mod tessellate;
 mod test_util;
 mod tier_a;
 
+#[cfg(test)]
+pub(crate) use plan::ClipState;
 pub(crate) use plan::{DrawCmd, FramePlan, ScissorRect};
 
 /// Path-flattening tolerance for recorded shapes (logical px) — a local copy, because

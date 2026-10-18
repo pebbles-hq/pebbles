@@ -203,6 +203,7 @@ impl Renderer {
         let clear = super::prepare::color::clear_color(params.base_color);
         let mut encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.gpu.encoder") });
+        encoder.push_debug_group("pebbles.gpu.frame");
         let composites = super::execute::tier_c::encode_runs(
             self,
             device,
@@ -230,6 +231,7 @@ impl Renderer {
             encode(self, &mut pass, format, &mut stats, &composites);
             stats.render_passes += 1;
         }
+        encoder.pop_debug_group();
         queue.submit([encoder.finish()]);
         target.targets.pool.end_frame();
         self.scratch.plan.release_refs();
@@ -328,7 +330,7 @@ mod tests {
         let gpu = ctx.device(id).expect("device");
         let mut renderer = Renderer::new(gpu, id);
         let texture = gpu.device().create_texture(&wgpu::TextureDescriptor {
-            label: None,
+            label: Some("pebbles.gpu.test.device_lost"),
             size: wgpu::Extent3d { width: 8, height: 8, depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,

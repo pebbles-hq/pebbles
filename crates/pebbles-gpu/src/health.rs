@@ -91,7 +91,10 @@ pub(crate) fn install_device_hooks(device: &wgpu::Device, health: &Arc<DeviceHea
 }
 
 /// Classify one uncaptured error (08 §6.3). Returns whether it was logged.
-#[allow(clippy::panic)] // strict mode (PEBBLES_GPU_STRICT) panics by contract (11 §4.6)
+#[cfg_attr(
+    not(test),
+    expect(clippy::panic, reason = "STRICT: opt-in validation panic under PEBBLES_GPU_STRICT, 11 §4.6")
+)]
 pub(crate) fn route_uncaptured(h: &DeviceHealth, strict: bool, trace: bool, e: wgpu::Error) -> bool {
     let logged = match &e {
         wgpu::Error::OutOfMemory { .. } | wgpu::Error::Internal { .. } => {

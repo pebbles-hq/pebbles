@@ -103,7 +103,7 @@ fn strict_mode_panics_on_validation_error() {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // A zero-size texture is a validation error.
         let _texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: None,
+            label: Some("pebbles.gpu.test.context"),
             size: wgpu::Extent3d { width: 0, height: 0, depth_or_array_layers: 1 },
             mip_level_count: 1,
             sample_count: 1,

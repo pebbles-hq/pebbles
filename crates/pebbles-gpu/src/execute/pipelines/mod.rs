@@ -36,6 +36,32 @@ pub(crate) enum PipelineKind {
     MaskMultiply,
 }
 
+impl PipelineKind {
+    /// `pebbles.gpu.draw.<kind>` debug-group label (11 §4.4); static, never allocated per frame.
+    pub(crate) const fn debug_label(self) -> &'static str {
+        match self {
+            Self::Solid => "pebbles.gpu.draw.solid",
+            Self::Sdf => "pebbles.gpu.draw.sdf",
+            Self::Shadow => "pebbles.gpu.draw.shadow",
+            Self::Glyph => "pebbles.gpu.draw.glyph",
+            Self::Image => "pebbles.gpu.draw.image",
+            Self::Gradient => "pebbles.gpu.draw.gradient",
+            Self::CompositeOver => "pebbles.gpu.draw.composite_over",
+            Self::CompositeCompose => "pebbles.gpu.draw.composite_compose",
+            Self::CompositeBackdrop => "pebbles.gpu.draw.composite_backdrop",
+            Self::Blit => "pebbles.gpu.draw.blit",
+            Self::Vertices => "pebbles.gpu.draw.vertices",
+            Self::Sprite => "pebbles.gpu.draw.sprite",
+            Self::Blur => "pebbles.gpu.draw.blur",
+            Self::ColorMatrix => "pebbles.gpu.draw.color_matrix",
+            Self::Morphology => "pebbles.gpu.draw.morphology",
+            Self::Projected => "pebbles.gpu.draw.projected",
+            Self::ShaderBrush => "pebbles.gpu.draw.shader_brush",
+            Self::MaskMultiply => "pebbles.gpu.draw.mask_multiply",
+        }
+    }
+}
+
 /// Identity of one render pipeline (10 §3.2). No depth-stencil state (DR-20).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct PipelineKey {

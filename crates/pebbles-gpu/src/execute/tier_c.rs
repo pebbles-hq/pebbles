@@ -184,12 +184,14 @@ pub(crate) fn encode_runs(
             // The run shares one clip: scissor = clip ∩ bounds, in run-texture space.
             let s = intersect(run.scissor, run.bounds);
             pass.set_scissor_rect(s.x0 - b.x0, s.y0 - b.y0, s.x1 - s.x0, s.y1 - s.y0);
+            pass.push_debug_group(PipelineKind::Solid.debug_label());
             for cmd in &renderer.scratch.plan.cmds[run.cmds.clone()] {
                 if let DrawCmd::Solid { indices, .. } = cmd {
                     pass.draw_indexed(indices.clone(), 0, 0..1);
                     stats.draw_calls += 1;
                 }
             }
+            pass.pop_debug_group();
             stats.render_passes += 1;
         }
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
