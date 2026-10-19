@@ -89,15 +89,17 @@ pub(crate) struct Composite {
     pub run: Run,
     pub bind_group: Option<wgpu::BindGroup>,
     pub params_offset: u32,
+    /// The run's booked pool target and Globals offset (`None`: nothing to render).
+    pub target: Option<(usize, u32)>,
 }
 
-/// Render every run of `renderer.scratch.plan` into its pooled target; return the composites
-/// in run order. Globals slot `k + 1` and composite slot `k` belong to run `k`.
-pub(crate) fn encode_runs(
+/// Book every run of `renderer.scratch.plan` before any segment renders (M07, O3): its pooled
+/// target, Globals slot, composite params and bind group; return the composites in run order.
+/// Globals slot `k + 1` and composite slot `k` belong to run `k`.
+pub(crate) fn prepare_runs(
     renderer: &mut Renderer,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    encoder: &mut wgpu::CommandEncoder,
     targets: &mut FrameTargets,
     format: wgpu::TextureFormat,
     stats: &mut FrameStats,
@@ -142,15 +144,14 @@ pub(crate) fn encode_runs(
         let (w, h) = (run.bounds.x1 - run.bounds.x0, run.bounds.y1 - run.bounds.y0);
         let params_offset = u32::try_from((base + k64) * stride).unwrap_or(0);
         if w == 0 || h == 0 {
-            out.push(Composite { run: run.clone(), bind_group: None, params_offset });
+            out.push(Composite { run: run.clone(), bind_group: None, params_offset, target: None });
             continue;
         }
         // 11 §2.6: a run whose target cannot be created (OOM twice) is skipped this frame.
         let Some(slot) = targets.pool.try_acquire(device, (w, h), format, samples, stats) else {
-            out.push(Composite { run: run.clone(), bind_group: None, params_offset });
+            out.push(Composite { run: run.clone(), bind_group: None, params_offset, target: None });
             continue;
         };
-        let tex = targets.pool.textures(slot);
         let size = targets.pool.book.slots[slot].size;
         let globals = crate::execute::resources::globals::Globals {
             target_size: [size.0 as f32, size.1 as f32],
@@ -170,84 +171,6 @@ pub(crate) fn encode_runs(
             _pad: 0,
         };
         queue.write_buffer(renderer.composite_buffer(), (base + k64) * stride, bytemuck::bytes_of(&params));
-        {
-            let (view, resolve_target) = match &tex.msaa {
-                Some((_, m)) => (m, Some(&tex.color.1)),
-                None => (&tex.color.1, None),
-            };
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("pebbles.gpu.pass.tier_c"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
-                    depth_slice: None,
-                    resolve_target,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            let (Some(pipeline), Some(vb), Some(ib)) = (
-                renderer.pipelines.get_ensured(solid),
-                renderer.arenas.solid_vertices.buffer(),
-                renderer.arenas.solid_indices.buffer(),
-            ) else {
-                continue;
-            };
-            pass.set_pipeline(pipeline);
-            pass.set_bind_group(
-                0,
-                renderer.globals_bg(),
-                &[u32::try_from(globals_offset).unwrap_or(0), 0, 0],
-            );
-            stats.bind_group_switches += 1;
-            pass.set_vertex_buffer(0, vb.slice(..));
-            pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-            // The run shares one clip: scissor = clip ∩ bounds, in run-texture space.
-            let s = intersect(run.scissor, run.bounds);
-            pass.set_scissor_rect(s.x0 - b.x0, s.y0 - b.y0, s.x1 - s.x0, s.y1 - s.y0);
-            stats.scissor_changes += 1;
-            pass.push_debug_group(PipelineKind::Solid.debug_label());
-            let gradient_key = PipelineKey { kind: PipelineKind::Gradient, variant: 2, ..solid };
-            let mut painted = false;
-            for cmd in &renderer.scratch.plan.cmds[run.cmds.clone()] {
-                match cmd {
-                    DrawCmd::Solid { indices, .. } => {
-                        if painted {
-                            pass.set_pipeline(pipeline);
-                            painted = false;
-                        }
-                        pass.draw_indexed(indices.clone(), 0, 0..1);
-                        stats.draw_calls += 1;
-                    }
-                    DrawCmd::Brush {
-                        cover: crate::prepare::plan::BrushCover::Mesh(indices), paint, ..
-                    } => {
-                        let Some((gp, bg, offset)) = renderer.brush_draw(
-                            *paint,
-                            gradient_key.variant,
-                            gradient_key.color_format,
-                            gradient_key.sample_count,
-                        ) else {
-                            continue;
-                        };
-                        pass.set_pipeline(gp);
-                        pass.set_bind_group(1, bg, &[offset]);
-                        stats.bind_group_switches += 1;
-                        painted = true;
-                        pass.draw_indexed(indices.clone(), 0, 0..1);
-                        stats.draw_calls += 1;
-                    }
-                    _ => {}
-                }
-            }
-            pass.pop_debug_group();
-            stats.render_passes += 1;
-        }
         // 10 §3.4: one composite bind group per pool slot, rebuilt only when the params buffer
         // is recreated (its slot count is the generation).
         let (layout, params, generation) =
@@ -280,8 +203,121 @@ pub(crate) fn encode_runs(
             stats,
         );
         let bind_group = group.clone();
-        out.push(Composite { run: run.clone(), bind_group: Some(bind_group), params_offset });
+        out.push(Composite {
+            run: run.clone(),
+            bind_group: Some(bind_group),
+            params_offset,
+            target: Some((slot, u32::try_from(globals_offset).unwrap_or(0))),
+        });
     }
     renderer.runs = runs;
     out
+}
+
+/// Render the runs of `composites` whose commands lie in `cmds` (one segment, M07) into their
+/// booked targets.
+pub(crate) fn render_runs(
+    renderer: &Renderer,
+    encoder: &mut wgpu::CommandEncoder,
+    targets: &FrameTargets,
+    composites: &[Composite],
+    cmds: Range<usize>,
+    format: wgpu::TextureFormat,
+    stats: &mut FrameStats,
+) {
+    let solid = PipelineKey {
+        kind: PipelineKind::Solid,
+        color_format: format,
+        sample_count: renderer.sample_count,
+        blend: 0,
+        variant: 0,
+    };
+    for c in composites.iter().filter(|c| cmds.contains(&c.run.cmds.start)) {
+        let Some((slot, globals_offset)) = c.target else { continue };
+        let run = &c.run;
+        let b = run.bounds;
+        let tex = targets.pool.textures(slot);
+        {
+            let (view, resolve_target) = match &tex.msaa {
+                Some((_, m)) => (m, Some(&tex.color.1)),
+                None => (&tex.color.1, None),
+            };
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("pebbles.gpu.pass.tier_c"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    depth_slice: None,
+                    resolve_target,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            let (Some(pipeline), Some(vb), Some(ib)) = (
+                renderer.pipelines.get_ensured(solid),
+                renderer.arenas.solid_vertices.buffer(),
+                renderer.arenas.solid_indices.buffer(),
+            ) else {
+                continue;
+            };
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, renderer.globals_bg(), &[globals_offset, 0, 0]);
+            stats.bind_group_switches += 1;
+            pass.set_vertex_buffer(0, vb.slice(..));
+            pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+            // The run shares one clip: scissor = clip ∩ bounds, in run-texture space.
+            let s = intersect(run.scissor, run.bounds);
+            pass.set_scissor_rect(s.x0 - b.x0, s.y0 - b.y0, s.x1 - s.x0, s.y1 - s.y0);
+            stats.scissor_changes += 1;
+            pass.push_debug_group(PipelineKind::Solid.debug_label());
+            let gradient_key = PipelineKey { kind: PipelineKind::Gradient, variant: 2, ..solid };
+            let mut painted = false;
+            for cmd in &renderer.scratch.plan.cmds[run.cmds.clone()] {
+                match cmd {
+                    DrawCmd::Solid { indices, .. } => {
+                        if painted {
+                            pass.set_pipeline(pipeline);
+                            painted = false;
+                        }
+                        pass.draw_indexed(
+                            renderer.seg_base.rebase(crate::prepare::segments::INDICES, indices),
+                            0,
+                            0..1,
+                        );
+                        stats.draw_calls += 1;
+                    }
+                    DrawCmd::Brush {
+                        cover: crate::prepare::plan::BrushCover::Mesh(indices), paint, ..
+                    } => {
+                        let Some((gp, bg, offset)) = renderer.brush_draw(
+                            *paint,
+                            gradient_key.variant,
+                            gradient_key.color_format,
+                            gradient_key.sample_count,
+                        ) else {
+                            continue;
+                        };
+                        pass.set_pipeline(gp);
+                        pass.set_bind_group(1, bg, &[offset]);
+                        stats.bind_group_switches += 1;
+                        painted = true;
+                        pass.draw_indexed(
+                            renderer.seg_base.rebase(crate::prepare::segments::INDICES, indices),
+                            0,
+                            0..1,
+                        );
+                        stats.draw_calls += 1;
+                    }
+                    _ => {}
+                }
+            }
+            pass.pop_debug_group();
+            stats.render_passes += 1;
+        }
+    }
 }

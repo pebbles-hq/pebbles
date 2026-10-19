@@ -19,6 +19,10 @@ pub(crate) struct GpuMasks {
     dummy: (wgpu::Texture, wgpu::TextureView),
     /// Job → its group-0 variant, this frame.
     groups: Vec<wgpu::BindGroup>,
+    /// Job → its booked (pool slot, Globals offset); `None` when its target hit OOM (M07).
+    slots: Vec<Option<(usize, u32)>>,
+    /// This frame's mask sample count.
+    samples: u32,
 }
 
 impl GpuMasks {
@@ -34,7 +38,7 @@ impl GpuMasks {
             view_formats: &[],
         });
         let v = t.create_view(&wgpu::TextureViewDescriptor::default());
-        Self { pool: LayerPool::default(), dummy: (t, v), groups: Vec::new() }
+        Self { pool: LayerPool::default(), dummy: (t, v), groups: Vec::new(), slots: Vec::new(), samples: 1 }
     }
 
     pub(crate) fn dummy_view(&self) -> &wgpu::TextureView {
@@ -64,14 +68,11 @@ impl GpuMasks {
     }
 }
 
-/// Render every GPU mask job of the plan, in order (parents precede children).
-pub(crate) fn render_jobs(
-    renderer: &mut Renderer,
-    device: &wgpu::Device,
-    encoder: &mut wgpu::CommandEncoder,
-    stats: &mut FrameStats,
-) {
+/// Book every GPU mask job of the plan before any segment renders (M07, O3): its pool target,
+/// its Globals slot and the group-0 variant content uses under it, in job order.
+pub(crate) fn prepare_jobs(renderer: &mut Renderer, device: &wgpu::Device, stats: &mut FrameStats) {
     renderer.gpu_masks.groups.clear();
+    renderer.gpu_masks.slots.clear();
     let n = renderer.scratch.plan.gpu_mask_jobs.len();
     if n == 0 {
         return;
@@ -81,6 +82,7 @@ pub(crate) fn render_jobs(
     renderer.ensure_uniform_slots(device, base + n as u64, 0, stats);
     let stride = super::tier_c::slot_stride(device);
     let samples = renderer.msaa_samples_for(FORMAT);
+    renderer.gpu_masks.samples = samples;
     let key = PipelineKey {
         kind: PipelineKind::Solid,
         color_format: FORMAT,
@@ -100,6 +102,7 @@ pub(crate) fn render_jobs(
         else {
             let g = renderer.globals_bg_with(device, &renderer.gpu_masks.dummy.1);
             renderer.gpu_masks.groups.push(g);
+            renderer.gpu_masks.slots.push(None);
             continue;
         };
         let size = renderer.gpu_masks.pool.book.slots[slot].size;
@@ -112,6 +115,50 @@ pub(crate) fn render_jobs(
         };
         let globals_offset = (base + j as u64) * stride;
         renderer.globals_staging.set(u32::try_from(base + j as u64).unwrap_or(u32::MAX), &globals);
+        // The group-0 variant content uses under this mask (cached per pool texture).
+        let group = {
+            let tex = renderer.gpu_masks.pool.textures(slot);
+            match &tex.composite_bg {
+                Some(g) if g.key == generation => g.group.clone(),
+                _ => {
+                    let g = renderer.globals_bg_with(device, &tex.color.1);
+                    stats.bind_groups_created += 1;
+                    renderer.gpu_masks.pool.textures_mut(slot).composite_bg =
+                        Some(super::resources::bind_groups::GenBindGroup {
+                            key: generation,
+                            group: g.clone(),
+                        });
+                    g
+                }
+            }
+        };
+        renderer.gpu_masks.groups.push(group);
+        renderer.gpu_masks.slots.push(Some((slot, u32::try_from(globals_offset).unwrap_or(0))));
+    }
+}
+
+/// Render the GPU mask jobs `jobs` (one segment's, M07) into their booked targets, in order
+/// (parents precede children).
+pub(crate) fn render_jobs(
+    renderer: &Renderer,
+    encoder: &mut wgpu::CommandEncoder,
+    jobs: std::ops::Range<usize>,
+    stats: &mut FrameStats,
+) {
+    let samples = renderer.gpu_masks.samples;
+    let key = PipelineKey {
+        kind: PipelineKind::Solid,
+        color_format: FORMAT,
+        sample_count: samples,
+        blend: 0,
+        variant: 0,
+    };
+    for j in jobs {
+        let (Some(job), Some(&Some((slot, globals_offset)))) =
+            (renderer.scratch.plan.gpu_mask_jobs.get(j), renderer.gpu_masks.slots.get(j))
+        else {
+            continue;
+        };
         {
             let tex = renderer.gpu_masks.pool.textures(slot);
             let (view, resolve_target, store) = match &tex.msaa {
@@ -141,8 +188,7 @@ pub(crate) fn render_jobs(
             };
             pass.push_debug_group("pebbles.gpu.mask");
             pass.set_pipeline(pipeline);
-            let offsets =
-                [u32::try_from(globals_offset).unwrap_or(0), 0, renderer.mask_clip_offset(job.parent)];
+            let offsets = [globals_offset, 0, renderer.mask_clip_offset(job.parent)];
             let parent_bg =
                 match renderer.scratch.plan.mask_clips.get(job.parent.0 as usize).and_then(|p| p.gpu) {
                     Some(pj) => renderer.gpu_masks.groups.get(pj as usize).unwrap_or(renderer.globals_bg()),
@@ -152,29 +198,15 @@ pub(crate) fn render_jobs(
             stats.bind_group_switches += 1;
             pass.set_vertex_buffer(0, vb.slice(..));
             pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(job.indices.clone(), 0, 0..1);
+            pass.draw_indexed(
+                renderer.seg_base.rebase(crate::prepare::segments::INDICES, &job.indices),
+                0,
+                0..1,
+            );
             stats.draw_calls += 1;
             pass.pop_debug_group();
         }
         stats.gpu_masks += 1;
         stats.gpu_masks_aliased += u32::from(samples == 1);
-        // The group-0 variant content uses under this mask (cached per pool texture).
-        let group = {
-            let tex = renderer.gpu_masks.pool.textures(slot);
-            match &tex.composite_bg {
-                Some(g) if g.key == generation => g.group.clone(),
-                _ => {
-                    let g = renderer.globals_bg_with(device, &tex.color.1);
-                    stats.bind_groups_created += 1;
-                    renderer.gpu_masks.pool.textures_mut(slot).composite_bg =
-                        Some(super::resources::bind_groups::GenBindGroup {
-                            key: generation,
-                            group: g.clone(),
-                        });
-                    g
-                }
-            }
-        };
-        renderer.gpu_masks.groups.push(group);
     }
 }

@@ -64,13 +64,14 @@ impl PassState {
     }
 }
 
-/// Resolve glyphs and images for the whole frame, then upload each arena once (10 §2).
-pub(crate) fn resolve_and_upload(
+/// Resolve glyphs and images for the whole frame (10 §2); the arenas are uploaded per
+/// segment by `Renderer::upload_segment` (M07).
+pub(crate) fn resolve_frame(
     renderer: &mut Renderer,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     stats: &mut FrameStats,
-) -> bool {
+) {
     resolve_glyphs(&mut renderer.glyph_atlas, &renderer.scratch.plan, &mut renderer.glyph_instances, stats);
     super::resolve::cull_resolved(&renderer.scratch.plan, &mut renderer.glyph_instances);
     // 09 L08: mask clips live in the coverage atlas too (staged before the flush).
@@ -115,16 +116,6 @@ pub(crate) fn resolve_and_upload(
             renderer.image_cache.ensure_bind_group(device, layout, key, *sampler, samplers, stats);
         }
     }
-    let arenas = &mut renderer.arenas;
-    let mut ok = arenas.meshes.upload(
-        device,
-        queue,
-        bytemuck::cast_slice(&renderer.scratch.plan.mesh_vertices),
-        stats,
-    );
-    ok &= arenas.glyphs.upload(device, queue, bytemuck::cast_slice(&renderer.glyph_instances), stats);
-    ok &= arenas.images.upload(device, queue, bytemuck::cast_slice(&renderer.image_instances), stats);
-    ok
 }
 
 /// Draw every command of the renderer's current plan, in order, into `pass`.
@@ -229,6 +220,9 @@ pub(crate) fn encode(
         };
     // The main pass is single-sampled (R17).
     let sample_count = 1;
+    // M07: the arenas hold the current segment's slices.
+    let sb = renderer.seg_base;
+    use crate::prepare::segments::{GLYPHS, IMAGES, INDICES, MESHES, SHADOWS, SHAPES};
     let key = |kind, variant| PipelineKey { kind, color_format: format, sample_count, blend: 0, variant };
     let mut state = PassState::new();
     state.origin = target.origin;
@@ -290,7 +284,8 @@ pub(crate) fn encode(
                     continue;
                 }
                 bind_clip(pass, *clip, stats);
-                pass.draw_indexed(indices.clone(), 0, 0..1);
+                let range = sb.rebase(INDICES, indices);
+                pass.draw_indexed(range, 0, 0..1);
                 stats.draw_calls += 1;
             }
             DrawCmd::Shapes { instances, clip } => {
@@ -306,7 +301,7 @@ pub(crate) fn encode(
                     continue;
                 }
                 bind_clip(pass, *clip, stats);
-                pass.draw(0..4, instances.clone());
+                pass.draw(0..4, sb.rebase(SHAPES, instances));
                 stats.draw_calls += 1;
             }
             DrawCmd::Shadows { instances, clip } => {
@@ -322,7 +317,7 @@ pub(crate) fn encode(
                     continue;
                 }
                 bind_clip(pass, *clip, stats);
-                pass.draw(0..4, instances.clone());
+                pass.draw(0..4, sb.rebase(SHADOWS, instances));
                 stats.draw_calls += 1;
             }
             DrawCmd::Glyphs { glyphs, clip } => {
@@ -341,7 +336,7 @@ pub(crate) fn encode(
                 pass.set_bind_group(1, bg, &[]);
                 stats.bind_group_switches += 1;
                 pass.set_vertex_buffer(0, vb.slice(..));
-                pass.draw(0..4, glyphs.clone());
+                pass.draw(0..4, sb.rebase(GLYPHS, glyphs));
                 stats.draw_calls += 1;
             }
             DrawCmd::Images { images, clip } => {
@@ -361,7 +356,7 @@ pub(crate) fn encode(
                 pass.set_bind_group(1, bg, &[]);
                 stats.bind_group_switches += 1;
                 pass.set_vertex_buffer(0, vb.slice(..));
-                pass.draw(0..4, images.clone());
+                pass.draw(0..4, sb.rebase(IMAGES, images));
                 stats.draw_calls += 1;
             }
             DrawCmd::GpuImage { image, clip } => {
@@ -381,9 +376,7 @@ pub(crate) fn encode(
                 pass.set_bind_group(1, bg, &[]);
                 stats.bind_group_switches += 1;
                 pass.set_vertex_buffer(0, vb.slice(..));
-                let i = u32::try_from(renderer.scratch.plan.images.len())
-                    .unwrap_or(u32::MAX)
-                    .saturating_add(*image);
+                let i = sb.gpu_instance(*image);
                 pass.draw(0..4, i..i + 1);
                 stats.draw_calls += 1;
             }
@@ -422,8 +415,10 @@ pub(crate) fn encode(
                 use crate::prepare::plan::BrushCover;
                 // Mesh covers draw inside their Tier C run (composited above).
                 let (variant, range, vb) = match cover {
-                    BrushCover::Shape(r) => (0, r, renderer.arenas.shape_instances.buffer()),
-                    BrushCover::Mask(r) => (1, r, renderer.arenas.glyphs.buffer()),
+                    BrushCover::Shape(r) => {
+                        (0, sb.rebase(SHAPES, r), renderer.arenas.shape_instances.buffer())
+                    }
+                    BrushCover::Mask(r) => (1, sb.rebase(GLYPHS, r), renderer.arenas.glyphs.buffer()),
                     BrushCover::Mesh(_) => continue,
                 };
                 let (Some((pipeline, bg, offset)), Some(vb)) =
@@ -439,7 +434,7 @@ pub(crate) fn encode(
                 pass.set_bind_group(1, bg, &[offset]);
                 stats.bind_group_switches += 1;
                 pass.set_vertex_buffer(0, vb.slice(..));
-                pass.draw(0..4, range.clone());
+                pass.draw(0..4, range);
                 stats.draw_calls += 1;
             }
             DrawCmd::Vertices { vertices, image, clip } => {
@@ -462,7 +457,7 @@ pub(crate) fn encode(
                 pass.set_bind_group(1, bg, &[]);
                 stats.bind_group_switches += 1;
                 pass.set_vertex_buffer(0, vb.slice(..));
-                pass.draw(vertices.clone(), 0..1);
+                pass.draw(sb.rebase(MESHES, vertices), 0..1);
                 stats.draw_calls += 1;
             }
             // Never inside a segment (09 §3.6).

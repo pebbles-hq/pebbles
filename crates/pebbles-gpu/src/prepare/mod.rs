@@ -37,6 +37,7 @@ pub(crate) mod path_strategy;
 pub(crate) mod plan;
 #[cfg(test)]
 mod property_tests;
+pub(crate) mod segments;
 mod shader_brush;
 mod shadows;
 mod shapes;
@@ -91,6 +92,8 @@ pub(crate) struct PrepareScratch {
     pub sdf_disabled: bool,
     /// `GpuBudgets::gpu_mask_bytes`; `None` = the native default (tests).
     pub gpu_mask_budget: Option<u64>,
+    /// Arena caps for merging and segmentation (M07); unlimited by default (tests).
+    pub arena_caps: segments::ArenaCaps,
     /// `GpuBudgets::path_mask_bytes`; `None` = the native default (tests, M28).
     pub path_mask_budget: Option<u64>,
     /// Path / clip masks admitted this frame (M28; cleared, capacity kept).
@@ -109,6 +112,7 @@ pub(crate) fn prepare<'s>(
 ) -> &'s FramePlan {
     scratch.plan.clear();
     scratch.plan.target_size = input.target_size;
+    scratch.plan.arena_caps = scratch.arena_caps;
     scratch.clips.reset(input.target_size);
     scratch.layers.reset();
     scratch.mask_keys.clear();
@@ -145,6 +149,14 @@ pub(crate) fn prepare<'s>(
     // 09 §2.7: pushes still open at the end of the frame are auto-closed (emitting the pops
     // and composites of open offscreen layers).
     walk.close_open_layers();
+    // 10 §2.5 (M07): cut the frame into segments under the arena caps.
+    let dropped = segments::build(&mut scratch.plan, scratch.arena_caps);
+    if dropped > 0 {
+        stats.oversize_ops_dropped += dropped;
+        for _ in 0..dropped {
+            stats.record(Unsupported::GeometryTooLarge);
+        }
+    }
     scratch.outlines.end_frame();
     scratch.colr.end_frame();
     &scratch.plan
@@ -363,7 +375,8 @@ impl Walk<'_> {
         };
         self.plan.gpu_mask_bytes += bytes;
         let job = num::index_u32(self.plan.gpu_mask_jobs.len());
-        self.plan.gpu_mask_jobs.push(plan::GpuMaskJob { rect, indices, parent });
+        let cmd_at = num::index_u32(self.plan.cmds.len());
+        self.plan.gpu_mask_jobs.push(plan::GpuMaskJob { rect, indices, parent, cmd_at });
         self.plan.mask_clips.push(plan::MaskClipRecord {
             key: 0,
             sources: 0..0,

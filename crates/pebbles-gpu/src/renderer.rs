@@ -5,7 +5,7 @@ use pebbles_render::paint::Scene;
 
 use super::context::{DeviceId, GpuDevice};
 use super::error::GpuError;
-use super::execute::encode::{encode, resolve_and_upload};
+use super::execute::encode::{encode, resolve_frame};
 use super::execute::pipelines::{PipelineCache, ShaderModules};
 use super::execute::resources::bind_groups::BindGroupLayouts;
 use super::execute::resources::buffers::FrameArenas;
@@ -67,6 +67,11 @@ pub struct Renderer {
     pub(crate) gpu_masks: super::execute::gpu_masks::GpuMasks,
     /// `layer_budget_exceeded` already warned (once per renderer).
     layer_budget_warned: bool,
+    /// Rebased index / joined image scratch for later segments (M07).
+    seg_indices: Vec<u32>,
+    seg_quads: Vec<QuadInstance>,
+    /// Array bases of the segment being encoded (M07; zero for single-segment frames).
+    pub(crate) seg_base: super::prepare::segments::SegBase,
     /// Custom renderers by paint type (02 §11, R60).
     customs: super::execute::custom::CustomRegistry,
     /// Shader-brush programs and per-frame bindings (09 §6.1, L43).
@@ -123,6 +128,107 @@ impl Renderer {
         c.frame_target_entries = self.targets_book.len();
         c.frame_target_bytes = self.targets_book.total_bytes();
         c
+    }
+
+    /// Upload segment `k`'s slices of every array into the arenas and set `seg_base` (10 §2.5,
+    /// M07). Indices are rebased to the segment's first vertex; a single-segment frame uploads
+    /// the arrays as they are. False when an arena could not grow (11 §2.6).
+    fn upload_segment(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        k: usize,
+        stats: &mut FrameStats,
+    ) -> bool {
+        use super::prepare::segments::{
+            GLYPHS, GPU_IMAGES, IMAGES, INDICES, MESHES, SHADOWS, SHAPES, SegBase, VERTICES,
+        };
+        let Some(seg) = self.scratch.plan.segments.get(k) else {
+            self.seg_base = SegBase::default();
+            return true;
+        };
+        self.seg_base = SegBase::of(seg);
+        let a = seg.arrays.clone();
+        let r = |x: &std::ops::Range<u32>| x.start as usize..x.end as usize;
+        let plan = &self.scratch.plan;
+        let arenas = &mut self.arenas;
+        let mut ok = arenas.solid_vertices.upload(
+            device,
+            queue,
+            bytemuck::cast_slice(plan.solid_vertices.get(r(&a[VERTICES])).unwrap_or_default()),
+            stats,
+        );
+        let indices = plan.solid_indices.get(r(&a[INDICES])).unwrap_or_default();
+        let vbase = a[VERTICES].start;
+        let indices: &[u32] = if vbase == 0 {
+            indices
+        } else {
+            self.seg_indices.clear();
+            self.seg_indices.extend(indices.iter().map(|i| i.saturating_sub(vbase)));
+            &self.seg_indices
+        };
+        ok &= arenas.solid_indices.upload(device, queue, bytemuck::cast_slice(indices), stats);
+        ok &= arenas.shape_instances.upload(
+            device,
+            queue,
+            bytemuck::cast_slice(plan.shapes.get(r(&a[SHAPES])).unwrap_or_default()),
+            stats,
+        );
+        ok &= arenas.shadow_instances.upload(
+            device,
+            queue,
+            bytemuck::cast_slice(plan.shadows.get(r(&a[SHADOWS])).unwrap_or_default()),
+            stats,
+        );
+        ok &= arenas.glyphs.upload(
+            device,
+            queue,
+            bytemuck::cast_slice(self.glyph_instances.get(r(&a[GLYPHS])).unwrap_or_default()),
+            stats,
+        );
+        // Images then this segment's GPU-image instances (stored after every image).
+        let n_img = u32::try_from(plan.images.len()).unwrap_or(u32::MAX);
+        let (img, gpu) =
+            (r(&a[IMAGES]), (n_img + a[GPU_IMAGES].start) as usize..(n_img + a[GPU_IMAGES].end) as usize);
+        let images: &[QuadInstance] = if img.end == gpu.start || gpu.is_empty() {
+            self.image_instances.get(img.start..gpu.end.max(img.end)).unwrap_or_default()
+        } else {
+            self.seg_quads.clear();
+            self.seg_quads.extend_from_slice(self.image_instances.get(img).unwrap_or_default());
+            self.seg_quads.extend_from_slice(self.image_instances.get(gpu).unwrap_or_default());
+            &self.seg_quads
+        };
+        ok &= arenas.images.upload(device, queue, bytemuck::cast_slice(images), stats);
+        ok &= arenas.meshes.upload(
+            device,
+            queue,
+            bytemuck::cast_slice(plan.mesh_vertices.get(r(&a[MESHES])).unwrap_or_default()),
+            stats,
+        );
+        ok
+    }
+
+    /// Render segment `k`'s GPU mask jobs and Tier C runs into their booked targets (M07).
+    fn render_segment_offscreen(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        k: usize,
+        targets: &super::frame_targets::FrameTargets,
+        composites: &[super::execute::tier_c::Composite],
+        format: wgpu::TextureFormat,
+        stats: &mut FrameStats,
+    ) {
+        let Some(seg) = self.scratch.plan.segments.get(k).cloned() else { return };
+        super::execute::gpu_masks::render_jobs(self, encoder, seg.jobs.clone(), stats);
+        super::execute::tier_c::render_runs(
+            self,
+            encoder,
+            targets,
+            composites,
+            seg.cmds.clone(),
+            format,
+            stats,
+        );
     }
 
     /// The bytes of GPU memory this Renderer requested (10 §9.3, M17). On demand only: the
@@ -214,6 +320,9 @@ impl Renderer {
             proj_next: 0,
             segments: Vec::new(),
             customs: Default::default(),
+            seg_base: Default::default(),
+            seg_indices: Vec::new(),
+            seg_quads: Vec::new(),
             timer: super::timing::GpuTimer::new(device, gpu.queue()),
             created_at: Some(web_time::Instant::now()),
             targets_book: super::frame_targets::TargetBook::new(budgets.frame_targets_bytes),
@@ -238,6 +347,11 @@ impl Renderer {
             scratch: PrepareScratch {
                 gpu_mask_budget: Some(budgets.gpu_mask_bytes),
                 path_mask_budget: Some(budgets.path_mask_bytes),
+                // M07: segments fit the arenas' caps and the portable vertex rule.
+                arena_caps: super::prepare::segments::ArenaCaps {
+                    bytes: gpu.device().limits().max_buffer_size.min(budgets.arena_max_bytes) / 4 * 4,
+                    max_vertices: super::prepare::segments::MAX_PORTABLE_VERTICES_PER_SEGMENT,
+                },
                 ..PrepareScratch::default()
             },
             stats: FrameStats::default(),
@@ -373,7 +487,7 @@ impl Renderer {
             stats.indices = n(plan.solid_indices.len());
             stats.instances =
                 n(plan.shapes.len() + plan.shadows.len() + plan.glyphs.len() + plan.images.len());
-            stats.segments = plan.stats.tess_calls;
+            stats.segments = n(plan.segments.len());
         }
         let upload_started = web_time::Instant::now();
 
@@ -394,32 +508,6 @@ impl Renderer {
         debug_assert_eq!(root_slot, 0);
         self.write_clips(device, queue, &mut stats);
 
-        let mut arenas_ok = true;
-        arenas_ok &= self.arenas.solid_vertices.upload(
-            device,
-            queue,
-            bytemuck::cast_slice(&self.scratch.plan.solid_vertices),
-            &mut stats,
-        );
-        arenas_ok &= self.arenas.solid_indices.upload(
-            device,
-            queue,
-            bytemuck::cast_slice(&self.scratch.plan.solid_indices),
-            &mut stats,
-        );
-        arenas_ok &= self.arenas.shape_instances.upload(
-            device,
-            queue,
-            bytemuck::cast_slice(&self.scratch.plan.shapes),
-            &mut stats,
-        );
-        arenas_ok &= self.arenas.shadow_instances.upload(
-            device,
-            queue,
-            bytemuck::cast_slice(&self.scratch.plan.shadows),
-            &mut stats,
-        );
-
         self.pipelines.prewarm(device, &self.shaders, &self.layouts, format, 1, &mut stats);
         if let Some(t) = self.created_at.take() {
             // 10 §12.1: Renderer::new through the first target's prewarm, once per renderer.
@@ -433,8 +521,9 @@ impl Renderer {
                 ),
             );
         }
-        arenas_ok &= resolve_and_upload(self, device, queue, &mut stats);
-        if !arenas_ok {
+        resolve_frame(self, device, queue, &mut stats);
+        // M07: the first segment's slices (the only one on normal frames).
+        if !self.upload_segment(device, queue, 0, &mut stats) {
             // 11 §2.6: an arena could not grow even after a retry — skip this frame's draws
             // (the passes still clear; nothing references the missing data).
             let plan = &mut self.scratch.plan;
@@ -442,6 +531,7 @@ impl Renderer {
             plan.gpu_mask_jobs.clear();
             plan.layers.clear();
             plan.customs.clear();
+            plan.segments.clear();
             plan.root_needs_backdrop = false;
         }
         stats.upload_us = u32::try_from(upload_started.elapsed().as_micros()).unwrap_or(u32::MAX);
@@ -458,19 +548,14 @@ impl Renderer {
         if !nested && let Some(t) = &mut self.timer {
             t.begin(&mut encoder, target.view);
         }
-        super::execute::gpu_masks::render_jobs(self, device, &mut encoder, &mut stats);
+        // O3: every target and Globals slot of the frame is booked before the first segment.
+        super::execute::gpu_masks::prepare_jobs(self, device, &mut stats);
         super::execute::gradients::prepare(self, device, queue, format, &mut stats);
         super::execute::image_brushes::prepare(self, device, queue, format, &mut stats);
         super::execute::shader_brushes::prepare(self, device, queue, format, &mut stats);
-        let composites = super::execute::tier_c::encode_runs(
-            self,
-            device,
-            queue,
-            &mut encoder,
-            target.targets,
-            format,
-            &mut stats,
-        );
+        let composites =
+            super::execute::tier_c::prepare_runs(self, device, queue, target.targets, format, &mut stats);
+        self.render_segment_offscreen(&mut encoder, 0, target.targets, &composites, format, &mut stats);
         let layers =
             super::execute::layers::acquire_layers(self, device, queue, target.targets, format, &mut stats);
         super::execute::encode::ensure_plan_pipelines(
@@ -630,6 +715,28 @@ impl Renderer {
             if let super::prepare::passes::AfterPass::CopyBackdrop(l) = seg.after {
                 let root = root_color.as_ref().map(|r| &r.0);
                 self.copy_backdrop(&mut encoder, l, &layers, target.targets, root, &mut stats);
+            }
+            if let super::prepare::passes::AfterPass::NextSegment(k) = seg.after {
+                // M07: submit this segment, upload the next one's slices (the arenas are reused,
+                // so a submit must separate them), and render its offscreen jobs and runs.
+                encoder.pop_debug_group();
+                let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("pebbles.gpu.encoder.segment"),
+                });
+                queue.submit([std::mem::replace(&mut encoder, next).finish()]);
+                encoder.push_debug_group("pebbles.gpu.frame");
+                if !self.upload_segment(device, queue, k as usize, &mut stats) {
+                    // 11 §2.6: the rest of the frame's draws are skipped.
+                    break;
+                }
+                self.render_segment_offscreen(
+                    &mut encoder,
+                    k as usize,
+                    target.targets,
+                    &composites,
+                    format,
+                    &mut stats,
+                );
             }
         }
         self.segments = segments;

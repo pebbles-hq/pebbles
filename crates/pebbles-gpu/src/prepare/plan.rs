@@ -120,6 +120,8 @@ pub(crate) struct GpuMaskJob {
     pub indices: std::ops::Range<u32>,
     /// The mask active when this clip was pushed (`MaskClipId::NONE`: none); multiplied in.
     pub parent: MaskClipId,
+    /// `cmds.len()` when the job was queued: it renders with that command's segment (M07).
+    pub cmd_at: u32,
 }
 
 /// A rounded-rect clip evaluated analytically in every content shader (09 §2.4).
@@ -436,6 +438,12 @@ pub(crate) struct FramePlan {
     pub mesh_vertices: Vec<crate::gpu_types::MeshVertex>,
     /// Mesh textures: (image, key, sampler).
     pub mesh_images: Vec<(peniko::ImageData, ImageKey, SamplerKey)>,
+    /// Segments of `cmds` that fit the arena caps (10 §2.5, M07); one for normal frames.
+    pub segments: Vec<super::segments::PlanSegment>,
+    /// The caps prepare merges and segments under.
+    pub arena_caps: super::segments::ArenaCaps,
+    /// First vertex of the last mesh command (the merge guard's cheap vertex-span bound).
+    last_vertex_start: u32,
     /// GPU-texture images (R61), indexed by `DrawCmd::GpuImage`.
     pub gpu_images: Vec<GpuImageRequest>,
     /// Custom primitives (R60), indexed by `DrawCmd::Custom`.
@@ -497,6 +505,8 @@ impl FramePlan {
         self.mesh_images.clear();
         self.customs.clear();
         self.gpu_images.clear();
+        self.segments.clear();
+        self.last_vertex_start = 0;
         self.shader_brushes.clear();
         self.image_brushes.clear();
         self.gpu_mask_bytes = 0;
@@ -525,14 +535,55 @@ impl FramePlan {
     /// contiguous ranges (`Images` also need the same `ImageKey` + `SamplerKey`). Returns whether a new command
     /// was pushed (true) or merged (false).
     pub(crate) fn push_draw(&mut self, cmd: DrawCmd) -> bool {
-        if let Some(last) = self.cmds.last_mut()
+        if let Some(last) = self.cmds.last()
             && let Some(merged) = merge(last, &cmd, &self.images)
+            && self.merge_fits(&merged)
         {
-            *last = merged;
+            if let Some(last) = self.cmds.last_mut() {
+                *last = merged;
+            }
             return false;
+        }
+        if self.arena_caps.bytes != u64::MAX
+            && let DrawCmd::Solid { indices, .. } | DrawCmd::Brush { cover: BrushCover::Mesh(indices), .. } =
+                &cmd
+        {
+            let ix = self.solid_indices.get(indices.start as usize..indices.end as usize).unwrap_or_default();
+            self.last_vertex_start = ix.iter().copied().min().unwrap_or(0);
         }
         self.cmds.push(cmd);
         true
+    }
+
+    /// M07: a merged command must stay under the arena caps (merging never crosses a segment).
+    /// Free without caps; with caps a cheap upper bound of the merged vertex span is used.
+    fn merge_fits(&self, merged: &DrawCmd) -> bool {
+        let caps = self.arena_caps;
+        if caps.bytes == u64::MAX {
+            return true;
+        }
+        let bytes = |n: u32, elem: usize| u64::from(n) * elem as u64 <= caps.bytes;
+        let len = |r: &std::ops::Range<u32>| r.end.saturating_sub(r.start);
+        match merged {
+            DrawCmd::Solid { indices, .. } | DrawCmd::Brush { cover: BrushCover::Mesh(indices), .. } => {
+                let verts = u32::try_from(self.solid_vertices.len())
+                    .unwrap_or(u32::MAX)
+                    .saturating_sub(self.last_vertex_start);
+                bytes(len(indices), 4) && bytes(verts, size_of::<SolidVertex>()) && verts <= caps.max_vertices
+            }
+            DrawCmd::Shapes { instances, .. }
+            | DrawCmd::Brush { cover: BrushCover::Shape(instances), .. } => {
+                bytes(len(instances), size_of::<ShapeInstance>())
+            }
+            DrawCmd::Shadows { instances, .. } => bytes(len(instances), size_of::<ShadowInstance>()),
+            DrawCmd::Glyphs { glyphs: r, .. }
+            | DrawCmd::Brush { cover: BrushCover::Mask(r), .. }
+            | DrawCmd::Images { images: r, .. } => bytes(len(r), size_of::<QuadInstance>()),
+            DrawCmd::Vertices { vertices, .. } => {
+                bytes(len(vertices), size_of::<crate::gpu_types::MeshVertex>())
+            }
+            _ => true,
+        }
     }
 
     /// Deterministic text of the plan (06 §10.3 v1 format).

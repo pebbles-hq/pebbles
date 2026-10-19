@@ -16,6 +16,8 @@ pub(crate) enum AfterPass {
     CopyBackdrop(u32),
     /// Run the custom primitive `plan.cmds[i]` (R60) between this pass and the next.
     Custom(u32),
+    /// Submit, then upload plan segment `k` before the next pass (M07).
+    NextSegment(u32),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -62,7 +64,19 @@ pub(crate) fn segment_passes(plan: &FramePlan, out: &mut Vec<PassSegment>) {
         }
         o.started = true;
     };
+    let mut next_seg = 1;
     for (i, cmd) in plan.cmds.iter().enumerate() {
+        // M07: a plan-segment boundary ends the current pass (reopened with Load after the
+        // resubmit).
+        if plan.segments.get(next_seg).is_some_and(|s| s.cmds.start == i) {
+            let i = u32::try_from(i).unwrap_or(u32::MAX);
+            let k = u32::try_from(next_seg).unwrap_or(u32::MAX);
+            if let Some(top) = stack.last_mut() {
+                close(top, i, false, false, AfterPass::NextSegment(k), out);
+                top.start = i;
+            }
+            next_seg += 1;
+        }
         let i = u32::try_from(i).unwrap_or(u32::MAX);
         match cmd {
             DrawCmd::PushLayer { layer } => {
