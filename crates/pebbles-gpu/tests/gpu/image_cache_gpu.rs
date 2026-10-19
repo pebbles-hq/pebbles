@@ -68,6 +68,9 @@ fn budget_enforced_lru() {
     assert!(r.2.census().image_entries <= 5);
 }
 
+/// Pinning (10 §6.3 P3): images drawn this frame survive even when together they exceed the
+/// budget; the next frame without them evicts down to the budget. (Since S10 a single image is
+/// downscaled below ¼ of the budget, so "over budget" takes several images.)
 #[test]
 #[ignore = "gpu"]
 fn in_use_over_budget_survives_frame() {
@@ -76,12 +79,17 @@ fn in_use_over_budget_survives_frame() {
     else {
         return;
     };
-    let big = image(1448, 1448, [0, 0, 255, 255]); // ≈ 8 MiB
-    let px = draw(&mut r, &[&big]);
-    assert_eq!(pixel(&px, 32, 16, 16), [0, 0, 255, 255], "renders despite the budget");
-    assert_eq!(r.2.census().image_entries, 1, "pinned for the frame it was drawn");
+    // Five ≈1 MiB images (511² × 4 B, just under ¼ of the budget: not downscaled) in one frame.
+    let images: Vec<_> = (0..5u8).map(|i| image(511, 511, [0, 0, 200 + i, 255])).collect();
+    let refs: Vec<&peniko::ImageBrush> = images.iter().collect();
+    let px = draw(&mut r, &refs);
+    assert_eq!(pixel(&px, 32, 16, 16), [0, 0, 204, 255], "the last image renders");
+    let c = r.2.census();
+    assert_eq!(c.image_entries, 5, "all pinned for the frame they were drawn");
+    assert!(c.image_bytes > 4 * MIB);
     draw(&mut r, &[]);
-    assert_eq!(r.2.census().image_entries, 0, "evicted one frame later");
+    let c = r.2.census();
+    assert!(c.image_bytes <= 4 * MIB && c.image_entries == 3, "evicted down to the budget: {c:?}");
 }
 
 #[test]

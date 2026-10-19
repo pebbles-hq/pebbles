@@ -201,10 +201,12 @@ impl ImageCache {
             to_premultiplied_rgba(bytes, key.format == 1, premultiplied, &mut self.scratch);
             &self.scratch
         };
-        let (pixels, w, h) = if w.max(h) > max {
+        // S10: above the texture limit or ¼ of the image budget → downscale by k (miss only).
+        let k = downscale_factor(w, h, max, self.budget_bytes / 4);
+        let (pixels, w, h) = if k > 1 {
             stats.record(Unsupported::ImageTooLarge);
             let mut out = Vec::new();
-            let (dw, dh) = downscale(pixels, w, h, max, &mut out);
+            let (dw, dh) = downscale(pixels, w, h, k, &mut out);
             self.scratch = out;
             (self.scratch.as_slice(), dw, dh)
         } else {
@@ -342,8 +344,23 @@ fn to_premultiplied_rgba(src: &[u8], bgra: bool, premultiplied: bool, out: &mut 
 }
 
 /// Box-filter premultiplied RGBA down by an integer factor so both sides fit `max`.
-fn downscale(src: &[u8], w: u32, h: u32, max: u32, out: &mut Vec<u8>) -> (u32, u32) {
-    let k = w.max(h).div_ceil(max.max(1));
+/// Smallest integer k ≥ 1 with ceil(w/k) ≤ max_side, ceil(h/k) ≤ max_side and
+/// ceil(w/k)·ceil(h/k)·4 ≤ max_bytes (u64 math). C13's box filter then downscales by k (S10).
+pub(crate) fn downscale_factor(w: u32, h: u32, max_side: u32, max_bytes: u64) -> u32 {
+    let max_side = max_side.max(1);
+    let mut k = w.max(h).div_ceil(max_side).max(1);
+    loop {
+        let (dw, dh) = (u64::from(w.div_ceil(k)), u64::from(h.div_ceil(k)));
+        if dw * dh * 4 <= max_bytes || (dw == 1 && dh == 1) {
+            return k;
+        }
+        k += 1;
+    }
+}
+
+/// Integer-factor box filter in premultiplied space (10 §6.2): `w × h` → `ceil(w/k) × ceil(h/k)`.
+fn downscale(src: &[u8], w: u32, h: u32, k: u32, out: &mut Vec<u8>) -> (u32, u32) {
+    let k = k.max(1);
     let (dw, dh) = (w.div_ceil(k), h.div_ceil(k));
     out.clear();
     out.resize((dw * dh * 4) as usize, 0);
@@ -403,8 +420,28 @@ mod tests {
     fn downscale_fits_the_limit() {
         let src = vec![255u8; 5 * 2 * 4];
         let mut out = Vec::new();
-        assert_eq!(downscale(&src, 5, 2, 4, &mut out), (3, 1));
+        assert_eq!(downscale(&src, 5, 2, downscale_factor(5, 2, 4, u64::MAX), &mut out), (3, 1));
         assert!(out.iter().all(|&b| b == 255));
+    }
+
+    #[test]
+    fn box_downscale_averages_2x2_blocks() {
+        // 2×2 of channel values 0, 100, 200, 101 → one texel (401 + 2) / 4 = 100.
+        let src: Vec<u8> = [0u8, 100, 200, 101].iter().flat_map(|&v| [v, v, v, 255]).collect();
+        let mut out = Vec::new();
+        assert_eq!(downscale(&src, 2, 2, 2, &mut out), (1, 1));
+        assert_eq!(out, vec![100, 100, 100, 255]);
+    }
+
+    #[test]
+    fn downscale_factor_fits_side() {
+        assert_eq!(downscale_factor(10000, 300, 8192, u64::MAX), 2);
+    }
+
+    #[test]
+    fn downscale_factor_fits_bytes() {
+        assert_eq!(downscale_factor(16384, 16384, 8192, 64 << 20), 4);
+        assert_eq!(downscale_factor(64, 64, 8192, 64 << 20), 1, "small images are never touched");
     }
 }
 

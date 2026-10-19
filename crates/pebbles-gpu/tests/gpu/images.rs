@@ -358,3 +358,25 @@ fn downscaled_checkerboard_has_no_moire() {
         }
     }
 }
+
+// ---- S10: oversize downscale at upload ----
+
+/// S10 AC4: a 10000×300 image renders with no validation error (run under PEBBLES_GPU_STRICT=1).
+#[test]
+#[ignore = "gpu"]
+fn huge_image_renders_without_validation_error() {
+    let Some((device, queue, mut r)) = setup("huge_image_renders_without_validation_error") else { return };
+    let image = peniko::ImageBrush::new(peniko::ImageData {
+        data: peniko::Blob::from([255u8, 0, 0, 255].repeat(10_000 * 300)),
+        format: peniko::ImageFormat::Rgba8,
+        alpha_type: peniko::ImageAlphaType::Alpha,
+        width: 10_000,
+        height: 300,
+    });
+    let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let mut s = Scene::new();
+    Painter::new(&mut s).draw_image(&image, Affine::scale(0.1));
+    let px = render_scene(&device, &queue, &mut r, &s, (1000, 30), Color::WHITE);
+    assert!(pollster::block_on(scope.pop()).is_none(), "validation error");
+    assert_eq!(pixel(&px, 1000, 500, 15), [255, 0, 0, 255]);
+}
