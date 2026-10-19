@@ -6,6 +6,9 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — gradients (wgpu renderer)
+wgpu renderer: linear, radial, two-point conical and sweep gradients with Pad/Repeat/Reflect and all interpolation color spaces (dithered like Flutter; gradient text drawn from outlines).
+
 ### Added — blend modes (wgpu renderer)
 wgpu renderer: all blend modes (16 mix × 14 compose) render, incl. ColorFiltered and ShaderMask.
 

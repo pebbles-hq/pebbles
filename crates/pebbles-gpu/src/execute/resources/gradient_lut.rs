@@ -1,5 +1,5 @@
-//! The gradient LUT texture (09 §5.3, L34): baked ramps as rows of a `Rgba8Unorm` texture,
-//! 256 texels per row. A ramp of `len` texels takes `len / 256` consecutive rows aligned to
+//! The gradient LUT texture (09 §5.3, L34): baked ramps as rows of a `Rgba16Float` texture,
+//! 256 texels per row (f16, not 8-bit: the §5.8 dither needs sub-LSB precision, L37). A ramp of `len` texels takes `len / 256` consecutive rows aligned to
 //! that span (buddy-style). Pure bookkeeping (`LutBook`) is split from the GPU side
 //! (`GradientLut`: texture, CPU mirror, uploads); growth re-uploads the mirror (no GPU copy).
 
@@ -123,8 +123,9 @@ pub(crate) struct GradientLut {
     view: wgpu::TextureView,
     /// Incremented whenever the texture is recreated (bind groups key on it).
     generation: u64,
-    mirror: Vec<[u8; 4]>,
-    scratch: Vec<[u8; 4]>,
+    /// f16 bits.
+    mirror: Vec<[u16; 4]>,
+    scratch: Vec<[f32; 4]>,
     frame: u64,
 }
 
@@ -135,7 +136,7 @@ fn create(device: &wgpu::Device, rows: u32) -> (wgpu::Texture, wgpu::TextureView
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
+        format: wgpu::TextureFormat::Rgba16Float,
         // §5.3: TEXTURE_BINDING | COPY_DST (+ COPY_SRC in tests, for the readback check).
         usage: wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::COPY_DST
@@ -150,7 +151,7 @@ impl GradientLut {
     pub(crate) fn new(device: &wgpu::Device, max_rows: u32) -> Self {
         let book = LutBook::new(max_rows);
         let (texture, view) = create(device, book.rows);
-        let mirror = vec![[0; 4]; (book.rows * LUT_ROW_TEXELS) as usize];
+        let mirror = vec![[0u16; 4]; (book.rows * LUT_ROW_TEXELS) as usize];
         Self { book, texture, view, generation: 0, mirror, scratch: Vec::new(), frame: 0 }
     }
 
@@ -165,7 +166,7 @@ impl GradientLut {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         key: &RampKey,
-        bake: impl FnOnce(&mut Vec<[u8; 4]>) -> u32,
+        bake: impl FnOnce(&mut Vec<[f32; 4]>) -> u32,
         stats: &mut crate::stats::FrameStats,
     ) -> Option<(u32, u32)> {
         let frame = self.frame;
@@ -186,7 +187,7 @@ impl GradientLut {
             Alloc::Grown { first_row, rows } => {
                 (self.texture, self.view) = create(device, rows);
                 self.generation += 1;
-                self.mirror.resize((rows * LUT_ROW_TEXELS) as usize, [0; 4]);
+                self.mirror.resize((rows * LUT_ROW_TEXELS) as usize, [0u16; 4]);
                 stats.textures_created += 1;
                 stats.texture_views_created += 1;
                 first_row
@@ -194,7 +195,9 @@ impl GradientLut {
         };
         let start = (first_row * LUT_ROW_TEXELS) as usize;
         let n = scratch.len().min(len as usize);
-        self.mirror[start..start + n].copy_from_slice(&scratch[..n]);
+        for (dst, src) in self.mirror[start..start + n].iter_mut().zip(&scratch[..n]) {
+            *dst = src.map(|v| half::f16::from_f32(v).to_bits());
+        }
         let (from_row, rows) = match alloc {
             Alloc::Grown { rows, .. } => (0, rows),
             _ => (first_row, (len / LUT_ROW_TEXELS).max(1)),
@@ -211,7 +214,7 @@ impl GradientLut {
             bytemuck::cast_slice(&self.mirror[from..to]),
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(LUT_ROW_TEXELS * 4),
+                bytes_per_row: Some(LUT_ROW_TEXELS * 8),
                 rows_per_image: Some(rows),
             },
             wgpu::Extent3d { width: LUT_ROW_TEXELS, height: rows, depth_or_array_layers: 1 },
@@ -310,7 +313,7 @@ mod tests {
         }
         assert!(lut.book.rows > LUT_INITIAL_ROWS, "grew");
         let rows = lut.book.rows;
-        let bytes = u64::from(rows * LUT_ROW_TEXELS * 4);
+        let bytes = u64::from(rows * LUT_ROW_TEXELS * 8);
         let buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("pebbles.gpu.test.lut_readback"),
             size: bytes,
@@ -326,7 +329,7 @@ mod tests {
                 buffer: &buf,
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some(LUT_ROW_TEXELS * 4),
+                    bytes_per_row: Some(LUT_ROW_TEXELS * 8),
                     rows_per_image: Some(rows),
                 },
             },
@@ -336,6 +339,6 @@ mod tests {
         buf.slice(..).map_async(wgpu::MapMode::Read, |_| {});
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         let data = buf.slice(..).get_mapped_range().to_vec();
-        assert_eq!(data, bytemuck::cast_slice::<[u8; 4], u8>(&lut.mirror));
+        assert_eq!(data, bytemuck::cast_slice::<[u16; 4], u8>(&lut.mirror));
     }
 }

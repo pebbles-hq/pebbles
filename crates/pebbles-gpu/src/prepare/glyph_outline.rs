@@ -223,7 +223,9 @@ impl Walk<'_> {
             let Some(cached) = self.outlines.cached(font, id, font_size, coords) else {
                 // COLR glyphs never get here: R29 splices them first, under any transform.
                 if has_color_strike(font, id) {
-                    // R23 2a: no vector form — a transformed quad of the native strike.
+                    // R23 2a: no vector form — a transformed quad of the native strike. A
+                    // color glyph ignores a gradient brush (§5.6): drawn unpainted.
+                    let paint = self.paint.take();
                     self.draw_strike_quad(
                         font,
                         font_size,
@@ -235,6 +237,7 @@ impl Walk<'_> {
                         &mut strike_run,
                         idx,
                     );
+                    self.paint = paint;
                 }
                 continue;
             };

@@ -1,15 +1,18 @@
 //! Gradients (09 §5): validation (§5.1), ramp encoding and baking (§5.2) and the
 //! gradient-space transform of every kind (§5.4).
 //!
-//! The two-point conical ("focal") decomposition follows Skia's `SkTwoPointConicalGradient`
-//! as structured in vello_common 0.2.0 `encode.rs` (`FocalData::create`), Copyright the Vello
-//! authors, Apache-2.0 OR MIT; re-derived here from the 09 §5.4 steps (attribution: L51).
+//! Ported from vello_common 0.2.0 `encode.rs` (`FocalData::create`, gradient transforms),
+//! Copyright the Vello Authors, Apache-2.0 OR MIT (used under Apache-2.0); the two-point
+//! conical decomposition follows Skia's `SkTwoPointConicalGradient` (BSD-3-Clause). See NOTICE.
 
 use kurbo::{Affine, Point, Vec2};
 
 use super::num::narrow_f32;
 use peniko::color::{AlphaColor, ColorSpaceTag, HueDirection, Srgb};
 use peniko::{ColorStop, Gradient, GradientKind, InterpolationAlphaSpace};
+
+/// Uniform sub-stops per stop pair for non-sRGB interpolation spaces (§5.2 step 3).
+const SUBSTOPS: u32 = 64;
 
 /// Largest ramp, in texels (§5.2).
 pub(crate) const MAX_LUT_LEN: u32 = 2048;
@@ -112,15 +115,26 @@ pub(crate) fn encode_ramp_ranges(
             push_point(scratch, (o1, endpoint(s1.color.to_alpha_color::<Srgb>(), alpha_space)));
             continue;
         }
+        // Sample the color crate's interpolator uniformly (exact at every sub-stop; the
+        // adaptive `color::gradient` iterator under-samples near the ends of curved paths).
         let map = |t: f32| o0 + (o1 - o0) * t;
-        if alpha_space == InterpolationAlphaSpace::Premultiplied {
-            for (t, c) in peniko::color::gradient::<Srgb>(s0.color, s1.color, cs, hue, 0.01) {
-                push_point(scratch, (map(t), c.un_premultiply().premultiply().components));
-            }
-        } else {
-            for (t, c) in peniko::color::gradient_unpremultiplied::<Srgb>(s0.color, s1.color, cs, hue, 0.01) {
-                push_point(scratch, (map(t), c.components));
-            }
+        for k in 0..=SUBSTOPS {
+            let t = k as f32 / SUBSTOPS as f32;
+            let c = if alpha_space == InterpolationAlphaSpace::Premultiplied {
+                s0.color
+                    .interpolate(s1.color, cs, hue)
+                    .eval(t)
+                    .to_alpha_color::<Srgb>()
+                    .premultiply()
+                    .components
+            } else {
+                s0.color
+                    .interpolate_unpremultiplied(s1.color, cs, hue)
+                    .eval(t)
+                    .to_alpha_color::<Srgb>()
+                    .components
+            };
+            push_point(scratch, (map(t), c));
         }
     }
     for e in scratch.iter_mut() {
@@ -163,14 +177,15 @@ pub(crate) fn lut_len(ranges: &[RampRange]) -> u32 {
     base.max(need).min(MAX_LUT_LEN)
 }
 
-/// §5.2 `bake_ramp`: `len` premultiplied RGBA8 texels.
+/// §5.2 `bake_ramp`: `len` premultiplied texels in `[0, 1]` (stored as f16 in the LUT so
+/// the §5.8 dither has sub-LSB precision to work with, like Skia's float gradients).
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
     clippy::cast_precision_loss,
     clippy::indexing_slicing
-)] // x1 ∈ [0, 1] → ≤ len; texels clamp to [0, 1] (`as u8` saturates); indices < 4
-pub(crate) fn bake_ramp(ranges: &[RampRange], len: u32, out: &mut Vec<[u8; 4]>) {
+)] // x1 ∈ [0, 1] → ≤ len; indices < 4
+pub(crate) fn bake_ramp(ranges: &[RampRange], len: u32, out: &mut Vec<[f32; 4]>) {
     out.clear();
     let mut start = 0u32;
     let denom = (len.max(2) - 1) as f32;
@@ -185,14 +200,14 @@ pub(crate) fn bake_ramp(ranges: &[RampRange], len: u32, out: &mut Vec<[u8; 4]>) 
                     *v *= a;
                 }
             }
-            let a = c[3];
-            out.push(c.map(|v| (v.min(1.0).min(a) * 255.0 + 0.5) as u8));
+            let a = c[3].clamp(0.0, 1.0);
+            out.push([c[0].clamp(0.0, a), c[1].clamp(0.0, a), c[2].clamp(0.0, a), a]);
         }
         start = start.max(end);
     }
     // Float rounding can leave the last texel(s) unwritten: hold the end color.
     while out.len() < len as usize {
-        let last = out.last().copied().unwrap_or([0; 4]);
+        let last = out.last().copied().unwrap_or([0.0; 4]);
         out.push(last);
     }
 }
@@ -218,7 +233,7 @@ impl RampKey {
     }
 
     /// Bake this ramp into `out`; returns its length in texels.
-    pub(crate) fn bake(&self, out: &mut Vec<[u8; 4]>) -> u32 {
+    pub(crate) fn bake(&self, out: &mut Vec<[f32; 4]>) -> u32 {
         let hue = hue_of(self.hue);
         let (mut scratch, mut ranges) = (Vec::new(), Vec::new());
         encode_ramp_ranges(&self.stops, self.cs, hue, self.alpha_space, &mut scratch, &mut ranges);

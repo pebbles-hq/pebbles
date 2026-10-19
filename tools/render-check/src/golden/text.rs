@@ -130,11 +130,13 @@ pub fn run_coverage(
     h: u32,
     hint: (f64, Option<bool>),
     foreground: peniko::Color,
+    force_outline: bool,
 ) -> Vec<GlyphOut> {
     let Some(face) = swash::FontRef::from_index(font.data.data(), font.index as usize) else {
         return Vec::new();
     };
-    let atlas = atlas_scale(t, glyph_transform, font_size);
+    // 09 §5.6: a gradient-painted run always takes the outline route.
+    let atlas = if force_outline { None } else { atlas_scale(t, glyph_transform, font_size) };
     // Outline route (§7.6): the outline at the run's own size, mapped by the full transform.
     let size = if atlas.is_some() { size_px(font_size, t) } else { f64::from(font_size) };
     if !(size.is_finite() && size > 0.0) {

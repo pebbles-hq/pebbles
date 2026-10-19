@@ -4,10 +4,6 @@ use super::*;
 use pebbles_render::paint::{Glyph, Painter};
 use peniko::{Brush, Color, Fill};
 
-fn glyph() -> Glyph {
-    Glyph { id: 36, x: 10.0, y: 10.0 }
-}
-
 fn plan_and_stats(scene: &Scene) -> (FramePlan, FrameStats) {
     // The tessellated tier (Tier A off): these tests read alpha from solid vertices.
     let mut scratch = PrepareScratch { sdf_disabled: true, ..PrepareScratch::default() };
@@ -119,22 +115,30 @@ fn gradient_fill_is_a_gradient_draw() {
 }
 
 #[test]
-fn gradient_text_uses_first_stop() {
+fn gradient_run_emits_one_gradient_cmd() {
+    // L36 AC1: "HH" with a gradient → glyph outlines (Tier B masks) under one Gradient cmd.
     let font = crate::test_support::bundled_font();
+    let font_ref = skrifa::FontRef::from_index(font.data.data(), 0).expect("font");
+    let gid = skrifa::MetadataProvider::charmap(&font_ref).map('H').expect("H").to_u32();
     let mut scene = Scene::new();
     Painter::new(&mut scene).draw_glyphs(
         &font,
-        16.0,
+        24.0,
         &[],
         &Brush::Gradient(gradient()),
         Affine::IDENTITY,
         None,
         Fill::NonZero,
-        std::iter::once(glyph()),
+        [Glyph { id: gid, x: 10.0, y: 30.0 }, Glyph { id: gid, x: 30.0, y: 30.0 }].into_iter(),
     );
     let (plan, stats) = plan_and_stats(&scene);
-    assert_eq!(plan.glyphs[0].color, [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(stats.unsupported[Unsupported::GradientText as usize], 1);
+    assert_eq!(plan.cmds.len(), 1, "{:?}", plan.cmds);
+    assert!(matches!(
+        plan.cmds[0],
+        DrawCmd::Gradient { cover: plan::GradientCover::Mask(_), gradient: 0, .. }
+    ));
+    assert_eq!(plan.gradients.len(), 1);
+    assert_eq!(stats.unsupported[Unsupported::GradientText as usize], 0);
 }
 
 #[test]

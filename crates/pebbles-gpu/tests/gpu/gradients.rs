@@ -168,3 +168,99 @@ fn degenerate_gradients_render_fallback_color() {
     };
     assert_eq!(pixel(&px, 32, 16, 16), [0, 200, 0, 255]);
 }
+
+/// L36 AC2: 48 px "HHHH" with a red→blue gradient across the run: the left stems are red,
+/// the right ones blue (text is painted through its outlines, not one solid color).
+#[test]
+#[ignore = "gpu"]
+fn gradient_text_is_not_solid() {
+    let font =
+        peniko::FontData::new(peniko::Blob::from(pebbles_render::fonts::builtin_fonts()[0].1.to_vec()), 0);
+    let gid = u32::from(swash::FontRef::from_index(font.data.data(), 0).expect("Inter").charmap().map('H'));
+    let g = Gradient::new_linear((0.0, 0.0), (160.0, 0.0))
+        .with_stops([Color::from_rgba8(255, 0, 0, 255), Color::from_rgba8(0, 0, 255, 255)].as_slice());
+    let Some(px) = draw("gradient_text_is_not_solid", (160, 64), Color::WHITE, |p| {
+        let glyphs = (0..4).map(|i| Glyph { id: gid, x: 4.0 + 38.0 * i as f32, y: 52.0 });
+        p.draw_glyphs(&font, 48.0, &[], &Brush::Gradient(g), Affine::IDENTITY, None, Fill::NonZero, glyphs);
+    }) else {
+        return;
+    };
+    // Per half, the red/blue balance of the fully covered (darkest: green == 0) pixels.
+    let balance = |x0: u32, x1: u32| {
+        let (mut r, mut b, mut n) = (0u64, 0u64, 0u64);
+        for y in 0..64u32 {
+            for x in x0..x1 {
+                let c = pixel(&px, 160, x, y);
+                if c[1] == 0 {
+                    (r, b, n) = (r + u64::from(c[0]), b + u64::from(c[2]), n + 1);
+                }
+            }
+        }
+        assert!(n > 20, "too few covered pixels in {x0}..{x1}");
+        (r / n, b / n)
+    };
+    let ((lr, lb), (rr, rb)) = (balance(0, 80), balance(80, 160));
+    assert!(lr > lb + 40, "left half reddest: r {lr} b {lb}");
+    assert!(rb > rr + 40, "right half bluest: r {rr} b {rb}");
+}
+
+/// L37: a 1024-px ramp from (0,0,0) to (16,16,16) bands into ~17 runs undithered; the ordered
+/// dither breaks it into many more horizontal runs.
+#[test]
+#[ignore = "gpu"]
+fn dither_breaks_banding() {
+    let g = Gradient::new_linear((0.0, 0.0), (1024.0, 0.0))
+        .with_stops([Color::BLACK, Color::from_rgba8(16, 16, 16, 255)].as_slice());
+    let Some(px) = draw("dither_breaks_banding", (1024, 8), Color::WHITE, |p| full(p, &g, (1024.0, 8.0)))
+    else {
+        return;
+    };
+    let row: Vec<u8> = (0..1024).map(|x| pixel(&px, 1024, x, 3)[0]).collect();
+    let runs = 1 + row.windows(2).filter(|w| w[0] != w[1]).count();
+    assert!(runs >= 4 * 17, "{runs} runs");
+}
+
+/// L37: the dither is zero-mean: a constant 0.5 gradient averages to 127.5 ±0.5 over 64×64.
+#[test]
+#[ignore = "gpu"]
+fn dither_is_zero_mean() {
+    let mid = Color::new([0.5, 0.5, 0.5, 1.0]);
+    let g = Gradient::new_linear((0.0, 0.0), (64.0, 0.0)).with_stops([mid, mid].as_slice());
+    let Some(px) = draw("dither_is_zero_mean", (64, 64), Color::WHITE, |p| full(p, &g, (64.0, 64.0))) else {
+        return;
+    };
+    let sum: u64 = (0..64u32)
+        .flat_map(|y| (0..64u32).map(move |x| (x, y)))
+        .map(|(x, y)| u64::from(pixel(&px, 64, x, y)[0]))
+        .sum();
+    let mean = sum as f64 / 4096.0;
+    assert!((mean - 127.5).abs() <= 0.5, "mean {mean}");
+}
+
+/// L30 AC1: one gradient over 100 frames bakes its ramp once (the LUT row is reused).
+#[test]
+#[ignore = "gpu"]
+fn gradient_lut_reuses_row_across_frames() {
+    let Some((device, _queue, mut r)) = setup("gradient_lut_reuses_row_across_frames") else { return };
+    let g = Gradient::new_linear((0.0, 0.0), (64.0, 0.0)).with_stops(bw().as_slice());
+    let mut s = Scene::new();
+    full(&mut Painter::new(&mut s), &g, (64.0, 64.0));
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pebbles.gpu.test.lut_reuse"),
+        size: wgpu::Extent3d { width: 64, height: 64, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut targets = FrameTargets::new();
+    let mut bakes = 0;
+    for _ in 0..100 {
+        let target = RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut targets);
+        bakes += r.render(target, &s, &FrameParams::new(Color::WHITE)).expect("render").lut_bakes;
+    }
+    assert_eq!(bakes, 1);
+}

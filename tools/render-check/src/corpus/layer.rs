@@ -32,6 +32,11 @@ pub fn cases() -> Vec<Case> {
         harness("layer/color_filtered", Layer, P4, 160, 120, color_filtered_case),
         ops("layer/blend_inside_clip", Layer, P4, 128, 96, blend_inside_clip),
         ops("layer/blend_in_sdf_clip", Layer, P4, 128, 96, blend_in_sdf_clip),
+        // 05 §7 `shader_mask_destin` (09 §8.0 `compose_destin_mask`): ShaderMask = a promoted
+        // layer holding the child and a `(Normal, DestIn)` gradient layer.
+        harness("layer/shader_mask_destin", Category::Analytic, P4, 200, 100, shader_mask_destin)
+            .analytic()
+            .probe("mask_fades_left_to_right", probe::mask_fades_left_to_right),
     ]);
     v
 }
@@ -285,4 +290,13 @@ fn blend_in_sdf_clip(p: &mut Painter<'_>) {
         &Rect::new(0., 0., 128., 96.),
     );
     p.pop_layer();
+}
+
+/// 05 §7: `shader_mask(white → transparent white over x 0..200, child)`.
+fn shader_mask_destin(h: &mut Harness) {
+    use pebbles_widgets::shader_mask;
+    let [r, g, b, a] = probe::MASK_CHILD;
+    let fade = pebbles_render::Gradient::horizontal([UiColor::WHITE, UiColor::from_rgba8(255, 255, 255, 0)]);
+    let child = container().width(200.).height(100.).color(UiColor::from_rgba8(r, g, b, a));
+    h.mount_widget(shader_mask(fade, child));
 }

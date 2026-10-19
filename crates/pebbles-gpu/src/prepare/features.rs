@@ -35,8 +35,8 @@ impl Walk<'_> {
     pub(super) fn note_paint(&mut self, brush: &peniko::Brush, brush_xf: Option<Affine>, stroke: bool) {
         match brush {
             peniko::Brush::Solid(_) => {}
-            // Gradients draw exactly (L35); only dithering is still missing (L37).
-            peniko::Brush::Gradient(_) => self.fell_back(Feature::GradientDither),
+            // Gradients draw exactly and dithered (L35, L37).
+            peniko::Brush::Gradient(_) => {}
             peniko::Brush::Image(_) => {
                 self.fell_back(if stroke { Feature::StrokeImageBrush } else { Feature::FillImageBrush });
                 if brush_xf.is_some() {
@@ -82,7 +82,8 @@ impl Walk<'_> {
     /// Non-solid glyph brushes (L36). Transformed, rotated and huge runs take the outline
     /// route since R20.
     pub(super) fn note_glyphs(&mut self, brush: &peniko::Brush) {
-        if !matches!(brush, peniko::Brush::Solid(_)) {
+        // Gradient runs are painted through their outlines (L36); image brushes are L41's.
+        if matches!(brush, peniko::Brush::Image(_)) {
             self.fell_back(Feature::GlyphsNonSolidBrush);
         }
     }

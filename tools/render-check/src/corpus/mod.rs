@@ -7,6 +7,7 @@ use crate::case::Case;
 pub mod adversarial;
 pub mod clip;
 pub mod frames;
+pub mod grad;
 pub mod img;
 pub mod layer;
 pub mod prim;
@@ -29,6 +30,7 @@ pub fn all() -> Vec<Case> {
     out.extend(img::cases());
     out.extend(shadow::cases());
     out.extend(layer::cases());
+    out.extend(grad::cases());
     out.extend(widget::cases());
     out.extend(screen::cases());
     out.extend(stress::cases());
@@ -72,6 +74,7 @@ mod tests {
             "img",
             "shadow",
             "layer",
+            "grad",
             "widget",
             "screen",
             "stress",

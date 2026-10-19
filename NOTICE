@@ -41,6 +41,19 @@ Tabler Icons (crates/pebbles-icons/src/tabler.rs)
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
     SOFTWARE.
 
+Gradient geometry (crates/pebbles-gpu/src/prepare/gradient.rs,
+crates/pebbles-gpu/src/shaders/gradient.wgsl)
+
+  Portions of the gradient-space transforms and the two-point conical
+  ("focal") gradient evaluation are ported from Vello (vello_common 0.2.0
+  encode.rs, vello_sparse_shaders 0.2.0), Copyright the Vello Authors,
+  licensed Apache-2.0 OR MIT and used here under the Apache License, Version
+  2.0 (see LICENSE). The two-point conical decomposition follows Skia's
+  SkTwoPointConicalGradient design, Copyright Google LLC, BSD-3-Clause
+  (https://skia.org/license). The blend and compose math in
+  crates/pebbles-gpu/src/shaders/composite.wgsl is Pebbles' own code, written
+  from the W3C Compositing and Blending Level 1 specification.
+
 -------------------------------------------------------------------------------
 Bundled fonts (crates/pebbles-render/assets/fonts/)
 -------------------------------------------------------------------------------

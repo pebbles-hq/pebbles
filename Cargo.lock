@@ -3089,6 +3089,7 @@ version = "0.0.1"
 dependencies = [
  "bytemuck",
  "guillotiere",
+ "half",
  "kurbo",
  "lyon_tessellation",
  "naga",

@@ -321,3 +321,30 @@ fn blend_matrix_matches_cpu_reference() {
     }
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
 }
+
+/// L20 AC3 (ShaderMask): red box; an outer Normal layer; inside it a `(Normal, DestIn)` layer
+/// filled with a transparent-white → opaque-white gradient over x 0..64.
+#[test]
+#[ignore = "gpu"]
+fn shader_mask_dest_in_gradient() {
+    let Some(mut r) = setup("shader_mask_dest_in_gradient") else { return };
+    let mut s = Scene::new();
+    let mut p = Painter::new(&mut s);
+    let all = Rect::new(0.0, 0.0, 64.0, 64.0);
+    p.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &all);
+    p.fill(Fill::NonZero, Affine::IDENTITY, Color::from_rgba8(255, 0, 0, 255), None, &all);
+    p.push_layer(Fill::NonZero, BlendMode::new(Mix::Normal, Compose::DestIn), 1.0, Affine::IDENTITY, &all);
+    let g = peniko::Gradient::new_linear((0.0, 0.0), (64.0, 0.0))
+        .with_stops([Color::from_rgba8(255, 255, 255, 0), Color::WHITE].as_slice());
+    p.fill(Fill::NonZero, Affine::IDENTITY, &g, None, &all);
+    p.pop_layer();
+    p.pop_layer();
+    let px = render(&mut r, &s, (64, 64), Color::WHITE);
+    // Pixel 0's center is at t = 0.5/64 (exact mask 0.008 → ≥ 253); pixel 1 is already at
+    // t = 0.023 (exactly 249), so the ≥ 250 probe sits on column 0.
+    let l = pixel(&px, 64, 0, 32);
+    assert!(l[..3].iter().all(|&v| v >= 250), "left fades to white: {l:?}");
+    // Column 63 (t = 63.5/64: exactly (255, 2, 2)); column 62 is already (255, 6, 6).
+    let r = pixel(&px, 64, 63, 32);
+    assert!(close(r, [255, 0, 0, 255], 4), "right keeps red: {r:?}");
+}

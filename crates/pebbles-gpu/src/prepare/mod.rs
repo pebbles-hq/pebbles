@@ -768,10 +768,19 @@ impl Walk<'_> {
                     self.note_glyphs(brush);
                     let base = match brush {
                         peniko::Brush::Solid(c) => *c,
-                        peniko::Brush::Gradient(g) => {
-                            self.stats.record(Unsupported::GradientText);
-                            g.stops.first().map_or(peniko::Color::TRANSPARENT, |s| s.color.to_alpha_color())
-                        }
+                        // 09 §5.6 (L36): the run's paint transform is `outer × op.transform`.
+                        peniko::Brush::Gradient(g) => match self.brush_paint(brush, xf) {
+                            // Color (COLR) fonts ignore the brush like any color glyph: the
+                            // foreground index takes the first stop.
+                            Some(_) if self.paint.is_some() && self.colr.font_has_colr(font) => {
+                                self.paint = None;
+                                g.stops
+                                    .first()
+                                    .map_or(peniko::Color::TRANSPARENT, |s| s.color.to_alpha_color())
+                            }
+                            Some(c) => c,
+                            None => continue,
+                        },
                         peniko::Brush::Image(_) => {
                             self.stats.record(Unsupported::ImageBrush);
                             continue;
@@ -788,7 +797,20 @@ impl Walk<'_> {
                         xf,
                         glyph_transform: *glyph_transform,
                     };
-                    if self.colr.font_has_colr(font) {
+                    if self.paint.is_some() {
+                        // Gradient text is drawn from outlines (§5.6), never atlas bitmaps.
+                        let (g, c) = (run.glyph_transform, run.coords);
+                        self.draw_glyph_outlines(
+                            run.font,
+                            run.font_size,
+                            c,
+                            run.color,
+                            run.xf,
+                            g,
+                            glyphs,
+                            idx,
+                        );
+                    } else if self.colr.font_has_colr(font) {
                         self.draw_colr_run(&run, glyphs, idx);
                     } else {
                         self.draw_glyph_segment(&run, glyphs, idx);

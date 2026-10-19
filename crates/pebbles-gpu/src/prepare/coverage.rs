@@ -260,6 +260,7 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::GradientStopsExtend,          // L32/L35
     F::GradientNonSrgbInterpolation, // L32
     F::GradientBrushTransform,       // L33
+    F::GradientDither,               // L37 (ordered 8×8, golden-model exact)
 ];
 
 #[cfg(test)]

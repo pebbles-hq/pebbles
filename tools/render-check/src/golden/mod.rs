@@ -75,9 +75,13 @@ impl Target {
             }
             #[allow(clippy::cast_precision_loss)] // pixel indices < 2^24
             let src = paint.at((i % w) as f64 + 0.5, (i / w) as f64 + 0.5);
-            let inv = 1.0 - src[3] * k;
+            let mut s = src.map(|v| v * k);
+            if paint.dithers() {
+                s = paint::dither(s, i % w, i / w);
+            }
+            let inv = 1.0 - s[3];
             for ch in 0..4 {
-                dst[ch] = src[ch] * k + dst[ch] * inv;
+                dst[ch] = s[ch] + dst[ch] * inv;
             }
         }
     }
@@ -325,7 +329,9 @@ impl Target {
                     peniko::Brush::Gradient(_) => (Color::BLACK, 1.0),
                 };
                 let (hint, coords) = (self.hint, normalized_coords);
-                for out in text::run_coverage(font, *font_size, coords, t, g, glyphs, w, h, hint, fg) {
+                let outline = matches!(brush, peniko::Brush::Gradient(_));
+                for out in text::run_coverage(font, *font_size, coords, t, g, glyphs, w, h, hint, fg, outline)
+                {
                     match out {
                         text::GlyphOut::Coverage(cov) => self.composite(&paint, &cov),
                         text::GlyphOut::Color(img) => self.composite_image(&img, run_alpha),

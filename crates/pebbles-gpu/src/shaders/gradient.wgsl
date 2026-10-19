@@ -3,9 +3,9 @@
 // atlas at group 0 binding 3) and Mesh (Tier C lyon mesh inside the MSAA run). The LUT holds
 // premultiplied sRGB-encoded ramps read with textureLoad (no sampler, WebGL2-safe).
 //
-// The focal (two-point conical) branch follows Skia's SkTwoPointConicalGradient as structured
-// in vello_common 0.2.0 (encode.rs / gradient shaders), Copyright the Vello authors,
-// Apache-2.0 OR MIT (attribution: 09 L51).
+// Ported from vello_sparse_shaders 0.2.0 / vello_common 0.2.0 (the focal branch of gradient
+// evaluation), Copyright the Vello Authors, Apache-2.0 OR MIT (used under Apache-2.0); it
+// follows Skia's SkTwoPointConicalGradient (BSD-3-Clause). See NOTICE.
 struct GradientParams {
     m0: vec4<f32>,
     m1: vec4<f32>,
@@ -22,11 +22,21 @@ fn apply_extend(t: f32, mode: u32) -> f32 {
     return clamp(t, 0.0, 1.0);
 }
 
+fn lut_texel(i: u32) -> vec4<f32> {
+    let j = gparams.info.z + i;
+    return textureLoad(gradient_lut, vec2<i32>(i32(j % 256u), i32(j / 256u)), 0);
+}
+
+// Linear between the two nearest ramp texels (two textureLoads, no sampler): the 8-bit LUT
+// keeps sub-LSB precision for the §5.8 dither, like Skia's float gradient evaluation.
 fn lut_lookup(t: f32) -> vec4<f32> {
     var te = apply_extend(t, gparams.info.y);
     te = select(0.0, te, te == te);
-    let i = gparams.info.z + u32(te * f32(gparams.info.w - 1u));
-    return textureLoad(gradient_lut, vec2<i32>(i32(i % 256u), i32(i / 256u)), 0);
+    let last = gparams.info.w - 1u;
+    let f = te * f32(last);
+    let i0 = min(u32(f), last);
+    let i1 = min(i0 + 1u, last);
+    return mix(lut_texel(i0), lut_texel(i1), f - f32(i0));
 }
 
 fn sweep_t(g_in: vec2<f32>) -> f32 {
@@ -95,8 +105,23 @@ fn gradient_paint(p: vec2<f32>) -> vec4<f32> {
     return lut_lookup(t) * valid;
 }
 
+// 09 §5.8 (L37): ordered 8×8 dither, zero-mean ±0.5 LSB, keyed by the integer DEVICE pixel
+// (identical in layer targets and in the golden model); alpha is never dithered.
+var<private> BAYER8: array<u32, 64> = array<u32, 64>(
+     0u, 32u,  8u, 40u,  2u, 34u, 10u, 42u,   48u, 16u, 56u, 24u, 50u, 18u, 58u, 26u,
+    12u, 44u,  4u, 36u, 14u, 46u,  6u, 38u,   60u, 28u, 52u, 20u, 62u, 30u, 54u, 22u,
+     3u, 35u, 11u, 43u,  1u, 33u,  9u, 41u,   51u, 19u, 59u, 27u, 49u, 17u, 57u, 25u,
+    15u, 47u,  7u, 39u, 13u, 45u,  5u, 37u,   63u, 31u, 55u, 23u, 61u, 29u, 53u, 21u);
+
+fn dither(c: vec4<f32>, p: vec2<f32>) -> vec4<f32> {
+    let pix = vec2<u32>(max(floor(p), vec2<f32>(0.0)));
+    let b = f32(BAYER8[(pix.y % 8u) * 8u + (pix.x % 8u)]);
+    let d = (b - 31.5) / (64.0 * 255.0);
+    return vec4<f32>(clamp(c.rgb + vec3<f32>(d), vec3<f32>(0.0), vec3<f32>(c.a)), c.a);
+}
+
 fn gradient_out(p: vec2<f32>, coverage: f32) -> vec4<f32> {
-    return gradient_paint(p) * (coverage * clip_coverage(p) * clip_mask_coverage(p));
+    return dither(gradient_paint(p) * (coverage * clip_coverage(p) * clip_mask_coverage(p)), p);
 }
 
 // ---- Mesh (Tier C): SolidVertex, color = [a; 4] ----

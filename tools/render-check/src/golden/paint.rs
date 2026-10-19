@@ -55,6 +55,11 @@ impl Paint {
     }
 
     /// Premultiplied color at device pixel center `(x, y)`.
+    /// Gradients dither (09 §5.8); solids and images never do.
+    pub fn dithers(&self) -> bool {
+        matches!(self, Paint::Gradient { .. })
+    }
+
     pub fn at(&self, x: f64, y: f64) -> [f64; 4] {
         match self {
             Paint::Solid(c) => *c,
@@ -91,6 +96,24 @@ impl Paint {
 }
 
 /// 09 §5.5 extend modes on `t`.
+/// 09 §5.8 (L37): the GPU's ordered 8×8 Bayer table.
+pub const BAYER8: [u8; 64] = [
+    0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26, //
+    12, 44, 4, 36, 14, 46, 6, 38, 60, 28, 52, 20, 62, 30, 54, 22, //
+    3, 35, 11, 43, 1, 33, 9, 41, 51, 19, 59, 27, 49, 17, 57, 25, //
+    15, 47, 7, 39, 13, 45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21,
+];
+
+/// The §5.8 dither of a premultiplied gradient contribution at device pixel `(x, y)`, in f32
+/// like the shader; alpha untouched, rgb clamped to `[0, a]`.
+pub fn dither(c: [f64; 4], x: usize, y: usize) -> [f64; 4] {
+    let b = f32::from(BAYER8[(y % 8) * 8 + x % 8]);
+    let d = (b - 31.5) / (64.0 * 255.0);
+    let a = c[3] as f32;
+    let ch = |v: f64| f64::from((v as f32 + d).clamp(0.0, a));
+    [ch(c[0]), ch(c[1]), ch(c[2]), c[3]]
+}
+
 pub fn apply_extend(t: f64, e: Extend) -> f64 {
     match e {
         Extend::Repeat => t - t.floor(),
@@ -255,8 +278,13 @@ fn gradient(g: &Gradient, p: Affine, alpha: f64) -> Result<Paint, CheckError> {
         let stops = padded
             .into_iter()
             .map(|(o, c)| {
-                let c = premul_color(c.to_alpha_color::<Srgb>());
-                let c = if premul || c[3] == 0.0 { c } else { [c[0] / c[3], c[1] / c[3], c[2] / c[3], c[3]] };
+                let c = if premul {
+                    premul_color(c.to_alpha_color::<Srgb>())
+                } else {
+                    // Straight components: a transparent stop keeps its color (peniko
+                    // `InterpolationAlphaSpace::Unpremultiplied`).
+                    c.to_alpha_color::<Srgb>().components.map(f64::from)
+                };
                 (o, c)
             })
             .collect();
@@ -408,4 +436,16 @@ fn image(i: &ImageBrush, p: Affine, alpha: f64) -> Option<Paint> {
         nearest: i.sampler.quality == ImageQuality::Low,
         alpha: alpha * f64::from(i.sampler.alpha),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn bayer_table_is_permutation() {
+        let mut seen = [false; 64];
+        for &v in &super::BAYER8 {
+            assert!(!std::mem::replace(&mut seen[usize::from(v)], true), "{v} twice");
+        }
+        assert!(seen.iter().all(|&s| s));
+    }
 }

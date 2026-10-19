@@ -46,10 +46,13 @@ fn validation_table() {
     assert_eq!(validate_gradient(&ok, id), Ok(()));
 }
 
+/// The ramp as 8-bit texels (`(v · 255 + 0.5)`), for value checks.
 fn bake_of(g: &Gradient) -> (u32, Vec<[u8; 4]>) {
     let mut out = Vec::new();
     let len = RampKey::of(g).bake(&mut out);
-    (len, out)
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let q = out.iter().map(|c| c.map(|v| (v * 255.0 + 0.5) as u8)).collect();
+    (len, q)
 }
 
 #[test]

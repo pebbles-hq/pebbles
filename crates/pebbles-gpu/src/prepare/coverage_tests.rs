@@ -196,7 +196,15 @@ fn fixture(f: F) -> Option<Scene> {
         }
         F::GlyphsRotated => glyphs(p, 16.0, &Brush::Solid(RED), rot, None, Fill::NonZero),
         F::GlyphsLarge => glyphs(p, 300.0, &Brush::Solid(RED), id, None, Fill::NonZero),
-        F::GlyphsNonSolidBrush => glyphs(p, 16.0, &Brush::Gradient(gradient()), id, None, Fill::NonZero),
+        // Gradient runs are delivered (L36); the image brush on glyphs is L41's.
+        F::GlyphsNonSolidBrush => glyphs(
+            p,
+            16.0,
+            &Brush::Image(crate::test_support::rgba_image(4, 4, [255; 4])),
+            id,
+            None,
+            Fill::NonZero,
+        ),
         F::GlyphsEvenOdd => glyphs(p, 16.0, &Brush::Solid(RED), id, None, Fill::EvenOdd),
         F::GlyphsDegenerate => glyphs(p, f32::NAN, &Brush::Solid(RED), id, None, Fill::NonZero),
         F::BlurredFill => p.fill_blurred(
