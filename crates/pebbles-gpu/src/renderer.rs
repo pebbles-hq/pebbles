@@ -76,6 +76,8 @@ pub struct Renderer {
     targets_book: super::frame_targets::TargetBook,
     /// Frames rendered (the book's clock).
     frame: u64,
+    /// Opt-in GPU frame timing (M22); `None` without `TIMESTAMP_QUERY`.
+    timer: Option<super::timing::GpuTimer>,
     /// Pass segments, reused across frames (09 §3.6).
     pub(crate) segments: Vec<super::prepare::passes::PassSegment>,
     pub(crate) arenas: FrameArenas,
@@ -190,6 +192,7 @@ impl Renderer {
             proj_next: 0,
             segments: Vec::new(),
             customs: Default::default(),
+            timer: super::timing::GpuTimer::new(device, gpu.queue()),
             targets_book: super::frame_targets::TargetBook::new(budgets.frame_targets_bytes),
             frame: 0,
             shader_programs: Default::default(),
@@ -405,6 +408,9 @@ impl Renderer {
         let mut encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.gpu.encoder") });
         encoder.push_debug_group("pebbles.gpu.frame");
+        if !nested && let Some(t) = &mut self.timer {
+            t.begin(&mut encoder, target.view);
+        }
         super::execute::gpu_masks::render_jobs(self, device, &mut encoder, &mut stats);
         super::execute::gradients::prepare(self, device, queue, format, &mut stats);
         super::execute::image_brushes::prepare(self, device, queue, format, &mut stats);
@@ -583,11 +589,18 @@ impl Renderer {
         if let Some((_, view)) = &root_color {
             self.blit_root(device, &mut encoder, view, target.view, format, &mut stats);
         }
+        if !nested && let Some(t) = &mut self.timer {
+            t.end(&mut encoder, target.view);
+        }
         encoder.pop_debug_group();
         let command_buffer = encoder.finish();
         stats.encode_us = u32::try_from(encode_started.elapsed().as_micros()).unwrap_or(u32::MAX);
         let submit_started = web_time::Instant::now();
         queue.submit([command_buffer]);
+        if !nested && let Some(t) = &mut self.timer {
+            t.after_submit();
+            stats.gpu_us = t.poll(device);
+        }
         if !nested {
             self.arenas.end_frame(device, &mut stats);
         }

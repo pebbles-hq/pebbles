@@ -43,6 +43,7 @@ mod surface;
 mod test_alloc;
 #[cfg(test)]
 pub(crate) mod test_support;
+mod timing;
 
 pub use budgets::{BudgetPlatform, GpuBudgets};
 #[cfg(debug_assertions)]

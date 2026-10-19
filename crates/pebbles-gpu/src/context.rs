@@ -209,10 +209,14 @@ impl GpuContext {
     async fn finish_device(&mut self, adapter: &wgpu::Adapter) -> Result<DeviceId, GpuError> {
         let info = adapter.get_info();
         let limits = wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits());
+        // M22: timestamps only when asked for and supported (never by default).
+        let timing = self.init.gpu_timing && adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
+        let required_features =
+            if timing { wgpu::Features::TIMESTAMP_QUERY } else { wgpu::Features::empty() };
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("pebbles.gpu.device"),
-                required_features: wgpu::Features::empty(),
+                required_features,
                 required_limits: limits,
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
                 ..Default::default()

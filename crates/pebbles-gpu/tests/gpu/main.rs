@@ -37,6 +37,7 @@ mod targets;
 mod targets_gpu;
 mod text;
 mod tier_c;
+mod timing_gpu;
 
 /// Acquire a headless device + renderer, printing a skip note and returning `None` without an adapter.
 pub(crate) fn setup(name: &str) -> Option<(wgpu::Device, wgpu::Queue, Renderer)> {

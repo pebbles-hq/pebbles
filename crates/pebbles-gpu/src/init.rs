@@ -78,6 +78,9 @@ pub struct GpuInit {
     pub strict_validation: bool,
     /// `PEBBLES_GPU_TRACE` set (any value): log a backtrace with each uncaptured error.
     pub gpu_trace: bool,
+    /// `PEBBLES_GPU_TIMING=1`: request `TIMESTAMP_QUERY` (when supported) and report
+    /// `FrameStats::gpu_us` (M22, opt-in).
+    pub gpu_timing: bool,
     /// Called from ANY thread when a device is lost. Must be cheap and non-blocking.
     pub on_device_lost: Option<Arc<dyn Fn() + Send + Sync>>,
 }
@@ -98,6 +101,7 @@ impl fmt::Debug for GpuInit {
             .field("print_info", &self.print_info)
             .field("strict_validation", &self.strict_validation)
             .field("gpu_trace", &self.gpu_trace)
+            .field("gpu_timing", &self.gpu_timing)
             .field("on_device_lost", &self.on_device_lost.is_some())
             .finish()
     }
@@ -157,6 +161,8 @@ impl GpuInit {
             None => cfg!(debug_assertions),
         };
         let gpu_trace = get("PEBBLES_GPU_TRACE").is_some();
+        // 10. gpu_timing (M22).
+        let gpu_timing = get("PEBBLES_GPU_TIMING").is_some_and(|s| parse_flag(&s));
         Self {
             display: None,
             os,
@@ -171,6 +177,7 @@ impl GpuInit {
             print_info,
             strict_validation,
             gpu_trace,
+            gpu_timing,
             on_device_lost: None,
         }
     }
