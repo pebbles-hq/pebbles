@@ -86,6 +86,11 @@ impl LayerPoolBook {
         }
     }
 
+    /// Bytes of the slots in use now.
+    pub(crate) fn in_use_bytes(&self) -> u64 {
+        self.slots.iter().filter(|s| s.in_use).map(Slot::bytes).sum()
+    }
+
     /// End the frame: release everything, drop idle slots, then the oldest free slots while
     /// over `budget`. Returns the dropped indices in descending order (remove in that order).
     pub(crate) fn end_frame(&mut self, budget: u64) -> Vec<usize> {
@@ -137,6 +142,8 @@ pub(crate) struct LayerTextures {
 pub(crate) struct LayerPool {
     pub book: LayerPoolBook,
     textures: Vec<LayerTextures>,
+    /// Highest in-use bytes this frame (09 §3.8 `layer_budget_exceeded`).
+    peak_in_use: u64,
 }
 
 impl LayerPool {
@@ -150,7 +157,9 @@ impl LayerPool {
         stats: &mut crate::stats::FrameStats,
     ) -> usize {
         let max = device.limits().max_texture_dimension_2d;
-        match self.book.acquire(size, format, samples, max) {
+        let acquired = self.book.acquire(size, format, samples, max);
+        self.peak_in_use = self.peak_in_use.max(self.book.in_use_bytes());
+        match acquired {
             Acquired::Reuse(i) => i,
             Acquired::Create(i) => {
                 let s = self.book.slots[i];
@@ -204,10 +213,14 @@ impl LayerPool {
     }
 
     /// Release everything and evict per 09 §3.8 under `budget` (`GpuBudgets::layer_pool_bytes`).
-    pub(crate) fn end_frame(&mut self, budget: u64) {
+    /// True when the targets in use this frame alone exceeded the budget (never refused).
+    pub(crate) fn end_frame(&mut self, budget: u64) -> bool {
+        let peak = self.peak_in_use;
+        self.peak_in_use = 0;
         for i in self.book.end_frame(budget) {
             self.textures.remove(i);
         }
+        peak > budget
     }
 
     /// Bytes held by the pool.

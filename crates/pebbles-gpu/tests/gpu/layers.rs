@@ -248,3 +248,47 @@ fn layer_pool_steady_state_200_frames() {
         }
     }
 }
+
+/// M16: 20 nested 512×512 opacity layers under a 16 MiB pool budget. In-use targets are never
+/// refused (the frame renders; `layer_budget_exceeded` counts it), and after every frame the
+/// pool is trimmed back under the budget.
+#[test]
+#[ignore = "gpu"]
+fn layer_pool_respects_budget() {
+    const MIB: u64 = 1024 * 1024;
+    let Some((device, _queue, mut r)) =
+        setup_with_budgets("layer_pool_respects_budget", |b| b.layer_pool_bytes = 16 * MIB)
+    else {
+        return;
+    };
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pebbles.gpu.test.layer_budget"),
+        size: wgpu::Extent3d { width: 512, height: 512, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut targets = FrameTargets::new();
+    for depth in [20usize, 12, 20, 4] {
+        let mut s = Scene::new();
+        let mut p = Painter::new(&mut s);
+        for _ in 0..depth {
+            layer(&mut p, 0.9, Affine::IDENTITY, &Rect::new(0.0, 0.0, 512.0, 512.0));
+            red(&mut p, Rect::new(0.0, 0.0, 300.0, 300.0));
+        }
+        red(&mut p, Rect::new(200.0, 200.0, 512.0, 512.0));
+        for _ in 0..depth {
+            p.pop_layer();
+        }
+        let target = RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut targets);
+        let stats = r.render(target, &s, &FrameParams::new(Color::WHITE)).expect("render");
+        let in_use = depth as u64 * 512 * 512 * 4 * 2;
+        assert_eq!(stats.layers_offscreen as usize, depth);
+        assert!(stats.layer_pool_bytes <= 16 * MIB, "depth {depth}: {} bytes", stats.layer_pool_bytes);
+        assert_eq!(stats.layer_budget_exceeded, u32::from(in_use > 16 * MIB), "depth {depth}");
+    }
+}

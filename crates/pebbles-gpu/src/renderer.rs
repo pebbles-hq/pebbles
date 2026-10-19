@@ -49,6 +49,8 @@ pub struct Renderer {
     pub(crate) runs: Vec<super::execute::tier_c::Run>,
     /// GPU coverage masks: the mask pool and the per-texture group-0 variants (09 §2.9, L09).
     pub(crate) gpu_masks: super::execute::gpu_masks::GpuMasks,
+    /// `layer_budget_exceeded` already warned (once per renderer).
+    layer_budget_warned: bool,
     /// Pass segments, reused across frames (09 §3.6).
     pub(crate) segments: Vec<super::prepare::passes::PassSegment>,
     pub(crate) arenas: FrameArenas,
@@ -144,6 +146,7 @@ impl Renderer {
             runs: Vec::new(),
             gpu_masks,
             segments: Vec::new(),
+            layer_budget_warned: false,
             arenas: FrameArenas::new(),
             device: device.clone(),
             queue: gpu.queue().clone(),
@@ -372,7 +375,18 @@ impl Renderer {
         let submit_started = web_time::Instant::now();
         queue.submit([command_buffer]);
         stats.submit_us = u32::try_from(submit_started.elapsed().as_micros()).unwrap_or(u32::MAX);
-        target.targets.pool.end_frame(self.budgets.layer_pool_bytes);
+        if target.targets.pool.end_frame(self.budgets.layer_pool_bytes) {
+            // 09 §3.8: in-use targets are never refused; count it and warn once.
+            stats.layer_budget_exceeded += 1;
+            if !self.layer_budget_warned {
+                self.layer_budget_warned = true;
+                pebbles_foundation::log::logf(
+                    pebbles_foundation::log::Level::Warn,
+                    pebbles_foundation::log::Cat::Gpu,
+                    format_args!("layer targets in use exceed the layer pool budget (09 §3.8)"),
+                );
+            }
+        }
         self.gpu_masks.end_frame(self.budgets.gpu_mask_bytes);
         stats.layer_pool_bytes = target.targets.pool.bytes();
         self.scratch.plan.release_refs();
