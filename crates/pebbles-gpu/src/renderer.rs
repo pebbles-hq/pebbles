@@ -47,6 +47,8 @@ pub struct Renderer {
     /// This frame's `Globals::color_flags`.
     color_flags: u32,
     pub(crate) runs: Vec<super::execute::tier_c::Run>,
+    /// Pass segments, reused across frames (09 §3.6).
+    pub(crate) segments: Vec<super::prepare::passes::PassSegment>,
     pub(crate) arenas: FrameArenas,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -129,6 +131,7 @@ impl Renderer {
             composite_slots: 1,
             color_flags: 0,
             runs: Vec::new(),
+            segments: Vec::new(),
             arenas: FrameArenas::new(),
             device: device.clone(),
             queue: gpu.queue().clone(),
@@ -296,31 +299,55 @@ impl Renderer {
             format,
             &mut stats,
         );
+        let layers =
+            super::execute::layers::acquire_layers(self, device, queue, target.targets, format, &mut stats);
         super::execute::encode::ensure_plan_pipelines(
             self,
             device,
             format,
-            !composites.is_empty(),
+            !composites.is_empty() || !layers.is_empty(),
             &mut stats,
         );
-        {
-            let (view, resolve_target) = (target.view, None);
+        let mut segments = std::mem::take(&mut self.segments);
+        super::prepare::passes::segment_passes(&self.scratch.plan, &mut segments);
+        for seg in &segments {
+            let Some(seg_target) = super::execute::layers::segment_target(seg.target, size, &layers) else {
+                continue;
+            };
+            let (view, resolve_target, clear_to, label) = match seg.target {
+                super::prepare::plan::TargetRef::Root => (target.view, None, clear, "pebbles.gpu.pass.root"),
+                super::prepare::plan::TargetRef::Layer(i) => {
+                    let Some(l) = layers[i as usize].as_ref() else { continue };
+                    let tex = target.targets.pool.textures(l.slot);
+                    let (v, r) = match &tex.msaa {
+                        Some((_, m)) => (m, Some(&tex.color.1)),
+                        None => (&tex.color.1, None),
+                    };
+                    (v, r, wgpu::Color::TRANSPARENT, "pebbles.gpu.pass.layer")
+                }
+            };
+            let load = match seg.color_load {
+                super::prepare::passes::SegmentLoad::Clear => wgpu::LoadOp::Clear(clear_to),
+                super::prepare::passes::SegmentLoad::Load => wgpu::LoadOp::Load,
+            };
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("pebbles.gpu.pass.root"),
+                label: Some(label),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view,
                     depth_slice: None,
                     resolve_target,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(clear), store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations { load, store: wgpu::StoreOp::Store },
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            encode(self, &mut pass, format, &mut stats, &composites);
+            let range = seg.cmds.start as usize..seg.cmds.end as usize;
+            encode(self, &mut pass, format, &mut stats, &composites, range, seg_target, &layers);
             stats.render_passes += 1;
         }
+        self.segments = segments;
         encoder.pop_debug_group();
         let command_buffer = encoder.finish();
         stats.encode_us = u32::try_from(encode_started.elapsed().as_micros()).unwrap_or(u32::MAX);

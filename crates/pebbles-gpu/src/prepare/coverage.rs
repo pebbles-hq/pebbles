@@ -245,6 +245,7 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::BlurredGlyphs,      // R42
     F::ClipRRect,          // L04 (SDF clip)
     F::ClipCircle,         // L04 (SDF clip)
+    F::LayerAlpha,         // L12 (exact fold) + L14 (offscreen composite)
 ];
 
 #[cfg(test)]

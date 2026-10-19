@@ -104,7 +104,9 @@ pub(crate) fn encode_runs(
     }
     let stride = slot_stride(device);
     let n = runs.len() as u64;
-    renderer.ensure_uniform_slots(device, n + 1, n, stats);
+    // Offscreen layers own Globals slots 1..=L and composite slots 0..L (09 §3.5); runs follow.
+    let base = renderer.scratch.plan.layers.len() as u64;
+    renderer.ensure_uniform_slots(device, base + n + 1, base + n, stats);
     let solid = PipelineKey {
         kind: PipelineKind::Solid,
         color_format: format,
@@ -126,7 +128,7 @@ pub(crate) fn encode_runs(
     for (k, run) in runs.iter().enumerate() {
         let k64 = k as u64;
         let (w, h) = (run.bounds.x1 - run.bounds.x0, run.bounds.y1 - run.bounds.y0);
-        let params_offset = u32::try_from(k64 * stride).unwrap_or(0);
+        let params_offset = u32::try_from((base + k64) * stride).unwrap_or(0);
         if w == 0 || h == 0 {
             out.push(Composite { run: run.clone(), bind_group: None, params_offset });
             continue;
@@ -141,7 +143,7 @@ pub(crate) fn encode_runs(
             color_flags: renderer.color_flags(),
             _pad0: 0,
         };
-        let globals_offset = (k64 + 1) * stride;
+        let globals_offset = (base + k64 + 1) * stride;
         queue.write_buffer(renderer.globals_buffer(), globals_offset, bytemuck::bytes_of(&globals));
         let b = run.bounds;
         let params = CompositeParams {
@@ -151,7 +153,7 @@ pub(crate) fn encode_runs(
             compose: 3, // SrcOver
             _pad: 0,
         };
-        queue.write_buffer(renderer.composite_buffer(), k64 * stride, bytemuck::bytes_of(&params));
+        queue.write_buffer(renderer.composite_buffer(), (base + k64) * stride, bytemuck::bytes_of(&params));
         {
             let (view, resolve_target) = match &tex.msaa {
                 Some((_, m)) => (m, Some(&tex.color.1)),

@@ -50,6 +50,9 @@ pub(crate) fn cmd_kinds(plan: &FramePlan) -> Vec<&'static str> {
             DrawCmd::Shadows { .. } => "shadows",
             DrawCmd::Glyphs { .. } => "glyphs",
             DrawCmd::Images { .. } => "images",
+            DrawCmd::PushLayer { .. } => "push_layer",
+            DrawCmd::PopLayer { .. } => "pop_layer",
+            DrawCmd::Composite { .. } => "composite",
         })
         .collect()
 }

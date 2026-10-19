@@ -63,7 +63,8 @@ fn half_alpha_layer_multiplies_draw_alpha() {
     p.pop_layer();
     let (plan, stats) = plan_and_stats(&scene);
     assert_eq!(plan.solid_vertices[0].color, [0.5, 0.0, 0.0, 0.5]);
-    assert_eq!(stats.unsupported[Unsupported::LayerAlpha as usize], 1);
+    // A single-draw layer folds exactly (09 §3.4, L12): nothing unsupported.
+    assert_eq!(stats.unsupported[Unsupported::LayerAlpha as usize], 0);
 }
 
 #[test]
@@ -77,9 +78,13 @@ fn nested_alpha_layers_multiply() {
     red_square(&mut p);
     p.pop_layer();
     let (plan, _) = plan_and_stats(&scene);
+    // The outer layer has two draws: it goes offscreen (alpha applied once at composite, L14);
+    // the inner single-draw layer folds into its fill.
     let alphas: Vec<f32> = plan.solid_vertices.iter().map(|v| v.color[3]).collect();
-    assert_eq!(alphas.first(), Some(&0.25));
-    assert_eq!(alphas.last(), Some(&0.5));
+    assert_eq!(alphas.first(), Some(&0.5));
+    assert_eq!(alphas.last(), Some(&1.0));
+    assert_eq!(plan.layers.len(), 1);
+    assert_eq!(plan.layers[0].alpha, 0.5);
 }
 
 #[test]

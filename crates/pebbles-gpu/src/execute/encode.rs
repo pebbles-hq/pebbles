@@ -13,6 +13,10 @@ struct PassState {
     /// Address of the bound pipeline (identity only, never dereferenced).
     pipeline: Option<*const wgpu::RenderPipeline>,
     pipeline_switches: u32,
+    /// Device px of the target's (0, 0).
+    origin: (u32, u32),
+    /// Target size (scissors clamp to it).
+    size: (u32, u32),
 }
 
 impl PassState {
@@ -27,17 +31,36 @@ impl PassState {
     }
 
     fn new() -> Self {
-        Self { scissor: None, scissor_changes: 0, pipeline: None, pipeline_switches: 0 }
+        Self {
+            scissor: None,
+            scissor_changes: 0,
+            pipeline: None,
+            pipeline_switches: 0,
+            origin: (0, 0),
+            size: (u32::MAX, u32::MAX),
+        }
     }
 
-    fn set_scissor(&mut self, pass: &mut wgpu::RenderPass<'_>, scissor: ScissorRect) {
-        let rect = (scissor.x0, scissor.y0, scissor.width(), scissor.height());
+    /// Set the scissor in the current target's space (device px − target origin, clamped to
+    /// the target size); false when it is empty there (the draw must be skipped, 09 §3.6).
+    fn set_scissor(&mut self, pass: &mut wgpu::RenderPass<'_>, scissor: ScissorRect) -> bool {
+        let (ox, oy) = self.origin;
+        let (w, h) = self.size;
+        let x0 = scissor.x0.saturating_sub(ox).min(w);
+        let y0 = scissor.y0.saturating_sub(oy).min(h);
+        let x1 = scissor.x1.saturating_sub(ox).min(w);
+        let y1 = scissor.y1.saturating_sub(oy).min(h);
+        if x1 <= x0 || y1 <= y0 {
+            return false;
+        }
+        let rect = (x0, y0, x1 - x0, y1 - y0);
         if self.scissor != Some(rect) {
             self.scissor_changes += 1;
             pass.insert_debug_marker("pebbles.gpu.clip.scissor");
             pass.set_scissor_rect(rect.0, rect.1, rect.2, rect.3);
             self.scissor = Some(rect);
         }
+        true
     }
 }
 
@@ -82,6 +105,10 @@ pub(crate) fn cmd_kind(cmd: &DrawCmd) -> PipelineKind {
         DrawCmd::Shadows { .. } => PipelineKind::Shadow,
         DrawCmd::Glyphs { .. } => PipelineKind::Glyph,
         DrawCmd::Images { .. } => PipelineKind::Image,
+        // Layer boundaries never reach a pass (09 §3.6); composites draw with CompositeOver.
+        DrawCmd::PushLayer { .. } | DrawCmd::PopLayer { .. } | DrawCmd::Composite { .. } => {
+            PipelineKind::CompositeOver
+        }
     }
 }
 
@@ -124,22 +151,40 @@ pub(crate) fn debug_group_runs(cmds: &[DrawCmd]) -> Vec<(std::ops::Range<usize>,
     out
 }
 
+/// The target a pass segment draws into (09 §3.5–§3.6).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SegmentTarget {
+    /// Byte offset of the target's Globals slot.
+    pub globals_offset: u32,
+    /// Device px of the target's (0, 0).
+    pub origin: (u32, u32),
+    /// Target texture size.
+    pub size: (u32, u32),
+}
+
+/// Draw the commands `range` of the renderer's plan, in order, into `pass` (one segment).
+/// `layers[i]` = layer `i`'s composite bind group and params offset (09 §3.7).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn encode(
     renderer: &Renderer,
     pass: &mut wgpu::RenderPass<'_>,
     format: wgpu::TextureFormat,
     stats: &mut FrameStats,
     composites: &[super::tier_c::Composite],
+    range: std::ops::Range<usize>,
+    target: SegmentTarget,
+    layers: &[Option<super::layers::LayerTarget>],
 ) {
     // Group 0: Globals slot 0 + the NONE clips; rebound when a cmd's SDF or mask clip changes
     // (09 §2.4, L08).
     let mut bound = (crate::prepare::SdfClipId::NONE, crate::prepare::plan::MaskClipId::NONE);
-    pass.set_bind_group(0, renderer.globals_bg(), &[0, 0, 0]);
+    let g = target.globals_offset;
+    pass.set_bind_group(0, renderer.globals_bg(), &[g, 0, 0]);
     stats.bind_group_switches += 1;
     let mut bind_clip =
         |pass: &mut wgpu::RenderPass<'_>, clip: crate::prepare::ClipState, stats: &mut FrameStats| {
             if (clip.sdf, clip.mask) != bound {
-                let offsets = [0, renderer.clip_offset(clip.sdf), renderer.mask_clip_offset(clip.mask)];
+                let offsets = [g, renderer.clip_offset(clip.sdf), renderer.mask_clip_offset(clip.mask)];
                 pass.set_bind_group(0, renderer.globals_bg(), &offsets);
                 stats.bind_group_switches += 1;
                 bound = (clip.sdf, clip.mask);
@@ -149,13 +194,17 @@ pub(crate) fn encode(
     let sample_count = 1;
     let key = |kind, variant| PipelineKey { kind, color_format: format, sample_count, blend: 0, variant };
     let mut state = PassState::new();
+    state.origin = target.origin;
+    state.size = target.size;
 
-    let mut runs = composites.iter().peekable();
+    let mut runs = composites.iter().filter(|c| range.contains(&c.run.cmds.start)).peekable();
     // Debug groups (S52): one per maximal run of same-kind draws; balanced within the pass.
     let groups = debug_group_runs(&renderer.scratch.plan.cmds);
     let (mut g, mut open) = (0, false);
-    let mut i = 0;
-    while let Some(cmd) = renderer.scratch.plan.cmds.get(i) {
+    let mut i = range.start;
+    while i < range.end
+        && let Some(cmd) = renderer.scratch.plan.cmds.get(i)
+    {
         if open && groups.get(g).is_some_and(|(r, _)| i >= r.end) {
             pass.pop_debug_group();
             open = false;
@@ -177,7 +226,9 @@ pub(crate) fn encode(
             else {
                 continue;
             };
-            state.set_scissor(pass, c.run.scissor);
+            if !state.set_scissor(pass, c.run.scissor) {
+                continue;
+            }
             bind_clip(pass, c.run.clip, stats);
             state.set_pipeline(pass, pipeline);
             pass.set_bind_group(1, bg, &[c.params_offset]);
@@ -198,7 +249,9 @@ pub(crate) fn encode(
                 state.set_pipeline(pass, pipeline);
                 pass.set_vertex_buffer(0, vb.slice(..));
                 pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-                state.set_scissor(pass, clip.scissor);
+                if !state.set_scissor(pass, clip.scissor) {
+                    continue;
+                }
                 bind_clip(pass, *clip, stats);
                 pass.draw_indexed(indices.clone(), 0, 0..1);
                 stats.draw_calls += 1;
@@ -212,7 +265,9 @@ pub(crate) fn encode(
                 };
                 state.set_pipeline(pass, pipeline);
                 pass.set_vertex_buffer(0, vb.slice(..));
-                state.set_scissor(pass, clip.scissor);
+                if !state.set_scissor(pass, clip.scissor) {
+                    continue;
+                }
                 bind_clip(pass, *clip, stats);
                 pass.draw(0..4, instances.clone());
                 stats.draw_calls += 1;
@@ -226,7 +281,9 @@ pub(crate) fn encode(
                 };
                 state.set_pipeline(pass, pipeline);
                 pass.set_vertex_buffer(0, vb.slice(..));
-                state.set_scissor(pass, clip.scissor);
+                if !state.set_scissor(pass, clip.scissor) {
+                    continue;
+                }
                 bind_clip(pass, *clip, stats);
                 pass.draw(0..4, instances.clone());
                 stats.draw_calls += 1;
@@ -239,7 +296,9 @@ pub(crate) fn encode(
                 ) else {
                     continue;
                 };
-                state.set_scissor(pass, clip.scissor);
+                if !state.set_scissor(pass, clip.scissor) {
+                    continue;
+                }
                 bind_clip(pass, *clip, stats);
                 state.set_pipeline(pass, pipeline);
                 pass.set_bind_group(1, bg, &[]);
@@ -257,7 +316,9 @@ pub(crate) fn encode(
                 ) else {
                     continue;
                 };
-                state.set_scissor(pass, clip.scissor);
+                if !state.set_scissor(pass, clip.scissor) {
+                    continue;
+                }
                 bind_clip(pass, *clip, stats);
                 state.set_pipeline(pass, pipeline);
                 pass.set_bind_group(1, bg, &[]);
@@ -266,6 +327,32 @@ pub(crate) fn encode(
                 pass.draw(0..4, images.clone());
                 stats.draw_calls += 1;
             }
+            DrawCmd::Composite { layer, clip } => {
+                let Some(l) = layers.get(*layer as usize).and_then(Option::as_ref) else { continue };
+                let Some(pipeline) = renderer.pipelines.get_ensured(key(PipelineKind::CompositeOver, 0))
+                else {
+                    continue;
+                };
+                let b = renderer.scratch.plan.layers[*layer as usize].bounds;
+                let s = clip.scissor;
+                let scissor = ScissorRect {
+                    x0: s.x0.max(b.x0),
+                    y0: s.y0.max(b.y0),
+                    x1: s.x1.min(b.x1),
+                    y1: s.y1.min(b.y1),
+                };
+                if scissor.x1 <= scissor.x0 || scissor.y1 <= scissor.y0 || !state.set_scissor(pass, scissor) {
+                    continue;
+                }
+                bind_clip(pass, *clip, stats);
+                state.set_pipeline(pass, pipeline);
+                pass.set_bind_group(1, &l.composite.0, &[l.composite.1]);
+                stats.bind_group_switches += 1;
+                pass.draw(0..4, 0..1);
+                stats.draw_calls += 1;
+            }
+            // Never inside a segment (09 §3.6).
+            DrawCmd::PushLayer { .. } | DrawCmd::PopLayer { .. } => {}
         }
     }
     if open {
@@ -276,7 +363,9 @@ pub(crate) fn encode(
     // Leave the pass with a full-target scissor: wgpu's GL backend resolves MSAA with
     // glBlitFramebuffer under the last scissor, which would drop every pixel outside the last
     // clip (Vulkan/Metal/DX12 resolves ignore the scissor).
-    state.set_scissor(pass, ScissorRect::full(renderer.scratch.plan.target_size));
+    let (ox, oy) = state.origin;
+    let full = ScissorRect { x0: ox, y0: oy, x1: ox + state.size.0, y1: oy + state.size.1 };
+    let _ = state.set_scissor(pass, full);
 }
 
 #[cfg(test)]

@@ -256,11 +256,6 @@ impl ClipStack {
         self.stack.len()
     }
 
-    /// Pushes still open (auto-closed at frame end, 09 §2.7).
-    pub(crate) fn open(&self) -> usize {
-        self.stack.len()
-    }
-
     /// The current clip state (only valid when not culled).
     pub(crate) fn current(&self) -> ClipState {
         self.current
@@ -288,6 +283,13 @@ impl ClipStack {
                 self.current.sdf = SdfClipId(u32::try_from(sdf_clips.len() - 1).unwrap_or(0));
             }
         }
+    }
+
+    /// Enter a layer target (09 §3.5): a fresh state whose scissor is the layer bounds.
+    pub(crate) fn push_fresh(&mut self, bounds: ScissorRect) {
+        self.stack.push(self.current);
+        self.current =
+            ClipState { scissor: bounds, sdf: SdfClipId::NONE, mask: super::plan::MaskClipId::NONE };
     }
 
     /// Push a mask clip whose record the walk appended (09 L08).

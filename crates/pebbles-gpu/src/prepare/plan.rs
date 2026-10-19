@@ -134,6 +134,41 @@ pub(crate) enum DrawCmd {
     Glyphs { glyphs: std::ops::Range<u32>, clip: ClipState },
     /// Instanced image quads from `images`; merges only with the same `ImageKey` + `SamplerKey`.
     Images { images: std::ops::Range<u32>, clip: ClipState },
+    /// Start rendering into layer `layer`'s target (09 §3.5; ends the parent's pass).
+    PushLayer { layer: u32 },
+    /// End layer `layer`'s target.
+    PopLayer { layer: u32 },
+    /// Composite layer `layer` into the parent target under `clip` (09 §3.7).
+    Composite { layer: u32, clip: ClipState },
+}
+
+/// Which target a layer composites into (09 §3.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TargetRef {
+    Root,
+    Layer(u32),
+}
+
+/// How a layer composites (09 §4.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CompositePath {
+    Over,
+    #[allow(dead_code, reason = "constructed once non-Over blends route offscreen (L21)")]
+    Compose,
+    Backdrop,
+}
+
+/// An offscreen layer (09 §3.5).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct LayerDesc {
+    /// Device px, non-empty: round_out(own clip bbox) ∩ parent scissor ∩ target.
+    pub bounds: ScissorRect,
+    /// (0, 1]; 1.0 for promoted layers.
+    pub alpha: f32,
+    pub mix: peniko::Mix,
+    pub compose: peniko::Compose,
+    pub path: CompositePath,
+    pub parent: TargetRef,
 }
 
 /// One glyph run's shared data; `GlyphRequest::run` indexes this.
@@ -205,6 +240,12 @@ pub(crate) struct PrepareStats {
     pub nonfinite: u32,
     pub unbalanced_pops: u32,
     pub autoclosed: u32,
+    /// Layer plans (09 §3.3).
+    pub layers_skipped: u32,
+    pub layers_pure_clip: u32,
+    pub layers_folded: u32,
+    pub layers_offscreen: u32,
+    pub layers_promoted: u32,
 }
 
 /// Everything one frame draws, in order. Reused across frames: `clear()` keeps every capacity.
@@ -229,6 +270,8 @@ pub(crate) struct FramePlan {
     pub mask_clips: Vec<MaskClipRecord>,
     /// The clip paths the mask records reference.
     pub clip_sources: Vec<MaskClipSource>,
+    /// Offscreen layers (09 §3.5), indexed by `DrawCmd::{PushLayer, PopLayer, Composite}`.
+    pub layers: Vec<LayerDesc>,
     // the ordered stream
     pub cmds: Vec<DrawCmd>,
     /// OC rows (R01) that fell back in this plan.
@@ -255,6 +298,7 @@ impl FramePlan {
         self.mask_clips.clear();
         self.mask_clips.push(MaskClipRecord { key: 0, sources: 0..0, rect: ScissorRect::default() });
         self.clip_sources.clear();
+        self.layers.clear();
         self.cmds.clear();
         self.fallback_features = super::coverage::FeatureSet::default();
         self.stats = PrepareStats::default();
@@ -332,6 +376,9 @@ fn format_cmd(cmd: &DrawCmd) -> String {
         DrawCmd::Images { images, clip } => {
             format!("Images images={}..{} {}", images.start, images.end, clip_str(clip))
         }
+        DrawCmd::PushLayer { layer } => format!("PushLayer {layer}"),
+        DrawCmd::PopLayer { layer } => format!("PopLayer {layer}"),
+        DrawCmd::Composite { layer, clip } => format!("Composite {layer} {}", clip_str(clip)),
     }
 }
 

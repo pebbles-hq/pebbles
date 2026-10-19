@@ -27,6 +27,7 @@ mod image_nine;
 mod images;
 mod layer;
 pub(crate) mod num;
+pub(crate) mod passes;
 pub(crate) mod path_masks;
 pub(crate) mod path_strategy;
 pub(crate) mod plan;
@@ -112,11 +113,9 @@ pub(crate) fn prepare<'s>(
         sdf: !scratch.sdf_disabled,
     };
     walk.emit(scene.ops(), input.root_transform);
-    // 09 §2.7: pushes still open at the end of the frame are auto-closed.
-    let open = scratch.clips.open();
-    if open > 0 {
-        scratch.plan.stats.autoclosed += u32::try_from(open).unwrap_or(u32::MAX);
-    }
+    // 09 §2.7: pushes still open at the end of the frame are auto-closed (emitting the pops
+    // and composites of open offscreen layers).
+    walk.close_open_layers();
     scratch.outlines.end_frame();
     scratch.colr.end_frame();
     &scratch.plan
@@ -205,6 +204,119 @@ pub(crate) fn scan_colr_atlas(
 }
 
 impl Walk<'_> {
+    /// A skipped (or hidden) layer: a culled clip frame until the matching pop.
+    fn push_skip_layer(&mut self) {
+        let scissor = self.clips.current().scissor;
+        self.clips.push(clip::ClipDecision { kind: clip::ClipKind::Cull, scissor }, &mut self.plan.sdf_clips);
+        self.layers.push(layer::Frame::Skip);
+    }
+
+    /// Apply a layer's clip to the current target (09 §2.2), counting the decision.
+    fn push_layer_clip(
+        &mut self,
+        clip: &pebbles_render::paint::display_list::Geometry,
+        xf: Affine,
+        fill: Fill,
+    ) {
+        let decision = clip::classify_clip(clip, xf, &self.clips.current());
+        self.note_clip(clip, xf, fill, &decision.kind);
+        if decision.kind == clip::ClipKind::Bounds {
+            self.stats.record(Unsupported::NonRectClip);
+        }
+        match decision.kind {
+            clip::ClipKind::Noop => self.plan.stats.clips_noop += 1,
+            clip::ClipKind::Cull => self.plan.stats.clips_culled += 1,
+            clip::ClipKind::Scissor => self.plan.stats.clips_scissor += 1,
+            clip::ClipKind::Sdf(_) => self.plan.stats.clips_sdf += 1,
+            clip::ClipKind::Mask => self.plan.stats.clips_mask += 1,
+            clip::ClipKind::Bounds => {}
+        }
+        if decision.kind == clip::ClipKind::Mask {
+            self.push_mask_clip(clip, xf, fill, decision.scissor);
+        } else {
+            self.clips.push(decision, &mut self.plan.sdf_clips);
+        }
+    }
+
+    /// 09 §3.5 push: the own clip on the parent (the composite's clip), the layer desc, the
+    /// `PushLayer` cmd and a fresh clip state for the layer target. Non-`Over` paths keep the C17
+    /// interim (content skipped, `LayerBlend` recorded) until L21/L24.
+    #[allow(clippy::too_many_arguments)]
+    fn push_offscreen(
+        &mut self,
+        clip: &pebbles_render::paint::display_list::Geometry,
+        xf: Affine,
+        fill: Fill,
+        blend: peniko::BlendMode,
+        alpha: f32,
+        promoted: bool,
+        idx: u32,
+    ) {
+        let prev_fold = self.layers.fold();
+        self.push_layer_clip(clip, xf, fill);
+        if blend != peniko::BlendMode::default() {
+            self.note_layer(alpha, blend);
+            self.stats.record(Unsupported::LayerBlend);
+            self.layers.push(layer::Frame::Interim { prev_fold });
+            return;
+        }
+        let comp = self.clips.current();
+        if self.clips.is_culled() {
+            self.layers.push(layer::Frame::Clip { prev_fold });
+            return;
+        }
+        let parent = match self.layers.current_target() {
+            Some(l) => plan::TargetRef::Layer(l),
+            None => plan::TargetRef::Root,
+        };
+        let id = num::index_u32(self.plan.layers.len());
+        self.plan.layers.push(plan::LayerDesc {
+            bounds: comp.scissor,
+            alpha,
+            mix: blend.mix,
+            compose: blend.compose,
+            path: plan::CompositePath::Over,
+            parent,
+        });
+        self.push(DrawCmd::PushLayer { layer: id }, idx);
+        self.clips.push_fresh(comp.scissor);
+        self.layers.push(layer::Frame::Offscreen { layer: id, comp, prev_fold });
+        self.layers.set_fold(1.0);
+        self.plan.stats.layers_offscreen += 1;
+        self.plan.stats.layers_promoted += u32::from(promoted);
+    }
+
+    /// The matching pop of any layer frame; false for an unbalanced pop.
+    fn pop_layer(&mut self, idx: u32) -> bool {
+        let Some(frame) = self.layers.pop() else { return false };
+        match frame {
+            layer::Frame::Skip => {
+                self.clips.pop();
+            }
+            layer::Frame::Clip { prev_fold } | layer::Frame::Interim { prev_fold } => {
+                self.clips.pop();
+                self.layers.set_fold(prev_fold);
+            }
+            layer::Frame::Offscreen { layer, comp, prev_fold } => {
+                self.clips.pop(); // the layer target's fresh state
+                self.push(DrawCmd::PopLayer { layer }, idx);
+                self.push(DrawCmd::Composite { layer, clip: comp }, idx);
+                self.clips.pop(); // the own clip on the parent
+                self.layers.set_fold(prev_fold);
+            }
+        }
+        true
+    }
+
+    /// 09 §2.7: auto-close every layer still open at the end of the frame.
+    fn close_open_layers(&mut self) {
+        while self.layers.open() > 0 {
+            let idx = self.visit;
+            self.pop_layer(idx);
+            self.plan.stats.autoclosed += 1;
+        }
+    }
+
     /// 09 L08: append a mask record = the active chain + this clip, over `scissor`.
     fn push_mask_clip(
         &mut self,
@@ -394,7 +506,7 @@ impl Walk<'_> {
     }
 
     fn emit(&mut self, ops: &[Op], outer: Affine) {
-        for op in ops {
+        for (i, op) in ops.iter().enumerate() {
             self.visit += 1;
             let idx = self.visit;
             self.plan.stats.ops += 1;
@@ -505,53 +617,51 @@ impl Walk<'_> {
                         // Keep the layer (stack balance) with an empty clip: its content is culled.
                         self.skip_non_finite();
                         self.plan.stats.nonfinite += 1;
-                        let scissor = self.clips.current().scissor;
-                        self.clips.push(
-                            clip::ClipDecision { kind: clip::ClipKind::Cull, scissor },
-                            &mut self.plan.sdf_clips,
-                        );
-                        self.layers.push(1.0, false);
+                        self.push_skip_layer();
                         continue;
                     }
-                    // Every layer's clip is pushed — including alpha < 1 or a non-default blend
-                    // (defect D06's "layer clip lost").
-                    let decision = clip::classify_clip(clip, xf, &self.clips.current());
-                    if !self.layers.is_skipped() {
-                        self.note_clip(clip, xf, *clip_fill, &decision.kind);
-                        self.note_layer(*alpha, *blend);
+                    if self.layers.is_skipped() || self.clips.is_culled() {
+                        self.push_skip_layer();
+                        continue;
                     }
-                    if decision.kind == clip::ClipKind::Bounds && !self.layers.is_skipped() {
-                        self.stats.record(Unsupported::NonRectClip);
-                    }
-                    match decision.kind {
-                        clip::ClipKind::Noop => self.plan.stats.clips_noop += 1,
-                        clip::ClipKind::Cull => self.plan.stats.clips_culled += 1,
-                        clip::ClipKind::Scissor => self.plan.stats.clips_scissor += 1,
-                        clip::ClipKind::Sdf(_) => self.plan.stats.clips_sdf += 1,
-                        clip::ClipKind::Mask => self.plan.stats.clips_mask += 1,
-                        clip::ClipKind::Bounds => {}
-                    }
-                    if decision.kind == clip::ClipKind::Mask {
-                        self.push_mask_clip(clip, xf, *clip_fill, decision.scissor);
-                    } else {
-                        self.clips.push(decision, &mut self.plan.sdf_clips);
-                    }
-                    let blended = *blend != peniko::BlendMode::default();
-                    if blended && !self.layers.is_skipped() {
-                        self.stats.record(Unsupported::LayerBlend);
-                    }
-                    // alpha == 0 is exact (nothing visible), so it is skipped without a log; a
-                    // non-finite alpha becomes 0 and is recorded (S02). The layer is always kept.
-                    let (alpha, non_finite) = hygiene::sanitize_layer_alpha(*alpha);
+                    let (a, non_finite) = hygiene::sanitize_layer_alpha(*alpha);
                     if non_finite {
                         self.stats.record(Unsupported::NonFinite);
                     }
-                    self.layers.push(alpha, blended || alpha == 0.0);
+                    let info = layer::scan_one(ops, i);
+                    match layer::classify_layer(info, *blend, a) {
+                        layer::LayerPlan::Skip => {
+                            self.plan.stats.layers_skipped += 1;
+                            self.push_skip_layer();
+                        }
+                        layer::LayerPlan::PureClip => {
+                            self.plan.stats.layers_pure_clip += 1;
+                            self.push_layer_clip(clip, xf, *clip_fill);
+                            let prev_fold = self.layers.fold();
+                            self.layers.push(layer::Frame::Clip { prev_fold });
+                        }
+                        layer::LayerPlan::Fold { alpha } => {
+                            self.plan.stats.layers_folded += 1;
+                            self.push_layer_clip(clip, xf, *clip_fill);
+                            let prev_fold = self.layers.fold();
+                            self.layers.push(layer::Frame::Clip { prev_fold });
+                            self.layers.set_fold(prev_fold * alpha);
+                        }
+                        layer::LayerPlan::Offscreen { promoted } => {
+                            self.push_offscreen(
+                                clip,
+                                xf,
+                                *clip_fill,
+                                *blend,
+                                if promoted { 1.0 } else { a },
+                                promoted,
+                                idx,
+                            );
+                        }
+                    }
                 }
                 Op::PopLayer => {
-                    if self.layers.pop() {
-                        self.clips.pop();
-                    } else {
+                    if !self.pop_layer(idx) {
                         // 09 §2.7: an unbalanced pop is ignored and counted.
                         self.plan.stats.unbalanced_pops += 1;
                     }

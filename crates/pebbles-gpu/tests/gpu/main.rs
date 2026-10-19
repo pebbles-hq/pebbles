@@ -17,6 +17,7 @@ mod gpu_geometry;
 mod gpu_smoke;
 mod image_cache_gpu;
 mod images;
+mod layers;
 mod order;
 mod path_masks;
 mod pixel_snap;

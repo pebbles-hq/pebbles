@@ -92,13 +92,10 @@ impl Walk<'_> {
         true
     }
 
-    /// Group alpha for the current draw; records `LayerAlpha` when it folds a fraction.
+    /// The fold alpha for the current draw (09 §3.4): exact for single-draw opacity layers;
+    /// multi-draw opacity layers are offscreen targets instead (L13/L14).
     pub(super) fn alpha(&mut self) -> f32 {
-        let a = self.layers.group_alpha();
-        if a < 1.0 {
-            self.stats.record(Unsupported::LayerAlpha);
-        }
-        a
+        self.layers.fold()
     }
 
     /// Whether the frame's vertex budget is spent (records `VertexLimit` once per frame).
