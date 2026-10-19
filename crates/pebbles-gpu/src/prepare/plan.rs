@@ -156,14 +156,23 @@ pub(crate) enum DrawCmd {
     PopLayer { layer: u32 },
     /// Composite layer `layer` into the parent target under `clip` (09 §3.7).
     Composite { layer: u32, clip: ClipState },
-    /// A gradient-painted draw (09 §5): the geometry's tier coverage × the ramp of
-    /// `plan.gradients[gradient]`. Merges only with the same gradient, cover kind and clip.
-    Gradient { cover: GradientCover, gradient: u32, clip: ClipState },
+    /// A brush-painted draw (09 §5, §6): the geometry's tier coverage × a gradient or image
+    /// brush. Merges only with the same paint, cover kind and clip.
+    Brush { cover: BrushCover, paint: BrushPaint, clip: ClipState },
+}
+
+/// The paint of a `Brush` draw.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BrushPaint {
+    /// `plan.gradients[i]`.
+    Gradient(u32),
+    /// `plan.image_brushes[i]`.
+    Image(u32),
 }
 
 /// The coverage source of a brush draw (09 §6 brush × tier rule).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum GradientCover {
+pub(crate) enum BrushCover {
     /// Tier A: `shapes` instances.
     Shape(std::ops::Range<u32>),
     /// Tier B: `glyphs` (path-mask quads).
@@ -172,7 +181,7 @@ pub(crate) enum GradientCover {
     Mesh(std::ops::Range<u32>),
 }
 
-impl GradientCover {
+impl BrushCover {
     pub(crate) fn variant(&self) -> u8 {
         match self {
             Self::Shape(_) => 0,
@@ -194,6 +203,16 @@ impl GradientCover {
             Self::Mesh(_) => Self::Mesh(r),
         }
     }
+}
+
+/// One image-brush paint of the frame (09 §6).
+#[derive(Clone, Debug)]
+pub(crate) struct ImageBrushDraw {
+    /// `Blob` clone (refcount bump); uploaded through the image cache (C13).
+    pub image: peniko::ImageData,
+    pub key: ImageKey,
+    pub sampler: SamplerKey,
+    pub params: crate::gpu_types::ImageBrushParams,
 }
 
 /// One gradient paint of the frame (09 §5.4): geometry for the shader and the LUT key.
@@ -307,6 +326,8 @@ pub(crate) struct PrepareStats {
     pub gpu_mask_overflow: u32,
     /// Invalid gradients drawn as their fallback solid (09 §5.1).
     pub gradient_fallbacks: u32,
+    /// Image-brush ops skipped: singular paint transform or empty image (09 §6).
+    pub image_brush_skipped: u32,
     /// Clips with a non-finite transform or geometry (row 1).
     pub nonfinite: u32,
     /// `PopLayer`s without a matching push, ignored (§2.7).
@@ -347,8 +368,10 @@ pub(crate) struct FramePlan {
     pub mask_clips: Vec<MaskClipRecord>,
     /// The clip paths the mask records reference.
     pub clip_sources: Vec<MaskClipSource>,
-    /// Gradient paints (09 §5), indexed by `DrawCmd::Gradient::gradient`.
+    /// Gradient paints (09 §5), indexed by `BrushPaint::Gradient`.
     pub gradients: Vec<GradientDraw>,
+    /// Image-brush paints (09 §6), indexed by `BrushPaint::Image`.
+    pub image_brushes: Vec<ImageBrushDraw>,
     /// GPU coverage masks (09 §2.9), parents before children.
     pub gpu_mask_jobs: Vec<GpuMaskJob>,
     /// Estimated mask pool bytes of `gpu_mask_jobs` (against `GpuBudgets::gpu_mask_bytes`).
@@ -392,6 +415,7 @@ impl FramePlan {
         self.clip_sources.clear();
         self.gpu_mask_jobs.clear();
         self.gradients.clear();
+        self.image_brushes.clear();
         self.gpu_mask_bytes = 0;
         self.layers.clear();
         self.root_needs_backdrop = false;
@@ -406,6 +430,7 @@ impl FramePlan {
     pub(crate) fn release_refs(&mut self) {
         self.glyph_runs.clear();
         self.images.clear();
+        self.image_brushes.clear();
     }
 
     /// Apply the merge rule: extend `cmds.last_mut()` iff same variant, same clip and
@@ -475,8 +500,8 @@ fn format_cmd(cmd: &DrawCmd) -> String {
         DrawCmd::PushLayer { layer } => format!("PushLayer {layer}"),
         DrawCmd::PopLayer { layer } => format!("PopLayer {layer}"),
         DrawCmd::Composite { layer, clip } => format!("Composite {layer} {}", clip_str(clip)),
-        DrawCmd::Gradient { cover, gradient, clip } => {
-            format!("Gradient {cover:?} g{gradient} {}", clip_str(clip))
+        DrawCmd::Brush { cover, paint, clip } => {
+            format!("Brush {cover:?} {paint:?} {}", clip_str(clip))
         }
     }
 }
@@ -519,12 +544,12 @@ fn merge(last: &DrawCmd, new: &DrawCmd, images: &[ImageRequest]) -> Option<DrawC
             Some(DrawCmd::Images { images: a.start..b.end, clip: *ca })
         }
         (
-            DrawCmd::Gradient { cover: a, gradient: ga, clip: ca },
-            DrawCmd::Gradient { cover: b, gradient: gb, clip: cb },
+            DrawCmd::Brush { cover: a, paint: ga, clip: ca },
+            DrawCmd::Brush { cover: b, paint: gb, clip: cb },
         ) if ga == gb && ca == cb && a.variant() == b.variant() && a.range().end == b.range().start => {
-            Some(DrawCmd::Gradient {
+            Some(DrawCmd::Brush {
                 cover: a.with_range(a.range().start..b.range().end),
-                gradient: *ga,
+                paint: *ga,
                 clip: *ca,
             })
         }

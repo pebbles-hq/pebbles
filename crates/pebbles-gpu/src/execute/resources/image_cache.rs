@@ -122,6 +122,11 @@ impl ImageCache {
         self.frame += 1;
     }
 
+    /// The resident texture view of `key` (image brushes bind it with their own layout, 09 §6).
+    pub(crate) fn view(&self, key: &ImageKey) -> Option<&wgpu::TextureView> {
+        self.entries.get(key).map(|e| &e.view)
+    }
+
     /// The bind group for `key` sampled with `sampler`, if `ensure_bind_group` made it.
     pub(crate) fn bind_group(&self, key: &ImageKey, sampler: SamplerKey) -> Option<&wgpu::BindGroup> {
         self.entries.get(key)?.bind_groups.iter().find(|(k, _)| *k == sampler).map(|(_, g)| g)

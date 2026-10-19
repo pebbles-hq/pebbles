@@ -5,6 +5,16 @@ macro_rules! shader {
     ($file:literal) => {
         concat!(include_str!("prelude.wgsl"), "\n", include_str!($file))
     };
+    // A brush paint (09 §6): prelude + the paint + the shared coverage variants.
+    ($file:literal, brush) => {
+        concat!(
+            include_str!("prelude.wgsl"),
+            "\n",
+            include_str!($file),
+            "\n",
+            include_str!("brush_cover.wgsl")
+        )
+    };
 }
 
 pub(crate) const SOLID: &str = shader!("solid.wgsl");
@@ -14,7 +24,8 @@ pub(crate) const SHADOW: &str = shader!("shadow.wgsl");
 pub(crate) const SDF: &str = shader!("sdf.wgsl");
 pub(crate) const COMPOSITE: &str = shader!("composite.wgsl");
 pub(crate) const BLIT: &str = shader!("blit.wgsl");
-pub(crate) const GRADIENT: &str = shader!("gradient.wgsl");
+pub(crate) const GRADIENT: &str = shader!("gradient.wgsl", brush);
+pub(crate) const IMAGE_BRUSH: &str = shader!("image_brush.wgsl", brush);
 
 /// `(name, full source)` for every pipeline shader.
 #[cfg_attr(not(test), allow(dead_code))] // read by the V02 validation tests
@@ -27,6 +38,7 @@ pub(crate) const ALL: &[(&str, &str)] = &[
     ("composite", COMPOSITE),
     ("blit", BLIT),
     ("gradient", GRADIENT),
+    ("image_brush", IMAGE_BRUSH),
 ];
 
 #[cfg(test)]

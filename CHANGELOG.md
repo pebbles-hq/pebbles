@@ -6,6 +6,9 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — image brushes (wgpu renderer)
+wgpu renderer: image brushes on fills and strokes (extend, quality, alpha, brush transform), and image-brush text.
+
 ### Added — gradients (wgpu renderer)
 wgpu renderer: linear, radial, two-point conical and sweep gradients with Pad/Repeat/Reflect and all interpolation color spaces (dithered like Flutter; gradient text drawn from outlines).
 

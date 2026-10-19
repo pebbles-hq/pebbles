@@ -188,6 +188,46 @@ pub fn image_fill_texels(img: &Rgba8, scale: f64) -> Result<(), String> {
     if checked > 0 { Ok(()) } else { Err("no texel inside the rect".into()) }
 }
 
+/// The `img/brush_fill_*` cells: 2×2 (red, green / blue, white) under `scale(16)` on 64×64.
+const BRUSH_CELLS: [[u8; 4]; 4] =
+    [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255], [255, 255, 255, 255]];
+
+fn brush_cells(img: &Rgba8, scale: f64, cell: impl Fn(u32, u32) -> usize) -> Result<(), String> {
+    for cy in 0..4u32 {
+        for cx in 0..4u32 {
+            let (lx, ly) = (16.0 * f64::from(cx) + 8.0, 16.0 * f64::from(cy) + 8.0);
+            let want = BRUSH_CELLS[cell(cx, cy)];
+            let got = px(img, dev(lx, scale), dev(ly, scale));
+            if !near(got, want, 0) {
+                return Err(format!("cell ({cx},{cy}) = {got:?}, want {want:?}"));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `img/brush_fill_pad`: cells beyond the image repeat its edge cells.
+pub fn brush_fill_pad(img: &Rgba8, scale: f64) -> Result<(), String> {
+    brush_cells(img, scale, |x, y| (y.min(1) * 2 + x.min(1)) as usize)
+}
+
+/// `img/brush_fill_repeat`: the 2×2 tiles.
+pub fn brush_fill_repeat(img: &Rgba8, scale: f64) -> Result<(), String> {
+    brush_cells(img, scale, |x, y| ((y % 2) * 2 + x % 2) as usize)
+}
+
+/// `img/brush_fill_reflect`: the 2×2 mirrored every other tile.
+pub fn brush_fill_reflect(img: &Rgba8, scale: f64) -> Result<(), String> {
+    let m = |v: u32| if (v / 2).is_multiple_of(2) { v % 2 } else { 1 - v % 2 };
+    brush_cells(img, scale, |x, y| (m(y) * 2 + m(x)) as usize)
+}
+
+/// `img/brush_fill_alpha_0_5`: the red cell at alpha 0.5 over white = (255, 128, 128) ±2.
+pub fn brush_alpha_half(img: &Rgba8, scale: f64) -> Result<(), String> {
+    let got = px(img, dev(8.0, scale), dev(8.0, scale));
+    if near(got, [255, 128, 128, 255], 2) { Ok(()) } else { Err(format!("{got:?}, want (255,128,128) ±2")) }
+}
+
 /// Run every probe of `case` on `img`, appending `(name, None | Some(message))` to `out`.
 /// Returns the number of failing probes. A panicking probe counts as failing.
 pub fn run_probes(case: &Case, img: &Rgba8, out: &mut Vec<(&'static str, Option<String>)>) -> usize {

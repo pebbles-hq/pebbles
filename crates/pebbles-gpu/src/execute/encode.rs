@@ -105,7 +105,8 @@ pub(crate) fn cmd_kind(cmd: &DrawCmd) -> PipelineKind {
         DrawCmd::Shadows { .. } => PipelineKind::Shadow,
         DrawCmd::Glyphs { .. } => PipelineKind::Glyph,
         DrawCmd::Images { .. } => PipelineKind::Image,
-        DrawCmd::Gradient { .. } => PipelineKind::Gradient,
+        DrawCmd::Brush { paint: crate::prepare::plan::BrushPaint::Gradient(_), .. } => PipelineKind::Gradient,
+        DrawCmd::Brush { .. } => PipelineKind::ImageBrush,
         // Layer boundaries never reach a pass (09 §3.6); composites draw with CompositeOver.
         DrawCmd::PushLayer { .. } | DrawCmd::PopLayer { .. } | DrawCmd::Composite { .. } => {
             PipelineKind::CompositeOver
@@ -129,7 +130,8 @@ pub(crate) fn ensure_plan_pipelines(
         .iter()
         .map(cmd_kind)
         .chain(composites.then_some(PipelineKind::CompositeOver));
-    for kind in kinds.filter(|k| *k != PipelineKind::Gradient) {
+    // Brush kinds are ensured per variant by their own prepare steps.
+    for kind in kinds.filter(|k| !matches!(k, PipelineKind::Gradient | PipelineKind::ImageBrush)) {
         let i = PipelineKind::ALL.iter().position(|k| *k == kind).unwrap_or(0);
         if std::mem::replace(&mut seen[i], true) {
             continue;
@@ -354,19 +356,17 @@ pub(crate) fn encode(
                 pass.draw(0..4, 0..1);
                 stats.draw_calls += 1;
             }
-            DrawCmd::Gradient { cover, gradient, clip } => {
-                use crate::prepare::plan::GradientCover;
+            DrawCmd::Brush { cover, paint, clip } => {
+                use crate::prepare::plan::BrushCover;
                 // Mesh covers draw inside their Tier C run (composited above).
                 let (variant, range, vb) = match cover {
-                    GradientCover::Shape(r) => (0, r, renderer.arenas.shape_instances.buffer()),
-                    GradientCover::Mask(r) => (1, r, renderer.arenas.glyphs.buffer()),
-                    GradientCover::Mesh(_) => continue,
+                    BrushCover::Shape(r) => (0, r, renderer.arenas.shape_instances.buffer()),
+                    BrushCover::Mask(r) => (1, r, renderer.arenas.glyphs.buffer()),
+                    BrushCover::Mesh(_) => continue,
                 };
-                let (Some(pipeline), Some(vb), Some(bg)) = (
-                    renderer.pipelines.get_ensured(key(PipelineKind::Gradient, variant)),
-                    vb,
-                    renderer.gradients.bind_group(),
-                ) else {
+                let Some((kind, bg, offset)) = renderer.brush_binding(*paint) else { continue };
+                let (Some(pipeline), Some(vb)) = (renderer.pipelines.get_ensured(key(kind, variant)), vb)
+                else {
                     continue;
                 };
                 if !state.set_scissor(pass, clip.scissor) {
@@ -374,7 +374,6 @@ pub(crate) fn encode(
                 }
                 bind_clip(pass, *clip, stats);
                 state.set_pipeline(pass, pipeline);
-                let offset = renderer.gradient_offset(*gradient);
                 pass.set_bind_group(1, bg, &[offset]);
                 stats.bind_group_switches += 1;
                 pass.set_vertex_buffer(0, vb.slice(..));

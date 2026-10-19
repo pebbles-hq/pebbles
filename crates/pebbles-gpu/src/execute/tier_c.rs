@@ -30,10 +30,10 @@ fn intersect(a: ScissorRect, b: ScissorRect) -> ScissorRect {
 
 /// A tessellated draw of a run: a solid mesh, or a gradient-painted one (09 §6 Mesh variant).
 fn mesh_of(cmd: &DrawCmd) -> Option<(&Range<u32>, crate::prepare::ClipState)> {
-    use crate::prepare::plan::GradientCover;
+    use crate::prepare::plan::BrushCover;
     match cmd {
         DrawCmd::Solid { indices, clip } => Some((indices, *clip)),
-        DrawCmd::Gradient { cover: GradientCover::Mesh(indices), clip, .. } => Some((indices, *clip)),
+        DrawCmd::Brush { cover: BrushCover::Mesh(indices), clip, .. } => Some((indices, *clip)),
         _ => None,
     }
 }
@@ -220,18 +220,16 @@ pub(crate) fn encode_runs(
                         pass.draw_indexed(indices.clone(), 0, 0..1);
                         stats.draw_calls += 1;
                     }
-                    DrawCmd::Gradient {
-                        cover: crate::prepare::plan::GradientCover::Mesh(indices),
-                        gradient,
-                        ..
+                    DrawCmd::Brush {
+                        cover: crate::prepare::plan::BrushCover::Mesh(indices), paint, ..
                     } => {
-                        let (Some(gp), Some(bg)) =
-                            (renderer.pipelines.get_ensured(gradient_key), renderer.gradients.bind_group())
+                        let Some((kind, bg, offset)) = renderer.brush_binding(*paint) else { continue };
+                        let Some(gp) = renderer.pipelines.get_ensured(PipelineKey { kind, ..gradient_key })
                         else {
                             continue;
                         };
                         pass.set_pipeline(gp);
-                        pass.set_bind_group(1, bg, &[renderer.gradient_offset(*gradient)]);
+                        pass.set_bind_group(1, bg, &[offset]);
                         stats.bind_group_switches += 1;
                         painted = true;
                         pass.draw_indexed(indices.clone(), 0, 0..1);

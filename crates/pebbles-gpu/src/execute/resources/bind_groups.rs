@@ -13,6 +13,7 @@ pub(crate) struct BindGroupLayouts {
     pub composite_backdrop: wgpu::BindGroupLayout,
     pub blit: wgpu::BindGroupLayout,
     pub gradient: wgpu::BindGroupLayout,
+    pub image_brush: wgpu::BindGroupLayout,
 }
 
 impl BindGroupLayouts {
@@ -194,7 +195,39 @@ impl BindGroupLayouts {
                 },
             ],
         });
-        Self { globals, texture, glyph, composite, composite_backdrop, blit, gradient }
+        // 09 §6: image brush = filterable texture + sampler + `ImageBrushParams` (dynamic, 48).
+        let image_brush = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("pebbles.gpu.layout.image_brush"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(48),
+                    },
+                    count: None,
+                },
+            ],
+        });
+        Self { globals, texture, glyph, composite, composite_backdrop, blit, gradient, image_brush }
     }
 }
 

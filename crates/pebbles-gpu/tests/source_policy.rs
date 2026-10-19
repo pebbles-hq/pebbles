@@ -83,6 +83,7 @@ fn every_wgsl_file_is_included() {
         let included = rust.iter().any(|(_, s)| {
             s.lines().any(|l| l.contains("include_str!(") && l.contains(name))
                 || s.contains(&format!("shader!(\"{name}\")"))
+                || s.contains(&format!("shader!(\"{name}\", brush)"))
         });
         assert!(included, "{name} is not compiled into any pipeline");
     }

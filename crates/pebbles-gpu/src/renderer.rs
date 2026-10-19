@@ -47,6 +47,8 @@ pub struct Renderer {
     /// This frame's `Globals::color_flags`.
     color_flags: u32,
     pub(crate) runs: Vec<super::execute::tier_c::Run>,
+    /// Image-brush params and bind groups (09 §6, L42).
+    pub(crate) image_brushes: super::execute::image_brushes::ImageBrushResources,
     /// Gradient LUT and params (09 §5.3, L34/L35).
     pub(crate) gradients: super::execute::gradients::GradientResources,
     /// GPU coverage masks: the mask pool and the per-texture group-0 variants (09 §2.9, L09).
@@ -151,6 +153,7 @@ impl Renderer {
             runs: Vec::new(),
             gpu_masks,
             gradients: super::execute::gradients::GradientResources::new(device, lut_rows),
+            image_brushes: super::execute::image_brushes::ImageBrushResources::new(device),
             segments: Vec::new(),
             layer_budget_warned: false,
             arenas: FrameArenas::new(),
@@ -318,6 +321,7 @@ impl Renderer {
         encoder.push_debug_group("pebbles.gpu.frame");
         super::execute::gpu_masks::render_jobs(self, device, queue, &mut encoder, &mut stats);
         super::execute::gradients::prepare(self, device, queue, format, &mut stats);
+        super::execute::image_brushes::prepare(self, device, queue, format, &mut stats);
         let composites = super::execute::tier_c::encode_runs(
             self,
             device,
@@ -416,6 +420,7 @@ impl Renderer {
         }
         self.gpu_masks.end_frame(self.budgets.gpu_mask_bytes);
         self.gradients.lut.end_frame();
+        self.image_brushes.end_frame();
         stats.layer_pool_bytes = target.targets.pool.bytes();
         self.scratch.plan.release_refs();
         if !nested {
@@ -625,6 +630,24 @@ impl Renderer {
             );
             self.globals_bg_key = key;
             stats.bind_groups_created += 1;
+        }
+    }
+
+    /// Pipeline kind, group-1 bind group and dynamic offset of a brush paint (09 §5, §6).
+    pub(crate) fn brush_binding(
+        &self,
+        paint: super::prepare::plan::BrushPaint,
+    ) -> Option<(super::execute::pipelines::PipelineKind, &wgpu::BindGroup, u32)> {
+        use super::execute::pipelines::PipelineKind;
+        use super::prepare::plan::BrushPaint;
+        match paint {
+            BrushPaint::Gradient(i) => {
+                Some((PipelineKind::Gradient, self.gradients.bind_group()?, self.gradient_offset(i)))
+            }
+            BrushPaint::Image(i) => {
+                let (group, offset) = self.image_brushes.binding(&self.device, i)?;
+                Some((PipelineKind::ImageBrush, group, offset))
+            }
         }
     }
 

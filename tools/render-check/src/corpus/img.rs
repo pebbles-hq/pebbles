@@ -10,7 +10,9 @@ use pebbles_widgets::container;
 use kurbo::{Affine, Rect, RoundedRect};
 use peniko::{Extend, ImageAlphaType, ImageBrush, ImageData, ImageFormat, ImageQuality};
 
-use crate::case::{Case, Category::Analytic, Category::Image, Slice::P3, harness, ops, with_scale_variants};
+use crate::case::{
+    Case, Category::Analytic, Category::Image, Slice::P3, Slice::P4, harness, ops, with_scale_variants,
+};
 use crate::probe::{self, noise_rgba8};
 
 const W: u32 = 128;
@@ -36,6 +38,25 @@ pub fn cases() -> Vec<Case> {
         ops("img/many_200_distinct", Image, P3, 256, 256, many_200_distinct),
         // R37 dynamic image (V53 case): updated in place, drawn like an image.
         ops("img/dynamic_update", Image, P3, W, H, dynamic_update),
+        // L40 image brushes (09 §8.0): judged by the golden model and analytic probes.
+        ops("img/brush_fill_pad", Image, P4, 64, 64, |p| brush_fill(p, Extend::Pad, 1.0))
+            .probe("brush_fill_pad", probe::brush_fill_pad),
+        ops("img/brush_fill_repeat", Image, P4, 64, 64, |p| brush_fill(p, Extend::Repeat, 1.0))
+            .probe("brush_fill_repeat", probe::brush_fill_repeat),
+        ops("img/brush_fill_reflect", Image, P4, 64, 64, |p| brush_fill(p, Extend::Reflect, 1.0))
+            .probe("brush_fill_reflect", probe::brush_fill_reflect),
+        ops("img/brush_fill_alpha_0_5", Image, P4, 64, 64, |p| brush_fill(p, Extend::Pad, 0.5))
+            .probe("brush_alpha_half", probe::brush_alpha_half),
+        ops("img/brush_stroke", Image, P4, 64, 64, |p| {
+            let rr = RoundedRect::new(12.0, 12.0, 52.0, 52.0, 8.0);
+            let b = brush_2x2(Extend::Repeat, 1.0);
+            p.stroke(&kurbo::Stroke::new(16.0), Affine::IDENTITY, &b, Some(Affine::scale(16.0)), &rr);
+        }),
+        ops("img/brush_transform_rotate", Image, P4, 64, 64, |p| {
+            let b = brush_2x2(Extend::Repeat, 1.0);
+            let xf = Affine::rotate(std::f64::consts::FRAC_PI_4) * Affine::scale(0.5) * Affine::scale(16.0);
+            p.fill(peniko::Fill::NonZero, Affine::IDENTITY, &b, Some(xf), &Rect::new(0.0, 0.0, 64.0, 64.0));
+        }),
         // R36 nine-slice (V53 case): a bordered 24×24 "button" stretched to 112×40.
         ops("img/nine_slice_button", Image, P3, W, H, nine_slice_button),
         // R35 mip chains (V53 cases): a one-pixel checker minified ×0.3.
@@ -232,4 +253,29 @@ fn under_clip_and_opacity(p: &mut Painter<'_>) {
     p.draw_image(&checker(128, 128, 8), Affine::IDENTITY);
     p.pop_layer();
     p.pop_layer();
+}
+
+/// 09 §8.0: the 2×2 brush image (red, green / blue, white), `Low` quality.
+fn brush_2x2(extend: Extend, alpha: f32) -> ImageBrush {
+    let px: Vec<u8> = [[255u8, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255], [255, 255, 255, 255]].concat();
+    let data = ImageData {
+        data: peniko::Blob::from(px),
+        format: ImageFormat::Rgba8,
+        alpha_type: ImageAlphaType::Alpha,
+        width: 2,
+        height: 2,
+    };
+    ImageBrush::new(data).with_quality(ImageQuality::Low).with_extend(extend).with_alpha(alpha)
+}
+
+/// A canvas-filling rect painted with the 2×2 brush under `scale(16)`.
+fn brush_fill(p: &mut Painter<'_>, extend: Extend, alpha: f32) {
+    let b = brush_2x2(extend, alpha);
+    p.fill(
+        peniko::Fill::NonZero,
+        Affine::IDENTITY,
+        &b,
+        Some(Affine::scale(16.0)),
+        &Rect::new(0.0, 0.0, 64.0, 64.0),
+    );
 }

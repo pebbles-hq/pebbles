@@ -107,7 +107,8 @@ fn bind_groups_within_webgl2_limit() {
 
 #[test]
 fn shader_table_is_complete() {
-    const PRELUDES: &[&str] = &["prelude"];
+    // Included into other shaders (the prelude; the brush coverage variants, 09 §6).
+    const PRELUDES: &[&str] = &["prelude", "brush_cover"];
     let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src/shaders");
     for e in std::fs::read_dir(dir).expect("shaders dir").flatten() {
         let path = e.path();

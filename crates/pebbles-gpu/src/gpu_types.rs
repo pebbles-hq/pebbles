@@ -143,6 +143,19 @@ pub(crate) struct GradientParams {
 const _: () = assert!(size_of::<GradientParams>() == 80);
 const _: () = assert!(core::mem::offset_of!(GradientParams, info) == 32);
 
+/// Image-brush parameters (09 §6), one uniform slot per `ImageBrushDraw`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+pub(crate) struct ImageBrushParams {
+    /// `D` row x: (a, c, e, 0) — device px → image px.
+    pub m0: [f32; 4],
+    /// `D` row y: (b, d, f, 0).
+    pub m1: [f32; 4],
+    /// (w, h, 1/w, 1/h) of the logical image.
+    pub size: [f32; 4],
+}
+const _: () = assert!(size_of::<ImageBrushParams>() == 48);
+
 #[cfg(test)]
 mod tests {
     use super::{CompositeParams, GradientParams};

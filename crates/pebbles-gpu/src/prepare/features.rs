@@ -31,21 +31,6 @@ impl Walk<'_> {
         self.plan.fallback_features.insert(f);
     }
 
-    /// A non-solid fill or stroke brush (skipped by C17): its gradient kind / image rows.
-    pub(super) fn note_paint(&mut self, brush: &peniko::Brush, brush_xf: Option<Affine>, stroke: bool) {
-        match brush {
-            peniko::Brush::Solid(_) => {}
-            // Gradients draw exactly and dithered (L35, L37).
-            peniko::Brush::Gradient(_) => {}
-            peniko::Brush::Image(_) => {
-                self.fell_back(if stroke { Feature::StrokeImageBrush } else { Feature::FillImageBrush });
-                if brush_xf.is_some() {
-                    self.fell_back(Feature::ImageBrushTransform);
-                }
-            }
-        }
-    }
-
     /// The clip rows of a layer clip (quarter turns and zero-radius rounded rects are exact
     /// scissors since R07).
     pub(super) fn note_clip(
@@ -75,16 +60,6 @@ impl Walk<'_> {
         self.fell_back(Feature::ClipGpuMask);
         if fill == peniko::Fill::EvenOdd && !matches!(clip, Geometry::Rect(_)) {
             self.fell_back(Feature::ClipEvenOdd);
-        }
-    }
-
-    /// Glyph-run rows decided in prepare (colour glyphs are only known at raster time).
-    /// Non-solid glyph brushes (L36). Transformed, rotated and huge runs take the outline
-    /// route since R20.
-    pub(super) fn note_glyphs(&mut self, brush: &peniko::Brush) {
-        // Gradient runs are painted through their outlines (L36); image brushes are L41's.
-        if matches!(brush, peniko::Brush::Image(_)) {
-            self.fell_back(Feature::GlyphsNonSolidBrush);
         }
     }
 }

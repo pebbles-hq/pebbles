@@ -108,7 +108,7 @@ fn gradient_fill_is_a_gradient_draw() {
     // 09 §5 (L35): the tessellated tier's mesh, painted by the gradient.
     assert!(matches!(
         plan.cmds[..],
-        [DrawCmd::Gradient { cover: plan::GradientCover::Mesh(_), gradient: 0, .. }]
+        [DrawCmd::Brush { cover: plan::BrushCover::Mesh(_), paint: plan::BrushPaint::Gradient(0), .. }]
     ));
     assert_eq!(plan.gradients.len(), 1);
     assert_eq!(stats.unsupported[Unsupported::GradientBrush as usize], 0);
@@ -135,7 +135,7 @@ fn gradient_run_emits_one_gradient_cmd() {
     assert_eq!(plan.cmds.len(), 1, "{:?}", plan.cmds);
     assert!(matches!(
         plan.cmds[0],
-        DrawCmd::Gradient { cover: plan::GradientCover::Mask(_), gradient: 0, .. }
+        DrawCmd::Brush { cover: plan::BrushCover::Mask(_), paint: plan::BrushPaint::Gradient(0), .. }
     ));
     assert_eq!(plan.gradients.len(), 1);
     assert_eq!(stats.unsupported[Unsupported::GradientText as usize], 0);
@@ -145,15 +145,20 @@ fn gradient_run_emits_one_gradient_cmd() {
 fn warn_once_logs_once_per_kind() {
     let mut scene = Scene::new();
     let mut p = Painter::new(&mut scene);
-    let image = crate::test_support::rgba_image(4, 4, [255; 4]);
     for _ in 0..100 {
-        p.fill(Fill::NonZero, Affine::IDENTITY, &image, None, &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0));
+        p.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::BLACK,
+            None,
+            &kurbo::Rect::new(f64::NAN, 0.0, 10.0, 10.0),
+        );
     }
     let mut warn = crate::stats::WarnOnce::default();
     let mut lines = 0;
     for _frame in 0..3 {
         let (_, stats) = plan_and_stats(&scene);
-        assert_eq!(stats.unsupported[Unsupported::ImageBrush as usize], 100);
+        assert_eq!(stats.unsupported[Unsupported::NonFinite as usize], 100);
         for kind in Unsupported::ALL {
             lines += u32::from(warn.report(kind, stats.unsupported[kind as usize]));
         }

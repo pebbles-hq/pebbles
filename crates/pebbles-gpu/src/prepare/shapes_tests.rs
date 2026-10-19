@@ -62,7 +62,7 @@ fn gradient_brush_takes_the_shape_cover() {
     // 09 §6 brush × tier rule: a Tier A rect keeps its analytic coverage; the gradient paints it.
     assert!(matches!(
         plan.cmds[..],
-        [crate::prepare::DrawCmd::Gradient { cover: crate::prepare::plan::GradientCover::Shape(_), .. }]
+        [crate::prepare::DrawCmd::Brush { cover: crate::prepare::plan::BrushCover::Shape(_), .. }]
     ));
     assert_eq!(plan.shapes[0].color, [1.0; 4], "white × alpha: coverage only");
 }

@@ -25,6 +25,7 @@ pub(crate) mod glyphs;
 pub(crate) mod gpu_masks;
 pub(crate) mod gradient;
 mod hygiene;
+pub(crate) mod image_brush;
 mod image_nine;
 mod images;
 mod layer;
@@ -150,8 +151,8 @@ struct Walk<'a> {
     clip_hint: pebbles_render::paint::display_list::PathHint,
     /// `GpuBudgets::gpu_mask_bytes` (rows 9–10).
     gpu_mask_budget: u64,
-    /// The gradient painting the current op (09 §5), if any.
-    paint: Option<u32>,
+    /// The brush painting the current op (09 §5, §6), if any.
+    paint: Option<plan::BrushPaint>,
 }
 
 /// One COLR glyph the renderer must render into the color atlas before the frame (R39).
@@ -600,7 +601,6 @@ impl Walk<'_> {
                     {
                         continue;
                     }
-                    self.note_paint(brush, *brush_transform, false);
                     let paint_xf = xf * brush_transform.unwrap_or(Affine::IDENTITY);
                     let Some(color) = self.brush_paint(brush, paint_xf) else { continue };
                     if self.vertex_budget_spent() {
@@ -647,7 +647,6 @@ impl Walk<'_> {
                     {
                         continue;
                     }
-                    self.note_paint(brush, *brush_transform, true);
                     let paint_xf = xf * brush_transform.unwrap_or(Affine::IDENTITY);
                     let Some(color) = self.brush_paint(brush, paint_xf) else { continue };
                     if self.vertex_budget_spent() {
@@ -765,7 +764,6 @@ impl Walk<'_> {
                     if !self.paint_is_sane(brush, xf) || self.hidden() {
                         continue;
                     }
-                    self.note_glyphs(brush);
                     let base = match brush {
                         peniko::Brush::Solid(c) => *c,
                         // 09 §5.6 (L36): the run's paint transform is `outer × op.transform`.
@@ -781,10 +779,15 @@ impl Walk<'_> {
                             Some(c) => c,
                             None => continue,
                         },
-                        peniko::Brush::Image(_) => {
-                            self.stats.record(Unsupported::ImageBrush);
-                            continue;
-                        }
+                        // 09 §6 (L41 step 3): image-brush runs draw through their outlines too.
+                        peniko::Brush::Image(_) => match self.brush_paint(brush, xf) {
+                            Some(_) if self.colr.font_has_colr(font) => {
+                                self.paint = None;
+                                continue;
+                            }
+                            Some(c) => c,
+                            None => continue,
+                        },
                     };
                     let k = self.alpha();
                     let color = color::premul_scaled(base, k);
@@ -1001,16 +1004,16 @@ impl Walk<'_> {
     }
 
     fn push(&mut self, cmd: DrawCmd, visit: u32) {
-        // A gradient-painted op (09 §5): its tier's coverage cmd becomes a Gradient cmd.
+        // A brush-painted op (09 §5, §6): its tier's coverage cmd becomes a Brush cmd.
         let cmd = match (self.paint, cmd) {
-            (Some(gradient), DrawCmd::Shapes { instances, clip }) => {
-                DrawCmd::Gradient { cover: plan::GradientCover::Shape(instances), gradient, clip }
+            (Some(paint), DrawCmd::Shapes { instances, clip }) => {
+                DrawCmd::Brush { cover: plan::BrushCover::Shape(instances), paint, clip }
             }
-            (Some(gradient), DrawCmd::Glyphs { glyphs, clip }) => {
-                DrawCmd::Gradient { cover: plan::GradientCover::Mask(glyphs), gradient, clip }
+            (Some(paint), DrawCmd::Glyphs { glyphs, clip }) => {
+                DrawCmd::Brush { cover: plan::BrushCover::Mask(glyphs), paint, clip }
             }
-            (Some(gradient), DrawCmd::Solid { indices, clip }) => {
-                DrawCmd::Gradient { cover: plan::GradientCover::Mesh(indices), gradient, clip }
+            (Some(paint), DrawCmd::Solid { indices, clip }) => {
+                DrawCmd::Brush { cover: plan::BrushCover::Mesh(indices), paint, clip }
             }
             (_, cmd) => cmd,
         };
@@ -1034,11 +1037,30 @@ impl Walk<'_> {
                         ramp: gradient::RampKey::of(g),
                         first,
                     });
-                    self.paint = Some(num::index_u32(self.plan.gradients.len() - 1));
+                    self.paint =
+                        Some(plan::BrushPaint::Gradient(num::index_u32(self.plan.gradients.len() - 1)));
                     Some(peniko::Color::WHITE)
                 }
             },
-            _ => self.solid_color(brush),
+            peniko::Brush::Image(b) => {
+                // 09 §6: P not finite or singular, or an empty image → skip the op.
+                let (w, h) = (b.image.width, b.image.height);
+                if w == 0 || h == 0 || !paint_xf.is_finite() || paint_xf.determinant().abs() < 1e-12 {
+                    self.plan.stats.image_brush_skipped += 1;
+                    return None;
+                }
+                let params = image_brush::params(paint_xf, w, h);
+                self.plan.image_brushes.push(plan::ImageBrushDraw {
+                    image: b.image.clone(),
+                    key: crate::execute::resources::image_cache::ImageKey::of(&b.image),
+                    sampler: images::sampler_key(b.sampler),
+                    params,
+                });
+                self.paint = Some(plan::BrushPaint::Image(num::index_u32(self.plan.image_brushes.len() - 1)));
+                // Coverage × alpha only: a = sampler.alpha × fold (× hairline, applied by the stroke).
+                Some(peniko::Color::WHITE.with_alpha(b.sampler.alpha.clamp(0.0, 1.0)))
+            }
+            peniko::Brush::Solid(_) => self.solid_color(brush),
         }
     }
 }

@@ -261,6 +261,10 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::GradientNonSrgbInterpolation, // L32
     F::GradientBrushTransform,       // L33
     F::GradientDither,               // L37 (ordered 8×8, golden-model exact)
+    F::FillImageBrush,               // L41/L42
+    F::StrokeImageBrush,             // L41/L42
+    F::ImageBrushTransform,          // L41
+    F::GlyphsNonSolidBrush,          // L36 (gradient) + L41 (image) via outlines
 ];
 
 #[cfg(test)]

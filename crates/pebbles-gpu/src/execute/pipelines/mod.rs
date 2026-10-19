@@ -17,6 +17,7 @@ pub(crate) enum PipelineKind {
     Glyph,
     Image,
     Gradient,
+    ImageBrush,
     CompositeOver,
     CompositeCompose,
     CompositeBackdrop,
@@ -33,13 +34,14 @@ pub(crate) enum PipelineKind {
 
 impl PipelineKind {
     /// Every kind, in declaration order.
-    pub(crate) const ALL: [PipelineKind; 18] = [
+    pub(crate) const ALL: [PipelineKind; 19] = [
         Self::Solid,
         Self::Sdf,
         Self::Shadow,
         Self::Glyph,
         Self::Image,
         Self::Gradient,
+        Self::ImageBrush,
         Self::CompositeOver,
         Self::CompositeCompose,
         Self::CompositeBackdrop,
@@ -73,6 +75,7 @@ impl PipelineKind {
             Self::CompositeBackdrop => "pebbles.gpu.pipeline.composite_backdrop",
             Self::Blit => "pebbles.gpu.pipeline.blit",
             Self::Gradient => "pebbles.gpu.pipeline.gradient",
+            Self::ImageBrush => "pebbles.gpu.pipeline.image_brush",
             _ => "pebbles.gpu.pipeline.other",
         }
     }
@@ -86,6 +89,7 @@ impl PipelineKind {
             Self::Glyph => "pebbles.gpu.draw.glyph",
             Self::Image => "pebbles.gpu.draw.image",
             Self::Gradient => "pebbles.gpu.draw.gradient",
+            Self::ImageBrush => "pebbles.gpu.draw.image_brush",
             Self::CompositeOver => "pebbles.gpu.draw.composite_over",
             Self::CompositeCompose => "pebbles.gpu.draw.composite_compose",
             Self::CompositeBackdrop => "pebbles.gpu.draw.composite_backdrop",
@@ -122,6 +126,7 @@ pub(crate) struct ShaderModules {
     pub composite: wgpu::ShaderModule,
     pub blit: wgpu::ShaderModule,
     pub gradient: wgpu::ShaderModule,
+    pub image_brush: wgpu::ShaderModule,
 }
 
 impl ShaderModules {
@@ -142,6 +147,7 @@ impl ShaderModules {
             composite: module("pebbles.gpu.shader.composite", shaders::COMPOSITE),
             blit: module("pebbles.gpu.shader.blit", shaders::BLIT),
             gradient: module("pebbles.gpu.shader.gradient", shaders::GRADIENT),
+            image_brush: module("pebbles.gpu.shader.image_brush", shaders::IMAGE_BRUSH),
         }
     }
 
@@ -157,6 +163,7 @@ impl ShaderModules {
             | PipelineKind::CompositeBackdrop => &self.composite,
             PipelineKind::Blit => &self.blit,
             PipelineKind::Gradient => &self.gradient,
+            PipelineKind::ImageBrush => &self.image_brush,
             _ => &self.solid,
         }
     }
@@ -197,6 +204,7 @@ impl PipelineCache {
             PipelineKind::CompositeBackdrop => Some(&layouts.composite_backdrop),
             PipelineKind::Blit => Some(&layouts.blit),
             PipelineKind::Gradient => Some(&layouts.gradient),
+            PipelineKind::ImageBrush => Some(&layouts.image_brush),
             _ => None,
         };
         debug_assert_eq!(group1.is_some(), desc.group1, "{kind:?}: group 1 disagrees with 02 §9");
