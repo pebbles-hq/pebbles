@@ -230,6 +230,10 @@ pub struct FrameStats {
     pub gpu_masks_aliased: u32,
     /// Backdrop copies for blend modes (09 L24).
     pub backdrop_copies: u32,
+    /// Layers whose alpha folded into their single draw (09 §3.4).
+    pub layers_folded: u32,
+    /// Layers rendered offscreen and composited (09 §3.5).
+    pub layers_offscreen: u32,
     /// Bytes held by this target's layer pool (09 §3.8).
     pub layer_pool_bytes: u64,
     /// Layer pool over its budget after the end-of-frame trim (09 §3.8).
@@ -323,6 +327,8 @@ impl Default for FrameStats {
             gpu_masks: 0,
             gpu_masks_aliased: 0,
             backdrop_copies: 0,
+            layers_folded: 0,
+            layers_offscreen: 0,
             layer_pool_bytes: 0,
             layer_budget_exceeded: 0,
             lut_bakes: 0,

@@ -227,6 +227,8 @@ impl Renderer {
         stats.ops = self.scratch.plan.stats.ops;
         stats.cmds = u32::try_from(self.scratch.plan.cmds.len()).unwrap_or(u32::MAX);
         stats.culled = self.scratch.plan.stats.culled;
+        stats.layers_folded = self.scratch.plan.stats.layers_folded;
+        stats.layers_offscreen = self.scratch.plan.stats.layers_offscreen;
         {
             let plan = &self.scratch.plan;
             let n = |v: usize| u32::try_from(v).unwrap_or(u32::MAX);

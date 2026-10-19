@@ -1,4 +1,5 @@
-//! Group opacity (09 §3.4–§3.7, L12–L14): folded single draws and exact offscreen layers.
+//! Group opacity (09 §3.4–§3.7, L10–L14): folded single draws and exact offscreen layers.
+//! 64×64 on white; every test runs under PEBBLES_GPU_STRICT (zero validation errors).
 
 use super::*;
 use peniko::Mix;
@@ -30,12 +31,15 @@ fn opacity_single_draw_is_folded() {
     let mut s = Scene::new();
     let mut p = Painter::new(&mut s);
     layer(&mut p, 0.5, Affine::IDENTITY, &Rect::new(0.0, 0.0, 64.0, 64.0));
-    red(&mut p, Rect::new(4.0, 4.0, 40.0, 40.0));
+    red(&mut p, Rect::new(8.0, 8.0, 56.0, 56.0));
     p.pop_layer();
-    let Some(rgba) = render(&s, "opacity_single_draw_is_folded") else { return };
-    let c = pixel(&rgba, 64, 20, 20);
+    let Some((device, queue, mut r)) = setup("opacity_single_draw_is_folded") else { return };
+    let mut targets = FrameTargets::new();
+    let (rgba, stats) = frame(&device, &queue, &mut r, &mut targets, &s);
+    assert_eq!((stats.layers_folded, stats.layers_offscreen), (1, 0));
+    let c = pixel(&rgba, 64, 32, 32);
     assert!(near(c, PINK, 2), "{c:?}");
-    assert!(is_white(pixel(&rgba, 64, 50, 50)));
+    assert!(is_white(pixel(&rgba, 64, 60, 60)));
 }
 
 /// L13 AC5 / L14 AC6: two overlapping fills under alpha 0.5 composite once — the overlap is
@@ -46,16 +50,16 @@ fn opacity_group_does_not_double_blend() {
     let mut s = Scene::new();
     let mut p = Painter::new(&mut s);
     layer(&mut p, 0.5, Affine::IDENTITY, &Rect::new(0.0, 0.0, 64.0, 64.0));
-    red(&mut p, Rect::new(4.0, 4.0, 40.0, 40.0));
-    red(&mut p, Rect::new(20.0, 20.0, 60.0, 60.0));
+    red(&mut p, Rect::new(8.0, 8.0, 40.0, 40.0));
+    red(&mut p, Rect::new(24.0, 24.0, 56.0, 56.0));
     p.pop_layer();
     let Some(rgba) = render(&s, "opacity_group_does_not_double_blend") else { return };
     for (x, y) in [(12, 12), (32, 32), (50, 50)] {
         let c = pixel(&rgba, 64, x, y);
         assert!(near(c, PINK, 2), "({x},{y}) {c:?}");
     }
-    assert!(is_white(pixel(&rgba, 64, 2, 2)));
-    assert!(is_white(pixel(&rgba, 64, 50, 10)));
+    assert!(is_white(pixel(&rgba, 64, 4, 4)));
+    assert!(is_white(pixel(&rgba, 64, 50, 12)));
 }
 
 /// L14 AC6: the layer's own circle clip applies once, at the composite.
@@ -64,7 +68,7 @@ fn opacity_group_does_not_double_blend() {
 fn opacity_layer_with_circle_clip() {
     let mut s = Scene::new();
     let mut p = Painter::new(&mut s);
-    layer(&mut p, 0.5, Affine::IDENTITY, &kurbo::Circle::new((32.0, 32.0), 20.0));
+    layer(&mut p, 0.5, Affine::IDENTITY, &kurbo::Circle::new((32.0, 32.0), 24.0));
     red(&mut p, Rect::new(0.0, 0.0, 40.0, 64.0));
     red(&mut p, Rect::new(24.0, 0.0, 64.0, 64.0));
     p.pop_layer();
@@ -73,9 +77,9 @@ fn opacity_layer_with_circle_clip() {
         for x in 0..64u32 {
             let d = ((f64::from(x) + 0.5 - 32.0).powi(2) + (f64::from(y) + 0.5 - 32.0).powi(2)).sqrt();
             let c = pixel(&rgba, 64, x, y);
-            if d < 19.0 {
+            if d < 23.0 {
                 assert!(near(c, PINK, 2), "({x},{y}) {c:?}");
-            } else if d > 21.0 {
+            } else if d > 25.0 {
                 assert!(is_white(c), "({x},{y}) {c:?}");
             }
         }
@@ -135,4 +139,112 @@ fn layer_with_mask_inside() {
     assert!(near(pixel(&rgba, 64, 3, 60), PINK, 2), "unmasked fill");
     assert!(is_white(pixel(&rgba, 64, 4, 4)), "outside the star");
     assert!(is_white(pixel(&rgba, 64, 32, 62)), "between the star's feet");
+}
+
+/// Render `scene` into a fresh 64×64 texture through the persistent `targets`.
+fn frame(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    r: &mut Renderer,
+    targets: &mut FrameTargets,
+    scene: &Scene,
+) -> (Vec<u8>, pebbles_gpu::FrameStats) {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pebbles.gpu.test.layers"),
+        size: wgpu::Extent3d { width: 64, height: 64, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let target = RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, targets);
+    let stats = r.render(target, scene, &FrameParams::new(Color::WHITE)).expect("render");
+    (readback(device, queue, &texture), stats)
+}
+
+/// L10 AC3: opacity 0 draws nothing.
+#[test]
+#[ignore = "gpu"]
+fn opacity_zero_draws_nothing() {
+    let mut s = Scene::new();
+    let mut p = Painter::new(&mut s);
+    layer(&mut p, 0.0, Affine::IDENTITY, &Rect::new(0.0, 0.0, 64.0, 64.0));
+    red(&mut p, Rect::new(8.0, 8.0, 40.0, 40.0));
+    red(&mut p, Rect::new(24.0, 24.0, 56.0, 56.0));
+    p.pop_layer();
+    let Some(rgba) = render(&s, "opacity_zero_draws_nothing") else { return };
+    for y in (0..64).step_by(4) {
+        for x in (0..64).step_by(4) {
+            assert!(is_white(pixel(&rgba, 64, x, y)), "({x},{y})");
+        }
+    }
+}
+
+/// L10 AC4: 0.5 inside 0.5 around one red rect → alpha 0.25.
+#[test]
+#[ignore = "gpu"]
+fn nested_opacity_multiplies() {
+    let mut s = Scene::new();
+    let mut p = Painter::new(&mut s);
+    layer(&mut p, 0.5, Affine::IDENTITY, &Rect::new(0.0, 0.0, 64.0, 64.0));
+    layer(&mut p, 0.5, Affine::IDENTITY, &Rect::new(0.0, 0.0, 64.0, 64.0));
+    red(&mut p, Rect::new(8.0, 8.0, 56.0, 56.0));
+    p.pop_layer();
+    p.pop_layer();
+    let Some(rgba) = render(&s, "nested_opacity_multiplies") else { return };
+    let c = pixel(&rgba, 64, 32, 32);
+    assert!(near(c, [255, 191, 191], 2), "{c:?}");
+}
+
+/// L10 AC7: two sibling same-size opacity layers reuse one pooled target.
+#[test]
+#[ignore = "gpu"]
+fn sibling_layers_share_one_pool_target() {
+    let mut s = Scene::new();
+    let mut p = Painter::new(&mut s);
+    for x in [0.0, 32.0] {
+        layer(&mut p, 0.5, Affine::IDENTITY, &Rect::new(x, 0.0, x + 32.0, 64.0));
+        red(&mut p, Rect::new(x + 4.0, 8.0, x + 20.0, 40.0));
+        red(&mut p, Rect::new(x + 12.0, 24.0, x + 28.0, 56.0));
+        p.pop_layer();
+    }
+    let Some((device, queue, mut r)) = setup("sibling_layers_share_one_pool_target") else { return };
+    let mut targets = FrameTargets::new();
+    let (rgba, stats) = frame(&device, &queue, &mut r, &mut targets, &s);
+    assert_eq!(stats.layers_offscreen, 2);
+    assert_eq!(targets.layer_pool_targets(), 1);
+    for (x, y) in [(16, 30), (48, 30)] {
+        let c = pixel(&rgba, 64, x, y);
+        assert!(near(c, PINK, 2), "({x},{y}) {c:?}");
+    }
+}
+
+/// L10 AC8: the same layered scene for 200 frames: the pool and the census stop changing.
+#[test]
+#[ignore = "gpu"]
+fn layer_pool_steady_state_200_frames() {
+    let mut s = Scene::new();
+    let mut p = Painter::new(&mut s);
+    layer(&mut p, 0.5, Affine::IDENTITY, &kurbo::Circle::new((32.0, 32.0), 24.0));
+    red(&mut p, Rect::new(8.0, 8.0, 40.0, 40.0));
+    layer(&mut p, 0.5, Affine::IDENTITY, &Rect::new(16.0, 16.0, 60.0, 60.0));
+    red(&mut p, Rect::new(24.0, 24.0, 56.0, 56.0));
+    red(&mut p, Rect::new(30.0, 10.0, 50.0, 50.0));
+    p.pop_layer();
+    p.pop_layer();
+    let Some((device, queue, mut r)) = setup("layer_pool_steady_state_200_frames") else { return };
+    let mut targets = FrameTargets::new();
+    let mut at10 = None;
+    for i in 1..=200 {
+        let _ = frame(&device, &queue, &mut r, &mut targets, &s);
+        let snap = (r.census(), targets.layer_pool_targets(), targets.frame_target_bytes());
+        if i == 10 {
+            at10 = Some(snap);
+        } else if i == 200 {
+            assert_eq!(Some(snap), at10);
+        }
+    }
 }

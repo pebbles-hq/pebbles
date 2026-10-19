@@ -4,7 +4,7 @@
 use super::encode::SegmentTarget;
 use crate::frame_targets::FrameTargets;
 use crate::gpu_types::CompositeParams;
-use crate::prepare::plan::TargetRef;
+use crate::prepare::plan::{DrawCmd, TargetRef};
 use crate::renderer::Renderer;
 use crate::stats::FrameStats;
 
@@ -34,8 +34,34 @@ pub(crate) fn acquire_layers(
     let stride = super::tier_c::slot_stride(device);
     // Layer content draws with the root pass's pipelines: single-sample, analytic AA (02 §6).
     let samples = 1;
+    // Layer i's target lives from its PushLayer to its Composite; a layer whose composite is
+    // already encoded hands its target back so siblings share one (09 §3.8).
+    let mut span = vec![(usize::MAX, usize::MAX); n];
+    for (k, cmd) in renderer.scratch.plan.cmds.iter().enumerate() {
+        match cmd {
+            DrawCmd::PushLayer { layer } => {
+                if let Some(s) = span.get_mut(*layer as usize) {
+                    s.0 = k;
+                }
+            }
+            DrawCmd::Composite { layer, .. } => {
+                if let Some(s) = span.get_mut(*layer as usize) {
+                    s.1 = k;
+                }
+            }
+            _ => {}
+        }
+    }
     let mut out = Vec::with_capacity(n);
-    for i in 0..n {
+    let mut live: Vec<(usize, usize)> = Vec::new();
+    for (i, &(start, end)) in span.iter().enumerate() {
+        live.retain(|&(end, slot)| {
+            let done = end < start;
+            if done {
+                targets.pool.release(slot);
+            }
+            !done
+        });
         let desc = renderer.scratch.plan.layers[i];
         let b = desc.bounds;
         let (w, h) = (b.x1.saturating_sub(b.x0), b.y1.saturating_sub(b.y0));
@@ -93,6 +119,7 @@ pub(crate) fn acquire_layers(
             stats,
         )
         .clone();
+        live.push((end, slot));
         out.push(Some(LayerTarget {
             slot,
             segment: SegmentTarget {

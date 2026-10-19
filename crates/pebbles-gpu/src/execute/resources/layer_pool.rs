@@ -77,6 +77,14 @@ impl LayerPoolBook {
         Acquired::Create(self.slots.len() - 1)
     }
 
+    /// Return slot `i` to the free list mid-frame (its last use is already encoded): a later
+    /// acquire this frame may reuse it, since passes run in encode order (09 §3.8).
+    pub(crate) fn release(&mut self, i: usize) {
+        if let Some(s) = self.slots.get_mut(i) {
+            s.in_use = false;
+        }
+    }
+
     /// End the frame: release everything, drop idle slots, then the oldest free slots while
     /// over `budget`. Returns the dropped indices in descending order (remove in that order).
     pub(crate) fn end_frame(&mut self, budget: u64) -> Vec<usize> {
@@ -176,8 +184,12 @@ impl LayerPool {
         }
     }
 
+    /// See [`LayerPoolBook::release`].
+    pub(crate) fn release(&mut self, i: usize) {
+        self.book.release(i);
+    }
+
     /// Pooled target count (census).
-    #[cfg(debug_assertions)]
     pub(crate) fn len(&self) -> usize {
         self.textures.len()
     }

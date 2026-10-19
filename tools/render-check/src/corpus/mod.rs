@@ -8,6 +8,7 @@ pub mod adversarial;
 pub mod clip;
 pub mod frames;
 pub mod img;
+pub mod layer;
 pub mod prim;
 pub mod screen;
 pub mod shadow;
@@ -27,6 +28,7 @@ pub fn all() -> Vec<Case> {
     out.extend(text::cases());
     out.extend(img::cases());
     out.extend(shadow::cases());
+    out.extend(layer::cases());
     out.extend(widget::cases());
     out.extend(screen::cases());
     out.extend(stress::cases());
@@ -69,6 +71,7 @@ mod tests {
             "text",
             "img",
             "shadow",
+            "layer",
             "widget",
             "screen",
             "stress",

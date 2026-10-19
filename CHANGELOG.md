@@ -6,6 +6,9 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — exact group opacity (wgpu renderer)
+wgpu renderer: Opacity is exact (no double blending of overlapping children); Opacity(0) draws nothing.
+
 ### Added — `capture::OffscreenCapture`
 A reusable headless renderer (one device for many frames/windows) with typed `CaptureError`s;
 `capture_rgba`/`capture_png` now use it. Capture works under every render backend.

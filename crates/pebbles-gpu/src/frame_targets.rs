@@ -31,6 +31,11 @@ impl FrameTargets {
         c.layer_pool_bytes += bytes;
     }
 
+    /// Pooled offscreen layer / Tier C targets currently held (census, 09 §3.8).
+    pub fn layer_pool_targets(&self) -> usize {
+        self.pool.len()
+    }
+
     /// Bytes of GPU textures this target owns beyond its own color texture (census, 10 §9).
     pub fn frame_target_bytes(&self) -> u64 {
         self.pool.bytes()
