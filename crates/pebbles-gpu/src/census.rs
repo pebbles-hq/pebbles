@@ -35,6 +35,10 @@ pub struct GpuCensus {
     pub gradient_rows_used: usize,
     /// Gradient LUT row capacity (0 until M15).
     pub gradient_rows_capacity: u32,
+    /// Resident Tier B path and clip masks in the coverage atlas (M28).
+    pub path_mask_entries: usize,
+    /// Their atlas bytes (≤ `GpuBudgets::path_mask_bytes` when a frame fits, M28).
+    pub path_mask_bytes: u64,
     /// `FrameTargets` owned (one per render target).
     pub frame_target_entries: usize,
     /// Bytes of target-owned textures.

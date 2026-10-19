@@ -28,6 +28,7 @@ mod images;
 mod layers;
 mod memory_budget;
 mod order;
+mod path_mask_budget;
 mod path_masks;
 mod pixel_snap;
 mod shader_brush;

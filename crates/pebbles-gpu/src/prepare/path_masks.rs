@@ -133,6 +133,26 @@ impl MaskSources {
     }
 }
 
+fn hash_of(key: &impl Hash) -> u64 {
+    let mut h = DefaultHasher::new();
+    key.hash(&mut h);
+    h.finish()
+}
+
+/// An upper bound of the atlas bytes a mask of `shape` under `xf` takes (its padded device bbox,
+/// the hairline widening and the gutter included; 10 §5, M28).
+pub(crate) fn budget_area(shape: &Geometry, xf: Affine, stroke: Option<&Stroke>) -> u64 {
+    let mut b = xf.transform_rect_bbox(shape.bounding_box());
+    if let Some(s) = stroke {
+        let k = if s.join == kurbo::Join::Miter { s.miter_limit.max(1.0) } else { 1.0 };
+        let pad = 0.5 * (s.width * xf.spectral_norm()).max(1.0) * k;
+        b = b.inflate(pad, pad);
+    }
+    let pad = 2.0 + 2.0 * f64::from(crate::execute::resources::atlas_alloc::GLYPH_GUTTER_PX);
+    let side = |lo: f64, hi: f64| num::to_u64_sat((hi.ceil() - lo.floor()).max(0.0) + pad);
+    side(b.x0, b.x1).saturating_mul(side(b.y0, b.y1))
+}
+
 /// `shape` flattened at `tol` into `out` (no allocation once `out` has the capacity).
 fn append_path(shape: &Geometry, tol: f64, out: &mut BezPath) {
     match shape {
@@ -217,6 +237,11 @@ impl Walk<'_> {
     ) -> bool {
         let slot = self.plan.mask_sources.next_slot();
         let Some((key, origin, alpha)) = build(shape, xf, rule, stroke, slot) else { return false };
+        // M28: admit masks in display-list order against the path budget; once this frame's own
+        // masks would exceed it, the op tessellates (Tier C) — decided by content, not history.
+        if !self.admit_path_mask(hash_of(&key), budget_area(shape, xf, stroke)) {
+            return false;
+        }
         let run = self.plan.mask_sources.commit();
         let start = num::index_u32(self.plan.glyphs.len());
         let color = premul.map(|v| v * alpha);

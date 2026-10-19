@@ -237,6 +237,7 @@ impl Renderer {
             limits: RendererLimits::from_device_limits(&device.limits()),
             scratch: PrepareScratch {
                 gpu_mask_budget: Some(budgets.gpu_mask_bytes),
+                path_mask_budget: Some(budgets.path_mask_bytes),
                 ..PrepareScratch::default()
             },
             stats: FrameStats::default(),

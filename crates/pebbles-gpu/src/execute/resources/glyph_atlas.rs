@@ -203,6 +203,8 @@ impl GlyphAtlas {
         c.glyph_color_side = self.cpu.color.side;
         c.glyph_color_layers = self.cpu.color.physical_layers;
         c.raster_fonts = self.raster.font_count();
+        c.path_mask_entries = self.cpu.path_entries();
+        c.path_mask_bytes = self.cpu.path_bytes();
     }
 
     pub(crate) fn end_frame(&mut self, stats: &mut FrameStats) {

@@ -91,6 +91,12 @@ pub(crate) struct PrepareScratch {
     pub sdf_disabled: bool,
     /// `GpuBudgets::gpu_mask_bytes`; `None` = the native default (tests).
     pub gpu_mask_budget: Option<u64>,
+    /// `GpuBudgets::path_mask_bytes`; `None` = the native default (tests, M28).
+    pub path_mask_budget: Option<u64>,
+    /// Path / clip masks admitted this frame (M28; cleared, capacity kept).
+    pub mask_keys: std::collections::HashSet<u64>,
+    /// The path-mask budget fallback was logged (once per renderer).
+    pub path_budget_warned: bool,
 }
 
 /// Walk `scene` in painter's order into `scratch.plan`, recording fallbacks into `stats`.
@@ -105,6 +111,7 @@ pub(crate) fn prepare<'s>(
     scratch.plan.target_size = input.target_size;
     scratch.clips.reset(input.target_size);
     scratch.layers.reset();
+    scratch.mask_keys.clear();
     let mut walk = Walk {
         plan: &mut scratch.plan,
         clips: &mut scratch.clips,
@@ -126,6 +133,10 @@ pub(crate) fn prepare<'s>(
         paint: None,
         pending_shader: None,
         layer_scan: &mut scratch.layer_scan,
+        path_mask_bytes: 0,
+        path_mask_budget: scratch.path_mask_budget.unwrap_or(8 << 20),
+        mask_keys: &mut scratch.mask_keys,
+        path_budget_warned: &mut scratch.path_budget_warned,
         layer_floor: 0,
         outer_override: None,
         outer_stack: Vec::new(),
@@ -163,6 +174,11 @@ struct Walk<'a> {
     gpu_mask_budget: u64,
     /// The brush painting the current op (09 §5, §6), if any.
     paint: Option<plan::BrushPaint>,
+    /// Path-mask bytes admitted this frame and the budget (M28).
+    path_mask_bytes: u64,
+    path_mask_budget: u64,
+    mask_keys: &'a mut std::collections::HashSet<u64>,
+    path_budget_warned: &'a mut bool,
     /// `scan_one` scratch (M18).
     layer_scan: &'a mut layer::ScanScratch,
     /// A shader brush (L43) waiting for its coverage op's white solid brush.
@@ -238,6 +254,32 @@ pub(crate) fn scan_colr_atlas(
 }
 
 impl Walk<'_> {
+    /// M28: admit a path or clip mask of `bytes` (keyed by `key`) against this frame's path
+    /// budget, in display-list order; a key already admitted this frame is free. False = over
+    /// budget (logged once per renderer): the caller falls back (Tier C / a GPU mask).
+    fn admit_path_mask(&mut self, key: u64, bytes: u64) -> bool {
+        if self.mask_keys.contains(&key) {
+            return true;
+        }
+        if self.path_mask_bytes.saturating_add(bytes) > self.path_mask_budget {
+            self.plan.stats.path_mask_budget_fallbacks += 1;
+            if !std::mem::replace(self.path_budget_warned, true) {
+                pebbles_foundation::log::logf(
+                    pebbles_foundation::log::Level::Warn,
+                    pebbles_foundation::log::Cat::Gpu,
+                    format_args!(
+                        "this frame's path and clip masks exceed the {} B coverage budget; the rest render as meshes / GPU masks (10 §5)",
+                        self.path_mask_budget
+                    ),
+                );
+            }
+            return false;
+        }
+        self.path_mask_bytes += bytes;
+        self.mask_keys.insert(key);
+        true
+    }
+
     /// A skipped (or hidden) layer: a culled clip frame until the matching pop.
     fn push_skip_layer(&mut self) {
         let scissor = self.clips.current().scissor;
@@ -255,6 +297,21 @@ impl Walk<'_> {
         let cur = self.clips.current();
         let volatile = self.clip_hint == pebbles_render::paint::display_list::PathHint::Volatile;
         let mut decision = clip::classify_clip_hinted(clip, xf, &cur, volatile);
+        // M28: a row-8 CPU mask over this frame's coverage budget becomes a GPU mask (row 9).
+        if decision.kind == clip::ClipKind::Mask {
+            use std::hash::{Hash, Hasher};
+            let s = decision.scissor;
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            (s.x0, s.y0, s.x1, s.y1, fill == Fill::EvenOdd).hash(&mut h);
+            xf.as_coeffs().iter().for_each(|v| v.to_bits().hash(&mut h));
+            let b = clip.bounding_box();
+            [b.x0, b.x1, b.y0, b.y1].iter().for_each(|v| v.to_bits().hash(&mut h));
+            let pad = 2 + 2 * u64::from(crate::execute::resources::atlas_alloc::GLYPH_GUTTER_PX);
+            let area = (u64::from(s.width()) + pad) * (u64::from(s.height()) + pad);
+            if !self.admit_path_mask(h.finish(), area) {
+                decision.kind = clip::ClipKind::GpuMask;
+            }
+        }
         // Row 8 under an active GPU mask takes row 9 with that mask as its parent (§2.2).
         let parent_gpu = self.plan.mask_clips.get(cur.mask.0 as usize).is_some_and(|r| r.gpu.is_some());
         if decision.kind == clip::ClipKind::Mask && parent_gpu {
@@ -1489,5 +1546,7 @@ mod bench_tests;
 mod fallback_tests;
 #[cfg(test)]
 mod fragment_tests;
+#[cfg(test)]
+pub(crate) mod mask_budget_tests;
 #[cfg(test)]
 mod walk_tests;

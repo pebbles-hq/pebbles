@@ -359,6 +359,8 @@ pub(crate) struct PrepareStats {
     pub clips_gpu_mask: u32,
     /// GPU masks refused (row 10): `MAX_GPU_MASKS` active or the budget spent.
     pub gpu_mask_overflow: u32,
+    /// Path / clip masks over this frame's coverage budget: meshes / GPU masks instead (M28).
+    pub path_mask_budget_fallbacks: u32,
     /// Invalid gradients drawn as their fallback solid (09 §5.1).
     pub gradient_fallbacks: u32,
     /// Image-brush ops skipped: singular paint transform or empty image (09 §6).

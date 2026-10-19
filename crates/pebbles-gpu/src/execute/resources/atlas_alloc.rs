@@ -228,6 +228,8 @@ pub(crate) struct CoverageAtlas {
     frame: u64,
     /// Bytes held by path masks; never above `path_budget`.
     path_bytes: u64,
+    /// Resident path / clip masks (census, M28).
+    path_entries: usize,
     path_budget: u64,
     /// Smallest padded area that overflowed this frame, per atlas kind (mask, color). After step 5
     /// nothing of that kind can be freed until the frame ends, so any request at least that large
@@ -243,6 +245,7 @@ impl CoverageAtlas {
             color: AtlasPages::new(AtlasKind::Color, GLYPH_COLOR_INITIAL_SIDE, max_side, color_layers),
             frame: 0,
             path_bytes: 0,
+            path_entries: 0,
             path_budget,
             overflowed: [None; 2],
         }
@@ -304,6 +307,7 @@ impl CoverageAtlas {
                 pages.occupied_px = pages.occupied_px.saturating_sub(e.area);
                 if key.kind() == MaskKind::Path {
                     self.path_bytes = self.path_bytes.saturating_sub(e.area);
+                    self.path_entries = self.path_entries.saturating_sub(1);
                 }
                 stats.glyph_evictions += 1;
                 n += 1;
@@ -396,6 +400,7 @@ impl CoverageAtlas {
         self.pages(atlas).occupied_px += area;
         if key.kind() == MaskKind::Path {
             self.path_bytes += area;
+            self.path_entries += 1;
         }
         self.entries.insert(key, Entry { slot: Some((slot, alloc.id)), last_used: frame, area });
         Ok(slot)
@@ -408,9 +413,15 @@ impl CoverageAtlas {
     }
 
     /// Bytes held by path masks.
-    #[cfg(test)]
+    #[cfg(any(test, debug_assertions))]
     pub(crate) fn path_bytes(&self) -> u64 {
         self.path_bytes
+    }
+
+    /// Resident path / clip masks.
+    #[cfg(any(test, debug_assertions))]
+    pub(crate) fn path_entries(&self) -> usize {
+        self.path_entries
     }
 }
 
