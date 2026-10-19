@@ -2,7 +2,7 @@
 //! union) become one Tier B mask request whose key carries the device σ and style; the atlas
 //! blurs on a miss (`raster/blur.rs`). Too-large padded masks blur on the GPU (effect layer, L61).
 
-use kurbo::{Affine, BezPath, Shape as _};
+use kurbo::{Affine, BezPath};
 use pebbles_render::paint::Glyph;
 use pebbles_render::paint::display_list::{BlurStyle, Geometry};
 
@@ -42,7 +42,7 @@ impl Walk<'_> {
         let (smax, _) = super::stroke::singular_values(&xf);
         let sigma_dev = f64::from(sigma.max(0.0)) * smax;
         let r = (3.0 * sigma_dev).ceil();
-        let b = xf.transform_rect_bbox(shape.to_path(0.1).bounding_box()).inflate(r + 1.0, r + 1.0);
+        let b = xf.transform_rect_bbox(shape.bounding_box()).inflate(r + 1.0, r + 1.0);
         if !b.is_finite() {
             self.stats.record(Unsupported::BlurMaskTooLarge);
             return;
@@ -68,15 +68,15 @@ impl Walk<'_> {
             }
             return;
         }
-        let Some((mut key, mut source, origin, _)) = super::path_masks::build(shape, xf, rule, None) else {
+        let Some(sigma_f) = num::to_f32(sigma_dev) else { return };
+        let slot = self.plan.mask_sources.next_slot();
+        let Some((mut key, origin, _)) = super::path_masks::build(shape, xf, rule, None, slot) else {
             return;
         };
-        let Some(sigma_f) = num::to_f32(sigma_dev) else { return };
         key.blur_q = num::to_u32_round(sigma_f * 16.0).unwrap_or(0).max(1);
         key.blur_style = style as u8;
-        source.blur = Some((sigma_f, style));
-        let run = num::index_u32(self.plan.mask_sources.len());
-        self.plan.mask_sources.push(source);
+        slot.blur = Some((sigma_f, style));
+        let run = self.plan.mask_sources.commit();
         let start = num::index_u32(self.plan.glyphs.len());
         self.plan.glyphs.push(GlyphRequest { key: key.into(), run, origin, color: premul, linear: None });
         self.stats.tier_b_draws += 1;

@@ -3,7 +3,7 @@
 
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use kurbo::{Affine, BezPath, Stroke};
+use kurbo::{Affine, BezPath, Shape as _, Stroke};
 use pebbles_render::paint::display_list::Geometry;
 
 use super::path_strategy::{Tier, choose_tier};
@@ -85,12 +85,74 @@ fn split_translation(t: f64) -> Option<(f64, u16)> {
 
 /// The key, source, origin and color scale of a Tier B request; `None` when the op must stay
 /// on the tessellated path (non-finite placement, or a dash pattern the guard rewrites).
+impl Default for MaskSource {
+    fn default() -> Self {
+        Self {
+            path: BezPath::new(),
+            device: Affine::IDENTITY,
+            rule: peniko::Fill::NonZero,
+            stroke: None,
+            blur: None,
+        }
+    }
+}
+
+/// The frame's mask sources, pooled (M18): slots keep their path allocations across frames.
+#[derive(Default)]
+pub(crate) struct MaskSources {
+    items: Vec<MaskSource>,
+    len: usize,
+}
+
+impl MaskSources {
+    pub(crate) fn clear(&mut self) {
+        self.len = 0;
+    }
+
+    pub(crate) fn get(&self, i: usize) -> Option<&MaskSource> {
+        self.items.get(..self.len)?.get(i)
+    }
+
+    /// The next slot, emptied (its path allocation is reused); `commit` keeps it.
+    pub(crate) fn next_slot(&mut self) -> &mut MaskSource {
+        if self.items.len() == self.len {
+            self.items.push(MaskSource::default());
+        }
+        #[allow(clippy::indexing_slicing)] // `len < items.len()`: pushed above
+        let s = &mut self.items[self.len];
+        s.path.truncate(0);
+        s.stroke = None;
+        s.blur = None;
+        s
+    }
+
+    /// Keep the slot `next_slot` returned; its index.
+    pub(crate) fn commit(&mut self) -> u32 {
+        self.len += 1;
+        num::index_u32(self.len - 1)
+    }
+}
+
+/// `shape` flattened at `tol` into `out` (no allocation once `out` has the capacity).
+fn append_path(shape: &Geometry, tol: f64, out: &mut BezPath) {
+    match shape {
+        Geometry::Rect(r) => out.extend(r.path_elements(tol)),
+        Geometry::RoundedRect(r) => out.extend(r.path_elements(tol)),
+        Geometry::Circle(c) => out.extend(c.path_elements(tol)),
+        Geometry::Path(p) => out.extend(p.elements().iter().copied()),
+        other => out.extend(other.to_path(tol).elements().iter().copied()),
+    }
+}
+
+/// Build the mask key into `slot` (path, device map, rule, stroke); `None` when the shape must be
+/// tessellated instead.
 pub(super) fn build(
     shape: &Geometry,
     xf: Affine,
     rule: peniko::Fill,
     stroke: Option<&Stroke>,
-) -> Option<(MaskKey, MaskSource, [f32; 2], f32)> {
+    slot: &mut MaskSource,
+) -> Option<(MaskKey, [f32; 2], f32)> {
     let [a, b, c, d, e, f] = xf.as_coeffs();
     let (ox, bx) = split_translation(e)?;
     let (oy, by) = split_translation(f)?;
@@ -101,12 +163,13 @@ pub(super) fn build(
     let device = Affine::new([a, b, c, d, f64::from(bx) / SUBPX_BINS, f64::from(by) / SUBPX_BINS]);
     let s = xf.spectral_norm().max(1e-9);
     // 1/1024 device px: the converted curves (and so dash positions) match the spec's geometry.
-    let path = shape.to_path(GEOMETRY_TOL_PX / s).into_owned();
+    append_path(shape, GEOMETRY_TOL_PX / s, &mut slot.path);
+    let path = &slot.path;
     let mut alpha = 1.0f32;
     let stroke = match stroke {
         None => None,
         Some(style) => {
-            if !matches!(plan_dashes(style, &path, s), DashPlan::Undashed | DashPlan::Dashed) {
+            if !matches!(plan_dashes(style, path, s), DashPlan::Undashed | DashPlan::Dashed) {
                 return None;
             }
             // Hairline rule (02 §5.5): exactly 1 device px, the width folded into alpha.
@@ -132,7 +195,8 @@ pub(super) fn build(
     };
     let rule = if stroke.is_some() { peniko::Fill::NonZero } else { rule };
     let origin = [num::to_f32(ox)?, num::to_f32(oy)?];
-    Some((key, MaskSource { path, device, rule, stroke, blur: None }, origin, alpha))
+    (slot.device, slot.rule, slot.stroke) = (device, rule, stroke);
+    Some((key, origin, alpha))
 }
 
 impl Walk<'_> {
@@ -151,9 +215,9 @@ impl Walk<'_> {
         premul: [f32; 4],
         idx: u32,
     ) -> bool {
-        let Some((key, source, origin, alpha)) = build(shape, xf, rule, stroke) else { return false };
-        let run = num::index_u32(self.plan.mask_sources.len());
-        self.plan.mask_sources.push(source);
+        let slot = self.plan.mask_sources.next_slot();
+        let Some((key, origin, alpha)) = build(shape, xf, rule, stroke, slot) else { return false };
+        let run = self.plan.mask_sources.commit();
         let start = num::index_u32(self.plan.glyphs.len());
         let color = premul.map(|v| v * alpha);
         self.plan.glyphs.push(GlyphRequest { key: key.into(), run, origin, color, linear: None });

@@ -109,21 +109,30 @@ fn scan_into(ops: &[Op], open: &mut Vec<usize>, out: &mut Vec<LayerInfo>, floor:
 /// The §3.2 facts of the PushLayer at `ops[push]`, from its own subtree (up to the matching pop
 /// or the end of `ops`). Computed where the walk meets the layer, so layers inside spliced
 /// fragments (COLR glyphs, R29) line up too; O(subtree) per layer.
-pub(crate) fn scan_one(ops: &[Op], push: usize) -> LayerInfo {
-    let mut out = Vec::new();
-    let mut open = Vec::new();
+/// Scratch for [`scan_one`], reused across layers and frames (M18).
+#[derive(Default)]
+pub(crate) struct ScanScratch {
+    out: Vec<LayerInfo>,
+    open: Vec<usize>,
+}
+
+pub(crate) fn scan_one(ops: &[Op], push: usize, scratch: &mut ScanScratch) -> LayerInfo {
+    let ScanScratch { out, open } = scratch;
+    out.clear();
+    open.clear();
+    let (out, open) = (out, open);
     let Some(first) = ops.get(push..push + 1) else {
         return LayerInfo::EMPTY;
     };
-    scan_into(first, &mut open, &mut out, 0);
+    scan_into(first, open, out, 0);
     for op in ops.get(push + 1..).unwrap_or_default() {
         if open.is_empty() {
             break;
         }
-        scan_into(std::slice::from_ref(op), &mut open, &mut out, 0);
+        scan_into(std::slice::from_ref(op), open, out, 0);
     }
     while !open.is_empty() {
-        close(&mut open, &mut out);
+        close(open, out);
     }
     out.first().copied().unwrap_or(LayerInfo::EMPTY)
 }

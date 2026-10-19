@@ -420,7 +420,7 @@ pub(crate) struct FramePlan {
     pub glyph_runs: Vec<GlyphRunInfo>,
     pub glyphs: Vec<GlyphRequest>,
     /// What to rasterize on a path-mask atlas miss (R15), indexed by `GlyphRequest::run`.
-    pub mask_sources: Vec<super::path_masks::MaskSource>,
+    pub mask_sources: super::path_masks::MaskSources,
     /// Normalized variation coords of every run, indexed by `GlyphRunInfo::coords`.
     pub coords: Vec<i16>,
     pub images: Vec<ImageRequest>,

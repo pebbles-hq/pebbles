@@ -40,6 +40,8 @@ mod shaders;
 mod stats;
 mod surface;
 #[cfg(test)]
+mod test_alloc;
+#[cfg(test)]
 pub(crate) mod test_support;
 
 pub use budgets::{BudgetPlatform, GpuBudgets};

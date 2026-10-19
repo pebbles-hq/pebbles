@@ -78,6 +78,8 @@ pub(crate) struct PrepareScratch {
     pub plan: FramePlan,
     pub clips: clip::ClipStack,
     pub layers: layer::LayerStack,
+    /// Reused by the per-layer subtree scan (M18).
+    pub layer_scan: layer::ScanScratch,
     pub tess: tessellate::PathTessellator,
     /// swash outlines for the glyph outline route (R20).
     pub outlines: glyph_outline::OutlineSource,
@@ -123,6 +125,7 @@ pub(crate) fn prepare<'s>(
         gpu_mask_budget: scratch.gpu_mask_budget.unwrap_or(gpu_masks::DEFAULT_BUDGET_BYTES),
         paint: None,
         pending_shader: None,
+        layer_scan: &mut scratch.layer_scan,
         layer_floor: 0,
         outer_override: None,
         outer_stack: Vec::new(),
@@ -160,6 +163,8 @@ struct Walk<'a> {
     gpu_mask_budget: u64,
     /// The brush painting the current op (09 §5, §6), if any.
     paint: Option<plan::BrushPaint>,
+    /// `scan_one` scratch (M18).
+    layer_scan: &'a mut layer::ScanScratch,
     /// A shader brush (L43) waiting for its coverage op's white solid brush.
     pending_shader: Option<u32>,
     /// Layer-stack depth at the current fragment's entry: pops below it are ignored (09 §7.2).
@@ -943,7 +948,7 @@ impl Walk<'_> {
                     if non_finite {
                         self.stats.record(Unsupported::NonFinite);
                     }
-                    let info = layer::scan_one(ops, i);
+                    let info = layer::scan_one(ops, i, self.layer_scan);
                     let mut plan_kind = layer::classify_layer(info, *blend, a);
                     // S12 (11 §2.5): past the nesting or live-target caps a layer flattens to a
                     // pure clip (its content still draws; opacity and blend are ignored).
@@ -1476,6 +1481,8 @@ fn push_cmd(plan: &mut FramePlan, cmd: DrawCmd, _visit: u32) {
     plan.push_draw(cmd);
 }
 
+#[cfg(test)]
+mod alloc_gate_tests;
 #[cfg(test)]
 mod fallback_tests;
 #[cfg(test)]

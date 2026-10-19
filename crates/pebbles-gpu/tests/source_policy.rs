@@ -65,11 +65,24 @@ fn has_word(code: &str, word: &str) -> bool {
     })
 }
 
+/// The only sanctioned `unsafe`: M18's test-only counting allocator (`#[cfg(test)]` module, a
+/// `GlobalAlloc` impl that forwards to `System`; DR-18 candidate, 06 §11).
+const UNSAFE_ALLOWED: &[&str] = &["src/test_alloc.rs"];
+
 #[test]
 fn no_handwritten_unsafe() {
     // `unsafe_code` in lint attributes is an identifier, not the keyword.
-    let v = violations(|c| has_word(c, "unsafe"));
+    let v: Vec<String> = violations(|c| has_word(c, "unsafe"))
+        .into_iter()
+        .filter(|l| !UNSAFE_ALLOWED.iter().any(|f| l.contains(f)))
+        .collect();
     assert!(v.is_empty(), "hand-written unsafe:\n{}", v.join("\n"));
+}
+
+#[test]
+fn sanctioned_unsafe_is_test_only() {
+    let lib = std::fs::read_to_string(src_dir().join("lib.rs")).unwrap_or_default();
+    assert!(lib.contains("#[cfg(test)]\nmod test_alloc;"), "test_alloc must stay #[cfg(test)]");
 }
 
 #[test]
