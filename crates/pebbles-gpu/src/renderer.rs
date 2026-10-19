@@ -30,6 +30,8 @@ pub struct Renderer {
     pub(crate) layouts: BindGroupLayouts,
     pub(crate) pipelines: PipelineCache,
     globals_buffer: wgpu::Buffer,
+    /// This frame's Globals slots, uploaded once (10 §2.6, M08).
+    pub(crate) globals_staging: super::execute::resources::globals::UniformSlots,
     globals_bg: wgpu::BindGroup,
     /// SDF clip records (09 §2.4, L04): one `ClipParams` per slot; `clip_slots` slots.
     clip_buffer: wgpu::Buffer,
@@ -163,6 +165,7 @@ impl Renderer {
             layouts,
             pipelines: PipelineCache::new(),
             globals_buffer,
+            globals_staging: Default::default(),
             globals_bg,
             clip_buffer,
             clip_slots: 1,
@@ -358,7 +361,10 @@ impl Renderer {
             },
             _pad0: 0,
         };
-        queue.write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
+        // 10 §2.6: every pass target's slot is staged, then uploaded once before the passes.
+        self.globals_staging.begin(super::execute::tier_c::slot_stride(device));
+        let root_slot = self.globals_staging.push(&globals);
+        debug_assert_eq!(root_slot, 0);
         self.write_clips(device, queue, &mut stats);
 
         self.arenas.solid_vertices.upload(
@@ -399,7 +405,7 @@ impl Renderer {
         let mut encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.gpu.encoder") });
         encoder.push_debug_group("pebbles.gpu.frame");
-        super::execute::gpu_masks::render_jobs(self, device, queue, &mut encoder, &mut stats);
+        super::execute::gpu_masks::render_jobs(self, device, &mut encoder, &mut stats);
         super::execute::gradients::prepare(self, device, queue, format, &mut stats);
         super::execute::image_brushes::prepare(self, device, queue, format, &mut stats);
         super::execute::shader_brushes::prepare(self, device, queue, format, &mut stats);
@@ -429,6 +435,7 @@ impl Renderer {
                 None => stats.record(Unsupported::CustomUnregistered),
             }
         }
+        queue.write_buffer(&self.globals_buffer, 0, self.globals_staging.bytes());
         let mut segments = std::mem::take(&mut self.segments);
         super::prepare::passes::segment_passes(&self.scratch.plan, &mut segments);
         // 09 §4.4: a backdrop composite into the root copies from it, so the root renders into a
@@ -1194,10 +1201,6 @@ impl Renderer {
         self.color_flags
     }
 
-    pub(crate) fn globals_buffer(&self) -> &wgpu::Buffer {
-        &self.globals_buffer
-    }
-
     pub(crate) fn composite_buffer(&self) -> &wgpu::Buffer {
         &self.composite_buffer
     }
@@ -1228,14 +1231,8 @@ impl Renderer {
                 mask_view,
                 self.gpu_masks.dummy_view(),
             );
-            // Slots written this frame (root, layers, GPU masks) must survive: copy them over
-            // (pending `write_buffer`s land before this submit).
-            let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("pebbles.gpu.encoder.globals_grow"),
-            });
-            let old = self.globals_slots * super::execute::tier_c::slot_stride(device);
-            enc.copy_buffer_to_buffer(&self.globals_buffer, 0, &buffer, 0, old);
-            self.queue.submit([enc.finish()]);
+            // The frame's slots are staged (`globals_staging`) and uploaded once before the
+            // passes, so a grown buffer needs no copy.
             (self.globals_buffer, self.globals_bg, self.globals_slots) = (buffer, bg, n);
             self.globals_bg_key.0 = n;
             stats.buffers_created += 1;

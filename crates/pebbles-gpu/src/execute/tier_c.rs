@@ -156,7 +156,7 @@ pub(crate) fn encode_runs(
             _pad0: 0,
         };
         let globals_offset = (base + k64 + 1) * stride;
-        queue.write_buffer(renderer.globals_buffer(), globals_offset, bytemuck::bytes_of(&globals));
+        renderer.globals_staging.set(u32::try_from(base + k64 + 1).unwrap_or(u32::MAX), &globals);
         let b = run.bounds;
         let params = CompositeParams {
             bounds: [b.x0 as f32, b.y0 as f32, b.x1 as f32, b.y1 as f32],

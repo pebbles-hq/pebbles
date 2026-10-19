@@ -1,7 +1,8 @@
-//! The single [`Globals`] uniform: pass-target size/origin plus color flags (10 §2.6).
+//! The [`Globals`] uniform: pass-target size/origin plus color flags, one dynamic-offset slot per
+//! pass target, staged in one reused buffer and uploaded once per frame (10 §2.6, M08).
 
-/// The shared uniform for every pipeline (group 0, binding 0). 32 bytes, dynamic-offset
-/// slots start at M08; C12 lands one slot.
+/// The shared uniform for every pipeline (group 0, binding 0). 32 bytes; one slot per pass
+/// target (slot 0 = the root, then layers, Tier C runs and GPU masks).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct Globals {
@@ -19,9 +20,79 @@ const _: () = assert!(core::mem::offset_of!(Globals, color_flags) == 24);
 /// Bit 0 of `Globals::color_flags`: decode sRGB output for the GL sRGB-only fallback (DR-05).
 pub(crate) const COLOR_FLAG_DECODE_SRGB_OUTPUT: u32 = 1;
 
+/// The frame's Globals slots, staged for ONE upload (10 §2.6): slot `i` lives at `i × stride`;
+/// the gaps stay zero. The `Vec` is reused across frames (cleared, capacity kept).
+#[derive(Debug, Default)]
+pub(crate) struct UniformSlots {
+    staging: Vec<u8>,
+    stride: u64,
+    count: u32,
+}
+
+impl UniformSlots {
+    /// Start a frame with slots `stride` bytes apart.
+    pub(crate) fn begin(&mut self, stride: u64) {
+        self.staging.clear();
+        self.stride = stride;
+        self.count = 0;
+    }
+
+    /// Append the next slot; returns its index.
+    pub(crate) fn push(&mut self, g: &Globals) -> u32 {
+        let slot = self.count;
+        self.set(slot, g);
+        slot
+    }
+
+    /// Write slot `slot` (zero-filling any gap before it).
+    pub(crate) fn set(&mut self, slot: u32, g: &Globals) {
+        let Ok(at) = usize::try_from(u64::from(slot) * self.stride) else { return };
+        let end = at + size_of::<Globals>();
+        if self.staging.len() < end {
+            self.staging.resize(end, 0);
+        }
+        self.staging[at..end].copy_from_slice(bytemuck::bytes_of(g));
+        self.count = self.count.max(slot + 1);
+    }
+
+    /// The staged bytes (`(count − 1) × stride + 32` long).
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.staging
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::Globals;
+    use super::{Globals, UniformSlots};
+
+    #[test]
+    fn slots_are_stride_aligned_and_zero_padded() {
+        let stride = 256u64;
+        let su = 256usize;
+        let g = |v: f32| Globals {
+            target_size: [v, v],
+            target_origin: [0.0, 1.0],
+            inv_target_size: [1.0 / v, 1.0 / v],
+            color_flags: 1,
+            _pad0: 0,
+        };
+        let mut s = UniformSlots::default();
+        s.begin(stride);
+        let slots = [s.push(&g(1.0)), s.push(&g(2.0)), s.push(&g(3.0))];
+        assert_eq!(slots, [0, 1, 2]);
+        let b = s.bytes();
+        assert_eq!(b.len() as u64, 2 * stride + 32);
+        for (i, v) in [1.0, 2.0, 3.0].into_iter().enumerate() {
+            let at = i * su;
+            assert_eq!(&b[at..at + 32], bytemuck::bytes_of(&g(v)));
+            if i < 2 {
+                assert!(b[at + 32..at + su].iter().all(|&x| x == 0), "gap {i} is zero");
+            }
+        }
+        // A new frame reuses the buffer.
+        s.begin(stride);
+        assert!(s.bytes().is_empty());
+    }
 
     /// Byte size of each WGSL scalar/vector type used by `Globals`.
     fn wgsl_size(ty: &str) -> usize {

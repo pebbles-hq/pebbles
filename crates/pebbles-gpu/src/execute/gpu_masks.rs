@@ -63,7 +63,6 @@ impl GpuMasks {
 pub(crate) fn render_jobs(
     renderer: &mut Renderer,
     device: &wgpu::Device,
-    queue: &wgpu::Queue,
     encoder: &mut wgpu::CommandEncoder,
     stats: &mut FrameStats,
 ) {
@@ -99,7 +98,7 @@ pub(crate) fn render_jobs(
             _pad0: 0,
         };
         let globals_offset = (base + j as u64) * stride;
-        queue.write_buffer(renderer.globals_buffer(), globals_offset, bytemuck::bytes_of(&globals));
+        renderer.globals_staging.set(u32::try_from(base + j as u64).unwrap_or(u32::MAX), &globals);
         {
             let tex = renderer.gpu_masks.pool.textures(slot);
             let (view, resolve_target, store) = match &tex.msaa {
