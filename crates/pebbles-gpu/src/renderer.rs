@@ -76,6 +76,8 @@ pub struct Renderer {
     targets_book: super::frame_targets::TargetBook,
     /// Frames rendered (the book's clock).
     frame: u64,
+    /// `Renderer::new` instant until "renderer ready" is logged (10 §12.1, M23).
+    created_at: Option<web_time::Instant>,
     /// Opt-in GPU frame timing (M22); `None` without `TIMESTAMP_QUERY`.
     timer: Option<super::timing::GpuTimer>,
     /// Pass segments, reused across frames (09 §3.6).
@@ -193,6 +195,7 @@ impl Renderer {
             segments: Vec::new(),
             customs: Default::default(),
             timer: super::timing::GpuTimer::new(device, gpu.queue()),
+            created_at: Some(web_time::Instant::now()),
             targets_book: super::frame_targets::TargetBook::new(budgets.frame_targets_bytes),
             frame: 0,
             shader_programs: Default::default(),
@@ -396,6 +399,18 @@ impl Renderer {
         );
 
         self.pipelines.prewarm(device, &self.shaders, &self.layouts, format, 1, &mut stats);
+        if let Some(t) = self.created_at.take() {
+            // 10 §12.1: Renderer::new through the first target's prewarm, once per renderer.
+            pebbles_foundation::log::logf(
+                pebbles_foundation::log::Level::Info,
+                pebbles_foundation::log::Cat::Perf,
+                format_args!(
+                    "renderer ready in {:.1} ms ({} pipelines prewarmed)",
+                    t.elapsed().as_secs_f64() * 1000.0,
+                    super::execute::pipelines::PipelineKind::ALL.iter().filter(|k| k.prewarm()).count()
+                ),
+            );
+        }
         resolve_and_upload(self, device, queue, &mut stats);
         stats.upload_us = u32::try_from(upload_started.elapsed().as_micros()).unwrap_or(u32::MAX);
         let encode_started = web_time::Instant::now();

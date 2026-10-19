@@ -244,6 +244,8 @@ impl App {
     /// frames. App code (`App::new(root).run()`) is identical on both.
     pub fn run(self) -> Result<(), Box<dyn std::error::Error>> {
         use pebbles_core::log;
+        // 10 §12.1 (M23): the startup clock for "first frame presented".
+        let started_at = web_time::Instant::now();
 
         // Web: send Rust panics to the browser console with a readable message +
         // stack (otherwise a panic is an opaque wasm "unreachable").
@@ -284,6 +286,7 @@ impl App {
         {
             let event_loop = EventLoop::<PebblesUserEvent>::with_user_event().build()?;
             let mut runner = Runner::new(self);
+            runner.set_started_at(started_at);
             runner.set_proxy(event_loop.create_proxy());
             use winit::platform::web::EventLoopExtWebSys;
             event_loop.spawn_app(runner);
@@ -300,6 +303,7 @@ impl App {
                 .with_android_app(crate::android_entry::android_app())
                 .build()?;
             let mut runner = Runner::new(self);
+            runner.set_started_at(started_at);
             event_loop.run_app(&mut runner)?;
             log::info(log::Cat::General, "pebbles app exited cleanly");
             Ok(())
@@ -310,6 +314,7 @@ impl App {
         {
             let event_loop = EventLoop::<PebblesUserEvent>::with_user_event().build()?;
             let mut runner = Runner::new(self);
+            runner.set_started_at(started_at);
             event_loop.run_app(&mut runner)?;
             log::info(log::Cat::General, "pebbles app exited cleanly");
             Ok(())

@@ -152,6 +152,9 @@ struct WindowRuntime {
 
 /// The winit application handler. Holds all persistent runtime state.
 pub(super) struct Runner {
+    /// `App::run` entry (10 §12.1, M23) and whether the first present was logged.
+    started_at: Instant,
+    first_present_logged: bool,
     // configuration
     title: String,
     background: Color,
@@ -279,9 +282,30 @@ pub(super) struct Runner {
     storm: Option<storm::InputStorm>,
 }
 
+/// 10 §12.1: once per process, on the first successful present (both backends).
+pub(super) fn note_first_present(logged: &mut bool, started_at: Instant, presented: bool) {
+    if presented && !std::mem::replace(logged, true) {
+        pebbles_foundation::log::logf(
+            pebbles_foundation::log::Level::Info,
+            pebbles_foundation::log::Cat::Perf,
+            format_args!(
+                "first frame presented in {:.1} ms since App::run",
+                started_at.elapsed().as_secs_f64() * 1000.0
+            ),
+        );
+    }
+}
+
 impl Runner {
+    /// The `App::run` entry instant (10 §12.1).
+    pub(super) fn set_started_at(&mut self, at: Instant) {
+        self.started_at = at;
+    }
+
     pub(super) fn new(app: App) -> Self {
         Runner {
+            started_at: Instant::now(),
+            first_present_logged: false,
             title: app.title,
             background: app.background,
             size: app.size,
