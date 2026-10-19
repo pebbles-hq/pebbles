@@ -324,6 +324,42 @@ fn paint_side(cx: &mut PaintCx<'_>, side: BorderSide, p0: (f64, f64), p1: (f64, 
 
 #[cfg(test)]
 mod tests {
+    use kurbo::Shape as _;
+
+    fn deco(shape: BoxShape) -> BoxDecoration {
+        BoxDecoration { shape, radius: BorderRadius::all(6.0), ..BoxDecoration::new() }
+    }
+
+    fn outline_shape(o: Outline) -> (Option<Circle>, Option<kurbo::RoundedRect>, BezPath) {
+        match o {
+            Outline::Circle(c) => (Some(c), None, c.to_path(0.1)),
+            Outline::RRect(r) => (None, Some(r), r.to_path(0.1)),
+        }
+    }
+
+    #[test]
+    fn outline_keeps_circle_primitive() {
+        let rect = Rect::new(0.0, 0.0, 40.0, 40.0);
+        let (c, _, _) = outline_shape(outline(&deco(BoxShape::Circle), Size::new(40.0, 40.0), rect).0);
+        assert_eq!(c, Some(Circle::new((20.0, 20.0), 20.0)));
+    }
+
+    #[test]
+    fn outline_keeps_rounded_rect_primitive() {
+        let rect = Rect::new(0.0, 0.0, 60.0, 30.0);
+        let (_, r, _) = outline_shape(outline(&deco(BoxShape::Rectangle), Size::new(60.0, 30.0), rect).0);
+        assert_eq!(r, Some(rect.to_rounded_rect(6.0)));
+    }
+
+    #[test]
+    fn outline_path_matches_previous_bezpath() {
+        let rect = Rect::new(0.0, 0.0, 40.0, 40.0);
+        let (_, _, circle) = outline_shape(outline(&deco(BoxShape::Circle), Size::new(40.0, 40.0), rect).0);
+        assert_eq!(circle, Circle::new((20.0, 20.0), 20.0).to_path(0.1));
+        let (_, _, rr) = outline_shape(outline(&deco(BoxShape::Rectangle), Size::new(40.0, 40.0), rect).0);
+        assert_eq!(rr, rect.to_rounded_rect(6.0).to_path(0.1));
+    }
+
     use super::*;
     use crate::decoration::{Border, BorderRadius, image_from_rgba8};
     use crate::paint::Scene;

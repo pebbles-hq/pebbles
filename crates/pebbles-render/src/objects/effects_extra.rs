@@ -27,6 +27,21 @@ fn layout_single_child(cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Si
 }
 
 // ---------------------------------------------------------------------------
+/// The clip shape of [`RenderClipOval`] (02/09 L02): a circle primitive for a square box.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum OvalClip {
+    Circle(kurbo::Circle),
+    Ellipse(Ellipse),
+}
+
+fn oval_clip_shape(bounds: Rect) -> OvalClip {
+    if (bounds.width() - bounds.height()).abs() <= 1e-9 {
+        OvalClip::Circle(kurbo::Circle::new(bounds.center(), bounds.width() / 2.0))
+    } else {
+        OvalClip::Ellipse(Ellipse::new(bounds.center(), (bounds.width() / 2.0, bounds.height() / 2.0), 0.0))
+    }
+}
+
 // RenderClipOval — clip the child to the ellipse inscribed in its bounds
 // ---------------------------------------------------------------------------
 
@@ -41,8 +56,13 @@ impl RenderObject for RenderClipOval {
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let Some(child) = cx.children().first().copied() else { return };
         let bounds = Rect::from_origin_size(offset.to_point(), cx.size());
-        let ellipse = Ellipse::new(bounds.center(), (bounds.width() / 2.0, bounds.height() / 2.0), 0.0);
-        cx.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &ellipse);
+        // L02: a square box clips with a circle primitive (classified exactly by renderers).
+        match oval_clip_shape(bounds) {
+            OvalClip::Circle(c) => cx.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &c),
+            OvalClip::Ellipse(e) => {
+                cx.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &e)
+            }
+        }
         cx.paint_child_clipped(child, offset + cx.child_offset(child), bounds);
         cx.scene.pop_layer();
     }
@@ -201,4 +221,20 @@ fn luminance_gradient(g: &Gradient, rect: Rect) -> peniko::Gradient {
         },
     };
     gradient_brush(&masked, rect)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn oval_clip_square_is_circle() {
+        let c = oval_clip_shape(Rect::new(10.0, 10.0, 50.0, 50.0));
+        assert_eq!(c, OvalClip::Circle(kurbo::Circle::new((30.0, 30.0), 20.0)));
+    }
+
+    #[test]
+    fn oval_clip_wide_is_ellipse() {
+        assert!(matches!(oval_clip_shape(Rect::new(0.0, 0.0, 80.0, 40.0)), OvalClip::Ellipse(_)));
+    }
 }
