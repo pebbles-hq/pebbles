@@ -541,8 +541,23 @@ impl Walk<'_> {
                     self.emit(ops, xf);
                 }
                 Op::Image { image, transform, .. } => {
-                    // Zero-size images are skipped silently.
-                    if image.image.width == 0 || image.image.height == 0 || self.hidden() {
+                    // R33: validate before any key. Zero-size images are skipped silently.
+                    match images::validate_image(&image.image) {
+                        Ok(()) => {}
+                        Err(images::ImageProblem::ZeroSize) => continue,
+                        Err(_) => {
+                            self.fell_back(coverage::Feature::ImageMalformed);
+                            self.stats.record(Unsupported::ImageMalformed);
+                            continue;
+                        }
+                    }
+                    // R32: a non-finite alpha skips the op; alpha 0 draws nothing.
+                    let a = image.sampler.alpha;
+                    if !a.is_finite() {
+                        self.skip_non_finite();
+                        continue;
+                    }
+                    if a <= 0.0 || self.hidden() {
                         continue;
                     }
                     let xf = outer * *transform;

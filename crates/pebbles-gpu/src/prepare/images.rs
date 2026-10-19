@@ -9,6 +9,31 @@ use super::plan::{FramePlan, ImageRequest};
 use crate::execute::resources::image_cache::{ImageKey, SamplerKey};
 use crate::gpu_types::QuadInstance;
 
+/// Why an `ImageData` cannot be drawn (R33, OC-40).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ImageProblem {
+    ZeroSize,
+    UnknownFormat,
+    LengthMismatch { expected: Option<usize>, actual: usize },
+}
+
+/// Validate before any key or upload (R33): sizes, format, and exact data length.
+pub(crate) fn validate_image(d: &peniko::ImageData) -> Result<(), ImageProblem> {
+    if d.width == 0 || d.height == 0 {
+        return Err(ImageProblem::ZeroSize);
+    }
+    match d.format {
+        peniko::ImageFormat::Rgba8 | peniko::ImageFormat::Bgra8 => {}
+        _ => return Err(ImageProblem::UnknownFormat),
+    }
+    let expected = d.format.size_in_bytes(d.width, d.height);
+    let actual = d.data.len();
+    if expected != Some(actual) {
+        return Err(ImageProblem::LengthMismatch { expected, actual });
+    }
+    Ok(())
+}
+
 /// The 02 §8.1 sampler of an image draw (R30): quality → filter/mipmap filter, extend →
 /// address modes. 10 §3.5 caches one `wgpu::Sampler` per key.
 pub(crate) fn sampler_key(s: peniko::ImageSampler) -> SamplerKey {
@@ -64,6 +89,52 @@ mod tests {
     use super::sampler_key;
     use crate::prepare::DrawCmd;
     use crate::prepare::test_util::prepare_scene;
+
+    use super::{ImageProblem, validate_image};
+
+    fn data(w: u32, h: u32, len: usize) -> peniko::ImageData {
+        peniko::ImageData {
+            data: peniko::Blob::from(vec![0u8; len]),
+            format: peniko::ImageFormat::Rgba8,
+            alpha_type: peniko::ImageAlphaType::Alpha,
+            width: w,
+            height: h,
+        }
+    }
+
+    #[test]
+    fn zero_size_skipped() {
+        assert_eq!(validate_image(&data(0, 4, 0)), Err(ImageProblem::ZeroSize));
+        assert_eq!(validate_image(&data(4, 0, 0)), Err(ImageProblem::ZeroSize));
+    }
+
+    #[test]
+    fn short_data_skipped() {
+        let e = validate_image(&data(4, 4, 60));
+        assert_eq!(e, Err(ImageProblem::LengthMismatch { expected: Some(64), actual: 60 }));
+        // And prepare draws nothing, recording the fallback.
+        let mut s = Scene::new();
+        Painter::new(&mut s).draw_image(&peniko::ImageBrush::new(data(4, 4, 60)), Affine::IDENTITY);
+        let (plan, stats) = prepare_scene(&s, 16, 16);
+        assert!(plan.cmds.is_empty() && plan.images.is_empty());
+        assert_eq!(stats.unsupported[crate::stats::Unsupported::ImageMalformed as usize], 1);
+    }
+
+    #[test]
+    fn long_data_skipped() {
+        assert!(matches!(validate_image(&data(4, 4, 65)), Err(ImageProblem::LengthMismatch { .. })));
+    }
+
+    #[test]
+    fn overflowing_size_skipped() {
+        let e = validate_image(&data(u32::MAX, u32::MAX, 16));
+        assert_eq!(e, Err(ImageProblem::LengthMismatch { expected: None, actual: 16 }));
+    }
+
+    #[test]
+    fn valid_image_passes() {
+        assert_eq!(validate_image(&data(4, 4, 64)), Ok(()));
+    }
 
     #[test]
     fn sampler_key_table() {

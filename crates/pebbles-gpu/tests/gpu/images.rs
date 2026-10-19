@@ -274,3 +274,57 @@ fn image_skewed() {
     let px = draw_quadrants(&mut r, t, (112, 72));
     assert_quadrants(&px, 112, 72, t);
 }
+
+// ---- R32: ImageSampler::alpha ----
+
+fn solid_image(px: [u8; 4], alpha_type: peniko::ImageAlphaType) -> peniko::ImageBrush {
+    peniko::ImageBrush::new(peniko::ImageData {
+        data: peniko::Blob::from(px.repeat(16)),
+        format: peniko::ImageFormat::Rgba8,
+        alpha_type,
+        width: 4,
+        height: 4,
+    })
+}
+
+fn center_of(r: &mut (wgpu::Device, wgpu::Queue, Renderer), image: &peniko::ImageBrush) -> [u8; 4] {
+    let mut s = Scene::new();
+    Painter::new(&mut s).draw_image(image, Affine::translate((4.0, 4.0)) * Affine::scale(4.0));
+    let px = render_scene(&r.0, &r.1, &mut r.2, &s, (24, 24), Color::WHITE);
+    pixel(&px, 24, 12, 12)
+}
+
+fn near(a: [u8; 4], b: [u8; 4]) -> bool {
+    a.iter().zip(b).all(|(x, y)| x.abs_diff(y) <= 2)
+}
+
+#[test]
+#[ignore = "gpu"]
+fn image_alpha_half() {
+    let Some(mut r) = setup("image_alpha_half") else { return };
+    let img = solid_image([255, 0, 0, 255], peniko::ImageAlphaType::Alpha).with_alpha(0.5);
+    let c = center_of(&mut r, &img);
+    assert!(near(c, [255, 127, 127, 255]), "{c:?}");
+}
+
+#[test]
+#[ignore = "gpu"]
+fn image_alpha_zero_draws_nothing() {
+    let Some(mut r) = setup("image_alpha_zero_draws_nothing") else { return };
+    let img = solid_image([255, 0, 0, 255], peniko::ImageAlphaType::Alpha).with_alpha(0.0);
+    assert_eq!(center_of(&mut r, &img), [255, 255, 255, 255]);
+    assert_eq!(r.2.last_frame_stats().draw_calls, 0);
+}
+
+#[test]
+#[ignore = "gpu"]
+fn premultiplied_image_alpha_half() {
+    let Some(mut r) = setup("premultiplied_image_alpha_half") else { return };
+    // Premultiplied (100, 50, 20, 128) × 0.5 = (50, 25, 10, 64) over white:
+    // out = src + 255 · (1 − 64/255).
+    let img = solid_image([100, 50, 20, 128], peniko::ImageAlphaType::AlphaPremultiplied).with_alpha(0.5);
+    let c = center_of(&mut r, &img);
+    let over = |s: f64| (s + 255.0 * (1.0 - 64.0 / 255.0)).round() as u8;
+    let want = [over(50.0), over(25.0), over(10.0), 255];
+    assert!(near(c, want), "{c:?} want {want:?}");
+}

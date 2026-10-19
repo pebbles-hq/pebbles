@@ -122,9 +122,6 @@ impl Walk<'_> {
         if s.quality != peniko::ImageQuality::Low && xf.determinant().abs() < 1.0 {
             self.fell_back(Feature::ImageMipmaps);
         }
-        if s.alpha < 1.0 {
-            self.fell_back(Feature::ImageAlpha);
-        }
     }
 
     /// Shadow rows (R40/R41 deliver them).

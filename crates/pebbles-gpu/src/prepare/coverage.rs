@@ -233,6 +233,8 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::ImageQuality,       // R30
     F::ImageExtend,        // R30
     F::ImageTransform,     // R31
+    F::ImageAlpha,         // R32
+    F::ImageMalformed,     // R33
 ];
 
 #[cfg(test)]

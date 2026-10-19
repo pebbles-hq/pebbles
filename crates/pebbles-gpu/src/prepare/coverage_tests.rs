@@ -179,7 +179,12 @@ fn fixture(f: F) -> Option<Scene> {
         F::ImageAlpha => p.draw_image(&rgba(4, 4).with_alpha(0.5), Affine::translate((8.0, 8.0))),
         F::ImageTransform => p.draw_image(&rgba(4, 4), rot),
         F::ImageOversize => p.draw_image(&rgba(64, 2), Affine::scale(0.5)),
-        F::ImageMalformed => p.draw_image(&rgba(0, 4), id),
+        F::ImageMalformed => {
+            // R33: 4×4 RGBA8 needs 64 bytes; 60 is malformed.
+            let mut img = rgba(4, 4);
+            img.image.data = peniko::Blob::from(vec![0u8; 60]);
+            p.draw_image(&img, id);
+        }
         F::ImageMipmaps => p.draw_image(&rgba(64, 64), Affine::scale(0.25)),
         F::ShadowAxisAligned => p.draw_blurred_rounded_rect(id, R, Color::BLACK, 4.0, 4.0),
         F::ShadowRotated => p.draw_blurred_rounded_rect(rot, R, Color::BLACK, 4.0, 4.0),

@@ -144,8 +144,8 @@ impl ImageCache {
         }
         let bytes: &[u8] = image.data.data();
         let (w, h) = (image.width, image.height);
+        // Prepare validated the data (R33); this stays as a guard, never counted twice.
         if w == 0 || h == 0 || u64::from(w) * u64::from(h) * 4 != bytes.len() as u64 {
-            stats.record(Unsupported::ImageMalformed);
             return false;
         }
         let max = device.limits().max_texture_dimension_2d;
