@@ -245,16 +245,25 @@ pub(crate) struct PrepareStats {
     pub tess_calls: u32,
     /// Glyphs culled against the active scissor before any atlas work (R25).
     pub culled_glyphs: u32,
-    /// Clip decisions (09 §2.2, §2.7).
+    /// Clips that became an exact scissor (09 §2.2 row 4).
     pub clips_scissor: u32,
+    /// Clips containing the current scissor: nothing changes (row 3).
     pub clips_noop: u32,
+    /// Clips with an empty intersection: their subtree is culled (row 2).
     pub clips_culled: u32,
+    /// Clips evaluated analytically in the shaders (rows 5–7, L04).
     pub clips_sdf: u32,
+    /// Clips rasterized into Tier B coverage masks (row 8, L08).
     pub clips_mask: u32,
+    /// Clips rendered as GPU coverage masks (row 9, L09).
     pub clips_gpu_mask: u32,
+    /// GPU masks refused (row 10): `MAX_GPU_MASKS` active or the budget spent.
     pub gpu_mask_overflow: u32,
+    /// Clips with a non-finite transform or geometry (row 1).
     pub nonfinite: u32,
+    /// `PopLayer`s without a matching push, ignored (§2.7).
     pub unbalanced_pops: u32,
+    /// Layers still open at the end of the frame, closed automatically (§2.7).
     pub autoclosed: u32,
     /// Layer plans (09 §3.3).
     pub layers_skipped: u32,

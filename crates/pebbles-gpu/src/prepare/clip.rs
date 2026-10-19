@@ -816,4 +816,91 @@ mod tests {
         assert_eq!(plan.gpu_mask_jobs.len(), 2);
         assert_eq!(plan.gpu_mask_jobs[1].parent, MaskClipId(1));
     }
+
+    // ---- L07: count gates (DR-14): clip pushes emit no commands ----
+
+    fn group_scene(
+        groups: usize,
+        depth: usize,
+        clip: impl Fn(usize, usize) -> (Rect, Affine),
+    ) -> crate::prepare::FramePlan {
+        use pebbles_render::paint::{Painter, Scene};
+        let mut s = Scene::new();
+        let mut p = Painter::new(&mut s);
+        for g in 0..groups {
+            for d in 0..depth {
+                let (r, xf) = clip(g, d);
+                p.push_layer(peniko::Fill::NonZero, peniko::BlendMode::default(), 1.0, xf, &r);
+            }
+            let (r, xf) = clip(g, 0);
+            p.fill(peniko::Fill::NonZero, xf, peniko::Color::BLACK, None, &r);
+            for _ in 0..depth {
+                p.pop_layer();
+            }
+        }
+        crate::prepare::test_util::prepare_scene(&s, 256, 256).0
+    }
+
+    #[test]
+    fn count_gate_rotated_clips() {
+        let plan = group_scene(100, 8, |g, d| {
+            let o = (g % 10) as f64 * 24.0;
+            let r = Rect::new(o + 4.0, o + 4.0, o + 40.0 - d as f64, o + 40.0 - d as f64);
+            (r, Affine::rotate_about(0.3, r.center()))
+        });
+        assert_eq!(plan.stats.clips_mask, 800);
+        assert_eq!(plan.cmds.len(), 100);
+    }
+
+    #[test]
+    fn count_gate_integer_rect_clips() {
+        let plan = group_scene(100, 8, |g, d| {
+            let o = (g % 10) as f64 * 24.0;
+            let i = d as f64;
+            (Rect::new(o + i, o + i, o + 40.0 - i, o + 40.0 - i), Affine::IDENTITY)
+        });
+        assert_eq!(plan.stats.clips_mask, 0);
+        assert_eq!(plan.stats.clips_sdf, 0);
+        assert_eq!(plan.stats.clips_scissor, 800);
+        assert_eq!(plan.cmds.len(), 100);
+    }
+
+    #[test]
+    fn count_gate_identical_nested_rects_are_noop() {
+        let plan = group_scene(1, 8, |_, _| (Rect::new(10.0, 10.0, 100.0, 100.0), Affine::IDENTITY));
+        assert_eq!(plan.stats.clips_scissor, 1);
+        assert_eq!(plan.stats.clips_noop, 7);
+        assert_eq!(plan.cmds.len(), 1);
+    }
+
+    #[test]
+    fn count_gate_list_of_rrect_cards() {
+        use pebbles_render::paint::{Painter, Scene};
+        let mut s = Scene::new();
+        let mut p = Painter::new(&mut s);
+        for i in 0..50 {
+            let y = f64::from(i) * 5.0;
+            let card = kurbo::RoundedRect::new(8.0, y, 248.0, y + 4.5, 2.0);
+            p.push_layer(peniko::Fill::NonZero, peniko::BlendMode::default(), 1.0, Affine::IDENTITY, &card);
+            p.fill(
+                peniko::Fill::NonZero,
+                Affine::IDENTITY,
+                peniko::Color::WHITE,
+                None,
+                &Rect::new(0.0, y, 256.0, y + 5.0),
+            );
+            p.fill(
+                peniko::Fill::NonZero,
+                Affine::IDENTITY,
+                peniko::Color::BLACK,
+                None,
+                &Rect::new(16.0, y + 1.0, 120.0, y + 3.0),
+            );
+            p.pop_layer();
+        }
+        let (plan, _) = crate::prepare::test_util::prepare_scene(&s, 256, 256);
+        assert_eq!(plan.stats.clips_mask, 0);
+        assert_eq!(plan.stats.clips_sdf, 50);
+        assert_eq!(plan.cmds.len(), 50, "two fills per card merge (same clip state, same pipeline)");
+    }
 }
