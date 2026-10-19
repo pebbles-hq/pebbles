@@ -70,6 +70,10 @@ pub struct Renderer {
     /// Shader-brush programs and per-frame bindings (09 §6.1, L43).
     pub(crate) shader_programs: super::execute::resources::shader_programs::ShaderPrograms,
     pub(crate) shader_brushes: super::execute::shader_brushes::ShaderBrushResources,
+    /// The targets this Renderer renders, by id (10 §4.4, M13).
+    targets_book: super::frame_targets::TargetBook,
+    /// Frames rendered (the book's clock).
+    frame: u64,
     /// Pass segments, reused across frames (09 §3.6).
     pub(crate) segments: Vec<super::prepare::passes::PassSegment>,
     pub(crate) arenas: FrameArenas,
@@ -110,6 +114,8 @@ impl Renderer {
         let (_, rows_used, rows_total) = self.gradients.lut.census();
         (c.gradient_rows_used, c.gradient_rows_capacity) = (rows_used as usize, rows_total);
         c.arena_capacity_bytes = self.arenas.capacity_bytes();
+        c.frame_target_entries = self.targets_book.len();
+        c.frame_target_bytes = self.targets_book.total_bytes();
         c
     }
 
@@ -181,6 +187,8 @@ impl Renderer {
             proj_next: 0,
             segments: Vec::new(),
             customs: Default::default(),
+            targets_book: super::frame_targets::TargetBook::new(budgets.frame_targets_bytes),
+            frame: 0,
             shader_programs: Default::default(),
             shader_brushes: super::execute::shader_brushes::ShaderBrushResources::new(
                 gpu.device(),
@@ -518,14 +526,18 @@ impl Renderer {
                 if x1 > x0 && y1 > y0 {
                     // R62: a depth-requesting renderer gets a lazily created, freshly cleared
                     // depth texture matching the attachment.
-                    let depth_key = entry.depth.map(|f| super::frame_targets::TargetKey {
-                        size: tex_size,
-                        samples,
-                        depth: Some(f),
+                    let depth_key = entry.depth.map(|f| {
+                        let key = super::frame_targets::TargetKey {
+                            width: tex_size.0,
+                            height: tex_size.1,
+                            format,
+                            sample_count: samples,
+                        };
+                        (key, f)
                     });
-                    if let Some(key) = depth_key {
-                        target.targets.ensure_depth(device, key, &mut stats);
-                        if let Some(d) = target.targets.depth_view(key) {
+                    if let Some((key, f)) = depth_key {
+                        target.targets.ensure_depth(device, key, f, &mut stats);
+                        if let Some(d) = target.targets.depth_view(key, f) {
                             clear_depth(&mut encoder, d);
                             stats.render_passes += 1;
                         }
@@ -549,7 +561,7 @@ impl Renderer {
                         scissor: (x0, y0, x1 - x0, y1 - y0),
                         transform: kurbo::Affine::translate((-f64::from(ox), -f64::from(oy)))
                             * item.transform,
-                        depth: depth_key.and_then(|k| target.targets.depth_view(k)),
+                        depth: depth_key.and_then(|(k, f)| target.targets.depth_view(k, f)),
                     };
                     entry.renderer.render(&mut ctx, &*item.paint);
                     encoder.pop_debug_group();
@@ -589,6 +601,14 @@ impl Renderer {
         self.shader_programs.end_frame();
         self.proj_next = 0;
         stats.layer_pool_bytes = target.targets.pool.bytes();
+        if !nested {
+            // 10 §4.4 E4/E5: book the target; over budget is counted, never refused.
+            if self.targets_book.record(target.targets, self.frame) {
+                stats.frame_target_budget_exceeded += 1;
+            }
+            self.targets_book.end_frame(self.frame);
+            self.frame += 1;
+        }
         self.scratch.plan.release_refs();
         if !nested {
             self.glyph_atlas.end_frame(&mut stats);

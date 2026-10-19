@@ -34,6 +34,7 @@ mod shadows;
 mod steady_state;
 mod support;
 mod targets;
+mod targets_gpu;
 mod text;
 mod tier_c;
 

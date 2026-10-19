@@ -3,9 +3,9 @@
 /// Debug-only, count-only. Soak tests compare it across rounds; leaks are judged by census,
 /// never RSS (performance-standards §4).
 ///
-/// `Renderer::census` fills the per-device fields; the `frame_target_*` and `layer_pool_*`
-/// fields belong to one render target and are filled by the owner of its `FrameTargets`
-/// (`OffscreenRenderer::census`).
+/// `Renderer::census` fills the per-device fields and the `frame_target_*` fields (from its
+/// book of rendered targets, M13); the `layer_pool_*` fields belong to one render target and are
+/// filled by the owner of its `FrameTargets` (`OffscreenRenderer::census`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct GpuCensus {
