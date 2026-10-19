@@ -19,6 +19,7 @@ mod clip;
 pub(crate) mod color;
 pub(crate) mod coverage;
 mod cull;
+pub(crate) mod effects;
 mod features;
 pub(crate) mod glyph_outline;
 pub(crate) mod glyphs;
@@ -354,6 +355,7 @@ impl Walk<'_> {
             compose: blend.compose,
             path,
             parent,
+            effect: None,
         });
         self.push(DrawCmd::PushLayer { layer: id }, idx);
         self.clips.push_fresh(comp.scissor);
@@ -363,8 +365,72 @@ impl Walk<'_> {
         self.plan.stats.layers_promoted += u32::from(promoted);
     }
 
+    /// 09 §10.3 push of an effect layer: the optional own clip on the parent (the composite's
+    /// clip), a layer target covering that clip grown by the effect's reach (∩ the parent
+    /// scissor), the device-space steps, and a fresh clip state for the children.
+    pub(super) fn push_effect_layer(
+        &mut self,
+        effect: &pebbles_render::paint::display_list::LayerEffect,
+        clip: Option<&pebbles_render::paint::display_list::Geometry>,
+        xf: Affine,
+        idx: u32,
+    ) {
+        let prev_fold = self.layers.fold();
+        let parent_scissor = self.clips.current().scissor;
+        match clip {
+            Some(c) => self.push_layer_clip(c, xf, Fill::NonZero),
+            None => self.clips.push(
+                clip::ClipDecision { kind: clip::ClipKind::Noop, scissor: parent_scissor },
+                &mut self.plan.sdf_clips,
+            ),
+        }
+        let comp = self.clips.current();
+        if self.clips.is_culled() || self.layers.offscreen_open() >= self.limits.max_layer_targets as usize {
+            self.layers.push(layer::Frame::Clip { prev_fold });
+            return;
+        }
+        // Device parameters = local × s, the larger singular value of the linear part (09 §10.1).
+        let s = xf.spectral_norm();
+        let (rx, ry) = effect.reach();
+        let grow = |v: u32, d: f64, up: bool| {
+            let d = u32::try_from(num::to_u64_sat((d * s).ceil())).unwrap_or(u32::MAX);
+            if up { v.saturating_add(d) } else { v.saturating_sub(d) }
+        };
+        let g = comp.scissor;
+        let p = parent_scissor;
+        let bounds = ScissorRect {
+            x0: grow(g.x0, rx, false).max(p.x0),
+            y0: grow(g.y0, ry, false).max(p.y0),
+            x1: grow(g.x1, rx, true).min(p.x1),
+            y1: grow(g.y1, ry, true).min(p.y1),
+        };
+        let mut steps = Vec::new();
+        effects::device_steps(effect, s, &mut steps);
+        let parent = match self.layers.current_target() {
+            Some(l) => plan::TargetRef::Layer(l),
+            None => plan::TargetRef::Root,
+        };
+        let id = num::index_u32(self.plan.layers.len());
+        self.plan.effects.push(steps);
+        self.plan.layers.push(plan::LayerDesc {
+            bounds,
+            alpha: 1.0,
+            mix: peniko::Mix::Normal,
+            compose: peniko::Compose::SrcOver,
+            path: plan::CompositePath::Over,
+            parent,
+            effect: Some(num::index_u32(self.plan.effects.len() - 1)),
+        });
+        self.push(DrawCmd::PushLayer { layer: id }, idx);
+        self.clips.push_fresh(bounds);
+        self.layers.push(layer::Frame::Offscreen { layer: id, comp, prev_fold });
+        self.layers.set_fold(1.0);
+        self.plan.stats.layers_offscreen += 1;
+        self.plan.stats.composites_over += 1;
+    }
+
     /// The matching pop of any layer frame; false for an unbalanced pop.
-    fn pop_layer(&mut self, idx: u32) -> bool {
+    pub(super) fn pop_layer(&mut self, idx: u32) -> bool {
         let Some(frame) = self.layers.pop() else { return false };
         match frame {
             layer::Frame::Skip => {
@@ -754,6 +820,18 @@ impl Walk<'_> {
                             );
                         }
                     }
+                }
+                Op::PushEffectLayer { effect, clip, transform, .. } => {
+                    let xf = outer * *transform;
+                    let finite = clip.as_ref().is_none_or(hygiene::geometry_is_finite);
+                    if !xf.is_finite() || !finite || self.layers.is_skipped() || self.clips.is_culled() {
+                        if !xf.is_finite() || !finite {
+                            self.skip_non_finite();
+                        }
+                        self.push_skip_layer();
+                        continue;
+                    }
+                    self.push_effect_layer(effect, clip.as_ref(), xf, idx);
                 }
                 Op::PopLayer => {
                     if self.layers.open() <= self.layer_floor || !self.pop_layer(idx) {

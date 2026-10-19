@@ -17,6 +17,8 @@ pub(crate) struct LayerTarget {
     pub composite: (wgpu::BindGroup, u32),
     /// `Backdrop` path (09 §4.4): the pool slot the parent's pixels are copied into.
     pub backdrop: Option<usize>,
+    /// Effect layers (09 §10.3): the passes run after the layer's last segment.
+    pub effect_passes: Vec<super::effects::EffectPass>,
 }
 
 /// Acquire and describe every offscreen layer of the plan. Call after `tier_c::encode_runs` so
@@ -57,6 +59,8 @@ pub(crate) fn acquire_layers(
     }
     let mut out = Vec::with_capacity(n);
     let mut live: Vec<(usize, usize)> = Vec::new();
+    let mut effect_slot = 0u32;
+    let mut all_passes: Vec<super::effects::EffectPass> = Vec::new();
     for path in [CompositePath::Over, CompositePath::Compose, CompositePath::Backdrop] {
         for d in renderer.scratch.plan.layers.iter().filter(|d| d.path == path) {
             let key = composite_key(d, format);
@@ -138,12 +142,34 @@ pub(crate) fn acquire_layers(
                 },
                 composite: (group, u32::try_from(params_offset).unwrap_or(0)),
                 backdrop: Some(bslot),
+                effect_passes: Vec::new(),
             }));
             continue;
         }
+        // 09 §10.3: an effect layer composites from its last effect pass's texture.
+        let mut effect_passes = Vec::new();
+        let csrc = match desc.effect.and_then(|e| renderer.scratch.plan.effects.get(e as usize)) {
+            Some(steps) => {
+                let mut acquire = |size: (u32, u32)| {
+                    let s = targets.pool.acquire(device, size, format, 1, stats);
+                    live.push((end, s));
+                    s
+                };
+                super::effects::plan_passes(
+                    steps,
+                    (w, h),
+                    slot,
+                    &mut acquire,
+                    &mut effect_slot,
+                    &mut effect_passes,
+                )
+            }
+            None => slot,
+        };
+        all_passes.extend(effect_passes.iter().cloned());
         let (layout, params_buf, generation) =
             (&renderer.layouts.composite, renderer.composite_buffer(), renderer.composite_generation());
-        let tex = targets.pool.textures_mut(slot);
+        let tex = targets.pool.textures_mut(csrc);
         let view = &tex.color.1;
         let group = super::resources::bind_groups::refresh(
             &mut tex.composite_bg,
@@ -181,8 +207,11 @@ pub(crate) fn acquire_layers(
             },
             composite: (group, u32::try_from(params_offset).unwrap_or(0)),
             backdrop: None,
+            effect_passes,
         }));
     }
+    super::effects::ensure_pipelines(renderer, device, format, &all_passes, stats);
+    renderer.write_effect_params(device, queue, &all_passes, stats);
     out
 }
 

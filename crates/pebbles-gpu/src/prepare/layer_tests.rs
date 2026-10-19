@@ -485,3 +485,21 @@ fn pool_exhaustion_flattens_deeper_layers() {
     assert_eq!(plan.layers.len(), crate::limits::MAX_LAYER_TARGETS as usize);
     assert_eq!(plan.stats.layers_offscreen, 16);
 }
+
+// ---- L61: effect layers ----
+
+#[test]
+fn reach_grows_bounds() {
+    use pebbles_render::paint::display_list::{BlurEdge, LayerEffect};
+    let plan = paths(|p| {
+        let e = LayerEffect::Blur { sigma_x: 2.0, sigma_y: 1.0, edge: BlurEdge::Decal };
+        p.push_effect_layer(e, Some(&r(20.0, 20.0, 40.0, 40.0)), Affine::IDENTITY);
+        fill(p, r(0.0, 0.0, 64.0, 64.0));
+        p.pop_layer();
+    });
+    // reach = ⌈3σ⌉ = (6, 3) around the clip's bbox.
+    assert_eq!(plan.layers[0].bounds, ScissorRect { x0: 14, y0: 17, x1: 46, y1: 43 });
+    assert!(plan.layers[0].effect.is_some());
+    let DrawCmd::Composite { clip, .. } = plan.cmds[plan.cmds.len() - 1] else { panic!() };
+    assert_eq!(clip.scissor, ScissorRect { x0: 20, y0: 20, x1: 40, y1: 40 }, "composited under the op clip");
+}

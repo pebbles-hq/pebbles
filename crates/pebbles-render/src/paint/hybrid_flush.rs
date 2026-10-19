@@ -131,6 +131,22 @@ fn emit(
             let clip_path = clip.to_path(TOL);
             out.push_layer(Some(&clip_path), Some(*blend), Some(*alpha), None, None);
         }
+        Op::PushEffectLayer { clip, transform, .. } => {
+            // DR-24 adoption rule: effects are wgpu-only; keep the clip so pops stay balanced.
+            static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                pebbles_foundation::log::logf(
+                    pebbles_foundation::log::Level::Warn,
+                    pebbles_foundation::log::Cat::Gpu,
+                    format_args!(
+                        "vello-hybrid: layer effects are not supported; drawn unfiltered (wgpu, 09 §10)"
+                    ),
+                );
+            }
+            out.set_transform(outer * *transform);
+            let clip_path = clip.as_ref().map(|c| c.to_path(TOL).into_owned());
+            out.push_layer(clip_path.as_ref(), None, None, None, None);
+        }
         Op::PopLayer => out.pop_layer(),
         Op::Image { image, transform, .. } => {
             let (w, h) = (image.image.width, image.image.height);

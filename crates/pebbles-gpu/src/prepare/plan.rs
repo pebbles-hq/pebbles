@@ -250,6 +250,18 @@ pub(crate) struct LayerDesc {
     pub compose: peniko::Compose,
     pub path: CompositePath,
     pub parent: TargetRef,
+    /// An effect layer (09 §10.3): index into `FramePlan::effects`, applied after the layer's
+    /// last pass, before its composite.
+    pub effect: Option<u32>,
+}
+
+/// One device-space effect step (09 §10.2–§10.6).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum EffectStep {
+    Blur { sigma_x: f32, sigma_y: f32, clamp: bool },
+    ColorMatrix([f32; 20]),
+    Dilate { rx: u32, ry: u32 },
+    Erode { rx: u32, ry: u32 },
 }
 
 /// One glyph run's shared data; `GlyphRequest::run` indexes this.
@@ -388,6 +400,8 @@ pub(crate) struct FramePlan {
     pub gpu_mask_bytes: u64,
     /// Offscreen layers (09 §3.5), indexed by `DrawCmd::{PushLayer, PopLayer, Composite}`.
     pub layers: Vec<LayerDesc>,
+    /// Effect-layer step lists (09 §10), indexed by `LayerDesc::effect`.
+    pub effects: Vec<Vec<EffectStep>>,
     /// A `Backdrop` layer composites into the root: the root renders into a copyable texture
     /// and is blitted to the frame target at the end (09 §4.4).
     pub root_needs_backdrop: bool,
@@ -428,6 +442,7 @@ impl FramePlan {
         self.image_brushes.clear();
         self.gpu_mask_bytes = 0;
         self.layers.clear();
+        self.effects.clear();
         self.root_needs_backdrop = false;
         self.cmds.clear();
         self.fallback_features = super::coverage::FeatureSet::default();

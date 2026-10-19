@@ -12,10 +12,7 @@ use crate::prepare::test_util::prepare_scene;
 const NOT_PRODUCIBLE: &[(F, &str)] = &[
     (F::Vertices, "no Op::Vertices yet (R63)"),
     (F::SpriteAtlas, "no Op::Atlas yet (R64)"),
-    (F::EffectBlur, "no Op::PushEffectLayer yet (L61)"),
     (F::BackdropFilter, "no Op::PushBackdropFilter yet (L62)"),
-    (F::EffectColorMatrix, "no LayerEffect yet (L63)"),
-    (F::EffectMorphology, "no LayerEffect yet (L64)"),
     (F::ProjectedLayer, "no Op::PushProjectedLayer yet (L65)"),
     (F::ShaderBrush, "no Op::ShaderFill yet (L43)"),
     (F::ClipEllipse, "Geometry has no Ellipse variant: an oval clip arrives as a Path (OC-24, L01)"),
@@ -254,6 +251,19 @@ fn fixture(f: F) -> Option<Scene> {
         F::NonFinite => p.fill(Fill::NonZero, id, RED, None, &Rect::new(f64::NAN, 0.0, 8.0, 8.0)),
         F::Offscreen => p.fill(Fill::NonZero, id, RED, None, &Rect::new(500.0, 500.0, 600.0, 600.0)),
         F::GradientDither => p.fill(Fill::NonZero, id, &gradient(), None, &R),
+        F::EffectBlur | F::EffectColorMatrix | F::EffectMorphology => {
+            use pebbles_render::paint::display_list::{BlurEdge, LayerEffect};
+            let e = match f {
+                F::EffectBlur => LayerEffect::Blur { sigma_x: 2.0, sigma_y: 2.0, edge: BlurEdge::Decal },
+                F::EffectColorMatrix => {
+                    LayerEffect::ColorMatrix(pebbles_render::paint::ColorMatrix::grayscale().0)
+                }
+                _ => LayerEffect::Dilate { radius_x: 2.0, radius_y: 2.0 },
+            };
+            p.push_effect_layer(e, None::<&Rect>, id);
+            p.fill(Fill::NonZero, id, RED, None, &R);
+            p.pop_layer();
+        }
         F::ClipGpuMask => layer(p, Mix::Normal, 1.0, id, &Circle::new((32.0, 32.0), 200.0).to_path(0.1)),
         _ => return None,
     }

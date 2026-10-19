@@ -14,6 +14,7 @@ mod capture;
 mod clip;
 mod clips;
 mod color;
+mod effects;
 mod fragments;
 mod frame_targets_gpu;
 mod gpu_color;

@@ -16,8 +16,10 @@ pub use kurbo::{self, Affine, BezPath, Circle, Point, Rect, Shape, Stroke};
 pub use peniko::{self, Brush, BrushRef, Color, Fill, FontData};
 
 // ---- the shared display list (DR-02) ----------------------------------------
+pub mod color_matrix;
 pub mod display_list;
 pub mod dynamic_image;
+pub use color_matrix::ColorMatrix;
 pub use display_list::{Glyph, NormalizedCoord, Painter, Scene, scene};
 pub use dynamic_image::{DynamicImage, DynamicImageFrame, IRect};
 

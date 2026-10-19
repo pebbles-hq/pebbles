@@ -76,6 +76,9 @@ impl PipelineKind {
             Self::Blit => "pebbles.gpu.pipeline.blit",
             Self::Gradient => "pebbles.gpu.pipeline.gradient",
             Self::ImageBrush => "pebbles.gpu.pipeline.image_brush",
+            Self::Blur => "pebbles.gpu.pipeline.blur",
+            Self::ColorMatrix => "pebbles.gpu.pipeline.color_matrix",
+            Self::Morphology => "pebbles.gpu.pipeline.morphology",
             _ => "pebbles.gpu.pipeline.other",
         }
     }
@@ -127,6 +130,7 @@ pub(crate) struct ShaderModules {
     pub blit: wgpu::ShaderModule,
     pub gradient: wgpu::ShaderModule,
     pub image_brush: wgpu::ShaderModule,
+    pub effects: wgpu::ShaderModule,
 }
 
 impl ShaderModules {
@@ -148,6 +152,7 @@ impl ShaderModules {
             blit: module("pebbles.gpu.shader.blit", shaders::BLIT),
             gradient: module("pebbles.gpu.shader.gradient", shaders::GRADIENT),
             image_brush: module("pebbles.gpu.shader.image_brush", shaders::IMAGE_BRUSH),
+            effects: module("pebbles.gpu.shader.effects", shaders::EFFECTS),
         }
     }
 
@@ -164,6 +169,7 @@ impl ShaderModules {
             PipelineKind::Blit => &self.blit,
             PipelineKind::Gradient => &self.gradient,
             PipelineKind::ImageBrush => &self.image_brush,
+            PipelineKind::Blur | PipelineKind::ColorMatrix | PipelineKind::Morphology => &self.effects,
             _ => &self.solid,
         }
     }
@@ -205,6 +211,9 @@ impl PipelineCache {
             PipelineKind::Blit => Some(&layouts.blit),
             PipelineKind::Gradient => Some(&layouts.gradient),
             PipelineKind::ImageBrush => Some(&layouts.image_brush),
+            PipelineKind::Blur | PipelineKind::ColorMatrix | PipelineKind::Morphology => {
+                Some(&layouts.effect)
+            }
             _ => None,
         };
         debug_assert_eq!(group1.is_some(), desc.group1, "{kind:?}: group 1 disagrees with 02 §9");

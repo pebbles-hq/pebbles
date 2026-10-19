@@ -113,6 +113,63 @@ pub enum BlurStyle {
     Inner,
 }
 
+/// How blur samples outside the layer (09 §10.2).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum BlurEdge {
+    /// Outside is transparent (Flutter `TileMode.decal`).
+    #[default]
+    Decal,
+    /// Outside repeats the nearest edge pixel (Flutter `TileMode.clamp`).
+    Clamp,
+}
+
+/// An image filter applied to a layer's content (09 §10.1; Flutter `ImageFilter`).
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub enum LayerEffect {
+    /// Gaussian blur with per-axis standard deviations in local units (true σ, like Skia).
+    Blur { sigma_x: f32, sigma_y: f32, edge: BlurEdge },
+    /// Row-major 4×5 color matrix on unpremultiplied RGBA; the fifth column is an offset in
+    /// `[0, 1]` (09 §10.5).
+    ColorMatrix([f32; 20]),
+    /// Per-channel max over a `(2rx + 1) × (2ry + 1)` window (local units).
+    Dilate { radius_x: f32, radius_y: f32 },
+    /// Per-channel min over the window.
+    Erode { radius_x: f32, radius_y: f32 },
+    /// Effects applied in order (never nested: `Painter` flattens chains).
+    Chain(Arc<[LayerEffect]>),
+}
+
+impl LayerEffect {
+    /// A flattened chain of `effects` (nested chains are spliced in, 09 §10.6).
+    pub fn chain(effects: impl IntoIterator<Item = LayerEffect>) -> Self {
+        let mut out = Vec::new();
+        for e in effects {
+            match e {
+                LayerEffect::Chain(inner) => out.extend(inner.iter().cloned()),
+                e => out.push(e),
+            }
+        }
+        LayerEffect::Chain(out.into())
+    }
+
+    /// How far the effect moves content, in local units per axis (09 §10.1).
+    pub fn reach(&self) -> (f64, f64) {
+        match self {
+            LayerEffect::Blur { sigma_x, sigma_y, .. } => {
+                ((3.0 * f64::from(sigma_x.max(0.0))).ceil(), (3.0 * f64::from(sigma_y.max(0.0))).ceil())
+            }
+            LayerEffect::ColorMatrix(_) => (0.0, 0.0),
+            LayerEffect::Dilate { radius_x, radius_y } | LayerEffect::Erode { radius_x, radius_y } => {
+                (f64::from(radius_x.max(0.0)), f64::from(radius_y.max(0.0)))
+            }
+            LayerEffect::Chain(es) => {
+                es.iter().map(LayerEffect::reach).fold((0.0, 0.0), |a, b| (a.0 + b.0, a.1 + b.1))
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Op {
@@ -135,6 +192,15 @@ pub enum Op {
         shape: Geometry,
         hint: PathHint,
         snap: PixelSnap,
+    },
+    /// Render the children offscreen, turn the layer into `effect`'s output, and composite it
+    /// source-over, clipped by `clip` (local, under `transform`) when set (09 §10.1, Flutter
+    /// `ImageFiltered` / `ColorFiltered(matrix)`). Closed by `PopLayer`.
+    #[non_exhaustive]
+    PushEffectLayer {
+        effect: LayerEffect,
+        clip: Option<Geometry>,
+        transform: Affine,
     },
     /// Clip to `clip` (filled with `clip_fill`) and composite the layer with `blend` at
     /// `alpha`.

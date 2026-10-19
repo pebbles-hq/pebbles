@@ -150,6 +150,60 @@ pub(crate) fn pipeline_descs() -> Vec<PipelineDesc> {
             group1: true,
         },
         PipelineDesc {
+            kind: PipelineKind::Blur,
+            wgsl: "effects.wgsl",
+            vs: "vs_full",
+            fs: "fs_down",
+            topology: TriangleList,
+            layout: None,
+            group1: true,
+        },
+        PipelineDesc {
+            kind: PipelineKind::Blur,
+            wgsl: "effects.wgsl",
+            vs: "vs_full",
+            fs: "fs_blur",
+            topology: TriangleList,
+            layout: None,
+            group1: true,
+        },
+        PipelineDesc {
+            kind: PipelineKind::Blur,
+            wgsl: "effects.wgsl",
+            vs: "vs_full",
+            fs: "fs_up",
+            topology: TriangleList,
+            layout: None,
+            group1: true,
+        },
+        PipelineDesc {
+            kind: PipelineKind::ColorMatrix,
+            wgsl: "effects.wgsl",
+            vs: "vs_full",
+            fs: "fs_matrix",
+            topology: TriangleList,
+            layout: None,
+            group1: true,
+        },
+        PipelineDesc {
+            kind: PipelineKind::Morphology,
+            wgsl: "effects.wgsl",
+            vs: "vs_full",
+            fs: "fs_dilate",
+            topology: TriangleList,
+            layout: None,
+            group1: true,
+        },
+        PipelineDesc {
+            kind: PipelineKind::Morphology,
+            wgsl: "effects.wgsl",
+            vs: "vs_full",
+            fs: "fs_erode",
+            topology: TriangleList,
+            layout: None,
+            group1: true,
+        },
+        PipelineDesc {
             kind: PipelineKind::CompositeOver,
             wgsl: "composite.wgsl",
             vs: "vs_main",
@@ -196,7 +250,7 @@ pub(crate) fn desc_of(kind: PipelineKind) -> Option<PipelineDesc> {
 /// The row `key` builds: kinds with coverage variants (Gradient) select by `key.variant`.
 pub(crate) fn desc_for(key: PipelineKey) -> Option<PipelineDesc> {
     match key.kind {
-        PipelineKind::Gradient | PipelineKind::ImageBrush => {
+        PipelineKind::Gradient | PipelineKind::ImageBrush | PipelineKind::Blur | PipelineKind::Morphology => {
             pipeline_descs().into_iter().filter(|d| d.kind == key.kind).nth(usize::from(key.variant))
         }
         kind => desc_of(kind),
@@ -231,7 +285,12 @@ pub(crate) fn build(
                 blend: match key.kind {
                     PipelineKind::CompositeCompose => Some(compose_blend_state(compose_of(key.blend))),
                     // The shader computes the final pixel (09 §4.4–§4.5).
-                    PipelineKind::CompositeBackdrop | PipelineKind::Blit => None,
+                    // The shader computes the final pixel (09 §4.4–§4.5); effect passes replace.
+                    PipelineKind::CompositeBackdrop
+                    | PipelineKind::Blit
+                    | PipelineKind::Blur
+                    | PipelineKind::ColorMatrix
+                    | PipelineKind::Morphology => None,
                     _ => Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
                 },
                 write_mask: wgpu::ColorWrites::ALL,

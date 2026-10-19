@@ -156,6 +156,21 @@ pub(crate) struct ImageBrushParams {
 }
 const _: () = assert!(size_of::<ImageBrushParams>() == 48);
 
+/// One effect pass's parameters (09 §10, `effects.wgsl`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+pub(crate) struct EffectParams {
+    /// (unused, radius, clamp edges, axis 0 = x / 1 = y).
+    pub info: [u32; 4],
+    /// (src content w, h, dst content w, h).
+    pub size: [f32; 4],
+    /// Gaussian taps w(0..=r), packed 4 per row.
+    pub weights: [[f32; 4]; 7],
+    /// Color matrix, 20 floats row-major.
+    pub matrix: [[f32; 4]; 5],
+}
+const _: () = assert!(size_of::<EffectParams>() == 224);
+
 #[cfg(test)]
 mod tests {
     use super::{CompositeParams, GradientParams};

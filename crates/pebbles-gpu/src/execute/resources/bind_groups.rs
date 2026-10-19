@@ -14,6 +14,7 @@ pub(crate) struct BindGroupLayouts {
     pub blit: wgpu::BindGroupLayout,
     pub gradient: wgpu::BindGroupLayout,
     pub image_brush: wgpu::BindGroupLayout,
+    pub effect: wgpu::BindGroupLayout,
 }
 
 impl BindGroupLayouts {
@@ -227,7 +228,24 @@ impl BindGroupLayouts {
                 },
             ],
         });
-        Self { globals, texture, glyph, composite, composite_backdrop, blit, gradient, image_brush }
+        // 09 §10: an effect pass reads one texture (textureLoad) with `EffectParams` (224 B).
+        let effect = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("pebbles.gpu.layout.effect"),
+            entries: &[
+                tex_entry(0),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(224),
+                    },
+                    count: None,
+                },
+            ],
+        });
+        Self { globals, texture, glyph, composite, composite_backdrop, blit, gradient, image_brush, effect }
     }
 }
 

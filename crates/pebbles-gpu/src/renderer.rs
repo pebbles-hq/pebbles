@@ -49,6 +49,9 @@ pub struct Renderer {
     pub(crate) runs: Vec<super::execute::tier_c::Run>,
     /// Image-brush params and bind groups (09 §6, L42).
     pub(crate) image_brushes: super::execute::image_brushes::ImageBrushResources,
+    /// Effect-pass params (09 §10): one dynamic-offset slot per pass of the frame.
+    effect_buffer: wgpu::Buffer,
+    effect_slots: u64,
     /// Gradient LUT and params (09 §5.3, L34/L35).
     pub(crate) gradients: super::execute::gradients::GradientResources,
     /// GPU coverage masks: the mask pool and the per-texture group-0 variants (09 §2.9, L09).
@@ -154,6 +157,8 @@ impl Renderer {
             gpu_masks,
             gradients: super::execute::gradients::GradientResources::new(device, lut_rows),
             image_brushes: super::execute::image_brushes::ImageBrushResources::new(device),
+            effect_buffer: uniform_buffer(device, "pebbles.gpu.buffer.effects", 1),
+            effect_slots: 1,
             segments: Vec::new(),
             layer_budget_warned: false,
             arenas: FrameArenas::new(),
@@ -399,6 +404,13 @@ impl Renderer {
             }
             drop(pass);
             stats.render_passes += 1;
+            if let super::prepare::plan::TargetRef::Layer(i) = seg.target
+                && seg.is_final
+                && let Some(l) = layers.get(i as usize).and_then(Option::as_ref)
+                && !l.effect_passes.is_empty()
+            {
+                self.run_effect(device, &mut encoder, l, target.targets, format, &mut stats);
+            }
             if let super::prepare::passes::AfterPass::CopyBackdrop(l) = seg.after {
                 let root = root_color.as_ref().map(|r| &r.0);
                 self.copy_backdrop(&mut encoder, l, &layers, target.targets, root, &mut stats);
@@ -658,6 +670,103 @@ impl Renderer {
                 let (group, offset) = self.image_brushes.binding(&self.device, i)?;
                 Some((PipelineKind::ImageBrush, group, offset))
             }
+        }
+    }
+
+    /// Write every effect pass's params (growing the buffer first).
+    pub(crate) fn write_effect_params(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        passes: &[super::execute::effects::EffectPass],
+        stats: &mut FrameStats,
+    ) {
+        let n = passes.len() as u64;
+        if n == 0 {
+            return;
+        }
+        if n > self.effect_slots {
+            self.effect_slots = n.next_power_of_two();
+            self.effect_buffer = uniform_buffer(device, "pebbles.gpu.buffer.effects", self.effect_slots);
+            stats.buffers_created += 1;
+        }
+        let stride = super::execute::tier_c::slot_stride(device);
+        for p in passes {
+            queue.write_buffer(
+                &self.effect_buffer,
+                u64::from(p.slot) * stride,
+                bytemuck::bytes_of(&p.params),
+            );
+        }
+    }
+
+    /// 09 §10.3: run layer `layer`'s effect passes (after its last segment).
+    fn run_effect(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        layer: &super::execute::layers::LayerTarget,
+        targets: &super::frame_targets::FrameTargets,
+        format: wgpu::TextureFormat,
+        stats: &mut FrameStats,
+    ) {
+        use super::execute::pipelines::PipelineKey;
+        let stride = super::execute::tier_c::slot_stride(device);
+        for p in &layer.effect_passes {
+            let key = PipelineKey {
+                kind: p.kind,
+                color_format: format,
+                sample_count: 1,
+                blend: 0,
+                variant: p.variant,
+            };
+            let Some(pipeline) = self.pipelines.get_ensured(key) else { continue };
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("pebbles.gpu.bind.effect"),
+                layout: &self.layouts.effect,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&targets.pool.textures(p.src).color.1),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: &self.effect_buffer,
+                            offset: 0,
+                            size: wgpu::BufferSize::new(224),
+                        }),
+                    },
+                ],
+            });
+            stats.bind_groups_created += 1;
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("pebbles.gpu.pass.effect"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &targets.pool.textures(p.dst).color.1,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            stats.render_passes += 1;
+            pass.push_debug_group("pebbles.gpu.effect");
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, &self.globals_bg, &[0, 0, 0]);
+            let offset = u32::try_from(u64::from(p.slot) * stride).unwrap_or(0);
+            pass.set_bind_group(1, &group, &[offset]);
+            stats.bind_group_switches += 2;
+            pass.set_scissor_rect(0, 0, p.dst_size.0.max(1), p.dst_size.1.max(1));
+            pass.draw(0..3, 0..1);
+            stats.draw_calls += 1;
+            pass.pop_debug_group();
         }
     }
 

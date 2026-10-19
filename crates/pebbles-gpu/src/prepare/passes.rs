@@ -111,6 +111,7 @@ mod tests {
                 compose: peniko::Compose::SrcOver,
                 path: CompositePath::Over,
                 parent: TargetRef::Root,
+                effect: None,
             });
         }
         p

@@ -265,6 +265,9 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::StrokeImageBrush,             // L41/L42
     F::ImageBrushTransform,          // L41
     F::GlyphsNonSolidBrush,          // L36 (gradient) + L41 (image) via outlines
+    F::EffectBlur,                   // L61
+    F::EffectColorMatrix,            // L63
+    F::EffectMorphology,             // L64
 ];
 
 #[cfg(test)]

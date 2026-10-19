@@ -1,6 +1,6 @@
 //! Blurred coverage masks (02 R42): `BlurredFill` (any shape) and `BlurredGlyphs` (a run's
 //! union) become one Tier B mask request whose key carries the device σ and style; the atlas
-//! blurs on a miss (`raster/blur.rs`). Too-large padded masks are skipped and counted until L61.
+//! blurs on a miss (`raster/blur.rs`). Too-large padded masks blur on the GPU (effect layer, L61).
 
 use kurbo::{Affine, BezPath, Shape as _};
 use pebbles_render::paint::Glyph;
@@ -16,6 +16,17 @@ use crate::stats::Unsupported;
 const FLIP_Y: Affine = Affine::new([1.0, 0.0, 0.0, -1.0, 0.0, 0.0]);
 
 impl Walk<'_> {
+    /// `shape` under `xf` as a tessellated (Tier C) fill of `premul`.
+    fn fill_mesh(&mut self, shape: &Geometry, xf: Affine, rule: peniko::Fill, premul: [f32; 4], idx: u32) {
+        let path = shape.to_path(0.1 / xf.spectral_norm().max(1e-9));
+        let els = path.elements().iter().copied();
+        if let Some(indices) = self.tess.fill(self.plan, self.stats, els, xf, rule, premul) {
+            self.stats.tier_c_draws += 1;
+            self.push(DrawCmd::Solid { indices, clip: self.clips.current() }, idx);
+        }
+        self.plan.stats.tess_calls += 1;
+    }
+
     /// One blurred mask of `shape` under `xf` (σ in local units).
     #[allow(clippy::too_many_arguments)]
     pub(super) fn draw_blurred(
@@ -32,8 +43,29 @@ impl Walk<'_> {
         let sigma_dev = f64::from(sigma.max(0.0)) * smax;
         let r = (3.0 * sigma_dev).ceil();
         let b = xf.transform_rect_bbox(shape.to_path(0.1).bounding_box()).inflate(r + 1.0, r + 1.0);
-        if !b.is_finite() || b.area() > MASK_MAX_AREA as f64 {
+        if !b.is_finite() {
             self.stats.record(Unsupported::BlurMaskTooLarge);
+            return;
+        }
+        if b.area() > MASK_MAX_AREA as f64 {
+            // L61 step 6: too large for a CPU mask — the shape renders into an effect layer and
+            // blurs on the GPU with the same §10.2 kernel. Normal: the blur; Solid: the blur
+            // with the shape on top. Inner/Outer need the shape as a mask (not yet): recorded.
+            if !matches!(style, BlurStyle::Normal | BlurStyle::Solid) {
+                self.stats.record(Unsupported::BlurMaskTooLarge);
+                return;
+            }
+            let effect = pebbles_render::paint::display_list::LayerEffect::Blur {
+                sigma_x: sigma,
+                sigma_y: sigma,
+                edge: pebbles_render::paint::display_list::BlurEdge::Decal,
+            };
+            self.push_effect_layer(&effect, None, xf, idx);
+            self.fill_mesh(shape, xf, rule, premul, idx);
+            self.pop_layer(idx);
+            if style == BlurStyle::Solid {
+                self.fill_mesh(shape, xf, rule, premul, idx);
+            }
             return;
         }
         let Some((mut key, mut source, origin, _)) = super::path_masks::build(shape, xf, rule, None) else {

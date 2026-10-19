@@ -7,7 +7,7 @@ use kurbo::{Affine, Rect, Shape, Stroke};
 use peniko::{Brush, BrushRef, Color, Fill, FontData};
 
 use super::Scene;
-use super::op::{Geometry, Glyph, NormalizedCoord, Op, PathHint, PixelSnap};
+use super::op::{Geometry, Glyph, LayerEffect, NormalizedCoord, Op, PathHint, PixelSnap};
 
 /// The fill-rule for a recorded layer's clip path. Pebbles only ever clips with a fill
 /// rule (never a stroked-outline clip), and `vello_hybrid`'s `push_layer` clip is a filled
@@ -115,6 +115,17 @@ impl<'a> Painter<'a> {
             clip: Geometry::from_shape(clip),
             hint: self.hint,
         });
+    }
+
+    /// Push an effect layer (09 §10.1, Flutter `ImageFiltered`): the children render offscreen,
+    /// `effect` filters them, and the result composites clipped by `clip` (local, under
+    /// `transform`). Close with [`pop_layer`](Self::pop_layer).
+    pub fn push_effect_layer(&mut self, effect: LayerEffect, clip: Option<&impl Shape>, transform: Affine) {
+        let effect = match effect {
+            LayerEffect::Chain(es) => LayerEffect::chain(es.iter().cloned()),
+            e => e,
+        };
+        self.scene.push(Op::PushEffectLayer { effect, clip: clip.map(Geometry::from_shape), transform });
     }
 
     /// Pop the most recent layer.
