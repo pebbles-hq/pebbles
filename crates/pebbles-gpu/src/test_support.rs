@@ -75,6 +75,17 @@ pub(crate) fn for_seeds(n: u64, mut body: impl FnMut(u64, &mut XorShift64)) {
     }
 }
 
+/// A `w`×`h` straight-alpha RGBA image filled with `px` (CPU tests).
+pub(crate) fn rgba_image(w: u32, h: u32, px: [u8; 4]) -> peniko::ImageBrush {
+    peniko::ImageBrush::new(peniko::ImageData {
+        data: peniko::Blob::from(px.repeat((w * h) as usize)),
+        format: peniko::ImageFormat::Rgba8,
+        alpha_type: peniko::ImageAlphaType::Alpha,
+        width: w,
+        height: h,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

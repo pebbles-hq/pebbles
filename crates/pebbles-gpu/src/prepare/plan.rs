@@ -183,7 +183,7 @@ impl FramePlan {
     }
 
     /// Apply the merge rule: extend `cmds.last_mut()` iff same variant, same clip and
-    /// contiguous ranges. `Images` never merges (until C13). Returns whether a new command
+    /// contiguous ranges (`Images` also need the same `ImageKey` + `SamplerKey`). Returns whether a new command
     /// was pushed (true) or merged (false).
     pub(crate) fn push_draw(&mut self, cmd: DrawCmd) -> bool {
         if let Some(last) = self.cmds.last_mut()
@@ -257,10 +257,6 @@ fn clip_str(clip: &ClipState) -> String {
 
 /// Merge `last` + `new` into one command when the exact merge rule holds, else `None`.
 fn merge(last: &DrawCmd, new: &DrawCmd, images: &[ImageRequest]) -> Option<DrawCmd> {
-    // Images never merge until C13 adds `ImageKey`.
-    if matches!(new, DrawCmd::Images { .. }) {
-        return None;
-    }
     if std::mem::discriminant(last) != std::mem::discriminant(new) {
         return None;
     }

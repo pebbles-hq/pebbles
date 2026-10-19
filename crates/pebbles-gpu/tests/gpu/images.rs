@@ -94,3 +94,53 @@ fn oversize_image_is_downscaled_not_rejected() {
     assert_eq!(pixel(&rgba, 64, 32, 8), [0, 0, 255, 255]);
     assert_eq!(renderer.last_frame_stats().unsupported[pebbles_gpu::Unsupported::ImageTooLarge as usize], 1);
 }
+
+// ---- R30: sampler quality and extend ----
+
+/// A 2×1 `[red, blue]` image scaled ×50 into a 100×50 target with sampler `s`.
+fn two_texels(r: &mut (wgpu::Device, wgpu::Queue, Renderer), s: peniko::ImageSampler) -> Vec<u8> {
+    let data = peniko::ImageData {
+        data: peniko::Blob::from([[255u8, 0, 0, 255], [0, 0, 255, 255]].concat()),
+        format: peniko::ImageFormat::Rgba8,
+        alpha_type: peniko::ImageAlphaType::Alpha,
+        width: 2,
+        height: 1,
+    };
+    let image = peniko::ImageBrush { image: data, sampler: s };
+    let mut scene = Scene::new();
+    Painter::new(&mut scene).draw_image(&image, Affine::scale(50.0));
+    render_scene(&r.0, &r.1, &mut r.2, &scene, (100, 50), Color::WHITE)
+}
+
+fn mixed(px: [u8; 4]) -> bool {
+    px[0] > 40 && px[2] > 40
+}
+
+#[test]
+#[ignore = "gpu"]
+fn quality_low_is_nearest() {
+    let Some(mut r) = setup("quality_low_is_nearest") else { return };
+    let s = peniko::ImageSampler { quality: peniko::ImageQuality::Low, ..Default::default() };
+    let px = two_texels(&mut r, s);
+    assert!((0..100).all(|x| !mixed(pixel(&px, 100, x, 25))), "Low must not blend");
+}
+
+#[test]
+#[ignore = "gpu"]
+fn quality_medium_blends() {
+    let Some(mut r) = setup("quality_medium_blends") else { return };
+    let px = two_texels(&mut r, peniko::ImageSampler::default());
+    let n = (0..100).filter(|&x| mixed(pixel(&px, 100, x, 25))).count();
+    assert!(n >= 10, "only {n} blended pixels");
+}
+
+#[test]
+#[ignore = "gpu"]
+fn extend_changes_edge_taps() {
+    let Some(mut r) = setup("extend_changes_edge_taps") else { return };
+    let pad = two_texels(&mut r, peniko::ImageSampler::default());
+    let s = peniko::ImageSampler { x_extend: peniko::Extend::Repeat, ..Default::default() };
+    let repeat = two_texels(&mut r, s);
+    // Column 0: Pad taps red twice; Repeat wraps to blue.
+    assert_ne!(pixel(&pad, 100, 0, 25), pixel(&repeat, 100, 0, 25));
+}

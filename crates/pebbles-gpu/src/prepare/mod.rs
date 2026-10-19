@@ -557,9 +557,6 @@ impl Walk<'_> {
                     }
                     self.note_image(image, xf);
                     let s = &image.sampler;
-                    if s.x_extend != peniko::Extend::Pad || s.y_extend != peniko::Extend::Pad {
-                        self.stats.record(Unsupported::ImageExtend);
-                    }
                     let k = self.alpha() * s.alpha.clamp(0.0, 1.0);
                     let range = images::image(self.plan, image, xf, k, tier_a::snaps(op));
                     self.push(DrawCmd::Images { images: range, clip: self.clips.current() }, idx);

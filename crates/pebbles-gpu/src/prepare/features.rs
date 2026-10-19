@@ -118,16 +118,9 @@ impl Walk<'_> {
     /// Image sampler and placement rows (R30–R35 deliver them).
     pub(super) fn note_image(&mut self, image: &peniko::ImageBrush, xf: Affine) {
         let s = &image.sampler;
-        // Medium (the default) is the bilinear sampling drawn today; Low/High are R30's.
-        if s.quality != peniko::ImageQuality::Medium {
-            self.fell_back(Feature::ImageQuality);
-        }
-        // Filtered minification needs mipmaps (R35).
+        // Quality and extend map to sampler state (R30). Filtered minification needs mipmaps (R35).
         if s.quality != peniko::ImageQuality::Low && xf.determinant().abs() < 1.0 {
             self.fell_back(Feature::ImageMipmaps);
-        }
-        if s.x_extend != peniko::Extend::Pad || s.y_extend != peniko::Extend::Pad {
-            self.fell_back(Feature::ImageExtend);
         }
         if s.alpha < 1.0 {
             self.fell_back(Feature::ImageAlpha);
