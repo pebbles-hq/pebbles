@@ -125,6 +125,26 @@ impl Renderer {
         c
     }
 
+    /// The bytes of GPU memory this Renderer requested (10 §9.3, M17). On demand only: the
+    /// driver report allocates, so never call it per frame. `layer_pool_bytes` is the last
+    /// rendered target's pool.
+    pub fn memory_report(&self) -> crate::MemoryReport {
+        let (glyph_mask_bytes, glyph_color_bytes) = self.glyph_atlas.bytes();
+        let stride = super::execute::tier_c::slot_stride(&self.device);
+        let uniforms = (self.globals_slots + self.composite_slots) * stride;
+        crate::MemoryReport {
+            frame_targets_bytes: self.targets_book.total_bytes(),
+            glyph_mask_bytes,
+            glyph_color_bytes,
+            image_cache_bytes: self.image_cache.bytes(),
+            gradient_lut_bytes: self.gradients.lut.bytes(),
+            layer_pool_bytes: self.stats.layer_pool_bytes,
+            gpu_mask_bytes: self.gpu_masks.bytes(),
+            arena_bytes: self.arenas.capacity_bytes() + uniforms,
+            driver_allocated_bytes: self.device.generate_allocator_report().map(|r| r.total_allocated_bytes),
+        }
+    }
+
     /// The MSAA sample count negotiated for the last target format (02 §5.4; 1 or 4).
     pub fn msaa_sample_count(&self) -> u32 {
         self.sample_count

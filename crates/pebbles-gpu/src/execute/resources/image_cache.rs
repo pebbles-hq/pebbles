@@ -167,6 +167,11 @@ impl ImageCache {
     }
 
     /// Census fields owned by the image cache (M05).
+    /// Σ bytes of the cached textures (10 §9.3).
+    pub(crate) fn bytes(&self) -> u64 {
+        self.total_bytes
+    }
+
     #[cfg(debug_assertions)]
     pub(crate) fn census_into(&self, c: &mut crate::census::GpuCensus) {
         c.image_entries = self.entries.len();

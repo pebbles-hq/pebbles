@@ -52,6 +52,11 @@ impl GpuMasks {
         self.pool.end_frame(budget);
     }
 
+    /// Pooled mask texture bytes (10 §9.3).
+    pub(crate) fn bytes(&self) -> u64 {
+        self.pool.bytes()
+    }
+
     /// Pooled mask textures and their bytes (census).
     #[cfg(debug_assertions)]
     pub(crate) fn census(&self) -> (usize, u64) {

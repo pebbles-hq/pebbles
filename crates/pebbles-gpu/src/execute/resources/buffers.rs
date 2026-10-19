@@ -41,7 +41,6 @@ impl GpuArena {
     }
 
     /// Allocated buffer bytes (census).
-    #[cfg(any(test, debug_assertions))]
     pub(crate) fn capacity(&self) -> u64 {
         self.capacity
     }
@@ -175,8 +174,7 @@ impl FrameArenas {
         ]
     }
 
-    /// Σ arena capacities (census).
-    #[cfg(debug_assertions)]
+    /// Σ arena capacities (census, 10 §9.3).
     pub(crate) fn capacity_bytes(&self) -> u64 {
         [
             &self.solid_vertices,

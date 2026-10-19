@@ -62,7 +62,7 @@ pub use renderer::Renderer;
 
 #[doc(hidden)]
 pub mod testing;
-pub use stats::{FrameStats, Unsupported};
+pub use stats::{FrameStats, MemoryReport, Unsupported};
 /// R14's seeded oracle check in render-check: the Tier B mask of `path` over a `w × h` target.
 #[doc(hidden)]
 pub fn __tier_b_mask_for_check(

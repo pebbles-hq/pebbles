@@ -182,6 +182,18 @@ impl GlyphAtlas {
         self.staging.clear();
     }
 
+    /// Requested bytes of the (mask, color) atlas textures: side² × physical layers × texel
+    /// (1 and 4 B; 10 §9.3).
+    pub(crate) fn bytes(&self) -> (u64, u64) {
+        let b = |side: u32, layers: u32, texel: u64| {
+            u64::from(side) * u64::from(side) * u64::from(layers) * texel
+        };
+        (
+            b(self.cpu.mask.side, self.cpu.mask.physical_layers, 1),
+            b(self.cpu.color.side, self.cpu.color.physical_layers, 4),
+        )
+    }
+
     /// Census fields owned by the glyph/coverage atlas (M05).
     #[cfg(debug_assertions)]
     pub(crate) fn census_into(&self, c: &mut crate::census::GpuCensus) {

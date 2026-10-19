@@ -66,6 +66,45 @@ pub enum Unsupported {
     GpuTextureUnregistered,
 }
 
+/// Bytes of GPU memory this Renderer requested (10 §9.3, M17), on demand — never per frame.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct MemoryReport {
+    /// Target-owned textures of every booked target (10 §4.4).
+    pub frame_targets_bytes: u64,
+    /// side² × physical layers × 1.
+    pub glyph_mask_bytes: u64,
+    /// side² × physical layers × 4.
+    pub glyph_color_bytes: u64,
+    /// Σ cached image textures (10 §6).
+    pub image_cache_bytes: u64,
+    /// `LUT_ROW_TEXELS` × rows × 8 (`Rgba16Float`, 09 §5.3).
+    pub gradient_lut_bytes: u64,
+    /// The last rendered target's layer pool (09 §3.8).
+    pub layer_pool_bytes: u64,
+    /// The GPU clip-mask pool (09 §2.9).
+    pub gpu_mask_bytes: u64,
+    /// Σ arena capacities (incl. the uniform buffers).
+    pub arena_bytes: u64,
+    /// `Device::generate_allocator_report().total_allocated_bytes`, where the backend has one
+    /// (not WebGPU / GL).
+    pub driver_allocated_bytes: Option<u64>,
+}
+
+impl MemoryReport {
+    /// Σ of the requested bytes (driver overhead excluded).
+    pub fn total_bytes(&self) -> u64 {
+        self.frame_targets_bytes
+            + self.glyph_mask_bytes
+            + self.glyph_color_bytes
+            + self.image_cache_bytes
+            + self.gradient_lut_bytes
+            + self.layer_pool_bytes
+            + self.gpu_mask_bytes
+            + self.arena_bytes
+    }
+}
+
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
     pub const COUNT: usize = 29;

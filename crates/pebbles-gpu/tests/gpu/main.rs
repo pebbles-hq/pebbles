@@ -26,6 +26,7 @@ mod image_brush;
 mod image_cache_gpu;
 mod images;
 mod layers;
+mod memory_budget;
 mod order;
 mod path_masks;
 mod pixel_snap;

@@ -98,8 +98,7 @@ impl TargetBook {
         self.entries.len()
     }
 
-    /// Booked bytes (census).
-    #[cfg(debug_assertions)]
+    /// Booked bytes (census, 10 §9.3).
     pub(crate) fn total_bytes(&self) -> u64 {
         self.total_bytes
     }

@@ -229,6 +229,11 @@ impl GradientLut {
         self.frame += 1;
     }
 
+    /// Bytes of the LUT texture: `LUT_ROW_TEXELS` × rows × 8 (`Rgba16Float`, 10 §9.3).
+    pub(crate) fn bytes(&self) -> u64 {
+        u64::from(LUT_ROW_TEXELS) * u64::from(self.book.rows) * 8
+    }
+
     /// `(ramps, rows_used, rows_total)` (census).
     #[cfg(debug_assertions)]
     pub(crate) fn census(&self) -> (usize, u32, u32) {
