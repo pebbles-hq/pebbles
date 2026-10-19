@@ -121,14 +121,14 @@ fn shader_table_is_complete() {
     }
 }
 
-/// R13: every fragment entry point returns through `finish_color(..)` — except `fs_over`, whose
-/// layer texels already passed through it when they were drawn.
+/// R13: every fragment entry point returns through `finish_color(..)` — except the composites
+/// and the blit, whose texels already passed through it when they were drawn.
 #[test]
 fn every_fragment_calls_finish_color() {
     for (name, src) in ALL {
         let module = naga::front::wgsl::parse_str(src).unwrap_or_else(|e| panic!("{name}: {e}"));
         for ep in module.entry_points.iter().filter(|e| e.stage == naga::ShaderStage::Fragment) {
-            if ep.name == "fs_over" {
+            if ["fs_over", "fs_compose", "fs_backdrop", "fs_blit"].contains(&ep.name.as_str()) {
                 continue;
             }
             let start =

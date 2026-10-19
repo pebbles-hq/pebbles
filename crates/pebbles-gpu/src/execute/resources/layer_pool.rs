@@ -184,7 +184,8 @@ impl LayerPool {
                     1,
                     wgpu::TextureUsages::RENDER_ATTACHMENT
                         | wgpu::TextureUsages::TEXTURE_BINDING
-                        | wgpu::TextureUsages::COPY_SRC,
+                        | wgpu::TextureUsages::COPY_SRC
+                        | wgpu::TextureUsages::COPY_DST,
                 );
                 stats.textures_created += 1 + u32::from(msaa.is_some());
                 stats.texture_views_created += 1 + u32::from(msaa.is_some());

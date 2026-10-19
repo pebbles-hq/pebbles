@@ -13,6 +13,7 @@ pub(crate) const IMAGE: &str = shader!("image.wgsl");
 pub(crate) const SHADOW: &str = shader!("shadow.wgsl");
 pub(crate) const SDF: &str = shader!("sdf.wgsl");
 pub(crate) const COMPOSITE: &str = shader!("composite.wgsl");
+pub(crate) const BLIT: &str = shader!("blit.wgsl");
 
 /// `(name, full source)` for every pipeline shader.
 #[cfg_attr(not(test), allow(dead_code))] // read by the V02 validation tests
@@ -23,6 +24,7 @@ pub(crate) const ALL: &[(&str, &str)] = &[
     ("shadow", SHADOW),
     ("sdf", SDF),
     ("composite", COMPOSITE),
+    ("blit", BLIT),
 ];
 
 #[cfg(test)]

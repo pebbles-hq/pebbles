@@ -295,8 +295,9 @@ impl Walk<'_> {
     }
 
     /// 09 §3.5 push: the own clip on the parent (the composite's clip), the layer desc, the
-    /// `PushLayer` cmd and a fresh clip state for the layer target. Non-`Over` paths keep the C17
-    /// interim (content skipped, `LayerBlend` recorded) until L21/L24.
+    /// `PushLayer` cmd and a fresh clip state for the layer target. The composite path follows
+    /// §4.2: `Over` for (Normal, SrcOver); fixed-function `Compose` for a Normal mix under a
+    /// scissor-only clip; else `Backdrop` (W3C blend math in the shader, coverage-weighted).
     #[allow(clippy::too_many_arguments)]
     fn push_offscreen(
         &mut self,
@@ -310,12 +311,6 @@ impl Walk<'_> {
     ) {
         let prev_fold = self.layers.fold();
         self.push_layer_clip(clip, xf, fill);
-        if blend != peniko::BlendMode::default() {
-            self.note_layer(alpha, blend);
-            self.stats.record(Unsupported::LayerBlend);
-            self.layers.push(layer::Frame::Interim { prev_fold });
-            return;
-        }
         let comp = self.clips.current();
         if self.clips.is_culled() {
             self.layers.push(layer::Frame::Clip { prev_fold });
@@ -325,13 +320,31 @@ impl Walk<'_> {
             Some(l) => plan::TargetRef::Layer(l),
             None => plan::TargetRef::Root,
         };
+        let path = if blend == peniko::BlendMode::default() {
+            plan::CompositePath::Over
+        } else if blend.mix == peniko::Mix::Normal
+            && comp.sdf == SdfClipId::NONE
+            && comp.mask == plan::MaskClipId::NONE
+        {
+            plan::CompositePath::Compose
+        } else {
+            plan::CompositePath::Backdrop
+        };
+        match path {
+            plan::CompositePath::Over => self.plan.stats.composites_over += 1,
+            plan::CompositePath::Compose => self.plan.stats.composites_compose += 1,
+            plan::CompositePath::Backdrop => self.plan.stats.composites_backdrop += 1,
+        }
+        if path == plan::CompositePath::Backdrop && parent == plan::TargetRef::Root {
+            self.plan.root_needs_backdrop = true;
+        }
         let id = num::index_u32(self.plan.layers.len());
         self.plan.layers.push(plan::LayerDesc {
             bounds: comp.scissor,
             alpha,
             mix: blend.mix,
             compose: blend.compose,
-            path: plan::CompositePath::Over,
+            path,
             parent,
         });
         self.push(DrawCmd::PushLayer { layer: id }, idx);
@@ -349,7 +362,7 @@ impl Walk<'_> {
             layer::Frame::Skip => {
                 self.clips.pop();
             }
-            layer::Frame::Clip { prev_fold } | layer::Frame::Interim { prev_fold } => {
+            layer::Frame::Clip { prev_fold } => {
                 self.clips.pop();
                 self.layers.set_fold(prev_fold);
             }

@@ -250,6 +250,9 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::ClipRectRotated,    // L08/L09 (coverage masks), L01
     F::ClipPath,           // L08/L09, L01
     F::ClipEvenOdd,        // L08/L09, L01
+    F::LayerMix,           // L23/L24 (backdrop composite)
+    F::LayerCompose,       // L21 (fixed-function) / L24 (backdrop under SDF or mask clips)
+    F::LayerMixAndCompose, // L23/L24
 ];
 
 #[cfg(test)]

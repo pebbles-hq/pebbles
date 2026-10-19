@@ -198,4 +198,24 @@ mod tests {
         let root: Vec<_> = out.iter().filter(|s| s.target == TargetRef::Root).collect();
         assert_eq!(root.len(), 2, "the leading Clear and the final pass; the empty Load between is dropped");
     }
+
+    #[test]
+    fn backdrop_layer_resolves_and_copies_parent() {
+        let mut p = plan(
+            vec![
+                DrawCmd::PushLayer { layer: 0 },
+                DrawCmd::PopLayer { layer: 0 },
+                DrawCmd::Composite { layer: 0, clip: ClipState::full((8, 8)) },
+            ],
+            1,
+        );
+        p.layers[0].path = CompositePath::Backdrop;
+        let mut out = Vec::new();
+        segment_passes(&p, &mut out);
+        assert_eq!(out[0].target, TargetRef::Root);
+        assert!(out[0].resolve);
+        assert_eq!(out[0].after, AfterPass::CopyBackdrop(0));
+        assert_eq!(out[1].target, TargetRef::Layer(0));
+        assert_eq!(out[2].color_load, SegmentLoad::Load);
+    }
 }

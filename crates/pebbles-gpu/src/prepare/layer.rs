@@ -1,7 +1,6 @@
 //! Layers (09 §3): the subtree facts (§3.2), the classification (§3.3) and the walk's layer
 //! frames. A layer is a pure clip, a folded alpha (§3.4), an offscreen target composited on pop
-//! (§3.5), or skipped. Non-`Over` blend paths keep the C17 interim (content skipped) until
-//! L21/L24 route them offscreen.
+//! (§3.5) through the Over, Compose or Backdrop path (§4.2), or skipped.
 
 use pebbles_render::paint::display_list::Op;
 
@@ -158,8 +157,6 @@ pub(crate) enum Frame {
     Skip,
     /// A pure clip or a fold: one clip frame; `prev_fold` restores the fold alpha.
     Clip { prev_fold: f32 },
-    /// The C17 interim for non-`Over` blend paths: one clip frame, content skipped.
-    Interim { prev_fold: f32 },
     /// An offscreen layer: its own clip frame on the parent (`comp` = the composite's clip
     /// state) plus a fresh frame for the layer target.
     Offscreen { layer: u32, comp: ClipState, prev_fold: f32 },
@@ -187,13 +184,13 @@ impl LayerStack {
     }
 
     pub(crate) fn push(&mut self, f: Frame) {
-        self.skipped += u32::from(matches!(f, Frame::Skip | Frame::Interim { .. }));
+        self.skipped += u32::from(matches!(f, Frame::Skip));
         self.frames.push(f);
     }
 
     pub(crate) fn pop(&mut self) -> Option<Frame> {
         let f = self.frames.pop()?;
-        self.skipped -= u32::from(matches!(f, Frame::Skip | Frame::Interim { .. }));
+        self.skipped -= u32::from(matches!(f, Frame::Skip));
         Some(f)
     }
 

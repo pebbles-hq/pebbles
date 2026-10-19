@@ -97,21 +97,6 @@ impl Walk<'_> {
         }
     }
 
-    /// Group alpha and blend rows of a layer.
-    pub(super) fn note_layer(&mut self, alpha: f32, blend: peniko::BlendMode) {
-        if alpha > 0.0 && alpha < 1.0 {
-            self.fell_back(Feature::LayerAlpha);
-        }
-        let mix = blend.mix != peniko::Mix::Normal;
-        let compose = blend.compose != peniko::Compose::SrcOver;
-        match (mix, compose) {
-            (true, true) => self.fell_back(Feature::LayerMixAndCompose),
-            (true, false) => self.fell_back(Feature::LayerMix),
-            (false, true) => self.fell_back(Feature::LayerCompose),
-            (false, false) => {}
-        }
-    }
-
     /// Glyph-run rows decided in prepare (colour glyphs are only known at raster time).
     /// Non-solid glyph brushes (L36). Transformed, rotated and huge runs take the outline
     /// route since R20.

@@ -83,13 +83,12 @@ fn border_is_two_device_px_at_scale_2() {
     assert!((2..=3).contains(&dark), "border should be ~2 device px, got {dark}");
 }
 
-/// C17: a child inside a blend layer (a `ColorFiltered`-style Multiply group): the filter rect
-/// that the blend layer draws is skipped with the layer, so it no longer covers the child,
-/// and the child drawn after the layer stays visible.
+/// A `ColorFiltered`-style Multiply layer over a red child: exact W3C multiply (L23; this
+/// replaced the C17 interim that skipped the layer).
 #[test]
 #[ignore = "gpu"]
-fn color_filtered_child_stays_visible() {
-    let Some((device, queue, mut renderer)) = setup("color_filtered_child_stays_visible") else { return };
+fn color_filtered_multiplies_child() {
+    let Some((device, queue, mut renderer)) = setup("color_filtered_multiplies_child") else { return };
     let mut scene = Scene::new();
     let mut p = Painter::new(&mut scene);
     p.fill(
@@ -115,6 +114,8 @@ fn color_filtered_child_stays_visible() {
     );
     p.pop_layer();
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (80, 80), Color::WHITE);
-    assert_eq!(pixel(&rgba, 80, 40, 40), [255, 0, 0, 255], "child covered by the filter rect");
-    assert_eq!(renderer.last_frame_stats().unsupported[pebbles_gpu::Unsupported::LayerBlend as usize], 1);
+    // W3C multiply (L23): red × blue = black over the child, white × blue = blue elsewhere.
+    assert_eq!(pixel(&rgba, 80, 40, 40), [0, 0, 0, 255], "multiply over the red child");
+    assert_eq!(pixel(&rgba, 80, 10, 10), [0, 0, 255, 255], "multiply over the white base");
+    assert_eq!(renderer.last_frame_stats().unsupported[pebbles_gpu::Unsupported::LayerBlend as usize], 0);
 }

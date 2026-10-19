@@ -88,13 +88,60 @@ fn table_matches_doc_02_section_9() {
         (PipelineKind::Image, TriangleStrip, Some((64, Instance))),
         (PipelineKind::Shadow, TriangleStrip, Some((96, Instance))),
         (PipelineKind::CompositeOver, TriangleStrip, None),
+        (PipelineKind::CompositeCompose, TriangleStrip, None),
+        (PipelineKind::CompositeBackdrop, TriangleStrip, None),
+        (PipelineKind::Blit, TriangleList, None),
     ];
     let code: Vec<_> = pipeline_descs()
         .into_iter()
         .map(|d| (d.kind, d.topology, d.layout.map(|l| (l.array_stride, l.step_mode))))
         .collect();
     assert_eq!(code, doc);
-    // Group 1 per §9: glyph atlas, image texture, composite layer.
+    // Group 1 per §9: glyph atlas, image texture, composite layer (+ backdrop), blit source.
     let group1: Vec<_> = pipeline_descs().into_iter().filter(|d| d.group1).map(|d| d.kind).collect();
-    assert_eq!(group1, [PipelineKind::Glyph, PipelineKind::Image, PipelineKind::CompositeOver]);
+    assert_eq!(
+        group1,
+        [
+            PipelineKind::Glyph,
+            PipelineKind::Image,
+            PipelineKind::CompositeOver,
+            PipelineKind::CompositeCompose,
+            PipelineKind::CompositeBackdrop,
+            PipelineKind::Blit,
+        ]
+    );
+}
+
+/// 09 §4.3, all 14 rows (L21).
+#[test]
+fn compose_table_matches_spec() {
+    use peniko::Compose as P;
+    use wgpu::BlendFactor as F;
+    let table = [
+        (P::Clear, F::Zero, F::Zero),
+        (P::Copy, F::One, F::Zero),
+        (P::Dest, F::Zero, F::One),
+        (P::SrcOver, F::One, F::OneMinusSrcAlpha),
+        (P::DestOver, F::OneMinusDstAlpha, F::One),
+        (P::SrcIn, F::DstAlpha, F::Zero),
+        (P::DestIn, F::Zero, F::SrcAlpha),
+        (P::SrcOut, F::OneMinusDstAlpha, F::Zero),
+        (P::DestOut, F::Zero, F::OneMinusSrcAlpha),
+        (P::SrcAtop, F::DstAlpha, F::OneMinusSrcAlpha),
+        (P::DestAtop, F::OneMinusDstAlpha, F::SrcAlpha),
+        (P::Xor, F::OneMinusDstAlpha, F::OneMinusSrcAlpha),
+        (P::Plus, F::One, F::One),
+        (P::PlusLighter, F::One, F::One),
+    ];
+    for (compose, src, dst) in table {
+        let s = super::compose_blend_state(compose);
+        assert_eq!(super::compose_of(compose as u8), compose);
+        for c in [s.color, s.alpha] {
+            assert_eq!(
+                (c.src_factor, c.dst_factor, c.operation),
+                (src, dst, wgpu::BlendOperation::Add),
+                "{compose:?}"
+            );
+        }
+    }
 }

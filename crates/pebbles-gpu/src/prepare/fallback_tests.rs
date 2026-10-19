@@ -88,7 +88,7 @@ fn nested_alpha_layers_multiply() {
 }
 
 #[test]
-fn blend_layer_content_is_skipped_and_counted() {
+fn blend_layer_goes_offscreen_through_the_backdrop() {
     let mut scene = Scene::new();
     let mut p = Painter::new(&mut scene);
     layer(&mut p, peniko::Mix::Multiply, 1.0);
@@ -96,8 +96,11 @@ fn blend_layer_content_is_skipped_and_counted() {
     p.pop_layer();
     red_square(&mut p);
     let (plan, stats) = plan_and_stats(&scene);
-    assert_eq!(plan.cmds.len(), 1, "only the square after the blend layer draws");
-    assert_eq!(stats.unsupported[Unsupported::LayerBlend as usize], 1);
+    // 09 §4.2: a non-Normal mix composites through the backdrop shader (L23/L24).
+    assert_eq!(plan.layers.len(), 1);
+    assert_eq!(plan.layers[0].path, plan::CompositePath::Backdrop);
+    assert!(plan.root_needs_backdrop);
+    assert_eq!(stats.unsupported[Unsupported::LayerBlend as usize], 0);
 }
 
 #[test]

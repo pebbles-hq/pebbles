@@ -268,8 +268,12 @@ fn promoted_clip_goes_offscreen_with_alpha_1() {
     p.pop_layer();
     p.pop_layer();
     let (plan, _) = prepare_scene(&s, 64, 64);
-    assert_eq!(plan.layers.len(), 1);
+    // The promoted parent (alpha 1) and its Multiply child (backdrop path) are both offscreen.
+    assert_eq!(plan.layers.len(), 2);
     assert_eq!(plan.layers[0].alpha, 1.0);
+    assert_eq!(plan.layers[0].path, CompositePath::Over);
+    assert_eq!(plan.layers[1].path, CompositePath::Backdrop);
+    assert_eq!(plan.layers[1].parent, TargetRef::Layer(0));
     assert_eq!(plan.stats.layers_promoted, 1);
 }
 
@@ -302,4 +306,114 @@ fn layer_content_uses_fresh_clip_state() {
     }
     let Some(DrawCmd::Composite { clip, .. }) = plan.cmds.last() else { panic!() };
     assert_ne!(clip.sdf, SdfClipId::NONE);
+}
+
+// ---- L21 / L24: composite path selection (§4.2) ----
+
+fn paths(build: impl FnOnce(&mut Painter<'_>)) -> FramePlan {
+    let mut s = Scene::new();
+    build(&mut Painter::new(&mut s));
+    prepare_scene(&s, 64, 64).0
+}
+
+fn path_of(plan: &FramePlan, i: usize) -> CompositePath {
+    plan.layers[i].path
+}
+
+use crate::prepare::plan::{CompositePath, TargetRef};
+
+#[test]
+fn dest_in_without_sdf_is_compose_path() {
+    let plan = paths(|p| {
+        push(p, BlendMode::new(Mix::Normal, Compose::DestIn), 1.0, &r(8.0, 8.0, 56.0, 56.0));
+        fill(p, r(0.0, 0.0, 64.0, 64.0));
+        p.pop_layer();
+    });
+    assert_eq!(path_of(&plan, 0), CompositePath::Compose);
+    assert_eq!(plan.stats.composites_compose, 1);
+    assert!(!plan.root_needs_backdrop);
+}
+
+#[test]
+fn dest_in_under_rrect_clip_is_backdrop_path() {
+    let plan = paths(|p| {
+        push(
+            p,
+            BlendMode::new(Mix::Normal, Compose::DestIn),
+            1.0,
+            &kurbo::RoundedRect::new(8.0, 8.0, 56.0, 56.0, 8.0),
+        );
+        fill(p, r(0.0, 0.0, 64.0, 64.0));
+        p.pop_layer();
+    });
+    assert_eq!(path_of(&plan, 0), CompositePath::Backdrop);
+    assert_eq!(plan.stats.composites_backdrop, 1);
+}
+
+#[test]
+fn multiply_layer_is_backdrop_path() {
+    let plan = paths(|p| {
+        push(p, Mix::Multiply, 1.0, &r(8.0, 8.0, 56.0, 56.0));
+        fill(p, r(0.0, 0.0, 64.0, 64.0));
+        p.pop_layer();
+    });
+    assert_eq!(path_of(&plan, 0), CompositePath::Backdrop);
+    assert_eq!(plan.layers[0].parent, TargetRef::Root);
+}
+
+/// ColorFiltered (§4.7): a pure-clip parent, the child, then `push_layer(Multiply)` + fill:
+/// the parent is promoted (Over) and the blend layer is the one Backdrop layer inside it.
+#[test]
+fn color_filter_pattern_plans_one_backdrop_layer() {
+    let plan = paths(|p| {
+        push(p, Mix::Normal, 1.0, &r(8.0, 8.0, 56.0, 56.0));
+        fill(p, r(8.0, 8.0, 32.0, 56.0));
+        push(p, Mix::Multiply, 1.0, &r(8.0, 8.0, 56.0, 56.0));
+        fill(p, r(8.0, 8.0, 56.0, 56.0));
+        p.pop_layer();
+        p.pop_layer();
+    });
+    let backdrops: Vec<_> = plan.layers.iter().filter(|l| l.path == CompositePath::Backdrop).collect();
+    assert_eq!(backdrops.len(), 1);
+    assert_eq!(backdrops[0].parent, TargetRef::Layer(0));
+    assert_eq!(path_of(&plan, 0), CompositePath::Over);
+    assert_eq!(plan.stats.layers_promoted, 1);
+    assert!(!plan.root_needs_backdrop, "the backdrop is the promoted layer, not the root");
+}
+
+/// ShaderMask (§4.7): `push_layer(Normal, 1)` child `push_layer((Normal, DestIn))` gradient
+/// fill pop pop → a promoted outer (Over) and a Compose inner.
+#[test]
+fn shader_mask_plans_promoted_outer_and_compose_inner() {
+    let plan = paths(|p| {
+        push(p, Mix::Normal, 1.0, &r(0.0, 0.0, 64.0, 64.0));
+        fill(p, r(8.0, 8.0, 56.0, 56.0));
+        push(p, BlendMode::new(Mix::Normal, Compose::DestIn), 1.0, &r(0.0, 0.0, 64.0, 64.0));
+        fill(p, r(0.0, 0.0, 32.0, 64.0));
+        p.pop_layer();
+        p.pop_layer();
+    });
+    assert_eq!(plan.layers.len(), 2);
+    assert_eq!(path_of(&plan, 0), CompositePath::Over);
+    assert_eq!(path_of(&plan, 1), CompositePath::Compose);
+    assert_eq!(plan.stats.layers_promoted, 1);
+}
+
+#[test]
+fn root_needs_backdrop_only_for_root_parented_backdrop_layers() {
+    let nested = paths(|p| {
+        push(p, Mix::Normal, 1.0, &r(0.0, 0.0, 64.0, 64.0));
+        fill(p, r(8.0, 8.0, 56.0, 56.0));
+        push(p, Mix::Screen, 1.0, &r(0.0, 0.0, 64.0, 64.0));
+        fill(p, r(0.0, 0.0, 32.0, 64.0));
+        p.pop_layer();
+        p.pop_layer();
+    });
+    assert!(!nested.root_needs_backdrop);
+    let root = paths(|p| {
+        push(p, Mix::Screen, 1.0, &r(0.0, 0.0, 64.0, 64.0));
+        fill(p, r(0.0, 0.0, 32.0, 64.0));
+        p.pop_layer();
+    });
+    assert!(root.root_needs_backdrop);
 }

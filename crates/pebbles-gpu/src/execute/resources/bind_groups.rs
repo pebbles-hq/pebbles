@@ -10,6 +10,8 @@ pub(crate) struct BindGroupLayouts {
     /// Composite group 1: the layer texture (non-filterable, `textureLoad`) + `CompositeParams`
     /// (uniform, dynamic offset) (09 §3.7).
     pub composite: wgpu::BindGroupLayout,
+    pub composite_backdrop: wgpu::BindGroupLayout,
+    pub blit: wgpu::BindGroupLayout,
 }
 
 impl BindGroupLayouts {
@@ -142,7 +144,39 @@ impl BindGroupLayouts {
                 },
             ],
         });
-        Self { globals, texture, glyph, composite }
+        let tex_entry = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+        // 09 §4.4: the backdrop composite adds the parent's copied pixels at binding 2.
+        let composite_backdrop = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("pebbles.gpu.layout.composite_backdrop"),
+            entries: &[
+                tex_entry(0),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(32),
+                    },
+                    count: None,
+                },
+                tex_entry(2),
+            ],
+        });
+        let blit = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("pebbles.gpu.layout.blit"),
+            entries: &[tex_entry(0)],
+        });
+        Self { globals, texture, glyph, composite, composite_backdrop, blit }
     }
 }
 

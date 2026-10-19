@@ -7,6 +7,18 @@
 #[derive(Default)]
 pub struct FrameTargets {
     pub(crate) pool: crate::execute::resources::layer_pool::LayerPool,
+    /// 09 §4.4: the root renders here (then is blitted) when a backdrop composite must copy
+    /// from it; dropped after `TARGET_IDLE_FRAMES` unused frames.
+    root_color: Option<RootColor>,
+}
+
+/// Frames a target-sized intermediate may sit unused before it is dropped (09 §4.4).
+pub(crate) const TARGET_IDLE_FRAMES: u32 = 600;
+
+pub(crate) struct RootColor {
+    pub texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    idle: u32,
 }
 
 impl std::fmt::Debug for FrameTargets {
@@ -29,6 +41,7 @@ impl FrameTargets {
         c.frame_target_bytes += bytes;
         c.layer_pool_textures += self.pool.len();
         c.layer_pool_bytes += bytes;
+        c.frame_target_bytes += self.root_color_bytes();
     }
 
     /// Pooled offscreen layer / Tier C targets currently held (census, 09 §3.8).
@@ -38,7 +51,65 @@ impl FrameTargets {
 
     /// Bytes of GPU textures this target owns beyond its own color texture (census, 10 §9).
     pub fn frame_target_bytes(&self) -> u64 {
-        self.pool.bytes()
+        self.pool.bytes() + self.root_color_bytes()
+    }
+
+    fn root_color_bytes(&self) -> u64 {
+        self.root_color.as_ref().map_or(0, |r| {
+            let t = &r.texture;
+            u64::from(t.width())
+                * u64::from(t.height())
+                * u64::from(t.format().block_copy_size(None).unwrap_or(4))
+        })
+    }
+
+    /// The root intermediate of `size` / `format` (created or recreated on demand).
+    pub(crate) fn root_color(
+        &mut self,
+        device: &wgpu::Device,
+        size: (u32, u32),
+        format: wgpu::TextureFormat,
+        stats: &mut crate::stats::FrameStats,
+    ) -> Option<&RootColor> {
+        let fresh = self
+            .root_color
+            .as_ref()
+            .is_some_and(|r| (r.texture.width(), r.texture.height()) == size && r.texture.format() == format);
+        if !fresh {
+            {
+                let texture = device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("pebbles.gpu.root_color"),
+                    size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                        | wgpu::TextureUsages::COPY_SRC
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
+                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                stats.textures_created += 1;
+                stats.texture_views_created += 1;
+                self.root_color = Some(RootColor { texture, view, idle: 0 });
+            }
+        }
+        let r = self.root_color.as_mut()?;
+        r.idle = 0;
+        Some(r)
+    }
+
+    /// End of frame: age the root intermediate (09 §4.4).
+    pub(crate) fn end_frame_root(&mut self, used: bool) {
+        if let Some(r) = &mut self.root_color
+            && !used
+        {
+            r.idle += 1;
+            if r.idle >= TARGET_IDLE_FRAMES {
+                self.root_color = None;
+            }
+        }
     }
 }
 

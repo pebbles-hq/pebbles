@@ -2,9 +2,10 @@
 //! layer, its Globals slot (`1 + i`) and its composite params slot (`i`).
 
 use super::encode::SegmentTarget;
+use super::pipelines::{PipelineKey, PipelineKind};
 use crate::frame_targets::FrameTargets;
 use crate::gpu_types::CompositeParams;
-use crate::prepare::plan::{DrawCmd, TargetRef};
+use crate::prepare::plan::{CompositePath, DrawCmd, LayerDesc, TargetRef};
 use crate::renderer::Renderer;
 use crate::stats::FrameStats;
 
@@ -14,6 +15,8 @@ pub(crate) struct LayerTarget {
     pub segment: SegmentTarget,
     /// Composite bind group and params offset.
     pub composite: (wgpu::BindGroup, u32),
+    /// `Backdrop` path (09 §4.4): the pool slot the parent's pixels are copied into.
+    pub backdrop: Option<usize>,
 }
 
 /// Acquire and describe every offscreen layer of the plan. Call after `tier_c::encode_runs` so
@@ -54,6 +57,12 @@ pub(crate) fn acquire_layers(
     }
     let mut out = Vec::with_capacity(n);
     let mut live: Vec<(usize, usize)> = Vec::new();
+    for path in [CompositePath::Over, CompositePath::Compose, CompositePath::Backdrop] {
+        for d in renderer.scratch.plan.layers.iter().filter(|d| d.path == path) {
+            let key = composite_key(d, format);
+            renderer.pipelines.ensure(device, &renderer.shaders, &renderer.layouts, key, stats);
+        }
+    }
     for (i, &(start, end)) in span.iter().enumerate() {
         live.retain(|&(end, slot)| {
             let done = end < start;
@@ -89,6 +98,49 @@ pub(crate) fn acquire_layers(
         };
         let params_offset = i as u64 * stride;
         queue.write_buffer(renderer.composite_buffer(), params_offset, bytemuck::bytes_of(&params));
+        let params_binding = |buffer| {
+            wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer,
+                offset: 0,
+                size: wgpu::BufferSize::new(32),
+            })
+        };
+        if desc.path == CompositePath::Backdrop {
+            // The backdrop copy lives exactly as long as the layer target.
+            let bslot = targets.pool.acquire(device, (w, h), format, 1, stats);
+            live.push((end, bslot));
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("pebbles.gpu.bind.composite_backdrop"),
+                layout: &renderer.layouts.composite_backdrop,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&targets.pool.textures(slot).color.1),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: params_binding(renderer.composite_buffer()),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::TextureView(&targets.pool.textures(bslot).color.1),
+                    },
+                ],
+            });
+            stats.bind_groups_created += 1;
+            live.push((end, slot));
+            out.push(Some(LayerTarget {
+                slot,
+                segment: SegmentTarget {
+                    globals_offset: u32::try_from(globals_offset).unwrap_or(0),
+                    origin: (b.x0, b.y0),
+                    size,
+                },
+                composite: (group, u32::try_from(params_offset).unwrap_or(0)),
+                backdrop: Some(bslot),
+            }));
+            continue;
+        }
         let (layout, params_buf, generation) =
             (&renderer.layouts.composite, renderer.composite_buffer(), renderer.composite_generation());
         let tex = targets.pool.textures_mut(slot);
@@ -128,9 +180,21 @@ pub(crate) fn acquire_layers(
                 size,
             },
             composite: (group, u32::try_from(params_offset).unwrap_or(0)),
+            backdrop: None,
         }));
     }
     out
+}
+
+/// The composite pipeline of layer `d` (09 §4.2): `PipelineKey.blend = compose as u8` for the
+/// fixed-function Compose path.
+pub(crate) fn composite_key(d: &LayerDesc, format: wgpu::TextureFormat) -> PipelineKey {
+    let (kind, blend) = match d.path {
+        CompositePath::Over => (PipelineKind::CompositeOver, 0),
+        CompositePath::Compose => (PipelineKind::CompositeCompose, d.compose as u8),
+        CompositePath::Backdrop => (PipelineKind::CompositeBackdrop, 0),
+    };
+    PipelineKey { kind, color_format: format, sample_count: 1, blend, variant: 0 }
 }
 
 /// The segment target of `target` (root = Globals slot 0 at the origin).

@@ -102,6 +102,33 @@ pub(crate) fn pipeline_descs() -> Vec<PipelineDesc> {
             layout: None,
             group1: true,
         },
+        PipelineDesc {
+            kind: PipelineKind::CompositeCompose,
+            wgsl: "composite.wgsl",
+            vs: "vs_main",
+            fs: "fs_compose",
+            topology: TriangleStrip,
+            layout: None,
+            group1: true,
+        },
+        PipelineDesc {
+            kind: PipelineKind::CompositeBackdrop,
+            wgsl: "composite.wgsl",
+            vs: "vs_main",
+            fs: "fs_backdrop",
+            topology: TriangleStrip,
+            layout: None,
+            group1: true,
+        },
+        PipelineDesc {
+            kind: PipelineKind::Blit,
+            wgsl: "blit.wgsl",
+            vs: "vs_blit",
+            fs: "fs_blit",
+            topology: TriangleList,
+            layout: None,
+            group1: true,
+        },
     ]
 }
 
@@ -135,7 +162,12 @@ pub(crate) fn build(
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState {
                 format: key.color_format,
-                blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                blend: match key.kind {
+                    PipelineKind::CompositeCompose => Some(compose_blend_state(compose_of(key.blend))),
+                    // The shader computes the final pixel (09 §4.4–§4.5).
+                    PipelineKind::CompositeBackdrop | PipelineKind::Blit => None,
+                    _ => Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                },
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
@@ -145,6 +177,52 @@ pub(crate) fn build(
         multiview_mask: None,
         cache: None,
     })
+}
+
+/// The fixed-function Porter-Duff blend state of `compose` (09 §4.3): with premultiplied
+/// colors `out = src·Fa + dst·Fb` is the W3C form; the Unorm target clamps `Plus*` to 1.
+pub(crate) fn compose_blend_state(compose: peniko::Compose) -> wgpu::BlendState {
+    use peniko::Compose as P;
+    use wgpu::BlendFactor as F;
+    let (src_factor, dst_factor) = match compose {
+        P::Clear => (F::Zero, F::Zero),
+        P::Copy => (F::One, F::Zero),
+        P::Dest => (F::Zero, F::One),
+        P::SrcOver => (F::One, F::OneMinusSrcAlpha),
+        P::DestOver => (F::OneMinusDstAlpha, F::One),
+        P::SrcIn => (F::DstAlpha, F::Zero),
+        P::DestIn => (F::Zero, F::SrcAlpha),
+        P::SrcOut => (F::OneMinusDstAlpha, F::Zero),
+        P::DestOut => (F::Zero, F::OneMinusSrcAlpha),
+        P::SrcAtop => (F::DstAlpha, F::OneMinusSrcAlpha),
+        P::DestAtop => (F::OneMinusDstAlpha, F::SrcAlpha),
+        P::Xor => (F::OneMinusDstAlpha, F::OneMinusSrcAlpha),
+        P::Plus | P::PlusLighter => (F::One, F::One),
+    };
+    let c = wgpu::BlendComponent { src_factor, dst_factor, operation: wgpu::BlendOperation::Add };
+    wgpu::BlendState { color: c, alpha: c }
+}
+
+/// `peniko::Compose` from its `repr(u8)` (`PipelineKey.blend`); unknown values are SrcOver.
+pub(crate) fn compose_of(v: u8) -> peniko::Compose {
+    use peniko::Compose as P;
+    const ALL: [P; 14] = [
+        P::Clear,
+        P::Copy,
+        P::Dest,
+        P::SrcOver,
+        P::DestOver,
+        P::SrcIn,
+        P::DestIn,
+        P::SrcOut,
+        P::DestOut,
+        P::SrcAtop,
+        P::DestAtop,
+        P::Xor,
+        P::Plus,
+        P::PlusLighter,
+    ];
+    ALL.get(usize::from(v)).copied().unwrap_or(P::SrcOver)
 }
 
 #[cfg(test)]

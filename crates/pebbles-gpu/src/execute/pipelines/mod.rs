@@ -69,6 +69,9 @@ impl PipelineKind {
             Self::Glyph => "pebbles.gpu.pipeline.glyph",
             Self::Image => "pebbles.gpu.pipeline.image",
             Self::CompositeOver => "pebbles.gpu.pipeline.composite_over",
+            Self::CompositeCompose => "pebbles.gpu.pipeline.composite_compose",
+            Self::CompositeBackdrop => "pebbles.gpu.pipeline.composite_backdrop",
+            Self::Blit => "pebbles.gpu.pipeline.blit",
             _ => "pebbles.gpu.pipeline.other",
         }
     }
@@ -116,6 +119,7 @@ pub(crate) struct ShaderModules {
     pub shadow: wgpu::ShaderModule,
     pub sdf: wgpu::ShaderModule,
     pub composite: wgpu::ShaderModule,
+    pub blit: wgpu::ShaderModule,
 }
 
 impl ShaderModules {
@@ -134,6 +138,7 @@ impl ShaderModules {
             shadow: module("pebbles.gpu.shader.shadow", shaders::SHADOW),
             sdf: module("pebbles.gpu.shader.sdf", shaders::SDF),
             composite: module("pebbles.gpu.shader.composite", shaders::COMPOSITE),
+            blit: module("pebbles.gpu.shader.blit", shaders::BLIT),
         }
     }
 
@@ -144,7 +149,10 @@ impl ShaderModules {
             PipelineKind::Image => &self.image,
             PipelineKind::Shadow => &self.shadow,
             PipelineKind::Sdf => &self.sdf,
-            PipelineKind::CompositeOver => &self.composite,
+            PipelineKind::CompositeOver
+            | PipelineKind::CompositeCompose
+            | PipelineKind::CompositeBackdrop => &self.composite,
+            PipelineKind::Blit => &self.blit,
             _ => &self.solid,
         }
     }
@@ -181,7 +189,9 @@ impl PipelineCache {
         let group1 = match kind {
             PipelineKind::Glyph => Some(&layouts.glyph),
             PipelineKind::Image => Some(&layouts.texture),
-            PipelineKind::CompositeOver => Some(&layouts.composite),
+            PipelineKind::CompositeOver | PipelineKind::CompositeCompose => Some(&layouts.composite),
+            PipelineKind::CompositeBackdrop => Some(&layouts.composite_backdrop),
+            PipelineKind::Blit => Some(&layouts.blit),
             _ => None,
         };
         debug_assert_eq!(group1.is_some(), desc.group1, "{kind:?}: group 1 disagrees with 02 §9");

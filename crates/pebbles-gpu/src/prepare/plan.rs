@@ -169,7 +169,6 @@ pub(crate) enum TargetRef {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CompositePath {
     Over,
-    #[allow(dead_code, reason = "constructed once non-Over blends route offscreen (L21)")]
     Compose,
     Backdrop,
 }
@@ -271,6 +270,10 @@ pub(crate) struct PrepareStats {
     pub layers_folded: u32,
     pub layers_offscreen: u32,
     pub layers_promoted: u32,
+    /// Offscreen layers per composite path (09 §4.2).
+    pub composites_over: u32,
+    pub composites_compose: u32,
+    pub composites_backdrop: u32,
 }
 
 /// Everything one frame draws, in order. Reused across frames: `clear()` keeps every capacity.
@@ -301,6 +304,9 @@ pub(crate) struct FramePlan {
     pub gpu_mask_bytes: u64,
     /// Offscreen layers (09 §3.5), indexed by `DrawCmd::{PushLayer, PopLayer, Composite}`.
     pub layers: Vec<LayerDesc>,
+    /// A `Backdrop` layer composites into the root: the root renders into a copyable texture
+    /// and is blitted to the frame target at the end (09 §4.4).
+    pub root_needs_backdrop: bool,
     // the ordered stream
     pub cmds: Vec<DrawCmd>,
     /// OC rows (R01) that fell back in this plan.
@@ -336,6 +342,7 @@ impl FramePlan {
         self.gpu_mask_jobs.clear();
         self.gpu_mask_bytes = 0;
         self.layers.clear();
+        self.root_needs_backdrop = false;
         self.cmds.clear();
         self.fallback_features = super::coverage::FeatureSet::default();
         self.stats = PrepareStats::default();

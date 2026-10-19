@@ -329,11 +329,13 @@ pub(crate) fn encode(
             }
             DrawCmd::Composite { layer, clip } => {
                 let Some(l) = layers.get(*layer as usize).and_then(Option::as_ref) else { continue };
-                let Some(pipeline) = renderer.pipelines.get_ensured(key(PipelineKind::CompositeOver, 0))
+                let desc = &renderer.scratch.plan.layers[*layer as usize];
+                let Some(pipeline) =
+                    renderer.pipelines.get_ensured(super::layers::composite_key(desc, format))
                 else {
                     continue;
                 };
-                let b = renderer.scratch.plan.layers[*layer as usize].bounds;
+                let b = desc.bounds;
                 let s = clip.scissor;
                 let scissor = ScissorRect {
                     x0: s.x0.max(b.x0),

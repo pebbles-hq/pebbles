@@ -331,12 +331,24 @@ impl Renderer {
         );
         let mut segments = std::mem::take(&mut self.segments);
         super::prepare::passes::segment_passes(&self.scratch.plan, &mut segments);
+        // 09 §4.4: a backdrop composite into the root copies from it, so the root renders into a
+        // copyable intermediate that is blitted to the frame target at the end.
+        let root_color = if self.scratch.plan.root_needs_backdrop {
+            target
+                .targets
+                .root_color(device, size, format, &mut stats)
+                .map(|r| (r.texture.clone(), r.view.clone()))
+        } else {
+            None
+        };
+        target.targets.end_frame_root(root_color.is_some());
+        let root_view = root_color.as_ref().map_or(target.view, |r| &r.1);
         for seg in &segments {
             let Some(seg_target) = super::execute::layers::segment_target(seg.target, size, &layers) else {
                 continue;
             };
             let (view, resolve_target, clear_to, label) = match seg.target {
-                super::prepare::plan::TargetRef::Root => (target.view, None, clear, "pebbles.gpu.pass.root"),
+                super::prepare::plan::TargetRef::Root => (root_view, None, clear, "pebbles.gpu.pass.root"),
                 super::prepare::plan::TargetRef::Layer(i) => {
                     let Some(l) = layers[i as usize].as_ref() else { continue };
                     let tex = target.targets.pool.textures(l.slot);
@@ -366,9 +378,17 @@ impl Renderer {
             });
             let range = seg.cmds.start as usize..seg.cmds.end as usize;
             encode(self, &mut pass, format, &mut stats, &composites, range, seg_target, &layers);
+            drop(pass);
             stats.render_passes += 1;
+            if let super::prepare::passes::AfterPass::CopyBackdrop(l) = seg.after {
+                let root = root_color.as_ref().map(|r| &r.0);
+                self.copy_backdrop(&mut encoder, l, &layers, target.targets, root);
+            }
         }
         self.segments = segments;
+        if let Some((_, view)) = &root_color {
+            self.blit_root(device, &mut encoder, view, target.view, format, &mut stats);
+        }
         encoder.pop_debug_group();
         let command_buffer = encoder.finish();
         stats.encode_us = u32::try_from(encode_started.elapsed().as_micros()).unwrap_or(u32::MAX);
@@ -401,6 +421,103 @@ impl Renderer {
 }
 
 impl Renderer {
+    /// 09 §4.4 `AfterPass::CopyBackdrop(layer)`: after the parent's segment before the layer's
+    /// push, copy the parent's pixels under the layer bounds into the layer's backdrop texture
+    /// (the parent does not change again until the layer composites).
+    fn copy_backdrop(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        layer: u32,
+        layers: &[Option<super::execute::layers::LayerTarget>],
+        targets: &super::frame_targets::FrameTargets,
+        root: Option<&wgpu::Texture>,
+    ) {
+        use super::prepare::plan::TargetRef;
+        let Some(l) = layers.get(layer as usize).and_then(Option::as_ref) else { return };
+        let Some(bslot) = l.backdrop else { return };
+        let desc = &self.scratch.plan.layers[layer as usize];
+        let (src, origin) = match desc.parent {
+            TargetRef::Root => match root {
+                Some(t) => (t, (0, 0)),
+                None => return,
+            },
+            TargetRef::Layer(p) => match layers.get(p as usize).and_then(Option::as_ref) {
+                Some(pl) => (&targets.pool.textures(pl.slot).color.0, pl.segment.origin),
+                None => return,
+            },
+        };
+        let b = desc.bounds;
+        encoder.copy_texture_to_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: src,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: b.x0 - origin.0, y: b.y0 - origin.1, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyTextureInfo {
+                texture: &targets.pool.textures(bslot).color.0,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::Extent3d { width: b.width(), height: b.height(), depth_or_array_layers: 1 },
+        );
+    }
+
+    /// 09 §4.4 `BlitRoot`: the root intermediate into the frame target (`blend: None`).
+    fn blit_root(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        src: &wgpu::TextureView,
+        dst: &wgpu::TextureView,
+        format: wgpu::TextureFormat,
+        stats: &mut FrameStats,
+    ) {
+        use super::execute::pipelines::{PipelineKey, PipelineKind};
+        let key = PipelineKey {
+            kind: PipelineKind::Blit,
+            color_format: format,
+            sample_count: 1,
+            blend: 0,
+            variant: 0,
+        };
+        self.pipelines.ensure(device, &self.shaders, &self.layouts, key, stats);
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("pebbles.gpu.bind.blit"),
+            layout: &self.layouts.blit,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(src),
+            }],
+        });
+        stats.bind_groups_created += 1;
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("pebbles.gpu.pass.blit"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: dst,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        stats.render_passes += 1;
+        let Some(pipeline) = self.pipelines.get_ensured(key) else { return };
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, &self.globals_bg, &[0, 0, 0]);
+        pass.set_bind_group(1, &group, &[]);
+        stats.bind_group_switches += 2;
+        pass.draw(0..3, 0..1);
+        stats.draw_calls += 1;
+    }
+
     /// Write this frame's SDF clip records (09 §2.4, L04), growing the clip buffer (and so the
     /// group-0 bind group) when needed. Record 0 is `ClipParams::NONE`.
     fn write_clips(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, stats: &mut FrameStats) {

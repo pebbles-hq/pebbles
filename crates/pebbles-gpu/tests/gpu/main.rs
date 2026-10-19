@@ -8,6 +8,8 @@ pub(crate) use peniko::{Brush, Color, Fill};
 pub(crate) use pebbles_gpu::{FrameParams, FrameTargets, GpuContext, GpuInit, RenderTarget, Renderer};
 
 mod atlas_gpu;
+mod blend;
+mod blend_ref;
 mod capture;
 mod clip;
 mod clips;
