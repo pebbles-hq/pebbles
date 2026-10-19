@@ -116,7 +116,7 @@ impl Renderer {
             health: std::sync::Arc::clone(gpu.health()),
             glyph_atlas,
             glyph_instances: Vec::new(),
-            image_cache: ImageCache::new(),
+            image_cache: ImageCache::new(budgets.image_cache_bytes),
             samplers: super::execute::resources::bind_groups::SamplerCache::default(),
             image_instances: Vec::new(),
             limits: RendererLimits::from_device_limits(&device.limits()),

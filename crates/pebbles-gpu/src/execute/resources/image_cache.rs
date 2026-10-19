@@ -1,9 +1,7 @@
 //! The image cache (10 §6): textures keyed by `Blob::id` — never a pointer, so no ABA — kept
 //! alive by a weak reference to the app's pixels, uploaded once, premultiplied.
 //!
-//! A GPU texture is freed at the first `end_frame` after the app drops its last `peniko::Blob`
-//! clone. (The byte budget and LRU eviction land with M02.) `Blob::from_raw_parts` callers must
-//! keep id ↔ bytes 1:1, since the key trusts the id.
+//! `Blob::from_raw_parts` callers must keep id ↔ bytes 1:1, since the key trusts the id.
 
 use std::collections::HashMap;
 
@@ -48,31 +46,65 @@ struct ImageEntry {
     bind_groups: Vec<(SamplerKey, wgpu::BindGroup)>,
     weak: peniko::WeakBlob<u8>,
     last_used: u64,
-    /// Texture bytes (`w · h · 4`; read by the debug census).
-    #[cfg_attr(not(debug_assertions), allow(dead_code))]
+    /// Uploaded texture bytes (`w · h · 4` after any downscale).
     bytes: u64,
 }
 
-/// Uploaded images by key.
+/// Uploaded images by key, under a byte budget (10 §6, M02).
+///
+/// A GPU texture is freed at the first `end_frame` after the app drops its last `peniko::Blob`
+/// clone, or earlier under budget pressure if it was not drawn this frame.
 pub(crate) struct ImageCache {
     entries: HashMap<ImageKey, ImageEntry>,
-    scratch: Vec<u8>,
-    frame: u64,
-    /// Running totals for the census (10 §9.2: O(1) reads, never iteration).
-    #[cfg(debug_assertions)]
+    /// Σ `bytes` of every entry (running total, O(1)).
     total_bytes: u64,
+    /// `GpuBudgets::image_cache_bytes`; soft for images drawn this frame (pinning, §6.3).
+    budget_bytes: u64,
+    scratch: Vec<u8>,
+    /// Reused LRU sort buffer.
+    evict_scratch: Vec<(u64, ImageKey, u64)>,
+    evict_keys: Vec<ImageKey>,
+    frame: u64,
+    /// Running bind-group total for the census (10 §9.2: O(1) reads, never iteration).
     #[cfg(debug_assertions)]
     total_bind_groups: usize,
 }
 
+/// §6.3 budget step, pure: among `candidates` (`(last_used, key, bytes)`), those not used in
+/// `frame` in LRU order, until `total − Σ bytes ≤ budget`. Pinned entries are never chosen.
+pub(crate) fn select_evictions(
+    candidates: &mut Vec<(u64, ImageKey, u64)>,
+    total: u64,
+    budget: u64,
+    frame: u64,
+    out: &mut Vec<ImageKey>,
+) {
+    out.clear();
+    if total <= budget {
+        return;
+    }
+    candidates.retain(|c| c.0 < frame);
+    candidates.sort_unstable_by_key(|c| (c.0, c.1.blob_id));
+    let mut total = total;
+    for &(_, key, bytes) in candidates.iter() {
+        if total <= budget {
+            break;
+        }
+        out.push(key);
+        total = total.saturating_sub(bytes);
+    }
+}
+
 impl ImageCache {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(budget_bytes: u64) -> Self {
         Self {
             entries: HashMap::new(),
-            scratch: Vec::new(),
-            frame: 0,
-            #[cfg(debug_assertions)]
             total_bytes: 0,
+            budget_bytes,
+            scratch: Vec::new(),
+            evict_scratch: Vec::new(),
+            evict_keys: Vec::new(),
+            frame: 0,
             #[cfg(debug_assertions)]
             total_bind_groups: 0,
         }
@@ -194,10 +226,8 @@ impl ImageCache {
         stats.textures_created += 1;
         stats.texture_views_created += 1;
         let bytes = u64::from(w) * u64::from(h) * 4;
-        #[cfg(debug_assertions)]
-        {
-            self.total_bytes += bytes;
-        }
+        self.total_bytes += bytes;
+        stats.texture_bytes_uploaded += bytes;
         self.entries.insert(
             key,
             ImageEntry {
@@ -212,25 +242,50 @@ impl ImageCache {
         true
     }
 
-    /// After the last submit: drop every image the app no longer holds.
+    /// After the last submit (10 §6.3): liveness first, then the budget with pinning.
     pub(crate) fn end_frame(&mut self, stats: &mut FrameStats) {
         let before = self.entries.len();
         #[cfg(debug_assertions)]
-        let (mut bytes, mut groups) = (self.total_bytes, self.total_bind_groups);
+        let mut groups = self.total_bind_groups;
+        let mut bytes = self.total_bytes;
         self.entries.retain(|_, e| {
             let live = e.weak.upgrade().is_some();
-            #[cfg(debug_assertions)]
             if !live {
                 bytes -= e.bytes;
-                groups -= e.bind_groups.len();
+                #[cfg(debug_assertions)]
+                {
+                    groups -= e.bind_groups.len();
+                }
             }
             live
         });
+        if bytes > self.budget_bytes {
+            self.evict_scratch.clear();
+            self.evict_scratch.extend(self.entries.iter().map(|(k, e)| (e.last_used, *k, e.bytes)));
+            select_evictions(
+                &mut self.evict_scratch,
+                bytes,
+                self.budget_bytes,
+                self.frame,
+                &mut self.evict_keys,
+            );
+            for key in &self.evict_keys {
+                if let Some(e) = self.entries.remove(key) {
+                    bytes -= e.bytes;
+                    #[cfg(debug_assertions)]
+                    {
+                        groups -= e.bind_groups.len();
+                    }
+                }
+            }
+        }
+        self.total_bytes = bytes;
         #[cfg(debug_assertions)]
         {
-            (self.total_bytes, self.total_bind_groups) = (bytes, groups);
+            self.total_bind_groups = groups;
         }
         stats.image_evictions += u32::try_from(before - self.entries.len()).unwrap_or(u32::MAX);
+        stats.image_cache_bytes = self.total_bytes;
     }
 }
 
@@ -315,5 +370,52 @@ mod tests {
         let mut out = Vec::new();
         assert_eq!(downscale(&src, 5, 2, 4, &mut out), (3, 1));
         assert!(out.iter().all(|&b| b == 255));
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::{ImageKey, select_evictions};
+
+    fn key(id: u64) -> ImageKey {
+        ImageKey { blob_id: id, width: 1, height: 1, format: 0, alpha: 0 }
+    }
+
+    #[test]
+    fn select_evictions_lru_order() {
+        let mut c = vec![(5, key(1), 10), (2, key(2), 10), (7, key(3), 10), (3, key(4), 10)];
+        let mut out = Vec::new();
+        select_evictions(&mut c, 40, 20, 9, &mut out);
+        assert_eq!(out, vec![key(2), key(4)], "oldest first, until within budget");
+    }
+
+    #[test]
+    fn select_evictions_skips_pinned() {
+        let mut c = vec![(9, key(1), 30), (4, key(2), 10)];
+        let mut out = Vec::new();
+        select_evictions(&mut c, 40, 5, 9, &mut out);
+        assert_eq!(out, vec![key(2)], "the entry used this frame is never evicted");
+    }
+
+    #[test]
+    fn select_evictions_noop_under_budget() {
+        let mut c = vec![(1, key(1), 10)];
+        let mut out = vec![key(9)];
+        select_evictions(&mut c, 10, 10, 5, &mut out);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn image_key_differs_for_equal_bytes() {
+        let data = |b: peniko::Blob<u8>| peniko::ImageData {
+            data: b,
+            format: peniko::ImageFormat::Rgba8,
+            alpha_type: peniko::ImageAlphaType::Alpha,
+            width: 1,
+            height: 1,
+        };
+        let a = ImageKey::of(&data(peniko::Blob::from(vec![1u8, 2, 3, 4])));
+        let b = ImageKey::of(&data(peniko::Blob::from(vec![1u8, 2, 3, 4])));
+        assert_ne!(a, b);
     }
 }

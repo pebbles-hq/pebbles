@@ -15,6 +15,7 @@ mod frame_targets_gpu;
 mod gpu_color;
 mod gpu_geometry;
 mod gpu_smoke;
+mod image_cache_gpu;
 mod images;
 mod order;
 mod path_masks;
