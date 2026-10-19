@@ -94,3 +94,33 @@ fn zero_sigma_is_hard_edge() {
     assert!(rgb_in(pixel(&px, 200, 100, 148), 0, 1), "{:?}", pixel(&px, 200, 100, 148));
     assert!(rgb_in(pixel(&px, 200, 100, 151), 254, 255), "{:?}", pixel(&px, 200, 100, 151));
 }
+
+/// R42: a blurred star mask. Normal: smooth falloff outside the star (no hard edge); Solid: the
+/// interior stays solid away from the edges.
+#[test]
+#[ignore = "gpu"]
+fn blurred_star_shadow() {
+    use pebbles_render::paint::display_list::BlurStyle;
+    let Some(mut r) = setup("blurred_star_shadow") else { return };
+    let mut star = kurbo::BezPath::new();
+    for i in 0..10 {
+        let a = std::f64::consts::PI * f64::from(i) / 5.0 - std::f64::consts::FRAC_PI_2;
+        let rad = if i % 2 == 0 { 40.0 } else { 17.0 };
+        let p = (64.0 + rad * a.cos(), 64.0 + rad * a.sin());
+        if i == 0 { star.move_to(p) } else { star.line_to(p) }
+    }
+    star.close_path();
+    let draw = |r: &mut (wgpu::Device, wgpu::Queue, Renderer), style| {
+        let mut s = Scene::new();
+        Painter::new(&mut s).fill_blurred(Fill::NonZero, Affine::IDENTITY, Color::BLACK, &star, 4.0, style);
+        render_scene(&r.0, &r.1, &mut r.2, &s, (128, 128), Color::WHITE)
+    };
+    let normal = draw(&mut r, BlurStyle::Normal);
+    // Along the ray straight up from the tip (64, 24): strictly increasing brightness outward.
+    let col: Vec<u8> = (8..24).map(|y| pixel(&normal, 128, 64, y)[0]).collect();
+    assert!(col.windows(2).all(|w| w[0] >= w[1]), "not a smooth falloff: {col:?}");
+    assert!(col[0] > 240 && *col.last().unwrap() < 240, "{col:?}");
+    let solid = draw(&mut r, BlurStyle::Solid);
+    let c = pixel(&solid, 128, 64, 64);
+    assert!(c[0] <= 2, "solid interior {c:?}");
+}

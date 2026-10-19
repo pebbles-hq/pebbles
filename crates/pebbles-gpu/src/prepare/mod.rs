@@ -7,12 +7,14 @@ use pebbles_render::paint::Scene;
 use pebbles_render::paint::display_list::Op;
 
 use path_strategy::Tier;
+use pebbles_render::paint::display_list::BlurStyle;
 use peniko::Fill;
 
 use crate::limits::RendererLimits;
 use crate::stats::{FrameStats, Unsupported};
 
 mod admit;
+mod blurred;
 mod clip;
 pub(crate) mod color;
 pub(crate) mod coverage;
@@ -575,6 +577,63 @@ impl Walk<'_> {
                     let k = self.alpha() * s.alpha.clamp(0.0, 1.0);
                     let range = images::image(self.plan, image, xf, k, tier_a::snaps(op));
                     self.push(DrawCmd::Images { images: range, clip: self.clips.current() }, idx);
+                }
+                Op::BlurredFill { style, transform, color, shape, sigma, blur_style, .. } => {
+                    let xf = outer * *transform;
+                    if !xf.is_finite() || !sigma.is_finite() || !hygiene::color_is_finite(color) {
+                        self.skip_non_finite();
+                        continue;
+                    }
+                    let k = self.alpha();
+                    if color.components[3] * k <= 0.0 || self.hidden() || !self.transform_is_sane(xf) {
+                        continue;
+                    }
+                    let pad = 3.0 * f64::from(sigma.max(0.0));
+                    if self
+                        .culled(xf.transform_rect_bbox(shape.to_path(0.1).bounding_box().inflate(pad, pad)))
+                    {
+                        continue;
+                    }
+                    let premul = color::premul(color.multiply_alpha(k));
+                    self.draw_blurred(shape, xf, *style, premul, *sigma, *blur_style, idx);
+                }
+                Op::BlurredGlyphs {
+                    font,
+                    font_size,
+                    normalized_coords,
+                    transform,
+                    glyph_transform,
+                    glyphs,
+                    color,
+                    sigma,
+                    ..
+                } => {
+                    let xf = outer * *transform;
+                    if !xf.is_finite()
+                        || !sigma.is_finite()
+                        || !font_size.is_finite()
+                        || !hygiene::color_is_finite(color)
+                    {
+                        self.skip_non_finite();
+                        continue;
+                    }
+                    let k = self.alpha();
+                    if color.components[3] * k <= 0.0
+                        || *font_size <= 0.0
+                        || self.hidden()
+                        || !self.transform_is_sane(xf)
+                    {
+                        continue;
+                    }
+                    // R42: blur the run's union, never glyph by glyph.
+                    let union =
+                        self.run_outline(font, *font_size, normalized_coords, *glyph_transform, glyphs);
+                    if union.elements().is_empty() {
+                        continue;
+                    }
+                    let shape = pebbles_render::paint::display_list::Geometry::Path(union);
+                    let premul = color::premul(color.multiply_alpha(k));
+                    self.draw_blurred(&shape, xf, Fill::NonZero, premul, *sigma, BlurStyle::Normal, idx);
                 }
                 Op::DynamicImage { frame, quality, alpha, transform, .. } => {
                     let xf = outer * *transform;

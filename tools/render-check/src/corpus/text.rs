@@ -39,6 +39,8 @@ pub fn cases() -> Vec<Case> {
         harness("text/scaled_transform_3x", Text, P2, W, H, scaled_transform_3x),
         harness("text/selection_caret", Text, P2, W, H, selection_caret),
         ops("text/glyph_run_synthetic", Text, P2, W, H, glyph_run_synthetic),
+        // R42 text shadow: the run's union blurred once (V53 case).
+        ops("text/shadow_blur", Text, P2, 320, 96, shadow_blur),
         // COLR (R29): the committed colr-test.ttf, judged by the golden COLR evaluator (V51).
         ops("text/colr_v0_layers", Text, P2, 160, 160, colr_v0_layers),
         ops("text/colr_v0_rotated", Text, P2, 160, 160, colr_v0_rotated),
@@ -166,6 +168,45 @@ fn glyph_run_synthetic(p: &mut Painter<'_>) {
         });
         p.draw_glyphs(&font, size, &[], &ink, Affine::IDENTITY, None, peniko::Fill::NonZero, glyphs);
     }
+}
+
+fn shadow_blur(p: &mut Painter<'_>) {
+    let font = pebbles_render::paint::peniko::FontData::new(
+        peniko::Blob::from(pebbles_render::fonts::builtin_fonts()[0].1.to_vec()),
+        0,
+    );
+    let f = swash::FontRef::from_index(font.data.data(), 0).expect("Inter");
+    let glyphs: Vec<pebbles_render::paint::Glyph> = "Shadow"
+        .chars()
+        .enumerate()
+        .map(|(i, c)| pebbles_render::paint::Glyph {
+            id: u32::from(f.charmap().map(c)),
+            x: 16.0 + 38.0 * i as f32,
+            y: 64.0,
+        })
+        .collect();
+    let shadow = Color::from_rgba8(0, 0, 0, 0x80);
+    p.draw_glyphs_blurred(
+        &font,
+        48.0,
+        &[],
+        Affine::translate((3.0, 3.0)),
+        None,
+        glyphs.iter().copied(),
+        shadow,
+        3.0,
+    );
+    let brush = peniko::Brush::Solid(Color::from_rgba8(0x1F, 0x29, 0x37, 0xFF));
+    p.draw_glyphs(
+        &font,
+        48.0,
+        &[],
+        &brush,
+        Affine::IDENTITY,
+        None,
+        peniko::Fill::NonZero,
+        glyphs.into_iter(),
+    );
 }
 
 fn colr_font() -> peniko::FontData {

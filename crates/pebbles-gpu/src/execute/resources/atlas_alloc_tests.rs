@@ -18,7 +18,15 @@ fn sized(glyph_id: u16, size_q: u32) -> GlyphKey {
 }
 
 fn path(n: u64) -> MaskKey {
-    MaskKey { geometry_hash: n, linear_q: [1024, 0, 0, 1024], subpx: (0, 0), rule: 0, stroke_hash: 0 }
+    MaskKey {
+        geometry_hash: n,
+        linear_q: [1024, 0, 0, 1024],
+        subpx: (0, 0),
+        rule: 0,
+        stroke_hash: 0,
+        blur_q: 0,
+        blur_style: 0,
+    }
 }
 
 fn atlas(max_side: u32, layers: u32) -> CoverageAtlas {

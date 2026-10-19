@@ -10,8 +10,6 @@ use crate::prepare::test_util::prepare_scene;
 
 /// Rows no display-list op can produce yet (their ops / data are added by the delivering card).
 const NOT_PRODUCIBLE: &[(F, &str)] = &[
-    (F::BlurredFill, "no Op::BlurredFill yet (R42)"),
-    (F::BlurredGlyphs, "no Op::BlurredGlyphs yet (R42)"),
     (F::Vertices, "no Op::Vertices yet (R63)"),
     (F::SpriteAtlas, "no Op::Atlas yet (R64)"),
     (F::EffectBlur, "no Op::PushEffectLayer yet (L61)"),
@@ -201,6 +199,19 @@ fn fixture(f: F) -> Option<Scene> {
         F::GlyphsNonSolidBrush => glyphs(p, 16.0, &Brush::Gradient(gradient()), id, None, Fill::NonZero),
         F::GlyphsEvenOdd => glyphs(p, 16.0, &Brush::Solid(RED), id, None, Fill::EvenOdd),
         F::GlyphsDegenerate => glyphs(p, f32::NAN, &Brush::Solid(RED), id, None, Fill::NonZero),
+        F::BlurredFill => p.fill_blurred(
+            Fill::NonZero,
+            id,
+            RED,
+            &Circle::new((32.0, 32.0), 12.0),
+            3.0,
+            pebbles_render::paint::display_list::BlurStyle::Normal,
+        ),
+        F::BlurredGlyphs => {
+            let font = crate::test_support::bundled_font();
+            let g = Glyph { id: 40, x: 8.0, y: 40.0 };
+            p.draw_glyphs_blurred(&font, 24.0, &[], id, None, std::iter::once(g), RED, 2.0);
+        }
         F::DynamicImage => {
             let img = pebbles_render::paint::DynamicImage::new(8, 8);
             p.draw_dynamic_image(&img, ImageQuality::Medium, 1.0, Affine::translate((8.0, 8.0)));

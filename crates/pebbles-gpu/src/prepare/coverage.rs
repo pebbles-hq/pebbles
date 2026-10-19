@@ -241,6 +241,8 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::ShadowDegenerate,   // R41
     F::ImageNine,          // R36
     F::DynamicImage,       // R37
+    F::BlurredFill,        // R42
+    F::BlurredGlyphs,      // R42
 ];
 
 #[cfg(test)]

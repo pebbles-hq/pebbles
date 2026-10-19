@@ -337,10 +337,29 @@ impl GlyphAtlas {
                 &outline
             }
         };
-        let Some(placement) = rasterize_anywhere(&mut self.paths, path, src, &mut self.mask_buf) else {
+        let Some(mut placement) = rasterize_anywhere(&mut self.paths, path, src, &mut self.mask_buf) else {
             self.cpu.insert_empty(key);
             return (GlyphLookup::Empty, true);
         };
+        if let Some((sigma, style)) = src.blur {
+            // R42: pad by ⌈3σ⌉, blur (09 §10.2), combine with the coverage per the style.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // σ bounded by MASK_MAX_AREA
+            let r = (3.0 * sigma).ceil().max(0.0) as usize;
+            let (w, h) = (self.mask_buf.width as usize, self.mask_buf.height as usize);
+            let (pw, ph) = (w + 2 * r, h + 2 * r);
+            let mut cov = vec![0u8; pw * ph];
+            for y in 0..h {
+                let src_row = self.mask_buf.data.get(y * w..(y + 1) * w).unwrap_or_default();
+                cov[(y + r) * pw + r..(y + r) * pw + r + w].copy_from_slice(src_row);
+            }
+            let blurred = crate::raster::blur::blur_mask(&cov, pw, ph, sigma);
+            self.mask_buf.data =
+                cov.iter().zip(&blurred).map(|(&c, &b)| crate::raster::blur::style(style, c, b)).collect();
+            self.mask_buf.width = u32::try_from(pw).unwrap_or(u32::MAX);
+            self.mask_buf.height = u32::try_from(ph).unwrap_or(u32::MAX);
+            let ri = i32::try_from(r).unwrap_or(0);
+            placement = (placement.0 - ri, placement.1 - ri);
+        }
         let (Ok(left), Ok(top)) = (i16::try_from(placement.0), i16::try_from(-placement.1)) else {
             return (GlyphLookup::Unsupported, true);
         };

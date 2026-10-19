@@ -47,11 +47,13 @@ pub enum Unsupported {
     ColorGlyphTransform,
     /// A glyph id above `u16::MAX` (no font has one): glyph skipped (R22).
     GlyphIdRange,
+    /// A blurred mask whose padded size exceeds `MASK_MAX_AREA`: skipped until L61 (R42).
+    BlurMaskTooLarge,
 }
 
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
-    pub const COUNT: usize = 21;
+    pub const COUNT: usize = 22;
     /// Every variant, in discriminant order.
     pub const ALL: [Unsupported; Self::COUNT] = [
         Self::NonRectClip,
@@ -75,6 +77,7 @@ impl Unsupported {
         Self::CoordOutOfRange,
         Self::ColorGlyphTransform,
         Self::GlyphIdRange,
+        Self::BlurMaskTooLarge,
     ];
 
     /// The variant's 11 §4.2 key, used in logs and stats dumps.
@@ -101,6 +104,7 @@ impl Unsupported {
             Self::CoordOutOfRange => "coordinate-out-of-range",
             Self::ColorGlyphTransform => "color-glyph-transform-unsupported",
             Self::GlyphIdRange => "glyph-id-out-of-range",
+            Self::BlurMaskTooLarge => "blur-mask-too-large",
         }
     }
 }

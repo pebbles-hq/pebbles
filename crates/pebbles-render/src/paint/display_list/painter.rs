@@ -126,6 +126,51 @@ impl<'a> Painter<'a> {
         self.scene.push(Op::Image { image: image.into().to_owned(), transform, snap: self.snap });
     }
 
+    /// Fill `shape` with a blurred coverage mask (02 R42); `sigma` in local units.
+    pub fn fill_blurred(
+        &mut self,
+        style: Fill,
+        transform: Affine,
+        color: Color,
+        shape: &impl Shape,
+        sigma: f32,
+        blur_style: super::op::BlurStyle,
+    ) {
+        self.scene.push(Op::BlurredFill {
+            style,
+            transform,
+            color,
+            shape: Geometry::from_shape(shape),
+            sigma,
+            blur_style,
+        });
+    }
+
+    /// Draw a glyph run's union as one blurred mask (02 R42; text shadows).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_glyphs_blurred(
+        &mut self,
+        font: &FontData,
+        font_size: f32,
+        normalized_coords: &[NormalizedCoord],
+        transform: Affine,
+        glyph_transform: Option<Affine>,
+        glyphs: impl Iterator<Item = Glyph>,
+        color: Color,
+        sigma: f32,
+    ) {
+        self.scene.push(Op::BlurredGlyphs {
+            font: font.clone(),
+            font_size,
+            normalized_coords: normalized_coords.to_vec(),
+            transform,
+            glyph_transform,
+            glyphs: glyphs.collect(),
+            color,
+            sigma,
+        });
+    }
+
     /// Draw a [`DynamicImage`](crate::paint::DynamicImage) (02 R37); never mipmapped.
     pub fn draw_dynamic_image(
         &mut self,

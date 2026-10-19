@@ -153,6 +153,19 @@ fn emit(
                 *img_idx += 1;
             }
         }
+        Op::BlurredFill { .. } | Op::BlurredGlyphs { .. } => {
+            // DR-24 adoption rule: no blurred masks in the transitional backend.
+            static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                pebbles_foundation::log::logf(
+                    pebbles_foundation::log::Level::Warn,
+                    pebbles_foundation::log::Cat::Gpu,
+                    format_args!(
+                        "vello-hybrid: blurred masks are not supported; skipped (wgpu draws them, 02 R42)"
+                    ),
+                );
+            }
+        }
         Op::DynamicImage { .. } => {
             // DR-24 adoption rule: no in-place texture updates in the transitional backend.
             static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);

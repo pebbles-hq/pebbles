@@ -24,6 +24,8 @@ pub(crate) struct MaskSource {
     pub rule: peniko::Fill,
     /// Stroke style in local space (hairline rule already applied); `None` for fills.
     pub stroke: Option<Stroke>,
+    /// Blurred masks (R42): device σ and style.
+    pub blur: Option<(f32, pebbles_render::paint::display_list::BlurStyle)>,
 }
 
 fn hash_geometry(g: &Geometry, h: &mut DefaultHasher) {
@@ -83,7 +85,7 @@ fn split_translation(t: f64) -> Option<(f64, u16)> {
 
 /// The key, source, origin and color scale of a Tier B request; `None` when the op must stay
 /// on the tessellated path (non-finite placement, or a dash pattern the guard rewrites).
-fn build(
+pub(super) fn build(
     shape: &Geometry,
     xf: Affine,
     rule: peniko::Fill,
@@ -125,10 +127,12 @@ fn build(
         subpx: (bx, by),
         rule: u8::from(rule == peniko::Fill::EvenOdd && stroke.is_none()),
         stroke_hash: stroke.as_ref().map_or(0, hash_stroke),
+        blur_q: 0,
+        blur_style: 0,
     };
     let rule = if stroke.is_some() { peniko::Fill::NonZero } else { rule };
     let origin = [num::to_f32(ox)?, num::to_f32(oy)?];
-    Some((key, MaskSource { path, device, rule, stroke }, origin, alpha))
+    Some((key, MaskSource { path, device, rule, stroke, blur: None }, origin, alpha))
 }
 
 impl Walk<'_> {

@@ -82,6 +82,68 @@ impl Target {
         }
     }
 
+    /// 02 R42: `path`'s coverage (8-bit, on the floored device bbox padded by ⌈3σ⌉ — the
+    /// renderer's mask region), blurred with the 09 §10.2 kernel, combined per `style`, painted.
+    fn blurred(
+        &mut self,
+        path: &kurbo::BezPath,
+        t: Affine,
+        rule: peniko::Fill,
+        color: Color,
+        sigma: f32,
+        style: pebbles_render::paint::display_list::BlurStyle,
+    ) {
+        use kurbo::Shape as _;
+        let [a, b, c, d, ..] = t.as_coeffs();
+        let s1 = a * a + b * b + c * c + d * d;
+        let det = (a * d - b * c).abs();
+        let smax = ((s1 + (s1 * s1 - 4.0 * det * det).max(0.0).sqrt()) / 2.0).sqrt();
+        let sd = f64::from(sigma.max(0.0)) * smax;
+        let r = (3.0 * sd).ceil();
+        let bb = t.transform_rect_bbox(path.bounding_box());
+        if !bb.is_finite() {
+            return;
+        }
+        let (x0, y0) = (bb.x0.floor() - r, bb.y0.floor() - r);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // bounded masks
+        let (pw, ph) = (((bb.x1.ceil() + r) - x0) as usize, ((bb.y1.ceil() + r) - y0) as usize);
+        let cov =
+            coverage::fill_coverage(path, Affine::translate((-x0, -y0)) * t, rule, pw as u32, ph as u32);
+        let q: Vec<f64> = cov.iter().map(|v| (v.clamp(0.0, 1.0) * 255.0).round() / 255.0).collect();
+        let bl = blur::blur(&q, pw, ph, sd, true);
+        let st = match style {
+            pebbles_render::paint::display_list::BlurStyle::Solid => blur::BlurStyle::Solid,
+            pebbles_render::paint::display_list::BlurStyle::Outer => blur::BlurStyle::Outer,
+            pebbles_render::paint::display_list::BlurStyle::Inner => blur::BlurStyle::Inner,
+            _ => blur::BlurStyle::Normal,
+        };
+        let src = premul(color);
+        let (w, h) = (self.w as i64, self.h as i64);
+        let buf = match self.layers.last_mut() {
+            Some(l) => &mut l.px,
+            None => &mut self.px,
+        };
+        #[allow(clippy::cast_possible_truncation)] // pixel coordinates
+        let (ox, oy) = (x0 as i64, y0 as i64);
+        for yy in 0..ph {
+            for xx in 0..pw {
+                let (dx, dy) = (ox + xx as i64, oy + yy as i64);
+                if dx < 0 || dy < 0 || dx >= w || dy >= h {
+                    continue;
+                }
+                let i = yy * pw + xx;
+                let k = blur::style(st, q[i], bl[i]);
+                if k == 0.0 {
+                    continue;
+                }
+                let dst = &mut buf[(dy * w + dx) as usize];
+                for ch in 0..4 {
+                    dst[ch] = src[ch] * k + dst[ch] * (1.0 - src[3] * k);
+                }
+            }
+        }
+    }
+
     /// Source-over a premultiplied color image (× `alpha`) into the current layer (or the root).
     fn composite_image(&mut self, img: &[[f64; 4]], alpha: f64) {
         let buf = match self.layers.last_mut() {
@@ -144,6 +206,25 @@ impl Target {
                 let shape = pebbles_render::paint::display_list::Geometry::Rect(r);
                 let cov = fill_geometry(&shape, t, peniko::Fill::NonZero, self.snap(*snap), self.w, self.h);
                 self.composite(&paint, &cov);
+            }
+            Op::BlurredFill { style, transform, color, shape, sigma, blur_style, .. } => {
+                let path = shape.to_path(0.01).into_owned();
+                self.blurred(&path, outer * *transform, *style, *color, *sigma, *blur_style);
+            }
+            Op::BlurredGlyphs {
+                font,
+                font_size,
+                normalized_coords,
+                transform,
+                glyph_transform,
+                glyphs,
+                color,
+                sigma,
+                ..
+            } => {
+                let path = text::run_union(font, *font_size, normalized_coords, *glyph_transform, glyphs);
+                let s = pebbles_render::paint::display_list::BlurStyle::Normal;
+                self.blurred(&path, outer * *transform, peniko::Fill::NonZero, *color, *sigma, s);
             }
             Op::DynamicImage { frame, quality, alpha, transform, .. } => {
                 // 02 R37: drawn exactly like `Image` (premultiplied pixels, never mipmapped).

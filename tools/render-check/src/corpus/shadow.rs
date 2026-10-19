@@ -36,10 +36,39 @@ pub fn cases() -> Vec<Case> {
             .probe("shadow_below_card", probe::shadow_below_card),
     ));
     v.extend([
+        // R42 blurred masks of any shape (V53 cases).
+        ops("shadow/path_star", Shadow, P3, W, H, path_star),
+        ops("shadow/path_blur_styles", Shadow, P3, 256, 128, path_blur_styles),
         harness("shadow/overlapping_cards", Shadow, P3, 200, 200, overlapping_cards).bg(BG),
         harness("shadow/inside_scroll_clip", Shadow, P3, 200, 200, inside_scroll_clip).bg(BG),
     ]);
     v
+}
+
+fn star() -> kurbo::BezPath {
+    let mut path = kurbo::BezPath::new();
+    for i in 0..10 {
+        let a = std::f64::consts::PI * f64::from(i) / 5.0 - std::f64::consts::FRAC_PI_2;
+        let r = if i % 2 == 0 { 40.0 } else { 17.0 };
+        let p = (64.0 + r * a.cos(), 64.0 + r * a.sin());
+        if i == 0 { path.move_to(p) } else { path.line_to(p) }
+    }
+    path.close_path();
+    path
+}
+
+fn path_star(p: &mut Painter<'_>) {
+    use pebbles_render::paint::display_list::BlurStyle;
+    p.fill_blurred(peniko::Fill::NonZero, Affine::IDENTITY, SHADOW, &star(), 5.0, BlurStyle::Normal);
+}
+
+fn path_blur_styles(p: &mut Painter<'_>) {
+    use pebbles_render::paint::display_list::BlurStyle;
+    let styles = [BlurStyle::Normal, BlurStyle::Solid, BlurStyle::Outer, BlurStyle::Inner];
+    for (i, s) in styles.into_iter().enumerate() {
+        let c = kurbo::Circle::new((32.0 + 64.0 * i as f64, 64.0), 20.0);
+        p.fill_blurred(peniko::Fill::NonZero, Affine::IDENTITY, SHADOW, &c, 4.0, s);
+    }
 }
 
 fn blurred(p: &mut Painter<'_>, t: Affine, rect: Rect, radius: f64, std_dev: f64) {

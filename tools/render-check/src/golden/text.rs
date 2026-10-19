@@ -70,6 +70,29 @@ fn outline_path(outline: &swash::scale::outline::Outline, pen: Point) -> BezPath
     path
 }
 
+/// The union of a run's glyph outlines in run space (each at its pen, under `G · FLIP_Y`) — the
+/// shape `BlurredGlyphs` blurs (02 R42).
+pub fn run_union(
+    font: &FontData,
+    font_size: f32,
+    coords: &[i16],
+    g: Option<Affine>,
+    glyphs: &[Glyph],
+) -> BezPath {
+    let mut union = BezPath::new();
+    let Some(face) = swash::FontRef::from_index(font.data.data(), font.index as usize) else { return union };
+    let mut ctx = ScaleContext::new();
+    let mut scaler =
+        ctx.builder(face).size(font_size).hint(false).normalized_coords(coords.iter().copied()).build();
+    for gl in glyphs {
+        let Ok(id) = u16::try_from(gl.id) else { continue };
+        let Some(outline) = scaler.scale_outline(id) else { continue };
+        let t = Affine::translate((f64::from(gl.x), f64::from(gl.y))) * g.unwrap_or(Affine::IDENTITY);
+        union.extend((t * outline_path(&outline, Point::ZERO)).elements().iter().copied());
+    }
+    union
+}
+
 /// Device ppem above which atlas-route runs use outlines (10 §8.2 `MAX_ATLAS_GLYPH_PX`).
 const MAX_ATLAS_GLYPH_PX: f64 = 256.0;
 

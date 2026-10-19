@@ -99,6 +99,20 @@ pub enum PixelSnap {
     Off,
 }
 
+/// How a blurred mask combines with the original coverage (Flutter's `BlurStyle`, 02 R42).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum BlurStyle {
+    /// The blur.
+    #[default]
+    Normal,
+    /// The shape solid, the blur outside it.
+    Solid,
+    /// Only the blur outside the shape.
+    Outer,
+    /// Only the blur inside the shape.
+    Inner,
+}
+
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Op {
@@ -138,6 +152,29 @@ pub enum Op {
         image: ImageBrush,
         transform: Affine,
         snap: PixelSnap,
+    },
+    /// A blurred coverage mask of any shape (02 R42, Flutter `MaskFilter.blur`): the shape's
+    /// coverage blurred by `sigma` (local units) and combined per `blur_style`, painted `color`.
+    #[non_exhaustive]
+    BlurredFill {
+        style: Fill,
+        transform: Affine,
+        color: Color,
+        shape: Geometry,
+        sigma: f32,
+        blur_style: BlurStyle,
+    },
+    /// A glyph run's union blurred as one mask (02 R42; text shadows).
+    #[non_exhaustive]
+    BlurredGlyphs {
+        font: FontData,
+        font_size: f32,
+        normalized_coords: Vec<NormalizedCoord>,
+        transform: Affine,
+        glyph_transform: Option<Affine>,
+        glyphs: Vec<Glyph>,
+        color: Color,
+        sigma: f32,
     },
     /// A dynamic image (02 R37): drawn like `Image`, uploaded in place by generation.
     #[non_exhaustive]

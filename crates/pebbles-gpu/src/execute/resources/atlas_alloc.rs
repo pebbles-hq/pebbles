@@ -54,6 +54,10 @@ pub(crate) struct MaskKey {
     pub rule: u8,
     /// Hash of width / joins / caps / dashes; 0 for fills.
     pub stroke_hash: u64,
+    /// Blurred masks (R42): `round(σ_dev · 16)`; 0 = no blur.
+    pub blur_q: u32,
+    /// `BlurStyle` as u8 (0 when `blur_q == 0`).
+    pub blur_style: u8,
 }
 
 /// A coverage-atlas key (10 §5.3).
