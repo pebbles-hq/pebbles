@@ -1484,6 +1484,8 @@ fn push_cmd(plan: &mut FramePlan, cmd: DrawCmd, _visit: u32) {
 #[cfg(test)]
 mod alloc_gate_tests;
 #[cfg(test)]
+mod bench_tests;
+#[cfg(test)]
 mod fallback_tests;
 #[cfg(test)]
 mod fragment_tests;
