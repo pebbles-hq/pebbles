@@ -255,7 +255,7 @@ fn random_scenes_never_panic() {
     crate::prepare::prepare(&scene, &input, &crate::test_support::webgl2_limits(), &mut scratch, &mut stats);
     let plan = &scratch.plan;
     assert!(plan.solid_vertices.iter().all(|v| v.pos.iter().all(|c| c.is_finite())), "solid vertex");
-    assert!(plan.shadows.iter().all(|s| s.rect.iter().chain(&s.params).all(|c| c.is_finite())), "shadow quad");
+    assert!(plan.shadows.iter().all(|s| s.xform.iter().chain(&s.origin_size).chain(&s.params0).chain(&s.params1).chain(&s.kernel).all(|c| c.is_finite())), "shadow quad");
     assert!(plan.images.iter().all(|i| i.quad.xform.iter().chain(&i.quad.origin).all(|c| c.is_finite())));
     assert!(plan.glyphs.iter().all(|g| g.origin.iter().all(|c| c.is_finite())), "glyph origin");
     assert_eq!(scratch.layers.depth(), 0, "layer stack balanced");

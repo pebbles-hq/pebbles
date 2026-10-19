@@ -20,6 +20,7 @@ mod images;
 mod order;
 mod path_masks;
 mod pixel_snap;
+mod shadows;
 mod steady_state;
 mod support;
 mod targets;

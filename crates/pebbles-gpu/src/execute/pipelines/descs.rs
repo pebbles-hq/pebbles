@@ -10,8 +10,14 @@ const SOLID_ATTRIBUTES: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![0 
 /// Glyph and image quads (`QuadInstance`).
 pub(crate) const QUAD_ATTRIBUTES: [wgpu::VertexAttribute; 5] =
     wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x2, 2 => Float32x4, 3 => Float32x4, 4 => Uint32x2];
-const SHADOW_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
-    wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4];
+const SHADOW_ATTRIBUTES: [wgpu::VertexAttribute; 6] = wgpu::vertex_attr_array![
+    0 => Float32x4,
+    1 => Float32x4,
+    2 => Float32x4,
+    3 => Float32x4,
+    4 => Float32x4,
+    5 => Float32x4
+];
 
 /// One row of 02 §9.
 #[derive(Clone, Debug)]

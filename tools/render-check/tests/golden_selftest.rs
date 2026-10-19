@@ -358,7 +358,7 @@ fn sigma_to_zero_equals_rect() {
 
 #[test]
 fn wide_shadow_center_value() {
-    // A 200×200 shadow (σ = 4): the center is fully covered; a pixel centered on an edge line
+    // A 200×200 shadow (std_dev 4 → σ = 4/√2): the center is fully covered; a pixel centered on an edge line
     // averages ½(1 + erf(·)) symmetrically about the edge, i.e. 0.5 (closed form).
     let (w, h) = (240, 240);
     let r = Rect::new(20.0, 20.0, 220.5, 220.0);

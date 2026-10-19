@@ -42,17 +42,22 @@ const _: () = assert!(core::mem::offset_of!(QuadInstance, layer_kind) == 56);
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
 pub(crate) struct ShadowInstance {
-    /// Device-space bounds (x0, y0, x1, y1) of the un-blurred shape.
-    pub rect: [f32; 4],
-    /// Premultiplied color.
+    /// a, b, c, d: the linear part of M (local → device).
+    pub xform: [f32; 4],
+    /// xy = M · (rect.x0, rect.y0) in device px; zw = (width, height) local.
+    pub origin_size: [f32; 4],
+    /// exponent, recip_exponent, scale, std_dev_inv (02 §8.2).
+    pub params0: [f32; 4],
+    /// min_edge, w, h, r1.
+    pub params1: [f32; 4],
+    /// Premultiplied (02 §3).
     pub color: [f32; 4],
-    /// (corner radius px, sigma px, 0, 0).
-    pub params: [f32; 4],
+    /// x = 2.5 · std_dev (local units, quad inflation); yzw = 0.
+    pub kernel: [f32; 4],
 }
 
-const _: () = assert!(size_of::<ShadowInstance>() == 48);
-const _: () = assert!(std::mem::offset_of!(ShadowInstance, color) == 16);
-const _: () = assert!(std::mem::offset_of!(ShadowInstance, params) == 32);
+const _: () = assert!(size_of::<ShadowInstance>() == 96);
+const _: () = assert!(std::mem::offset_of!(ShadowInstance, color) == 64);
 
 /// Tier A analytic shape (02 §6.4): rect / rounded rect / circle, fill or uniform stroke, as one
 /// instanced quad with SDF coverage. WGSL: five `vec4<f32>` attributes at locations 0–4.

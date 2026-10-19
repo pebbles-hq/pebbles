@@ -19,32 +19,28 @@ const SHADOW: Color = Color::from_rgba8(0, 0, 0, 0x99);
 const BG: Color = Color::from_rgba8(0xF0, 0xF0, 0xF0, 0xFF);
 
 pub fn cases() -> Vec<Case> {
-    // The landed shader is a 1-D erf-of-SDF approximation; the 02 §8.2 closed form (judged by
-    // the golden model's 2-D Gaussian) lands with R40.
-    let r40 = |c: Case| c.xfail("R40", "shadow shader is not the 02 §8.2 closed form until R40");
+    // The 02 §8.2 closed form is an approximation of the Gaussian; at σ ≥ ½·size and with a
+    // clamped radius its error exceeds the Shadow thresholds (needs a DR on formula or limits).
+    let approx = |c: Case| c.xfail("R40", "closed-form error at extreme σ/size or clamped radius (02 §8.2)");
     let mut v = vec![
-        r40(ops("shadow/blurred_rect_basic", Shadow, P3, W, H, blurred_rect_basic)),
+        ops("shadow/blurred_rect_basic", Shadow, P3, W, H, blurred_rect_basic),
         ops("shadow/blur_min", Shadow, P3, W, H, blur_min),
-        r40(ops("shadow/blur_64", Shadow, P3, 256, 256, blur_64)),
-        r40(ops("shadow/radius_gt_half", Shadow, P3, W, H, radius_gt_half)),
-        r40(ops("shadow/translated_scaled", Shadow, P3, W, H, translated_scaled)),
+        approx(ops("shadow/blur_64", Shadow, P3, 256, 256, blur_64)),
+        approx(ops("shadow/radius_gt_half", Shadow, P3, W, H, radius_gt_half)),
+        ops("shadow/translated_scaled", Shadow, P3, W, H, translated_scaled),
         ops("shadow/rotated", Analytic, P3, W, H, rotated)
             .analytic()
             .probe("rotated_shadow_bounds", rotated_shadow_bounds),
     ];
-    v.extend(
-        with_scale_variants(
-            harness("shadow/elevation_card", Shadow, P3, 200, 200, elevation_card)
-                .bg(BG)
-                .probe("card_interior_white", probe::card_interior_white)
-                .probe("shadow_below_card", probe::shadow_below_card),
-        )
-        .into_iter()
-        .map(r40),
-    );
+    v.extend(with_scale_variants(
+        harness("shadow/elevation_card", Shadow, P3, 200, 200, elevation_card)
+            .bg(BG)
+            .probe("card_interior_white", probe::card_interior_white)
+            .probe("shadow_below_card", probe::shadow_below_card),
+    ));
     v.extend([
-        r40(harness("shadow/overlapping_cards", Shadow, P3, 200, 200, overlapping_cards).bg(BG)),
-        r40(harness("shadow/inside_scroll_clip", Shadow, P3, 200, 200, inside_scroll_clip).bg(BG)),
+        harness("shadow/overlapping_cards", Shadow, P3, 200, 200, overlapping_cards).bg(BG),
+        harness("shadow/inside_scroll_clip", Shadow, P3, 200, 200, inside_scroll_clip).bg(BG),
     ]);
     v
 }

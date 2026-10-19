@@ -591,11 +591,13 @@ impl Walk<'_> {
                     if !self.transform_is_sane(xf) || self.culled(cull::blurred_bounds(*rect, *std_dev, xf)) {
                         continue;
                     }
-                    self.note_shadow(xf);
                     let k = self.alpha();
-                    let range =
-                        shadows::shadow(self.plan, rect, xf, *radius, *std_dev, brush.multiply_alpha(k));
-                    self.push(DrawCmd::Shadows { instances: range, clip: self.clips.current() }, idx);
+                    // R40: the closed form in local space (any affine). Degenerate → R41.
+                    if let Some(range) =
+                        shadows::shadow(self.plan, rect, xf, *radius, *std_dev, brush.multiply_alpha(k))
+                    {
+                        self.push(DrawCmd::Shadows { instances: range, clip: self.clips.current() }, idx);
+                    }
                 }
                 // `Op` is `#[non_exhaustive]`: a variant added upstream is skipped and counted.
                 #[allow(unreachable_patterns)]

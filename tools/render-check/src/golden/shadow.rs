@@ -1,6 +1,11 @@
 //! Box shadows in the golden model (05 §6.7a, V46 step 1): the rounded rect's exact coverage on a
-//! 4× supersampled local grid, convolved with a 2-D Gaussian (σ = `std_dev`, truncated at 4σ;
-//! applied separably), then sampled through the op transform at 4 × 4 subsamples per pixel.
+//! 4× supersampled local grid, convolved with a 2-D Gaussian (truncated at 4σ; applied
+//! separably), then sampled through the op transform at 4 × 4 subsamples per pixel.
+//!
+//! **σ convention.** 02 §8.2 adopts vello_common's closed form as the spec; it evaluates
+//! `erf(d / std_dev)`, i.e. a Gaussian of standard deviation `std_dev / √2` (also the
+//! vello-hybrid behavior apps were tuned on, and the source of 02 §8.2's hand-checked values:
+//! 0.0002 at 2.5·`std_dev`). The model therefore blurs with `σ = std_dev / √2`.
 
 use kurbo::{Affine, Point, Rect, RoundedRect, Shape};
 use peniko::Fill;
@@ -91,7 +96,8 @@ impl Field {
 /// Coverage of a blurred rounded rect under `t` over a `w × h` target.
 pub fn shadow_coverage(t: Affine, rect: Rect, radius: f64, std_dev: f64, w: u32, h: u32) -> Vec<f64> {
     let mut out = vec![0.0; w as usize * h as usize];
-    let Some(field) = Field::new(rect.abs(), radius, std_dev.max(0.0)) else { return out };
+    let std_dev = std_dev.max(0.0) * std::f64::consts::FRAC_1_SQRT_2;
+    let Some(field) = Field::new(rect.abs(), radius, std_dev) else { return out };
     if t.determinant().abs() < 1e-12 {
         return out;
     }

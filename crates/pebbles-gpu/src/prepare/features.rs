@@ -114,11 +114,4 @@ impl Walk<'_> {
             self.fell_back(Feature::GlyphsNonSolidBrush);
         }
     }
-
-    /// Shadow rows (R40/R41 deliver them).
-    pub(super) fn note_shadow(&mut self, xf: Affine) {
-        let c = xf.as_coeffs();
-        let axis_aligned = c[1].abs() < 1e-9 && c[2].abs() < 1e-9;
-        self.fell_back(if axis_aligned { Feature::ShadowAxisAligned } else { Feature::ShadowRotated });
-    }
 }

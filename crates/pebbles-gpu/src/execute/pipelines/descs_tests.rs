@@ -86,7 +86,7 @@ fn table_matches_doc_02_section_9() {
         (PipelineKind::Sdf, TriangleStrip, Some((80, Instance))),
         (PipelineKind::Glyph, TriangleStrip, Some((64, Instance))),
         (PipelineKind::Image, TriangleStrip, Some((64, Instance))),
-        (PipelineKind::Shadow, TriangleStrip, Some((48, Instance))),
+        (PipelineKind::Shadow, TriangleStrip, Some((96, Instance))),
         (PipelineKind::CompositeOver, TriangleStrip, None),
     ];
     let code: Vec<_> = pipeline_descs()
