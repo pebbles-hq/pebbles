@@ -269,6 +269,7 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::EffectColorMatrix,            // L63
     F::EffectMorphology,             // L64
     F::BackdropFilter,               // L62
+    F::ProjectedLayer,               // L65
 ];
 
 #[cfg(test)]

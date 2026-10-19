@@ -15,6 +15,7 @@ pub(crate) struct BindGroupLayouts {
     pub gradient: wgpu::BindGroupLayout,
     pub image_brush: wgpu::BindGroupLayout,
     pub effect: wgpu::BindGroupLayout,
+    pub projected: wgpu::BindGroupLayout,
 }
 
 impl BindGroupLayouts {
@@ -245,7 +246,50 @@ impl BindGroupLayouts {
                 },
             ],
         });
-        Self { globals, texture, glyph, composite, composite_backdrop, blit, gradient, image_brush, effect }
+        // 09 §10.7: the projected layer = filterable texture + sampler + `ProjectedParams` (112 B).
+        let projected = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("pebbles.gpu.layout.projected"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(112),
+                    },
+                    count: None,
+                },
+            ],
+        });
+        Self {
+            globals,
+            texture,
+            glyph,
+            composite,
+            composite_backdrop,
+            blit,
+            gradient,
+            image_brush,
+            effect,
+            projected,
+        }
     }
 }
 

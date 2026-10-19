@@ -156,6 +156,21 @@ pub(crate) struct ImageBrushParams {
 }
 const _: () = assert!(size_of::<ImageBrushParams>() == 48);
 
+/// A projected layer's composite parameters (09 §10.7, `projected.wgsl`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+pub(crate) struct ProjectedParams {
+    /// Homography rows (texture px → device px), xyz used.
+    pub h: [[f32; 4]; 3],
+    /// (content w, h, texture w, h).
+    pub size: [f32; 4],
+    /// Device px of the 4 corners in strip order.
+    pub corners: [[f32; 4]; 2],
+    /// x: 1 = analytic edge AA.
+    pub aa: [f32; 4],
+}
+const _: () = assert!(size_of::<ProjectedParams>() == 112);
+
 /// One effect pass's parameters (09 §10, `effects.wgsl`).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]

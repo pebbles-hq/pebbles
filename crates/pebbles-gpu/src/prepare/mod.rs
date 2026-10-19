@@ -121,6 +121,8 @@ pub(crate) fn prepare<'s>(
         gpu_mask_budget: scratch.gpu_mask_budget.unwrap_or(gpu_masks::DEFAULT_BUDGET_BYTES),
         paint: None,
         layer_floor: 0,
+        outer_override: None,
+        outer_stack: Vec::new(),
     };
     walk.emit(scene.ops(), input.root_transform);
     // 09 §2.7: pushes still open at the end of the frame are auto-closed (emitting the pops
@@ -157,6 +159,10 @@ struct Walk<'a> {
     paint: Option<plan::BrushPaint>,
     /// Layer-stack depth at the current fragment's entry: pops below it are ignored (09 §7.2).
     layer_floor: usize,
+    /// The device transform the ops of the current projected layer use (09 §10.7).
+    outer_override: Option<Affine>,
+    /// (layer depth after the push, the override to restore at its pop).
+    outer_stack: Vec<(usize, Option<Affine>)>,
 }
 
 /// One COLR glyph the renderer must render into the color atlas before the frame (R39).
@@ -343,6 +349,7 @@ impl Walk<'_> {
             plan::CompositePath::Over => self.plan.stats.composites_over += 1,
             plan::CompositePath::Compose => self.plan.stats.composites_compose += 1,
             plan::CompositePath::Backdrop => self.plan.stats.composites_backdrop += 1,
+            plan::CompositePath::Projected => {}
         }
         if path == plan::CompositePath::Backdrop && parent == plan::TargetRef::Root {
             self.plan.root_needs_backdrop = true;
@@ -499,8 +506,92 @@ impl Walk<'_> {
         self.plan.stats.composites_backdrop += 1;
     }
 
+    /// 09 §10.7: an affine projection draws its children inline under `outer × A` (a pure clip
+    /// layer of `bounds`); a perspective one renders them offscreen in texture px at scale ρ and
+    /// composites the texture through `H_dev = outer · H` (`CompositePath::Projected`).
+    fn push_projected_layer(
+        &mut self,
+        projection: &pebbles_render::paint::Projective,
+        bounds: kurbo::Rect,
+        clip: Option<&pebbles_render::paint::display_list::Geometry>,
+        outer: Affine,
+        idx: u32,
+    ) {
+        use pebbles_render::paint::Projective;
+        let prev_fold = self.layers.fold();
+        let prev_override = self.outer_override;
+        if projection.is_affine() {
+            let a = outer * projection.to_affine();
+            let shape = clip.cloned().unwrap_or(pebbles_render::paint::display_list::Geometry::Rect(bounds));
+            self.push_layer_clip(&shape, a, Fill::NonZero);
+            self.layers.push(layer::Frame::Clip { prev_fold });
+            self.outer_stack.push((self.layers.open(), prev_override));
+            self.outer_override = Some(a);
+            return;
+        }
+        let h_dev = projection.then(&Projective::from_affine(outer));
+        let corners =
+            [(bounds.x0, bounds.y0), (bounds.x1, bounds.y0), (bounds.x0, bounds.y1), (bounds.x1, bounds.y1)];
+        let rho = corners
+            .iter()
+            .filter_map(|&(x, y)| h_dev.local_scale(kurbo::Point::new(x, y)))
+            .fold(0.0f64, f64::max)
+            .clamp(0.25, 2.0);
+        let max_side = f64::from(self.limits.max_texture_dim);
+        let rho = rho.min(max_side / bounds.width().max(1.0)).min(max_side / bounds.height().max(1.0));
+        let to_u32 = |v: f64| u32::try_from(num::to_u64_sat(v.ceil())).unwrap_or(u32::MAX).max(1);
+        let tex =
+            ScissorRect { x0: 0, y0: 0, x1: to_u32(bounds.width() * rho), y1: to_u32(bounds.height() * rho) };
+        // The parent's own clip state is the composite clip (no own clip on the parent: the
+        // optional `clip` is local and applies inside the layer, exactly).
+        let comp = self.clips.current();
+        self.clips.push(
+            clip::ClipDecision { kind: clip::ClipKind::Noop, scissor: comp.scissor },
+            &mut self.plan.sdf_clips,
+        );
+        if self.clips.is_culled() || self.layers.offscreen_open() >= self.limits.max_layer_targets as usize {
+            self.layers.push(layer::Frame::Skip);
+            return;
+        }
+        let local_to_tex = Affine::scale(rho) * Affine::translate((-bounds.x0, -bounds.y0));
+        let tex_to_device = Projective::from_affine(local_to_tex.inverse()).then(&h_dev);
+        let parent = match self.layers.current_target() {
+            Some(l) => plan::TargetRef::Layer(l),
+            None => plan::TargetRef::Root,
+        };
+        let id = num::index_u32(self.plan.layers.len());
+        self.plan.layers.push(plan::LayerDesc {
+            bounds: tex,
+            alpha: 1.0,
+            mix: peniko::Mix::Normal,
+            compose: peniko::Compose::SrcOver,
+            path: plan::CompositePath::Projected,
+            parent,
+            effect: None,
+        });
+        self.plan.projections.push((id, tex_to_device.0.map(num::narrow_f32)));
+        self.push(DrawCmd::PushLayer { layer: id }, idx);
+        self.clips.push_fresh(tex);
+        self.layers.push(layer::Frame::Offscreen { layer: id, comp, prev_fold });
+        self.layers.set_fold(1.0);
+        self.outer_stack.push((self.layers.open(), prev_override));
+        self.outer_override = Some(local_to_tex);
+        if let Some(c) = clip {
+            // The local clip applies exactly in texture space, folded into the fresh state (it
+            // ends with the layer).
+            self.push_layer_clip(c, local_to_tex, Fill::NonZero);
+            self.clips.squash();
+        }
+        self.plan.stats.layers_offscreen += 1;
+        self.plan.stats.composites_over += 1;
+    }
+
     /// The matching pop of any layer frame; false for an unbalanced pop.
     pub(super) fn pop_layer(&mut self, idx: u32) -> bool {
+        let depth = self.layers.open();
+        if self.outer_stack.last().is_some_and(|(d, _)| *d == depth) {
+            self.outer_override = self.outer_stack.pop().and_then(|(_, prev)| prev);
+        }
         let Some(frame) = self.layers.pop() else { return false };
         match frame {
             layer::Frame::Skip => {
@@ -720,8 +811,10 @@ impl Walk<'_> {
         self.draw_glyph_segment(run, glyphs.get(start..).unwrap_or_default(), idx);
     }
 
-    fn emit(&mut self, ops: &[Op], outer: Affine) {
+    fn emit(&mut self, ops: &[Op], outer0: Affine) {
         for (i, op) in ops.iter().enumerate() {
+            // A projected layer (09 §10.7) re-bases the ops between its push and pop.
+            let outer = self.outer_override.unwrap_or(outer0);
             self.visit += 1;
             let idx = self.visit;
             self.plan.stats.ops += 1;
@@ -1005,12 +1098,29 @@ impl Walk<'_> {
                     }
                     // 09 §7.2: a fragment balances its own pushes; it can never pop outer ones.
                     let floor = std::mem::replace(&mut self.layer_floor, self.layers.open());
+                    let saved = self.outer_override.take();
                     self.emit(ops, xf);
                     while self.layers.open() > self.layer_floor {
                         self.pop_layer(self.visit);
                         self.plan.stats.autoclosed += 1;
                     }
+                    self.outer_override = saved;
                     self.layer_floor = floor;
+                }
+                Op::PushProjectedLayer { projection, bounds, clip, .. } => {
+                    let finite = projection.0.iter().all(|v| v.is_finite())
+                        && bounds.is_finite()
+                        && clip.as_ref().is_none_or(hygiene::geometry_is_finite);
+                    if !finite {
+                        self.skip_non_finite();
+                        self.push_skip_layer();
+                        continue;
+                    }
+                    if self.layers.is_skipped() || self.clips.is_culled() {
+                        self.push_skip_layer();
+                        continue;
+                    }
+                    self.push_projected_layer(projection, *bounds, clip.as_ref(), outer, idx);
                 }
                 Op::Image { image, transform, .. } => {
                     // R33: validate before any key. Zero-size images are skipped silently.

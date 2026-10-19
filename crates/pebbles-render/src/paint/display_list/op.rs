@@ -213,6 +213,15 @@ pub enum Op {
         blend: BlendMode,
         alpha: f32,
     },
+    /// Render the children (in `bounds`, local px) offscreen and draw them through the
+    /// homography `projection` (09 §10.7, Flutter `Transform` with a perspective `Matrix4`),
+    /// clipped by `clip` (local) when set. Closed by `PopLayer`.
+    #[non_exhaustive]
+    PushProjectedLayer {
+        projection: crate::paint::Projective,
+        bounds: Rect,
+        clip: Option<Geometry>,
+    },
     /// Clip to `clip` (filled with `clip_fill`) and composite the layer with `blend` at
     /// `alpha`.
     #[non_exhaustive]

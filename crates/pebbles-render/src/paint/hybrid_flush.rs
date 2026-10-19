@@ -21,9 +21,7 @@ impl super::Scene {
         // Image ops draw an EXTERNAL texture keyed by its visit index; the shell binds
         // `TextureId(index)` from `image_uploads()` (same walk order) before rendering.
         let mut img_idx: u32 = 0;
-        for op in self.ops() {
-            emit(op, Affine::IDENTITY, out, resources, &mut img_idx);
-        }
+        emit_list(self.ops(), Affine::IDENTITY, out, resources, &mut img_idx);
     }
 
     /// The CPU pixel data for every image op, in the SAME order [`Self::flush`] visits
@@ -89,6 +87,56 @@ fn apply_paint(out: &mut vello_hybrid::Scene, brush: &Brush) -> bool {
         Brush::Image(_) => {
             image_deferred_note();
             false
+        }
+    }
+}
+
+/// Replay an op list under `outer`. Projected layers (09 §10.7) change the transform of the ops
+/// between their push and pop: this backend draws them through the projection's affine
+/// approximation (logged once; wgpu renders the true perspective).
+fn emit_list(
+    ops: &[Op],
+    mut outer: Affine,
+    out: &mut vello_hybrid::Scene,
+    resources: &mut vello_hybrid::Resources,
+    img_idx: &mut u32,
+) {
+    let mut pushed: Vec<Option<Affine>> = Vec::new();
+    for op in ops {
+        match op {
+            Op::PushProjectedLayer { projection, bounds, clip, .. } => {
+                if !projection.is_affine() {
+                    static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                    if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                        pebbles_foundation::log::logf(
+                            pebbles_foundation::log::Level::Warn,
+                            pebbles_foundation::log::Cat::Gpu,
+                            format_args!(
+                                "vello-hybrid: perspective layers drawn with their affine approximation (wgpu, 09 §10.7)"
+                            ),
+                        );
+                    }
+                }
+                let placed = outer * projection.to_affine();
+                out.set_transform(placed);
+                let clip_path = clip
+                    .as_ref()
+                    .map_or_else(|| kurbo::Shape::to_path(bounds, TOL), |c| c.to_path(TOL).into_owned());
+                out.push_layer(Some(&clip_path), None, None, None, None);
+                pushed.push(Some(outer));
+                outer = placed;
+            }
+            Op::PopLayer => {
+                out.pop_layer();
+                if let Some(Some(prev)) = pushed.pop() {
+                    outer = prev;
+                }
+            }
+            Op::PushLayer { .. } | Op::PushEffectLayer { .. } | Op::PushBackdropFilter { .. } => {
+                pushed.push(None);
+                emit(op, outer, out, resources, img_idx);
+            }
+            _ => emit(op, outer, out, resources, img_idx),
         }
     }
 }
@@ -255,10 +303,10 @@ fn emit(
         }
         Op::Fragment { transform, ops } => {
             let placed = outer * transform.unwrap_or(Affine::IDENTITY);
-            for sub in ops.iter() {
-                emit(sub, placed, out, resources, img_idx);
-            }
+            emit_list(ops, placed, out, resources, img_idx);
         }
+        // Handled by `emit_list` (it owns the transform stack).
+        Op::PushProjectedLayer { .. } => {}
     }
 }
 

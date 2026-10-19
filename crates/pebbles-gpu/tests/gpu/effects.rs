@@ -403,3 +403,67 @@ fn nested_backdrops_compound() {
         "the inner filter sees the outer's result"
     );
 }
+
+// ---- L65: projected layers ----
+
+/// A card tilted about the y axis (Flutter `Matrix4.identity()..setEntry(3, 2, p)..rotateY(a)`)
+/// around its center, placed at (16, 16).
+fn tilted() -> pebbles_render::paint::Projective {
+    use pebbles_render::paint::Projective;
+    let (s, c) = 0.6f64.sin_cos();
+    let persp = Projective([c, 0.0, 0.0, 0.0, 1.0, 0.0, -0.004 * s, 0.0, 1.0]);
+    let to_center = Projective::from_affine(Affine::translate((-32.0, -24.0)));
+    let back = Projective::from_affine(Affine::translate((48.0, 40.0)));
+    to_center.then(&persp).then(&back)
+}
+
+fn card(p: &mut Painter<'_>) {
+    p.push_projected_layer(tilted(), Rect::new(0.0, 0.0, 64.0, 48.0), None::<&Rect>);
+    p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &Rect::new(0.0, 0.0, 64.0, 48.0));
+    p.pop_layer();
+}
+
+fn column_height(px: &[u8], w: u32, x: u32) -> u32 {
+    (0..80u32).filter(|&y| pixel(px, w, x, y)[0] < 128).count() as u32
+}
+
+#[test]
+#[ignore = "gpu"]
+fn projected_card_is_trapezoid() {
+    let Some(px) = render("projected_card_is_trapezoid", (96, 80), card) else { return };
+    let cols: Vec<u32> = (0..96).filter(|&x| column_height(&px, 96, x) > 0).collect();
+    let (l, r) = (*cols.first().unwrap(), *cols.last().unwrap());
+    let (hl, hr) = (column_height(&px, 96, l + 2), column_height(&px, 96, r - 2));
+    assert!(hl != hr && hl.abs_diff(hr) >= 4, "near and far edges differ: {hl} vs {hr}");
+    assert!(r - l < 64, "foreshortened width {}", r - l);
+}
+
+#[test]
+#[ignore = "gpu"]
+fn projected_edges_are_antialiased() {
+    let Some(px) = render("projected_edges_are_antialiased", (96, 80), card) else { return };
+    let partial = (0..96u32)
+        .flat_map(|x| (0..80u32).map(move |y| (x, y)))
+        .filter(|&(x, y)| {
+            let v = pixel(&px, 96, x, y)[0];
+            v > 20 && v < 235
+        })
+        .count();
+    assert!(partial > 20, "the slanted edges have partially covered pixels ({partial})");
+}
+
+#[test]
+#[ignore = "gpu"]
+fn affine_projection_draws_inline() {
+    let Some(px) = render("affine_projection_draws_inline", (64, 64), |p| {
+        let h = pebbles_render::paint::Projective::from_affine(Affine::translate((10.0, 10.0)));
+        p.push_projected_layer(h, Rect::new(0.0, 0.0, 20.0, 20.0), None::<&Rect>);
+        p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &Rect::new(0.0, 0.0, 40.0, 40.0));
+        p.pop_layer();
+    }) else {
+        return;
+    };
+    assert_eq!(pixel(&px, 64, 15, 15)[0], 0, "translated content");
+    assert!(is_white(pixel(&px, 64, 35, 35)), "clipped to the translated bounds");
+    assert!(is_white(pixel(&px, 64, 5, 5)));
+}

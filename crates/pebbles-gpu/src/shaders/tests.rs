@@ -132,6 +132,7 @@ fn every_fragment_calls_finish_color() {
             // Composites, the blit and effect passes move already-finished texels.
             if ["fs_over", "fs_compose", "fs_backdrop", "fs_blit"].contains(&ep.name.as_str())
                 || *name == "effects"
+                || *name == "projected"
             {
                 continue;
             }

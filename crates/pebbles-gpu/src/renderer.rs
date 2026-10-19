@@ -52,6 +52,10 @@ pub struct Renderer {
     /// Effect-pass params (09 §10): one dynamic-offset slot per pass of the frame.
     effect_buffer: wgpu::Buffer,
     effect_slots: u64,
+    /// Projected-layer params (09 §10.7), filled in frame order.
+    proj_buffer: wgpu::Buffer,
+    proj_slots: u64,
+    proj_next: u32,
     /// Gradient LUT and params (09 §5.3, L34/L35).
     pub(crate) gradients: super::execute::gradients::GradientResources,
     /// GPU coverage masks: the mask pool and the per-texture group-0 variants (09 §2.9, L09).
@@ -159,6 +163,9 @@ impl Renderer {
             image_brushes: super::execute::image_brushes::ImageBrushResources::new(device),
             effect_buffer: uniform_buffer(device, "pebbles.gpu.buffer.effects", 1),
             effect_slots: 1,
+            proj_buffer: uniform_buffer(device, "pebbles.gpu.buffer.projected", 4),
+            proj_slots: 4,
+            proj_next: 0,
             segments: Vec::new(),
             layer_budget_warned: false,
             arenas: FrameArenas::new(),
@@ -441,6 +448,7 @@ impl Renderer {
         self.gpu_masks.end_frame(self.budgets.gpu_mask_bytes);
         self.gradients.lut.end_frame();
         self.image_brushes.end_frame();
+        self.proj_next = 0;
         stats.layer_pool_bytes = target.targets.pool.bytes();
         self.scratch.plan.release_refs();
         if !nested {
@@ -671,6 +679,46 @@ impl Renderer {
                 Some((PipelineKind::ImageBrush, group, offset))
             }
         }
+    }
+
+    pub(crate) fn projected_buffer(&self) -> &wgpu::Buffer {
+        &self.proj_buffer
+    }
+
+    /// Append one projected layer's params (09 §10.7) and return its dynamic offset.
+    pub(crate) fn write_projected_params(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        h: [f32; 9],
+        content: (u32, u32),
+        tex: (u32, u32),
+        stats: &mut FrameStats,
+    ) -> u32 {
+        let k = u64::from(self.proj_next);
+        if k + 1 > self.proj_slots {
+            // Grow before any projected bind group of the frame binds the buffer (they are
+            // created after this call returns, so earlier ones are recreated below).
+            self.proj_slots = (k + 1).next_power_of_two().max(4);
+            self.proj_buffer = uniform_buffer(device, "pebbles.gpu.buffer.projected", self.proj_slots);
+            stats.buffers_created += 1;
+        }
+        self.proj_next += 1;
+        let (cw, ch) = (content.0 as f32, content.1 as f32);
+        let map = |x: f32, y: f32| {
+            let w = h[6] * x + h[7] * y + h[8];
+            ((h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w, w)
+        };
+        let c = [map(0.0, 0.0), map(cw, 0.0), map(0.0, ch), map(cw, ch)];
+        let params = super::gpu_types::ProjectedParams {
+            h: [[h[0], h[1], h[2], 0.0], [h[3], h[4], h[5], 0.0], [h[6], h[7], h[8], 0.0]],
+            size: [cw, ch, tex.0 as f32, tex.1 as f32],
+            corners: [[c[0].0, c[0].1, c[1].0, c[1].1], [c[2].0, c[2].1, c[3].0, c[3].1]],
+            aa: [f32::from(u8::from(c.iter().all(|p| p.2 > 0.0))), 0.0, 0.0, 0.0],
+        };
+        let stride = super::execute::tier_c::slot_stride(device);
+        queue.write_buffer(&self.proj_buffer, k * stride, bytemuck::bytes_of(&params));
+        u32::try_from(k * stride).unwrap_or(0)
     }
 
     /// Write every effect pass's params (growing the buffer first).

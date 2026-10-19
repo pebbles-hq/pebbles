@@ -301,6 +301,12 @@ impl ClipStack {
         }
     }
 
+    /// Fold the last push into the state below it: the current state stays, and the next pop
+    /// restores what preceded the push before (used to clip a layer's fresh state, 09 §10.7).
+    pub(crate) fn squash(&mut self) {
+        self.stack.pop();
+    }
+
     /// Enter a layer target (09 §3.5): a fresh state whose scissor is the layer bounds.
     pub(crate) fn push_fresh(&mut self, bounds: ScissorRect) {
         self.stack.push(self.current);

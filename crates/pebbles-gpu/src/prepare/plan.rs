@@ -236,6 +236,8 @@ pub(crate) enum TargetRef {
 pub(crate) enum CompositePath {
     Over,
     Compose,
+    /// A perspective layer (09 §10.7): drawn through `FramePlan::projections`' homography.
+    Projected,
     Backdrop,
 }
 
@@ -402,6 +404,8 @@ pub(crate) struct FramePlan {
     pub layers: Vec<LayerDesc>,
     /// Effect-layer step lists (09 §10), indexed by `LayerDesc::effect`.
     pub effects: Vec<Vec<EffectStep>>,
+    /// Projected layers (09 §10.7): (layer, row-major texture-px → device-px homography).
+    pub projections: Vec<(u32, [f32; 9])>,
     /// A `Backdrop` layer composites into the root: the root renders into a copyable texture
     /// and is blitted to the frame target at the end (09 §4.4).
     pub root_needs_backdrop: bool,
@@ -443,6 +447,7 @@ impl FramePlan {
         self.gpu_mask_bytes = 0;
         self.layers.clear();
         self.effects.clear();
+        self.projections.clear();
         self.root_needs_backdrop = false;
         self.cmds.clear();
         self.fallback_features = super::coverage::FeatureSet::default();

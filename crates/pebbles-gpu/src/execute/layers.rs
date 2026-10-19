@@ -61,7 +61,9 @@ pub(crate) fn acquire_layers(
     let mut live: Vec<(usize, usize)> = Vec::new();
     let mut effect_slot = 0u32;
     let mut all_passes: Vec<super::effects::EffectPass> = Vec::new();
-    for path in [CompositePath::Over, CompositePath::Compose, CompositePath::Backdrop] {
+    for path in
+        [CompositePath::Over, CompositePath::Compose, CompositePath::Backdrop, CompositePath::Projected]
+    {
         for d in renderer.scratch.plan.layers.iter().filter(|d| d.path == path) {
             let key = composite_key(d, format);
             renderer.pipelines.ensure(device, &renderer.shaders, &renderer.layouts, key, stats);
@@ -167,6 +169,52 @@ pub(crate) fn acquire_layers(
             }));
             continue;
         }
+        if desc.path == CompositePath::Projected {
+            let proj =
+                renderer.scratch.plan.projections.iter().find(|(l, _)| *l as usize == i).map(|(_, h)| *h);
+            let Some(proj) = proj else {
+                out.push(None);
+                continue;
+            };
+            let k = renderer.write_projected_params(device, queue, proj, (w, h), size, stats);
+            let sampler_key = crate::execute::resources::image_cache::SamplerKey::of(
+                peniko::ImageSampler::new().with_quality(peniko::ImageQuality::Medium),
+            );
+            let sampler = renderer.samplers.get_or_create(device, sampler_key, stats).clone();
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("pebbles.gpu.bind.projected"),
+                layout: &renderer.layouts.projected,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&targets.pool.textures(slot).color.1),
+                    },
+                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: renderer.projected_buffer(),
+                            offset: 0,
+                            size: wgpu::BufferSize::new(112),
+                        }),
+                    },
+                ],
+            });
+            stats.bind_groups_created += 1;
+            live.push((end, slot));
+            out.push(Some(LayerTarget {
+                slot,
+                segment: SegmentTarget {
+                    globals_offset: u32::try_from(globals_offset).unwrap_or(0),
+                    origin: (b.x0, b.y0),
+                    size,
+                },
+                composite: (group, k),
+                backdrop: None,
+                effect_passes: Vec::new(),
+            }));
+            continue;
+        }
         // 09 §10.3: an effect layer composites from its last effect pass's texture.
         let mut effect_passes = Vec::new();
         let csrc = match desc.effect.and_then(|e| renderer.scratch.plan.effects.get(e as usize)) {
@@ -243,6 +291,7 @@ pub(crate) fn composite_key(d: &LayerDesc, format: wgpu::TextureFormat) -> Pipel
         CompositePath::Over => (PipelineKind::CompositeOver, 0),
         CompositePath::Compose => (PipelineKind::CompositeCompose, d.compose as u8),
         CompositePath::Backdrop => (PipelineKind::CompositeBackdrop, 0),
+        CompositePath::Projected => (PipelineKind::Projected, 0),
     };
     PipelineKey { kind, color_format: format, sample_count: 1, blend, variant: 0 }
 }

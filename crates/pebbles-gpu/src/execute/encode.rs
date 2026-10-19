@@ -338,7 +338,12 @@ pub(crate) fn encode(
                 else {
                     continue;
                 };
-                let b = desc.bounds;
+                // A projected layer lands anywhere under its parent clip (09 §10.7).
+                let b = if desc.path == crate::prepare::plan::CompositePath::Projected {
+                    clip.scissor
+                } else {
+                    desc.bounds
+                };
                 let s = clip.scissor;
                 let scissor = ScissorRect {
                     x0: s.x0.max(b.x0),

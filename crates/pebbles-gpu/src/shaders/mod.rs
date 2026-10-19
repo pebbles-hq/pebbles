@@ -25,6 +25,7 @@ pub(crate) const SDF: &str = shader!("sdf.wgsl");
 pub(crate) const COMPOSITE: &str = shader!("composite.wgsl");
 pub(crate) const BLIT: &str = shader!("blit.wgsl");
 pub(crate) const EFFECTS: &str = shader!("effects.wgsl");
+pub(crate) const PROJECTED: &str = shader!("projected.wgsl");
 pub(crate) const GRADIENT: &str = shader!("gradient.wgsl", brush);
 pub(crate) const IMAGE_BRUSH: &str = shader!("image_brush.wgsl", brush);
 
@@ -39,6 +40,7 @@ pub(crate) const ALL: &[(&str, &str)] = &[
     ("composite", COMPOSITE),
     ("blit", BLIT),
     ("effects", EFFECTS),
+    ("projected", PROJECTED),
     ("gradient", GRADIENT),
     ("image_brush", IMAGE_BRUSH),
 ];

@@ -204,6 +204,15 @@ pub(crate) fn pipeline_descs() -> Vec<PipelineDesc> {
             group1: true,
         },
         PipelineDesc {
+            kind: PipelineKind::Projected,
+            wgsl: "projected.wgsl",
+            vs: "vs_main",
+            fs: "fs_main",
+            topology: TriangleStrip,
+            layout: None,
+            group1: true,
+        },
+        PipelineDesc {
             kind: PipelineKind::CompositeOver,
             wgsl: "composite.wgsl",
             vs: "vs_main",

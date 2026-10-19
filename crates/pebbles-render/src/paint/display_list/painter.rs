@@ -152,6 +152,19 @@ impl<'a> Painter<'a> {
         });
     }
 
+    /// Push a projected (perspective) layer (09 §10.7): the children, drawn in local px inside
+    /// `bounds`, are mapped through `projection` (Flutter `Transform` with a `Matrix4`). Renderers
+    /// draw an affine projection inline; a perspective one renders offscreen and is drawn through
+    /// the homography. Close with [`pop_layer`](Self::pop_layer).
+    pub fn push_projected_layer(
+        &mut self,
+        projection: crate::paint::Projective,
+        bounds: Rect,
+        clip: Option<&impl Shape>,
+    ) {
+        self.scene.push(Op::PushProjectedLayer { projection, bounds, clip: clip.map(Geometry::from_shape) });
+    }
+
     /// Pop the most recent layer.
     pub fn pop_layer(&mut self) {
         self.scene.push(Op::PopLayer);
