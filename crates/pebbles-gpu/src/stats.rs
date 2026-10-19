@@ -54,11 +54,15 @@ pub enum Unsupported {
     ClipOverflow,
     /// The gradient LUT had no room even after eviction: drawn as its first stop (09 §5.3).
     LutFull,
+    /// A layer nested deeper than `RendererLimits::max_layer_depth`: flattened (11 §2.5).
+    LayerDepthExceeded,
+    /// More live offscreen layers than `RendererLimits::max_layer_targets`: flattened.
+    LayerPoolExhausted,
 }
 
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
-    pub const COUNT: usize = 24;
+    pub const COUNT: usize = 26;
     /// Every variant, in discriminant order.
     pub const ALL: [Unsupported; Self::COUNT] = [
         Self::NonRectClip,
@@ -85,6 +89,8 @@ impl Unsupported {
         Self::BlurMaskTooLarge,
         Self::ClipOverflow,
         Self::LutFull,
+        Self::LayerDepthExceeded,
+        Self::LayerPoolExhausted,
     ];
 
     /// The variant's 11 §4.2 key, used in logs and stats dumps.
@@ -114,6 +120,8 @@ impl Unsupported {
             Self::BlurMaskTooLarge => "blur-mask-too-large",
             Self::ClipOverflow => "clip-mask-overflow",
             Self::LutFull => "gradient-lut-full",
+            Self::LayerDepthExceeded => "layer-depth-exceeded",
+            Self::LayerPoolExhausted => "layer-pool-exhausted",
         }
     }
 }

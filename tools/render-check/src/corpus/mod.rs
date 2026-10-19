@@ -5,6 +5,7 @@ use pebbles_render::paint::{Painter, kurbo, peniko};
 use crate::case::Case;
 
 pub mod adversarial;
+pub mod brush;
 pub mod clip;
 pub mod frag;
 pub mod frames;
@@ -33,6 +34,7 @@ pub fn all() -> Vec<Case> {
     out.extend(layer::cases());
     out.extend(grad::cases());
     out.extend(frag::cases());
+    out.extend(brush::cases());
     out.extend(widget::cases());
     out.extend(screen::cases());
     out.extend(stress::cases());
@@ -78,6 +80,7 @@ mod tests {
             "layer",
             "grad",
             "frag",
+            "brush",
             "widget",
             "screen",
             "stress",
@@ -112,5 +115,13 @@ mod tests {
         assert!(n("xform/") >= 7, "xform/ {}", n("xform/"));
         assert!(n("clip/") >= 7, "clip/ {}", n("clip/"));
         assert!(!all.iter().any(|c| c.name.starts_with("smoke/")), "the smoke family is removed");
+    }
+
+    #[test]
+    fn blend_and_compose_families_complete() {
+        let all = all();
+        let n = |prefix: &str| all.iter().filter(|c| c.name.starts_with(prefix)).count();
+        assert_eq!(n("layer/blend_") - n("layer/blend_inside_clip") - n("layer/blend_in_sdf_clip"), 16);
+        assert_eq!(n("layer/compose_"), 14);
     }
 }

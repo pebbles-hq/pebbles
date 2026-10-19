@@ -1,6 +1,7 @@
 //! Layer scan, classification, fold and offscreen-emission tests (09 §3, L11/L12/L14).
 
 use super::*;
+use crate::prepare::PrepareScratch;
 use crate::prepare::plan::{DrawCmd, FramePlan, MaskClipId, ScissorRect, SdfClipId};
 use crate::prepare::test_util::{cmd_kinds, prepare_scene, prepare_scene_tessellated};
 use kurbo::{Affine, Circle, Rect};
@@ -416,4 +417,71 @@ fn root_needs_backdrop_only_for_root_parented_backdrop_layers() {
         p.pop_layer();
     });
     assert!(root.root_needs_backdrop);
+}
+
+// ---- S12: layer caps (11 §2.5) ----
+
+#[test]
+fn layer_target_never_exceeds_target_size() {
+    let plan = paths(|p| {
+        push(p, Mix::Normal, 0.5, &r(-500.0, -500.0, 5000.0, 5000.0));
+        fill(p, r(0.0, 0.0, 64.0, 64.0));
+        fill(p, r(10.0, 10.0, 30.0, 30.0));
+        p.pop_layer();
+    });
+    assert_eq!(plan.layers[0].bounds, ScissorRect { x0: 0, y0: 0, x1: 64, y1: 64 });
+}
+
+fn nested_groups(depth: usize) -> FramePlan {
+    paths(|p| {
+        for _ in 0..depth {
+            push(p, Mix::Normal, 0.9, &r(0.0, 0.0, 64.0, 64.0));
+            fill(p, r(0.0, 0.0, 32.0, 32.0));
+        }
+        fill(p, r(16.0, 16.0, 48.0, 48.0));
+        for _ in 0..depth {
+            p.pop_layer();
+        }
+    })
+}
+
+#[test]
+fn nesting_beyond_depth_cap_flattens() {
+    // 40 nested groups: the live-target cap (16) flattens first; with it raised, the depth
+    // cap (32) flattens the rest.
+    let mut s = Scene::new();
+    {
+        let mut p = Painter::new(&mut s);
+        for _ in 0..40 {
+            push(&mut p, Mix::Normal, 0.9, &r(0.0, 0.0, 64.0, 64.0));
+            fill(&mut p, r(0.0, 0.0, 32.0, 32.0));
+        }
+        fill(&mut p, r(16.0, 16.0, 48.0, 48.0));
+        for _ in 0..40 {
+            p.pop_layer();
+        }
+    }
+    let mut limits = crate::test_support::webgl2_limits();
+    limits.max_layer_targets = 64;
+    let mut scratch = PrepareScratch::default();
+    let mut stats = crate::stats::FrameStats::default();
+    let input = crate::prepare::PrepareInput {
+        target_size: (64, 64),
+        root_transform: Affine::IDENTITY,
+        vertex_limit: u32::MAX,
+        scale_factor: 1.0,
+        glyph_hint: None,
+    };
+    crate::prepare::prepare(&s, &input, &limits, &mut scratch, &mut stats);
+    assert_eq!(scratch.plan.layers.len(), limits.max_layer_depth as usize);
+    assert_eq!(stats.unsupported[crate::stats::Unsupported::LayerDepthExceeded as usize], 40 - 32);
+    // The flattened layers' content still draws.
+    assert!(scratch.plan.cmds.len() > 40);
+}
+
+#[test]
+fn pool_exhaustion_flattens_deeper_layers() {
+    let plan = nested_groups(20);
+    assert_eq!(plan.layers.len(), crate::limits::MAX_LAYER_TARGETS as usize);
+    assert_eq!(plan.stats.layers_offscreen, 16);
 }

@@ -286,8 +286,10 @@ fn layer_pool_respects_budget() {
         }
         let target = RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut targets);
         let stats = r.render(target, &s, &FrameParams::new(Color::WHITE)).expect("render");
-        let in_use = depth as u64 * 512 * 512 * 4 * 2;
-        assert_eq!(stats.layers_offscreen as usize, depth);
+        // S12: at most `max_layer_targets` (16) live layers go offscreen; deeper ones flatten.
+        let live = depth.min(16);
+        let in_use = live as u64 * 512 * 512 * 4 * 2;
+        assert_eq!(stats.layers_offscreen as usize, live);
         assert!(stats.layer_pool_bytes <= 16 * MIB, "depth {depth}: {} bytes", stats.layer_pool_bytes);
         assert_eq!(stats.layer_budget_exceeded, u32::from(in_use > 16 * MIB), "depth {depth}");
     }

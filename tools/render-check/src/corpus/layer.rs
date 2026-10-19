@@ -34,6 +34,7 @@ pub fn cases() -> Vec<Case> {
         ops("layer/blend_in_sdf_clip", Layer, P4, 128, 96, blend_in_sdf_clip),
         // 05 §7 `shader_mask_destin` (09 §8.0 `compose_destin_mask`): ShaderMask = a promoted
         // layer holding the child and a `(Normal, DestIn)` gradient layer.
+        harness("layer/decoration_blend", Layer, P4, 160, 120, decoration_blend),
         // 05 §7: `Painter::append` of one sub-scene (layer + fills) at two transforms (L50).
         ops("layer/fragment_append", Layer, P4, 128, 96, |p| {
             let f = super::frag::tile();
@@ -305,4 +306,22 @@ fn shader_mask_destin(h: &mut Harness) {
     let fade = pebbles_render::Gradient::horizontal([UiColor::WHITE, UiColor::from_rgba8(255, 255, 255, 0)]);
     let child = container().width(200.).height(100.).color(UiColor::from_rgba8(r, g, b, a));
     h.mount_widget(shader_mask(fade, child));
+}
+
+/// 05 §7: `BoxDecoration::new().blend(Multiply)` (a colored box) over an image.
+fn decoration_blend(h: &mut Harness) {
+    use pebbles_render::{BlendMode, BoxDecoration, image_from_rgba8};
+    let px: Vec<u8> = (0..64u32 * 64)
+        .flat_map(|i| {
+            let (x, y) = (i % 64, i / 64);
+            [(x * 4) as u8, (y * 4) as u8, 200, 255]
+        })
+        .collect();
+    let image = BoxDecoration::new().image(image_from_rgba8(64, 64, px));
+    let tint =
+        BoxDecoration::new().color(UiColor::from_rgba8(0xF5, 0x9E, 0x0B, 0xFF)).blend(BlendMode::Multiply);
+    h.mount_widget(stack(vec![
+        positioned(container().width(140.).height(100.).decoration(image)).left(10.).top(10.).into_widget(),
+        positioned(container().width(80.).height(60.).decoration(tint)).left(40.).top(30.).into_widget(),
+    ]));
 }

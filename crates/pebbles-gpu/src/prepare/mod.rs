@@ -710,7 +710,21 @@ impl Walk<'_> {
                         self.stats.record(Unsupported::NonFinite);
                     }
                     let info = layer::scan_one(ops, i);
-                    match layer::classify_layer(info, *blend, a) {
+                    let mut plan_kind = layer::classify_layer(info, *blend, a);
+                    // S12 (11 §2.5): past the nesting or live-target caps a layer flattens to a
+                    // pure clip (its content still draws; opacity and blend are ignored).
+                    if !matches!(plan_kind, layer::LayerPlan::Skip | layer::LayerPlan::PureClip) {
+                        if self.layers.open() >= self.limits.max_layer_depth as usize {
+                            self.stats.record(Unsupported::LayerDepthExceeded);
+                            plan_kind = layer::LayerPlan::PureClip;
+                        } else if matches!(plan_kind, layer::LayerPlan::Offscreen { .. })
+                            && self.layers.offscreen_open() >= self.limits.max_layer_targets as usize
+                        {
+                            self.stats.record(Unsupported::LayerPoolExhausted);
+                            plan_kind = layer::LayerPlan::PureClip;
+                        }
+                    }
+                    match plan_kind {
                         layer::LayerPlan::Skip => {
                             self.plan.stats.layers_skipped += 1;
                             self.push_skip_layer();

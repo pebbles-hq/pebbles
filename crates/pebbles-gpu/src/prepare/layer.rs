@@ -214,6 +214,11 @@ impl LayerStack {
         self.frames.len()
     }
 
+    /// Open offscreen layer targets (11 §2.5 `max_layer_targets`).
+    pub(crate) fn offscreen_open(&self) -> usize {
+        self.frames.iter().filter(|f| matches!(f, Frame::Offscreen { .. })).count()
+    }
+
     /// The innermost open offscreen layer (the current target), or `None` for the root.
     pub(crate) fn current_target(&self) -> Option<u32> {
         self.frames.iter().rev().find_map(|f| match f {
