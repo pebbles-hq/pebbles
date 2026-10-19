@@ -6,6 +6,9 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — exact clips (wgpu renderer)
+wgpu renderer: rounded-rect, circle, ellipse and path clips (nested) now clip exactly.
+
 ### Fixed — exact group opacity (wgpu renderer)
 wgpu renderer: Opacity is exact (no double blending of overlapping children); Opacity(0) draws nothing.
 

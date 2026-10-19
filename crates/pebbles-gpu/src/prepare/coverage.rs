@@ -247,6 +247,9 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::ClipCircle,         // L04 (SDF clip)
     F::LayerAlpha,         // L12 (exact fold) + L14 (offscreen composite)
     F::ClipGpuMask,        // L09 (GPU coverage masks)
+    F::ClipRectRotated,    // L08/L09 (coverage masks), L01
+    F::ClipPath,           // L08/L09, L01
+    F::ClipEvenOdd,        // L08/L09, L01
 ];
 
 #[cfg(test)]

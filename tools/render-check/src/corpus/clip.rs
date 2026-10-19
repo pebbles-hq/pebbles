@@ -40,6 +40,53 @@ pub fn cases() -> Vec<Case> {
             clipped(p, &kurbo::Ellipse::new((64., 64.), (56., 32.), 0.0))
         }),
         ops("clip/nested_paths_3", Geometry, P1, 128, 128, nested_paths_3),
+        // L01 (§7 / 09 §8.0): the remaining clip shapes, rules and nestings.
+        ops("clip/rect_rotated", Geometry, P1, 128, 128, |p| {
+            let t = Affine::rotate_about(0.26, kurbo::Point::new(64., 64.));
+            p.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &Rect::new(24., 24., 104., 104.));
+            stripes(p);
+            p.pop_layer();
+        }),
+        harness("clip/oval_widget", Geometry, P1, 240, 160, oval_widget),
+        ops("clip/path_star_evenodd", Geometry, P1, 128, 128, |p| {
+            p.push_layer(Fill::EvenOdd, Mix::Normal, 1.0, Affine::IDENTITY, &star(64.0, 64.0, 56.0));
+            stripes(p);
+            p.pop_layer();
+        }),
+        ops("clip/donut_evenodd", Geometry, P1, 128, 128, |p| {
+            let mut donut = kurbo::Circle::new((64., 64.), 50.).to_path(0.01);
+            donut.extend(kurbo::Circle::new((64., 64.), 25.).to_path(0.01));
+            p.push_layer(Fill::EvenOdd, Mix::Normal, 1.0, Affine::IDENTITY, &donut);
+            stripes(p);
+            p.pop_layer();
+        }),
+        ops("clip/nested_depth8", Geometry, P1, 128, 128, nested_depth8),
+        ops("clip/rrect_in_rrect", Geometry, P1, 128, 128, |p| {
+            p.push_layer(
+                Fill::NonZero,
+                Mix::Normal,
+                1.0,
+                Affine::IDENTITY,
+                &RoundedRect::new(20., 20., 108., 108., 16.),
+            );
+            clipped(p, &RoundedRect::new(32., 32., 120., 120., 8.));
+            p.pop_layer();
+        }),
+        // 09 §2.4: two draws overlapping on an SDF edge conflate their coverage (documented).
+        ops("clip/rrect_overlap_edge", Geometry, P1, 128, 128, |p| {
+            p.push_layer(
+                Fill::NonZero,
+                Mix::Normal,
+                1.0,
+                Affine::IDENTITY,
+                &RoundedRect::new(8., 8., 120., 120., 20.),
+            );
+            p.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &Rect::new(0., 0., 128., 128.));
+            p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &Rect::new(0., 0., 128., 128.));
+            p.pop_layer();
+        })
+        .pct_over(1.5),
+        harness("clip/clip_inside_opacity", Category::Layer, P1, 240, 200, clip_inside_opacity),
         // L09 GPU coverage masks (row 9): a clip too large for a CPU mask, and a volatile one.
         // Their edges are 4× MSAA coverage (§2.9, like Tier C), judged as Mesh (05 §8).
         ops("clip/huge_rotated", Category::Mesh, P1, 640, 640, huge_rotated),
@@ -151,4 +198,43 @@ fn huge_rotated(p: &mut Painter<'_>) {
     p.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &Rect::new(40., 40., 600., 600.));
     stripes_xf(p, Affine::scale(5.0));
     p.pop_layer();
+}
+
+/// 05 §7: `clip_oval(container().width(160.).height(100.).color(#3B82F6))`.
+fn oval_widget(h: &mut Harness) {
+    use pebbles_widgets::{clip_oval, container};
+    h.mount_widget(clip_oval(
+        container()
+            .width(160.)
+            .height(100.)
+            .color(pebbles_foundation::Color::from_rgba8(0x3B, 0x82, 0xF6, 0xFF)),
+    ));
+}
+
+/// 05 §7: 8 nested clips alternating rect / rrect(8) / rect rotated 10°, each inset 6 px.
+fn nested_depth8(p: &mut Painter<'_>) {
+    for d in 0..8 {
+        let i = 6.0 * f64::from(d);
+        let r = Rect::new(4. + i, 4. + i, 124. - i * 0.5, 124. - i * 0.5);
+        match d % 3 {
+            0 => p.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &r),
+            1 => p.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &r.to_rounded_rect(8.)),
+            _ => {
+                let t = Affine::rotate_about(10f64.to_radians(), r.center());
+                p.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &r);
+            }
+        }
+    }
+    stripes(p);
+    for _ in 0..8 {
+        p.pop_layer();
+    }
+}
+
+/// 05 §7: an opacity-0.5 layer containing a clipped scroll list.
+fn clip_inside_opacity(h: &mut Harness) {
+    use pebbles_widgets::{container, list_tile, list_view, opacity};
+    let rows: Vec<_> = (0..40).map(|i| list_tile(format!("Row {i}")).into_widget()).collect();
+    h.mount_widget(opacity(0.5, container().height(200.).child(list_view(rows))));
+    h.scroll(Offset::new(100., 100.), 37.);
 }

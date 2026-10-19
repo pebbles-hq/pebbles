@@ -162,6 +162,12 @@ pub fn adversarial_bg_outside_valid(img: &Rgba8, _scale: f64) -> Result<(), Stri
     Ok(())
 }
 
+/// `adversarial/clip_depth_300`: the center pixel is the fill color (`#2563EB`) ±2.
+pub fn center_is_ink(img: &Rgba8, _scale: f64) -> Result<(), String> {
+    let c = px(img, img.width / 2, img.height / 2);
+    if near(c, [37, 99, 235, 255], 2) { Ok(()) } else { Err(format!("center pixel {c:?} is not the fill")) }
+}
+
 /// `brush/image_fill_*`: a 16×16 `noise_rgba8(.., 7)` image under `Affine::scale(2.)` fills
 /// logical (8,8)–(120,120); each texel's center inside the rect matches the image ±4.
 pub fn image_fill_texels(img: &Rgba8, scale: f64) -> Result<(), String> {

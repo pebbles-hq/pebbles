@@ -28,6 +28,9 @@ pub fn cases() -> Vec<Case> {
             .analytic()
             .probe("all_opaque", probe::all_opaque),
         a(ops("adversarial/clip_empty_intersection", Analytic, Robustness, W, H, clip_empty_intersection)),
+        // 09 §8.0 (L01): 300 nested rotated-rect clips, then a fill.
+        a(ops("adversarial/clip_depth_300", Analytic, Robustness, W, H, clip_depth_300))
+            .probe("center_is_ink", probe::center_is_ink),
     ]
 }
 
@@ -105,6 +108,17 @@ fn clip_empty_intersection(p: &mut Painter<'_>) {
     let red = Color::from_rgb8(220, 38, 38);
     p.fill(Fill::NonZero, Affine::IDENTITY, red, None, &Rect::new(0.0, 0.0, 256.0, 256.0));
     for _ in 0..8 {
+        p.pop_layer();
+    }
+}
+
+fn clip_depth_300(p: &mut Painter<'_>) {
+    let rot = Affine::rotate_about(0.3, (128.0, 128.0));
+    for _ in 0..300 {
+        p.push_layer(Fill::NonZero, Mix::Normal, 1.0, rot, &Rect::new(64.0, 64.0, 192.0, 192.0));
+    }
+    p.fill(Fill::NonZero, Affine::IDENTITY, INK, None, &Rect::new(0.0, 0.0, 256.0, 256.0));
+    for _ in 0..300 {
         p.pop_layer();
     }
 }

@@ -75,8 +75,9 @@ impl Walk<'_> {
         kind: &super::clip::ClipKind,
     ) {
         use super::clip::{ClipClass, ClipKind, clip_class};
-        // An SDF clip (09 §2.4, L04) is exact: rounded rects, circles, fractional rects.
-        if matches!(kind, ClipKind::Sdf(_) | ClipKind::Noop | ClipKind::Scissor | ClipKind::Cull) {
+        // Every clip route is exact (scissor, SDF L04, Tier B mask L08, GPU mask L09) except the
+        // row-10 overflow, which clips to the bounding box.
+        if !matches!(kind, ClipKind::Overflow) {
             return;
         }
         match (clip_class(clip, xf), clip) {
@@ -88,12 +89,9 @@ impl Walk<'_> {
             (_, Geometry::Circle(_)) => self.fell_back(Feature::ClipCircle),
             _ => {
                 self.fell_back(Feature::ClipPath);
-                // The GPU mask route (L09) is exact; only its overflow (row 10) falls back.
-                if matches!(kind, ClipKind::Overflow) {
-                    self.fell_back(Feature::ClipGpuMask);
-                }
             }
         }
+        self.fell_back(Feature::ClipGpuMask);
         if fill == peniko::Fill::EvenOdd && !matches!(clip, Geometry::Rect(_)) {
             self.fell_back(Feature::ClipEvenOdd);
         }

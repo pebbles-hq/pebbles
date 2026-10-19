@@ -116,6 +116,9 @@ pub struct Case {
     pub in_refs: bool,
     /// How a stability case (`frames > 1`, or `LastVsFresh`) is judged.
     pub stability: Stability,
+    /// A documented per-case `max_pct_over` (09 §8.0 allows exactly one: the SDF clip
+    /// conflation of `clip/rrect_overlap_edge`); `None` = the category's.
+    pub pct_over_override: Option<f64>,
 }
 
 /// How a stability case is judged (§7.2 frames/).
@@ -149,6 +152,7 @@ fn base(name: &str, category: Category, slice: Slice, w: u32, h: u32, build: Bui
         frames: 1,
         in_refs: true,
         stability: Stability::EveryFrame,
+        pct_over_override: None,
     }
 }
 
@@ -188,6 +192,12 @@ impl Case {
     }
 
     /// Probes only judge; never committed.
+    /// Override the category's `max_pct_over` (documented exceptions only).
+    pub fn pct_over(mut self, max: f64) -> Self {
+        self.pct_over_override = Some(max);
+        self
+    }
+
     pub fn analytic(mut self) -> Self {
         self.reference = Reference::Analytic;
         self.in_refs = false;

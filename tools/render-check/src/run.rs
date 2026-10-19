@@ -137,7 +137,12 @@ impl Runner {
             device_size: case.device_size(),
             scale: case.scale,
             metrics: None,
-            limits: limits(case.category, self.opts.tolerance),
+            limits: limits(case.category, self.opts.tolerance).map(|mut l| {
+                if let Some(p) = case.pct_over_override {
+                    l.max_pct_over = p;
+                }
+                l
+            }),
             probes: Vec::new(),
             fallbacks: Vec::new(),
             smoke: None,
