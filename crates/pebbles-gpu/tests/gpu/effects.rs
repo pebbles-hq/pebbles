@@ -289,3 +289,117 @@ fn blur_then_matrix_differs_from_matrix_then_blur() {
     };
     assert!(a != c, "effect order matters");
 }
+
+// ---- L62: backdrop filters ----
+
+/// 4-px black/white vertical stripes over the canvas.
+fn stripes(p: &mut Painter<'_>) {
+    for i in 0..16 {
+        let x = f64::from(i) * 4.0;
+        if i % 2 == 0 {
+            p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &Rect::new(x, 0.0, x + 4.0, 64.0));
+        }
+    }
+}
+
+/// The largest |Δ| between horizontally adjacent pixels along row `y` over `x0..x1`.
+fn max_step(px: &[u8], y: u32, x0: u32, x1: u32) -> i32 {
+    (x0..x1 - 1)
+        .map(|x| (i32::from(pixel(px, 64, x, y)[0]) - i32::from(pixel(px, 64, x + 1, y)[0])).abs())
+        .max()
+        .unwrap()
+}
+
+#[test]
+#[ignore = "gpu"]
+fn frosted_panel_blurs_behind_only() {
+    let Some(px) = render("frosted_panel_blurs_behind_only", (64, 64), |p| {
+        stripes(p);
+        p.push_backdrop_filter(
+            blur(3.0, BlurEdge::Clamp),
+            &Rect::new(16.0, 16.0, 48.0, 48.0),
+            Affine::IDENTITY,
+            peniko::Mix::Normal,
+            1.0,
+        );
+        p.pop_layer();
+    }) else {
+        return;
+    };
+    assert!(max_step(&px, 32, 20, 44) < 60, "inside the panel the stripes are blurred");
+    assert_eq!(max_step(&px, 4, 0, 64), 255, "outside the panel the stripes stay sharp");
+    assert_eq!(max_step(&px, 32, 0, 15), 255, "left of the panel, same row: sharp");
+}
+
+#[test]
+#[ignore = "gpu"]
+fn children_draw_sharp_over_the_backdrop() {
+    let Some(px) = render("children_draw_sharp_over_the_backdrop", (64, 64), |p| {
+        stripes(p);
+        p.push_backdrop_filter(
+            blur(3.0, BlurEdge::Clamp),
+            &Rect::new(16.0, 16.0, 48.0, 48.0),
+            Affine::IDENTITY,
+            peniko::Mix::Normal,
+            1.0,
+        );
+        p.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::from_rgba8(255, 0, 0, 255),
+            None,
+            &Rect::new(24.0, 24.0, 40.0, 40.0),
+        );
+        p.fill(
+            Fill::NonZero,
+            Affine::IDENTITY,
+            Color::from_rgba8(0, 0, 255, 255),
+            None,
+            &Rect::new(0.0, 0.0, 64.0, 8.0),
+        );
+        p.pop_layer();
+    }) else {
+        return;
+    };
+    assert_eq!(pixel(&px, 64, 32, 32), [255, 0, 0, 255], "the child draws sharp on top");
+    assert_eq!(pixel(&px, 64, 23, 32)[2], pixel(&px, 64, 23, 32)[0], "next to it, the blurred gray backdrop");
+    assert_eq!(
+        pixel(&px, 64, 32, 4)[2],
+        0,
+        "the children are clipped to the panel (no blue band at the top)"
+    );
+}
+
+#[test]
+#[ignore = "gpu"]
+fn nested_backdrops_compound() {
+    let one = |p: &mut Painter<'_>| {
+        p.push_backdrop_filter(
+            blur(1.5, BlurEdge::Clamp),
+            &Rect::new(8.0, 8.0, 56.0, 56.0),
+            Affine::IDENTITY,
+            peniko::Mix::Normal,
+            1.0,
+        );
+    };
+    let Some(single) = render("nested_backdrops_compound/one", (64, 64), |p| {
+        stripes(p);
+        one(p);
+        p.pop_layer();
+    }) else {
+        return;
+    };
+    let Some(double) = render("nested_backdrops_compound/two", (64, 64), |p| {
+        stripes(p);
+        one(p);
+        one(p);
+        p.pop_layer();
+        p.pop_layer();
+    }) else {
+        return;
+    };
+    assert!(
+        max_step(&double, 32, 16, 48) < max_step(&single, 32, 16, 48),
+        "the inner filter sees the outer's result"
+    );
+}

@@ -72,11 +72,6 @@ impl Geometry {
     }
 }
 
-/// One recorded paint verb.
-///
-/// **Renderer contract, not app API.** Produced only by [`Painter`](super::Painter);
-/// consumed by `pebbles-gpu` and (until Phase 7) the hybrid flush. New variants and new
-/// fields are added in minor releases — always match with `..` and a wildcard arm.
 /// How the renderer may rasterize a path fill/stroke (02 §5.2, R16).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 #[non_exhaustive]
@@ -170,6 +165,11 @@ impl LayerEffect {
     }
 }
 
+/// One recorded paint verb.
+///
+/// **Renderer contract, not app API.** Produced only by [`Painter`](super::Painter);
+/// consumed by `pebbles-gpu` and (until Phase 7) the hybrid flush. New variants and new
+/// fields are added in minor releases — always match with `..` and a wildcard arm.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Op {
@@ -201,6 +201,17 @@ pub enum Op {
         effect: LayerEffect,
         clip: Option<Geometry>,
         transform: Affine,
+    },
+    /// Filter the content already drawn under `clip` (local, under `transform`) with `effect`
+    /// and draw it back with `blend` / `alpha`; the children then draw normally on top (09
+    /// §10.4, Flutter `BackdropFilter`). Closed by `PopLayer`.
+    #[non_exhaustive]
+    PushBackdropFilter {
+        effect: LayerEffect,
+        clip: Geometry,
+        transform: Affine,
+        blend: BlendMode,
+        alpha: f32,
     },
     /// Clip to `clip` (filled with `clip_fill`) and composite the layer with `blend` at
     /// `alpha`.

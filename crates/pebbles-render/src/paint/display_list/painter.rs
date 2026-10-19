@@ -128,6 +128,30 @@ impl<'a> Painter<'a> {
         self.scene.push(Op::PushEffectLayer { effect, clip: clip.map(Geometry::from_shape), transform });
     }
 
+    /// Push a backdrop filter (09 §10.4, Flutter `BackdropFilter`): what is already drawn under
+    /// `clip` is filtered by `effect` and drawn back with `blend` at `alpha`; the children then
+    /// draw on top, clipped. Close with [`pop_layer`](Self::pop_layer).
+    pub fn push_backdrop_filter(
+        &mut self,
+        effect: LayerEffect,
+        clip: &impl Shape,
+        transform: Affine,
+        blend: impl Into<peniko::BlendMode>,
+        alpha: f32,
+    ) {
+        let effect = match effect {
+            LayerEffect::Chain(es) => LayerEffect::chain(es.iter().cloned()),
+            e => e,
+        };
+        self.scene.push(Op::PushBackdropFilter {
+            effect,
+            clip: Geometry::from_shape(clip),
+            transform,
+            blend: blend.into(),
+            alpha,
+        });
+    }
+
     /// Pop the most recent layer.
     pub fn pop_layer(&mut self) {
         self.scene.push(Op::PopLayer);

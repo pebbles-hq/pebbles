@@ -12,7 +12,6 @@ use crate::prepare::test_util::prepare_scene;
 const NOT_PRODUCIBLE: &[(F, &str)] = &[
     (F::Vertices, "no Op::Vertices yet (R63)"),
     (F::SpriteAtlas, "no Op::Atlas yet (R64)"),
-    (F::BackdropFilter, "no Op::PushBackdropFilter yet (L62)"),
     (F::ProjectedLayer, "no Op::PushProjectedLayer yet (L65)"),
     (F::ShaderBrush, "no Op::ShaderFill yet (L43)"),
     (F::ClipEllipse, "Geometry has no Ellipse variant: an oval clip arrives as a Path (OC-24, L01)"),
@@ -262,6 +261,13 @@ fn fixture(f: F) -> Option<Scene> {
             };
             p.push_effect_layer(e, None::<&Rect>, id);
             p.fill(Fill::NonZero, id, RED, None, &R);
+            p.pop_layer();
+        }
+        F::BackdropFilter => {
+            use pebbles_render::paint::display_list::{BlurEdge, LayerEffect};
+            p.fill(Fill::NonZero, id, RED, None, &R);
+            let e = LayerEffect::Blur { sigma_x: 2.0, sigma_y: 2.0, edge: BlurEdge::Clamp };
+            p.push_backdrop_filter(e, &R, id, Mix::Normal, 1.0);
             p.pop_layer();
         }
         F::ClipGpuMask => layer(p, Mix::Normal, 1.0, id, &Circle::new((32.0, 32.0), 200.0).to_path(0.1)),

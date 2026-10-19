@@ -429,6 +429,76 @@ impl Walk<'_> {
         self.plan.stats.composites_over += 1;
     }
 
+    /// 09 §10.4 push of a backdrop filter: a layer whose content is the parent's pixels under
+    /// the clip (grown by the effect's reach), filtered with Clamp edges, composited back with
+    /// `blend`/`alpha` through the backdrop path; then the children draw inline under the clip.
+    #[allow(clippy::too_many_arguments)]
+    fn push_backdrop_filter(
+        &mut self,
+        effect: &pebbles_render::paint::display_list::LayerEffect,
+        clip: &pebbles_render::paint::display_list::Geometry,
+        xf: Affine,
+        blend: peniko::BlendMode,
+        alpha: f32,
+        idx: u32,
+    ) {
+        let prev_fold = self.layers.fold();
+        let parent_scissor = self.clips.current().scissor;
+        self.push_layer_clip(clip, xf, Fill::NonZero);
+        self.layers.push(layer::Frame::Clip { prev_fold });
+        let comp = self.clips.current();
+        let (a, _) = hygiene::sanitize_layer_alpha(alpha);
+        if self.clips.is_culled()
+            || a <= 0.0
+            || self.layers.offscreen_open() >= self.limits.max_layer_targets as usize
+        {
+            return;
+        }
+        let s = xf.spectral_norm();
+        let (rx, ry) = effect.reach();
+        let grow = |v: u32, d: f64, up: bool| {
+            let d = u32::try_from(num::to_u64_sat((d * s).ceil())).unwrap_or(u32::MAX);
+            if up { v.saturating_add(d) } else { v.saturating_sub(d) }
+        };
+        let (g, p) = (comp.scissor, parent_scissor);
+        let bounds = ScissorRect {
+            x0: grow(g.x0, rx, false).max(p.x0),
+            y0: grow(g.y0, ry, false).max(p.y0),
+            x1: grow(g.x1, rx, true).min(p.x1),
+            y1: grow(g.y1, ry, true).min(p.y1),
+        };
+        let mut steps = Vec::new();
+        effects::device_steps(effect, s, &mut steps);
+        for st in &mut steps {
+            if let plan::EffectStep::Blur { clamp, .. } = st {
+                *clamp = true;
+            }
+        }
+        let parent = match self.layers.current_target() {
+            Some(l) => plan::TargetRef::Layer(l),
+            None => plan::TargetRef::Root,
+        };
+        if parent == plan::TargetRef::Root {
+            self.plan.root_needs_backdrop = true;
+        }
+        let id = num::index_u32(self.plan.layers.len());
+        self.plan.effects.push(steps);
+        self.plan.layers.push(plan::LayerDesc {
+            bounds,
+            alpha: a,
+            mix: blend.mix,
+            compose: blend.compose,
+            path: plan::CompositePath::Backdrop,
+            parent,
+            effect: Some(num::index_u32(self.plan.effects.len() - 1)),
+        });
+        self.push(DrawCmd::PushLayer { layer: id }, idx);
+        self.push(DrawCmd::PopLayer { layer: id }, idx);
+        self.push(DrawCmd::Composite { layer: id, clip: comp }, idx);
+        self.plan.stats.layers_offscreen += 1;
+        self.plan.stats.composites_backdrop += 1;
+    }
+
     /// The matching pop of any layer frame; false for an unbalanced pop.
     pub(super) fn pop_layer(&mut self, idx: u32) -> bool {
         let Some(frame) = self.layers.pop() else { return false };
@@ -820,6 +890,19 @@ impl Walk<'_> {
                             );
                         }
                     }
+                }
+                Op::PushBackdropFilter { effect, clip, transform, blend, alpha, .. } => {
+                    let xf = outer * *transform;
+                    if !xf.is_finite() || !hygiene::geometry_is_finite(clip) {
+                        self.skip_non_finite();
+                        self.push_skip_layer();
+                        continue;
+                    }
+                    if self.layers.is_skipped() || self.clips.is_culled() {
+                        self.push_skip_layer();
+                        continue;
+                    }
+                    self.push_backdrop_filter(effect, clip, xf, *blend, *alpha, idx);
                 }
                 Op::PushEffectLayer { effect, clip, transform, .. } => {
                     let xf = outer * *transform;
