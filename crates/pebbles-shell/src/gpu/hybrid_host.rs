@@ -76,6 +76,12 @@ impl RenderContext {
         Some(new_renderer(&dh.device, &dh.queue))
     }
 
+    /// Soak CSV (11 §2.9): `(allocated, reserved)` driver bytes of device `device`.
+    pub(crate) fn allocator_report(&self, device: usize) -> Option<(u64, u64)> {
+        let r = self.inner.devices.get(device)?.device.generate_allocator_report()?;
+        Some((r.total_allocated_bytes, r.total_reserved_bytes))
+    }
+
     /// Fatal uncaptured errors landed since this context was built (08 §6.5 step 1).
     pub(crate) fn needs_reset(&self) -> bool {
         GPU_ERRORS.load(std::sync::atomic::Ordering::Relaxed) != self.errors_seen
@@ -119,6 +125,11 @@ impl RenderSurface<'_> {
 }
 
 /// The hybrid backend has no renderer counters (06 §3.5 seam; unconditional at X02).
+/// Soak CSV: the hybrid renderer has no census.
+pub(crate) fn census_values(_renderer: &Renderer) -> Option<[u64; 23]> {
+    None
+}
+
 pub(crate) fn frame_stats_line(_renderer: &Renderer) -> Option<String> {
     None
 }

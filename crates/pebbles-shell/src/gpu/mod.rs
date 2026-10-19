@@ -17,13 +17,15 @@ compile_error!("pebbles-shell: enable a GPU host — `vello-hybrid` (default) or
 #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
 mod wgpu_host;
 #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
-pub(crate) use wgpu_host::{RenderContext, RenderSurface, Renderer, frame_stats_line, present_frame};
+pub(crate) use wgpu_host::{
+    RenderContext, RenderSurface, Renderer, census_values, frame_stats_line, present_frame,
+};
 
 #[cfg(feature = "vello-hybrid")]
 mod hybrid_host;
 #[cfg(feature = "vello-hybrid")]
 pub(crate) use hybrid_host::{
-    RenderContext, RenderSurface, Renderer, frame_stats_line, new_renderer, present_frame,
+    RenderContext, RenderSurface, Renderer, census_values, frame_stats_line, new_renderer, present_frame,
 };
 
 pub(crate) use pebbles_render::Scene;

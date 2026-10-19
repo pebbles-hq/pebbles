@@ -382,6 +382,9 @@ impl Runner {
         // bounds are current). The `active` borrow has ended above. Collected ONLY
         // when an assistive-technology adapter is live — the full-tree walk is
         // wasted work otherwise.
+        // 11 §2.9: the soak sampler counts presented frames (the `active` borrow has ended).
+        self.soak_frame();
+
         if self.a11y.is_some() {
             let nodes = self.ui.render_tree().semantics_tree();
             let focus = pebbles_core::focus::focused_element_ffi(self.ui.window_id());

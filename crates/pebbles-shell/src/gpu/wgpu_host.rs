@@ -58,6 +58,13 @@ impl RenderContext {
             .collect()
     }
 
+    /// Soak CSV (11 §2.9): `(allocated, reserved)` driver bytes of device `device`.
+    pub(crate) fn allocator_report(&self, device: usize) -> Option<(u64, u64)> {
+        let (_, gpu) = self.inner.devices().nth(device)?;
+        let r = gpu.device().generate_allocator_report()?;
+        Some((r.total_allocated_bytes, r.total_reserved_bytes))
+    }
+
     /// Soak tool (`PEBBLES_SYNTH_GPU_LOSS`): a no-op until P10 destroys the devices.
     pub(crate) fn inject_synthetic_loss(&self) {}
 }
@@ -79,6 +86,17 @@ impl RenderSurface<'_> {
 pub(crate) type Renderer = GpuRenderer;
 
 /// The `[pebbles gpu]` stats line (10 §9.1 `Display`), for `PEBBLES_FRAME_STATS` (06 §3.5 seam).
+/// Soak CSV (11 §2.9): the renderer census (debug assertions only).
+pub(crate) fn census_values(renderer: &Renderer) -> Option<[u64; 23]> {
+    #[cfg(debug_assertions)]
+    return Some(renderer.census().values());
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = renderer;
+        None
+    }
+}
+
 pub(crate) fn frame_stats_line(renderer: &Renderer) -> Option<String> {
     Some(renderer.last_frame_stats().to_string())
 }

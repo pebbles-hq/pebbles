@@ -56,3 +56,62 @@ pub struct GpuCensus {
     /// Σ capacity of all frame arenas.
     pub arena_capacity_bytes: u64,
 }
+
+impl GpuCensus {
+    /// Column names in field order (soak CSV, 11 §2.9).
+    pub const COLUMNS: [&'static str; 23] = [
+        "glyph_entries",
+        "glyph_mask_side",
+        "glyph_mask_layers",
+        "glyph_color_side",
+        "glyph_color_layers",
+        "raster_fonts",
+        "color_glyph_fragments",
+        "image_entries",
+        "image_bytes",
+        "image_bind_groups",
+        "samplers",
+        "gradient_rows_used",
+        "gradient_rows_capacity",
+        "path_mask_entries",
+        "path_mask_bytes",
+        "frame_target_entries",
+        "frame_target_bytes",
+        "layer_pool_textures",
+        "layer_pool_bytes",
+        "gpu_mask_textures",
+        "gpu_mask_bytes",
+        "pipelines",
+        "arena_capacity_bytes",
+    ];
+
+    /// The fields as `u64`, in [`COLUMNS`](Self::COLUMNS) order.
+    pub fn values(&self) -> [u64; 23] {
+        let u = |v: usize| u64::try_from(v).unwrap_or(u64::MAX);
+        [
+            u(self.glyph_entries),
+            u64::from(self.glyph_mask_side),
+            u64::from(self.glyph_mask_layers),
+            u64::from(self.glyph_color_side),
+            u64::from(self.glyph_color_layers),
+            u(self.raster_fonts),
+            u(self.color_glyph_fragments),
+            u(self.image_entries),
+            self.image_bytes,
+            u(self.image_bind_groups),
+            u(self.samplers),
+            u(self.gradient_rows_used),
+            u64::from(self.gradient_rows_capacity),
+            u(self.path_mask_entries),
+            self.path_mask_bytes,
+            u(self.frame_target_entries),
+            self.frame_target_bytes,
+            u(self.layer_pool_textures),
+            self.layer_pool_bytes,
+            u(self.gpu_mask_textures),
+            self.gpu_mask_bytes,
+            u(self.pipelines),
+            self.arena_capacity_bytes,
+        ]
+    }
+}

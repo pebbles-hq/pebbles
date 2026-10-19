@@ -113,3 +113,9 @@ strip = "debuginfo"
 # wrapping). Inherits everything else from `dev`.
 [profile.test]
 overflow-checks = true
+
+# Optimized build WITH debug assertions, so the #[cfg(debug_assertions)] census accessors are
+# compiled in for long-running soaks (wgpu-migration 11 §2.9).
+[profile.soak]
+inherits = "release"
+debug-assertions = true

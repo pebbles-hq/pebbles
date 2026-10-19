@@ -32,6 +32,7 @@ use super::App;
 
 mod input;
 mod render;
+mod soak_csv;
 mod storm;
 mod windows;
 
@@ -280,6 +281,9 @@ pub(super) struct Runner {
     /// Dev-only synthetic-input monkey (`PEBBLES_INPUT_STORM=1`); `None` in
     /// normal runs. See [`storm`].
     storm: Option<storm::InputStorm>,
+    /// `PEBBLES_SOAK_CSV` sampler (11 §2.9) and the rendered-frame counter.
+    soak: Option<soak_csv::SoakCsv>,
+    soak_frames: u64,
 }
 
 /// 10 §12.1: once per process, on the first successful present (both backends).
@@ -369,6 +373,8 @@ impl Runner {
             frame_no: 0,
             last_objects: 0,
             storm: storm::InputStorm::from_env(),
+            soak: soak_csv::SoakCsv::from_env(),
+            soak_frames: 0,
         }
     }
 
@@ -635,7 +641,56 @@ impl Runner {
     }
 }
 
+impl Runner {
+    /// Soak CSV (11 §2.9): count a rendered frame; every `EVERY_FRAMES` append a row.
+    pub(super) fn soak_frame(&mut self) {
+        if self.soak.is_none() {
+            return;
+        }
+        self.soak_frames += 1;
+        if self.soak_frames.is_multiple_of(soak_csv::EVERY_FRAMES) {
+            self.soak_sample();
+        }
+    }
+
+    /// Append one soak row now.
+    fn soak_sample(&mut self) {
+        let device = self.active.as_ref().map_or(0, |a| a.surface.device_index());
+        let gpu = self.context.as_ref().and_then(|c| c.allocator_report(device));
+        let census = self.renderers.get(device).and_then(Option::as_ref).and_then(crate::gpu::census_values);
+        #[cfg(debug_assertions)]
+        let ui = Some([
+            self.ui.element_count(),
+            self.ui.render_node_count(),
+            pebbles_core::reactive::census_signals(),
+            pebbles_core::reactive::census_subscriptions(),
+        ]);
+        #[cfg(not(debug_assertions))]
+        let ui = None;
+        let sample = soak_csv::Sample {
+            unix_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis()),
+            frame: self.soak_frames,
+            uptime_s: self.started_at.elapsed().as_secs_f64(),
+            rss_kib: soak_csv::rss_kib(),
+            gpu,
+            ui,
+            census,
+        };
+        if let Some(s) = &mut self.soak {
+            s.write(&sample);
+        }
+    }
+}
+
 impl ApplicationHandler<PebblesUserEvent> for Runner {
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        if self.soak.is_some() {
+            self.soak_sample();
+        }
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.active.is_some() {
             return;
