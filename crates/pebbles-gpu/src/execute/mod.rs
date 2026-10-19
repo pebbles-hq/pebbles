@@ -1,5 +1,6 @@
 //! Execute: the wgpu-side draw/encode helpers.
 
+pub(crate) mod alloc;
 pub(crate) mod custom;
 pub(crate) mod effects;
 pub(crate) mod encode;

@@ -182,7 +182,7 @@ impl FrameTargets {
             d.idle = 0;
             return;
         }
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
+        let d = wgpu::TextureDescriptor {
             label: Some("pebbles.gpu.target.depth"),
             size: wgpu::Extent3d { width: key.width, height: key.height, depth_or_array_layers: 1 },
             mip_level_count: 1,
@@ -191,7 +191,18 @@ impl FrameTargets {
             format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[],
-        });
+        };
+        // 11 §2.6: unused depth targets are the eviction; a second OOM leaves the custom pass
+        // without depth (`CustomRender::depth` is `None`).
+        let depth = &mut self.depth;
+        let Some(texture) = crate::execute::alloc::create_with_retry(
+            device,
+            || device.create_texture(&d),
+            || depth.retain(|t| t.idle == 0),
+        ) else {
+            stats.record(crate::stats::Unsupported::GpuOom);
+            return;
+        };
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         stats.textures_created += 1;
         stats.texture_views_created += 1;
@@ -229,7 +240,7 @@ impl FrameTargets {
             .is_some_and(|r| (r.texture.width(), r.texture.height()) == size && r.texture.format() == format);
         if !fresh {
             {
-                let texture = device.create_texture(&wgpu::TextureDescriptor {
+                let d = wgpu::TextureDescriptor {
                     label: Some("pebbles.gpu.root_color"),
                     size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
                     mip_level_count: 1,
@@ -240,7 +251,15 @@ impl FrameTargets {
                         | wgpu::TextureUsages::COPY_SRC
                         | wgpu::TextureUsages::TEXTURE_BINDING,
                     view_formats: &[],
-                });
+                };
+                // 11 §2.6: on a second OOM the frame renders without the root intermediate.
+                self.root_color = None;
+                let Some(texture) =
+                    crate::execute::alloc::create_with_retry(device, || device.create_texture(&d), || {})
+                else {
+                    stats.record(crate::stats::Unsupported::GpuOom);
+                    return None;
+                };
                 let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
                 stats.textures_created += 1;
                 stats.texture_views_created += 1;

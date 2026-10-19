@@ -93,7 +93,15 @@ pub(crate) fn render_jobs(
     for j in 0..n {
         let job = renderer.scratch.plan.gpu_mask_jobs[j].clone();
         let r = job.rect;
-        let slot = renderer.gpu_masks.pool.acquire(device, (r.width(), r.height()), FORMAT, samples, stats);
+        // 11 §2.6: a mask that cannot be created (OOM twice) covers nothing this frame (the
+        // zero-initialized dummy), keeping the job → group indices aligned.
+        let Some(slot) =
+            renderer.gpu_masks.pool.try_acquire(device, (r.width(), r.height()), FORMAT, samples, stats)
+        else {
+            let g = renderer.globals_bg_with(device, &renderer.gpu_masks.dummy.1);
+            renderer.gpu_masks.groups.push(g);
+            continue;
+        };
         let size = renderer.gpu_masks.pool.book.slots[slot].size;
         let globals = super::resources::globals::Globals {
             target_size: [size.0 as f32, size.1 as f32],

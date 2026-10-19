@@ -174,3 +174,28 @@ fn path_budget_evicts_unused_paths_never_glyphs() {
     assert!(a.get(key(1)).is_some(), "glyph kept");
     assert_eq!(a.insert(path(3), AtlasKind::Mask, 8, 8, 0, 0, &mut s), Err(Overflow));
 }
+
+/// S09: an atlas capped after a growth OOM keeps the other kind and never grows again.
+#[test]
+fn cap_kind_drops_only_that_kind_and_freezes_size() {
+    let mut stats = FrameStats::default();
+    let mut a = CoverageAtlas::new(2048, 4, 4, u64::MAX);
+    a.begin_frame();
+    let g = key;
+    a.insert(g(1), AtlasKind::Mask, 8, 8, 0, 0, &mut stats).expect("mask");
+    a.insert(g(2), AtlasKind::Color, 8, 8, 0, 0, &mut stats).expect("color");
+    let side = a.mask.side;
+    a.cap_kind(AtlasKind::Mask, side, 2);
+    assert!(a.get(g(1)).is_none(), "mask entries dropped");
+    assert!(a.get(g(2)).is_some(), "color entries kept");
+    // Fill past the capped side: it overflows instead of growing.
+    let mut n = 0;
+    while a
+        .insert(g(100 + u16::try_from(n).unwrap_or(0)), AtlasKind::Mask, 200, 200, 0, 0, &mut stats)
+        .is_ok()
+    {
+        n += 1;
+        assert!(n < 10_000);
+    }
+    assert_eq!(a.mask.side, side, "never grows past the texture");
+}

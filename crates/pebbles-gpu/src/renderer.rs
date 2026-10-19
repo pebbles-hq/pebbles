@@ -394,25 +394,26 @@ impl Renderer {
         debug_assert_eq!(root_slot, 0);
         self.write_clips(device, queue, &mut stats);
 
-        self.arenas.solid_vertices.upload(
+        let mut arenas_ok = true;
+        arenas_ok &= self.arenas.solid_vertices.upload(
             device,
             queue,
             bytemuck::cast_slice(&self.scratch.plan.solid_vertices),
             &mut stats,
         );
-        self.arenas.solid_indices.upload(
+        arenas_ok &= self.arenas.solid_indices.upload(
             device,
             queue,
             bytemuck::cast_slice(&self.scratch.plan.solid_indices),
             &mut stats,
         );
-        self.arenas.shape_instances.upload(
+        arenas_ok &= self.arenas.shape_instances.upload(
             device,
             queue,
             bytemuck::cast_slice(&self.scratch.plan.shapes),
             &mut stats,
         );
-        self.arenas.shadow_instances.upload(
+        arenas_ok &= self.arenas.shadow_instances.upload(
             device,
             queue,
             bytemuck::cast_slice(&self.scratch.plan.shadows),
@@ -432,7 +433,17 @@ impl Renderer {
                 ),
             );
         }
-        resolve_and_upload(self, device, queue, &mut stats);
+        arenas_ok &= resolve_and_upload(self, device, queue, &mut stats);
+        if !arenas_ok {
+            // 11 §2.6: an arena could not grow even after a retry — skip this frame's draws
+            // (the passes still clear; nothing references the missing data).
+            let plan = &mut self.scratch.plan;
+            plan.cmds.clear();
+            plan.gpu_mask_jobs.clear();
+            plan.layers.clear();
+            plan.customs.clear();
+            plan.root_needs_backdrop = false;
+        }
         stats.upload_us = u32::try_from(upload_started.elapsed().as_micros()).unwrap_or(u32::MAX);
         let encode_started = web_time::Instant::now();
 

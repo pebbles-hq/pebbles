@@ -64,6 +64,11 @@ pub enum Unsupported {
     CustomUnregistered,
     /// An `Op::GpuImage` whose `TextureId` is unknown or unregistered: skipped (R61).
     GpuTextureUnregistered,
+    /// A content-sized GPU allocation hit out-of-memory twice (after one evict-and-retry): the
+    /// 11 §2.6 degradation applied (S09).
+    GpuOom,
+    /// A multisampled target hit out-of-memory: single-sampled instead (S09).
+    MsaaOomFallback1x,
 }
 
 /// Bytes of GPU memory this Renderer requested (10 §9.3, M17), on demand — never per frame.
@@ -107,7 +112,7 @@ impl MemoryReport {
 
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
-    pub const COUNT: usize = 29;
+    pub const COUNT: usize = 31;
     /// Every variant, in discriminant order.
     pub const ALL: [Unsupported; Self::COUNT] = [
         Self::NonRectClip,
@@ -139,6 +144,8 @@ impl Unsupported {
         Self::MeshGradient,
         Self::CustomUnregistered,
         Self::GpuTextureUnregistered,
+        Self::GpuOom,
+        Self::MsaaOomFallback1x,
     ];
 
     /// The variant's 11 §4.2 key, used in logs and stats dumps.
@@ -173,6 +180,8 @@ impl Unsupported {
             Self::MeshGradient => "mesh-gradient-unsupported",
             Self::CustomUnregistered => "custom-paint-unregistered",
             Self::GpuTextureUnregistered => "gpu-texture-unregistered",
+            Self::GpuOom => "gpu-oom",
+            Self::MsaaOomFallback1x => "msaa-oom-fallback-1x",
         }
     }
 }

@@ -145,7 +145,11 @@ pub(crate) fn encode_runs(
             out.push(Composite { run: run.clone(), bind_group: None, params_offset });
             continue;
         }
-        let slot = targets.pool.acquire(device, (w, h), format, samples, stats);
+        // 11 §2.6: a run whose target cannot be created (OOM twice) is skipped this frame.
+        let Some(slot) = targets.pool.try_acquire(device, (w, h), format, samples, stats) else {
+            out.push(Composite { run: run.clone(), bind_group: None, params_offset });
+            continue;
+        };
         let tex = targets.pool.textures(slot);
         let size = targets.pool.book.slots[slot].size;
         let globals = crate::execute::resources::globals::Globals {

@@ -147,7 +147,9 @@ pub(crate) struct LayerPool {
 }
 
 impl LayerPool {
-    /// Acquire a target of at least `size`; returns its index.
+    /// Acquire a target of at least `size`; returns its index. A creation that hits OOM twice
+    /// (11 §2.6) escalates through the uncaptured-error / device-loss path; callers that can
+    /// degrade use [`try_acquire`](Self::try_acquire).
     pub(crate) fn acquire(
         &mut self,
         device: &wgpu::Device,
@@ -156,41 +158,86 @@ impl LayerPool {
         samples: u32,
         stats: &mut crate::stats::FrameStats,
     ) -> usize {
+        match self.acquire_inner(device, size, format, samples, stats, true) {
+            Some(i) => i,
+            None => self.book.slots.len().saturating_sub(1),
+        }
+    }
+
+    /// [`acquire`](Self::acquire), but `None` (nothing booked, `gpu-oom` recorded) when the
+    /// creation hits OOM twice — the caller drops that layer / run / mask for this frame.
+    pub(crate) fn try_acquire(
+        &mut self,
+        device: &wgpu::Device,
+        size: (u32, u32),
+        format: wgpu::TextureFormat,
+        samples: u32,
+        stats: &mut crate::stats::FrameStats,
+    ) -> Option<usize> {
+        self.acquire_inner(device, size, format, samples, stats, false)
+    }
+
+    fn acquire_inner(
+        &mut self,
+        device: &wgpu::Device,
+        size: (u32, u32),
+        format: wgpu::TextureFormat,
+        samples: u32,
+        stats: &mut crate::stats::FrameStats,
+        escalate: bool,
+    ) -> Option<usize> {
         let max = device.limits().max_texture_dimension_2d;
         let acquired = self.book.acquire(size, format, samples, max);
         self.peak_in_use = self.peak_in_use.max(self.book.in_use_bytes());
         match acquired {
-            Acquired::Reuse(i) => i,
+            Acquired::Reuse(i) => Some(i),
             Acquired::Create(i) => {
                 let s = self.book.slots[i];
-                let tex = |label, sample_count, usage| {
-                    let t = device.create_texture(&wgpu::TextureDescriptor {
-                        label: Some(label),
-                        size: wgpu::Extent3d { width: s.size.0, height: s.size.1, depth_or_array_layers: 1 },
-                        mip_level_count: 1,
-                        sample_count,
-                        dimension: wgpu::TextureDimension::D2,
-                        format,
-                        usage,
-                        view_formats: &[],
-                    });
-                    let v = t.create_view(&wgpu::TextureViewDescriptor::default());
-                    (t, v)
+                let desc = |label, sample_count, usage| wgpu::TextureDescriptor {
+                    label: Some(label),
+                    size: wgpu::Extent3d { width: s.size.0, height: s.size.1, depth_or_array_layers: 1 },
+                    mip_level_count: 1,
+                    sample_count,
+                    dimension: wgpu::TextureDimension::D2,
+                    format,
+                    usage,
+                    view_formats: &[],
                 };
-                let msaa = (samples > 1)
-                    .then(|| tex("pebbles.gpu.layer.msaa", samples, wgpu::TextureUsages::RENDER_ATTACHMENT));
-                let color = tex(
-                    "pebbles.gpu.layer.color",
-                    1,
-                    wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::TEXTURE_BINDING
-                        | wgpu::TextureUsages::COPY_SRC
-                        | wgpu::TextureUsages::COPY_DST,
-                );
+                let tex = |d: wgpu::TextureDescriptor<'static>| {
+                    let t = if escalate {
+                        crate::execute::alloc::create_with_retry(device, || device.create_texture(&d), || {})
+                            .unwrap_or_else(|| device.create_texture(&d))
+                    } else {
+                        crate::execute::alloc::create_with_retry(device, || device.create_texture(&d), || {})?
+                    };
+                    let v = t.create_view(&wgpu::TextureViewDescriptor::default());
+                    Some((t, v))
+                };
+                let msaa = if samples > 1 {
+                    let m =
+                        tex(desc("pebbles.gpu.layer.msaa", samples, wgpu::TextureUsages::RENDER_ATTACHMENT));
+                    if m.is_none() {
+                        self.book.slots.pop();
+                        stats.record(crate::stats::Unsupported::GpuOom);
+                        return None;
+                    }
+                    m
+                } else {
+                    None
+                };
+                let usage = wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING
+                    | wgpu::TextureUsages::COPY_SRC
+                    | wgpu::TextureUsages::COPY_DST;
+                let Some(color) = tex(desc("pebbles.gpu.layer.color", 1, usage)) else {
+                    self.book.slots.pop();
+                    stats.record(crate::stats::Unsupported::GpuOom);
+                    return None;
+                };
                 stats.textures_created += 1 + u32::from(msaa.is_some());
                 stats.texture_views_created += 1 + u32::from(msaa.is_some());
                 self.textures.push(LayerTextures { msaa, color, composite_bg: None });
-                i
+                Some(i)
             }
         }
     }

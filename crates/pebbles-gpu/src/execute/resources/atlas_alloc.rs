@@ -406,6 +406,24 @@ impl CoverageAtlas {
         Ok(slot)
     }
 
+    /// S09: an atlas whose growth hit OOM is full at `side` × `layers` (its texture): drop every
+    /// entry of `kind` and rebuild its pages at that size, never growing again.
+    pub(crate) fn cap_kind(&mut self, kind: AtlasKind, side: u32, layers: u32) {
+        let mut scratch = FrameStats::default();
+        self.evict(|_, e| e.slot.is_some_and(|(s, _)| s.kind == kind), &mut scratch);
+        self.overflowed = [None; 2];
+        let generation = self.pages(kind).generation + 1;
+        let mut pages = AtlasPages::new(kind, side, side, layers);
+        pages.physical_layers = layers.max(2);
+        pages.generation = generation;
+        *self.pages(kind) = pages;
+    }
+
+    /// The pages' generation of `kind`.
+    pub(crate) fn pages_generation(&mut self, kind: AtlasKind) -> u64 {
+        self.pages(kind).generation
+    }
+
     /// Resident + empty entries.
     #[cfg(any(test, debug_assertions))]
     pub(crate) fn len(&self) -> usize {

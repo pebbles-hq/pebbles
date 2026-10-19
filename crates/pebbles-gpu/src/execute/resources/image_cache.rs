@@ -68,6 +68,8 @@ pub(crate) struct ImageCache {
     total_bytes: u64,
     /// `GpuBudgets::image_cache_bytes`; soft for images drawn this frame (pinning, §6.3).
     budget_bytes: u64,
+    /// S09: blob ids whose upload hit OOM twice → the frame they may retry at (60 frames on).
+    oom_until: HashMap<u64, u64>,
     scratch: Vec<u8>,
     /// Reused LRU sort buffer.
     evict_scratch: Vec<(u64, ImageKey, u64)>,
@@ -109,6 +111,7 @@ impl ImageCache {
             entries: HashMap::new(),
             total_bytes: 0,
             budget_bytes,
+            oom_until: HashMap::new(),
             scratch: Vec::new(),
             evict_scratch: Vec::new(),
             evict_keys: Vec::new(),
@@ -179,6 +182,57 @@ impl ImageCache {
         c.image_bind_groups = self.total_bind_groups;
     }
 
+    /// 11 §2.6: create an image texture under an OOM scope; on OOM evict to half the budget and
+    /// retry once; a second OOM skips the image (and its blob for 60 frames).
+    fn create_checked(
+        &mut self,
+        device: &wgpu::Device,
+        desc: &wgpu::TextureDescriptor<'_>,
+        blob_id: u64,
+        stats: &mut FrameStats,
+    ) -> Option<wgpu::Texture> {
+        let t = crate::execute::alloc::alloc_with_retry(
+            || crate::execute::alloc::checked(device, || device.create_texture(desc)),
+            || self.evict_to_fraction(0.5),
+        );
+        match t {
+            Some(t) => Some(t),
+            None => {
+                stats.record(Unsupported::GpuOom);
+                self.oom_until.insert(blob_id, self.frame + 60);
+                None
+            }
+        }
+    }
+
+    /// Evict least-recently-used entries not drawn this frame until the cache holds at most
+    /// `fraction` of its budget (S09's OOM response, 11 §2.6 rule 4).
+    pub(crate) fn evict_to_fraction(&mut self, fraction: f64) {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+        let target = (self.budget_bytes as f64 * fraction.clamp(0.0, 1.0)) as u64;
+        let frame = self.frame;
+        let mut order: Vec<(u64, ImageKey, u64)> = self
+            .entries
+            .iter()
+            .filter(|(_, e)| e.last_used < frame)
+            .map(|(k, e)| (e.last_used, *k, e.bytes))
+            .collect();
+        order.sort_unstable_by_key(|o| o.0);
+        for (_, k, b) in order {
+            if self.total_bytes <= target {
+                break;
+            }
+            if let Some(e) = self.entries.remove(&k) {
+                self.total_bytes -= b;
+                #[cfg(debug_assertions)]
+                {
+                    self.total_bind_groups -= e.bind_groups.len();
+                }
+                drop(e);
+            }
+        }
+    }
+
     /// Make `image` resident (uploading on a miss). Returns false when it cannot be drawn.
     pub(crate) fn ensure(
         &mut self,
@@ -211,24 +265,28 @@ impl ImageCache {
         }
         let max = device.limits().max_texture_dimension_2d;
         let premultiplied = key.alpha == 1;
-        let pixels: &[u8] = if key.format == 0 && premultiplied && w <= max && h <= max {
-            bytes // zero copy
-        } else {
+        // The texels: the app's bytes (zero copy) or `self.scratch` — re-borrowed after the
+        // (possibly evicting) texture creation below.
+        let zero_copy = key.format == 0 && premultiplied && w <= max && h <= max;
+        if !zero_copy {
             to_premultiplied_rgba(bytes, key.format == 1, premultiplied, &mut self.scratch);
-            &self.scratch
-        };
+        }
         // S10: above the texture limit or ¼ of the image budget → downscale by k (miss only).
         let k = downscale_factor(w, h, max, self.budget_bytes / 4);
-        let (pixels, w, h) = if k > 1 {
+        let (zero_copy, w, h) = if k > 1 {
             stats.record(Unsupported::ImageTooLarge);
             let mut out = Vec::new();
-            let (dw, dh) = downscale(pixels, w, h, k, &mut out);
+            let src: &[u8] = if zero_copy { bytes } else { &self.scratch };
+            let (dw, dh) = downscale(src, w, h, k, &mut out);
             self.scratch = out;
-            (self.scratch.as_slice(), dw, dh)
+            (false, dw, dh)
         } else {
-            (pixels, w, h)
+            (zero_copy, w, h)
         };
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
+        if self.oom_until.get(&key.blob_id).is_some_and(|&f| self.frame < f) {
+            return false;
+        }
+        let desc = wgpu::TextureDescriptor {
             label: Some("pebbles.gpu.image"),
             size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
             mip_level_count: if mips { super::image_mips::mip_level_count(w, h) } else { 1 },
@@ -237,7 +295,9 @@ impl ImageCache {
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
-        });
+        };
+        let Some(texture) = self.create_checked(device, &desc, key.blob_id, stats) else { return false };
+        let pixels: &[u8] = if zero_copy { bytes } else { &self.scratch };
         queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &texture,
@@ -325,7 +385,7 @@ impl ImageCache {
             }
             return true;
         }
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
+        let desc = wgpu::TextureDescriptor {
             label: Some("pebbles.gpu.image.dynamic"),
             size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
             mip_level_count: 1,
@@ -334,7 +394,11 @@ impl ImageCache {
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
-        });
+        };
+        if self.oom_until.get(&key.blob_id).is_some_and(|&f| self.frame < f) {
+            return false;
+        }
+        let Some(texture) = self.create_checked(device, &desc, key.blob_id, stats) else { return false };
         let full = super::dynamic_images::full_rect(frame);
         super::dynamic_images::upload_rect(queue, &texture, frame, full, stats);
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());

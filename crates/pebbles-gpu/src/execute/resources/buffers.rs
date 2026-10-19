@@ -56,29 +56,43 @@ impl GpuArena {
         self.buffer.as_ref()
     }
 
-    fn recreate(&mut self, device: &wgpu::Device, capacity: u64, stats: &mut FrameStats) {
-        self.buffer = Some(device.create_buffer(&wgpu::BufferDescriptor {
+    /// (Re)create at `capacity` under an OOM scope (11 §2.6); false on a second OOM (the
+    /// arena keeps its old buffer, too small for this frame).
+    fn recreate(&mut self, device: &wgpu::Device, capacity: u64, stats: &mut FrameStats) -> bool {
+        let desc = wgpu::BufferDescriptor {
             label: Some(self.label),
             size: capacity,
             usage: self.usage | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
-        }));
+        };
+        // Dropping the old buffer first is the eviction: it frees what the retry needs.
+        let old = &mut self.buffer;
+        let Some(buffer) =
+            crate::execute::alloc::create_with_retry(device, || device.create_buffer(&desc), || *old = None)
+        else {
+            self.capacity = 0;
+            stats.record(crate::stats::Unsupported::GpuOom);
+            return false;
+        };
+        self.buffer = Some(buffer);
         self.capacity = capacity;
         self.generation += 1;
         stats.buffers_created += 1;
+        true
     }
 
-    /// Write `bytes` once this frame (O2), growing the buffer when it no longer fits.
+    /// Write `bytes` once this frame (O2), growing the buffer when it no longer fits. False
+    /// when growth hit OOM twice: the frame's remaining draws must be skipped (11 §2.6).
     pub(crate) fn upload(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         bytes: &[u8],
         stats: &mut FrameStats,
-    ) {
+    ) -> bool {
         let len = bytes.len() as u64;
         if len == 0 {
-            return;
+            return true;
         }
         let padded = len.next_multiple_of(wgpu::COPY_BUFFER_ALIGNMENT);
         if padded > self.capacity {
@@ -98,10 +112,9 @@ impl GpuArena {
                     );
                 }
             }
-            if capacity < padded {
-                return;
+            if capacity < padded || !self.recreate(device, capacity, stats) {
+                return false;
             }
-            self.recreate(device, capacity, stats);
         }
         if let Some(buffer) = &self.buffer {
             let rem = (len % wgpu::COPY_BUFFER_ALIGNMENT) as usize;
@@ -119,6 +132,7 @@ impl GpuArena {
         }
         stats.buffer_bytes_uploaded += len;
         self.high_water = self.high_water.max(padded);
+        true
     }
 
     /// After the frame's submit: close the shrink window every `SHRINK_WINDOW_FRAMES` frames,
@@ -131,7 +145,7 @@ impl GpuArena {
         if self.buffer.is_some()
             && let Some(t) = shrink_target(self.capacity, self.high_water)
         {
-            self.recreate(device, t, stats);
+            let _ = self.recreate(device, t, stats);
         }
         self.window_frames = 0;
         self.high_water = 0;

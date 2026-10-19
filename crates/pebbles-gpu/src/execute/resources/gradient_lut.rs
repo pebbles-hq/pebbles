@@ -130,7 +130,24 @@ pub(crate) struct GradientLut {
 }
 
 fn create(device: &wgpu::Device, rows: u32) -> (wgpu::Texture, wgpu::TextureView) {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
+    try_create(device, rows).unwrap_or_else(|| {
+        // The initial LUT is small and fixed: an OOM here escalates (device-loss path).
+        let t = device.create_texture(&desc(rows));
+        let v = t.create_view(&wgpu::TextureViewDescriptor::default());
+        (t, v)
+    })
+}
+
+/// 11 §2.6: the LUT texture under an OOM scope, retried once; `None` on a second OOM.
+fn try_create(device: &wgpu::Device, rows: u32) -> Option<(wgpu::Texture, wgpu::TextureView)> {
+    let d = desc(rows);
+    let texture = crate::execute::alloc::create_with_retry(device, || device.create_texture(&d), || {})?;
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    Some((texture, view))
+}
+
+fn desc(rows: u32) -> wgpu::TextureDescriptor<'static> {
+    wgpu::TextureDescriptor {
         label: Some("pebbles.gpu.lut.gradient"),
         size: wgpu::Extent3d { width: LUT_ROW_TEXELS, height: rows, depth_or_array_layers: 1 },
         mip_level_count: 1,
@@ -142,9 +159,7 @@ fn create(device: &wgpu::Device, rows: u32) -> (wgpu::Texture, wgpu::TextureView
             | wgpu::TextureUsages::COPY_DST
             | if cfg!(test) { wgpu::TextureUsages::COPY_SRC } else { wgpu::TextureUsages::empty() },
         view_formats: &[],
-    });
-    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    (texture, view)
+    }
 }
 
 impl GradientLut {
@@ -185,7 +200,18 @@ impl GradientLut {
             }
             Alloc::At(r) => r,
             Alloc::Grown { first_row, rows } => {
-                (self.texture, self.view) = create(device, rows);
+                let Some(tv) = try_create(device, rows) else {
+                    // 11 §2.6: treat the LUT as full at its current size (the first-stop fallback).
+                    let old = u32::try_from(self.mirror.len() / LUT_ROW_TEXELS as usize).unwrap_or(0);
+                    self.book.free(key);
+                    self.book.rows = old;
+                    self.book.max_rows = old;
+                    self.book.used.truncate(old as usize);
+                    stats.record(crate::stats::Unsupported::GpuOom);
+                    self.scratch = scratch;
+                    return None;
+                };
+                (self.texture, self.view) = tv;
                 self.generation += 1;
                 self.mirror.resize((rows * LUT_ROW_TEXELS) as usize, [0u16; 4]);
                 stats.textures_created += 1;

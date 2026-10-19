@@ -70,7 +70,7 @@ pub(crate) fn resolve_and_upload(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     stats: &mut FrameStats,
-) {
+) -> bool {
     resolve_glyphs(&mut renderer.glyph_atlas, &renderer.scratch.plan, &mut renderer.glyph_instances, stats);
     super::resolve::cull_resolved(&renderer.scratch.plan, &mut renderer.glyph_instances);
     // 09 L08: mask clips live in the coverage atlas too (staged before the flush).
@@ -116,9 +116,15 @@ pub(crate) fn resolve_and_upload(
         }
     }
     let arenas = &mut renderer.arenas;
-    arenas.meshes.upload(device, queue, bytemuck::cast_slice(&renderer.scratch.plan.mesh_vertices), stats);
-    arenas.glyphs.upload(device, queue, bytemuck::cast_slice(&renderer.glyph_instances), stats);
-    arenas.images.upload(device, queue, bytemuck::cast_slice(&renderer.image_instances), stats);
+    let mut ok = arenas.meshes.upload(
+        device,
+        queue,
+        bytemuck::cast_slice(&renderer.scratch.plan.mesh_vertices),
+        stats,
+    );
+    ok &= arenas.glyphs.upload(device, queue, bytemuck::cast_slice(&renderer.glyph_instances), stats);
+    ok &= arenas.images.upload(device, queue, bytemuck::cast_slice(&renderer.image_instances), stats);
+    ok
 }
 
 /// Draw every command of the renderer's current plan, in order, into `pass`.

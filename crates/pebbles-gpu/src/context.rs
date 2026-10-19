@@ -97,6 +97,10 @@ pub(crate) fn instance_descriptor(init: &GpuInit) -> wgpu::InstanceDescriptor {
     desc.backend_options.dx12.shader_compiler = init.dx12_compiler.clone();
     // GL minor version / DX12 presentation system / noop honour their WGPU_* variables.
     desc.backend_options = desc.backend_options.with_env();
+    // 11 §2.6 rule 5: memory pressure surfaces as a recoverable OOM (D3D12; optionally Vulkan).
+    // Never `InstanceDescriptor::with_env()`: it would re-read WGPU_BACKEND and reset this.
+    desc.memory_budget_thresholds =
+        wgpu::MemoryBudgetThresholds { for_resource_creation: Some(95), for_device_loss: None };
     desc
 }
 

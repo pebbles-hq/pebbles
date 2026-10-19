@@ -35,6 +35,8 @@ pub(crate) struct AtlasTexture {
     layers: u32,
     /// The `AtlasPages::generation` this texture matches.
     pub generation: u64,
+    /// The last growth hit OOM twice (S09): the pages must be capped to this texture.
+    pub oom: bool,
 }
 
 fn format_of(kind: AtlasKind) -> (wgpu::TextureFormat, u32, &'static str) {
@@ -76,7 +78,14 @@ impl AtlasTexture {
 
     fn new(device: &wgpu::Device, pages: &AtlasPages) -> Self {
         let (texture, view) = Self::create(device, pages.kind, pages.side, pages.physical_layers);
-        Self { texture, view, side: pages.side, layers: pages.physical_layers, generation: pages.generation }
+        Self {
+            texture,
+            view,
+            side: pages.side,
+            layers: pages.physical_layers,
+            generation: pages.generation,
+            oom: false,
+        }
     }
 
     /// SYNC step 2a: recreate at the pages' size when it changed, copying every old layer one
@@ -92,7 +101,18 @@ impl AtlasTexture {
             self.generation = pages.generation;
             return false;
         }
-        let (texture, view) = Self::create(device, pages.kind, pages.side, pages.physical_layers);
+        // 11 §2.6: growth under an OOM scope, retried once; a second OOM keeps the old texture
+        // and the caller treats the atlas as full at that size.
+        let grown = crate::execute::alloc::create_with_retry(
+            device,
+            || Self::create(device, pages.kind, pages.side, pages.physical_layers),
+            || {},
+        );
+        let Some((texture, view)) = grown else {
+            stats.record(crate::stats::Unsupported::GpuOom);
+            self.oom = true;
+            return false;
+        };
         stats.textures_created += 1;
         stats.texture_views_created += 1;
         let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -453,6 +473,15 @@ impl GlyphAtlas {
     ) {
         self.mask.sync(device, queue, &self.cpu.mask, stats);
         self.color.sync(device, queue, &self.cpu.color, stats);
+        // S09: an atlas that could not grow is full at its texture's size — its entries are
+        // dropped (re-rasterized next frame) and this frame's uploads of that kind skipped.
+        for (tex, kind) in [(&mut self.mask, AtlasKind::Mask), (&mut self.color, AtlasKind::Color)] {
+            if std::mem::take(&mut tex.oom) {
+                self.cpu.cap_kind(kind, tex.side, tex.layers);
+                tex.generation = self.cpu.pages_generation(kind);
+                self.uploads.retain(|u| u.kind != kind);
+            }
+        }
         for u in &self.uploads {
             let (tex, bpp) = match u.kind {
                 AtlasKind::Mask => (&self.mask.texture, 1),
