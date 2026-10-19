@@ -84,7 +84,10 @@ pub(crate) fn acquire_layers(
             out.push(None);
             continue;
         }
-        let slot = targets.pool.acquire(device, (w, h), format, samples, stats);
+        // A projected layer keeps ≥ 1 transparent texel past its content so bilinear sampling
+        // at the content edge always blends with transparent (09 §10.7; the golden model's decal).
+        let pad = u32::from(desc.path == CompositePath::Projected);
+        let slot = targets.pool.acquire(device, (w + pad, h + pad), format, samples, stats);
         let size = targets.pool.book.slots[slot].size;
         let globals = crate::execute::resources::globals::Globals {
             target_size: [size.0 as f32, size.1 as f32],

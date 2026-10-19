@@ -36,6 +36,8 @@ pub fn limits(cat: Category, tol: Tolerance) -> Option<Limits> {
         Category::Shadow => l(3, 1.00, 3, 0.50),
         Category::Layer => l(2, 0.0, 2, 0.20),
         Category::Mesh => l(64, 2.00, 1, 1.00),
+        Category::Effect => l(2, 0.50, 2, 0.30),
+        Category::Projected => l(3, 1.00, 3, 0.50),
         Category::Screen | Category::Stress => l(0, 0.0, 0, 0.0),
         Category::SelfConsistency => l(0, 0.0, 0, 0.0),
         Category::CrossBackend => l(1, 0.10, 1, 0.05),

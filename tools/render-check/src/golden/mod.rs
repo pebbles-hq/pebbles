@@ -12,6 +12,7 @@ pub mod blur;
 pub mod colr;
 pub mod compose;
 pub mod coverage;
+pub mod effects;
 pub mod layers;
 pub mod nine;
 pub mod paint;
@@ -29,7 +30,31 @@ use crate::CheckError;
 use crate::metric::Rgba8;
 use layers::Layer;
 use paint::Paint;
+use pebbles_render::paint::Projective;
 use shapes::{Snap, fill_geometry, stroke_geometry};
+
+/// The index of the `PopLayer` matching the push at `ops[start]` (or `ops.len()`).
+fn matching_pop(ops: &[Op], start: usize) -> usize {
+    let mut depth = 0usize;
+    for (i, op) in ops.iter().enumerate().skip(start) {
+        match op {
+            Op::PushLayer { .. }
+            | Op::PushEffectLayer { .. }
+            | Op::PushBackdropFilter { .. }
+            | Op::PushProjectedLayer { .. } => {
+                depth += 1;
+            }
+            Op::PopLayer => {
+                depth -= 1;
+                if depth == 0 {
+                    return i;
+                }
+            }
+            _ => {}
+        }
+    }
+    ops.len()
+}
 
 /// The golden renderer.
 pub struct Golden;
@@ -58,6 +83,19 @@ fn quantize(v: f64) -> u8 {
 }
 
 impl Target {
+    /// An effect's device rect: the clip bbox (or the target) rounded out, grown by the device
+    /// reach, ∩ the target (09 §10.1).
+    fn effect_rect(&self, bbox: Option<kurbo::Rect>, gx: f64, gy: f64) -> (usize, usize, usize, usize) {
+        let (w, h) = (f64::from(self.w), f64::from(self.h));
+        let b = bbox.map_or(kurbo::Rect::new(0.0, 0.0, w, h), |b| {
+            let b = kurbo::Rect::new(b.x0.floor(), b.y0.floor(), b.x1.ceil(), b.y1.ceil())
+                .intersect(kurbo::Rect::new(0.0, 0.0, w, h));
+            kurbo::Rect::new(b.x0 - gx, b.y0 - gy, b.x1 + gx, b.y1 + gy)
+        });
+        let c = |v: f64, m: f64| v.clamp(0.0, m) as usize;
+        (c(b.x0, w), c(b.y0, h), c(b.x1, w), c(b.y1, h))
+    }
+
     fn snap(&self, op_snap: PixelSnap) -> Snap {
         self.force_snap.unwrap_or(if op_snap == PixelSnap::Auto { Snap::Auto } else { Snap::Off })
     }
@@ -163,8 +201,99 @@ impl Target {
     }
 
     fn walk(&mut self, ops: &[Op], outer: Affine) -> Result<(), CheckError> {
-        for op in ops {
-            self.op(op, outer)?;
+        let mut i = 0;
+        while i < ops.len() {
+            if let Op::PushProjectedLayer { projection, bounds, clip, .. } = &ops[i] {
+                let end = matching_pop(ops, i);
+                let children = &ops[i + 1..end.min(ops.len())];
+                self.projected(projection, *bounds, clip.as_ref(), children, outer)?;
+                i = end + 1;
+                continue;
+            }
+            self.op(&ops[i], outer)?;
+            i += 1;
+        }
+        Ok(())
+    }
+
+    /// 09 §10.7 (V52 step 2): an affine projection draws inline under `outer × A` clipped to the
+    /// bounds; a perspective one renders the children at the layer scale ρ, then maps every device
+    /// pixel center through `H⁻¹`, samples bilinearly and multiplies the analytic edge coverage.
+    fn projected(
+        &mut self,
+        projection: &Projective,
+        bounds: kurbo::Rect,
+        clip: Option<&pebbles_render::paint::display_list::Geometry>,
+        children: &[Op],
+        outer: Affine,
+    ) -> Result<(), CheckError> {
+        use pebbles_render::paint::display_list::Geometry;
+        let (w, h) = (self.w as usize, self.h as usize);
+        if projection.is_affine() {
+            let a = outer * projection.to_affine();
+            let g = clip.cloned().unwrap_or(Geometry::Rect(bounds));
+            let mask = fill_geometry(&g, a, peniko::Fill::NonZero, Snap::Off, self.w, self.h);
+            self.layers.push(Layer::new(w * h, mask, peniko::BlendMode::default(), 1.0));
+            self.walk(children, a)?;
+            if let Some(layer) = self.layers.pop() {
+                match self.layers.last_mut() {
+                    Some(parent) => layer.pop_into(&mut parent.px),
+                    None => layer.pop_into(&mut self.px),
+                }
+            }
+            return Ok(());
+        }
+        let h_dev = projection.then(&Projective::from_affine(outer));
+        let (rho, tw, th) = effects::projected_scale(&h_dev, bounds, 8192.0);
+        let local_to_tex = Affine::scale(rho) * Affine::translate((-bounds.x0, -bounds.y0));
+        let mut sub = Target {
+            w: tw as u32,
+            h: th as u32,
+            px: vec![[0.0; 4]; tw * th],
+            layers: Vec::new(),
+            force_snap: self.force_snap,
+            hint: self.hint,
+        };
+        if let Some(c) = clip {
+            let mask = fill_geometry(c, local_to_tex, peniko::Fill::NonZero, Snap::Off, sub.w, sub.h);
+            sub.layers.push(Layer::new(tw * th, mask, peniko::BlendMode::default(), 1.0));
+        }
+        sub.walk(children, local_to_tex)?;
+        while let Some(layer) = sub.layers.pop() {
+            match sub.layers.last_mut() {
+                Some(parent) => layer.pop_into(&mut parent.px),
+                None => layer.pop_into(&mut sub.px),
+            }
+        }
+        effects::quantize(&mut sub.px);
+        let tex = effects::Img { w: tw, h: th, px: sub.px };
+        let tex_to_device = Projective::from_affine(local_to_tex.inverse()).then(&h_dev);
+        let Some(inv) = tex_to_device.inverse() else { return Ok(()) };
+        let (cw, ch) = (tw as f64, th as f64);
+        let corners: Vec<Option<kurbo::Point>> = [(0.0, 0.0), (cw, 0.0), (0.0, ch), (cw, ch)]
+            .iter()
+            .map(|&(x, y)| tex_to_device.map_point(kurbo::Point::new(x, y)))
+            .collect();
+        let quad =
+            corners.iter().all(Option::is_some).then(|| [0, 1, 2, 3].map(|k| corners[k].unwrap_or_default()));
+        let buf = match self.layers.last_mut() {
+            Some(l) => &mut l.px,
+            None => &mut self.px,
+        };
+        for y in 0..h {
+            for x in 0..w {
+                let p = kurbo::Point::new(x as f64 + 0.5, y as f64 + 0.5);
+                let Some(t) = inv.map_point(p) else { continue };
+                let cov = quad.map_or(1.0, |c| effects::edge_coverage(p, c));
+                if cov <= 0.0 || t.x < -1.0 || t.y < -1.0 || t.x > cw + 1.0 || t.y > ch + 1.0 {
+                    continue;
+                }
+                let s = effects::sample(&tex, t).map(|v| v * cov);
+                let d = &mut buf[y * w + x];
+                for k in 0..4 {
+                    d[k] = s[k] + d[k] * (1.0 - s[3]);
+                }
+            }
         }
         Ok(())
     }
@@ -188,7 +317,81 @@ impl Target {
                 let n = self.px.len();
                 self.layers.push(Layer::new(n, mask, *blend, f64::from(*alpha).clamp(0.0, 1.0)));
             }
+            Op::PushEffectLayer { effect, clip, transform, .. } => {
+                let t = outer * *transform;
+                let s = effects::spectral(t);
+                let (w, h) = (self.w as usize, self.h as usize);
+                let (mask, bbox) = match clip {
+                    Some(c) => {
+                        let b = t.transform_rect_bbox(c.bounding_box());
+                        (fill_geometry(c, t, peniko::Fill::NonZero, Snap::Off, self.w, self.h), Some(b))
+                    }
+                    None => (vec![1.0; w * h], None),
+                };
+                let (rx, ry) = effect.reach();
+                let r = self.effect_rect(bbox, (rx * s).ceil(), (ry * s).ceil());
+                let mut st = Vec::new();
+                effects::steps(effect, s, &mut st);
+                let mut layer = Layer::new(w * h, mask, peniko::BlendMode::default(), 1.0);
+                layer.effect = Some((st, r));
+                self.layers.push(layer);
+            }
+            Op::PushBackdropFilter { effect, clip, transform, blend, alpha, .. } => {
+                let t = outer * *transform;
+                let s = effects::spectral(t);
+                let (w, h) = (self.w as usize, self.h as usize);
+                let mask = fill_geometry(clip, t, peniko::Fill::NonZero, Snap::Off, self.w, self.h);
+                let (rx, ry) = effect.reach();
+                let r = self.effect_rect(
+                    Some(t.transform_rect_bbox(clip.bounding_box())),
+                    (rx * s).ceil(),
+                    (ry * s).ceil(),
+                );
+                let mut st = Vec::new();
+                effects::steps(effect, s, &mut st);
+                let a = f64::from(*alpha).clamp(0.0, 1.0);
+                // The backdrop is the renderer's current target: the innermost isolated layer
+                // (or the root) with the pure-clip layers above it flattened in (those draw
+                // inline on the GPU, 09 §3.1).
+                let base_idx = self.layers.iter().rposition(|l| !l.is_pure_clip());
+                let mut flat = match base_idx {
+                    Some(i) => self.layers[i].px.clone(),
+                    None => self.px.clone(),
+                };
+                for l in &self.layers[base_idx.map_or(0, |i| i + 1)..] {
+                    let copy = Layer::new(0, l.mask.clone(), l.blend, l.alpha);
+                    let copy = Layer { px: l.px.clone(), ..copy };
+                    copy.pop_into(&mut flat);
+                }
+                let buf = match self.layers.last_mut() {
+                    Some(l) => &mut l.px,
+                    None => &mut self.px,
+                };
+                let mut base = effects::crop(&flat, w, r);
+                effects::quantize(&mut base.px);
+                let filtered = effects::apply(base, &st, true);
+                for y in 0..filtered.h {
+                    for x in 0..filtered.w {
+                        let i = (r.1 + y) * w + r.0 + x;
+                        let cov = mask[i];
+                        if cov == 0.0 || a == 0.0 {
+                            continue;
+                        }
+                        let src = filtered.px[y * filtered.w + x].map(|v| v * a);
+                        let res = compose::composite(buf[i], src, blend.mix, blend.compose);
+                        for k in 0..4 {
+                            buf[i][k] += (res[k] - buf[i][k]) * cov;
+                        }
+                    }
+                }
+                // The children draw on top, clipped (a plain clip layer).
+                self.layers.push(Layer::new(w * h, mask, peniko::BlendMode::default(), 1.0));
+            }
             Op::PopLayer => {
+                let w = self.w as usize;
+                if let Some(l) = self.layers.last_mut() {
+                    l.run_effect(w);
+                }
                 if let Some(layer) = self.layers.pop() {
                     match self.layers.last_mut() {
                         Some(parent) => layer.pop_into(&mut parent.px),

@@ -586,3 +586,114 @@ fn blur_styles_partition_normal() {
     // The blur spreads ink outside the square and keeps the center near full.
     assert!(b[6 * w + 24] > 0.0 && b[24 * w + 24] > 0.9);
 }
+
+// ---- V52: effects, projected layers, dithering ----
+
+mod v52 {
+    use kurbo::{Affine, Rect};
+    use pebbles_render::paint::display_list::{BlurEdge, LayerEffect};
+    use pebbles_render::paint::{ColorMatrix, Painter, Projective, Scene};
+    use peniko::{Color, Fill};
+    use render_check::golden::Golden;
+
+    fn px(img: &render_check::metric::Rgba8, x: u32, y: u32) -> [u8; 4] {
+        let i = ((y * img.width + x) * 4) as usize;
+        [img.data[i], img.data[i + 1], img.data[i + 2], img.data[i + 3]]
+    }
+
+    fn render(build: impl FnOnce(&mut Painter<'_>)) -> render_check::metric::Rgba8 {
+        let mut s = Scene::new();
+        build(&mut Painter::new(&mut s));
+        Golden::render(&s, 64, 64, Color::WHITE).expect("golden")
+    }
+
+    fn effect(p: &mut Painter<'_>, e: LayerEffect, body: impl FnOnce(&mut Painter<'_>)) {
+        p.push_effect_layer(e, None::<&Rect>, Affine::IDENTITY);
+        body(p);
+        p.pop_layer();
+    }
+
+    #[test]
+    fn blur_of_constant_is_constant() {
+        let img = render(|p| {
+            effect(p, LayerEffect::Blur { sigma_x: 5.0, sigma_y: 5.0, edge: BlurEdge::Clamp }, |p| {
+                p.fill(
+                    Fill::NonZero,
+                    Affine::IDENTITY,
+                    Color::from_rgba8(200, 50, 50, 255),
+                    None,
+                    &Rect::new(0.0, 0.0, 64.0, 64.0),
+                );
+            })
+        });
+        for (x, y) in [(32, 32), (0, 0), (63, 40)] {
+            assert_eq!(px(&img, x, y), [200, 50, 50, 255], "({x},{y})");
+        }
+    }
+
+    #[test]
+    fn grayscale_matrix_example() {
+        let img = render(|p| {
+            effect(p, ColorMatrix::grayscale().into(), |p| {
+                p.fill(
+                    Fill::NonZero,
+                    Affine::IDENTITY,
+                    Color::from_rgba8(255, 0, 0, 255),
+                    None,
+                    &Rect::new(0.0, 0.0, 64.0, 64.0),
+                );
+            })
+        });
+        let c = px(&img, 32, 32);
+        assert!(c[..3].iter().all(|&v| (i32::from(v) - 54).abs() <= 1), "{c:?}");
+    }
+
+    #[test]
+    fn dilate_square_grows_by_radius() {
+        let img = render(|p| {
+            effect(p, LayerEffect::Dilate { radius_x: 3.0, radius_y: 3.0 }, |p| {
+                p.fill(
+                    Fill::NonZero,
+                    Affine::IDENTITY,
+                    Color::BLACK,
+                    None,
+                    &Rect::new(27.0, 27.0, 37.0, 37.0),
+                );
+            })
+        });
+        assert_eq!(px(&img, 24, 24)[0], 0);
+        assert_eq!(px(&img, 39, 39)[0], 0);
+        assert_eq!(px(&img, 23, 30)[0], 255);
+        assert_eq!(px(&img, 40, 30)[0], 255);
+    }
+
+    #[test]
+    fn identity_projection_equals_layer() {
+        let body = |p: &mut Painter<'_>| {
+            p.fill(
+                Fill::NonZero,
+                Affine::IDENTITY,
+                Color::from_rgba8(30, 90, 200, 255),
+                None,
+                &Rect::new(8.0, 8.0, 40.0, 30.0),
+            );
+        };
+        let plain = render(|p| body(p));
+        let projected = render(|p| {
+            p.push_projected_layer(
+                Projective::from_affine(Affine::IDENTITY),
+                Rect::new(0.0, 0.0, 64.0, 64.0),
+                None::<&Rect>,
+            );
+            body(p);
+            p.pop_layer();
+        });
+        assert_eq!(plain.data, projected.data);
+    }
+
+    #[test]
+    fn bayer_mean_is_zero() {
+        let sum: f64 = render_check::golden::paint::BAYER8.iter().map(|&b| f64::from(b) - 31.5).sum();
+        assert!(sum.abs() < 1e-9);
+    }
+}

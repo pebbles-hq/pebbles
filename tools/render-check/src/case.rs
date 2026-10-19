@@ -15,6 +15,10 @@ pub enum Category {
     Layer,
     Text,
     Mesh,
+    /// Layer effects and backdrop filters (09 §10; 8-bit passes mirrored by the golden model).
+    Effect,
+    /// Perspective layers (09 §10.7; bilinear resampling).
+    Projected,
     Screen,
     Stress,
     SelfConsistency,
@@ -25,7 +29,7 @@ pub enum Category {
 
 impl Category {
     /// Every category.
-    pub const ALL: [Category; 14] = [
+    pub const ALL: [Category; 16] = [
         Self::Exact,
         Self::Geometry,
         Self::Gradient,
@@ -34,6 +38,8 @@ impl Category {
         Self::Layer,
         Self::Text,
         Self::Mesh,
+        Self::Effect,
+        Self::Projected,
         Self::Screen,
         Self::Stress,
         Self::SelfConsistency,

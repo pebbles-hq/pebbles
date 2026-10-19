@@ -6,6 +6,9 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — layer effects (wgpu renderer)
+wgpu renderer: blur, backdrop filter, color matrix, dilate/erode and perspective layers (`Painter::push_effect_layer`, `push_backdrop_filter`, `push_projected_layer`; `Transform::matrix4`).
+
 ### Added — image brushes (wgpu renderer)
 wgpu renderer: image brushes on fills and strokes (extend, quality, alpha, brush transform), and image-brush text.
 

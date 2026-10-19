@@ -467,3 +467,21 @@ fn affine_projection_draws_inline() {
     assert!(is_white(pixel(&px, 64, 35, 35)), "clipped to the translated bounds");
     assert!(is_white(pixel(&px, 64, 5, 5)));
 }
+
+/// L60: a blurred centered square spreads equally in every direction.
+#[test]
+#[ignore = "gpu"]
+fn blur_spreads_symmetrically() {
+    let Some(px) = render("blur_spreads_symmetrically", (64, 64), |p| {
+        effect(p, blur(4.0, BlurEdge::Decal), |p| {
+            p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &Rect::new(24.0, 24.0, 40.0, 40.0));
+        })
+    }) else {
+        return;
+    };
+    for d in [2, 6, 10] {
+        let (l, r) = (pixel(&px, 64, 23 - d + 1, 32)[0], pixel(&px, 64, 40 + d - 1, 32)[0]);
+        let (t, b) = (pixel(&px, 64, 32, 23 - d + 1)[0], pixel(&px, 64, 32, 40 + d - 1)[0]);
+        assert!(l.abs_diff(r) <= 2 && t.abs_diff(b) <= 2 && l.abs_diff(t) <= 2, "d {d}: {l} {r} {t} {b}");
+    }
+}
