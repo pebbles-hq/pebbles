@@ -161,3 +161,49 @@ fn integer_clip_is_hard_on_every_edge() {
     }
     assert_eq!(pixel(&rgba, 128, 20, 20)[..3], [0, 0, 0]);
 }
+
+/// L04: a circle clip is analytic — the edge pixel is partially covered, interior full,
+/// outside untouched.
+#[test]
+#[ignore = "gpu"]
+fn circle_clip_edge_is_analytic() {
+    let Some((device, queue, mut r)) = setup("circle_clip_edge_is_analytic") else { return };
+    let mut s = Scene::new();
+    let mut p = Painter::new(&mut s);
+    p.push_layer(
+        Fill::NonZero,
+        peniko::BlendMode::default(),
+        1.0,
+        Affine::IDENTITY,
+        &kurbo::Circle::new((32.0, 32.0), 24.0),
+    );
+    p.fill(
+        Fill::NonZero,
+        Affine::IDENTITY,
+        Color::from_rgba8(255, 0, 0, 255),
+        None,
+        &Rect::new(0.0, 0.0, 64.0, 64.0),
+    );
+    p.pop_layer();
+    let px = render_scene(&device, &queue, &mut r, &s, (64, 64), Color::WHITE);
+    // Every pixel within 1 px of the edge has coverage clamp(0.5 − (d − 24)) (analytic, ±3):
+    // red stays 255, green = 255 · (1 − coverage). Some of them are partially covered.
+    let mut partial = 0;
+    for y in 0..64u32 {
+        for x in 0..64u32 {
+            let d = (f64::from(x) + 0.5 - 32.0).hypot(f64::from(y) + 0.5 - 32.0);
+            if (d - 24.0).abs() > 1.0 {
+                continue;
+            }
+            let cov = (0.5 - (d - 24.0)).clamp(0.0, 1.0);
+            let want = (255.0 * (1.0 - cov)).round() as u8;
+            let got = pixel(&px, 64, x, y);
+            assert_eq!(got[0], 255, "({x},{y})");
+            assert!(got[1].abs_diff(want) <= 3, "({x},{y}) d {d:.3}: green {} want {want}", got[1]);
+            partial += u32::from((80..=176).contains(&got[1]));
+        }
+    }
+    assert!(partial >= 8, "only {partial} half-covered edge pixels");
+    assert_eq!(pixel(&px, 64, 32, 32), [255, 0, 0, 255]);
+    assert_eq!(pixel(&px, 64, 32, 4), [255, 255, 255, 255]);
+}

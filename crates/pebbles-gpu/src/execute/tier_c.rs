@@ -18,6 +18,8 @@ pub(crate) struct Run {
     /// Device px, rounded out, ∩ the clip scissor; empty ⇒ nothing to draw.
     pub bounds: ScissorRect,
     pub scissor: ScissorRect,
+    /// The run's SDF clip: applied once, by its composite (the offscreen content binds none).
+    pub sdf: crate::prepare::SdfClipId,
 }
 
 fn intersect(a: ScissorRect, b: ScissorRect) -> ScissorRect {
@@ -62,7 +64,7 @@ pub(crate) fn plan_runs(plan: &FramePlan, out: &mut Vec<Run>) {
             }
             _ => ScissorRect { x0: 0, y0: 0, x1: 0, y1: 0 },
         };
-        out.push(Run { cmds: start..i, bounds, scissor: clip.scissor });
+        out.push(Run { cmds: start..i, bounds, scissor: clip.scissor, sdf: clip.sdf });
     }
 }
 
@@ -178,7 +180,7 @@ pub(crate) fn encode_runs(
                 continue;
             };
             pass.set_pipeline(pipeline);
-            pass.set_bind_group(0, renderer.globals_bg(), &[u32::try_from(globals_offset).unwrap_or(0)]);
+            pass.set_bind_group(0, renderer.globals_bg(), &[u32::try_from(globals_offset).unwrap_or(0), 0]);
             stats.bind_group_switches += 1;
             pass.set_vertex_buffer(0, vb.slice(..));
             pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);

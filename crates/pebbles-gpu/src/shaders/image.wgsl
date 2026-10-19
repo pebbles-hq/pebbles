@@ -88,5 +88,5 @@ fn fs(i: QuadOut) -> @location(0) vec4<f32> {
     // a pixel center on the start edge and excludes one on the end edge.
     let e = edge(du.x, nu, (i.edges & 1u) != 0u, true) * edge(du.y, nu, (i.edges & 2u) != 0u, false)
         * edge(dv.x, nv, (i.edges & 4u) != 0u, true) * edge(dv.y, nv, (i.edges & 8u) != 0u, false);
-    return finish_color(t * (i.span.z * e));
+    return finish_color(t * (i.span.z * e * clip_coverage(device_pos(i.p))));
 }

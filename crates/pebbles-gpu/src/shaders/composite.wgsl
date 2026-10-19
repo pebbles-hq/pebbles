@@ -23,8 +23,9 @@ fn layer_texel(p: vec2<f32>) -> vec4<f32> {
 // CompositeOver: premultiplied source-over (BlendState::PREMULTIPLIED_ALPHA_BLENDING). The only
 // fragment without `finish_color`: the layer's texels already passed through it when they were
 // drawn, so a second decode would double-convert on the GL sRGB path (R13).
-// `clip_coverage` arrives with L04 and `clip_mask_coverage` with L08.
+// `clip_coverage` (L04) applies the composited run's SDF clip once; `clip_mask_coverage` arrives with L08.
 @fragment
 fn fs_over(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
-    return layer_texel(device_pos(frag_coord)) * comp.alpha;
+    let p = device_pos(frag_coord);
+    return layer_texel(p) * (comp.alpha * clip_coverage(p));
 }

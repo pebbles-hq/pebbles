@@ -35,18 +35,6 @@ struct ShapeOut {
     return out;
 }
 
-// Signed distance to a rounded rect; radii = (tl, tr, br, bl).
-fn sd_rrect(p: vec2<f32>, rect: vec4<f32>, radii: vec4<f32>) -> f32 {
-    let center = (rect.xy + rect.zw) * 0.5;
-    let half_size = (rect.zw - rect.xy) * 0.5;
-    let d = p - center;
-    let r_top = select(radii.x, radii.y, d.x > 0.0);
-    let r_bottom = select(radii.w, radii.z, d.x > 0.0);
-    let r = select(r_top, r_bottom, d.y > 0.0);
-    let q = abs(d) - half_size + vec2<f32>(r);
-    return length(max(q, vec2<f32>(0.0))) + min(max(q.x, q.y), 0.0) - r;
-}
-
 // Area of the pixel box [p - 0.5, p + 0.5]² inside `rect`: exact for a sharp rect, and an upper
 // bound of a rounded rect's area (rounded corners are cut by the SDF term).
 fn box_overlap(p: vec2<f32>, rect: vec4<f32>) -> f32 {
@@ -93,5 +81,5 @@ fn rrect_coverage(p: vec2<f32>, rect: vec4<f32>, radii: vec4<f32>) -> f32 {
         // A border is the ring between nested shapes: outer minus inner area.
         coverage = max(coverage - rrect_coverage(in.p, in.inner, in.inner_radii), 0.0);
     }
-    return finish_color(in.color * coverage);
+    return finish_color(in.color * (coverage * clip_coverage(device_pos(in.clip))));
 }

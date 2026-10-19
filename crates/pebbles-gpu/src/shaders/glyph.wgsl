@@ -41,5 +41,6 @@ fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     // Both samples in uniform control flow, then select (W5).
     let m = textureSample(mask_atlas, atlas_sampler, mask_uv, mask_layer).r;
     let c = textureSample(color_atlas, atlas_sampler, color_uv, color_layer);
-    return finish_color(select(in.color * m, c * in.color.a, in.layer_kind.y == 1u));
+    let cc = clip_coverage(device_pos(in.p));
+    return finish_color(select(in.color * m, c * in.color.a, in.layer_kind.y == 1u) * cc);
 }

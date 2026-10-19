@@ -3,22 +3,32 @@
 use kurbo::Affine;
 use pebbles_render::paint::display_list::Geometry;
 
-use super::plan::{ClipState, ScissorRect};
+use super::plan::{ClipState, ScissorRect, SdfClip, SdfClipId};
 
-/// How a clip is realised. Phase C produces only these four; L01 deletes `Bounds`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A device-space edge within this distance of an integer is "on the pixel grid" (09 §2.2).
+pub(crate) const SNAP_EPS: f64 = 1e-3;
+/// |b|, |c| ≤ AXIS_EPS × max(|a|, |d|, 1) means "no rotation or skew".
+pub(crate) const AXIS_EPS: f64 = 1e-9;
+/// |a − d| ≤ UNIFORM_EPS × max(|a|, |d|) means "uniform scale".
+pub(crate) const UNIFORM_EPS: f64 = 1e-6;
+
+/// How a clip is realised (09 §2.2).
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum ClipKind {
     /// The clip contains the current scissor: nothing changes.
     Noop,
     /// Empty intersection or non-finite input: cull until the matching pop.
     Cull,
-    /// Axis-aligned rect after transform (incl. zero-radius rounded rects): scissor alone is exact.
+    /// The new scissor alone is exact.
     Scissor,
-    /// Any other clip → scissor to its device bounding box (C17 logs it).
+    /// Interim for rows 8–10 until L08/L09: scissor to the device bbox (C17 logs it).
     Bounds,
+    /// Scissor (rounded out) + this SDF clip.
+    Sdf(SdfClip),
 }
 
 /// The result of classifying a clip geometry.
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct ClipDecision {
     pub kind: ClipKind,
     /// The scissor to apply (`cur.scissor` for `Noop`/`Cull`).
@@ -95,49 +105,135 @@ pub(crate) fn clip_class(g: &Geometry, m: Affine) -> ClipClass {
     }
 }
 
-/// Classify a clip geometry under `xf` against the current clip (09 §2.2, Phase-C rows only):
-/// an R07 `Scissor` class goes through C11's snap + intersect; everything else is a bbox
-/// scissor (`Bounds`, C17) until L01.
+/// Signed distance from `p` to a rounded rect (negative inside), the WGSL `sd_rrect` on the CPU.
+pub(crate) fn sd_rrect(p: kurbo::Point, rect: [f64; 4], radii: [f64; 4]) -> f64 {
+    let (cx, cy) = (0.5 * (rect[0] + rect[2]), 0.5 * (rect[1] + rect[3]));
+    let (hx, hy) = (0.5 * (rect[2] - rect[0]), 0.5 * (rect[3] - rect[1]));
+    let (qx0, qy0) = (p.x - cx, p.y - cy);
+    let r_top = if qx0 > 0.0 { radii[1] } else { radii[0] };
+    let r_bottom = if qx0 > 0.0 { radii[2] } else { radii[3] };
+    let r = if qy0 < 0.0 { r_top } else { r_bottom };
+    let (qx, qy) = (qx0.abs() - hx + r, qy0.abs() - hy + r);
+    qx.max(qy).min(0.0) + qx.max(0.0).hypot(qy.max(0.0)) - r
+}
+
+/// The device rect and radii of an SDF-eligible clip (rows 5–7), else `None`.
+fn sdf_of(geom: &Geometry, xf: Affine) -> Option<SdfClip> {
+    let [a, b, c, d, ..] = xf.as_coeffs();
+    let s = a.abs().max(d.abs()).max(1.0);
+    let no_skew = b.abs() <= AXIS_EPS * s && c.abs() <= AXIS_EPS * s;
+    let uniform = (a.abs() - d.abs()).abs() <= UNIFORM_EPS * a.abs().max(d.abs());
+    let f = |v: f64| super::num::to_f32(v);
+    match geom {
+        Geometry::RoundedRect(rr) if no_skew && a > 0.0 && d > 0.0 && uniform => {
+            let dev = xf.transform_rect_bbox(rr.rect());
+            let r = rr.radii();
+            let radii = [r.top_left, r.top_right, r.bottom_right, r.bottom_left].map(|v| f(v * a));
+            Some(SdfClip {
+                rect: [f(dev.x0)?, f(dev.y0)?, f(dev.x1)?, f(dev.y1)?],
+                radii: [radii[0]?, radii[1]?, radii[2]?, radii[3]?],
+            })
+        }
+        Geometry::Circle(ci) if no_skew && uniform => {
+            let dev = xf.transform_rect_bbox(kurbo::Shape::bounding_box(ci));
+            let r = f(ci.radius * a.abs())?;
+            Some(SdfClip { rect: [f(dev.x0)?, f(dev.y0)?, f(dev.x1)?, f(dev.y1)?], radii: [r; 4] })
+        }
+        _ => None,
+    }
+}
+
+/// Whether the SDF clip contains every pixel of `s` (row 3): all four corners at `sd ≤ −½`.
+fn sdf_contains(c: &SdfClip, s: ScissorRect) -> bool {
+    let rect = c.rect.map(f64::from);
+    let radii = c.radii.map(f64::from);
+    [(s.x0, s.y0), (s.x1, s.y0), (s.x0, s.y1), (s.x1, s.y1)]
+        .iter()
+        .all(|&(x, y)| sd_rrect(kurbo::Point::new(f64::from(x), f64::from(y)), rect, radii) <= -0.5)
+}
+
+/// Classify a clip geometry under `xf` against the current clip (09 §2.2 rows 1–7; rows 8–10
+/// keep the `Bounds` interim until L08/L09).
 pub(crate) fn classify_clip(geom: &Geometry, xf: Affine, cur: &ClipState) -> ClipDecision {
+    let cull = ClipDecision { kind: ClipKind::Cull, scissor: cur.scissor };
+    // Row 1: non-finite.
     if !xf.as_coeffs().iter().all(|v| v.is_finite()) {
-        return ClipDecision { kind: ClipKind::Cull, scissor: cur.scissor };
+        return cull;
     }
-    match clip_class(geom, xf) {
-        ClipClass::Scissor { device, .. } => finish(device, cur, ClipKind::Scissor),
-        ClipClass::RoundedRect | ClipClass::Other => {
-            finish(xf.transform_rect_bbox(geom.bounding_box()), cur, ClipKind::Bounds)
-        }
+    let bbox = xf.transform_rect_bbox(geom.bounding_box());
+    if !bbox.is_finite() {
+        return cull;
     }
-}
-
-fn finish(b: kurbo::Rect, cur: &ClipState, kind: ClipKind) -> ClipDecision {
-    let Some(scissor) =
-        ScissorRect::from_device_bounds(b.x0, b.y0, b.x1, b.y1, (cur.scissor.x1, cur.scissor.y1))
+    // Row 2: empty intersection.
+    let target = (cur.scissor.x1, cur.scissor.y1);
+    let Some(rounded_out) = ScissorRect::from_device_bounds(bbox.x0, bbox.y0, bbox.x1, bbox.y1, target)
+        .and_then(|r| r.intersect(cur.scissor))
     else {
-        return ClipDecision { kind: ClipKind::Cull, scissor: cur.scissor };
+        return cull;
     };
-    match scissor.intersect(cur.scissor) {
-        None => ClipDecision { kind: ClipKind::Cull, scissor: cur.scissor },
-        Some(intersected) if intersected == cur.scissor => {
-            ClipDecision { kind: ClipKind::Noop, scissor: cur.scissor }
+    match clip_class(geom, xf) {
+        ClipClass::Scissor { device, .. } => {
+            // Row 3: contains the scissor.
+            let s = cur.scissor;
+            if device.x0 <= f64::from(s.x0)
+                && device.y0 <= f64::from(s.y0)
+                && device.x1 >= f64::from(s.x1)
+                && device.y1 >= f64::from(s.y1)
+            {
+                return ClipDecision { kind: ClipKind::Noop, scissor: cur.scissor };
+            }
+            let on_grid = |v: f64| (v - v.round()).abs() <= SNAP_EPS;
+            if on_grid(device.x0) && on_grid(device.y0) && on_grid(device.x1) && on_grid(device.y1) {
+                // Row 4: integer edges → scissor (rounded to nearest).
+                let (x0, y0, x1, y1) =
+                    (device.x0.round(), device.y0.round(), device.x1.round(), device.y1.round());
+                return match ScissorRect::from_device_bounds(x0, y0, x1, y1, target)
+                    .and_then(|r| r.intersect(cur.scissor))
+                {
+                    Some(scissor) => ClipDecision { kind: ClipKind::Scissor, scissor },
+                    None => cull,
+                };
+            }
+            // Row 5: a fractional edge → an SDF rect (when the slot is free).
+            let f = |v: f64| super::num::to_f32(v).unwrap_or(0.0);
+            if cur.sdf == SdfClipId::NONE {
+                let c = SdfClip {
+                    rect: [f(device.x0), f(device.y0), f(device.x1), f(device.y1)],
+                    radii: [0.0; 4],
+                };
+                return ClipDecision { kind: ClipKind::Sdf(c), scissor: rounded_out };
+            }
+            ClipDecision { kind: ClipKind::Bounds, scissor: rounded_out }
         }
-        Some(intersected) => ClipDecision { kind, scissor: intersected },
+        ClipClass::RoundedRect | ClipClass::Other => {
+            // Rows 6–7: rounded rect / circle under a uniform, unrotated transform.
+            if let Some(c) = sdf_of(geom, xf) {
+                if sdf_contains(&c, cur.scissor) {
+                    return ClipDecision { kind: ClipKind::Noop, scissor: cur.scissor };
+                }
+                if cur.sdf == SdfClipId::NONE {
+                    return ClipDecision { kind: ClipKind::Sdf(c), scissor: rounded_out };
+                }
+            }
+            // Rows 8–10 (interim until L08/L09): the device bbox.
+            ClipDecision { kind: ClipKind::Bounds, scissor: rounded_out }
+        }
     }
 }
 
-/// The clip stack: the current (intersected) scissor plus the saved scissor at each
-/// `PushLayer`. An unmatched `PopLayer` is ignored.
+/// The clip stack: the current `ClipState` plus the saved state at each `PushLayer`. An
+/// unmatched `PopLayer` is ignored (counted by the caller).
 #[derive(Default)]
 pub(crate) struct ClipStack {
-    stack: Vec<ScissorRect>,
-    current: ScissorRect,
+    stack: Vec<ClipState>,
+    current: ClipState,
 }
 
 impl ClipStack {
-    /// Reset for a new frame (full-target scissor).
+    /// Reset for a new frame (full-target scissor, no SDF or mask clip).
     pub(crate) fn reset(&mut self, target: (u32, u32)) {
         self.stack.clear();
-        self.current = ScissorRect::full(target);
+        self.current = ClipState::full(target);
     }
 
     /// Open entries (tests: the stack is balanced after a walk).
@@ -146,30 +242,46 @@ impl ClipStack {
         self.stack.len()
     }
 
+    /// Pushes still open (auto-closed at frame end, 09 §2.7).
+    pub(crate) fn open(&self) -> usize {
+        self.stack.len()
+    }
+
     /// The current clip state (only valid when not culled).
     pub(crate) fn current(&self) -> ClipState {
-        ClipState { scissor: self.current }
+        self.current
     }
 
     /// The current scissor is empty — every draw in the subtree is culled.
     pub(crate) fn is_culled(&self) -> bool {
-        self.current.x1 <= self.current.x0 || self.current.y1 <= self.current.y0
+        let s = self.current.scissor;
+        s.x1 <= s.x0 || s.y1 <= s.y0
     }
 
-    /// Apply a classified clip, intersecting with the parent. A `Cull` decision empties the
-    /// current scissor so the whole subtree is culled until the matching pop.
-    pub(crate) fn push(&mut self, decision: ClipDecision) {
+    /// Apply a classified clip (09 §2.2 "Applying a decision"); an SDF clip is appended to
+    /// `sdf_clips`. A `Cull` decision empties the scissor so the subtree is culled.
+    pub(crate) fn push(&mut self, decision: ClipDecision, sdf_clips: &mut Vec<SdfClip>) {
         self.stack.push(self.current);
-        self.current = match decision.kind {
-            ClipKind::Cull => ScissorRect { x0: 0, y0: 0, x1: 0, y1: 0 },
-            _ => decision.scissor,
-        };
+        match decision.kind {
+            ClipKind::Cull => self.current.scissor = ScissorRect { x0: 0, y0: 0, x1: 0, y1: 0 },
+            ClipKind::Noop => {}
+            ClipKind::Scissor | ClipKind::Bounds => self.current.scissor = decision.scissor,
+            ClipKind::Sdf(c) => {
+                sdf_clips.push(c);
+                self.current.scissor = decision.scissor;
+                self.current.sdf = SdfClipId(u32::try_from(sdf_clips.len() - 1).unwrap_or(0));
+            }
+        }
     }
 
-    /// Pop the matching clip; an unmatched pop is ignored.
-    pub(crate) fn pop(&mut self) {
-        if let Some(prev) = self.stack.pop() {
-            self.current = prev;
+    /// Pop the matching clip; returns false for an unmatched pop.
+    pub(crate) fn pop(&mut self) -> bool {
+        match self.stack.pop() {
+            Some(prev) => {
+                self.current = prev;
+                true
+            }
+            None => false,
         }
     }
 }
@@ -180,7 +292,7 @@ mod tests {
     use kurbo::Rect;
 
     fn cur(size: (u32, u32)) -> ClipState {
-        ClipState { scissor: ScissorRect::full(size) }
+        ClipState::full(size)
     }
 
     #[test]
@@ -204,8 +316,11 @@ mod tests {
     #[test]
     fn rotated_90_rect_is_scissor_clip() {
         let geom = Geometry::Rect(Rect::new(0.0, 0.0, 100.0, 50.0));
-        let d = classify_clip(&geom, Affine::rotate(std::f64::consts::FRAC_PI_2), &cur((200, 200)));
+        // Rotated into x ∈ [−50, 0] it would be entirely off-target (a cull); move it into view.
+        let m = Affine::translate((100.0, 0.0)) * Affine::rotate(std::f64::consts::FRAC_PI_2);
+        let d = classify_clip(&geom, m, &cur((200, 200)));
         assert_eq!(d.kind, ClipKind::Scissor);
+        assert_eq!(d.scissor, ScissorRect { x0: 50, y0: 0, x1: 100, y1: 100 });
     }
 
     #[test]
@@ -314,5 +429,192 @@ mod tests {
     fn fractional_rect_is_unaligned() {
         let c = class(Geometry::Rect(Rect::new(10.5, 10.0, 50.0, 40.0)), Affine::IDENTITY);
         assert!(matches!(c, ClipClass::Scissor { aligned: false, .. }), "{c:?}");
+    }
+
+    // ---- L03 (09 §2.2 rows 1–7) ----
+
+    fn decide(g: Geometry, m: Affine) -> ClipDecision {
+        classify_clip(&g, m, &cur((100, 100)))
+    }
+
+    #[test]
+    fn integer_rect_is_scissor() {
+        let d = decide(Geometry::Rect(Rect::new(10.0, 10.0, 50.0, 40.0)), Affine::IDENTITY);
+        assert_eq!(d.kind, ClipKind::Scissor);
+        assert_eq!(d.scissor, ScissorRect { x0: 10, y0: 10, x1: 50, y1: 40 });
+    }
+
+    #[test]
+    fn rect_rotated_90_is_scissor() {
+        let m = Affine::translate((60.0, 0.0)) * Affine::rotate(std::f64::consts::FRAC_PI_2);
+        assert_eq!(decide(Geometry::Rect(Rect::new(10.0, 10.0, 50.0, 40.0)), m).kind, ClipKind::Scissor);
+    }
+
+    #[test]
+    fn fractional_rect_is_sdf() {
+        let d = decide(Geometry::Rect(Rect::new(10.5, 10.0, 50.0, 40.0)), Affine::IDENTITY);
+        let ClipKind::Sdf(c) = d.kind else { panic!("{:?}", d.kind) };
+        assert_eq!(c.radii, [0.0; 4]);
+        assert_eq!(d.scissor.x0, 10);
+    }
+
+    #[test]
+    fn rrect_uniform_scale_is_sdf_with_scaled_radii() {
+        let g = Geometry::RoundedRect(kurbo::RoundedRect::new(0.0, 0.0, 40.0, 40.0, 8.0));
+        let ClipKind::Sdf(c) = decide(g, Affine::scale(2.0)).kind else { panic!() };
+        assert_eq!(c.radii, [16.0; 4]);
+    }
+
+    #[test]
+    fn rrect_non_uniform_scale_is_mask() {
+        let g = Geometry::RoundedRect(kurbo::RoundedRect::new(0.0, 0.0, 40.0, 40.0, 8.0));
+        // Rows 8–10 (mask) — the bbox interim until L08.
+        assert_eq!(decide(g, Affine::scale_non_uniform(2.0, 1.0)).kind, ClipKind::Bounds);
+    }
+
+    #[test]
+    fn circle_under_rotation_is_sdf() {
+        let g = || Geometry::Circle(kurbo::Circle::new((50.0, 50.0), 20.0));
+        assert!(matches!(decide(g(), Affine::IDENTITY).kind, ClipKind::Sdf(_)));
+        let rot = Affine::rotate_about(std::f64::consts::FRAC_PI_6, kurbo::Point::new(50.0, 50.0));
+        assert_eq!(decide(g(), rot).kind, ClipKind::Bounds, "a rotated circle is a mask (row 8)");
+    }
+
+    #[test]
+    fn second_rrect_with_sdf_taken_is_mask() {
+        let mut c = cur((100, 100));
+        c.sdf = SdfClipId(1);
+        let g = Geometry::RoundedRect(kurbo::RoundedRect::new(10.0, 10.0, 60.0, 60.0, 8.0));
+        assert_eq!(classify_clip(&g, Affine::IDENTITY, &c).kind, ClipKind::Bounds);
+    }
+
+    #[test]
+    fn containing_rect_is_noop() {
+        assert_eq!(
+            decide(Geometry::Rect(Rect::new(-5.0, -5.0, 200.0, 200.0)), Affine::IDENTITY).kind,
+            ClipKind::Noop
+        );
+    }
+
+    #[test]
+    fn rrect_containing_scissor_is_noop() {
+        let g = Geometry::RoundedRect(kurbo::RoundedRect::new(-20.0, -20.0, 120.0, 120.0, 8.0));
+        assert_eq!(decide(g, Affine::IDENTITY).kind, ClipKind::Noop);
+    }
+
+    #[test]
+    fn nan_transform_culls() {
+        let m = Affine::new([f64::NAN, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        assert_eq!(decide(Geometry::Rect(Rect::new(0.0, 0.0, 10.0, 10.0)), m).kind, ClipKind::Cull);
+    }
+
+    #[test]
+    fn disjoint_clip_culls_until_pop() {
+        use pebbles_render::paint::{Painter, Scene};
+        let mut s = Scene::new();
+        let mut p = Painter::new(&mut s);
+        p.push_layer(
+            peniko::Fill::NonZero,
+            peniko::BlendMode::default(),
+            1.0,
+            Affine::IDENTITY,
+            &Rect::new(200.0, 200.0, 300.0, 300.0),
+        );
+        p.fill(
+            peniko::Fill::NonZero,
+            Affine::IDENTITY,
+            peniko::Color::BLACK,
+            None,
+            &Rect::new(0.0, 0.0, 50.0, 50.0),
+        );
+        p.pop_layer();
+        p.fill(
+            peniko::Fill::NonZero,
+            Affine::IDENTITY,
+            peniko::Color::BLACK,
+            None,
+            &Rect::new(0.0, 0.0, 50.0, 50.0),
+        );
+        let (plan, _) = crate::prepare::test_util::prepare_scene(&s, 100, 100);
+        assert_eq!(plan.cmds.len(), 1, "only the fill after the pop");
+        assert_eq!(plan.stats.clips_culled, 1);
+    }
+
+    #[test]
+    fn unbalanced_pop_is_ignored() {
+        use pebbles_render::paint::{Painter, Scene};
+        let mut s = Scene::new();
+        Painter::new(&mut s).pop_layer();
+        let (plan, _) = crate::prepare::test_util::prepare_scene(&s, 100, 100);
+        assert_eq!(plan.stats.unbalanced_pops, 1);
+    }
+
+    #[test]
+    fn open_push_is_autoclosed() {
+        use pebbles_render::paint::{Painter, Scene};
+        let mut s = Scene::new();
+        Painter::new(&mut s).push_layer(
+            peniko::Fill::NonZero,
+            peniko::BlendMode::default(),
+            1.0,
+            Affine::IDENTITY,
+            &Rect::new(10.0, 10.0, 50.0, 50.0),
+        );
+        let (plan, _) = crate::prepare::test_util::prepare_scene(&s, 100, 100);
+        assert_eq!(plan.stats.autoclosed, 1);
+    }
+
+    // ---- L04 ----
+
+    #[test]
+    fn rrect_push_assigns_sdf_record() {
+        use pebbles_render::paint::{Painter, Scene};
+        let mut s = Scene::new();
+        let mut p = Painter::new(&mut s);
+        let rr = kurbo::RoundedRect::new(10.0, 10.0, 60.0, 60.0, 6.0);
+        p.push_layer(peniko::Fill::NonZero, peniko::BlendMode::default(), 1.0, Affine::IDENTITY, &rr);
+        p.fill(
+            peniko::Fill::NonZero,
+            Affine::IDENTITY,
+            peniko::Color::BLACK,
+            None,
+            &Rect::new(0.0, 0.0, 100.0, 100.0),
+        );
+        p.pop_layer();
+        p.fill(
+            peniko::Fill::NonZero,
+            Affine::IDENTITY,
+            peniko::Color::BLACK,
+            None,
+            &Rect::new(0.0, 0.0, 100.0, 100.0),
+        );
+        let (plan, _) = crate::prepare::test_util::prepare_scene(&s, 100, 100);
+        let clips: Vec<_> = plan
+            .cmds
+            .iter()
+            .map(|c| match c {
+                crate::prepare::DrawCmd::Shapes { clip, .. }
+                | crate::prepare::DrawCmd::Solid { clip, .. } => clip.sdf,
+                _ => SdfClipId::NONE,
+            })
+            .collect();
+        assert_eq!(clips, vec![SdfClipId(1), SdfClipId::NONE], "AC1 + AC2 (restored on pop)");
+        assert_eq!(plan.sdf_clips[1].radii, [6.0; 4]);
+    }
+
+    #[test]
+    fn sdf_record_restored_on_pop() {
+        let mut stack = ClipStack::default();
+        stack.reset((100, 100));
+        let mut records = vec![SdfClip::NONE];
+        let d = classify_clip(
+            &Geometry::Circle(kurbo::Circle::new((50.0, 50.0), 20.0)),
+            Affine::IDENTITY,
+            &stack.current(),
+        );
+        stack.push(d, &mut records);
+        assert_eq!(stack.current().sdf, SdfClipId(1));
+        assert!(stack.pop());
+        assert_eq!(stack.current().sdf, SdfClipId::NONE);
     }
 }

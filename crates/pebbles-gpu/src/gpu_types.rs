@@ -59,6 +59,25 @@ pub(crate) struct ShadowInstance {
 const _: () = assert!(size_of::<ShadowInstance>() == 96);
 const _: () = assert!(std::mem::offset_of!(ShadowInstance, color) == 64);
 
+/// One SDF clip record (09 §2.4): bound at group 0, binding 1, dynamic offset.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+pub(crate) struct ClipParams {
+    /// Device px: x0, y0, x1, y1.
+    pub rect: [f32; 4],
+    /// Device px: tl, tr, br, bl.
+    pub radii: [f32; 4],
+}
+
+const _: () = assert!(size_of::<ClipParams>() == 32);
+
+#[cfg(test)]
+#[test]
+fn clip_params_layout() {
+    assert_eq!(size_of::<ClipParams>(), 32);
+    assert_eq!(std::mem::offset_of!(ClipParams, radii), 16);
+}
+
 /// Tier A analytic shape (02 §6.4): rect / rounded rect / circle, fill or uniform stroke, as one
 /// instanced quad with SDF coverage. WGSL: five `vec4<f32>` attributes at locations 0–4.
 #[repr(C)]

@@ -243,6 +243,8 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::DynamicImage,       // R37
     F::BlurredFill,        // R42
     F::BlurredGlyphs,      // R42
+    F::ClipRRect,          // L04 (SDF clip)
+    F::ClipCircle,         // L04 (SDF clip)
 ];
 
 #[cfg(test)]

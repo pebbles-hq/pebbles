@@ -31,6 +31,9 @@ pub struct Renderer {
     pub(crate) pipelines: PipelineCache,
     globals_buffer: wgpu::Buffer,
     globals_bg: wgpu::BindGroup,
+    /// SDF clip records (09 §2.4, L04): one `ClipParams` per slot; `clip_slots` slots.
+    clip_buffer: wgpu::Buffer,
+    clip_slots: u64,
     /// Dynamic-offset slots in `globals_buffer` (slot 0 = main pass, then one per Tier C run).
     globals_slots: u64,
     /// One `CompositeParams` slot per Tier C run (R17).
@@ -93,7 +96,9 @@ impl Renderer {
         let device = gpu.device();
         let layouts = BindGroupLayouts::new(device);
         let glyph_atlas = GlyphAtlas::new(device, &budgets);
-        let (globals_buffer, globals_bg) = globals_slots(device, &layouts, 1);
+        let globals_buffer = uniform_buffer(device, "pebbles.gpu.buffer.globals", 1);
+        let clip_buffer = uniform_buffer(device, "pebbles.gpu.buffer.clips", 1);
+        let globals_bg = globals_bind_group(device, &layouts, &globals_buffer, &clip_buffer);
         let composite_buffer = uniform_buffer(device, "pebbles.gpu.buffer.composite", 1);
         Renderer {
             sample_count: gpu.caps().msaa_samples,
@@ -105,6 +110,8 @@ impl Renderer {
             pipelines: PipelineCache::new(),
             globals_buffer,
             globals_bg,
+            clip_buffer,
+            clip_slots: 1,
             globals_slots: 1,
             composite_buffer,
             composite_slots: 1,
@@ -228,6 +235,7 @@ impl Renderer {
             _pad0: 0,
         };
         queue.write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
+        self.write_clips(device, queue, &mut stats);
 
         self.arenas.solid_vertices.upload(
             device,
@@ -321,6 +329,32 @@ impl Renderer {
 }
 
 impl Renderer {
+    /// Write this frame's SDF clip records (09 §2.4, L04), growing the clip buffer (and so the
+    /// group-0 bind group) when needed. Record 0 is `ClipParams::NONE`.
+    fn write_clips(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, stats: &mut FrameStats) {
+        let n = self.scratch.plan.sdf_clips.len().max(1) as u64;
+        if n > self.clip_slots {
+            let slots = n.next_power_of_two();
+            self.clip_buffer = uniform_buffer(device, "pebbles.gpu.buffer.clips", slots);
+            self.clip_slots = slots;
+            self.globals_bg =
+                globals_bind_group(device, &self.layouts, &self.globals_buffer, &self.clip_buffer);
+            stats.buffers_created += 1;
+            stats.bind_groups_created += 1;
+        }
+        let stride = super::execute::tier_c::slot_stride(device);
+        for (i, c) in self.scratch.plan.sdf_clips.iter().enumerate() {
+            let p = super::gpu_types::ClipParams { rect: c.rect, radii: c.radii };
+            queue.write_buffer(&self.clip_buffer, i as u64 * stride, bytemuck::bytes_of(&p));
+        }
+    }
+
+    /// The dynamic offset of SDF clip record `id` (09 §2.4).
+    pub(crate) fn clip_offset(&self, id: super::prepare::SdfClipId) -> u32 {
+        let stride = super::execute::tier_c::slot_stride(&self.device);
+        u32::try_from(u64::from(id.0) * stride).unwrap_or(0)
+    }
+
     /// R39 pre-pass: render every atlas-route COLR glyph of `scene` that misses the color atlas
     /// into its slot — once, with the normal pipelines, into a scratch `Rgba8Unorm` target that
     /// is copied into the page (pages are not render attachments). A frame with no misses does
@@ -468,7 +502,8 @@ impl Renderer {
     ) {
         if globals > self.globals_slots {
             let n = globals.next_power_of_two();
-            let (buffer, bg) = globals_slots(device, &self.layouts, n);
+            let buffer = uniform_buffer(device, "pebbles.gpu.buffer.globals", n);
+            let bg = globals_bind_group(device, &self.layouts, &buffer, &self.clip_buffer);
             // Slot 0 (the main pass) was written this frame already: copy it over.
             let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("pebbles.gpu.encoder.globals_grow"),
@@ -498,26 +533,29 @@ fn uniform_buffer(device: &wgpu::Device, label: &'static str, slots: u64) -> wgp
     })
 }
 
-/// The Globals buffer with `slots` slots and its bind group (32-byte window, dynamic offset).
-fn globals_slots(
+/// Group 0 over the Globals (binding 0) and SDF clip (binding 1) buffers, both 32-byte windows
+/// with dynamic offsets (09 §2.4).
+fn globals_bind_group(
     device: &wgpu::Device,
     layouts: &BindGroupLayouts,
-    slots: u64,
-) -> (wgpu::Buffer, wgpu::BindGroup) {
-    let buffer = uniform_buffer(device, "pebbles.gpu.buffer.globals", slots);
-    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    globals: &wgpu::Buffer,
+    clips: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    let window = |buffer| {
+        wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+            buffer,
+            offset: 0,
+            size: wgpu::BufferSize::new(32),
+        })
+    };
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("pebbles.gpu.bind.globals"),
         layout: &layouts.globals,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                buffer: &buffer,
-                offset: 0,
-                size: wgpu::BufferSize::new(size_of::<Globals>() as u64),
-            }),
-        }],
-    });
-    (buffer, bg)
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: window(globals) },
+            wgpu::BindGroupEntry { binding: 1, resource: window(clips) },
+        ],
+    })
 }
 
 #[cfg(test)]

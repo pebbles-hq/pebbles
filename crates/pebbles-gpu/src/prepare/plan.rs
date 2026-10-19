@@ -55,9 +55,49 @@ impl ScissorRect {
 /// The clip a drawing command executes under. Every drawing `DrawCmd` carries its own copy;
 /// prepare keeps the current one on its `ClipStack`. C07 lands `scissor` only (L03 adds `sdf`,
 /// L08 adds `mask`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) struct ClipState {
+    /// Always set; the full target when unclipped. Never empty in an emitted cmd.
     pub scissor: ScissorRect,
+    /// The one active SDF clip, or `SdfClipId::NONE` (09 §2.4, L04).
+    pub sdf: SdfClipId,
+    /// The one active coverage-mask clip, or `MaskClipId::NONE` (09 L08/L09).
+    pub mask: MaskClipId,
+}
+
+impl ClipState {
+    /// No clip but the full target.
+    pub(crate) fn full(target: (u32, u32)) -> Self {
+        Self { scissor: ScissorRect::full(target), sdf: SdfClipId::NONE, mask: MaskClipId::NONE }
+    }
+}
+
+/// Index into `FramePlan::sdf_clips`. `SdfClipId::NONE` (0) is the "no SDF clip" record.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub(crate) struct SdfClipId(pub(crate) u32);
+impl SdfClipId {
+    pub(crate) const NONE: SdfClipId = SdfClipId(0);
+}
+
+/// Index into `FramePlan::mask_clips` (L08). `MaskClipId::NONE` (0) = no mask clip.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub(crate) struct MaskClipId(pub(crate) u32);
+impl MaskClipId {
+    pub(crate) const NONE: MaskClipId = MaskClipId(0);
+}
+
+/// A rounded-rect clip evaluated analytically in every content shader (09 §2.4).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct SdfClip {
+    /// Device px: x0, y0, x1, y1.
+    pub rect: [f32; 4],
+    /// Device px: top-left, top-right, bottom-right, bottom-left. All 0 for a sharp rect.
+    pub radii: [f32; 4],
+}
+
+impl SdfClip {
+    /// Record 0: a rect so large that coverage is 1 everywhere.
+    pub(crate) const NONE: SdfClip = SdfClip { rect: [-1.0e8, -1.0e8, 1.0e8, 1.0e8], radii: [0.0; 4] };
 }
 
 /// One ordered command. Drawing variants reference arena ranges and carry the `ClipState`
@@ -134,6 +174,17 @@ pub(crate) struct PrepareStats {
     pub tess_calls: u32,
     /// Glyphs culled against the active scissor before any atlas work (R25).
     pub culled_glyphs: u32,
+    /// Clip decisions (09 §2.2, §2.7).
+    pub clips_scissor: u32,
+    pub clips_noop: u32,
+    pub clips_culled: u32,
+    pub clips_sdf: u32,
+    pub clips_mask: u32,
+    pub clips_gpu_mask: u32,
+    pub gpu_mask_overflow: u32,
+    pub nonfinite: u32,
+    pub unbalanced_pops: u32,
+    pub autoclosed: u32,
 }
 
 /// Everything one frame draws, in order. Reused across frames: `clear()` keeps every capacity.
@@ -152,6 +203,8 @@ pub(crate) struct FramePlan {
     /// Normalized variation coords of every run, indexed by `GlyphRunInfo::coords`.
     pub coords: Vec<i16>,
     pub images: Vec<ImageRequest>,
+    /// SDF clip records (09 §2.4); `[0]` is `SdfClip::NONE`.
+    pub sdf_clips: Vec<SdfClip>,
     // the ordered stream
     pub cmds: Vec<DrawCmd>,
     /// OC rows (R01) that fell back in this plan.
@@ -173,6 +226,8 @@ impl FramePlan {
         self.mask_sources.clear();
         self.coords.clear();
         self.images.clear();
+        self.sdf_clips.clear();
+        self.sdf_clips.push(SdfClip::NONE);
         self.cmds.clear();
         self.fallback_features = super::coverage::FeatureSet::default();
         self.stats = PrepareStats::default();

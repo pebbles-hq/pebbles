@@ -67,8 +67,18 @@ impl Walk<'_> {
 
     /// The clip rows of a layer clip (quarter turns and zero-radius rounded rects are exact
     /// scissors since R07).
-    pub(super) fn note_clip(&mut self, clip: &Geometry, xf: Affine, fill: peniko::Fill) {
-        use super::clip::{ClipClass, clip_class};
+    pub(super) fn note_clip(
+        &mut self,
+        clip: &Geometry,
+        xf: Affine,
+        fill: peniko::Fill,
+        kind: &super::clip::ClipKind,
+    ) {
+        use super::clip::{ClipClass, ClipKind, clip_class};
+        // An SDF clip (09 §2.4, L04) is exact: rounded rects, circles, fractional rects.
+        if matches!(kind, ClipKind::Sdf(_) | ClipKind::Noop | ClipKind::Scissor | ClipKind::Cull) {
+            return;
+        }
         match (clip_class(clip, xf), clip) {
             (ClipClass::Scissor { .. }, _) => {}
             (_, Geometry::Rect(_) | Geometry::RoundedRect(_)) if !quarter_turn(xf) && is_rect_like(clip) => {

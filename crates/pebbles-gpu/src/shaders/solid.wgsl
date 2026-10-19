@@ -18,5 +18,5 @@ fn vs(i: I) -> O {
 
 @fragment
 fn fs(i: O) -> @location(0) vec4<f32> {
-    return finish_color(i.c);
+    return finish_color(i.c * clip_coverage(device_pos(i.p)));
 }

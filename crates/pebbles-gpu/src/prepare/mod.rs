@@ -44,7 +44,7 @@ mod tier_a;
 
 #[cfg(test)]
 pub(crate) use plan::ClipState;
-pub(crate) use plan::{DrawCmd, FramePlan, GlyphRequest, ScissorRect};
+pub(crate) use plan::{DrawCmd, FramePlan, GlyphRequest, ScissorRect, SdfClipId};
 
 /// Path-flattening tolerance for recorded shapes (logical px) — a local copy, because
 /// `display_list::TOL` is `pub(crate)` to pebbles-render.
@@ -113,8 +113,12 @@ pub(crate) fn prepare<'s>(
         sdf: !scratch.sdf_disabled,
     };
     walk.emit(scene.ops(), input.root_transform);
+    // 09 §2.7: pushes still open at the end of the frame are auto-closed.
+    let open = scratch.clips.open();
+    if open > 0 {
+        scratch.plan.stats.autoclosed += u32::try_from(open).unwrap_or(u32::MAX);
+    }
     scratch.outlines.end_frame();
-    scratch.colr.end_frame();
     scratch.colr.end_frame();
     &scratch.plan
 }
@@ -453,8 +457,12 @@ impl Walk<'_> {
                     if !xf.is_finite() || !hygiene::geometry_is_finite(clip) {
                         // Keep the layer (stack balance) with an empty clip: its content is culled.
                         self.skip_non_finite();
+                        self.plan.stats.nonfinite += 1;
                         let scissor = self.clips.current().scissor;
-                        self.clips.push(clip::ClipDecision { kind: clip::ClipKind::Cull, scissor });
+                        self.clips.push(
+                            clip::ClipDecision { kind: clip::ClipKind::Cull, scissor },
+                            &mut self.plan.sdf_clips,
+                        );
                         self.layers.push(1.0, false);
                         continue;
                     }
@@ -462,13 +470,20 @@ impl Walk<'_> {
                     // (defect D06's "layer clip lost").
                     let decision = clip::classify_clip(clip, xf, &self.clips.current());
                     if !self.layers.is_skipped() {
-                        self.note_clip(clip, xf, *clip_fill);
+                        self.note_clip(clip, xf, *clip_fill, &decision.kind);
                         self.note_layer(*alpha, *blend);
                     }
                     if decision.kind == clip::ClipKind::Bounds && !self.layers.is_skipped() {
                         self.stats.record(Unsupported::NonRectClip);
                     }
-                    self.clips.push(decision);
+                    match decision.kind {
+                        clip::ClipKind::Noop => self.plan.stats.clips_noop += 1,
+                        clip::ClipKind::Cull => self.plan.stats.clips_culled += 1,
+                        clip::ClipKind::Scissor => self.plan.stats.clips_scissor += 1,
+                        clip::ClipKind::Sdf(_) => self.plan.stats.clips_sdf += 1,
+                        clip::ClipKind::Bounds => {}
+                    }
+                    self.clips.push(decision, &mut self.plan.sdf_clips);
                     let blended = *blend != peniko::BlendMode::default();
                     if blended && !self.layers.is_skipped() {
                         self.stats.record(Unsupported::LayerBlend);
@@ -484,6 +499,9 @@ impl Walk<'_> {
                 Op::PopLayer => {
                     if self.layers.pop() {
                         self.clips.pop();
+                    } else {
+                        // 09 §2.7: an unbalanced pop is ignored and counted.
+                        self.plan.stats.unbalanced_pops += 1;
                     }
                 }
                 Op::Glyphs {

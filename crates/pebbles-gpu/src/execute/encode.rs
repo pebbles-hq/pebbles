@@ -128,8 +128,18 @@ pub(crate) fn encode(
     stats: &mut FrameStats,
     composites: &[super::tier_c::Composite],
 ) {
-    pass.set_bind_group(0, renderer.globals_bg(), &[0]);
+    // Group 0: Globals slot 0 + the NONE clip; rebound when a cmd's SDF clip changes (09 §2.4).
+    let mut bound_sdf = crate::prepare::SdfClipId::NONE;
+    pass.set_bind_group(0, renderer.globals_bg(), &[0, 0]);
     stats.bind_group_switches += 1;
+    let mut bind_clip =
+        |pass: &mut wgpu::RenderPass<'_>, sdf: crate::prepare::SdfClipId, stats: &mut FrameStats| {
+            if sdf != bound_sdf {
+                pass.set_bind_group(0, renderer.globals_bg(), &[0, renderer.clip_offset(sdf)]);
+                stats.bind_group_switches += 1;
+                bound_sdf = sdf;
+            }
+        };
     // The main pass is single-sampled (R17).
     let sample_count = 1;
     let key = |kind, variant| PipelineKey { kind, color_format: format, sample_count, blend: 0, variant };
@@ -163,6 +173,7 @@ pub(crate) fn encode(
                 continue;
             };
             state.set_scissor(pass, c.run.scissor);
+            bind_clip(pass, c.run.sdf, stats);
             state.set_pipeline(pass, pipeline);
             pass.set_bind_group(1, bg, &[c.params_offset]);
             stats.bind_group_switches += 1;
@@ -183,6 +194,7 @@ pub(crate) fn encode(
                 pass.set_vertex_buffer(0, vb.slice(..));
                 pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
                 state.set_scissor(pass, clip.scissor);
+                bind_clip(pass, clip.sdf, stats);
                 pass.draw_indexed(indices.clone(), 0, 0..1);
                 stats.draw_calls += 1;
             }
@@ -196,6 +208,7 @@ pub(crate) fn encode(
                 state.set_pipeline(pass, pipeline);
                 pass.set_vertex_buffer(0, vb.slice(..));
                 state.set_scissor(pass, clip.scissor);
+                bind_clip(pass, clip.sdf, stats);
                 pass.draw(0..4, instances.clone());
                 stats.draw_calls += 1;
             }
@@ -209,6 +222,7 @@ pub(crate) fn encode(
                 state.set_pipeline(pass, pipeline);
                 pass.set_vertex_buffer(0, vb.slice(..));
                 state.set_scissor(pass, clip.scissor);
+                bind_clip(pass, clip.sdf, stats);
                 pass.draw(0..4, instances.clone());
                 stats.draw_calls += 1;
             }
@@ -221,6 +235,7 @@ pub(crate) fn encode(
                     continue;
                 };
                 state.set_scissor(pass, clip.scissor);
+                bind_clip(pass, clip.sdf, stats);
                 state.set_pipeline(pass, pipeline);
                 pass.set_bind_group(1, bg, &[]);
                 stats.bind_group_switches += 1;
@@ -238,6 +253,7 @@ pub(crate) fn encode(
                     continue;
                 };
                 state.set_scissor(pass, clip.scissor);
+                bind_clip(pass, clip.sdf, stats);
                 state.set_pipeline(pass, pipeline);
                 pass.set_bind_group(1, bg, &[]);
                 stats.bind_group_switches += 1;
@@ -261,11 +277,11 @@ pub(crate) fn encode(
 #[cfg(test)]
 mod tests {
     use super::{cmd_kind, debug_group_runs};
-    use crate::prepare::{DrawCmd, ScissorRect};
+    use crate::prepare::DrawCmd;
 
     #[test]
     fn debug_group_runs_partition_commands() {
-        let clip = crate::prepare::ClipState { scissor: ScissorRect::full((8, 8)) };
+        let clip = crate::prepare::ClipState::full((8, 8));
         let cmds = vec![
             DrawCmd::Solid { indices: 0..3, clip },
             DrawCmd::Solid { indices: 3..6, clip },

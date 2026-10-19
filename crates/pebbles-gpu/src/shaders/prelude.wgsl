@@ -11,6 +11,25 @@ const COLOR_FLAG_DECODE_SRGB_OUTPUT: u32 = 1u;
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 
+// The active SDF clip (09 §2.4, L04): group 0, binding 1, dynamic offset. Record 0 is "no clip".
+struct ClipParams {
+    rect: vec4<f32>,   // device px: x0, y0, x1, y1
+    radii: vec4<f32>,  // device px: top-left, top-right, bottom-right, bottom-left
+};
+@group(0) @binding(1) var<uniform> clip: ClipParams;
+
+// Signed distance from p to a rounded rect, negative inside. y points down.
+fn sd_rrect(p: vec2<f32>, rect: vec4<f32>, radii: vec4<f32>) -> f32 {
+    let center = (rect.xy + rect.zw) * 0.5;
+    let half_size = (rect.zw - rect.xy) * 0.5;
+    let q0 = p - center;
+    let r_top = select(radii.x, radii.y, q0.x > 0.0);
+    let r_bottom = select(radii.w, radii.z, q0.x > 0.0);
+    let r = select(r_bottom, r_top, q0.y < 0.0);
+    let q = abs(q0) - half_size + vec2<f32>(r, r);
+    return min(max(q.x, q.y), 0.0) + length(max(q, vec2<f32>(0.0, 0.0))) - r;
+}
+
 fn srgb_to_linear(c: f32) -> f32 {
     return select(pow((c + 0.055) / 1.055, 2.4), c / 12.92, c <= 0.04045);
 }
@@ -44,4 +63,9 @@ fn quad_corner(vertex_index: u32) -> vec2<f32> {
 // Fragment @builtin(position) -> device px of the frame (adds the pass target's origin).
 fn device_pos(frag_coord: vec4<f32>) -> vec2<f32> {
     return frag_coord.xy + globals.target_origin;
+}
+
+// Analytic coverage of the active SDF clip at device px `p` (1.0 when the NONE record is bound).
+fn clip_coverage(p: vec2<f32>) -> f32 {
+    return clamp(0.5 - sd_rrect(p, clip.rect, clip.radii), 0.0, 1.0);
 }
