@@ -196,7 +196,7 @@ impl Renderer {
             ),
             external_textures: Default::default(),
             layer_budget_warned: false,
-            arenas: FrameArenas::new(),
+            arenas: FrameArenas::new(gpu.device().limits().max_buffer_size.min(budgets.arena_max_bytes)),
             device: device.clone(),
             queue: gpu.queue().clone(),
             health: std::sync::Arc::clone(gpu.health()),
@@ -581,6 +581,9 @@ impl Renderer {
         stats.encode_us = u32::try_from(encode_started.elapsed().as_micros()).unwrap_or(u32::MAX);
         let submit_started = web_time::Instant::now();
         queue.submit([command_buffer]);
+        if !nested {
+            self.arenas.end_frame(device, &mut stats);
+        }
         stats.submit_us = u32::try_from(submit_started.elapsed().as_micros()).unwrap_or(u32::MAX);
         if target.targets.pool.end_frame(self.budgets.layer_pool_bytes) {
             // 09 §3.8: in-use targets are never refused; count it and warn once.
