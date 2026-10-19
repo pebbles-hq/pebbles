@@ -165,6 +165,11 @@ impl LayerEffect {
     }
 }
 
+/// A GPU texture registered with the renderer (02 §11.1, R61): a plain id, so the display list
+/// stays GPU-free.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct TextureId(pub u64);
+
 /// Paint data for a custom GPU primitive (02 §11.2, DR-22). pebbles-render stays GPU-free: the
 /// renderer finds the `CustomRenderer` registered for the concrete type and hands it this value.
 pub trait CustomPaint: std::any::Any + Send + Sync {
@@ -243,6 +248,16 @@ pub enum Op {
         bounds: Rect,
         transform: Affine,
         paint: Arc<dyn CustomPaint>,
+    },
+    /// A registered GPU texture drawn into `rect` (local, under `transform`) at `alpha`, like an
+    /// image (02 §11.1, R61). Texels are premultiplied and sRGB-encoded, as uploaded images.
+    #[non_exhaustive]
+    GpuImage {
+        id: TextureId,
+        transform: Affine,
+        rect: Rect,
+        alpha: f32,
+        sampler: peniko::ImageSampler,
     },
     /// A triangle mesh (Flutter `drawVertices`, 02 §12): not antialiased.
     #[non_exhaustive]

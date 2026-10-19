@@ -4,7 +4,7 @@ use super::super::prepare::{DrawCmd, ScissorRect};
 use super::super::renderer::Renderer;
 use super::pipelines::{PipelineKey, PipelineKind};
 use super::resolve::resolve_glyphs;
-use crate::stats::FrameStats;
+use crate::stats::{FrameStats, Unsupported};
 
 /// Tracks the render pass's current scissor so redundant `set_scissor_rect` calls are elided.
 struct PassState {
@@ -91,6 +91,23 @@ pub(crate) fn resolve_and_upload(
         // An image that cannot be drawn becomes a zero-area quad so ranges stay valid.
         renderer.image_instances.push(if drawable { req.quad } else { bytemuck::Zeroable::zeroed() });
     }
+    // R61: GPU-texture quads follow the uploaded images; an unknown or unregistered id becomes
+    // a zero-area quad and is counted.
+    for req in &renderer.scratch.plan.gpu_images {
+        let (layout, samplers) = (&renderer.layouts.texture, &mut renderer.samplers);
+        let ok = renderer.external_textures.ensure_bind_group(
+            device,
+            layout,
+            req.id,
+            req.sampler,
+            samplers,
+            stats,
+        );
+        if !ok {
+            stats.record(Unsupported::GpuTextureUnregistered);
+        }
+        renderer.image_instances.push(if ok { req.quad } else { bytemuck::Zeroable::zeroed() });
+    }
     // R63: mesh textures (the image cache) and vertices.
     for (image, key, sampler) in &renderer.scratch.plan.mesh_images {
         if renderer.image_cache.ensure(device, queue, image, false, stats) {
@@ -112,7 +129,7 @@ pub(crate) fn cmd_kind(cmd: &DrawCmd) -> PipelineKind {
         DrawCmd::Shapes { .. } => PipelineKind::Sdf,
         DrawCmd::Shadows { .. } => PipelineKind::Shadow,
         DrawCmd::Glyphs { .. } => PipelineKind::Glyph,
-        DrawCmd::Images { .. } => PipelineKind::Image,
+        DrawCmd::Images { .. } | DrawCmd::GpuImage { .. } => PipelineKind::Image,
         DrawCmd::Vertices { .. } => PipelineKind::Vertices,
         DrawCmd::Brush { paint: crate::prepare::plan::BrushPaint::Gradient(_), .. } => PipelineKind::Gradient,
         DrawCmd::Brush { .. } => PipelineKind::ImageBrush,
@@ -339,6 +356,29 @@ pub(crate) fn encode(
                 stats.bind_group_switches += 1;
                 pass.set_vertex_buffer(0, vb.slice(..));
                 pass.draw(0..4, images.clone());
+                stats.draw_calls += 1;
+            }
+            DrawCmd::GpuImage { image, clip } => {
+                let Some(req) = renderer.scratch.plan.gpu_images.get(*image as usize) else { continue };
+                let (Some(pipeline), Some(vb), Some(bg)) = (
+                    renderer.pipelines.get_ensured(key(PipelineKind::Image, 0)),
+                    renderer.arenas.images.buffer(),
+                    renderer.external_textures.bind_group(req.id, req.sampler),
+                ) else {
+                    continue;
+                };
+                if !state.set_scissor(pass, clip.scissor) {
+                    continue;
+                }
+                bind_clip(pass, *clip, stats);
+                state.set_pipeline(pass, pipeline);
+                pass.set_bind_group(1, bg, &[]);
+                stats.bind_group_switches += 1;
+                pass.set_vertex_buffer(0, vb.slice(..));
+                let i = u32::try_from(renderer.scratch.plan.images.len())
+                    .unwrap_or(u32::MAX)
+                    .saturating_add(*image);
+                pass.draw(0..4, i..i + 1);
                 stats.draw_calls += 1;
             }
             DrawCmd::Composite { layer, clip } => {

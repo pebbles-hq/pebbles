@@ -569,3 +569,71 @@ mod budget_tests {
         assert_ne!(a, b);
     }
 }
+
+/// One app-owned texture registered with `Renderer::register_texture` (02 §11.1, R61): never
+/// copied, never evicted by the budget — the owner unregisters it.
+pub(crate) struct ExternalTexture {
+    view: wgpu::TextureView,
+    size: (u32, u32),
+    bind_groups: Vec<(SamplerKey, wgpu::BindGroup)>,
+}
+
+/// The registered external textures, by `TextureId`.
+#[derive(Default)]
+pub(crate) struct ExternalTextures {
+    entries: HashMap<u64, ExternalTexture>,
+    next_id: u64,
+}
+
+impl ExternalTextures {
+    pub(crate) fn register(&mut self, view: wgpu::TextureView, size: (u32, u32)) -> u64 {
+        // Ids are never reused, so a stale id can never alias a newer texture.
+        self.next_id += 1;
+        self.entries.insert(self.next_id, ExternalTexture { view, size, bind_groups: Vec::new() });
+        self.next_id
+    }
+
+    pub(crate) fn unregister(&mut self, id: u64) -> bool {
+        self.entries.remove(&id).is_some()
+    }
+
+    pub(crate) fn size(&self, id: u64) -> Option<(u32, u32)> {
+        self.entries.get(&id).map(|e| e.size)
+    }
+
+    /// Create the `(id, sampler)` bind group on first use (before any pass opens); false when
+    /// `id` is not registered.
+    pub(crate) fn ensure_bind_group(
+        &mut self,
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        id: u64,
+        sampler: SamplerKey,
+        samplers: &mut SamplerCache,
+        stats: &mut FrameStats,
+    ) -> bool {
+        let Some(entry) = self.entries.get_mut(&id) else { return false };
+        if entry.bind_groups.iter().any(|(k, _)| *k == sampler) {
+            return true;
+        }
+        let s = samplers.get_or_create(device, sampler, stats);
+        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("pebbles.gpu.bind.external"),
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&entry.view),
+                },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(s) },
+            ],
+        });
+        stats.bind_groups_created += 1;
+        entry.bind_groups.push((sampler, group));
+        true
+    }
+
+    pub(crate) fn bind_group(&self, id: u64, sampler: SamplerKey) -> Option<&wgpu::BindGroup> {
+        self.entries.get(&id)?.bind_groups.iter().find(|(k, _)| *k == sampler).map(|(_, g)| g)
+    }
+}

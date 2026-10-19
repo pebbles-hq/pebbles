@@ -76,6 +76,8 @@ pub struct Renderer {
     pub(crate) glyph_atlas: GlyphAtlas,
     pub(crate) glyph_instances: Vec<QuadInstance>,
     pub(crate) image_cache: ImageCache,
+    /// App-owned textures for `Op::GpuImage` (02 §11.1, R61).
+    pub(crate) external_textures: super::execute::resources::image_cache::ExternalTextures,
     /// Samplers by key (10 §3.5, M12).
     pub(crate) samplers: super::execute::resources::bind_groups::SamplerCache,
     pub(crate) image_instances: Vec<QuadInstance>,
@@ -176,6 +178,7 @@ impl Renderer {
             proj_next: 0,
             segments: Vec::new(),
             customs: Default::default(),
+            external_textures: Default::default(),
             layer_budget_warned: false,
             arenas: FrameArenas::new(),
             device: device.clone(),
@@ -212,6 +215,29 @@ impl Renderer {
     /// registration for `P`.
     pub fn register_custom<P: super::CustomPaint>(&mut self, r: Box<dyn super::CustomRenderer>) {
         self.customs.insert(std::any::TypeId::of::<P>(), r);
+    }
+
+    /// Make an app-owned texture drawable with `Op::GpuImage` (02 §11.1, R61). The view must be
+    /// a filterable float 2D texture of this device holding premultiplied, sRGB-encoded texels
+    /// (like uploaded images, 02 §3). It is never copied and never evicted: call
+    /// [`unregister_texture`](Self::unregister_texture) when done. Ids are never reused.
+    pub fn register_texture(
+        &mut self,
+        view: wgpu::TextureView,
+        size: (u32, u32),
+    ) -> pebbles_render::paint::display_list::TextureId {
+        pebbles_render::paint::display_list::TextureId(self.external_textures.register(view, size))
+    }
+
+    /// Forget a texture registered with [`register_texture`](Self::register_texture); later
+    /// draws of `id` are skipped and counted. Returns whether `id` was registered.
+    pub fn unregister_texture(&mut self, id: pebbles_render::paint::display_list::TextureId) -> bool {
+        self.external_textures.unregister(id.0)
+    }
+
+    /// The size passed to [`register_texture`](Self::register_texture), if `id` is registered.
+    pub fn texture_size(&self, id: pebbles_render::paint::display_list::TextureId) -> Option<(u32, u32)> {
+        self.external_textures.size(id.0)
     }
 
     /// The hard caps derived from this Renderer's device (11 §2.5).

@@ -162,6 +162,9 @@ pub(crate) enum DrawCmd {
     /// A custom primitive (02 §11, R60): `customs[op]`, drawn by its registered renderer in its
     /// own pass — never merged; segmentation ends the current pass around it.
     Custom { op: u32 },
+    /// A registered GPU texture (02 §11.1, R61): `gpu_images[image]` with the image pipeline;
+    /// its instance follows `images` in the image arena. Never merged.
+    GpuImage { image: u32, clip: ClipState },
     /// A brush-painted draw (09 §5, §6): the geometry's tier coverage × a gradient or image
     /// brush. Merges only with the same paint, cover kind and clip.
     Brush { cover: BrushCover, paint: BrushPaint, clip: ClipState },
@@ -376,6 +379,14 @@ pub(crate) struct PrepareStats {
     pub image_brushes: u32,
 }
 
+/// One GPU-texture image (R61): the registered texture's id, its sampler and its quad.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct GpuImageRequest {
+    pub id: u64,
+    pub sampler: SamplerKey,
+    pub quad: QuadInstance,
+}
+
 /// One custom primitive (R60): its paint, local → device transform and device scissor (the
 /// clip scissor ∩ the op's device bounds, never empty).
 #[derive(Clone, Debug)]
@@ -411,6 +422,8 @@ pub(crate) struct FramePlan {
     pub mesh_vertices: Vec<crate::gpu_types::MeshVertex>,
     /// Mesh textures: (image, key, sampler).
     pub mesh_images: Vec<(peniko::ImageData, ImageKey, SamplerKey)>,
+    /// GPU-texture images (R61), indexed by `DrawCmd::GpuImage`.
+    pub gpu_images: Vec<GpuImageRequest>,
     /// Custom primitives (R60), indexed by `DrawCmd::Custom`.
     pub customs: Vec<CustomItem>,
     /// Gradient paints (09 §5), indexed by `BrushPaint::Gradient`.
@@ -467,6 +480,7 @@ impl FramePlan {
         self.mesh_vertices.clear();
         self.mesh_images.clear();
         self.customs.clear();
+        self.gpu_images.clear();
         self.image_brushes.clear();
         self.gpu_mask_bytes = 0;
         self.layers.clear();
@@ -560,6 +574,7 @@ fn format_cmd(cmd: &DrawCmd) -> String {
             format!("Vertices {vertices:?} {image:?} {}", clip_str(clip))
         }
         DrawCmd::Custom { op } => format!("Custom {op}"),
+        DrawCmd::GpuImage { image, clip } => format!("GpuImage {image} {}", clip_str(clip)),
         DrawCmd::Brush { cover, paint, clip } => {
             format!("Brush {cover:?} {paint:?} {}", clip_str(clip))
         }

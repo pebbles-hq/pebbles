@@ -35,6 +35,7 @@ fn is_draw(op: &Op) -> bool {
         Op::Fill { .. }
             | Op::Stroke { .. }
             | Op::Image { .. }
+            | Op::GpuImage { .. }
             | Op::ImageNine { .. }
             | Op::DynamicImage { .. }
             | Op::BlurredRect { .. }

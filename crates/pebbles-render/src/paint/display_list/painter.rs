@@ -185,6 +185,19 @@ impl<'a> Painter<'a> {
         self.scene.push(Op::Custom { bounds, transform, paint });
     }
 
+    /// A registered GPU texture (02 §11.1, R61) stretched over `rect`; skipped (and counted)
+    /// when `id` is not registered with the renderer.
+    pub fn draw_gpu_image(
+        &mut self,
+        id: super::TextureId,
+        transform: Affine,
+        rect: Rect,
+        alpha: f32,
+        sampler: peniko::ImageSampler,
+    ) {
+        self.scene.push(Op::GpuImage { id, transform, rect, alpha, sampler });
+    }
+
     pub fn draw_atlas(
         &mut self,
         image: &peniko::ImageBrush,

@@ -62,11 +62,13 @@ pub enum Unsupported {
     MeshGradient,
     /// A custom primitive whose paint type has no registered `CustomRenderer`: skipped (R60).
     CustomUnregistered,
+    /// An `Op::GpuImage` whose `TextureId` is unknown or unregistered: skipped (R61).
+    GpuTextureUnregistered,
 }
 
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
-    pub const COUNT: usize = 28;
+    pub const COUNT: usize = 29;
     /// Every variant, in discriminant order.
     pub const ALL: [Unsupported; Self::COUNT] = [
         Self::NonRectClip,
@@ -97,6 +99,7 @@ impl Unsupported {
         Self::LayerPoolExhausted,
         Self::MeshGradient,
         Self::CustomUnregistered,
+        Self::GpuTextureUnregistered,
     ];
 
     /// The variant's 11 §4.2 key, used in logs and stats dumps.
@@ -130,6 +133,7 @@ impl Unsupported {
             Self::LayerPoolExhausted => "layer-pool-exhausted",
             Self::MeshGradient => "mesh-gradient-unsupported",
             Self::CustomUnregistered => "custom-paint-unregistered",
+            Self::GpuTextureUnregistered => "gpu-texture-unregistered",
         }
     }
 }

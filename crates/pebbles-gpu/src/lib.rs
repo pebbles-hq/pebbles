@@ -53,7 +53,7 @@ pub use init::{GpuInit, GpuPower, HostOs};
 pub use limits::RendererLimits;
 #[cfg(not(target_family = "wasm"))]
 pub use offscreen::{OffscreenRenderer, RgbaImage};
-pub use pebbles_render::paint::display_list::CustomPaint;
+pub use pebbles_render::paint::display_list::{CustomPaint, TextureId};
 pub use renderer::Renderer;
 pub use stats::{FrameStats, Unsupported};
 /// R14's seeded oracle check in render-check: the Tier B mask of `path` over a `w × h` target.

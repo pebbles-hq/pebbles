@@ -168,3 +168,81 @@ fn custom_free_frame_keeps_one_pass() {
     render_scene(&device, &queue, &mut renderer, &scene, (64, 24), Color::WHITE);
     assert_eq!(renderer.last_frame_stats().render_passes, 1);
 }
+
+/// A 16×16 texture filled by a GPU render pass with premultiplied `color`.
+fn gpu_texture(device: &wgpu::Device, queue: &wgpu::Queue, color: wgpu::Color) -> wgpu::TextureView {
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("test.gpu_image"),
+        size: wgpu::Extent3d { width: 16, height: 16, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder =
+        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("test.gpu_image") });
+    drop(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("test.gpu_image.fill"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: &view,
+            depth_slice: None,
+            resolve_target: None,
+            ops: wgpu::Operations { load: wgpu::LoadOp::Clear(color), store: wgpu::StoreOp::Store },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    }));
+    queue.submit([encoder.finish()]);
+    view
+}
+
+#[test]
+#[ignore = "gpu"]
+fn gpu_image_composites_with_alpha() {
+    let Some((device, queue, mut renderer)) = setup("gpu_image_composites_with_alpha") else { return };
+    // Premultiplied half-transparent blue.
+    let view = gpu_texture(&device, &queue, wgpu::Color { r: 0.0, g: 0.0, b: 0.5, a: 0.5 });
+    let id = renderer.register_texture(view, (16, 16));
+    assert_eq!(renderer.texture_size(id), Some((16, 16)));
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    let s = peniko::ImageSampler::default();
+    p.draw_gpu_image(id, Affine::IDENTITY, Rect::new(8.0, 8.0, 24.0, 24.0), 1.0, s);
+    p.draw_gpu_image(id, Affine::translate((32.0, 0.0)), Rect::new(8.0, 8.0, 24.0, 24.0), 0.5, s);
+    let rgba = render_scene(&device, &queue, &mut renderer, &scene, (64, 32), Color::WHITE);
+    let near = |c: [u8; 4], e: [u8; 3]| (0..3).all(|k| (i32::from(c[k]) - i32::from(e[k])).abs() <= 2);
+    let c = pixel(&rgba, 64, 16, 16);
+    assert!(near(c, [128, 128, 255]), "half-blue over white: {c:?}");
+    let c = pixel(&rgba, 64, 48, 16);
+    assert!(near(c, [191, 191, 255]), "quarter-blue over white: {c:?}");
+    assert!(is_white(pixel(&rgba, 64, 4, 16)) && is_white(pixel(&rgba, 64, 26, 16)), "placed at the rect");
+    assert_eq!(renderer.last_frame_stats().unsupported[Unsupported::GpuTextureUnregistered as usize], 0);
+}
+
+#[test]
+#[ignore = "gpu"]
+fn gpu_image_unknown_and_unregistered_are_skipped() {
+    let Some((device, queue, mut renderer)) = setup("gpu_image_unknown_and_unregistered") else { return };
+    let view = gpu_texture(&device, &queue, wgpu::Color::BLACK);
+    let id = renderer.register_texture(view, (16, 16));
+    assert!(renderer.unregister_texture(id));
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    let s = peniko::ImageSampler::default();
+    p.draw_gpu_image(id, Affine::IDENTITY, Rect::new(0.0, 0.0, 16.0, 16.0), 1.0, s);
+    p.draw_gpu_image(
+        pebbles_gpu::TextureId(9_999),
+        Affine::IDENTITY,
+        Rect::new(16.0, 0.0, 32.0, 16.0),
+        1.0,
+        s,
+    );
+    let rgba = render_scene(&device, &queue, &mut renderer, &scene, (32, 16), Color::WHITE);
+    assert!(is_white(pixel(&rgba, 32, 8, 8)) && is_white(pixel(&rgba, 32, 24, 8)), "nothing drawn");
+    assert_eq!(renderer.last_frame_stats().unsupported[Unsupported::GpuTextureUnregistered as usize], 2);
+}

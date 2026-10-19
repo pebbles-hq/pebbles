@@ -129,6 +129,31 @@ pub(crate) fn image(
     start..start + 1
 }
 
+/// Append one GPU-texture image (R61): the whole texture mapped onto the `size` rect at `m`'s
+/// origin. External textures have one level (LOD 0).
+pub(crate) fn gpu_image(
+    plan: &mut FramePlan,
+    id: u64,
+    sampler: peniko::ImageSampler,
+    m: Affine,
+    size: (f64, f64),
+    opacity: f32,
+) -> u32 {
+    let o = m * kurbo::Point::ORIGIN;
+    let x = m * kurbo::Point::new(size.0, 0.0) - o;
+    let y = m * kurbo::Point::new(0.0, size.1) - o;
+    let f = |v: f64| to_f32(v).unwrap_or(0.0);
+    let quad = QuadInstance {
+        xform: [f(x.x), f(x.y), f(y.x), f(y.y)],
+        origin: [f(o.x), f(o.y)],
+        uv: [0.0, 0.0, 1.0, 1.0],
+        color: [0.0, 0.0, 0.0, opacity],
+        layer_kind: [super::image_nine::EDGE_ALL, 2],
+    };
+    plan.gpu_images.push(super::plan::GpuImageRequest { id, sampler: sampler_key(sampler), quad });
+    index_u32(plan.gpu_images.len() - 1)
+}
+
 #[cfg(test)]
 mod tests {
     use kurbo::Affine;

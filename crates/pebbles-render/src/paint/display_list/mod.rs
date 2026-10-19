@@ -12,6 +12,7 @@ pub mod painter;
 
 pub use op::{
     BlurEdge, BlurStyle, CustomPaint, Geometry, Glyph, LayerEffect, NormalizedCoord, Op, PathHint, PixelSnap,
+    TextureId,
 };
 pub use painter::Painter;
 

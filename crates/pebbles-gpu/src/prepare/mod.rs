@@ -1136,6 +1136,24 @@ impl Walk<'_> {
                     }
                     self.draw_mesh(mesh, brush, *color_mode, xf, idx);
                 }
+                Op::GpuImage { id, transform, rect, alpha, sampler, .. } => {
+                    let xf = outer * *transform;
+                    if !xf.is_finite() || !rect.is_finite() || !alpha.is_finite() {
+                        self.skip_non_finite();
+                        continue;
+                    }
+                    let k = self.alpha() * alpha.clamp(0.0, 1.0) * sampler.alpha.clamp(0.0, 1.0);
+                    if k <= 0.0 || rect.is_zero_area() || self.hidden() {
+                        continue;
+                    }
+                    let r = rect.abs();
+                    let m = xf * Affine::translate(r.origin().to_vec2());
+                    if !self.transform_is_sane(m) || self.culled(xf.transform_rect_bbox(r)) {
+                        continue;
+                    }
+                    let image = images::gpu_image(self.plan, id.0, *sampler, m, (r.width(), r.height()), k);
+                    self.push(DrawCmd::GpuImage { image, clip: self.clips.current() }, idx);
+                }
                 Op::Custom { bounds, transform, paint, .. } => {
                     let xf = outer * *transform;
                     if !xf.is_finite() {
