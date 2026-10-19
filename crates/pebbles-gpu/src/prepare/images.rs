@@ -79,7 +79,7 @@ pub(crate) fn image(
         origin: [f(o.x), f(o.y)],
         uv: [0.0, 0.0, 1.0, 1.0],
         color: [f(lod), 0.0, 0.0, opacity],
-        layer_kind: [0, 2],
+        layer_kind: [super::image_nine::EDGE_ALL, 2],
     };
     let start = index_u32(plan.images.len());
     plan.images.push(ImageRequest {

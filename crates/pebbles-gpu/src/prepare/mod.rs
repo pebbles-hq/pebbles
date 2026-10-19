@@ -21,6 +21,7 @@ mod features;
 pub(crate) mod glyph_outline;
 pub(crate) mod glyphs;
 mod hygiene;
+mod image_nine;
 mod images;
 mod layer;
 pub(crate) mod num;
@@ -574,6 +575,36 @@ impl Walk<'_> {
                     let k = self.alpha() * s.alpha.clamp(0.0, 1.0);
                     let range = images::image(self.plan, image, xf, k, tier_a::snaps(op));
                     self.push(DrawCmd::Images { images: range, clip: self.clips.current() }, idx);
+                }
+                Op::ImageNine { image, center, dst, transform, .. } => {
+                    // R36: validated like any image (R33), then split into ≤ 9 quads.
+                    match images::validate_image(&image.image) {
+                        Ok(()) => {}
+                        Err(images::ImageProblem::ZeroSize) => continue,
+                        Err(_) => {
+                            self.fell_back(coverage::Feature::ImageMalformed);
+                            self.stats.record(Unsupported::ImageMalformed);
+                            continue;
+                        }
+                    }
+                    let a = image.sampler.alpha;
+                    let xf = outer * *transform;
+                    if !xf.is_finite() || !a.is_finite() || !center.is_finite() || !dst.is_finite() {
+                        self.skip_non_finite();
+                        continue;
+                    }
+                    if a <= 0.0 || self.hidden() || !self.transform_is_sane(xf) {
+                        continue;
+                    }
+                    if self.culled(xf.transform_rect_bbox(dst.abs())) {
+                        continue;
+                    }
+                    let k = self.alpha() * a.clamp(0.0, 1.0);
+                    let (range, clamped) = image_nine::image_nine(self.plan, image, *center, *dst, xf, k);
+                    self.stats.nine_slice_clamped += u32::from(clamped);
+                    if !range.is_empty() {
+                        self.push(DrawCmd::Images { images: range, clip: self.clips.current() }, idx);
+                    }
                 }
                 Op::BlurredRect { transform, rect, brush, radius, std_dev, .. } => {
                     if self.hidden() {

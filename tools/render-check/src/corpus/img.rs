@@ -35,6 +35,8 @@ pub fn cases() -> Vec<Case> {
             .analytic()
             .probe("huge_image_downscaled_red", probe::huge_image_downscaled_red),
         ops("img/many_200_distinct", Image, P3, 256, 256, many_200_distinct),
+        // R36 nine-slice (V53 case): a bordered 24×24 "button" stretched to 112×40.
+        ops("img/nine_slice_button", Image, P3, W, H, nine_slice_button),
         // R35 mip chains (V53 cases): a one-pixel checker minified ×0.3.
         ops("img/minify_checker_medium", Image, P3, W, H, minify_checker_medium),
         ops("img/minify_checker_high", Image, P3, W, H, minify_checker_high),
@@ -163,6 +165,30 @@ fn many_200_distinct(p: &mut Painter<'_>) {
         let (x, y) = (f64::from(i % 15) * 17.0, f64::from(i / 15) * 17.0);
         p.draw_image(&noise(16, 16, 1000 + u64::from(i)), Affine::translate((x, y)));
     }
+}
+
+/// A 24×24 button skin: 6-px dark border, light interior, a distinct color per corner.
+fn button_skin() -> ImageBrush {
+    let px: Vec<u8> = (0..24u32 * 24)
+        .flat_map(|i| {
+            let (x, y) = (i % 24, i / 24);
+            let border = !(6..18).contains(&x) || !(6..18).contains(&y);
+            match (x < 6, x >= 18, y < 6, y >= 18) {
+                (true, _, true, _) => [0xEF, 0x44, 0x44, 0xFF],
+                (_, true, true, _) => [0x10, 0xB9, 0x81, 0xFF],
+                (true, _, _, true) => [0x3B, 0x82, 0xF6, 0xFF],
+                (_, true, _, true) => [0xF5, 0x9E, 0x0B, 0xFF],
+                _ if border => [0x1F, 0x29, 0x37, 0xFF],
+                _ => [0xF9, 0xFA, 0xFB, 0xFF],
+            }
+        })
+        .collect();
+    image_from_rgba8(24, 24, px)
+}
+
+fn nine_slice_button(p: &mut Painter<'_>) {
+    let dst = Rect::new(8.0, 40.0, 120.0, 80.0);
+    p.draw_image_nine(&button_skin(), Rect::new(6.0, 6.0, 18.0, 18.0), dst, Affine::IDENTITY);
 }
 
 fn minify_checker(p: &mut Painter<'_>, q: ImageQuality) {

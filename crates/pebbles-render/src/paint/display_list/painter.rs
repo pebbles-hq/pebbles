@@ -126,6 +126,17 @@ impl<'a> Painter<'a> {
         self.scene.push(Op::Image { image: image.into().to_owned(), transform, snap: self.snap });
     }
 
+    /// Draw `image` nine-sliced into `dst` (02 R36): `center` (image px) is the stretchable part.
+    pub fn draw_image_nine(
+        &mut self,
+        image: &peniko::ImageBrush,
+        center: Rect,
+        dst: Rect,
+        transform: Affine,
+    ) {
+        self.scene.push(Op::ImageNine { image: image.clone(), center, dst, transform });
+    }
+
     /// A GPU-accelerated blurred rounded rectangle (drop shadow).
     pub fn draw_blurred_rounded_rect(
         &mut self,

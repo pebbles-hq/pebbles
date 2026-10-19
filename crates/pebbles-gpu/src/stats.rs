@@ -234,6 +234,8 @@ pub struct FrameStats {
     pub lut_bakes: u32,
     /// COLR glyphs rendered into the color atlas (02 R39).
     pub color_glyph_renders: u32,
+    /// Nine-slice centers clamped into their image (02 R36).
+    pub nine_slice_clamped: u32,
     /// Ops re-prepared this frame (M29 retained prepare).
     pub ops_prepared: u32,
     /// Damaged pixels redrawn (M30).
@@ -321,6 +323,7 @@ impl Default for FrameStats {
             layer_budget_exceeded: 0,
             lut_bakes: 0,
             color_glyph_renders: 0,
+            nine_slice_clamped: 0,
             ops_prepared: 0,
             damage_px: 0,
             full_redraws: 0,

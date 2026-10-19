@@ -239,6 +239,7 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::ShadowAxisAligned,  // R40
     F::ShadowRotated,      // R40
     F::ShadowDegenerate,   // R41
+    F::ImageNine,          // R36
 ];
 
 #[cfg(test)]

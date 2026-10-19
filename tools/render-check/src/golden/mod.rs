@@ -145,6 +145,42 @@ impl Target {
                 let cov = fill_geometry(&shape, t, peniko::Fill::NonZero, self.snap(*snap), self.w, self.h);
                 self.composite(&paint, &cov);
             }
+            Op::ImageNine { image, center, dst, transform, .. } => {
+                // 02 R36: per slice, the destination rect's exact coverage, sampled bilinearly
+                // from the slice with UVs inset by half a texel (no bleeding across slices).
+                let t = outer * *transform;
+                let img = paint::Texels::of(&image.image);
+                let (w, h) = (f64::from(img.w), f64::from(img.h));
+                let alpha = f64::from(image.sampler.alpha).clamp(0.0, 1.0);
+                if t.determinant().abs() < 1e-12 || alpha <= 0.0 {
+                    return Ok(());
+                }
+                let inv = t.inverse();
+                for (s, d) in nine::nine_slice_rects(w, h, *center, dst.abs()) {
+                    let shape = pebbles_render::paint::display_list::Geometry::Rect(d);
+                    let cov = fill_geometry(&shape, t, peniko::Fill::NonZero, Snap::Off, self.w, self.h);
+                    let hx = 0.5_f64.min(0.5 * s.width());
+                    let hy = 0.5_f64.min(0.5 * s.height());
+                    let wu = self.w as usize;
+                    let px: Vec<[f64; 4]> = cov
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &k)| {
+                            if k == 0.0 {
+                                return [0.0; 4];
+                            }
+                            #[allow(clippy::cast_precision_loss)] // pixel indices < 2^24
+                            let q = inv * kurbo::Point::new((i % wu) as f64 + 0.5, (i / wu) as f64 + 0.5);
+                            let (tx, ty) = ((q.x - d.x0) / d.width(), (q.y - d.y0) / d.height());
+                            let u = s.x0 + hx + tx * (s.width() - 2.0 * hx);
+                            let v = s.y0 + hy + ty * (s.height() - 2.0 * hy);
+                            let c = img.sample(u, v, peniko::Extend::Pad, peniko::Extend::Pad, false);
+                            c.map(|x| x * k * alpha)
+                        })
+                        .collect();
+                    self.composite_image(&px, 1.0);
+                }
+            }
             Op::BlurredRect { transform, rect, brush, radius, std_dev, .. } => {
                 let cov =
                     shadow::shadow_coverage(outer * *transform, *rect, *radius, *std_dev, self.w, self.h);

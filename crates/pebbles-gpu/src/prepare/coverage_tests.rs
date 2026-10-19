@@ -10,7 +10,6 @@ use crate::prepare::test_util::prepare_scene;
 
 /// Rows no display-list op can produce yet (their ops / data are added by the delivering card).
 const NOT_PRODUCIBLE: &[(F, &str)] = &[
-    (F::ImageNine, "no Op::ImageNine yet (R36)"),
     (F::DynamicImage, "no Op::DynamicImage yet (R37)"),
     (F::BlurredFill, "no Op::BlurredFill yet (R42)"),
     (F::BlurredGlyphs, "no Op::BlurredGlyphs yet (R42)"),
@@ -203,6 +202,12 @@ fn fixture(f: F) -> Option<Scene> {
         F::GlyphsNonSolidBrush => glyphs(p, 16.0, &Brush::Gradient(gradient()), id, None, Fill::NonZero),
         F::GlyphsEvenOdd => glyphs(p, 16.0, &Brush::Solid(RED), id, None, Fill::EvenOdd),
         F::GlyphsDegenerate => glyphs(p, f32::NAN, &Brush::Solid(RED), id, None, Fill::NonZero),
+        F::ImageNine => p.draw_image_nine(
+            &rgba(16, 16),
+            Rect::new(4.0, 4.0, 12.0, 12.0),
+            Rect::new(8.0, 8.0, 56.0, 40.0),
+            id,
+        ),
         F::GlyphsColor => {
             // R39: the committed COLR test font's glyph `A` on the atlas route.
             use crate::raster::color_glyph::tests::{colr_font, gid};

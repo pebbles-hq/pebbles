@@ -139,6 +139,15 @@ pub enum Op {
         transform: Affine,
         snap: PixelSnap,
     },
+    /// A nine-slice image (Flutter `drawImageNine`, 02 R36): `center` (image px) stretches to fill
+    /// `dst`; the four corners keep their size (scaled down only when they do not fit).
+    #[non_exhaustive]
+    ImageNine {
+        image: ImageBrush,
+        center: Rect,
+        dst: Rect,
+        transform: Affine,
+    },
     /// Analytic blurred rounded rect (shadow).
     #[non_exhaustive]
     BlurredRect {

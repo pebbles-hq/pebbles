@@ -380,3 +380,48 @@ fn huge_image_renders_without_validation_error() {
     assert!(pollster::block_on(scope.pop()).is_none(), "validation error");
     assert_eq!(pixel(&px, 1000, 500, 15), [255, 0, 0, 255]);
 }
+
+// ---- R36: nine-slice ----
+
+/// R36: drawn at integer positions, the four corner texels of a nine-slice are exact (R19) and
+/// the center stretches.
+#[test]
+#[ignore = "gpu"]
+fn nine_slice_corners_are_exact() {
+    let Some(mut r) = setup("nine_slice_corners_are_exact") else { return };
+    // 8×8 image: 2-px corners red/green/blue/yellow, border gray, center white.
+    let px: Vec<u8> = (0..64u32)
+        .flat_map(|i| {
+            let (x, y) = (i % 8, i / 8);
+            match (x < 2, x >= 6, y < 2, y >= 6) {
+                (true, _, true, _) => [255, 0, 0, 255],
+                (_, true, true, _) => [0, 255, 0, 255],
+                (true, _, _, true) => [0, 0, 255, 255],
+                (_, true, _, true) => [255, 255, 0, 255],
+                (false, false, false, false) => [255, 255, 255, 255],
+                _ => [128, 128, 128, 255],
+            }
+        })
+        .collect();
+    let image = peniko::ImageBrush::new(peniko::ImageData {
+        data: peniko::Blob::from(px),
+        format: peniko::ImageFormat::Rgba8,
+        alpha_type: peniko::ImageAlphaType::Alpha,
+        width: 8,
+        height: 8,
+    });
+    let mut s = Scene::new();
+    Painter::new(&mut s).draw_image_nine(
+        &image,
+        Rect::new(2.0, 2.0, 6.0, 6.0),
+        Rect::new(4.0, 4.0, 60.0, 28.0),
+        Affine::IDENTITY,
+    );
+    let out = render_scene(&r.0, &r.1, &mut r.2, &s, (64, 32), Color::from_rgba8(0, 0, 0, 255));
+    assert_eq!(pixel(&out, 64, 4, 4), [255, 0, 0, 255]);
+    assert_eq!(pixel(&out, 64, 59, 4), [0, 255, 0, 255]);
+    assert_eq!(pixel(&out, 64, 4, 27), [0, 0, 255, 255]);
+    assert_eq!(pixel(&out, 64, 59, 27), [255, 255, 0, 255]);
+    assert_eq!(pixel(&out, 64, 32, 16), [255, 255, 255, 255], "stretched center");
+    assert_eq!(pixel(&out, 64, 3, 4), [0, 0, 0, 255], "nothing outside dst");
+}
