@@ -272,6 +272,7 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::ProjectedLayer,               // L65
     F::Vertices,                     // R63
     F::SpriteAtlas,                  // R64
+    F::ShaderBrush,                  // L43
 ];
 
 #[cfg(test)]

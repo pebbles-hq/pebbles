@@ -29,6 +29,9 @@ guillotiere.workspace = true
 zeno.workspace = true
 half.workspace = true    # f16 gradient LUT texels (09 §5.3, L37)
 
+# L43: app shader brushes are validated (and translated to GLSL ES for WebGL2) before use.
+naga = { version = "29.0.4", features = ["wgsl-in", "glsl-out"] }
+
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 pollster.workspace = true
 

@@ -420,8 +420,8 @@ pub(crate) fn encode(
                     BrushCover::Mask(r) => (1, r, renderer.arenas.glyphs.buffer()),
                     BrushCover::Mesh(_) => continue,
                 };
-                let Some((kind, bg, offset)) = renderer.brush_binding(*paint) else { continue };
-                let (Some(pipeline), Some(vb)) = (renderer.pipelines.get_ensured(key(kind, variant)), vb)
+                let (Some((pipeline, bg, offset)), Some(vb)) =
+                    (renderer.brush_draw(*paint, variant, format, sample_count), vb)
                 else {
                     continue;
                 };

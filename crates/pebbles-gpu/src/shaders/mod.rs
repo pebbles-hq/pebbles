@@ -30,6 +30,20 @@ pub(crate) const VERTICES: &str = shader!("vertices.wgsl");
 pub(crate) const GRADIENT: &str = shader!("gradient.wgsl", brush);
 pub(crate) const IMAGE_BRUSH: &str = shader!("image_brush.wgsl", brush);
 
+/// Everything before the app source of a shader brush (09 §6.1, L43).
+pub(crate) const SHADER_BRUSH_HEAD: &str =
+    concat!(include_str!("prelude.wgsl"), "\n", include_str!("shader_brush_prelude.wgsl"), "\n");
+
+/// The full module of a shader brush: head + the app's `pebbles_paint` + the coverage variants.
+pub(crate) fn shader_brush_source(app: &str) -> String {
+    format!("{SHADER_BRUSH_HEAD}{app}\n{}", include_str!("brush_cover.wgsl"))
+}
+
+/// Lines before the app source in [`shader_brush_source`] (app line = module line − this).
+pub(crate) fn shader_brush_head_lines() -> usize {
+    SHADER_BRUSH_HEAD.lines().count()
+}
+
 /// `(name, full source)` for every pipeline shader.
 #[cfg_attr(not(test), allow(dead_code))] // read by the V02 validation tests
 pub(crate) const ALL: &[(&str, &str)] = &[

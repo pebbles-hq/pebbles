@@ -48,6 +48,7 @@ pub use census::GpuCensus;
 pub use context::{DeviceHealth, DeviceId, GpuCaps, GpuContext, GpuDevice};
 pub use error::{AcquireError, CaptureError, GpuError};
 pub use execute::custom::{CustomPrepare, CustomRender, CustomRenderer};
+pub use execute::resources::shader_programs::{ShaderError, validate_shader_program};
 pub use frame_targets::{FrameParams, FrameTargets, RenderTarget};
 pub use init::{GpuInit, GpuPower, HostOs};
 pub use limits::RendererLimits;

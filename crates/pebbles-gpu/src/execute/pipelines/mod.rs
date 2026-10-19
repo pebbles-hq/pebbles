@@ -6,6 +6,7 @@ use super::resources::bind_groups::BindGroupLayouts;
 use crate::stats::FrameStats;
 
 pub(crate) mod descs;
+pub(crate) mod shader_brush;
 
 /// One render pipeline family. Each maps to exactly one `.wgsl` file (§9.1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

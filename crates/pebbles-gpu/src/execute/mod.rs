@@ -10,5 +10,6 @@ pub(crate) mod layers;
 pub(crate) mod pipelines;
 pub(crate) mod resolve;
 pub(crate) mod resources;
+pub(crate) mod shader_brushes;
 pub(crate) mod targets;
 pub(crate) mod tier_c;

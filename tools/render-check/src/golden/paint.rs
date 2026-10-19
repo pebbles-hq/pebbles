@@ -26,6 +26,14 @@ pub enum Paint {
         nearest: bool,
         alpha: f64,
     },
+    /// A shader brush (09 §6.1, L43) judged through its corpus oracle — the Rust mirror of the
+    /// case's WGSL (the renderer never evaluates WGSL on the CPU).
+    Shader {
+        inv: Affine,
+        oracle: ShaderOracle,
+        values: Vec<f32>,
+        size: (f64, f64),
+    },
     /// A minified `Medium`/`High` image (R35): the mip chain and the per-draw LOD.
     Mipped {
         inv: Affine,
@@ -37,6 +45,10 @@ pub enum Paint {
         alpha: f64,
     },
 }
+
+/// The CPU mirror of a corpus shader program: `(local, device, u.values, u.size)` →
+/// premultiplied RGBA.
+pub type ShaderOracle = fn(Point, Point, &[f32], (f64, f64)) -> [f64; 4];
 
 fn premul_color(c: peniko::Color) -> [f64; 4] {
     let [r, g, b, a] = c.components.map(f64::from);
@@ -73,6 +85,10 @@ impl Paint {
             Paint::Image { inv, img, x_extend, y_extend, nearest, alpha } => {
                 let uv = *inv * Point::new(x, y);
                 img.sample(uv.x, uv.y, *x_extend, *y_extend, *nearest).map(|v| v * alpha)
+            }
+            Paint::Shader { inv, oracle, values, size } => {
+                let l = *inv * Point::new(x, y);
+                oracle(l, Point::new(x, y), values, *size).map(|v| v.clamp(0.0, 1.0))
             }
             Paint::Mipped { inv, levels, x_extend, y_extend, lod, trilinear, alpha } => {
                 let uv = *inv * Point::new(x, y);

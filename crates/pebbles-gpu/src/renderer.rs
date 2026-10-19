@@ -67,6 +67,9 @@ pub struct Renderer {
     layer_budget_warned: bool,
     /// Custom renderers by paint type (02 §11, R60).
     customs: super::execute::custom::CustomRegistry,
+    /// Shader-brush programs and per-frame bindings (09 §6.1, L43).
+    pub(crate) shader_programs: super::execute::resources::shader_programs::ShaderPrograms,
+    pub(crate) shader_brushes: super::execute::shader_brushes::ShaderBrushResources,
     /// Pass segments, reused across frames (09 §3.6).
     pub(crate) segments: Vec<super::prepare::passes::PassSegment>,
     pub(crate) arenas: FrameArenas,
@@ -178,6 +181,11 @@ impl Renderer {
             proj_next: 0,
             segments: Vec::new(),
             customs: Default::default(),
+            shader_programs: Default::default(),
+            shader_brushes: super::execute::shader_brushes::ShaderBrushResources::new(
+                gpu.device(),
+                gpu.queue(),
+            ),
             external_textures: Default::default(),
             layer_budget_warned: false,
             arenas: FrameArenas::new(),
@@ -386,6 +394,7 @@ impl Renderer {
         super::execute::gpu_masks::render_jobs(self, device, queue, &mut encoder, &mut stats);
         super::execute::gradients::prepare(self, device, queue, format, &mut stats);
         super::execute::image_brushes::prepare(self, device, queue, format, &mut stats);
+        super::execute::shader_brushes::prepare(self, device, queue, format, &mut stats);
         let composites = super::execute::tier_c::encode_runs(
             self,
             device,
@@ -576,6 +585,8 @@ impl Renderer {
         self.gpu_masks.end_frame(self.budgets.gpu_mask_bytes);
         self.gradients.lut.end_frame();
         self.image_brushes.end_frame();
+        self.shader_brushes.end_frame();
+        self.shader_programs.end_frame();
         self.proj_next = 0;
         stats.layer_pool_bytes = target.targets.pool.bytes();
         self.scratch.plan.release_refs();
@@ -791,6 +802,31 @@ impl Renderer {
         }
     }
 
+    /// The pipeline (coverage `variant` at `format` / `samples`), group-1 bind group and dynamic
+    /// offset of a brush paint (09 §5, §6, §6.1); every pipeline was ensured before the passes.
+    pub(crate) fn brush_draw(
+        &self,
+        paint: super::prepare::plan::BrushPaint,
+        variant: u8,
+        format: wgpu::TextureFormat,
+        samples: u32,
+    ) -> Option<(&wgpu::RenderPipeline, &wgpu::BindGroup, u32)> {
+        if let super::prepare::plan::BrushPaint::Shader(i) = paint {
+            let (group, offset) = self.shader_brushes.binding(&self.device, i)?;
+            let id = self.scratch.plan.shader_brushes.get(i as usize)?.program.id();
+            return Some((self.shader_programs.pipeline(id, variant, format, samples)?, group, offset));
+        }
+        let (kind, group, offset) = self.brush_binding(paint)?;
+        let key = super::execute::pipelines::PipelineKey {
+            kind,
+            color_format: format,
+            sample_count: samples,
+            blend: 0,
+            variant,
+        };
+        Some((self.pipelines.get_ensured(key)?, group, offset))
+    }
+
     /// Pipeline kind, group-1 bind group and dynamic offset of a brush paint (09 §5, §6).
     pub(crate) fn brush_binding(
         &self,
@@ -806,6 +842,7 @@ impl Renderer {
                 let (group, offset) = self.image_brushes.binding(&self.device, i)?;
                 Some((PipelineKind::ImageBrush, group, offset))
             }
+            BrushPaint::Shader(_) => None,
         }
     }
 

@@ -37,6 +37,7 @@ pub(crate) mod path_strategy;
 pub(crate) mod plan;
 #[cfg(test)]
 mod property_tests;
+mod shader_brush;
 mod shadows;
 mod shapes;
 #[cfg(test)]
@@ -121,6 +122,7 @@ pub(crate) fn prepare<'s>(
         clip_hint: pebbles_render::paint::display_list::PathHint::Auto,
         gpu_mask_budget: scratch.gpu_mask_budget.unwrap_or(gpu_masks::DEFAULT_BUDGET_BYTES),
         paint: None,
+        pending_shader: None,
         layer_floor: 0,
         outer_override: None,
         outer_stack: Vec::new(),
@@ -158,6 +160,8 @@ struct Walk<'a> {
     gpu_mask_budget: u64,
     /// The brush painting the current op (09 §5, §6), if any.
     paint: Option<plan::BrushPaint>,
+    /// A shader brush (L43) waiting for its coverage op's white solid brush.
+    pending_shader: Option<u32>,
     /// Layer-stack depth at the current fragment's entry: pops below it are ignored (09 §7.2).
     layer_floor: usize,
     /// The device transform the ops of the current projected layer use (09 §10.7).
@@ -1136,6 +1140,26 @@ impl Walk<'_> {
                     }
                     self.draw_mesh(mesh, brush, *color_mode, xf, idx);
                 }
+                Op::ShaderFill { transform, shader, shape, .. } => {
+                    // 09 §6.1: the coverage is the same fill/stroke with a white brush, routed by
+                    // tier like an image brush; its solid brush then becomes the shader paint.
+                    let Some(coverage) = op.shader_coverage() else { continue };
+                    let paint_xf = outer * *transform * shader.transform;
+                    let Some(draw) = shader_brush::draw(shader, paint_xf, shape.bounding_box().size()) else {
+                        self.skip_non_finite();
+                        continue;
+                    };
+                    self.plan.shader_brushes.push(draw);
+                    self.pending_shader = Some(num::index_u32(self.plan.shader_brushes.len() - 1));
+                    // The coverage op stands in for this op (same visit index, one op).
+                    self.visit -= 1;
+                    self.plan.stats.ops -= 1;
+                    self.emit(std::slice::from_ref(&coverage), outer0);
+                    if self.pending_shader.take().is_some() {
+                        // Culled, hidden or skipped: nothing references the draw.
+                        self.plan.shader_brushes.pop();
+                    }
+                }
                 Op::GpuImage { id, transform, rect, alpha, sampler, .. } => {
                     let xf = outer * *transform;
                     if !xf.is_finite() || !rect.is_finite() || !alpha.is_finite() {
@@ -1429,7 +1453,13 @@ impl Walk<'_> {
                 // Coverage × alpha only: a = sampler.alpha × fold (× hairline, applied by the stroke).
                 Some(peniko::Color::WHITE.with_alpha(b.sampler.alpha.clamp(0.0, 1.0)))
             }
-            peniko::Brush::Solid(_) => self.solid_color(brush),
+            peniko::Brush::Solid(_) => {
+                if let Some(i) = self.pending_shader.take() {
+                    self.paint = Some(plan::BrushPaint::Shader(i));
+                    return Some(peniko::Color::WHITE);
+                }
+                self.solid_color(brush)
+            }
         }
     }
 }

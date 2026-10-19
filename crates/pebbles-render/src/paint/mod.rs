@@ -21,11 +21,15 @@ pub mod display_list;
 pub mod dynamic_image;
 pub mod mesh;
 pub mod projective;
+pub mod shader_program;
 pub use color_matrix::ColorMatrix;
 pub use display_list::{Glyph, NormalizedCoord, Painter, Scene, scene};
 pub use dynamic_image::{DynamicImage, DynamicImageFrame, IRect};
 pub use mesh::{Mesh, MeshError, Sprite, VertexColorMode, VertexMode};
 pub use projective::Projective;
+pub use shader_program::{
+    MAX_SHADER_IMAGES, MAX_SHADER_UNIFORMS, ShaderBrush, ShaderBrushError, ShaderProgram,
+};
 
 // Transitional consumer: replays the display list into a live `vello_hybrid::Scene`
 // (feature `vello-hybrid`; deleted whole at Phase 7, X01).

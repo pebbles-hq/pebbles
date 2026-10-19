@@ -11,3 +11,4 @@ pub(crate) mod gradient_lut;
 pub(crate) mod image_cache;
 pub(crate) mod image_mips;
 pub(crate) mod layer_pool;
+pub(crate) mod shader_programs;

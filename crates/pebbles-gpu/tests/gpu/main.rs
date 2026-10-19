@@ -29,6 +29,7 @@ mod layers;
 mod order;
 mod path_masks;
 mod pixel_snap;
+mod shader_brush;
 mod shadows;
 mod steady_state;
 mod support;

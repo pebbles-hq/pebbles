@@ -177,6 +177,8 @@ pub(crate) enum BrushPaint {
     Gradient(u32),
     /// `plan.image_brushes[i]`.
     Image(u32),
+    /// `plan.shader_brushes[i]` (L43).
+    Shader(u32),
 }
 
 /// The coverage source of a brush draw (09 §6 brush × tier rule).
@@ -222,6 +224,16 @@ pub(crate) struct ImageBrushDraw {
     pub key: ImageKey,
     pub sampler: SamplerKey,
     pub params: crate::gpu_types::ImageBrushParams,
+}
+
+/// One shader-brush paint of the frame (09 §6.1, L43).
+#[derive(Clone, Debug)]
+pub(crate) struct ShaderBrushDraw {
+    pub program: pebbles_render::paint::ShaderProgram,
+    pub params: crate::gpu_types::ShaderBrushParams,
+    /// ≤ 2 `Blob` clones (refcount bumps) bound as `t0`, `t1`.
+    pub images: Vec<(peniko::ImageData, ImageKey)>,
+    pub sampler: SamplerKey,
 }
 
 /// One gradient paint of the frame (09 §5.4): geometry for the shader and the LUT key.
@@ -428,6 +440,8 @@ pub(crate) struct FramePlan {
     pub customs: Vec<CustomItem>,
     /// Gradient paints (09 §5), indexed by `BrushPaint::Gradient`.
     pub gradients: Vec<GradientDraw>,
+    /// Shader-brush paints (09 §6.1), indexed by `BrushPaint::Shader`.
+    pub shader_brushes: Vec<ShaderBrushDraw>,
     /// Image-brush paints (09 §6), indexed by `BrushPaint::Image`.
     pub image_brushes: Vec<ImageBrushDraw>,
     /// GPU coverage masks (09 §2.9), parents before children.
@@ -481,6 +495,7 @@ impl FramePlan {
         self.mesh_images.clear();
         self.customs.clear();
         self.gpu_images.clear();
+        self.shader_brushes.clear();
         self.image_brushes.clear();
         self.gpu_mask_bytes = 0;
         self.layers.clear();
@@ -499,6 +514,7 @@ impl FramePlan {
         self.glyph_runs.clear();
         self.images.clear();
         self.image_brushes.clear();
+        self.shader_brushes.clear();
         self.mesh_images.clear();
         self.customs.clear();
     }

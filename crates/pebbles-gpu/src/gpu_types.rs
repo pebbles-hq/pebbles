@@ -156,6 +156,20 @@ pub(crate) struct ImageBrushParams {
 }
 const _: () = assert!(size_of::<ImageBrushParams>() == 48);
 
+/// Shader-brush uniforms (09 §6.1, L43): `PebblesShaderUniforms`, one slot per draw.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+pub(crate) struct ShaderBrushParams {
+    /// device px → brush local, row x: (a, c, e, 0).
+    pub inv0: [f32; 4],
+    /// Row y: (b, d, f, 0).
+    pub inv1: [f32; 4],
+    /// (local bounds w, h, 0, 0).
+    pub size: [f32; 4],
+    pub values: [[f32; 4]; 16],
+}
+const _: () = assert!(size_of::<ShaderBrushParams>() == 304);
+
 /// One mesh vertex (02 §12, R63): device px, image UV (normalized), premultiplied color.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]

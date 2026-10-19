@@ -16,6 +16,8 @@ pub(crate) struct BindGroupLayouts {
     pub image_brush: wgpu::BindGroupLayout,
     pub effect: wgpu::BindGroupLayout,
     pub projected: wgpu::BindGroupLayout,
+    /// 09 §6.1: shader brush = t0, t1 (filterable), s0, `ShaderBrushParams` (dynamic, 304).
+    pub shader_brush: wgpu::BindGroupLayout,
 }
 
 impl BindGroupLayouts {
@@ -229,6 +231,39 @@ impl BindGroupLayouts {
                 },
             ],
         });
+        let tex_f = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
+        let shader_brush = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("pebbles.gpu.layout.shader_brush"),
+            entries: &[
+                tex_f(0),
+                tex_f(1),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(304),
+                    },
+                    count: None,
+                },
+            ],
+        });
         // 09 §10: an effect pass reads one texture (textureLoad) with `EffectParams` (224 B).
         let effect = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("pebbles.gpu.layout.effect"),
@@ -287,6 +322,7 @@ impl BindGroupLayouts {
             blit,
             gradient,
             image_brush,
+            shader_brush,
             effect,
             projected,
         }

@@ -313,6 +313,28 @@ impl Target {
                 let cov = stroke_geometry(shape, style, outer * *transform, self.snap(*snap), self.w, self.h);
                 self.composite(&paint, &cov);
             }
+            Op::ShaderFill { style, stroke, transform, shader, shape, .. } => {
+                let Some(oracle) = crate::corpus::brush::shader_oracle(shader.program.source()) else {
+                    return Err(CheckError::GoldenUnsupported("ShaderFill without a corpus oracle"));
+                };
+                let p = outer * *transform * shader.transform;
+                if p.determinant().abs() < 1e-12 {
+                    return Ok(());
+                }
+                let b = shape.bounding_box();
+                let paint = Paint::Shader {
+                    inv: p.inverse(),
+                    oracle,
+                    values: shader.uniforms.to_vec(),
+                    size: (b.width(), b.height()),
+                };
+                let m = outer * *transform;
+                let cov = match stroke {
+                    None => fill_geometry(shape, m, *style, self.snap(PixelSnap::Auto), self.w, self.h),
+                    Some(s) => stroke_geometry(shape, s, m, self.snap(PixelSnap::Auto), self.w, self.h),
+                };
+                self.composite(&paint, &cov);
+            }
             Op::PushLayer { clip_fill, blend, alpha, transform, clip, .. } => {
                 let mask = fill_geometry(clip, outer * *transform, *clip_fill, Snap::Off, self.w, self.h);
                 let n = self.px.len();

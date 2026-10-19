@@ -9,10 +9,8 @@ use super::{ALL, DELIVERED, Feature as F, Policy, policy};
 use crate::prepare::test_util::prepare_scene;
 
 /// Rows no display-list op can produce yet (their ops / data are added by the delivering card).
-const NOT_PRODUCIBLE: &[(F, &str)] = &[
-    (F::ShaderBrush, "no Op::ShaderFill yet (L43)"),
-    (F::ClipEllipse, "Geometry has no Ellipse variant: an oval clip arrives as a Path (OC-24, L01)"),
-];
+const NOT_PRODUCIBLE: &[(F, &str)] =
+    &[(F::ClipEllipse, "Geometry has no Ellipse variant: an oval clip arrives as a Path (OC-24, L01)")];
 
 /// Rows whose contract is "do not crash" (or exact by contract): no bit is required.
 const NOT_CRASH: &[F] = &[
@@ -272,6 +270,14 @@ fn fixture(f: F) -> Option<Scene> {
             p.push_projected_layer(h, R, None::<&Rect>);
             p.fill(Fill::NonZero, id, RED, None, &R);
             p.pop_layer();
+        }
+        F::ShaderBrush => {
+            let prog = pebbles_render::paint::ShaderProgram::new(
+                "fn pebbles_paint(l: vec2<f32>, d: vec2<f32>) -> vec4<f32> { return vec4<f32>(1.0); }",
+            );
+            let none: [peniko::ImageBrush; 0] = [];
+            let b = pebbles_render::paint::ShaderBrush::new(prog, [0.0f32; 0], none, Affine::IDENTITY);
+            p.fill_shader(Fill::NonZero, id, &b.expect("valid brush"), &R);
         }
         F::Vertices => {
             use pebbles_render::paint::{Mesh, VertexColorMode, VertexMode};

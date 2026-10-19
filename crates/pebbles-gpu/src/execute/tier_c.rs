@@ -223,9 +223,12 @@ pub(crate) fn encode_runs(
                     DrawCmd::Brush {
                         cover: crate::prepare::plan::BrushCover::Mesh(indices), paint, ..
                     } => {
-                        let Some((kind, bg, offset)) = renderer.brush_binding(*paint) else { continue };
-                        let Some(gp) = renderer.pipelines.get_ensured(PipelineKey { kind, ..gradient_key })
-                        else {
+                        let Some((gp, bg, offset)) = renderer.brush_draw(
+                            *paint,
+                            gradient_key.variant,
+                            gradient_key.color_format,
+                            gradient_key.sample_count,
+                        ) else {
                             continue;
                         };
                         pass.set_pipeline(gp);

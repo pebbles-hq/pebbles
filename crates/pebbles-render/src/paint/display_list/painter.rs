@@ -185,6 +185,42 @@ impl<'a> Painter<'a> {
         self.scene.push(Op::Custom { bounds, transform, paint });
     }
 
+    /// Fill `shape` with app WGSL (09 §6.1, L43).
+    pub fn fill_shader(
+        &mut self,
+        style: Fill,
+        transform: Affine,
+        shader: &crate::paint::shader_program::ShaderBrush,
+        shape: &impl Shape,
+    ) {
+        self.scene.push(Op::ShaderFill {
+            style,
+            stroke: None,
+            transform,
+            shader: shader.clone(),
+            shape: Geometry::from_shape(shape),
+            hint: self.hint,
+        });
+    }
+
+    /// Stroke `shape` with app WGSL (09 §6.1, L43).
+    pub fn stroke_shader(
+        &mut self,
+        style: &Stroke,
+        transform: Affine,
+        shader: &crate::paint::shader_program::ShaderBrush,
+        shape: &impl Shape,
+    ) {
+        self.scene.push(Op::ShaderFill {
+            style: Fill::NonZero,
+            stroke: Some(style.clone()),
+            transform,
+            shader: shader.clone(),
+            shape: Geometry::from_shape(shape),
+            hint: self.hint,
+        });
+    }
+
     /// A registered GPU texture (02 §11.1, R61) stretched over `rect`; skipped (and counted)
     /// when `id` is not registered with the renderer.
     pub fn draw_gpu_image(

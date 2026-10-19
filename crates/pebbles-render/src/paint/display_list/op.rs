@@ -249,6 +249,17 @@ pub enum Op {
         transform: Affine,
         paint: Arc<dyn CustomPaint>,
     },
+    /// A fill (`stroke: None`) or stroke of `shape` painted by app WGSL (09 §6.1, L43; Flutter
+    /// `FragmentShader`), routed by tier like an image brush.
+    #[non_exhaustive]
+    ShaderFill {
+        style: Fill,
+        stroke: Option<Stroke>,
+        transform: Affine,
+        shader: crate::paint::shader_program::ShaderBrush,
+        shape: Geometry,
+        hint: PathHint,
+    },
     /// A registered GPU texture drawn into `rect` (local, under `transform`) at `alpha`, like an
     /// image (02 §11.1, R61). Texels are premultiplied and sRGB-encoded, as uploaded images.
     #[non_exhaustive]
@@ -363,4 +374,33 @@ pub enum Op {
         transform: Option<Affine>,
         ops: Arc<Vec<Op>>,
     },
+}
+
+impl Op {
+    /// For a `ShaderFill`, the same fill / stroke with a white solid brush: its coverage (the
+    /// renderer routes it by tier, then paints it with the shader). `None` for any other op.
+    pub fn shader_coverage(&self) -> Option<Op> {
+        let Op::ShaderFill { style, stroke, transform, shape, hint, .. } = self else { return None };
+        let brush = Brush::Solid(Color::WHITE);
+        Some(match stroke {
+            None => Op::Fill {
+                style: *style,
+                transform: *transform,
+                brush,
+                brush_transform: None,
+                shape: shape.clone(),
+                hint: *hint,
+                snap: PixelSnap::Auto,
+            },
+            Some(stroke) => Op::Stroke {
+                style: stroke.clone(),
+                transform: *transform,
+                brush,
+                brush_transform: None,
+                shape: shape.clone(),
+                hint: *hint,
+                snap: PixelSnap::Auto,
+            },
+        })
+    }
 }
