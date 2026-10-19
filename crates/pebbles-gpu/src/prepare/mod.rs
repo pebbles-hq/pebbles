@@ -119,6 +119,7 @@ pub(crate) fn prepare<'s>(
         clip_hint: pebbles_render::paint::display_list::PathHint::Auto,
         gpu_mask_budget: scratch.gpu_mask_budget.unwrap_or(gpu_masks::DEFAULT_BUDGET_BYTES),
         paint: None,
+        layer_floor: 0,
     };
     walk.emit(scene.ops(), input.root_transform);
     // 09 §2.7: pushes still open at the end of the frame are auto-closed (emitting the pops
@@ -153,6 +154,8 @@ struct Walk<'a> {
     gpu_mask_budget: u64,
     /// The brush painting the current op (09 §5, §6), if any.
     paint: Option<plan::BrushPaint>,
+    /// Layer-stack depth at the current fragment's entry: pops below it are ignored (09 §7.2).
+    layer_floor: usize,
 }
 
 /// One COLR glyph the renderer must render into the color atlas before the frame (R39).
@@ -739,7 +742,7 @@ impl Walk<'_> {
                     }
                 }
                 Op::PopLayer => {
-                    if !self.pop_layer(idx) {
+                    if self.layers.open() <= self.layer_floor || !self.pop_layer(idx) {
                         // 09 §2.7: an unbalanced pop is ignored and counted.
                         self.plan.stats.unbalanced_pops += 1;
                     }
@@ -825,7 +828,14 @@ impl Walk<'_> {
                         self.skip_non_finite();
                         continue;
                     }
+                    // 09 §7.2: a fragment balances its own pushes; it can never pop outer ones.
+                    let floor = std::mem::replace(&mut self.layer_floor, self.layers.open());
                     self.emit(ops, xf);
+                    while self.layers.open() > self.layer_floor {
+                        self.pop_layer(self.visit);
+                        self.plan.stats.autoclosed += 1;
+                    }
+                    self.layer_floor = floor;
                 }
                 Op::Image { image, transform, .. } => {
                     // R33: validate before any key. Zero-size images are skipped silently.
@@ -1037,6 +1047,7 @@ impl Walk<'_> {
                         ramp: gradient::RampKey::of(g),
                         first,
                     });
+                    self.plan.stats.gradients += 1;
                     self.paint =
                         Some(plan::BrushPaint::Gradient(num::index_u32(self.plan.gradients.len() - 1)));
                     Some(peniko::Color::WHITE)
@@ -1056,6 +1067,7 @@ impl Walk<'_> {
                     sampler: images::sampler_key(b.sampler),
                     params,
                 });
+                self.plan.stats.image_brushes += 1;
                 self.paint = Some(plan::BrushPaint::Image(num::index_u32(self.plan.image_brushes.len() - 1)));
                 // Coverage × alpha only: a = sampler.alpha × fold (× hairline, applied by the stroke).
                 Some(peniko::Color::WHITE.with_alpha(b.sampler.alpha.clamp(0.0, 1.0)))
@@ -1079,5 +1091,7 @@ fn push_cmd(plan: &mut FramePlan, cmd: DrawCmd, _visit: u32) {
 
 #[cfg(test)]
 mod fallback_tests;
+#[cfg(test)]
+mod fragment_tests;
 #[cfg(test)]
 mod walk_tests;

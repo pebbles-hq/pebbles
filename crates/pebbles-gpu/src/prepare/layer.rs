@@ -49,7 +49,7 @@ fn is_draw(op: &Op) -> bool {
 #[cfg(test)]
 pub(crate) fn scan_layers(ops: &[Op], out: &mut Vec<LayerInfo>) {
     let mut open: Vec<usize> = Vec::new();
-    scan_into(ops, &mut open, out);
+    scan_into(ops, &mut open, out, 0);
     while !open.is_empty() {
         close(&mut open, out);
     }
@@ -65,7 +65,7 @@ fn close(open: &mut Vec<usize>, out: &mut [LayerInfo]) {
     }
 }
 
-fn scan_into(ops: &[Op], open: &mut Vec<usize>, out: &mut Vec<LayerInfo>) {
+fn scan_into(ops: &[Op], open: &mut Vec<usize>, out: &mut Vec<LayerInfo>, floor: usize) {
     for op in ops {
         match op {
             Op::PushLayer { blend, .. } => {
@@ -76,10 +76,12 @@ fn scan_into(ops: &[Op], open: &mut Vec<usize>, out: &mut Vec<LayerInfo>) {
                 out.push(LayerInfo { default_blend: default, ..LayerInfo::EMPTY });
                 open.push(out.len() - 1);
             }
-            Op::PopLayer => close(open, out),
+            // 09 §7.2: a pop that would close a layer opened outside this fragment is ignored.
+            Op::PopLayer if open.len() > floor => close(open, out),
+            Op::PopLayer => {}
             Op::Fragment { ops, .. } => {
                 let depth = open.len();
-                scan_into(ops, open, out);
+                scan_into(ops, open, out, depth);
                 while open.len() > depth {
                     close(open, out);
                 }
@@ -103,12 +105,12 @@ pub(crate) fn scan_one(ops: &[Op], push: usize) -> LayerInfo {
     let Some(first) = ops.get(push..push + 1) else {
         return LayerInfo::EMPTY;
     };
-    scan_into(first, &mut open, &mut out);
+    scan_into(first, &mut open, &mut out, 0);
     for op in ops.get(push + 1..).unwrap_or_default() {
         if open.is_empty() {
             break;
         }
-        scan_into(std::slice::from_ref(op), &mut open, &mut out);
+        scan_into(std::slice::from_ref(op), &mut open, &mut out, 0);
     }
     while !open.is_empty() {
         close(&mut open, &mut out);

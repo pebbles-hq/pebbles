@@ -292,3 +292,25 @@ fn layer_pool_respects_budget() {
         assert_eq!(stats.layer_budget_exceeded, u32::from(in_use > 16 * MIB), "depth {depth}");
     }
 }
+
+/// L52 AC2: an Over layer splits the root into 3 passes and copies nothing; a Multiply layer
+/// copies its backdrop once.
+#[test]
+#[ignore = "gpu"]
+fn frame_stats_count_passes_and_copies() {
+    let Some((device, queue, mut r)) = setup("frame_stats_count_passes_and_copies") else { return };
+    let scene = |blend: peniko::BlendMode| {
+        let mut s = Scene::new();
+        let mut p = Painter::new(&mut s);
+        p.push_layer(Fill::NonZero, blend, 0.5, Affine::IDENTITY, &Rect::new(0.0, 0.0, 64.0, 64.0));
+        red(&mut p, Rect::new(8.0, 8.0, 40.0, 40.0));
+        red(&mut p, Rect::new(24.0, 24.0, 56.0, 56.0));
+        p.pop_layer();
+        s
+    };
+    let mut targets = FrameTargets::new();
+    let (_, over) = frame(&device, &queue, &mut r, &mut targets, &scene(peniko::BlendMode::default()));
+    assert_eq!((over.render_passes, over.backdrop_copies), (3, 0));
+    let (_, mul) = frame(&device, &queue, &mut r, &mut targets, &scene(Mix::Multiply.into()));
+    assert_eq!(mul.backdrop_copies, 1);
+}

@@ -127,6 +127,7 @@ pub(crate) fn render_jobs(
             ) else {
                 continue;
             };
+            pass.push_debug_group("pebbles.gpu.mask");
             pass.set_pipeline(pipeline);
             let offsets =
                 [u32::try_from(globals_offset).unwrap_or(0), 0, renderer.mask_clip_offset(job.parent)];
@@ -141,6 +142,7 @@ pub(crate) fn render_jobs(
             pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
             pass.draw_indexed(job.indices.clone(), 0, 0..1);
             stats.draw_calls += 1;
+            pass.pop_debug_group();
         }
         stats.gpu_masks += 1;
         stats.gpu_masks_aliased += u32::from(samples == 1);

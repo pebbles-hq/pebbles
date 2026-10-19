@@ -334,16 +334,26 @@ pub(crate) struct PrepareStats {
     pub unbalanced_pops: u32,
     /// Layers still open at the end of the frame, closed automatically (§2.7).
     pub autoclosed: u32,
-    /// Layer plans (09 §3.3).
+    /// Layers that draw nothing (alpha 0 or empty, non-destructive; 09 §3.3).
     pub layers_skipped: u32,
+    /// Layers that are only a clip (09 §3.3).
     pub layers_pure_clip: u32,
+    /// Layers whose alpha folded into their single draw (09 §3.4).
     pub layers_folded: u32,
+    /// Layers rendered into their own target (09 §3.5).
     pub layers_offscreen: u32,
+    /// Pure-clip layers promoted offscreen by a non-default-blend child (09 §3.1).
     pub layers_promoted: u32,
-    /// Offscreen layers per composite path (09 §4.2).
+    /// Offscreen layers composited source-over (09 §4.2).
     pub composites_over: u32,
+    /// Offscreen layers composited with a fixed-function Porter-Duff blend (09 §4.3).
     pub composites_compose: u32,
+    /// Offscreen layers composited through the backdrop shader (09 §4.4–§4.5).
     pub composites_backdrop: u32,
+    /// Gradient paints of the frame (09 §5).
+    pub gradients: u32,
+    /// Image-brush paints of the frame (09 §6).
+    pub image_brushes: u32,
 }
 
 /// Everything one frame draws, in order. Reused across frames: `clear()` keeps every capacity.

@@ -34,6 +34,12 @@ pub fn cases() -> Vec<Case> {
         ops("layer/blend_in_sdf_clip", Layer, P4, 128, 96, blend_in_sdf_clip),
         // 05 §7 `shader_mask_destin` (09 §8.0 `compose_destin_mask`): ShaderMask = a promoted
         // layer holding the child and a `(Normal, DestIn)` gradient layer.
+        // 05 §7: `Painter::append` of one sub-scene (layer + fills) at two transforms (L50).
+        ops("layer/fragment_append", Layer, P4, 128, 96, |p| {
+            let f = super::frag::tile();
+            p.append(&f, Some(Affine::translate((8., 8.))));
+            p.append(&f, Some(Affine::translate((64., 40.))));
+        }),
         harness("layer/shader_mask_destin", Category::Analytic, P4, 200, 100, shader_mask_destin)
             .analytic()
             .probe("mask_fades_left_to_right", probe::mask_fades_left_to_right),

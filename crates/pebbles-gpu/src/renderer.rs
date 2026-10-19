@@ -388,12 +388,20 @@ impl Renderer {
                 multiview_mask: None,
             });
             let range = seg.cmds.start as usize..seg.cmds.end as usize;
+            // 09 L52: layer segments are grouped for frame debuggers.
+            let layer_seg = matches!(seg.target, super::prepare::plan::TargetRef::Layer(_));
+            if layer_seg {
+                pass.push_debug_group("pebbles.gpu.layer");
+            }
             encode(self, &mut pass, format, &mut stats, &composites, range, seg_target, &layers);
+            if layer_seg {
+                pass.pop_debug_group();
+            }
             drop(pass);
             stats.render_passes += 1;
             if let super::prepare::passes::AfterPass::CopyBackdrop(l) = seg.after {
                 let root = root_color.as_ref().map(|r| &r.0);
-                self.copy_backdrop(&mut encoder, l, &layers, target.targets, root);
+                self.copy_backdrop(&mut encoder, l, &layers, target.targets, root, &mut stats);
             }
         }
         self.segments = segments;
@@ -444,6 +452,7 @@ impl Renderer {
         layers: &[Option<super::execute::layers::LayerTarget>],
         targets: &super::frame_targets::FrameTargets,
         root: Option<&wgpu::Texture>,
+        stats: &mut FrameStats,
     ) {
         use super::prepare::plan::TargetRef;
         let Some(l) = layers.get(layer as usize).and_then(Option::as_ref) else { return };
@@ -460,6 +469,7 @@ impl Renderer {
             },
         };
         let b = desc.bounds;
+        stats.backdrop_copies += 1;
         encoder.copy_texture_to_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: src,
