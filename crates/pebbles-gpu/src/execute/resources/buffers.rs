@@ -85,6 +85,8 @@ pub(crate) struct FrameArenas {
     pub shadow_instances: GpuArena,
     pub glyphs: GpuArena,
     pub images: GpuArena,
+    /// Mesh vertices (R63).
+    pub meshes: GpuArena,
 }
 
 impl FrameArenas {
@@ -98,6 +100,7 @@ impl FrameArenas {
             &self.shadow_instances,
             &self.glyphs,
             &self.images,
+            &self.meshes,
         ]
         .iter()
         .map(|a| a.capacity())
@@ -112,6 +115,7 @@ impl FrameArenas {
             shadow_instances: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.shadows"),
             glyphs: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.glyphs"),
             images: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.images"),
+            meshes: GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.meshes"),
         }
     }
 }

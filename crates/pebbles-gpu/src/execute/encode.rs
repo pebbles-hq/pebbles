@@ -91,7 +91,15 @@ pub(crate) fn resolve_and_upload(
         // An image that cannot be drawn becomes a zero-area quad so ranges stay valid.
         renderer.image_instances.push(if drawable { req.quad } else { bytemuck::Zeroable::zeroed() });
     }
+    // R63: mesh textures (the image cache) and vertices.
+    for (image, key, sampler) in &renderer.scratch.plan.mesh_images {
+        if renderer.image_cache.ensure(device, queue, image, false, stats) {
+            let (layout, samplers) = (&renderer.layouts.texture, &mut renderer.samplers);
+            renderer.image_cache.ensure_bind_group(device, layout, key, *sampler, samplers, stats);
+        }
+    }
     let arenas = &mut renderer.arenas;
+    arenas.meshes.upload(device, queue, bytemuck::cast_slice(&renderer.scratch.plan.mesh_vertices), stats);
     arenas.glyphs.upload(device, queue, bytemuck::cast_slice(&renderer.glyph_instances), stats);
     arenas.images.upload(device, queue, bytemuck::cast_slice(&renderer.image_instances), stats);
 }
@@ -105,6 +113,7 @@ pub(crate) fn cmd_kind(cmd: &DrawCmd) -> PipelineKind {
         DrawCmd::Shadows { .. } => PipelineKind::Shadow,
         DrawCmd::Glyphs { .. } => PipelineKind::Glyph,
         DrawCmd::Images { .. } => PipelineKind::Image,
+        DrawCmd::Vertices { .. } => PipelineKind::Vertices,
         DrawCmd::Brush { paint: crate::prepare::plan::BrushPaint::Gradient(_), .. } => PipelineKind::Gradient,
         DrawCmd::Brush { .. } => PipelineKind::ImageBrush,
         // Layer boundaries never reach a pass (09 §3.6); composites draw with CompositeOver.
@@ -383,6 +392,29 @@ pub(crate) fn encode(
                 stats.bind_group_switches += 1;
                 pass.set_vertex_buffer(0, vb.slice(..));
                 pass.draw(0..4, range.clone());
+                stats.draw_calls += 1;
+            }
+            DrawCmd::Vertices { vertices, image, clip } => {
+                let bg = match image.and_then(|i| renderer.scratch.plan.mesh_images.get(i as usize)) {
+                    Some((_, k, s)) => renderer.image_cache.bind_group(k, *s),
+                    None => Some(renderer.white_bind_group()),
+                };
+                let (Some(pipeline), Some(vb), Some(bg)) = (
+                    renderer.pipelines.get_ensured(key(PipelineKind::Vertices, 0)),
+                    renderer.arenas.meshes.buffer(),
+                    bg,
+                ) else {
+                    continue;
+                };
+                if !state.set_scissor(pass, clip.scissor) {
+                    continue;
+                }
+                bind_clip(pass, *clip, stats);
+                state.set_pipeline(pass, pipeline);
+                pass.set_bind_group(1, bg, &[]);
+                stats.bind_group_switches += 1;
+                pass.set_vertex_buffer(0, vb.slice(..));
+                pass.draw(vertices.clone(), 0..1);
                 stats.draw_calls += 1;
             }
             // Never inside a segment (09 §3.6).

@@ -165,6 +165,29 @@ impl<'a> Painter<'a> {
         self.scene.push(Op::PushProjectedLayer { projection, bounds, clip: clip.map(Geometry::from_shape) });
     }
 
+    /// Draw a triangle mesh (Flutter `Canvas.drawVertices`, 02 §12) with `brush` (solid or image;
+    /// UVs are image pixels) combined per `color_mode` with the vertex colors.
+    pub fn draw_vertices<'b>(
+        &mut self,
+        mesh: &Arc<crate::paint::Mesh>,
+        brush: impl Into<BrushRef<'b>>,
+        color_mode: crate::paint::VertexColorMode,
+        transform: Affine,
+    ) {
+        let brush = brush.into().to_owned();
+        self.scene.push(Op::Vertices { mesh: Arc::clone(mesh), brush, color_mode, transform });
+    }
+
+    /// Draw a sprite batch from one image (Flutter `Canvas.drawAtlas`, 02 §12).
+    pub fn draw_atlas(
+        &mut self,
+        image: &peniko::ImageBrush,
+        sprites: &Arc<[crate::paint::Sprite]>,
+        transform: Affine,
+    ) {
+        self.scene.push(Op::Atlas { image: image.clone(), sprites: Arc::clone(sprites), transform });
+    }
+
     /// Pop the most recent layer.
     pub fn pop_layer(&mut self) {
         self.scene.push(Op::PopLayer);

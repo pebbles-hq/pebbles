@@ -80,6 +80,7 @@ impl PipelineKind {
             Self::ColorMatrix => "pebbles.gpu.pipeline.color_matrix",
             Self::Morphology => "pebbles.gpu.pipeline.morphology",
             Self::Projected => "pebbles.gpu.pipeline.projected",
+            Self::Vertices => "pebbles.gpu.pipeline.vertices",
             _ => "pebbles.gpu.pipeline.other",
         }
     }
@@ -133,6 +134,7 @@ pub(crate) struct ShaderModules {
     pub image_brush: wgpu::ShaderModule,
     pub effects: wgpu::ShaderModule,
     pub projected: wgpu::ShaderModule,
+    pub vertices: wgpu::ShaderModule,
 }
 
 impl ShaderModules {
@@ -156,6 +158,7 @@ impl ShaderModules {
             image_brush: module("pebbles.gpu.shader.image_brush", shaders::IMAGE_BRUSH),
             effects: module("pebbles.gpu.shader.effects", shaders::EFFECTS),
             projected: module("pebbles.gpu.shader.projected", shaders::PROJECTED),
+            vertices: module("pebbles.gpu.shader.vertices", shaders::VERTICES),
         }
     }
 
@@ -174,6 +177,7 @@ impl ShaderModules {
             PipelineKind::ImageBrush => &self.image_brush,
             PipelineKind::Blur | PipelineKind::ColorMatrix | PipelineKind::Morphology => &self.effects,
             PipelineKind::Projected => &self.projected,
+            PipelineKind::Vertices => &self.vertices,
             _ => &self.solid,
         }
     }
@@ -219,6 +223,7 @@ impl PipelineCache {
                 Some(&layouts.effect)
             }
             PipelineKind::Projected => Some(&layouts.projected),
+            PipelineKind::Vertices => Some(&layouts.texture),
             _ => None,
         };
         debug_assert_eq!(group1.is_some(), desc.group1, "{kind:?}: group 1 disagrees with 02 §9");

@@ -4,9 +4,12 @@
 use std::mem::size_of;
 
 use super::{PipelineKey, PipelineKind};
-use crate::gpu_types::{QuadInstance, ShadowInstance, ShapeInstance, SolidVertex};
+use crate::gpu_types::{MeshVertex, QuadInstance, ShadowInstance, ShapeInstance, SolidVertex};
 
 const SOLID_ATTRIBUTES: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x4];
+/// Mesh vertices (`MeshVertex`, R63).
+const MESH_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+    wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x4];
 /// Glyph and image quads (`QuadInstance`).
 pub(crate) const QUAD_ATTRIBUTES: [wgpu::VertexAttribute; 5] =
     wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x2, 2 => Float32x4, 3 => Float32x4, 4 => Uint32x2];
@@ -210,6 +213,15 @@ pub(crate) fn pipeline_descs() -> Vec<PipelineDesc> {
             fs: "fs_main",
             topology: TriangleStrip,
             layout: None,
+            group1: true,
+        },
+        PipelineDesc {
+            kind: PipelineKind::Vertices,
+            wgsl: "vertices.wgsl",
+            vs: "vs",
+            fs: "fs",
+            topology: TriangleList,
+            layout: layout(size_of::<MeshVertex>(), Vertex, &MESH_ATTRIBUTES),
             group1: true,
         },
         PipelineDesc {

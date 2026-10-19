@@ -13,6 +13,7 @@ pub mod frames;
 pub mod grad;
 pub mod img;
 pub mod layer;
+pub mod mesh;
 pub mod prim;
 pub mod screen;
 pub mod shadow;
@@ -37,6 +38,7 @@ pub fn all() -> Vec<Case> {
     out.extend(frag::cases());
     out.extend(brush::cases());
     out.extend(effects::cases());
+    out.extend(mesh::cases());
     out.extend(widget::cases());
     out.extend(screen::cases());
     out.extend(stress::cases());
@@ -84,6 +86,8 @@ mod tests {
             "frag",
             "brush",
             "effect",
+            "mesh",
+            "sprite",
             "widget",
             "screen",
             "stress",

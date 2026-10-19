@@ -26,6 +26,9 @@ struct QuadOut {
     @location(3) @interpolate(flat) normals: vec4<f32>,
     // Edge mask (R36): bit 0 u0, 1 u1, 2 v0, 3 v1 — set = antialiased, clear = top-left rule.
     @location(4) @interpolate(flat) edges: u32,
+    // Sprites (kind 3, R64): the premultiplied tint and the UV rect inset by half a texel.
+    @location(5) @interpolate(flat) tint: vec4<f32>,
+    @location(6) @interpolate(flat) uv_clamp: vec4<f32>,
 }
 
 // Area of the unit pixel square on the inner side of a line at signed distance `d` (px) from
@@ -69,7 +72,10 @@ fn vs(i: QuadIn, @builtin(vertex_index) vi: u32) -> QuadOut {
     o.p = to_clip(i.origin + q.x * x + q.y * y);
     o.uv = mix(i.uv.xy, i.uv.zw, q);
     o.q = q;
-    o.span = vec4<f32>(hx, hy, i.color.a, i.color.x);
+    let sprite = i.layer_kind.y == 3u;
+    o.span = vec4<f32>(hx, hy, select(i.color.a, 1.0, sprite), select(i.color.x, 0.0, sprite));
+    o.tint = select(vec4<f32>(1.0), i.color, sprite);
+    o.uv_clamp = select(vec4<f32>(-1e9, -1e9, 1e9, 1e9), vec4<f32>(min(i.uv.xy, i.uv.zw), max(i.uv.xy, i.uv.zw)), sprite);
     // u edges run along y (normal ⟂ y); v edges along x.
     o.normals = vec4<f32>(sorted_abs(vec2<f32>(-y.y, y.x)), sorted_abs(vec2<f32>(-x.y, x.x)));
     o.edges = i.layer_kind.x;
@@ -79,7 +85,11 @@ fn vs(i: QuadIn, @builtin(vertex_index) vi: u32) -> QuadOut {
 @fragment
 fn fs(i: QuadOut) -> @location(0) vec4<f32> {
     // The LOD comes from the CPU (R35), never from derivatives.
-    let t = textureSampleLevel(image, image_sampler, i.uv, i.span.w);
+    // Sprites sample inside their source rect inset by half a texel (no neighbor bleed).
+    let half = vec2<f32>(0.5) / vec2<f32>(textureDimensions(image));
+    let lo = i.uv_clamp.xy + half;
+    let uv = clamp(i.uv, lo, max(lo, i.uv_clamp.zw - half));
+    let t = textureSampleLevel(image, image_sampler, uv, i.span.w) * i.tint;
     let du = vec2<f32>(i.q.x, 1.0 - i.q.x) * i.span.x;
     let dv = vec2<f32>(i.q.y, 1.0 - i.q.y) * i.span.y;
     let nu = i.normals.xy;

@@ -14,6 +14,7 @@ pub mod compose;
 pub mod coverage;
 pub mod effects;
 pub mod layers;
+pub mod mesh;
 pub mod nine;
 pub mod paint;
 pub mod shadow;
@@ -316,6 +317,22 @@ impl Target {
                 let mask = fill_geometry(clip, outer * *transform, *clip_fill, Snap::Off, self.w, self.h);
                 let n = self.px.len();
                 self.layers.push(Layer::new(n, mask, *blend, f64::from(*alpha).clamp(0.0, 1.0)));
+            }
+            Op::Vertices { mesh, brush, color_mode, transform, .. } => {
+                let (w, h) = (self.w, self.h);
+                let buf = match self.layers.last_mut() {
+                    Some(l) => &mut l.px,
+                    None => &mut self.px,
+                };
+                mesh::draw_mesh(buf, w, h, mesh, brush, *color_mode, outer * *transform);
+            }
+            Op::Atlas { image, sprites, transform, .. } => {
+                let (w, h) = (self.w, self.h);
+                let buf = match self.layers.last_mut() {
+                    Some(l) => &mut l.px,
+                    None => &mut self.px,
+                };
+                mesh::draw_sprites(buf, w, h, image, sprites, outer * *transform);
             }
             Op::PushEffectLayer { effect, clip, transform, .. } => {
                 let t = outer * *transform;

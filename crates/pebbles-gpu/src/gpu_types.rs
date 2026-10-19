@@ -156,6 +156,16 @@ pub(crate) struct ImageBrushParams {
 }
 const _: () = assert!(size_of::<ImageBrushParams>() == 48);
 
+/// One mesh vertex (02 §12, R63): device px, image UV (normalized), premultiplied color.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+pub(crate) struct MeshVertex {
+    pub pos: [f32; 2],
+    pub uv: [f32; 2],
+    pub color: [f32; 4],
+}
+const _: () = assert!(size_of::<MeshVertex>() == 32);
+
 /// A projected layer's composite parameters (09 §10.7, `projected.wgsl`).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]

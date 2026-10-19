@@ -10,8 +10,6 @@ use crate::prepare::test_util::prepare_scene;
 
 /// Rows no display-list op can produce yet (their ops / data are added by the delivering card).
 const NOT_PRODUCIBLE: &[(F, &str)] = &[
-    (F::Vertices, "no Op::Vertices yet (R63)"),
-    (F::SpriteAtlas, "no Op::Atlas yet (R64)"),
     (F::ShaderBrush, "no Op::ShaderFill yet (L43)"),
     (F::ClipEllipse, "Geometry has no Ellipse variant: an oval clip arrives as a Path (OC-24, L01)"),
 ];
@@ -274,6 +272,28 @@ fn fixture(f: F) -> Option<Scene> {
             p.push_projected_layer(h, R, None::<&Rect>);
             p.fill(Fill::NonZero, id, RED, None, &R);
             p.pop_layer();
+        }
+        F::Vertices => {
+            use pebbles_render::paint::{Mesh, VertexColorMode, VertexMode};
+            let m = Mesh::new(
+                VertexMode::Triangles,
+                vec![[8.0, 8.0], [40.0, 8.0], [8.0, 40.0]],
+                None,
+                None,
+                None,
+            );
+            let m = std::sync::Arc::new(m.expect("valid mesh"));
+            p.draw_vertices(&m, RED, VertexColorMode::Modulate, id);
+        }
+        F::SpriteAtlas => {
+            let s = pebbles_render::paint::Sprite::from_components(
+                Rect::new(0.0, 0.0, 4.0, 4.0),
+                0.0,
+                2.0,
+                (0.0, 0.0),
+                (8.0, 8.0),
+            );
+            p.draw_atlas(&rgba(4, 4), &std::sync::Arc::from([s]), id);
         }
         F::ClipGpuMask => layer(p, Mix::Normal, 1.0, id, &Circle::new((32.0, 32.0), 200.0).to_path(0.1)),
         _ => return None,

@@ -222,6 +222,21 @@ pub enum Op {
         bounds: Rect,
         clip: Option<Geometry>,
     },
+    /// A triangle mesh (Flutter `drawVertices`, 02 §12): not antialiased.
+    #[non_exhaustive]
+    Vertices {
+        mesh: Arc<crate::paint::Mesh>,
+        brush: Brush,
+        color_mode: crate::paint::VertexColorMode,
+        transform: Affine,
+    },
+    /// A sprite batch from one image (Flutter `drawAtlas`, 02 §12).
+    #[non_exhaustive]
+    Atlas {
+        image: ImageBrush,
+        sprites: Arc<[crate::paint::Sprite]>,
+        transform: Affine,
+    },
     /// Clip to `clip` (filled with `clip_fill`) and composite the layer with `blend` at
     /// `alpha`.
     #[non_exhaustive]

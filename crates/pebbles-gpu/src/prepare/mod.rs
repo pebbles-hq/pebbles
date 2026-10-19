@@ -46,6 +46,7 @@ pub(crate) mod tessellate;
 #[cfg(test)]
 pub(crate) mod test_util;
 mod tier_a;
+pub(crate) mod vertices;
 
 pub(crate) use plan::ClipState;
 pub(crate) use plan::{DrawCmd, FramePlan, GlyphRequest, ScissorRect, SdfClipId};
@@ -1121,6 +1122,30 @@ impl Walk<'_> {
                         continue;
                     }
                     self.push_projected_layer(projection, *bounds, clip.as_ref(), outer, idx);
+                }
+                Op::Vertices { mesh, brush, color_mode, transform, .. } => {
+                    let xf = outer * *transform;
+                    if !xf.is_finite()
+                        || mesh.positions.iter().any(|p| !p[0].is_finite() || !p[1].is_finite())
+                    {
+                        self.skip_non_finite();
+                        continue;
+                    }
+                    if self.hidden() {
+                        continue;
+                    }
+                    self.draw_mesh(mesh, brush, *color_mode, xf, idx);
+                }
+                Op::Atlas { image, sprites, transform, .. } => {
+                    let xf = outer * *transform;
+                    if !xf.is_finite() {
+                        self.skip_non_finite();
+                        continue;
+                    }
+                    if self.hidden() {
+                        continue;
+                    }
+                    self.draw_sprites(image, sprites, xf, idx);
                 }
                 Op::Image { image, transform, .. } => {
                     // R33: validate before any key. Zero-size images are skipped silently.

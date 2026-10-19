@@ -156,6 +156,9 @@ pub(crate) enum DrawCmd {
     PopLayer { layer: u32 },
     /// Composite layer `layer` into the parent target under `clip` (09 §3.7).
     Composite { layer: u32, clip: ClipState },
+    /// A triangle mesh (02 §12, R63): `mesh_vertices[vertices]` as a triangle list, textured by
+    /// `mesh_images[image]` (`None`: white) — never merged, never antialiased.
+    Vertices { vertices: std::ops::Range<u32>, image: Option<u32>, clip: ClipState },
     /// A brush-painted draw (09 §5, §6): the geometry's tier coverage × a gradient or image
     /// brush. Merges only with the same paint, cover kind and clip.
     Brush { cover: BrushCover, paint: BrushPaint, clip: ClipState },
@@ -392,6 +395,10 @@ pub(crate) struct FramePlan {
     pub mask_clips: Vec<MaskClipRecord>,
     /// The clip paths the mask records reference.
     pub clip_sources: Vec<MaskClipSource>,
+    /// Mesh vertices (R63), triangle lists.
+    pub mesh_vertices: Vec<crate::gpu_types::MeshVertex>,
+    /// Mesh textures: (image, key, sampler).
+    pub mesh_images: Vec<(peniko::ImageData, ImageKey, SamplerKey)>,
     /// Gradient paints (09 §5), indexed by `BrushPaint::Gradient`.
     pub gradients: Vec<GradientDraw>,
     /// Image-brush paints (09 §6), indexed by `BrushPaint::Image`.
@@ -443,6 +450,8 @@ impl FramePlan {
         self.clip_sources.clear();
         self.gpu_mask_jobs.clear();
         self.gradients.clear();
+        self.mesh_vertices.clear();
+        self.mesh_images.clear();
         self.image_brushes.clear();
         self.gpu_mask_bytes = 0;
         self.layers.clear();
@@ -461,6 +470,7 @@ impl FramePlan {
         self.glyph_runs.clear();
         self.images.clear();
         self.image_brushes.clear();
+        self.mesh_images.clear();
     }
 
     /// Apply the merge rule: extend `cmds.last_mut()` iff same variant, same clip and
@@ -530,6 +540,9 @@ fn format_cmd(cmd: &DrawCmd) -> String {
         DrawCmd::PushLayer { layer } => format!("PushLayer {layer}"),
         DrawCmd::PopLayer { layer } => format!("PopLayer {layer}"),
         DrawCmd::Composite { layer, clip } => format!("Composite {layer} {}", clip_str(clip)),
+        DrawCmd::Vertices { vertices, image, clip } => {
+            format!("Vertices {vertices:?} {image:?} {}", clip_str(clip))
+        }
         DrawCmd::Brush { cover, paint, clip } => {
             format!("Brush {cover:?} {paint:?} {}", clip_str(clip))
         }

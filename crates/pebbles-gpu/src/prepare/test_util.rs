@@ -54,6 +54,7 @@ pub(crate) fn cmd_kinds(plan: &FramePlan) -> Vec<&'static str> {
             DrawCmd::PopLayer { .. } => "pop_layer",
             DrawCmd::Composite { .. } => "composite",
             DrawCmd::Brush { .. } => "brush",
+            DrawCmd::Vertices { .. } => "vertices",
         })
         .collect()
 }

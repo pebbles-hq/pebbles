@@ -472,3 +472,114 @@ fn dynamic_image_reuses_one_texture() {
     }
     assert_eq!(created, 1);
 }
+
+// ---- R63 meshes / R64 sprite batches ----
+
+#[test]
+#[ignore = "gpu"]
+fn vertex_colors_interpolate() {
+    use pebbles_render::paint::{Mesh, VertexColorMode, VertexMode};
+    let Some((device, queue, mut r)) = setup("vertex_colors_interpolate") else { return };
+    let mesh = std::sync::Arc::new(
+        Mesh::new(
+            VertexMode::Triangles,
+            vec![[0.0, 0.0], [63.0, 0.0], [0.0, 63.0]],
+            Some(vec![
+                Color::from_rgba8(255, 0, 0, 255),
+                Color::from_rgba8(0, 255, 0, 255),
+                Color::from_rgba8(0, 0, 255, 255),
+            ]),
+            None,
+            None,
+        )
+        .unwrap(),
+    );
+    let mut s = Scene::new();
+    Painter::new(&mut s).draw_vertices(&mesh, Color::WHITE, VertexColorMode::Modulate, Affine::IDENTITY);
+    let px = render_scene(&device, &queue, &mut r, &s, (64, 64), Color::WHITE);
+    // Pixel (21, 21)'s center (21.5, 21.5), next to the centroid: barycentric weights.
+    let c = pixel(&px, 64, 21, 21);
+    let (u, v) = (21.5 / 63.0, 21.5 / 63.0);
+    let want = [255.0 * (1.0 - u - v), 255.0 * u, 255.0 * v];
+    assert!((0..3).all(|i| (f64::from(c[i]) - want[i]).abs() <= 3.0), "centroid {c:?} vs {want:?}");
+    assert!(is_white(pixel(&px, 64, 60, 60)), "outside the triangle");
+}
+
+#[test]
+#[ignore = "gpu"]
+fn textured_mesh_modulates() {
+    use pebbles_render::paint::{Mesh, VertexColorMode, VertexMode};
+    let Some((device, queue, mut r)) = setup("textured_mesh_modulates") else { return };
+    let img =
+        peniko::ImageBrush::new(rgba_image(2, 2, [0, 255, 0, 255])).with_quality(peniko::ImageQuality::Low);
+    let mesh = std::sync::Arc::new(
+        Mesh::new(
+            VertexMode::TriangleStrip,
+            vec![[0.0, 0.0], [64.0, 0.0], [0.0, 64.0], [64.0, 64.0]],
+            Some(vec![Color::from_rgba8(255, 255, 255, 255); 4]),
+            Some(vec![[0.0, 0.0], [2.0, 0.0], [0.0, 2.0], [2.0, 2.0]]),
+            None,
+        )
+        .unwrap(),
+    );
+    let mut s = Scene::new();
+    let half = img.clone().with_alpha(0.5);
+    Painter::new(&mut s).draw_vertices(&mesh, &half, VertexColorMode::Modulate, Affine::IDENTITY);
+    let px = render_scene(&device, &queue, &mut r, &s, (64, 64), Color::WHITE);
+    let c = pixel(&px, 64, 32, 32);
+    assert!((i32::from(c[0]) - 128).abs() <= 2 && c[1] == 255 && (i32::from(c[2]) - 128).abs() <= 2, "{c:?}");
+}
+
+#[test]
+#[ignore = "gpu"]
+fn ten_thousand_sprites_one_draw() {
+    use pebbles_render::paint::Sprite;
+    let Some((device, queue, mut r)) = setup("ten_thousand_sprites_one_draw") else { return };
+    let img = peniko::ImageBrush::new(rgba_image(4, 4, [255, 0, 0, 255]));
+    let sprites: std::sync::Arc<[Sprite]> = (0..10_000)
+        .map(|i| {
+            Sprite::from_components(
+                Rect::new(0.0, 0.0, 4.0, 4.0),
+                0.0,
+                0.5,
+                (0.0, 0.0),
+                ((i % 100) as f32 * 2.0, (i / 100) as f32 * 2.0),
+            )
+        })
+        .collect();
+    let mut s = Scene::new();
+    Painter::new(&mut s).draw_atlas(&img, &sprites, Affine::IDENTITY);
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pebbles.gpu.test.sprites"),
+        size: wgpu::Extent3d { width: 200, height: 200, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut targets = FrameTargets::new();
+    let target = RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut targets);
+    let stats = r.render(target, &s, &FrameParams::new(Color::WHITE)).expect("render");
+    assert_eq!(stats.draw_calls, 1, "one instanced draw for the batch");
+    let px = readback(&device, &queue, &texture);
+    assert_eq!(pixel(&px, 200, 101, 101), [255, 0, 0, 255]);
+}
+
+#[test]
+#[ignore = "gpu"]
+fn sprite_color_modulates() {
+    use pebbles_render::paint::Sprite;
+    let Some((device, queue, mut r)) = setup("sprite_color_modulates") else { return };
+    let img = peniko::ImageBrush::new(rgba_image(8, 8, [255, 255, 255, 255]));
+    let mut sp = Sprite::from_components(Rect::new(0.0, 0.0, 8.0, 8.0), 0.0, 4.0, (0.0, 0.0), (16.0, 16.0));
+    sp.color = Some(Color::from_rgba8(0, 0, 255, 255));
+    let sprites: std::sync::Arc<[Sprite]> = vec![sp].into();
+    let mut s = Scene::new();
+    Painter::new(&mut s).draw_atlas(&img, &sprites, Affine::IDENTITY);
+    let px = render_scene(&device, &queue, &mut r, &s, (64, 64), Color::WHITE);
+    assert_eq!(pixel(&px, 64, 32, 32), [0, 0, 255, 255]);
+    assert!(is_white(pixel(&px, 64, 8, 8)));
+}

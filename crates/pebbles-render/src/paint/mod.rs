@@ -19,10 +19,12 @@ pub use peniko::{self, Brush, BrushRef, Color, Fill, FontData};
 pub mod color_matrix;
 pub mod display_list;
 pub mod dynamic_image;
+pub mod mesh;
 pub mod projective;
 pub use color_matrix::ColorMatrix;
 pub use display_list::{Glyph, NormalizedCoord, Painter, Scene, scene};
 pub use dynamic_image::{DynamicImage, DynamicImageFrame, IRect};
+pub use mesh::{Mesh, MeshError, Sprite, VertexColorMode, VertexMode};
 pub use projective::Projective;
 
 // Transitional consumer: replays the display list into a live `vello_hybrid::Scene`

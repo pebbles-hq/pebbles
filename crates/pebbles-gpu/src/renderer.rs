@@ -52,6 +52,9 @@ pub struct Renderer {
     /// Effect-pass params (09 §10): one dynamic-offset slot per pass of the frame.
     effect_buffer: wgpu::Buffer,
     effect_slots: u64,
+    /// 1×1 white texture + sampler with the image layout (R63).
+    white_bg: wgpu::BindGroup,
+    _white_tex: wgpu::Texture,
     /// Projected-layer params (09 §10.7), filled in frame order.
     proj_buffer: wgpu::Buffer,
     proj_slots: u64,
@@ -127,6 +130,7 @@ impl Renderer {
         let (mask_view, mask_gen) = glyph_atlas.mask_view();
         let gpu_masks = super::execute::gpu_masks::GpuMasks::new(device);
         let lut_rows = budgets.gradient_lut_max_rows;
+        let (white_tex, white_bg) = white_texture(device, gpu.queue(), &layouts);
         let globals_bg = globals_bind_group(
             device,
             &layouts,
@@ -163,6 +167,8 @@ impl Renderer {
             image_brushes: super::execute::image_brushes::ImageBrushResources::new(device),
             effect_buffer: uniform_buffer(device, "pebbles.gpu.buffer.effects", 1),
             effect_slots: 1,
+            white_bg,
+            _white_tex: white_tex,
             proj_buffer: uniform_buffer(device, "pebbles.gpu.buffer.projected", 4),
             proj_slots: 4,
             proj_next: 0,
@@ -681,6 +687,11 @@ impl Renderer {
         }
     }
 
+    /// A 1×1 white texture with the image layout (meshes without an image brush, R63).
+    pub(crate) fn white_bind_group(&self) -> &wgpu::BindGroup {
+        &self.white_bg
+    }
+
     pub(crate) fn projected_buffer(&self) -> &wgpu::Buffer {
         &self.proj_buffer
     }
@@ -1055,6 +1066,44 @@ impl Renderer {
             stats.buffers_created += 1;
         }
     }
+}
+
+/// A 1×1 opaque white texture and its image-layout bind group (R63).
+fn white_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layouts: &BindGroupLayouts,
+) -> (wgpu::Texture, wgpu::BindGroup) {
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("pebbles.gpu.texture.white"),
+        size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        tex.as_image_copy(),
+        &[255u8; 4],
+        wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4), rows_per_image: Some(1) },
+        wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
+    );
+    let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+        label: Some("pebbles.gpu.sampler.white"),
+        ..Default::default()
+    });
+    let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("pebbles.gpu.bind.white"),
+        layout: &layouts.texture,
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
+            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+        ],
+    });
+    (tex, bg)
 }
 
 /// A uniform buffer of `slots` dynamic-offset slots.

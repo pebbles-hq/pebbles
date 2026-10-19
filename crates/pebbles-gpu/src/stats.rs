@@ -58,11 +58,13 @@ pub enum Unsupported {
     LayerDepthExceeded,
     /// More live offscreen layers than `RendererLimits::max_layer_targets`: flattened.
     LayerPoolExhausted,
+    /// A mesh with a gradient brush: drawn with the first stop's color (R63).
+    MeshGradient,
 }
 
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
-    pub const COUNT: usize = 26;
+    pub const COUNT: usize = 27;
     /// Every variant, in discriminant order.
     pub const ALL: [Unsupported; Self::COUNT] = [
         Self::NonRectClip,
@@ -91,6 +93,7 @@ impl Unsupported {
         Self::LutFull,
         Self::LayerDepthExceeded,
         Self::LayerPoolExhausted,
+        Self::MeshGradient,
     ];
 
     /// The variant's 11 §4.2 key, used in logs and stats dumps.
@@ -122,6 +125,7 @@ impl Unsupported {
             Self::LutFull => "gradient-lut-full",
             Self::LayerDepthExceeded => "layer-depth-exceeded",
             Self::LayerPoolExhausted => "layer-pool-exhausted",
+            Self::MeshGradient => "mesh-gradient-unsupported",
         }
     }
 }

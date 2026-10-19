@@ -270,6 +270,8 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::EffectMorphology,             // L64
     F::BackdropFilter,               // L62
     F::ProjectedLayer,               // L65
+    F::Vertices,                     // R63
+    F::SpriteAtlas,                  // R64
 ];
 
 #[cfg(test)]
