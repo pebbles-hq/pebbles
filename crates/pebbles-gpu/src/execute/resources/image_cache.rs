@@ -46,8 +46,10 @@ struct ImageEntry {
     bind_groups: Vec<(SamplerKey, wgpu::BindGroup)>,
     weak: peniko::WeakBlob<u8>,
     last_used: u64,
-    /// Uploaded texture bytes (`w · h · 4` after any downscale).
+    /// Uploaded texture bytes: every level of `w · h · 4` after any downscale.
     bytes: u64,
+    /// Whether the full mip chain is resident (R35: `Medium`/`High` images).
+    mips: bool,
 }
 
 /// Uploaded images by key, under a byte budget (10 §6, M02).
@@ -167,12 +169,23 @@ impl ImageCache {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         image: &peniko::ImageData,
+        mips: bool,
         stats: &mut FrameStats,
     ) -> bool {
         let key = ImageKey::of(image);
         if let Some(e) = self.entries.get_mut(&key) {
             e.last_used = self.frame;
-            return true;
+            if e.mips || !mips {
+                return true;
+            }
+            // First drawn `Low`, now filtered: re-insert with the mip chain (one re-upload, R35).
+            if let Some(old) = self.entries.remove(&key) {
+                self.total_bytes -= old.bytes;
+                #[cfg(debug_assertions)]
+                {
+                    self.total_bind_groups -= old.bind_groups.len();
+                }
+            }
         }
         let bytes: &[u8] = image.data.data();
         let (w, h) = (image.width, image.height);
@@ -200,7 +213,7 @@ impl ImageCache {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("pebbles.gpu.image"),
             size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-            mip_level_count: 1,
+            mip_level_count: if mips { super::image_mips::mip_level_count(w, h) } else { 1 },
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
@@ -218,6 +231,28 @@ impl ImageCache {
             wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * w), rows_per_image: None },
             wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
         );
+        let mut bytes = u64::from(w) * u64::from(h) * 4;
+        if mips {
+            // Every level uploaded once, at insert (R35); the budget counts them all.
+            for (level, (px, lw, lh)) in super::image_mips::build_mips(pixels, w, h).iter().enumerate() {
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &texture,
+                        mip_level: u32::try_from(level + 1).unwrap_or(u32::MAX),
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    px,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(4 * lw),
+                        rows_per_image: None,
+                    },
+                    wgpu::Extent3d { width: *lw, height: *lh, depth_or_array_layers: 1 },
+                );
+                bytes += u64::from(*lw) * u64::from(*lh) * 4;
+            }
+        }
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         if self.scratch.capacity() > IMAGE_SCRATCH_RETAIN_BYTES {
             self.scratch = Vec::new();
@@ -225,7 +260,6 @@ impl ImageCache {
         stats.images_uploaded += 1;
         stats.textures_created += 1;
         stats.texture_views_created += 1;
-        let bytes = u64::from(w) * u64::from(h) * 4;
         self.total_bytes += bytes;
         stats.texture_bytes_uploaded += bytes;
         self.entries.insert(
@@ -237,6 +271,7 @@ impl ImageCache {
                 weak: image.data.downgrade(),
                 last_used: self.frame,
                 bytes,
+                mips,
             },
         );
         true

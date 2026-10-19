@@ -235,6 +235,7 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::ImageTransform,     // R31
     F::ImageAlpha,         // R32
     F::ImageMalformed,     // R33
+    F::ImageMipmaps,       // R35
 ];
 
 #[cfg(test)]

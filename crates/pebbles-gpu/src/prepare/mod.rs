@@ -570,7 +570,6 @@ impl Walk<'_> {
                     {
                         continue;
                     }
-                    self.note_image(image, xf);
                     let s = &image.sampler;
                     let k = self.alpha() * s.alpha.clamp(0.0, 1.0);
                     let range = images::image(self.plan, image, xf, k, tier_a::snaps(op));

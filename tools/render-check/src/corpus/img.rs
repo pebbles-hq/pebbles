@@ -35,6 +35,9 @@ pub fn cases() -> Vec<Case> {
             .analytic()
             .probe("huge_image_downscaled_red", probe::huge_image_downscaled_red),
         ops("img/many_200_distinct", Image, P3, 256, 256, many_200_distinct),
+        // R35 mip chains (V53 cases): a one-pixel checker minified ×0.3.
+        ops("img/minify_checker_medium", Image, P3, W, H, minify_checker_medium),
+        ops("img/minify_checker_high", Image, P3, W, H, minify_checker_high),
         ops("img/under_clip_and_opacity", Image, P3, W, H, under_clip_and_opacity)
             .xfail("L10", "exact group opacity lands with L10"),
     ]);
@@ -160,6 +163,19 @@ fn many_200_distinct(p: &mut Painter<'_>) {
         let (x, y) = (f64::from(i % 15) * 17.0, f64::from(i / 15) * 17.0);
         p.draw_image(&noise(16, 16, 1000 + u64::from(i)), Affine::translate((x, y)));
     }
+}
+
+fn minify_checker(p: &mut Painter<'_>, q: ImageQuality) {
+    let img = checker(320, 320, 1).with_quality(q);
+    p.draw_image(&img, Affine::translate((16.0, 16.0)) * Affine::scale(0.3));
+}
+
+fn minify_checker_medium(p: &mut Painter<'_>) {
+    minify_checker(p, ImageQuality::Medium);
+}
+
+fn minify_checker_high(p: &mut Painter<'_>) {
+    minify_checker(p, ImageQuality::High);
 }
 
 fn under_clip_and_opacity(p: &mut Painter<'_>) {

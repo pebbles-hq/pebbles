@@ -63,11 +63,22 @@ pub(crate) fn image(
     let x = transform * kurbo::Point::new(w, 0.0) - o;
     let y = transform * kurbo::Point::new(0.0, h) - o;
     let f = |v: f64| to_f32(v).unwrap_or(0.0);
+    // R35: the LOD is computed once per draw on the CPU from the image px → device map
+    // (`Medium` = the nearest level, `High` = trilinear; `Low` keeps level 0). Image quads carry it
+    // in `color.x` (their `color.rgb` is otherwise unused; `.a` is the opacity).
+    let quality = image.sampler.quality;
+    let mips = quality != peniko::ImageQuality::Low;
+    let lod = if mips {
+        let l = crate::execute::resources::image_mips::lod(x.x / w, x.y / w, y.x / h, y.y / h);
+        if quality == peniko::ImageQuality::Medium { l.round() } else { l }
+    } else {
+        0.0
+    };
     let quad = QuadInstance {
         xform: [f(x.x), f(x.y), f(y.x), f(y.y)],
         origin: [f(o.x), f(o.y)],
         uv: [0.0, 0.0, 1.0, 1.0],
-        color: [0.0, 0.0, 0.0, opacity],
+        color: [f(lod), 0.0, 0.0, opacity],
         layer_kind: [0, 2],
     };
     let start = index_u32(plan.images.len());
@@ -76,6 +87,7 @@ pub(crate) fn image(
         sampler: sampler_key(image.sampler),
         image: image.image.clone(),
         quad,
+        mips,
     });
     start..start + 1
 }

@@ -20,8 +20,8 @@ struct QuadOut {
     @location(0) uv: vec2<f32>,
     // Quad parameter (0..1 inside, beyond 0..1 in the 1-px fringe).
     @location(1) q: vec2<f32>,
-    // Device-px distance between the opposite edges: (across u, across v); opacity.
-    @location(2) @interpolate(flat) span: vec3<f32>,
+    // Device-px distance between the opposite edges: (across u, across v); opacity; LOD (R35).
+    @location(2) @interpolate(flat) span: vec4<f32>,
     // |normal| components of the u edges (xy) and the v edges (zw), sorted (max, min).
     @location(3) @interpolate(flat) normals: vec4<f32>,
 }
@@ -60,7 +60,7 @@ fn vs(i: QuadIn, @builtin(vertex_index) vi: u32) -> QuadOut {
     o.p = to_clip(i.origin + q.x * x + q.y * y);
     o.uv = mix(i.uv.xy, i.uv.zw, q);
     o.q = q;
-    o.span = vec3<f32>(hx, hy, i.color.a);
+    o.span = vec4<f32>(hx, hy, i.color.a, i.color.x);
     // u edges run along y (normal ⟂ y); v edges along x.
     o.normals = vec4<f32>(sorted_abs(vec2<f32>(-y.y, y.x)), sorted_abs(vec2<f32>(-x.y, x.x)));
     return o;
@@ -68,7 +68,8 @@ fn vs(i: QuadIn, @builtin(vertex_index) vi: u32) -> QuadOut {
 
 @fragment
 fn fs(i: QuadOut) -> @location(0) vec4<f32> {
-    let t = textureSample(image, image_sampler, i.uv);
+    // The LOD comes from the CPU (R35), never from derivatives.
+    let t = textureSampleLevel(image, image_sampler, i.uv, i.span.w);
     let du = vec2<f32>(i.q.x, 1.0 - i.q.x) * i.span.x;
     let dv = vec2<f32>(i.q.y, 1.0 - i.q.y) * i.span.y;
     let nu = i.normals.xy;

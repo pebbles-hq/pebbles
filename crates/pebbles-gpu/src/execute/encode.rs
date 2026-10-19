@@ -54,7 +54,7 @@ pub(crate) fn resolve_and_upload(
     renderer.glyph_atlas.flush(device, queue, &renderer.layouts.glyph, stats);
     renderer.image_instances.clear();
     for req in &renderer.scratch.plan.images {
-        let drawable = renderer.image_cache.ensure(device, queue, &req.image, stats);
+        let drawable = renderer.image_cache.ensure(device, queue, &req.image, req.mips, stats);
         if drawable {
             let (layout, samplers) = (&renderer.layouts.texture, &mut renderer.samplers);
             renderer.image_cache.ensure_bind_group(device, layout, &req.key, req.sampler, samplers, stats);

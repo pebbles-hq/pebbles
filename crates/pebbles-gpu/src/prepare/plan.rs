@@ -115,6 +115,8 @@ pub(crate) struct ImageRequest {
     pub image: peniko::ImageData,
     /// Device-space placement and opacity.
     pub quad: QuadInstance,
+    /// `Medium`/`High` images carry the R35 mip chain.
+    pub mips: bool,
 }
 
 /// Plan-local counters (dedicated counters only — fallbacks are recorded through

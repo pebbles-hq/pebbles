@@ -115,15 +115,6 @@ impl Walk<'_> {
         }
     }
 
-    /// Image sampler and placement rows (R30–R35 deliver them).
-    pub(super) fn note_image(&mut self, image: &peniko::ImageBrush, xf: Affine) {
-        let s = &image.sampler;
-        // Quality and extend map to sampler state (R30). Filtered minification needs mipmaps (R35).
-        if s.quality != peniko::ImageQuality::Low && xf.determinant().abs() < 1.0 {
-            self.fell_back(Feature::ImageMipmaps);
-        }
-    }
-
     /// Shadow rows (R40/R41 deliver them).
     pub(super) fn note_shadow(&mut self, xf: Affine) {
         let c = xf.as_coeffs();

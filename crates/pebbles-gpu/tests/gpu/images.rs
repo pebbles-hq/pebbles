@@ -328,3 +328,33 @@ fn premultiplied_image_alpha_half() {
     let want = [over(50.0), over(25.0), over(10.0), 255];
     assert!(near(c, want), "{c:?} want {want:?}");
 }
+
+// ---- R35: mipmapped minification ----
+
+/// A 512² one-pixel black/white checkerboard drawn at 64² with `High`: every pixel is the
+/// average gray 128 ±3 (no moiré from sampling level 0).
+#[test]
+#[ignore = "gpu"]
+fn downscaled_checkerboard_has_no_moire() {
+    let Some(mut r) = setup("downscaled_checkerboard_has_no_moire") else { return };
+    let px: Vec<u8> = (0..512u32 * 512)
+        .flat_map(|i| if (i % 512 + i / 512) % 2 == 0 { [0u8, 0, 0, 255] } else { [255u8, 255, 255, 255] })
+        .collect();
+    let image = peniko::ImageBrush::new(peniko::ImageData {
+        data: peniko::Blob::from(px),
+        format: peniko::ImageFormat::Rgba8,
+        alpha_type: peniko::ImageAlphaType::Alpha,
+        width: 512,
+        height: 512,
+    })
+    .with_quality(peniko::ImageQuality::High);
+    let mut s = Scene::new();
+    Painter::new(&mut s).draw_image(&image, Affine::scale(0.125));
+    let out = render_scene(&r.0, &r.1, &mut r.2, &s, (64, 64), Color::WHITE);
+    for y in 0..64 {
+        for x in 0..64 {
+            let p = pixel(&out, 64, x, y);
+            assert!(p[..3].iter().all(|c| c.abs_diff(128) <= 3), "({x},{y}) {p:?}");
+        }
+    }
+}
