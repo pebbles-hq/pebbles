@@ -307,15 +307,16 @@ fn emit(
         }
         // Handled by `emit_list` (it owns the transform stack).
         Op::PushProjectedLayer { .. } => {}
-        Op::Vertices { .. } | Op::Atlas { .. } => {
-            // DR-24 adoption rule: meshes and sprite batches are wgpu-only.
+        Op::Vertices { .. } | Op::Atlas { .. } | Op::Custom { .. } => {
+            // DR-24 adoption rule: meshes and sprite batches are wgpu-only (custom GPU
+            // primitives too, DR-22).
             static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
             if !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
                 pebbles_foundation::log::logf(
                     pebbles_foundation::log::Level::Warn,
                     pebbles_foundation::log::Cat::Gpu,
                     format_args!(
-                        "vello-hybrid: meshes and sprite batches are not supported; skipped (wgpu, 02 §12)"
+                        "vello-hybrid: meshes, sprite batches and custom primitives are not supported; skipped (wgpu, 02 §11–§12)"
                     ),
                 );
             }

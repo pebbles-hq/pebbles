@@ -65,6 +65,8 @@ pub struct Renderer {
     pub(crate) gpu_masks: super::execute::gpu_masks::GpuMasks,
     /// `layer_budget_exceeded` already warned (once per renderer).
     layer_budget_warned: bool,
+    /// Custom renderers by paint type (02 §11, R60).
+    customs: super::execute::custom::CustomRegistry,
     /// Pass segments, reused across frames (09 §3.6).
     pub(crate) segments: Vec<super::prepare::passes::PassSegment>,
     pub(crate) arenas: FrameArenas,
@@ -173,6 +175,7 @@ impl Renderer {
             proj_slots: 4,
             proj_next: 0,
             segments: Vec::new(),
+            customs: Default::default(),
             layer_budget_warned: false,
             arenas: FrameArenas::new(),
             device: device.clone(),
@@ -203,6 +206,12 @@ impl Renderer {
                 VERTEX_LIMIT_NO_FULL_INDEX
             },
         }
+    }
+
+    /// Draw every `Op::Custom` whose paint is a `P` with `r` (02 §11.2, R60); replaces an earlier
+    /// registration for `P`.
+    pub fn register_custom<P: super::CustomPaint>(&mut self, r: Box<dyn super::CustomRenderer>) {
+        self.customs.insert(std::any::TypeId::of::<P>(), r);
     }
 
     /// The hard caps derived from this Renderer's device (11 §2.5).
@@ -358,6 +367,14 @@ impl Renderer {
             !composites.is_empty() || !layers.is_empty(),
             &mut stats,
         );
+        // R60: custom renderers prepare before any pass; unregistered types are counted once
+        // per op and skipped at execute.
+        for item in &self.scratch.plan.customs {
+            match self.customs.get_mut(&*item.paint) {
+                Some(r) => r.prepare(&mut super::CustomPrepare { device, queue }, &*item.paint),
+                None => stats.record(Unsupported::CustomUnregistered),
+            }
+        }
         let mut segments = std::mem::take(&mut self.segments);
         super::prepare::passes::segment_passes(&self.scratch.plan, &mut segments);
         // 09 §4.4: a backdrop composite into the root copies from it, so the root renders into a
@@ -423,6 +440,47 @@ impl Renderer {
                 && !l.effect_passes.is_empty()
             {
                 self.run_effect(device, &mut encoder, l, target.targets, format, &mut stats);
+            }
+            if let super::prepare::passes::AfterPass::Custom(i) = seg.after
+                && let Some(&super::prepare::plan::DrawCmd::Custom { op }) =
+                    self.scratch.plan.cmds.get(i as usize)
+                && let Some(item) = self.scratch.plan.customs.get(op as usize)
+                && let Some(r) = self.customs.get_mut(&*item.paint)
+            {
+                let (view, samples) = match seg.target {
+                    super::prepare::plan::TargetRef::Root => (root_view, 1),
+                    super::prepare::plan::TargetRef::Layer(l) => {
+                        let Some(l) = layers.get(l as usize).and_then(Option::as_ref) else { continue };
+                        let tex = target.targets.pool.textures(l.slot);
+                        match &tex.msaa {
+                            Some((t, m)) => (m, t.sample_count()),
+                            None => (&tex.color.1, 1),
+                        }
+                    }
+                };
+                let (ox, oy) = seg_target.origin;
+                let (w, h) = seg_target.size;
+                let s = item.scissor;
+                let (x0, y0) = (s.x0.saturating_sub(ox).min(w), s.y0.saturating_sub(oy).min(h));
+                let (x1, y1) = (s.x1.saturating_sub(ox).min(w), s.y1.saturating_sub(oy).min(h));
+                if x1 > x0 && y1 > y0 {
+                    encoder.push_debug_group("pebbles.gpu.custom");
+                    let mut ctx = super::CustomRender {
+                        device,
+                        queue,
+                        encoder: &mut encoder,
+                        target: view,
+                        format,
+                        sample_count: samples,
+                        size: (w, h),
+                        scissor: (x0, y0, x1 - x0, y1 - y0),
+                        transform: kurbo::Affine::translate((-f64::from(ox), -f64::from(oy)))
+                            * item.transform,
+                        depth: None,
+                    };
+                    r.render(&mut ctx, &*item.paint);
+                    encoder.pop_debug_group();
+                }
             }
             if let super::prepare::passes::AfterPass::CopyBackdrop(l) = seg.after {
                 let root = root_color.as_ref().map(|r| &r.0);

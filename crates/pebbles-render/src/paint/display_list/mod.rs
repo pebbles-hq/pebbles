@@ -10,7 +10,9 @@ use kurbo::Affine;
 pub mod op;
 pub mod painter;
 
-pub use op::{BlurEdge, BlurStyle, Geometry, Glyph, LayerEffect, NormalizedCoord, Op, PathHint, PixelSnap};
+pub use op::{
+    BlurEdge, BlurStyle, CustomPaint, Geometry, Glyph, LayerEffect, NormalizedCoord, Op, PathHint, PixelSnap,
+};
 pub use painter::Painter;
 
 /// Path-flattening tolerance for recorded non-primitive shapes (logical px).

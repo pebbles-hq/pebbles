@@ -41,6 +41,8 @@ fn is_draw(op: &Op) -> bool {
             | Op::BlurredFill { .. }
             | Op::BlurredGlyphs { .. }
             | Op::Glyphs { .. }
+            | Op::Vertices { .. }
+            | Op::Atlas { .. }
     )
 }
 
@@ -84,6 +86,12 @@ fn scan_into(ops: &[Op], open: &mut Vec<usize>, out: &mut Vec<LayerInfo>, floor:
                 scan_into(ops, open, out, depth);
                 while open.len() > depth {
                     close(open, out);
+                }
+            }
+            // R60: a custom renderer cannot apply a folded alpha, so its layer never folds.
+            Op::Custom { .. } => {
+                if let Some(info) = open.last().and_then(|&i| out.get_mut(i)) {
+                    info.draw_ops = 2;
                 }
             }
             op if is_draw(op) => {

@@ -60,11 +60,13 @@ pub enum Unsupported {
     LayerPoolExhausted,
     /// A mesh with a gradient brush: drawn with the first stop's color (R63).
     MeshGradient,
+    /// A custom primitive whose paint type has no registered `CustomRenderer`: skipped (R60).
+    CustomUnregistered,
 }
 
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
-    pub const COUNT: usize = 27;
+    pub const COUNT: usize = 28;
     /// Every variant, in discriminant order.
     pub const ALL: [Unsupported; Self::COUNT] = [
         Self::NonRectClip,
@@ -94,6 +96,7 @@ impl Unsupported {
         Self::LayerDepthExceeded,
         Self::LayerPoolExhausted,
         Self::MeshGradient,
+        Self::CustomUnregistered,
     ];
 
     /// The variant's 11 §4.2 key, used in logs and stats dumps.
@@ -126,6 +129,7 @@ impl Unsupported {
             Self::LayerDepthExceeded => "layer-depth-exceeded",
             Self::LayerPoolExhausted => "layer-pool-exhausted",
             Self::MeshGradient => "mesh-gradient-unsupported",
+            Self::CustomUnregistered => "custom-paint-unregistered",
         }
     }
 }

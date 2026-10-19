@@ -14,6 +14,8 @@ pub(crate) enum AfterPass {
     None,
     /// Copy the parent's image under the layer bounds into a backdrop texture (09 §4.4, L23).
     CopyBackdrop(u32),
+    /// Run the custom primitive `plan.cmds[i]` (R60) between this pass and the next.
+    Custom(u32),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,6 +75,13 @@ pub(crate) fn segment_passes(plan: &FramePlan, out: &mut Vec<PassSegment>) {
                     close(top, i, false, backdrop, after, out);
                 }
                 stack.push(Open { target: TargetRef::Layer(*layer), started: false, start: i + 1 });
+            }
+            DrawCmd::Custom { .. } => {
+                // R60: end the pass, let the custom renderer record its own, reopen with Load.
+                if let Some(top) = stack.last_mut() {
+                    close(top, i, false, false, AfterPass::Custom(i), out);
+                    top.start = i + 1;
+                }
             }
             DrawCmd::PopLayer { .. } => {
                 if let Some(mut top) = stack.pop() {
@@ -218,5 +227,49 @@ mod tests {
         assert_eq!(out[0].after, AfterPass::CopyBackdrop(0));
         assert_eq!(out[1].target, TargetRef::Layer(0));
         assert_eq!(out[2].color_load, SegmentLoad::Load);
+    }
+
+    #[derive(Debug)]
+    struct Probe;
+    impl pebbles_render::paint::display_list::CustomPaint for Probe {
+        fn bounds(&self) -> kurbo::Rect {
+            kurbo::Rect::new(0.0, 0.0, 8.0, 8.0)
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[test]
+    fn custom_cmd_keeps_order() {
+        use pebbles_render::paint::{Painter, Scene};
+        let mut scene = Scene::new();
+        let mut p = Painter::new(&mut scene);
+        let r = kurbo::Rect::new(0.0, 0.0, 8.0, 8.0);
+        p.fill(peniko::Fill::NonZero, kurbo::Affine::IDENTITY, peniko::Color::BLACK, None, &r);
+        p.draw_custom(r, kurbo::Affine::IDENTITY, std::sync::Arc::new(Probe));
+        p.fill(peniko::Fill::NonZero, kurbo::Affine::IDENTITY, peniko::Color::BLACK, None, &r);
+        let (plan, _) = crate::prepare::test_util::prepare_scene(&scene, 16, 16);
+        assert_eq!(crate::prepare::test_util::cmd_kinds(&plan), ["shapes", "custom", "shapes"]);
+        assert_eq!(plan.customs.len(), 1);
+        assert_eq!(plan.customs[0].scissor, ScissorRect { x0: 0, y0: 0, x1: 8, y1: 8 });
+        let mut out = Vec::new();
+        segment_passes(&plan, &mut out);
+        assert_eq!(
+            summary(&out),
+            vec![
+                (TargetRef::Root, SegmentLoad::Clear, false, false),
+                (TargetRef::Root, SegmentLoad::Load, true, true)
+            ]
+        );
+        assert_eq!(out[0].after, AfterPass::Custom(1));
+        assert_eq!((out[0].cmds.clone(), out[1].cmds.clone()), (0..1, 2..3));
+    }
+
+    #[test]
+    fn no_custom_ops_same_segments() {
+        let mut out = Vec::new();
+        segment_passes(&plan(vec![solid(), solid()], 0), &mut out);
+        assert!(out.iter().all(|s| s.after == AfterPass::None));
     }
 }

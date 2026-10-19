@@ -116,10 +116,12 @@ pub(crate) fn cmd_kind(cmd: &DrawCmd) -> PipelineKind {
         DrawCmd::Vertices { .. } => PipelineKind::Vertices,
         DrawCmd::Brush { paint: crate::prepare::plan::BrushPaint::Gradient(_), .. } => PipelineKind::Gradient,
         DrawCmd::Brush { .. } => PipelineKind::ImageBrush,
-        // Layer boundaries never reach a pass (09 §3.6); composites draw with CompositeOver.
-        DrawCmd::PushLayer { .. } | DrawCmd::PopLayer { .. } | DrawCmd::Composite { .. } => {
-            PipelineKind::CompositeOver
-        }
+        // Layer boundaries and custom ops never reach a pass (09 §3.6, R60); composites draw
+        // with CompositeOver.
+        DrawCmd::PushLayer { .. }
+        | DrawCmd::PopLayer { .. }
+        | DrawCmd::Composite { .. }
+        | DrawCmd::Custom { .. } => PipelineKind::CompositeOver,
     }
 }
 
@@ -418,7 +420,7 @@ pub(crate) fn encode(
                 stats.draw_calls += 1;
             }
             // Never inside a segment (09 §3.6).
-            DrawCmd::PushLayer { .. } | DrawCmd::PopLayer { .. } => {}
+            DrawCmd::PushLayer { .. } | DrawCmd::PopLayer { .. } | DrawCmd::Custom { .. } => {}
         }
     }
     if open {

@@ -179,6 +179,12 @@ impl<'a> Painter<'a> {
     }
 
     /// Draw a sprite batch from one image (Flutter `Canvas.drawAtlas`, 02 §12).
+    /// A custom GPU primitive (02 §11.2): drawn in order by the `CustomRenderer` registered
+    /// for `paint`'s type; skipped (and counted) when none is.
+    pub fn draw_custom(&mut self, bounds: Rect, transform: Affine, paint: Arc<dyn super::CustomPaint>) {
+        self.scene.push(Op::Custom { bounds, transform, paint });
+    }
+
     pub fn draw_atlas(
         &mut self,
         image: &peniko::ImageBrush,

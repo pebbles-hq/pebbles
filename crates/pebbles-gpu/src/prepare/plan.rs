@@ -159,6 +159,9 @@ pub(crate) enum DrawCmd {
     /// A triangle mesh (02 §12, R63): `mesh_vertices[vertices]` as a triangle list, textured by
     /// `mesh_images[image]` (`None`: white) — never merged, never antialiased.
     Vertices { vertices: std::ops::Range<u32>, image: Option<u32>, clip: ClipState },
+    /// A custom primitive (02 §11, R60): `customs[op]`, drawn by its registered renderer in its
+    /// own pass — never merged; segmentation ends the current pass around it.
+    Custom { op: u32 },
     /// A brush-painted draw (09 §5, §6): the geometry's tier coverage × a gradient or image
     /// brush. Merges only with the same paint, cover kind and clip.
     Brush { cover: BrushCover, paint: BrushPaint, clip: ClipState },
@@ -373,6 +376,15 @@ pub(crate) struct PrepareStats {
     pub image_brushes: u32,
 }
 
+/// One custom primitive (R60): its paint, local → device transform and device scissor (the
+/// clip scissor ∩ the op's device bounds, never empty).
+#[derive(Clone, Debug)]
+pub(crate) struct CustomItem {
+    pub paint: std::sync::Arc<dyn pebbles_render::paint::display_list::CustomPaint>,
+    pub transform: kurbo::Affine,
+    pub scissor: ScissorRect,
+}
+
 /// Everything one frame draws, in order. Reused across frames: `clear()` keeps every capacity.
 #[derive(Default)]
 pub(crate) struct FramePlan {
@@ -399,6 +411,8 @@ pub(crate) struct FramePlan {
     pub mesh_vertices: Vec<crate::gpu_types::MeshVertex>,
     /// Mesh textures: (image, key, sampler).
     pub mesh_images: Vec<(peniko::ImageData, ImageKey, SamplerKey)>,
+    /// Custom primitives (R60), indexed by `DrawCmd::Custom`.
+    pub customs: Vec<CustomItem>,
     /// Gradient paints (09 §5), indexed by `BrushPaint::Gradient`.
     pub gradients: Vec<GradientDraw>,
     /// Image-brush paints (09 §6), indexed by `BrushPaint::Image`.
@@ -452,6 +466,7 @@ impl FramePlan {
         self.gradients.clear();
         self.mesh_vertices.clear();
         self.mesh_images.clear();
+        self.customs.clear();
         self.image_brushes.clear();
         self.gpu_mask_bytes = 0;
         self.layers.clear();
@@ -471,6 +486,7 @@ impl FramePlan {
         self.images.clear();
         self.image_brushes.clear();
         self.mesh_images.clear();
+        self.customs.clear();
     }
 
     /// Apply the merge rule: extend `cmds.last_mut()` iff same variant, same clip and
@@ -543,6 +559,7 @@ fn format_cmd(cmd: &DrawCmd) -> String {
         DrawCmd::Vertices { vertices, image, clip } => {
             format!("Vertices {vertices:?} {image:?} {}", clip_str(clip))
         }
+        DrawCmd::Custom { op } => format!("Custom {op}"),
         DrawCmd::Brush { cover, paint, clip } => {
             format!("Brush {cover:?} {paint:?} {}", clip_str(clip))
         }

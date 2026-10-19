@@ -165,6 +165,20 @@ impl LayerEffect {
     }
 }
 
+/// Paint data for a custom GPU primitive (02 §11.2, DR-22). pebbles-render stays GPU-free: the
+/// renderer finds the `CustomRenderer` registered for the concrete type and hands it this value.
+pub trait CustomPaint: std::any::Any + Send + Sync {
+    /// Local-space bounds (culling and clipping).
+    fn bounds(&self) -> Rect;
+    fn as_any(&self) -> &dyn std::any::Any;
+}
+
+impl std::fmt::Debug for dyn CustomPaint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CustomPaint").field("bounds", &self.bounds()).finish_non_exhaustive()
+    }
+}
+
 /// One recorded paint verb.
 ///
 /// **Renderer contract, not app API.** Produced only by [`Painter`](super::Painter);
@@ -221,6 +235,14 @@ pub enum Op {
         projection: crate::paint::Projective,
         bounds: Rect,
         clip: Option<Geometry>,
+    },
+    /// A custom GPU primitive drawn in painter's order by the renderer registered for the
+    /// paint's type (02 §11, DR-22). `bounds` is local, under `transform`.
+    #[non_exhaustive]
+    Custom {
+        bounds: Rect,
+        transform: Affine,
+        paint: Arc<dyn CustomPaint>,
     },
     /// A triangle mesh (Flutter `drawVertices`, 02 §12): not antialiased.
     #[non_exhaustive]

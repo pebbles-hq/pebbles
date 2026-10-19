@@ -1136,6 +1136,35 @@ impl Walk<'_> {
                     }
                     self.draw_mesh(mesh, brush, *color_mode, xf, idx);
                 }
+                Op::Custom { bounds, transform, paint, .. } => {
+                    let xf = outer * *transform;
+                    if !xf.is_finite() {
+                        self.skip_non_finite();
+                        continue;
+                    }
+                    if self.hidden() {
+                        continue;
+                    }
+                    let b = xf.transform_rect_bbox(*bounds);
+                    if self.culled(b) {
+                        continue;
+                    }
+                    let clip = self.clips.current();
+                    let Some(scissor) =
+                        ScissorRect::from_device_bounds(b.x0, b.y0, b.x1, b.y1, self.plan.target_size)
+                            .and_then(|s| s.intersect(clip.scissor))
+                    else {
+                        self.plan.stats.culled += 1;
+                        continue;
+                    };
+                    let op = num::index_u32(self.plan.customs.len());
+                    self.plan.customs.push(plan::CustomItem {
+                        paint: std::sync::Arc::clone(paint),
+                        transform: xf,
+                        scissor,
+                    });
+                    self.push(DrawCmd::Custom { op }, idx);
+                }
                 Op::Atlas { image, sprites, transform, .. } => {
                     let xf = outer * *transform;
                     if !xf.is_finite() {
