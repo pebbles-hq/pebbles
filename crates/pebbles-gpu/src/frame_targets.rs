@@ -92,10 +92,14 @@ impl TargetBook {
         self.total_bytes -= freed;
     }
 
+    /// Booked targets (census).
+    #[cfg(debug_assertions)]
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// Booked bytes (census).
+    #[cfg(debug_assertions)]
     pub(crate) fn total_bytes(&self) -> u64 {
         self.total_bytes
     }

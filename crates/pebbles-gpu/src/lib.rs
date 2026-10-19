@@ -58,6 +58,9 @@ pub use limits::RendererLimits;
 pub use offscreen::{OffscreenRenderer, RgbaImage};
 pub use pebbles_render::paint::display_list::{CustomPaint, TextureId};
 pub use renderer::Renderer;
+
+#[doc(hidden)]
+pub mod testing;
 pub use stats::{FrameStats, Unsupported};
 /// R14's seeded oracle check in render-check: the Tier B mask of `path` over a `w × h` target.
 #[doc(hidden)]

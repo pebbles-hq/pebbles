@@ -41,6 +41,7 @@ impl GpuArena {
     }
 
     /// Allocated buffer bytes (census).
+    #[cfg(any(test, debug_assertions))]
     pub(crate) fn capacity(&self) -> u64 {
         self.capacity
     }

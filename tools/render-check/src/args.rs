@@ -108,6 +108,7 @@ impl Args {
 /// Usage text (`-h`).
 pub const USAGE: &str = "\
 usage: render-check [options]
+       render-check bench --help   (10 §11.2 timing mode, M21)
   --out <DIR>                     output root (default target/render-check)
   --only <PREFIX>                 run cases whose name starts with PREFIX (repeatable)
   --skip <PREFIX>                 skip cases with PREFIX (repeatable, after --only)

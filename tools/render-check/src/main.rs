@@ -227,7 +227,18 @@ fn runner_placeholder(case: &Case) -> CaseResult {
 }
 
 fn main() -> ExitCode {
-    let args = match args::parse(std::env::args().skip(1)) {
+    let mut argv = std::env::args().skip(1).peekable();
+    if argv.peek().is_some_and(|a| a == "bench") {
+        argv.next();
+        return match render_check::bench::parse(argv) {
+            Ok(a) => ExitCode::from(render_check::bench::run(&a)),
+            Err(e) => {
+                eprintln!("render-check bench: {e}\n{}", render_check::bench::USAGE);
+                ExitCode::from(2)
+            }
+        };
+    }
+    let args = match args::parse(argv) {
         Ok(a) => a,
         Err(e) => {
             eprintln!("render-check: {e}\n{}", args::USAGE);

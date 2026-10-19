@@ -103,6 +103,28 @@ impl OffscreenRenderer {
         }
     }
 
+    /// Render `scene` into `target` (an `Rgba8Unorm` view of `size`) without a readback — the
+    /// bench's render-only entry (10 §11.2). Returns the submission to wait on.
+    pub fn render_only(
+        &mut self,
+        scene: &Scene,
+        target: &wgpu::TextureView,
+        base_color: peniko::Color,
+    ) -> Result<wgpu::SubmissionIndex, CaptureError> {
+        let rt = RenderTarget::new(target, wgpu::TextureFormat::Rgba8Unorm, &mut self.targets);
+        self.last_stats =
+            self.renderer.render(rt, scene, &FrameParams::new(base_color)).map_err(CaptureError::Gpu)?;
+        // An empty submit orders after the frame's: waiting on it waits for the frame.
+        Ok(self.queue().submit([]))
+    }
+
+    /// Replace the renderer with a fresh one on the same device: every cache cold (the bench's
+    /// `glyph_cold`, 10 §11.1).
+    pub fn reset_renderer(&mut self) {
+        self.renderer = Renderer::new(self.gpu(), self.device);
+        self.targets = FrameTargets::new();
+    }
+
     /// `min(MAX_DIM, RendererLimits::max_texture_dim)`.
     pub fn max_size(&self) -> u32 {
         Self::MAX_DIM.min(self.renderer.limits().max_texture_dim)

@@ -4,6 +4,7 @@
 use std::fmt;
 
 pub mod args;
+pub mod bench;
 pub mod candidate;
 pub mod case;
 pub mod corpus;

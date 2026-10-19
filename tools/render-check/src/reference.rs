@@ -23,6 +23,83 @@ impl HybridReference {
         Self { device, queue, inner: None, images: HashMap::new() }
     }
 
+    /// The bench's render-only entry (10 §11.2): flush + render + submit into `view` (an
+    /// `Rgba8Unorm` target of `width`×`height`), no readback; the submission to wait on.
+    /// `cold` drops the hybrid renderer first (cold caches).
+    pub fn render_only(
+        &mut self,
+        scene: &Scene,
+        view: &wgpu::TextureView,
+        (width, height): (u32, u32),
+        background: peniko::Color,
+        cold: bool,
+    ) -> Result<wgpu::SubmissionIndex, CheckError> {
+        if width == 0 || height == 0 || width > u32::from(u16::MAX) || height > u32::from(u16::MAX) {
+            return Err(CheckError::Size { width, height });
+        }
+        if cold {
+            self.inner = None;
+        }
+        let (device, queue) = (self.device.clone(), self.queue.clone());
+        let (renderer, resources) = self.inner.get_or_insert_with(|| {
+            let cfg = RenderTargetConfig { format: wgpu::TextureFormat::Rgba8Unorm, width, height };
+            Renderer::new(&device, &cfg)
+        });
+        let mut hyb = vello_hybrid::Scene::new(width as u16, height as u16);
+        hyb.set_paint(background.with_alpha(1.0));
+        hyb.fill_rect(&kurbo::Rect::new(0.0, 0.0, f64::from(width), f64::from(height)));
+        scene.flush(&mut hyb, resources);
+        // Bench scenes keep their images resident: upload once per renderer.
+        let mut bindings = TextureBindings::new();
+        for (i, up) in scene.image_uploads().iter().enumerate() {
+            let id = i as u64;
+            let texture = self.images.entry(id).or_insert_with(|| {
+                let t = device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("check.bench.image"),
+                    size: wgpu::Extent3d { width: up.width, height: up.height, depth_or_array_layers: 1 },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+                queue.write_texture(
+                    t.as_image_copy(),
+                    &up.rgba8,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(up.width * 4),
+                        rows_per_image: Some(up.height),
+                    },
+                    wgpu::Extent3d { width: up.width, height: up.height, depth_or_array_layers: 1 },
+                );
+                t
+            });
+            bindings.insert(TextureId(id), texture.create_view(&wgpu::TextureViewDescriptor::default()));
+        }
+        let mut encoder = device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("check.bench.hybrid") });
+        renderer
+            .render(
+                &hyb,
+                resources,
+                &device,
+                &queue,
+                &mut encoder,
+                &RenderSize { width, height },
+                view,
+                &bindings,
+            )
+            .map_err(|e| CheckError::ReferenceGpu(format!("vello_hybrid render: {e:?}")))?;
+        Ok(queue.submit([encoder.finish()]))
+    }
+
+    /// Forget the bench's resident images (between cases).
+    pub fn clear_images(&mut self) {
+        self.images.clear();
+    }
+
     /// Render `scene` (already in device px) over an opaque `background`; returns
     /// unpremultiplied RGBA8 like the candidate.
     pub fn render_rgba(
