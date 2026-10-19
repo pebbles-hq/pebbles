@@ -399,7 +399,10 @@ impl Golden {
                 None => layer.pop_into(&mut t.px),
             }
         }
-        let data = t.px.iter().flat_map(|p| p.map(quantize)).collect();
+        // The target holds premultiplied values; quantize them like the GPU's 8-bit target, then
+        // unpremultiply exactly as the candidate readback does (non-opaque results, e.g. Clear).
+        let mut data: Vec<u8> = t.px.iter().flat_map(|p| p.map(quantize)).collect();
+        crate::readback::unpremultiply_in_place(&mut data);
         Ok(Rgba8 { width: w, height: h, data })
     }
 }

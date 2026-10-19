@@ -6,6 +6,9 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — blend modes (wgpu renderer)
+wgpu renderer: all blend modes (16 mix × 14 compose) render, incl. ColorFiltered and ShaderMask.
+
 ### Fixed — exact clips (wgpu renderer)
 wgpu renderer: rounded-rect, circle, ellipse and path clips (nested) now clip exactly.
 

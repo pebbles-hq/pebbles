@@ -199,59 +199,69 @@ fn backdrop_lerps_by_sdf_coverage() {
     assert!(partial > 0, "no partially covered edge pixel");
 }
 
-/// L24 AC5 (ColorFiltered pattern): child, then a Multiply layer + fill inside the promoted
-/// parent: the blend sees only the child, not the white base.
+/// L20 AC1 (ColorFiltered over a mixed backdrop): a white box (left) and a `#808080` box
+/// (right) under a full-canvas Multiply layer filled `#00FF00`.
 #[test]
 #[ignore = "gpu"]
 fn color_filter_multiply_green() {
     let Some(mut r) = setup("color_filter_multiply_green") else { return };
     let mut s = Scene::new();
     let mut p = Painter::new(&mut s);
-    let bounds = Rect::new(8.0, 8.0, 56.0, 56.0);
-    p.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &bounds);
+    p.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &Rect::new(0.0, 0.0, 32.0, 64.0));
     p.fill(
         Fill::NonZero,
         Affine::IDENTITY,
-        Color::from_rgba8(255, 255, 0, 255),
+        Color::from_rgba8(0x80, 0x80, 0x80, 255),
         None,
-        &Rect::new(8.0, 8.0, 32.0, 56.0),
+        &Rect::new(32.0, 0.0, 64.0, 64.0),
     );
-    p.push_layer(Fill::NonZero, Mix::Multiply, 1.0, Affine::IDENTITY, &bounds);
-    p.fill(Fill::NonZero, Affine::IDENTITY, Color::from_rgba8(0, 255, 0, 255), None, &bounds);
-    p.pop_layer();
+    p.push_layer(Fill::NonZero, Mix::Multiply, 1.0, Affine::IDENTITY, &Rect::new(0.0, 0.0, 64.0, 64.0));
+    p.fill(
+        Fill::NonZero,
+        Affine::IDENTITY,
+        Color::from_rgba8(0, 255, 0, 255),
+        None,
+        &Rect::new(0.0, 0.0, 64.0, 64.0),
+    );
     p.pop_layer();
     let px = render(&mut r, &s, (64, 64), Color::WHITE);
-    // Over the yellow child: multiply → green.
-    assert!(close(pixel(&px, 64, 20, 32), [0, 255, 0, 255], 2));
-    // Over the empty part of the group (backdrop transparent): the source shows as is.
-    assert!(close(pixel(&px, 64, 44, 32), [0, 255, 0, 255], 2));
-    // Outside the group: the white base.
-    assert!(is_white(pixel(&px, 64, 2, 2)));
+    assert!(close(pixel(&px, 64, 16, 32), [0, 255, 0, 255], 2), "{:?}", pixel(&px, 64, 16, 32));
+    assert!(close(pixel(&px, 64, 48, 32), [0, 128, 0, 255], 2), "{:?}", pixel(&px, 64, 48, 32));
 }
 
-/// L24 AC5: a blend layer inside a pure clip composites against the clip layer's content.
+/// L20 AC2: screen(0.5, 0.5) = 0.75.
+#[test]
+#[ignore = "gpu"]
+fn screen_gray_on_gray() {
+    let Some(mut r) = setup("screen_gray_on_gray") else { return };
+    let gray = Color::from_rgba8(0x80, 0x80, 0x80, 255);
+    let mut s = Scene::new();
+    let mut p = Painter::new(&mut s);
+    p.fill(Fill::NonZero, Affine::IDENTITY, gray, None, &Rect::new(0.0, 0.0, 64.0, 64.0));
+    p.push_layer(Fill::NonZero, Mix::Screen, 1.0, Affine::IDENTITY, &Rect::new(0.0, 0.0, 64.0, 64.0));
+    p.fill(Fill::NonZero, Affine::IDENTITY, gray, None, &Rect::new(0.0, 0.0, 64.0, 64.0));
+    p.pop_layer();
+    let px = render(&mut r, &s, (64, 64), Color::WHITE);
+    assert!(close(pixel(&px, 64, 32, 32), [192, 192, 192, 255], 2), "{:?}", pixel(&px, 64, 32, 32));
+}
+
+/// L20 AC4 (§3.1): blue base; a pure rect clip whose layer is promoted by its Multiply child;
+/// gray over the left half; the Multiply red layer sees only the clip layer's content.
 #[test]
 #[ignore = "gpu"]
 fn blend_inside_pure_clip_uses_clip_layer_backdrop() {
     let Some(mut r) = setup("blend_inside_pure_clip_uses_clip_layer_backdrop") else { return };
     let mut s = Scene::new();
     let mut p = Painter::new(&mut s);
+    p.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &Rect::new(0.0, 0.0, 64.0, 64.0));
     p.fill(
         Fill::NonZero,
         Affine::IDENTITY,
-        Color::from_rgba8(0, 0, 255, 255),
+        Color::from_rgba8(0x80, 0x80, 0x80, 255),
         None,
-        &Rect::new(0.0, 0.0, 64.0, 64.0),
+        &Rect::new(0.0, 0.0, 32.0, 64.0),
     );
-    p.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &Rect::new(8.0, 8.0, 56.0, 56.0));
-    p.fill(
-        Fill::NonZero,
-        Affine::IDENTITY,
-        Color::from_rgba8(128, 128, 128, 255),
-        None,
-        &Rect::new(8.0, 8.0, 56.0, 56.0),
-    );
-    p.push_layer(Fill::NonZero, Mix::Screen, 1.0, Affine::IDENTITY, &Rect::new(16.0, 16.0, 48.0, 48.0));
+    p.push_layer(Fill::NonZero, Mix::Multiply, 1.0, Affine::IDENTITY, &Rect::new(0.0, 0.0, 64.0, 64.0));
     p.fill(
         Fill::NonZero,
         Affine::IDENTITY,
@@ -261,11 +271,9 @@ fn blend_inside_pure_clip_uses_clip_layer_backdrop() {
     );
     p.pop_layer();
     p.pop_layer();
-    let px = render(&mut r, &s, (64, 64), Color::WHITE);
-    // screen(gray, red) = (255, 128, 128): the backdrop is the gray of the clip layer.
-    assert!(close(pixel(&px, 64, 32, 32), [255, 128, 128, 255], 2), "{:?}", pixel(&px, 64, 32, 32));
-    assert!(close(pixel(&px, 64, 10, 10), [128, 128, 128, 255], 1));
-    assert!(close(pixel(&px, 64, 2, 2), [0, 0, 255, 255], 1));
+    let px = render(&mut r, &s, (64, 64), Color::from_rgba8(0, 0, 255, 255));
+    assert!(close(pixel(&px, 64, 16, 32), [128, 0, 0, 255], 2), "{:?}", pixel(&px, 64, 16, 32));
+    assert!(close(pixel(&px, 64, 48, 32), [255, 0, 0, 255], 2), "not black: {:?}", pixel(&px, 64, 48, 32));
 }
 
 /// L25: every Mix × Compose × (B, S) pair against the CPU reference, ±3 per channel. Each
