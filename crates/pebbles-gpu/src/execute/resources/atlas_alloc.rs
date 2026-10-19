@@ -65,6 +65,8 @@ pub(crate) struct MaskKey {
 pub(crate) enum CoverageKey {
     Glyph(GlyphKey),
     Path(MaskKey),
+    /// A mask-clip chain product (09 L08): the chain hash and its device rect.
+    Clip(u64, [u32; 4]),
 }
 
 impl From<GlyphKey> for CoverageKey {
@@ -90,7 +92,8 @@ impl CoverageKey {
     pub(crate) fn kind(&self) -> MaskKind {
         match self {
             Self::Glyph(_) => MaskKind::Glyph,
-            Self::Path(_) => MaskKind::Path,
+            // Clip masks share the Tier B path-mask budget (DR-20).
+            Self::Path(_) | Self::Clip(..) => MaskKind::Path,
         }
     }
 }

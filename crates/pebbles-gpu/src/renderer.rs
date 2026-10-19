@@ -34,6 +34,11 @@ pub struct Renderer {
     /// SDF clip records (09 §2.4, L04): one `ClipParams` per slot; `clip_slots` slots.
     clip_buffer: wgpu::Buffer,
     clip_slots: u64,
+    /// Mask-clip records (09 L08) and the inputs group 0 was last built from.
+    mask_clip_buffer: wgpu::Buffer,
+    mask_clip_slots: u64,
+    globals_bg_key: (u64, u64, u64, u64),
+    mask_clip_slots_resolved: Vec<Option<super::execute::resources::atlas_alloc::AtlasSlot>>,
     /// Dynamic-offset slots in `globals_buffer` (slot 0 = main pass, then one per Tier C run).
     globals_slots: u64,
     /// One `CompositeParams` slot per Tier C run (R17).
@@ -98,7 +103,10 @@ impl Renderer {
         let glyph_atlas = GlyphAtlas::new(device, &budgets);
         let globals_buffer = uniform_buffer(device, "pebbles.gpu.buffer.globals", 1);
         let clip_buffer = uniform_buffer(device, "pebbles.gpu.buffer.clips", 1);
-        let globals_bg = globals_bind_group(device, &layouts, &globals_buffer, &clip_buffer);
+        let mask_clip_buffer = uniform_buffer(device, "pebbles.gpu.buffer.mask_clips", 1);
+        let (mask_view, mask_gen) = glyph_atlas.mask_view();
+        let globals_bg =
+            globals_bind_group(device, &layouts, &globals_buffer, &clip_buffer, &mask_clip_buffer, mask_view);
         let composite_buffer = uniform_buffer(device, "pebbles.gpu.buffer.composite", 1);
         Renderer {
             sample_count: gpu.caps().msaa_samples,
@@ -112,6 +120,10 @@ impl Renderer {
             globals_bg,
             clip_buffer,
             clip_slots: 1,
+            mask_clip_buffer,
+            mask_clip_slots: 1,
+            globals_bg_key: (1, 1, 1, mask_gen),
+            mask_clip_slots_resolved: Vec::new(),
             globals_slots: 1,
             composite_buffer,
             composite_slots: 1,
@@ -337,16 +349,89 @@ impl Renderer {
             let slots = n.next_power_of_two();
             self.clip_buffer = uniform_buffer(device, "pebbles.gpu.buffer.clips", slots);
             self.clip_slots = slots;
-            self.globals_bg =
-                globals_bind_group(device, &self.layouts, &self.globals_buffer, &self.clip_buffer);
+            // Group 0 is rebuilt by `write_mask_clips` (its key includes `clip_slots`).
             stats.buffers_created += 1;
-            stats.bind_groups_created += 1;
         }
         let stride = super::execute::tier_c::slot_stride(device);
         for (i, c) in self.scratch.plan.sdf_clips.iter().enumerate() {
             let p = super::gpu_types::ClipParams { rect: c.rect, radii: c.radii };
             queue.write_buffer(&self.clip_buffer, i as u64 * stride, bytemuck::bytes_of(&p));
         }
+    }
+
+    /// 09 L08: resolve every mask-clip record into the coverage atlas (stages uploads; call
+    /// before the atlas flush) and keep the slots for `write_mask_clips`.
+    pub(crate) fn resolve_mask_clips(&mut self, stats: &mut FrameStats) {
+        self.mask_clip_slots_resolved.clear();
+        self.mask_clip_slots_resolved.push(None);
+        let plan = &self.scratch.plan;
+        for rec in plan.mask_clips.iter().skip(1) {
+            let sources = plan
+                .clip_sources
+                .get(rec.sources.start as usize..rec.sources.end as usize)
+                .unwrap_or_default();
+            let slot = match self.glyph_atlas.lookup_clip(rec.key, sources, rec.rect, stats) {
+                super::execute::resources::glyph_atlas::GlyphLookup::Slot(s) => Some(s),
+                _ => None,
+            };
+            self.mask_clip_slots_resolved.push(slot);
+        }
+    }
+
+    /// 09 L08: write the mask-clip records (after the atlas flush) and rebuild group 0 when a
+    /// buffer grew or the mask atlas texture was recreated.
+    pub(crate) fn write_mask_clips(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        stats: &mut FrameStats,
+    ) {
+        let n = self.scratch.plan.mask_clips.len().max(1) as u64;
+        if n > self.mask_clip_slots {
+            let slots = n.next_power_of_two();
+            self.mask_clip_buffer = uniform_buffer(device, "pebbles.gpu.buffer.mask_clips", slots);
+            self.mask_clip_slots = slots;
+            stats.buffers_created += 1;
+        }
+        let stride = super::execute::tier_c::slot_stride(device);
+        for (i, rec) in self.scratch.plan.mask_clips.iter().enumerate() {
+            let slot = self.mask_clip_slots_resolved.get(i).copied().flatten();
+            #[allow(clippy::cast_precision_loss)] // device px and atlas texels ≪ 2^24
+            let p = match slot {
+                Some(s) => super::gpu_types::MaskClipParams {
+                    rect: [
+                        rec.rect.x0 as f32,
+                        rec.rect.y0 as f32,
+                        rec.rect.width() as f32,
+                        rec.rect.height() as f32,
+                    ],
+                    atlas: [f32::from(s.x), f32::from(s.y), f32::from(s.layer), 1.0],
+                },
+                // No record (index 0) or an atlas overflow: coverage 1 (the scissor still clips).
+                None => super::gpu_types::MaskClipParams { rect: [0.0; 4], atlas: [0.0; 4] },
+            };
+            queue.write_buffer(&self.mask_clip_buffer, i as u64 * stride, bytemuck::bytes_of(&p));
+        }
+        let (view, generation) = self.glyph_atlas.mask_view();
+        let key = (self.globals_slots, self.clip_slots, self.mask_clip_slots, generation);
+        if key != self.globals_bg_key {
+            self.globals_bg = globals_bind_group(
+                device,
+                &self.layouts,
+                &self.globals_buffer,
+                &self.clip_buffer,
+                &self.mask_clip_buffer,
+                view,
+            );
+            self.globals_bg_key = key;
+            stats.bind_groups_created += 1;
+        }
+    }
+
+    /// The dynamic offset of mask-clip record `id` (09 L08).
+    pub(crate) fn mask_clip_offset(&self, id: super::prepare::plan::MaskClipId) -> u32 {
+        let stride = super::execute::tier_c::slot_stride(&self.device);
+        u32::try_from(u64::from(id.0) * stride).unwrap_or(0)
     }
 
     /// The dynamic offset of SDF clip record `id` (09 §2.4).
@@ -503,7 +588,15 @@ impl Renderer {
         if globals > self.globals_slots {
             let n = globals.next_power_of_two();
             let buffer = uniform_buffer(device, "pebbles.gpu.buffer.globals", n);
-            let bg = globals_bind_group(device, &self.layouts, &buffer, &self.clip_buffer);
+            let (mask_view, _) = self.glyph_atlas.mask_view();
+            let bg = globals_bind_group(
+                device,
+                &self.layouts,
+                &buffer,
+                &self.clip_buffer,
+                &self.mask_clip_buffer,
+                mask_view,
+            );
             // Slot 0 (the main pass) was written this frame already: copy it over.
             let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("pebbles.gpu.encoder.globals_grow"),
@@ -511,6 +604,7 @@ impl Renderer {
             enc.copy_buffer_to_buffer(&self.globals_buffer, 0, &buffer, 0, size_of::<Globals>() as u64);
             self.queue.submit([enc.finish()]);
             (self.globals_buffer, self.globals_bg, self.globals_slots) = (buffer, bg, n);
+            self.globals_bg_key.0 = n;
             stats.buffers_created += 1;
             stats.bind_groups_created += 1;
         }
@@ -540,6 +634,8 @@ fn globals_bind_group(
     layouts: &BindGroupLayouts,
     globals: &wgpu::Buffer,
     clips: &wgpu::Buffer,
+    mask_clips: &wgpu::Buffer,
+    mask_atlas: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
     let window = |buffer| {
         wgpu::BindingResource::Buffer(wgpu::BufferBinding {
@@ -554,6 +650,8 @@ fn globals_bind_group(
         entries: &[
             wgpu::BindGroupEntry { binding: 0, resource: window(globals) },
             wgpu::BindGroupEntry { binding: 1, resource: window(clips) },
+            wgpu::BindGroupEntry { binding: 2, resource: window(mask_clips) },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(mask_atlas) },
         ],
     })
 }

@@ -29,7 +29,7 @@ mod layer;
 pub(crate) mod num;
 pub(crate) mod path_masks;
 pub(crate) mod path_strategy;
-mod plan;
+pub(crate) mod plan;
 #[cfg(test)]
 mod property_tests;
 mod shadows;
@@ -42,7 +42,6 @@ pub(crate) mod tessellate;
 pub(crate) mod test_util;
 mod tier_a;
 
-#[cfg(test)]
 pub(crate) use plan::ClipState;
 pub(crate) use plan::{DrawCmd, FramePlan, GlyphRequest, ScissorRect, SdfClipId};
 
@@ -202,6 +201,54 @@ pub(crate) fn scan_colr_atlas(
             }
             _ => {}
         }
+    }
+}
+
+impl Walk<'_> {
+    /// 09 L08: append a mask record = the active chain + this clip, over `scissor`.
+    fn push_mask_clip(
+        &mut self,
+        geom: &pebbles_render::paint::display_list::Geometry,
+        xf: Affine,
+        rule: Fill,
+        scissor: ScissorRect,
+    ) {
+        use std::hash::{Hash, Hasher};
+        let parent = self.clips.current().mask;
+        let parent_rec = self.plan.mask_clips.get(parent.0 as usize).cloned();
+        let path = geom.to_path(0.01 / xf.spectral_norm().max(1e-9)).into_owned();
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        parent_rec.as_ref().map_or(0, |r| r.key).hash(&mut h);
+        for el in path.elements() {
+            let pts: &[kurbo::Point] = match el {
+                kurbo::PathEl::MoveTo(a) | kurbo::PathEl::LineTo(a) => std::slice::from_ref(a),
+                kurbo::PathEl::QuadTo(a, b) => &[*a, *b],
+                kurbo::PathEl::CurveTo(a, b, c) => &[*a, *b, *c],
+                kurbo::PathEl::ClosePath => &[],
+            };
+            std::mem::discriminant(el).hash(&mut h);
+            pts.iter().for_each(|p| [p.x, p.y].iter().for_each(|v| v.to_bits().hash(&mut h)));
+        }
+        xf.as_coeffs().iter().for_each(|v| v.to_bits().hash(&mut h));
+        (rule == Fill::EvenOdd).hash(&mut h);
+        (scissor.x0, scissor.y0, scissor.x1, scissor.y1).hash(&mut h);
+        let start = num::index_u32(self.plan.clip_sources.len());
+        if let Some(r) = &parent_rec {
+            for i in r.sources.clone() {
+                if let Some(s) = self.plan.clip_sources.get(i as usize).cloned() {
+                    self.plan.clip_sources.push(s);
+                }
+            }
+        }
+        self.plan.clip_sources.push(plan::MaskClipSource { path, xf, rule });
+        let end = num::index_u32(self.plan.clip_sources.len());
+        self.plan.mask_clips.push(plan::MaskClipRecord {
+            key: h.finish().max(1),
+            sources: start..end,
+            rect: scissor,
+        });
+        let id = plan::MaskClipId(num::index_u32(self.plan.mask_clips.len() - 1));
+        self.clips.push_mask(scissor, id);
     }
 }
 
@@ -481,9 +528,14 @@ impl Walk<'_> {
                         clip::ClipKind::Cull => self.plan.stats.clips_culled += 1,
                         clip::ClipKind::Scissor => self.plan.stats.clips_scissor += 1,
                         clip::ClipKind::Sdf(_) => self.plan.stats.clips_sdf += 1,
+                        clip::ClipKind::Mask => self.plan.stats.clips_mask += 1,
                         clip::ClipKind::Bounds => {}
                     }
-                    self.clips.push(decision, &mut self.plan.sdf_clips);
+                    if decision.kind == clip::ClipKind::Mask {
+                        self.push_mask_clip(clip, xf, *clip_fill, decision.scissor);
+                    } else {
+                        self.clips.push(decision, &mut self.plan.sdf_clips);
+                    }
                     let blended = *blend != peniko::BlendMode::default();
                     if blended && !self.layers.is_skipped() {
                         self.stats.record(Unsupported::LayerBlend);

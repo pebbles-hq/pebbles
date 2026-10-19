@@ -86,6 +86,26 @@ impl MaskClipId {
     pub(crate) const NONE: MaskClipId = MaskClipId(0);
 }
 
+/// One clip path of a mask chain (09 L08): rasterized exactly over the record's rect.
+#[derive(Clone, Debug)]
+pub(crate) struct MaskClipSource {
+    pub path: kurbo::BezPath,
+    /// Full device transform.
+    pub xf: kurbo::Affine,
+    pub rule: peniko::Fill,
+}
+
+/// An active coverage-mask clip (09 L08): the product of every clip in `sources` over `rect`.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct MaskClipRecord {
+    /// Identity of the chain (every clip's geometry, transform and rule).
+    pub key: u64,
+    /// Range into `FramePlan::clip_sources` (outermost first).
+    pub sources: std::ops::Range<u32>,
+    /// Device px; the scissor of the state that carries it.
+    pub rect: ScissorRect,
+}
+
 /// A rounded-rect clip evaluated analytically in every content shader (09 §2.4).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct SdfClip {
@@ -205,6 +225,10 @@ pub(crate) struct FramePlan {
     pub images: Vec<ImageRequest>,
     /// SDF clip records (09 §2.4); `[0]` is `SdfClip::NONE`.
     pub sdf_clips: Vec<SdfClip>,
+    /// Mask clip records (09 L08); `[0]` is the "no mask" record.
+    pub mask_clips: Vec<MaskClipRecord>,
+    /// The clip paths the mask records reference.
+    pub clip_sources: Vec<MaskClipSource>,
     // the ordered stream
     pub cmds: Vec<DrawCmd>,
     /// OC rows (R01) that fell back in this plan.
@@ -228,6 +252,9 @@ impl FramePlan {
         self.images.clear();
         self.sdf_clips.clear();
         self.sdf_clips.push(SdfClip::NONE);
+        self.mask_clips.clear();
+        self.mask_clips.push(MaskClipRecord { key: 0, sources: 0..0, rect: ScissorRect::default() });
+        self.clip_sources.clear();
         self.cmds.clear();
         self.fallback_features = super::coverage::FeatureSet::default();
         self.stats = PrepareStats::default();

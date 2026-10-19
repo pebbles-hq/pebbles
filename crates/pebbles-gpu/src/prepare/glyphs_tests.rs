@@ -167,7 +167,7 @@ fn atlas_keys_follow_hint_policy() {
         let (plan, _) = crate::prepare::test_util::prepare_with(&s, &input);
         match plan.glyphs[0].key {
             crate::execute::resources::atlas_alloc::CoverageKey::Glyph(k) => k.hint,
-            crate::execute::resources::atlas_alloc::CoverageKey::Path(_) => panic!("glyph expected"),
+            _ => panic!("glyph expected"),
         }
     };
     assert!(key_hint(1.0));

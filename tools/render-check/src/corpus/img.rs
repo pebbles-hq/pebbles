@@ -29,8 +29,7 @@ pub fn cases() -> Vec<Case> {
         ops("img/bgra8_source", Image, P3, W, H, bgra8_source),
         ops("img/brush_alpha_0_5", Image, P3, W, H, brush_alpha_0_5),
         ops("img/edge_sampling", Image, P3, W, H, edge_sampling),
-        harness("img/fit_cover_rrect", Image, P3, 200, 120, fit_cover_rrect)
-            .xfail("L01", "rounded-rect clip of a decoration image lands with L01"),
+        harness("img/fit_cover_rrect", Image, P3, 200, 120, fit_cover_rrect),
         ops("img/huge_10000x300", Analytic, P3, 1000, 30, huge_10000x300)
             .analytic()
             .probe("huge_image_downscaled_red", probe::huge_image_downscaled_red),
@@ -42,8 +41,7 @@ pub fn cases() -> Vec<Case> {
         // R35 mip chains (V53 cases): a one-pixel checker minified ×0.3.
         ops("img/minify_checker_medium", Image, P3, W, H, minify_checker_medium),
         ops("img/minify_checker_high", Image, P3, W, H, minify_checker_high),
-        ops("img/under_clip_and_opacity", Image, P3, W, H, under_clip_and_opacity)
-            .xfail("L10", "exact group opacity lands with L10"),
+        ops("img/under_clip_and_opacity", Image, P3, W, H, under_clip_and_opacity),
     ]);
     v
 }

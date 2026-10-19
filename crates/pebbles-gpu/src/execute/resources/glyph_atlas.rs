@@ -4,7 +4,7 @@
 //! rasterized during resolve and staged as padded bitmaps; `flush` syncs then uploads them.
 
 use super::atlas_alloc::{
-    AtlasKind, AtlasPages, AtlasSlot, CoverageAtlas, GLYPH_GUTTER_PX, GlyphKey, MaskKey,
+    AtlasKind, AtlasPages, AtlasSlot, CoverageAtlas, CoverageKey, GLYPH_GUTTER_PX, GlyphKey, MaskKey,
 };
 use super::bind_groups::{GenBindGroup, refresh};
 use crate::budgets::GpuBudgets;
@@ -305,6 +305,61 @@ impl GlyphAtlas {
         let zeros = vec![0u8; w as usize * h as usize * 4];
         stage(&mut self.staging, &mut self.uploads, slot, &zeros);
         Some(slot)
+    }
+
+    /// 09 L08: the coverage of a mask-clip chain over `rect` — each clip rasterized exactly
+    /// (R14) over the rect, multiplied (`round(a · b / 255)`), stored as one mask entry.
+    pub(crate) fn lookup_clip(
+        &mut self,
+        key: u64,
+        sources: &[crate::prepare::plan::MaskClipSource],
+        rect: crate::prepare::ScissorRect,
+        stats: &mut FrameStats,
+    ) -> GlyphLookup {
+        let ckey = CoverageKey::Clip(key, [rect.x0, rect.y0, rect.x1, rect.y1]);
+        if let Some(hit) = self.cpu.get(ckey) {
+            return hit.map_or(GlyphLookup::Empty, GlyphLookup::Slot);
+        }
+        let (w, h) = (rect.width(), rect.height());
+        if w == 0 || h == 0 {
+            self.cpu.insert_empty(ckey);
+            return GlyphLookup::Empty;
+        }
+        let n = w as usize * h as usize;
+        let mut acc = vec![255u8; n];
+        let clip = crate::prepare::ScissorRect { x0: 0, y0: 0, x1: w, y1: h };
+        for s in sources {
+            let m = kurbo::Affine::translate((-f64::from(rect.x0), -f64::from(rect.y0))) * s.xf;
+            let mut cov = vec![0u8; n];
+            if let Some(p) = self.paths.rasterize(&s.path, m, s.rule, clip, &mut self.mask_buf) {
+                let (mw, mh) = (self.mask_buf.width as usize, self.mask_buf.height as usize);
+                let (ox, oy) = (usize::try_from(p.left).unwrap_or(0), usize::try_from(p.top).unwrap_or(0));
+                for y in 0..mh {
+                    for x in 0..mw {
+                        let (dx, dy) = (ox + x, oy + y);
+                        if dx < w as usize && dy < h as usize {
+                            cov[dy * w as usize + dx] = self.mask_buf.data[y * mw + x];
+                        }
+                    }
+                }
+            }
+            for (a, c) in acc.iter_mut().zip(&cov) {
+                *a = u8::try_from((u32::from(*a) * u32::from(*c) + 127) / 255).unwrap_or(u8::MAX);
+            }
+        }
+        stats.masks_rasterized += 1;
+        match self.cpu.insert(ckey, AtlasKind::Mask, w, h, 0, 0, stats) {
+            Ok(slot) => {
+                stage(&mut self.staging, &mut self.uploads, slot, &acc);
+                GlyphLookup::Slot(slot)
+            }
+            Err(_) => GlyphLookup::Full,
+        }
+    }
+
+    /// The mask pages' view and generation (group 0 binds them for clip masks, 09 L08).
+    pub(crate) fn mask_view(&self) -> (&wgpu::TextureView, u64) {
+        (&self.mask.view, self.mask.generation)
     }
 
     /// The color pages' texture (R39 copies rendered COLR glyphs into it).

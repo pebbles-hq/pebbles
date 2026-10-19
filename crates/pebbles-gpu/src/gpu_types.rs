@@ -78,6 +78,18 @@ fn clip_params_layout() {
     assert_eq!(std::mem::offset_of!(ClipParams, radii), 16);
 }
 
+/// One mask-clip record (09 L08): group 0, binding 2, dynamic offset. `atlas.w == 0` = none.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+pub(crate) struct MaskClipParams {
+    /// Device px: x0, y0, width, height of the clip rect.
+    pub rect: [f32; 4],
+    /// Atlas texel x, y, layer, enabled (1) / none (0).
+    pub atlas: [f32; 4],
+}
+
+const _: () = assert!(size_of::<MaskClipParams>() == 32);
+
 /// Tier A analytic shape (02 §6.4): rect / rounded rect / circle, fill or uniform stroke, as one
 /// instanced quad with SDF coverage. WGSL: five `vec4<f32>` attributes at locations 0–4.
 #[repr(C)]

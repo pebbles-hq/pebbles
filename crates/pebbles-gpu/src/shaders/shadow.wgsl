@@ -79,5 +79,5 @@ fn fs(in: ShadowOut) -> @location(0) vec4<f32> {
         value = value + row_x(p.x, p.y - y, sigma, corner, half) * g * step;
         y = y + step;
     }
-    return finish_color(in.color * (clamp(value, 0.0, 1.0) * clip_coverage(device_pos(in.clip))));
+    return finish_color(in.color * (clamp(value, 0.0, 1.0) * (clip_coverage(device_pos(in.clip)) * clip_mask_coverage(device_pos(in.clip)))));
 }

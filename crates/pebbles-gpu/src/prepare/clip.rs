@@ -25,6 +25,9 @@ pub(crate) enum ClipKind {
     Bounds,
     /// Scissor (rounded out) + this SDF clip.
     Sdf(SdfClip),
+    /// Scissor (rounded out) + a Tier B coverage-mask clip multiplied with the active one (row 8);
+    /// the walk builds the record from the geometry.
+    Mask,
 }
 
 /// The result of classifying a clip geometry.
@@ -152,8 +155,20 @@ fn sdf_contains(c: &SdfClip, s: ScissorRect) -> bool {
         .all(|&(x, y)| sd_rrect(kurbo::Point::new(f64::from(x), f64::from(y)), rect, radii) <= -0.5)
 }
 
-/// Classify a clip geometry under `xf` against the current clip (09 §2.2 rows 1–7; rows 8–10
-/// keep the `Bounds` interim until L08/L09).
+/// Row 8: a Tier B mask when the clipped area and segment count fit (02 §5.2); rows 9–10 keep
+/// the `Bounds` interim until L09 (GPU masks).
+fn mask_or_bounds(geom: &Geometry, xf: Affine, scissor: ScissorRect) -> ClipDecision {
+    use super::path_strategy::{MASK_MAX_AREA, MASK_MAX_SEGMENTS, segment_count};
+    let area = u64::from(scissor.width()) * u64::from(scissor.height());
+    if area <= MASK_MAX_AREA && segment_count(geom, xf) <= MASK_MAX_SEGMENTS {
+        ClipDecision { kind: ClipKind::Mask, scissor }
+    } else {
+        ClipDecision { kind: ClipKind::Bounds, scissor }
+    }
+}
+
+/// Classify a clip geometry under `xf` against the current clip (09 §2.2 rows 1–8; rows 9–10
+/// keep the `Bounds` interim until L09).
 pub(crate) fn classify_clip(geom: &Geometry, xf: Affine, cur: &ClipState) -> ClipDecision {
     let cull = ClipDecision { kind: ClipKind::Cull, scissor: cur.scissor };
     // Row 1: non-finite.
@@ -203,7 +218,7 @@ pub(crate) fn classify_clip(geom: &Geometry, xf: Affine, cur: &ClipState) -> Cli
                 };
                 return ClipDecision { kind: ClipKind::Sdf(c), scissor: rounded_out };
             }
-            ClipDecision { kind: ClipKind::Bounds, scissor: rounded_out }
+            mask_or_bounds(geom, xf, rounded_out)
         }
         ClipClass::RoundedRect | ClipClass::Other => {
             // Rows 6–7: rounded rect / circle under a uniform, unrotated transform.
@@ -215,8 +230,7 @@ pub(crate) fn classify_clip(geom: &Geometry, xf: Affine, cur: &ClipState) -> Cli
                     return ClipDecision { kind: ClipKind::Sdf(c), scissor: rounded_out };
                 }
             }
-            // Rows 8–10 (interim until L08/L09): the device bbox.
-            ClipDecision { kind: ClipKind::Bounds, scissor: rounded_out }
+            mask_or_bounds(geom, xf, rounded_out)
         }
     }
 }
@@ -266,12 +280,21 @@ impl ClipStack {
             ClipKind::Cull => self.current.scissor = ScissorRect { x0: 0, y0: 0, x1: 0, y1: 0 },
             ClipKind::Noop => {}
             ClipKind::Scissor | ClipKind::Bounds => self.current.scissor = decision.scissor,
+            // The walk pushes mask clips through `push_mask` (it builds the record).
+            ClipKind::Mask => self.current.scissor = decision.scissor,
             ClipKind::Sdf(c) => {
                 sdf_clips.push(c);
                 self.current.scissor = decision.scissor;
                 self.current.sdf = SdfClipId(u32::try_from(sdf_clips.len() - 1).unwrap_or(0));
             }
         }
+    }
+
+    /// Push a mask clip whose record the walk appended (09 L08).
+    pub(crate) fn push_mask(&mut self, scissor: ScissorRect, id: super::plan::MaskClipId) {
+        self.stack.push(self.current);
+        self.current.scissor = scissor;
+        self.current.mask = id;
     }
 
     /// Pop the matching clip; returns false for an unmatched pop.
@@ -324,10 +347,10 @@ mod tests {
     }
 
     #[test]
-    fn rotated_30_rect_is_bounds_clip() {
+    fn rotated_30_rect_is_mask_clip() {
         let geom = Geometry::Rect(Rect::new(0.0, 0.0, 100.0, 50.0));
         let d = classify_clip(&geom, Affine::rotate(std::f64::consts::FRAC_PI_6), &cur((200, 200)));
-        assert_eq!(d.kind, ClipKind::Bounds);
+        assert_eq!(d.kind, ClipKind::Mask);
     }
 
     #[test]
@@ -468,8 +491,7 @@ mod tests {
     #[test]
     fn rrect_non_uniform_scale_is_mask() {
         let g = Geometry::RoundedRect(kurbo::RoundedRect::new(0.0, 0.0, 40.0, 40.0, 8.0));
-        // Rows 8–10 (mask) — the bbox interim until L08.
-        assert_eq!(decide(g, Affine::scale_non_uniform(2.0, 1.0)).kind, ClipKind::Bounds);
+        assert_eq!(decide(g, Affine::scale_non_uniform(2.0, 1.0)).kind, ClipKind::Mask);
     }
 
     #[test]
@@ -477,7 +499,7 @@ mod tests {
         let g = || Geometry::Circle(kurbo::Circle::new((50.0, 50.0), 20.0));
         assert!(matches!(decide(g(), Affine::IDENTITY).kind, ClipKind::Sdf(_)));
         let rot = Affine::rotate_about(std::f64::consts::FRAC_PI_6, kurbo::Point::new(50.0, 50.0));
-        assert_eq!(decide(g(), rot).kind, ClipKind::Bounds, "a rotated circle is a mask (row 8)");
+        assert_eq!(decide(g(), rot).kind, ClipKind::Mask, "a rotated circle is a mask (row 8)");
     }
 
     #[test]
@@ -485,7 +507,7 @@ mod tests {
         let mut c = cur((100, 100));
         c.sdf = SdfClipId(1);
         let g = Geometry::RoundedRect(kurbo::RoundedRect::new(10.0, 10.0, 60.0, 60.0, 8.0));
-        assert_eq!(classify_clip(&g, Affine::IDENTITY, &c).kind, ClipKind::Bounds);
+        assert_eq!(classify_clip(&g, Affine::IDENTITY, &c).kind, ClipKind::Mask);
     }
 
     #[test]
@@ -616,5 +638,55 @@ mod tests {
         assert_eq!(stack.current().sdf, SdfClipId(1));
         assert!(stack.pop());
         assert_eq!(stack.current().sdf, SdfClipId::NONE);
+    }
+
+    // ---- L08 (row 8: Tier B mask clips) ----
+
+    fn star(r: f64) -> Geometry {
+        let mut p = kurbo::BezPath::new();
+        for i in 0..5 {
+            let a = -std::f64::consts::FRAC_PI_2 + f64::from(i) * 4.0 * std::f64::consts::PI / 5.0;
+            let pt = (50.0 + r * a.cos(), 50.0 + r * a.sin());
+            if i == 0 { p.move_to(pt) } else { p.line_to(pt) }
+        }
+        p.close_path();
+        Geometry::Path(p)
+    }
+
+    #[test]
+    fn path_clip_is_mask_when_small() {
+        assert_eq!(decide(star(40.0), Affine::IDENTITY).kind, ClipKind::Mask);
+    }
+
+    #[test]
+    fn huge_path_clip_is_not_a_cpu_mask() {
+        // 1000×1000 target: the clipped bbox exceeds MASK_MAX_AREA → rows 9–10 (Bounds until L09).
+        let d = classify_clip(&star(400.0), Affine::translate((450.0, 450.0)), &cur((1000, 1000)));
+        assert_ne!(d.kind, ClipKind::Mask);
+    }
+
+    #[test]
+    fn nested_masks_multiply() {
+        use pebbles_render::paint::{Painter, Scene};
+        let mut s = Scene::new();
+        let mut p = Painter::new(&mut s);
+        let Geometry::Path(a) = star(45.0) else { unreachable!() };
+        p.push_layer(peniko::Fill::NonZero, peniko::BlendMode::default(), 1.0, Affine::IDENTITY, &a);
+        let e = kurbo::Ellipse::new((50.0, 55.0), (40.0, 25.0), 0.3);
+        p.push_layer(peniko::Fill::NonZero, peniko::BlendMode::default(), 1.0, Affine::IDENTITY, &e);
+        p.fill(
+            peniko::Fill::NonZero,
+            Affine::IDENTITY,
+            peniko::Color::BLACK,
+            None,
+            &Rect::new(0.0, 0.0, 100.0, 100.0),
+        );
+        p.pop_layer();
+        p.pop_layer();
+        let (plan, _) = crate::prepare::test_util::prepare_scene(&s, 100, 100);
+        assert_eq!(plan.mask_clips.len(), 3, "NONE + outer + nested");
+        assert_eq!(plan.mask_clips[2].sources.len(), 2, "the nested record carries both clips (multiplied)");
+        assert_ne!(plan.mask_clips[1].key, plan.mask_clips[2].key);
+        assert_eq!(plan.stats.clips_mask, 2);
     }
 }

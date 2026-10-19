@@ -186,8 +186,20 @@ fn circle_clip_edge_is_analytic() {
     );
     p.pop_layer();
     let px = render_scene(&device, &queue, &mut r, &s, (64, 64), Color::WHITE);
-    // Every pixel within 1 px of the edge has coverage clamp(0.5 − (d − 24)) (analytic, ±3):
-    // red stays 255, green = 255 · (1 − coverage). Some of them are partially covered.
+    // Every pixel within 1 px of the edge has the exact pixel area inside the circle (±3; the
+    // clip uses the exact-area coverage of Tier A fills): red stays 255, green = 255 · (1 − area).
+    let area = |x: u32, y: u32| -> f64 {
+        let n = 16;
+        let mut inside = 0;
+        for j in 0..n {
+            for i in 0..n {
+                let sx = f64::from(x) + (f64::from(i) + 0.5) / f64::from(n);
+                let sy = f64::from(y) + (f64::from(j) + 0.5) / f64::from(n);
+                inside += u32::from((sx - 32.0).hypot(sy - 32.0) <= 24.0);
+            }
+        }
+        f64::from(inside) / f64::from(n * n)
+    };
     let mut partial = 0;
     for y in 0..64u32 {
         for x in 0..64u32 {
@@ -195,7 +207,7 @@ fn circle_clip_edge_is_analytic() {
             if (d - 24.0).abs() > 1.0 {
                 continue;
             }
-            let cov = (0.5 - (d - 24.0)).clamp(0.0, 1.0);
+            let cov = area(x, y);
             let want = (255.0 * (1.0 - cov)).round() as u8;
             let got = pixel(&px, 64, x, y);
             assert_eq!(got[0], 255, "({x},{y})");

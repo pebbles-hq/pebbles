@@ -17,15 +17,8 @@ use crate::probe;
 /// Every `clip/` scissor case.
 pub fn cases() -> Vec<Case> {
     let mut v = vec![ops("clip/rect_scissor", Geometry, P1, 128, 128, rect_scissor)];
-    // 09 §2: a fractional rect clip is a scissor rounded out until the SDF clip (L03/L04); the
-    // golden model clips exactly, so these fail by design until then.
-    v.extend(
-        with_scale_variants(ops("clip/rect_fractional", Geometry, P1, 128, 128, rect_fractional))
-            .into_iter()
-            .map(|c| {
-                c.xfail("L04", "fractional rect clips are scissors rounded out until the SDF clip (09 §2)")
-            }),
-    );
+    // 09 §2.2 row 5: a fractional rect clip is an SDF rect (L04).
+    v.extend(with_scale_variants(ops("clip/rect_fractional", Geometry, P1, 128, 128, rect_fractional)));
     v.extend([
         ops("clip/rect_negative_origin", Geometry, P1, 128, 128, rect_negative_origin),
         ops("clip/rect_offscreen", Category::Analytic, P1, 128, 128, rect_offscreen)
@@ -36,8 +29,55 @@ pub fn cases() -> Vec<Case> {
             .analytic()
             .probe("all_background", probe::all_background),
         harness("clip/scroll_viewport", Geometry, P1, 240, 200, scroll_viewport),
+        // L04 SDF clips (rows 6–7) and L08 Tier B mask clips (row 8, nested masks multiply).
+        ops("clip/rrect", Geometry, P1, 128, 128, |p| {
+            clipped(p, &RoundedRect::new(16., 16., 112., 112., 24.))
+        }),
+        ops("clip/circle", Geometry, P1, 128, 128, |p| clipped(p, &kurbo::Circle::new((64., 64.), 48.))),
+        ops("clip/path_star", Geometry, P1, 128, 128, |p| clipped(p, &star(64.0, 64.0, 56.0))),
+        ops("clip/rotated_rect_30", Geometry, P1, 128, 128, rotated_rect_30),
+        ops("clip/ellipse", Geometry, P1, 128, 128, |p| {
+            clipped(p, &kurbo::Ellipse::new((64., 64.), (56., 32.), 0.0))
+        }),
+        ops("clip/nested_paths_3", Geometry, P1, 128, 128, nested_paths_3),
     ]);
     v
+}
+
+/// A five-pointed star (pentagram outline, non-zero → solid center).
+fn star(cx: f64, cy: f64, r: f64) -> kurbo::BezPath {
+    let mut path = kurbo::BezPath::new();
+    for i in 0..5 {
+        let a = -std::f64::consts::FRAC_PI_2 + f64::from(i) * 4.0 * std::f64::consts::PI / 5.0;
+        let pt = (cx + r * a.cos(), cy + r * a.sin());
+        if i == 0 { path.move_to(pt) } else { path.line_to(pt) }
+    }
+    path.close_path();
+    path
+}
+
+fn rotated_rect_30(p: &mut Painter<'_>) {
+    let t = Affine::rotate_about(std::f64::consts::FRAC_PI_6, kurbo::Point::new(64., 64.));
+    p.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &Rect::new(24., 24., 104., 104.));
+    stripes(p);
+    p.pop_layer();
+}
+
+fn nested_paths_3(p: &mut Painter<'_>) {
+    p.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &star(64., 64., 60.));
+    p.push_layer(
+        Fill::NonZero,
+        Mix::Normal,
+        1.0,
+        Affine::IDENTITY,
+        &kurbo::Ellipse::new((64., 70.), (50., 34.), 0.3),
+    );
+    let t = Affine::rotate_about(0.4, kurbo::Point::new(64., 64.));
+    p.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &Rect::new(30., 30., 98., 98.));
+    stripes(p);
+    p.pop_layer();
+    p.pop_layer();
+    p.pop_layer();
 }
 
 /// 8 vertical 16-px stripes of distinct colors across the whole canvas.

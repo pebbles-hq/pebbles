@@ -50,8 +50,11 @@ pub(crate) fn resolve_and_upload(
 ) {
     resolve_glyphs(&mut renderer.glyph_atlas, &renderer.scratch.plan, &mut renderer.glyph_instances, stats);
     super::resolve::cull_resolved(&renderer.scratch.plan, &mut renderer.glyph_instances);
+    // 09 L08: mask clips live in the coverage atlas too (staged before the flush).
+    renderer.resolve_mask_clips(stats);
     // SYNC (10 §5.7): grow (separate submit) before this frame's uploads, then refresh the bind group.
     renderer.glyph_atlas.flush(device, queue, &renderer.layouts.glyph, stats);
+    renderer.write_mask_clips(device, queue, stats);
     renderer.image_instances.clear();
     for req in &renderer.scratch.plan.images {
         let drawable = match &req.dynamic {
@@ -128,16 +131,18 @@ pub(crate) fn encode(
     stats: &mut FrameStats,
     composites: &[super::tier_c::Composite],
 ) {
-    // Group 0: Globals slot 0 + the NONE clip; rebound when a cmd's SDF clip changes (09 §2.4).
-    let mut bound_sdf = crate::prepare::SdfClipId::NONE;
-    pass.set_bind_group(0, renderer.globals_bg(), &[0, 0]);
+    // Group 0: Globals slot 0 + the NONE clips; rebound when a cmd's SDF or mask clip changes
+    // (09 §2.4, L08).
+    let mut bound = (crate::prepare::SdfClipId::NONE, crate::prepare::plan::MaskClipId::NONE);
+    pass.set_bind_group(0, renderer.globals_bg(), &[0, 0, 0]);
     stats.bind_group_switches += 1;
     let mut bind_clip =
-        |pass: &mut wgpu::RenderPass<'_>, sdf: crate::prepare::SdfClipId, stats: &mut FrameStats| {
-            if sdf != bound_sdf {
-                pass.set_bind_group(0, renderer.globals_bg(), &[0, renderer.clip_offset(sdf)]);
+        |pass: &mut wgpu::RenderPass<'_>, clip: crate::prepare::ClipState, stats: &mut FrameStats| {
+            if (clip.sdf, clip.mask) != bound {
+                let offsets = [0, renderer.clip_offset(clip.sdf), renderer.mask_clip_offset(clip.mask)];
+                pass.set_bind_group(0, renderer.globals_bg(), &offsets);
                 stats.bind_group_switches += 1;
-                bound_sdf = sdf;
+                bound = (clip.sdf, clip.mask);
             }
         };
     // The main pass is single-sampled (R17).
@@ -173,7 +178,7 @@ pub(crate) fn encode(
                 continue;
             };
             state.set_scissor(pass, c.run.scissor);
-            bind_clip(pass, c.run.sdf, stats);
+            bind_clip(pass, c.run.clip, stats);
             state.set_pipeline(pass, pipeline);
             pass.set_bind_group(1, bg, &[c.params_offset]);
             stats.bind_group_switches += 1;
@@ -194,7 +199,7 @@ pub(crate) fn encode(
                 pass.set_vertex_buffer(0, vb.slice(..));
                 pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
                 state.set_scissor(pass, clip.scissor);
-                bind_clip(pass, clip.sdf, stats);
+                bind_clip(pass, *clip, stats);
                 pass.draw_indexed(indices.clone(), 0, 0..1);
                 stats.draw_calls += 1;
             }
@@ -208,7 +213,7 @@ pub(crate) fn encode(
                 state.set_pipeline(pass, pipeline);
                 pass.set_vertex_buffer(0, vb.slice(..));
                 state.set_scissor(pass, clip.scissor);
-                bind_clip(pass, clip.sdf, stats);
+                bind_clip(pass, *clip, stats);
                 pass.draw(0..4, instances.clone());
                 stats.draw_calls += 1;
             }
@@ -222,7 +227,7 @@ pub(crate) fn encode(
                 state.set_pipeline(pass, pipeline);
                 pass.set_vertex_buffer(0, vb.slice(..));
                 state.set_scissor(pass, clip.scissor);
-                bind_clip(pass, clip.sdf, stats);
+                bind_clip(pass, *clip, stats);
                 pass.draw(0..4, instances.clone());
                 stats.draw_calls += 1;
             }
@@ -235,7 +240,7 @@ pub(crate) fn encode(
                     continue;
                 };
                 state.set_scissor(pass, clip.scissor);
-                bind_clip(pass, clip.sdf, stats);
+                bind_clip(pass, *clip, stats);
                 state.set_pipeline(pass, pipeline);
                 pass.set_bind_group(1, bg, &[]);
                 stats.bind_group_switches += 1;
@@ -253,7 +258,7 @@ pub(crate) fn encode(
                     continue;
                 };
                 state.set_scissor(pass, clip.scissor);
-                bind_clip(pass, clip.sdf, stats);
+                bind_clip(pass, *clip, stats);
                 state.set_pipeline(pass, pipeline);
                 pass.set_bind_group(1, bg, &[]);
                 stats.bind_group_switches += 1;

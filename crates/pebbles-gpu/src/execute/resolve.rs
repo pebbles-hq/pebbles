@@ -19,6 +19,11 @@ pub(crate) fn resolve_glyphs(
     for req in &plan.glyphs {
         let key = match req.key {
             CoverageKey::Glyph(k) => k,
+            // Mask clips are resolved per record (09 L08), never as glyph requests.
+            CoverageKey::Clip(..) => {
+                out.push(QuadInstance::zeroed());
+                continue;
+            }
             CoverageKey::Path(k) => {
                 let Some(src) = plan.mask_sources.get(req.run as usize) else {
                     out.push(QuadInstance::zeroed());
