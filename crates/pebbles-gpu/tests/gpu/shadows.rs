@@ -76,3 +76,21 @@ fn card_shadow_does_not_cover_card() {
     let px = render_scene(&device, &queue, &mut r, &s, (200, 200), Color::from_rgba8(0xF0, 0xF0, 0xF0, 0xFF));
     assert_eq!(pixel(&px, 200, 100, 100), [255, 255, 255, 255]);
 }
+
+/// R41: σ = 0 is a hard-edged rect: 1 px inside the edge is black, 1 px outside is white.
+#[test]
+#[ignore = "gpu"]
+fn zero_sigma_is_hard_edge() {
+    let Some(mut r) = setup("zero_sigma_is_hard_edge") else { return };
+    let mut s = Scene::new();
+    Painter::new(&mut s).draw_blurred_rounded_rect(
+        Affine::IDENTITY,
+        Rect::new(50.0, 50.0, 150.0, 150.0),
+        Color::BLACK,
+        0.0,
+        0.0,
+    );
+    let px = render_scene(&r.0, &r.1, &mut r.2, &s, (200, 200), Color::WHITE);
+    assert!(rgb_in(pixel(&px, 200, 100, 148), 0, 1), "{:?}", pixel(&px, 200, 100, 148));
+    assert!(rgb_in(pixel(&px, 200, 100, 151), 254, 255), "{:?}", pixel(&px, 200, 100, 151));
+}

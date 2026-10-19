@@ -592,9 +592,14 @@ impl Walk<'_> {
                         continue;
                     }
                     let k = self.alpha();
-                    // R40: the closed form in local space (any affine). Degenerate → R41.
+                    // R41: a transparent shadow draws nothing.
+                    if brush.components[3] * k <= 0.0 {
+                        continue;
+                    }
+                    // R40: the closed form in local space (any affine); an empty rect is skipped.
+                    let max = self.limits.max_coord_px;
                     if let Some(range) =
-                        shadows::shadow(self.plan, rect, xf, *radius, *std_dev, brush.multiply_alpha(k))
+                        shadows::shadow(self.plan, rect, xf, *radius, *std_dev, brush.multiply_alpha(k), max)
                     {
                         self.push(DrawCmd::Shadows { instances: range, clip: self.clips.current() }, idx);
                     }

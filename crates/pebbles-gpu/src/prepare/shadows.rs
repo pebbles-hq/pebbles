@@ -76,7 +76,8 @@ pub(crate) fn shadow_params(rect: Rect, radius: f32, std_dev: f32) -> Option<Sha
 }
 
 /// Append one shadow instance for `rect` under `m` (local → device) and return its range;
-/// `None` when the parameters are degenerate (R41 decides what to draw instead).
+/// `None` when the rect is empty (R41: skipped silently). `max_coord_px` bounds the quad
+/// inflation (S05): beyond it the shadow is outside every possible target.
 pub(crate) fn shadow(
     plan: &mut FramePlan,
     rect: &Rect,
@@ -84,6 +85,7 @@ pub(crate) fn shadow(
     radius: f64,
     std_dev: f64,
     color: Color,
+    max_coord_px: f32,
 ) -> Option<Range<u32>> {
     let p = shadow_params(*rect, narrow_f32(radius), narrow_f32(std_dev))?;
     let r = rect.abs();
@@ -96,9 +98,18 @@ pub(crate) fn shadow(
         params0: [p.exponent, p.recip_exponent, p.scale, p.std_dev_inv],
         params1: [p.min_edge, p.w, p.h, p.r1],
         color: premul(color),
-        kernel: [2.5 * narrow_f32(std_dev).max(1e-6), 0.0, 0.0, 0.0],
+        kernel: [kernel_extent(std_dev, m, max_coord_px), 0.0, 0.0, 0.0],
     });
     Some(start..start + 1)
+}
+
+/// `2.5 · std_dev` (local units), clamped to `max_coord_px / σmax(M)` so the inflated quad stays
+/// finite for absurd σ (S05). σ itself is never clamped (R41).
+fn kernel_extent(std_dev: f64, m: Affine, max_coord_px: f32) -> f32 {
+    let k = 2.5 * std_dev.max(1e-6);
+    let (smax, _) = super::stroke::singular_values(&m);
+    let bound = if smax > 0.0 { f64::from(max_coord_px) / smax } else { k };
+    narrow_f32(k.min(bound))
 }
 
 #[cfg(test)]
@@ -128,6 +139,71 @@ mod tests {
         let clamped = shadow_params(Rect::new(0.0, 0.0, 100.0, 50.0), 80.0, 6.0).unwrap();
         let exact = shadow_params(Rect::new(0.0, 0.0, 100.0, 50.0), 25.0, 6.0).unwrap();
         assert_eq!(clamped, exact);
+    }
+
+    fn one(rect: Rect, radius: f64, std_dev: f64, color: Color) -> (FramePlan, crate::stats::FrameStats) {
+        use pebbles_render::paint::{Painter, Scene};
+        let mut s = Scene::new();
+        Painter::new(&mut s).draw_blurred_rounded_rect(Affine::IDENTITY, rect, color, radius, std_dev);
+        crate::prepare::test_util::prepare_scene(&s, 200, 200)
+    }
+
+    #[test]
+    fn nan_rect_shadow_skipped() {
+        let (plan, stats) = one(Rect::new(f64::NAN, 0.0, 10.0, 10.0), 0.0, 4.0, Color::BLACK);
+        assert!(plan.shadows.is_empty());
+        assert_eq!(stats.non_finite_skipped, 1);
+    }
+
+    #[test]
+    fn zero_size_shadow_skipped() {
+        let (plan, stats) = one(Rect::new(10.0, 10.0, 10.0, 50.0), 0.0, 4.0, Color::BLACK);
+        assert!(plan.shadows.is_empty() && plan.cmds.is_empty());
+        assert_eq!(stats.non_finite_skipped, 0, "silent");
+    }
+
+    #[test]
+    fn transparent_shadow_skipped() {
+        let (plan, _) = one(Rect::new(10.0, 10.0, 50.0, 50.0), 0.0, 4.0, Color::TRANSPARENT);
+        assert!(plan.shadows.is_empty() && plan.cmds.is_empty());
+    }
+
+    #[test]
+    fn negative_radius_is_zero() {
+        let r = Rect::new(0.0, 0.0, 100.0, 60.0);
+        assert_eq!(shadow_params(r, -5.0, 6.0), shadow_params(r, 0.0, 6.0));
+        assert_eq!(shadow_params(r, 4.0, -3.0), shadow_params(r, 4.0, 1e-6), "negative σ → hard edge");
+    }
+
+    #[test]
+    fn inverted_rect_is_normalized() {
+        let a = one(Rect::new(150.0, 150.0, 50.0, 50.0), 4.0, 6.0, Color::BLACK).0.shadows;
+        let b = one(Rect::new(50.0, 50.0, 150.0, 150.0), 4.0, 6.0, Color::BLACK).0.shadows;
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn huge_sigma_keeps_quad_finite() {
+        let limits = crate::test_support::webgl2_limits();
+        let mut plan = FramePlan::default();
+        let r = Rect::new(0.0, 0.0, 100.0, 100.0);
+        shadow(&mut plan, &r, Affine::IDENTITY, 0.0, 1e30, Color::BLACK, limits.max_coord_px).unwrap();
+        let s = plan.shadows[0];
+        let k = s.kernel[0];
+        assert!(k.is_finite());
+        // Quad corners: (−k, −k) … (w + k, h + k) in local = device units here.
+        let far = f64::from(s.origin_size[2] + k);
+        assert!(far <= f64::from(limits.max_coord_px) + 100.0, "{far}");
+        assert!(s.params0.iter().chain(&s.params1).all(|v| v.is_finite()));
+    }
+
+    #[test]
+    fn normal_sigma_is_unchanged() {
+        let limits = crate::test_support::webgl2_limits();
+        let mut plan = FramePlan::default();
+        let r = Rect::new(0.0, 0.0, 100.0, 100.0);
+        shadow(&mut plan, &r, Affine::IDENTITY, 0.0, 8.0, Color::BLACK, limits.max_coord_px).unwrap();
+        assert_eq!(plan.shadows[0].kernel[0], 2.5 * 8.0);
     }
 
     #[test]
