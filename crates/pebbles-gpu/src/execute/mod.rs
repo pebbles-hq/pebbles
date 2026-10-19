@@ -1,6 +1,7 @@
 //! Execute: the wgpu-side draw/encode helpers.
 
 pub(crate) mod encode;
+pub(crate) mod gpu_masks;
 pub(crate) mod layers;
 pub(crate) mod pipelines;
 pub(crate) mod resolve;

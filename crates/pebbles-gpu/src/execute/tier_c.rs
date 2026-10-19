@@ -104,8 +104,10 @@ pub(crate) fn encode_runs(
     }
     let stride = slot_stride(device);
     let n = runs.len() as u64;
-    // Offscreen layers own Globals slots 1..=L and composite slots 0..L (09 §3.5); runs follow.
-    let base = renderer.scratch.plan.layers.len() as u64;
+    // Offscreen layers own Globals slots 1..=L and composite slots 0..L (09 §3.5), GPU masks the
+    // next J Globals slots; runs follow.
+    // GPU mask jobs own the Globals slots after the layers (09 §2.9).
+    let base = (renderer.scratch.plan.layers.len() + renderer.scratch.plan.gpu_mask_jobs.len()) as u64;
     renderer.ensure_uniform_slots(device, base + n + 1, base + n, stats);
     let solid = PipelineKey {
         kind: PipelineKind::Solid,

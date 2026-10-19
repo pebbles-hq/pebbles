@@ -22,9 +22,10 @@ pub(crate) struct Slot {
 }
 
 impl Slot {
-    /// `w·h·4·(samples + 1)` (09 §3.8).
+    /// `w·h·texel·(samples + 1)` (09 §3.8; 1 byte for the R8 mask pool).
     pub(crate) fn bytes(&self) -> u64 {
-        u64::from(self.size.0) * u64::from(self.size.1) * 4 * (u64::from(self.samples) + 1)
+        let texel = u64::from(self.format.block_copy_size(None).unwrap_or(4));
+        u64::from(self.size.0) * u64::from(self.size.1) * texel * (u64::from(self.samples) + 1)
     }
 }
 

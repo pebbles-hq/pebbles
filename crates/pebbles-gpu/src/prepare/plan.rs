@@ -104,6 +104,22 @@ pub(crate) struct MaskClipRecord {
     pub sources: std::ops::Range<u32>,
     /// Device px; the scissor of the state that carries it.
     pub rect: ScissorRect,
+    /// A GPU coverage mask (09 §2.9, L09): index into `FramePlan::gpu_mask_jobs`. `None`: a
+    /// Tier B atlas mask (L08).
+    pub gpu: Option<u32>,
+    /// GPU masks in this record's chain (the active count for `MAX_GPU_MASKS`).
+    pub gpu_depth: u8,
+}
+
+/// One GPU coverage mask to render before the frame's first pass (09 §2.9).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct GpuMaskJob {
+    /// Device rect of the mask texture.
+    pub rect: ScissorRect,
+    /// The clip path's lyon fill mesh in device px: a range of the solid index arena.
+    pub indices: std::ops::Range<u32>,
+    /// The mask active when this clip was pushed (`MaskClipId::NONE`: none); multiplied in.
+    pub parent: MaskClipId,
 }
 
 /// A rounded-rect clip evaluated analytically in every content shader (09 §2.4).
@@ -270,6 +286,10 @@ pub(crate) struct FramePlan {
     pub mask_clips: Vec<MaskClipRecord>,
     /// The clip paths the mask records reference.
     pub clip_sources: Vec<MaskClipSource>,
+    /// GPU coverage masks (09 §2.9), parents before children.
+    pub gpu_mask_jobs: Vec<GpuMaskJob>,
+    /// Estimated mask pool bytes of `gpu_mask_jobs` (against `GpuBudgets::gpu_mask_bytes`).
+    pub gpu_mask_bytes: u64,
     /// Offscreen layers (09 §3.5), indexed by `DrawCmd::{PushLayer, PopLayer, Composite}`.
     pub layers: Vec<LayerDesc>,
     // the ordered stream
@@ -296,8 +316,16 @@ impl FramePlan {
         self.sdf_clips.clear();
         self.sdf_clips.push(SdfClip::NONE);
         self.mask_clips.clear();
-        self.mask_clips.push(MaskClipRecord { key: 0, sources: 0..0, rect: ScissorRect::default() });
+        self.mask_clips.push(MaskClipRecord {
+            key: 0,
+            sources: 0..0,
+            rect: ScissorRect::default(),
+            gpu: None,
+            gpu_depth: 0,
+        });
         self.clip_sources.clear();
+        self.gpu_mask_jobs.clear();
+        self.gpu_mask_bytes = 0;
         self.layers.clear();
         self.cmds.clear();
         self.fallback_features = super::coverage::FeatureSet::default();

@@ -22,6 +22,7 @@ mod cull;
 mod features;
 pub(crate) mod glyph_outline;
 pub(crate) mod glyphs;
+pub(crate) mod gpu_masks;
 mod hygiene;
 mod image_nine;
 mod images;
@@ -81,6 +82,8 @@ pub(crate) struct PrepareScratch {
     pub colr_vector_only: bool,
     /// Debug switch (R10): draw Tier A shapes through tessellation instead (tests, render-check).
     pub sdf_disabled: bool,
+    /// `GpuBudgets::gpu_mask_bytes`; `None` = the native default (tests).
+    pub gpu_mask_budget: Option<u64>,
 }
 
 /// Walk `scene` in painter's order into `scratch.plan`, recording fallbacks into `stats`.
@@ -111,6 +114,8 @@ pub(crate) fn prepare<'s>(
         glyph_hint: input.glyph_hint,
         out_of_vertices: false,
         sdf: !scratch.sdf_disabled,
+        clip_hint: pebbles_render::paint::display_list::PathHint::Auto,
+        gpu_mask_budget: scratch.gpu_mask_budget.unwrap_or(gpu_masks::DEFAULT_BUDGET_BYTES),
     };
     walk.emit(scene.ops(), input.root_transform);
     // 09 §2.7: pushes still open at the end of the frame are auto-closed (emitting the pops
@@ -139,6 +144,10 @@ struct Walk<'a> {
     out_of_vertices: bool,
     /// Tier A analytic shapes enabled (R10).
     sdf: bool,
+    /// `PathHint` of the `PushLayer` being applied (row 9's `Volatile`).
+    clip_hint: pebbles_render::paint::display_list::PathHint,
+    /// `GpuBudgets::gpu_mask_bytes` (rows 9–10).
+    gpu_mask_budget: u64,
 }
 
 /// One COLR glyph the renderer must render into the color atlas before the frame (R39).
@@ -218,24 +227,71 @@ impl Walk<'_> {
         xf: Affine,
         fill: Fill,
     ) {
-        let decision = clip::classify_clip(clip, xf, &self.clips.current());
-        self.note_clip(clip, xf, fill, &decision.kind);
-        if decision.kind == clip::ClipKind::Bounds {
-            self.stats.record(Unsupported::NonRectClip);
+        let cur = self.clips.current();
+        let volatile = self.clip_hint == pebbles_render::paint::display_list::PathHint::Volatile;
+        let mut decision = clip::classify_clip_hinted(clip, xf, &cur, volatile);
+        // Row 8 under an active GPU mask takes row 9 with that mask as its parent (§2.2).
+        let parent_gpu = self.plan.mask_clips.get(cur.mask.0 as usize).is_some_and(|r| r.gpu.is_some());
+        if decision.kind == clip::ClipKind::Mask && parent_gpu {
+            decision.kind = clip::ClipKind::GpuMask;
         }
+        if decision.kind == clip::ClipKind::GpuMask && !self.push_gpu_mask(clip, xf, fill, decision.scissor) {
+            decision.kind = clip::ClipKind::Overflow;
+        }
+        self.note_clip(clip, xf, fill, &decision.kind);
         match decision.kind {
             clip::ClipKind::Noop => self.plan.stats.clips_noop += 1,
             clip::ClipKind::Cull => self.plan.stats.clips_culled += 1,
             clip::ClipKind::Scissor => self.plan.stats.clips_scissor += 1,
             clip::ClipKind::Sdf(_) => self.plan.stats.clips_sdf += 1,
             clip::ClipKind::Mask => self.plan.stats.clips_mask += 1,
-            clip::ClipKind::Bounds => {}
+            clip::ClipKind::GpuMask => self.plan.stats.clips_gpu_mask += 1,
+            clip::ClipKind::Overflow => {}
         }
-        if decision.kind == clip::ClipKind::Mask {
-            self.push_mask_clip(clip, xf, fill, decision.scissor);
-        } else {
-            self.clips.push(decision, &mut self.plan.sdf_clips);
+        match decision.kind {
+            clip::ClipKind::Mask => self.push_mask_clip(clip, xf, fill, decision.scissor),
+            // `push_gpu_mask` pushed the clip state already.
+            clip::ClipKind::GpuMask => {}
+            _ => self.clips.push(decision, &mut self.plan.sdf_clips),
         }
+    }
+
+    /// 09 §2.2 rows 9–10: queue a GPU coverage mask job (§2.9) and push its clip state; false
+    /// (row 10, nothing pushed) when `MAX_GPU_MASKS` are active, the mask pool budget is spent,
+    /// or the clip path fails to tessellate (R03 records that; no `ClipOverflow`).
+    fn push_gpu_mask(
+        &mut self,
+        geom: &pebbles_render::paint::display_list::Geometry,
+        xf: Affine,
+        rule: Fill,
+        rect: ScissorRect,
+    ) -> bool {
+        let parent = self.clips.current().mask;
+        let depth = self.plan.mask_clips.get(parent.0 as usize).map_or(0, |r| r.gpu_depth);
+        let bytes = gpu_masks::job_bytes(rect);
+        if depth >= clip::MAX_GPU_MASKS || self.plan.gpu_mask_bytes + bytes > self.gpu_mask_budget {
+            self.stats.record(Unsupported::ClipOverflow);
+            self.plan.stats.gpu_mask_overflow += 1;
+            return false;
+        }
+        let path = geom.to_path(0.1 / xf.spectral_norm().max(1e-9));
+        let els = path.elements().iter().copied();
+        let Some(indices) = self.tess.fill(self.plan, self.stats, els, xf, rule, [1.0; 4]) else {
+            return false;
+        };
+        self.plan.gpu_mask_bytes += bytes;
+        let job = num::index_u32(self.plan.gpu_mask_jobs.len());
+        self.plan.gpu_mask_jobs.push(plan::GpuMaskJob { rect, indices, parent });
+        self.plan.mask_clips.push(plan::MaskClipRecord {
+            key: 0,
+            sources: 0..0,
+            rect,
+            gpu: Some(job),
+            gpu_depth: depth + 1,
+        });
+        let id = plan::MaskClipId(num::index_u32(self.plan.mask_clips.len() - 1));
+        self.clips.push_mask(rect, id);
+        true
     }
 
     /// 09 §3.5 push: the own clip on the parent (the composite's clip), the layer desc, the
@@ -358,6 +414,8 @@ impl Walk<'_> {
             key: h.finish().max(1),
             sources: start..end,
             rect: scissor,
+            gpu: None,
+            gpu_depth: 0,
         });
         let id = plan::MaskClipId(num::index_u32(self.plan.mask_clips.len() - 1));
         self.clips.push_mask(scissor, id);
@@ -611,8 +669,9 @@ impl Walk<'_> {
                         }
                     }
                 }
-                Op::PushLayer { transform, clip, alpha, blend, clip_fill, .. } => {
+                Op::PushLayer { transform, clip, alpha, blend, clip_fill, hint, .. } => {
                     let xf = outer * *transform;
+                    self.clip_hint = *hint;
                     if !xf.is_finite() || !hygiene::geometry_is_finite(clip) {
                         // Keep the layer (stack balance) with an empty clip: its content is culled.
                         self.skip_non_finite();

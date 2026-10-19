@@ -43,7 +43,7 @@ impl<'a> Painter<'a> {
         self.scene
     }
 
-    /// Set the [`PathHint`] recorded on every following fill/stroke until changed again.
+    /// Set the [`PathHint`] recorded on every following fill, stroke and clip layer until changed.
     pub fn set_path_hint(&mut self, hint: PathHint) {
         self.hint = hint;
     }
@@ -113,6 +113,7 @@ impl<'a> Painter<'a> {
             alpha,
             transform,
             clip: Geometry::from_shape(clip),
+            hint: self.hint,
         });
     }
 

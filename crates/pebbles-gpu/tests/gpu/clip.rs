@@ -219,3 +219,63 @@ fn circle_clip_edge_is_analytic() {
     assert_eq!(pixel(&px, 64, 32, 32), [255, 0, 0, 255]);
     assert_eq!(pixel(&px, 64, 32, 4), [255, 255, 255, 255]);
 }
+
+/// L09: a 1920×1080 rotated clip is a GPU mask (4× MSAA where available): its edge has
+/// fractional coverage, not just 0 / 255.
+#[test]
+#[ignore = "gpu"]
+fn gpu_mask_edges_are_antialiased() {
+    let Some((device, queue, mut renderer)) = setup("gpu_mask_edges_are_antialiased") else { return };
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    let rot = Affine::rotate_about(std::f64::consts::FRAC_PI_6, (960.0, 540.0));
+    p.push_layer(
+        Fill::NonZero,
+        peniko::BlendMode::default(),
+        1.0,
+        rot,
+        &Rect::new(160.0, 90.0, 1760.0, 990.0),
+    );
+    p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &Rect::new(0.0, 0.0, 1920.0, 1080.0));
+    p.pop_layer();
+    let rgba = render_scene(&device, &queue, &mut renderer, &scene, (1920, 1080), Color::WHITE);
+    // Center inside, corner outside.
+    assert_eq!(pixel(&rgba, 1920, 960, 540)[0], 0);
+    assert!(is_white(pixel(&rgba, 1920, 2, 2)));
+    // Along row 540, the left edge of the rotated rect crosses at a fractional x.
+    let row: Vec<u8> = (0..1920).map(|x| pixel(&rgba, 1920, x, 540)[0]).collect();
+    assert!(row.iter().any(|&v| v > 10 && v < 245), "no fractional edge pixel on row 540");
+}
+
+/// L09: a GPU mask inside a Tier B circle mask multiplies its parent: outside the circle stays
+/// untouched even where the GPU mask covers.
+#[test]
+#[ignore = "gpu"]
+fn nested_gpu_mask_multiplies_parent() {
+    let Some((device, queue, mut renderer)) = setup("nested_gpu_mask_multiplies_parent") else { return };
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    let rot = Affine::rotate_about(0.3, (32.0, 32.0));
+    p.push_layer(
+        Fill::NonZero,
+        peniko::BlendMode::default(),
+        1.0,
+        rot,
+        &kurbo::Ellipse::new((32.0, 32.0), (20.0, 20.0), 0.0),
+    ); // a rotated circle: Tier B mask
+    p.set_path_hint(pebbles_render::paint::display_list::PathHint::Volatile);
+    p.push_layer(Fill::NonZero, peniko::BlendMode::default(), 1.0, rot, &Rect::new(-10.0, 24.0, 80.0, 60.0));
+    p.fill(
+        Fill::NonZero,
+        Affine::IDENTITY,
+        Color::from_rgba8(255, 0, 0, 255),
+        None,
+        &Rect::new(0.0, 0.0, 64.0, 64.0),
+    );
+    p.pop_layer();
+    p.pop_layer();
+    let rgba = render_scene(&device, &queue, &mut renderer, &scene, (64, 64), Color::WHITE);
+    assert_eq!(pixel(&rgba, 64, 32, 40), [255, 0, 0, 255], "inside both");
+    assert!(is_white(pixel(&rgba, 64, 2, 40)), "inside the GPU mask, outside the circle");
+    assert!(is_white(pixel(&rgba, 64, 32, 16)), "inside the circle, outside the GPU mask");
+}

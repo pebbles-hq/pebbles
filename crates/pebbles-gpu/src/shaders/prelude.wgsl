@@ -25,6 +25,7 @@ struct MaskClipParams {
 };
 @group(0) @binding(2) var<uniform> mask_clip: MaskClipParams;
 @group(0) @binding(3) var clip_atlas: texture_2d_array<f32>;
+@group(0) @binding(4) var gpu_mask: texture_2d<f32>;
 
 // Signed distance from p to a rounded rect, negative inside. y points down.
 fn sd_rrect(p: vec2<f32>, rect: vec4<f32>, radii: vec4<f32>) -> f32 {
@@ -132,5 +133,9 @@ fn clip_mask_coverage(p: vec2<f32>) -> f32 {
     let texel = clamp(vec2<i32>(mask_clip.atlas.xy + local), vec2<i32>(0), size - vec2<i32>(1));
     let layer = clamp(i32(mask_clip.atlas.z), 0, i32(textureNumLayers(clip_atlas)) - 1);
     let v = textureLoad(clip_atlas, texel, layer, 0).r;
-    return select(1.0, select(0.0, v, inside), mask_clip.atlas.w > 0.5);
+    // atlas.w == 2: a GPU mask (L09) at (0, 0) of the texture bound at binding 4.
+    let gsize = vec2<i32>(textureDimensions(gpu_mask));
+    let g = textureLoad(gpu_mask, clamp(vec2<i32>(local), vec2<i32>(0), gsize - vec2<i32>(1)), 0).r;
+    let m = select(v, g, mask_clip.atlas.w > 1.5);
+    return select(1.0, select(0.0, m, inside), mask_clip.atlas.w > 0.5);
 }

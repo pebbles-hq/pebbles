@@ -47,6 +47,8 @@ pub struct Renderer {
     /// This frame's `Globals::color_flags`.
     color_flags: u32,
     pub(crate) runs: Vec<super::execute::tier_c::Run>,
+    /// GPU coverage masks: the mask pool and the per-texture group-0 variants (09 §2.9, L09).
+    pub(crate) gpu_masks: super::execute::gpu_masks::GpuMasks,
     /// Pass segments, reused across frames (09 §3.6).
     pub(crate) segments: Vec<super::prepare::passes::PassSegment>,
     pub(crate) arenas: FrameArenas,
@@ -81,6 +83,7 @@ impl Renderer {
         c.samplers = self.samplers.len();
         c.color_glyph_fragments = self.scratch.colr.len();
         c.pipelines = self.pipelines.len();
+        (c.gpu_mask_textures, c.gpu_mask_bytes) = self.gpu_masks.census();
         c.arena_capacity_bytes = self.arenas.capacity_bytes();
         c
     }
@@ -107,8 +110,16 @@ impl Renderer {
         let clip_buffer = uniform_buffer(device, "pebbles.gpu.buffer.clips", 1);
         let mask_clip_buffer = uniform_buffer(device, "pebbles.gpu.buffer.mask_clips", 1);
         let (mask_view, mask_gen) = glyph_atlas.mask_view();
-        let globals_bg =
-            globals_bind_group(device, &layouts, &globals_buffer, &clip_buffer, &mask_clip_buffer, mask_view);
+        let gpu_masks = super::execute::gpu_masks::GpuMasks::new(device);
+        let globals_bg = globals_bind_group(
+            device,
+            &layouts,
+            &globals_buffer,
+            &clip_buffer,
+            &mask_clip_buffer,
+            mask_view,
+            gpu_masks.dummy_view(),
+        );
         let composite_buffer = uniform_buffer(device, "pebbles.gpu.buffer.composite", 1);
         Renderer {
             sample_count: gpu.caps().msaa_samples,
@@ -131,6 +142,7 @@ impl Renderer {
             composite_slots: 1,
             color_flags: 0,
             runs: Vec::new(),
+            gpu_masks,
             segments: Vec::new(),
             arenas: FrameArenas::new(),
             device: device.clone(),
@@ -142,7 +154,10 @@ impl Renderer {
             samplers: super::execute::resources::bind_groups::SamplerCache::default(),
             image_instances: Vec::new(),
             limits: RendererLimits::from_device_limits(&device.limits()),
-            scratch: PrepareScratch::default(),
+            scratch: PrepareScratch {
+                gpu_mask_budget: Some(budgets.gpu_mask_bytes),
+                ..PrepareScratch::default()
+            },
             stats: FrameStats::default(),
             nested: false,
             colr_jobs: Vec::new(),
@@ -292,6 +307,7 @@ impl Renderer {
         let mut encoder = device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.gpu.encoder") });
         encoder.push_debug_group("pebbles.gpu.frame");
+        super::execute::gpu_masks::render_jobs(self, device, queue, &mut encoder, &mut stats);
         let composites = super::execute::tier_c::encode_runs(
             self,
             device,
@@ -357,6 +373,7 @@ impl Renderer {
         queue.submit([command_buffer]);
         stats.submit_us = u32::try_from(submit_started.elapsed().as_micros()).unwrap_or(u32::MAX);
         target.targets.pool.end_frame(self.budgets.layer_pool_bytes);
+        self.gpu_masks.end_frame(self.budgets.gpu_mask_bytes);
         stats.layer_pool_bytes = target.targets.pool.bytes();
         self.scratch.plan.release_refs();
         if !nested {
@@ -395,6 +412,10 @@ impl Renderer {
         self.mask_clip_slots_resolved.push(None);
         let plan = &self.scratch.plan;
         for rec in plan.mask_clips.iter().skip(1) {
+            if rec.gpu.is_some() {
+                self.mask_clip_slots_resolved.push(None);
+                continue;
+            }
             let sources = plan
                 .clip_sources
                 .get(rec.sources.start as usize..rec.sources.end as usize)
@@ -427,6 +448,16 @@ impl Renderer {
             let slot = self.mask_clip_slots_resolved.get(i).copied().flatten();
             #[allow(clippy::cast_precision_loss)] // device px and atlas texels ≪ 2^24
             let p = match slot {
+                // A GPU mask (09 L09): texels at (0, 0) of its pool texture (`atlas.w == 2`).
+                _ if rec.gpu.is_some() => super::gpu_types::MaskClipParams {
+                    rect: [
+                        rec.rect.x0 as f32,
+                        rec.rect.y0 as f32,
+                        rec.rect.width() as f32,
+                        rec.rect.height() as f32,
+                    ],
+                    atlas: [0.0, 0.0, 0.0, 2.0],
+                },
                 Some(s) => super::gpu_types::MaskClipParams {
                     rect: [
                         rec.rect.x0 as f32,
@@ -451,6 +482,7 @@ impl Renderer {
                 &self.clip_buffer,
                 &self.mask_clip_buffer,
                 view,
+                self.gpu_masks.dummy_view(),
             );
             self.globals_bg_key = key;
             stats.bind_groups_created += 1;
@@ -588,6 +620,48 @@ impl Renderer {
         &self.globals_bg
     }
 
+    /// Group 0 for drawing under mask record `mask`: the variant carrying its GPU mask texture
+    /// (09 L09), else the default.
+    pub(crate) fn globals_bg_for(&self, mask: super::prepare::plan::MaskClipId) -> &wgpu::BindGroup {
+        self.scratch
+            .plan
+            .mask_clips
+            .get(mask.0 as usize)
+            .and_then(|r| r.gpu)
+            .and_then(|j| self.gpu_masks.bind_group(j))
+            .unwrap_or(&self.globals_bg)
+    }
+
+    /// Group 0 with `gpu_mask` at binding 4, and the identity of the buffers it binds (rebuild
+    /// a cached variant when this changes).
+    pub(crate) fn globals_bg_with(
+        &self,
+        device: &wgpu::Device,
+        gpu_mask: &wgpu::TextureView,
+    ) -> wgpu::BindGroup {
+        let (mask_view, _) = self.glyph_atlas.mask_view();
+        globals_bind_group(
+            device,
+            &self.layouts,
+            &self.globals_buffer,
+            &self.clip_buffer,
+            &self.mask_clip_buffer,
+            mask_view,
+            gpu_mask,
+        )
+    }
+
+    pub(crate) fn globals_bg_generation(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.globals_bg_key.hash(&mut h);
+        h.finish()
+    }
+
+    pub(crate) fn msaa_samples_for(&mut self, format: wgpu::TextureFormat) -> u32 {
+        self.msaa.get(&self.adapter, format, None)
+    }
+
     /// `Globals::color_flags` of the current frame (slot 0), reused by Tier C run slots.
     pub(crate) fn color_flags(&self) -> u32 {
         self.color_flags
@@ -625,12 +699,15 @@ impl Renderer {
                 &self.clip_buffer,
                 &self.mask_clip_buffer,
                 mask_view,
+                self.gpu_masks.dummy_view(),
             );
-            // Slot 0 (the main pass) was written this frame already: copy it over.
+            // Slots written this frame (root, layers, GPU masks) must survive: copy them over
+            // (pending `write_buffer`s land before this submit).
             let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("pebbles.gpu.encoder.globals_grow"),
             });
-            enc.copy_buffer_to_buffer(&self.globals_buffer, 0, &buffer, 0, size_of::<Globals>() as u64);
+            let old = self.globals_slots * super::execute::tier_c::slot_stride(device);
+            enc.copy_buffer_to_buffer(&self.globals_buffer, 0, &buffer, 0, old);
             self.queue.submit([enc.finish()]);
             (self.globals_buffer, self.globals_bg, self.globals_slots) = (buffer, bg, n);
             self.globals_bg_key.0 = n;
@@ -665,6 +742,7 @@ fn globals_bind_group(
     clips: &wgpu::Buffer,
     mask_clips: &wgpu::Buffer,
     mask_atlas: &wgpu::TextureView,
+    gpu_mask: &wgpu::TextureView,
 ) -> wgpu::BindGroup {
     let window = |buffer| {
         wgpu::BindingResource::Buffer(wgpu::BufferBinding {
@@ -681,6 +759,7 @@ fn globals_bind_group(
             wgpu::BindGroupEntry { binding: 1, resource: window(clips) },
             wgpu::BindGroupEntry { binding: 2, resource: window(mask_clips) },
             wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(mask_atlas) },
+            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(gpu_mask) },
         ],
     })
 }

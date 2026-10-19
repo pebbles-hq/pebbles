@@ -60,6 +60,17 @@ impl BindGroupLayouts {
                     },
                     count: None,
                 },
+                // 09 L09: the active GPU coverage mask (a mask pool texture, or a 1×1 dummy).
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         let texture = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

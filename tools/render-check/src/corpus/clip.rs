@@ -40,6 +40,13 @@ pub fn cases() -> Vec<Case> {
             clipped(p, &kurbo::Ellipse::new((64., 64.), (56., 32.), 0.0))
         }),
         ops("clip/nested_paths_3", Geometry, P1, 128, 128, nested_paths_3),
+        // L09 GPU coverage masks (row 9): a clip too large for a CPU mask, and a volatile one.
+        // Their edges are 4× MSAA coverage (§2.9, like Tier C), judged as Mesh (05 §8).
+        ops("clip/huge_rotated", Category::Mesh, P1, 640, 640, huge_rotated),
+        ops("clip/volatile_path", Category::Mesh, P1, 128, 128, |p| {
+            p.set_path_hint(pebbles_render::paint::display_list::PathHint::Volatile);
+            clipped(p, &star(64.0, 64.0, 56.0));
+        }),
     ]);
     v
 }
@@ -82,11 +89,15 @@ fn nested_paths_3(p: &mut Painter<'_>) {
 
 /// 8 vertical 16-px stripes of distinct colors across the whole canvas.
 fn stripes(p: &mut Painter<'_>) {
+    stripes_xf(p, Affine::IDENTITY);
+}
+
+fn stripes_xf(p: &mut Painter<'_>, xf: Affine) {
     const COLORS: [u32; 8] = [0xEF4444, 0xF59E0B, 0x10B981, 0x3B82F6, 0x8B5CF6, 0xEC4899, 0x111827, 0x14B8A6];
     for (i, c) in COLORS.into_iter().enumerate() {
         let color = Color::from_rgba8((c >> 16) as u8, (c >> 8) as u8, c as u8, 0xFF);
         let x = 16. * i as f64;
-        p.fill(Fill::NonZero, Affine::IDENTITY, color, None, &Rect::new(x, 0., x + 16., 128.));
+        p.fill(Fill::NonZero, xf, color, None, &Rect::new(x, 0., x + 16., 128.));
     }
 }
 
@@ -131,4 +142,13 @@ fn scroll_viewport(h: &mut Harness) {
     let rows: Vec<_> = (0..40).map(|i| list_tile(format!("Row {i}")).into_widget()).collect();
     h.mount_widget(container().height(200.).child(list_view(rows)));
     h.scroll(Offset::new(100., 100.), 37.);
+}
+
+/// A 560×560 square rotated 30° about the center of a 640×640 canvas: its clipped bbox exceeds
+/// `MASK_MAX_AREA`, so it is a GPU coverage mask (09 §2.2 row 9).
+fn huge_rotated(p: &mut Painter<'_>) {
+    let t = Affine::rotate_about(std::f64::consts::FRAC_PI_6, kurbo::Point::new(320., 320.));
+    p.push_layer(Fill::NonZero, Mix::Normal, 1.0, t, &Rect::new(40., 40., 600., 600.));
+    stripes_xf(p, Affine::scale(5.0));
+    p.pop_layer();
 }

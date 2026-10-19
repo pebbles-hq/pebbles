@@ -21,14 +21,19 @@ pub(crate) enum ClipKind {
     Cull,
     /// The new scissor alone is exact.
     Scissor,
-    /// Interim for rows 8–10 until L08/L09: scissor to the device bbox (C17 logs it).
-    Bounds,
     /// Scissor (rounded out) + this SDF clip.
     Sdf(SdfClip),
     /// Scissor (rounded out) + a Tier B coverage-mask clip multiplied with the active one (row 8);
     /// the walk builds the record from the geometry.
     Mask,
+    /// Row 9: a GPU coverage mask (§2.9) — the walk queues the job, or falls to row 10.
+    GpuMask,
+    /// Row 10: a GPU mask was needed but none could be had: scissor (rounded out) only.
+    Overflow,
 }
+
+/// GPU coverage masks active at once (nesting depth); one pooled R8 texture each (L09).
+pub(crate) const MAX_GPU_MASKS: u8 = 8;
 
 /// The result of classifying a clip geometry.
 #[derive(Clone, Copy, Debug)]
@@ -155,21 +160,32 @@ fn sdf_contains(c: &SdfClip, s: ScissorRect) -> bool {
         .all(|&(x, y)| sd_rrect(kurbo::Point::new(f64::from(x), f64::from(y)), rect, radii) <= -0.5)
 }
 
-/// Row 8: a Tier B mask when the clipped area and segment count fit (02 §5.2); rows 9–10 keep
-/// the `Bounds` interim until L09 (GPU masks).
-fn mask_or_bounds(geom: &Geometry, xf: Affine, scissor: ScissorRect) -> ClipDecision {
+/// Row 8: a Tier B mask when the clipped area and segment count fit (02 §5.2) and the path is
+/// not `Volatile`; else row 9, a GPU mask (the walk applies row 10 when it cannot have one).
+fn mask_or_gpu(geom: &Geometry, xf: Affine, scissor: ScissorRect, volatile: bool) -> ClipDecision {
     use super::path_strategy::{MASK_MAX_AREA, MASK_MAX_SEGMENTS, segment_count};
     let area = u64::from(scissor.width()) * u64::from(scissor.height());
-    if area <= MASK_MAX_AREA && segment_count(geom, xf) <= MASK_MAX_SEGMENTS {
+    if !volatile && area <= MASK_MAX_AREA && segment_count(geom, xf) <= MASK_MAX_SEGMENTS {
         ClipDecision { kind: ClipKind::Mask, scissor }
     } else {
-        ClipDecision { kind: ClipKind::Bounds, scissor }
+        ClipDecision { kind: ClipKind::GpuMask, scissor }
     }
 }
 
-/// Classify a clip geometry under `xf` against the current clip (09 §2.2 rows 1–8; rows 9–10
-/// keep the `Bounds` interim until L09).
+/// Classify a clip geometry under `xf` against the current clip (09 §2.2 rows 1–9; the walk
+/// applies row 10).
+#[cfg(test)]
 pub(crate) fn classify_clip(geom: &Geometry, xf: Affine, cur: &ClipState) -> ClipDecision {
+    classify_clip_hinted(geom, xf, cur, false)
+}
+
+/// [`classify_clip`] for a clip recorded with `PathHint::Volatile` when `volatile`.
+pub(crate) fn classify_clip_hinted(
+    geom: &Geometry,
+    xf: Affine,
+    cur: &ClipState,
+    volatile: bool,
+) -> ClipDecision {
     let cull = ClipDecision { kind: ClipKind::Cull, scissor: cur.scissor };
     // Row 1: non-finite.
     if !xf.as_coeffs().iter().all(|v| v.is_finite()) {
@@ -218,7 +234,7 @@ pub(crate) fn classify_clip(geom: &Geometry, xf: Affine, cur: &ClipState) -> Cli
                 };
                 return ClipDecision { kind: ClipKind::Sdf(c), scissor: rounded_out };
             }
-            mask_or_bounds(geom, xf, rounded_out)
+            mask_or_gpu(geom, xf, rounded_out, volatile)
         }
         ClipClass::RoundedRect | ClipClass::Other => {
             // Rows 6–7: rounded rect / circle under a uniform, unrotated transform.
@@ -230,7 +246,7 @@ pub(crate) fn classify_clip(geom: &Geometry, xf: Affine, cur: &ClipState) -> Cli
                     return ClipDecision { kind: ClipKind::Sdf(c), scissor: rounded_out };
                 }
             }
-            mask_or_bounds(geom, xf, rounded_out)
+            mask_or_gpu(geom, xf, rounded_out, volatile)
         }
     }
 }
@@ -274,9 +290,9 @@ impl ClipStack {
         match decision.kind {
             ClipKind::Cull => self.current.scissor = ScissorRect { x0: 0, y0: 0, x1: 0, y1: 0 },
             ClipKind::Noop => {}
-            ClipKind::Scissor | ClipKind::Bounds => self.current.scissor = decision.scissor,
+            ClipKind::Scissor | ClipKind::Overflow => self.current.scissor = decision.scissor,
             // The walk pushes mask clips through `push_mask` (it builds the record).
-            ClipKind::Mask => self.current.scissor = decision.scissor,
+            ClipKind::Mask | ClipKind::GpuMask => self.current.scissor = decision.scissor,
             ClipKind::Sdf(c) => {
                 sdf_clips.push(c);
                 self.current.scissor = decision.scissor;
@@ -314,6 +330,7 @@ impl ClipStack {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::prepare::plan::{DrawCmd, MaskClipId};
     use kurbo::Rect;
 
     fn cur(size: (u32, u32)) -> ClipState {
@@ -617,8 +634,7 @@ mod tests {
             .cmds
             .iter()
             .map(|c| match c {
-                crate::prepare::DrawCmd::Shapes { clip, .. }
-                | crate::prepare::DrawCmd::Solid { clip, .. } => clip.sdf,
+                DrawCmd::Shapes { clip, .. } | DrawCmd::Solid { clip, .. } => clip.sdf,
                 _ => SdfClipId::NONE,
             })
             .collect();
@@ -662,9 +678,9 @@ mod tests {
 
     #[test]
     fn huge_path_clip_is_not_a_cpu_mask() {
-        // 1000×1000 target: the clipped bbox exceeds MASK_MAX_AREA → rows 9–10 (Bounds until L09).
+        // 1000×1000 target: the clipped bbox exceeds MASK_MAX_AREA → row 9 (GPU mask).
         let d = classify_clip(&star(400.0), Affine::translate((450.0, 450.0)), &cur((1000, 1000)));
-        assert_ne!(d.kind, ClipKind::Mask);
+        assert_eq!(d.kind, ClipKind::GpuMask);
     }
 
     #[test]
@@ -690,5 +706,114 @@ mod tests {
         assert_eq!(plan.mask_clips[2].sources.len(), 2, "the nested record carries both clips (multiplied)");
         assert_ne!(plan.mask_clips[1].key, plan.mask_clips[2].key);
         assert_eq!(plan.stats.clips_mask, 2);
+    }
+
+    // ---- L09: GPU coverage masks (rows 9–10) ----
+
+    fn layered(
+        size: (u32, u32),
+        hint: pebbles_render::paint::display_list::PathHint,
+        clips: &[(Geometry, Affine)],
+    ) -> (crate::prepare::FramePlan, crate::stats::FrameStats) {
+        use pebbles_render::paint::{Painter, Scene};
+        let mut s = Scene::new();
+        let mut p = Painter::new(&mut s);
+        p.set_path_hint(hint);
+        for (g, xf) in clips {
+            p.push_layer(peniko::Fill::NonZero, peniko::BlendMode::default(), 1.0, *xf, &*g.to_path(0.01));
+        }
+        let (w, h) = (f64::from(size.0), f64::from(size.1));
+        p.fill(
+            peniko::Fill::NonZero,
+            Affine::IDENTITY,
+            peniko::Color::BLACK,
+            None,
+            &Rect::new(0.0, 0.0, w, h),
+        );
+        for _ in clips {
+            p.pop_layer();
+        }
+        crate::prepare::test_util::prepare_scene(&s, size.0, size.1)
+    }
+
+    #[test]
+    fn huge_rotated_clip_is_gpu_mask() {
+        let rot = Affine::rotate_about(std::f64::consts::FRAC_PI_6, (960.0, 540.0));
+        let full = Geometry::Rect(Rect::new(0.0, 0.0, 1920.0, 1080.0));
+        let (plan, _) =
+            layered((1920, 1080), pebbles_render::paint::display_list::PathHint::Auto, &[(full, rot)]);
+        assert_eq!(plan.gpu_mask_jobs.len(), 1);
+        assert_eq!(plan.stats.clips_gpu_mask, 1);
+        assert_eq!(plan.mask_clips[1].gpu, Some(0));
+        assert!(!plan.gpu_mask_jobs[0].indices.is_empty());
+        let (DrawCmd::Solid { clip, .. } | DrawCmd::Shapes { clip, .. }) = plan.cmds[0] else { panic!() };
+        assert_eq!(clip.mask, MaskClipId(1));
+    }
+
+    #[test]
+    fn volatile_clip_is_gpu_mask() {
+        let (plan, _) = layered(
+            (100, 100),
+            pebbles_render::paint::display_list::PathHint::Volatile,
+            &[(star(40.0), Affine::IDENTITY)],
+        );
+        assert_eq!(plan.gpu_mask_jobs.len(), 1);
+        assert_eq!(plan.stats.clips_mask, 0);
+        let (plan, _) = layered(
+            (100, 100),
+            pebbles_render::paint::display_list::PathHint::Auto,
+            &[(star(40.0), Affine::IDENTITY)],
+        );
+        assert!(plan.gpu_mask_jobs.is_empty(), "the same clip without the hint is a Tier B mask");
+    }
+
+    #[test]
+    fn gpu_mask_limit_overflows() {
+        let clips: Vec<_> = (0..9).map(|i| (star(40.0 - f64::from(i)), Affine::IDENTITY)).collect();
+        let (plan, stats) =
+            layered((100, 100), pebbles_render::paint::display_list::PathHint::Volatile, &clips);
+        assert_eq!(plan.gpu_mask_jobs.len(), usize::from(MAX_GPU_MASKS));
+        assert_eq!(plan.stats.gpu_mask_overflow, 1);
+        assert_eq!(stats.unsupported[crate::stats::Unsupported::ClipOverflow as usize], 1);
+        // Each job multiplies its parent: the chain is linear.
+        for (j, job) in plan.gpu_mask_jobs.iter().enumerate().skip(1) {
+            assert_eq!(plan.mask_clips[job.parent.0 as usize].gpu, Some(u32::try_from(j - 1).unwrap()));
+        }
+    }
+
+    #[test]
+    fn tier_b_under_gpu_mask_becomes_gpu_mask() {
+        use pebbles_render::paint::display_list::PathHint;
+        use pebbles_render::paint::{Painter, Scene};
+        let mut s = Scene::new();
+        let mut p = Painter::new(&mut s);
+        p.set_path_hint(PathHint::Volatile);
+        p.push_layer(
+            peniko::Fill::NonZero,
+            peniko::BlendMode::default(),
+            1.0,
+            Affine::IDENTITY,
+            &*star(45.0).to_path(0.01),
+        );
+        p.set_path_hint(PathHint::Auto);
+        p.push_layer(
+            peniko::Fill::NonZero,
+            peniko::BlendMode::default(),
+            1.0,
+            Affine::IDENTITY,
+            &*star(30.0).to_path(0.01),
+        );
+        p.fill(
+            peniko::Fill::NonZero,
+            Affine::IDENTITY,
+            peniko::Color::BLACK,
+            None,
+            &Rect::new(0.0, 0.0, 100.0, 100.0),
+        );
+        p.pop_layer();
+        p.pop_layer();
+        let (plan, _) = crate::prepare::test_util::prepare_scene(&s, 100, 100);
+        assert_eq!(plan.gpu_mask_jobs.len(), 2);
+        assert_eq!(plan.gpu_mask_jobs[1].parent, MaskClipId(1));
     }
 }

@@ -88,10 +88,8 @@ impl Walk<'_> {
             (_, Geometry::Circle(_)) => self.fell_back(Feature::ClipCircle),
             _ => {
                 self.fell_back(Feature::ClipPath);
-                // A path clip covering the whole target needs the GPU mask route (L09).
-                let b = xf.transform_rect_bbox(clip.bounding_box());
-                let (w, h) = self.plan.target_size;
-                if b.width() >= f64::from(w) && b.height() >= f64::from(h) {
+                // The GPU mask route (L09) is exact; only its overflow (row 10) falls back.
+                if matches!(kind, ClipKind::Overflow) {
                     self.fell_back(Feature::ClipGpuMask);
                 }
             }

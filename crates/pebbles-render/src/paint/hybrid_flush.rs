@@ -125,7 +125,7 @@ fn emit(
             }
             out.reset_paint_transform();
         }
-        Op::PushLayer { clip_fill, blend, alpha, transform, clip } => {
+        Op::PushLayer { clip_fill, blend, alpha, transform, clip, .. } => {
             out.set_transform(outer * *transform);
             out.set_fill_rule(*clip_fill);
             let clip_path = clip.to_path(TOL);

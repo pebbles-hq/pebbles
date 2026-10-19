@@ -43,6 +43,10 @@ pub struct GpuCensus {
     pub layer_pool_textures: usize,
     /// Pooled layer bytes.
     pub layer_pool_bytes: u64,
+    /// Pooled GPU clip-mask textures (09 §2.9).
+    pub gpu_mask_textures: usize,
+    /// Pooled GPU clip-mask bytes.
+    pub gpu_mask_bytes: u64,
     /// Created render pipelines.
     pub pipelines: usize,
     /// Σ capacity of all frame arenas.

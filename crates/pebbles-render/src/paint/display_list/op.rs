@@ -145,6 +145,8 @@ pub enum Op {
         alpha: f32,
         transform: Affine,
         clip: Geometry,
+        /// `Volatile` clip paths skip the CPU mask rasterizer (GPU coverage mask, 09 §2.9).
+        hint: PathHint,
     },
     PopLayer,
     #[non_exhaustive]

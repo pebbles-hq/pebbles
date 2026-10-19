@@ -49,11 +49,14 @@ pub enum Unsupported {
     GlyphIdRange,
     /// A blurred mask whose padded size exceeds `MASK_MAX_AREA`: skipped until L61 (R42).
     BlurMaskTooLarge,
+    /// A clip needed a GPU coverage mask but `MAX_GPU_MASKS` were active or the mask pool budget
+    /// was exhausted: clipped to its bounding box (09 §2.2 row 10).
+    ClipOverflow,
 }
 
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
-    pub const COUNT: usize = 22;
+    pub const COUNT: usize = 23;
     /// Every variant, in discriminant order.
     pub const ALL: [Unsupported; Self::COUNT] = [
         Self::NonRectClip,
@@ -78,6 +81,7 @@ impl Unsupported {
         Self::ColorGlyphTransform,
         Self::GlyphIdRange,
         Self::BlurMaskTooLarge,
+        Self::ClipOverflow,
     ];
 
     /// The variant's 11 §4.2 key, used in logs and stats dumps.
@@ -105,6 +109,7 @@ impl Unsupported {
             Self::ColorGlyphTransform => "color-glyph-transform-unsupported",
             Self::GlyphIdRange => "glyph-id-out-of-range",
             Self::BlurMaskTooLarge => "blur-mask-too-large",
+            Self::ClipOverflow => "clip-mask-overflow",
         }
     }
 }

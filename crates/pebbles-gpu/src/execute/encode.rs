@@ -185,7 +185,7 @@ pub(crate) fn encode(
         |pass: &mut wgpu::RenderPass<'_>, clip: crate::prepare::ClipState, stats: &mut FrameStats| {
             if (clip.sdf, clip.mask) != bound {
                 let offsets = [g, renderer.clip_offset(clip.sdf), renderer.mask_clip_offset(clip.mask)];
-                pass.set_bind_group(0, renderer.globals_bg(), &offsets);
+                pass.set_bind_group(0, renderer.globals_bg_for(clip.mask), &offsets);
                 stats.bind_group_switches += 1;
                 bound = (clip.sdf, clip.mask);
             }
