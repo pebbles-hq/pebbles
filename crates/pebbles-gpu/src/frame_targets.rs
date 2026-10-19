@@ -10,6 +10,25 @@ pub struct FrameTargets {
     /// 09 §4.4: the root renders here (then is blitted) when a backdrop composite must copy
     /// from it; dropped after `TARGET_IDLE_FRAMES` unused frames.
     root_color: Option<RootColor>,
+    /// Depth textures for depth-requesting custom renderers (R62), created on first use.
+    depth: Vec<DepthTarget>,
+}
+
+/// What a target-sized attachment must match (10 §4): size, sample count and, for custom
+/// renderers that ask for one, the depth format (R62).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct TargetKey {
+    pub size: (u32, u32),
+    pub samples: u32,
+    pub depth: Option<wgpu::TextureFormat>,
+}
+
+struct DepthTarget {
+    key: TargetKey,
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    /// Frames since last use (dropped after `TARGET_IDLE_FRAMES`).
+    idle: u32,
 }
 
 /// Frames a target-sized intermediate may sit unused before it is dropped (09 §4.4).
@@ -41,7 +60,8 @@ impl FrameTargets {
         c.frame_target_bytes += bytes;
         c.layer_pool_textures += self.pool.len();
         c.layer_pool_bytes += bytes;
-        c.frame_target_bytes += self.root_color_bytes();
+        c.frame_target_bytes += self.root_color_bytes() + self.depth_bytes();
+        c.frame_target_entries += self.depth.len();
     }
 
     /// Pooled offscreen layer / Tier C targets currently held (census, 09 §3.8).
@@ -51,7 +71,55 @@ impl FrameTargets {
 
     /// Bytes of GPU textures this target owns beyond its own color texture (census, 10 §9).
     pub fn frame_target_bytes(&self) -> u64 {
-        self.pool.bytes() + self.root_color_bytes()
+        self.pool.bytes() + self.root_color_bytes() + self.depth_bytes()
+    }
+
+    /// Depth textures held for custom renderers (census, R62).
+    pub fn depth_targets(&self) -> usize {
+        self.depth.len()
+    }
+
+    fn depth_bytes(&self) -> u64 {
+        self.depth
+            .iter()
+            .map(|d| {
+                let t = &d.texture;
+                let texel = t.format().block_copy_size(Some(wgpu::TextureAspect::DepthOnly)).unwrap_or(4);
+                u64::from(t.width()) * u64::from(t.height()) * u64::from(texel) * u64::from(t.sample_count())
+            })
+            .sum()
+    }
+
+    /// Create the depth texture of `key` unless it exists (R62); marks it used this frame.
+    pub(crate) fn ensure_depth(
+        &mut self,
+        device: &wgpu::Device,
+        key: TargetKey,
+        stats: &mut crate::stats::FrameStats,
+    ) {
+        let Some(format) = key.depth else { return };
+        if let Some(d) = self.depth.iter_mut().find(|d| d.key == key) {
+            d.idle = 0;
+            return;
+        }
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("pebbles.gpu.custom_depth"),
+            size: wgpu::Extent3d { width: key.size.0, height: key.size.1, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: key.samples,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        stats.textures_created += 1;
+        stats.texture_views_created += 1;
+        self.depth.push(DepthTarget { key, texture, view, idle: 0 });
+    }
+
+    pub(crate) fn depth_view(&self, key: TargetKey) -> Option<&wgpu::TextureView> {
+        self.depth.iter().find(|d| d.key == key).map(|d| &d.view)
     }
 
     fn root_color_bytes(&self) -> u64 {
@@ -102,6 +170,10 @@ impl FrameTargets {
 
     /// End of frame: age the root intermediate (09 §4.4).
     pub(crate) fn end_frame_root(&mut self, used: bool) {
+        for d in &mut self.depth {
+            d.idle += 1;
+        }
+        self.depth.retain(|d| d.idle < TARGET_IDLE_FRAMES);
         if let Some(r) = &mut self.root_color
             && !used
         {

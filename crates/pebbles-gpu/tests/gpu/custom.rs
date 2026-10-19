@@ -246,3 +246,160 @@ fn gpu_image_unknown_and_unregistered_are_skipped() {
     assert!(is_white(pixel(&rgba, 32, 8, 8)) && is_white(pixel(&rgba, 32, 24, 8)), "nothing drawn");
     assert_eq!(renderer.last_frame_stats().unsupported[Unsupported::GpuTextureUnregistered as usize], 2);
 }
+
+/// Paint data for the depth test: two overlapping quads at different depths.
+struct Tris;
+
+impl CustomPaint for Tris {
+    fn bounds(&self) -> Rect {
+        Rect::new(0.0, 0.0, 64.0, 32.0)
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+/// Draws a near red quad (z 0.2), then a far blue quad (z 0.8) overlapping it: drawn later,
+/// blue would win the overlap without the depth test.
+#[derive(Default)]
+struct DepthTris {
+    pipeline: Option<wgpu::RenderPipeline>,
+    saw_depth: bool,
+}
+
+const DEPTH_WGSL: &str = "
+struct V { @builtin(position) p: vec4<f32>, @location(0) c: vec4<f32> }
+@vertex fn vs(@builtin(vertex_index) i: u32, @builtin(instance_index) k: u32) -> V {
+    // Instance 0: red at z 0.2 over x ∈ [-1, 0.25]; instance 1: blue at z 0.8 over x ∈ [-0.25, 1].
+    let corner = vec2<f32>(f32(i & 1u), f32((i >> 1u) & 1u));
+    var o: V;
+    if k == 0u {
+        o.p = vec4<f32>(mix(-1.0, 0.25, corner.x), corner.y * 2.0 - 1.0, 0.2, 1.0);
+        o.c = vec4<f32>(1.0, 0.0, 0.0, 1.0);
+    } else {
+        o.p = vec4<f32>(mix(-0.25, 1.0, corner.x), corner.y * 2.0 - 1.0, 0.8, 1.0);
+        o.c = vec4<f32>(0.0, 0.0, 1.0, 1.0);
+    }
+    return o;
+}
+@fragment fn fs(v: V) -> @location(0) vec4<f32> { return v.c; }
+";
+
+impl CustomRenderer for DepthTris {
+    fn prepare(&mut self, _ctx: &mut CustomPrepare<'_>, _paint: &dyn CustomPaint) {}
+
+    fn render(&mut self, ctx: &mut CustomRender<'_>, _paint: &dyn CustomPaint) {
+        let Some(depth) = ctx.depth else { return };
+        self.saw_depth = true;
+        let pipeline = self.pipeline.get_or_insert_with(|| {
+            let module = ctx.device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("test.custom.depth"),
+                source: wgpu::ShaderSource::Wgsl(DEPTH_WGSL.into()),
+            });
+            ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("test.custom.depth"),
+                layout: None,
+                vertex: wgpu::VertexState {
+                    module: &module,
+                    entry_point: Some("vs"),
+                    compilation_options: Default::default(),
+                    buffers: &[],
+                },
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: wgpu::MultisampleState { count: ctx.sample_count, ..Default::default() },
+                fragment: Some(wgpu::FragmentState {
+                    module: &module,
+                    entry_point: Some("fs"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(ctx.format.into())],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        });
+        let mut pass = ctx.encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("test.custom.depth"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: ctx.target,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth,
+                depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Discard }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        let (x, y, w, h) = ctx.scissor;
+        pass.set_scissor_rect(x, y, w, h);
+        pass.set_pipeline(pipeline);
+        pass.draw(0..4, 0..1);
+        pass.draw(0..4, 1..2);
+    }
+}
+
+fn render_with(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    renderer: &mut Renderer,
+    targets: &mut FrameTargets,
+    scene: &Scene,
+    size: (u32, u32),
+) -> Vec<u8> {
+    let texture = target_texture(device, size.0, size.1);
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let target = RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, targets);
+    renderer.render(target, scene, &FrameParams::new(Color::WHITE)).expect("render");
+    readback(device, queue, &texture)
+}
+
+#[test]
+#[ignore = "gpu"]
+fn depth_nearer_triangle_wins_in_order_with_2d() {
+    let Some((device, queue, mut renderer)) = setup("depth_nearer_triangle_wins") else { return };
+    renderer.register_custom_with_depth::<Tris>(
+        Box::new(DepthTris::default()),
+        wgpu::TextureFormat::Depth32Float,
+    );
+    let mut targets = FrameTargets::new();
+    let mut scene = Scene::new();
+    let mut p = Painter::new(&mut scene);
+    fill(&mut p, GREEN, Rect::new(0.0, 0.0, 64.0, 32.0));
+    p.draw_custom(Rect::new(0.0, 0.0, 64.0, 32.0), Affine::IDENTITY, Arc::new(Tris));
+    fill(&mut p, GREEN, Rect::new(56.0, 0.0, 64.0, 32.0));
+    let rgba = render_with(&device, &queue, &mut renderer, &mut targets, &scene, (64, 32));
+    // Red covers x < 40, blue x > 24; the overlap 24..40 must be red (nearer).
+    assert_eq!(pixel(&rgba, 64, 10, 16), [255, 0, 0, 255], "red alone");
+    assert_eq!(pixel(&rgba, 64, 32, 16), [255, 0, 0, 255], "nearer red wins the overlap");
+    assert_eq!(pixel(&rgba, 64, 48, 16), [0, 0, 255, 255], "blue alone");
+    assert_eq!(pixel(&rgba, 64, 60, 16), [0, 255, 0, 255], "2D after the custom op draws on top");
+    assert_eq!(targets.depth_targets(), 1);
+}
+
+#[test]
+#[ignore = "gpu"]
+fn depth_not_allocated_without_request() {
+    let Some((device, queue, mut renderer)) = setup("depth_not_allocated_without_request") else { return };
+    renderer.register_custom::<Flat>(Box::new(BlueFill::default()));
+    let mut targets = FrameTargets::new();
+    let mut scene = Scene::new();
+    let b = Rect::new(0.0, 0.0, 32.0, 16.0);
+    Painter::new(&mut scene).draw_custom(b, Affine::IDENTITY, Arc::new(Flat(b)));
+    render_with(&device, &queue, &mut renderer, &mut targets, &scene, (32, 16));
+    assert_eq!(targets.depth_targets(), 0);
+    assert_eq!(targets.frame_target_bytes(), 0);
+}

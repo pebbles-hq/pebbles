@@ -214,7 +214,18 @@ impl Renderer {
     /// Draw every `Op::Custom` whose paint is a `P` with `r` (02 §11.2, R60); replaces an earlier
     /// registration for `P`.
     pub fn register_custom<P: super::CustomPaint>(&mut self, r: Box<dyn super::CustomRenderer>) {
-        self.customs.insert(std::any::TypeId::of::<P>(), r);
+        self.customs.insert(std::any::TypeId::of::<P>(), r, None);
+    }
+
+    /// [`register_custom`](Self::register_custom) with a depth attachment of `depth` (e.g.
+    /// `Depth32Float`, 02 §11.1, R62): `CustomRender::depth` is then a texture matching the
+    /// target, created on first use and cleared to 1.0 before every custom pass.
+    pub fn register_custom_with_depth<P: super::CustomPaint>(
+        &mut self,
+        r: Box<dyn super::CustomRenderer>,
+        depth: wgpu::TextureFormat,
+    ) {
+        self.customs.insert(std::any::TypeId::of::<P>(), r, Some(depth));
     }
 
     /// Make an app-owned texture drawable with `Op::GpuImage` (02 §11.1, R61). The view must be
@@ -397,7 +408,7 @@ impl Renderer {
         // per op and skipped at execute.
         for item in &self.scratch.plan.customs {
             match self.customs.get_mut(&*item.paint) {
-                Some(r) => r.prepare(&mut super::CustomPrepare { device, queue }, &*item.paint),
+                Some(e) => e.renderer.prepare(&mut super::CustomPrepare { device, queue }, &*item.paint),
                 None => stats.record(Unsupported::CustomUnregistered),
             }
         }
@@ -471,17 +482,23 @@ impl Renderer {
                 && let Some(&super::prepare::plan::DrawCmd::Custom { op }) =
                     self.scratch.plan.cmds.get(i as usize)
                 && let Some(item) = self.scratch.plan.customs.get(op as usize)
-                && let Some(r) = self.customs.get_mut(&*item.paint)
+                && let Some(entry) = self.customs.get_mut(&*item.paint)
             {
-                let (view, samples) = match seg.target {
-                    super::prepare::plan::TargetRef::Root => (root_view, 1),
+                let layer_slot = match seg.target {
+                    super::prepare::plan::TargetRef::Root => None,
                     super::prepare::plan::TargetRef::Layer(l) => {
                         let Some(l) = layers.get(l as usize).and_then(Option::as_ref) else { continue };
-                        let tex = target.targets.pool.textures(l.slot);
-                        match &tex.msaa {
-                            Some((t, m)) => (m, t.sample_count()),
-                            None => (&tex.color.1, 1),
-                        }
+                        Some(l.slot)
+                    }
+                };
+                // The attachment's real size and sample count (pool slots may be larger than
+                // the layer).
+                let (tex_size, samples) = match layer_slot {
+                    None => (size, 1),
+                    Some(slot) => {
+                        let tex = target.targets.pool.textures(slot);
+                        let t = &tex.color.0;
+                        ((t.width(), t.height()), tex.msaa.as_ref().map_or(1, |(m, _)| m.sample_count()))
                     }
                 };
                 let (ox, oy) = seg_target.origin;
@@ -490,6 +507,27 @@ impl Renderer {
                 let (x0, y0) = (s.x0.saturating_sub(ox).min(w), s.y0.saturating_sub(oy).min(h));
                 let (x1, y1) = (s.x1.saturating_sub(ox).min(w), s.y1.saturating_sub(oy).min(h));
                 if x1 > x0 && y1 > y0 {
+                    // R62: a depth-requesting renderer gets a lazily created, freshly cleared
+                    // depth texture matching the attachment.
+                    let depth_key = entry.depth.map(|f| super::frame_targets::TargetKey {
+                        size: tex_size,
+                        samples,
+                        depth: Some(f),
+                    });
+                    if let Some(key) = depth_key {
+                        target.targets.ensure_depth(device, key, &mut stats);
+                        if let Some(d) = target.targets.depth_view(key) {
+                            clear_depth(&mut encoder, d);
+                            stats.render_passes += 1;
+                        }
+                    }
+                    let view = match layer_slot {
+                        None => root_view,
+                        Some(slot) => {
+                            let tex = target.targets.pool.textures(slot);
+                            tex.msaa.as_ref().map_or(&tex.color.1, |(_, m)| m)
+                        }
+                    };
                     encoder.push_debug_group("pebbles.gpu.custom");
                     let mut ctx = super::CustomRender {
                         device,
@@ -498,13 +536,13 @@ impl Renderer {
                         target: view,
                         format,
                         sample_count: samples,
-                        size: (w, h),
+                        size: tex_size,
                         scissor: (x0, y0, x1 - x0, y1 - y0),
                         transform: kurbo::Affine::translate((-f64::from(ox), -f64::from(oy)))
                             * item.transform,
-                        depth: None,
+                        depth: depth_key.and_then(|k| target.targets.depth_view(k)),
                     };
-                    r.render(&mut ctx, &*item.paint);
+                    entry.renderer.render(&mut ctx, &*item.paint);
                     encoder.pop_debug_group();
                 }
             }
@@ -1153,6 +1191,22 @@ impl Renderer {
 }
 
 /// A 1×1 opaque white texture and its image-layout bind group (R63).
+/// Clear `view` to depth 1.0 in a depth-only pass (R62).
+fn clear_depth(encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
+    drop(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("pebbles.gpu.pass.depth_clear"),
+        color_attachments: &[],
+        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+            view,
+            depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
+            stencil_ops: None,
+        }),
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    }));
+}
+
 fn white_texture(
     device: &wgpu::Device,
     queue: &wgpu::Queue,

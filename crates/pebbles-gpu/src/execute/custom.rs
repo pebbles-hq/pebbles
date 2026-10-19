@@ -53,22 +53,34 @@ pub struct CustomRender<'a> {
     pub scissor: (u32, u32, u32, u32),
     /// Local → `target` px transform of the op.
     pub transform: kurbo::Affine,
-    /// Present only when the renderer was registered with a depth request (R62).
+    /// Present only when the renderer was registered with a depth request (R62): matches
+    /// `target`'s size and sample count, cleared to 1.0; begin your pass with `LoadOp::Load`.
     pub depth: Option<&'a wgpu::TextureView>,
 }
 
 /// The registered custom renderers, by paint type.
 #[derive(Default)]
 pub(crate) struct CustomRegistry {
-    renderers: HashMap<TypeId, Box<dyn CustomRenderer>>,
+    renderers: HashMap<TypeId, CustomEntry>,
+}
+
+/// One registered renderer and its depth request (R62).
+pub(crate) struct CustomEntry {
+    pub renderer: Box<dyn CustomRenderer>,
+    pub depth: Option<wgpu::TextureFormat>,
 }
 
 impl CustomRegistry {
-    pub(crate) fn insert(&mut self, ty: TypeId, r: Box<dyn CustomRenderer>) {
-        self.renderers.insert(ty, r);
+    pub(crate) fn insert(
+        &mut self,
+        ty: TypeId,
+        renderer: Box<dyn CustomRenderer>,
+        depth: Option<wgpu::TextureFormat>,
+    ) {
+        self.renderers.insert(ty, CustomEntry { renderer, depth });
     }
 
-    pub(crate) fn get_mut(&mut self, paint: &dyn CustomPaint) -> Option<&mut Box<dyn CustomRenderer>> {
+    pub(crate) fn get_mut(&mut self, paint: &dyn CustomPaint) -> Option<&mut CustomEntry> {
         self.renderers.get_mut(&paint.as_any().type_id())
     }
 }
