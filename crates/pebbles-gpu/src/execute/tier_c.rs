@@ -248,9 +248,14 @@ pub(crate) fn render_runs(
                     view,
                     depth_slice: None,
                     resolve_target,
+                    // M26: one pass, resolved at its end; the MSAA color is never loaded again.
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
+                        store: if resolve_target.is_some() {
+                            wgpu::StoreOp::Discard
+                        } else {
+                            wgpu::StoreOp::Store
+                        },
                     },
                 })],
                 depth_stencil_attachment: None,

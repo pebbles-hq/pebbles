@@ -597,8 +597,10 @@ impl Renderer {
                 super::prepare::plan::TargetRef::Layer(i) => {
                     let Some(l) = layers[i as usize].as_ref() else { continue };
                     let tex = target.targets.pool.textures(l.slot);
+                    // M26: a multisampled layer resolves only where the plan says so (its final
+                    // pass, or before a backdrop capture of it).
                     let (v, r) = match &tex.msaa {
-                        Some((_, m)) => (m, Some(&tex.color.1)),
+                        Some((_, m)) => (m, seg.resolve.then_some(&tex.color.1)),
                         None => (&tex.color.1, None),
                     };
                     (v, r, wgpu::Color::TRANSPARENT, "pebbles.gpu.pass.layer")
@@ -614,7 +616,16 @@ impl Renderer {
                     view,
                     depth_slice: None,
                     resolve_target,
-                    ops: wgpu::Operations { load, store: wgpu::StoreOp::Store },
+                    // M26 (10 §4.6): after the target's final resolve nothing loads its MSAA
+                    // color again — discard it (free on tilers). Every other pass stores.
+                    ops: wgpu::Operations {
+                        load,
+                        store: if resolve_target.is_some() && seg.is_final {
+                            wgpu::StoreOp::Discard
+                        } else {
+                            wgpu::StoreOp::Store
+                        },
+                    },
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
