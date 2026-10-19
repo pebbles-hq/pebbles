@@ -95,8 +95,14 @@ pub(crate) fn shadow(
     plan.shadows.push(ShadowInstance {
         xform: [a, b, c, d],
         origin_size: [narrow_f32(o.x), narrow_f32(o.y), p.width, p.height],
-        params0: [p.exponent, p.recip_exponent, p.scale, p.std_dev_inv],
-        params1: [p.min_edge, p.w, p.h, p.r1],
+        // (corner radius clamped to half the min edge, Gaussian σ = std_dev / √2, 0, 0).
+        params0: [
+            narrow_f32(radius).max(0.0).min(0.5 * p.min_edge),
+            narrow_f32(std_dev).max(1e-6) * std::f32::consts::FRAC_1_SQRT_2,
+            0.0,
+            0.0,
+        ],
+        params1: [0.0; 4],
         color: premul(color),
         kernel: [kernel_extent(std_dev, m, max_coord_px), 0.0, 0.0, 0.0],
     });

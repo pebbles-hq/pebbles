@@ -19,14 +19,11 @@ const SHADOW: Color = Color::from_rgba8(0, 0, 0, 0x99);
 const BG: Color = Color::from_rgba8(0xF0, 0xF0, 0xF0, 0xFF);
 
 pub fn cases() -> Vec<Case> {
-    // The 02 §8.2 closed form is an approximation of the Gaussian; at σ ≥ ½·size and with a
-    // clamped radius its error exceeds the Shadow thresholds (needs a DR on formula or limits).
-    let approx = |c: Case| c.xfail("R40", "closed-form error at extreme σ/size or clamped radius (02 §8.2)");
     let mut v = vec![
         ops("shadow/blurred_rect_basic", Shadow, P3, W, H, blurred_rect_basic),
         ops("shadow/blur_min", Shadow, P3, W, H, blur_min),
-        approx(ops("shadow/blur_64", Shadow, P3, 256, 256, blur_64)),
-        approx(ops("shadow/radius_gt_half", Shadow, P3, W, H, radius_gt_half)),
+        ops("shadow/blur_64", Shadow, P3, 256, 256, blur_64),
+        ops("shadow/radius_gt_half", Shadow, P3, W, H, radius_gt_half),
         ops("shadow/translated_scaled", Shadow, P3, W, H, translated_scaled),
         ops("shadow/rotated", Analytic, P3, W, H, rotated)
             .analytic()

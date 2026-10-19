@@ -1,7 +1,7 @@
-// Box shadows (02 §8.2, R40): the closed-form Gaussian blur of a rounded rect evaluated in the
-// rect's LOCAL space, so it is exact under any affine. Port of vello_sparse_shaders-0.2.0
-// `shaders/render.wesl:1099-1160` (Apache-2.0 OR MIT), re-typed from the 02 §8.2 spec. The local
-// position is an interpolated varying: affine maps interpolate exactly (no inverse matrix).
+// Box shadows (02 §8.2, R40): the Gaussian blur of a rounded rect evaluated in the rect's LOCAL
+// space, so it is exact under any affine. x is integrated exactly (erf); y numerically over ±3σ
+// (Evan Wallace's rounded-box shadow, public domain/MIT). σ = std_dev / √2 (02 §8.2 convention).
+// The local position is an interpolated varying: affine maps interpolate exactly.
 
 struct ShadowIn {
     @builtin(vertex_index) vi: u32,
@@ -45,25 +45,38 @@ fn erf7(x: f32) -> f32 {
     return z / sqrt(1.0 + z * z);
 }
 
+// Coverage of one row of the rounded box along x (exact Gaussian integral in x): the row at
+// height `y` spans ±curved, shortened by the corner arc (Evan Wallace's rounded-box shadow).
+fn row_x(x: f32, y: f32, sigma: f32, corner: f32, half: vec2<f32>) -> f32 {
+    let delta = min(half.y - corner - abs(y), 0.0);
+    let curved = half.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
+    let k = 0.70710678 / sigma;
+    return 0.5 * (erf7((x + curved) * k) - erf7((x - curved) * k));
+}
+
+const SHADOW_SAMPLES: u32 = 12u;
+
 @fragment
 fn fs(in: ShadowOut) -> @location(0) vec4<f32> {
-    let exponent = in.params0.x;
-    let recip_exponent = in.params0.y;
-    let scale = in.params0.z;
-    let std_dev_inv = in.params0.w;
-    let min_edge = in.params1.x;
-    let w = in.params1.y;
-    let h = in.params1.z;
-    let r1 = in.params1.w;
-    let y = in.local.y - 0.5 * in.size.y;
-    let y0 = r1 + abs(y) - 0.5 * h;
-    let y1 = max(y0, 0.0);
-    let x = in.local.x - 0.5 * in.size.x;
-    let x0 = r1 + abs(x) - 0.5 * w;
-    let x1 = max(x0, 0.0);
-    let d_pos = pow(pow(x1, exponent) + pow(y1, exponent), recip_exponent);
-    let d_neg = min(max(x0, y0), 0.0);
-    let d = d_pos + d_neg - r1;
-    let coverage = scale * (erf7(std_dev_inv * (min_edge + d)) - erf7(std_dev_inv * d));
-    return finish_color(in.color * coverage);
+    // params0 = (corner radius (clamped), σ (Gaussian std, local units), 0, 0).
+    let corner = in.params0.x;
+    let sigma = max(in.params0.y, 1e-6);
+    let half = 0.5 * in.size;
+    let p = in.local - half;
+    // Integrate the row coverage against the Gaussian in y over ±3σ (midpoint rule), clamped to
+    // the rows the box occupies.
+    let low = p.y - half.y;
+    let high = p.y + half.y;
+    let start = clamp(-3.0 * sigma, low, high);
+    let end = clamp(3.0 * sigma, low, high);
+    let step = (end - start) / f32(SHADOW_SAMPLES);
+    var y = start + 0.5 * step;
+    var value = 0.0;
+    let norm = 0.39894228 / sigma; // 1 / (σ √(2π))
+    for (var i = 0u; i < SHADOW_SAMPLES; i = i + 1u) {
+        let g = norm * exp(-0.5 * y * y / (sigma * sigma));
+        value = value + row_x(p.x, p.y - y, sigma, corner, half) * g * step;
+        y = y + step;
+    }
+    return finish_color(in.color * clamp(value, 0.0, 1.0));
 }
