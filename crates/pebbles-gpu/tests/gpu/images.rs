@@ -425,3 +425,50 @@ fn nine_slice_corners_are_exact() {
     assert_eq!(pixel(&out, 64, 32, 16), [255, 255, 255, 255], "stretched center");
     assert_eq!(pixel(&out, 64, 3, 4), [0, 0, 0, 255], "nothing outside dst");
 }
+
+// ---- R37: dynamic images ----
+
+fn draw_dynamic(
+    r: &mut (wgpu::Device, wgpu::Queue, Renderer),
+    img: &pebbles_render::paint::DynamicImage,
+) -> Vec<u8> {
+    let mut s = Scene::new();
+    Painter::new(&mut s).draw_dynamic_image(img, peniko::ImageQuality::Low, 1.0, Affine::IDENTITY);
+    render_scene(&r.0, &r.1, &mut r.2, &s, (img.width(), img.height()), Color::WHITE)
+}
+
+/// R37: a new generation with 10 dirty rows uploads exactly those rows.
+#[test]
+#[ignore = "gpu"]
+fn dynamic_update_uploads_only_dirty_rows() {
+    let Some(mut r) = setup("dynamic_update_uploads_only_dirty_rows") else { return };
+    let mut img = pebbles_render::paint::DynamicImage::new(256, 256);
+    draw_dynamic(&mut r, &img);
+    let mut px = vec![0u8; 256 * 256 * 4];
+    for row in 100..110 {
+        for x in 0..256 {
+            px[(row * 256 + x) * 4..][..4].copy_from_slice(&[0, 0, 255, 255]);
+        }
+    }
+    img.update(peniko::Blob::from(px), Some(pebbles_render::paint::IRect { x: 0, y: 100, w: 256, h: 10 }));
+    let out = draw_dynamic(&mut r, &img);
+    assert_eq!(r.2.last_frame_stats().texture_bytes_uploaded, 256 * 4 * 10);
+    assert_eq!(pixel(&out, 256, 50, 105), [0, 0, 255, 255]);
+    assert_eq!(pixel(&out, 256, 50, 50), [255, 255, 255, 255], "transparent elsewhere");
+}
+
+/// R37: 60 updates of one dynamic image reuse one texture.
+#[test]
+#[ignore = "gpu"]
+fn dynamic_image_reuses_one_texture() {
+    let Some(mut r) = setup("dynamic_image_reuses_one_texture") else { return };
+    let mut img = pebbles_render::paint::DynamicImage::new(32, 32);
+    let mut created = 0;
+    for i in 0..60u8 {
+        img.update(peniko::Blob::from([i, 0, 0, 255].repeat(32 * 32)), None);
+        let out = draw_dynamic(&mut r, &img);
+        created += r.2.last_frame_stats().textures_created;
+        assert_eq!(pixel(&out, 32, 16, 16), [i, 0, 0, 255], "frame {i} shows its own pixels");
+    }
+    assert_eq!(created, 1);
+}

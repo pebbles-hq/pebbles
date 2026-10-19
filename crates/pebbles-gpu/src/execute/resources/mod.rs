@@ -4,6 +4,7 @@
 pub(crate) mod atlas_alloc;
 pub(crate) mod bind_groups;
 pub(crate) mod buffers;
+pub(crate) mod dynamic_images;
 pub(crate) mod globals;
 pub(crate) mod glyph_atlas;
 pub(crate) mod image_cache;

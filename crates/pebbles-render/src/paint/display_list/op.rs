@@ -139,6 +139,14 @@ pub enum Op {
         transform: Affine,
         snap: PixelSnap,
     },
+    /// A dynamic image (02 R37): drawn like `Image`, uploaded in place by generation.
+    #[non_exhaustive]
+    DynamicImage {
+        frame: crate::paint::DynamicImageFrame,
+        quality: peniko::ImageQuality,
+        alpha: f32,
+        transform: Affine,
+    },
     /// A nine-slice image (Flutter `drawImageNine`, 02 R36): `center` (image px) stretches to fill
     /// `dst`; the four corners keep their size (scaled down only when they do not fit).
     #[non_exhaustive]

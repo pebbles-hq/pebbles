@@ -107,7 +107,14 @@ pub(crate) fn image_nine(
             color: [0.0, 0.0, 0.0, opacity],
             layer_kind: [edges, 2],
         };
-        plan.images.push(ImageRequest { key, sampler, image: image.image.clone(), quad, mips: false });
+        plan.images.push(ImageRequest {
+            key,
+            sampler,
+            image: image.image.clone(),
+            quad,
+            mips: false,
+            dynamic: None,
+        });
     }
     (start..index_u32(plan.images.len()), clamped)
 }

@@ -10,7 +10,6 @@ use crate::prepare::test_util::prepare_scene;
 
 /// Rows no display-list op can produce yet (their ops / data are added by the delivering card).
 const NOT_PRODUCIBLE: &[(F, &str)] = &[
-    (F::DynamicImage, "no Op::DynamicImage yet (R37)"),
     (F::BlurredFill, "no Op::BlurredFill yet (R42)"),
     (F::BlurredGlyphs, "no Op::BlurredGlyphs yet (R42)"),
     (F::Vertices, "no Op::Vertices yet (R63)"),
@@ -202,6 +201,10 @@ fn fixture(f: F) -> Option<Scene> {
         F::GlyphsNonSolidBrush => glyphs(p, 16.0, &Brush::Gradient(gradient()), id, None, Fill::NonZero),
         F::GlyphsEvenOdd => glyphs(p, 16.0, &Brush::Solid(RED), id, None, Fill::EvenOdd),
         F::GlyphsDegenerate => glyphs(p, f32::NAN, &Brush::Solid(RED), id, None, Fill::NonZero),
+        F::DynamicImage => {
+            let img = pebbles_render::paint::DynamicImage::new(8, 8);
+            p.draw_dynamic_image(&img, ImageQuality::Medium, 1.0, Affine::translate((8.0, 8.0)));
+        }
         F::ImageNine => p.draw_image_nine(
             &rgba(16, 16),
             Rect::new(4.0, 4.0, 12.0, 12.0),

@@ -36,6 +36,9 @@ impl ImageKey {
 use super::bind_groups::SamplerCache;
 pub(crate) use super::bind_groups::SamplerKey;
 
+/// Dynamic images not drawn for this many frames are dropped (R37).
+pub(crate) const DYNAMIC_IDLE_FRAMES: u64 = 120;
+
 /// Scratch buffers above this are released after an upload (10 §6.2).
 const IMAGE_SCRATCH_RETAIN_BYTES: usize = 16 << 20;
 
@@ -44,7 +47,10 @@ struct ImageEntry {
     view: wgpu::TextureView,
     /// One bind group per sampler key used with this image (≤ 27, 10 §3.4).
     bind_groups: Vec<(SamplerKey, wgpu::BindGroup)>,
-    weak: peniko::WeakBlob<u8>,
+    /// Static images: the app's pixels (`None` for dynamic images, which age out instead).
+    weak: Option<peniko::WeakBlob<u8>>,
+    /// Dynamic images (R37): the uploaded generation.
+    generation: Option<u64>,
     last_used: u64,
     /// Uploaded texture bytes: every level of `w · h · 4` after any downscale.
     bytes: u64,
@@ -270,10 +276,73 @@ impl ImageCache {
                 _texture: texture,
                 view,
                 bind_groups: Vec::new(),
-                weak: image.data.downgrade(),
+                weak: Some(image.data.downgrade()),
+                generation: None,
                 last_used: self.frame,
                 bytes,
                 mips,
+            },
+        );
+        true
+    }
+
+    /// Make dynamic image `frame` resident (R37): first sight creates one texture; a new
+    /// generation uploads only its dirty rectangle. Bytes count against the image budget.
+    pub(crate) fn ensure_dynamic(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        key: ImageKey,
+        frame: &pebbles_render::paint::DynamicImageFrame,
+        stats: &mut FrameStats,
+    ) -> bool {
+        let (w, h) = (frame.width, frame.height);
+        let max = device.limits().max_texture_dimension_2d;
+        if w == 0
+            || h == 0
+            || w > max
+            || h > max
+            || frame.data.len() as u64 != u64::from(w) * u64::from(h) * 4
+        {
+            return false;
+        }
+        if let Some(e) = self.entries.get_mut(&key) {
+            e.last_used = self.frame;
+            if e.generation != Some(frame.generation) {
+                let rect = super::dynamic_images::dirty_rect(frame);
+                super::dynamic_images::upload_rect(queue, &e._texture, frame, rect, stats);
+                e.generation = Some(frame.generation);
+            }
+            return true;
+        }
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("pebbles.gpu.image.dynamic"),
+            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let full = super::dynamic_images::full_rect(frame);
+        super::dynamic_images::upload_rect(queue, &texture, frame, full, stats);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        stats.textures_created += 1;
+        stats.texture_views_created += 1;
+        let bytes = u64::from(w) * u64::from(h) * 4;
+        self.total_bytes += bytes;
+        self.entries.insert(
+            key,
+            ImageEntry {
+                _texture: texture,
+                view,
+                bind_groups: Vec::new(),
+                weak: None,
+                generation: Some(frame.generation),
+                last_used: self.frame,
+                bytes,
+                mips: false,
             },
         );
         true
@@ -286,7 +355,11 @@ impl ImageCache {
         let mut groups = self.total_bind_groups;
         let mut bytes = self.total_bytes;
         self.entries.retain(|_, e| {
-            let live = e.weak.upgrade().is_some();
+            let live = match &e.weak {
+                Some(w) => w.upgrade().is_some(),
+                // Dynamic images (R37) are dropped when not drawn for DYNAMIC_IDLE_FRAMES.
+                None => self.frame.saturating_sub(e.last_used) < DYNAMIC_IDLE_FRAMES,
+            };
             if !live {
                 bytes -= e.bytes;
                 #[cfg(debug_assertions)]

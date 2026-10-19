@@ -126,6 +126,17 @@ impl<'a> Painter<'a> {
         self.scene.push(Op::Image { image: image.into().to_owned(), transform, snap: self.snap });
     }
 
+    /// Draw a [`DynamicImage`](crate::paint::DynamicImage) (02 R37); never mipmapped.
+    pub fn draw_dynamic_image(
+        &mut self,
+        image: &crate::paint::DynamicImage,
+        quality: peniko::ImageQuality,
+        alpha: f32,
+        transform: Affine,
+    ) {
+        self.scene.push(Op::DynamicImage { frame: image.frame(), quality, alpha, transform });
+    }
+
     /// Draw `image` nine-sliced into `dst` (02 R36): `center` (image px) is the stretchable part.
     pub fn draw_image_nine(
         &mut self,

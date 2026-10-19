@@ -240,6 +240,7 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::ShadowRotated,      // R40
     F::ShadowDegenerate,   // R41
     F::ImageNine,          // R36
+    F::DynamicImage,       // R37
 ];
 
 #[cfg(test)]

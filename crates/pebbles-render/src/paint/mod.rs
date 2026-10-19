@@ -17,7 +17,9 @@ pub use peniko::{self, Brush, BrushRef, Color, Fill, FontData};
 
 // ---- the shared display list (DR-02) ----------------------------------------
 pub mod display_list;
+pub mod dynamic_image;
 pub use display_list::{Glyph, NormalizedCoord, Painter, Scene, scene};
+pub use dynamic_image::{DynamicImage, DynamicImageFrame, IRect};
 
 // Transitional consumer: replays the display list into a live `vello_hybrid::Scene`
 // (feature `vello-hybrid`; deleted whole at Phase 7, X01).

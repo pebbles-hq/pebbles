@@ -34,6 +34,42 @@ pub(crate) fn validate_image(d: &peniko::ImageData) -> Result<(), ImageProblem> 
     Ok(())
 }
 
+/// A dynamic image draw (R37): like `image`, keyed by its id (never `Blob::id`), never mipmapped.
+pub(crate) fn dynamic_image(
+    plan: &mut FramePlan,
+    frame: &pebbles_render::paint::DynamicImageFrame,
+    quality: peniko::ImageQuality,
+    transform: Affine,
+    opacity: f32,
+    snap: bool,
+) -> Range<u32> {
+    let data = peniko::ImageData {
+        data: frame.data.clone(),
+        format: peniko::ImageFormat::Rgba8,
+        alpha_type: peniko::ImageAlphaType::AlphaPremultiplied,
+        width: frame.width,
+        height: frame.height,
+    };
+    // `Low` keeps nearest sampling; mips are never built for dynamic images.
+    let q = if quality == peniko::ImageQuality::High { peniko::ImageQuality::Medium } else { quality };
+    let brush = peniko::ImageBrush::new(data).with_quality(q);
+    let range = image(plan, &brush, transform, opacity, snap);
+    let key = ImageKey {
+        blob_id: crate::execute::resources::dynamic_images::DYNAMIC_KEY_BIT | frame.id,
+        width: frame.width,
+        height: frame.height,
+        format: 0,
+        alpha: 1,
+    };
+    for req in plan.images.get_mut(range.start as usize..range.end as usize).unwrap_or_default() {
+        req.key = key;
+        req.mips = false;
+        req.quad.color[0] = 0.0; // LOD 0: one level
+        req.dynamic = Some(frame.clone());
+    }
+    range
+}
+
 /// The 02 §8.1 sampler of an image draw (R30): quality → filter/mipmap filter, extend →
 /// address modes. 10 §3.5 caches one `wgpu::Sampler` per key.
 pub(crate) fn sampler_key(s: peniko::ImageSampler) -> SamplerKey {
@@ -88,6 +124,7 @@ pub(crate) fn image(
         image: image.image.clone(),
         quad,
         mips,
+        dynamic: None,
     });
     start..start + 1
 }

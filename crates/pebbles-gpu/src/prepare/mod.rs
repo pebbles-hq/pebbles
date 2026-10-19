@@ -576,6 +576,24 @@ impl Walk<'_> {
                     let range = images::image(self.plan, image, xf, k, tier_a::snaps(op));
                     self.push(DrawCmd::Images { images: range, clip: self.clips.current() }, idx);
                 }
+                Op::DynamicImage { frame, quality, alpha, transform, .. } => {
+                    let xf = outer * *transform;
+                    if !xf.is_finite() || !alpha.is_finite() {
+                        self.skip_non_finite();
+                        continue;
+                    }
+                    if frame.width == 0 || frame.height == 0 || *alpha <= 0.0 || self.hidden() {
+                        continue;
+                    }
+                    if !self.transform_is_sane(xf)
+                        || self.culled(cull::image_bounds(frame.width, frame.height, xf))
+                    {
+                        continue;
+                    }
+                    let k = self.alpha() * alpha.clamp(0.0, 1.0);
+                    let range = images::dynamic_image(self.plan, frame, *quality, xf, k, tier_a::snaps(op));
+                    self.push(DrawCmd::Images { images: range, clip: self.clips.current() }, idx);
+                }
                 Op::ImageNine { image, center, dst, transform, .. } => {
                     // R36: validated like any image (R33), then split into ≤ 9 quads.
                     match images::validate_image(&image.image) {

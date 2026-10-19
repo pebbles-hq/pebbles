@@ -35,6 +35,8 @@ pub fn cases() -> Vec<Case> {
             .analytic()
             .probe("huge_image_downscaled_red", probe::huge_image_downscaled_red),
         ops("img/many_200_distinct", Image, P3, 256, 256, many_200_distinct),
+        // R37 dynamic image (V53 case): updated in place, drawn like an image.
+        ops("img/dynamic_update", Image, P3, W, H, dynamic_update),
         // R36 nine-slice (V53 case): a bordered 24×24 "button" stretched to 112×40.
         ops("img/nine_slice_button", Image, P3, W, H, nine_slice_button),
         // R35 mip chains (V53 cases): a one-pixel checker minified ×0.3.
@@ -165,6 +167,21 @@ fn many_200_distinct(p: &mut Painter<'_>) {
         let (x, y) = (f64::from(i % 15) * 17.0, f64::from(i / 15) * 17.0);
         p.draw_image(&noise(16, 16, 1000 + u64::from(i)), Affine::translate((x, y)));
     }
+}
+
+fn dynamic_update(p: &mut Painter<'_>) {
+    let mut img = pebbles_render::paint::DynamicImage::new(32, 32);
+    // Premultiplied noise as the "new frame", one dirty band.
+    img.update(
+        peniko::Blob::from(noise_rgba8(32, 32, 9)),
+        Some(pebbles_render::paint::IRect { x: 0, y: 8, w: 32, h: 16 }),
+    );
+    p.draw_dynamic_image(
+        &img,
+        ImageQuality::Medium,
+        1.0,
+        Affine::translate((16.0, 16.0)) * Affine::scale(3.0),
+    );
 }
 
 /// A 24×24 button skin: 6-px dark border, light interior, a distinct color per corner.

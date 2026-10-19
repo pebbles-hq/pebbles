@@ -117,6 +117,8 @@ pub(crate) struct ImageRequest {
     pub quad: QuadInstance,
     /// `Medium`/`High` images carry the R35 mip chain.
     pub mips: bool,
+    /// Dynamic images (R37): the frame to make resident (`image` mirrors its pixels).
+    pub dynamic: Option<pebbles_render::paint::DynamicImageFrame>,
 }
 
 /// Plan-local counters (dedicated counters only — fallbacks are recorded through

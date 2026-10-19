@@ -145,6 +145,45 @@ impl Target {
                 let cov = fill_geometry(&shape, t, peniko::Fill::NonZero, self.snap(*snap), self.w, self.h);
                 self.composite(&paint, &cov);
             }
+            Op::DynamicImage { frame, quality, alpha, transform, .. } => {
+                // 02 R37: drawn exactly like `Image` (premultiplied pixels, never mipmapped).
+                let data = peniko::ImageData {
+                    data: frame.data.clone(),
+                    format: peniko::ImageFormat::Rgba8,
+                    alpha_type: peniko::ImageAlphaType::AlphaPremultiplied,
+                    width: frame.width,
+                    height: frame.height,
+                };
+                let q = if *quality == peniko::ImageQuality::Low {
+                    peniko::ImageQuality::Low
+                } else {
+                    peniko::ImageQuality::Medium
+                };
+                let t = outer * *transform;
+                let brush = peniko::ImageBrush::new(data).with_quality(q).with_alpha(*alpha);
+                // Medium is bilinear on the single level (paint.rs only mips when LOD > 0 on
+                // static images; dynamic images are never mipmapped).
+                let Some(paint) = Paint::new(&peniko::Brush::Image(brush), t, 1.0)? else { return Ok(()) };
+                let paint = match paint {
+                    Paint::Mipped { inv, levels, x_extend, y_extend, alpha, .. } => Paint::Image {
+                        inv,
+                        img: levels.into_iter().next().unwrap_or(paint::Texels {
+                            w: 0,
+                            h: 0,
+                            px: Vec::new(),
+                        }),
+                        x_extend,
+                        y_extend,
+                        nearest: false,
+                        alpha,
+                    },
+                    other => other,
+                };
+                let r = kurbo::Rect::new(0.0, 0.0, f64::from(frame.width), f64::from(frame.height));
+                let shape = pebbles_render::paint::display_list::Geometry::Rect(r);
+                let cov = fill_geometry(&shape, t, peniko::Fill::NonZero, Snap::Auto, self.w, self.h);
+                self.composite(&paint, &cov);
+            }
             Op::ImageNine { image, center, dst, transform, .. } => {
                 // 02 R36: per slice, the destination rect's exact coverage, sampled bilinearly
                 // from the slice with UVs inset by half a texel (no bleeding across slices).
