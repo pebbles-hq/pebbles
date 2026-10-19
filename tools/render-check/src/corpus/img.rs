@@ -22,10 +22,7 @@ pub fn cases() -> Vec<Case> {
     v.extend([
         ops("img/scaled_down_quarter", Image, P3, W, H, scaled_down_quarter),
         ops("img/nonuniform_scale", Image, P3, W, H, nonuniform_scale),
-        // Interior texels match the golden model (Δ ≤ 3); the rotated quad's edges are not
-        // antialiased yet (Δ 113 on the edge pixels).
-        ops("img/rotated_30", Image, P3, W, H, rotated_30)
-            .xfail("R31", "rotated image quad edges are not antialiased until R31"),
+        ops("img/rotated_30", Image, P3, W, H, rotated_30),
         ops("img/quality_low_nearest", Image, P3, W, H, quality_low_nearest),
         ops("img/straight_alpha", Image, P3, W, H, straight_alpha),
         ops("img/premultiplied_alpha", Image, P3, W, H, premultiplied_alpha),

@@ -125,9 +125,6 @@ impl Walk<'_> {
         if s.alpha < 1.0 {
             self.fell_back(Feature::ImageAlpha);
         }
-        if !quarter_turn(xf) || xf.as_coeffs()[0] < 0.0 || xf.as_coeffs()[3] < 0.0 {
-            self.fell_back(Feature::ImageTransform);
-        }
     }
 
     /// Shadow rows (R40/R41 deliver them).

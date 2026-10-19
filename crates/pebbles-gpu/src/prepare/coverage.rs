@@ -232,6 +232,7 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::GlyphsColor,        // R39
     F::ImageQuality,       // R30
     F::ImageExtend,        // R30
+    F::ImageTransform,     // R31
 ];
 
 #[cfg(test)]

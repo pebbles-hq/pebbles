@@ -144,3 +144,133 @@ fn extend_changes_edge_taps() {
     // Column 0: Pad taps red twice; Repeat wraps to blue.
     assert_ne!(pixel(&pad, 100, 0, 25), pixel(&repeat, 100, 0, 25));
 }
+
+// ---- R31: arbitrary image transforms ----
+
+const QUAD_COLORS: [[u8; 4]; 4] = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255], [255, 255, 0, 255]];
+
+/// A 4×4 image with one color per 2×2 quadrant: TL red, TR green, BL blue, BR yellow.
+fn quadrants() -> peniko::ImageBrush {
+    let px: Vec<u8> = (0..16u32)
+        .flat_map(|i| {
+            let (x, y) = (i % 4, i / 4);
+            QUAD_COLORS[(usize::from(y >= 2) * 2) + usize::from(x >= 2)]
+        })
+        .collect();
+    peniko::ImageBrush::new(peniko::ImageData {
+        data: peniko::Blob::from(px),
+        format: peniko::ImageFormat::Rgba8,
+        alpha_type: peniko::ImageAlphaType::Alpha,
+        width: 4,
+        height: 4,
+    })
+}
+
+fn draw_quadrants(r: &mut (wgpu::Device, wgpu::Queue, Renderer), t: Affine, size: (u32, u32)) -> Vec<u8> {
+    let mut s = Scene::new();
+    Painter::new(&mut s).draw_image(&quadrants().with_quality(peniko::ImageQuality::Low), t);
+    render_scene(&r.0, &r.1, &mut r.2, &s, size, Color::WHITE)
+}
+
+/// The color expected at device pixel center `(x, y)` for image transform `t`, or `None` near an
+/// edge between quadrants / outside.
+fn expected(t: Affine, x: u32, y: u32) -> Option<[u8; 4]> {
+    let p = t.inverse() * kurbo::Point::new(f64::from(x) + 0.5, f64::from(y) + 0.5);
+    let near = |v: f64| (v - 2.0).abs() < 0.3 || v < 0.3 || v > 3.7;
+    if !(0.0..4.0).contains(&p.x) || !(0.0..4.0).contains(&p.y) || near(p.x) || near(p.y) {
+        return None;
+    }
+    Some(QUAD_COLORS[usize::from(p.y >= 2.0) * 2 + usize::from(p.x >= 2.0)])
+}
+
+fn assert_quadrants(px: &[u8], w: u32, h: u32, t: Affine) {
+    let mut checked = 0;
+    for y in 0..h {
+        for x in 0..w {
+            if let Some(want) = expected(t, x, y) {
+                let got = pixel(px, w, x, y);
+                assert!(
+                    got.iter().zip(want).all(|(a, b)| a.abs_diff(b) <= 2),
+                    "({x},{y}) {got:?} want {want:?}"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 100, "only {checked} pixels checked");
+}
+
+#[test]
+#[ignore = "gpu"]
+fn image_translate_scale() {
+    let Some(mut r) = setup("image_translate_scale") else { return };
+    let t = Affine::translate((8.0, 8.0)) * Affine::scale(16.0);
+    assert_quadrants(&draw_quadrants(&mut r, t, (80, 80)), 80, 80, t);
+}
+
+#[test]
+#[ignore = "gpu"]
+fn image_nonuniform_scale() {
+    let Some(mut r) = setup("image_nonuniform_scale") else { return };
+    let t = Affine::scale_non_uniform(16.0, 8.0);
+    assert_quadrants(&draw_quadrants(&mut r, t, (64, 32)), 64, 32, t);
+}
+
+#[test]
+#[ignore = "gpu"]
+fn image_mirrored() {
+    let Some(mut r) = setup("image_mirrored") else { return };
+    let t = Affine::translate((64.0, 0.0)) * Affine::scale_non_uniform(-16.0, 16.0);
+    let px = draw_quadrants(&mut r, t, (64, 64));
+    assert_quadrants(&px, 64, 64, t);
+    // Left/right swapped: the top-left device quadrant is green.
+    assert_eq!(pixel(&px, 64, 16, 16), [0, 255, 0, 255]);
+}
+
+#[test]
+#[ignore = "gpu"]
+fn image_rotated_30() {
+    let Some(mut r) = setup("image_rotated_30") else { return };
+    let t = Affine::rotate_about(std::f64::consts::FRAC_PI_6, kurbo::Point::new(48.0, 48.0))
+        * Affine::translate((16.0, 16.0))
+        * Affine::scale(16.0);
+    let px = draw_quadrants(&mut r, t, (96, 96));
+    assert_quadrants(&px, 96, 96, t);
+    // Ink bbox = the transformed corners' bbox ± 1 px; outside the rotated quad: white.
+    let corners = [(0.0, 0.0), (4.0, 0.0), (0.0, 4.0), (4.0, 4.0)].map(|c| t * kurbo::Point::from(c));
+    let (x0, x1) = corners.iter().fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p.x), b.max(p.x)));
+    let (y0, y1) = corners.iter().fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p.y), b.max(p.y)));
+    let ink: Vec<(u32, u32)> = (0..96u32)
+        .flat_map(|y| (0..96u32).map(move |x| (x, y)))
+        .filter(|&(x, y)| !is_white(pixel(&px, 96, x, y)))
+        .collect();
+    let ix0 = ink.iter().map(|p| p.0).min().unwrap();
+    let ix1 = ink.iter().map(|p| p.0).max().unwrap() + 1;
+    let iy0 = ink.iter().map(|p| p.1).min().unwrap();
+    let iy1 = ink.iter().map(|p| p.1).max().unwrap() + 1;
+    assert!(
+        (f64::from(ix0) - x0).abs() <= 1.0 && (f64::from(ix1) - x1).abs() <= 1.0,
+        "x {ix0}..{ix1} vs {x0}..{x1}"
+    );
+    assert!(
+        (f64::from(iy0) - y0).abs() <= 1.0 && (f64::from(iy1) - y1).abs() <= 1.0,
+        "y {iy0}..{iy1} vs {y0}..{y1}"
+    );
+    let inv = t.inverse();
+    for &(x, y) in &ink {
+        let q = inv * kurbo::Point::new(f64::from(x) + 0.5, f64::from(y) + 0.5);
+        assert!(
+            (-0.2..=4.2).contains(&q.x) && (-0.2..=4.2).contains(&q.y),
+            "ink outside the quad at ({x},{y})"
+        );
+    }
+}
+
+#[test]
+#[ignore = "gpu"]
+fn image_skewed() {
+    let Some(mut r) = setup("image_skewed") else { return };
+    let t = Affine::translate((4.0, 4.0)) * Affine::skew(0.5, 0.0) * Affine::scale(16.0);
+    let px = draw_quadrants(&mut r, t, (112, 72));
+    assert_quadrants(&px, 112, 72, t);
+}
