@@ -11,15 +11,27 @@ use pebbles_core::widget::{AnyWidget, IntoWidget, RenderWidget};
 pub struct Transform {
     matrix: Affine,
     alignment: Alignment,
+    /// A column-major `Matrix4` (perspective allowed), when built with [`Transform::matrix4`].
+    matrix4: Option<[f64; 16]>,
     child: Option<AnyWidget>,
 }
 
 /// Transform `child` by an arbitrary affine matrix (origin defaults to the center).
 pub fn transform(matrix: Affine, child: impl IntoWidget) -> Transform {
-    Transform { matrix, alignment: Alignment::CENTER, child: Some(child.into_widget()) }
+    Transform { matrix, alignment: Alignment::CENTER, matrix4: None, child: Some(child.into_widget()) }
 }
 
 impl Transform {
+    /// Transform by a Flutter-style column-major `Matrix4` — perspective included (09 §10.7):
+    /// painted through a projected layer and hit-tested through its inverse.
+    pub fn matrix4(m: [f64; 16], child: impl IntoWidget) -> Self {
+        Transform {
+            matrix: Affine::IDENTITY,
+            alignment: Alignment::CENTER,
+            matrix4: Some(m),
+            child: Some(child.into_widget()),
+        }
+    }
     /// Rotate `radians` clockwise around the origin.
     pub fn rotate(radians: f64, child: impl IntoWidget) -> Self {
         transform(Affine::rotate(radians), child)
@@ -47,12 +59,17 @@ pebbles_core::render_widget!(Transform);
 
 impl RenderWidget for Transform {
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(RenderTransform::new(self.matrix, self.alignment))
+        Box::new(match self.matrix4 {
+            Some(m) => RenderTransform::matrix4(m, self.alignment),
+            None => RenderTransform::new(self.matrix, self.alignment),
+        })
     }
     fn update_render_object(&self, object: &mut dyn RenderObject) {
         if let Some(t) = object.downcast_mut::<RenderTransform>() {
-            t.matrix = self.matrix;
-            t.alignment = self.alignment;
+            *t = match self.matrix4 {
+                Some(m) => RenderTransform::matrix4(m, self.alignment),
+                None => RenderTransform::new(self.matrix, self.alignment),
+            };
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {

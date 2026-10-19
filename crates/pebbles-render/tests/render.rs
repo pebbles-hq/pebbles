@@ -729,3 +729,65 @@ fn text_field_lazy_motion_fallbacks_are_char_safe() {
     assert!(full.is_char_boundary(up) && up < start, "vertical hop lands above, on a boundary");
     pebbles_render::text_edit::clear(4246);
 }
+
+/// Flutter `Matrix4.identity()..setEntry(3, 2, 0.002)..rotateY(0.6)` (column-major storage).
+fn perspective_matrix4() -> [f64; 16] {
+    let (s, c) = 0.6f64.sin_cos();
+    let p = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.002, 0.0, 0.0, 0.0, 1.0];
+    let r = [c, 0.0, -s, 0.0, 0.0, 1.0, 0.0, 0.0, s, 0.0, c, 0.0, 0.0, 0.0, 0.0, 1.0];
+    let mut out = [0.0; 16];
+    for col in 0..4 {
+        for row in 0..4 {
+            out[col * 4 + row] = (0..4).map(|k| p[k * 4 + row] * r[col * 4 + k]).sum();
+        }
+    }
+    out
+}
+
+/// L66: a perspective `Matrix4` hit-tests through its inverse: a point on the visible
+/// (projected) card hits the child; a point inside the untransformed box but outside the
+/// trapezoid misses it.
+#[test]
+fn projective_transform_hit_tests_through_inverse() {
+    use pebbles_render::RenderTransform;
+    use pebbles_render::paint::Projective;
+    let mut tree = RenderTree::new();
+    let mut text = TextEnv::new();
+    let t = tree.insert(Box::new(RenderTransform::matrix4(perspective_matrix4(), Alignment::CENTER)));
+    let child = tree.insert(Box::new(RenderColoredBox::new(pebbles_foundation::palette::RED)));
+    tree.insert_child(t, child, 0);
+    tree.root = Some(t);
+    tree.layout(&mut text, tight(200.0, 100.0));
+    assert!(tree.hit_test(pebbles_foundation::Offset::new(100.0, 50.0)).contains(&child), "the center hits");
+    // The same homography the tree uses: around the center.
+    let h = Projective::from_affine(kurbo::Affine::translate((-100.0, -50.0)))
+        .then(&Projective::from_matrix4(perspective_matrix4()))
+        .then(&Projective::from_affine(kurbo::Affine::translate((100.0, 50.0))));
+    let inv = h.inverse().unwrap();
+    let outside = (0..20)
+        .flat_map(|i| [(f64::from(i) * 10.0 + 1.0, 1.0), (f64::from(i) * 10.0 + 1.0, 99.0)])
+        .find(|&(x, y)| {
+            inv.map_point(kurbo::Point::new(x, y))
+                .is_none_or(|q| !(0.0..200.0).contains(&q.x) || !(0.0..100.0).contains(&q.y))
+        })
+        .expect("a box point outside the trapezoid");
+    let hits = tree.hit_test(pebbles_foundation::Offset::new(outside.0, outside.1));
+    assert!(!hits.contains(&child), "{outside:?} is outside the projected card");
+}
+
+/// L66: an affine `Matrix4` keeps the affine transform path (no projection).
+#[test]
+fn affine_matrix4_uses_affine_path() {
+    use pebbles_render::RenderTransform;
+    use pebbles_render::object::RenderObject;
+    let mut m = [0.0; 16];
+    m[0] = 2.0;
+    m[5] = 2.0;
+    m[10] = 1.0;
+    m[15] = 1.0;
+    m[12] = 5.0;
+    let t = RenderTransform::matrix4(m, Alignment::TOP_LEFT);
+    assert!(t.projective.is_none());
+    assert_eq!(t.transform(Size::new(10.0, 10.0)), Some(kurbo::Affine::new([2.0, 0.0, 0.0, 2.0, 5.0, 0.0])));
+    assert!(t.projection(Size::new(10.0, 10.0)).is_none());
+}

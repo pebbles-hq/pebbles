@@ -88,6 +88,13 @@ pub trait RenderObject: Any {
         None
     }
 
+    /// A perspective paint/hit-test transform of the subtree (09 §10.7, L66), in local space
+    /// (resolved around the transform origin). When set it replaces [`transform`](Self::transform):
+    /// the tree paints the subtree through a projected layer and hit-tests through the inverse.
+    fn projection(&self, _size: Size) -> Option<crate::paint::Projective> {
+        None
+    }
+
     /// This node's **intrinsic extent** on `axis` — the size it would choose with
     /// no external constraints on that axis, given that the perpendicular axis is
     /// fixed at `cross_extent` (infinite when unconstrained). `None` means the

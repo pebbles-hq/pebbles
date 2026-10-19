@@ -690,7 +690,14 @@ impl RenderTree {
         // barrier's subtree and everything painted behind it at this point.
         let mut absorbed: Option<Vec<RenderId>> = None;
         if let Some(root) = self.root {
-            self.hit_test_node(root, point, Affine::IDENTITY, &mut hits, &mut path, &mut absorbed);
+            self.hit_test_node(
+                root,
+                point,
+                crate::paint::Projective::from_affine(Affine::IDENTITY),
+                &mut hits,
+                &mut path,
+                &mut absorbed,
+            );
         }
         absorbed.unwrap_or(hits)
     }
@@ -707,21 +714,25 @@ impl RenderTree {
         &self,
         id: RenderId,
         point: Offset,
-        to_window: Affine,
+        to_window: crate::paint::Projective,
         out: &mut Vec<RenderId>,
         path: &mut Vec<RenderId>,
         absorbed: &mut Option<Vec<RenderId>>,
     ) {
         let node = &self.nodes[id];
         // This node's local frame, then its transform (parent-applied ∘ own).
-        let mut frame = to_window * Affine::translate((node.offset.x, node.offset.y));
+        use crate::paint::Projective;
+        let mut local_t = Affine::translate((node.offset.x, node.offset.y));
         if let Some(t) = node_transform(node) {
-            frame *= t;
+            local_t *= t;
         }
-        if frame.determinant().abs() < 1e-9 {
-            return; // degenerate transform — nothing is hittable
+        let mut frame = Projective::from_affine(local_t).then(&to_window);
+        // A perspective node (09 §10.7, L66) maps its subtree through its projection.
+        if let Some(h) = node.object.as_deref().and_then(|o| o.projection(node.size)) {
+            frame = h.then(&frame);
         }
-        let local = frame.inverse() * point.to_point();
+        // Degenerate transforms and points behind the camera hit nothing.
+        let Some(local) = frame.inverse().and_then(|inv| inv.map_point(point.to_point())) else { return };
         if !Rect::from_origin_size((0.0, 0.0), node.size).contains(local) {
             return;
         }

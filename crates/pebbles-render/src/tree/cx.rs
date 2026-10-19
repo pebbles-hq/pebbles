@@ -227,6 +227,28 @@ impl PaintCx<'_> {
         let node = &self.tree.nodes[child];
         let Some(object) = node.object.as_deref() else { return };
         let local = node.paint_rect;
+        if let Some(h) = object.projection(node.size) {
+            // 09 §10.7 (L66): the subtree paints in local space into a projected layer.
+            crate::stats::bump_painted();
+            let placed = h.then(&crate::paint::Projective::from_affine(Affine::translate((
+                absolute_offset.x,
+                absolute_offset.y,
+            ))));
+            let mut sub_scene = crate::paint::scene();
+            let mut sub = PaintCx {
+                scene: crate::paint::Painter::new(&mut sub_scene),
+                text: &mut *self.text,
+                tree: self.tree,
+                current: child,
+                visible: Rect::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::INFINITY),
+                relayout: self.relayout,
+            };
+            object.paint(&mut sub, Offset::ZERO);
+            self.scene.push_projected_layer(placed, local, None::<&Rect>);
+            self.scene.append(&sub_scene, None);
+            self.scene.pop_layer();
+            return;
+        }
         match node_transform(node) {
             // Pure translation: no sub-scene, no bbox math — fold into the offset.
             Some(t) if is_translation(t) => {
