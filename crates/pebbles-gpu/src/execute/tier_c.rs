@@ -28,20 +28,30 @@ fn intersect(a: ScissorRect, b: ScissorRect) -> ScissorRect {
     ScissorRect { x0, y0, x1: a.x1.min(b.x1).max(x0), y1: a.y1.min(b.y1).max(y0) }
 }
 
-/// Group consecutive `Solid` cmds sharing a clip into runs with their vertex bounds.
+/// A tessellated draw of a run: a solid mesh, or a gradient-painted one (09 §6 Mesh variant).
+fn mesh_of(cmd: &DrawCmd) -> Option<(&Range<u32>, crate::prepare::ClipState)> {
+    use crate::prepare::plan::GradientCover;
+    match cmd {
+        DrawCmd::Solid { indices, clip } => Some((indices, *clip)),
+        DrawCmd::Gradient { cover: GradientCover::Mesh(indices), clip, .. } => Some((indices, *clip)),
+        _ => None,
+    }
+}
+
+/// Group consecutive tessellated cmds sharing a clip into runs with their vertex bounds.
 pub(crate) fn plan_runs(plan: &FramePlan, out: &mut Vec<Run>) {
     out.clear();
     let mut i = 0;
     while i < plan.cmds.len() {
-        let DrawCmd::Solid { clip, .. } = plan.cmds[i] else {
+        let Some((_, clip)) = mesh_of(&plan.cmds[i]) else {
             i += 1;
             continue;
         };
         let start = i;
         let (mut x0, mut y0, mut x1, mut y1) =
             (f32::INFINITY, f32::INFINITY, f32::NEG_INFINITY, f32::NEG_INFINITY);
-        while let Some(DrawCmd::Solid { indices, clip: c }) = plan.cmds.get(i) {
-            if *c != clip {
+        while let Some((indices, c)) = plan.cmds.get(i).and_then(mesh_of) {
+            if c != clip {
                 break;
             }
             for &ix in
@@ -198,10 +208,36 @@ pub(crate) fn encode_runs(
             pass.set_scissor_rect(s.x0 - b.x0, s.y0 - b.y0, s.x1 - s.x0, s.y1 - s.y0);
             stats.scissor_changes += 1;
             pass.push_debug_group(PipelineKind::Solid.debug_label());
+            let gradient_key = PipelineKey { kind: PipelineKind::Gradient, variant: 2, ..solid };
+            let mut painted = false;
             for cmd in &renderer.scratch.plan.cmds[run.cmds.clone()] {
-                if let DrawCmd::Solid { indices, .. } = cmd {
-                    pass.draw_indexed(indices.clone(), 0, 0..1);
-                    stats.draw_calls += 1;
+                match cmd {
+                    DrawCmd::Solid { indices, .. } => {
+                        if painted {
+                            pass.set_pipeline(pipeline);
+                            painted = false;
+                        }
+                        pass.draw_indexed(indices.clone(), 0, 0..1);
+                        stats.draw_calls += 1;
+                    }
+                    DrawCmd::Gradient {
+                        cover: crate::prepare::plan::GradientCover::Mesh(indices),
+                        gradient,
+                        ..
+                    } => {
+                        let (Some(gp), Some(bg)) =
+                            (renderer.pipelines.get_ensured(gradient_key), renderer.gradients.bind_group())
+                        else {
+                            continue;
+                        };
+                        pass.set_pipeline(gp);
+                        pass.set_bind_group(1, bg, &[renderer.gradient_offset(*gradient)]);
+                        stats.bind_group_switches += 1;
+                        painted = true;
+                        pass.draw_indexed(indices.clone(), 0, 0..1);
+                        stats.draw_calls += 1;
+                    }
+                    _ => {}
                 }
             }
             pass.pop_debug_group();

@@ -12,6 +12,7 @@ pub(crate) struct BindGroupLayouts {
     pub composite: wgpu::BindGroupLayout,
     pub composite_backdrop: wgpu::BindGroupLayout,
     pub blit: wgpu::BindGroupLayout,
+    pub gradient: wgpu::BindGroupLayout,
 }
 
 impl BindGroupLayouts {
@@ -176,7 +177,24 @@ impl BindGroupLayouts {
             label: Some("pebbles.gpu.layout.blit"),
             entries: &[tex_entry(0)],
         });
-        Self { globals, texture, glyph, composite, composite_backdrop, blit }
+        // 09 §5.4: the gradient LUT + `GradientParams` (dynamic, 80 bytes).
+        let gradient = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("pebbles.gpu.layout.gradient"),
+            entries: &[
+                tex_entry(0),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true,
+                        min_binding_size: wgpu::BufferSize::new(80),
+                    },
+                    count: None,
+                },
+            ],
+        });
+        Self { globals, texture, glyph, composite, composite_backdrop, blit, gradient }
     }
 }
 

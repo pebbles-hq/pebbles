@@ -52,11 +52,13 @@ pub enum Unsupported {
     /// A clip needed a GPU coverage mask but `MAX_GPU_MASKS` were active or the mask pool budget
     /// was exhausted: clipped to its bounding box (09 §2.2 row 10).
     ClipOverflow,
+    /// The gradient LUT had no room even after eviction: drawn as its first stop (09 §5.3).
+    LutFull,
 }
 
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
-    pub const COUNT: usize = 23;
+    pub const COUNT: usize = 24;
     /// Every variant, in discriminant order.
     pub const ALL: [Unsupported; Self::COUNT] = [
         Self::NonRectClip,
@@ -82,6 +84,7 @@ impl Unsupported {
         Self::GlyphIdRange,
         Self::BlurMaskTooLarge,
         Self::ClipOverflow,
+        Self::LutFull,
     ];
 
     /// The variant's 11 §4.2 key, used in logs and stats dumps.
@@ -110,6 +113,7 @@ impl Unsupported {
             Self::GlyphIdRange => "glyph-id-out-of-range",
             Self::BlurMaskTooLarge => "blur-mask-too-large",
             Self::ClipOverflow => "clip-mask-overflow",
+            Self::LutFull => "gradient-lut-full",
         }
     }
 }

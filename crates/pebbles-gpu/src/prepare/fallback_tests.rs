@@ -104,13 +104,18 @@ fn blend_layer_goes_offscreen_through_the_backdrop() {
 }
 
 #[test]
-fn gradient_fill_is_skipped_and_counted() {
+fn gradient_fill_is_a_gradient_draw() {
     let mut scene = Scene::new();
     let mut p = Painter::new(&mut scene);
     p.fill(Fill::NonZero, Affine::IDENTITY, &gradient(), None, &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0));
     let (plan, stats) = plan_and_stats(&scene);
-    assert!(plan.cmds.is_empty());
-    assert_eq!(stats.unsupported[Unsupported::GradientBrush as usize], 1);
+    // 09 §5 (L35): the tessellated tier's mesh, painted by the gradient.
+    assert!(matches!(
+        plan.cmds[..],
+        [DrawCmd::Gradient { cover: plan::GradientCover::Mesh(_), gradient: 0, .. }]
+    ));
+    assert_eq!(plan.gradients.len(), 1);
+    assert_eq!(stats.unsupported[Unsupported::GradientBrush as usize], 0);
 }
 
 #[test]
@@ -136,14 +141,15 @@ fn gradient_text_uses_first_stop() {
 fn warn_once_logs_once_per_kind() {
     let mut scene = Scene::new();
     let mut p = Painter::new(&mut scene);
+    let image = crate::test_support::rgba_image(4, 4, [255; 4]);
     for _ in 0..100 {
-        p.fill(Fill::NonZero, Affine::IDENTITY, &gradient(), None, &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0));
+        p.fill(Fill::NonZero, Affine::IDENTITY, &image, None, &kurbo::Rect::new(0.0, 0.0, 10.0, 10.0));
     }
     let mut warn = crate::stats::WarnOnce::default();
     let mut lines = 0;
     for _frame in 0..3 {
         let (_, stats) = plan_and_stats(&scene);
-        assert_eq!(stats.unsupported[Unsupported::GradientBrush as usize], 100);
+        assert_eq!(stats.unsupported[Unsupported::ImageBrush as usize], 100);
         for kind in Unsupported::ALL {
             lines += u32::from(warn.report(kind, stats.unsupported[kind as usize]));
         }

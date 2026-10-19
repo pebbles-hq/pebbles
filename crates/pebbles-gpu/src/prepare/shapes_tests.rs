@@ -53,13 +53,18 @@ fn rotated_rect_is_tessellated() {
 }
 
 #[test]
-fn gradient_brush_is_tessellated_or_fallback() {
+fn gradient_brush_takes_the_shape_cover() {
     let mut scene = Scene::new();
     let g = peniko::Gradient::new_linear((0.0, 0.0), (10.0, 0.0))
         .with_stops([Color::BLACK, Color::WHITE].as_slice());
     Painter::new(&mut scene).fill(Fill::NonZero, Affine::IDENTITY, &g, None, &R);
     let (plan, _) = prepare_scene(&scene, 64, 64);
-    assert!(plan.shapes.is_empty(), "a gradient never takes the solid Tier A path");
+    // 09 §6 brush × tier rule: a Tier A rect keeps its analytic coverage; the gradient paints it.
+    assert!(matches!(
+        plan.cmds[..],
+        [crate::prepare::DrawCmd::Gradient { cover: crate::prepare::plan::GradientCover::Shape(_), .. }]
+    ));
+    assert_eq!(plan.shapes[0].color, [1.0; 4], "white × alpha: coverage only");
 }
 
 #[test]

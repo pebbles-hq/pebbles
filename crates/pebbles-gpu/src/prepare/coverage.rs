@@ -224,35 +224,42 @@ pub(crate) const DELIVERED: &[Feature] = &[
     F::ImageOversize,
     F::GlyphsSolid,
     F::GlyphsVariable,
-    F::GlyphsTransform,    // R20
-    F::GlyphsRotated,      // R20
-    F::GlyphsLarge,        // R20
-    F::GlyphsDegenerate,   // R22
-    F::GlyphsColorRotated, // R29
-    F::GlyphsColor,        // R39
-    F::ImageQuality,       // R30
-    F::ImageExtend,        // R30
-    F::ImageTransform,     // R31
-    F::ImageAlpha,         // R32
-    F::ImageMalformed,     // R33
-    F::ImageMipmaps,       // R35
-    F::ShadowAxisAligned,  // R40
-    F::ShadowRotated,      // R40
-    F::ShadowDegenerate,   // R41
-    F::ImageNine,          // R36
-    F::DynamicImage,       // R37
-    F::BlurredFill,        // R42
-    F::BlurredGlyphs,      // R42
-    F::ClipRRect,          // L04 (SDF clip)
-    F::ClipCircle,         // L04 (SDF clip)
-    F::LayerAlpha,         // L12 (exact fold) + L14 (offscreen composite)
-    F::ClipGpuMask,        // L09 (GPU coverage masks)
-    F::ClipRectRotated,    // L08/L09 (coverage masks), L01
-    F::ClipPath,           // L08/L09, L01
-    F::ClipEvenOdd,        // L08/L09, L01
-    F::LayerMix,           // L23/L24 (backdrop composite)
-    F::LayerCompose,       // L21 (fixed-function) / L24 (backdrop under SDF or mask clips)
-    F::LayerMixAndCompose, // L23/L24
+    F::GlyphsTransform,              // R20
+    F::GlyphsRotated,                // R20
+    F::GlyphsLarge,                  // R20
+    F::GlyphsDegenerate,             // R22
+    F::GlyphsColorRotated,           // R29
+    F::GlyphsColor,                  // R39
+    F::ImageQuality,                 // R30
+    F::ImageExtend,                  // R30
+    F::ImageTransform,               // R31
+    F::ImageAlpha,                   // R32
+    F::ImageMalformed,               // R33
+    F::ImageMipmaps,                 // R35
+    F::ShadowAxisAligned,            // R40
+    F::ShadowRotated,                // R40
+    F::ShadowDegenerate,             // R41
+    F::ImageNine,                    // R36
+    F::DynamicImage,                 // R37
+    F::BlurredFill,                  // R42
+    F::BlurredGlyphs,                // R42
+    F::ClipRRect,                    // L04 (SDF clip)
+    F::ClipCircle,                   // L04 (SDF clip)
+    F::LayerAlpha,                   // L12 (exact fold) + L14 (offscreen composite)
+    F::ClipGpuMask,                  // L09 (GPU coverage masks)
+    F::ClipRectRotated,              // L08/L09 (coverage masks), L01
+    F::ClipPath,                     // L08/L09, L01
+    F::ClipEvenOdd,                  // L08/L09, L01
+    F::LayerMix,                     // L23/L24 (backdrop composite)
+    F::LayerCompose,                 // L21 (fixed-function) / L24 (backdrop under SDF or mask clips)
+    F::LayerMixAndCompose,           // L23/L24
+    F::FillGradientLinear,           // L35
+    F::FillGradientRadial,           // L35
+    F::FillGradientSweep,            // L35
+    F::StrokeGradient,               // L35
+    F::GradientStopsExtend,          // L32/L35
+    F::GradientNonSrgbInterpolation, // L32
+    F::GradientBrushTransform,       // L33
 ];
 
 #[cfg(test)]

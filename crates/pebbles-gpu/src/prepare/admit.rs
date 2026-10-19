@@ -42,10 +42,8 @@ impl Walk<'_> {
     pub(super) fn solid_color(&mut self, brush: &peniko::Brush) -> Option<peniko::Color> {
         match brush {
             peniko::Brush::Solid(c) => Some(*c),
-            peniko::Brush::Gradient(_) => {
-                self.stats.record(Unsupported::GradientBrush);
-                None
-            }
+            // Gradients are routed by `brush_paint` (09 §5); never reached for fills/strokes.
+            peniko::Brush::Gradient(_) => None,
             peniko::Brush::Image(_) => {
                 self.stats.record(Unsupported::ImageBrush);
                 None

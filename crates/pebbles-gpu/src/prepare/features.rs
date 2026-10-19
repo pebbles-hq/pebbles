@@ -35,27 +35,8 @@ impl Walk<'_> {
     pub(super) fn note_paint(&mut self, brush: &peniko::Brush, brush_xf: Option<Affine>, stroke: bool) {
         match brush {
             peniko::Brush::Solid(_) => {}
-            peniko::Brush::Gradient(g) => {
-                self.fell_back(if stroke {
-                    Feature::StrokeGradient
-                } else {
-                    match g.kind {
-                        peniko::GradientKind::Linear(_) => Feature::FillGradientLinear,
-                        peniko::GradientKind::Radial(_) => Feature::FillGradientRadial,
-                        peniko::GradientKind::Sweep(_) => Feature::FillGradientSweep,
-                    }
-                });
-                if g.extend != peniko::Extend::Pad || g.stops.iter().any(|s| s.color.components[3] < 1.0) {
-                    self.fell_back(Feature::GradientStopsExtend);
-                }
-                if g.interpolation_cs != peniko::color::ColorSpaceTag::Srgb {
-                    self.fell_back(Feature::GradientNonSrgbInterpolation);
-                }
-                if brush_xf.is_some() {
-                    self.fell_back(Feature::GradientBrushTransform);
-                }
-                self.fell_back(Feature::GradientDither);
-            }
+            // Gradients draw exactly (L35); only dithering is still missing (L37).
+            peniko::Brush::Gradient(_) => self.fell_back(Feature::GradientDither),
             peniko::Brush::Image(_) => {
                 self.fell_back(if stroke { Feature::StrokeImageBrush } else { Feature::FillImageBrush });
                 if brush_xf.is_some() {

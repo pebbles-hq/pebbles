@@ -127,9 +127,25 @@ pub(crate) struct CompositeParams {
 }
 const _: () = assert!(size_of::<CompositeParams>() == 32);
 
+/// Gradient draw parameters (09 §5.4), one uniform slot per `GradientDraw`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Pod, Zeroable)]
+pub(crate) struct GradientParams {
+    /// `G` row x: (a, c, e, 0) — device px → gradient space.
+    pub m0: [f32; 4],
+    /// `G` row y: (b, d, f, 0).
+    pub m1: [f32; 4],
+    /// (kind, extend as u32, lut_start, lut_len).
+    pub info: [u32; 4],
+    pub p0: [f32; 4],
+    pub p1: [f32; 4],
+}
+const _: () = assert!(size_of::<GradientParams>() == 80);
+const _: () = assert!(core::mem::offset_of!(GradientParams, info) == 32);
+
 #[cfg(test)]
 mod tests {
-    use super::CompositeParams;
+    use super::{CompositeParams, GradientParams};
 
     #[test]
     fn composite_params_layout() {
@@ -138,5 +154,12 @@ mod tests {
         assert_eq!(core::mem::offset_of!(CompositeParams, mix_mode), 20);
         assert_eq!(core::mem::offset_of!(CompositeParams, compose), 24);
         assert_eq!(core::mem::offset_of!(CompositeParams, _pad), 28);
+    }
+
+    #[test]
+    fn gradient_params_layout() {
+        assert_eq!(size_of::<GradientParams>(), 80);
+        assert_eq!(core::mem::offset_of!(GradientParams, info), 32);
+        assert_eq!(core::mem::offset_of!(GradientParams, p0), 48);
     }
 }

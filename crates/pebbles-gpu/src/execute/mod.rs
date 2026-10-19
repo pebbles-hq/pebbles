@@ -2,6 +2,7 @@
 
 pub(crate) mod encode;
 pub(crate) mod gpu_masks;
+pub(crate) mod gradients;
 pub(crate) mod layers;
 pub(crate) mod pipelines;
 pub(crate) mod resolve;

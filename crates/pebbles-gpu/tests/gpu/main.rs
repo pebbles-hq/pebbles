@@ -18,6 +18,7 @@ mod frame_targets_gpu;
 mod gpu_color;
 mod gpu_geometry;
 mod gpu_smoke;
+mod gradients;
 mod image_cache_gpu;
 mod images;
 mod layers;

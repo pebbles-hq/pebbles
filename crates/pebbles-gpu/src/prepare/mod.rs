@@ -23,6 +23,7 @@ mod features;
 pub(crate) mod glyph_outline;
 pub(crate) mod glyphs;
 pub(crate) mod gpu_masks;
+pub(crate) mod gradient;
 mod hygiene;
 mod image_nine;
 mod images;
@@ -116,6 +117,7 @@ pub(crate) fn prepare<'s>(
         sdf: !scratch.sdf_disabled,
         clip_hint: pebbles_render::paint::display_list::PathHint::Auto,
         gpu_mask_budget: scratch.gpu_mask_budget.unwrap_or(gpu_masks::DEFAULT_BUDGET_BYTES),
+        paint: None,
     };
     walk.emit(scene.ops(), input.root_transform);
     // 09 §2.7: pushes still open at the end of the frame are auto-closed (emitting the pops
@@ -148,6 +150,8 @@ struct Walk<'a> {
     clip_hint: pebbles_render::paint::display_list::PathHint,
     /// `GpuBudgets::gpu_mask_bytes` (rows 9–10).
     gpu_mask_budget: u64,
+    /// The gradient painting the current op (09 §5), if any.
+    paint: Option<u32>,
 }
 
 /// One COLR glyph the renderer must render into the color atlas before the frame (R39).
@@ -581,6 +585,7 @@ impl Walk<'_> {
             self.visit += 1;
             let idx = self.visit;
             self.plan.stats.ops += 1;
+            self.paint = None;
             match op {
                 Op::Fill { style, transform, brush, brush_transform, shape, .. } => {
                     let xf = outer * *transform;
@@ -596,7 +601,8 @@ impl Walk<'_> {
                         continue;
                     }
                     self.note_paint(brush, *brush_transform, false);
-                    let Some(color) = self.solid_color(brush) else { continue };
+                    let paint_xf = xf * brush_transform.unwrap_or(Affine::IDENTITY);
+                    let Some(color) = self.brush_paint(brush, paint_xf) else { continue };
                     if self.vertex_budget_spent() {
                         continue;
                     }
@@ -642,7 +648,8 @@ impl Walk<'_> {
                         continue;
                     }
                     self.note_paint(brush, *brush_transform, true);
-                    let Some(color) = self.solid_color(brush) else { continue };
+                    let paint_xf = xf * brush_transform.unwrap_or(Affine::IDENTITY);
+                    let Some(color) = self.brush_paint(brush, paint_xf) else { continue };
                     if self.vertex_budget_spent() {
                         continue;
                     }
@@ -972,7 +979,45 @@ impl Walk<'_> {
     }
 
     fn push(&mut self, cmd: DrawCmd, visit: u32) {
+        // A gradient-painted op (09 §5): its tier's coverage cmd becomes a Gradient cmd.
+        let cmd = match (self.paint, cmd) {
+            (Some(gradient), DrawCmd::Shapes { instances, clip }) => {
+                DrawCmd::Gradient { cover: plan::GradientCover::Shape(instances), gradient, clip }
+            }
+            (Some(gradient), DrawCmd::Glyphs { glyphs, clip }) => {
+                DrawCmd::Gradient { cover: plan::GradientCover::Mask(glyphs), gradient, clip }
+            }
+            (Some(gradient), DrawCmd::Solid { indices, clip }) => {
+                DrawCmd::Gradient { cover: plan::GradientCover::Mesh(indices), gradient, clip }
+            }
+            (_, cmd) => cmd,
+        };
         push_cmd(self.plan, cmd, visit);
+    }
+
+    /// The color an op's geometry is emitted with: the solid color, or for a valid gradient
+    /// white (coverage × alpha only) with `self.paint` set to its `GradientDraw`; an invalid
+    /// gradient draws its §5.1 fallback solid. Image brushes record their fallback (L40).
+    fn brush_paint(&mut self, brush: &peniko::Brush, paint_xf: Affine) -> Option<peniko::Color> {
+        match brush {
+            peniko::Brush::Gradient(g) => match gradient::validate_gradient(g, paint_xf) {
+                Err(c) => {
+                    self.plan.stats.gradient_fallbacks += 1;
+                    Some(c)
+                }
+                Ok(()) => {
+                    let first = g.stops.first().map_or([0.0; 4], |s| color::premul(s.color.to_alpha_color()));
+                    self.plan.gradients.push(plan::GradientDraw {
+                        geom: gradient::gradient_geom(g, paint_xf),
+                        ramp: gradient::RampKey::of(g),
+                        first,
+                    });
+                    self.paint = Some(num::index_u32(self.plan.gradients.len() - 1));
+                    Some(peniko::Color::WHITE)
+                }
+            },
+            _ => self.solid_color(brush),
+        }
     }
 }
 

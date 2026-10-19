@@ -72,6 +72,7 @@ impl PipelineKind {
             Self::CompositeCompose => "pebbles.gpu.pipeline.composite_compose",
             Self::CompositeBackdrop => "pebbles.gpu.pipeline.composite_backdrop",
             Self::Blit => "pebbles.gpu.pipeline.blit",
+            Self::Gradient => "pebbles.gpu.pipeline.gradient",
             _ => "pebbles.gpu.pipeline.other",
         }
     }
@@ -120,6 +121,7 @@ pub(crate) struct ShaderModules {
     pub sdf: wgpu::ShaderModule,
     pub composite: wgpu::ShaderModule,
     pub blit: wgpu::ShaderModule,
+    pub gradient: wgpu::ShaderModule,
 }
 
 impl ShaderModules {
@@ -139,6 +141,7 @@ impl ShaderModules {
             sdf: module("pebbles.gpu.shader.sdf", shaders::SDF),
             composite: module("pebbles.gpu.shader.composite", shaders::COMPOSITE),
             blit: module("pebbles.gpu.shader.blit", shaders::BLIT),
+            gradient: module("pebbles.gpu.shader.gradient", shaders::GRADIENT),
         }
     }
 
@@ -153,6 +156,7 @@ impl ShaderModules {
             | PipelineKind::CompositeCompose
             | PipelineKind::CompositeBackdrop => &self.composite,
             PipelineKind::Blit => &self.blit,
+            PipelineKind::Gradient => &self.gradient,
             _ => &self.solid,
         }
     }
@@ -192,6 +196,7 @@ impl PipelineCache {
             PipelineKind::CompositeOver | PipelineKind::CompositeCompose => Some(&layouts.composite),
             PipelineKind::CompositeBackdrop => Some(&layouts.composite_backdrop),
             PipelineKind::Blit => Some(&layouts.blit),
+            PipelineKind::Gradient => Some(&layouts.gradient),
             _ => None,
         };
         debug_assert_eq!(group1.is_some(), desc.group1, "{kind:?}: group 1 disagrees with 02 §9");
@@ -220,7 +225,7 @@ impl PipelineCache {
         }
         let shader = modules.for_kind(key.kind);
         // Kinds without a §9 row in code yet are never reached (later cards add them).
-        let Some(desc) = descs::desc_of(key.kind) else { return };
+        let Some(desc) = descs::desc_for(key) else { return };
         debug_assert!(crate::shaders::ALL.iter().any(|(n, _)| desc.wgsl.trim_end_matches(".wgsl") == *n));
         let pipeline_layout = self.layout_for(device, &desc, layouts);
         let pipeline = descs::build(device, shader, &pipeline_layout, key, &desc);

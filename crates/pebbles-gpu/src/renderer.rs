@@ -47,6 +47,8 @@ pub struct Renderer {
     /// This frame's `Globals::color_flags`.
     color_flags: u32,
     pub(crate) runs: Vec<super::execute::tier_c::Run>,
+    /// Gradient LUT and params (09 §5.3, L34/L35).
+    pub(crate) gradients: super::execute::gradients::GradientResources,
     /// GPU coverage masks: the mask pool and the per-texture group-0 variants (09 §2.9, L09).
     pub(crate) gpu_masks: super::execute::gpu_masks::GpuMasks,
     /// `layer_budget_exceeded` already warned (once per renderer).
@@ -86,6 +88,8 @@ impl Renderer {
         c.color_glyph_fragments = self.scratch.colr.len();
         c.pipelines = self.pipelines.len();
         (c.gpu_mask_textures, c.gpu_mask_bytes) = self.gpu_masks.census();
+        let (_, rows_used, rows_total) = self.gradients.lut.census();
+        (c.gradient_rows_used, c.gradient_rows_capacity) = (rows_used as usize, rows_total);
         c.arena_capacity_bytes = self.arenas.capacity_bytes();
         c
     }
@@ -113,6 +117,7 @@ impl Renderer {
         let mask_clip_buffer = uniform_buffer(device, "pebbles.gpu.buffer.mask_clips", 1);
         let (mask_view, mask_gen) = glyph_atlas.mask_view();
         let gpu_masks = super::execute::gpu_masks::GpuMasks::new(device);
+        let lut_rows = budgets.gradient_lut_max_rows;
         let globals_bg = globals_bind_group(
             device,
             &layouts,
@@ -145,6 +150,7 @@ impl Renderer {
             color_flags: 0,
             runs: Vec::new(),
             gpu_masks,
+            gradients: super::execute::gradients::GradientResources::new(device, lut_rows),
             segments: Vec::new(),
             layer_budget_warned: false,
             arenas: FrameArenas::new(),
@@ -311,6 +317,7 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("pebbles.gpu.encoder") });
         encoder.push_debug_group("pebbles.gpu.frame");
         super::execute::gpu_masks::render_jobs(self, device, queue, &mut encoder, &mut stats);
+        super::execute::gradients::prepare(self, device, queue, format, &mut stats);
         let composites = super::execute::tier_c::encode_runs(
             self,
             device,
@@ -408,6 +415,7 @@ impl Renderer {
             }
         }
         self.gpu_masks.end_frame(self.budgets.gpu_mask_bytes);
+        self.gradients.lut.end_frame();
         stats.layer_pool_bytes = target.targets.pool.bytes();
         self.scratch.plan.release_refs();
         if !nested {
@@ -618,6 +626,11 @@ impl Renderer {
             self.globals_bg_key = key;
             stats.bind_groups_created += 1;
         }
+    }
+
+    /// The dynamic offset of gradient `i`'s params (09 §5.4).
+    pub(crate) fn gradient_offset(&self, i: u32) -> u32 {
+        super::execute::gradients::GradientResources::offset(&self.device, i)
     }
 
     /// The dynamic offset of mask-clip record `id` (09 L08).

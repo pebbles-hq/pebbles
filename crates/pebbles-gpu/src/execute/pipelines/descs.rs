@@ -93,6 +93,35 @@ pub(crate) fn pipeline_descs() -> Vec<PipelineDesc> {
             layout: layout(size_of::<ShadowInstance>(), Instance, &SHADOW_ATTRIBUTES),
             group1: false,
         },
+        // 09 §6 brush × tier rule: the Gradient kind's three coverage variants (key.variant
+        // 0 Shape, 1 Mask, 2 Mesh); `desc_for` picks the row by variant.
+        PipelineDesc {
+            kind: PipelineKind::Gradient,
+            wgsl: "gradient.wgsl",
+            vs: "vs_shape",
+            fs: "fs_shape",
+            topology: TriangleStrip,
+            layout: layout(size_of::<ShapeInstance>(), Instance, &ShapeInstance::ATTRIBUTES),
+            group1: true,
+        },
+        PipelineDesc {
+            kind: PipelineKind::Gradient,
+            wgsl: "gradient.wgsl",
+            vs: "vs_mask",
+            fs: "fs_mask",
+            topology: TriangleStrip,
+            layout: layout(size_of::<QuadInstance>(), Instance, &QUAD_ATTRIBUTES),
+            group1: true,
+        },
+        PipelineDesc {
+            kind: PipelineKind::Gradient,
+            wgsl: "gradient.wgsl",
+            vs: "vs_mesh",
+            fs: "fs_mesh",
+            topology: TriangleList,
+            layout: layout(size_of::<SolidVertex>(), Vertex, &SOLID_ATTRIBUTES),
+            group1: true,
+        },
         PipelineDesc {
             kind: PipelineKind::CompositeOver,
             wgsl: "composite.wgsl",
@@ -132,9 +161,19 @@ pub(crate) fn pipeline_descs() -> Vec<PipelineDesc> {
     ]
 }
 
-/// The table row of `kind`, if the kind exists in code.
+/// The table row of `kind`, if the kind exists in code (a variant kind: its first row).
 pub(crate) fn desc_of(kind: PipelineKind) -> Option<PipelineDesc> {
     pipeline_descs().into_iter().find(|d| d.kind == kind)
+}
+
+/// The row `key` builds: kinds with coverage variants (Gradient) select by `key.variant`.
+pub(crate) fn desc_for(key: PipelineKey) -> Option<PipelineDesc> {
+    match key.kind {
+        PipelineKind::Gradient => {
+            pipeline_descs().into_iter().filter(|d| d.kind == key.kind).nth(usize::from(key.variant))
+        }
+        kind => desc_of(kind),
+    }
 }
 
 /// Build `key`'s pipeline from its table row (premultiplied source-over, no depth/stencil,

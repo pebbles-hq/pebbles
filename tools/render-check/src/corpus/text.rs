@@ -45,8 +45,8 @@ pub fn cases() -> Vec<Case> {
         ops("text/colr_v0_layers", Text, P2, 160, 160, colr_v0_layers),
         ops("text/colr_v0_rotated", Text, P2, 160, 160, colr_v0_rotated),
         ops("text/colr_foreground", Text, P2, 160, 160, colr_foreground),
-        ops("text/colr_v1_gradient", Text, P2, 160, 160, colr_v1_gradient)
-            .xfail("L30", "COLRv1 gradients take the C17 fallback until gradients ship (L30)"),
+        // COLRv1 gradients render through the gradient pipeline (L35).
+        ops("text/colr_v1_gradient", Text, P2, 160, 160, colr_v1_gradient),
         // COLRv1 composite modes render through the blend layers of L21–L24.
         ops("text/colr_v1_composite", Text, P2, 160, 160, colr_v1_composite),
     ]);

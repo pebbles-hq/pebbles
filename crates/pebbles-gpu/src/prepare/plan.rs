@@ -156,6 +156,53 @@ pub(crate) enum DrawCmd {
     PopLayer { layer: u32 },
     /// Composite layer `layer` into the parent target under `clip` (09 §3.7).
     Composite { layer: u32, clip: ClipState },
+    /// A gradient-painted draw (09 §5): the geometry's tier coverage × the ramp of
+    /// `plan.gradients[gradient]`. Merges only with the same gradient, cover kind and clip.
+    Gradient { cover: GradientCover, gradient: u32, clip: ClipState },
+}
+
+/// The coverage source of a brush draw (09 §6 brush × tier rule).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum GradientCover {
+    /// Tier A: `shapes` instances.
+    Shape(std::ops::Range<u32>),
+    /// Tier B: `glyphs` (path-mask quads).
+    Mask(std::ops::Range<u32>),
+    /// Tier C: `solid_indices` (drawn inside the MSAA run).
+    Mesh(std::ops::Range<u32>),
+}
+
+impl GradientCover {
+    pub(crate) fn variant(&self) -> u8 {
+        match self {
+            Self::Shape(_) => 0,
+            Self::Mask(_) => 1,
+            Self::Mesh(_) => 2,
+        }
+    }
+
+    fn range(&self) -> &std::ops::Range<u32> {
+        match self {
+            Self::Shape(r) | Self::Mask(r) | Self::Mesh(r) => r,
+        }
+    }
+
+    fn with_range(&self, r: std::ops::Range<u32>) -> Self {
+        match self {
+            Self::Shape(_) => Self::Shape(r),
+            Self::Mask(_) => Self::Mask(r),
+            Self::Mesh(_) => Self::Mesh(r),
+        }
+    }
+}
+
+/// One gradient paint of the frame (09 §5.4): geometry for the shader and the LUT key.
+#[derive(Clone, Debug)]
+pub(crate) struct GradientDraw {
+    pub geom: super::gradient::GradientGeom,
+    pub ramp: super::gradient::RampKey,
+    /// Premultiplied first stop: drawn instead when the LUT is full (§5.3).
+    pub first: [f32; 4],
 }
 
 /// Which target a layer composites into (09 §3.5).
@@ -258,6 +305,8 @@ pub(crate) struct PrepareStats {
     pub clips_gpu_mask: u32,
     /// GPU masks refused (row 10): `MAX_GPU_MASKS` active or the budget spent.
     pub gpu_mask_overflow: u32,
+    /// Invalid gradients drawn as their fallback solid (09 §5.1).
+    pub gradient_fallbacks: u32,
     /// Clips with a non-finite transform or geometry (row 1).
     pub nonfinite: u32,
     /// `PopLayer`s without a matching push, ignored (§2.7).
@@ -298,6 +347,8 @@ pub(crate) struct FramePlan {
     pub mask_clips: Vec<MaskClipRecord>,
     /// The clip paths the mask records reference.
     pub clip_sources: Vec<MaskClipSource>,
+    /// Gradient paints (09 §5), indexed by `DrawCmd::Gradient::gradient`.
+    pub gradients: Vec<GradientDraw>,
     /// GPU coverage masks (09 §2.9), parents before children.
     pub gpu_mask_jobs: Vec<GpuMaskJob>,
     /// Estimated mask pool bytes of `gpu_mask_jobs` (against `GpuBudgets::gpu_mask_bytes`).
@@ -340,6 +391,7 @@ impl FramePlan {
         });
         self.clip_sources.clear();
         self.gpu_mask_jobs.clear();
+        self.gradients.clear();
         self.gpu_mask_bytes = 0;
         self.layers.clear();
         self.root_needs_backdrop = false;
@@ -423,6 +475,9 @@ fn format_cmd(cmd: &DrawCmd) -> String {
         DrawCmd::PushLayer { layer } => format!("PushLayer {layer}"),
         DrawCmd::PopLayer { layer } => format!("PopLayer {layer}"),
         DrawCmd::Composite { layer, clip } => format!("Composite {layer} {}", clip_str(clip)),
+        DrawCmd::Gradient { cover, gradient, clip } => {
+            format!("Gradient {cover:?} g{gradient} {}", clip_str(clip))
+        }
     }
 }
 
@@ -462,6 +517,16 @@ fn merge(last: &DrawCmd, new: &DrawCmd, images: &[ImageRequest]) -> Option<DrawC
             if ca == cb && a.end == b.start && same_texture(images, a.start, b.start) =>
         {
             Some(DrawCmd::Images { images: a.start..b.end, clip: *ca })
+        }
+        (
+            DrawCmd::Gradient { cover: a, gradient: ga, clip: ca },
+            DrawCmd::Gradient { cover: b, gradient: gb, clip: cb },
+        ) if ga == gb && ca == cb && a.variant() == b.variant() && a.range().end == b.range().start => {
+            Some(DrawCmd::Gradient {
+                cover: a.with_range(a.range().start..b.range().end),
+                gradient: *ga,
+                clip: *ca,
+            })
         }
         _ => None,
     }
