@@ -51,9 +51,9 @@ fn rotated_shadow_is_rotated() {
     let Some(mut r) = setup("rotated_shadow_is_rotated") else { return };
     let t = Affine::rotate_about(std::f64::consts::FRAC_PI_4, kurbo::Point::new(100.0, 100.0));
     let px = shadow_px(&mut r, t);
-    // Inside the axis-aligned bbox of the rotated square (x, y ≥ 29.3) but 2·std_dev outside the
-    // square itself (along the diagonal: 70.7 − 50 = 20.7 px).
-    let p = pixel(&px, 200, 50, 50);
+    // Inside the axis-aligned bbox of the rotated square (x, y ≥ 29.3) but ≈ 2.6σ outside the
+    // square itself (along the diagonal: 75.7 − 50 = 25.7 px).
+    let p = pixel(&px, 200, 46, 46);
     assert!(rgb_in(p, 250, 255), "{p:?} (an AABB shader would darken it)");
     assert!(rgb_in(pixel(&px, 200, 100, 100), 0, 1));
 }

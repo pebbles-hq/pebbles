@@ -110,7 +110,8 @@ impl RenderObject for RenderDecoratedBox {
                 shadow_rect,
                 shadow.color,
                 shadow_radius,
-                shadow.blur.max(0.01),
+                // Flutter: BoxShadow.blurRadius → σ via convertRadiusToSigma (Skia semantics).
+                shadow.blur_sigma(),
             );
         }
 

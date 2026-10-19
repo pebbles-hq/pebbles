@@ -116,7 +116,7 @@ impl Border {
 pub struct BoxShadow {
     pub color: Color,
     pub offset: Offset,
-    /// Gaussian blur radius.
+    /// Blur radius (Flutter's `BoxShadow.blurRadius`); the Gaussian σ is [`BoxShadow::blur_sigma`].
     pub blur: f64,
     /// How far to grow (or shrink, if negative) the shadow rect before blurring.
     pub spread: f64,
@@ -125,6 +125,12 @@ pub struct BoxShadow {
 impl BoxShadow {
     pub fn new(color: Color, offset: Offset, blur: f64, spread: f64) -> Self {
         BoxShadow { color, offset, blur, spread }
+    }
+
+    /// The Gaussian standard deviation of this shadow — Flutter/Skia's `convertRadiusToSigma`:
+    /// `σ = radius · 0.57735 + 0.5` for a positive radius, else 0 (a hard edge).
+    pub fn blur_sigma(&self) -> f64 {
+        if self.blur > 0.0 { self.blur * 0.57735 + 0.5 } else { 0.0 }
     }
 }
 

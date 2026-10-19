@@ -2,10 +2,7 @@
 //! 4× supersampled local grid, convolved with a 2-D Gaussian (truncated at 4σ; applied
 //! separably), then sampled through the op transform at 4 × 4 subsamples per pixel.
 //!
-//! **σ convention.** 02 §8.2 adopts vello_common's closed form as the spec; it evaluates
-//! `erf(d / std_dev)`, i.e. a Gaussian of standard deviation `std_dev / √2` (also the
-//! vello-hybrid behavior apps were tuned on, and the source of 02 §8.2's hand-checked values:
-//! 0.0002 at 2.5·`std_dev`). The model therefore blurs with `σ = std_dev / √2`.
+//! σ = `std_dev`: the true Gaussian standard deviation (Skia/Flutter semantics, 02 §8.2).
 
 use kurbo::{Affine, Point, Rect, RoundedRect, Shape};
 use peniko::Fill;
@@ -47,6 +44,8 @@ fn blur_1d(src: &[f64], dst: &mut [f64], n: usize, stride: usize, count: usize, 
 /// The blurred coverage field of `rect` (radius `radius`, σ `std_dev`, local units).
 struct Field {
     origin: Point,
+    /// Grid cells per local unit.
+    ss: f64,
     w: usize,
     h: usize,
     v: Vec<f64>,
@@ -58,26 +57,29 @@ impl Field {
         let pad = (4.0 * std_dev).max(0.0).ceil() + 1.0;
         let area = rect.inflate(pad, pad);
         let origin = Point::new(area.x0, area.y0);
-        let (w, h) = ((area.width() * SS).ceil() as usize, (area.height() * SS).ceil() as usize);
+        // 4 cells per unit, coarsened for wide blurs so a cell stays ≤ σ/16 (the Gaussian is
+        // smooth at that scale; cost stays bounded for σ = 64).
+        let ss = if std_dev > 4.0 { (SS * 4.0 / std_dev).max(0.25) } else { SS };
+        let (w, h) = ((area.width() * ss).ceil() as usize, (area.height() * ss).ceil() as usize);
         if w == 0 || h == 0 || w * h > 64_000_000 {
             return None;
         }
         let rr = RoundedRect::from_rect(rect, radius.max(0.0));
-        let to_grid = Affine::scale(SS) * Affine::translate((-origin.x, -origin.y));
-        let path = rr.to_path(0.01 / SS);
+        let to_grid = Affine::scale(ss) * Affine::translate((-origin.x, -origin.y));
+        let path = rr.to_path(0.01 / ss);
         let ind = fill_coverage(&path, to_grid, Fill::NonZero, w as u32, h as u32);
-        let k = kernel(std_dev * SS);
+        let k = kernel(std_dev * ss);
         let mut tmp = vec![0.0; w * h];
         blur_1d(&ind, &mut tmp, w, 1, h, w, &k);
         let mut v = vec![0.0; w * h];
         blur_1d(&tmp, &mut v, h, w, w, 1, &k);
-        Some(Self { origin, w, h, v })
+        Some(Self { origin, ss, w, h, v })
     }
 
-    /// Bilinear lookup at local `p` (cell centers at (i + 0.5) / SS).
+    /// Bilinear lookup at local `p` (cell centers at (i + 0.5) / ss).
     fn at(&self, p: Point) -> f64 {
-        let gx = (p.x - self.origin.x) * SS - 0.5;
-        let gy = (p.y - self.origin.y) * SS - 0.5;
+        let gx = (p.x - self.origin.x) * self.ss - 0.5;
+        let gy = (p.y - self.origin.y) * self.ss - 0.5;
         let (x0, y0) = (gx.floor(), gy.floor());
         let (fx, fy) = (gx - x0, gy - y0);
         let get = |x: f64, y: f64| {
@@ -96,7 +98,7 @@ impl Field {
 /// Coverage of a blurred rounded rect under `t` over a `w × h` target.
 pub fn shadow_coverage(t: Affine, rect: Rect, radius: f64, std_dev: f64, w: u32, h: u32) -> Vec<f64> {
     let mut out = vec![0.0; w as usize * h as usize];
-    let std_dev = std_dev.max(0.0) * std::f64::consts::FRAC_1_SQRT_2;
+    let std_dev = std_dev.max(0.0);
     let Some(field) = Field::new(rect.abs(), radius, std_dev) else { return out };
     if t.determinant().abs() < 1e-12 {
         return out;

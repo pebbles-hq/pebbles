@@ -95,13 +95,8 @@ pub(crate) fn shadow(
     plan.shadows.push(ShadowInstance {
         xform: [a, b, c, d],
         origin_size: [narrow_f32(o.x), narrow_f32(o.y), p.width, p.height],
-        // (corner radius clamped to half the min edge, Gaussian σ = std_dev / √2, 0, 0).
-        params0: [
-            narrow_f32(radius).max(0.0).min(0.5 * p.min_edge),
-            narrow_f32(std_dev).max(1e-6) * std::f32::consts::FRAC_1_SQRT_2,
-            0.0,
-            0.0,
-        ],
+        // (corner radius clamped to half the min edge, Gaussian σ = std_dev (Skia/Flutter), 0, 0).
+        params0: [narrow_f32(radius).max(0.0).min(0.5 * p.min_edge), narrow_f32(std_dev).max(1e-6), 0.0, 0.0],
         params1: [0.0; 4],
         color: premul(color),
         kernel: [kernel_extent(std_dev, m, max_coord_px), 0.0, 0.0, 0.0],
@@ -109,10 +104,11 @@ pub(crate) fn shadow(
     Some(start..start + 1)
 }
 
-/// `2.5 · std_dev` (local units), clamped to `max_coord_px / σmax(M)` so the inflated quad stays
+/// `3 · std_dev` (local units), clamped to `max_coord_px / σmax(M)` so the inflated quad stays
 /// finite for absurd σ (S05). σ itself is never clamped (R41).
 fn kernel_extent(std_dev: f64, m: Affine, max_coord_px: f32) -> f32 {
-    let k = 2.5 * std_dev.max(1e-6);
+    // 3σ: the Gaussian's visible extent (Skia's blur kernel extent).
+    let k = 3.0 * std_dev.max(1e-6);
     let (smax, _) = super::stroke::singular_values(&m);
     let bound = if smax > 0.0 { f64::from(max_coord_px) / smax } else { k };
     narrow_f32(k.min(bound))
@@ -209,7 +205,7 @@ mod tests {
         let mut plan = FramePlan::default();
         let r = Rect::new(0.0, 0.0, 100.0, 100.0);
         shadow(&mut plan, &r, Affine::IDENTITY, 0.0, 8.0, Color::BLACK, limits.max_coord_px).unwrap();
-        assert_eq!(plan.shadows[0].kernel[0], 2.5 * 8.0);
+        assert_eq!(plan.shadows[0].kernel[0], 3.0 * 8.0);
     }
 
     #[test]

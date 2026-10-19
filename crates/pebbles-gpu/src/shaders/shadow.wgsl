@@ -1,6 +1,7 @@
 // Box shadows (02 §8.2, R40): the Gaussian blur of a rounded rect evaluated in the rect's LOCAL
 // space, so it is exact under any affine. x is integrated exactly (erf); y numerically over ±3σ
-// (Evan Wallace's rounded-box shadow, public domain/MIT). σ = std_dev / √2 (02 §8.2 convention).
+// (Evan Wallace's rounded-box shadow, MIT). σ = std_dev: the true Gaussian standard deviation
+// (Skia `MaskFilter.blur` / Flutter semantics, 02 §8.2).
 // The local position is an interpolated varying: affine maps interpolate exactly.
 
 struct ShadowIn {
