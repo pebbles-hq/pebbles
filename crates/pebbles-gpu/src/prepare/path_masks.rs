@@ -109,6 +109,10 @@ impl MaskSources {
         self.len = 0;
     }
 
+    pub(crate) fn len(&self) -> usize {
+        self.len
+    }
+
     pub(crate) fn get(&self, i: usize) -> Option<&MaskSource> {
         self.items.get(..self.len)?.get(i)
     }

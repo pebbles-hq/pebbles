@@ -20,6 +20,7 @@ pub const BENCH_CASES: &[(&str, (u32, u32), BenchFn)] = &[
     ("bench/shadows_200", (1200, 800), shadows_200),
     ("bench/layers_100", (1200, 800), layers_100),
     ("bench/gradients_500", (1200, 800), gradients_500),
+    ("bench/static_list_scroll", (800, 1000), static_list_scroll),
 ];
 
 /// Cases that run on a fresh renderer every iteration (cold caches).
@@ -201,6 +202,33 @@ pub fn layers_100(p: &mut Painter<'_>) {
         fill(p, Color::from_rgb8(59, 130, 246), &r);
         fill(p, Color::from_rgb8(239, 68, 68), &Circle::new(r.center(), 24.0));
         p.pop_layer();
+    }
+}
+
+/// A 2 000-op list: 100 rows (each a retained fragment of 20 ops: card, stroke, icon, text
+/// stand-in bars) placed at whole-pixel offsets (M29's static scroll).
+pub fn static_list_scroll(p: &mut Painter<'_>) {
+    for i in 0..100u16 {
+        let mut row = pebbles_render::paint::Scene::new();
+        {
+            let mut r = Painter::new(&mut row);
+            let card = RoundedRect::new(0.0, 0.0, 760.0, 34.0, 6.0);
+            fill(&mut r, Color::WHITE, &card);
+            r.stroke(&Stroke::new(1.0), ID, Color::from_rgb8(229, 231, 235), None, &card);
+            r.fill(
+                Fill::NonZero,
+                Affine::translate((8.0, 7.0)),
+                Color::from_rgb8(16, 185, 129),
+                None,
+                &icon(),
+            );
+            for k in 0..17u16 {
+                let x = 40.0 + f64::from(k) * 42.0;
+                let w = 20.0 + f64::from((k * 7 + i) % 18);
+                fill(&mut r, Color::from_rgb8(55, 65, 81), &Rect::new(x, 12.0, x + w, 22.0));
+            }
+        }
+        p.append(&row, Some(Affine::translate((20.0, 10.0 + f64::from(i) * 40.0))));
     }
 }
 

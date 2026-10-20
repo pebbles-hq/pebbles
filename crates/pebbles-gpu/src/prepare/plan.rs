@@ -395,6 +395,88 @@ pub(crate) struct PrepareStats {
     pub image_brushes: u32,
 }
 
+impl PrepareStats {
+    /// Field-wise `self − before` (M29 saves a fragment's delta).
+    pub(crate) fn delta(&self, before: &Self) -> Self {
+        let mut d = Self::default();
+        macro_rules! f { ($($x:ident),*) => { $( d.$x = self.$x.wrapping_sub(before.$x); )* } }
+        f!(
+            ops,
+            culled,
+            fast_rects,
+            tess_calls,
+            culled_glyphs,
+            clips_scissor,
+            clips_noop,
+            clips_culled,
+            clips_sdf,
+            clips_mask,
+            clips_gpu_mask,
+            gpu_mask_overflow,
+            path_mask_budget_fallbacks,
+            gradient_fallbacks,
+            image_brush_skipped,
+            nonfinite,
+            unbalanced_pops,
+            autoclosed,
+            layers_skipped,
+            layers_pure_clip,
+            layers_folded,
+            layers_offscreen,
+            layers_promoted,
+            composites_over,
+            composites_compose,
+            composites_backdrop,
+            gradients,
+            image_brushes
+        );
+        #[cfg(debug_assertions)]
+        {
+            d.culled_ops = self.culled_ops.wrapping_sub(before.culled_ops);
+        }
+        d
+    }
+
+    /// Field-wise `self += d` (M29 replay).
+    pub(crate) fn add(&mut self, d: &Self) {
+        macro_rules! f { ($($x:ident),*) => { $( self.$x = self.$x.wrapping_add(d.$x); )* } }
+        f!(
+            ops,
+            culled,
+            fast_rects,
+            tess_calls,
+            culled_glyphs,
+            clips_scissor,
+            clips_noop,
+            clips_culled,
+            clips_sdf,
+            clips_mask,
+            clips_gpu_mask,
+            gpu_mask_overflow,
+            path_mask_budget_fallbacks,
+            gradient_fallbacks,
+            image_brush_skipped,
+            nonfinite,
+            unbalanced_pops,
+            autoclosed,
+            layers_skipped,
+            layers_pure_clip,
+            layers_folded,
+            layers_offscreen,
+            layers_promoted,
+            composites_over,
+            composites_compose,
+            composites_backdrop,
+            gradients,
+            image_brushes
+        );
+        #[cfg(debug_assertions)]
+        {
+            self.culled_ops = self.culled_ops.wrapping_add(d.culled_ops);
+        }
+    }
+}
+
 /// One GPU-texture image (R61): the registered texture's id, its sampler and its quad.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct GpuImageRequest {

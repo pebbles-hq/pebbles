@@ -87,7 +87,7 @@ pub(crate) type Renderer = GpuRenderer;
 
 /// The `[pebbles gpu]` stats line (10 §9.1 `Display`), for `PEBBLES_FRAME_STATS` (06 §3.5 seam).
 /// Soak CSV (11 §2.9): the renderer census (debug assertions only).
-pub(crate) fn census_values(renderer: &Renderer) -> Option<[u64; 23]> {
+pub(crate) fn census_values(renderer: &Renderer) -> Option<[u64; 25]> {
     #[cfg(debug_assertions)]
     return Some(renderer.census().values());
     #[cfg(not(debug_assertions))]

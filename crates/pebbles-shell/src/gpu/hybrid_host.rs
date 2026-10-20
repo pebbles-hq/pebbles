@@ -126,7 +126,7 @@ impl RenderSurface<'_> {
 
 /// The hybrid backend has no renderer counters (06 §3.5 seam; unconditional at X02).
 /// Soak CSV: the hybrid renderer has no census.
-pub(crate) fn census_values(_renderer: &Renderer) -> Option<[u64; 23]> {
+pub(crate) fn census_values(_renderer: &Renderer) -> Option<[u64; 25]> {
     None
 }
 

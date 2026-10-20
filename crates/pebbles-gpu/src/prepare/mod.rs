@@ -37,6 +37,7 @@ pub(crate) mod path_strategy;
 pub(crate) mod plan;
 #[cfg(test)]
 mod property_tests;
+pub(crate) mod retained;
 pub(crate) mod segments;
 mod shader_brush;
 mod shadows;
@@ -92,6 +93,9 @@ pub(crate) struct PrepareScratch {
     pub sdf_disabled: bool,
     /// `GpuBudgets::gpu_mask_bytes`; `None` = the native default (tests).
     pub gpu_mask_budget: Option<u64>,
+    /// Retained fragments (M29) and their byte budget (0 disables, `PEBBLES_GPU_RETAINED=0`).
+    pub retained: retained::RetainedCache,
+    pub retained_budget: u64,
     /// Arena caps for merging and segmentation (M07); unlimited by default (tests).
     pub arena_caps: segments::ArenaCaps,
     /// `GpuBudgets::path_mask_bytes`; `None` = the native default (tests, M28).
@@ -116,6 +120,7 @@ pub(crate) fn prepare<'s>(
     scratch.clips.reset(input.target_size);
     scratch.layers.reset();
     scratch.mask_keys.clear();
+    scratch.retained.begin_frame();
     let mut walk = Walk {
         plan: &mut scratch.plan,
         clips: &mut scratch.clips,
@@ -137,6 +142,10 @@ pub(crate) fn prepare<'s>(
         paint: None,
         pending_shader: None,
         layer_scan: &mut scratch.layer_scan,
+        retained: &mut scratch.retained,
+        retained_on: scratch.retained_budget > 0,
+        rec_bounds: None,
+        rec_admits: None,
         path_mask_bytes: 0,
         path_mask_budget: scratch.path_mask_budget.unwrap_or(8 << 20),
         mask_keys: &mut scratch.mask_keys,
@@ -149,6 +158,7 @@ pub(crate) fn prepare<'s>(
     // 09 §2.7: pushes still open at the end of the frame are auto-closed (emitting the pops
     // and composites of open offscreen layers).
     walk.close_open_layers();
+    scratch.retained.end_frame(scratch.retained_budget);
     // 10 §2.5 (M07): cut the frame into segments under the arena caps.
     let dropped = segments::build(&mut scratch.plan, scratch.arena_caps);
     if dropped > 0 {
@@ -191,6 +201,13 @@ struct Walk<'a> {
     path_mask_budget: u64,
     mask_keys: &'a mut std::collections::HashSet<u64>,
     path_budget_warned: &'a mut bool,
+    /// The retained cache (M29), whether it is on, and the device bounds the fragment being
+    /// recorded has touched (`culled()` boxes).
+    retained: &'a mut retained::RetainedCache,
+    retained_on: bool,
+    rec_bounds: Option<kurbo::Rect>,
+    /// Path-budget admissions of the fragment being recorded (M29 × M28).
+    rec_admits: Option<Vec<(u64, u64)>>,
     /// `scan_one` scratch (M18).
     layer_scan: &'a mut layer::ScanScratch,
     /// A shader brush (L43) waiting for its coverage op's white solid brush.
@@ -266,10 +283,209 @@ pub(crate) fn scan_colr_atlas(
 }
 
 impl Walk<'_> {
+    /// `Op::Fragment` (09 §7): replayed from the retained cache when unchanged (M29), else
+    /// walked — and recorded when cacheable.
+    #[inline(never)]
+    fn emit_fragment(&mut self, ops: &std::sync::Arc<Vec<Op>>, xf: Affine) {
+        let key = self.retained_key(ops, xf);
+        let origin = (xf.translation().x.floor(), xf.translation().y.floor());
+        #[allow(clippy::cast_possible_truncation)] // finite and checked against the target below
+        let origin = (origin.0 as i32, origin.1 as i32);
+        if let Some(key) = key {
+            let scissor_px = self.clips.current().scissor;
+            if let Some((b, mode)) = self.retained.hit_bounds(&key, ops, origin)
+                && match mode {
+                    retained::Mode::Inside => cull::scissor_rect(scissor_px).contains_rect(b),
+                    retained::Mode::Outside => cull::is_outside(b, scissor_px),
+                }
+                && self.admit_all(&key)
+            {
+                let clip = self.clips.current();
+                #[cfg(test)]
+                let visit = self.visit;
+                if let Some((fd, pd, features, visits, b)) =
+                    self.retained.replay(&key, ops, origin, clip, self.plan, |plan, c| {
+                        #[cfg(test)]
+                        {
+                            if plan.push_draw(c) {
+                                plan.cmd_ops.push(visit + 1);
+                            }
+                        }
+                        #[cfg(not(test))]
+                        plan.push_draw(c);
+                    })
+                {
+                    self.stats.add_prepare_delta(&fd);
+                    self.plan.stats.add(&pd);
+                    self.plan.fallback_features.union(features);
+                    self.visit += visits;
+                    if let Some(r) = &mut self.rec_bounds {
+                        *r = retained::join(*r, b);
+                    }
+                    return;
+                }
+            }
+        }
+        let Some(key) = key else {
+            // Not cacheable here: walk it with no recording bookkeeping (fragments are hot —
+            // glyph runs splice COLR fragments per glyph).
+            self.walk_fragment_ops(ops, xf);
+            return;
+        };
+        let key = Some(key);
+        let m0 = retained::Marks::of(self.plan);
+        let last_before = self.plan.cmds.last().cloned();
+        // The fragment's own fallback rows are collected from empty, then OR-ed back in.
+        let features0 = std::mem::take(&mut self.plan.fallback_features);
+        let (stats0, plan0, visit0) = (*self.stats, self.plan.stats.clone(), self.visit);
+        let outer_rec = self.rec_bounds.replace(kurbo::Rect::ZERO);
+        let outer_admits = self.rec_admits.replace(Vec::new());
+        self.walk_fragment_ops(ops, xf);
+        let mut bounds = self.rec_bounds.take().unwrap_or(kurbo::Rect::ZERO);
+        let admits = std::mem::replace(&mut self.rec_admits, outer_admits).unwrap_or_default();
+        if let Some(outer) = &mut self.rec_admits {
+            outer.extend_from_slice(&admits);
+        }
+        let features = self.plan.fallback_features;
+        self.plan.fallback_features.union(features0);
+        if let Some(key) = key {
+            let pd = self.plan.stats.delta(&plan0);
+            let m1 = retained::Marks::of(self.plan);
+            let clean = m1.other == m0.other
+                && pd.culled_glyphs == 0
+                && pd.nonfinite == 0
+                && pd.autoclosed == 0
+                && pd.unbalanced_pops == 0
+                && pd.path_mask_budget_fallbacks == 0
+                && !self.out_of_vertices;
+            if clean {
+                bounds = retained::join(bounds, retained_data_bounds(self.plan, &m0));
+                let scissor_px = self.clips.current().scissor;
+                let produced = m1.cmds != m0.cmds
+                    || m1.vertices != m0.vertices
+                    || m1.shapes != m0.shapes
+                    || m1.shadows != m0.shadows
+                    || m1.glyphs != m0.glyphs
+                    || m1.images != m0.images
+                    || m1.masks != m0.masks
+                    || last_before.as_ref() != self.plan.cmds.last();
+                let mode = if pd.culled == 0 && cull::scissor_rect(scissor_px).contains_rect(bounds) {
+                    Some(retained::Mode::Inside)
+                } else if !produced && bounds != kurbo::Rect::ZERO && cull::is_outside(bounds, scissor_px) {
+                    Some(retained::Mode::Outside)
+                } else {
+                    None
+                };
+                if let Some(mode) = mode {
+                    let fd = self.stats.prepare_delta(&stats0);
+                    let deltas = (fd, pd, features, self.visit - visit0);
+                    self.retained.record(
+                        key,
+                        ops,
+                        origin,
+                        &m0,
+                        last_before.as_ref(),
+                        self.plan,
+                        deltas,
+                        bounds,
+                        mode,
+                        admits,
+                    );
+                }
+            }
+        }
+        if let Some(r) = outer_rec {
+            self.rec_bounds = Some(retained::join(r, bounds));
+        }
+    }
+
+    /// M29 × M28: admit every mask a replay of `key` brings, exactly as its walk would; false
+    /// (nothing admitted) when one would not fit — the fragment is walked instead.
+    fn admit_all(&mut self, key: &retained::RetainedKey) -> bool {
+        let admits = self.retained.admits(key);
+        let mut need = 0u64;
+        let mut seen = 0usize;
+        for (i, &(k, b)) in admits.iter().enumerate() {
+            let repeat = admits.get(..i).is_some_and(|p| p.iter().any(|(x, _)| *x == k));
+            if !self.mask_keys.contains(&k) && !repeat {
+                need = need.saturating_add(b);
+                seen += 1;
+            }
+        }
+        if seen > 0 && self.path_mask_bytes.saturating_add(need) > self.path_mask_budget {
+            return false;
+        }
+        for &(k, b) in admits {
+            if self.mask_keys.insert(k) {
+                self.path_mask_bytes += b;
+            }
+            if let Some(a) = &mut self.rec_admits {
+                a.push((k, b));
+            }
+        }
+        true
+    }
+
+    /// Walk a fragment's ops (09 §7.2: a fragment balances its own pushes; it can never pop
+    /// outer ones).
+    fn walk_fragment_ops(&mut self, ops: &[Op], xf: Affine) {
+        let floor = std::mem::replace(&mut self.layer_floor, self.layers.open());
+        let saved = self.outer_override.take();
+        self.emit(ops, xf);
+        while self.layers.open() > self.layer_floor {
+            self.pop_layer(self.visit);
+            self.plan.stats.autoclosed += 1;
+        }
+        self.outer_override = saved;
+        self.layer_floor = floor;
+    }
+
+    /// The M29 key of a fragment placed at `xf`, or `None` when caching cannot apply here.
+    fn retained_key(&self, ops: &std::sync::Arc<Vec<Op>>, xf: Affine) -> Option<retained::RetainedKey> {
+        use std::hash::{Hash, Hasher};
+        if !self.retained_on
+            || ops.len() < retained::MIN_OPS
+            || self.outer_override.is_some()
+            || self.layers.is_skipped()
+            || self.clips.is_culled()
+            || self.out_of_vertices
+        {
+            return None;
+        }
+        let clip = self.clips.current();
+        let mask = self.plan.mask_clips.get(clip.mask.0 as usize)?;
+        if mask.gpu.is_some() {
+            return None;
+        }
+        let [a, b, c, d, e, f] = xf.as_coeffs();
+        let t = |v: f64| v.is_finite() && v.abs() < 1.0e7;
+        if !(t(e) && t(f)) {
+            return None;
+        }
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        let s = clip.scissor;
+        (s.x0, s.y0, s.x1, s.y1, mask.key).hash(&mut h);
+        if let Some(sdf) = self.plan.sdf_clips.get(clip.sdf.0 as usize) {
+            sdf.rect.iter().chain(&sdf.radii).for_each(|v| v.to_bits().hash(&mut h));
+        }
+        self.layers.fold().to_bits().hash(&mut h);
+        (self.scale_factor.to_bits(), self.glyph_hint, self.sdf, self.vertex_limit, self.plan.target_size)
+            .hash(&mut h);
+        Some(retained::RetainedKey {
+            ops_ptr: std::sync::Arc::as_ptr(ops) as usize,
+            linear: [a, b, c, d].map(f64::to_bits),
+            frac: ((e - e.floor()).to_bits(), (f - f.floor()).to_bits()),
+            context: h.finish(),
+        })
+    }
+
     /// M28: admit a path or clip mask of `bytes` (keyed by `key`) against this frame's path
     /// budget, in display-list order; a key already admitted this frame is free. False = over
     /// budget (logged once per renderer): the caller falls back (Tier C / a GPU mask).
     fn admit_path_mask(&mut self, key: u64, bytes: u64) -> bool {
+        if let Some(a) = &mut self.rec_admits {
+            a.push((key, bytes));
+        }
         if self.mask_keys.contains(&key) {
             return true;
         }
@@ -898,6 +1114,8 @@ impl Walk<'_> {
             self.visit += 1;
             let idx = self.visit;
             self.plan.stats.ops += 1;
+            // M29: ops actually walked (replayed fragments are not counted).
+            self.stats.ops_prepared += 1;
             self.paint = None;
             match op {
                 Op::Fill { style, transform, brush, brush_transform, shape, .. } => {
@@ -1176,16 +1394,7 @@ impl Walk<'_> {
                         self.skip_non_finite();
                         continue;
                     }
-                    // 09 §7.2: a fragment balances its own pushes; it can never pop outer ones.
-                    let floor = std::mem::replace(&mut self.layer_floor, self.layers.open());
-                    let saved = self.outer_override.take();
-                    self.emit(ops, xf);
-                    while self.layers.open() > self.layer_floor {
-                        self.pop_layer(self.visit);
-                        self.plan.stats.autoclosed += 1;
-                    }
-                    self.outer_override = saved;
-                    self.layer_floor = floor;
+                    self.emit_fragment(ops, xf);
                 }
                 Op::PushProjectedLayer { projection, bounds, clip, .. } => {
                     let finite = projection.0.iter().all(|v| v.is_finite())
@@ -1562,4 +1771,30 @@ mod fragment_tests;
 #[cfg(test)]
 pub(crate) mod mask_budget_tests;
 #[cfg(test)]
+mod retained_tests;
+#[cfg(test)]
 mod walk_tests;
+
+/// The device bounds of the data a fragment appended since `m0` that `culled()` does not see:
+/// atlas glyphs (their culling box, R25) and solid vertices (outline-route glyphs).
+fn retained_data_bounds(plan: &FramePlan, m0: &retained::Marks) -> kurbo::Rect {
+    let mut b: Option<kurbo::Rect> = None;
+    let mut add = |r: kurbo::Rect| b = Some(b.map_or(r, |x| x.union(r)));
+    for g in plan.glyphs.get(m0.glyphs..).unwrap_or_default() {
+        // Tier B path masks reported their bounds through `culled()`.
+        if !matches!(g.key, crate::execute::resources::atlas_alloc::CoverageKey::Glyph(_)) {
+            continue;
+        }
+        let s = plan.glyph_runs.get(g.run as usize).map_or(64.0, |r| f64::from(r.size_px));
+        let (x, y) = (f64::from(g.origin[0]), f64::from(g.origin[1]));
+        add(kurbo::Rect::new(x - 2.0 * s - 1.0, y - 2.0 * s - 1.0, x + 3.0 * s + 1.0, y + 2.0 * s + 1.0));
+    }
+    let v = plan.solid_vertices.get(m0.vertices..).unwrap_or_default();
+    if let Some(first) = v.first() {
+        let p =
+            |v: &crate::gpu_types::SolidVertex| kurbo::Point::new(f64::from(v.pos[0]), f64::from(v.pos[1]));
+        let r = v.iter().fold(kurbo::Rect::from_points(p(first), p(first)), |r, v| r.union_pt(p(v)));
+        add(r.inflate(1.0, 1.0));
+    }
+    b.unwrap_or(kurbo::Rect::ZERO)
+}

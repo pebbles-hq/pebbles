@@ -106,6 +106,9 @@ pub(crate) fn hint_policy(scale_factor: f64, ppem: f32) -> bool {
 }
 
 #[allow(clippy::too_many_arguments)]
+// Kept out of line: inlined into the walk's huge `emit`, its per-glyph loop lost ~2.5× (M29
+// codegen regression, bench/glyph_runs_1k 445 → 1110 µs).
+#[inline(never)]
 pub(crate) fn glyph_run(
     plan: &mut FramePlan,
     stats: &mut FrameStats,

@@ -34,7 +34,7 @@ pub(super) struct Sample {
     /// (elements, render nodes, signals, subscriptions) — debug-only census.
     pub ui: Option<[usize; 4]>,
     /// The renderer census (wgpu + debug assertions only).
-    pub census: Option<[u64; 23]>,
+    pub census: Option<[u64; 25]>,
 }
 
 pub(super) fn header() -> String {
@@ -108,7 +108,7 @@ mod tests {
             rss_kib: Some(1024),
             gpu: Some((2, 3)),
             ui: Some([4, 5, 6, 7]),
-            census: Some([9; 23]),
+            census: Some([9; 25]),
         };
         assert_eq!(row(&full).trim_end().split(',').count(), cols);
         let empty = Sample::default();

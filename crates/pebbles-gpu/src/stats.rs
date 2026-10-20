@@ -112,6 +112,56 @@ impl MemoryReport {
     }
 }
 
+/// The `FrameStats` counters prepare can change (M29 saves a fragment's delta and replays it).
+macro_rules! prepare_counters {
+    ($m:ident) => {
+        $m!(
+            tier_a_draws,
+            tier_b_draws,
+            tier_c_draws,
+            fallbacks,
+            non_finite_skipped,
+            degenerate_skipped,
+            nine_slice_clamped
+        )
+    };
+}
+
+impl FrameStats {
+    /// The prepare counters changed since `before` (M29).
+    pub(crate) fn prepare_delta(&self, before: &Self) -> PrepareDelta {
+        let mut d = PrepareDelta::default();
+        macro_rules! sub_fields { ($($f:ident),*) => { $( d.$f = self.$f.wrapping_sub(before.$f); )* } }
+        prepare_counters!(sub_fields);
+        for (i, (a, b)) in self.unsupported.iter().zip(&before.unsupported).enumerate() {
+            d.unsupported[i] = a.wrapping_sub(*b);
+        }
+        d
+    }
+
+    /// Re-apply a saved delta (M29 replay).
+    pub(crate) fn add_prepare_delta(&mut self, d: &PrepareDelta) {
+        macro_rules! add_fields { ($($f:ident),*) => { $( self.$f = self.$f.wrapping_add(d.$f); )* } }
+        prepare_counters!(add_fields);
+        for (a, b) in self.unsupported.iter_mut().zip(&d.unsupported) {
+            *a = a.wrapping_add(*b);
+        }
+    }
+}
+
+/// The prepare-time `FrameStats` counters of one fragment (M29).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PrepareDelta {
+    pub tier_a_draws: u32,
+    pub tier_b_draws: u32,
+    pub tier_c_draws: u32,
+    pub fallbacks: u32,
+    pub non_finite_skipped: u32,
+    pub degenerate_skipped: u32,
+    pub nine_slice_clamped: u32,
+    pub unsupported: [u32; Unsupported::COUNT],
+}
+
 impl Unsupported {
     /// Number of variants; must stay ≤ 64 (`WarnOnce` bits).
     pub const COUNT: usize = 32;

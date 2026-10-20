@@ -190,6 +190,11 @@ impl FeatureSet {
         self.0 |= 1u128 << f as u8;
     }
 
+    /// Every row of `other` too (M29 replays OR a fragment's rows in).
+    pub(crate) fn union(&mut self, other: FeatureSet) {
+        self.0 |= other.0;
+    }
+
     #[cfg_attr(not(test), allow(dead_code))] // read by the R01 tests and the Phase 5 gate
     pub(crate) fn contains(&self, f: Feature) -> bool {
         self.0 & (1u128 << f as u8) != 0

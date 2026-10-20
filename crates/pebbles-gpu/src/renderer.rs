@@ -125,6 +125,8 @@ impl Renderer {
         let (_, rows_used, rows_total) = self.gradients.lut.census();
         (c.gradient_rows_used, c.gradient_rows_capacity) = (rows_used as usize, rows_total);
         c.arena_capacity_bytes = self.arenas.capacity_bytes();
+        c.retained_entries = self.scratch.retained.len();
+        c.retained_bytes = self.scratch.retained.bytes();
         c.frame_target_entries = self.targets_book.len();
         c.frame_target_bytes = self.targets_book.total_bytes();
         c
@@ -347,6 +349,7 @@ impl Renderer {
             scratch: PrepareScratch {
                 gpu_mask_budget: Some(budgets.gpu_mask_bytes),
                 path_mask_budget: Some(budgets.path_mask_bytes),
+                retained_budget: budgets.retained_bytes,
                 // M07: segments fit the arenas' caps and the portable vertex rule.
                 arena_caps: super::prepare::segments::ArenaCaps {
                     bytes: gpu.device().limits().max_buffer_size.min(budgets.arena_max_bytes) / 4 * 4,

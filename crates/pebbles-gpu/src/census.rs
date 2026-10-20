@@ -39,6 +39,10 @@ pub struct GpuCensus {
     pub path_mask_entries: usize,
     /// Their atlas bytes (≤ `GpuBudgets::path_mask_bytes` when a frame fits, M28).
     pub path_mask_bytes: u64,
+    /// Retained fragments (M29).
+    pub retained_entries: usize,
+    /// Their bytes (≤ `GpuBudgets::retained_bytes`).
+    pub retained_bytes: u64,
     /// `FrameTargets` owned (one per render target).
     pub frame_target_entries: usize,
     /// Bytes of target-owned textures.
@@ -59,7 +63,7 @@ pub struct GpuCensus {
 
 impl GpuCensus {
     /// Column names in field order (soak CSV, 11 §2.9).
-    pub const COLUMNS: [&'static str; 23] = [
+    pub const COLUMNS: [&'static str; 25] = [
         "glyph_entries",
         "glyph_mask_side",
         "glyph_mask_layers",
@@ -75,6 +79,8 @@ impl GpuCensus {
         "gradient_rows_capacity",
         "path_mask_entries",
         "path_mask_bytes",
+        "retained_entries",
+        "retained_bytes",
         "frame_target_entries",
         "frame_target_bytes",
         "layer_pool_textures",
@@ -86,7 +92,7 @@ impl GpuCensus {
     ];
 
     /// The fields as `u64`, in [`COLUMNS`](Self::COLUMNS) order.
-    pub fn values(&self) -> [u64; 23] {
+    pub fn values(&self) -> [u64; 25] {
         let u = |v: usize| u64::try_from(v).unwrap_or(u64::MAX);
         [
             u(self.glyph_entries),
@@ -104,6 +110,8 @@ impl GpuCensus {
             u64::from(self.gradient_rows_capacity),
             u(self.path_mask_entries),
             self.path_mask_bytes,
+            u(self.retained_entries),
+            self.retained_bytes,
             u(self.frame_target_entries),
             self.frame_target_bytes,
             u(self.layer_pool_textures),

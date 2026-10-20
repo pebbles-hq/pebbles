@@ -119,6 +119,10 @@ impl GpuBudgets {
             read("PEBBLES_GPU_PATH_MASK_BUDGET_MB", mib(b.path_mask_bytes), 1, mib(atlas_max).max(1)) * MIB;
         b.gpu_mask_bytes = read("PEBBLES_GPU_MASK_BUDGET_MB", mib(b.gpu_mask_bytes), 2, 256) * MIB;
         b.retained_bytes = read("PEBBLES_GPU_RETAINED_BUDGET_MB", mib(b.retained_bytes), 1, 128) * MIB;
+        // M29: `PEBBLES_GPU_RETAINED=0` turns retained prepare off (determinism comparisons).
+        if env("PEBBLES_GPU_RETAINED").is_some_and(|v| v.trim() == "0") {
+            b.retained_bytes = 0;
+        }
         b.gradient_lut_max_rows = u32::try_from(read(
             "PEBBLES_GPU_GRADIENT_LUT_MAX_ROWS",
             u64::from(b.gradient_lut_max_rows),

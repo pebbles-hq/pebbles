@@ -69,6 +69,10 @@ impl Walk<'_> {
     /// Also sets the op's flattening-tolerance scale (`tessellate::tolerance_scale`).
     pub(super) fn culled(&mut self, b: kurbo::Rect) -> bool {
         self.tess.tol_scale = 1.0;
+        // M29: the fragment being recorded touched `b`.
+        if let Some(r) = &mut self.rec_bounds {
+            *r = super::retained::join(*r, b);
+        }
         // Device bounds past the f32 range (or non-finite) cannot become vertices: every point
         // would narrow to ±inf. Skip as non-finite before any path is built (02 §6.1).
         if ![b.x0, b.y0, b.x1, b.y1].iter().all(|v| v.is_finite() && v.abs() <= f64::from(f32::MAX)) {
