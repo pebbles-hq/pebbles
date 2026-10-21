@@ -168,7 +168,13 @@ impl HybridCapture {
         {
             let mut ctx = RenderContext::new();
             let dev_id = pollster::block_on(ctx.device(None))
-                .ok_or_else(|| CaptureError::Backend("no compatible GPU device for capture".into()))?;
+                // The same typed error as the wgpu path (DR-12), so callers can tell "no GPU" apart.
+                .ok_or(CaptureError::Gpu(pebbles_gpu::GpuError::NoAdapter {
+                    backends: wgpu::Backends::all(),
+                    software_only: false,
+                    enumerated: 0,
+                    source: None,
+                }))?;
             let handle = ctx.devices.remove(dev_id);
             let renderer = gpu::new_renderer(&handle.device, &handle.queue);
             Ok(HybridCapture { device: handle.device, queue: handle.queue, renderer })

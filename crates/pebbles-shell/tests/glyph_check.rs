@@ -7,27 +7,16 @@
 //!
 //! `#[ignore]` because they need a GPU (run with `-- --ignored`).
 
+mod support;
+
 use pebbles_core::IntoWidget;
 use pebbles_foundation::palette;
 use pebbles_shell::capture;
 use pebbles_widgets::{Text, text};
-
-/// Count pixels darker than a near-white threshold (i.e. "ink").
-fn ink_pixels(rgba: &[u8], w: u32, h: u32) -> u32 {
-    let mut count = 0u32;
-    for y in 0..h {
-        for x in 0..w {
-            let i = ((y * w + x) * 4) as usize;
-            if rgba[i] < 200 || rgba[i + 1] < 200 || rgba[i + 2] < 200 {
-                count += 1;
-            }
-        }
-    }
-    count
-}
+use support::{capture_or_skip, luma, px};
 
 #[test]
-#[ignore = "requires a GPU"]
+#[ignore = "gpu"]
 fn glyphs_share_one_baseline() {
     let root = text("Hello World").color(palette::BLACK).size(40.0).into_widget();
     let w = 400u32;
@@ -52,7 +41,7 @@ fn glyphs_share_one_baseline() {
 }
 
 #[test]
-#[ignore = "requires a GPU"]
+#[ignore = "gpu"]
 fn bundled_families_and_weights_render() {
     let default: Text = text("Hello").size(32.0).color(palette::BLACK);
     let mono = text("Hello").size(32.0).color(palette::BLACK).font_family("JetBrains Mono");
@@ -62,14 +51,20 @@ fn bundled_families_and_weights_render() {
     for (label, root) in
         [("Inter", default), ("JetBrains Mono", mono), ("bold", bold), ("synthesized italic", synth_italic)]
     {
-        let rgba = capture::capture_rgba(root.into_widget(), 300, 80, palette::WHITE).expect("capture");
-        let ink = ink_pixels(&rgba, 300, 80);
-        assert!(ink > 50, "{label}: expected glyphs to render, got {ink} ink pixels");
+        let Some(rgba) = capture_or_skip(label, root.into_widget(), 300, 80) else { return };
+        // A 32 px line sits in the top ~45 px band: it must hold solid ink, and the far
+        // corner stays untouched background.
+        let darkest = (0..45)
+            .flat_map(|y| (0..300).map(move |x| (x, y)))
+            .map(|(x, y)| luma(px(&rgba, 300, x, y)))
+            .min();
+        assert!(darkest.is_some_and(|l| l <= 80), "{label}: no solid ink, darkest luma {darkest:?}");
+        assert_eq!(px(&rgba, 300, 298, 78), [255, 255, 255, 255], "{label}: corner");
     }
 }
 
 #[test]
-#[ignore = "requires a GPU and a system color-emoji font"]
+#[ignore = "gpu"]
 fn color_emoji_renders() {
     let root = text("😀").size(48.0).into_widget();
     let (w, h) = (120u32, 120u32);

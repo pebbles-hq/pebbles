@@ -10,7 +10,7 @@ use pebbles_shell::capture;
 use pebbles_widgets::{container, text};
 
 #[test]
-#[ignore = "requires a GPU"]
+#[ignore = "gpu"]
 fn capture_png_produces_a_decodable_image() {
     let root = container()
         .color(Color::from_rgba8(0x63, 0x66, 0xF1, 0xFF))
@@ -28,7 +28,7 @@ fn capture_png_produces_a_decodable_image() {
 }
 
 #[test]
-#[ignore = "requires a GPU"]
+#[ignore = "gpu"]
 fn offscreen_capture_reuses_one_device_across_frames() {
     let mut gpu = capture::OffscreenCapture::new().expect("device");
     let red = Color::from_rgba8(255, 0, 0, 255);
@@ -42,7 +42,7 @@ fn offscreen_capture_reuses_one_device_across_frames() {
 }
 
 #[test]
-#[ignore = "requires a GPU"]
+#[ignore = "gpu"]
 fn offscreen_capture_rejects_zero_and_oversized_frames() {
     let mut gpu = capture::OffscreenCapture::new().expect("device");
     let s = pebbles_render::Scene::new();
