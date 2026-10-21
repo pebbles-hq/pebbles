@@ -171,7 +171,10 @@ impl Runner {
             Err(e) => {
                 pebbles_core::log::warn(
                     pebbles_core::log::Cat::General,
-                    format!("could not create a GPU surface for a secondary window: {e}"),
+                    format!(
+                        "could not create a GPU surface for a secondary window: {}",
+                        crate::gpu::error_text(&e)
+                    ),
                 );
                 return;
             }

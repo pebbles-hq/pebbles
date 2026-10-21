@@ -133,7 +133,25 @@ impl GpuContext {
         width: u32,
         height: u32,
     ) -> Result<super::surface::RenderSurface<'window>, GpuError> {
-        let surface = self.instance.create_surface(window).map_err(GpuError::from)?;
+        let surface = match self.instance.create_surface(window) {
+            Ok(s) => s,
+            Err(e) => {
+                // 08 §14.3: no backend could even make a surface because none has an adapter —
+                // that is a missing driver (NoAdapter guidance), not a window-system refusal.
+                #[cfg(not(target_family = "wasm"))]
+                if self.devices.is_empty()
+                    && self.instance.enumerate_adapters(self.init.backends).await.is_empty()
+                {
+                    return Err(GpuError::NoAdapter {
+                        backends: self.init.backends,
+                        software_only: self.init.force_software,
+                        enumerated: 0,
+                        source: None,
+                    });
+                }
+                return Err(GpuError::from(e));
+            }
+        };
         super::surface::RenderSurface::configure_new(self, surface, width, height).await
     }
 

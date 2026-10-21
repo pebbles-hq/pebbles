@@ -187,6 +187,52 @@ impl std::error::Error for CaptureError {
     }
 }
 
+impl GpuError {
+    /// What the user can do about this error on `os` (08 §14.3, P07). One line, no `\n`.
+    pub fn guidance(&self, os: crate::HostOs) -> &'static str {
+        use crate::HostOs as O;
+        enum K {
+            Adapter,
+            Device,
+            Surface,
+        }
+        let k = match self {
+            Self::NoAdapter { .. } => K::Adapter,
+            Self::RequestDevice { .. } => K::Device,
+            Self::CreateSurface(_) | Self::SurfaceUnsupported { .. } | Self::NoSurfaceFormat { .. } => {
+                K::Surface
+            }
+            _ => K::Device,
+        };
+        match (os, k) {
+            (O::Linux, K::Adapter) => {
+                "Install a Vulkan driver (Mesa: mesa-vulkan-drivers; NVIDIA: the proprietary driver) or Mesa EGL/GLES (libegl1, libgl1-mesa-dri). Try WGPU_BACKEND=gl, or PEBBLES_CPU_RENDER=1 for software rendering. Run `pebbles doctor`."
+            }
+            (O::Linux, K::Device) => {
+                "The GPU driver refused Pebbles' baseline limits. Update the driver, or try WGPU_BACKEND=gl / PEBBLES_CPU_RENDER=1."
+            }
+            (O::Linux, K::Surface) => {
+                "The window system refused a GPU surface. Try WGPU_BACKEND=vulkan, or an X11 session (unset WAYLAND_DISPLAY)."
+            }
+            (O::Windows, K::Adapter) => {
+                "Update the GPU driver. PEBBLES_CPU_RENDER=1 uses the WARP software renderer. If WGPU_DX12_COMPILER is set to dxc, ship dxcompiler.dll or unset it."
+            }
+            (O::Windows, K::Device) => "Update the GPU driver, or set PEBBLES_CPU_RENDER=1 (WARP).",
+            (O::Windows, K::Surface) => {
+                "Update the GPU driver; if the problem persists set PEBBLES_CPU_RENDER=1."
+            }
+            (O::MacOs, K::Adapter) => {
+                "Pebbles needs a Metal-capable Mac. PEBBLES_CPU_RENDER has no effect on macOS (there is no software Metal adapter) — unset it."
+            }
+            (O::MacOs, _) => "Update macOS.",
+            (O::Web, _) => {
+                "This browser exposes neither WebGPU nor WebGL2. Use Chrome/Edge, Safari 26+, or Firefox; check chrome://gpu."
+            }
+            (O::Other, _) => "See PLATFORMS.md.",
+        }
+    }
+}
+
 impl From<GpuError> for CaptureError {
     fn from(e: GpuError) -> Self {
         Self::Gpu(e)
@@ -241,6 +287,53 @@ mod tests {
             assert!(!s.is_empty());
             assert!(!s.ends_with('.'));
             assert!(!s.contains('\n'));
+        }
+    }
+
+    fn no_adapter() -> GpuError {
+        GpuError::NoAdapter {
+            backends: wgpu::Backends::VULKAN,
+            software_only: false,
+            enumerated: 0,
+            source: None,
+        }
+    }
+
+    #[test]
+    fn guidance_linux_mentions_gl_and_cpu_render() {
+        let g = no_adapter().guidance(crate::HostOs::Linux);
+        assert!(g.contains("WGPU_BACKEND=gl") && g.contains("PEBBLES_CPU_RENDER=1"), "{g}");
+    }
+
+    #[test]
+    fn guidance_macos_says_no_software_adapter() {
+        assert!(no_adapter().guidance(crate::HostOs::MacOs).contains("no software Metal adapter"));
+    }
+
+    #[test]
+    fn guidance_windows_mentions_warp() {
+        assert!(no_adapter().guidance(crate::HostOs::Windows).contains("WARP"));
+    }
+
+    #[test]
+    fn display_is_one_line() {
+        let all = [
+            no_adapter(),
+            GpuError::SurfaceUnsupported { adapter: "a".into() },
+            GpuError::NoSurfaceFormat { offered: vec![] },
+            GpuError::DeviceLost,
+        ];
+        for e in &all {
+            assert!(!e.to_string().contains('\n'), "{e}");
+            for os in [
+                crate::HostOs::Linux,
+                crate::HostOs::Windows,
+                crate::HostOs::MacOs,
+                crate::HostOs::Web,
+                crate::HostOs::Other,
+            ] {
+                assert!(!e.guidance(os).contains('\n'));
+            }
         }
     }
 }

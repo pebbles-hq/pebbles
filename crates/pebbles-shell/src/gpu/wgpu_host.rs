@@ -23,8 +23,8 @@ impl RenderContext {
         window: impl Into<wgpu::SurfaceTarget<'w>>,
         width: u32,
         height: u32,
-    ) -> Result<RenderSurface<'w>, String> {
-        let surface = self.inner.create_surface(window, width, height).await.map_err(|e| e.to_string())?;
+    ) -> Result<RenderSurface<'w>, HostError> {
+        let surface = self.inner.create_surface(window, width, height).await.map_err(HostError)?;
         // pebbles-gpu installed its device hooks (`DeviceHealth`) in `request_device` (C18).
         Ok(RenderSurface(surface))
     }
@@ -67,6 +67,31 @@ impl RenderContext {
 
     /// Soak tool (`PEBBLES_SYNTH_GPU_LOSS`): a no-op until P10 destroys the devices.
     pub(crate) fn inject_synthetic_loss(&self) {}
+}
+
+/// A GPU setup failure: displays as `GpuError` (one line); `startup_failure_text` adds the
+/// per-OS guidance (08 §14.3, P07).
+#[derive(Debug)]
+pub(crate) struct HostError(pebbles_gpu::GpuError);
+
+impl std::fmt::Display for HostError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+/// `{error} — {guidance}` for recovery and secondary-window logs (08 §14.3).
+pub(crate) fn error_text(e: &HostError) -> String {
+    format!("{} — {}", e.0, e.0.guidance(pebbles_gpu::HostOs::current()))
+}
+
+/// The native startup failure text (08 §14.3).
+pub(crate) fn startup_failure_text(e: &HostError) -> String {
+    format!(
+        "\npebbles: could not initialize the GPU.\n  {}\n  {}\n",
+        e.0,
+        e.0.guidance(pebbles_gpu::HostOs::current())
+    )
 }
 
 /// Thin wrapper over `pebbles_gpu::RenderSurface`.

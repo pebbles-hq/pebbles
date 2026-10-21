@@ -130,6 +130,18 @@ pub(crate) fn census_values(_renderer: &Renderer) -> Option<[u64; 25]> {
     None
 }
 
+/// Recovery / secondary-window log text (the hybrid path keeps its message).
+pub(crate) fn error_text(e: &impl std::fmt::Display) -> String {
+    e.to_string()
+}
+
+/// The native startup failure text (the hybrid path keeps its message).
+pub(crate) fn startup_failure_text(e: &impl std::fmt::Display) -> String {
+    format!(
+        "\npebbles: could not initialize the GPU — no compatible graphics device or driver.\n  {e}\n  Run `pebbles doctor` to check your setup (Linux typically needs Vulkan).\n"
+    )
+}
+
 pub(crate) fn frame_stats_line(_renderer: &Renderer) -> Option<String> {
     None
 }

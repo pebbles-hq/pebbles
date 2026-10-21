@@ -717,24 +717,18 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         {
             let init = self.host_init.get_or_insert_with(|| HostInit::new(event_loop));
             self.context = Some(pollster::block_on(new_context(init)));
-            let surface = match pollster::block_on(self.context.as_mut().unwrap().create_surface(
-                window.clone(),
-                w,
-                h,
-            )) {
-                Ok(s) => s,
-                Err(e) => {
-                    // The #1 first-run failure on Linux/Windows: no compatible GPU/driver.
-                    // Exit with a readable message pointing at `pebbles doctor`, not a
-                    // one-word `expect` panic + backtrace.
-                    eprintln!(
-                        "\npebbles: could not initialize the GPU — no compatible graphics device or driver.\n  \
-                         {e}\n  \
-                         Run `pebbles doctor` to check your setup (Linux typically needs Vulkan).\n"
-                    );
-                    std::process::exit(1);
-                }
-            };
+            let surface =
+                match pollster::block_on(self.context.as_mut().unwrap().create_surface(window.clone(), w, h))
+                {
+                    Ok(s) => s,
+                    Err(e) => {
+                        // The #1 first-run failure on Linux/Windows: no compatible GPU/driver.
+                        // Exit with a readable message pointing at `pebbles doctor`, not a
+                        // one-word `expect` panic + backtrace.
+                        eprintln!("{}", crate::gpu::startup_failure_text(&e));
+                        std::process::exit(1);
+                    }
+                };
             self.on_gpu_ready(window, surface);
         }
 

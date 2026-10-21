@@ -89,7 +89,7 @@ impl Runner {
                 phys.height.max(1),
             )) {
                 Ok(surface) => active.surface = surface,
-                Err(e) => failure = Some(e.to_string()),
+                Err(e) => failure = Some(crate::gpu::error_text(&e)),
             }
         }
         for w in self.windows.values_mut() {
@@ -101,7 +101,7 @@ impl Runner {
                 phys.height.max(1),
             )) {
                 Ok(surface) => w.surface = surface,
-                Err(e) => failure = failure.or(Some(e.to_string())),
+                Err(e) => failure = failure.or(Some(crate::gpu::error_text(&e))),
             }
         }
         if let Some(ctx) = self.context.as_ref() {
@@ -147,7 +147,7 @@ impl Runner {
             let mut context = new_context(&init).await;
             let event = match context.create_surface(window.clone(), w, h).await {
                 Ok(surface) => PebblesUserEvent::SurfaceReady { context, surface, window },
-                Err(e) => PebblesUserEvent::GpuRecoveryFailed { window, error: e.to_string() },
+                Err(e) => PebblesUserEvent::GpuRecoveryFailed { window, error: crate::gpu::error_text(&e) },
             };
             let _ = proxy.send_event(event);
         });
