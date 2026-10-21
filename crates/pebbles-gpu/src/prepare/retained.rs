@@ -203,10 +203,12 @@ impl RetainedCache {
         }
     }
 
+    #[cfg(any(test, debug_assertions))]
     pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }
 
+    #[cfg(any(test, debug_assertions))]
     pub(crate) fn bytes(&self) -> u64 {
         self.bytes
     }

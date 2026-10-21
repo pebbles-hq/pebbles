@@ -65,8 +65,10 @@ impl RenderContext {
         Some((r.total_allocated_bytes, r.total_reserved_bytes))
     }
 
-    /// Soak tool (`PEBBLES_SYNTH_GPU_LOSS`): a no-op until P10 destroys the devices.
-    pub(crate) fn inject_synthetic_loss(&self) {}
+    /// Soak tool (`PEBBLES_SYNTH_GPU_LOSS`): destroy the real devices (P10).
+    pub(crate) fn inject_synthetic_loss(&self) {
+        self.inner.simulate_device_loss();
+    }
 }
 
 /// A GPU setup failure: displays as `GpuError` (one line); `startup_failure_text` adds the

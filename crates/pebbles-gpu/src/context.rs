@@ -155,6 +155,15 @@ impl GpuContext {
         super::surface::RenderSurface::configure_new(self, surface, width, height).await
     }
 
+    /// Soak tooling (`PEBBLES_SYNTH_GPU_LOSS`, 08 §6.9): destroys every device so the real
+    /// lost-callback path runs.
+    pub fn simulate_device_loss(&self) {
+        for d in &self.devices {
+            d.device.destroy();
+            let _ = d.device.poll(wgpu::PollType::Poll);
+        }
+    }
+
     /// Reuse a compatible device, or request a new one through the §3.1 ranking.
     pub async fn request_device(
         &mut self,

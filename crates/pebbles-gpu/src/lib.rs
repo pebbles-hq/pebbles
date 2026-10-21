@@ -18,7 +18,6 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable))]
 
 mod budgets;
-#[cfg(debug_assertions)]
 mod census;
 mod context;
 mod diag;
@@ -47,7 +46,6 @@ pub(crate) mod test_support;
 mod timing;
 
 pub use budgets::{BudgetPlatform, GpuBudgets};
-#[cfg(debug_assertions)]
 pub use census::GpuCensus;
 pub use context::{DeviceHealth, DeviceId, GpuCaps, GpuContext, GpuDevice};
 pub use error::{AcquireError, CaptureError, GpuError};
