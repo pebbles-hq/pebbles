@@ -285,7 +285,7 @@ pub(crate) fn encode(
                 }
                 bind_clip(pass, *clip, stats);
                 let range = sb.rebase(INDICES, indices);
-                pass.draw_indexed(range, 0, 0..1);
+                crate::execute::pipelines::draw_indexed_portable(pass, range, 0..1);
                 stats.draw_calls += 1;
             }
             DrawCmd::Shapes { instances, clip } => {

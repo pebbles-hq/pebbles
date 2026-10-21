@@ -163,6 +163,10 @@ pub(crate) fn shrink_target(capacity: u64, high_water: u64) -> Option<u64> {
     (capacity >= target.saturating_mul(GpuArena::SHRINK_FACTOR)).then_some(target)
 }
 
+/// DL-4 (08 §11): index buffers are `INDEX | COPY_DST` only, never shared with other usages.
+pub(crate) const INDEX_BUFFER_USAGE: wgpu::BufferUsages =
+    wgpu::BufferUsages::INDEX.union(wgpu::BufferUsages::COPY_DST);
+
 /// One persistent arena per `FramePlan` array that exists at this card.
 pub(crate) struct FrameArenas {
     pub solid_vertices: GpuArena,
@@ -209,7 +213,7 @@ impl FrameArenas {
         let a = |usage, label| GpuArena::new(usage, label, max_capacity);
         Self {
             solid_vertices: a(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.vertices"),
-            solid_indices: a(wgpu::BufferUsages::INDEX, "pebbles.gpu.buffer.indices"),
+            solid_indices: a(INDEX_BUFFER_USAGE, "pebbles.gpu.buffer.indices"),
             shape_instances: a(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.shapes"),
             shadow_instances: a(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.shadows"),
             glyphs: a(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.glyphs"),

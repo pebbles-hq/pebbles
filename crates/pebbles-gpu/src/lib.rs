@@ -21,6 +21,8 @@ mod budgets;
 mod census;
 mod context;
 mod diag;
+#[cfg(test)]
+mod downlevel;
 mod error;
 mod execute;
 mod frame_targets;

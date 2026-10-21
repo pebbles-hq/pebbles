@@ -198,9 +198,9 @@ pub(crate) fn render_jobs(
             stats.bind_group_switches += 1;
             pass.set_vertex_buffer(0, vb.slice(..));
             pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
-            pass.draw_indexed(
+            crate::execute::pipelines::draw_indexed_portable(
+                &mut pass,
                 renderer.seg_base.rebase(crate::prepare::segments::INDICES, &job.indices),
-                0,
                 0..1,
             );
             stats.draw_calls += 1;

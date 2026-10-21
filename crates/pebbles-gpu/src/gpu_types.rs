@@ -230,3 +230,16 @@ mod tests {
         assert_eq!(core::mem::offset_of!(GradientParams, p0), 48);
     }
 }
+
+// DL-5 (08 §11): every uniform block is a multiple of 16 bytes and ≤ 16 KiB (WebGL2).
+macro_rules! uniform_block { ($($t:ty),*) => { $( const _: () = assert!(size_of::<$t>() % 16 == 0 && size_of::<$t>() <= 16 * 1024); )* } }
+uniform_block!(
+    ClipParams,
+    MaskClipParams,
+    CompositeParams,
+    GradientParams,
+    ImageBrushParams,
+    ShaderBrushParams,
+    ProjectedParams,
+    EffectParams
+);

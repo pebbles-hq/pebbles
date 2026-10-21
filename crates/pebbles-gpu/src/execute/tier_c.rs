@@ -289,9 +289,9 @@ pub(crate) fn render_runs(
                             pass.set_pipeline(pipeline);
                             painted = false;
                         }
-                        pass.draw_indexed(
+                        crate::execute::pipelines::draw_indexed_portable(
+                            &mut pass,
                             renderer.seg_base.rebase(crate::prepare::segments::INDICES, indices),
-                            0,
                             0..1,
                         );
                         stats.draw_calls += 1;
@@ -311,9 +311,9 @@ pub(crate) fn render_runs(
                         pass.set_bind_group(1, bg, &[offset]);
                         stats.bind_group_switches += 1;
                         painted = true;
-                        pass.draw_indexed(
+                        crate::execute::pipelines::draw_indexed_portable(
+                            &mut pass,
                             renderer.seg_base.rebase(crate::prepare::segments::INDICES, indices),
-                            0,
                             0..1,
                         );
                         stats.draw_calls += 1;

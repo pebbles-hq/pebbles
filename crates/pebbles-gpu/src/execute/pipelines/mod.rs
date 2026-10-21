@@ -6,6 +6,16 @@ use super::resources::bind_groups::BindGroupLayouts;
 use crate::stats::FrameStats;
 
 pub(crate) mod descs;
+
+/// DL-3 (08 §11): the only `draw_indexed` call — `base_vertex` is always 0 (indices are
+/// pre-offset in prepare; `BASE_VERTEX` is absent on WebGL2).
+pub(crate) fn draw_indexed_portable(
+    pass: &mut wgpu::RenderPass<'_>,
+    indices: std::ops::Range<u32>,
+    instances: std::ops::Range<u32>,
+) {
+    pass.draw_indexed(indices, 0, instances);
+}
 pub(crate) mod shader_brush;
 
 /// One render pipeline family. Each maps to exactly one `.wgsl` file (§9.1).
