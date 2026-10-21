@@ -19,6 +19,7 @@ mod effects;
 mod fragments;
 mod frame_targets_gpu;
 mod gpu_color;
+mod gpu_formats;
 mod gpu_geometry;
 mod gpu_smoke;
 mod gradients;
