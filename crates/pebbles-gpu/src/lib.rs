@@ -21,6 +21,7 @@ mod budgets;
 #[cfg(debug_assertions)]
 mod census;
 mod context;
+mod diag;
 mod error;
 mod execute;
 mod frame_targets;

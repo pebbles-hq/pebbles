@@ -262,6 +262,24 @@ impl<'window> RenderSurface<'window> {
             view_formats: if choice.view_format != choice.format { vec![choice.view_format] } else { vec![] },
         };
         surface.configure(device.device(), &config);
+        let line = super::diag::surface_line(&super::diag::SurfaceSummary {
+            format: config.format,
+            view_format: choice.view_format,
+            encoding: choice.encoding,
+            present: config.present_mode,
+            latency: config.desired_maximum_frame_latency,
+            alpha: config.alpha_mode,
+            width: config.width,
+            height: config.height,
+        });
+        pebbles_foundation::log::logf(
+            pebbles_foundation::log::Level::Debug,
+            pebbles_foundation::log::Cat::Gpu,
+            format_args!("{line}"),
+        );
+        if ctx.init().print_info || cfg!(target_family = "wasm") {
+            super::diag::stderr_line(&line);
+        }
         Ok(RenderSurface {
             surface,
             config,

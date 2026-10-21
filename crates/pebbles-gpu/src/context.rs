@@ -264,22 +264,20 @@ impl GpuContext {
         };
 
         let software = info.device_type == wgpu::DeviceType::Cpu;
-        let soft = if software { " | software" } else { "" };
-        logf(
-            Level::Info,
-            Cat::Gpu,
-            format_args!(
-                "GPU: {} | backend={} type={:?} | driver=\"{} {}\" | max_tex={} | power={:?}{}",
-                info.name,
-                info.backend,
-                info.device_type,
-                info.driver,
-                info.driver_info,
-                caps.limits.max_texture_dimension_2d,
-                self.init.power,
-                soft
-            ),
-        );
+        let line = super::diag::adapter_line(&super::diag::GpuSummary {
+            name: &info.name,
+            backend: info.backend,
+            device_type: info.device_type,
+            driver: &info.driver,
+            driver_info: &info.driver_info,
+            max_texture_dim: caps.limits.max_texture_dimension_2d,
+            power: self.init.power,
+        });
+        logf(Level::Info, Cat::Gpu, format_args!("{line}"));
+        // P09: PEBBLES_GPU_INFO=1 (native) — the web always writes it to the console.
+        if self.init.print_info || cfg!(target_family = "wasm") {
+            super::diag::stderr_line(&line);
+        }
         if software && !self.init.force_software {
             logf(
                 Level::Warn,

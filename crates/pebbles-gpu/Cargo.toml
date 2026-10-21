@@ -36,6 +36,9 @@ half.workspace = true    # f16 gradient LUT texels (09 §5.3, L37)
 # L43: app shader brushes are validated (and translated to GLSL ES for WebGL2) before use.
 naga = { version = "29.0.4", features = ["wgsl-in", "glsl-out"] }
 
+[target.'cfg(target_family = "wasm")'.dependencies]
+web-sys = { version = "0.3", features = ["console"] }  # P09: diagnostics to the browser console
+
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 pollster.workspace = true
 
