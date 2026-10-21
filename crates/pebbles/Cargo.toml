@@ -25,7 +25,9 @@ pebbles-macros.workspace = true
 # default; the first-party `wgpu` renderer is opt-in via `--no-default-features --features wgpu`.
 # With both enabled, `vello-hybrid` wins until the Phase-6 flip. The offscreen `capture` API
 # works off-wasm under either backend.
-default = ["vello-hybrid"]
+# webgl: WebGL2 fallback for the wgpu renderer on wasm32 (no effect on native).
+default = ["vello-hybrid", "webgl"]
+webgl = ["pebbles-shell/webgl"]
 wgpu = [
     "pebbles-render/wgpu",
     "pebbles-core/wgpu",

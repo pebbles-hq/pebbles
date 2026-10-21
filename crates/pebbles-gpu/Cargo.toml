@@ -12,6 +12,10 @@ categories.workspace = true
 readme = "README.md"
 description = "The first-party wgpu 2D renderer for Pebbles: display-list preparation and GPU execution. Implementation crate — apps use pebbles::shell."
 
+[features]
+# WebGL2 fallback on wasm32 (wgpu's GL backend). Inert on native targets.
+webgl = ["wgpu/webgl"]
+
 [dependencies]
 pebbles-foundation.workspace = true
 # Display-list types ONLY. NEVER add features here — enabling a pebbles-render feature

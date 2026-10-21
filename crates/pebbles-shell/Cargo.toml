@@ -45,7 +45,9 @@ global-hotkey = { version = "0.8", optional = true }
 
 [features]
 # Render backend (wgpu migration): `vello-hybrid` (default) or `wgpu` (opt-in). With both enabled, `vello-hybrid` wins until the Phase-6 flip (DR-10).
-default = ["vello-hybrid"]
+default = ["vello-hybrid", "webgl"]
+# WebGL2 fallback for the wgpu renderer on wasm32 (no effect on native).
+webgl = ["pebbles-gpu?/webgl"]
 wgpu = [
     "pebbles-render/wgpu",
     "pebbles-core/wgpu",

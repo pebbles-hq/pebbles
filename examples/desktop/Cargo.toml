@@ -39,6 +39,7 @@ vello-hybrid = [
 ]
 wgpu = [
     "pebbles/wgpu",
+    "pebbles/webgl",
     "pebbles-testing/wgpu",
     "pebbles-render/wgpu",
     "pebbles-widgets/wgpu",
