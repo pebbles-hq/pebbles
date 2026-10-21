@@ -278,12 +278,11 @@ impl Runner {
                 return None;
             }
             (Reference::SelfGolden, _) | (_, true) => {
-                let path = self.opts.reference_dir.join(format!("{}.png", case.file_stem()));
-                match png_io::decode(&path) {
+                match crate::refs::load_reference(&self.opts.reference_dir, case) {
                     Ok(img) => Some(img),
-                    Err(_) if dir_mode => {
+                    Err(e) if dir_mode => {
                         r.status = Status::MissingRef;
-                        r.note = format!("missing {}", path.display());
+                        r.note = e.to_string();
                         return None;
                     }
                     // Self-goldens land with V12; until then smoke + no hard status judge.

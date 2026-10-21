@@ -14,6 +14,7 @@ pub mod png_io;
 pub mod probe;
 pub mod readback;
 pub mod reference;
+pub mod refs;
 pub mod report;
 pub mod rng;
 pub mod run;
@@ -42,6 +43,8 @@ pub enum CheckError {
     Png(String),
     /// The golden model does not implement this op yet (V45/V46); reported as PROBE_FAIL.
     GoldenUnsupported(&'static str),
+    /// `--reference dir` has no committed self-golden for the case (MISSING_REF).
+    MissingRef(String),
 }
 
 impl fmt::Display for CheckError {
@@ -55,6 +58,7 @@ impl fmt::Display for CheckError {
             Self::Io(e) => write!(f, "I/O: {e}"),
             Self::Png(e) => write!(f, "PNG: {e}"),
             Self::GoldenUnsupported(op) => write!(f, "golden model does not support {op}"),
+            Self::MissingRef(path) => write!(f, "missing {path}"),
         }
     }
 }
