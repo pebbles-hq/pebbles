@@ -67,7 +67,9 @@ jobs:
           key: msrv
       # `check`, not `test`: the promise is that a 1.90 user can BUILD the
       # library, not that dev-dependencies hold the same floor.
-      - run: cargo check --workspace --all-features
+      - name: Show the toolchain actually used (+1.90 overrides rust-toolchain.toml)
+        run: cargo +1.90 --version && rustc +1.90 --version
+      - run: cargo +1.90 check --workspace --all-features
 
   # ───────────────────────────────────────────────────────────────────────────
   # Cross-platform COMPILE gate. The whole stack — framework AND shell — compiles
