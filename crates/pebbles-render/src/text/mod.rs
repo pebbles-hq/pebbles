@@ -2,6 +2,7 @@
 //! render objects for a window. Held by the shell and threaded into layout.
 
 pub(crate) mod fonts;
+pub(crate) mod style;
 
 /// Whether a [`TextEnv`] also uses the host's installed fonts (03 §3.3.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
