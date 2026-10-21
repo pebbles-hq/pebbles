@@ -183,6 +183,10 @@ impl OffscreenRenderer {
         base_color: peniko::Color,
         scale: f64,
     ) -> Result<RgbaImage, CaptureError> {
+        // C18: a lost device renders nothing — report it before creating any resource on it.
+        if self.gpu().health().is_lost() {
+            return Err(CaptureError::Gpu(crate::GpuError::DeviceLost));
+        }
         let (width, height) = size;
         let max = self.max_size();
         if width == 0 || height == 0 || width > max || height > max {
