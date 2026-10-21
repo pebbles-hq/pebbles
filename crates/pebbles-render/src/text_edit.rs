@@ -395,6 +395,17 @@ pub fn len() -> usize {
     LAYOUTS.with(|m| m.borrow().len())
 }
 
+/// Caret rect (local space of the publishing object) of `byte`, Downstream affinity, 1 px wide.
+/// Out-of-range bytes clamp to the end of the text.
+pub fn caret_rect(id: u64, byte: usize) -> Option<Rect> {
+    with_single(id, |l| {
+        // parley's from_byte_index clamps out-of-range bytes to text_len (Upstream).
+        let bb = Cursor::from_byte_index(l, byte, Affinity::Downstream).geometry(l, 1.0);
+        Rect::new(bb.x0, bb.y0, bb.x1, bb.y1)
+    })
+    .or_else(|| with_lines(id, |t| t.caret_rect(byte, 1.0)))
+}
+
 fn with_single<R>(id: u64, f: impl FnOnce(&Layout<Brush>) -> R) -> Option<R> {
     LAYOUTS.with(|m| {
         m.borrow().get(&id).and_then(|p| match p {

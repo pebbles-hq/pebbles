@@ -59,6 +59,21 @@ impl TextEnv {
         TextEnv { fonts, layout: parley::LayoutContext::new(), cache: ShapeCache::default() }
     }
 
+    /// Test-only: a TextEnv with ONLY the bundled + App::font faces (no system fonts).
+    #[doc(hidden)]
+    pub fn new_hermetic() -> Self {
+        let mut fonts = parley::FontContext {
+            collection: parley::fontique::Collection::new(parley::fontique::CollectionOptions {
+                shared: false,
+                system_fonts: false,
+            }),
+            source_cache: Default::default(),
+        };
+        crate::fonts::apply_builtins(&mut fonts);
+        crate::fonts::apply_user_fonts(&mut fonts);
+        TextEnv { fonts, layout: parley::LayoutContext::new(), cache: ShapeCache::default() }
+    }
+
     /// End-of-frame hook (the shell calls it once per window draw): advance the
     /// cache generation and, under pressure, evict entries not used in the last
     /// two generations. Idle windows keep their entries (eviction only under
