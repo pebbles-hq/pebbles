@@ -380,6 +380,49 @@ impl TextLayout {
     }
 }
 
+/// (min, max) intrinsic widths of `shaped` (§3.7.7), from its ONE unbounded layout — no
+/// reshape. max = that layout's width; min = the widest run between spaces / NBSPs / line
+/// breaks (Flutter's `getMinIntrinsicWidth` notion, Parley parity), or max when that is 0.
+/// Memoized in `ShapedText::intrinsic`.
+#[allow(dead_code)] // RenderParagraph::intrinsic reads it from T22.
+pub(crate) fn intrinsic_widths(
+    shaped: &Rc<ShapedText>,
+    scratch: &mut ShapeBuffer,
+    fonts: &mut FontRegistry,
+) -> (f32, f32) {
+    if let Some(memo) = shaped.intrinsic.get() {
+        return memo;
+    }
+    let params = LayoutParams {
+        width: None,
+        wrap: false,
+        align: Some(cosmic_text::Align::Left),
+        max_lines: None,
+        ellipsis: false,
+    };
+    let layout = TextLayout::new(shaped.clone(), params, scratch, fonts);
+    let (mut min, mut cur) = (0.0_f32, 0.0_f32);
+    for line in &layout.lines {
+        let text = layout.line_text(line);
+        for g in &line.layout.glyphs {
+            let cluster = text.get(g.start..g.end).unwrap_or("");
+            if !cluster.is_empty() && cluster.chars().all(|c| c == ' ' || c == '\u{a0}') {
+                min = min.max(cur);
+                cur = 0.0;
+            } else {
+                cur += g.w;
+            }
+        }
+        // A line break is a word boundary too.
+        min = min.max(cur);
+        cur = 0.0;
+    }
+    let max = layout.width;
+    let pair = (if min > 0.0 { min } else { max }, max);
+    shaped.intrinsic.set(Some(pair));
+    pair
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -537,5 +580,39 @@ mod tests {
     #[test]
     fn empty_text_never_elides() {
         assert!(!lay("", &clamp(mono(), 1, true), None).is_elided());
+    }
+
+    fn shaped(text: &str, size: f32) -> (Rc<ShapedText>, TextEnv) {
+        let mut env = TextEnv::new();
+        let style = ParagraphStyle { font_size: size, ..mono() };
+        let spec = crate::text::style::TextStyleSpec::from(&style);
+        let shaped = Rc::new(crate::text::shape::shape_text(&mut env.registry, text, &spec, &[]));
+        (shaped, env)
+    }
+
+    #[test]
+    fn intrinsic_mono() {
+        let (s, mut env) = shaped("aaa bbbbbb cc", 10.0);
+        let (min, max) = intrinsic_widths(&s, &mut env.scratch, &mut env.registry);
+        assert!(near(min, 36.0, 0.01) && near(max, 78.0, 0.01), "{min} {max}");
+    }
+
+    #[test]
+    fn intrinsic_nbsp_is_a_break() {
+        let (s, mut env) = shaped("aa\u{a0}bbbb", 10.0);
+        let (min, _) = intrinsic_widths(&s, &mut env.scratch, &mut env.registry);
+        assert!(near(min, 24.0, 0.01), "{min}");
+    }
+
+    #[test]
+    fn intrinsic_does_not_reshape() {
+        let (s, mut env) = shaped("aaa bbbbbb cc", 10.0);
+        let (shapes, layouts) = (crate::text::shape_count(), crate::text::layout_count());
+        let first = intrinsic_widths(&s, &mut env.scratch, &mut env.registry);
+        for _ in 0..9 {
+            assert_eq!(intrinsic_widths(&s, &mut env.scratch, &mut env.registry), first);
+        }
+        assert_eq!(crate::text::shape_count(), shapes, "no reshape");
+        assert_eq!(crate::text::layout_count() - layouts, 1, "the walk runs once");
     }
 }
