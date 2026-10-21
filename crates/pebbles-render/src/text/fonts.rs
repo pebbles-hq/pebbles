@@ -20,6 +20,54 @@ pub(crate) struct FaceRef {
     pub(crate) coords: Arc<[i16]>,
 }
 
+/// Generic CSS families -> bundled family (§3.3.4): deterministic on every platform.
+const GENERICS: &[(&str, &str)] = &[
+    ("serif", "Lora"),
+    ("ui-serif", "Lora"),
+    ("sans-serif", "Inter"),
+    ("system-ui", "Inter"),
+    ("ui-sans-serif", "Inter"),
+    ("-apple-system", "Inter"),
+    ("blinkmacsystemfont", "Inter"),
+    ("monospace", "JetBrains Mono"),
+    ("ui-monospace", "JetBrains Mono"),
+    ("cursive", "Inter"),
+    ("fantasy", "Inter"),
+    ("emoji", "Inter"),
+    ("math", "Inter"),
+    ("fangsong", "Inter"),
+    ("ui-rounded", "Inter"),
+];
+
+/// Split a CSS family list on commas outside quotes; trim, strip one level of matching
+/// quotes, skip empty entries.
+fn split_css_families(css: &str) -> smallvec::SmallVec<[&str; 4]> {
+    let mut out: smallvec::SmallVec<[&str; 4]> = smallvec::SmallVec::new();
+    let mut quote: Option<char> = None;
+    let mut start = 0;
+    for (i, c) in css.char_indices() {
+        match (quote, c) {
+            (None, '\'' | '"') => quote = Some(c),
+            (Some(q), c) if c == q => quote = None,
+            (None, ',') => {
+                out.push(&css[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    out.push(&css[start..]);
+    out.into_iter()
+        .map(str::trim)
+        .map(|e| {
+            let unquoted =
+                ['\'', '"'].iter().find_map(|q| e.strip_prefix(*q).and_then(|r| r.strip_suffix(*q)));
+            unquoted.unwrap_or(e).trim()
+        })
+        .filter(|e| !e.is_empty())
+        .collect()
+}
+
 /// Fixed aliases (§3.3.3): lowercase key -> canonical family.
 const ALIASES: &[(&str, &str)] = &[("inter variable", "Inter"), ("space grotesk light", "Space Grotesk")];
 
@@ -157,6 +205,36 @@ impl FontRegistry {
         self.canonical = canonical;
     }
 
+    /// Resolve a CSS family list to one concrete bundled/registered family (§3.3.4): generics
+    /// first, then the canonical table; no hit -> [`DEFAULT_FAMILY`](crate::fonts::DEFAULT_FAMILY),
+    /// logged once per distinct string. Memoized until the next generation bump.
+    #[allow(dead_code)] // paragraphs resolve through it from T10.
+    pub(crate) fn resolve_family(&mut self, css: &str) -> cosmic_text::FamilyOwned {
+        if let Some(hit) = self.resolved.get(css) {
+            return hit.clone();
+        }
+        let found = split_css_families(css).into_iter().find_map(|entry| {
+            let key = entry.to_lowercase();
+            GENERICS
+                .iter()
+                .find(|(g, _)| *g == key)
+                .map(|(_, family)| family.to_string())
+                .or_else(|| self.canonical.get(&key).cloned())
+        });
+        let family = found.unwrap_or_else(|| {
+            if self.warned_families.insert(css.to_string()) {
+                pebbles_foundation::log::warn(
+                    pebbles_foundation::log::Cat::General,
+                    format!("font family `{css}` not found; using {}", crate::fonts::DEFAULT_FAMILY),
+                );
+            }
+            crate::fonts::DEFAULT_FAMILY.to_string()
+        });
+        let resolved = cosmic_text::FamilyOwned::Name(family.into());
+        self.resolved.insert(css.to_string(), resolved.clone());
+        resolved
+    }
+
     #[allow(dead_code)] // shaping goes through it from T10.
     pub(crate) fn font_system(&mut self) -> &mut cosmic_text::FontSystem {
         &mut self.system
@@ -244,6 +322,41 @@ mod tests {
     #[test]
     fn families_builtins_first() {
         assert_eq!(registry().families(), ["Inter", "JetBrains Mono", "Space Grotesk", "Lora"]);
+    }
+
+    #[test]
+    fn resolve_family_table() {
+        let mut r = registry();
+        for (css, want) in [
+            ("jetbrains mono", "JetBrains Mono"),
+            ("monospace", "JetBrains Mono"),
+            ("ui-monospace", "JetBrains Mono"),
+            ("serif", "Lora"),
+            ("sans-serif", "Inter"),
+            ("system-ui", "Inter"),
+            ("'Not A Font', Lora", "Lora"),
+            ("\"Space Grotesk\"", "Space Grotesk"),
+            ("Inter Variable", "Inter"),
+            ("Space Grotesk Light", "Space Grotesk"),
+            ("Nope", "Inter"),
+            ("", "Inter"),
+            (" , ,", "Inter"),
+        ] {
+            assert_eq!(r.resolve_family(css), cosmic_text::FamilyOwned::Name(want.into()), "{css:?}");
+        }
+    }
+
+    #[test]
+    fn split_is_quote_aware() {
+        assert_eq!(split_css_families("'a, b', \"c\" ,d,,").as_slice(), ["a, b", "c", "d"]);
+    }
+
+    #[test]
+    fn resolve_is_memoized() {
+        let mut r = registry();
+        r.resolve_family("serif");
+        r.resolve_family("serif");
+        assert_eq!(r.resolved.len(), 1);
     }
 
     #[test]
