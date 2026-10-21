@@ -54,6 +54,8 @@ pub use error::{AcquireError, CaptureError, GpuError};
 pub use execute::custom::{CustomPrepare, CustomRender, CustomRenderer};
 pub use execute::resources::shader_programs::{ShaderError, validate_shader_program};
 pub use frame_targets::{FrameParams, FrameTargets, RenderTarget};
+#[cfg(not(target_family = "wasm"))]
+pub use init::backend_rank;
 pub use init::{GpuInit, GpuPower, HostOs};
 pub use limits::RendererLimits;
 #[cfg(not(target_family = "wasm"))]

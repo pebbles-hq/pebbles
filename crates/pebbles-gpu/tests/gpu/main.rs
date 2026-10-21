@@ -31,6 +31,7 @@ mod order;
 mod path_mask_budget;
 mod path_masks;
 mod pixel_snap;
+mod platform_policy;
 mod segments_gpu;
 mod shader_brush;
 mod shadows;
