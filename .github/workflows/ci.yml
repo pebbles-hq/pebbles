@@ -185,6 +185,33 @@ jobs:
   # Line coverage — NON-BLOCKING for now. Publishes a per-crate summary to the job
   # page so we can see which modules lack coverage; gate on a threshold later.
   # ───────────────────────────────────────────────────────────────────────────
+  feature-matrix:
+    name: Feature matrix (backend forwarding)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: feature-matrix
+      - name: Each backend alone, plus every integration
+        run: |
+          set -euo pipefail
+          for be in vello-hybrid wgpu; do
+            echo "::group::$be"
+            cargo check -p pebbles-render --no-default-features --features "$be"
+            cargo check -p pebbles-testing --no-default-features --features "$be"
+            cargo check -p pebbles-shell --all-targets --no-default-features --features "$be"
+            cargo check -p pebbles --no-default-features --features "$be,image-view,file-dialogs,tokio,native-menus,global-hotkeys"
+            echo "::endgroup::"
+          done
+      - name: Both backends resolve to the transition winner (DR-10)
+        run: cargo check -p pebbles --no-default-features --features vello-hybrid,wgpu
+      # Since C03 the display list is backend-neutral: pebbles-gpu builds pebbles-render with
+      # no backend feature (DR-03), so that configuration must keep compiling.
+      - name: No backend builds the display-list core
+        run: cargo check -p pebbles-render -p pebbles-gpu --no-default-features
+
   coverage:
     name: Coverage (non-blocking)
     runs-on: ubuntu-latest
