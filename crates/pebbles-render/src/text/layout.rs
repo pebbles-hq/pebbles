@@ -58,6 +58,27 @@ pub struct TextLayout {
     pub(crate) kept_paras: usize,
 }
 
+/// The layout-cache key (§3.8): the shape key plus every line-breaking input.
+pub(crate) fn layout_hash(shape: u64, params: &LayoutParams) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    shape.hash(&mut h);
+    params.width.map(f32::to_bits).hash(&mut h);
+    params.wrap.hash(&mut h);
+    let align_tag: u8 = match params.align {
+        None => 0,
+        Some(cosmic_text::Align::Left) => 1,
+        Some(cosmic_text::Align::Right) => 2,
+        Some(cosmic_text::Align::Center) => 3,
+        Some(cosmic_text::Align::Justified) => 4,
+        Some(cosmic_text::Align::End) => 5,
+    };
+    align_tag.hash(&mut h);
+    params.max_lines.hash(&mut h);
+    params.ellipsis.hash(&mut h);
+    h.finish()
+}
+
 /// Break one shaped line into layout lines.
 fn break_line(
     shaped: &ShapedText,

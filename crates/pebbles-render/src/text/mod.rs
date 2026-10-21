@@ -1,5 +1,16 @@
-//! Text environment: the parley font/layout contexts shared across all text
-//! render objects for a window. Held by the shell and threaded into layout.
+//! Text environment (03 §3.4): fonts, shaping, layout and their caches, shared by every text
+//! render object.
+//!
+//! - **Ownership.** One `TextEnv` per runner, shared by all its windows; offscreen capture
+//!   builds its own per call; tests use [`TextEnv::new`] (bundled + `App::font` faces only,
+//!   deterministic on every OS).
+//! - **Pipeline.** `FontRegistry` (bundled-first, zero-copy) → shaping per paragraph
+//!   (cosmic-text `ShapeLine`) → [`TextLayout`] (line breaking, metrics, ellipsis). Both stages
+//!   are cached by content hash and evicted by generation, only under pressure; a font-set
+//!   change clears them.
+//! - **No rasterization here.** Text produces glyph runs; the renderer owns the atlas (DR-07).
+//!
+//! The Parley `fonts`/`layout` fields remain for not-yet-ported consumers until T40.
 
 pub(crate) mod cache;
 pub(crate) mod fonts;
@@ -52,8 +63,40 @@ pub(crate) fn count_layout() {
 
 pub use layout::TextLayout;
 
+/// One text layout request (crate-internal: cosmic types never reach a `pub` signature).
+pub(crate) struct TextRequest<'a> {
+    pub(crate) text: &'a str,
+    pub(crate) style: &'a style::TextStyleSpec,
+    pub(crate) spans: &'a [style::SpanSpec],
+    pub(crate) params: layout::LayoutParams,
+}
+
+/// The cache keys of a [`TextRequest`]: its shape and its layout.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TextKey {
+    pub(crate) shape: u64,
+    pub(crate) layout: u64,
+}
+
+/// Debug census of a [`TextEnv`] (03 §3.4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextCensus {
+    /// Cached shaped texts.
+    pub shapes: usize,
+    /// Cached layouts.
+    pub layouts: usize,
+    /// Font faces in the registry.
+    pub faces: usize,
+    /// Faces with glyph-op data.
+    pub face_data: usize,
+    /// Memoized (face, weight) variation coordinates.
+    pub coords: usize,
+    /// Font generation.
+    pub generation: u64,
+}
+
 /// Test seam: shape + lay out `text` exactly as `RenderParagraph` will (`width` only when
-/// `style.soft_wrap`), bypassing the caches.
+/// `style.soft_wrap`), through the caches.
 #[doc(hidden)]
 pub fn layout_for_test(
     env: &mut TextEnv,
@@ -64,7 +107,6 @@ pub fn layout_for_test(
 ) -> std::rc::Rc<TextLayout> {
     let spec = style::TextStyleSpec::from(style);
     let spans: Vec<style::SpanSpec> = spans.iter().map(style::SpanSpec::from).collect();
-    let shaped = std::rc::Rc::new(shape::shape_text(&mut env.registry, text, &spec, &spans));
     let wrap = style.soft_wrap && width.is_some();
     let params = layout::LayoutParams {
         width: if wrap { width } else { None },
@@ -76,7 +118,9 @@ pub fn layout_for_test(
         max_lines: style.max_lines,
         ellipsis: style.ellipsis,
     };
-    std::rc::Rc::new(TextLayout::new(shaped, params, &mut env.scratch, &mut env.registry))
+    let req = TextRequest { text, style: &spec, spans: &spans, params };
+    let key = env.text_key(&req);
+    env.layout_text(&req, key)
 }
 
 /// Count one shape (no-op in release).
@@ -267,6 +311,51 @@ impl TextEnv {
         self.cache.map.len()
     }
 
+    /// The cache keys of `req` (shape key includes the font generation).
+    pub(crate) fn text_key(&self, req: &TextRequest<'_>) -> TextKey {
+        let shape = style::shape_hash(req.text, req.style, req.spans, self.registry.generation());
+        TextKey { shape, layout: layout::layout_hash(shape, &req.params) }
+    }
+
+    /// The layout of `req`: a layout-cache hit, or a layout of the cached (or fresh) shape.
+    pub(crate) fn layout_text(&mut self, req: &TextRequest<'_>, key: TextKey) -> std::rc::Rc<TextLayout> {
+        let generation = self.caches.generation;
+        if let Some(hit) = self.caches.layouts.get(key.layout, generation) {
+            return hit;
+        }
+        let shaped = match self.caches.shapes.get(key.shape, generation) {
+            Some(shaped) => shaped,
+            None => {
+                let shaped =
+                    std::rc::Rc::new(shape::shape_text(&mut self.registry, req.text, req.style, req.spans));
+                self.caches.shapes.insert(key.shape, shaped.clone(), generation);
+                shaped
+            }
+        };
+        let layout =
+            std::rc::Rc::new(TextLayout::new(shaped, req.params, &mut self.scratch, &mut self.registry));
+        self.caches.layouts.insert(key.layout, layout.clone(), generation);
+        layout
+    }
+
+    /// The font generation (bumps on every face addition).
+    pub fn font_generation(&self) -> u64 {
+        self.registry.generation()
+    }
+
+    /// Debug census: cache and font-registry sizes.
+    #[cfg(debug_assertions)]
+    pub fn census(&self) -> TextCensus {
+        TextCensus {
+            shapes: self.caches.shapes.len(),
+            layouts: self.caches.layouts.len(),
+            faces: self.registry.faces_len(),
+            face_data: self.registry.face_data_len(),
+            coords: self.registry.coords_len(),
+            generation: self.registry.generation(),
+        }
+    }
+
     /// Number of cached cosmic-text layouts (census / tests).
     pub fn layout_cache_len(&self) -> usize {
         self.caches.layouts.len()
@@ -302,5 +391,41 @@ impl TextEnv {
                 self.caches.clear();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::objects::ParagraphStyle;
+
+    fn style() -> ParagraphStyle {
+        ParagraphStyle::default()
+    }
+
+    #[test]
+    fn request_hits_layout_cache() {
+        let mut env = TextEnv::new();
+        let (shapes, layouts) = (shape_count(), layout_count());
+        layout_for_test(&mut env, "hello world", &style(), &[], Some(200.0));
+        layout_for_test(&mut env, "hello world", &style(), &[], Some(200.0));
+        assert_eq!((shape_count() - shapes, layout_count() - layouts), (1, 1));
+    }
+
+    #[test]
+    fn width_change_relayouts_without_reshape() {
+        let mut env = TextEnv::new();
+        let (shapes, layouts) = (shape_count(), layout_count());
+        layout_for_test(&mut env, "hello world", &style(), &[], Some(200.0));
+        layout_for_test(&mut env, "hello world", &style(), &[], Some(120.0));
+        assert_eq!((shape_count() - shapes, layout_count() - layouts), (1, 2));
+    }
+
+    #[test]
+    fn census_counts() {
+        let mut env = TextEnv::new();
+        layout_for_test(&mut env, "hello", &style(), &[], None);
+        let c = env.census();
+        assert_eq!((c.shapes, c.layouts, c.faces), (1, 1, 6));
     }
 }

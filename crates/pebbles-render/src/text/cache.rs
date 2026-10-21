@@ -21,7 +21,6 @@ impl<V> Default for GenMap<V> {
 
 impl<V: Clone> GenMap<V> {
     /// The entry for `key`, marked used in `generation`.
-    #[allow(dead_code)] // RenderParagraph looks layouts up from T22.
     pub(crate) fn get(&mut self, key: u64, generation: u32) -> Option<V> {
         self.map.get_mut(&key).map(|(v, used)| {
             *used = generation;
@@ -29,7 +28,6 @@ impl<V: Clone> GenMap<V> {
         })
     }
 
-    #[allow(dead_code)]
     pub(crate) fn insert(&mut self, key: u64, value: V, generation: u32) {
         self.map.insert(key, (value, generation));
     }
@@ -54,9 +52,7 @@ impl<V: Clone> GenMap<V> {
 /// The shape and layout caches of one `TextEnv`.
 #[derive(Default)]
 pub(crate) struct TextCaches {
-    #[allow(dead_code)] // filled by RenderParagraph from T22.
     pub(crate) shapes: GenMap<Rc<ShapedText>>,
-    #[allow(dead_code)]
     pub(crate) layouts: GenMap<Rc<TextLayout>>,
     pub(crate) generation: u32,
 }

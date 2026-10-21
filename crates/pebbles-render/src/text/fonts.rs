@@ -323,7 +323,6 @@ impl FontRegistry {
     /// Resolve a CSS family list to one concrete bundled/registered family (§3.3.4): generics
     /// first, then the canonical table; no hit -> [`DEFAULT_FAMILY`](crate::fonts::DEFAULT_FAMILY),
     /// logged once per distinct string. Memoized until the next generation bump.
-    #[allow(dead_code)] // paragraphs resolve through it from T10.
     pub(crate) fn resolve_family(&mut self, css: &str) -> cosmic_text::FamilyOwned {
         if let Some(hit) = self.resolved.get(css) {
             return hit.clone();
@@ -350,12 +349,10 @@ impl FontRegistry {
         resolved
     }
 
-    #[allow(dead_code)] // shaping goes through it from T10.
     pub(crate) fn font_system(&mut self) -> &mut cosmic_text::FontSystem {
         &mut self.system
     }
 
-    #[allow(dead_code)] // the layout cache keys on it from T10.
     pub(crate) fn generation(&self) -> u64 {
         self.generation
     }
@@ -365,19 +362,16 @@ impl FontRegistry {
     }
 
     /// Census: faces in the database.
-    #[allow(dead_code)] // debug census (§3.3.7), read by the T-track diagnostics.
     pub(crate) fn faces_len(&self) -> usize {
         self.system.db().len()
     }
 
     /// Census: faces with glyph-op data.
-    #[allow(dead_code)]
     pub(crate) fn face_data_len(&self) -> usize {
         self.faces.len()
     }
 
     /// Census: memoized (face, weight) coords.
-    #[allow(dead_code)]
     pub(crate) fn coords_len(&self) -> usize {
         self.coords.len()
     }
