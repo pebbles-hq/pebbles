@@ -1,5 +1,5 @@
 //! The [`Painter`]: the recording API RenderObjects speak. Every verb records an
-//! [`Op`](super::op::Op) onto a [`Scene`](super::Scene).
+//! [`Op`] onto a [`Scene`].
 
 use std::sync::Arc;
 
