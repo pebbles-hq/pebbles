@@ -86,8 +86,9 @@ impl TextFields {
     pub(crate) const MAX_LINES: u16 = 1 << 10;
     pub(crate) const ELLIPSIS: u16 = 1 << 11;
     pub(crate) const SOFT_WRAP: u16 = 1 << 12;
+    pub(crate) const TAB_WIDTH: u16 = 1 << 13;
     /// Every property (used by `.paragraph_style(..)`, which sets them all).
-    pub(crate) const ALL: u16 = (1 << 13) - 1;
+    pub(crate) const ALL: u16 = (1 << 14) - 1;
 
     pub(crate) fn mark(&mut self, bit: u16) {
         self.0 |= bit;
@@ -144,6 +145,9 @@ pub(crate) fn overlay_fields(base: &mut ParagraphStyle, style: &ParagraphStyle, 
     }
     if set.has(TextFields::SOFT_WRAP) {
         base.soft_wrap = style.soft_wrap;
+    }
+    if set.has(TextFields::TAB_WIDTH) {
+        base.tab_width = style.tab_width;
     }
 }
 
@@ -233,6 +237,12 @@ impl Text {
     pub fn letter_spacing(mut self, px: f32) -> Self {
         self.style.letter_spacing = px;
         self.set.mark(TextFields::LETTER_SPACING);
+        self
+    }
+    /// TAB advance in space widths (default 1: one column in monospace; 0 counts as 1).
+    pub fn tab_width(mut self, w: u16) -> Self {
+        self.style.tab_width = w;
+        self.set.mark(TextFields::TAB_WIDTH);
         self
     }
     /// Render italic.
@@ -514,6 +524,11 @@ impl RichText {
     /// Extra spacing between glyphs in logical px (0 = none).
     pub fn letter_spacing(mut self, px: f32) -> Self {
         self.base.letter_spacing = px;
+        self
+    }
+    /// TAB advance in space widths (default 1: one column in monospace; 0 counts as 1).
+    pub fn tab_width(mut self, w: u16) -> Self {
+        self.base.tab_width = w;
         self
     }
     pub fn align(mut self, align: TextAlign) -> Self {

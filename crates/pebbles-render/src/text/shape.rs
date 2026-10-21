@@ -152,6 +152,41 @@ mod tests {
         assert!(shaped.paras[1].placeholder);
     }
 
+    /// Sum of the EM advances of the glyphs before byte `end`.
+    fn advance_before(shaped: &ShapedText, end: usize) -> f32 {
+        let line = &shaped.paras[0].shape;
+        line.spans
+            .iter()
+            .flat_map(|s| &s.words)
+            .flat_map(|w| &w.glyphs)
+            .filter(|g| g.end <= end)
+            .map(|g| g.x_advance)
+            .sum()
+    }
+
+    fn mono(tab_width: u16) -> TextStyleSpec {
+        TextStyleSpec::from(&ParagraphStyle {
+            font_size: 20.0,
+            font_family: Some("JetBrains Mono".into()),
+            tab_width,
+            ..ParagraphStyle::default()
+        })
+    }
+
+    #[test]
+    fn tab_is_one_column_in_mono() {
+        let shaped = shape_text(&mut fonts(), "a\tb", &mono(1), &[]);
+        let em = advance_before(&shaped, 2);
+        assert!((em - 1.2).abs() <= 0.0001, "{em}");
+    }
+
+    #[test]
+    fn tab_width_4_in_mono() {
+        let shaped = shape_text(&mut fonts(), "a\tb", &mono(4), &[]);
+        let em = advance_before(&shaped, 2);
+        assert!((em - 2.4).abs() <= 0.0001, "{em}");
+    }
+
     #[test]
     fn shape_counter_counts_shapelines() {
         let mut f = fonts();

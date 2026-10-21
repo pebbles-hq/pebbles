@@ -53,6 +53,9 @@ pub struct ParagraphStyle {
     /// (`true`, the default). `false` shapes a single unbounded line that clips to
     /// the box (the classic one-line label, combine with `ellipsis`).
     pub soft_wrap: bool,
+    /// TAB advance in space widths: a TAB moves to the next multiple of `tab_width × space
+    /// advance`. Default 1 (one column in monospace).
+    pub tab_width: u16,
 }
 
 impl Default for ParagraphStyle {
@@ -71,6 +74,7 @@ impl Default for ParagraphStyle {
             max_lines: None,
             ellipsis: false,
             soft_wrap: true,
+            tab_width: crate::text::style::DEFAULT_TAB_WIDTH,
         }
     }
 }

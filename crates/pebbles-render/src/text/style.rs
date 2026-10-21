@@ -13,7 +13,7 @@ use pebbles_foundation::TextAlign;
 use super::fonts::FontRegistry;
 use crate::objects::{ParagraphStyle, TextFieldStyle, TextSpanStyle};
 
-/// TAB advance in space widths until `ParagraphStyle::tab_width` lands (T15).
+/// TAB advance in space widths (`ParagraphStyle::tab_width` default; text fields always).
 pub const DEFAULT_TAB_WIDTH: u16 = 1;
 
 /// The shaping-relevant part of a paragraph or field style.
@@ -54,7 +54,7 @@ impl From<&ParagraphStyle> for TextStyleSpec {
             strikethrough: s.strikethrough,
             letter_spacing: s.letter_spacing,
             family: s.font_family.clone(),
-            tab_width: DEFAULT_TAB_WIDTH,
+            tab_width: s.tab_width.max(1),
         }
     }
 }
