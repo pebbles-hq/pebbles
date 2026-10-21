@@ -1,6 +1,7 @@
 //! Text environment: the parley font/layout contexts shared across all text
 //! render objects for a window. Held by the shell and threaded into layout.
 
+pub(crate) mod cache;
 pub(crate) mod fonts;
 pub(crate) mod layout;
 pub(crate) mod shape;
@@ -115,6 +116,8 @@ pub struct TextEnv {
     registry: fonts::FontRegistry,
     /// cosmic-text line-breaking scratch, reused by every layout (03 §3.8).
     scratch: cosmic_text::ShapeBuffer,
+    /// Shape + layout caches for the cosmic-text path (03 §3.8).
+    caches: cache::TextCaches,
 }
 
 #[derive(Default)]
@@ -133,14 +136,14 @@ struct CacheEntry {
 /// editor-scale documents: a megabyte source holds tens of thousands of per-line
 /// entries whose owner (the field's line table) rebuilds from them on remount —
 /// evicting those between screen hops turns a warm remount into a full reshape.
-const SHAPE_CACHE_PRESSURE: usize = 32_768;
+pub(crate) const SHAPE_CACHE_PRESSURE: usize = 32_768;
 
 /// How many generations (frames) an entry may sit unused before a pressure sweep
 /// may drop it. Minutes, not seconds: an editor's working set (per-line layouts
 /// of the open document) must survive View/Edit remounts and idle pauses —
 /// re-shaping a megabyte because the user read the preview for a while is the
 /// exact jank this cache exists to kill. Reclaimed after sustained disuse.
-const SHAPE_CACHE_STALE: u32 = 4096;
+pub(crate) const SHAPE_CACHE_STALE: u32 = 4096;
 
 impl Default for TextEnv {
     fn default() -> Self {
@@ -170,6 +173,7 @@ impl TextEnv {
             cache: ShapeCache::default(),
             registry,
             scratch: Default::default(),
+            caches: Default::default(),
         }
     }
 
@@ -192,6 +196,7 @@ impl TextEnv {
             cache: ShapeCache::default(),
             registry,
             scratch: Default::default(),
+            caches: Default::default(),
         }
     }
 
@@ -210,7 +215,11 @@ impl TextEnv {
 
     /// Merge a finished background font scan; `true` when the font set changed. Never blocks.
     pub fn poll_fonts(&mut self) -> bool {
-        self.registry.poll()
+        let changed = self.registry.poll();
+        if changed {
+            self.caches.clear();
+        }
+        changed
     }
 
     /// End-of-frame hook (the shell calls it once per window draw): advance the
@@ -218,6 +227,7 @@ impl TextEnv {
     /// two generations. Idle windows keep their entries (eviction only under
     /// pressure), so re-presenting a long-idle window never re-shapes the world.
     pub fn finish_frame(&mut self) {
+        self.caches.finish_frame();
         self.cache.generation = self.cache.generation.wrapping_add(1);
         // Sweep only occasionally: a huge document legitimately holds thousands
         // of per-line entries whose owners (the field's line table) keep them
@@ -256,13 +266,22 @@ impl TextEnv {
     pub fn shape_cache_len(&self) -> usize {
         self.cache.map.len()
     }
+
+    /// Number of cached cosmic-text layouts (census / tests).
+    pub fn layout_cache_len(&self) -> usize {
+        self.caches.layouts.len()
+    }
     /// Registers font bytes (one or more faces) and refreshes discovery.
     /// Returns the number of faces registered.
     pub fn register_font(&mut self, bytes: Vec<u8>) -> usize {
         let data: fonts::FontBytes = std::sync::Arc::new(bytes);
         // Parley keeps a registration (sharing the same bytes) until its consumers are ported (T40).
         self.fonts.collection.register_fonts(crate::fonts::FontBlob::new(data.clone()), None);
-        self.registry.register(data)
+        let added = self.registry.register(data);
+        if added > 0 {
+            self.caches.clear();
+        }
+        added
     }
     /// Loads and registers a font file from disk (ttf/otf/ttc).
     pub fn register_font_file(&mut self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
@@ -277,7 +296,11 @@ impl TextEnv {
         #[cfg(not(target_family = "wasm"))]
         {
             self.fonts.collection.load_system_fonts(); // Parley, until T40
+            let before = self.registry.generation();
             self.registry.scan_blocking();
+            if self.registry.generation() != before {
+                self.caches.clear();
+            }
         }
     }
 }
