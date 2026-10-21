@@ -129,10 +129,10 @@ impl TextEnv {
     /// Registers font bytes (one or more faces) and refreshes discovery.
     /// Returns the number of faces registered.
     pub fn register_font(&mut self, bytes: Vec<u8>) -> usize {
-        self.fonts
-            .collection
-            .register_fonts(crate::fonts::FontBlob::new(std::sync::Arc::new(bytes)), None)
-            .len()
+        let data: fonts::FontBytes = std::sync::Arc::new(bytes);
+        // Parley keeps a registration (sharing the same bytes) until its consumers are ported (T40).
+        self.fonts.collection.register_fonts(crate::fonts::FontBlob::new(data.clone()), None);
+        self.registry.register(data)
     }
     /// Loads and registers a font file from disk (ttf/otf/ttc).
     pub fn register_font_file(&mut self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {

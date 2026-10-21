@@ -13,7 +13,7 @@ use crate::fonts::BUILTIN_FAMILIES;
 pub(crate) type FontBytes = Arc<dyn AsRef<[u8]> + Send + Sync>;
 
 /// What a glyph op needs for one (face, weight): the face bytes + variation coords.
-#[allow(dead_code)] // T06 resolves faces for glyph runs.
+#[allow(dead_code)] // glyph runs resolve faces through it from T10.
 #[derive(Clone, Debug)]
 pub(crate) struct FaceRef {
     pub(crate) font: peniko::FontData,
@@ -71,7 +71,7 @@ fn split_css_families(css: &str) -> smallvec::SmallVec<[&str; 4]> {
 /// Fixed aliases (§3.3.3): lowercase key -> canonical family.
 const ALIASES: &[(&str, &str)] = &[("inter variable", "Inter"), ("space grotesk light", "Space Grotesk")];
 
-#[allow(dead_code)] // `resolved`, `coords` and `warned_families` are used from T06 on.
+#[allow(dead_code)] // `coords` is filled by `face` (glyph runs, T10).
 pub(crate) struct FontRegistry {
     /// Built with `new_with_locale_and_db` — never scans.
     system: cosmic_text::FontSystem,
@@ -92,6 +92,8 @@ pub(crate) struct FontRegistry {
     protected: Vec<String>,
     /// Log-once set for unresolved family strings.
     warned_families: std::collections::HashSet<String>,
+    /// Log-once flag for runtime font bytes that failed to parse.
+    warned_bad_font: bool,
 }
 
 /// Load `bytes` into `db`, renaming every face to `rename` when given; returns the new ids
@@ -169,6 +171,7 @@ impl FontRegistry {
             coords: HashMap::new(),
             protected,
             warned_families: Default::default(),
+            warned_bad_font: false,
         };
         registry.rebuild_names();
         registry
@@ -203,6 +206,34 @@ impl FontRegistry {
         }
         self.families = families;
         self.canonical = canonical;
+    }
+
+    /// Register runtime font bytes (one or more faces) under their own family names; returns
+    /// the number of faces added. Unparseable bytes add nothing (logged once).
+    pub(crate) fn register(&mut self, data: FontBytes) -> usize {
+        let ids = self.system.db_mut().load_font_source(fontdb::Source::Binary(data.clone()));
+        for id in &ids {
+            let Some(face) = self.system.db().face(*id) else { continue };
+            self.protected.extend(face.families.iter().map(|(n, _)| n.to_lowercase()));
+            self.faces.insert(*id, peniko::FontData::new(peniko::Blob::new(data.clone()), face.index));
+        }
+        if ids.is_empty() {
+            if !self.warned_bad_font {
+                self.warned_bad_font = true;
+                pebbles_foundation::log::warn(
+                    pebbles_foundation::log::Cat::General,
+                    "registered font bytes did not parse as a font".to_string(),
+                );
+            }
+            return 0;
+        }
+        self.protected.sort();
+        self.protected.dedup();
+        self.generation += 1;
+        self.rebuild_names();
+        self.resolved.clear();
+        crate::fonts::refresh_families_from(&self.families);
+        ids.len()
     }
 
     /// Resolve a CSS family list to one concrete bundled/registered family (§3.3.4): generics
@@ -357,6 +388,23 @@ mod tests {
         r.resolve_family("serif");
         r.resolve_family("serif");
         assert_eq!(r.resolved.len(), 1);
+    }
+
+    #[test]
+    fn register_user_font_adds_faces_and_bumps_generation() {
+        let mut r = registry();
+        let before = r.generation();
+        let lora = crate::fonts::builtin_fonts()[5].1.to_vec();
+        assert_eq!(r.register(Arc::new(lora)), 1);
+        assert_eq!(r.generation(), before + 1);
+    }
+
+    #[test]
+    fn register_garbage_returns_zero() {
+        let mut r = registry();
+        let before = r.generation();
+        assert_eq!(r.register(Arc::new(vec![0u8; 64])), 0);
+        assert_eq!(r.generation(), before);
     }
 
     #[test]
