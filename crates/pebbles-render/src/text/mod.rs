@@ -1,6 +1,8 @@
 //! Text environment: the parley font/layout contexts shared across all text
 //! render objects for a window. Held by the shell and threaded into layout.
 
+pub(crate) mod fonts;
+
 /// Owns the mutable state parley needs to shape and lay out text: the font
 /// database/cache and the layout scratch context. One per window.
 pub struct TextEnv {
@@ -15,6 +17,10 @@ pub struct TextEnv {
     /// pass, a toggle elsewhere) hits this instead of re-shaping — shaping cost
     /// tracks NEW content, not rebuild traffic.
     cache: ShapeCache,
+    /// The cosmic-text font registry (03 §3.3); shaping moves onto it in Track T, while the
+    /// Parley fields above stay for not-yet-ported consumers until T40.
+    #[allow(dead_code)] // read once paragraphs shape through cosmic-text (T10).
+    registry: fonts::FontRegistry,
 }
 
 #[derive(Default)]
@@ -55,8 +61,10 @@ impl TextEnv {
         let mut fonts = parley::FontContext::new();
         crate::fonts::apply_builtins(&mut fonts);
         crate::fonts::apply_user_fonts(&mut fonts); // F4: user fonts from App::font
-        crate::fonts::refresh_families(&mut fonts);
-        TextEnv { fonts, layout: parley::LayoutContext::new(), cache: ShapeCache::default() }
+        let registry = fonts::FontRegistry::new_bundled(&crate::fonts::user_fonts_snapshot(), "en-US".into());
+        // The global families snapshot is refreshed ONLY from the registry (03 §3.3.7).
+        crate::fonts::refresh_families_from(registry.families());
+        TextEnv { fonts, layout: parley::LayoutContext::new(), cache: ShapeCache::default(), registry }
     }
 
     /// Test-only: a TextEnv with ONLY the bundled + App::font faces (no system fonts).
@@ -71,7 +79,8 @@ impl TextEnv {
         };
         crate::fonts::apply_builtins(&mut fonts);
         crate::fonts::apply_user_fonts(&mut fonts);
-        TextEnv { fonts, layout: parley::LayoutContext::new(), cache: ShapeCache::default() }
+        let registry = fonts::FontRegistry::new_bundled(&crate::fonts::user_fonts_snapshot(), "en-US".into());
+        TextEnv { fonts, layout: parley::LayoutContext::new(), cache: ShapeCache::default(), registry }
     }
 
     /// End-of-frame hook (the shell calls it once per window draw): advance the
@@ -120,13 +129,10 @@ impl TextEnv {
     /// Registers font bytes (one or more faces) and refreshes discovery.
     /// Returns the number of faces registered.
     pub fn register_font(&mut self, bytes: Vec<u8>) -> usize {
-        let n = self
-            .fonts
+        self.fonts
             .collection
             .register_fonts(crate::fonts::FontBlob::new(std::sync::Arc::new(bytes)), None)
-            .len();
-        crate::fonts::refresh_families(&mut self.fonts);
-        n
+            .len()
     }
     /// Loads and registers a font file from disk (ttf/otf/ttc).
     pub fn register_font_file(&mut self, path: impl AsRef<std::path::Path>) -> std::io::Result<()> {
@@ -141,7 +147,6 @@ impl TextEnv {
         #[cfg(not(target_family = "wasm"))]
         {
             self.fonts.collection.load_system_fonts();
-            crate::fonts::refresh_families(&mut self.fonts);
         }
     }
 }

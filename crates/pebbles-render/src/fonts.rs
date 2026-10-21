@@ -61,6 +61,11 @@ pub fn register_user_font(bytes: &'static [u8]) {
     user_fonts().write().expect("user-font registry lock poisoned (a prior panic held it)").push(bytes);
 }
 
+/// The `App::font` bytes registered so far (each `TextEnv` builds its registry from them).
+pub(crate) fn user_fonts_snapshot() -> Vec<&'static [u8]> {
+    user_fonts().read().expect("user-font registry lock poisoned (a prior panic held it)").clone()
+}
+
 /// Apply every registered user font into a fresh font context.
 pub(crate) fn apply_user_fonts(fonts: &mut parley::FontContext) {
     for bytes in user_fonts().read().expect("user-font registry lock poisoned (a prior panic held it)").iter()
@@ -76,25 +81,11 @@ fn registry() -> &'static RwLock<Vec<String>> {
     FAMILIES.get_or_init(|| RwLock::new(Vec::new()))
 }
 
-/// Refreshes the global family snapshot from a font context. Called whenever
-/// fonts are registered into a [`TextEnv`](crate::TextEnv).
-pub(crate) fn refresh_families(fonts: &mut parley::FontContext) {
-    let mut others: Vec<String> = Vec::new();
-    for name in fonts.collection.family_names() {
-        if BUILTIN_FAMILIES.contains(&name) {
-            continue;
-        }
-        others.push(name.to_string());
-    }
-    others.sort_by_key(|a| a.to_lowercase());
-    let mut all: Vec<String> = BUILTIN_FAMILIES
-        .iter()
-        .filter(|b| fonts.collection.family_by_name(b).is_some())
-        .map(|s| s.to_string())
-        .collect();
-    all.append(&mut others);
+/// Replace the global family snapshot with a registry's families (03 §3.3.7: the most
+/// recently changed registry wins).
+pub(crate) fn refresh_families_from(families: &[String]) {
     if let Ok(mut w) = registry().write() {
-        *w = all;
+        *w = families.to_vec();
     }
 }
 
