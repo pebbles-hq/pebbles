@@ -160,6 +160,49 @@ pub struct RenderSurface<'window> {
     targets: FrameTargets,
 }
 
+/// 08 §4.2: Pebbles has no transparent windows — `Opaque` when offered, else `Auto`.
+pub fn choose_alpha_mode(modes: &[wgpu::CompositeAlphaMode]) -> wgpu::CompositeAlphaMode {
+    if modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
+        wgpu::CompositeAlphaMode::Opaque
+    } else {
+        wgpu::CompositeAlphaMode::Auto
+    }
+}
+
+/// 08 §4.3: the mode to configure and whether `wanted` had to be replaced.
+pub fn choose_present_mode(
+    wanted: wgpu::PresentMode,
+    modes: &[wgpu::PresentMode],
+) -> (wgpu::PresentMode, bool) {
+    use wgpu::PresentMode::{AutoNoVsync, AutoVsync, Fifo};
+    match wanted {
+        // Resolved by wgpu itself against the surface; always valid. Fifo is always offered.
+        AutoVsync | AutoNoVsync | Fifo => (wanted, false),
+        m if modes.contains(&m) => (m, false),
+        _ => (AutoVsync, true),
+    }
+}
+
+/// 08 §4.3: `desired_maximum_frame_latency` clamped to 1..=3.
+pub const fn frame_latency(requested: u32) -> u32 {
+    if requested < 1 {
+        1
+    } else if requested > 3 {
+        3
+    } else {
+        requested
+    }
+}
+
+/// 08 §4.4: `None` = do not configure (0-sized); else the clamped size and whether it clamped.
+pub fn clamp_surface_size(width: u32, height: u32, max_dim: u32) -> Option<((u32, u32), bool)> {
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let (w, h) = (width.min(max_dim), height.min(max_dim));
+    Some(((w, h), w != width || h != height))
+}
+
 impl<'window> RenderSurface<'window> {
     /// The surface's device id.
     pub fn device_id(&self) -> DeviceId {
@@ -249,14 +292,43 @@ impl<'window> RenderSurface<'window> {
                 ),
             );
         }
-        let alpha_mode = capabilities.alpha_modes.first().copied().unwrap_or(wgpu::CompositeAlphaMode::Auto);
+        let alpha_mode = choose_alpha_mode(&capabilities.alpha_modes);
+        let wanted = ctx.init().present_mode;
+        let (present_mode, replaced) = choose_present_mode(wanted, &capabilities.present_modes);
+        if replaced {
+            pebbles_foundation::log::logf(
+                pebbles_foundation::log::Level::Warn,
+                pebbles_foundation::log::Cat::Gpu,
+                format_args!(
+                    "present mode {wanted:?} unsupported by this surface ({:?}); using AutoVsync",
+                    capabilities.present_modes
+                ),
+            );
+        }
+        let max = device.device().limits().max_texture_dimension_2d;
+        // A 0-sized window at creation configures at 1×1; the first real resize reconfigures.
+        let (width, height) = match clamp_surface_size(width, height, max) {
+            None => (1, 1),
+            Some(((w, h), clamped)) => {
+                if clamped {
+                    pebbles_foundation::log::logf(
+                        pebbles_foundation::log::Level::Warn,
+                        pebbles_foundation::log::Cat::Gpu,
+                        format_args!(
+                            "surface {width}x{height} exceeds max texture size {max}; rendering at {w}x{h} (stretched)"
+                        ),
+                    );
+                }
+                (w, h)
+            }
+        };
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: choice.format,
-            width: width.max(1),
-            height: height.max(1),
-            present_mode: ctx.init().present_mode,
-            desired_maximum_frame_latency: ctx.init().max_frame_latency,
+            width,
+            height,
+            present_mode,
+            desired_maximum_frame_latency: frame_latency(ctx.init().max_frame_latency),
             alpha_mode,
             // Only list the view format when it differs from the surface format (GL — DL-10).
             view_formats: if choice.view_format != choice.format { vec![choice.view_format] } else { vec![] },
@@ -294,6 +366,32 @@ impl<'window> RenderSurface<'window> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn alpha_prefers_opaque() {
+        use wgpu::CompositeAlphaMode as A;
+        assert_eq!(choose_alpha_mode(&[A::PreMultiplied, A::Opaque]), A::Opaque);
+        assert_eq!(choose_alpha_mode(&[A::Inherit]), A::Auto);
+    }
+
+    #[test]
+    fn present_mode_fallback() {
+        use wgpu::PresentMode as P;
+        assert_eq!(choose_present_mode(P::Mailbox, &[P::Fifo]), (P::AutoVsync, true));
+        assert_eq!(choose_present_mode(P::Immediate, &[P::Fifo, P::Immediate]), (P::Immediate, false));
+        assert_eq!(choose_present_mode(P::Fifo, &[]), (P::Fifo, false));
+    }
+
+    #[test]
+    fn latency_clamped() {
+        assert_eq!((frame_latency(0), frame_latency(2), frame_latency(9)), (1, 2, 3));
+    }
+
+    #[test]
+    fn size_clamp() {
+        assert_eq!(clamp_surface_size(0, 10, 8192), None);
+        assert_eq!(clamp_surface_size(9000, 100, 8192), Some(((8192, 100), true)));
+    }
 
     #[test]
     fn action_for_every_status() {
