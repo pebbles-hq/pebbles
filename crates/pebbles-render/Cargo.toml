@@ -28,8 +28,16 @@ glifo = { version = "0.3", optional = true }
 peniko.workspace = true
 kurbo.workspace = true
 parley.workspace = true
+# Text (03 §3.10) — NON-optional: text is backend-neutral (DR-08).
+cosmic-text.workspace = true
+unicode-segmentation.workspace = true
+sys-locale.workspace = true
 slotmap.workspace = true
 smallvec = { workspace = true, features = ["union"] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+cosmic-text = { workspace = true, features = ["wasm-web"] } # sys-locale reads navigator.language
+sys-locale = { workspace = true, features = ["js"] }
 
 [features]
 # Render backend (wgpu migration). Exactly ONE must be on. `vello-hybrid` is the default;

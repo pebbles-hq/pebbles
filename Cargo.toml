@@ -66,6 +66,8 @@ parley = "0.11"
 # mints a new Blob per face); fontdb is re-exported as cosmic_text::fontdb, so no crate names
 # fontdb directly. wasm adds `wasm-web` per crate. If T04 already wrote this line, keep it.
 cosmic-text = { version = "0.19", default-features = false, features = ["std", "fontconfig"] }
+unicode-segmentation = "1.12"
+sys-locale = "0.3"
 
 # --- renderer (pebbles-gpu only; DR-03) ---
 lyon_tessellation = "1.0"
