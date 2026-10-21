@@ -34,3 +34,14 @@ fn solid_rect_center_pixel() {
         assert_eq!(px(&image.pixels, 64, 2, 2), [255, 255, 255, 255]);
     }
 }
+
+/// V09: the noop backend is selected when requested (validation-only runs).
+#[test]
+#[ignore = "gpu"]
+fn noop_adapter_selected_when_requested() {
+    if std::env::var("WGPU_BACKEND").as_deref() != Ok("noop") {
+        return;
+    }
+    let r = pebbles_gpu::OffscreenRenderer::new().expect("noop adapter");
+    assert_eq!(r.adapter_info().backend, wgpu::Backend::Noop);
+}
