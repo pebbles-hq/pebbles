@@ -2,6 +2,7 @@
 //! render objects for a window. Held by the shell and threaded into layout.
 
 pub(crate) mod fonts;
+pub(crate) mod layout;
 pub(crate) mod shape;
 pub(crate) mod style;
 
@@ -22,6 +23,59 @@ pub fn shape_count() -> u64 {
 #[cfg(debug_assertions)]
 pub fn reset_shape_count() {
     SHAPES.with(|c| c.set(0));
+}
+
+#[cfg(debug_assertions)]
+thread_local! {
+    static LAYOUTS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Debug-only: total `TextLayout` constructions since [`reset_layout_count`].
+#[cfg(debug_assertions)]
+pub fn layout_count() -> u64 {
+    LAYOUTS.with(std::cell::Cell::get)
+}
+
+/// Debug-only: reset the layout tally.
+#[cfg(debug_assertions)]
+pub fn reset_layout_count() {
+    LAYOUTS.with(|c| c.set(0));
+}
+
+/// Count one `TextLayout` construction (no-op in release).
+#[inline]
+pub(crate) fn count_layout() {
+    #[cfg(debug_assertions)]
+    LAYOUTS.with(|c| c.set(c.get() + 1));
+}
+
+pub use layout::TextLayout;
+
+/// Test seam: shape + lay out `text` exactly as `RenderParagraph` will (`width` only when
+/// `style.soft_wrap`), bypassing the caches.
+#[doc(hidden)]
+pub fn layout_for_test(
+    env: &mut TextEnv,
+    text: &str,
+    style: &crate::objects::ParagraphStyle,
+    spans: &[crate::objects::TextSpanStyle],
+    width: Option<f32>,
+) -> std::rc::Rc<TextLayout> {
+    let spec = style::TextStyleSpec::from(style);
+    let spans: Vec<style::SpanSpec> = spans.iter().map(style::SpanSpec::from).collect();
+    let shaped = std::rc::Rc::new(shape::shape_text(&mut env.registry, text, &spec, &spans));
+    let wrap = style.soft_wrap && width.is_some();
+    let params = layout::LayoutParams {
+        width: if wrap { width } else { None },
+        wrap,
+        align: Some(style::to_cosmic_align(
+            style.align,
+            crate::text_direction() == pebbles_foundation::TextDirection::Rtl,
+        )),
+        max_lines: style.max_lines,
+        ellipsis: style.ellipsis,
+    };
+    std::rc::Rc::new(TextLayout::new(shaped, params, &mut env.scratch, &mut env.registry))
 }
 
 /// Count one shape (no-op in release).
@@ -58,8 +112,9 @@ pub struct TextEnv {
     cache: ShapeCache,
     /// The cosmic-text font registry (03 §3.3); shaping moves onto it in Track T, while the
     /// Parley fields above stay for not-yet-ported consumers until T40.
-    #[allow(dead_code)] // read once paragraphs shape through cosmic-text (T10).
     registry: fonts::FontRegistry,
+    /// cosmic-text line-breaking scratch, reused by every layout (03 §3.8).
+    scratch: cosmic_text::ShapeBuffer,
 }
 
 #[derive(Default)]
@@ -109,7 +164,13 @@ impl TextEnv {
         crate::fonts::apply_user_fonts(&mut fonts); // F4: user fonts from App::font
         // The global families snapshot is refreshed ONLY from the registry (03 §3.3.7).
         crate::fonts::refresh_families_from(registry.families());
-        TextEnv { fonts, layout: parley::LayoutContext::new(), cache: ShapeCache::default(), registry }
+        TextEnv {
+            fonts,
+            layout: parley::LayoutContext::new(),
+            cache: ShapeCache::default(),
+            registry,
+            scratch: Default::default(),
+        }
     }
 
     /// Test-only: a TextEnv with ONLY the bundled + App::font faces (no system fonts).
@@ -125,7 +186,13 @@ impl TextEnv {
         crate::fonts::apply_builtins(&mut fonts);
         crate::fonts::apply_user_fonts(&mut fonts);
         let registry = fonts::FontRegistry::new_bundled(&crate::fonts::user_fonts_snapshot(), "en-US".into());
-        TextEnv { fonts, layout: parley::LayoutContext::new(), cache: ShapeCache::default(), registry }
+        TextEnv {
+            fonts,
+            layout: parley::LayoutContext::new(),
+            cache: ShapeCache::default(),
+            registry,
+            scratch: Default::default(),
+        }
     }
 
     /// A text environment that also uses the host's fonts per `mode` (always bundled-only on

@@ -43,8 +43,23 @@ const INTER: &str = "Inter";
 const MONO: &str = "JetBrains Mono";
 
 /// Fields a known, documented divergence exempts from assertion (printed instead).
-const KNOWN_DIFFS: &[(&str /*case*/, &str /*field*/, &str /*reason*/)] =
-    &[("inter16_tab", "width", "Q-5: TAB is a space-advance stop, not a .notdef box")];
+/// `"*"` matches every case.
+const KNOWN_DIFFS: &[(&str /*case*/, &str /*field*/, &str /*reason*/)] = &[
+    ("inter16_tab", "width", "Q-5: TAB is a space-advance stop, not a .notdef box"),
+    ("lora16_crlf", "height", "Q-8: CRLF is one paragraph break, not two"),
+    ("lora16_crlf", "line_tops", "Q-8: CRLF is one paragraph break, not two"),
+];
+
+/// Q-9: Parley pixel-snaps line tops and baselines and starts the first line box at y = -1;
+/// TextLayout keeps them fractional (Flutter/Skia). The pinned value is exactly
+/// `round(ours) - 1`, which `text_pin_layout_matches_oracle` asserts instead of skipping.
+fn parley_snap(v: f64) -> f64 {
+    v.round() - 1.0
+}
+
+fn known_diff(case: &str, field: &str) -> Option<&'static str> {
+    KNOWN_DIFFS.iter().find(|(c, f, _)| (*c == case || *c == "*") && *f == field).map(|(_, _, why)| *why)
+}
 
 const fn case(name: &'static str, text: &'static str, family: &'static str, size: f32) -> PinCase {
     PinCase {
@@ -231,7 +246,7 @@ fn text_pin_matches_parley_oracle() {
             if ok {
                 return;
             }
-            if let Some((_, _, why)) = KNOWN_DIFFS.iter().find(|(c, f, _)| c == name && *f == field) {
+            if let Some(why) = known_diff(name, field) {
                 println!("KNOWN_DIFF {name}.{field}: {detail} ({why})");
             } else {
                 failures.push(format!("{name}.{field}: {detail}"));
@@ -261,4 +276,83 @@ fn text_pin_matches_parley_oracle() {
         );
     }
     assert!(failures.is_empty(), "text metrics drifted from the Parley pin:\n{}", failures.join("\n"));
+}
+
+/// Pinned cases the direct `TextLayout` path covers before max_lines/ellipsis (T13) and the
+/// RenderParagraph swap (T22).
+const LAYOUT_CASES: &[&str] = &[
+    "inter16_hello",
+    "mono20_ascii",
+    "mono20_trailing_ws",
+    "mono20_tab",
+    "mono20_ls2",
+    "mono20_override",
+    "mono20_long_word",
+    "inter16_trailing_nl",
+    "lora16_crlf",
+    "inter16_empty",
+    "mono20_center_paras",
+    "mono20_justify",
+];
+
+#[test]
+fn text_pin_layout_matches_oracle() {
+    assert!(!PARLEY.is_empty(), "fixture empty: run with PEBBLES_UPDATE_TEXT_PIN=1");
+    let mut env = TextEnv::new();
+    let cases = corpus();
+    let mut failures = Vec::new();
+    for name in LAYOUT_CASES {
+        let c = cases.iter().find(|c| c.name == *name).expect("case in corpus");
+        let pin = PARLEY.iter().find(|p| p.name == *name).expect("case in fixture");
+        let style = ParagraphStyle {
+            font_size: c.size,
+            line_height: c.line_height,
+            weight: c.weight,
+            italic: c.italic,
+            letter_spacing: c.letter_spacing,
+            align: c.align,
+            soft_wrap: c.soft_wrap,
+            max_lines: c.max_lines,
+            ellipsis: c.ellipsis,
+            font_family: Some(c.family.into()),
+            ..ParagraphStyle::default()
+        };
+        let l = pebbles_render::text::layout_for_test(
+            &mut env,
+            c.text,
+            &style,
+            &(c.spans)(),
+            c.width.map(|w| w as f32),
+        );
+        // The pin measured RenderParagraph, which constrains the layout to its box.
+        let width = c.width.map_or(f64::from(l.width()), |w| f64::from(l.width()).min(w));
+        let tops: Vec<f64> = l.line_tops().into_iter().map(f64::from).collect();
+        let checks = [
+            ("width", (width - pin.width).abs() <= 0.75, format!("{width} vs pinned {}", pin.width)),
+            (
+                "height",
+                (f64::from(l.height()) - pin.height).abs() <= 0.01,
+                format!("{} vs pinned {}", l.height(), pin.height),
+            ),
+            (
+                "baseline",
+                l.first_baseline().is_some_and(|b| parley_snap(f64::from(b)) == pin.baseline),
+                format!("{:?} vs pinned {} (Q-9 snap)", l.first_baseline(), pin.baseline),
+            ),
+            (
+                "line_tops",
+                tops.len() == pin.line_tops.len()
+                    && tops.iter().zip(pin.line_tops).all(|(a, b)| parley_snap(*a) == *b),
+                format!("{tops:?} vs pinned {:?} (Q-9 snap)", pin.line_tops),
+            ),
+        ];
+        for (field, ok, detail) in checks {
+            match (ok, known_diff(name, field)) {
+                (true, _) => {}
+                (false, Some(why)) => println!("KNOWN_DIFF {name}.{field}: {detail} ({why})"),
+                (false, None) => failures.push(format!("{name}.{field}: {detail}")),
+            }
+        }
+    }
+    assert!(failures.is_empty(), "TextLayout drifted from the Parley pin:\n{}", failures.join("\n"));
 }

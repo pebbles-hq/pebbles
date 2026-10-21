@@ -30,7 +30,7 @@ mod wrap;
 
 #[cfg(debug_assertions)]
 #[cfg(debug_assertions)]
-pub use crate::text::{reset_shape_count, shape_count};
+pub use crate::text::{layout_count, reset_layout_count, reset_shape_count, shape_count};
 pub use aspect::RenderAspectRatio;
 pub use basic::{
     RenderAlign, RenderColoredBox, RenderConstrainedBox, RenderPadding, RenderPointerBarrier,
