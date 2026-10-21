@@ -145,25 +145,6 @@ fn to_parley_align(a: TextAlign, rtl: bool) -> Alignment {
     }
 }
 
-// Debug-only tally of parley re-shapes (E3): the tests assert a stable string doesn't
-// re-shape on a repeat layout. Bumped once per layout that actually shapes.
-#[cfg(debug_assertions)]
-thread_local! {
-    static SHAPES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
-}
-
-/// Debug-only: total parley re-shapes since [`reset_shape_count`]. Test hook (E3).
-#[cfg(debug_assertions)]
-pub fn shape_count() -> u64 {
-    SHAPES.with(std::cell::Cell::get)
-}
-
-/// Debug-only: reset the re-shape tally.
-#[cfg(debug_assertions)]
-pub fn reset_shape_count() {
-    SHAPES.with(|c| c.set(0));
-}
-
 /// A leaf render object that lays out and paints text.
 pub struct RenderParagraph {
     pub text: String,
@@ -424,8 +405,7 @@ impl RenderObject for RenderParagraph {
             self.refresh_span_geometry();
             return constraints.constrain(self.shape_size);
         }
-        #[cfg(debug_assertions)]
-        SHAPES.with(|c| c.set(c.get() + 1));
+        crate::text::count_shape();
 
         let text_env = &mut *cx.text;
         let mut layout = self.build(text_env, &self.text, max_advance);

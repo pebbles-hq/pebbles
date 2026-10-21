@@ -2,7 +2,34 @@
 //! render objects for a window. Held by the shell and threaded into layout.
 
 pub(crate) mod fonts;
+pub(crate) mod shape;
 pub(crate) mod style;
+
+// Debug-only tally of shapes (E3): one per Parley layout that shapes, and one per cosmic-text
+// `ShapeLine::new`. Tests assert a stable string doesn't re-shape on a repeat layout.
+#[cfg(debug_assertions)]
+thread_local! {
+    static SHAPES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Debug-only: total shapes since [`reset_shape_count`]. Test hook (E3).
+#[cfg(debug_assertions)]
+pub fn shape_count() -> u64 {
+    SHAPES.with(std::cell::Cell::get)
+}
+
+/// Debug-only: reset the shape tally.
+#[cfg(debug_assertions)]
+pub fn reset_shape_count() {
+    SHAPES.with(|c| c.set(0));
+}
+
+/// Count one shape (no-op in release).
+#[inline]
+pub(crate) fn count_shape() {
+    #[cfg(debug_assertions)]
+    SHAPES.with(|c| c.set(c.get() + 1));
+}
 
 /// Whether a [`TextEnv`] also uses the host's installed fonts (03 §3.3.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

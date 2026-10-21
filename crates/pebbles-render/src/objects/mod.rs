@@ -28,6 +28,9 @@ mod transform;
 mod view;
 mod wrap;
 
+#[cfg(debug_assertions)]
+#[cfg(debug_assertions)]
+pub use crate::text::{reset_shape_count, shape_count};
 pub use aspect::RenderAspectRatio;
 pub use basic::{
     RenderAlign, RenderColoredBox, RenderConstrainedBox, RenderPadding, RenderPointerBarrier,
@@ -51,8 +54,6 @@ pub use list::RenderList;
 pub use measure::{RenderMeasureProbe, RenderPositionProbe};
 pub use overflow::{RenderLimitedBox, RenderOverflowBox};
 pub use paragraph::{ParagraphStyle, RenderParagraph, TextSpanStyle};
-#[cfg(debug_assertions)]
-pub use paragraph::{reset_shape_count, shape_count};
 pub use pointer::{Cursor, PointerButton, PointerEvent, RenderPointerListener, TapCallback};
 pub use scroll::{
     RefreshState, RenderScroll, ScrollEvent, ScrollHandle, ScrollMetrics, ScrollNotification, ScrollPhysics,
