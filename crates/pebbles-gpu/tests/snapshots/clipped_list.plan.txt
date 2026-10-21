@@ -1,0 +1,15 @@
+# pebbles-gpu FramePlan v1
+target 200x200
+arenas solid_v=0 solid_i=0 shapes=6 shadows=0 glyphs=25 runs=5 images=0 layers=0 gradients=0
+0 Shapes inst=0..1 clip=[10,10,190,110]
+1 Glyphs glyphs=0..5 clip=[10,10,190,110]
+2 Shapes inst=1..2 clip=[10,10,190,110]
+3 Glyphs glyphs=5..10 clip=[10,10,190,110]
+4 Shapes inst=2..3 clip=[10,10,190,110]
+5 Glyphs glyphs=10..15 clip=[10,10,190,110]
+6 Shapes inst=3..4 clip=[10,10,190,110]
+7 Glyphs glyphs=15..20 clip=[10,10,190,110]
+8 Shapes inst=4..5 clip=[10,10,190,110]
+9 Glyphs glyphs=20..25 clip=[10,10,190,110]
+10 Shapes inst=5..6 clip=[0,0,200,200]
+stats ops=13 culled=0 fast_rects=0 unsupported=-
