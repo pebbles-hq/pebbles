@@ -136,6 +136,7 @@ pub(crate) fn error_text(e: &impl std::fmt::Display) -> String {
 }
 
 /// The native startup failure text (the hybrid path keeps its message).
+#[cfg_attr(target_family = "wasm", allow(dead_code))] // native startup only
 pub(crate) fn startup_failure_text(e: &impl std::fmt::Display) -> String {
     format!(
         "\npebbles: could not initialize the GPU — no compatible graphics device or driver.\n  {e}\n  Run `pebbles doctor` to check your setup (Linux typically needs Vulkan).\n"

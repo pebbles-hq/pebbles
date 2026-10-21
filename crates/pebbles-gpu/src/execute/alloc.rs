@@ -7,6 +7,7 @@
 /// The outcome of one checked creation.
 pub(crate) enum Checked<T> {
     Ok(T),
+    #[cfg_attr(target_family = "wasm", allow(dead_code))] // no OOM scopes on wasm
     OutOfMemory,
 }
 

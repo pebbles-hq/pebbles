@@ -17,6 +17,7 @@ compile_error!("pebbles-shell: enable a GPU host — `vello-hybrid` (default) or
 #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
 mod wgpu_host;
 #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
+#[cfg_attr(target_family = "wasm", allow(unused_imports))] // startup_failure_text: native only
 pub(crate) use wgpu_host::{
     RenderContext, RenderSurface, Renderer, census_values, error_text, frame_stats_line, present_frame,
     startup_failure_text,
@@ -25,6 +26,7 @@ pub(crate) use wgpu_host::{
 #[cfg(feature = "vello-hybrid")]
 mod hybrid_host;
 #[cfg(feature = "vello-hybrid")]
+#[cfg_attr(target_family = "wasm", allow(unused_imports))] // startup_failure_text: native only
 pub(crate) use hybrid_host::{
     RenderContext, RenderSurface, Renderer, census_values, error_text, frame_stats_line, new_renderer,
     present_frame, startup_failure_text,

@@ -88,6 +88,7 @@ pub(crate) fn error_text(e: &HostError) -> String {
 }
 
 /// The native startup failure text (08 §14.3).
+#[cfg_attr(target_family = "wasm", allow(dead_code))] // native startup only
 pub(crate) fn startup_failure_text(e: &HostError) -> String {
     format!(
         "\npebbles: could not initialize the GPU.\n  {}\n  {}\n",

@@ -315,6 +315,9 @@ impl App {
             let event_loop = EventLoop::<PebblesUserEvent>::with_user_event().build()?;
             let mut runner = Runner::new(self);
             runner.set_started_at(started_at);
+            // P11: the device-lost waker sends through this proxy.
+            #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
+            runner.set_proxy(event_loop.create_proxy());
             event_loop.run_app(&mut runner)?;
             log::info(log::Cat::General, "pebbles app exited cleanly");
             Ok(())

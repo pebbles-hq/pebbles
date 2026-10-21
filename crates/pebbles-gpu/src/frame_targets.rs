@@ -136,6 +136,7 @@ impl FrameTargets {
 
     /// Census fields owned by one render target (M05).
     #[cfg(debug_assertions)]
+    #[cfg_attr(target_family = "wasm", allow(dead_code))] // the offscreen renderer is native-only
     pub(crate) fn census_into(&self, c: &mut crate::census::GpuCensus) {
         // The `frame_target_*` fields come from the Renderer's book (M13).
         c.layer_pool_textures += self.pool.len();
