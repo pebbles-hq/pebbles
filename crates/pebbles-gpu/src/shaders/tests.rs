@@ -46,6 +46,43 @@ fn every_entry_point_translates_to_glsl_es_300_webgl() {
             .and_then(|mut w| w.write())
             .unwrap_or_else(|e| panic!("{name}::{}: {e:?}", ep.name));
         }
+        // P16: HLSL SM 5.1 — the FXC level (DR-13) — and MSL 1.2, the lowest version wgpu-hal's
+        // Metal backend selects. Translation only; FXC / Metal compilation is the V31/V32 lanes.
+        let opts = naga::back::hlsl::Options::default();
+        let popts = naga::back::hlsl::PipelineOptions::default();
+        let mut hlsl = String::new();
+        naga::back::hlsl::Writer::new(&mut hlsl, &opts, &popts)
+            .write(&module, &info, None)
+            .unwrap_or_else(|e| panic!("{name}: HLSL translation failed: {e}"));
+        let mopts = naga::back::msl::Options { lang_version: (1, 2), ..Default::default() };
+        naga::back::msl::write_string(&module, &info, &mopts, &naga::back::msl::PipelineOptions::default())
+            .unwrap_or_else(|e| panic!("{name}: MSL translation failed: {e}"));
+    }
+}
+
+/// V03: every shader translates to HLSL Shader Model 5.1 (the FXC ceiling, DR-13).
+#[test]
+fn every_shader_translates_to_hlsl_sm51() {
+    for (name, src) in ALL {
+        let (module, info) = parse_and_validate(name, src);
+        let opts = naga::back::hlsl::Options::default();
+        assert_eq!(opts.shader_model, naga::back::hlsl::ShaderModel::V5_1);
+        let popts = naga::back::hlsl::PipelineOptions::default();
+        let mut out = String::new();
+        naga::back::hlsl::Writer::new(&mut out, &opts, &popts)
+            .write(&module, &info, None)
+            .unwrap_or_else(|e| panic!("{name}: {e:?}"));
+    }
+}
+
+/// V03: every shader translates to MSL 2.1.
+#[test]
+fn every_shader_translates_to_msl() {
+    for (name, src) in ALL {
+        let (module, info) = parse_and_validate(name, src);
+        let opts = naga::back::msl::Options { lang_version: (2, 1), ..Default::default() };
+        naga::back::msl::write_string(&module, &info, &opts, &naga::back::msl::PipelineOptions::default())
+            .unwrap_or_else(|e| panic!("{name}: {e:?}"));
     }
 }
 
