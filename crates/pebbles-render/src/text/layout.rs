@@ -392,11 +392,14 @@ impl TextLayout {
         &self.shaped.paras
     }
 
-    /// The text a line's glyph byte ranges index (the paragraph, or the elided variant).
+    /// The text a line's glyph byte ranges index: the paragraph, the elided variant, or the
+    /// placeholder space an empty paragraph is shaped as.
     pub(crate) fn line_text(&self, line: &VisualLine) -> &str {
+        let para = &self.shaped.paras[line.para];
         match (&self.elided, line.from_elided) {
             (Some(e), true) => &e.text,
-            _ => &self.shaped.text[self.shaped.paras[line.para].range.clone()],
+            _ if para.placeholder => " ",
+            _ => &self.shaped.text[para.range.clone()],
         }
     }
 }
@@ -626,6 +629,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)] // the shape/layout counters are debug-only
     fn intrinsic_does_not_reshape() {
         let (s, mut env) = shaped("aaa bbbbbb cc", 10.0);
         let (shapes, layouts) = (crate::text::shape_count(), crate::text::layout_count());
@@ -635,5 +639,101 @@ mod tests {
         }
         assert_eq!(crate::text::shape_count(), shapes, "no reshape");
         assert_eq!(crate::text::layout_count() - layouts, 1, "the walk runs once");
+    }
+}
+
+#[cfg(test)]
+mod robustness {
+    use crate::objects::ParagraphStyle;
+    use crate::text::{TextEnv, layout_for_test};
+    use pebbles_foundation::TextAlign;
+
+    fn next(state: &mut u64) -> u64 {
+        // xorshift64
+        let mut x = *state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        *state = x;
+        x
+    }
+
+    fn pick<'a, T>(state: &mut u64, items: &'a [T]) -> &'a T {
+        &items[(next(state) % items.len() as u64) as usize]
+    }
+
+    const ALPHABET: &[&str] = &[
+        "a",
+        "Z",
+        "5",
+        " ",
+        "\t",
+        "\n",
+        "\r",
+        "\r\n",
+        "\u{85}",
+        "\u{2029}",
+        "\u{1E}",
+        "\u{a0}",
+        "é",
+        "e\u{301}",
+        "\u{5d0}",
+        "\u{627}",
+        "\u{4e2d}",
+        "🙂",
+        "👩\u{200d}👩\u{200d}👧",
+        "\u{202E}",
+        "\u{202C}",
+        "\u{2066}",
+        "\u{2069}",
+        "\u{0}",
+        "\u{FFFD}",
+    ];
+    const ALIGNS: &[TextAlign] = &[
+        TextAlign::Left,
+        TextAlign::Right,
+        TextAlign::Center,
+        TextAlign::Justify,
+        TextAlign::Start,
+        TextAlign::End,
+    ];
+
+    #[test]
+    fn seeded_layout_never_panics() {
+        let mut env = TextEnv::new();
+        for seed in [1u64, 2, 3, 0xDEAD_BEEF] {
+            let mut state = seed;
+            for _ in 0..500 {
+                let tokens = next(&mut state) % 200;
+                let text: String = (0..tokens).map(|_| *pick(&mut state, ALPHABET)).collect();
+                let style = ParagraphStyle {
+                    font_size: *pick(&mut state, &[0.0, f32::NAN, 1.0, 13.0, 16.0, 1e9]),
+                    max_lines: *pick(&mut state, &[None, Some(0), Some(1), Some(3)]),
+                    ellipsis: next(&mut state).is_multiple_of(2),
+                    align: *pick(&mut state, ALIGNS),
+                    tab_width: *pick(&mut state, &[0, 1, 4]),
+                    ..ParagraphStyle::default()
+                };
+                let width =
+                    *pick(&mut state, &[None, Some(0.0), Some(1.0), Some(57.5), Some(f32::NAN), Some(1e7)]);
+                let l = layout_for_test(&mut env, &text, &style, &[], width);
+                let ctx = format!("seed {seed:#x} text {text:?} style {style:?} width {width:?}");
+                assert!(l.width().is_finite() && l.width() >= 0.0, "width {} — {ctx}", l.width());
+                assert!(l.height().is_finite() && l.height() >= 0.0, "height {} — {ctx}", l.height());
+                let tops = l.line_tops();
+                assert!(tops.windows(2).all(|w| w[0] <= w[1]), "tops {tops:?} — {ctx}");
+                for line in &l.lines {
+                    let t = l.line_text(line);
+                    for g in &line.layout.glyphs {
+                        assert!(
+                            t.is_char_boundary(g.start) && t.is_char_boundary(g.end),
+                            "glyph {}..{} off a char boundary of {t:?} — {ctx}",
+                            g.start,
+                            g.end
+                        );
+                    }
+                }
+            }
+        }
     }
 }

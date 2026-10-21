@@ -188,6 +188,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(debug_assertions)] // the shape/layout counters are debug-only
     fn shape_counter_counts_shapelines() {
         let mut f = fonts();
         let before = crate::text::shape_count();
