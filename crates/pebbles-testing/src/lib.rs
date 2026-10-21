@@ -114,6 +114,7 @@ impl Default for Harness {
 
 impl Harness {
     /// A harness with every service initialized and a [`DEFAULT_WINDOW`] viewport.
+    /// `TextEnv::new()` = bundled + App::font fonts only (deterministic on every OS).
     pub fn new() -> Self {
         init_services();
         let ui = Ui::new();

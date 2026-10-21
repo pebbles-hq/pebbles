@@ -26,7 +26,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{CursorIcon, Window, WindowAttributes, WindowId};
 
-use pebbles_render::{Cursor, TextEnv};
+use pebbles_render::{Cursor, SystemFonts, TextEnv};
 
 use super::App;
 
@@ -353,7 +353,9 @@ impl Runner {
             active: None,
             a11y: None,
             ui: Ui::new(),
-            text: TextEnv::new(),
+            // System fonts scan off the UI thread and merge on a later frame (bundled-only
+            // on the web).
+            text: TextEnv::with_system_fonts(SystemFonts::Background),
             scene: Scene::new(),
             frame: Scene::new(),
             mounted: false,

@@ -233,6 +233,15 @@ impl Runner {
         }
         let logical = Size::new(phys.width as f64 / scale, phys.height as f64 / scale);
         pebbles_widgets::overlay::set_window_size(logical.width, logical.height);
+        // One font poll per frame, on the main window: a merged system-font scan re-lays out
+        // every window.
+        if self.text.poll_fonts() {
+            self.ui.invalidate_layout();
+            for w in self.windows.values_mut() {
+                w.ui.invalidate_layout();
+                w.window.request_redraw();
+            }
+        }
         let t = Instant::now();
         self.ui.layout(&mut self.text, logical);
         let layout = t.elapsed();

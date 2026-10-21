@@ -246,6 +246,7 @@ impl FontRegistry {
 
     /// Merge a scanned database: faces whose family collides with a protected name (builtins,
     /// aliases, user fonts) are dropped. Returns the number of faces added.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))] // scans are native-only
     fn merge(&mut self, tmp: fontdb::Database) -> usize {
         let mut added = 0;
         for face in tmp.faces() {

@@ -224,6 +224,11 @@ impl Ui {
 
     // ----- layout / paint --------------------------------------------------
 
+    /// Re-lay out and repaint everything next frame (the font set changed).
+    pub fn invalidate_layout(&mut self) {
+        self.render.mark_all_needs_layout();
+    }
+
     /// Lay the tree out to fill a `window`-sized area. The window size is sanitized to a
     /// finite, non-negative extent first — a NaN/negative size (a 0×0 or degenerate surface,
     /// a bad DPI event) must not propagate into constraint math and crash the frame.

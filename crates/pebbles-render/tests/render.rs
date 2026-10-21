@@ -791,3 +791,40 @@ fn affine_matrix4_uses_affine_path() {
     assert_eq!(t.transform(Size::new(10.0, 10.0)), Some(kurbo::Affine::new([2.0, 0.0, 0.0, 2.0, 5.0, 0.0])));
     assert!(t.projection(Size::new(10.0, 10.0)).is_none());
 }
+
+/// Counts its `layout` calls and lays out its children with the incoming constraints.
+struct LayoutProbe(std::rc::Rc<std::cell::Cell<u32>>);
+
+impl pebbles_render::RenderObject for LayoutProbe {
+    fn layout(&mut self, cx: &mut pebbles_render::LayoutCx<'_>, constraints: BoxConstraints) -> Size {
+        self.0.set(self.0.get() + 1);
+        for child in cx.children() {
+            cx.layout_child(child, constraints);
+        }
+        constraints.constrain(Size::new(10.0, 10.0))
+    }
+
+    fn paint(&self, _cx: &mut pebbles_render::PaintCx<'_>, _offset: pebbles_foundation::Offset) {}
+}
+
+/// A font-set change re-lays out every node: `mark_all_needs_layout` dirties the whole tree,
+/// not just one ancestor path.
+#[test]
+fn mark_all_needs_layout_dirties_every_node() {
+    let runs = std::rc::Rc::new(std::cell::Cell::new(0));
+    let mut tree = RenderTree::new();
+    let mut text = TextEnv::new();
+    let root = tree.insert(Box::new(LayoutProbe(runs.clone())));
+    for i in 0..3 {
+        let child = tree.insert(Box::new(LayoutProbe(runs.clone())));
+        tree.insert_child(root, child, i);
+    }
+    tree.root = Some(root);
+    tree.layout(&mut text, tight(100.0, 100.0));
+    assert_eq!(runs.get(), 4);
+    tree.layout(&mut text, tight(100.0, 100.0));
+    let clean = runs.get();
+    tree.mark_all_needs_layout();
+    tree.layout(&mut text, tight(100.0, 100.0));
+    assert_eq!(runs.get() - clean, 4, "every node re-runs layout");
+}

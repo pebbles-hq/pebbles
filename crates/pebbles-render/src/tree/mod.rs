@@ -541,6 +541,20 @@ impl RenderTree {
     ///
     /// A production framework would stop at the nearest *relayout boundary*; v0
     /// keeps it simple and dirties up to the root, which is correct if less optimal.
+    /// Mark every live node for layout and paint, and every repaint boundary dirty — the
+    /// font set changed (a system-font scan merged), so every shaped text may differ.
+    pub fn mark_all_needs_layout(&mut self) {
+        for node in self.nodes.values_mut() {
+            if let Some(b) =
+                node.object.as_deref_mut().and_then(|o| o.downcast_mut::<crate::objects::RenderBoundary>())
+            {
+                b.mark_dirty();
+            }
+            node.needs_layout = true;
+            node.needs_paint = true;
+        }
+    }
+
     pub fn mark_needs_layout(&mut self, id: RenderId) {
         let mut cur = Some(id);
         while let Some(c) = cur {

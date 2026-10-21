@@ -102,7 +102,9 @@ pub fn capture_rgba(
     set_prefers_reduced_motion(true);
 
     let mut gpu = OffscreenCapture::new()?;
-    let mut env = TextEnv::new();
+    // One environment per call (never cached, 03 §3.1); system fonts scanned inline so a
+    // screenshot matches the app.
+    let mut env = TextEnv::with_system_fonts(pebbles_render::SystemFonts::Blocking);
     let mut ui = Ui::new();
     ui.make_current();
     ui.mount_root(View::new(background, OverlayHost::wrap(root)).into_widget());
