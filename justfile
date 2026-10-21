@@ -43,3 +43,15 @@ typos:
 
 # The full gate — everything CI would block a PR on, in one run.
 gate: fmt clippy check test doc typos
+
+# Render check (05 §6). Needs a GPU, or prefix with the LAVAPIPE env (00 §7).
+render-check:
+    cargo run -p render-check --release -- --out target/render-check --determinism
+
+# List the render corpus (no GPU).
+render-check-list:
+    cargo run -p render-check --release -- --list
+
+# Render check against the committed self-goldens (after V12/V18).
+render-check-refs:
+    cargo run -p render-check --release -- --out target/render-check --reference dir --determinism

@@ -174,10 +174,11 @@ impl Runner {
         let reruns = (1..case.frames).chain(self.opts.determinism.then_some(0));
         for frame in reruns {
             match self.render_candidate(case, frame) {
-                Ok(again) if again == cand => {}
-                Ok(_) => {
-                    r.status = Status::Unstable;
-                    r.note = format!("frame {frame} differs from frame 0");
+                Ok(again) => {
+                    if let Some(note) = instability(&cand, &again, frame) {
+                        r.status = Status::Unstable;
+                        r.note = note;
+                    }
                 }
                 Err((status, note)) => {
                     r.status = status;
@@ -228,10 +229,11 @@ impl Runner {
         }))
         .map_err(|p| (Status::Panic, format!("fresh candidate: {}", panic_message(&*p))))?
         .map_err(|e| (Status::GpuError, e.to_string()))?;
-        if again == *cand {
-            Ok(())
-        } else {
-            Err((Status::Unstable, format!("frame {last} differs from a fresh renderer's")))
+        match first_difference(cand, &again) {
+            None => Ok(()),
+            Some((x, y)) => {
+                Err((Status::Unstable, format!("frame {last} differs from a fresh renderer's at ({x},{y})")))
+            }
         }
     }
 
@@ -363,4 +365,40 @@ impl Runner {
 /// Whether `status` leaves the device suspect (§6.11: recreate both sides).
 pub fn needs_recreate(status: Status) -> bool {
     matches!(status, Status::Panic | Status::GpuError)
+}
+
+/// The first pixel (row-major) where two renders differ; `None` when byte-equal. A size
+/// mismatch reports (0,0).
+pub fn first_difference(a: &Rgba8, b: &Rgba8) -> Option<(u32, u32)> {
+    if (a.width, a.height) != (b.width, b.height) {
+        return Some((0, 0));
+    }
+    let i = a.data.as_chunks::<4>().0.iter().zip(b.data.as_chunks::<4>().0).position(|(p, q)| p != q)?;
+    let i = u32::try_from(i).expect("pixel index fits u32");
+    Some((i % a.width, i / a.width))
+}
+
+/// The `UNSTABLE` note when re-render `frame` (0 = the `--determinism` re-render) differs.
+pub fn instability(first: &Rgba8, again: &Rgba8, frame: u32) -> Option<String> {
+    let (x, y) = first_difference(first, again)?;
+    Some(format!("frame {frame} differs from frame 0 at ({x},{y})"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn image(data: Vec<u8>) -> Rgba8 {
+        Rgba8 { width: 2, height: 2, data }
+    }
+
+    #[test]
+    fn unstable_when_two_renders_differ() {
+        let a = image(vec![9; 16]);
+        assert_eq!(instability(&a, &a.clone(), 0), None);
+        let mut b = a.clone();
+        b.data[3 * 4 + 1] = 0; // pixel (1,1)
+        assert_eq!(first_difference(&a, &b), Some((1, 1)));
+        assert_eq!(instability(&a, &b, 0).as_deref(), Some("frame 0 differs from frame 0 at (1,1)"));
+    }
 }
