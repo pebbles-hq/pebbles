@@ -3,6 +3,17 @@
 
 pub(crate) mod fonts;
 
+/// Whether a [`TextEnv`] also uses the host's installed fonts (03 §3.3.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SystemFonts {
+    /// Bundled + App::font only. Deterministic. Tests, web.
+    None,
+    /// Scan synchronously during construction. Capture/offscreen (screenshots match the app).
+    Blocking,
+    /// Scan on a background thread "pebbles-font-scan"; merge on the next poll. Desktop runner.
+    Background,
+}
+
 /// Owns the mutable state parley needs to shape and lay out text: the font
 /// database/cache and the layout scratch context. One per window.
 pub struct TextEnv {
@@ -58,10 +69,16 @@ impl TextEnv {
     /// Creates a text environment with the bundled families registered and
     /// the host's system fonts discovered.
     pub fn new() -> Self {
+        Self::with_registry(fonts::FontRegistry::new_bundled(
+            &crate::fonts::user_fonts_snapshot(),
+            "en-US".into(),
+        ))
+    }
+
+    fn with_registry(registry: fonts::FontRegistry) -> Self {
         let mut fonts = parley::FontContext::new();
         crate::fonts::apply_builtins(&mut fonts);
         crate::fonts::apply_user_fonts(&mut fonts); // F4: user fonts from App::font
-        let registry = fonts::FontRegistry::new_bundled(&crate::fonts::user_fonts_snapshot(), "en-US".into());
         // The global families snapshot is refreshed ONLY from the registry (03 §3.3.7).
         crate::fonts::refresh_families_from(registry.families());
         TextEnv { fonts, layout: parley::LayoutContext::new(), cache: ShapeCache::default(), registry }
@@ -81,6 +98,24 @@ impl TextEnv {
         crate::fonts::apply_user_fonts(&mut fonts);
         let registry = fonts::FontRegistry::new_bundled(&crate::fonts::user_fonts_snapshot(), "en-US".into());
         TextEnv { fonts, layout: parley::LayoutContext::new(), cache: ShapeCache::default(), registry }
+    }
+
+    /// A text environment that also uses the host's fonts per `mode` (always bundled-only on
+    /// the web). Locale from the OS (`sys-locale`), falling back to `en-US`.
+    pub fn with_system_fonts(mode: SystemFonts) -> Self {
+        let locale = sys_locale::get_locale().unwrap_or_else(|| "en-US".into());
+        let mut registry = fonts::FontRegistry::new_bundled(&crate::fonts::user_fonts_snapshot(), locale);
+        match mode {
+            SystemFonts::None => {}
+            SystemFonts::Blocking => registry.scan_blocking(),
+            SystemFonts::Background => registry.start_background(),
+        }
+        Self::with_registry(registry)
+    }
+
+    /// Merge a finished background font scan; `true` when the font set changed. Never blocks.
+    pub fn poll_fonts(&mut self) -> bool {
+        self.registry.poll()
     }
 
     /// End-of-frame hook (the shell calls it once per window draw): advance the
@@ -146,7 +181,8 @@ impl TextEnv {
     pub fn register_system_fonts(&mut self) {
         #[cfg(not(target_family = "wasm"))]
         {
-            self.fonts.collection.load_system_fonts();
+            self.fonts.collection.load_system_fonts(); // Parley, until T40
+            self.registry.scan_blocking();
         }
     }
 }

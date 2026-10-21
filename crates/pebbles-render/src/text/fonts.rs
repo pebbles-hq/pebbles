@@ -94,6 +94,9 @@ pub(crate) struct FontRegistry {
     warned_families: std::collections::HashSet<String>,
     /// Log-once flag for runtime font bytes that failed to parse.
     warned_bad_font: bool,
+    /// The background system-font scan ("pebbles-font-scan"), merged on the next `poll`.
+    #[cfg(not(target_family = "wasm"))]
+    loader: Option<std::thread::JoinHandle<fontdb::Database>>,
 }
 
 /// Load `bytes` into `db`, renaming every face to `rename` when given; returns the new ids
@@ -172,6 +175,8 @@ impl FontRegistry {
             protected,
             warned_families: Default::default(),
             warned_bad_font: false,
+            #[cfg(not(target_family = "wasm"))]
+            loader: None,
         };
         registry.rebuild_names();
         registry
@@ -206,6 +211,84 @@ impl FontRegistry {
         }
         self.families = families;
         self.canonical = canonical;
+    }
+
+    /// Scan the system fonts now and merge them (capture/offscreen: screenshots match the app).
+    /// A no-op on wasm (fontdb has no wasm arm).
+    pub(crate) fn scan_blocking(&mut self) {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let mut tmp = fontdb::Database::new();
+            tmp.load_system_fonts();
+            self.merge(tmp);
+        }
+    }
+
+    /// Start the system-font scan on a background thread; [`poll`](Self::poll) merges it.
+    /// A no-op on wasm (no threads); a spawn failure logs once and keeps bundled fonts only.
+    pub(crate) fn start_background(&mut self) {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let spawned = std::thread::Builder::new().name("pebbles-font-scan".into()).spawn(|| {
+                let mut tmp = fontdb::Database::new();
+                tmp.load_system_fonts();
+                tmp
+            });
+            match spawned {
+                Ok(handle) => self.loader = Some(handle),
+                Err(e) => pebbles_foundation::log::warn(
+                    pebbles_foundation::log::Cat::General,
+                    format!("system font scan thread failed to start ({e}); using bundled fonts only"),
+                ),
+            }
+        }
+    }
+
+    /// Merge a scanned database: faces whose family collides with a protected name (builtins,
+    /// aliases, user fonts) are dropped. Returns the number of faces added.
+    fn merge(&mut self, tmp: fontdb::Database) -> usize {
+        let mut added = 0;
+        for face in tmp.faces() {
+            if face.families.iter().any(|(n, _)| self.protected.contains(&n.to_lowercase())) {
+                continue;
+            }
+            // db_mut() also clears cosmic-text's font-match cache.
+            self.system.db_mut().push_face_info(face.clone());
+            added += 1;
+        }
+        if added > 0 {
+            self.generation += 1;
+            self.rebuild_names();
+            self.resolved.clear();
+            crate::fonts::refresh_families_from(&self.families);
+        }
+        added
+    }
+
+    /// Test seam for [`merge`](Self::merge).
+    #[cfg(test)]
+    pub(crate) fn merge_for_test(&mut self, tmp: fontdb::Database) -> usize {
+        self.merge(tmp)
+    }
+
+    /// Merge a finished background scan; `true` iff the generation changed. Never blocks.
+    pub(crate) fn poll(&mut self) -> bool {
+        #[cfg(not(target_family = "wasm"))]
+        if self.loader.as_ref().is_some_and(std::thread::JoinHandle::is_finished) {
+            let before = self.generation;
+            match self.loader.take().map(std::thread::JoinHandle::join) {
+                Some(Ok(tmp)) => {
+                    self.merge(tmp);
+                }
+                Some(Err(_)) => pebbles_foundation::log::warn(
+                    pebbles_foundation::log::Cat::General,
+                    "system font scan panicked; using bundled fonts only".to_string(),
+                ),
+                None => {}
+            }
+            return self.generation != before;
+        }
+        false
     }
 
     /// Register runtime font bytes (one or more faces) under their own family names; returns
@@ -405,6 +488,76 @@ mod tests {
         let before = r.generation();
         assert_eq!(r.register(Arc::new(vec![0u8; 64])), 0);
         assert_eq!(r.generation(), before);
+    }
+
+    fn renamed(bytes: &'static [u8], family: &str) -> fontdb::Database {
+        let mut db = fontdb::Database::new();
+        for id in db.load_font_source(fontdb::Source::Binary(Arc::new(bytes))) {
+            let mut info = db.face(id).cloned().expect("face");
+            db.remove_face(id);
+            info.families = vec![(family.to_string(), fontdb::Language::English_UnitedStates)];
+            db.push_face_info(info);
+        }
+        db
+    }
+
+    /// Inter Variable (protected alias, unmodified), a face renamed "Inter" (protected builtin)
+    /// and Lora renamed "System Lora Copy".
+    fn system_db() -> fontdb::Database {
+        let inter = crate::fonts::builtin_fonts()[0].1;
+        let mut db = fontdb::Database::new();
+        db.load_font_source(fontdb::Source::Binary(Arc::new(inter)));
+        for face in renamed(inter, "Inter")
+            .faces()
+            .chain(renamed(crate::fonts::builtin_fonts()[5].1, "System Lora Copy").faces())
+        {
+            db.push_face_info(face.clone());
+        }
+        db
+    }
+
+    #[test]
+    fn merge_skips_builtin_family_collisions() {
+        let mut r = registry();
+        let inter = query(&mut r, "Inter", Style::Normal);
+        assert_eq!(r.merge_for_test(system_db()), 1);
+        assert_eq!(query(&mut r, "Inter", Style::Normal), inter, "the bundled Inter still wins");
+    }
+
+    #[test]
+    fn merge_bumps_generation_and_families() {
+        let mut r = registry();
+        let before = r.generation();
+        r.merge_for_test(system_db());
+        assert_eq!(r.generation(), before + 1);
+        assert_eq!(r.families(), ["Inter", "JetBrains Mono", "Space Grotesk", "Lora", "System Lora Copy"]);
+    }
+
+    #[test]
+    fn poll_without_loader_is_false() {
+        assert!(!registry().poll());
+    }
+
+    #[test]
+    #[ignore = "scans the host's system fonts"]
+    #[cfg(not(target_family = "wasm"))]
+    fn background_scan_completes() {
+        let mut r = registry();
+        let before = r.faces_len();
+        r.start_background();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while std::time::Instant::now() < deadline {
+            if r.poll() {
+                assert!(r.faces_len() > before);
+                return;
+            }
+            if r.loader.is_none() {
+                break; // finished without adding a face (zero system fonts)
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(r.faces_len(), before, "the scan neither merged nor finished in 30 s");
+        assert!(r.loader.is_none(), "the scan did not finish in 30 s");
     }
 
     #[test]
