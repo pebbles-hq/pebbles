@@ -48,6 +48,11 @@ const KNOWN_DIFFS: &[(&str /*case*/, &str /*field*/, &str /*reason*/)] = &[
     ("inter16_tab", "width", "Q-5: TAB is a space-advance stop, not a .notdef box"),
     ("lora16_crlf", "height", "Q-8: CRLF is one paragraph break, not two"),
     ("lora16_crlf", "line_tops", "Q-8: CRLF is one paragraph break, not two"),
+    (
+        "mono20_maxlines_noell",
+        "line_tops",
+        "Q-2: Parley keeps max_lines-dropped lines in its layout (hidden carets); TextLayout drops them",
+    ),
 ];
 
 /// Q-9: Parley pixel-snaps line tops and baselines and starts the first line box at y = -1;
@@ -278,8 +283,7 @@ fn text_pin_matches_parley_oracle() {
     assert!(failures.is_empty(), "text metrics drifted from the Parley pin:\n{}", failures.join("\n"));
 }
 
-/// Pinned cases the direct `TextLayout` path covers before max_lines/ellipsis (T13) and the
-/// RenderParagraph swap (T22).
+/// Pinned cases the direct `TextLayout` path covers before the RenderParagraph swap (T22).
 const LAYOUT_CASES: &[&str] = &[
     "inter16_hello",
     "mono20_ascii",
@@ -293,6 +297,9 @@ const LAYOUT_CASES: &[&str] = &[
     "inter16_empty",
     "mono20_center_paras",
     "mono20_justify",
+    "mono20_ellipsis_wrap",
+    "mono20_ellipsis_paras",
+    "mono20_maxlines_noell",
 ];
 
 #[test]

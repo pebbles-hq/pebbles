@@ -5,7 +5,7 @@
 
 use std::rc::Rc;
 
-use cosmic_text::{Ellipsize, Hinting, LayoutLine, ShapeBuffer, Wrap};
+use cosmic_text::{Ellipsize, Hinting, LayoutLine, ShapeBuffer, ShapeLine, Shaping, Wrap};
 
 use super::fonts::FontRegistry;
 use super::shape::{ShapedPara, ShapedText};
@@ -35,7 +35,7 @@ pub(crate) struct VisualLine {
     pub(crate) baseline: f32,
 }
 
-#[allow(dead_code)] // `para`/`cut` drive caret mapping and paint of the elided line (T18+).
+#[allow(dead_code)] // `cut` drives caret mapping of the elided line (T18+).
 pub(crate) struct Elided {
     pub(crate) para: usize,
     pub(crate) cut: usize,
@@ -54,20 +54,21 @@ pub struct TextLayout {
     /// `params.width`, or the common width of pass 2 (§3.7.5).
     pub(crate) align_width: f32,
     /// `paras[kept_paras..]` were dropped by max_lines.
+    #[allow(dead_code)] // caret/hit mapping clamps to kept paragraphs (T18).
     pub(crate) kept_paras: usize,
 }
 
-/// Break one paragraph into layout lines.
-fn break_para(
+/// Break one shaped line into layout lines.
+fn break_line(
     shaped: &ShapedText,
-    para: &ShapedPara,
+    shape: &ShapeLine,
     width: Option<f32>,
     wrap: bool,
     align: Option<cosmic_text::Align>,
     scratch: &mut ShapeBuffer,
 ) -> Vec<LayoutLine> {
     let mut out = Vec::new();
-    para.shape.layout_to_buffer(
+    shape.layout_to_buffer(
         scratch,
         shaped.base_font_size,
         width,
@@ -92,10 +93,56 @@ fn break_para(
     out
 }
 
+/// The elided variant of one paragraph: its shape and the kept prefix.
+struct ElidedShape {
+    para: usize,
+    cut: usize,
+    text: String,
+    shape: ShapeLine,
+}
+
+/// ELIDE(i, k) (§3.7.4): the longest prefix of paragraph `i` that, followed by "…", lays out
+/// in at most `k` lines (binary search over char starts, Parley's algorithm per paragraph).
+/// The prefix keeps its span attributes; the "…" takes the defaults.
+fn elide(
+    shaped: &ShapedText,
+    i: usize,
+    k: usize,
+    params: &LayoutParams,
+    scratch: &mut ShapeBuffer,
+    fonts: &mut FontRegistry,
+) -> ElidedShape {
+    let para = &shaped.paras[i];
+    let para_text = &shaped.text[para.range.clone()];
+    let chars: Vec<usize> = para_text.char_indices().map(|(b, _)| b).collect();
+    let mut shape_prefix = |cut: usize| {
+        let mut attrs = para.attrs.clone();
+        let _ = attrs.split_off(cut);
+        let text = format!("{}\u{2026}", &para_text[..cut]);
+        super::count_shape();
+        let shape = ShapeLine::new(fonts.font_system(), &text, &attrs, Shaping::Advanced, shaped.tab_width);
+        (text, shape)
+    };
+    let (mut lo, mut hi, mut best) = (0usize, chars.len(), 0usize);
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        let cut = chars.get(mid).copied().unwrap_or(para_text.len());
+        let (_, shape) = shape_prefix(cut);
+        if break_line(shaped, &shape, params.width, params.wrap, None, scratch).len() <= k {
+            best = cut;
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    let (text, shape) = shape_prefix(best);
+    ElidedShape { para: i, cut: best, text, shape }
+}
+
 /// Width of `line` without its logically-trailing whitespace (Parley semantics).
-fn content_width(line: &VisualLine, line_text: &str) -> f32 {
-    let total: f32 = line.layout.glyphs.iter().map(|g| g.w).sum();
-    let mut glyphs: Vec<&cosmic_text::LayoutGlyph> = line.layout.glyphs.iter().collect();
+fn content_width(line: &LayoutLine, line_text: &str) -> f32 {
+    let total: f32 = line.glyphs.iter().map(|g| g.w).sum();
+    let mut glyphs: Vec<&cosmic_text::LayoutGlyph> = line.glyphs.iter().collect();
     glyphs.sort_by_key(|g| std::cmp::Reverse(g.end));
     let mut trailing = 0.0;
     for g in glyphs {
@@ -115,21 +162,68 @@ impl TextLayout {
         shaped: Rc<ShapedText>,
         params: LayoutParams,
         scratch: &mut ShapeBuffer,
-        _fonts: &mut FontRegistry,
+        fonts: &mut FontRegistry,
     ) -> TextLayout {
         super::count_layout();
-        // Pass 1 — break lines (max_lines / ellipsis: T13). Justification only stretches the
-        // spaces of already-broken lines, so justified text is measured unjustified (Parley's
-        // width is the natural advance) and placed justified.
+        // Justification only stretches the spaces of already-broken lines, so justified text is
+        // measured unjustified (Parley's width is the natural advance) and placed justified.
         let justified = params.align == Some(cosmic_text::Align::Justified);
         let measure_align = if justified { None } else { params.align };
-        let mut raw: Vec<(usize, LayoutLine)> = Vec::new();
-        for (i, para) in shaped.paras.iter().enumerate() {
-            for line in break_para(&shaped, para, params.width, params.wrap, measure_align, scratch) {
-                raw.push((i, line));
+        let can_elide = params.ellipsis && !shaped.text.is_empty();
+        // Quirk Q-2: max_lines without ellipsis reports the width of every laid-out line.
+        let q2 = params.max_lines.is_some() && !params.ellipsis;
+        let mut remaining = params.max_lines.map(|m| m as usize);
+        // Lines kept per kept paragraph (pass 1 decides; re-breaks reuse the counts).
+        let mut keep: Vec<usize> = Vec::new();
+        let mut q2_width: f32 = 0.0;
+        let mut elided: Option<ElidedShape> = None;
+        let n = shaped.paras.len();
+        let q2_measure = |from: usize, skip: usize, q2_width: &mut f32, scratch: &mut ShapeBuffer| {
+            for (j, para) in shaped.paras.iter().enumerate().skip(from) {
+                if para.placeholder {
+                    continue;
+                }
+                let text = &shaped.text[para.range.clone()];
+                let lines =
+                    break_line(&shaped, &para.shape, params.width, params.wrap, measure_align, scratch);
+                for l in lines.iter().skip(if j == from { skip } else { 0 }) {
+                    *q2_width = q2_width.max(content_width(l, text));
+                }
             }
+        };
+        // Pass 1 — break lines under the max_lines budget (§3.7.3–§3.7.4).
+        for (i, para) in shaped.paras.iter().enumerate() {
+            let count =
+                break_line(&shaped, &para.shape, params.width, params.wrap, measure_align, scratch).len();
+            let Some(left) = remaining else {
+                keep.push(count);
+                continue;
+            };
+            if count < left || (count == left && i + 1 == n) {
+                keep.push(count);
+                remaining = Some(left - count);
+                continue;
+            }
+            if count == left {
+                // Budget exhausted exactly at this paragraph's end with more to come.
+                keep.push(count);
+                if can_elide {
+                    elided = Some(elide(&shaped, i, count, &params, scratch, fonts));
+                } else if q2 {
+                    q2_measure(i + 1, 0, &mut q2_width, scratch);
+                }
+                break;
+            }
+            // Overflow inside paragraph i.
+            keep.push(left);
+            if can_elide {
+                elided = Some(elide(&shaped, i, left, &params, scratch, fonts));
+            } else if q2 {
+                q2_measure(i, left, &mut q2_width, scratch);
+            }
+            break;
         }
-        let kept_paras = shaped.paras.len();
+        let kept_paras = keep.len();
         let mut layout = TextLayout {
             lines: Vec::new(),
             elided: None,
@@ -140,47 +234,77 @@ impl TextLayout {
             kept_paras,
             shaped,
         };
+        let raw =
+            layout.break_kept(&keep, elided.as_ref(), params.width, params.wrap, measure_align, scratch);
         layout.place(raw);
+        layout.elided = elided.as_ref().map(|e| Elided { para: e.para, cut: e.cut, text: e.text.clone() });
         layout.measure();
-        if justified {
-            let mut raw = Vec::new();
-            for (i, para) in layout.shaped.paras[..layout.kept_paras].iter().enumerate() {
-                for line in break_para(&layout.shaped, para, params.width, params.wrap, params.align, scratch)
-                {
-                    raw.push((i, line));
+        layout.width = layout.width.max(q2_width);
+        match params.width {
+            Some(w) => {
+                layout.align_width = w;
+                if justified {
+                    let raw = layout.break_kept(
+                        &keep,
+                        elided.as_ref(),
+                        Some(w),
+                        params.wrap,
+                        params.align,
+                        scratch,
+                    );
+                    layout.place(raw);
                 }
             }
-            layout.place(raw);
-        }
-        // Pass 2 — unbounded multi-paragraph text aligns every line inside one common width.
-        match params.width {
-            Some(w) => layout.align_width = w,
-            None if layout.kept_paras > 1 => {
+            // Pass 2 — unbounded multi-paragraph text aligns every line inside one common width.
+            None if kept_paras > 1 => {
                 let w = layout.width;
-                let mut raw = Vec::new();
-                for (i, para) in layout.shaped.paras[..layout.kept_paras].iter().enumerate() {
-                    for line in break_para(&layout.shaped, para, Some(w), false, params.align, scratch) {
-                        raw.push((i, line));
-                    }
-                }
+                let raw = layout.break_kept(&keep, elided.as_ref(), Some(w), false, params.align, scratch);
                 layout.place(raw);
                 layout.align_width = w;
             }
-            None => layout.align_width = layout.width,
+            None => {
+                layout.align_width = layout.width;
+                if justified {
+                    let raw = layout.break_kept(&keep, elided.as_ref(), None, false, params.align, scratch);
+                    layout.place(raw);
+                }
+            }
         }
         layout
     }
 
+    /// Break every kept paragraph (the elided one through its variant), keeping `keep[i]` lines.
+    fn break_kept(
+        &self,
+        keep: &[usize],
+        elided: Option<&ElidedShape>,
+        width: Option<f32>,
+        wrap: bool,
+        align: Option<cosmic_text::Align>,
+        scratch: &mut ShapeBuffer,
+    ) -> Vec<(usize, bool, LayoutLine)> {
+        let mut raw = Vec::new();
+        for (i, &k) in keep.iter().enumerate() {
+            let (shape, from_elided) = match elided {
+                Some(e) if e.para == i => (&e.shape, true),
+                _ => (&self.shaped.paras[i].shape, false),
+            };
+            let lines = break_line(&self.shaped, shape, width, wrap, align, scratch);
+            raw.extend(lines.into_iter().take(k).map(|l| (i, from_elided, l)));
+        }
+        raw
+    }
+
     /// Stack `raw` lines with cosmic's per-line vertical metrics (§3.7.2).
-    fn place(&mut self, raw: Vec<(usize, LayoutLine)>) {
+    fn place(&mut self, raw: Vec<(usize, bool, LayoutLine)>) {
         let mut top = 0.0;
         self.lines = raw
             .into_iter()
-            .map(|(para, layout)| {
+            .map(|(para, from_elided, layout)| {
                 let height = layout.line_height_opt.unwrap_or(self.shaped.base_line_height_px);
                 let baseline =
                     top + (height - (layout.max_ascent + layout.max_descent)) / 2.0 + layout.max_ascent;
-                let line = VisualLine { para, from_elided: false, layout, top, height, baseline };
+                let line = VisualLine { para, from_elided, layout, top, height, baseline };
                 top += height;
                 line
             })
@@ -192,8 +316,8 @@ impl TextLayout {
     fn measure(&mut self) {
         let mut width: f32 = 0.0;
         for line in &self.lines {
-            if !self.shaped.paras[line.para].placeholder {
-                width = width.max(content_width(line, self.line_text(line)));
+            if line.from_elided || !self.shaped.paras[line.para].placeholder {
+                width = width.max(content_width(&line.layout, self.line_text(line)));
             }
         }
         self.width = width;
@@ -332,7 +456,7 @@ mod tests {
     fn long_word_overflows() {
         let l = lay("aaaaaaaaaaaaaaaa bb", &mono(), Some(100.0));
         assert_eq!(l.line_count(), 2);
-        let w0 = content_width(&l.lines[0], l.line_text(&l.lines[0]));
+        let w0 = content_width(&l.lines[0].layout, l.line_text(&l.lines[0]));
         assert!(near(w0, 192.0, 0.01), "{w0}");
     }
 
@@ -368,5 +492,50 @@ mod tests {
     #[test]
     fn crlf_paras() {
         assert_eq!(lay("a\r\nb", &style("Lora", 16.0), None).line_count(), 2);
+    }
+
+    fn clamp(s: ParagraphStyle, max_lines: u32, ellipsis: bool) -> ParagraphStyle {
+        ParagraphStyle { max_lines: Some(max_lines), ellipsis, ..s }
+    }
+
+    #[test]
+    fn ellipsis_inside_paragraph() {
+        let l = lay("aaaa bbbb cccc", &clamp(mono(), 2, true), Some(100.0));
+        assert_eq!(l.line_count(), 2);
+        assert!(l.is_elided());
+        assert!(near(l.height(), 48.0, 0.001));
+        let e = l.elided.as_ref().expect("elided");
+        assert_eq!(e.cut, 12);
+        assert_eq!(e.text, "aaaa bbbb cc\u{2026}");
+        let w1 = content_width(&l.lines[1].layout, l.line_text(&l.lines[1]));
+        assert!(near(w1, 96.0, 0.01), "{w1}");
+    }
+
+    #[test]
+    fn ellipsis_at_paragraph_boundary() {
+        let l = lay("one\ntwo\nthree", &clamp(ParagraphStyle { soft_wrap: false, ..mono() }, 2, true), None);
+        assert_eq!(l.line_count(), 2);
+        assert_eq!(l.elided.as_ref().map(|e| e.text.as_str()), Some("two\u{2026}"));
+        assert!(near(l.width(), 48.0, 0.01), "{}", l.width());
+        assert!(near(l.height(), 48.0, 0.001));
+    }
+
+    #[test]
+    fn max_lines_without_ellipsis_keeps_quirk_q2() {
+        let l = lay("a\nbbbbbbbb\nc", &clamp(ParagraphStyle { soft_wrap: false, ..mono() }, 1, false), None);
+        assert_eq!(l.line_count(), 1);
+        assert!(near(l.height(), 24.0, 0.001));
+        assert!(near(l.width(), 96.0, 0.01), "{}", l.width());
+    }
+
+    #[test]
+    fn trailing_newline_ellipsis() {
+        let l = lay("a\nb\n", &clamp(ParagraphStyle { soft_wrap: false, ..mono() }, 2, true), None);
+        assert_eq!(l.elided.as_ref().map(|e| e.text.as_str()), Some("b\u{2026}"));
+    }
+
+    #[test]
+    fn empty_text_never_elides() {
+        assert!(!lay("", &clamp(mono(), 1, true), None).is_elided());
     }
 }
