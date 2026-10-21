@@ -27,9 +27,9 @@ fmt:
 fmt-fix:
     cargo fmt --all
 
-# Lints (ci.yml: clippy job — warn-only, matching CI; no `-D warnings` yet).
+# Lints (ci.yml: clippy job — denies warnings).
 clippy:
-    cargo clippy --workspace --all-targets --all-features
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # Rustdoc with the same broken-link denies CI enforces (ci.yml: docs job).
 doc:
@@ -43,6 +43,29 @@ typos:
 
 # The full gate — everything CI would block a PR on, in one run.
 gate: fmt clippy check test doc typos
+
+# wgpu transition lanes (ci.yml: wgpu-backend). Flags removed at Phase 7 (05 V34).
+check-wgpu:
+    cargo check -p pebbles-render -p pebbles-core -p pebbles-widgets -p pebbles-shell -p pebbles --all-targets --no-default-features --features wgpu
+
+test-wgpu:
+    cargo test -p pebbles-render --no-default-features --features wgpu
+    cargo test -p pebbles-widgets --no-default-features --features wgpu
+    cargo test -p pebbles-shell --no-default-features --features wgpu
+
+clippy-wgpu:
+    cargo clippy -p pebbles-render -p pebbles-shell -p pebbles --all-targets --no-default-features --features wgpu -- -D warnings
+
+wasm-wgpu:
+    cargo check -p pebbles-shell -p pebbles --no-default-features --features wgpu --target wasm32-unknown-unknown
+
+# GPU tests (ci.yml: gpu-wgpu-linux). Prefix with the LAVAPIPE env on a GPU-less box.
+gpu-wgpu:
+    cargo test -p pebbles-gpu -- --ignored --test-threads=1
+    cargo test -p pebbles-shell --no-default-features --features wgpu -- --ignored --test-threads=1
+
+# Everything CI blocks on during the transition.
+gate-transition: gate check-wgpu test-wgpu clippy-wgpu wasm-wgpu
 
 # Render check (05 §6). Needs a GPU, or prefix with the LAVAPIPE env (00 §7).
 render-check:

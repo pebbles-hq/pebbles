@@ -17,6 +17,8 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings  # CI gates
 cargo fmt --check                # style (max_width = 110, see rustfmt.toml)
 ```
 
+`just gate` runs all of these. During the renderer migration run `just gate-transition`.
+
 > CI runs clippy with `-D warnings` (a new lint fails the build) and rustfmt as a
 > separate blocking gate — run both before pushing. CI floats on `stable`, so
 > `rustup update stable` first if a lint disagrees with your local toolchain.
