@@ -264,8 +264,12 @@ pub struct RenderParagraph {
     /// Where the paragraph publishes each link span's laid-out boxes
     /// `(rect in local space, link index)` — shared with the widget's tap handler.
     pub link_boxes: Option<LinkBoxes>,
-    /// Inline boxes, one per U+FFFC in `text`, in order (T48 / WidgetSpan T50).
+    /// Inline boxes, one per U+FFFC in `text`, in order (T48). Set directly for bare
+    /// placeholders; recomputed from the children every layout when `inline` is non-empty.
     pub placeholders: Vec<Placeholder>,
+    /// Inline render children (WidgetSpan, T50): per child its alignment and optional baseline
+    /// offset; the children themselves are this object's render children, in order.
+    pub inline: Vec<(PlaceholderAlignment, Option<f32>)>,
     /// When set, the shaped layout is published to [`crate::text_edit`] under this
     /// id at layout, so the owning widget can hit-test a point → byte for text
     /// selection. Opt-in — plain/rich paragraphs leave it `None`.
@@ -299,6 +303,7 @@ impl RenderParagraph {
             spans: Vec::new(),
             link_boxes: None,
             placeholders: Vec::new(),
+            inline: Vec::new(),
             select_id: None,
             selection: None,
             selection_color: Color::from_rgba8(59, 130, 246, 70),
@@ -389,9 +394,35 @@ impl RenderParagraph {
 impl RenderObject for RenderParagraph {
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let width = constraints.has_bounded_width().then_some(constraints.max_width as f32);
+        // Inline children first: each becomes a placeholder of its laid-out size (T50).
+        let children = cx.children();
+        if !children.is_empty() {
+            let loose = BoxConstraints::loose(Size::new(constraints.max_width, f64::INFINITY));
+            self.placeholders = children
+                .iter()
+                .enumerate()
+                .map(|(i, &child)| {
+                    let size = cx.layout_child(child, loose);
+                    let (alignment, offset) = self.inline.get(i).copied().unwrap_or_default();
+                    let baseline =
+                        offset.map(f64::from).or_else(|| cx.child_baseline(child)).unwrap_or(size.height);
+                    Placeholder {
+                        width: size.width as f32,
+                        height: size.height as f32,
+                        alignment,
+                        baseline_offset: baseline as f32,
+                    }
+                })
+                .collect();
+        }
         let params = self.params(cx.text, width);
         let (layout, key) = self.layout_with(cx.text, params);
         let size = Size::new(f64::from(layout.width()), f64::from(layout.height()));
+        for (i, &child) in children.iter().enumerate() {
+            if let Some(r) = layout.placeholder_boxes().get(i) {
+                cx.set_child_offset(child, Offset::new(r.x0, r.y0));
+            }
+        }
         self.cached = Some(layout);
         self.layout_key = Some(key);
         self.brushes.clear();
@@ -452,8 +483,12 @@ impl RenderObject for RenderParagraph {
             cx.scene.fill(Fill::NonZero, Affine::IDENTITY, *color, None, &world.to_rounded_rect(4.0));
         }
 
-        // Glyph runs + decorations, culled per line and per run.
+        // Glyph runs + decorations, culled per line and per run; inline children paint over the
+        // text at their placeholder boxes (T50).
         crate::text::paint::paint_text_layout(cx, layout, offset, &self.brushes);
+        for child in cx.children() {
+            cx.paint_child(child, offset + cx.child_offset(child));
+        }
     }
 
     fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {

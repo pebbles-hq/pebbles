@@ -406,6 +406,30 @@ pub struct TextSpan {
     pub chip: Option<Color>,
     /// Navigation target — taps resolve through [`RichText::on_link`].
     pub link: Option<String>,
+    /// An inline widget in place of text (Flutter `WidgetSpan`, see [`widget_span`]).
+    pub widget: Option<InlineChild>,
+}
+
+/// An inline widget of a rich paragraph: a builder (widgets are not `Clone`), how it aligns on
+/// its line, and an optional baseline offset (default: the child's own baseline, else its
+/// height).
+#[derive(Clone)]
+pub struct InlineChild {
+    build: std::rc::Rc<dyn Fn() -> AnyWidget>,
+    alignment: pebbles_render::PlaceholderAlignment,
+    baseline_offset: Option<f32>,
+}
+
+/// An inline widget inside [`text_rich`] (Flutter `WidgetSpan`): laid out with the text, wraps
+/// like a word, aligned by [`TextSpan::align`] (default: on the baseline).
+pub fn widget_span(child: impl Fn() -> AnyWidget + 'static) -> TextSpan {
+    let mut s = span("\u{FFFC}");
+    s.widget = Some(InlineChild {
+        build: std::rc::Rc::new(child),
+        alignment: pebbles_render::PlaceholderAlignment::Baseline,
+        baseline_offset: None,
+    });
+    s
 }
 
 /// A plain [`TextSpan`] over `text` — chain setters to style it.
@@ -421,10 +445,25 @@ pub fn span(text: impl Into<String>) -> TextSpan {
         size: None,
         chip: None,
         link: None,
+        widget: None,
     }
 }
 
 impl TextSpan {
+    /// How a [`widget_span`] sits on its line (no effect on text spans).
+    pub fn align(mut self, alignment: pebbles_render::PlaceholderAlignment) -> Self {
+        if let Some(w) = &mut self.widget {
+            w.alignment = alignment;
+        }
+        self
+    }
+    /// A [`widget_span`]'s baseline, measured from its top (default: the child's baseline).
+    pub fn baseline_offset(mut self, px: f32) -> Self {
+        if let Some(w) = &mut self.widget {
+            w.baseline_offset = Some(px);
+        }
+        self
+    }
     pub fn weight(mut self, w: f32) -> Self {
         self.weight = Some(w);
         self
@@ -616,6 +655,8 @@ struct RichTextLeaf {
     /// When set, the paragraph paints a keyboard-focus ring behind the link span
     /// with this URL index (keyboard link traversal).
     focused_link: Option<usize>,
+    /// Inline widgets (one per U+FFFC of `text`, in order).
+    inline: Vec<InlineChild>,
 }
 
 pebbles_core::render_widget!(RichTextLeaf);
@@ -627,6 +668,7 @@ impl RenderWidget for RichTextLeaf {
         p.select_id = self.select_id;
         p.selection = self.selection;
         p.focused_link = self.focused_link;
+        p.inline = self.inline.iter().map(|c| (c.alignment, c.baseline_offset)).collect();
         Box::new(p)
     }
 
@@ -639,8 +681,18 @@ impl RenderWidget for RichTextLeaf {
             p.select_id = self.select_id;
             p.selection = self.selection;
             p.focused_link = self.focused_link;
+            p.inline = self.inline.iter().map(|c| (c.alignment, c.baseline_offset)).collect();
         }
     }
+
+    fn take_children(&mut self) -> Vec<AnyWidget> {
+        self.inline.iter().map(|c| (c.build)()).collect()
+    }
+}
+
+/// The inline widgets of `spans`, in text order.
+fn inline_children(spans: &[TextSpan]) -> Vec<InlineChild> {
+    spans.iter().filter_map(|s| s.widget.clone()).collect()
 }
 
 /// Resolve spans → concatenated text + byte-ranged style overrides + link URLs.
@@ -767,6 +819,7 @@ fn render_group_leaf(p: &SelectableRichProps, group: SelectionGroup, index: usiz
         select_id: Some(sid),
         selection: local,
         focused_link: None,
+        inline: inline_children(&p.spans),
     };
     let mut gd = crate::widgets::GestureDetector::new(leaf);
     if let Some(boxes) = boxes {
@@ -844,6 +897,7 @@ fn render_selectable_rich(p: &SelectableRichProps) -> AnyWidget {
         select_id: Some(id),
         selection: sel.get(),
         focused_link: None,
+        inline: inline_children(&p.spans),
     };
     let mut gd = crate::widgets::GestureDetector::new(leaf);
     if let Some(boxes) = boxes {
@@ -910,6 +964,7 @@ fn render_keyboard_rich(p: &KeyboardRichProps) -> AnyWidget {
             select_id: None,
             selection: None,
             focused_link: None,
+            inline: inline_children(&p.spans),
         };
         return leaf.into_widget();
     }
@@ -972,6 +1027,7 @@ fn render_keyboard_rich(p: &KeyboardRichProps) -> AnyWidget {
         select_id: None,
         selection: None,
         focused_link: is_focused.then(|| focused_idx.get().min(n - 1)),
+        inline: inline_children(&p.spans),
     };
     let mut gd = crate::widgets::GestureDetector::new(leaf);
     gd = wire_links(gd, boxes, urls, p.on_link.clone(), p.on_link_hover.clone());
@@ -1028,6 +1084,7 @@ impl IntoWidget for RichText {
                 select_id: None,
                 selection: None,
                 focused_link: None,
+                inline: inline_children(&self.spans),
             };
             match boxes {
                 None => leaf.into_widget(),

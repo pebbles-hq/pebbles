@@ -83,4 +83,5 @@ mod time_field;
 mod transform;
 mod virtualization;
 mod wheel_axis;
+mod widget_span;
 mod window_knobs;
