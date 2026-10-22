@@ -1,0 +1,208 @@
+//! Editing pin (03b E01): the Parley build's caret rects, keyboard motions, hit-tests and
+//! word selection, recorded once into an oracle fixture that the TextLayout editing geometry
+//! must reproduce (E03–E10). Hermetic fonts (bundled faces only).
+
+use pebbles_foundation::Size;
+use pebbles_render::constraints::BoxConstraints;
+use pebbles_render::objects::{ParagraphStyle, RenderParagraph};
+use pebbles_render::text::TextEnv;
+use pebbles_render::text_edit;
+use pebbles_render::tree::RenderTree;
+
+/// One recorded case.
+pub struct EditRecord {
+    name: &'static str,
+    /// (byte, x0, y0) of `caret_rect` at every char boundary.
+    carets: &'static [(usize, f64, f64)],
+    /// (motion, from byte, resulting focus) for every char boundary, extend = false.
+    motions: &'static [(&'static str, usize, usize)],
+    /// (x, y, byte) on a 4-px grid over the layout box.
+    hits: &'static [(f64, f64, usize)],
+    /// (x, y, start, end) of `word_at` at every glyph center.
+    words: &'static [(f64, f64, usize, usize)],
+}
+
+include!("fixtures/edit_pin_parley.rs");
+
+struct EditCase {
+    name: &'static str,
+    text: &'static str,
+    family: &'static str,
+    size: f32,
+    width: Option<f64>,
+}
+
+fn corpus() -> Vec<EditCase> {
+    vec![
+        EditCase {
+            name: "mono20_abc",
+            text: "abcdefghij",
+            family: "JetBrains Mono",
+            size: 20.0,
+            width: None,
+        },
+        EditCase {
+            name: "inter16_wrap",
+            text: "The quick brown fox jumps over the dog",
+            family: "Inter",
+            size: 16.0,
+            width: Some(120.0),
+        },
+        EditCase { name: "inter16_two_paras", text: "ab\n\ncd", family: "Inter", size: 16.0, width: None },
+        EditCase { name: "lora16_crlf", text: "ab\r\ncd", family: "Lora", size: 16.0, width: None },
+        EditCase { name: "mixed_bidi", text: "abc אבג def", family: "Inter", size: 16.0, width: None },
+        // cjk_line waits for V22's bundled CJK test font.
+        EditCase { name: "emoji_cluster", text: "a👍🏽b", family: "Inter", size: 16.0, width: None },
+    ]
+}
+
+type Motion = fn(u64, usize, usize, bool) -> Option<(usize, usize)>;
+
+const MOTIONS: &[(&str, Motion)] = &[
+    ("left", text_edit::left),
+    ("right", text_edit::right),
+    ("word_left", text_edit::word_left),
+    ("word_right", text_edit::word_right),
+    ("line_start", text_edit::line_start),
+    ("line_end", text_edit::line_end),
+    ("line_up", text_edit::line_up),
+    ("line_down", text_edit::line_down),
+];
+
+struct Measured {
+    carets: Vec<(usize, f64, f64)>,
+    motions: Vec<(&'static str, usize, usize)>,
+    hits: Vec<(f64, f64, usize)>,
+    words: Vec<(f64, f64, usize, usize)>,
+}
+
+fn measure(env: &mut TextEnv, index: usize, c: &EditCase) -> Measured {
+    let id = 9100 + index as u64;
+    let style =
+        ParagraphStyle { font_size: c.size, font_family: Some(c.family.into()), ..ParagraphStyle::default() };
+    let mut para = RenderParagraph::new(c.text, style);
+    para.select_id = Some(id);
+    let mut tree = RenderTree::new();
+    let p = tree.insert(Box::new(para));
+    tree.root = Some(p);
+    let constraints = match c.width {
+        Some(w) => BoxConstraints::loose(Size::new(w, 10_000.0)),
+        None => BoxConstraints::UNBOUNDED,
+    };
+    tree.layout(env, constraints);
+    let size = tree.size_of(p);
+    let bounds: Vec<usize> =
+        c.text.char_indices().map(|(b, _)| b).chain(std::iter::once(c.text.len())).collect();
+    let carets = bounds
+        .iter()
+        .map(|&b| {
+            let r = text_edit::caret_rect(id, b).expect("caret");
+            (b, r.x0, r.y0)
+        })
+        .collect();
+    let mut motions = Vec::new();
+    for (name, f) in MOTIONS {
+        for &b in &bounds {
+            if let Some((_, focus)) = f(id, b, b, false) {
+                motions.push((*name, b, focus));
+            }
+        }
+    }
+    let mut hits = Vec::new();
+    let (mut y, mut x);
+    y = 0.0;
+    while y < size.height {
+        x = 0.0;
+        while x < size.width {
+            if let Some(b) = text_edit::hit(id, x, y) {
+                hits.push((x, y, b));
+            }
+            x += 4.0;
+        }
+        y += 4.0;
+    }
+    // Glyph centers: the midpoint between consecutive caret stops on the same line.
+    let mut words = Vec::new();
+    for w in bounds.windows(2) {
+        let (a, b) = (
+            text_edit::caret_rect(id, w[0]).expect("caret"),
+            text_edit::caret_rect(id, w[1]).expect("caret"),
+        );
+        if a.y0 == b.y0 && b.x0 > a.x0 {
+            let (cx, cy) = ((a.x0 + b.x0) / 2.0, (a.y0 + a.y1) / 2.0);
+            if let Some((s, e)) = text_edit::word_at(id, cx, cy) {
+                words.push((cx, cy, s, e));
+            }
+        }
+    }
+    text_edit::clear(id);
+    Measured { carets, motions, hits, words }
+}
+
+fn write_fixture(rows: &[(&str, Measured)]) {
+    let mut out = String::from(
+        "// Generated by `cargo test -p pebbles-render --test edit_pin -- --ignored regenerate_edit_pin`\n\
+         // on the Parley build (E01). Never regenerate after the switch (N15).\n\
+         pub const PARLEY: &[EditRecord] = &[\n",
+    );
+    for (name, m) in rows {
+        let carets: Vec<String> = m.carets.iter().map(|(b, x, y)| format!("({b}, {x:?}, {y:?})")).collect();
+        let motions: Vec<String> = m.motions.iter().map(|(n, a, f)| format!("({n:?}, {a}, {f})")).collect();
+        let hits: Vec<String> = m.hits.iter().map(|(x, y, b)| format!("({x:?}, {y:?}, {b})")).collect();
+        let words: Vec<String> =
+            m.words.iter().map(|(x, y, s, e)| format!("({x:?}, {y:?}, {s}, {e})")).collect();
+        out.push_str(&format!(
+            "    EditRecord {{\n        name: {name:?},\n        carets: &[{}],\n        motions: &[{}],\n        hits: &[{}],\n        words: &[{}],\n    }},\n",
+            carets.join(", "),
+            motions.join(", "),
+            hits.join(", "),
+            words.join(", ")
+        ));
+    }
+    out.push_str("];\n");
+    std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/edit_pin_parley.rs"), out)
+        .expect("write");
+}
+
+fn measure_all() -> Vec<(&'static str, Measured)> {
+    let mut env = TextEnv::new_hermetic();
+    corpus().iter().enumerate().map(|(i, c)| (c.name, measure(&mut env, i, c))).collect()
+}
+
+#[test]
+#[ignore = "regenerates the Parley oracle; never after the switch"]
+fn regenerate_edit_pin() {
+    write_fixture(&measure_all());
+}
+
+#[test]
+fn edit_matches_parley_oracle() {
+    assert!(!PARLEY.is_empty(), "fixture empty: run regenerate_edit_pin on the Parley build");
+    let rows = measure_all();
+    let mut failures = Vec::new();
+    for (pin, (name, m)) in PARLEY.iter().zip(&rows) {
+        assert_eq!(pin.name, *name, "fixture order");
+        let close = |a: f64, b: f64| (a - b).abs() <= 0.5;
+        if pin.carets.len() != m.carets.len()
+            || pin
+                .carets
+                .iter()
+                .zip(&m.carets)
+                .any(|(p, c)| p.0 != c.0 || !close(p.1, c.1) || !close(p.2, c.2))
+        {
+            failures.push(format!("{name}.carets"));
+        }
+        if pin.motions != m.motions.as_slice() {
+            failures.push(format!("{name}.motions"));
+        }
+        if pin.hits.len() != m.hits.len() || pin.hits.iter().zip(&m.hits).any(|(p, c)| p.2 != c.2) {
+            failures.push(format!("{name}.hits"));
+        }
+        if pin.words.len() != m.words.len()
+            || pin.words.iter().zip(&m.words).any(|(p, c)| (p.2, p.3) != (c.2, c.3))
+        {
+            failures.push(format!("{name}.words"));
+        }
+    }
+    assert!(failures.is_empty(), "editing drifted from the Parley pin: {failures:?}");
+}
