@@ -1,5 +1,5 @@
 //! Layout-aware text-editing helpers over Pebbles' cosmic-text
-//! [`TextLayout`](crate::text::TextLayout) (03b).
+//! [`TextLayout`] (03b).
 //!
 //! Cursor motion, hit-testing and word selection need laid-out text, which lives in the text
 //! render objects ([`RenderTextField`](crate::RenderTextField), selectable paragraphs). Each
@@ -8,7 +8,7 @@
 //! Byte offsets are into the publisher's (unobscured) text; password fields do not publish.
 //!
 //! Two shapes are published:
-//! - **Text**: one [`TextLayout`](crate::text::TextLayout) for the whole content (single-line
+//! - **Text**: one [`TextLayout`] for the whole content (single-line
 //!   fields, the placeholder, unbounded-width fields, selectable paragraphs). Motion runs on
 //!   `text::motion` / `TextLayout` geometry directly.
 //! - **Lines** (P5): a [`LineTable`] — one layout PER SOURCE LINE, so a keystroke re-shapes one
