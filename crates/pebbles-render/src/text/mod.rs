@@ -338,6 +338,12 @@ impl TextEnv {
         layout
     }
 
+    /// Face data (Blob + normalized `wght` coords) for a glyph op.
+    #[allow(dead_code)] // glyph-run paint (T20)
+    pub(crate) fn face(&mut self, id: cosmic_text::fontdb::ID, weight: u16) -> Option<fonts::FaceRef> {
+        self.registry.face(id, weight)
+    }
+
     /// The font generation (bumps on every face addition).
     pub fn font_generation(&self) -> u64 {
         self.registry.generation()

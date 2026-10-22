@@ -13,7 +13,7 @@ use crate::fonts::BUILTIN_FAMILIES;
 pub(crate) type FontBytes = Arc<dyn AsRef<[u8]> + Send + Sync>;
 
 /// What a glyph op needs for one (face, weight): the face bytes + variation coords.
-#[allow(dead_code)] // glyph runs resolve faces through it from T10.
+#[allow(dead_code)] // read by glyph-run paint (T20)
 #[derive(Clone, Debug)]
 pub(crate) struct FaceRef {
     pub(crate) font: peniko::FontData,
@@ -71,7 +71,6 @@ fn split_css_families(css: &str) -> smallvec::SmallVec<[&str; 4]> {
 /// Fixed aliases (§3.3.3): lowercase key -> canonical family.
 const ALIASES: &[(&str, &str)] = &[("inter variable", "Inter"), ("space grotesk light", "Space Grotesk")];
 
-#[allow(dead_code)] // `coords` is filled by `face` (glyph runs, T10).
 pub(crate) struct FontRegistry {
     /// Built with `new_with_locale_and_db` — never scans.
     system: cosmic_text::FontSystem,
@@ -94,6 +93,8 @@ pub(crate) struct FontRegistry {
     warned_families: std::collections::HashSet<String>,
     /// Log-once flag for runtime font bytes that failed to parse.
     warned_bad_font: bool,
+    /// Log-once flag for a face whose data could not be shared (glyph runs skip it).
+    warned_unshared: bool,
     /// The background system-font scan ("pebbles-font-scan"), merged on the next `poll`.
     #[cfg(not(target_family = "wasm"))]
     loader: Option<std::thread::JoinHandle<fontdb::Database>>,
@@ -175,6 +176,7 @@ impl FontRegistry {
             protected,
             warned_families: Default::default(),
             warned_bad_font: false,
+            warned_unshared: false,
             #[cfg(not(target_family = "wasm"))]
             loader: None,
         };
@@ -290,6 +292,65 @@ impl FontRegistry {
             return self.generation != before;
         }
         false
+    }
+
+    /// Face data for a glyph op (§3.3.6): the face's one registry-owned Blob and the normalized
+    /// `wght` coordinates for `weight` (empty at the default instance). System faces are
+    /// memory-mapped by cosmic-text on first use; a face that still cannot be shared is `None`
+    /// (the caller skips the run).
+    pub(crate) fn face(&mut self, id: fontdb::ID, weight: u16) -> Option<FaceRef> {
+        let font = match self.faces.get(&id) {
+            Some(font) => font.clone(),
+            None => {
+                let font = self.shared_face_data(id)?;
+                self.faces.insert(id, font.clone());
+                font
+            }
+        };
+        let coords = match self.coords.get(&(id, weight)) {
+            Some(c) => c.clone(),
+            None => {
+                use cosmic_text::skrifa::{FontRef, MetadataProvider, Tag};
+                let font_ref = FontRef::from_index(font.data.data(), font.index).ok()?;
+                let loc = font_ref.axes().location([(Tag::new(b"wght"), f32::from(weight))]);
+                let bits: Vec<i16> = loc.coords().iter().map(|c| c.to_bits()).collect();
+                let coords: Arc<[i16]> =
+                    if bits.iter().all(|&b| b == 0) { Arc::from([]) } else { Arc::from(bits) };
+                self.coords.insert((id, weight), coords.clone());
+                coords
+            }
+        };
+        Some(FaceRef { font, coords })
+    }
+
+    /// A `FontData` over the face's shared bytes (binary sources directly; a file source after
+    /// cosmic-text memory-maps it).
+    fn shared_face_data(&mut self, id: fontdb::ID) -> Option<peniko::FontData> {
+        for attempt in 0..2 {
+            let (source, index) = self.system.db().face_source(id)?;
+            match source {
+                fontdb::Source::Binary(arc) | fontdb::Source::SharedFile(_, arc) => {
+                    return Some(peniko::FontData::new(peniko::Blob::new(arc), index));
+                }
+                fontdb::Source::File(_) if attempt == 0 => {
+                    // cosmic maps the file and converts the source to SharedFile.
+                    let _ = self.system.get_font(id, fontdb::Weight(400));
+                }
+                fontdb::Source::File(path) => {
+                    if !self.warned_unshared {
+                        self.warned_unshared = true;
+                        pebbles_foundation::log::warn(
+                            pebbles_foundation::log::Cat::General,
+                            format!(
+                                "font face {} could not be memory-mapped; its text is skipped",
+                                path.display()
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Register runtime font bytes (one or more faces) under their own family names; returns
@@ -555,6 +616,52 @@ mod tests {
         }
         assert_eq!(r.faces_len(), before, "the scan neither merged nor finished in 30 s");
         assert!(r.loader.is_none(), "the scan did not finish in 30 s");
+    }
+
+    fn id_of(r: &mut FontRegistry, family: &str) -> fontdb::ID {
+        query(r, family, Style::Normal).expect("face")
+    }
+
+    #[test]
+    fn lora_coords() {
+        let mut r = registry();
+        let id = id_of(&mut r, "Lora");
+        assert!(r.face(id, 400).expect("face").coords.is_empty());
+        assert_eq!(&*r.face(id, 550).expect("face").coords, &[8192]);
+        assert_eq!(&*r.face(id, 700).expect("face").coords, &[16384]);
+    }
+
+    #[test]
+    fn face_blob_is_stable() {
+        let mut r = registry();
+        let id = id_of(&mut r, "Lora");
+        let a = r.face(id, 400).expect("face").font.data.id();
+        assert_eq!(r.face(id, 400).expect("face").font.data.id(), a);
+        assert_eq!(r.face(id, 700).expect("face").font.data.id(), a);
+    }
+
+    #[test]
+    fn inter_bold_has_coords() {
+        let mut r = registry();
+        let id = id_of(&mut r, "Inter");
+        let c = r.face(id, 700).expect("face").coords;
+        assert_eq!(c.len(), 2, "{c:?}");
+        assert_eq!(c[0], 0, "opsz stays at its default");
+    }
+
+    #[test]
+    #[ignore = "scans the host's system fonts"]
+    #[cfg(not(target_family = "wasm"))]
+    fn system_file_face_is_shared() {
+        let mut r = registry();
+        r.scan_blocking();
+        let file = r.font_system().db().faces().find_map(|f| match &f.source {
+            fontdb::Source::File(path) => Some((f.id, path.clone())),
+            _ => None,
+        });
+        let Some((id, path)) = file else { return };
+        let face = r.face(id, 400).expect("system face is shared");
+        assert_eq!(face.font.data.len() as u64, std::fs::metadata(path).expect("stat").len());
     }
 
     #[test]
