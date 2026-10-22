@@ -14,6 +14,7 @@
 
 pub(crate) mod cache;
 pub(crate) mod fonts;
+pub(crate) mod geometry;
 pub(crate) mod layout;
 pub(crate) mod paint;
 pub(crate) mod shape;
@@ -62,6 +63,7 @@ pub(crate) fn count_layout() {
     LAYOUTS.with(|c| c.set(c.get() + 1));
 }
 
+pub use geometry::Affinity;
 pub use layout::TextLayout;
 
 /// One text layout request (crate-internal: cosmic types never reach a `pub` signature).
