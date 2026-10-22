@@ -933,3 +933,95 @@ fn ten_thousand_line_field_keystroke_shapes_one_line() {
     assert!(shape_count() <= 1, "one keystroke shaped {} lines", shape_count());
     assert!(after <= before + 2, "materialized {before} -> {after}");
 }
+
+/// A 10 000-line, 80-column document in a focused multi-line field (E18), laid out at 600×300.
+#[cfg(debug_assertions)]
+fn perf_field(id: u64) -> (RenderTree, TextEnv, pebbles_render::RenderId, String) {
+    use pebbles_render::objects::{RenderTextField, TextFieldStyle};
+    let line: String =
+        "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor in".into();
+    let source: String = (0..10_000).map(|_| format!("{}\n", &line[..80.min(line.len())])).collect();
+    let mut text = TextEnv::new();
+    let mut tree = RenderTree::new();
+    let mut field = RenderTextField::new(source.clone(), TextFieldStyle::default());
+    field.multiline = true;
+    field.field_id = id;
+    field.focused = true;
+    let id = tree.insert(Box::new(field));
+    tree.root = Some(id);
+    tree.layout(&mut text, tight(600.0, 300.0));
+    (tree, text, id, source)
+}
+
+/// E18 (a): one keystroke shapes ≤ 1 line and lays out ≤ 1 line.
+#[test]
+#[cfg(debug_assertions)] // shape / layout counters are debug-only
+fn perf_keystroke_shapes_and_lays_out_one_line() {
+    use pebbles_render::objects::{
+        RenderTextField, layout_count, reset_layout_count, reset_shape_count, shape_count,
+    };
+    let (mut tree, mut text, id, _) = perf_field(4301);
+    reset_shape_count();
+    reset_layout_count();
+    {
+        let f = tree.object_mut(id).downcast_mut::<RenderTextField>().unwrap();
+        f.text.insert(3, 'x');
+        f.focus = 4;
+        f.anchor = 4;
+    }
+    tree.mark_needs_layout(id);
+    tree.layout(&mut text, tight(600.0, 300.0));
+    assert!(shape_count() <= 1 && layout_count() <= 1, "shapes {} layouts {}", shape_count(), layout_count());
+}
+
+/// E18 (b): 1 000 `line_down` motions shape nothing once warm.
+#[test]
+#[cfg(debug_assertions)]
+fn perf_line_down_never_shapes() {
+    use pebbles_render::objects::{reset_shape_count, shape_count};
+    use pebbles_render::text_edit;
+    let (_tree, _text, _, source) = perf_field(4302);
+    let mut f = 0;
+    f = text_edit::line_down(4302, f, f, false).expect("published").1; // warm-up
+    reset_shape_count();
+    for _ in 0..1_000 {
+        f = text_edit::line_down(4302, f, f, false).expect("published").1;
+    }
+    assert!(f <= source.len());
+    assert_eq!(shape_count(), 0, "vertical motion must not shape");
+}
+
+/// E18 (c): painting a select-all only materializes the visible window, never the document.
+#[test]
+#[cfg(debug_assertions)]
+fn perf_select_all_paints_only_visible_slots() {
+    use pebbles_render::objects::RenderTextField;
+    use pebbles_render::paint::Scene;
+    use pebbles_render::text_edit;
+    let (mut tree, mut text, id, source) = perf_field(4303);
+    {
+        let f = tree.object_mut(id).downcast_mut::<RenderTextField>().unwrap();
+        f.anchor = 0;
+        f.focus = source.len();
+    }
+    tree.mark_needs_layout(id);
+    tree.layout(&mut text, tight(600.0, 300.0));
+    let mut scene = Scene::new();
+    tree.paint(&mut text, &mut scene);
+    let table = text_edit::get_lines(4303).expect("table");
+    assert!(table.materialized_count() < 200, "materialized {} of 10 000 lines", table.materialized_count());
+}
+
+/// E18 AC2 (informative): wall time of 1 000 `right` motions.
+#[test]
+#[cfg(debug_assertions)]
+fn perf_right_motions_timing() {
+    use pebbles_render::text_edit;
+    let (_tree, _text, _, _) = perf_field(4304);
+    let t = web_time::Instant::now();
+    let mut f = 0;
+    for _ in 0..1_000 {
+        f = text_edit::right(4304, f, f, false).expect("published").1;
+    }
+    println!("right_x1000_ms={:.3} (focus {f})", t.elapsed().as_secs_f64() * 1e3);
+}
