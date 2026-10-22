@@ -69,6 +69,17 @@ impl TextLayout {
         }
     }
 
+    /// The logical start byte (line-local) of visual line `i`: the paragraph start for its first
+    /// line (cosmic-text emits no glyph for whitespace it collapses at a wrap, even a leading
+    /// one), else the glyph span's start.
+    pub(crate) fn line_logical_start(&self, i: usize) -> usize {
+        let line = &self.lines[i];
+        let first = i == 0
+            || self.lines[i - 1].para != line.para
+            || self.lines[i - 1].from_elided != line.from_elided;
+        if first { 0 } else { self.line_span(i).map_or(0, |(s, _)| s) }
+    }
+
     /// Width of the whitespace between line `i`'s glyphs and its logical end: cosmic-text emits
     /// no glyph for the trailing space of a soft-wrapped line, but it still has an advance.
     fn hidden_trailing_width(&self, i: usize) -> f32 {
@@ -235,7 +246,7 @@ impl TextLayout {
         }
         let run = self.run(i);
         let glyphs = &line.layout.glyphs;
-        let span_start = self.line_span(i).map_or(0, |(s, _)| s);
+        let span_start = self.line_logical_start(i);
         let span_end = self.line_logical_end(i);
         let min_x = glyphs.iter().map(|g| g.x).fold(f32::INFINITY, f32::min);
         let max_x = glyphs.iter().map(|g| g.x + g.w).fold(f32::NEG_INFINITY, f32::max);
@@ -280,7 +291,9 @@ impl TextLayout {
                 // Visual box of grapheme j (RTL clusters run right to left).
                 let x0 = if rtl { gx1 - (j + 1) as f32 * egc_w } else { gx0 + j as f32 * egc_w };
                 if x >= x0 && x <= x0 + egc_w {
-                    let past = (x >= x0 + egc_w / 2.0) != rtl;
+                    // A zero-width box (collapsed whitespace at a wrap) has no far half.
+                    let far_half = egc_w > 0.0 && x >= x0 + egc_w / 2.0;
+                    let past = far_half != rtl;
                     return if past {
                         (to_text(g.start + gi + egc.len()), Affinity::Upstream)
                     } else {
@@ -465,5 +478,105 @@ mod tests {
         assert_eq!(l.word_at(63.0, 10.0), (5, 6), "whitespace selects itself");
         assert_eq!(l.word_at(69.0, 10.0), (5, 6));
         assert_eq!(l.word_at(30.0, 10.0), (0, 5));
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod robustness {
+    //! Seeded invariant loops (03b §3.11, E19): no panics; every byte a char boundary ≤ len;
+    //! selection rects never negative; `hit(caret_rect(b).center()) == b` on single-paragraph
+    //! LTR text (or a byte with the identical caret, where collapsed whitespace makes two bytes
+    //! share one position).
+    use super::*;
+    use crate::objects::ParagraphStyle;
+    use crate::text::{TextEnv, layout_for_test};
+    use std::rc::Rc;
+
+    pub(crate) fn next(state: &mut u64) -> u64 {
+        // xorshift64
+        let mut x = *state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        *state = x;
+        x
+    }
+
+    const ALPHABET: &[&str] = &[
+        "a",
+        "Z",
+        " ",
+        "5",
+        "\u{5d0}",
+        "\u{5d1}",
+        "\u{627}",
+        "\u{644}",
+        "\u{4e2d}",
+        "\u{6587}",
+        "🙂",
+        "👩\u{200d}👩\u{200d}👧",
+        "👍\u{1F3FD}",
+        "e\u{301}",
+        "\r",
+        "\n",
+        "\r\n",
+        "\u{2029}",
+    ];
+    const LTR: &[&str] = &["a", "Z", " ", "5", "\u{4e2d}", "🙂", "e\u{301}", "w"];
+
+    pub(crate) fn random_layout(env: &mut TextEnv, state: &mut u64, alphabet: &[&str]) -> Rc<TextLayout> {
+        let n = next(state) % 30;
+        let text: String = (0..n).map(|_| alphabet[(next(state) % alphabet.len() as u64) as usize]).collect();
+        let width = [None, Some(0.0), Some(1.0), Some(57.0), Some(1e6)][(next(state) % 5) as usize];
+        layout_for_test(env, &text, &ParagraphStyle::default(), &[], width)
+    }
+
+    fn check_byte(l: &TextLayout, b: usize, what: &str) {
+        let t = l.text();
+        assert!(b <= t.len() && t.is_char_boundary(b), "{what} returned {b} in {t:?}");
+    }
+
+    #[test]
+    fn seeded_geometry_invariants() {
+        let mut env = TextEnv::new();
+        for seed in 1..=2_000u64 {
+            let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+            let l = random_layout(&mut env, &mut state, ALPHABET);
+            let len = l.text().len();
+            let mut rects = Vec::new();
+            for _ in 0..50 {
+                let b = (next(&mut state) % (len as u64 + 9)) as usize;
+                let r = l.caret_rect(b, Affinity::Downstream, 1.0);
+                assert!(r.x0.is_finite() && r.y0.is_finite(), "caret at {b} of {:?}", l.text());
+                let x = (next(&mut state) % 4_000_001) as f32 - 2_000_000.0;
+                let y = (next(&mut state) % 4_000_001) as f32 - 2_000_000.0;
+                check_byte(&l, l.hit(x / 2.0, y / 2.0).0, "hit");
+                let (s, e) = l.word_at(x / 2.0, y / 2.0);
+                check_byte(&l, s, "word_at start");
+                check_byte(&l, e, "word_at end");
+                rects.clear();
+                l.selection_rects(b, (next(&mut state) % (len as u64 + 9)) as usize, &mut rects);
+                assert!(rects.iter().all(|r| r.width() >= 0.0), "{rects:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn seeded_caret_hit_round_trip_ltr() {
+        let mut env = TextEnv::new();
+        for seed in 1..=2_000u64 {
+            let mut state = seed.wrapping_mul(0x2545_F491_4F6C_DD1D) | 1;
+            let l = random_layout(&mut env, &mut state, LTR);
+            let t = l.text().to_string();
+            for (b, _) in t.grapheme_indices(true).chain(std::iter::once((t.len(), ""))) {
+                let r = l.caret_rect(b, Affinity::Downstream, 0.0);
+                let c = r.center();
+                let (got, aff) = l.hit(c.x as f32, c.y as f32);
+                // Exact, unless two bytes share one caret position (whitespace collapsed to zero
+                // width at a wrap): then the hit must at least place the caret at the same spot.
+                let same_spot = l.caret_rect(got, aff, 0.0) == r;
+                assert!(got == b || same_spot, "round trip at {b} of {t:?} gave {got} (caret {r:?})");
+            }
+        }
     }
 }

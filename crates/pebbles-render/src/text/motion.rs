@@ -166,7 +166,7 @@ fn line_edge(layout: &TextLayout, a: usize, f: usize, extend: bool, end: bool) -
     } else if end {
         to_text(layout, i, layout.line_logical_end(i))
     } else {
-        to_text(layout, i, glyphs.iter().map(|g| g.start).min().unwrap_or(0))
+        to_text(layout, i, layout.line_logical_start(i))
     };
     apply(a, target, extend)
 }
@@ -278,5 +278,53 @@ mod tests {
         assert_eq!(line_up(&l, 2, 2, false), (0, 0));
         assert_eq!(line_down(&l, 11, 11, false), (11, 11));
         assert_eq!(line_down(&l, 8, 8, false), (11, 11));
+    }
+}
+
+#[cfg(test)]
+mod robustness {
+    //! Seeded motion sequences (03b §3.11, E19): never panic, every focus a char boundary ≤ len.
+    use super::*;
+    use crate::text::TextEnv;
+    use crate::text::geometry::robustness::{next, random_layout};
+
+    const ALPHABET: &[&str] = &[
+        "a",
+        "Z",
+        " ",
+        "\u{5d0}",
+        "\u{5d1}",
+        "\u{627}",
+        "\u{4e2d}",
+        "👩\u{200d}👩\u{200d}👧",
+        "👍\u{1F3FD}",
+        "e\u{301}",
+        "\r",
+        "\n",
+        "\r\n",
+        "\u{2029}",
+    ];
+
+    type Motion = fn(&TextLayout, usize, usize, bool) -> (usize, usize);
+    const MOTIONS: [Motion; 8] =
+        [left, right, word_left, word_right, line_start, line_end, line_up, line_down];
+
+    #[test]
+    fn seeded_motion_sequences() {
+        let mut env = TextEnv::new();
+        for seed in 1..=2_000u64 {
+            let mut state = seed.wrapping_mul(0xD1B5_4A32_D192_ED03) | 1;
+            let l = random_layout(&mut env, &mut state, ALPHABET);
+            let t = l.text();
+            let (mut a, mut f) = ((next(&mut state) % (t.len() as u64 + 9)) as usize, 0);
+            for _ in 0..50 {
+                let m = MOTIONS[(next(&mut state) % 8) as usize];
+                let extend = next(&mut state).is_multiple_of(2);
+                (a, f) = m(&l, a, f, extend);
+                for b in [a, f] {
+                    assert!(b <= t.len() && t.is_char_boundary(b), "motion returned {b} in {t:?}");
+                }
+            }
+        }
     }
 }
