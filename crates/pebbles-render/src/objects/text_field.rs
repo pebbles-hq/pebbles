@@ -256,6 +256,7 @@ impl RenderObject for RenderTextField {
             align: None,
             max_lines: None,
             ellipsis: false,
+            strut: None,
         };
         let req = TextRequest { text: display, style: &spec, spans: &[], params };
         let key = cx.text.text_key(&req);

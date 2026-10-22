@@ -352,6 +352,25 @@ impl FontRegistry {
         None
     }
 
+    /// Ascent and descent (px, both positive) of the regular face of CSS family `css` at `size`.
+    pub(crate) fn vertical_metrics(&mut self, css: &str, size: f32) -> Option<(f32, f32)> {
+        use cosmic_text::skrifa::{
+            FontRef, MetadataProvider,
+            instance::{LocationRef, Size},
+        };
+        let cosmic_text::FamilyOwned::Name(name) = self.resolve_family(css) else { return None };
+        let id = self.system.db().query(&fontdb::Query {
+            families: &[fontdb::Family::Name(&name)],
+            weight: fontdb::Weight(400),
+            stretch: fontdb::Stretch::Normal,
+            style: fontdb::Style::Normal,
+        })?;
+        let face = self.face(id, 400)?;
+        let font = FontRef::from_index(face.font.data.data(), face.font.index).ok()?;
+        let m = font.metrics(Size::new(size), LocationRef::default());
+        Some((m.ascent, -m.descent))
+    }
+
     /// Register runtime font bytes (one or more faces) under their own family names; returns
     /// the number of faces added. Unparseable bytes add nothing (logged once).
     pub(crate) fn register(&mut self, data: FontBytes) -> usize {

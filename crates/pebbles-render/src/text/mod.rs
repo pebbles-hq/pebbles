@@ -120,6 +120,7 @@ pub fn layout_for_test(
         )),
         max_lines: style.max_lines,
         ellipsis: style.ellipsis,
+        strut: style.strut.as_ref().map(|s| env.strut_metrics(s)),
     };
     let req = TextRequest { text, style: &spec, spans: &spans, params };
     let key = env.text_key(&req);
@@ -272,6 +273,29 @@ impl TextEnv {
     /// (min, max) intrinsic widths of a layout's shaped text (memoized, no reshape).
     pub(crate) fn intrinsic_widths(&mut self, layout: &TextLayout) -> (f32, f32) {
         layout::intrinsic_widths(&layout.shaped, &mut self.scratch, &mut self.registry)
+    }
+
+    /// A strut resolved to px: the strut font's ascent / descent at its size (rescaled to
+    /// `height` × size when set), plus half the leading above and below.
+    pub(crate) fn strut_metrics(&mut self, strut: &crate::objects::StrutStyle) -> layout::StrutMetrics {
+        let size = style::sanitize_size(strut.font_size);
+        let family = strut.font_family.as_deref().unwrap_or(crate::fonts::DEFAULT_FAMILY);
+        let (mut ascent, mut descent) =
+            self.registry.vertical_metrics(family, size).unwrap_or((size * 0.8, size * 0.2));
+        if let Some(h) = strut.height.filter(|h| h.is_finite() && *h >= 0.0) {
+            let total = ascent + descent;
+            if total > 0.0 {
+                let k = h * size / total;
+                ascent *= k;
+                descent *= k;
+            }
+        }
+        let half_leading = strut.leading.filter(|l| l.is_finite()).map_or(0.0, |l| l * size / 2.0);
+        layout::StrutMetrics {
+            above: ascent + half_leading,
+            below: descent + half_leading,
+            force: strut.force_strut_height,
+        }
     }
 
     /// The font generation (bumps on every face addition).

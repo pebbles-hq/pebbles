@@ -1056,3 +1056,26 @@ fn background_under_selection() {
     let sel = fills.iter().position(|b| *b == peniko::Brush::Solid(selection_color));
     assert!(bg.expect("background") < sel.expect("selection"), "{fills:?}");
 }
+
+/// T49: a paragraph's intrinsic height includes its strut (sized through IntrinsicHeight).
+#[test]
+fn intrinsics_include_strut() {
+    use pebbles_render::objects::{RenderIntrinsicHeight, StrutStyle};
+    let strut = StrutStyle {
+        font_family: None,
+        font_size: 40.0,
+        height: None,
+        leading: None,
+        force_strut_height: false,
+    };
+    let style = ParagraphStyle { strut: Some(strut), ..ParagraphStyle::default() };
+    let mut tree = RenderTree::new();
+    let mut text = TextEnv::new();
+    let root = tree.insert(Box::new(RenderIntrinsicHeight));
+    let p = tree.insert(Box::new(RenderParagraph::new("Hi", style)));
+    tree.insert_child(root, p, 0);
+    tree.root = Some(root);
+    tree.layout(&mut text, BoxConstraints::loose(Size::new(300.0, 1000.0)));
+    let h = tree.size_of(root).height;
+    assert!(h >= (1984.0 + 494.0) / 2048.0 * 40.0 - 0.01, "{h}");
+}

@@ -49,6 +49,21 @@ pub struct TextShadow {
     pub color: Color,
 }
 
+/// A minimum (or forced) line box for every line of a paragraph (Flutter `StrutStyle`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct StrutStyle {
+    /// The strut's font family (`None` = the default family).
+    pub font_family: Option<String>,
+    /// The strut font size (px).
+    pub font_size: f32,
+    /// Line height as a multiple of `font_size` (`None` = the font's ascent + descent).
+    pub height: Option<f32>,
+    /// Extra leading as a multiple of `font_size`, split half above and half below.
+    pub leading: Option<f32>,
+    /// Every line is exactly the strut's height, whatever its glyphs.
+    pub force_strut_height: bool,
+}
+
 /// Styling for a paragraph of text.
 #[derive(Clone, Debug)]
 pub struct ParagraphStyle {
@@ -85,6 +100,8 @@ pub struct ParagraphStyle {
     /// (`true`, the default). `false` shapes a single unbounded line that clips to
     /// the box (the classic one-line label, combine with `ellipsis`).
     pub soft_wrap: bool,
+    /// A minimum (or forced) line box for every line (`None` = the glyphs' own).
+    pub strut: Option<StrutStyle>,
     /// TAB advance in space widths: a TAB moves to the next multiple of `tab_width × space
     /// advance`. Default 1 (one column in monospace).
     pub tab_width: u16,
@@ -111,6 +128,7 @@ impl Default for ParagraphStyle {
             max_lines: None,
             ellipsis: false,
             soft_wrap: true,
+            strut: None,
             tab_width: crate::text::style::DEFAULT_TAB_WIDTH,
         }
     }
@@ -243,7 +261,7 @@ impl RenderParagraph {
 
     /// The layout request for this paragraph at `width` (03 §3.5.1: a width only when soft
     /// wrap is on and the box is bounded).
-    fn params(&self, width: Option<f32>) -> LayoutParams {
+    fn params(&self, text: &mut TextEnv, width: Option<f32>) -> LayoutParams {
         let rtl = crate::direction::text_direction() == TextDirection::Rtl;
         let width = if self.style.soft_wrap { width } else { None };
         LayoutParams {
@@ -252,6 +270,7 @@ impl RenderParagraph {
             align: Some(to_cosmic_align(self.style.align, rtl)),
             max_lines: self.style.max_lines,
             ellipsis: self.style.ellipsis,
+            strut: self.style.strut.as_ref().map(|s| text.strut_metrics(s)),
         }
     }
 
@@ -311,7 +330,8 @@ impl RenderParagraph {
 impl RenderObject for RenderParagraph {
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         let width = constraints.has_bounded_width().then_some(constraints.max_width as f32);
-        let (layout, key) = self.layout_with(cx.text, self.params(width));
+        let params = self.params(cx.text, width);
+        let (layout, key) = self.layout_with(cx.text, params);
         let size = Size::new(f64::from(layout.width()), f64::from(layout.height()));
         self.cached = Some(layout);
         self.layout_key = Some(key);
@@ -382,7 +402,8 @@ impl RenderObject for RenderParagraph {
             // The widest unbreakable run (Flutter's `getMinIntrinsicWidth` notion) from the ONE
             // unbounded layout's advances — memoized on the shape, never a reshape.
             Axis::Horizontal => {
-                let (layout, _) = self.layout_with(cx.text, self.params(None));
+                let params = self.params(cx.text, None);
+                let (layout, _) = self.layout_with(cx.text, params);
                 Some(f64::from(cx.text.intrinsic_widths(&layout).0))
             }
             // The height when wrapped at `cross_extent` (max_lines ignored: quirk Q-3).
@@ -395,6 +416,7 @@ impl RenderObject for RenderParagraph {
                     align: Some(to_cosmic_align(self.style.align, rtl)),
                     max_lines: None,
                     ellipsis: false,
+                    strut: self.style.strut.as_ref().map(|s| cx.text.strut_metrics(s)),
                 };
                 let (layout, _) = self.layout_with(cx.text, params);
                 Some(f64::from(layout.height()))

@@ -21,6 +21,17 @@ pub(crate) struct LayoutParams {
     pub(crate) align: Option<cosmic_text::Align>,
     pub(crate) max_lines: Option<u32>,
     pub(crate) ellipsis: bool,
+    /// The paragraph's strut, resolved to px (Flutter `StrutStyle`).
+    pub(crate) strut: Option<StrutMetrics>,
+}
+
+/// A resolved strut: the minimum extent above and below every baseline (px).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct StrutMetrics {
+    pub(crate) above: f32,
+    pub(crate) below: f32,
+    /// Every line is exactly the strut's extents (`force_strut_height`).
+    pub(crate) force: bool,
 }
 
 pub(crate) struct VisualLine {
@@ -76,6 +87,7 @@ pub(crate) fn layout_hash(shape: u64, params: &LayoutParams) -> u64 {
     align_tag.hash(&mut h);
     params.max_lines.hash(&mut h);
     params.ellipsis.hash(&mut h);
+    params.strut.map(|s| (s.above.to_bits(), s.below.to_bits(), s.force)).hash(&mut h);
     h.finish()
 }
 
@@ -322,9 +334,21 @@ impl TextLayout {
         self.lines = raw
             .into_iter()
             .map(|(para, from_elided, layout)| {
-                let height = layout.line_height_opt.unwrap_or(self.shaped.base_line_height_px);
-                let baseline =
-                    top + (height - (layout.max_ascent + layout.max_descent)) / 2.0 + layout.max_ascent;
+                let mut height = layout.line_height_opt.unwrap_or(self.shaped.base_line_height_px);
+                // Extent above the baseline: half the leading over the glyph box (cosmic-text's
+                // centering), then at least the strut's (exactly the strut's when forced).
+                let mut above = (height - (layout.max_ascent + layout.max_descent)) / 2.0 + layout.max_ascent;
+                if let Some(strut) = self.params.strut {
+                    let below = height - above;
+                    let (a, b) = if strut.force {
+                        (strut.above, strut.below)
+                    } else {
+                        (above.max(strut.above), below.max(strut.below))
+                    };
+                    above = a;
+                    height = a + b;
+                }
+                let baseline = top + above;
                 let line = VisualLine { para, from_elided, layout, top, height, baseline };
                 top += height;
                 line
@@ -423,6 +447,7 @@ pub(crate) fn intrinsic_widths(
         align: Some(cosmic_text::Align::Left),
         max_lines: None,
         ellipsis: false,
+        strut: None,
     };
     let layout = TextLayout::new(shaped.clone(), params, scratch, fonts);
     let (mut min, mut cur) = (0.0_f32, 0.0_f32);
@@ -639,6 +664,52 @@ mod tests {
         }
         assert_eq!(crate::text::shape_count(), shapes, "no reshape");
         assert_eq!(crate::text::layout_count() - layouts, 1, "the walk runs once");
+    }
+}
+
+#[cfg(test)]
+mod strut_tests {
+    use crate::objects::{ParagraphStyle, StrutStyle, TextSpanStyle};
+    use crate::text::{TextEnv, layout_for_test};
+
+    fn strut(size: f32, force: bool) -> StrutStyle {
+        StrutStyle {
+            font_family: None,
+            font_size: size,
+            height: None,
+            leading: None,
+            force_strut_height: force,
+        }
+    }
+
+    #[test]
+    fn strut_sets_minimum_line_height() {
+        let plain = layout_for_test(&mut TextEnv::new(), "Hello", &ParagraphStyle::default(), &[], None);
+        let style = ParagraphStyle { strut: Some(strut(32.0, false)), ..ParagraphStyle::default() };
+        let l = layout_for_test(&mut TextEnv::new(), "Hello", &style, &[], None);
+        // Inter at 32 px: ascent + descent = (1984 + 494) / 2048 × 32.
+        let strut_h = (1984.0 + 494.0) / 2048.0 * 32.0;
+        assert!((l.height() - strut_h).abs() < 0.01, "{} vs {strut_h}", l.height());
+        assert!(l.height() > plain.height());
+        assert!(l.first_baseline().unwrap() > plain.first_baseline().unwrap());
+    }
+
+    #[test]
+    fn forced_strut_ignores_tall_glyphs() {
+        let mut big = TextSpanStyle::new(0..5);
+        big.size = Some(48.0);
+        let style = ParagraphStyle { strut: Some(strut(16.0, true)), ..ParagraphStyle::default() };
+        let l = layout_for_test(&mut TextEnv::new(), "Hello", &style, &[big], None);
+        let strut_h = (1984.0 + 494.0) / 2048.0 * 16.0;
+        assert!((l.height() - strut_h).abs() < 0.01, "{} vs {strut_h}", l.height());
+    }
+
+    #[test]
+    fn strut_height_and_leading() {
+        let s = StrutStyle { height: Some(2.0), leading: Some(0.5), ..strut(20.0, true) };
+        let style = ParagraphStyle { strut: Some(s), ..ParagraphStyle::default() };
+        let l = layout_for_test(&mut TextEnv::new(), "Hi", &style, &[], None);
+        assert!((l.height() - (40.0 + 10.0)).abs() < 0.01, "{}", l.height());
     }
 }
 

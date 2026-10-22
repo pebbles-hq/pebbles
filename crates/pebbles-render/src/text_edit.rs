@@ -166,6 +166,7 @@ impl LineTable {
             align: None,
             max_lines: None,
             ellipsis: false,
+            strut: None,
         };
         let req = TextRequest { text, style: &self.shape.style, spans: &[], params };
         let key = env.text_key(&req);
