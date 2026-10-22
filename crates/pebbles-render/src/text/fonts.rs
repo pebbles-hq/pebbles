@@ -367,11 +367,13 @@ impl FontRegistry {
     }
 
     /// Census: faces with glyph-op data.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))] // read by the debug census
     pub(crate) fn face_data_len(&self) -> usize {
         self.faces.len()
     }
 
     /// Census: memoized (face, weight) coords.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))] // read by the debug census
     pub(crate) fn coords_len(&self) -> usize {
         self.coords.len()
     }

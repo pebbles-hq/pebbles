@@ -22,16 +22,21 @@ pub const BUILTIN_FAMILIES: &[&str] = &["Inter", "JetBrains Mono", "Space Grotes
 /// the same choice Flutter makes by bundling a default font.
 pub const DEFAULT_FAMILY: &str = "Inter";
 
+/// The embedded font files. A `static` (not a promoted constant) so the bytes have ONE
+/// address: a constant may be materialized per codegen unit, which would duplicate megabytes
+/// of font data and break the registry's zero-copy sharing (03 §3.3.2).
+static BUILTIN_FONTS: [(&str, &[u8]); 6] = [
+    ("Inter", include_bytes!("../assets/fonts/InterVariable.ttf")),
+    ("Inter", include_bytes!("../assets/fonts/InterVariable-Italic.ttf")),
+    ("JetBrains Mono", include_bytes!("../assets/fonts/JetBrainsMono[wght].ttf")),
+    ("JetBrains Mono", include_bytes!("../assets/fonts/JetBrainsMono-Italic[wght].ttf")),
+    ("Space Grotesk", include_bytes!("../assets/fonts/SpaceGrotesk[wght].ttf")),
+    ("Lora", include_bytes!("../assets/fonts/Lora[wght].ttf")),
+];
+
 /// Built-in font files: `(family name, bytes)`.
 pub fn builtin_fonts() -> &'static [(&'static str, &'static [u8])] {
-    &[
-        ("Inter", include_bytes!("../assets/fonts/InterVariable.ttf")),
-        ("Inter", include_bytes!("../assets/fonts/InterVariable-Italic.ttf")),
-        ("JetBrains Mono", include_bytes!("../assets/fonts/JetBrainsMono[wght].ttf")),
-        ("JetBrains Mono", include_bytes!("../assets/fonts/JetBrainsMono-Italic[wght].ttf")),
-        ("Space Grotesk", include_bytes!("../assets/fonts/SpaceGrotesk[wght].ttf")),
-        ("Lora", include_bytes!("../assets/fonts/Lora[wght].ttf")),
-    ]
+    &BUILTIN_FONTS
 }
 
 /// Registers every built-in face into the given font context, overriding the

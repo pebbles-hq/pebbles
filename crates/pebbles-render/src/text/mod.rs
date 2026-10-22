@@ -394,7 +394,7 @@ impl TextEnv {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, debug_assertions))] // the shape/layout counters and census are debug-only
 mod tests {
     use super::*;
     use crate::objects::ParagraphStyle;
@@ -404,7 +404,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(debug_assertions)] // the shape/layout counters are debug-only
     fn request_hits_layout_cache() {
         let mut env = TextEnv::new();
         let (shapes, layouts) = (shape_count(), layout_count());
@@ -414,7 +413,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(debug_assertions)] // the shape/layout counters are debug-only
     fn width_change_relayouts_without_reshape() {
         let mut env = TextEnv::new();
         let (shapes, layouts) = (shape_count(), layout_count());
@@ -424,7 +422,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(debug_assertions)] // the shape/layout counters are debug-only
     fn census_counts() {
         let mut env = TextEnv::new();
         layout_for_test(&mut env, "hello", &style(), &[], None);
