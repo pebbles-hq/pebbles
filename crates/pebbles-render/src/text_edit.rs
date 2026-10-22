@@ -351,11 +351,69 @@ pub fn store_lines(id: u64, table: Rc<LineTable>) {
     });
 }
 
-/// Drop a field's published layout (on unmount / password).
+/// Drop a field's published layout (on unmount / password) and its IME caret.
 pub fn clear(id: u64) {
     LAYOUTS.with(|m| {
         m.borrow_mut().remove(&id);
     });
+    clear_ime_caret(id);
+}
+
+// ---------------------------------------------------------------------------
+// IME candidate-window position (03b §3.10, E17)
+// ---------------------------------------------------------------------------
+
+/// The focused editor's caret in window coordinates (logical px), and whether it changed since
+/// the shell last consumed it.
+struct ImeCaret {
+    id: u64,
+    rect: Rect,
+    dirty: bool,
+}
+
+thread_local! {
+    static IME_CARET: RefCell<Option<ImeCaret>> = const { RefCell::new(None) };
+}
+
+/// Publish the focused editor `id`'s caret rect in window coordinates (logical px). A rect equal
+/// to the published one is not a change.
+pub fn set_ime_caret(id: u64, rect: Rect) {
+    IME_CARET.with(|c| {
+        let mut c = c.borrow_mut();
+        let changed = c.as_ref().is_none_or(|cur| cur.id != id || cur.rect != rect);
+        if changed {
+            *c = Some(ImeCaret { id, rect, dirty: true });
+        }
+    });
+}
+
+/// Drop `id`'s IME caret (blur / unmount); another editor's caret is left alone.
+pub fn clear_ime_caret(id: u64) {
+    IME_CARET.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.as_ref().is_some_and(|cur| cur.id == id) {
+            *c = None;
+        }
+    });
+}
+
+/// The published IME caret rect (window coordinates, logical px), if an editor is focused.
+pub fn ime_caret() -> Option<Rect> {
+    IME_CARET.with(|c| c.borrow().as_ref().map(|cur| cur.rect))
+}
+
+/// The IME caret if it changed since the last call (the shell positions the OS candidate window
+/// only then, right after painting the window the editor lives in).
+pub fn take_ime_caret_update() -> Option<Rect> {
+    IME_CARET.with(|c| {
+        c.borrow_mut().as_mut().and_then(|cur| std::mem::replace(&mut cur.dirty, false).then_some(cur.rect))
+    })
+}
+
+/// Debug census: number of published IME carets (0 or 1).
+#[cfg(debug_assertions)]
+pub fn ime_caret_census() -> usize {
+    IME_CARET.with(|c| usize::from(c.borrow().is_some()))
 }
 
 /// The published whole-content layout for `id`, if any (tests + tooling; `Rc` identity
@@ -666,4 +724,24 @@ pub fn word_at(id: u64, x: f64, y: f64) -> Option<(usize, usize)> {
 pub fn extend_to(id: u64, a: usize, _f: usize, x: f64, y: f64) -> Option<(usize, usize)> {
     with_text(id, |l| (a, l.hit(x as f32, y as f32).0))
         .or_else(|| with_lines(id, |t| (a, lines_hit(t, x, y))))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ime_caret_round_trip() {
+        let r = Rect::new(10.0, 20.0, 11.5, 38.0);
+        set_ime_caret(7, r);
+        assert_eq!(ime_caret(), Some(r));
+        assert_eq!(take_ime_caret_update(), Some(r));
+        assert_eq!(take_ime_caret_update(), None, "unchanged: nothing to apply");
+        set_ime_caret(7, r);
+        assert_eq!(take_ime_caret_update(), None, "the same rect is not a change");
+        clear_ime_caret(8);
+        assert_eq!(ime_caret_census(), 1, "another id does not clear it");
+        clear(7);
+        assert_eq!((ime_caret(), ime_caret_census()), (None, 0));
+    }
 }

@@ -294,6 +294,10 @@ impl Runner {
         let t = Instant::now();
         self.scene.reset();
         let corrective = self.ui.paint(&mut self.text, &mut self.scene);
+        // The focused editor's caret moved: put the OS IME candidate window under it (03b E17).
+        if let Some(caret) = pebbles_render::text_edit::take_ime_caret_update() {
+            place_ime(&active.window, caret, scale);
+        }
         // F2: overlay the inspector outline (logical space, before the DPI scale).
         if self.inspect_mode
             && let Some(r) = self.inspect_rect
@@ -480,6 +484,9 @@ impl Runner {
 
         self.scene.reset();
         let corrective = w.ui.paint(&mut self.text, &mut self.scene);
+        if let Some(caret) = pebbles_render::text_edit::take_ime_caret_update() {
+            place_ime(&w.window, caret, scale);
+        }
         self.frame.reset();
         self.frame.append(&self.scene, Some(Affine::scale(scale)));
         self.text.finish_frame();

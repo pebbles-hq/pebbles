@@ -190,6 +190,24 @@ impl RenderTextField {
     }
 }
 
+impl RenderTextField {
+    /// Publish the caret in window coordinates for the OS IME candidate window (03b E17), or
+    /// drop it when unfocused. `offset` is this field's absolute paint offset.
+    fn publish_ime_caret(&self, offset: Offset) {
+        if !self.focused {
+            crate::text_edit::clear_ime_caret(self.field_id);
+            return;
+        }
+        let (caret, _, _) = self.composed_meta();
+        let local = match (&self.table, &self.cached) {
+            (Some(table), _) => table.caret_rect(caret, 1.5),
+            (None, Some(layout)) => layout.caret_rect(caret, Affinity::Downstream, 1.5),
+            (None, None) => return,
+        };
+        crate::text_edit::set_ime_caret(self.field_id, local + offset);
+    }
+}
+
 /// The result of [`RenderTextField::composed`]: the display string plus the geometry
 /// hints paint needs (caret position, preedit underline range).
 struct Composed {
@@ -203,6 +221,9 @@ struct Composed {
 
 impl RenderObject for RenderTextField {
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
+        if !self.focused {
+            crate::text_edit::clear_ime_caret(self.field_id);
+        }
         // Multi-line content takes the LINE-TABLE path (P5): per-line shaped
         // layouts through the window cache — a keystroke re-shapes ONE line.
         // Single-line fields, passwords, the placeholder, and unbounded widths
@@ -256,6 +277,7 @@ impl RenderObject for RenderTextField {
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
+        self.publish_ime_caret(offset);
         if let Some(table) = &self.table {
             let table = table.clone();
             self.paint_lines(cx, offset, &table);

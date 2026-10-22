@@ -1184,14 +1184,8 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             }
 
             // IME composition (CJK, dead keys). Preedit = the in-progress underline;
-            // Commit = the finished text, inserted like a normal keystroke.
-            //
-            // DEFERRED: `window.set_ime_cursor_area(..)` (which positions the OS candidate
-            // window at the caret) is not called — the focused editor's caret rect in window
-            // coordinates isn't plumbed to the shell. Caret geometry lives in the widget layer
-            // (the text-edit layout registry, keyed by instance id) and is never published in
-            // window space, so the shell has no rect to hand winit. The candidate window falls
-            // back to winit's default position until that geometry is surfaced (a follow-up).
+            // Commit = the finished text, inserted like a normal keystroke. The candidate window
+            // follows the focused editor's caret (`place_ime`, after each paint).
             WindowEvent::Ime(ime) => {
                 let handled = match ime {
                     Ime::Preedit(text, _cursor) => self.ui.dispatch_key(KeyInput::Preedit(text)),
@@ -1383,4 +1377,15 @@ pub(super) fn gpu_log(level: pebbles_foundation::log::Level, line: &str) {
     }
     #[cfg(not(target_family = "wasm"))]
     let _ = Level::Error;
+}
+
+/// Put the OS IME candidate window under `caret` (window coordinates, logical px): winit's
+/// cursor area on desktop, the hidden input on the web (03b §3.10, E17).
+fn place_ime(window: &Window, caret: kurbo::Rect, scale: f64) {
+    let pos = PhysicalPosition::new(caret.x0 * scale, caret.y0 * scale);
+    let size =
+        winit::dpi::PhysicalSize::new((caret.width() * scale).max(1.0), (caret.height() * scale).max(1.0));
+    window.set_ime_cursor_area(pos, size);
+    #[cfg(target_family = "wasm")]
+    crate::web_ime::place(caret);
 }

@@ -187,3 +187,16 @@ pub(crate) fn sync_focus() {
         }
     });
 }
+
+/// Move the hidden input to the caret (logical px) so the browser's IME candidate window opens
+/// beside the text being composed (03b E17).
+pub(crate) fn place(caret: kurbo::Rect) {
+    IME.with(|i| {
+        if let Some(ime) = i.borrow().as_ref() {
+            let style = ime.input.style();
+            let _ = style.set_property("left", &format!("{}px", caret.x0));
+            let _ = style.set_property("top", &format!("{}px", caret.y0));
+            let _ = style.set_property("height", &format!("{}px", caret.height().max(1.0)));
+        }
+    });
+}
