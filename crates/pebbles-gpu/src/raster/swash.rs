@@ -65,6 +65,33 @@ struct RasterFont {
 }
 
 /// The glyph rasterizer: one swash `ScaleContext` plus one reused scratch image.
+/// Largest atlas glyph box per side (px). Atlas glyphs are at most `MAX_ATLAS_GLYPH_PX` per em
+/// (larger sizes take the outline route, 02 §7.5); a real glyph stays within a few em even with
+/// swashes or stacked marks, so 4 em is generous. A malformed outline can claim tens of
+/// thousands of px for a 5 px glyph — found by the S32 fuzzer — and would otherwise allocate
+/// and fill a mask of hundreds of megapixels; it is skipped instead.
+pub(crate) const MAX_RASTER_GLYPH_PX: u32 = 4 * crate::limits::MAX_ATLAS_GLYPH_PX;
+
+/// The pixel box of a glyph outline of `w` × `h`, or `None` beyond [`MAX_RASTER_GLYPH_PX`].
+fn glyph_box(w: f64, h: f64) -> Option<(u32, u32)> {
+    let max = f64::from(MAX_RASTER_GLYPH_PX);
+    if !(w <= max && h <= max) {
+        return None; // NaN fails the comparison too
+    }
+    Some((
+        crate::prepare::num::ceil_px(w, MAX_RASTER_GLYPH_PX)?,
+        crate::prepare::num::ceil_px(h, MAX_RASTER_GLYPH_PX)?,
+    ))
+}
+
+/// What [`GlyphRaster::decode`] left in the scratch buffers.
+enum Decoded {
+    /// A color strike decoded at this ppem into `scratch`.
+    Strike(u16),
+    /// An outline in `outline`, to be shifted right by this many px.
+    Outline(f64),
+}
+
 pub(crate) struct GlyphRaster {
     frame: u64,
     ctx: ScaleContext,
@@ -77,6 +104,9 @@ pub(crate) struct GlyphRaster {
     /// Premultiplied strike bytes, then their box-downscaled copy (R23).
     color: Vec<u8>,
     down: Vec<u8>,
+    /// Faces whose decoding panicked inside the font stack (malformed tables): skipped from
+    /// then on, logged once each.
+    poisoned: std::collections::HashSet<(u64, u32)>,
 }
 
 /// What to rasterize.
@@ -120,6 +150,7 @@ impl Default for GlyphRaster {
             mask: super::coverage::MaskBuf::default(),
             color: Vec::new(),
             down: Vec::new(),
+            poisoned: std::collections::HashSet::new(),
         }
     }
 }
@@ -127,7 +158,36 @@ impl Default for GlyphRaster {
 impl GlyphRaster {
     /// Rasterize one glyph. `None` when the font cannot be parsed or swash has no
     /// representation for the glyph.
+    ///
+    /// A malformed face can panic inside the font stack (e.g. read-fonts 0.41 indexing an empty
+    /// glyf flag array, found by the S33 mutation loop): the panic is contained here, the glyph
+    /// is skipped and the face is never decoded again — a bad font costs its glyphs, never the
+    /// app.
     pub(crate) fn rasterize(&mut self, req: &RasterRequest<'_>) -> Option<RasterGlyph<'_>> {
+        let id = (req.font.data.id(), req.font.index);
+        if self.poisoned.contains(&id) {
+            return None;
+        }
+        // Only the font-stack work (table parsing, strike decode, outline scaling) runs inside
+        // the boundary; it fills our scratch buffers and returns an owned result, so the glyph
+        // is decoded once and the borrowed RasterGlyph is built outside.
+        let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.decode(req)));
+        match decoded {
+            Ok(Some(Decoded::Strike(ppem))) => self.strike(ppem, req),
+            Ok(Some(Decoded::Outline(dx))) => self.outline_mask(dx),
+            Ok(None) => None,
+            Err(_) => {
+                self.poisoned.insert(id);
+                self.fonts.remove(&id);
+                crate::diag::warn_once_font_panic(id.0);
+                None
+            }
+        }
+    }
+
+    /// Decode `req` through the font stack into `self.scratch` (a color strike) or
+    /// `self.outline` (an outline shifted by the returned `dx`).
+    fn decode(&mut self, req: &RasterRequest<'_>) -> Option<Decoded> {
         let bytes: &[u8] = req.font.data.data();
         let id = (req.font.data.id(), req.font.index);
         let entry = match self.fonts.entry(id) {
@@ -150,7 +210,7 @@ impl GlyphRaster {
                 req.glyph_id,
                 &mut self.scratch,
             ) {
-                return self.strike(ppem, req);
+                return Some(Decoded::Strike(ppem));
             }
         }
         let mut scaler = self
@@ -164,7 +224,7 @@ impl GlyphRaster {
         if !scaler.scale_outline_into(req.glyph_id, &mut self.outline) {
             return None;
         }
-        self.outline_mask(f64::from(dx))
+        Some(Decoded::Outline(f64::from(dx)))
     }
 
     /// The strike in `self.scratch` (decoded at `ppem`) premultiplied; box-downscaled to the
@@ -224,8 +284,7 @@ impl GlyphRaster {
         use kurbo::Shape as _;
         let b = self.path.bounding_box();
         let (x0, y0) = (b.x0.floor(), b.y0.floor());
-        let w = crate::prepare::num::ceil_px(b.x1 - x0, u32::from(u16::MAX))?;
-        let h = crate::prepare::num::ceil_px(b.y1 - y0, u32::from(u16::MAX))?;
+        let (w, h) = glyph_box(b.x1 - x0, b.y1 - y0)?;
         let shift = kurbo::Affine::translate((-x0, -y0));
         let clip = crate::prepare::ScissorRect { x0: 0, y0: 0, x1: w, y1: h };
         let placed =
@@ -329,6 +388,14 @@ mod tests {
         let regular = coverage_sum(&mut raster, &font, &coords_for(400.0));
         let bold = coverage_sum(&mut raster, &font, &coords_for(700.0));
         assert!(bold > regular, "bold {bold} <= regular {regular}");
+    }
+
+    #[test]
+    fn oversized_glyph_box_is_refused() {
+        assert_eq!(glyph_box(30.0, 40.0), Some((30, 40)));
+        assert!(glyph_box(1024.0, 1024.0).is_some());
+        assert_eq!(glyph_box(25_635.4, 26_015.8), None, "the fuzzer's malformed 5 px glyph");
+        assert_eq!(glyph_box(f64::NAN, 10.0), None);
     }
 
     fn rasterize_h(raster: &mut GlyphRaster, font: &peniko::FontData) {

@@ -70,6 +70,33 @@ pub(crate) fn split_paragraphs(text: &str) -> Vec<Para> {
     paras
 }
 
+/// `ShapeLine::new`, with a malformed font's panic inside the font stack contained (e.g.
+/// cosmic-text 0.19 `expect`ing that a shaped glyph id fits u16, found by the S33 mutation
+/// loop): the paragraph then shapes as empty — no glyphs, text still addressable — and a warning
+/// is logged once. A bad font costs its text, never the app.
+fn shape_line_contained(
+    fonts: &mut FontRegistry,
+    line: &str,
+    attrs: &AttrsList,
+    tab_width: u16,
+) -> ShapeLine {
+    let shaped = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        ShapeLine::new(fonts.font_system(), line, attrs, Shaping::Advanced, tab_width)
+    }));
+    shaped.unwrap_or_else(|_| {
+        thread_local! {
+            static WARNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+        }
+        if !WARNED.with(|w| w.replace(true)) {
+            pebbles_foundation::log::warn(
+                pebbles_foundation::log::Cat::General,
+                "a malformed font panicked while shaping; that text renders empty".to_string(),
+            );
+        }
+        ShapeLine::new(fonts.font_system(), "", attrs, Shaping::Advanced, tab_width)
+    })
+}
+
 /// The character standing in for an inline placeholder.
 pub(crate) const OBJECT_REPLACEMENT: &str = "\u{FFFC}";
 
@@ -190,7 +217,7 @@ pub(crate) fn shape_text(
             };
             let line = if placeholder { " " } else { &text[p.range.clone()] };
             super::count_shape();
-            let mut shape = ShapeLine::new(fonts.font_system(), line, &attrs, Shaping::Advanced, tab_width);
+            let mut shape = shape_line_contained(fonts, line, &attrs, tab_width);
             if !placeholder {
                 apply_placeholder_advances(&mut shape, text, p.range.start, spec);
                 apply_variation_advances(fonts, &mut shape, p.range.start, spec, spans);

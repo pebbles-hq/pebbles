@@ -130,9 +130,18 @@ impl FontRegistry {
     /// Bundled faces (renamed to their builtin family) + `App::font` faces, generics mapped
     /// to bundled families. No I/O.
     pub(crate) fn new_bundled(user_fonts: &[&'static [u8]], locale: String) -> FontRegistry {
+        Self::build(true, user_fonts, locale)
+    }
+
+    /// A registry with no faces at all (fuzzing: only the bytes under test, S31).
+    pub(crate) fn empty() -> FontRegistry {
+        Self::build(false, &[], "en-US".into())
+    }
+
+    fn build(builtins: bool, user_fonts: &[&'static [u8]], locale: String) -> FontRegistry {
         let mut db = fontdb::Database::new();
         let mut faces = HashMap::new();
-        for (family, bytes) in crate::fonts::builtin_fonts() {
+        for (family, bytes) in crate::fonts::builtin_fonts().iter().filter(|_| builtins) {
             if load(&mut db, &mut faces, bytes, Some(family)) == 0 {
                 pebbles_foundation::log::warn(
                     pebbles_foundation::log::Cat::General,
@@ -477,6 +486,7 @@ impl FontRegistry {
     }
 
     /// Census: faces in the database.
+    #[cfg_attr(not(debug_assertions), allow(dead_code))] // read by the debug census
     pub(crate) fn faces_len(&self) -> usize {
         self.system.db().len()
     }

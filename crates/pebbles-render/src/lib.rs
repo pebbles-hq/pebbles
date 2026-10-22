@@ -14,6 +14,8 @@
 //! All render objects live in a single [`RenderTree`] arena keyed by generational
 //! [`RenderId`]s, traversed through [`LayoutCx`] / [`PaintCx`]. See [`tree`] for why.
 
+#[doc(hidden)]
+pub mod __fuzz;
 pub mod constraints;
 pub mod decoration;
 pub mod direction;

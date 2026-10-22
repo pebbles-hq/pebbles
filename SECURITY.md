@@ -51,6 +51,24 @@ boundary. What is in scope:
   Guards are a navigation-flow tool, **not** an auth boundary — protected data
   must be authorized server-side (see `router::add_guard`).
 
+### Renderer & fonts
+
+- **Fonts are trusted input in this release.** Bundled fonts, fonts registered with
+  `App::font` / `fonts::register_user_font`, and fonts installed on the user's machine are parsed by
+  `fontdb` (ttf-parser), shaped by `cosmic-text` (harfrust/skrifa) and rasterized by `swash`. An
+  application that registers font bytes obtained at runtime from an untrusted source accepts that
+  parser risk. The font pipeline is fuzzed (`fuzz/`, weekly) and mutation-tested on every CI run.
+- **Text and images are untrusted content.** Text of any length or script must not crash or hang the
+  renderer. Images are bounded at decode (32 MB compressed, 16 384 px per side) and again on the GPU
+  (downscaled to the device texture limit and a per-image byte cap; the image cache is LRU-bounded).
+- **GPU allocations are capped.** Every allocation whose size content can influence (images, layer
+  targets, geometry buffers, capture) is bounded by the device limits and fixed budgets; out-of-memory
+  is recovered (evict + retry) or degraded, never a crash.
+- **Shaders are static.** All WGSL is compiled from files embedded at build time; no shader source is
+  built at runtime.
+- **GPU failures are survivable.** Device loss and surface loss rebuild the GPU state; a renderer
+  validation error is a bug and fails CI.
+
 Out of scope: anything requiring the attacker to already run code as the user —
 they control the process either way, *including its environment*, so a file sink
 like `PEBBLES_LOG_FILE=<path>` (which truncates an arbitrary path with the
@@ -72,3 +90,5 @@ report an issue in any of them through this same advisory process.
 | Secrets in git history | Gitleaks → Code Scanning |
 | Repository security posture | OpenSSF Scorecard |
 | Action pinning | every action pinned to a full commit SHA |
+| Font pipeline fuzzing | cargo-fuzz (weekly) + seeded mutation tests (every CI run) |
+| Renderer validation | PEBBLES_GPU_STRICT=1 in every GPU lane |

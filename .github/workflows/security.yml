@@ -8,6 +8,8 @@ on:
   schedule:
     # Daily at 02:00 UTC — catches newly published advisories without a push.
     - cron: "0 2 * * *"
+    # Weekly, Sunday 03:00 UTC — the font fuzzers (job fuzz-fonts).
+    - cron: "0 3 * * 0"
   workflow_dispatch:
 
 # Minimal default token scope; jobs that upload SARIF escalate themselves.
@@ -149,3 +151,34 @@ jobs:
         # `rustup default nightly`, so without it cargo resolves to stable —
         # where miri is not installed — and the job dies before running a test.
         run: cargo +nightly miri test -p pebbles-core --lib
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Font-pipeline fuzzing (11 S34) — the isolated cargo-fuzz crate (fuzz/, S32)
+  # plus the long seeded mutation loop (S33). Weekly and on demand, NON-blocking:
+  # a crash is triaged into an issue and a fixed S33 regression case.
+  # ───────────────────────────────────────────────────────────────────────────
+  fuzz-fonts:
+    name: Font fuzzing (weekly)
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && github.event.schedule == '0 3 * * 0')
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - name: Install nightly
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: nightly
+      - run: cargo install cargo-fuzz --locked
+      - name: Seed the font corpus from the bundled fonts
+        run: mkdir -p fuzz/corpus/font_bytes && cp crates/pebbles-render/assets/fonts/*.ttf fuzz/corpus/font_bytes/
+      # `+nightly`: rust-toolchain.toml pins stable (see the miri job).
+      - run: cargo +nightly fuzz run font_bytes -- -max_total_time=600 -timeout=10
+      - run: cargo +nightly fuzz run text_layout -- -max_total_time=600 -timeout=10
+      - run: cargo test -p pebbles-gpu --release --test font_mutation -- --ignored
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/

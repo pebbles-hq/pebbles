@@ -17,6 +17,8 @@
 #![warn(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 #![cfg_attr(not(test), warn(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unreachable))]
 
+#[doc(hidden)]
+pub mod __fuzz;
 mod budgets;
 mod census;
 mod context;

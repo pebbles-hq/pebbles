@@ -60,6 +60,21 @@ pub(crate) fn stderr_line(line: &str) {
     web_sys::console::info_1(&format!("pebbles: {line}").into());
 }
 
+/// Log once per face that a malformed font panicked inside the font stack (its glyphs are skipped).
+pub(crate) fn warn_once_font_panic(blob_id: u64) {
+    thread_local! {
+        static SEEN: std::cell::RefCell<std::collections::HashSet<u64>> = std::cell::RefCell::default();
+    }
+    if SEEN.with(|s| s.borrow_mut().insert(blob_id)) {
+        pebbles_foundation::log::warn(
+            pebbles_foundation::log::Cat::Gpu,
+            format!(
+                "font {blob_id:#x}: malformed glyph data panicked in the font parser; its glyphs are skipped"
+            ),
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

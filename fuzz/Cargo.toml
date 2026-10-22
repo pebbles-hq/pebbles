@@ -1,0 +1,32 @@
+[package]
+name = "pebbles-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# Until Phase 7 pebbles-render needs a backend feature; drop default-features/features at X02.
+pebbles-render = { path = "../crates/pebbles-render", default-features = false, features = ["wgpu"] }
+pebbles-gpu = { path = "../crates/pebbles-gpu" }
+
+[[bin]]
+name = "font_bytes"
+path = "fuzz_targets/font_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "text_layout"
+path = "fuzz_targets/text_layout.rs"
+test = false
+doc = false
+bench = false
+
+# Its own workspace: libfuzzer-sys never enters the main Cargo.lock / cargo-deny graph.
+[workspace]
+members = ["."]
