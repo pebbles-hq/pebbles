@@ -83,7 +83,12 @@ that touch the OS in a platform-specific way have restrictions:
    Space Grotesk, Lora, plus any you register with `App::font`) **and** the bundled
    **Tabler** icon set (~5100 outline `tabler::*` + ~1050 filled `tabler::filled::*`,
    which replaced the previous Lucide set) are compiled in and render on every platform.
-   Only *system-font discovery* is desktop-only for now. **Icon binary-size footgun:**
+   Only *system-font discovery* is desktop-only. **Web text:** the web renders the bundled
+   families (plus `App::font`) only; the CSS generics `"monospace"`, `"serif"` and
+   `"sans-serif"` (and `system-ui`, `ui-monospace`, …) resolve to JetBrains Mono, Lora and
+   Inter on every platform, and scripts the bundled fonts don't cover (Hebrew, Arabic, CJK,
+   emoji) need a covering font registered with `App::font`. The text locale comes from
+   `navigator.language`. **Icon binary-size footgun:**
    naming a glyph by its `const` (`tabler::CAMERA`) lets the linker drop every icon you
    don't reference; calling `tabler::by_name` or iterating `tabler::ALL` links the whole
    ~6,184-glyph table into the binary (the lookup can reach any of them), so use `by_name`
