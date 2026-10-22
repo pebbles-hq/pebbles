@@ -6,6 +6,28 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — text stack: Parley → cosmic-text
+Text now shapes and lays out with cosmic-text 0.19 on every backend; carets, selection, hit-testing and keyboard motion run on Pebbles' own geometry over the new `TextLayout`.
+
+**Changed**
+- `TextEnv::new()` no longer scans system fonts (bundled + `App::font` faces only, identical on every OS); use `TextEnv::with_system_fonts` for OS fonts.
+- Generic families map to bundled families everywhere: `monospace` → JetBrains Mono, `serif` → Lora, `sans-serif` / `system-ui` → Inter.
+- A TAB is a space-advance tab stop (`ParagraphStyle::tab_width`, default 1 = one monospace column), not a `.notdef` box.
+- A wrap-width change relayouts without reshaping; shaped words are cached across lines.
+- Baselines and line tops are fractional (no longer pixel-snapped from y = −1); CRLF and U+0085 are single paragraph breaks; a grapheme cluster is one caret unit; Up/Down past the first/last line go to the text start/end; double-clicking whitespace selects the whitespace.
+- The IME candidate window follows the caret of the focused text field.
+
+**Added**
+- `SystemFonts`, `TextEnv::{with_system_fonts, poll_fonts, layout_cache_len, font_generation, census}`, `TextLayout`, `TextCensus`, `text::Affinity`.
+- `ParagraphStyle::tab_width`, `Text::tab_width`, `RichText::tab_width`.
+- `text_edit::{caret_rect, set_ime_caret, clear_ime_caret, ime_caret}`.
+
+**Breaking**
+- The `TextEnv::fonts` / `TextEnv::layout` Parley fields and `fonts::FontBlob` are removed.
+- `text_edit::get` returns and `text_edit::store` takes `Rc<TextLayout>` (`text_edit::store_text` is a deprecated alias for one release).
+
+**Migration:** code that needs OS fonts builds its `TextEnv` with `TextEnv::with_system_fonts(SystemFonts::Background)` (the runner already does; capture uses `Blocking`); code that read the Parley fields or `fonts::FontBlob` uses the `TextEnv` methods listed under **Added** (`register_font` for runtime fonts).
+
 ### Added — layer effects (wgpu renderer)
 wgpu renderer: blur, backdrop filter, color matrix, dilate/erode and perspective layers (`Painter::push_effect_layer`, `push_backdrop_filter`, `push_projected_layer`; `Transform::matrix4`).
 
