@@ -159,7 +159,7 @@ impl LineTable {
         }
         let l = &self.lines[i];
         let text = if l.empty { " " } else { &self.display[l.start..l.start + l.len] };
-        // Paragraph-direction start alignment (Parley `Alignment::Start` parity, 03 §3.5.1).
+        // Paragraph-direction start alignment (the pre-swap `Alignment::Start` behavior, 03 §3.5.1).
         let params = LayoutParams {
             width: Some(self.shape.width as f32),
             wrap: true,
@@ -338,7 +338,7 @@ pub fn store(id: u64, layout: Rc<TextLayout>) {
     });
 }
 
-/// Former name of [`store`] while Parley and cosmic-text layouts coexisted (03b E11).
+/// Former name of [`store`] during the text-engine swap (03b E11).
 #[deprecated(note = "use `text_edit::store`")]
 pub fn store_text(id: u64, layout: Rc<TextLayout>) {
     store(id, layout);

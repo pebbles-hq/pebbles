@@ -189,7 +189,7 @@ fn vertical(layout: &TextLayout, a: usize, f: usize, extend: bool, up: bool) -> 
     }
     let i = layout.line_for(f, Affinity::Downstream);
     let target = if up { i.checked_sub(1) } else { Some(i + 1).filter(|&j| j < layout.lines.len()) };
-    // Past the first / last line: the text's start / end (Parley, Flutter).
+    // Past the first / last line: the text's start / end (the pre-swap build, Flutter).
     let Some(t) = target else { return apply(a, if up { 0 } else { text.len() }, extend) };
     let x = layout.caret_rect(f, Affinity::Downstream, 0.0).x0 as f32;
     let line = &layout.lines[t];

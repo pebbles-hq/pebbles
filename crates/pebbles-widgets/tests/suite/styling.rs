@@ -101,7 +101,7 @@ fn text_style_props_lay_out_and_paint() {
     ui.mount_root(View::new(palette::WHITE, component(styled_text)).into_widget());
     ui.layout(&mut env, Size::new(160.0, 200.0)); // narrow → wraps
     let mut scene = pebbles_render::Scene::new();
-    ui.paint(&mut env, &mut scene); // must not panic with the parley style props set
+    ui.paint(&mut env, &mut scene); // must not panic with every text style prop set
 }
 
 fn styled_card() -> impl IntoWidget {

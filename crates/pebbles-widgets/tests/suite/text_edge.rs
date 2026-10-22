@@ -1,6 +1,6 @@
 //! Text shaping on hostile input: a right-to-left script, an emoji / ZWJ grapheme
 //! cluster, and a very large single paragraph must all lay out + paint through the
-//! parley path without panicking, and produce non-zero laid-out bounds. The
+//! text layout path without panicking, and produce non-zero laid-out bounds. The
 //! assertion is deliberately "shapes, sizes, paints" — the point is exercising the
 //! shaping path on inputs that trip naive byte/char handling, not pixel-checking
 //! the glyphs.

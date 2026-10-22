@@ -1,5 +1,5 @@
 //! Pebbles text styles -> cosmic-text attributes (03 §3.5): sanitized specs, layered span
-//! flattening (a later span wins per property, Parley parity) and the shape-cache hash
+//! flattening (a later span wins per property, pre-swap parity) and the shape-cache hash
 //! (§3.8; colors, width and alignment never enter it).
 
 #![allow(dead_code)] // paragraphs and fields shape through this from T10/T22.

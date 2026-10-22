@@ -65,7 +65,7 @@ pub struct RenderFlex {
     /// Affects a Column's main axis and a Row's cross axis.
     pub vertical_direction: VerticalDirection,
     /// The baseline to align on when `cross_axis_alignment == Baseline`
-    /// (alphabetic vs ideographic — parley's baseline serves both today).
+    /// (alphabetic vs ideographic — the layout's alphabetic baseline serves both today).
     pub text_baseline: TextBaseline,
 }
 

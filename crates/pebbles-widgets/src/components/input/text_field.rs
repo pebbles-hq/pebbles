@@ -479,7 +479,7 @@ fn pure_word_right(s: &str, mut i: usize) -> usize {
     i
 }
 
-/// Resolve a caret/selection motion, preferring the layout (parley handles bidi,
+/// Resolve a caret/selection motion, preferring the layout (it handles bidi,
 /// clusters and multiline) and falling back to pure logic when none is published.
 fn resolve_motion(
     id: u64,
@@ -804,7 +804,7 @@ fn render_field(p: &Props) -> AnyWidget {
         id: focus.raw_id(),
         multiline: p.multiline,
     };
-    // Release the field's published parley layout when it unmounts (E6a): the
+    // Release the field's published text layout when it unmounts (E6a): the
     // render object stores it every layout pass keyed by `ed.id`, and nothing
     // else clears it — a text field unmounted while holding text would otherwise
     // keep its glyph runs alive forever.

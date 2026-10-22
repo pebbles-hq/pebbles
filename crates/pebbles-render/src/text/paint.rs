@@ -103,7 +103,7 @@ pub(crate) fn paint_into(
     }
 }
 
-/// Underline / strikethrough rects of one line (§3.9.5, Parley formulas; never rounded).
+/// Underline / strikethrough rects of one line (§3.9.5, the pre-swap formulas; never rounded).
 fn paint_decorations(
     scene: &mut Painter<'_>,
     visible: Rect,

@@ -1,6 +1,6 @@
 //! Text editing polish (checklist 1.2): the caret blinks (~2 Hz) while the field
 //! is focused and stays solid while composing; multiline Up/Down keep the caret's
-//! column (parley's affinity-based vertical navigation), proven by inserting a
+//! column (affinity-based vertical navigation), proven by inserting a
 //! character after the move and asserting where it landed.
 
 use std::cell::RefCell;

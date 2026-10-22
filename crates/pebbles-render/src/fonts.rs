@@ -2,13 +2,12 @@
 //!
 //! Every [`TextEnv`](crate::TextEnv) registers a small set of OFL-licensed
 //! families embedded in the binary (see `assets/fonts/`) **plus** the fonts
-//! installed on the host, discovered through parley/fontique. Query them with
-//! [`available_families`]/[`has_family`], and apply one to text with
+//! installed on the host when the environment scans them (see
+//! `TextEnv::with_system_fonts`). Query them with [`available_families`]/[`has_family`], and
+//! apply one to text with
 //! `Style::font_family(...)` / `ParagraphStyle::font_family(...)`.
 
 use std::sync::{OnceLock, RwLock};
-
-use parley::fontique::{Blob, FontInfoOverride};
 
 /// The families embedded in the binary (SIL OFL 1.1 — licenses in
 /// `assets/fonts/*-OFL.txt`). Registered in this order, so they take
@@ -39,17 +38,6 @@ pub fn builtin_fonts() -> &'static [(&'static str, &'static [u8])] {
     &BUILTIN_FONTS
 }
 
-/// Registers every built-in face into the given font context, overriding the
-/// metadata family name so lookups by [`BUILTIN_FAMILIES`] always resolve.
-pub(crate) fn apply_builtins(fonts: &mut parley::FontContext) {
-    for (family, bytes) in builtin_fonts() {
-        fonts.collection.register_fonts(
-            Blob::new(std::sync::Arc::new(bytes.to_vec())),
-            Some(FontInfoOverride { family_name: Some(family), ..Default::default() }),
-        );
-    }
-}
-
 /// User fonts registered via `App::font` (F4): raw `'static` bytes, applied by every
 /// [`TextEnv`](crate::TextEnv) so all windows (each own a `TextEnv`) see the family.
 static USER_FONTS: OnceLock<RwLock<Vec<&'static [u8]>>> = OnceLock::new();
@@ -69,14 +57,6 @@ pub fn register_user_font(bytes: &'static [u8]) {
 /// The `App::font` bytes registered so far (each `TextEnv` builds its registry from them).
 pub(crate) fn user_fonts_snapshot() -> Vec<&'static [u8]> {
     user_fonts().read().expect("user-font registry lock poisoned (a prior panic held it)").clone()
-}
-
-/// Apply every registered user font into a fresh font context.
-pub(crate) fn apply_user_fonts(fonts: &mut parley::FontContext) {
-    for bytes in user_fonts().read().expect("user-font registry lock poisoned (a prior panic held it)").iter()
-    {
-        fonts.collection.register_fonts(Blob::new(std::sync::Arc::new(bytes.to_vec())), None);
-    }
 }
 
 /// Last known family snapshot (built-ins first, then system families sorted).
@@ -119,7 +99,3 @@ pub fn has_family(name: &str) -> bool {
 pub fn is_builtin(name: &str) -> bool {
     BUILTIN_FAMILIES.iter().any(|f| f.eq_ignore_ascii_case(name))
 }
-
-/// Convenience re-export so [`TextEnv`](crate::TextEnv) callers don't need a
-/// direct parley dependency to register fonts.
-pub use parley::fontique::Blob as FontBlob;

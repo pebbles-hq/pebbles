@@ -1,5 +1,5 @@
 //! Laid-out text (03 §3.7): line breaking per paragraph through cosmic-text, cosmic's vertical
-//! metrics, Parley-parity measurement (trailing whitespace excluded, justified text measured
+//! metrics, pre-swap-parity measurement (trailing whitespace excluded, justified text measured
 //! unjustified, the empty last line of a text ending with a separator counted) and a common
 //! alignment width for unbounded multi-paragraph text.
 
@@ -123,7 +123,7 @@ struct ElidedShape {
 }
 
 /// ELIDE(i, k) (§3.7.4): the longest prefix of paragraph `i` that, followed by "…", lays out
-/// in at most `k` lines (binary search over char starts, Parley's algorithm per paragraph).
+/// in at most `k` lines (binary search over char starts, the pre-swap algorithm per paragraph).
 /// The prefix keeps its span attributes; the "…" takes the defaults.
 fn elide(
     shaped: &ShapedText,
@@ -160,7 +160,7 @@ fn elide(
     ElidedShape { para: i, cut: best, text, shape }
 }
 
-/// Width of `line` without its logically-trailing whitespace (Parley semantics).
+/// Width of `line` without its logically-trailing whitespace (pre-swap semantics).
 fn content_width(line: &LayoutLine, line_text: &str) -> f32 {
     let total: f32 = line.glyphs.iter().map(|g| g.w).sum();
     let mut glyphs: Vec<&cosmic_text::LayoutGlyph> = line.glyphs.iter().collect();
@@ -187,7 +187,7 @@ impl TextLayout {
     ) -> TextLayout {
         super::count_layout();
         // Justification only stretches the spaces of already-broken lines, so justified text is
-        // measured unjustified (Parley's width is the natural advance) and placed justified.
+        // measured unjustified (the pre-swap width is the natural advance) and placed justified.
         let justified = params.align == Some(cosmic_text::Align::Justified);
         let measure_align = if justified { None } else { params.align };
         let can_elide = params.ellipsis && !shaped.text.is_empty();
@@ -333,7 +333,7 @@ impl TextLayout {
     }
 
     /// Width = widest content; height = Σ line heights, including the empty last line of a text
-    /// that ends with a separator (Parley and Flutter both count it, §3.7.6).
+    /// that ends with a separator (the pre-swap build and Flutter both count it, §3.7.6).
     fn measure(&mut self) {
         let mut width: f32 = 0.0;
         for line in &self.lines {
@@ -406,7 +406,7 @@ impl TextLayout {
 
 /// (min, max) intrinsic widths of `shaped` (§3.7.7), from its ONE unbounded layout — no
 /// reshape. max = that layout's width; min = the widest run between spaces / NBSPs / line
-/// breaks (Flutter's `getMinIntrinsicWidth` notion, Parley parity), or max when that is 0.
+/// breaks (Flutter's `getMinIntrinsicWidth` notion, pre-swap parity), or max when that is 0.
 /// Memoized in `ShapedText::intrinsic`.
 #[allow(dead_code)] // RenderParagraph::intrinsic reads it from T22.
 pub(crate) fn intrinsic_widths(
@@ -505,7 +505,7 @@ mod tests {
 
     #[test]
     fn trailing_newline_height() {
-        // Three lines of 19.2: the empty last line counts (Parley pin 57.6; Flutter alike).
+        // Three lines of 19.2: the empty last line counts (oracle pin 57.6; Flutter alike).
         let l = lay("line1\nline2\n", &style("Inter", 16.0), None);
         assert!(near(l.height(), 57.6, 0.001), "{}", l.height());
         assert_eq!(l.line_count(), 3);

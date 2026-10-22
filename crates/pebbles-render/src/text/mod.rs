@@ -9,8 +9,6 @@
 //!   are cached by content hash and evicted by generation, only under pressure; a font-set
 //!   change clears them.
 //! - **No rasterization here.** Text produces glyph runs; the renderer owns the atlas (DR-07).
-//!
-//! The Parley `fonts`/`layout` fields remain for not-yet-ported consumers until T40.
 
 pub(crate) mod cache;
 pub(crate) mod fonts;
@@ -21,8 +19,8 @@ pub(crate) mod paint;
 pub(crate) mod shape;
 pub(crate) mod style;
 
-// Debug-only tally of shapes (E3): one per Parley layout that shapes, and one per cosmic-text
-// `ShapeLine::new`. Tests assert a stable string doesn't re-shape on a repeat layout.
+// Debug-only tally of shapes (E3): one per cosmic-text `ShapeLine::new`. Tests assert a
+// stable string does not re-shape on a repeat layout.
 #[cfg(debug_assertions)]
 thread_local! {
     static SHAPES: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
@@ -145,16 +143,10 @@ pub enum SystemFonts {
     Background,
 }
 
-/// Owns the mutable state parley needs to shape and lay out text: the font
-/// database/cache and the layout scratch context. One per window.
+/// Owns the mutable state text needs: the font registry, the line-breaking scratch and the
+/// shape / layout caches. One per runner (shared by its windows).
 pub struct TextEnv {
-    /// Font collection + cache. Discovers system fonts on construction.
-    pub fonts: parley::FontContext,
-    /// Reusable layout builder scratch space, parameterized by the brush type
-    /// used for glyph styling (we use [`peniko::Brush`]).
-    pub layout: parley::LayoutContext<peniko::Brush>,
-    /// The cosmic-text font registry (03 §3.3); shaping moves onto it in Track T, while the
-    /// Parley fields above stay for not-yet-ported consumers until T40.
+    /// The cosmic-text font registry (03 §3.3).
     registry: fonts::FontRegistry,
     /// cosmic-text line-breaking scratch, reused by every layout (03 §3.8).
     scratch: cosmic_text::ShapeBuffer,
@@ -182,8 +174,8 @@ impl Default for TextEnv {
 }
 
 impl TextEnv {
-    /// Creates a text environment with the bundled families registered and
-    /// the host's system fonts discovered.
+    /// A text environment with the bundled + `App::font` faces only (deterministic on every
+    /// OS; tests). Apps use [`with_system_fonts`](Self::with_system_fonts).
     pub fn new() -> Self {
         Self::with_registry(fonts::FontRegistry::new_bundled(
             &crate::fonts::user_fonts_snapshot(),
@@ -192,40 +184,16 @@ impl TextEnv {
     }
 
     fn with_registry(registry: fonts::FontRegistry) -> Self {
-        let mut fonts = parley::FontContext::new();
-        crate::fonts::apply_builtins(&mut fonts);
-        crate::fonts::apply_user_fonts(&mut fonts); // F4: user fonts from App::font
         // The global families snapshot is refreshed ONLY from the registry (03 §3.3.7).
         crate::fonts::refresh_families_from(registry.families());
-        TextEnv {
-            fonts,
-            layout: parley::LayoutContext::new(),
-            registry,
-            scratch: Default::default(),
-            caches: Default::default(),
-        }
+        TextEnv { registry, scratch: Default::default(), caches: Default::default() }
     }
 
-    /// Test-only: a TextEnv with ONLY the bundled + App::font faces (no system fonts).
+    /// Former test-only hermetic constructor; [`new`](Self::new) is hermetic now.
+    #[deprecated(note = "`TextEnv::new()` uses bundled + App::font faces only")]
     #[doc(hidden)]
     pub fn new_hermetic() -> Self {
-        let mut fonts = parley::FontContext {
-            collection: parley::fontique::Collection::new(parley::fontique::CollectionOptions {
-                shared: false,
-                system_fonts: false,
-            }),
-            source_cache: Default::default(),
-        };
-        crate::fonts::apply_builtins(&mut fonts);
-        crate::fonts::apply_user_fonts(&mut fonts);
-        let registry = fonts::FontRegistry::new_bundled(&crate::fonts::user_fonts_snapshot(), "en-US".into());
-        TextEnv {
-            fonts,
-            layout: parley::LayoutContext::new(),
-            registry,
-            scratch: Default::default(),
-            caches: Default::default(),
-        }
+        Self::new()
     }
 
     /// A text environment that also uses the host's fonts per `mode` (always bundled-only on
@@ -325,10 +293,7 @@ impl TextEnv {
     /// Registers font bytes (one or more faces) and refreshes discovery.
     /// Returns the number of faces registered.
     pub fn register_font(&mut self, bytes: Vec<u8>) -> usize {
-        let data: fonts::FontBytes = std::sync::Arc::new(bytes);
-        // Parley keeps a registration (sharing the same bytes) until its consumers are ported (T40).
-        self.fonts.collection.register_fonts(crate::fonts::FontBlob::new(data.clone()), None);
-        let added = self.registry.register(data);
+        let added = self.registry.register(std::sync::Arc::new(bytes));
         if added > 0 {
             self.caches.clear();
         }
@@ -346,7 +311,6 @@ impl TextEnv {
     pub fn register_system_fonts(&mut self) {
         #[cfg(not(target_family = "wasm"))]
         {
-            self.fonts.collection.load_system_fonts(); // Parley, until T40
             let before = self.registry.generation();
             self.registry.scan_blocking();
             if self.registry.generation() != before {

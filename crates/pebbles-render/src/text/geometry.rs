@@ -306,7 +306,7 @@ impl TextLayout {
     }
 
     /// The UAX #29 word segment under the point (double-click selection). Whitespace under the
-    /// point selects the whitespace run (Parley, macOS, browsers, Flutter).
+    /// point selects the whitespace run (the pre-swap build, macOS, browsers, Flutter).
     pub fn word_at(&self, x: f32, y: f32) -> (usize, usize) {
         let (byte, aff) = self.hit(x, y);
         let (p, local) = self.para_of(byte);
