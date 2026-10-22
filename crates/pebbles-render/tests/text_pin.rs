@@ -53,6 +53,21 @@ const KNOWN_DIFFS: &[(&str /*case*/, &str /*field*/, &str /*reason*/)] = &[
         "line_tops",
         "Q-2: Parley keeps max_lines-dropped lines in its layout (hidden carets); TextLayout drops them",
     ),
+    (
+        "mono20_maxlines_noell",
+        "line_starts",
+        "Q-2: Parley keeps max_lines-dropped lines in its layout (hidden carets); TextLayout drops them",
+    ),
+    ("lora16_crlf", "line_starts", "Q-8: CRLF is one paragraph break, not two"),
+    ("inter12_separators", "width", "Q-13: U+0085 (NEL) is a paragraph break (Parley draws it as a glyph)"),
+    ("inter12_separators", "height", "Q-13: U+0085 (NEL) is a paragraph break"),
+    ("inter12_separators", "line_tops", "Q-13: U+0085 (NEL) is a paragraph break"),
+    ("inter12_separators", "line_starts", "Q-13: U+0085 (NEL) is a paragraph break"),
+    (
+        "inter16_spans",
+        "baseline",
+        "Q-14: a mixed-size line places its baseline by the CSS/Flutter half-leading model",
+    ),
 ];
 
 /// Q-9: Parley pixel-snaps line tops and baselines and starts the first line box at y = -1;
@@ -60,6 +75,12 @@ const KNOWN_DIFFS: &[(&str /*case*/, &str /*field*/, &str /*reason*/)] = &[
 /// `round(ours) - 1`, which `text_pin_layout_matches_oracle` asserts instead of skipping.
 fn parley_snap(v: f64) -> f64 {
     v.round() - 1.0
+}
+
+/// The Q-9 relation with the pin's ±0.25 baseline tolerance: a fractional value near .5 may
+/// round either way.
+fn snaps_to(v: f64, pinned: f64) -> bool {
+    parley_snap(v - 0.25) == pinned || parley_snap(v + 0.25) == pinned
 }
 
 fn known_diff(case: &str, field: &str) -> Option<&'static str> {
@@ -265,14 +286,14 @@ fn text_pin_matches_parley_oracle() {
         );
         check(
             "baseline",
-            (m.baseline - pin.baseline).abs() <= 0.25,
-            format!("{} vs pinned {}", m.baseline, pin.baseline),
+            snaps_to(m.baseline, pin.baseline),
+            format!("{} vs pinned {} (Q-9 snap)", m.baseline, pin.baseline),
         );
         check(
             "line_tops",
             m.line_tops.len() == pin.line_tops.len()
-                && m.line_tops.iter().zip(pin.line_tops).all(|(a, b)| (a - b).abs() <= 0.01),
-            format!("{:?} vs pinned {:?}", m.line_tops, pin.line_tops),
+                && m.line_tops.iter().zip(pin.line_tops).all(|(a, b)| parley_snap(*a) == *b),
+            format!("{:?} vs pinned {:?} (Q-9 snap)", m.line_tops, pin.line_tops),
         );
         check(
             "line_starts",
@@ -343,7 +364,7 @@ fn text_pin_layout_matches_oracle() {
             ),
             (
                 "baseline",
-                l.first_baseline().is_some_and(|b| parley_snap(f64::from(b)) == pin.baseline),
+                l.first_baseline().is_some_and(|b| snaps_to(f64::from(b), pin.baseline)),
                 format!("{:?} vs pinned {} (Q-9 snap)", l.first_baseline(), pin.baseline),
             ),
             (

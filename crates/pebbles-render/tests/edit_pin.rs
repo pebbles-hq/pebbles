@@ -256,13 +256,6 @@ fn compare(path: Path, snap_y: bool) -> Vec<String> {
     failures
 }
 
-#[test]
-fn edit_matches_parley_oracle() {
-    assert!(!PARLEY.is_empty(), "fixture empty: run regenerate_edit_pin on the Parley build");
-    let failures = compare(Path::Paragraph, false);
-    assert!(failures.is_empty(), "editing drifted from the Parley pin: {failures:#?}");
-}
-
 /// Documented, deliberate differences from the Parley build (03 §3.13), as
 /// (case, failure-label prefix, reason). Each is printed, not asserted.
 const KNOWN_DIFFS: &[(&str, &str, &str)] = &[
@@ -284,10 +277,11 @@ const KNOWN_DIFFS: &[(&str, &str, &str)] = &[
     ("mixed_bidi", "word_", "Q-12: word motion is logical UAX #29, not visual"),
 ];
 
-#[test]
-fn text_layout_editing_matches_parley_oracle() {
+/// Every difference from the pin must be a documented KNOWN_DIFF.
+fn assert_matches_oracle(path: Path) {
+    assert!(!PARLEY.is_empty(), "fixture empty: run regenerate_edit_pin on the Parley build");
     let mut unexpected = Vec::new();
-    for f in compare(Path::TextLayout, true) {
+    for f in compare(path, true) {
         let known = KNOWN_DIFFS.iter().find(|(case, label, _)| {
             f.strip_prefix(case).and_then(|r| r.strip_prefix('.')).is_some_and(|r| r.starts_with(label))
         });
@@ -297,4 +291,16 @@ fn text_layout_editing_matches_parley_oracle() {
         }
     }
     assert!(unexpected.is_empty(), "{} differences:\n{}", unexpected.len(), unexpected.join("\n"));
+}
+
+/// Through the public RenderParagraph path (cosmic-text since T22).
+#[test]
+fn edit_matches_parley_oracle() {
+    assert_matches_oracle(Path::Paragraph);
+}
+
+/// Through a TextLayout published with `store_text`.
+#[test]
+fn text_layout_editing_matches_parley_oracle() {
+    assert_matches_oracle(Path::TextLayout);
 }

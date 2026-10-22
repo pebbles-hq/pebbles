@@ -254,32 +254,34 @@ fn inspect_returns_the_hit_chain_deepest_last() {
     assert_eq!(deepest.bounds.height(), 20.0);
 }
 
-/// E3: a paragraph re-shapes only when its text / style / wrap-width change; an
-/// identical relayout reuses the cached shaped layout.
+/// E3: a paragraph shapes only when its text / style change and lays out only when its
+/// width changes too; an identical relayout reuses both. A new wrap width relayouts the
+/// cached shape without reshaping (03 §3.8).
 #[test]
 fn paragraph_reshapes_only_when_inputs_change() {
-    use pebbles_render::objects::{reset_shape_count, shape_count};
+    use pebbles_render::objects::{layout_count, reset_layout_count, reset_shape_count, shape_count};
 
     reset_shape_count();
+    reset_layout_count();
     let mut tree = RenderTree::new();
     let mut text = TextEnv::new();
     let p = tree.insert(Box::new(RenderParagraph::new("Hello world", ParagraphStyle::default())));
     tree.root = Some(p);
 
     tree.layout(&mut text, tight(200.0, 100.0));
-    assert_eq!(shape_count(), 1, "first layout shapes once");
+    assert_eq!((shape_count(), layout_count()), (1, 1), "first layout shapes and lays out once");
 
-    // Identical constraints → cache hit, no re-shape.
+    // Identical constraints → no reshape, no relayout.
     tree.layout(&mut text, tight(200.0, 100.0));
-    assert_eq!(shape_count(), 1, "an identical relayout reuses the shape");
+    assert_eq!((shape_count(), layout_count()), (1, 1), "an identical relayout reuses both");
 
-    // A narrower wrap width → re-shape.
+    // A narrower wrap width → a new layout of the SAME shape.
     tree.layout(&mut text, tight(120.0, 100.0));
-    assert_eq!(shape_count(), 2, "a wrap-width change re-shapes");
+    assert_eq!((shape_count(), layout_count()), (1, 2), "a wrap-width change relayouts, never reshapes");
 
     // …and that new width is itself cached.
     tree.layout(&mut text, tight(120.0, 100.0));
-    assert_eq!(shape_count(), 2, "the new width is cached too");
+    assert_eq!((shape_count(), layout_count()), (1, 2), "the new width is cached too");
 }
 
 // ---------------------------------------------------------------------------

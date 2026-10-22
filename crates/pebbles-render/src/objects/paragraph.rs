@@ -1,28 +1,24 @@
-//! [`RenderParagraph`] — a leaf render object that shapes text with parley and
-//! paints its glyph runs into the vello scene.
+//! [`RenderParagraph`] — a leaf render object that lays out text with the cosmic-text
+//! [`TextLayout`](crate::text::TextLayout) and paints its glyph runs as backend-neutral ops.
 //!
-//! Layout builds and caches a `parley::Layout` (paint has no font context, so the
-//! shaped layout must survive from layout to paint). Text is laid out in **logical**
-//! pixels at scale 1.0; the shell applies the device-scale transform to the whole
-//! scene, and because vello rasterizes glyph outlines through that transform the
-//! text stays crisp at any DPI.
+//! Layout asks the window's [`TextEnv`] for a layout (shape and layout caches keyed by
+//! content, never by color); the `Rc<TextLayout>` survives from layout to paint. Text is laid
+//! out in **logical** pixels; the renderer applies the device scale to the whole scene.
 
 use std::cell::RefCell;
 use std::ops::Range;
 use std::rc::Rc;
 
-use crate::paint::Glyph;
 use kurbo::Affine;
-use parley::{
-    Affinity, Alignment, AlignmentOptions, Cursor, FontStyle, FontWeight, Layout, LineHeight,
-    PositionedLayoutItem, Selection, StyleProperty,
-};
 use pebbles_foundation::{Axis, Color, Offset, Rect, Size, TextAlign, TextDirection};
 use peniko::{Brush, Fill};
+use smallvec::SmallVec;
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;
-use crate::text::TextEnv;
+use crate::text::layout::LayoutParams;
+use crate::text::style::{SpanSpec, TextStyleSpec, to_cosmic_align};
+use crate::text::{TextEnv, TextLayout, TextRequest};
 use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 
 type LinkBoxes = Rc<RefCell<Vec<(Rect, usize)>>>;
@@ -81,7 +77,7 @@ impl Default for ParagraphStyle {
 
 /// A ranged style override for rich text: a byte `range` of the paragraph's text
 /// plus the properties that differ from the base [`ParagraphStyle`]. One paragraph
-/// with N spans shapes as ONE parley layout with per-range styles — never one
+/// with N spans shapes as ONE layout with per-range styles — never one
 /// widget per styled run.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextSpanStyle {
@@ -124,31 +120,6 @@ impl TextSpanStyle {
     }
 }
 
-/// Map to parley's alignment. `Start`/`End` resolve against the ambient text
-/// direction (D2): under RTL, `Start` is the right edge and `End` the left.
-fn to_parley_align(a: TextAlign, rtl: bool) -> Alignment {
-    match a {
-        TextAlign::Left => Alignment::Left,
-        TextAlign::Right => Alignment::Right,
-        TextAlign::Center => Alignment::Center,
-        TextAlign::Justify => Alignment::Justify,
-        TextAlign::Start => {
-            if rtl {
-                Alignment::Right
-            } else {
-                Alignment::Left
-            }
-        }
-        TextAlign::End => {
-            if rtl {
-                Alignment::Left
-            } else {
-                Alignment::Right
-            }
-        }
-    }
-}
-
 /// A leaf render object that lays out and paints text.
 pub struct RenderParagraph {
     pub text: String,
@@ -172,17 +143,15 @@ pub struct RenderParagraph {
     pub focused_link: Option<usize>,
     /// Chip (inline-code) backgrounds computed from the shaped layout, local space.
     chips: Vec<(Rect, Color)>,
-    /// Shaped layout, produced in [`RenderObject::layout`] and consumed in paint.
-    /// `Rc`: the same shaped layout is shared through the window's [`TextEnv`]
-    /// cache, so a REBUILT paragraph (virtual-list windows sliding, unrelated
-    /// toggles) reuses the shape instead of re-running parley.
-    cached: Option<Rc<Layout<Brush>>>,
-    /// E3 shape cache: a hash of `(text, style, spans, max_advance)` from the last
-    /// shape, and the unconstrained size it produced. A layout whose key matches
-    /// reuses `cached` (no re-shape); the returned size is re-`constrain`ed against
-    /// the fresh constraints, so min-bound changes are still honored.
-    shape_key: Option<u64>,
-    shape_size: Size,
+    /// The layout, produced in [`RenderObject::layout`] and consumed in paint. `Rc`: shared
+    /// through the window's [`TextEnv`] caches, so a REBUILT paragraph (virtual-list windows
+    /// sliding, unrelated toggles) reuses the shape and layout instead of redoing them.
+    cached: Option<Rc<TextLayout>>,
+    /// The layout-cache key of `cached`: an unchanged key skips even the cache lookup.
+    layout_key: Option<u64>,
+    /// Brush table (slot 0 = base color, slot i + 1 = span i), rebuilt every layout: colors
+    /// never enter the shape key (03 §3.9.4).
+    brushes: SmallVec<[Brush; 4]>,
 }
 
 impl RenderParagraph {
@@ -198,8 +167,8 @@ impl RenderParagraph {
             focused_link: None,
             chips: Vec::new(),
             cached: None,
-            shape_key: None,
-            shape_size: Size::new(0.0, 0.0),
+            layout_key: None,
+            brushes: SmallVec::new(),
         }
     }
 
@@ -210,139 +179,32 @@ impl RenderParagraph {
         p
     }
 
-    /// A cheap key over everything that affects the shaped layout — field-by-field
-    /// bit hashing. (Never a `Debug` format: that heap-allocated a string per
-    /// paragraph per layout pass, which at document scale was an allocation storm.)
-    fn shape_hash(&self, max_advance: Option<f32>) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        self.text.hash(&mut h);
-        let s = &self.style;
-        s.font_size.to_bits().hash(&mut h);
-        for c in s.color.components {
-            c.to_bits().hash(&mut h);
-        }
-        s.line_height.to_bits().hash(&mut h);
-        s.weight.to_bits().hash(&mut h);
-        (s.align as u8).hash(&mut h);
-        s.letter_spacing.to_bits().hash(&mut h);
-        (s.italic, s.underline, s.strikethrough, s.soft_wrap, s.ellipsis).hash(&mut h);
-        s.max_lines.hash(&mut h);
-        s.font_family.hash(&mut h);
-        for span in &self.spans {
-            span.range.hash(&mut h);
-            span.weight.map(f32::to_bits).hash(&mut h);
-            (span.italic, span.underline, span.strikethrough).hash(&mut h);
-            if let Some(c) = span.color {
-                for v in c.components {
-                    v.to_bits().hash(&mut h);
-                }
-            }
-            span.family.hash(&mut h);
-            span.size.map(f32::to_bits).hash(&mut h);
-            if let Some(c) = span.chip {
-                for v in c.components {
-                    v.to_bits().hash(&mut h);
-                }
-            }
-            span.link.hash(&mut h);
-        }
-        max_advance.map(f32::to_bits).hash(&mut h);
-        // D2: ambient direction affects Start/End alignment, so it's part of the key.
-        (crate::direction::text_direction() == TextDirection::Rtl).hash(&mut h);
-        h.finish()
-    }
-
-    /// Shape `s` into a broken, aligned layout with this paragraph's style.
-    fn build(&self, text_env: &mut TextEnv, s: &str, max_advance: Option<f32>) -> Layout<Brush> {
-        let mut builder = text_env.layout.ranged_builder(&mut text_env.fonts, s, 1.0, true);
-        builder.push_default(StyleProperty::FontSize(self.style.font_size));
-        builder.push_default(StyleProperty::FontWeight(FontWeight::new(self.style.weight)));
-        builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(self.style.line_height)));
-        builder.push_default(StyleProperty::Brush(Brush::Solid(self.style.color)));
-        if self.style.letter_spacing != 0.0 {
-            builder.push_default(StyleProperty::LetterSpacing(self.style.letter_spacing));
-        }
-        if self.style.italic {
-            builder.push_default(StyleProperty::FontStyle(FontStyle::Italic));
-        }
-        if self.style.underline {
-            builder.push_default(StyleProperty::Underline(true));
-        }
-        if self.style.strikethrough {
-            builder.push_default(StyleProperty::Strikethrough(true));
-        }
-        // Always set a family. Default to a BUNDLED font (Inter) rather than parley's
-        // generic default, which resolves via system fonts — empty on web/mobile, so
-        // an unset family renders no glyphs there. See fonts::DEFAULT_FAMILY.
-        let family = self.style.font_family.as_deref().unwrap_or(crate::fonts::DEFAULT_FAMILY);
-        builder.push_default(StyleProperty::FontFamily(family.into()));
-        // Ranged overrides (rich text): each span pushes only the properties it
-        // changes, over its byte range — one shaped layout for the whole block.
-        for span in &self.spans {
-            let r = span.range.clone();
-            if r.is_empty() || r.end > s.len() {
-                continue;
-            }
-            if let Some(w) = span.weight {
-                builder.push(StyleProperty::FontWeight(FontWeight::new(w)), r.clone());
-            }
-            if span.italic {
-                builder.push(StyleProperty::FontStyle(FontStyle::Italic), r.clone());
-            }
-            if span.underline {
-                builder.push(StyleProperty::Underline(true), r.clone());
-            }
-            if span.strikethrough {
-                builder.push(StyleProperty::Strikethrough(true), r.clone());
-            }
-            if let Some(c) = span.color {
-                builder.push(StyleProperty::Brush(Brush::Solid(c)), r.clone());
-            }
-            if let Some(f) = &span.family {
-                builder.push(StyleProperty::FontFamily(f.as_str().into()), r.clone());
-            }
-            if let Some(px) = span.size {
-                builder.push(StyleProperty::FontSize(px), r.clone());
-            }
-        }
-        let mut layout: Layout<Brush> = builder.build(s);
-        layout.break_all_lines(max_advance);
+    /// The layout request for this paragraph at `width` (03 §3.5.1: a width only when soft
+    /// wrap is on and the box is bounded).
+    fn params(&self, width: Option<f32>) -> LayoutParams {
         let rtl = crate::direction::text_direction() == TextDirection::Rtl;
-        layout.align(to_parley_align(self.style.align, rtl), AlignmentOptions::default());
-        layout
+        let width = if self.style.soft_wrap { width } else { None };
+        LayoutParams {
+            width,
+            wrap: width.is_some(),
+            align: Some(to_cosmic_align(self.style.align, rtl)),
+            max_lines: self.style.max_lines,
+            ellipsis: self.style.ellipsis,
+        }
     }
 
-    /// The laid-out boxes (local space) of a byte `range` — one rect per line the
-    /// range crosses, spanning the covered clusters.
-    fn range_boxes(layout: &Layout<Brush>, range: &Range<usize>, out: &mut Vec<Rect>) {
-        for line in layout.lines() {
-            let lm = line.metrics();
-            let (mut x0, mut x1): (Option<f64>, f64) = (None, 0.0);
-            for item in line.items() {
-                let PositionedLayoutItem::GlyphRun(gr) = item else { continue };
-                let run = gr.run();
-                let rr = run.text_range();
-                if rr.end <= range.start || rr.start >= range.end {
-                    continue;
-                }
-                let mut x = f64::from(gr.offset());
-                for cluster in run.clusters() {
-                    let cr = cluster.text_range();
-                    let adv = f64::from(cluster.advance());
-                    if cr.start < range.end && cr.end > range.start {
-                        if x0.is_none() {
-                            x0 = Some(x);
-                        }
-                        x1 = x1.max(x + adv);
-                    }
-                    x += adv;
-                }
-            }
-            if let Some(x0) = x0 {
-                out.push(Rect::new(x0, f64::from(lm.block_min_coord), x1, f64::from(lm.block_max_coord)));
-            }
+    /// The layout of this paragraph's text with `params`, through the window's caches.
+    fn layout_with(&self, text: &mut TextEnv, params: LayoutParams) -> (Rc<TextLayout>, u64) {
+        let spec = TextStyleSpec::from(&self.style);
+        let spans: Vec<SpanSpec> = self.spans.iter().map(SpanSpec::from).collect();
+        let req = TextRequest { text: &self.text, style: &spec, spans: &spans, params };
+        let key = text.text_key(&req);
+        if self.layout_key == Some(key.layout)
+            && let Some(cached) = &self.cached
+        {
+            return (cached.clone(), key.layout);
         }
+        (text.layout_text(&req, key), key.layout)
     }
 
     /// Refresh chip backgrounds + published link boxes from the current layout.
@@ -353,7 +215,7 @@ impl RenderParagraph {
         let Some(layout) = &self.cached else { return };
         // Publish the shaped layout for point→byte hit-testing when selection is on.
         if let Some(id) = self.select_id {
-            crate::text_edit::store(id, layout.clone());
+            crate::text_edit::store_text(id, layout.clone());
         }
         let needs_chips = self.spans.iter().any(|s| s.chip.is_some());
         let needs_links = self.link_boxes.is_some() && self.spans.iter().any(|s| s.link.is_some());
@@ -368,7 +230,7 @@ impl RenderParagraph {
                 continue;
             }
             boxes.clear();
-            Self::range_boxes(layout, &span.range, &mut boxes);
+            layout.range_boxes(span.range.clone(), &mut boxes);
             for r in &boxes {
                 if let Some(c) = span.chip {
                     self.chips.push((r.inflate(2.0, 0.5), c));
@@ -386,91 +248,31 @@ impl RenderParagraph {
 
 impl RenderObject for RenderParagraph {
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
-        let max_advance = if self.style.soft_wrap && constraints.has_bounded_width() {
-            Some(constraints.max_width as f32)
-        } else {
-            None
-        };
-
-        // E3: skip the parley re-shape when text/style/wrap-width are unchanged. The
-        // cached `Layout` survives for paint; only re-`constrain` the stored size.
-        let key = self.shape_hash(max_advance);
-        if self.shape_key == Some(key) && self.cached.is_some() {
-            self.refresh_span_geometry();
-            return constraints.constrain(self.shape_size);
-        }
-        // Window-level shape cache: a rebuilt paragraph (new render object, same
-        // content) reuses the shared shaped layout — shaping tracks NEW text, not
-        // rebuild traffic.
-        if let Some((rc, w, h)) = cx.text.cached_layout(key) {
-            self.cached = Some(rc);
-            self.shape_size = Size::new(w, h);
-            self.shape_key = Some(key);
-            self.refresh_span_geometry();
-            return constraints.constrain(self.shape_size);
-        }
-        crate::text::count_shape();
-
-        let text_env = &mut *cx.text;
-        let mut layout = self.build(text_env, &self.text, max_advance);
-
-        // `max_lines` clamp. With `ellipsis`, when the text overflows, re-shape the
-        // longest character prefix that still fits in `max_lines` lines once "…" is
-        // appended (binary search on the char boundary).
-        let full_h = layout.height() as f64;
-        let mut height = full_h;
-        if let Some(max) = self.style.max_lines {
-            let max = max as usize;
-            let over = layout.lines().count() > max;
-            if over && self.style.ellipsis && !self.text.is_empty() {
-                let chars: Vec<usize> = self.text.char_indices().map(|(i, _)| i).collect();
-                let (mut lo, mut hi, mut best) = (0usize, chars.len(), String::from("…"));
-                while lo < hi {
-                    let mid = (lo + hi).div_ceil(2);
-                    let cut = chars.get(mid).copied().unwrap_or(self.text.len());
-                    let candidate = format!("{}…", &self.text[..cut]);
-                    let trial = self.build(text_env, &candidate, max_advance);
-                    if trial.lines().count() <= max {
-                        best = candidate;
-                        lo = mid;
-                    } else {
-                        hi = mid - 1;
-                    }
-                }
-                layout = self.build(text_env, &best, max_advance);
-            }
-            // Report a height covering only the kept lines; paint skips the rest.
-            let h: f64 = layout.lines().take(max).map(|l| l.metrics().line_height as f64).sum();
-            if h > 0.0 {
-                height = h.min(layout.height() as f64);
-            }
-        }
-        let size = Size::new(layout.width() as f64, height);
-        let layout = Rc::new(layout);
-        cx.text.store_layout(key, layout.clone(), size.width, size.height);
+        let width = constraints.has_bounded_width().then_some(constraints.max_width as f32);
+        let (layout, key) = self.layout_with(cx.text, self.params(width));
+        let size = Size::new(f64::from(layout.width()), f64::from(layout.height()));
         self.cached = Some(layout);
-        self.shape_size = size;
-        self.shape_key = Some(key);
+        self.layout_key = Some(key);
+        self.brushes.clear();
+        self.brushes.push(Brush::Solid(self.style.color));
+        self.brushes.extend(self.spans.iter().map(|s| Brush::Solid(s.color.unwrap_or(self.style.color))));
         self.refresh_span_geometry();
         constraints.constrain(size)
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let Some(layout) = &self.cached else { return };
-        let transform = Affine::translate((offset.x, offset.y));
+        let visible = cx.visible();
+        let mut rects: Vec<Rect> = Vec::new();
 
         // Selection highlight, behind everything (only when a non-empty range is set).
-        let visible = cx.visible();
         if let Some((a, f)) = self.selection
             && a != f
         {
-            let (a, f) = (a.min(self.text.len()), f.min(self.text.len()));
-            let sel = Selection::new(
-                Cursor::from_byte_index(layout, a, Affinity::Downstream),
-                Cursor::from_byte_index(layout, f, Affinity::Downstream),
-            );
-            for (bb, _) in sel.geometry(layout) {
-                let rect = Rect::new(offset.x + bb.x0, offset.y + bb.y0, offset.x + bb.x1, offset.y + bb.y1);
+            let len = self.text.len();
+            layout.selection_rects(a.min(len), f.min(len), &mut rects);
+            for r in &rects {
+                let rect = *r + offset;
                 if rect.y1 < visible.y0 || rect.y0 > visible.y1 {
                     continue;
                 }
@@ -480,20 +282,15 @@ impl RenderObject for RenderParagraph {
 
         // Keyboard-focus highlight behind the focused link's glyphs (a11y Tab-nav).
         if let Some(fl) = self.focused_link {
-            let mut boxes: Vec<Rect> = Vec::new();
+            rects.clear();
             for span in &self.spans {
                 if span.link == Some(fl) {
-                    Self::range_boxes(layout, &span.range, &mut boxes);
+                    layout.range_boxes(span.range.clone(), &mut rects);
                 }
             }
             let ring = Color::from_rgba8(59, 130, 246, 64);
-            for r in &boxes {
-                let rect = Rect::new(
-                    offset.x + r.x0 - 1.0,
-                    offset.y + r.y0 - 1.0,
-                    offset.x + r.x1 + 1.0,
-                    offset.y + r.y1 + 1.0,
-                );
+            for r in &rects {
+                let rect = (*r + offset).inflate(1.0, 1.0);
                 if rect.y1 < visible.y0 || rect.y0 > visible.y1 {
                     continue;
                 }
@@ -503,134 +300,44 @@ impl RenderObject for RenderParagraph {
 
         // Chip (inline-code) backgrounds first, behind the glyphs — culled per chip.
         for (r, color) in &self.chips {
-            let world = Rect::new(r.x0 + offset.x, r.y0 + offset.y, r.x1 + offset.x, r.y1 + offset.y);
+            let world = *r + offset;
             if world.y1 < visible.y0 || world.y0 > visible.y1 {
                 continue;
             }
             cx.scene.fill(Fill::NonZero, Affine::IDENTITY, *color, None, &world.to_rounded_rect(4.0));
         }
 
-        // Line-level culling: a single huge paragraph must not encode glyphs the
-        // viewport can't show. Lines are in top-to-bottom order, so once one
-        // starts below the visible window the rest can't be visible either.
-        let max_lines = self.style.max_lines.map(|m| m as usize).unwrap_or(usize::MAX);
-        for line in layout.lines().take(max_lines) {
-            let m = line.metrics();
-            if offset.y + f64::from(m.block_max_coord) < visible.y0 {
-                continue;
-            }
-            if offset.y + f64::from(m.block_min_coord) > visible.y1 {
-                break;
-            }
-            for item in line.items() {
-                let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
-                    continue;
-                };
-                // Horizontal culling within the line: an unwrapped multi-thousand-
-                // glyph code line must not encode runs beyond the window's x-range.
-                let run_x0 = offset.x + f64::from(glyph_run.offset());
-                let run_x1 = run_x0 + f64::from(glyph_run.advance());
-                if run_x1 < visible.x0 || run_x0 > visible.x1 {
-                    continue;
-                }
-                crate::stats::bump_glyph_run();
-                let run = glyph_run.run();
-                let synthesis = run.synthesis();
-                let glyph_transform =
-                    synthesis.skew().map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
-
-                cx.scene.draw_glyphs(
-                    run.font(),
-                    run.font_size(),
-                    run.normalized_coords(),
-                    &glyph_run.style().brush,
-                    transform,
-                    glyph_transform,
-                    Fill::NonZero,
-                    glyph_run.positioned_glyphs().map(|g| Glyph { id: g.id, x: g.x, y: g.y }),
-                );
-
-                // Underline / strikethrough decorations (base style or spans).
-                let style_ref = glyph_run.style();
-                if style_ref.underline.is_some() || style_ref.strikethrough.is_some() {
-                    let rm = run.metrics();
-                    let x0 = f64::from(glyph_run.offset()) + offset.x;
-                    let x1 = x0 + f64::from(glyph_run.advance());
-                    let baseline = f64::from(glyph_run.baseline()) + offset.y;
-                    if let Some(dec) = &style_ref.underline {
-                        let top = baseline - f64::from(dec.offset.unwrap_or(rm.underline_offset));
-                        let size_v = f64::from(dec.size.unwrap_or(rm.underline_size));
-                        cx.scene.fill(
-                            Fill::NonZero,
-                            Affine::IDENTITY,
-                            &dec.brush,
-                            None,
-                            &Rect::new(x0, top, x1, top + size_v),
-                        );
-                    }
-                    if let Some(dec) = &style_ref.strikethrough {
-                        let top = baseline - f64::from(dec.offset.unwrap_or(rm.strikethrough_offset));
-                        let size_v = f64::from(dec.size.unwrap_or(rm.strikethrough_size));
-                        cx.scene.fill(
-                            Fill::NonZero,
-                            Affine::IDENTITY,
-                            &dec.brush,
-                            None,
-                            &Rect::new(x0, top, x1, top + size_v),
-                        );
-                    }
-                }
-            }
-        }
+        // Glyph runs + decorations, culled per line and per run.
+        crate::text::paint::paint_text_layout(cx, layout, offset, &self.brushes);
     }
 
     fn intrinsic(&self, cx: &mut IntrinsicCx<'_>, axis: Axis, cross_extent: f64) -> Option<f64> {
         match axis {
-            // The widest unbreakable run — the widest whitespace-separated word
-            // (Flutter's `getMinIntrinsicWidth` notion), measured by scanning the
-            // ONE natural layout's cluster advances. (The old path re-shaped up to
-            // 256 words individually — hundreds of parley runs per measure.)
+            // The widest unbreakable run (Flutter's `getMinIntrinsicWidth` notion) from the ONE
+            // unbounded layout's advances — memoized on the shape, never a reshape.
             Axis::Horizontal => {
-                let layout = self.build(&mut *cx.text, &self.text, None);
-                let natural = layout.width() as f64;
-                let (mut max_word, mut cur) = (0.0_f64, 0.0_f64);
-                for line in layout.lines() {
-                    for item in line.items() {
-                        let PositionedLayoutItem::GlyphRun(gr) = item else { continue };
-                        for cluster in gr.run().clusters() {
-                            if cluster.is_space_or_nbsp() {
-                                max_word = max_word.max(cur);
-                                cur = 0.0;
-                            } else {
-                                cur += f64::from(cluster.advance());
-                            }
-                        }
-                    }
-                    // A line break is a word boundary too.
-                    max_word = max_word.max(cur);
-                    cur = 0.0;
-                }
-                max_word = max_word.max(cur);
-                Some(if max_word > 0.0 { max_word } else { natural })
+                let (layout, _) = self.layout_with(cx.text, self.params(None));
+                Some(f64::from(cx.text.intrinsic_widths(&layout).0))
             }
-            // The height the paragraph takes when wrapped at `cross_extent`.
+            // The height when wrapped at `cross_extent` (max_lines ignored: quirk Q-3).
             Axis::Vertical => {
-                let max_advance =
-                    if cross_extent.is_finite() { Some(cross_extent.max(0.0) as f32) } else { None };
-                Some(self.build(&mut *cx.text, &self.text, max_advance).height() as f64)
+                let rtl = crate::direction::text_direction() == TextDirection::Rtl;
+                let width = cross_extent.is_finite().then_some(cross_extent.max(0.0) as f32);
+                let params = LayoutParams {
+                    width,
+                    wrap: width.is_some(),
+                    align: Some(to_cosmic_align(self.style.align, rtl)),
+                    max_lines: None,
+                    ellipsis: false,
+                };
+                let (layout, _) = self.layout_with(cx.text, params);
+                Some(f64::from(layout.height()))
             }
         }
     }
 
     fn baseline(&self, _cx: &mut LayoutCx<'_>) -> Option<f64> {
-        // The first line's baseline: the line's top offset plus its metrics'
-        // baseline (the distance from the line top to the alphabetic baseline).
-        self.cached.as_ref().and_then(|layout| {
-            layout.lines().next().map(|line| {
-                let m = line.metrics();
-                (m.block_min_coord + m.baseline) as f64
-            })
-        })
+        self.cached.as_ref().and_then(|l| l.first_baseline()).map(f64::from)
     }
 
     fn debug_name(&self) -> &'static str {

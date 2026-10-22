@@ -347,6 +347,11 @@ impl TextEnv {
         self.registry.face(id, weight)
     }
 
+    /// (min, max) intrinsic widths of a layout's shaped text (memoized, no reshape).
+    pub(crate) fn intrinsic_widths(&mut self, layout: &TextLayout) -> (f32, f32) {
+        layout::intrinsic_widths(&layout.shaped, &mut self.scratch, &mut self.registry)
+    }
+
     /// The font generation (bumps on every face addition).
     pub fn font_generation(&self) -> u64 {
         self.registry.generation()
