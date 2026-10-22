@@ -844,7 +844,7 @@ fn text_edit_routes_text_layout_entries() {
     };
     let layout = pebbles_render::text::layout_for_test(&mut env, "hello world\nab", &style, &[], None);
     let id = 77_001;
-    text_edit::store_text(id, layout);
+    text_edit::store(id, layout);
     assert_eq!(text_edit::right(id, 0, 0, false), Some((1, 1)));
     assert_eq!(text_edit::left(id, 2, 7, false), Some((2, 2)));
     assert_eq!(text_edit::right(id, 2, 7, true), Some((2, 8)));
@@ -860,4 +860,76 @@ fn text_edit_routes_text_layout_entries() {
     assert!((text_edit::caret_rect(id, 3).expect("caret").x0 - 36.0).abs() <= 0.01);
     text_edit::clear(id);
     assert_eq!(text_edit::hit(id, 0.0, 0.0), None);
+}
+
+/// IME preedit (03b E13): the composition is spliced in at the caret and painted with a 1 px
+/// underline spanning exactly the preedit's display range.
+#[test]
+fn text_field_preedit_is_underlined_at_the_caret() {
+    use pebbles_render::objects::{RenderTextField, TextFieldStyle};
+    use pebbles_render::paint::Scene;
+    use pebbles_render::paint::display_list::Op;
+
+    let mut field = RenderTextField::new("a", TextFieldStyle::default());
+    field.focus = 1;
+    field.anchor = 1;
+    field.preedit = "にほ".to_string();
+    let mut tree = RenderTree::new();
+    let mut text = TextEnv::new();
+    let id = tree.insert(Box::new(field));
+    tree.root = Some(id);
+    tree.layout(&mut text, BoxConstraints::loose(Size::new(300.0, 100.0)));
+    let mut scene = Scene::new();
+    tree.paint(&mut text, &mut scene);
+
+    // The display string is "aにほ": the preedit spans bytes 1..7.
+    let style = ParagraphStyle { font_size: 14.0, line_height: 1.3, ..ParagraphStyle::default() };
+    let layout = pebbles_render::text::layout_for_test(&mut text, "aにほ", &style, &[], None);
+    let x0 = layout.caret_rect(1, pebbles_render::text::Affinity::Downstream, 0.0).x0;
+    let x1 = layout.caret_rect(7, pebbles_render::text::Affinity::Downstream, 0.0).x0;
+    let underline = scene.ops().iter().find_map(|op| match op {
+        Op::Fill { shape, .. } => {
+            let r = shape.bounding_box();
+            ((r.height() - 1.0).abs() < 1e-6).then_some(r)
+        }
+        _ => None,
+    });
+    let r = underline.expect("a 1 px preedit underline");
+    assert!((r.x0 - x0).abs() < 0.01 && (r.x1 - x1).abs() < 0.01, "{r:?} vs {x0}..{x1}");
+}
+
+/// 03b E12 AC2: one keystroke in a 10 000-line field lays out at most one changed line —
+/// the untouched lines keep their layouts across the table rebuild.
+#[test]
+#[cfg(debug_assertions)] // shape counter is debug-only
+fn ten_thousand_line_field_keystroke_shapes_one_line() {
+    use pebbles_render::objects::{RenderTextField, TextFieldStyle, reset_shape_count, shape_count};
+    let source: String = (0..10_000).map(|i| format!("line {i}\n")).collect();
+    let mut text = TextEnv::new();
+    let mut tree = RenderTree::new();
+    let mut field = RenderTextField::new(source.clone(), TextFieldStyle::default());
+    field.multiline = true;
+    field.field_id = 4250;
+    field.focused = true;
+    field.focus = source.find("line 5000").expect("line");
+    field.anchor = field.focus;
+    let id = tree.insert(Box::new(field));
+    tree.root = Some(id);
+    tree.layout(&mut text, tight(400.0, 300.0));
+    let before = pebbles_render::text_edit::get_lines(4250).expect("table").materialized_count();
+
+    // Type one character on the caret's line.
+    reset_shape_count();
+    {
+        let f = tree.object_mut(id).downcast_mut::<RenderTextField>().unwrap();
+        let at = f.focus;
+        f.text.insert(at, 'x');
+        f.focus += 1;
+        f.anchor = f.focus;
+    }
+    tree.mark_needs_layout(id);
+    tree.layout(&mut text, tight(400.0, 300.0));
+    let after = pebbles_render::text_edit::get_lines(4250).expect("table").materialized_count();
+    assert!(shape_count() <= 1, "one keystroke shaped {} lines", shape_count());
+    assert!(after <= before + 2, "materialized {before} -> {after}");
 }

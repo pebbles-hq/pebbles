@@ -1,23 +1,21 @@
 //! [`RenderTextField`] — a leaf render object that paints editable text with a
 //! selection highlight and a caret. It is display-only: the widget layer owns the
 //! string and the selection (anchor + focus byte offsets) and feeds them in; this
-//! object shapes the text with parley, paints the selection rects + glyphs + caret
-//! (all via parley geometry), and publishes its `Layout` to [`crate::text_edit`] so
-//! the widget can do cursor motion and hit-testing.
+//! object lays the text out as a cosmic-text [`TextLayout`], paints the selection rects +
+//! glyphs + caret (all via `TextLayout` geometry), and publishes the layout to
+//! [`crate::text_edit`] so the widget can do cursor motion and hit-testing.
 
 use std::rc::Rc;
 
-use crate::paint::Glyph;
 use kurbo::{Affine, Rect};
-use parley::{
-    Affinity, Alignment, AlignmentOptions, Cursor, FontWeight, Layout, LineHeight, PositionedLayoutItem,
-    Selection, StyleProperty,
-};
 use pebbles_foundation::{Color, Offset, Size};
 use peniko::{Brush, Fill};
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;
+use crate::text::layout::LayoutParams;
+use crate::text::style::TextStyleSpec;
+use crate::text::{Affinity, TextLayout, TextRequest};
 use crate::tree::{LayoutCx, PaintCx};
 
 /// Line count above which a fresh table is built LAZILY (P5.2): heights start
@@ -86,9 +84,9 @@ pub struct RenderTextField {
     /// Stable id for publishing the layout to [`crate::text_edit`].
     pub field_id: u64,
     pub style: TextFieldStyle,
-    /// Shaped display layout (Rc so it can be published + kept for paint) —
-    /// the SINGLE-layout path (single-line fields, placeholder, unbounded width).
-    cached: Option<Rc<Layout<Brush>>>,
+    /// The display layout (Rc so it can be published + kept for paint) — the SINGLE-layout
+    /// path (single-line fields, placeholder, unbounded width).
+    cached: Option<Rc<TextLayout>>,
     /// The per-line table (P5) — the multi-line path: one shaped layout per
     /// source line, so a keystroke re-shapes one line, not one document.
     table: Option<Rc<crate::text_edit::LineTable>>,
@@ -226,49 +224,26 @@ impl RenderObject for RenderTextField {
         };
         let display = &composed.text;
 
-        // Shape through the window cache: caret blinks, focus flips, selection
-        // moves, and unrelated rebuilds re-layout this field WITHOUT re-shaping
-        // the document — only a text / style / wrap-width change shapes. One
-        // shape per keystroke, zero otherwise (the P5 editor contract).
-        let key = {
-            use std::hash::{Hash, Hasher};
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            0xF1E1D_u64.hash(&mut h); // field tag — never collides with paragraphs
-            display.hash(&mut h);
-            self.style.font_size.to_bits().hash(&mut h);
-            self.style.weight.to_bits().hash(&mut h);
-            self.style.line_height.to_bits().hash(&mut h);
-            for c in composed.color.components {
-                c.to_bits().hash(&mut h);
-            }
-            max_advance.map(f32::to_bits).hash(&mut h);
-            h.finish()
+        // Lay out through the window caches: caret blinks, focus flips, selection moves and
+        // unrelated rebuilds re-layout this field WITHOUT re-shaping the document — only a
+        // text / style / wrap-width change shapes. One shape per keystroke, zero otherwise
+        // (the P5 editor contract). Colors are painted, never part of the key.
+        let spec = TextStyleSpec::for_field(&self.style);
+        let params = LayoutParams {
+            width: max_advance,
+            wrap: max_advance.is_some(),
+            align: None,
+            max_lines: None,
+            ellipsis: false,
         };
-        let layout: Rc<Layout<Brush>> = match cx.text.cached_layout(key) {
-            Some((rc, _, _)) => rc,
-            None => {
-                let mut builder = cx.text.layout.ranged_builder(&mut cx.text.fonts, display, 1.0, true);
-                builder.push_default(StyleProperty::FontSize(self.style.font_size));
-                builder.push_default(StyleProperty::FontWeight(FontWeight::new(self.style.weight)));
-                builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
-                    self.style.line_height,
-                )));
-                builder.push_default(StyleProperty::Brush(Brush::Solid(composed.color)));
-                // Bundled default font, or text is blank on web/mobile (see fonts::DEFAULT_FAMILY).
-                builder.push_default(StyleProperty::FontFamily(crate::fonts::DEFAULT_FAMILY.into()));
-                let mut layout: Layout<Brush> = builder.build(display);
-                layout.break_all_lines(max_advance);
-                layout.align(Alignment::Start, AlignmentOptions::default());
-                let rc = Rc::new(layout);
-                cx.text.store_layout(key, rc.clone(), rc.width() as f64, rc.height() as f64);
-                rc
-            }
-        };
+        let req = TextRequest { text: display, style: &spec, spans: &[], params };
+        let key = cx.text.text_key(&req);
+        let layout = cx.text.layout_text(&req, key);
 
         self.line_px = (self.style.font_size as f64) * (self.style.line_height as f64);
         let height = (layout.height() as f64).max(self.line_px);
         let width =
-            if constraints.has_bounded_width() { constraints.max_width } else { layout.width() as f64 };
+            if constraints.has_bounded_width() { constraints.max_width } else { f64::from(layout.width()) };
         // Publish for hit-testing / motion — but only real (unobscured) text, and not
         // while composing (the published layout would include the transient preedit).
         if self.obscure.is_none() && self.preedit.is_empty() && !self.text.is_empty() {
@@ -287,9 +262,10 @@ impl RenderObject for RenderTextField {
             return;
         }
         let Some(layout) = &self.cached else { return };
-        let transform = Affine::translate((offset.x, offset.y));
         let composed = self.composed();
         let composing = composed.preedit.is_some();
+        let visible = cx.visible();
+        let mut rects: Vec<Rect> = Vec::new();
 
         // 1. Selection highlight (skip for password / placeholder / while composing —
         // during composition the caret is collapsed at the preedit).
@@ -297,13 +273,9 @@ impl RenderObject for RenderTextField {
         if has_text && !composing && self.obscure.is_none() && self.anchor != self.focus {
             let a = self.to_display(self.anchor);
             let f = self.to_display(self.focus);
-            let sel = Selection::new(
-                Cursor::from_byte_index(layout, a, Affinity::Downstream),
-                Cursor::from_byte_index(layout, f, Affinity::Downstream),
-            );
-            let visible = cx.visible();
-            for (bb, _) in sel.geometry(layout) {
-                let rect = Rect::new(offset.x + bb.x0, offset.y + bb.y0, offset.x + bb.x1, offset.y + bb.y1);
+            layout.selection_rects(a, f, &mut rects);
+            for r in &rects {
+                let rect = *r + offset;
                 if rect.y1 < visible.y0 || rect.y0 > visible.y1 {
                     continue;
                 }
@@ -311,57 +283,16 @@ impl RenderObject for RenderTextField {
             }
         }
 
-        // 2. Glyphs — windowed exactly like paragraphs: line-level y-culling
-        // (top-to-bottom early break) and per-run x-culling, so a huge source
-        // never encodes more than the window can show.
-        let visible = cx.visible();
-        for line in layout.lines() {
-            let m = line.metrics();
-            if offset.y + f64::from(m.block_max_coord) < visible.y0 {
-                continue;
-            }
-            if offset.y + f64::from(m.block_min_coord) > visible.y1 {
-                break;
-            }
-            for item in line.items() {
-                let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
-                    continue;
-                };
-                let run_x0 = offset.x + f64::from(glyph_run.offset());
-                if run_x0 + f64::from(glyph_run.advance()) < visible.x0 || run_x0 > visible.x1 {
-                    continue;
-                }
-                crate::stats::bump_glyph_run();
-                let run = glyph_run.run();
-                let synthesis = run.synthesis();
-                let glyph_transform =
-                    synthesis.skew().map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
-                cx.scene.draw_glyphs(
-                    run.font(),
-                    run.font_size(),
-                    run.normalized_coords(),
-                    &glyph_run.style().brush,
-                    transform,
-                    glyph_transform,
-                    Fill::NonZero,
-                    glyph_run.positioned_glyphs().map(|g| Glyph { id: g.id, x: g.x, y: g.y }),
-                );
-            }
-        }
+        // 2. Glyphs — line- and run-culled to the visible rect like paragraphs.
+        crate::text::paint::paint_text_layout(cx, layout, offset, &[Brush::Solid(composed.color)]);
 
         // 3. Composition underline: a 1px rule beneath the preedit range.
         if let Some((p0, p1)) = composed.preedit {
-            let sel = Selection::new(
-                Cursor::from_byte_index(layout, p0, Affinity::Downstream),
-                Cursor::from_byte_index(layout, p1, Affinity::Downstream),
-            );
-            for (bb, _) in sel.geometry(layout) {
-                let rect = Rect::new(
-                    offset.x + bb.x0,
-                    offset.y + bb.y1 - 1.5,
-                    offset.x + bb.x1,
-                    offset.y + bb.y1 - 0.5,
-                );
+            rects.clear();
+            layout.selection_rects(p0, p1, &mut rects);
+            for r in &rects {
+                let rect =
+                    Rect::new(offset.x + r.x0, offset.y + r.y1 - 1.5, offset.x + r.x1, offset.y + r.y1 - 0.5);
                 cx.scene.fill(Fill::NonZero, Affine::IDENTITY, self.style.caret_color, None, &rect);
             }
         }
@@ -370,7 +301,7 @@ impl RenderObject for RenderTextField {
         // the preedit; the placeholder shows it at the very start.
         if self.focused && self.caret_visible {
             let f = if has_text || composing { composed.caret } else { 0 };
-            let bb = Cursor::from_byte_index(layout, f, Affinity::Downstream).geometry(layout, 1.5);
+            let bb = layout.caret_rect(f, Affinity::Downstream, 1.5);
             let rect = Rect::new(
                 offset.x + bb.x0,
                 offset.y + bb.y0 + 1.0,
@@ -427,7 +358,7 @@ impl RenderTextField {
             // of line entries can age out of the cache during blink fast-paths —
             // the old table still owns them).
             struct Carry {
-                layout: Option<Rc<Layout<Brush>>>,
+                layout: Option<Rc<TextLayout>>,
                 height: f64,
                 measured: bool,
             }
@@ -483,10 +414,6 @@ impl RenderTextField {
                         (None, self.line_px * est_rows, empty)
                     }
                 };
-                if let Some(rc) = &layout {
-                    // Keep the global cache generation fresh for recycled lines.
-                    cx.text.store_layout(line_key, rc.clone(), rc.width() as f64, rc.height() as f64);
-                }
                 lines.push(crate::text_edit::LineSlot {
                     key: line_key,
                     start,
@@ -504,13 +431,7 @@ impl RenderTextField {
                 lines,
                 text_len: display.len(),
                 display: Rc::from(display.as_str()),
-                shape: crate::text_edit::ShapeSpec {
-                    font_size: self.style.font_size,
-                    weight: self.style.weight,
-                    line_height: self.style.line_height,
-                    brush: Brush::Solid(composed.color),
-                    width,
-                },
+                shape: crate::text_edit::ShapeSpec { style: TextStyleSpec::for_field(&self.style), width },
                 line_px: self.line_px,
                 dirty_geometry: std::cell::Cell::new(false),
             };
@@ -603,11 +524,9 @@ impl RenderTextField {
                     continue;
                 }
                 let Some(layout) = l.layout() else { continue };
-                let sel = Selection::new(
-                    Cursor::from_byte_index(&layout, la, Affinity::Downstream),
-                    Cursor::from_byte_index(&layout, lf, Affinity::Downstream),
-                );
-                for (bb, _) in sel.geometry(&layout) {
+                let mut rects = Vec::new();
+                layout.selection_rects(la, lf, &mut rects);
+                for bb in rects {
                     let rect = Rect::new(offset.x + bb.x0, top + bb.y0, offset.x + bb.x1, top + bb.y1);
                     cx.scene.fill(Fill::NonZero, Affine::IDENTITY, self.style.selection_color, None, &rect);
                 }
@@ -615,6 +534,7 @@ impl RenderTextField {
         }
 
         // 2. Glyphs — only the visible window of lines and runs.
+        let brushes = [Brush::Solid(self.style.color)];
         for l in window {
             let top = offset.y + l.y.get();
             if top + l.height.get() < visible.y0 {
@@ -627,33 +547,7 @@ impl RenderTextField {
                 continue; // nothing visible on an empty line (the space is fake)
             }
             let Some(layout) = l.layout() else { continue };
-            let transform = Affine::translate((offset.x, top));
-            for line in layout.lines() {
-                for item in line.items() {
-                    let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
-                        continue;
-                    };
-                    let run_x0 = offset.x + f64::from(glyph_run.offset());
-                    if run_x0 + f64::from(glyph_run.advance()) < visible.x0 || run_x0 > visible.x1 {
-                        continue;
-                    }
-                    crate::stats::bump_glyph_run();
-                    let run = glyph_run.run();
-                    let synthesis = run.synthesis();
-                    let glyph_transform =
-                        synthesis.skew().map(|angle| Affine::skew(angle.to_radians().tan() as f64, 0.0));
-                    cx.scene.draw_glyphs(
-                        run.font(),
-                        run.font_size(),
-                        run.normalized_coords(),
-                        &glyph_run.style().brush,
-                        transform,
-                        glyph_transform,
-                        Fill::NonZero,
-                        glyph_run.positioned_glyphs().map(|g| Glyph { id: g.id, x: g.x, y: g.y }),
-                    );
-                }
-            }
+            crate::text::paint::paint_text_layout(cx, &layout, Offset::new(offset.x, top), &brushes);
         }
 
         // 3. Composition underline beneath the preedit range — the affected
@@ -673,11 +567,9 @@ impl RenderTextField {
                     continue;
                 }
                 let Some(layout) = l.layout() else { continue };
-                let sel = Selection::new(
-                    Cursor::from_byte_index(&layout, la, Affinity::Downstream),
-                    Cursor::from_byte_index(&layout, lf, Affinity::Downstream),
-                );
-                for (bb, _) in sel.geometry(&layout) {
+                let mut rects = Vec::new();
+                layout.selection_rects(la, lf, &mut rects);
+                for bb in rects {
                     let rect =
                         Rect::new(offset.x + bb.x0, top + bb.y1 - 1.5, offset.x + bb.x1, top + bb.y1 - 0.5);
                     cx.scene.fill(Fill::NonZero, Affine::IDENTITY, self.style.caret_color, None, &rect);

@@ -1,46 +1,43 @@
-//! Layout-aware text-editing helpers backed by parley's `Selection`.
+//! Layout-aware text-editing helpers over Pebbles' cosmic-text
+//! [`TextLayout`](crate::text::TextLayout) (03b).
 //!
-//! Cursor motion, hit-testing and word selection need shaped text, which lives in
-//! [`RenderTextField`](crate::RenderTextField). Each field publishes here (keyed
-//! by a stable id) on every `layout()` pass; the widget layer calls the granular
-//! helpers to move the caret, extend a selection, or map a click to a byte
-//! offset. Byte offsets are into the field's (unobscured) text; password fields
-//! do not publish.
+//! Cursor motion, hit-testing and word selection need laid-out text, which lives in the text
+//! render objects ([`RenderTextField`](crate::RenderTextField), selectable paragraphs). Each
+//! publishes here (keyed by a stable id) on every `layout()` pass; the widget layer calls the
+//! granular helpers to move the caret, extend a selection, or map a click to a byte offset.
+//! Byte offsets are into the publisher's (unobscured) text; password fields do not publish.
 //!
 //! Two shapes are published:
-//! - **Single**: one `Layout` for the whole content (single-line fields, the
-//!   placeholder, unbounded-width fields). Motion delegates to parley directly.
-//! - **Lines** (P5): a [`LineTable`] — one shaped layout PER SOURCE LINE, so a
-//!   keystroke re-shapes one line instead of one document. Motion runs parley
-//!   *within* the line's layout (visual/BiDi/grapheme correctness preserved,
-//!   including wrapped visual lines inside a source line) and hops source lines
-//!   at the boundaries.
+//! - **Text**: one [`TextLayout`](crate::text::TextLayout) for the whole content (single-line
+//!   fields, the placeholder, unbounded-width fields, selectable paragraphs). Motion runs on
+//!   `text::motion` / `TextLayout` geometry directly.
+//! - **Lines** (P5): a [`LineTable`] — one layout PER SOURCE LINE, so a keystroke re-shapes one
+//!   line instead of one document. Motion runs within the line's layout (visual / bidi /
+//!   grapheme correctness, including wrapped visual lines inside a source line) and hops source
+//!   lines at the boundaries.
 //!
-//! **Lazy materialization (P5.2):** above a size threshold, a fresh table holds
-//! only line metadata (byte ranges + height *estimates*) — a line shapes on
-//! first *visibility* (the field's paint materializes the visible window through
-//! the [`TextEnv`](crate::TextEnv) now carried by `PaintCx`) or on first
-//! *need* (the caret window, materialized during layout). Measured heights
-//! replace estimates and the field requests a corrective relayout, exactly like
-//! the ListView's estimate-then-measure extents. Motion on a line that has never
-//! been shaped falls back to char-boundary–safe arithmetic on the table's own
-//! copy of the text — approximate (chars, not graphemes; no BiDi) but
-//! panic-free, and reachable only when the caret is far outside the window
-//! (scroll-to-view + the caret window keep it materialized in practice).
+//! **Lazy materialization (P5.2):** above a size threshold, a fresh table holds only line
+//! metadata (byte ranges + height *estimates*) — a line lays out on first *visibility* (the
+//! field's paint materializes the visible window through the [`TextEnv`](crate::TextEnv)
+//! carried by `PaintCx`) or on first *need* (the caret window, materialized during layout).
+//! Measured heights replace estimates and the field requests a corrective relayout, exactly
+//! like the ListView's estimate-then-measure extents. Motion on a line that has never been laid
+//! out falls back to char-boundary–safe arithmetic on the table's own copy of the text —
+//! approximate (chars, not graphemes; no bidi) but panic-free, and reachable only when the caret
+//! is far outside the window.
 //!
-//! This module lives in `pebbles-render` (which owns parley) and exposes plain
-//! functions rather than the core `Motion` enum, because `pebbles-render` sits
-//! *below* `pebbles-core` in the crate graph.
+//! This module exposes plain functions rather than the core `Motion` enum, because
+//! `pebbles-render` sits *below* `pebbles-core` in the crate graph.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use kurbo::Rect;
-use parley::{
-    Affinity, Alignment, AlignmentOptions, Cursor, FontWeight, Layout, LineHeight, Selection, StyleProperty,
-};
-use peniko::Brush;
+
+use crate::text::layout::LayoutParams;
+use crate::text::style::TextStyleSpec;
+use crate::text::{Affinity, TextLayout, TextRequest, motion};
 
 // ---------------------------------------------------------------------------
 // The line table (P5)
@@ -68,14 +65,14 @@ pub(crate) struct LineSlot {
     /// Whether `height` came from a real shape (empty lines are exact upfront —
     /// the fake space always lays out to one line box).
     pub(crate) measured: Cell<bool>,
-    /// The shaped layout, materialized on first visibility/need (P5.2).
-    pub(crate) layout: RefCell<Option<Rc<Layout<Brush>>>>,
+    /// The line's layout, materialized on first visibility/need (P5.2).
+    pub(crate) layout: RefCell<Option<Rc<TextLayout>>>,
     pub(crate) empty: bool,
 }
 
 impl LineSlot {
     /// The materialized layout, if this line has ever shaped.
-    pub(crate) fn layout(&self) -> Option<Rc<Layout<Brush>>> {
+    pub(crate) fn layout(&self) -> Option<Rc<TextLayout>> {
         self.layout.borrow().clone()
     }
 }
@@ -84,10 +81,9 @@ impl LineSlot {
 /// style inputs the owning field shaped with. Lets paint (and the caret window)
 /// materialize lines long after `layout_lines` returned.
 pub(crate) struct ShapeSpec {
-    pub(crate) font_size: f32,
-    pub(crate) weight: f32,
-    pub(crate) line_height: f32,
-    pub(crate) brush: Brush,
+    /// The field's text style (colors are painted, never shaped).
+    pub(crate) style: TextStyleSpec,
+    /// The wrap width of every line.
     pub(crate) width: f64,
 }
 
@@ -157,31 +153,23 @@ impl LineTable {
     /// measuring its real height. A no-op when already materialized. Marks the
     /// table's geometry dirty when the measured height differs from the
     /// estimate — the caller reflows + requests a corrective relayout.
-    pub(crate) fn ensure_line(&self, i: usize, env: &mut crate::TextEnv) -> Rc<Layout<Brush>> {
+    pub(crate) fn ensure_line(&self, i: usize, env: &mut crate::TextEnv) -> Rc<TextLayout> {
         if let Some(rc) = &*self.lines[i].layout.borrow() {
             return rc.clone();
         }
         let l = &self.lines[i];
         let text = if l.empty { " " } else { &self.display[l.start..l.start + l.len] };
-        let rc = match env.cached_layout(l.key) {
-            Some((rc, _, _)) => rc,
-            None => {
-                let s = &self.shape;
-                let mut builder = env.layout.ranged_builder(&mut env.fonts, text, 1.0, true);
-                builder.push_default(StyleProperty::FontSize(s.font_size));
-                builder.push_default(StyleProperty::FontWeight(FontWeight::new(s.weight)));
-                builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(s.line_height)));
-                builder.push_default(StyleProperty::Brush(s.brush.clone()));
-                // Bundled default font, or text is blank on web/mobile (see fonts::DEFAULT_FAMILY).
-                builder.push_default(StyleProperty::FontFamily(crate::fonts::DEFAULT_FAMILY.into()));
-                let mut layout: Layout<Brush> = builder.build(text);
-                layout.break_all_lines(Some(s.width as f32));
-                layout.align(Alignment::Start, AlignmentOptions::default());
-                let rc = Rc::new(layout);
-                env.store_layout(l.key, rc.clone(), rc.width() as f64, rc.height() as f64);
-                rc
-            }
+        // Paragraph-direction start alignment (Parley `Alignment::Start` parity, 03 §3.5.1).
+        let params = LayoutParams {
+            width: Some(self.shape.width as f32),
+            wrap: true,
+            align: None,
+            max_lines: None,
+            ellipsis: false,
         };
+        let req = TextRequest { text, style: &self.shape.style, spans: &[], params };
+        let key = env.text_key(&req);
+        let rc = env.layout_text(&req, key);
         let h = (rc.height() as f64).max(self.line_px);
         if (h - l.height.get()).abs() > 0.1 {
             l.height.set(h);
@@ -252,11 +240,7 @@ impl LineTable {
     pub(crate) fn caret_x(&self, i: usize, local: usize) -> f64 {
         let l = &self.lines[i];
         match &*l.layout.borrow() {
-            Some(layout) => {
-                Cursor::from_byte_index(layout, local.min(l.len), Affinity::Downstream)
-                    .geometry(layout, 1.0)
-                    .x0
-            }
+            Some(layout) => layout.caret_rect(local.min(l.len), Affinity::Downstream, 1.0).x0,
             None => 0.0,
         }
     }
@@ -274,8 +258,8 @@ impl LineTable {
         let l = &self.lines[i];
         match &*l.layout.borrow() {
             Some(layout) => {
-                let bb = Cursor::from_byte_index(layout, self.local(i, b), Affinity::Downstream)
-                    .geometry(layout, width as f32);
+                let local = if l.empty { 0 } else { self.local(i, b) };
+                let bb = layout.caret_rect(local, Affinity::Downstream, width as f32);
                 Rect::new(bb.x0, bb.y0 + l.y.get(), bb.x1, bb.y1 + l.y.get())
             }
             None => Rect::new(0.0, l.y.get(), width, l.y.get() + self.line_px),
@@ -339,35 +323,31 @@ fn pure_word_right(s: &str, mut i: usize) -> usize {
 // ---------------------------------------------------------------------------
 
 enum Published {
-    Single(Rc<Layout<Brush>>),
+    Text(Rc<TextLayout>),
     Lines(Rc<LineTable>),
-    /// A cosmic-text layout (03b E11); Parley entries keep their path until E15.
-    Text(Rc<crate::text::TextLayout>),
 }
 
 thread_local! {
     static LAYOUTS: RefCell<HashMap<u64, Published>> = RefCell::new(HashMap::new());
 }
 
-/// Publish a whole-content `layout` for field `id` (single-line fields).
-pub fn store(id: u64, layout: Rc<Layout<Brush>>) {
+/// Publish a whole-content `layout` for `id` (single-line fields, selectable paragraphs).
+pub fn store(id: u64, layout: Rc<TextLayout>) {
     LAYOUTS.with(|m| {
-        m.borrow_mut().insert(id, Published::Single(layout));
+        m.borrow_mut().insert(id, Published::Text(layout));
     });
+}
+
+/// Former name of [`store`] while Parley and cosmic-text layouts coexisted (03b E11).
+#[deprecated(note = "use `text_edit::store`")]
+pub fn store_text(id: u64, layout: Rc<TextLayout>) {
+    store(id, layout);
 }
 
 /// Publish a per-line table for field `id` (multi-line fields, P5).
 pub fn store_lines(id: u64, table: Rc<LineTable>) {
     LAYOUTS.with(|m| {
         m.borrow_mut().insert(id, Published::Lines(table));
-    });
-}
-
-/// Publish a cosmic-text [`TextLayout`](crate::text::TextLayout) for `id` (03b E11): the
-/// motion, hit and caret queries below run on Pebbles' own editing geometry for it.
-pub fn store_text(id: u64, layout: Rc<crate::text::TextLayout>) {
-    LAYOUTS.with(|m| {
-        m.borrow_mut().insert(id, Published::Text(layout));
     });
 }
 
@@ -378,13 +358,13 @@ pub fn clear(id: u64) {
     });
 }
 
-/// The published single layout for `id`, if any (tests + tooling; `Rc` identity
-/// proves cache hits — a caret blink must NOT produce a new shaped layout).
-pub fn get(id: u64) -> Option<Rc<Layout<Brush>>> {
+/// The published whole-content layout for `id`, if any (tests + tooling; `Rc` identity
+/// proves cache hits — a caret blink must NOT produce a new layout).
+pub fn get(id: u64) -> Option<Rc<TextLayout>> {
     LAYOUTS.with(|r| {
         r.borrow().get(&id).and_then(|p| match p {
-            Published::Single(l) => Some(l.clone()),
-            _ => None,
+            Published::Text(l) => Some(l.clone()),
+            Published::Lines(_) => None,
         })
     })
 }
@@ -395,7 +375,7 @@ pub fn get_lines(id: u64) -> Option<Rc<LineTable>> {
     LAYOUTS.with(|r| {
         r.borrow().get(&id).and_then(|p| match p {
             Published::Lines(t) => Some(t.clone()),
-            _ => None,
+            Published::Text(_) => None,
         })
     })
 }
@@ -408,29 +388,15 @@ pub fn len() -> usize {
 /// Caret rect (local space of the publishing object) of `byte`, Downstream affinity, 1 px wide.
 /// Out-of-range bytes clamp to the end of the text.
 pub fn caret_rect(id: u64, byte: usize) -> Option<Rect> {
-    with_single(id, |l| {
-        // parley's from_byte_index clamps out-of-range bytes to text_len (Upstream).
-        let bb = Cursor::from_byte_index(l, byte, Affinity::Downstream).geometry(l, 1.0);
-        Rect::new(bb.x0, bb.y0, bb.x1, bb.y1)
-    })
-    .or_else(|| with_lines(id, |t| t.caret_rect(byte, 1.0)))
-    .or_else(|| with_text(id, |l| l.caret_rect(byte, crate::text::Affinity::Downstream, 1.0)))
+    with_text(id, |l| l.caret_rect(byte, Affinity::Downstream, 1.0))
+        .or_else(|| with_lines(id, |t| t.caret_rect(byte, 1.0)))
 }
 
-fn with_text<R>(id: u64, f: impl FnOnce(&crate::text::TextLayout) -> R) -> Option<R> {
+fn with_text<R>(id: u64, f: impl FnOnce(&TextLayout) -> R) -> Option<R> {
     LAYOUTS.with(|m| {
         m.borrow().get(&id).and_then(|p| match p {
             Published::Text(l) => Some(f(l)),
-            _ => None,
-        })
-    })
-}
-
-fn with_single<R>(id: u64, f: impl FnOnce(&Layout<Brush>) -> R) -> Option<R> {
-    LAYOUTS.with(|m| {
-        m.borrow().get(&id).and_then(|p| match p {
-            Published::Single(l) => Some(f(l)),
-            _ => None,
+            Published::Lines(_) => None,
         })
     })
 }
@@ -439,25 +405,13 @@ fn with_lines<R>(id: u64, f: impl FnOnce(&LineTable) -> R) -> Option<R> {
     LAYOUTS.with(|m| {
         m.borrow().get(&id).and_then(|p| match p {
             Published::Lines(t) => Some(f(t)),
-            _ => None,
+            Published::Text(_) => None,
         })
     })
 }
 
-fn cursor(layout: &Layout<Brush>, byte: usize) -> Cursor {
-    Cursor::from_byte_index(layout, byte, Affinity::Downstream)
-}
-
-fn selection(layout: &Layout<Brush>, anchor: usize, focus: usize) -> Selection {
-    Selection::new(cursor(layout, anchor), cursor(layout, focus))
-}
-
-fn out(s: Selection) -> (usize, usize) {
-    (s.anchor().index(), s.focus().index())
-}
-
 // ---------------------------------------------------------------------------
-// Line-table motion (parley within a line, manual hops across lines)
+// Line-table motion (TextLayout motion within a line, manual hops across lines)
 // ---------------------------------------------------------------------------
 
 fn apply(a: usize, nf: usize, extend: bool) -> (usize, usize) {
@@ -473,10 +427,7 @@ fn lines_left(t: &LineTable, a: usize, f: usize, extend: bool) -> (usize, usize)
     let local = t.local(i, f);
     let nf = if local > 0 && !t.lines[i].empty {
         match t.lines[i].layout() {
-            Some(layout) => {
-                let s = selection(&layout, local, local).previous_visual(&layout, false);
-                t.global(i, s.focus().index())
-            }
+            Some(layout) => t.global(i, motion::left(&layout, local, local, false).1),
             // Never materialized (off-window): char-boundary step, no shaping.
             None => t.global(i, prev_char(t.slot_text(i), local)),
         }
@@ -498,10 +449,7 @@ fn lines_right(t: &LineTable, a: usize, f: usize, extend: bool) -> (usize, usize
     let l = &t.lines[i];
     let nf = if local < l.len {
         match l.layout() {
-            Some(layout) => {
-                let s = selection(&layout, local, local).next_visual(&layout, false);
-                t.global(i, s.focus().index())
-            }
+            Some(layout) => t.global(i, motion::right(&layout, local, local, false).1),
             None => t.global(i, next_char(t.slot_text(i), local)),
         }
     } else if i + 1 < t.lines.len() {
@@ -517,10 +465,7 @@ fn lines_word_left(t: &LineTable, a: usize, f: usize, extend: bool) -> (usize, u
     let local = t.local(i, f);
     let nf = if local > 0 && !t.lines[i].empty {
         match t.lines[i].layout() {
-            Some(layout) => {
-                let s = selection(&layout, local, local).previous_visual_word(&layout, false);
-                t.global(i, s.focus().index())
-            }
+            Some(layout) => t.global(i, motion::word_left(&layout, local, local, false).1),
             None => t.global(i, pure_word_left(t.slot_text(i), local)),
         }
     } else if i > 0 {
@@ -537,10 +482,7 @@ fn lines_word_right(t: &LineTable, a: usize, f: usize, extend: bool) -> (usize, 
     let l = &t.lines[i];
     let nf = if local < l.len {
         match l.layout() {
-            Some(layout) => {
-                let s = selection(&layout, local, local).next_visual_word(&layout, false);
-                t.global(i, s.focus().index())
-            }
+            Some(layout) => t.global(i, motion::word_right(&layout, local, local, false).1),
             None => t.global(i, pure_word_right(t.slot_text(i), local)),
         }
     } else if i + 1 < t.lines.len() {
@@ -561,10 +503,7 @@ fn lines_line_start(t: &LineTable, a: usize, f: usize, extend: bool) -> (usize, 
         l.start
     } else {
         match l.layout() {
-            Some(layout) => {
-                let s = selection(&layout, local, local).line_start(&layout, false);
-                t.global(i, s.focus().index())
-            }
+            Some(layout) => t.global(i, motion::line_start(&layout, local, local, false).1),
             None => l.start,
         }
     };
@@ -579,10 +518,7 @@ fn lines_line_end(t: &LineTable, a: usize, f: usize, extend: bool) -> (usize, us
         l.start
     } else {
         match l.layout() {
-            Some(layout) => {
-                let s = selection(&layout, local, local).line_end(&layout, false);
-                t.global(i, s.focus().index())
-            }
+            Some(layout) => t.global(i, motion::line_end(&layout, local, local, false).1),
             None => l.start + l.len,
         }
     };
@@ -593,23 +529,21 @@ fn lines_vertical(t: &LineTable, a: usize, f: usize, extend: bool, up: bool) -> 
     let i = t.line_of(f);
     let l = &t.lines[i];
     let local = t.local(i, f);
-    // First try parley WITHIN the source line — a soft-wrapped line has several
-    // visual lines and vertical motion must walk them before hopping. The move
-    // counts only if the caret actually changed VISUAL line (its y moved):
-    // parley clamps to the line's start/end at the layout's boundary lines,
-    // which must fall through to the source-line hop instead.
+    // First move WITHIN the source line — a soft-wrapped line has several visual lines and
+    // vertical motion must walk them before hopping to the neighboring source line.
     if !l.empty
         && let Some(layout) = l.layout()
     {
-        let y_before =
-            Cursor::from_byte_index(&layout, local, Affinity::Downstream).geometry(&layout, 1.0).y0;
-        let sel = selection(&layout, local, local);
-        let moved = if up { sel.previous_line(&layout, false) } else { sel.next_line(&layout, false) };
-        let y_after = moved.focus().geometry(&layout, 1.0).y0;
-        let crossed = if up { y_after < y_before - 0.5 } else { y_after > y_before + 0.5 };
-        if crossed {
-            let mf = moved.focus().index().min(l.len);
-            return apply(a, t.global(i, mf), extend);
+        let vl = layout.line_for(local, Affinity::Downstream);
+        let inside = if up { vl > 0 } else { vl + 1 < layout.line_count() };
+        if inside {
+            let mf = if up {
+                motion::line_up(&layout, local, local, false)
+            } else {
+                motion::line_down(&layout, local, local, false)
+            }
+            .1;
+            return apply(a, t.global(i, mf.min(l.len)), extend);
         }
     }
     // At the source line's boundary visual line: hop, preserving the caret x.
@@ -622,8 +556,8 @@ fn lines_vertical(t: &LineTable, a: usize, f: usize, extend: bool, up: bool) -> 
             match target.layout() {
                 Some(layout) => {
                     let y = (layout.height() - 0.1).max(0.0);
-                    let s = Selection::from_point(&layout, x, y);
-                    t.global(i - 1, s.focus().index())
+                    let b = if target.empty { 0 } else { layout.hit(x, y).0 };
+                    t.global(i - 1, b)
                 }
                 // Off-window target: land at a char-snapped ~same byte column.
                 None => t.global(i - 1, snap_char(t.slot_text(i - 1), local)),
@@ -635,8 +569,8 @@ fn lines_vertical(t: &LineTable, a: usize, f: usize, extend: bool, up: bool) -> 
         let target = &t.lines[i + 1];
         match target.layout() {
             Some(layout) => {
-                let s = Selection::from_point(&layout, x, 0.1);
-                t.global(i + 1, s.focus().index())
+                let b = if target.empty { 0 } else { layout.hit(x, 0.1).0 };
+                t.global(i + 1, b)
             }
             None => t.global(i + 1, snap_char(t.slot_text(i + 1), local)),
         }
@@ -651,10 +585,8 @@ fn lines_hit(t: &LineTable, x: f64, y: f64) -> usize {
     let i = t.line_at_y(y);
     let l = &t.lines[i];
     match l.layout() {
-        Some(layout) => {
-            let s = Selection::from_point(&layout, x as f32, (y - l.y.get()) as f32);
-            t.global(i, s.focus().index())
-        }
+        Some(_) if l.empty => l.start,
+        Some(layout) => t.global(i, layout.hit(x as f32, (y - l.y.get()) as f32).0),
         // A hit on a never-painted line (drag auto-scroll racing paint): the
         // line's start — the next frame materializes it and the drag corrects.
         None => l.start,
@@ -667,84 +599,71 @@ fn lines_hit(t: &LineTable, x: f64, y: f64) -> usize {
 
 /// Move one grapheme left; `extend` grows the selection instead of collapsing it.
 pub fn left(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
-    with_single(id, |l| out(selection(l, a, f).previous_visual(l, extend)))
+    with_text(id, |l| motion::left(l, a, f, extend))
         .or_else(|| with_lines(id, |t| lines_left(t, a, f, extend)))
-        .or_else(|| with_text(id, |l| crate::text::motion::left(l, a, f, extend)))
 }
 /// Move one grapheme right.
 pub fn right(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
-    with_single(id, |l| out(selection(l, a, f).next_visual(l, extend)))
+    with_text(id, |l| motion::right(l, a, f, extend))
         .or_else(|| with_lines(id, |t| lines_right(t, a, f, extend)))
-        .or_else(|| with_text(id, |l| crate::text::motion::right(l, a, f, extend)))
 }
 /// Move one word left.
 pub fn word_left(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
-    with_single(id, |l| out(selection(l, a, f).previous_visual_word(l, extend)))
+    with_text(id, |l| motion::word_left(l, a, f, extend))
         .or_else(|| with_lines(id, |t| lines_word_left(t, a, f, extend)))
-        .or_else(|| with_text(id, |l| crate::text::motion::word_left(l, a, f, extend)))
 }
 /// Move one word right.
 pub fn word_right(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
-    with_single(id, |l| out(selection(l, a, f).next_visual_word(l, extend)))
+    with_text(id, |l| motion::word_right(l, a, f, extend))
         .or_else(|| with_lines(id, |t| lines_word_right(t, a, f, extend)))
-        .or_else(|| with_text(id, |l| crate::text::motion::word_right(l, a, f, extend)))
 }
 /// Move to the start of the visual line.
 pub fn line_start(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
-    with_single(id, |l| out(selection(l, a, f).line_start(l, extend)))
+    with_text(id, |l| motion::line_start(l, a, f, extend))
         .or_else(|| with_lines(id, |t| lines_line_start(t, a, f, extend)))
-        .or_else(|| with_text(id, |l| crate::text::motion::line_start(l, a, f, extend)))
 }
 /// Move to the end of the visual line.
 pub fn line_end(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
-    with_single(id, |l| out(selection(l, a, f).line_end(l, extend)))
+    with_text(id, |l| motion::line_end(l, a, f, extend))
         .or_else(|| with_lines(id, |t| lines_line_end(t, a, f, extend)))
-        .or_else(|| with_text(id, |l| crate::text::motion::line_end(l, a, f, extend)))
 }
 /// Move up one (visual) line.
 pub fn line_up(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
-    with_single(id, |l| out(selection(l, a, f).previous_line(l, extend)))
+    with_text(id, |l| motion::line_up(l, a, f, extend))
         .or_else(|| with_lines(id, |t| lines_vertical(t, a, f, extend, true)))
-        .or_else(|| with_text(id, |l| crate::text::motion::line_up(l, a, f, extend)))
 }
 /// Move down one (visual) line.
 pub fn line_down(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
-    with_single(id, |l| out(selection(l, a, f).next_line(l, extend)))
+    with_text(id, |l| motion::line_down(l, a, f, extend))
         .or_else(|| with_lines(id, |t| lines_vertical(t, a, f, extend, false)))
-        .or_else(|| with_text(id, |l| crate::text::motion::line_down(l, a, f, extend)))
 }
 
 /// Map a point (in the text's local space) to a caret byte offset.
 pub fn hit(id: u64, x: f64, y: f64) -> Option<usize> {
-    with_single(id, |l| Selection::from_point(l, x as f32, y as f32).focus().index())
-        .or_else(|| with_lines(id, |t| lines_hit(t, x, y)))
-        .or_else(|| with_text(id, |l| l.hit(x as f32, y as f32).0))
+    with_text(id, |l| l.hit(x as f32, y as f32).0).or_else(|| with_lines(id, |t| lines_hit(t, x, y)))
 }
 /// The word (anchor, focus) under a point — for double-click select.
 pub fn word_at(id: u64, x: f64, y: f64) -> Option<(usize, usize)> {
-    with_single(id, |l| out(Selection::word_from_point(l, x as f32, y as f32)))
-        .or_else(|| {
-            with_lines(id, |t| {
-                if t.lines.is_empty() {
-                    return (0, 0);
+    with_text(id, |l| l.word_at(x as f32, y as f32)).or_else(|| {
+        with_lines(id, |t| {
+            if t.lines.is_empty() {
+                return (0, 0);
+            }
+            let i = t.line_at_y(y);
+            let l = &t.lines[i];
+            match l.layout() {
+                Some(_) if l.empty => (l.start, l.start),
+                Some(layout) => {
+                    let (s, e) = layout.word_at(x as f32, (y - l.y.get()) as f32);
+                    (t.global(i, s), t.global(i, e))
                 }
-                let i = t.line_at_y(y);
-                let l = &t.lines[i];
-                match l.layout() {
-                    Some(layout) => {
-                        let s = Selection::word_from_point(&layout, x as f32, (y - l.y.get()) as f32);
-                        let (a, f) = out(s);
-                        (t.global(i, a), t.global(i, f))
-                    }
-                    None => (l.start, l.start),
-                }
-            })
+                None => (l.start, l.start),
+            }
         })
-        .or_else(|| with_text(id, |l| l.word_at(x as f32, y as f32)))
+    })
 }
 /// Extend the current selection's focus to a point — for drag-select.
-pub fn extend_to(id: u64, a: usize, f: usize, x: f64, y: f64) -> Option<(usize, usize)> {
-    with_single(id, |l| out(selection(l, a, f).extend_to_point(l, x as f32, y as f32)))
+pub fn extend_to(id: u64, a: usize, _f: usize, x: f64, y: f64) -> Option<(usize, usize)> {
+    with_text(id, |l| (a, l.hit(x as f32, y as f32).0))
         .or_else(|| with_lines(id, |t| (a, lines_hit(t, x, y))))
-        .or_else(|| with_text(id, |l| (a, l.hit(x as f32, y as f32).0)))
 }

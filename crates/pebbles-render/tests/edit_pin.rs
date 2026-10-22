@@ -92,7 +92,7 @@ fn publish(env: &mut TextEnv, id: u64, c: &EditCase, path: Path) -> Size {
         let layout =
             pebbles_render::text::layout_for_test(env, c.text, &style, &[], c.width.map(|w| w as f32));
         let size = Size::new(f64::from(layout.width()), f64::from(layout.height()));
-        text_edit::store_text(id, layout);
+        text_edit::store(id, layout);
         return size;
     }
     let mut para = RenderParagraph::new(c.text, style);

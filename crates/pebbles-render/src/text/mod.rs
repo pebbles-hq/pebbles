@@ -153,12 +153,6 @@ pub struct TextEnv {
     /// Reusable layout builder scratch space, parameterized by the brush type
     /// used for glyph styling (we use [`peniko::Brush`]).
     pub layout: parley::LayoutContext<peniko::Brush>,
-    /// Shaped-layout cache shared by every paragraph in the window: content-keyed
-    /// (`text + style + spans + wrap width`), generation-evicted. A paragraph
-    /// REBUILT by the widget layer (a virtual-list window sliding, a corrective
-    /// pass, a toggle elsewhere) hits this instead of re-shaping — shaping cost
-    /// tracks NEW content, not rebuild traffic.
-    cache: ShapeCache,
     /// The cosmic-text font registry (03 §3.3); shaping moves onto it in Track T, while the
     /// Parley fields above stay for not-yet-ported consumers until T40.
     registry: fonts::FontRegistry,
@@ -166,18 +160,6 @@ pub struct TextEnv {
     scratch: cosmic_text::ShapeBuffer,
     /// Shape + layout caches for the cosmic-text path (03 §3.8).
     caches: cache::TextCaches,
-}
-
-#[derive(Default)]
-struct ShapeCache {
-    map: std::collections::HashMap<u64, CacheEntry>,
-    generation: u32,
-}
-
-struct CacheEntry {
-    layout: std::rc::Rc<parley::Layout<peniko::Brush>>,
-    size: (f64, f64),
-    last_used: u32,
 }
 
 /// Entries kept beyond this trigger an eviction sweep at frame end. Sized for
@@ -218,7 +200,6 @@ impl TextEnv {
         TextEnv {
             fonts,
             layout: parley::LayoutContext::new(),
-            cache: ShapeCache::default(),
             registry,
             scratch: Default::default(),
             caches: Default::default(),
@@ -241,7 +222,6 @@ impl TextEnv {
         TextEnv {
             fonts,
             layout: parley::LayoutContext::new(),
-            cache: ShapeCache::default(),
             registry,
             scratch: Default::default(),
             caches: Default::default(),
@@ -276,43 +256,11 @@ impl TextEnv {
     /// pressure), so re-presenting a long-idle window never re-shapes the world.
     pub fn finish_frame(&mut self) {
         self.caches.finish_frame();
-        self.cache.generation = self.cache.generation.wrapping_add(1);
-        // Sweep only occasionally: a huge document legitimately holds thousands
-        // of per-line entries whose owners (the field's line table) keep them
-        // useful between rebuilds — scanning them every frame is wasted work.
-        if self.cache.map.len() > SHAPE_CACHE_PRESSURE && self.cache.generation.is_multiple_of(256) {
-            let current = self.cache.generation;
-            self.cache.map.retain(|_, e| current.wrapping_sub(e.last_used) <= SHAPE_CACHE_STALE);
-        }
-    }
-
-    /// Cached shaped layout for `key`, refreshing its generation on hit.
-    pub(crate) fn cached_layout(
-        &mut self,
-        key: u64,
-    ) -> Option<(std::rc::Rc<parley::Layout<peniko::Brush>>, f64, f64)> {
-        let generation = self.cache.generation;
-        self.cache.map.get_mut(&key).map(|e| {
-            e.last_used = generation;
-            (e.layout.clone(), e.size.0, e.size.1)
-        })
-    }
-
-    /// Store a freshly shaped layout under `key`.
-    pub(crate) fn store_layout(
-        &mut self,
-        key: u64,
-        layout: std::rc::Rc<parley::Layout<peniko::Brush>>,
-        w: f64,
-        h: f64,
-    ) {
-        let last_used = self.cache.generation;
-        self.cache.map.insert(key, CacheEntry { layout, size: (w, h), last_used });
     }
 
     /// Number of cached shaped layouts (census / tests).
     pub fn shape_cache_len(&self) -> usize {
-        self.cache.map.len()
+        self.caches.shapes.len()
     }
 
     /// The cache keys of `req` (shape key includes the font generation).

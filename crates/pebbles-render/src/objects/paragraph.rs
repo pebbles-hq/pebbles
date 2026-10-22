@@ -215,7 +215,7 @@ impl RenderParagraph {
         let Some(layout) = &self.cached else { return };
         // Publish the shaped layout for point→byte hit-testing when selection is on.
         if let Some(id) = self.select_id {
-            crate::text_edit::store_text(id, layout.clone());
+            crate::text_edit::store(id, layout.clone());
         }
         let needs_chips = self.spans.iter().any(|s| s.chip.is_some());
         let needs_links = self.link_boxes.is_some() && self.spans.iter().any(|s| s.link.is_some());
