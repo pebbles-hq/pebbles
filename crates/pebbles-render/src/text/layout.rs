@@ -64,6 +64,8 @@ pub struct TextLayout {
     pub(crate) height: f32,
     /// `params.width`, or the common width of pass 2 (§3.7.5).
     pub(crate) align_width: f32,
+    /// Inline placeholder boxes in layout space, in placeholder order (T48).
+    pub(crate) placeholder_boxes: Vec<kurbo::Rect>,
     /// `paras[kept_paras..]` were dropped by max_lines.
     #[allow(dead_code)] // caret/hit mapping clamps to kept paragraphs (T18).
     pub(crate) kept_paras: usize,
@@ -264,6 +266,7 @@ impl TextLayout {
             width: 0.0,
             height: 0.0,
             align_width: 0.0,
+            placeholder_boxes: Vec::new(),
             kept_paras,
             shaped,
         };
@@ -331,29 +334,96 @@ impl TextLayout {
     /// Stack `raw` lines with cosmic's per-line vertical metrics (§3.7.2).
     fn place(&mut self, raw: Vec<(usize, bool, LayoutLine)>) {
         let mut top = 0.0;
-        self.lines = raw
-            .into_iter()
-            .map(|(para, from_elided, layout)| {
-                let mut height = layout.line_height_opt.unwrap_or(self.shaped.base_line_height_px);
-                // Extent above the baseline: half the leading over the glyph box (cosmic-text's
-                // centering), then at least the strut's (exactly the strut's when forced).
-                let mut above = (height - (layout.max_ascent + layout.max_descent)) / 2.0 + layout.max_ascent;
-                if let Some(strut) = self.params.strut {
-                    let below = height - above;
-                    let (a, b) = if strut.force {
-                        (strut.above, strut.below)
-                    } else {
-                        (above.max(strut.above), below.max(strut.below))
-                    };
-                    above = a;
-                    height = a + b;
-                }
-                let baseline = top + above;
-                let line = VisualLine { para, from_elided, layout, top, height, baseline };
-                top += height;
-                line
+        let mut boxes: Vec<(usize, kurbo::Rect)> = Vec::new();
+        let mut lines = Vec::with_capacity(raw.len());
+        for (para, from_elided, layout) in raw {
+            let mut height = layout.line_height_opt.unwrap_or(self.shaped.base_line_height_px);
+            // Extent above the baseline: half the leading over the glyph box (cosmic-text's
+            // centering), then at least the strut's (exactly the strut's when forced).
+            let mut above = (height - (layout.max_ascent + layout.max_descent)) / 2.0 + layout.max_ascent;
+            if let Some(strut) = self.params.strut {
+                let below = height - above;
+                let (a, b) = if strut.force {
+                    (strut.above, strut.below)
+                } else {
+                    (above.max(strut.above), below.max(strut.below))
+                };
+                above = a;
+                height = a + b;
+            }
+            // Inline placeholders grow the line to contain them (T48).
+            let inline = self.inline_boxes(para, from_elided, &layout);
+            for (_, _, p) in &inline {
+                use crate::objects::PlaceholderAlignment as A;
+                let below = height - above;
+                let h = p.height.max(0.0);
+                let (need_above, need_below) = match p.alignment {
+                    A::Baseline => (p.baseline_offset, h - p.baseline_offset),
+                    A::AboveBaseline => (h, 0.0),
+                    A::BelowBaseline => (0.0, h),
+                    A::Top => (above, h - above),
+                    A::Bottom => (h - below, below),
+                    A::Middle => {
+                        let grow = (h - height).max(0.0) / 2.0;
+                        (above + grow, below + grow)
+                    }
+                };
+                above = above.max(need_above);
+                height = above + (height - above).max(need_below).max(below);
+            }
+            let baseline = top + above;
+            for (index, x, p) in inline {
+                use crate::objects::PlaceholderAlignment as A;
+                let h = p.height.max(0.0);
+                let y0 = match p.alignment {
+                    A::Baseline => baseline - p.baseline_offset,
+                    A::AboveBaseline => baseline - h,
+                    A::BelowBaseline => baseline,
+                    A::Top => top,
+                    A::Bottom => top + height - h,
+                    A::Middle => top + (height - h) / 2.0,
+                };
+                let r = kurbo::Rect::new(
+                    f64::from(x),
+                    f64::from(y0),
+                    f64::from(x + p.width.max(0.0)),
+                    f64::from(y0 + h),
+                );
+                boxes.push((index, r));
+            }
+            lines.push(VisualLine { para, from_elided, layout, top, height, baseline });
+            top += height;
+        }
+        self.lines = lines;
+        boxes.sort_by_key(|(i, _)| *i);
+        self.placeholder_boxes = boxes.into_iter().map(|(_, r)| r).collect();
+    }
+
+    /// The placeholders on one laid-out line: (placeholder index, x, placeholder).
+    fn inline_boxes(
+        &self,
+        para: usize,
+        from_elided: bool,
+        layout: &LayoutLine,
+    ) -> Vec<(usize, f32, crate::objects::Placeholder)> {
+        if self.shaped.placeholders.is_empty() || from_elided {
+            return Vec::new();
+        }
+        let start = self.shaped.paras[para].range.start;
+        layout
+            .glyphs
+            .iter()
+            .filter_map(|g| {
+                let at = start + g.start;
+                let i = self.shaped.placeholders.iter().position(|(b, _)| *b == at)?;
+                Some((i, g.x, self.shaped.placeholders[i].1))
             })
-            .collect();
+            .collect()
+    }
+
+    /// Inline placeholder boxes in layout space, in placeholder order (T48).
+    pub fn placeholder_boxes(&self) -> &[kurbo::Rect] {
+        &self.placeholder_boxes
     }
 
     /// Width = widest content; height = Σ line heights, including the empty last line of a text
@@ -664,6 +734,111 @@ mod tests {
         }
         assert_eq!(crate::text::shape_count(), shapes, "no reshape");
         assert_eq!(crate::text::layout_count() - layouts, 1, "the walk runs once");
+    }
+}
+
+#[cfg(test)]
+mod placeholder_tests {
+    use crate::objects::{ParagraphStyle, Placeholder, PlaceholderAlignment};
+    use crate::text::style::TextStyleSpec;
+    use crate::text::{Affinity, TextEnv, TextLayout, TextRequest};
+    use std::rc::Rc;
+
+    fn ph(width: f32, height: f32, alignment: PlaceholderAlignment, baseline_offset: f32) -> Placeholder {
+        Placeholder { width, height, alignment, baseline_offset }
+    }
+
+    /// JetBrains Mono 20: a 24 px line with its baseline at 19.2.
+    fn lay(text: &str, placeholders: Vec<Placeholder>, width: Option<f32>) -> Rc<TextLayout> {
+        let mut env = TextEnv::new();
+        let style = ParagraphStyle {
+            font_family: Some("JetBrains Mono".into()),
+            font_size: 20.0,
+            ..ParagraphStyle::default()
+        };
+        let mut spec = TextStyleSpec::from(&style);
+        spec.placeholders = placeholders;
+        let params = super::LayoutParams {
+            width,
+            wrap: width.is_some(),
+            align: Some(cosmic_text::Align::Left),
+            max_lines: None,
+            ellipsis: false,
+            strut: None,
+        };
+        let req = TextRequest { text, style: &spec, spans: &[], params };
+        let key = env.text_key(&req);
+        env.layout_text(&req, key)
+    }
+
+    fn near(a: f64, b: f64) -> bool {
+        (a - b).abs() <= 0.01
+    }
+
+    fn one(alignment: PlaceholderAlignment, height: f32, offset: f32) -> (kurbo::Rect, f32) {
+        let l = lay("a\u{FFFC}b", vec![ph(30.0, height, alignment, offset)], None);
+        (l.placeholder_boxes()[0], l.height())
+    }
+
+    #[test]
+    fn baseline_alignment() {
+        let (r, h) = one(PlaceholderAlignment::Baseline, 30.0, 25.0);
+        assert!(near(r.x0, 12.0) && near(r.x1, 42.0) && near(r.y0, 0.0) && near(r.y1, 30.0), "{r:?}");
+        assert!((h - 30.0).abs() < 0.01, "{h}");
+    }
+
+    #[test]
+    fn above_baseline_alignment() {
+        let (r, h) = one(PlaceholderAlignment::AboveBaseline, 10.0, 0.0);
+        assert!(near(r.y0, 9.2) && near(r.y1, 19.2), "{r:?}");
+        assert!((h - 24.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn below_baseline_alignment() {
+        let (r, h) = one(PlaceholderAlignment::BelowBaseline, 10.0, 0.0);
+        assert!(near(r.y0, 19.2) && near(r.y1, 29.2), "{r:?}");
+        assert!((h - 29.2).abs() < 0.01, "{h}");
+    }
+
+    #[test]
+    fn top_alignment() {
+        let (r, _) = one(PlaceholderAlignment::Top, 10.0, 0.0);
+        assert!(near(r.y0, 0.0), "{r:?}");
+    }
+
+    #[test]
+    fn bottom_alignment() {
+        let (r, _) = one(PlaceholderAlignment::Bottom, 10.0, 0.0);
+        assert!(near(r.y0, 14.0), "{r:?}");
+    }
+
+    #[test]
+    fn middle_alignment() {
+        let (r, h) = one(PlaceholderAlignment::Middle, 40.0, 0.0);
+        assert!((h - 40.0).abs() < 0.01 && near(r.y0, 0.0), "{r:?} {h}");
+    }
+
+    #[test]
+    fn placeholder_wraps_like_a_word() {
+        let l =
+            lay("aaaa \u{FFFC} bbbb", vec![ph(80.0, 10.0, PlaceholderAlignment::Bottom, 0.0)], Some(100.0));
+        assert_eq!(l.line_count(), 3, "{:?}", l.placeholder_boxes());
+        assert!(near(l.placeholder_boxes()[0].x0, 0.0), "the box starts its own line");
+    }
+
+    #[test]
+    fn caret_steps_over_placeholder_once() {
+        let l = lay("a\u{FFFC}b", vec![ph(30.0, 10.0, PlaceholderAlignment::Bottom, 0.0)], None);
+        assert_eq!(crate::text::motion::right(&l, 1, 1, false).1, 4);
+        assert_eq!(crate::text::motion::left(&l, 4, 4, false).1, 1);
+    }
+
+    #[test]
+    fn hit_inside_placeholder_returns_its_boundary() {
+        let l = lay("a\u{FFFC}b", vec![ph(30.0, 10.0, PlaceholderAlignment::Bottom, 0.0)], None);
+        assert_eq!(l.hit(15.0, 10.0), (1, Affinity::Downstream));
+        assert_eq!(l.hit(38.0, 10.0), (4, Affinity::Upstream));
     }
 }
 

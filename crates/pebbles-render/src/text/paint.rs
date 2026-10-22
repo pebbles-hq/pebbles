@@ -115,7 +115,7 @@ pub(crate) fn paint_into(
         if !line.from_elided && layout.shaped.paras[line.para].placeholder {
             continue;
         }
-        let runs = line_runs(text, visible, line, origin, brushes);
+        let runs = line_runs(text, visible, line, origin, brushes, layout.line_text(line));
         // Shadows first, in list order, under every glyph of the line (decorations get none).
         for run in &runs {
             let Some(paint) = slot(run.metadata) else { continue };
@@ -182,6 +182,7 @@ fn line_runs(
     line: &super::layout::VisualLine,
     origin: Offset,
     paints: &[TextPaint],
+    line_text: &str,
 ) -> Vec<Run> {
     let glyphs = &line.layout.glyphs;
     let key = |g: &cosmic_text::LayoutGlyph| {
@@ -205,6 +206,14 @@ fn line_runs(
         if origin.x + f64::from(x1) < visible.x0 || origin.x + f64::from(x0) > visible.x1 {
             continue;
         }
+        // Inline placeholders are never painted (the widget paints there, T50).
+        let run: Vec<&cosmic_text::LayoutGlyph> = run
+            .iter()
+            .filter(|g| line_text.get(g.start..g.end) != Some(super::shape::OBJECT_REPLACEMENT))
+            .collect();
+        if run.is_empty() {
+            continue;
+        }
         let variations = paints.get(g0.metadata).or(paints.first()).map_or(&[][..], |p| &p.variations[..]);
         let Some(face) = text.face_with(g0.font_id, g0.font_weight.0, variations) else { continue };
         runs.push(Run {
@@ -216,7 +225,7 @@ fn line_runs(
                 .then(fake_italic),
             metadata: g0.metadata,
             glyphs: run
-                .iter()
+                .into_iter()
                 .map(|g| {
                     let (x, y) = pen(g);
                     Glyph { id: u32::from(g.glyph_id), x, y }

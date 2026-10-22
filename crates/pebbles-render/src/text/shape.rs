@@ -42,6 +42,8 @@ pub(crate) struct ShapedText {
     pub(crate) generation: u64,
     /// (min, max) intrinsic width, T14.
     pub(crate) intrinsic: std::cell::Cell<Option<(f32, f32)>>,
+    /// Inline boxes in text order with the absolute byte of their U+FFFC (T48).
+    pub(crate) placeholders: Vec<(usize, crate::objects::Placeholder)>,
 }
 
 /// Split `text` at every paragraph separator (§3.6 table). Text ending with a separator yields
@@ -66,6 +68,31 @@ pub(crate) fn split_paragraphs(text: &str) -> Vec<Para> {
     }
     paras.push(Para { range: start..text.len(), ending_len: 0 });
     paras
+}
+
+/// The character standing in for an inline placeholder.
+pub(crate) const OBJECT_REPLACEMENT: &str = "\u{FFFC}";
+
+/// Each U+FFFC advances by its placeholder's width (in EM of the glyph's size); unmatched
+/// U+FFFC (more characters than placeholders) keep their own advance.
+fn apply_placeholder_advances(shape: &mut ShapeLine, text: &str, para_start: usize, spec: &TextStyleSpec) {
+    if spec.placeholders.is_empty() {
+        return;
+    }
+    let base_size = sanitize_size(spec.font_size);
+    for g in shape.spans.iter_mut().flat_map(|s| s.words.iter_mut()).flat_map(|w| w.glyphs.iter_mut()) {
+        let at = para_start + g.start;
+        if text.get(at..para_start + g.end) != Some(OBJECT_REPLACEMENT) {
+            continue;
+        }
+        let index = text[..at].matches(OBJECT_REPLACEMENT).count();
+        if let Some(p) = spec.placeholders.get(index) {
+            let size = g.metrics_opt.map_or(base_size, |m| m.font_size);
+            if size > 0.0 && p.width.is_finite() {
+                g.x_advance = p.width.max(0.0) / size;
+            }
+        }
+    }
 }
 
 /// Variation axes other than `wght` change advances, but cosmic-text shapes at the `wght`-only
@@ -165,6 +192,7 @@ pub(crate) fn shape_text(
             super::count_shape();
             let mut shape = ShapeLine::new(fonts.font_system(), line, &attrs, Shaping::Advanced, tab_width);
             if !placeholder {
+                apply_placeholder_advances(&mut shape, text, p.range.start, spec);
                 apply_variation_advances(fonts, &mut shape, p.range.start, spec, spans);
                 apply_word_spacing(&mut shape, text, p.range.start, spec, spans);
             }
@@ -180,6 +208,11 @@ pub(crate) fn shape_text(
         base_line_height_px: base_font_size * sanitize_lh(spec.line_height),
         generation: fonts.generation(),
         intrinsic: std::cell::Cell::new(None),
+        placeholders: text
+            .match_indices(OBJECT_REPLACEMENT)
+            .map(|(b, _)| b)
+            .zip(spec.placeholders.iter().copied())
+            .collect(),
     }
 }
 

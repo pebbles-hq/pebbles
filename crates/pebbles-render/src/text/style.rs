@@ -30,6 +30,8 @@ pub(crate) struct TextStyleSpec {
     pub(crate) word_spacing: f32,
     pub(crate) features: Vec<crate::objects::FontFeature>,
     pub(crate) variations: Vec<crate::objects::FontVariation>,
+    /// Inline boxes, one per U+FFFC in the text, in order (T48).
+    pub(crate) placeholders: Vec<crate::objects::Placeholder>,
     pub(crate) family: Option<String>,
     pub(crate) tab_width: u16,
 }
@@ -66,6 +68,7 @@ impl From<&ParagraphStyle> for TextStyleSpec {
             word_spacing: s.word_spacing,
             features: s.font_features.clone(),
             variations: s.font_variations.clone(),
+            placeholders: Vec::new(),
             family: s.font_family.clone(),
             tab_width: s.tab_width.max(1),
         }
@@ -87,6 +90,7 @@ impl TextStyleSpec {
             word_spacing: 0.0,
             features: Vec::new(),
             variations: Vec::new(),
+            placeholders: Vec::new(),
             family: None,
             tab_width: DEFAULT_TAB_WIDTH,
         }
@@ -331,6 +335,9 @@ pub(crate) fn shape_hash(text: &str, spec: &TextStyleSpec, spans: &[SpanSpec], g
     spec.letter_spacing.to_bits().hash(&mut h);
     spec.word_spacing.to_bits().hash(&mut h);
     hash_font_settings(&spec.features, &spec.variations, &mut h);
+    for p in &spec.placeholders {
+        (p.width.to_bits(), p.height.to_bits(), p.alignment, p.baseline_offset.to_bits()).hash(&mut h);
+    }
     spec.family.hash(&mut h);
     spec.tab_width.max(1).hash(&mut h);
     spans.len().hash(&mut h);

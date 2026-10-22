@@ -39,6 +39,35 @@ pub enum TextDecorationStyle {
     Wavy,
 }
 
+/// Where an inline placeholder sits on its line (Flutter `PlaceholderAlignment`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum PlaceholderAlignment {
+    /// The box's `baseline_offset` sits on the text baseline.
+    #[default]
+    Baseline,
+    /// The box's bottom sits on the baseline.
+    AboveBaseline,
+    /// The box's top sits on the baseline.
+    BelowBaseline,
+    /// The box's top meets the line's top.
+    Top,
+    /// The box's bottom meets the line's bottom.
+    Bottom,
+    /// The box is centered in the line.
+    Middle,
+}
+
+/// An inline box laid out with the text (Flutter `PlaceholderSpan`): one U+FFFC in the
+/// paragraph text per placeholder, in order. Nothing is painted for it (the widget paints).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Placeholder {
+    pub width: f32,
+    pub height: f32,
+    pub alignment: PlaceholderAlignment,
+    /// Distance from the box's top to its baseline (`Baseline` alignment).
+    pub baseline_offset: f32,
+}
+
 /// An OpenType feature setting (Flutter `FontFeature`), e.g. `tnum = 1`, `liga = 0`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FontFeature {
@@ -235,6 +264,8 @@ pub struct RenderParagraph {
     /// Where the paragraph publishes each link span's laid-out boxes
     /// `(rect in local space, link index)` — shared with the widget's tap handler.
     pub link_boxes: Option<LinkBoxes>,
+    /// Inline boxes, one per U+FFFC in `text`, in order (T48 / WidgetSpan T50).
+    pub placeholders: Vec<Placeholder>,
     /// When set, the shaped layout is published to [`crate::text_edit`] under this
     /// id at layout, so the owning widget can hit-test a point → byte for text
     /// selection. Opt-in — plain/rich paragraphs leave it `None`.
@@ -267,6 +298,7 @@ impl RenderParagraph {
             style,
             spans: Vec::new(),
             link_boxes: None,
+            placeholders: Vec::new(),
             select_id: None,
             selection: None,
             selection_color: Color::from_rgba8(59, 130, 246, 70),
@@ -302,7 +334,8 @@ impl RenderParagraph {
 
     /// The layout of this paragraph's text with `params`, through the window's caches.
     fn layout_with(&self, text: &mut TextEnv, params: LayoutParams) -> (Rc<TextLayout>, u64) {
-        let spec = TextStyleSpec::from(&self.style);
+        let mut spec = TextStyleSpec::from(&self.style);
+        spec.placeholders.clone_from(&self.placeholders);
         let spans: Vec<SpanSpec> = self.spans.iter().map(SpanSpec::from).collect();
         let req = TextRequest { text: &self.text, style: &spec, spans: &spans, params };
         let key = text.text_key(&req);
