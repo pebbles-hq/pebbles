@@ -209,3 +209,100 @@ impl Runner {
         self.request_redraw();
     }
 }
+
+/// Dev-only secondary-window churn: `PEBBLES_WINDOW_CHURN=1` opens 10 windows of growing size,
+/// closes them 30 ticks later, and repeats 20 times, then logs
+/// `window churn done` and the renderer census (11 SOAK-WINDOWS). Every cycle builds and drops
+/// 10 surfaces with their `FrameTargets`, so a per-window leak shows up in the census line.
+/// Desktop only; the main window is never touched.
+///
+/// Paced by a 16 ms event-loop tick, not by main-window frames: once the new windows cover the
+/// main window, a Wayland compositor stops sending it frame callbacks and frame pacing stalls.
+pub(super) struct WindowChurn {
+    cycle: u32,
+    frame: u64,
+    open: Vec<pebbles_widgets::window::WindowId>,
+    /// When the last tick ran (`about_to_wait` also runs on every event; ticks stay 16 ms apart).
+    last: Option<Instant>,
+    /// The final report ran (a half-second after the last close, once those windows dropped).
+    reported: bool,
+}
+
+impl WindowChurn {
+    const CYCLES: u32 = 20;
+    const WINDOWS: u32 = 10;
+
+    /// Build from the environment: any non-empty, non-"0" `PEBBLES_WINDOW_CHURN` on desktop.
+    pub(super) fn from_env() -> Option<Self> {
+        if cfg!(any(target_family = "wasm", target_os = "android", target_os = "ios")) {
+            return None;
+        }
+        let v = std::env::var("PEBBLES_WINDOW_CHURN").ok()?;
+        if v.is_empty() || v == "0" {
+            return None;
+        }
+        eprintln!("pebbles: WINDOW CHURN armed — {} cycles of {} windows", Self::CYCLES, Self::WINDOWS);
+        Some(WindowChurn { cycle: 0, frame: 0, open: Vec::new(), last: None, reported: false })
+    }
+
+    /// The tick period (one 60 Hz frame).
+    pub(super) const TICK: Duration = Duration::from_millis(16);
+
+    /// Whether the churn still has cycles to run (the runner keeps ticking it).
+    pub(super) fn running(&self) -> bool {
+        !self.reported
+    }
+}
+
+impl Runner {
+    /// One churn tick (from `about_to_wait`, every [`WindowChurn::TICK`]).
+    pub(super) fn churn_tick(&mut self) {
+        let Some(churn) = self.churn.as_mut() else { return };
+        if !churn.running() || churn.last.is_some_and(|t| t.elapsed() < WindowChurn::TICK) {
+            return;
+        }
+        churn.last = Some(Instant::now());
+        let frame = churn.frame;
+        churn.frame += 1;
+        if frame % 60 == 0 && churn.cycle == WindowChurn::CYCLES {
+            churn.reported = true;
+            self.churn_report();
+        } else if frame % 60 == 0 && churn.open.is_empty() {
+            let cycle = churn.cycle;
+            self.ui.make_current();
+            for i in 0..WindowChurn::WINDOWS {
+                let id = pebbles_widgets::window::window(pebbles_widgets::text(format!("churn {cycle}.{i}")))
+                    .size(300 + 40 * i, 200 + 30 * i)
+                    .open();
+                if let Some(churn) = self.churn.as_mut() {
+                    churn.open.push(id);
+                }
+            }
+        } else if frame % 60 == 30 && churn.open.len() == WindowChurn::WINDOWS as usize {
+            let ids = std::mem::take(&mut churn.open);
+            churn.cycle += 1;
+            self.ui.make_current();
+            for id in ids {
+                pebbles_widgets::window::close_window(id);
+            }
+        }
+    }
+
+    /// `window churn done` plus the renderer census (10 §9) of the main window's device.
+    fn churn_report(&self) {
+        use pebbles_foundation::log::{Cat, Level, logf};
+        logf(Level::Warn, Cat::Gpu, format_args!("window churn done"));
+        let device = self.active.as_ref().map_or(0, |a| a.surface.device_index());
+        let census = self.renderers.get(device).and_then(Option::as_ref).and_then(crate::gpu::census_values);
+        let line = match census {
+            Some(values) => pebbles_gpu::GpuCensus::COLUMNS
+                .iter()
+                .zip(values)
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect::<Vec<_>>()
+                .join(" "),
+            None => "unavailable (wgpu backend with debug assertions only; use --profile soak)".to_owned(),
+        };
+        logf(Level::Warn, Cat::Gpu, format_args!("census: {line}"));
+    }
+}

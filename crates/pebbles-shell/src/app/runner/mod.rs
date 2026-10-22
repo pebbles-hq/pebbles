@@ -287,6 +287,8 @@ pub(super) struct Runner {
     /// Dev-only synthetic-input monkey (`PEBBLES_INPUT_STORM=1`); `None` in
     /// normal runs. See [`storm`].
     storm: Option<storm::InputStorm>,
+    /// Dev-only secondary-window churn (`PEBBLES_WINDOW_CHURN=1`, S16); `None` normally.
+    churn: Option<storm::WindowChurn>,
     /// `PEBBLES_SOAK_CSV` sampler (11 §2.9) and the rendered-frame counter.
     soak: Option<soak_csv::SoakCsv>,
     soak_frames: u64,
@@ -381,6 +383,7 @@ impl Runner {
             frame_no: 0,
             last_objects: 0,
             storm: storm::InputStorm::from_env(),
+            churn: storm::WindowChurn::from_env(),
             soak: soak_csv::SoakCsv::from_env(),
             soak_frames: 0,
         }
@@ -1358,6 +1361,11 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         if self.storm.is_some() && self.mounted {
             self.storm_tick();
             event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(10)));
+        }
+        // Dev window churn: one tick per 16 ms until its cycles are done.
+        if self.churn.as_ref().is_some_and(storm::WindowChurn::running) && self.mounted {
+            self.churn_tick();
+            event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + storm::WindowChurn::TICK));
         }
     }
 }

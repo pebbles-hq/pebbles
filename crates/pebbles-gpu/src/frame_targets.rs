@@ -15,6 +15,22 @@ pub struct FrameTargets {
     depth: Vec<DepthTarget>,
     /// Minted by the Renderer on first render (its `TargetBook`, 10 §4.4 E4).
     id: Option<u64>,
+    /// The book's retire list: dropping these targets hands `id` back so the book forgets them at
+    /// once (an idle app renders no frames, so the stale-frame sweep alone would never run).
+    retire: Option<Retired>,
+}
+
+/// Ids of dropped `FrameTargets`, drained by their `TargetBook`.
+type Retired = std::sync::Arc<std::sync::Mutex<Vec<u64>>>;
+
+impl Drop for FrameTargets {
+    fn drop(&mut self) {
+        if let (Some(id), Some(retire)) = (self.id, &self.retire)
+            && let Ok(mut ids) = retire.lock()
+        {
+            ids.push(id);
+        }
+    }
 }
 
 /// What a target-sized attachment must match (10 §4.1): its size, color format and sample
@@ -44,6 +60,8 @@ pub(crate) const TARGET_STALE_FRAMES: u64 = 300;
 pub(crate) struct TargetBook {
     /// FrameTargets id → (bytes, last frame rendered).
     entries: std::collections::HashMap<u64, (u64, u64)>,
+    /// Ids handed back by dropped `FrameTargets`, not yet removed from `entries`.
+    retired: Retired,
     next_id: u64,
     total_bytes: u64,
     budget_bytes: u64,
@@ -52,12 +70,23 @@ pub(crate) struct TargetBook {
 
 impl TargetBook {
     pub(crate) fn new(budget_bytes: u64) -> Self {
-        Self { entries: Default::default(), next_id: 0, total_bytes: 0, budget_bytes, warned: false }
+        Self {
+            entries: Default::default(),
+            retired: Retired::default(),
+            next_id: 0,
+            total_bytes: 0,
+            budget_bytes,
+            warned: false,
+        }
     }
 
     /// E4/E5: record `targets` as rendered on `frame`; true when the book is over budget (logged
     /// once; creation is never refused).
     pub(crate) fn record(&mut self, targets: &mut FrameTargets, frame: u64) -> bool {
+        self.reap();
+        if targets.id.is_none() {
+            targets.retire = Some(self.retired.clone());
+        }
         let id = *targets.id.get_or_insert_with(|| {
             self.next_id += 1;
             self.next_id
@@ -81,6 +110,7 @@ impl TargetBook {
 
     /// E4: forget targets not rendered for `TARGET_STALE_FRAMES` frames.
     pub(crate) fn end_frame(&mut self, frame: u64) {
+        self.reap();
         let mut freed = 0;
         self.entries.retain(|_, (bytes, last)| {
             let keep = frame.saturating_sub(*last) < TARGET_STALE_FRAMES;
@@ -92,15 +122,33 @@ impl TargetBook {
         self.total_bytes -= freed;
     }
 
-    /// Booked targets (census).
-    #[cfg(debug_assertions)]
-    pub(crate) fn len(&self) -> usize {
-        self.entries.len()
+    /// Forget the targets dropped since the last call.
+    fn reap(&mut self) {
+        let ids = self.retired.lock().map(|mut ids| std::mem::take(&mut *ids)).unwrap_or_default();
+        for id in ids {
+            if let Some((bytes, _)) = self.entries.remove(&id) {
+                self.total_bytes -= bytes;
+            }
+        }
     }
 
-    /// Booked bytes (census, 10 §9.3).
+    /// Booked targets still alive (census): dropped ones count as gone before the next reap.
+    #[cfg(debug_assertions)]
+    pub(crate) fn len(&self) -> usize {
+        let pending = self
+            .retired
+            .lock()
+            .map_or(0, |ids| ids.iter().filter(|id| self.entries.contains_key(id)).count());
+        self.entries.len() - pending
+    }
+
+    /// Booked bytes of live targets (census, 10 §9.3).
     pub(crate) fn total_bytes(&self) -> u64 {
-        self.total_bytes
+        let pending: u64 = self
+            .retired
+            .lock()
+            .map_or(0, |ids| ids.iter().filter_map(|id| self.entries.get(id)).map(|(b, _)| b).sum());
+        self.total_bytes - pending
     }
 }
 
@@ -478,5 +526,25 @@ mod tests {
     #[test]
     fn only_x8() {
         assert_eq!(negotiate_sample_count(F::MULTISAMPLE_X8 | F::MULTISAMPLE_RESOLVE, None), 1);
+    }
+
+    /// S16: a closed window's targets leave the book when they drop, not 300 frames later.
+    #[test]
+    #[cfg(debug_assertions)]
+    fn dropped_targets_leave_the_book_at_once() {
+        let mut book = super::TargetBook::new(u64::MAX);
+        let mut main = super::FrameTargets::new();
+        let mut windows: Vec<_> = (0..10).map(|_| super::FrameTargets::new()).collect();
+        book.record(&mut main, 1);
+        for w in &mut windows {
+            book.record(w, 1);
+        }
+        assert_eq!(book.len(), 11);
+        drop(windows);
+        assert_eq!(book.len(), 1, "census counts only live targets, before any reap");
+        book.end_frame(2);
+        assert_eq!((book.len(), book.entries.len()), (1, 1));
+        book.record(&mut main, 3);
+        assert_eq!(book.len(), 1);
     }
 }
