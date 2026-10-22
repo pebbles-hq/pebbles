@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use kurbo::Affine;
 use pebbles_foundation::{Axis, Color, Offset, Rect, Size, TextAlign, TextDirection};
-use peniko::{Brush, Fill};
+use peniko::Fill;
 use smallvec::SmallVec;
 
 use crate::constraints::BoxConstraints;
@@ -22,6 +22,22 @@ use crate::text::{TextEnv, TextLayout, TextRequest};
 use crate::tree::{IntrinsicCx, LayoutCx, PaintCx};
 
 type LinkBoxes = Rc<RefCell<Vec<(Rect, usize)>>>;
+
+/// How a text decoration line is drawn (Flutter `TextDecorationStyle`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum TextDecorationStyle {
+    /// One continuous line.
+    #[default]
+    Solid,
+    /// Two parallel lines.
+    Double,
+    /// Round dots.
+    Dotted,
+    /// Short dashes.
+    Dashed,
+    /// A sine-like wave.
+    Wavy,
+}
 
 /// Styling for a paragraph of text.
 #[derive(Clone, Debug)]
@@ -39,6 +55,14 @@ pub struct ParagraphStyle {
     pub italic: bool,
     pub underline: bool,
     pub strikethrough: bool,
+    /// A line over the text, at the font's ascent.
+    pub overline: bool,
+    /// How underline / overline / strikethrough lines are drawn.
+    pub decoration_style: TextDecorationStyle,
+    /// Decoration color (`None` = the text color).
+    pub decoration_color: Option<Color>,
+    /// Decoration thickness as a multiple of the font's own (1.0 = the font's).
+    pub decoration_thickness: f32,
     /// A font family name (system fallback if unset/unavailable).
     pub font_family: Option<String>,
     /// Clamp the paragraph to at most this many lines (excess lines are dropped).
@@ -66,6 +90,10 @@ impl Default for ParagraphStyle {
             italic: false,
             underline: false,
             strikethrough: false,
+            overline: false,
+            decoration_style: TextDecorationStyle::Solid,
+            decoration_color: None,
+            decoration_thickness: 1.0,
             font_family: None,
             max_lines: None,
             ellipsis: false,
@@ -87,6 +115,14 @@ pub struct TextSpanStyle {
     pub italic: bool,
     pub underline: bool,
     pub strikethrough: bool,
+    /// Overline the range.
+    pub overline: bool,
+    /// Decoration style override for the range.
+    pub decoration_style: Option<TextDecorationStyle>,
+    /// Decoration color override for the range.
+    pub decoration_color: Option<Color>,
+    /// Decoration thickness multiplier override for the range.
+    pub decoration_thickness: Option<f32>,
     /// Color override for the range.
     pub color: Option<Color>,
     /// Font family override (e.g. the monospace family for inline code).
@@ -111,6 +147,10 @@ impl TextSpanStyle {
             italic: false,
             underline: false,
             strikethrough: false,
+            overline: false,
+            decoration_style: None,
+            decoration_color: None,
+            decoration_thickness: None,
             color: None,
             family: None,
             size: None,
@@ -151,7 +191,7 @@ pub struct RenderParagraph {
     layout_key: Option<u64>,
     /// Brush table (slot 0 = base color, slot i + 1 = span i), rebuilt every layout: colors
     /// never enter the shape key (03 §3.9.4).
-    brushes: SmallVec<[Brush; 4]>,
+    brushes: SmallVec<[crate::text::paint::TextPaint; 4]>,
 }
 
 impl RenderParagraph {
@@ -254,8 +294,9 @@ impl RenderObject for RenderParagraph {
         self.cached = Some(layout);
         self.layout_key = Some(key);
         self.brushes.clear();
-        self.brushes.push(Brush::Solid(self.style.color));
-        self.brushes.extend(self.spans.iter().map(|s| Brush::Solid(s.color.unwrap_or(self.style.color))));
+        let base = crate::text::paint::TextPaint::base(&self.style);
+        self.brushes.push(base.clone());
+        self.brushes.extend(self.spans.iter().map(|s| base.for_span(s)));
         self.refresh_span_geometry();
         constraints.constrain(size)
     }

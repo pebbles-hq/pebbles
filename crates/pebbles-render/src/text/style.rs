@@ -25,6 +25,7 @@ pub(crate) struct TextStyleSpec {
     pub(crate) italic: bool,
     pub(crate) underline: bool,
     pub(crate) strikethrough: bool,
+    pub(crate) overline: bool,
     pub(crate) letter_spacing: f32,
     pub(crate) family: Option<String>,
     pub(crate) tab_width: u16,
@@ -38,6 +39,8 @@ pub(crate) struct SpanSpec {
     pub(crate) italic: bool,
     pub(crate) underline: bool,
     pub(crate) strikethrough: bool,
+    pub(crate) overline: bool,
+    /// The span has its own paint slot (color or decoration override).
     pub(crate) has_color: bool,
     pub(crate) family: Option<String>,
     pub(crate) size: Option<f32>,
@@ -52,6 +55,7 @@ impl From<&ParagraphStyle> for TextStyleSpec {
             italic: s.italic,
             underline: s.underline,
             strikethrough: s.strikethrough,
+            overline: s.overline,
             letter_spacing: s.letter_spacing,
             family: s.font_family.clone(),
             tab_width: s.tab_width.max(1),
@@ -69,6 +73,7 @@ impl TextStyleSpec {
             italic: false,
             underline: false,
             strikethrough: false,
+            overline: false,
             letter_spacing: 0.0,
             family: None,
             tab_width: DEFAULT_TAB_WIDTH,
@@ -84,7 +89,12 @@ impl From<&TextSpanStyle> for SpanSpec {
             italic: s.italic,
             underline: s.underline,
             strikethrough: s.strikethrough,
-            has_color: s.color.is_some(),
+            overline: s.overline,
+            // A span with its own colors or decoration paint needs its own paint slot.
+            has_color: s.color.is_some()
+                || s.decoration_color.is_some()
+                || s.decoration_style.is_some()
+                || s.decoration_thickness.is_some(),
             family: s.family.clone(),
             size: s.size,
         }
@@ -138,6 +148,7 @@ struct Merged<'s> {
     italic: bool,
     underline: bool,
     strikethrough: bool,
+    overline: bool,
     family: Option<&'s str>,
     size: f32,
     slot: usize,
@@ -150,6 +161,7 @@ impl<'s> Merged<'s> {
             italic: spec.italic,
             underline: spec.underline,
             strikethrough: spec.strikethrough,
+            overline: spec.overline,
             family: spec.family.as_deref(),
             size: spec.font_size,
             slot: 0,
@@ -174,6 +186,9 @@ impl<'s> Merged<'s> {
         }
         if self.strikethrough {
             attrs = attrs.strikethrough();
+        }
+        if self.overline {
+            attrs = attrs.overline();
         }
         attrs
     }
@@ -242,6 +257,7 @@ pub(crate) fn attrs_list_for(
             merged.italic |= s.italic;
             merged.underline |= s.underline;
             merged.strikethrough |= s.strikethrough;
+            merged.overline |= s.overline;
             if let Some(family) = s.family.as_deref() {
                 merged.family = Some(family);
             }
@@ -269,7 +285,7 @@ pub(crate) fn shape_hash(text: &str, spec: &TextStyleSpec, spans: &[SpanSpec], g
     sanitize_size(spec.font_size).to_bits().hash(&mut h);
     sanitize_lh(spec.line_height).to_bits().hash(&mut h);
     weight_of(spec.weight).0.hash(&mut h);
-    (spec.italic, spec.underline, spec.strikethrough).hash(&mut h);
+    (spec.italic, spec.underline, spec.strikethrough, spec.overline).hash(&mut h);
     spec.letter_spacing.to_bits().hash(&mut h);
     spec.family.hash(&mut h);
     spec.tab_width.max(1).hash(&mut h);
@@ -277,7 +293,7 @@ pub(crate) fn shape_hash(text: &str, spec: &TextStyleSpec, spans: &[SpanSpec], g
     for s in spans {
         s.range.hash(&mut h);
         s.weight.map(f32::to_bits).hash(&mut h);
-        (s.italic, s.underline, s.strikethrough, s.has_color).hash(&mut h);
+        (s.italic, s.underline, s.strikethrough, s.overline, s.has_color).hash(&mut h);
         s.family.hash(&mut h);
         s.size.map(f32::to_bits).hash(&mut h);
     }

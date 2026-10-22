@@ -54,7 +54,7 @@ pub use objects::{
     RenderTable, RenderTextField, RenderTransform, RenderView, RenderWrap, ScrollEvent, ScrollHandle,
     ScrollMetrics, ScrollNotification, ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode,
     SemanticsProps, SemanticsRole, SizeFn, StackFit, StackParentData, TableColumnWidth, TapCallback,
-    TextFieldStyle, TextSpanStyle, tabler,
+    TextDecorationStyle, TextFieldStyle, TextSpanStyle, tabler,
 };
 pub use text::{SystemFonts, TextCensus, TextEnv, TextLayout};
 pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};

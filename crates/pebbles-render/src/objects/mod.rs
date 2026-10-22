@@ -53,7 +53,7 @@ pub use layout_extra::{
 pub use list::RenderList;
 pub use measure::{RenderMeasureProbe, RenderPositionProbe};
 pub use overflow::{RenderLimitedBox, RenderOverflowBox};
-pub use paragraph::{ParagraphStyle, RenderParagraph, TextSpanStyle};
+pub use paragraph::{ParagraphStyle, RenderParagraph, TextDecorationStyle, TextSpanStyle};
 pub use pointer::{Cursor, PointerButton, PointerEvent, RenderPointerListener, TapCallback};
 pub use scroll::{
     RefreshState, RenderScroll, ScrollEvent, ScrollHandle, ScrollMetrics, ScrollNotification, ScrollPhysics,

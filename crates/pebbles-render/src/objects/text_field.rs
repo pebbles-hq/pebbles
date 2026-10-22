@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use kurbo::{Affine, Rect};
 use pebbles_foundation::{Color, Offset, Size};
-use peniko::{Brush, Fill};
+use peniko::Fill;
 
 use crate::constraints::BoxConstraints;
 use crate::object::RenderObject;
@@ -306,7 +306,12 @@ impl RenderObject for RenderTextField {
         }
 
         // 2. Glyphs — line- and run-culled to the visible rect like paragraphs.
-        crate::text::paint::paint_text_layout(cx, layout, offset, &[Brush::Solid(composed.color)]);
+        crate::text::paint::paint_text_layout(
+            cx,
+            layout,
+            offset,
+            &[crate::text::paint::TextPaint::solid(composed.color)],
+        );
 
         // 3. Composition underline: a 1px rule beneath the preedit range.
         if let Some((p0, p1)) = composed.preedit {
@@ -556,7 +561,7 @@ impl RenderTextField {
         }
 
         // 2. Glyphs — only the visible window of lines and runs.
-        let brushes = [Brush::Solid(self.style.color)];
+        let brushes = [crate::text::paint::TextPaint::solid(self.style.color)];
         for l in window {
             let top = offset.y + l.y.get();
             if top + l.height.get() < visible.y0 {

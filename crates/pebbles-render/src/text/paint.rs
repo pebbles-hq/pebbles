@@ -7,22 +7,73 @@ use pebbles_foundation::Offset;
 use peniko::{Brush, Fill};
 
 use super::TextEnv;
+use super::decoration;
 use super::layout::TextLayout;
+use crate::objects::{ParagraphStyle, TextDecorationStyle, TextSpanStyle};
 use crate::paint::{Glyph, Painter};
 use crate::tree::PaintCx;
+
+/// What one paint slot (glyph metadata) draws with: the glyph brush and the decoration paint.
+/// Paint-only — never part of the shape key (03 §3.9.4).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct TextPaint {
+    pub(crate) brush: Brush,
+    pub(crate) decoration_style: TextDecorationStyle,
+    pub(crate) decoration_brush: Brush,
+    /// Multiplier of the font's own decoration thickness.
+    pub(crate) decoration_thickness: f32,
+}
+
+impl TextPaint {
+    /// A plain solid paint (decorations in the text color, the font's thickness).
+    pub(crate) fn solid(color: peniko::Color) -> Self {
+        TextPaint {
+            brush: Brush::Solid(color),
+            decoration_style: TextDecorationStyle::Solid,
+            decoration_brush: Brush::Solid(color),
+            decoration_thickness: 1.0,
+        }
+    }
+
+    /// Slot 0 of a paragraph.
+    pub(crate) fn base(style: &ParagraphStyle) -> Self {
+        TextPaint {
+            brush: Brush::Solid(style.color),
+            decoration_style: style.decoration_style,
+            decoration_brush: Brush::Solid(style.decoration_color.unwrap_or(style.color)),
+            decoration_thickness: style.decoration_thickness,
+        }
+    }
+
+    /// A span's slot: its overrides over this base.
+    pub(crate) fn for_span(&self, span: &TextSpanStyle) -> Self {
+        let brush = span.color.map_or_else(|| self.brush.clone(), Brush::Solid);
+        // The decoration follows the span's text color unless it sets its own.
+        let decoration_brush = match (span.decoration_color, span.color) {
+            (Some(c), _) => Brush::Solid(c),
+            (None, Some(c)) => Brush::Solid(c),
+            (None, None) => self.decoration_brush.clone(),
+        };
+        TextPaint {
+            brush,
+            decoration_style: span.decoration_style.unwrap_or(self.decoration_style),
+            decoration_brush,
+            decoration_thickness: span.decoration_thickness.unwrap_or(self.decoration_thickness),
+        }
+    }
+}
 
 /// The faux-italic shear (cosmic-text sets FAKE_ITALIC when the face is upright).
 fn fake_italic() -> Affine {
     Affine::skew(14f64.to_radians().tan(), 0.0)
 }
 
-/// Paint `layout`'s glyph runs at `origin` with `brushes` (slot 0 = base color).
-#[allow(dead_code)] // RenderParagraph paints through it from T22.
+/// Paint `layout`'s glyph runs and decorations at `origin` with the slot paints (slot 0 = base).
 pub(crate) fn paint_text_layout(
     cx: &mut PaintCx<'_>,
     layout: &TextLayout,
     origin: Offset,
-    brushes: &[Brush],
+    brushes: &[TextPaint],
 ) {
     let visible = cx.visible();
     paint_into(&mut cx.scene, cx.text, visible, layout, origin, brushes);
@@ -35,7 +86,7 @@ pub(crate) fn paint_into(
     visible: Rect,
     layout: &TextLayout,
     origin: Offset,
-    brushes: &[Brush],
+    brushes: &[TextPaint],
 ) {
     let transform = Affine::translate((origin.x, origin.y));
     for line in &layout.lines {
@@ -81,7 +132,8 @@ pub(crate) fn paint_into(
                 continue;
             }
             let Some(face) = text.face(g0.font_id, g0.font_weight.0) else { continue };
-            let brush = brushes.get(g0.metadata).or(brushes.first()).cloned().unwrap_or_default();
+            let brush =
+                brushes.get(g0.metadata).or(brushes.first()).map(|p| p.brush.clone()).unwrap_or_default();
             let glyph_transform =
                 g0.cache_key_flags.contains(cosmic_text::CacheKeyFlags::FAKE_ITALIC).then(fake_italic);
             scene.draw_glyphs(
@@ -103,42 +155,49 @@ pub(crate) fn paint_into(
     }
 }
 
-/// Underline / strikethrough rects of one line (§3.9.5, the pre-swap formulas; never rounded).
+/// Underline / overline / strikethrough of one line (§3.9.5 positions; T43 styles), never
+/// rounded. Thickness = the font's × the slot's multiplier.
 fn paint_decorations(
     scene: &mut Painter<'_>,
     visible: Rect,
     line: &super::layout::VisualLine,
     origin: Offset,
-    brushes: &[Brush],
+    brushes: &[TextPaint],
 ) {
     let glyphs = &line.layout.glyphs;
+    let transform = Affine::translate((origin.x, origin.y));
     for span in &line.layout.decorations {
         let run = glyphs.get(span.glyph_range.clone()).unwrap_or(&[]);
         let Some(first) = run.first() else { continue };
         let x0 = run.iter().map(|g| g.x).fold(f32::INFINITY, f32::min);
         let x1 = run.iter().map(|g| g.x + g.w).fold(f32::NEG_INFINITY, f32::max);
-        let (ox, oy) = (origin.x, origin.y);
-        if ox + f64::from(x1) < visible.x0 || ox + f64::from(x0) > visible.x1 {
+        if origin.x + f64::from(x1) < visible.x0 || origin.x + f64::from(x0) > visible.x1 {
             continue;
         }
-        let brush = brushes.get(first.metadata).or(brushes.first()).cloned().unwrap_or_default();
+        let paint = brushes
+            .get(first.metadata)
+            .or(brushes.first())
+            .cloned()
+            .unwrap_or_else(|| TextPaint::solid(peniko::Color::BLACK));
         let size = span.font_size;
         let deco = &span.data.text_decoration;
-        let mut rect = |metrics: &cosmic_text::DecorationMetrics| {
-            let top = line.baseline - metrics.offset * size;
-            let r = Rect::new(
-                f64::from(x0),
-                f64::from(top),
-                f64::from(x1),
-                f64::from(top + metrics.thickness * size),
-            );
-            scene.fill(Fill::NonZero, Affine::IDENTITY, &brush, None, &(r + kurbo::Vec2::new(ox, oy)));
+        let underline = &span.data.underline_metrics;
+        let (x0, x1) = (f64::from(x0), f64::from(x1));
+        let mut emit = |top: f32, thickness_em: f32| {
+            let t = f64::from(thickness_em * size * paint.decoration_thickness.max(0.0));
+            let shapes = decoration::geometry(paint.decoration_style, x0, x1, f64::from(top), t);
+            decoration::paint(scene, transform, &shapes, &paint.decoration_brush);
         };
         if deco.underline != cosmic_text::UnderlineStyle::None {
-            rect(&span.data.underline_metrics);
+            emit(line.baseline - underline.offset * size, underline.thickness);
+        }
+        if deco.overline {
+            // The band's top at the font's ascent edge, the underline's thickness.
+            emit(line.baseline - span.data.ascent * size, underline.thickness);
         }
         if deco.strikethrough {
-            rect(&span.data.strikethrough_metrics);
+            let m = &span.data.strikethrough_metrics;
+            emit(line.baseline - m.offset * size, m.thickness);
         }
     }
 }
@@ -186,11 +245,11 @@ mod tests {
         ParagraphStyle { font_family: Some(family.into()), font_size: size, ..ParagraphStyle::default() }
     }
 
-    fn brushes() -> Vec<Brush> {
+    fn brushes() -> Vec<TextPaint> {
         vec![
-            Brush::Solid(Color::BLACK),
-            Brush::Solid(Color::WHITE),
-            Brush::Solid(pebbles_foundation::palette::RED),
+            TextPaint::solid(Color::BLACK),
+            TextPaint::solid(Color::WHITE),
+            TextPaint::solid(pebbles_foundation::palette::RED),
         ]
     }
 
@@ -248,8 +307,8 @@ mod tests {
         paint(&mut env, "ab", &style("Inter", 16.0), &spans(pebbles_foundation::palette::BLUE), ALL);
         assert_eq!(crate::text::shape_count() - before, 1, "color values never reshape");
         assert_eq!(ops.len(), 2);
-        assert_eq!(ops[0].5, brushes()[0]);
-        assert_eq!(ops[1].5, brushes()[2]);
+        assert_eq!(ops[0].5, brushes()[0].brush);
+        assert_eq!(ops[1].5, brushes()[2].brush);
     }
 
     #[test]
@@ -338,5 +397,70 @@ mod tests {
         let (rects, _) = deco("abcdef", &style("JetBrains Mono", 20.0), &[u]);
         assert_eq!(rects.len(), 1);
         assert!(near(rects[0].x0, 24.0, 0.01) && near(rects[0].x1, 48.0, 0.01), "{:?}", rects[0]);
+    }
+
+    /// Fills (rect, brush) painted for `text` with `style` as slot 0.
+    fn styled(text: &str, para: &ParagraphStyle) -> (Vec<(Rect, Brush)>, std::rc::Rc<TextLayout>) {
+        let mut env = TextEnv::new();
+        let layout = layout_for_test(&mut env, text, para, &[], None);
+        let mut scene = Scene::new();
+        let mut p = Painter::new(&mut scene);
+        paint_into(&mut p, &mut env, ALL, &layout, Offset::new(0.0, 0.0), &[TextPaint::base(para)]);
+        let fills = scene
+            .ops()
+            .iter()
+            .filter_map(|op| match op {
+                Op::Fill { shape, brush, .. } => Some((shape.bounding_box(), brush.clone())),
+                _ => None,
+            })
+            .collect();
+        (fills, layout)
+    }
+
+    #[test]
+    fn overline_sits_on_ascent() {
+        let para = ParagraphStyle { overline: true, ..style("Inter", 16.0) };
+        let (fills, layout) = styled("Hi", &para);
+        assert_eq!(fills.len(), 1);
+        // Inter: ascent 1984 / 2048 em → 15.5 px above the baseline.
+        let top = f64::from(layout.first_baseline().unwrap()) - 1984.0 / 2048.0 * 16.0;
+        assert!(near(fills[0].0.y0, top, 0.01), "{:?} vs {top}", fills[0].0);
+    }
+
+    #[test]
+    fn decoration_color_overrides_text_color() {
+        let para = ParagraphStyle {
+            underline: true,
+            decoration_color: Some(pebbles_foundation::palette::RED),
+            ..style("Inter", 16.0)
+        };
+        let (fills, _) = styled("Hi", &para);
+        assert_eq!(fills[0].1, Brush::Solid(pebbles_foundation::palette::RED));
+        let (plain, _) = styled("Hi", &ParagraphStyle { underline: true, ..style("Inter", 16.0) });
+        assert_eq!(plain[0].1, Brush::Solid(Color::BLACK), "defaults to the text color");
+    }
+
+    #[test]
+    fn thickness_multiplier_scales() {
+        let one = styled("Hi", &ParagraphStyle { underline: true, ..style("Inter", 16.0) }).0[0].0;
+        let three = styled(
+            "Hi",
+            &ParagraphStyle { underline: true, decoration_thickness: 3.0, ..style("Inter", 16.0) },
+        )
+        .0[0]
+            .0;
+        assert!(near(three.height(), one.height() * 3.0, 0.001), "{one:?} {three:?}");
+        assert!(near(three.y0, one.y0, 0.001), "the band keeps its top");
+    }
+
+    #[test]
+    fn dashed_style_reaches_the_painter() {
+        let para = ParagraphStyle {
+            underline: true,
+            decoration_style: TextDecorationStyle::Dashed,
+            ..style("JetBrains Mono", 20.0)
+        };
+        // 4 glyphs = 48 px at t = 1 px: dashes every 5 px.
+        assert_eq!(styled("abcd", &para).0.len(), 10);
     }
 }

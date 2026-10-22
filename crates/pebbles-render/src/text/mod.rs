@@ -11,6 +11,7 @@
 //! - **No rasterization here.** Text produces glyph runs; the renderer owns the atlas (DR-07).
 
 pub(crate) mod cache;
+pub(crate) mod decoration;
 pub(crate) mod fonts;
 pub(crate) mod geometry;
 pub(crate) mod layout;
