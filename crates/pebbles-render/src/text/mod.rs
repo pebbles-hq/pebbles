@@ -15,6 +15,7 @@
 pub(crate) mod cache;
 pub(crate) mod fonts;
 pub(crate) mod layout;
+pub(crate) mod paint;
 pub(crate) mod shape;
 pub(crate) mod style;
 
@@ -339,7 +340,6 @@ impl TextEnv {
     }
 
     /// Face data (Blob + normalized `wght` coords) for a glyph op.
-    #[allow(dead_code)] // glyph-run paint (T20)
     pub(crate) fn face(&mut self, id: cosmic_text::fontdb::ID, weight: u16) -> Option<fonts::FaceRef> {
         self.registry.face(id, weight)
     }

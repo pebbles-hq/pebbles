@@ -13,7 +13,6 @@ use crate::fonts::BUILTIN_FAMILIES;
 pub(crate) type FontBytes = Arc<dyn AsRef<[u8]> + Send + Sync>;
 
 /// What a glyph op needs for one (face, weight): the face bytes + variation coords.
-#[allow(dead_code)] // read by glyph-run paint (T20)
 #[derive(Clone, Debug)]
 pub(crate) struct FaceRef {
     pub(crate) font: peniko::FontData,
