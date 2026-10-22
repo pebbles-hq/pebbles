@@ -408,6 +408,9 @@ pub struct TextSpan {
     pub link: Option<String>,
     /// An inline widget in place of text (Flutter `WidgetSpan`, see [`widget_span`]).
     pub widget: Option<InlineChild>,
+    /// Render-level style extensions (decoration styles, shadows, background, spacing,
+    /// OpenType features and axes), applied over the fields above.
+    pub extra: pebbles_render::TextSpanStyle,
 }
 
 /// An inline widget of a rich paragraph: a builder (widgets are not `Clone`), how it aligns on
@@ -446,6 +449,7 @@ pub fn span(text: impl Into<String>) -> TextSpan {
         chip: None,
         link: None,
         widget: None,
+        extra: pebbles_render::TextSpanStyle::new(0..0),
     }
 }
 
@@ -462,6 +466,51 @@ impl TextSpan {
         if let Some(w) = &mut self.widget {
             w.baseline_offset = Some(px);
         }
+        self
+    }
+    /// A line over the run.
+    pub fn overline(mut self) -> Self {
+        self.extra.overline = true;
+        self
+    }
+    /// How the run's decoration lines are drawn (solid, double, dotted, dashed, wavy).
+    pub fn decoration_style(mut self, style: pebbles_render::TextDecorationStyle) -> Self {
+        self.extra.decoration_style = Some(style);
+        self
+    }
+    /// The decoration lines' color (default: the run's text color).
+    pub fn decoration_color(mut self, color: Color) -> Self {
+        self.extra.decoration_color = Some(color);
+        self
+    }
+    /// The decoration thickness as a multiple of the font's (default 1).
+    pub fn decoration_thickness(mut self, factor: f32) -> Self {
+        self.extra.decoration_thickness = Some(factor);
+        self
+    }
+    /// Add a glyph shadow (painted under the glyphs, in the order added).
+    pub fn shadow(mut self, shadow: pebbles_render::TextShadow) -> Self {
+        self.extra.shadows.push(shadow);
+        self
+    }
+    /// A fill behind the run spanning its line box.
+    pub fn background(mut self, color: Color) -> Self {
+        self.extra.background = Some(color);
+        self
+    }
+    /// Extra advance per word separator (px; may be negative).
+    pub fn word_spacing(mut self, px: f32) -> Self {
+        self.extra.word_spacing = Some(px);
+        self
+    }
+    /// An OpenType feature (`*b"tnum"`, `*b"liga"`, …) set to `value`.
+    pub fn font_feature(mut self, tag: [u8; 4], value: u32) -> Self {
+        self.extra.font_features.push(pebbles_render::FontFeature { tag, value });
+        self
+    }
+    /// A variable-font axis (`*b"opsz"`, `*b"wdth"`, …) set to `value`.
+    pub fn font_variation(mut self, axis: [u8; 4], value: f32) -> Self {
+        self.extra.font_variations.push(pebbles_render::FontVariation { axis, value });
         self
     }
     pub fn weight(mut self, w: f32) -> Self {
@@ -703,7 +752,8 @@ fn resolve_spans(spans: &[TextSpan]) -> (String, Vec<pebbles_render::TextSpanSty
     for s in spans {
         let start = text.len();
         text.push_str(&s.text);
-        let mut rs = pebbles_render::TextSpanStyle::new(start..text.len());
+        let mut rs = s.extra.clone();
+        rs.range = start..text.len();
         rs.weight = s.weight;
         rs.italic = s.italic;
         rs.underline = s.underline;

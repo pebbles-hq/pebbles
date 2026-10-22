@@ -64,7 +64,66 @@ pub fn international() -> Vec<Case> {
         harness("text/emoji_color", Text, TrackT, W, H, emoji_color)
             .probe("emoji_has_color", crate::probe::emoji_has_color),
         harness("text/mixed_scripts_fallback", Text, TrackT, W, H, mixed_scripts_fallback),
+        harness("text/decorations_all_styles", Text, TrackT, W, H, decorations_all_styles),
+        harness("text/shadows_and_background", Text, TrackT, W, H, shadows_and_background),
     ]
+}
+
+/// T43: every decoration style, plus overline, a decoration color and a thickness multiplier.
+fn decorations_all_styles(h: &mut Harness) {
+    use pebbles_render::TextDecorationStyle as S;
+    let row = |label: &'static str, style: S| {
+        text_rich(vec![span(label).underline().decoration_style(style)]).size(20.0).into_widget()
+    };
+    page(
+        h,
+        column(vec![
+            row("Solid underline", S::Solid),
+            row("Double underline", S::Double),
+            row("Dotted underline", S::Dotted),
+            row("Dashed underline", S::Dashed),
+            row("Wavy underline", S::Wavy),
+            text_rich(vec![
+                span("Overline ").overline(),
+                span("red, thick ")
+                    .underline()
+                    .decoration_color(Color::from_rgba8(220, 38, 38, 255))
+                    .decoration_thickness(3.0),
+                span("struck").strikethrough().decoration_style(S::Wavy),
+            ])
+            .size(20.0)
+            .into_widget(),
+        ])
+        .spacing(10.0),
+    );
+}
+
+/// T44 / T45: blurred and sharp glyph shadows, and a span background over its line box.
+fn shadows_and_background(h: &mut Harness) {
+    use pebbles_foundation::Offset;
+    use pebbles_render::TextShadow;
+    let soft =
+        TextShadow { offset: Offset::new(2.0, 3.0), blur_sigma: 3.0, color: Color::from_rgba8(0, 0, 0, 140) };
+    let hard = TextShadow {
+        offset: Offset::new(2.0, 2.0),
+        blur_sigma: 0.0,
+        color: Color::from_rgba8(37, 99, 235, 255),
+    };
+    page(
+        h,
+        column(vec![
+            text_rich(vec![span("Soft shadow").shadow(soft)]).size(36.0).into_widget(),
+            text_rich(vec![span("Hard shadow").shadow(hard)]).size(36.0).into_widget(),
+            text_rich(vec![
+                span("plain "),
+                span("highlighted").background(Color::from_rgba8(253, 224, 71, 255)),
+                span(" text"),
+            ])
+            .size(24.0)
+            .into_widget(),
+        ])
+        .spacing(12.0),
+    );
 }
 
 fn rtl_arabic(h: &mut Harness) {
