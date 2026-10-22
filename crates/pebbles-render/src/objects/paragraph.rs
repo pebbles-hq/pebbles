@@ -39,6 +39,16 @@ pub enum TextDecorationStyle {
     Wavy,
 }
 
+/// A glyph shadow (Flutter `Shadow` in `TextStyle.shadows`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextShadow {
+    /// Offset of the shadow from the glyphs (logical px).
+    pub offset: Offset,
+    /// Gaussian blur sigma (0 = a sharp copy).
+    pub blur_sigma: f32,
+    pub color: Color,
+}
+
 /// Styling for a paragraph of text.
 #[derive(Clone, Debug)]
 pub struct ParagraphStyle {
@@ -125,6 +135,10 @@ pub struct TextSpanStyle {
     pub decoration_thickness: Option<f32>,
     /// Color override for the range.
     pub color: Option<Color>,
+    /// Glyph shadows of the range, painted under its glyphs in list order.
+    pub shadows: Vec<TextShadow>,
+    /// Fill behind the range, spanning the full line box (no horizontal padding).
+    pub background: Option<Color>,
     /// Font family override (e.g. the monospace family for inline code).
     pub family: Option<String>,
     /// Absolute font-size override (px).
@@ -152,6 +166,8 @@ impl TextSpanStyle {
             decoration_color: None,
             decoration_thickness: None,
             color: None,
+            shadows: Vec::new(),
+            background: None,
             family: None,
             size: None,
             chip: None,
@@ -306,7 +322,10 @@ impl RenderObject for RenderParagraph {
         let visible = cx.visible();
         let mut rects: Vec<Rect> = Vec::new();
 
-        // Selection highlight, behind everything (only when a non-empty range is set).
+        // Span backgrounds, behind everything (Flutter `TextStyle.background`).
+        crate::text::paint::paint_backgrounds(&mut cx.scene, visible, layout, offset, &self.spans);
+
+        // Selection highlight, over the backgrounds (only when a non-empty range is set).
         if let Some((a, f)) = self.selection
             && a != f
         {

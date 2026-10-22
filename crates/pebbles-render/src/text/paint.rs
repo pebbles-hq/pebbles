@@ -22,6 +22,8 @@ pub(crate) struct TextPaint {
     pub(crate) decoration_brush: Brush,
     /// Multiplier of the font's own decoration thickness.
     pub(crate) decoration_thickness: f32,
+    /// Glyph shadows, painted under the glyphs in list order.
+    pub(crate) shadows: Vec<crate::objects::TextShadow>,
 }
 
 impl TextPaint {
@@ -32,6 +34,7 @@ impl TextPaint {
             decoration_style: TextDecorationStyle::Solid,
             decoration_brush: Brush::Solid(color),
             decoration_thickness: 1.0,
+            shadows: Vec::new(),
         }
     }
 
@@ -42,6 +45,7 @@ impl TextPaint {
             decoration_style: style.decoration_style,
             decoration_brush: Brush::Solid(style.decoration_color.unwrap_or(style.color)),
             decoration_thickness: style.decoration_thickness,
+            shadows: Vec::new(),
         }
     }
 
@@ -59,6 +63,7 @@ impl TextPaint {
             decoration_style: span.decoration_style.unwrap_or(self.decoration_style),
             decoration_brush,
             decoration_thickness: span.decoration_thickness.unwrap_or(self.decoration_thickness),
+            shadows: span.shadows.clone(),
         }
     }
 }
@@ -89,6 +94,7 @@ pub(crate) fn paint_into(
     brushes: &[TextPaint],
 ) {
     let transform = Affine::translate((origin.x, origin.y));
+    let slot = |metadata: usize| brushes.get(metadata).or(brushes.first());
     for line in &layout.lines {
         let top = origin.y + f64::from(line.top);
         if top + f64::from(line.height) < visible.y0 {
@@ -100,58 +106,145 @@ pub(crate) fn paint_into(
         if !line.from_elided && layout.shaped.paras[line.para].placeholder {
             continue;
         }
-        let glyphs = &line.layout.glyphs;
-        let mut start = 0;
-        while start < glyphs.len() {
-            let g0 = &glyphs[start];
-            let key = (
-                g0.font_id,
-                g0.font_weight.0,
-                g0.font_size.to_bits(),
-                g0.cache_key_flags.bits(),
-                g0.metadata,
-            );
-            let end = glyphs[start..]
-                .iter()
-                .position(|g| {
-                    (g.font_id, g.font_weight.0, g.font_size.to_bits(), g.cache_key_flags.bits(), g.metadata)
-                        != key
-                })
-                .map_or(glyphs.len(), |n| start + n);
-            let run = &glyphs[start..end];
-            start = end;
-            if g0.font_size <= 0.0 {
-                continue;
+        let runs = line_runs(text, visible, line, origin);
+        // Shadows first, in list order, under every glyph of the line (decorations get none).
+        for run in &runs {
+            let Some(paint) = slot(run.metadata) else { continue };
+            for shadow in &paint.shadows {
+                let at = transform * Affine::translate((shadow.offset.x, shadow.offset.y));
+                let glyphs = run.glyphs.iter().copied();
+                if shadow.blur_sigma > 0.0 {
+                    scene.draw_glyphs_blurred(
+                        &run.face.font,
+                        run.size,
+                        &run.face.coords,
+                        at,
+                        run.glyph_transform,
+                        glyphs,
+                        shadow.color,
+                        shadow.blur_sigma,
+                    );
+                } else {
+                    let brush = Brush::Solid(shadow.color);
+                    scene.draw_glyphs(
+                        &run.face.font,
+                        run.size,
+                        &run.face.coords,
+                        &brush,
+                        at,
+                        run.glyph_transform,
+                        Fill::NonZero,
+                        glyphs,
+                    );
+                }
             }
-            let pen = |g: &cosmic_text::LayoutGlyph| {
-                (g.x + g.font_size * g.x_offset, line.baseline + g.y - g.font_size * g.y_offset)
-            };
-            let x0 = run.iter().map(|g| pen(g).0).fold(f32::INFINITY, f32::min);
-            let x1 = run.iter().map(|g| pen(g).0 + g.w).fold(f32::NEG_INFINITY, f32::max);
-            if origin.x + f64::from(x1) < visible.x0 || origin.x + f64::from(x0) > visible.x1 {
-                continue;
-            }
-            let Some(face) = text.face(g0.font_id, g0.font_weight.0) else { continue };
-            let brush =
-                brushes.get(g0.metadata).or(brushes.first()).map(|p| p.brush.clone()).unwrap_or_default();
-            let glyph_transform =
-                g0.cache_key_flags.contains(cosmic_text::CacheKeyFlags::FAKE_ITALIC).then(fake_italic);
+        }
+        for run in runs {
+            let brush = slot(run.metadata).map(|p| p.brush.clone()).unwrap_or_default();
             scene.draw_glyphs(
-                &face.font,
-                g0.font_size,
-                &face.coords,
+                &run.face.font,
+                run.size,
+                &run.face.coords,
                 &brush,
                 transform,
-                glyph_transform,
+                run.glyph_transform,
                 Fill::NonZero,
-                run.iter().map(|g| {
-                    let (x, y) = pen(g);
-                    Glyph { id: u32::from(g.glyph_id), x, y }
-                }),
+                run.glyphs.into_iter(),
             );
             crate::stats::bump_glyph_run();
         }
         paint_decorations(scene, visible, line, origin, brushes);
+    }
+}
+
+/// One glyph run of a line, ready to paint.
+struct Run {
+    face: super::fonts::FaceRef,
+    size: f32,
+    glyph_transform: Option<Affine>,
+    metadata: usize,
+    glyphs: Vec<Glyph>,
+}
+
+/// The visible runs of `line`: glyphs sharing face, weight, size, synthesis flags and slot.
+fn line_runs(
+    text: &mut TextEnv,
+    visible: Rect,
+    line: &super::layout::VisualLine,
+    origin: Offset,
+) -> Vec<Run> {
+    let glyphs = &line.layout.glyphs;
+    let key = |g: &cosmic_text::LayoutGlyph| {
+        (g.font_id, g.font_weight.0, g.font_size.to_bits(), g.cache_key_flags.bits(), g.metadata)
+    };
+    let pen = |g: &cosmic_text::LayoutGlyph| {
+        (g.x + g.font_size * g.x_offset, line.baseline + g.y - g.font_size * g.y_offset)
+    };
+    let mut runs = Vec::new();
+    let mut start = 0;
+    while start < glyphs.len() {
+        let g0 = &glyphs[start];
+        let end = glyphs[start..].iter().position(|g| key(g) != key(g0)).map_or(glyphs.len(), |n| start + n);
+        let run = &glyphs[start..end];
+        start = end;
+        if g0.font_size <= 0.0 {
+            continue;
+        }
+        let x0 = run.iter().map(|g| pen(g).0).fold(f32::INFINITY, f32::min);
+        let x1 = run.iter().map(|g| pen(g).0 + g.w).fold(f32::NEG_INFINITY, f32::max);
+        if origin.x + f64::from(x1) < visible.x0 || origin.x + f64::from(x0) > visible.x1 {
+            continue;
+        }
+        let Some(face) = text.face(g0.font_id, g0.font_weight.0) else { continue };
+        runs.push(Run {
+            face,
+            size: g0.font_size,
+            glyph_transform: g0
+                .cache_key_flags
+                .contains(cosmic_text::CacheKeyFlags::FAKE_ITALIC)
+                .then(fake_italic),
+            metadata: g0.metadata,
+            glyphs: run
+                .iter()
+                .map(|g| {
+                    let (x, y) = pen(g);
+                    Glyph { id: u32::from(g.glyph_id), x, y }
+                })
+                .collect(),
+        });
+    }
+    runs
+}
+
+/// Span backgrounds (Flutter `TextStyle.background`), painted first: each span's range boxes
+/// span the full line box; boxes of one span touching on one line merge (no seams, no padding).
+pub(crate) fn paint_backgrounds(
+    scene: &mut Painter<'_>,
+    visible: Rect,
+    layout: &TextLayout,
+    origin: Offset,
+    spans: &[TextSpanStyle],
+) {
+    let mut boxes = Vec::new();
+    for span in spans {
+        let Some(color) = span.background else { continue };
+        boxes.clear();
+        layout.range_boxes(span.range.clone(), &mut boxes);
+        boxes.sort_by(|a, b| a.y0.total_cmp(&b.y0).then(a.x0.total_cmp(&b.x0)));
+        let mut merged: Vec<Rect> = Vec::new();
+        for r in boxes.iter().copied() {
+            match merged.last_mut() {
+                Some(m) if m.y0 == r.y0 && r.x0 <= m.x1 + 1e-3 => *m = m.union(r),
+                _ => merged.push(r),
+            }
+        }
+        for r in merged {
+            let world = r + origin;
+            if world.y1 < visible.y0 || world.y0 > visible.y1 {
+                continue;
+            }
+            scene.fill(Fill::NonZero, Affine::IDENTITY, color, None, &world);
+        }
     }
 }
 
@@ -462,5 +555,81 @@ mod tests {
         };
         // 4 glyphs = 48 px at t = 1 px: dashes every 5 px.
         assert_eq!(styled("abcd", &para).0.len(), 10);
+    }
+
+    fn shadow(sigma: f32) -> crate::objects::TextShadow {
+        crate::objects::TextShadow { offset: Offset::new(2.0, 3.0), blur_sigma: sigma, color: Color::BLACK }
+    }
+
+    /// Op kinds in paint order for "ab" whose span 0..2 carries `shadows`.
+    fn shadow_ops(shadows: Vec<crate::objects::TextShadow>) -> Vec<&'static str> {
+        let mut env = TextEnv::new();
+        let mut span = TextSpanStyle::new(0..2);
+        span.shadows = shadows;
+        let st = style("Inter", 16.0);
+        let layout = layout_for_test(&mut env, "ab", &st, std::slice::from_ref(&span), None);
+        let base = TextPaint::base(&st);
+        let paints = [base.clone(), base.for_span(&span)];
+        let mut scene = Scene::new();
+        let mut p = Painter::new(&mut scene);
+        paint_into(&mut p, &mut env, ALL, &layout, Offset::new(0.0, 0.0), &paints);
+        scene
+            .ops()
+            .iter()
+            .map(|op| match op {
+                Op::Glyphs { transform, .. } if *transform != Affine::IDENTITY => "shadow",
+                Op::Glyphs { .. } => "glyphs",
+                Op::BlurredGlyphs { .. } => "blurred",
+                _ => "other",
+            })
+            .collect()
+    }
+
+    #[test]
+    fn shadow_is_painted_before_glyphs() {
+        assert_eq!(shadow_ops(vec![shadow(2.0)]), ["blurred", "glyphs"]);
+        assert_eq!(shadow_ops(vec![shadow(2.0), shadow(0.0)]), ["blurred", "shadow", "glyphs"]);
+    }
+
+    #[test]
+    fn zero_sigma_uses_plain_glyphs() {
+        assert_eq!(shadow_ops(vec![shadow(0.0)]), ["shadow", "glyphs"]);
+    }
+
+    /// Background fills for `text` with span `range` on `background`.
+    fn backgrounds(
+        text: &str,
+        range: std::ops::Range<usize>,
+        width: Option<f32>,
+    ) -> (Vec<Rect>, std::rc::Rc<TextLayout>) {
+        let mut env = TextEnv::new();
+        let mut span = TextSpanStyle::new(range);
+        span.background = Some(pebbles_foundation::palette::RED);
+        let layout = layout_for_test(&mut env, text, &style("JetBrains Mono", 20.0), &[], width);
+        let mut scene = Scene::new();
+        let mut p = Painter::new(&mut scene);
+        paint_backgrounds(&mut p, ALL, &layout, Offset::new(0.0, 0.0), &[span]);
+        (fills(&scene), layout)
+    }
+
+    #[test]
+    fn background_covers_line_box() {
+        let (rects, layout) = backgrounds("abcdef", 1..4, None);
+        assert_eq!(rects.len(), 1);
+        let r = rects[0];
+        assert!(near(r.x0, 12.0, 0.01) && near(r.x1, 48.0, 0.01), "{r:?}");
+        assert!(
+            near(r.y0, 0.0, 0.01) && near(r.y1, f64::from(layout.lines[0].height), 0.01),
+            "full line box: {r:?}"
+        );
+    }
+
+    #[test]
+    fn background_spans_wrap_per_line() {
+        let (rects, _) = backgrounds("aaaa bbbb cccc", 2..12, Some(100.0));
+        assert_eq!(rects.len(), 3, "{rects:?}");
+        let mut ys: Vec<i64> = rects.iter().map(|r| r.y0 as i64).collect();
+        ys.dedup();
+        assert_eq!(ys.len(), 3);
     }
 }

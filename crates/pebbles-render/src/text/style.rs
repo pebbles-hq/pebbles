@@ -92,6 +92,7 @@ impl From<&TextSpanStyle> for SpanSpec {
             overline: s.overline,
             // A span with its own colors or decoration paint needs its own paint slot.
             has_color: s.color.is_some()
+                || !s.shadows.is_empty()
                 || s.decoration_color.is_some()
                 || s.decoration_style.is_some()
                 || s.decoration_thickness.is_some(),

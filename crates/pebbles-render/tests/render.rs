@@ -1025,3 +1025,34 @@ fn perf_right_motions_timing() {
     }
     println!("right_x1000_ms={:.3} (focus {f})", t.elapsed().as_secs_f64() * 1e3);
 }
+
+/// T45: a span background paints before the selection highlight (selection stays visible).
+#[test]
+fn background_under_selection() {
+    use pebbles_render::objects::TextSpanStyle;
+    use pebbles_render::paint::Scene;
+    use pebbles_render::paint::display_list::Op;
+    let mut span = TextSpanStyle::new(0..5);
+    span.background = Some(pebbles_foundation::palette::RED);
+    let mut para = RenderParagraph::with_spans("hello world", ParagraphStyle::default(), vec![span]);
+    para.selection = Some((0, 5));
+    let selection_color = para.selection_color;
+    let mut tree = RenderTree::new();
+    let mut text = TextEnv::new();
+    let id = tree.insert(Box::new(para));
+    tree.root = Some(id);
+    tree.layout(&mut text, BoxConstraints::UNBOUNDED);
+    let mut scene = Scene::new();
+    tree.paint(&mut text, &mut scene);
+    let fills: Vec<peniko::Brush> = scene
+        .ops()
+        .iter()
+        .filter_map(|op| match op {
+            Op::Fill { brush, .. } => Some(brush.clone()),
+            _ => None,
+        })
+        .collect();
+    let bg = fills.iter().position(|b| *b == peniko::Brush::Solid(pebbles_foundation::palette::RED));
+    let sel = fills.iter().position(|b| *b == peniko::Brush::Solid(selection_color));
+    assert!(bg.expect("background") < sel.expect("selection"), "{fills:?}");
+}
