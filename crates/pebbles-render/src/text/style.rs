@@ -28,6 +28,8 @@ pub(crate) struct TextStyleSpec {
     pub(crate) overline: bool,
     pub(crate) letter_spacing: f32,
     pub(crate) word_spacing: f32,
+    pub(crate) features: Vec<crate::objects::FontFeature>,
+    pub(crate) variations: Vec<crate::objects::FontVariation>,
     pub(crate) family: Option<String>,
     pub(crate) tab_width: u16,
 }
@@ -46,6 +48,8 @@ pub(crate) struct SpanSpec {
     pub(crate) family: Option<String>,
     pub(crate) size: Option<f32>,
     pub(crate) word_spacing: Option<f32>,
+    pub(crate) features: Vec<crate::objects::FontFeature>,
+    pub(crate) variations: Vec<crate::objects::FontVariation>,
 }
 
 impl From<&ParagraphStyle> for TextStyleSpec {
@@ -60,6 +64,8 @@ impl From<&ParagraphStyle> for TextStyleSpec {
             overline: s.overline,
             letter_spacing: s.letter_spacing,
             word_spacing: s.word_spacing,
+            features: s.font_features.clone(),
+            variations: s.font_variations.clone(),
             family: s.font_family.clone(),
             tab_width: s.tab_width.max(1),
         }
@@ -79,6 +85,8 @@ impl TextStyleSpec {
             overline: false,
             letter_spacing: 0.0,
             word_spacing: 0.0,
+            features: Vec::new(),
+            variations: Vec::new(),
             family: None,
             tab_width: DEFAULT_TAB_WIDTH,
         }
@@ -97,12 +105,15 @@ impl From<&TextSpanStyle> for SpanSpec {
             // A span with its own colors or decoration paint needs its own paint slot.
             has_color: s.color.is_some()
                 || !s.shadows.is_empty()
+                || !s.font_variations.is_empty()
                 || s.decoration_color.is_some()
                 || s.decoration_style.is_some()
                 || s.decoration_thickness.is_some(),
             family: s.family.clone(),
             size: s.size,
             word_spacing: s.word_spacing,
+            features: s.font_features.clone(),
+            variations: s.font_variations.clone(),
         }
     }
 }
@@ -155,6 +166,7 @@ struct Merged<'s> {
     underline: bool,
     strikethrough: bool,
     overline: bool,
+    features: &'s [crate::objects::FontFeature],
     family: Option<&'s str>,
     size: f32,
     slot: usize,
@@ -168,6 +180,7 @@ impl<'s> Merged<'s> {
             underline: spec.underline,
             strikethrough: spec.strikethrough,
             overline: spec.overline,
+            features: &spec.features,
             family: spec.family.as_deref(),
             size: spec.font_size,
             slot: 0,
@@ -195,6 +208,14 @@ impl<'s> Merged<'s> {
         }
         if self.overline {
             attrs = attrs.overline();
+        }
+        if !self.features.is_empty() {
+            let features = self
+                .features
+                .iter()
+                .map(|f| cosmic_text::Feature { tag: cosmic_text::FeatureTag::new(&f.tag), value: f.value })
+                .collect();
+            attrs = attrs.font_features(cosmic_text::FontFeatures { features });
         }
         attrs
     }
@@ -264,6 +285,9 @@ pub(crate) fn attrs_list_for(
             merged.underline |= s.underline;
             merged.strikethrough |= s.strikethrough;
             merged.overline |= s.overline;
+            if !s.features.is_empty() {
+                merged.features = &s.features;
+            }
             if let Some(family) = s.family.as_deref() {
                 merged.family = Some(family);
             }
@@ -282,6 +306,18 @@ pub(crate) fn attrs_list_for(
     list
 }
 
+fn hash_font_settings(
+    features: &[crate::objects::FontFeature],
+    variations: &[crate::objects::FontVariation],
+    h: &mut impl Hasher,
+) {
+    features.hash(h);
+    variations.len().hash(h);
+    for v in variations {
+        (v.axis, v.value.to_bits()).hash(h);
+    }
+}
+
 /// The shape-cache key (§3.8): text, sanitized spec without colors, spans, tab width and the
 /// font generation — field by field, no formatting, no allocation.
 pub(crate) fn shape_hash(text: &str, spec: &TextStyleSpec, spans: &[SpanSpec], generation: u64) -> u64 {
@@ -294,6 +330,7 @@ pub(crate) fn shape_hash(text: &str, spec: &TextStyleSpec, spans: &[SpanSpec], g
     (spec.italic, spec.underline, spec.strikethrough, spec.overline).hash(&mut h);
     spec.letter_spacing.to_bits().hash(&mut h);
     spec.word_spacing.to_bits().hash(&mut h);
+    hash_font_settings(&spec.features, &spec.variations, &mut h);
     spec.family.hash(&mut h);
     spec.tab_width.max(1).hash(&mut h);
     spans.len().hash(&mut h);
@@ -304,6 +341,7 @@ pub(crate) fn shape_hash(text: &str, spec: &TextStyleSpec, spans: &[SpanSpec], g
         s.family.hash(&mut h);
         s.size.map(f32::to_bits).hash(&mut h);
         s.word_spacing.map(f32::to_bits).hash(&mut h);
+        hash_font_settings(&s.features, &s.variations, &mut h);
     }
     generation.hash(&mut h);
     h.finish()

@@ -24,6 +24,8 @@ pub(crate) struct TextPaint {
     pub(crate) decoration_thickness: f32,
     /// Glyph shadows, painted under the glyphs in list order.
     pub(crate) shadows: Vec<crate::objects::TextShadow>,
+    /// Variable-font axes of this slot (glyph ops carry every axis's coords).
+    pub(crate) variations: Vec<crate::objects::FontVariation>,
 }
 
 impl TextPaint {
@@ -35,6 +37,7 @@ impl TextPaint {
             decoration_brush: Brush::Solid(color),
             decoration_thickness: 1.0,
             shadows: Vec::new(),
+            variations: Vec::new(),
         }
     }
 
@@ -46,6 +49,7 @@ impl TextPaint {
             decoration_brush: Brush::Solid(style.decoration_color.unwrap_or(style.color)),
             decoration_thickness: style.decoration_thickness,
             shadows: Vec::new(),
+            variations: style.font_variations.clone(),
         }
     }
 
@@ -64,6 +68,11 @@ impl TextPaint {
             decoration_brush,
             decoration_thickness: span.decoration_thickness.unwrap_or(self.decoration_thickness),
             shadows: span.shadows.clone(),
+            variations: if span.font_variations.is_empty() {
+                self.variations.clone()
+            } else {
+                span.font_variations.clone()
+            },
         }
     }
 }
@@ -106,7 +115,7 @@ pub(crate) fn paint_into(
         if !line.from_elided && layout.shaped.paras[line.para].placeholder {
             continue;
         }
-        let runs = line_runs(text, visible, line, origin);
+        let runs = line_runs(text, visible, line, origin, brushes);
         // Shadows first, in list order, under every glyph of the line (decorations get none).
         for run in &runs {
             let Some(paint) = slot(run.metadata) else { continue };
@@ -172,6 +181,7 @@ fn line_runs(
     visible: Rect,
     line: &super::layout::VisualLine,
     origin: Offset,
+    paints: &[TextPaint],
 ) -> Vec<Run> {
     let glyphs = &line.layout.glyphs;
     let key = |g: &cosmic_text::LayoutGlyph| {
@@ -195,7 +205,8 @@ fn line_runs(
         if origin.x + f64::from(x1) < visible.x0 || origin.x + f64::from(x0) > visible.x1 {
             continue;
         }
-        let Some(face) = text.face(g0.font_id, g0.font_weight.0) else { continue };
+        let variations = paints.get(g0.metadata).or(paints.first()).map_or(&[][..], |p| &p.variations[..]);
+        let Some(face) = text.face_with(g0.font_id, g0.font_weight.0, variations) else { continue };
         runs.push(Run {
             face,
             size: g0.font_size,

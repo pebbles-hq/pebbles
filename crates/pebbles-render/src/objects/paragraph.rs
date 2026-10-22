@@ -39,6 +39,20 @@ pub enum TextDecorationStyle {
     Wavy,
 }
 
+/// An OpenType feature setting (Flutter `FontFeature`), e.g. `tnum = 1`, `liga = 0`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct FontFeature {
+    pub tag: [u8; 4],
+    pub value: u32,
+}
+
+/// A variable-font axis setting (Flutter `FontVariation`), e.g. `opsz = 32`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FontVariation {
+    pub axis: [u8; 4],
+    pub value: f32,
+}
+
 /// A glyph shadow (Flutter `Shadow` in `TextStyle.shadows`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextShadow {
@@ -90,6 +104,10 @@ pub struct ParagraphStyle {
     pub decoration_color: Option<Color>,
     /// Decoration thickness as a multiple of the font's own (1.0 = the font's).
     pub decoration_thickness: f32,
+    /// OpenType feature settings for the whole paragraph.
+    pub font_features: Vec<FontFeature>,
+    /// Variable-font axis settings (`wght` overrides `weight` when set).
+    pub font_variations: Vec<FontVariation>,
     /// A font family name (system fallback if unset/unavailable).
     pub font_family: Option<String>,
     /// Clamp the paragraph to at most this many lines (excess lines are dropped).
@@ -124,6 +142,8 @@ impl Default for ParagraphStyle {
             decoration_style: TextDecorationStyle::Solid,
             decoration_color: None,
             decoration_thickness: 1.0,
+            font_features: Vec::new(),
+            font_variations: Vec::new(),
             font_family: None,
             max_lines: None,
             ellipsis: false,
@@ -166,6 +186,10 @@ pub struct TextSpanStyle {
     pub size: Option<f32>,
     /// Word-spacing override for the range (px).
     pub word_spacing: Option<f32>,
+    /// OpenType features for the range (empty = the paragraph's).
+    pub font_features: Vec<FontFeature>,
+    /// Variable-font axes for the range (empty = the paragraph's).
+    pub font_variations: Vec<FontVariation>,
     /// Paint a rounded "chip" background behind the range (inline code).
     pub chip: Option<Color>,
     /// This range is a link — the index into the owning widget's URL list. The
@@ -194,6 +218,8 @@ impl TextSpanStyle {
             family: None,
             size: None,
             word_spacing: None,
+            font_features: Vec::new(),
+            font_variations: Vec::new(),
             chip: None,
             link: None,
         }

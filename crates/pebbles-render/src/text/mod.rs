@@ -266,6 +266,7 @@ impl TextEnv {
     }
 
     /// Face data (Blob + normalized `wght` coords) for a glyph op.
+    #[cfg(test)]
     pub(crate) fn face(&mut self, id: cosmic_text::fontdb::ID, weight: u16) -> Option<fonts::FaceRef> {
         self.registry.face(id, weight)
     }
@@ -296,6 +297,16 @@ impl TextEnv {
             below: descent + half_leading,
             force: strut.force_strut_height,
         }
+    }
+
+    /// [`face`](Self::face) with extra variation axes.
+    pub(crate) fn face_with(
+        &mut self,
+        id: cosmic_text::fontdb::ID,
+        weight: u16,
+        variations: &[crate::objects::FontVariation],
+    ) -> Option<fonts::FaceRef> {
+        self.registry.face_with(id, weight, variations)
     }
 
     /// The font generation (bumps on every face addition).

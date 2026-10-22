@@ -68,6 +68,45 @@ pub(crate) fn split_paragraphs(text: &str) -> Vec<Para> {
     paras
 }
 
+/// Variation axes other than `wght` change advances, but cosmic-text shapes at the `wght`-only
+/// location: re-measure each affected glyph's advance with skrifa at the full location. GPOS
+/// adjustments computed by harfrust at the `wght`-only location are kept (RK-30).
+fn apply_variation_advances(
+    fonts: &mut FontRegistry,
+    shape: &mut ShapeLine,
+    para_start: usize,
+    spec: &TextStyleSpec,
+    spans: &[SpanSpec],
+) {
+    use cosmic_text::skrifa::{FontRef, GlyphId, MetadataProvider, instance::Size};
+    let affects = |v: &[crate::objects::FontVariation]| v.iter().any(|v| &v.axis != b"wght");
+    if !affects(&spec.variations) && !spans.iter().any(|s| affects(&s.variations)) {
+        return;
+    }
+    for g in shape.spans.iter_mut().flat_map(|s| s.words.iter_mut()).flat_map(|w| w.glyphs.iter_mut()) {
+        let at = para_start + g.start;
+        let vars = spans
+            .iter()
+            .rev()
+            .find(|s| s.range.contains(&at) && !s.variations.is_empty())
+            .map_or(&spec.variations[..], |s| &s.variations[..]);
+        if !affects(vars) {
+            continue;
+        }
+        let Some(face) = fonts.face_with(g.font_id, g.font_weight.0, vars) else { continue };
+        let Ok(font_ref) = FontRef::from_index(face.font.data.data(), face.font.index) else { continue };
+        let coords: Vec<cosmic_text::skrifa::instance::NormalizedCoord> = face
+            .coords
+            .iter()
+            .map(|&c| cosmic_text::skrifa::instance::NormalizedCoord::from_bits(c))
+            .collect();
+        let metrics = font_ref.glyph_metrics(Size::new(1.0), coords.as_slice());
+        if let Some(em) = metrics.advance_width(GlyphId::new(u32::from(g.glyph_id))) {
+            g.x_advance = em; // EM units at size 1
+        }
+    }
+}
+
 /// CSS word-separator characters (CSS Text 3 §8.2).
 fn is_word_separator(c: char) -> bool {
     matches!(c, ' ' | '\u{A0}' | '\u{1361}' | '\u{10100}' | '\u{10101}' | '\u{1039F}' | '\u{1091F}')
@@ -126,6 +165,7 @@ pub(crate) fn shape_text(
             super::count_shape();
             let mut shape = ShapeLine::new(fonts.font_system(), line, &attrs, Shaping::Advanced, tab_width);
             if !placeholder {
+                apply_variation_advances(fonts, &mut shape, p.range.start, spec, spans);
                 apply_word_spacing(&mut shape, text, p.range.start, spec, spans);
             }
             ShapedPara { range: p.range, ending_len: p.ending_len, placeholder, attrs, shape }
@@ -264,5 +304,99 @@ mod tests {
     #[test]
     fn negative_word_spacing_allowed() {
         assert!((width("a b", -4.0, None).0 - 32.0).abs() < 0.01, "{:?}", width("a b", -4.0, None));
+    }
+
+    use crate::objects::{FontFeature, FontVariation};
+
+    fn lay(text: &str, family: &str, f: impl FnOnce(&mut ParagraphStyle)) -> Rc<crate::text::TextLayout> {
+        let mut style =
+            ParagraphStyle { font_family: Some(family.into()), font_size: 20.0, ..ParagraphStyle::default() };
+        f(&mut style);
+        crate::text::layout_for_test(&mut crate::text::TextEnv::new(), text, &style, &[], None)
+    }
+
+    #[test]
+    fn tnum_makes_digits_equal_width() {
+        let w = |t: &str, tnum: bool| {
+            lay(t, "Inter", |s| {
+                if tnum {
+                    s.font_features = vec![FontFeature { tag: *b"tnum", value: 1 }];
+                }
+            })
+            .width()
+        };
+        assert!((w("1111", false) - w("0000", false)).abs() > 0.5, "proportional digits differ");
+        assert!((w("1111", true) - w("0000", true)).abs() < 0.01, "tabular digits are equal");
+    }
+
+    #[test]
+    fn liga_off_splits_fi() {
+        let glyphs = |liga: Option<u32>| {
+            let l = lay("fi", "Lora", |s| {
+                if let Some(v) = liga {
+                    s.font_features = vec![FontFeature { tag: *b"liga", value: v }];
+                }
+            });
+            l.lines[0].layout.glyphs.len()
+        };
+        assert_eq!(glyphs(None), 1, "Lora forms the fi ligature by default");
+        assert_eq!(glyphs(Some(0)), 2);
+    }
+
+    #[test]
+    fn opsz_axis_changes_advances() {
+        let w = |opsz: f32| {
+            lay("Hamburgefonstiv", "Inter", |s| {
+                s.font_variations = vec![FontVariation { axis: *b"opsz", value: opsz }]
+            })
+            .width()
+        };
+        assert!((w(32.0) - w(14.0)).abs() > 0.1, "{} vs {}", w(32.0), w(14.0));
+    }
+
+    #[test]
+    fn coords_reach_glyph_ops() {
+        use crate::paint::{Painter, Scene};
+        use crate::text::paint::{TextPaint, paint_into};
+        let mut env = crate::text::TextEnv::new();
+        let style = ParagraphStyle {
+            font_family: Some("Inter".into()),
+            font_variations: vec![FontVariation { axis: *b"opsz", value: 32.0 }],
+            ..ParagraphStyle::default()
+        };
+        let layout = crate::text::layout_for_test(&mut env, "Hi", &style, &[], None);
+        let mut scene = Scene::new();
+        let mut p = Painter::new(&mut scene);
+        let all = kurbo::Rect::new(-1e9, -1e9, 1e9, 1e9);
+        paint_into(
+            &mut p,
+            &mut env,
+            all,
+            &layout,
+            pebbles_foundation::Offset::new(0.0, 0.0),
+            &[TextPaint::base(&style)],
+        );
+        let coords = scene.ops().iter().find_map(|op| match op {
+            crate::paint::display_list::Op::Glyphs { normalized_coords, .. } => {
+                Some(normalized_coords.clone())
+            }
+            _ => None,
+        });
+        let coords = coords.expect("a glyph op");
+        assert_eq!(coords.len(), 2, "opsz and wght");
+        assert_ne!(coords[0], 0, "opsz moved off its default");
+    }
+
+    #[test]
+    fn feature_and_variation_sets_split_the_cache() {
+        let spec = |f: Vec<FontFeature>, v: Vec<FontVariation>| TextStyleSpec {
+            features: f,
+            variations: v,
+            ..TextStyleSpec::from(&ParagraphStyle::default())
+        };
+        let h = |s: &TextStyleSpec| crate::text::style::shape_hash("ab", s, &[], 1);
+        let base = h(&spec(vec![], vec![]));
+        assert_ne!(base, h(&spec(vec![FontFeature { tag: *b"tnum", value: 1 }], vec![])));
+        assert_ne!(base, h(&spec(vec![], vec![FontVariation { axis: *b"opsz", value: 32.0 }])));
     }
 }

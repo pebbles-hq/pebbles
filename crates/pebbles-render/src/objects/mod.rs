@@ -54,7 +54,8 @@ pub use list::RenderList;
 pub use measure::{RenderMeasureProbe, RenderPositionProbe};
 pub use overflow::{RenderLimitedBox, RenderOverflowBox};
 pub use paragraph::{
-    ParagraphStyle, RenderParagraph, StrutStyle, TextDecorationStyle, TextShadow, TextSpanStyle,
+    FontFeature, FontVariation, ParagraphStyle, RenderParagraph, StrutStyle, TextDecorationStyle, TextShadow,
+    TextSpanStyle,
 };
 pub use pointer::{Cursor, PointerButton, PointerEvent, RenderPointerListener, TapCallback};
 pub use scroll::{

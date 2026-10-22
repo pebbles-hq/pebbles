@@ -293,6 +293,42 @@ impl FontRegistry {
         false
     }
 
+    /// Normalized coords for `weight` plus every axis in `variations` (`wght` there overrides
+    /// the weight); empty when all axes sit at their defaults.
+    pub(crate) fn coords_for(
+        &mut self,
+        font: &peniko::FontData,
+        weight: u16,
+        variations: &[crate::objects::FontVariation],
+    ) -> Option<Arc<[i16]>> {
+        use cosmic_text::skrifa::{FontRef, MetadataProvider, Tag};
+        let font_ref = FontRef::from_index(font.data.data(), font.index).ok()?;
+        let mut settings: Vec<(Tag, f32)> = vec![(Tag::new(b"wght"), f32::from(weight))];
+        for v in variations {
+            let tag = Tag::new(&v.axis);
+            settings.retain(|(t, _)| *t != tag);
+            settings.push((tag, v.value));
+        }
+        let loc = font_ref.axes().location(settings);
+        let bits: Vec<i16> = loc.coords().iter().map(|c| c.to_bits()).collect();
+        Some(if bits.iter().all(|&b| b == 0) { Arc::from([]) } else { Arc::from(bits) })
+    }
+
+    /// [`face`](Self::face) with extra variation axes (not memoized: variation sets are rare).
+    pub(crate) fn face_with(
+        &mut self,
+        id: fontdb::ID,
+        weight: u16,
+        variations: &[crate::objects::FontVariation],
+    ) -> Option<FaceRef> {
+        let base = self.face(id, weight)?;
+        if variations.is_empty() {
+            return Some(base);
+        }
+        let coords = self.coords_for(&base.font, weight, variations)?;
+        Some(FaceRef { font: base.font, coords })
+    }
+
     /// Face data for a glyph op (§3.3.6): the face's one registry-owned Blob and the normalized
     /// `wght` coordinates for `weight` (empty at the default instance). System faces are
     /// memory-mapped by cosmic-text on first use; a face that still cannot be shared is `None`
