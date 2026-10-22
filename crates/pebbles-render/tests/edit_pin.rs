@@ -76,10 +76,25 @@ struct Measured {
     words: Vec<(f64, f64, usize, usize)>,
 }
 
-fn measure(env: &mut TextEnv, index: usize, c: &EditCase) -> Measured {
-    let id = 9100 + index as u64;
+/// Which build path publishes the case for `text_edit`.
+#[derive(Clone, Copy, PartialEq)]
+enum Path {
+    /// RenderParagraph (Parley until T22).
+    Paragraph,
+    /// A cosmic-text TextLayout published with `text_edit::store_text` (E11).
+    TextLayout,
+}
+
+fn publish(env: &mut TextEnv, id: u64, c: &EditCase, path: Path) -> Size {
     let style =
         ParagraphStyle { font_size: c.size, font_family: Some(c.family.into()), ..ParagraphStyle::default() };
+    if path == Path::TextLayout {
+        let layout =
+            pebbles_render::text::layout_for_test(env, c.text, &style, &[], c.width.map(|w| w as f32));
+        let size = Size::new(f64::from(layout.width()), f64::from(layout.height()));
+        text_edit::store_text(id, layout);
+        return size;
+    }
     let mut para = RenderParagraph::new(c.text, style);
     para.select_id = Some(id);
     let mut tree = RenderTree::new();
@@ -90,7 +105,12 @@ fn measure(env: &mut TextEnv, index: usize, c: &EditCase) -> Measured {
         None => BoxConstraints::UNBOUNDED,
     };
     tree.layout(env, constraints);
-    let size = tree.size_of(p);
+    tree.size_of(p)
+}
+
+fn measure(env: &mut TextEnv, index: usize, c: &EditCase, path: Path) -> Measured {
+    let id = 9100 + index as u64;
+    let size = publish(env, id, c, path);
     let bounds: Vec<usize> =
         c.text.char_indices().map(|(b, _)| b).chain(std::iter::once(c.text.len())).collect();
     let carets = bounds
@@ -164,45 +184,117 @@ fn write_fixture(rows: &[(&str, Measured)]) {
         .expect("write");
 }
 
-fn measure_all() -> Vec<(&'static str, Measured)> {
+fn measure_all(path: Path) -> Vec<(&'static str, Measured)> {
     let mut env = TextEnv::new_hermetic();
-    corpus().iter().enumerate().map(|(i, c)| (c.name, measure(&mut env, i, c))).collect()
+    corpus().iter().enumerate().map(|(i, c)| (c.name, measure(&mut env, i, c, path))).collect()
 }
 
 #[test]
 #[ignore = "regenerates the Parley oracle; never after the switch"]
 fn regenerate_edit_pin() {
-    write_fixture(&measure_all());
+    write_fixture(&measure_all(Path::Paragraph));
+}
+
+/// Q-9 (03 §3.13): Parley pixel-snaps line tops and starts the first line at y = -1; the
+/// pinned caret y0 is exactly `round(fractional) - 1`.
+fn parley_snap(y: f64) -> f64 {
+    y.round() - 1.0
+}
+
+/// Compare one build path against the pin; `snap_y` applies the Q-9 relation to caret y.
+fn compare(path: Path, snap_y: bool) -> Vec<String> {
+    let rows = measure_all(path);
+    let mut failures = Vec::new();
+    for (pin, (name, m)) in PARLEY.iter().zip(&rows) {
+        assert_eq!(pin.name, *name, "fixture order");
+        let close = |a: f64, b: f64| (a - b).abs() <= 0.5;
+        let y = |v: f64| if snap_y { parley_snap(v) } else { v };
+        for (p, c) in pin.carets.iter().zip(&m.carets) {
+            if p.0 != c.0 || !close(p.1, c.1) || !close(p.2, y(c.2)) {
+                failures.push(format!(
+                    "{name}.caret@{}: pinned ({}, {}) got ({}, {})",
+                    p.0,
+                    p.1,
+                    p.2,
+                    c.1,
+                    y(c.2)
+                ));
+            }
+        }
+        if pin.carets.len() != m.carets.len() {
+            failures.push(format!("{name}.carets: {} vs {}", pin.carets.len(), m.carets.len()));
+        }
+        for p in pin.motions {
+            let got = m.motions.iter().find(|c| c.0 == p.0 && c.1 == p.1).map(|c| c.2);
+            if got != Some(p.2) {
+                failures.push(format!("{name}.{}({}): pinned {} got {got:?}", p.0, p.1, p.2));
+            }
+        }
+        // Hits and words are sampled at pinned coordinates (shifted by the Q-9 offset).
+        let id = 9200 + rows.iter().position(|r| r.0 == *name).unwrap_or(0) as u64;
+        let mut env = TextEnv::new_hermetic();
+        let case = corpus().into_iter().find(|c| c.name == *name).expect("case");
+        let size = publish(&mut env, id, &case, path);
+        let dy = if snap_y { 1.0 } else { 0.0 };
+        for &(x, py, b) in pin.hits {
+            if py + dy >= size.height {
+                continue; // the Q-9 shift moved this sample below our box
+            }
+            let got = text_edit::hit(id, x, py + dy);
+            if got != Some(b) {
+                failures.push(format!("{name}.hit({x}, {py}): pinned {b} got {got:?}"));
+            }
+        }
+        for &(x, py, s, e) in pin.words {
+            let got = text_edit::word_at(id, x, py + dy);
+            if got != Some((s, e)) {
+                failures.push(format!("{name}.word_at({x}, {py}): pinned {s}..{e} got {got:?}"));
+            }
+        }
+        text_edit::clear(id);
+    }
+    failures
 }
 
 #[test]
 fn edit_matches_parley_oracle() {
     assert!(!PARLEY.is_empty(), "fixture empty: run regenerate_edit_pin on the Parley build");
-    let rows = measure_all();
-    let mut failures = Vec::new();
-    for (pin, (name, m)) in PARLEY.iter().zip(&rows) {
-        assert_eq!(pin.name, *name, "fixture order");
-        let close = |a: f64, b: f64| (a - b).abs() <= 0.5;
-        if pin.carets.len() != m.carets.len()
-            || pin
-                .carets
-                .iter()
-                .zip(&m.carets)
-                .any(|(p, c)| p.0 != c.0 || !close(p.1, c.1) || !close(p.2, c.2))
-        {
-            failures.push(format!("{name}.carets"));
-        }
-        if pin.motions != m.motions.as_slice() {
-            failures.push(format!("{name}.motions"));
-        }
-        if pin.hits.len() != m.hits.len() || pin.hits.iter().zip(&m.hits).any(|(p, c)| p.2 != c.2) {
-            failures.push(format!("{name}.hits"));
-        }
-        if pin.words.len() != m.words.len()
-            || pin.words.iter().zip(&m.words).any(|(p, c)| (p.2, p.3) != (c.2, c.3))
-        {
-            failures.push(format!("{name}.words"));
+    let failures = compare(Path::Paragraph, false);
+    assert!(failures.is_empty(), "editing drifted from the Parley pin: {failures:#?}");
+}
+
+/// Documented, deliberate differences from the Parley build (03 §3.13), as
+/// (case, failure-label prefix, reason). Each is printed, not asserted.
+const KNOWN_DIFFS: &[(&str, &str, &str)] = &[
+    ("lora16_crlf", "", "Q-8: CRLF is one paragraph break (Parley lays out an extra line)"),
+    ("emoji_cluster", "hit", "Q-10: a grapheme cluster is never split (Parley steps inside 👍🏽)"),
+    ("emoji_cluster", "left", "Q-10: a grapheme cluster is never split"),
+    ("emoji_cluster", "right", "Q-10: a grapheme cluster is never split"),
+    (
+        "inter16_wrap",
+        "left(",
+        "Q-11: Left at a soft-wrap start moves on (Parley stays: its byte API drops affinity)",
+    ),
+    ("inter16_wrap", "word_left(", "Q-11: Left at a soft-wrap start moves on"),
+    (
+        "inter16_two_paras",
+        "word_",
+        "Q-12: word motion is logical UAX #29 crossing paragraphs (line-table parity)",
+    ),
+    ("mixed_bidi", "word_", "Q-12: word motion is logical UAX #29, not visual"),
+];
+
+#[test]
+fn text_layout_editing_matches_parley_oracle() {
+    let mut unexpected = Vec::new();
+    for f in compare(Path::TextLayout, true) {
+        let known = KNOWN_DIFFS.iter().find(|(case, label, _)| {
+            f.strip_prefix(case).and_then(|r| r.strip_prefix('.')).is_some_and(|r| r.starts_with(label))
+        });
+        match known {
+            Some((_, _, why)) => println!("KNOWN_DIFF {f} ({why})"),
+            None => unexpected.push(f),
         }
     }
-    assert!(failures.is_empty(), "editing drifted from the Parley pin: {failures:?}");
+    assert!(unexpected.is_empty(), "{} differences:\n{}", unexpected.len(), unexpected.join("\n"));
 }

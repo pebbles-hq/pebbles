@@ -16,6 +16,7 @@ pub(crate) mod cache;
 pub(crate) mod fonts;
 pub(crate) mod geometry;
 pub(crate) mod layout;
+pub(crate) mod motion;
 pub(crate) mod paint;
 pub(crate) mod shape;
 pub(crate) mod style;

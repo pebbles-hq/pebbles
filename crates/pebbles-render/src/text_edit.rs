@@ -341,6 +341,8 @@ fn pure_word_right(s: &str, mut i: usize) -> usize {
 enum Published {
     Single(Rc<Layout<Brush>>),
     Lines(Rc<LineTable>),
+    /// A cosmic-text layout (03b E11); Parley entries keep their path until E15.
+    Text(Rc<crate::text::TextLayout>),
 }
 
 thread_local! {
@@ -361,6 +363,14 @@ pub fn store_lines(id: u64, table: Rc<LineTable>) {
     });
 }
 
+/// Publish a cosmic-text [`TextLayout`](crate::text::TextLayout) for `id` (03b E11): the
+/// motion, hit and caret queries below run on Pebbles' own editing geometry for it.
+pub fn store_text(id: u64, layout: Rc<crate::text::TextLayout>) {
+    LAYOUTS.with(|m| {
+        m.borrow_mut().insert(id, Published::Text(layout));
+    });
+}
+
 /// Drop a field's published layout (on unmount / password).
 pub fn clear(id: u64) {
     LAYOUTS.with(|m| {
@@ -374,7 +384,7 @@ pub fn get(id: u64) -> Option<Rc<Layout<Brush>>> {
     LAYOUTS.with(|r| {
         r.borrow().get(&id).and_then(|p| match p {
             Published::Single(l) => Some(l.clone()),
-            Published::Lines(_) => None,
+            _ => None,
         })
     })
 }
@@ -385,7 +395,7 @@ pub fn get_lines(id: u64) -> Option<Rc<LineTable>> {
     LAYOUTS.with(|r| {
         r.borrow().get(&id).and_then(|p| match p {
             Published::Lines(t) => Some(t.clone()),
-            Published::Single(_) => None,
+            _ => None,
         })
     })
 }
@@ -404,13 +414,23 @@ pub fn caret_rect(id: u64, byte: usize) -> Option<Rect> {
         Rect::new(bb.x0, bb.y0, bb.x1, bb.y1)
     })
     .or_else(|| with_lines(id, |t| t.caret_rect(byte, 1.0)))
+    .or_else(|| with_text(id, |l| l.caret_rect(byte, crate::text::Affinity::Downstream, 1.0)))
+}
+
+fn with_text<R>(id: u64, f: impl FnOnce(&crate::text::TextLayout) -> R) -> Option<R> {
+    LAYOUTS.with(|m| {
+        m.borrow().get(&id).and_then(|p| match p {
+            Published::Text(l) => Some(f(l)),
+            _ => None,
+        })
+    })
 }
 
 fn with_single<R>(id: u64, f: impl FnOnce(&Layout<Brush>) -> R) -> Option<R> {
     LAYOUTS.with(|m| {
         m.borrow().get(&id).and_then(|p| match p {
             Published::Single(l) => Some(f(l)),
-            Published::Lines(_) => None,
+            _ => None,
         })
     })
 }
@@ -419,7 +439,7 @@ fn with_lines<R>(id: u64, f: impl FnOnce(&LineTable) -> R) -> Option<R> {
     LAYOUTS.with(|m| {
         m.borrow().get(&id).and_then(|p| match p {
             Published::Lines(t) => Some(f(t)),
-            Published::Single(_) => None,
+            _ => None,
         })
     })
 }
@@ -649,70 +669,82 @@ fn lines_hit(t: &LineTable, x: f64, y: f64) -> usize {
 pub fn left(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
     with_single(id, |l| out(selection(l, a, f).previous_visual(l, extend)))
         .or_else(|| with_lines(id, |t| lines_left(t, a, f, extend)))
+        .or_else(|| with_text(id, |l| crate::text::motion::left(l, a, f, extend)))
 }
 /// Move one grapheme right.
 pub fn right(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
     with_single(id, |l| out(selection(l, a, f).next_visual(l, extend)))
         .or_else(|| with_lines(id, |t| lines_right(t, a, f, extend)))
+        .or_else(|| with_text(id, |l| crate::text::motion::right(l, a, f, extend)))
 }
 /// Move one word left.
 pub fn word_left(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
     with_single(id, |l| out(selection(l, a, f).previous_visual_word(l, extend)))
         .or_else(|| with_lines(id, |t| lines_word_left(t, a, f, extend)))
+        .or_else(|| with_text(id, |l| crate::text::motion::word_left(l, a, f, extend)))
 }
 /// Move one word right.
 pub fn word_right(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
     with_single(id, |l| out(selection(l, a, f).next_visual_word(l, extend)))
         .or_else(|| with_lines(id, |t| lines_word_right(t, a, f, extend)))
+        .or_else(|| with_text(id, |l| crate::text::motion::word_right(l, a, f, extend)))
 }
 /// Move to the start of the visual line.
 pub fn line_start(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
     with_single(id, |l| out(selection(l, a, f).line_start(l, extend)))
         .or_else(|| with_lines(id, |t| lines_line_start(t, a, f, extend)))
+        .or_else(|| with_text(id, |l| crate::text::motion::line_start(l, a, f, extend)))
 }
 /// Move to the end of the visual line.
 pub fn line_end(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
     with_single(id, |l| out(selection(l, a, f).line_end(l, extend)))
         .or_else(|| with_lines(id, |t| lines_line_end(t, a, f, extend)))
+        .or_else(|| with_text(id, |l| crate::text::motion::line_end(l, a, f, extend)))
 }
 /// Move up one (visual) line.
 pub fn line_up(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
     with_single(id, |l| out(selection(l, a, f).previous_line(l, extend)))
         .or_else(|| with_lines(id, |t| lines_vertical(t, a, f, extend, true)))
+        .or_else(|| with_text(id, |l| crate::text::motion::line_up(l, a, f, extend)))
 }
 /// Move down one (visual) line.
 pub fn line_down(id: u64, a: usize, f: usize, extend: bool) -> Option<(usize, usize)> {
     with_single(id, |l| out(selection(l, a, f).next_line(l, extend)))
         .or_else(|| with_lines(id, |t| lines_vertical(t, a, f, extend, false)))
+        .or_else(|| with_text(id, |l| crate::text::motion::line_down(l, a, f, extend)))
 }
 
 /// Map a point (in the text's local space) to a caret byte offset.
 pub fn hit(id: u64, x: f64, y: f64) -> Option<usize> {
     with_single(id, |l| Selection::from_point(l, x as f32, y as f32).focus().index())
         .or_else(|| with_lines(id, |t| lines_hit(t, x, y)))
+        .or_else(|| with_text(id, |l| l.hit(x as f32, y as f32).0))
 }
 /// The word (anchor, focus) under a point — for double-click select.
 pub fn word_at(id: u64, x: f64, y: f64) -> Option<(usize, usize)> {
-    with_single(id, |l| out(Selection::word_from_point(l, x as f32, y as f32))).or_else(|| {
-        with_lines(id, |t| {
-            if t.lines.is_empty() {
-                return (0, 0);
-            }
-            let i = t.line_at_y(y);
-            let l = &t.lines[i];
-            match l.layout() {
-                Some(layout) => {
-                    let s = Selection::word_from_point(&layout, x as f32, (y - l.y.get()) as f32);
-                    let (a, f) = out(s);
-                    (t.global(i, a), t.global(i, f))
+    with_single(id, |l| out(Selection::word_from_point(l, x as f32, y as f32)))
+        .or_else(|| {
+            with_lines(id, |t| {
+                if t.lines.is_empty() {
+                    return (0, 0);
                 }
-                None => (l.start, l.start),
-            }
+                let i = t.line_at_y(y);
+                let l = &t.lines[i];
+                match l.layout() {
+                    Some(layout) => {
+                        let s = Selection::word_from_point(&layout, x as f32, (y - l.y.get()) as f32);
+                        let (a, f) = out(s);
+                        (t.global(i, a), t.global(i, f))
+                    }
+                    None => (l.start, l.start),
+                }
+            })
         })
-    })
+        .or_else(|| with_text(id, |l| l.word_at(x as f32, y as f32)))
 }
 /// Extend the current selection's focus to a point — for drag-select.
 pub fn extend_to(id: u64, a: usize, f: usize, x: f64, y: f64) -> Option<(usize, usize)> {
     with_single(id, |l| out(selection(l, a, f).extend_to_point(l, x as f32, y as f32)))
         .or_else(|| with_lines(id, |t| (a, lines_hit(t, x, y))))
+        .or_else(|| with_text(id, |l| (a, l.hit(x as f32, y as f32).0)))
 }

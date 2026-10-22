@@ -828,3 +828,34 @@ fn mark_all_needs_layout_dirties_every_node() {
     tree.layout(&mut text, tight(100.0, 100.0));
     assert_eq!(runs.get() - clean, 4, "every node re-runs layout");
 }
+
+/// The public `text_edit` motions, hit and caret queries run on a cosmic-text `TextLayout`
+/// published with `store_text` (03b E11), with unchanged signatures.
+#[test]
+fn text_edit_routes_text_layout_entries() {
+    use pebbles_render::text_edit;
+    let mut env = TextEnv::new();
+    let style = ParagraphStyle {
+        font_family: Some("JetBrains Mono".into()),
+        font_size: 20.0,
+        ..ParagraphStyle::default()
+    };
+    let layout = pebbles_render::text::layout_for_test(&mut env, "hello world\nab", &style, &[], None);
+    let id = 77_001;
+    text_edit::store_text(id, layout);
+    assert_eq!(text_edit::right(id, 0, 0, false), Some((1, 1)));
+    assert_eq!(text_edit::left(id, 2, 7, false), Some((2, 2)));
+    assert_eq!(text_edit::right(id, 2, 7, true), Some((2, 8)));
+    assert_eq!(text_edit::word_right(id, 0, 0, false), Some((5, 5)));
+    assert_eq!(text_edit::word_left(id, 11, 11, false), Some((6, 6)));
+    assert_eq!(text_edit::line_end(id, 3, 3, false), Some((11, 11)));
+    assert_eq!(text_edit::line_start(id, 3, 3, false), Some((0, 0)));
+    assert_eq!(text_edit::line_down(id, 1, 1, false), Some((13, 13)));
+    assert_eq!(text_edit::line_up(id, 13, 13, false), Some((1, 1)));
+    assert_eq!(text_edit::hit(id, 37.0, 10.0), Some(3));
+    assert_eq!(text_edit::word_at(id, 78.0, 10.0), Some((6, 11)));
+    assert_eq!(text_edit::extend_to(id, 2, 2, 37.0, 10.0), Some((2, 3)));
+    assert!((text_edit::caret_rect(id, 3).expect("caret").x0 - 36.0).abs() <= 0.01);
+    text_edit::clear(id);
+    assert_eq!(text_edit::hit(id, 0.0, 0.0), None);
+}

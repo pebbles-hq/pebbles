@@ -57,6 +57,38 @@ impl TextLayout {
         Some((start, end))
     }
 
+    /// The logical end byte (line-local) of visual line `i`: the next line's start when the
+    /// paragraph soft-wraps after it (so trailing whitespace belongs to this line), else the
+    /// glyph span's end.
+    pub(crate) fn line_logical_end(&self, i: usize) -> usize {
+        let line = &self.lines[i];
+        let next = self.lines.get(i + 1).filter(|n| n.para == line.para && n.from_elided == line.from_elided);
+        match next.and_then(|_| self.line_span(i + 1)) {
+            Some((start, _)) => start,
+            None => self.line_span(i).map_or(0, |(_, e)| e),
+        }
+    }
+
+    /// Width of the whitespace between line `i`'s glyphs and its logical end: cosmic-text emits
+    /// no glyph for the trailing space of a soft-wrapped line, but it still has an advance.
+    fn hidden_trailing_width(&self, i: usize) -> f32 {
+        let line = &self.lines[i];
+        let (Some((_, end)), logical_end) = (self.line_span(i), self.line_logical_end(i)) else { return 0.0 };
+        if logical_end <= end || line.from_elided {
+            return 0.0;
+        }
+        let shape = &self.shaped.paras[line.para].shape;
+        let em: f32 = shape
+            .spans
+            .iter()
+            .flat_map(|s| &s.words)
+            .flat_map(|w| &w.glyphs)
+            .filter(|g| g.start >= end && g.end <= logical_end)
+            .map(|g| g.x_advance)
+            .sum();
+        em * self.shaped.base_font_size
+    }
+
     /// Whether line `i` addresses no text (an empty paragraph's placeholder or no glyphs).
     fn line_is_empty(&self, i: usize) -> bool {
         let line = &self.lines[i];
@@ -203,7 +235,8 @@ impl TextLayout {
         }
         let run = self.run(i);
         let glyphs = &line.layout.glyphs;
-        let (span_start, span_end) = self.line_span(i).unwrap_or((0, 0));
+        let span_start = self.line_span(i).map_or(0, |(s, _)| s);
+        let span_end = self.line_logical_end(i);
         let min_x = glyphs.iter().map(|g| g.x).fold(f32::INFINITY, f32::min);
         let max_x = glyphs.iter().map(|g| g.x + g.w).fold(f32::NEG_INFINITY, f32::max);
         // Outside the glyphs: the visual start / end of the line.
@@ -215,40 +248,46 @@ impl TextLayout {
             };
         }
         if x > max_x {
-            return if run.rtl {
-                (to_text(span_start), Affinity::Downstream)
-            } else {
-                (to_text(span_end), Affinity::Upstream)
-            };
+            if run.rtl {
+                return (to_text(span_start), Affinity::Downstream);
+            }
+            // The hidden trailing whitespace of a wrapped line: its leading half stays before it.
+            let glyph_end = self.line_span(i).map_or(0, |(_, e)| e);
+            let hidden = self.hidden_trailing_width(i);
+            if hidden > 0.0 && x < max_x + hidden / 2.0 {
+                return (to_text(glyph_end), Affinity::Upstream);
+            }
+            return (to_text(span_end), Affinity::Upstream);
         }
-        // Port of cosmic `Buffer::hit`'s per-glyph loop: graphemes split a cluster evenly.
-        for g in glyphs {
-            if x < g.x || x > g.x + g.w {
+        // Port of cosmic `Buffer::hit`'s per-glyph loop, with every glyph of one cluster (e.g. an
+        // emoji with a modifier drawn as two glyphs) treated as one box: graphemes split it evenly.
+        let mut k = 0;
+        while k < glyphs.len() {
+            let g = &glyphs[k];
+            let n = glyphs[k..].iter().take_while(|h| (h.start, h.end) == (g.start, g.end)).count();
+            let (gx0, gx1) = glyphs[k..k + n]
+                .iter()
+                .fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), h| (a.min(h.x), b.max(h.x + h.w)));
+            k += n;
+            if x < gx0 || x > gx1 {
                 continue;
             }
             let cluster = &run.text[g.start..g.end];
             let total = cluster.grapheme_indices(true).count().max(1);
-            let egc_w = g.w / total as f32;
-            let mut egc_x = g.x;
-            for (k, egc) in cluster.grapheme_indices(true) {
-                if x >= egc_x && x <= egc_x + egc_w {
-                    let right_half = x >= egc_x + egc_w / 2.0;
-                    // The visually later half of a grapheme is past it in reading order.
-                    let past = right_half != g.level.is_rtl();
+            let egc_w = (gx1 - gx0) / total as f32;
+            let rtl = g.level.is_rtl();
+            for (j, (gi, egc)) in cluster.grapheme_indices(true).enumerate() {
+                // Visual box of grapheme j (RTL clusters run right to left).
+                let x0 = if rtl { gx1 - (j + 1) as f32 * egc_w } else { gx0 + j as f32 * egc_w };
+                if x >= x0 && x <= x0 + egc_w {
+                    let past = (x >= x0 + egc_w / 2.0) != rtl;
                     return if past {
-                        (to_text(g.start + k + egc.len()), Affinity::Upstream)
+                        (to_text(g.start + gi + egc.len()), Affinity::Upstream)
                     } else {
-                        (to_text(g.start + k), Affinity::Downstream)
+                        (to_text(g.start + gi), Affinity::Downstream)
                     };
                 }
-                egc_x += egc_w;
             }
-            let past = (x >= g.x + g.w / 2.0) != g.level.is_rtl();
-            return if past {
-                (to_text(g.end), Affinity::Upstream)
-            } else {
-                (to_text(g.start), Affinity::Downstream)
-            };
         }
         // Between glyphs (justified gaps): the nearest glyph edge.
         let nearest = glyphs
@@ -266,26 +305,27 @@ impl TextLayout {
         }
     }
 
-    /// The UAX #29 word under the point (double-click selection): whitespace under the point
-    /// selects the word before it when there is one.
+    /// The UAX #29 word segment under the point (double-click selection). Whitespace under the
+    /// point selects the whitespace run (Parley, macOS, browsers, Flutter).
     pub fn word_at(&self, x: f32, y: f32) -> (usize, usize) {
-        let (byte, _) = self.hit(x, y);
+        let (byte, aff) = self.hit(x, y);
         let (p, local) = self.para_of(byte);
         let para = &self.shaped.paras[p];
         let text = &self.shaped.text[para.range.clone()];
-        let segments: Vec<(usize, &str)> = text.split_word_bound_indices().collect();
-        if segments.is_empty() {
-            return (para.range.start, para.range.start);
+        // The character under the point: a trailing-half hit lands after it.
+        let under = if aff == Affinity::Upstream && local > 0 {
+            text[..local].char_indices().next_back().map_or(0, |(i, _)| i)
+        } else {
+            local
+        };
+        let segment = text
+            .split_word_bound_indices()
+            .find(|(s, w)| *s <= under && under < s + w.len())
+            .or_else(|| text.split_word_bound_indices().next_back());
+        match segment {
+            Some((s, w)) => (para.range.start + s, para.range.start + s + w.len()),
+            None => (para.range.start, para.range.start),
         }
-        let k = segments
-            .iter()
-            .position(|(s, _)| *s == local)
-            .or_else(|| segments.iter().position(|(s, w)| *s < local && local < s + w.len()))
-            .unwrap_or(segments.len() - 1);
-        let is_space = |w: &str| w.chars().all(char::is_whitespace);
-        let k = if is_space(segments[k].1) && k > 0 && !is_space(segments[k - 1].1) { k - 1 } else { k };
-        let (s, w) = segments[k];
-        (para.range.start + s, para.range.start + s + w.len())
     }
 }
 
@@ -422,7 +462,8 @@ mod tests {
         let l = lay("hello world", "JetBrains Mono", 20.0, None);
         // Mono 12 px advances: space spans 60..72, 'w' 72..84.
         assert_eq!(l.word_at(78.0, 10.0), (6, 11));
-        assert_eq!(l.word_at(63.0, 10.0), (0, 5));
-        assert_eq!(l.word_at(69.0, 10.0), (6, 11));
+        assert_eq!(l.word_at(63.0, 10.0), (5, 6), "whitespace selects itself");
+        assert_eq!(l.word_at(69.0, 10.0), (5, 6));
+        assert_eq!(l.word_at(30.0, 10.0), (0, 5));
     }
 }
