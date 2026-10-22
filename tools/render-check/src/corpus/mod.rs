@@ -31,6 +31,7 @@ pub fn all() -> Vec<Case> {
     out.extend(xform::cases());
     out.extend(clip::cases());
     out.extend(text::cases());
+    out.extend(text::international());
     out.extend(img::cases());
     out.extend(shadow::cases());
     out.extend(layer::cases());

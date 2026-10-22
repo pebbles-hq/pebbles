@@ -64,3 +64,19 @@ impl fmt::Display for CheckError {
 }
 
 impl std::error::Error for CheckError {}
+
+/// Register the committed test fonts (`fonts/`, V22) as `App::font` user fonts, once per
+/// process. Must run before any `TextEnv` / `Harness` exists (each snapshots the user fonts).
+pub fn register_test_fonts() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        for bytes in [
+            &include_bytes!("../fonts/NotoSansArabic-test.ttf")[..],
+            &include_bytes!("../fonts/NotoSansHebrew-test.ttf")[..],
+            &include_bytes!("../fonts/NotoSansSC-test.otf")[..],
+            &include_bytes!("../fonts/NotoColorEmoji-test.ttf")[..],
+        ] {
+            pebbles_render::fonts::register_user_font(bytes);
+        }
+    });
+}

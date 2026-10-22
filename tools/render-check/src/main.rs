@@ -227,6 +227,8 @@ fn runner_placeholder(case: &Case) -> CaseResult {
 }
 
 fn main() -> ExitCode {
+    // Test fonts join every TextEnv as user fonts, before any Harness exists (V22).
+    render_check::register_test_fonts();
     let mut argv = std::env::args().skip(1).peekable();
     if argv.peek().is_some_and(|a| a == "bench") {
         argv.next();

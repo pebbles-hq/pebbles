@@ -9,7 +9,7 @@ use pebbles_widgets::{column, container, span, text, text_field, text_rich, tran
 
 use kurbo::Affine;
 
-use crate::case::{Case, Category::Text, Slice::P2, harness, ops, with_scale_variants};
+use crate::case::{Case, Category::Text, Slice::P2, Slice::TrackT, harness, ops, with_scale_variants};
 
 const W: u32 = 480;
 const H: u32 = 320;
@@ -51,6 +51,45 @@ pub fn cases() -> Vec<Case> {
         ops("text/colr_v1_composite", Text, P2, 160, 160, colr_v1_composite),
     ]);
     v
+}
+
+/// text/ international — Slice TrackT (V22): the committed Noto test fonts (`fonts/`).
+pub fn international() -> Vec<Case> {
+    crate::register_test_fonts();
+    vec![
+        harness("text/rtl_arabic", Text, TrackT, W, H, rtl_arabic),
+        harness("text/rtl_hebrew", Text, TrackT, W, H, rtl_hebrew),
+        harness("text/bidi_mixed", Text, TrackT, W, H, bidi_mixed),
+        harness("text/cjk", Text, TrackT, W, H, cjk),
+        harness("text/emoji_color", Text, TrackT, W, H, emoji_color)
+            .probe("emoji_has_color", crate::probe::emoji_has_color),
+        harness("text/mixed_scripts_fallback", Text, TrackT, W, H, mixed_scripts_fallback),
+    ]
+}
+
+fn rtl_arabic(h: &mut Harness) {
+    page(h, text("مرحبا بالعالم").font_family("Noto Sans Arabic").size(28.0));
+}
+
+fn rtl_hebrew(h: &mut Harness) {
+    page(h, text("שלום עולם").font_family("Noto Sans Hebrew").size(28.0));
+}
+
+fn bidi_mixed(h: &mut Harness) {
+    // Inter has no Hebrew: the run falls back to the registered Noto Sans Hebrew.
+    page(h, text("abc אבג 123 def").size(28.0));
+}
+
+fn cjk(h: &mut Harness) {
+    page(h, text("你好，世界。渲染测试").font_family("Noto Sans CJK SC").size(28.0));
+}
+
+fn emoji_color(h: &mut Harness) {
+    page(h, text("😀 👍 🚀 🎉").font_family("Noto Color Emoji").size(40.0));
+}
+
+fn mixed_scripts_fallback(h: &mut Harness) {
+    page(h, text("Hello مرحبا 你好").size(28.0));
 }
 
 fn page(h: &mut Harness, child: impl pebbles_core::IntoWidget) {

@@ -244,3 +244,36 @@ fn edit_matches_oracle() {
 fn text_layout_editing_matches_oracle() {
     assert_matches_oracle(Path::TextLayout);
 }
+
+/// E01's `cjk_line` case, pinned analytically: the pre-swap build cannot serve as its oracle
+/// (its ICU4X segmentation data had no Chinese model, so every caret collapsed to x = 0).
+/// Noto Sans CJK SC at 16 px: ten full-width 16 px glyphs, a caret every 16 px, one character
+/// per arrow press, hits landing on character boundaries.
+#[test]
+fn cjk_line_editing_is_per_character() {
+    pebbles_render::fonts::register_user_font(include_bytes!(
+        "../../../tools/render-check/fonts/NotoSansSC-test.otf"
+    ));
+    let text = "你好，世界。渲染测试";
+    let style = ParagraphStyle {
+        font_size: 16.0,
+        font_family: Some("Noto Sans CJK SC".into()),
+        ..ParagraphStyle::default()
+    };
+    let layout = pebbles_render::text::layout_for_test(&mut TextEnv::new(), text, &style, &[], None);
+    assert!((layout.width() - 160.0).abs() < 0.01, "width {}", layout.width());
+    let id = 9300;
+    text_edit::store(id, layout);
+    let bounds: Vec<usize> = text.char_indices().map(|(b, _)| b).chain(std::iter::once(text.len())).collect();
+    for (i, &b) in bounds.iter().enumerate() {
+        let x = text_edit::caret_rect(id, b).expect("caret").x0;
+        assert!((x - 16.0 * i as f64).abs() < 0.01, "caret {i} at {x}");
+        if let Some(&next) = bounds.get(i + 1) {
+            assert_eq!(text_edit::right(id, b, b, false), Some((next, next)));
+            assert_eq!(text_edit::left(id, next, next, false), Some((b, b)));
+            assert_eq!(text_edit::hit(id, 16.0 * i as f64 + 4.0, 8.0), Some(b), "left half of char {i}");
+            assert_eq!(text_edit::hit(id, 16.0 * i as f64 + 12.0, 8.0), Some(next), "right half of char {i}");
+        }
+    }
+    text_edit::clear(id);
+}

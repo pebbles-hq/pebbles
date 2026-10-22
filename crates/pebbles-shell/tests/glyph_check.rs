@@ -66,9 +66,18 @@ fn bundled_families_and_weights_render() {
 #[test]
 #[ignore = "gpu"]
 fn color_emoji_renders() {
-    let root = text("😀").size(48.0).into_widget();
+    // vello_hybrid (the transitional smoke backend, deleted at Phase 7) cannot rasterize CBDT
+    // bitmap glyphs; the first-party wgpu renderer does (R29 color glyphs).
+    if cfg!(feature = "vello-hybrid") {
+        println!("SKIP color_emoji_renders: vello-hybrid has no CBDT bitmap glyphs (05 §8.3)");
+        return;
+    }
+    // The committed CBDT test font (V22), registered before capture builds its TextEnv — no
+    // system emoji font involved.
+    register_emoji_font();
+    let root = text("😀").font_family("Noto Color Emoji").size(48.0).into_widget();
     let (w, h) = (120u32, 120u32);
-    let rgba = capture::capture_rgba(root, w, h, palette::WHITE).expect("capture");
+    let Some(rgba) = capture_or_skip("color_emoji_renders", root, w, h) else { return };
     let mut ink = 0u32;
     let mut colored = 0u32;
     for y in 0..h {
@@ -87,4 +96,66 @@ fn color_emoji_renders() {
     // not a monochrome fallback.
     assert!(ink > 20, "expected emoji glyph pixels, got {ink}");
     assert!(colored > 0, "expected colored emoji pixels, got {colored} colored of {ink}");
+}
+
+fn register_emoji_font() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        pebbles_render::fonts::register_user_font(include_bytes!(
+            "../../../tools/render-check/fonts/NotoColorEmoji-test.ttf"
+        ));
+    });
+}
+
+/// Rows of `rgba` (`w` wide) holding a pixel with luma ≤ `max`: (first, last).
+fn ink_rows(rgba: &[u8], w: u32, h: u32, max: u32) -> Option<(u32, u32)> {
+    let rows: Vec<u32> = (0..h).filter(|&y| (0..w).any(|x| luma(px(rgba, w, x, y)) <= max)).collect();
+    Some((*rows.first()?, *rows.last()?))
+}
+
+/// T23: cosmic-shaped text renders on whichever backend this build selects (run the file under
+/// both the default and `--no-default-features --features wgpu`).
+#[test]
+#[ignore = "gpu"]
+fn cosmic_text_renders_on_every_backend() {
+    let (w, h) = (300u32, 80u32);
+    let root = text("Hello cosmic").size(24.0).color(palette::BLACK).into_widget();
+    let Some(rgba) = capture_or_skip("cosmic_text_renders_on_every_backend", root, w, h) else { return };
+    let (top, bottom) = ink_rows(&rgba, w, h, 128).expect("ink");
+    let darkest =
+        (top..=bottom).flat_map(|y| (0..w).map(move |x| (x, y))).map(|(x, y)| luma(px(&rgba, w, x, y))).min();
+    assert!(darkest.is_some_and(|l| l <= 80), "darkest luma {darkest:?}");
+    let band = bottom - top + 1;
+    assert!((14..=30).contains(&band), "ink band {top}..{bottom} = {band} px");
+    assert_eq!(px(&rgba, w, w - 2, h - 2), [255, 255, 255, 255], "background");
+}
+
+/// T23: weight and slant reach the renderer — bold darkens the regular run's ink box.
+#[test]
+#[ignore = "gpu"]
+fn bold_and_italic_differ() {
+    let (w, h) = (200u32, 60u32);
+    let cap = |t: Text| capture_or_skip("bold_and_italic_differ", t.into_widget(), w, h);
+    let base = || text("Hello").size(32.0).color(palette::BLACK);
+    let (Some(regular), Some(bold), Some(italic)) = (cap(base()), cap(base().bold()), cap(base().italic()))
+    else {
+        return;
+    };
+    assert_ne!(regular, bold);
+    assert_ne!(regular, italic);
+    assert_ne!(bold, italic);
+    // Mean luma over the regular run's ink box: bold puts more ink there.
+    let (top, bottom) = ink_rows(&regular, w, h, 200).expect("ink");
+    let cols: Vec<u32> =
+        (0..w).filter(|&x| (top..=bottom).any(|y| luma(px(&regular, w, x, y)) <= 200)).collect();
+    let (left, right) = (cols[0], *cols.last().unwrap());
+    let mean = |img: &[u8]| {
+        let n = f64::from((right - left + 1) * (bottom - top + 1));
+        (top..=bottom)
+            .flat_map(|y| (left..=right).map(move |x| (x, y)))
+            .map(|(x, y)| f64::from(luma(px(img, w, x, y))))
+            .sum::<f64>()
+            / n
+    };
+    assert!(mean(&bold) < mean(&regular), "bold {} vs regular {}", mean(&bold), mean(&regular));
 }
