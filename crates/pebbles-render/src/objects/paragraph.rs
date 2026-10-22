@@ -62,6 +62,8 @@ pub struct ParagraphStyle {
     pub align: TextAlign,
     /// Extra spacing between letters (logical px; 0 = none).
     pub letter_spacing: f32,
+    /// Extra advance added to each word separator (space, NBSP, …), logical px; may be negative.
+    pub word_spacing: f32,
     pub italic: bool,
     pub underline: bool,
     pub strikethrough: bool,
@@ -97,6 +99,7 @@ impl Default for ParagraphStyle {
             weight: 400.0,
             align: TextAlign::Start,
             letter_spacing: 0.0,
+            word_spacing: 0.0,
             italic: false,
             underline: false,
             strikethrough: false,
@@ -143,6 +146,8 @@ pub struct TextSpanStyle {
     pub family: Option<String>,
     /// Absolute font-size override (px).
     pub size: Option<f32>,
+    /// Word-spacing override for the range (px).
+    pub word_spacing: Option<f32>,
     /// Paint a rounded "chip" background behind the range (inline code).
     pub chip: Option<Color>,
     /// This range is a link — the index into the owning widget's URL list. The
@@ -170,6 +175,7 @@ impl TextSpanStyle {
             background: None,
             family: None,
             size: None,
+            word_spacing: None,
             chip: None,
             link: None,
         }

@@ -68,6 +68,43 @@ pub(crate) fn split_paragraphs(text: &str) -> Vec<Para> {
     paras
 }
 
+/// CSS word-separator characters (CSS Text 3 §8.2).
+fn is_word_separator(c: char) -> bool {
+    matches!(c, ' ' | '\u{A0}' | '\u{1361}' | '\u{10100}' | '\u{10101}' | '\u{1039F}' | '\u{1091F}')
+}
+
+/// Add word spacing to every word-separator glyph's advance before line breaking, so wraps see
+/// it (Flutter `wordSpacing`). The last span covering a glyph with an override wins.
+fn apply_word_spacing(
+    shape: &mut ShapeLine,
+    text: &str,
+    para_start: usize,
+    spec: &TextStyleSpec,
+    spans: &[SpanSpec],
+) {
+    if spec.word_spacing == 0.0 && spans.iter().all(|s| s.word_spacing.is_none()) {
+        return;
+    }
+    let base_size = sanitize_size(spec.font_size);
+    for g in shape.spans.iter_mut().flat_map(|s| s.words.iter_mut()).flat_map(|w| w.glyphs.iter_mut()) {
+        let at = para_start + g.start;
+        let cluster = text.get(at..para_start + g.end).unwrap_or("");
+        if cluster.is_empty() || !cluster.chars().all(is_word_separator) {
+            continue;
+        }
+        let spacing = spans
+            .iter()
+            .rev()
+            .find(|s| s.range.contains(&at) && s.word_spacing.is_some())
+            .and_then(|s| s.word_spacing)
+            .unwrap_or(spec.word_spacing);
+        let size = g.metrics_opt.map_or(base_size, |m| m.font_size);
+        if spacing.is_finite() && size > 0.0 {
+            g.x_advance += spacing / size; // advances are in EM
+        }
+    }
+}
+
 /// Shape every paragraph of `text` (Advanced shaping: font fallback included).
 pub(crate) fn shape_text(
     fonts: &mut FontRegistry,
@@ -87,7 +124,10 @@ pub(crate) fn shape_text(
             };
             let line = if placeholder { " " } else { &text[p.range.clone()] };
             super::count_shape();
-            let shape = ShapeLine::new(fonts.font_system(), line, &attrs, Shaping::Advanced, tab_width);
+            let mut shape = ShapeLine::new(fonts.font_system(), line, &attrs, Shaping::Advanced, tab_width);
+            if !placeholder {
+                apply_word_spacing(&mut shape, text, p.range.start, spec, spans);
+            }
             ShapedPara { range: p.range, ending_len: p.ending_len, placeholder, attrs, shape }
         })
         .collect();
@@ -194,5 +234,35 @@ mod tests {
         let before = crate::text::shape_count();
         shape_text(&mut f, "a\nb\nc", &spec(), &[]);
         assert_eq!(crate::text::shape_count() - before, 3);
+    }
+
+    fn width(text: &str, word_spacing: f32, max: Option<f32>) -> (f32, usize) {
+        let mut env = crate::text::TextEnv::new();
+        let style = ParagraphStyle {
+            font_family: Some("JetBrains Mono".into()),
+            font_size: 20.0,
+            word_spacing,
+            ..ParagraphStyle::default()
+        };
+        let l = crate::text::layout_for_test(&mut env, text, &style, &[], max);
+        (l.width(), l.line_count())
+    }
+
+    #[test]
+    fn word_spacing_widens_spaces_only() {
+        assert!((width("a b", 5.0, None).0 - 41.0).abs() < 0.01, "{:?}", width("a b", 5.0, None));
+        assert!((width("ab", 5.0, None).0 - 24.0).abs() < 0.01, "letters unchanged");
+    }
+
+    #[test]
+    fn word_spacing_moves_wrap_points() {
+        // "aaa bbb" = 84 px: fits 90 without spacing, wraps with +10 px.
+        assert_eq!(width("aaa bbb", 0.0, Some(90.0)).1, 1);
+        assert_eq!(width("aaa bbb", 10.0, Some(90.0)).1, 2);
+    }
+
+    #[test]
+    fn negative_word_spacing_allowed() {
+        assert!((width("a b", -4.0, None).0 - 32.0).abs() < 0.01, "{:?}", width("a b", -4.0, None));
     }
 }
