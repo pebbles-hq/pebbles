@@ -224,6 +224,11 @@ impl TextEnv {
     /// pressure), so re-presenting a long-idle window never re-shapes the world.
     pub fn finish_frame(&mut self) {
         self.caches.finish_frame();
+        // cosmic-text's shaped-word cache (feature `shape-run-cache`): one age per 256 frames,
+        // dropping runs unused for 16 ages — the same ~4 096-frame horizon as the layout caches.
+        if self.caches.generation.is_multiple_of(256) {
+            self.registry.font_system().shape_run_cache.trim(SHAPE_CACHE_STALE as u64 / 256);
+        }
     }
 
     /// Number of cached shaped layouts (census / tests).
