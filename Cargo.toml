@@ -48,6 +48,8 @@ pebbles-macros = { path = "crates/pebbles-macros", version = "0.0.1" }
 pebbles = { path = "crates/pebbles", version = "0.0.1", default-features = false }
 pebbles-testing = { path = "crates/pebbles-testing", version = "0.0.1", default-features = false }
 pebbles-gpu = { path = "crates/pebbles-gpu", version = "0.0.1" }
+# The `log` facade wgpu/naga report through (already in the graph via wgpu); pebbles-gpu bridges it (S56).
+log = "0.4"
 
 # --- Linebender 2D stack ---
 # `kurbo` (geometry) and `peniko` (brushes/colors) are the renderer-neutral paint

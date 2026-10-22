@@ -1,7 +1,9 @@
 //! Shared helpers for pebbles-gpu GPU integration tests (05 §4, V01).
 #![allow(dead_code)] // each test module uses a subset
 
-use pebbles_gpu::{GpuInit, OffscreenRenderer};
+use std::ops::{Deref, DerefMut};
+
+use pebbles_gpu::{GpuInit, OffscreenRenderer, backend_error_count, install_log_bridge};
 
 /// `PEBBLES_REQUIRE_GPU=1` turns a missing adapter into a failure (GPU lanes set it).
 pub fn require_gpu() -> bool {
@@ -16,12 +18,49 @@ pub fn strict_init() -> GpuInit {
     init
 }
 
+/// A test's renderer. On drop it fails the test if wgpu/naga logged an error-level record
+/// while it lived (backend validation layers report there, not through the error scope; S56).
+/// GPU lanes run `--test-threads=1`, so the process-global count is per test.
+pub struct GpuTest {
+    renderer: OffscreenRenderer,
+    test: String,
+    errors_at_start: u64,
+}
+
+impl Deref for GpuTest {
+    type Target = OffscreenRenderer;
+    fn deref(&self) -> &OffscreenRenderer {
+        &self.renderer
+    }
+}
+
+impl DerefMut for GpuTest {
+    fn deref_mut(&mut self) -> &mut OffscreenRenderer {
+        &mut self.renderer
+    }
+}
+
+impl Drop for GpuTest {
+    fn drop(&mut self) {
+        let errors = backend_error_count() - self.errors_at_start;
+        if !std::thread::panicking() {
+            assert_eq!(
+                errors, 0,
+                "{}: the GPU backend logged {errors} error(s); see the log above",
+                self.test
+            );
+        }
+    }
+}
+
 /// A headless renderer, or `None` after printing `SKIP <test>: <reason>`.
-pub fn gpu_or_skip(test: &str) -> Option<OffscreenRenderer> {
+pub fn gpu_or_skip(test: &str) -> Option<GpuTest> {
+    install_log_bridge();
+    let errors_at_start = backend_error_count();
     match OffscreenRenderer::with_init(strict_init()) {
-        Ok(r) => {
-            eprintln!("GPU {test}: {}", adapter_summary(&r));
-            Some(r)
+        Ok(renderer) => {
+            eprintln!("GPU {test}: {}", adapter_summary(&renderer));
+            Some(GpuTest { renderer, test: test.to_owned(), errors_at_start })
         }
         Err(e) if require_gpu() => panic!("{test}: PEBBLES_REQUIRE_GPU=1 but no GPU adapter: {e}"),
         Err(e) => {

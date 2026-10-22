@@ -253,6 +253,9 @@ impl App {
         console_error_panic_hook::set_once();
 
         log::init();
+        // S56: wgpu/naga `log` records (validation layers, hal errors) into the same log.
+        #[cfg(feature = "wgpu")]
+        pebbles_gpu::install_log_bridge();
 
         // Reduced-motion: query the platform once at startup so widgets can default their
         // entry/transition animations off (`prefers_reduced_motion()`), honoring the user's

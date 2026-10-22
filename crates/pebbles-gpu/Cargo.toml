@@ -31,6 +31,7 @@ swash.workspace = true
 skrifa.workspace = true   # COLR paint graphs (02 R29, DR-23)
 guillotiere.workspace = true
 zeno.workspace = true
+log.workspace = true     # added by S56: wgpu/naga records -> pebbles_foundation::log
 half.workspace = true    # f16 gradient LUT texels (09 §5.3, L37)
 
 # L43: app shader brushes are validated (and translated to GLSL ES for WebGL2) before use.

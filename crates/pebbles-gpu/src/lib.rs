@@ -52,6 +52,7 @@ mod timing;
 pub use budgets::{BudgetPlatform, GpuBudgets};
 pub use census::GpuCensus;
 pub use context::{DeviceHealth, DeviceId, GpuCaps, GpuContext, GpuDevice};
+pub use diag::{backend_error_count, install_log_bridge};
 pub use error::{AcquireError, CaptureError, GpuError};
 pub use execute::custom::{CustomPrepare, CustomRender, CustomRenderer};
 pub use execute::resources::shader_programs::{ShaderError, validate_shader_program};
