@@ -1079,3 +1079,38 @@ fn intrinsics_include_strut() {
     let h = tree.size_of(root).height;
     assert!(h >= (1984.0 + 494.0) / 2048.0 * 40.0 - 0.01, "{h}");
 }
+
+/// T09 AC3 (automated on the host): with `SystemFonts::Background`, a paragraph naming a
+/// system-only family renders in the bundled default first, then — after the background scan
+/// merges (polled like the runner, once per frame) — in that family, within 2 s.
+#[test]
+#[ignore = "scans the host's system fonts"]
+fn background_scan_switches_system_family_within_2s() {
+    use pebbles_render::SystemFonts;
+    let family = "DejaVu Sans";
+    let width = |text: &mut TextEnv| {
+        let style = ParagraphStyle { font_family: Some(family.into()), ..ParagraphStyle::default() };
+        let mut tree = RenderTree::new();
+        let p = tree.insert(Box::new(RenderParagraph::new("Hamburgefonstiv", style)));
+        tree.root = Some(p);
+        tree.layout(text, BoxConstraints::UNBOUNDED);
+        tree.size_of(p).width
+    };
+    let mut text = TextEnv::with_system_fonts(SystemFonts::Background);
+    let start = std::time::Instant::now();
+    let first = width(&mut text);
+    let mut merged = false;
+    while start.elapsed() < std::time::Duration::from_secs(2) {
+        if text.poll_fonts() {
+            merged = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(16)); // one frame
+    }
+    assert!(merged, "the background scan did not merge within 2 s");
+    let after = width(&mut text);
+    let inter = width(&mut TextEnv::new());
+    assert!((first - inter).abs() < 0.01, "before the merge it renders in the bundled default");
+    assert!((after - first).abs() > 0.5, "after the merge it renders in {family}: {first} -> {after}");
+    println!("merged in {:?}", start.elapsed());
+}
