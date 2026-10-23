@@ -341,6 +341,32 @@ jobs:
         run: cargo test -p pebbles-shell --no-default-features --features wgpu -- --ignored --test-threads=1
 
   # Render check: golden model + probes + self-goldens (+ transitional Vello smoke), in-process (05 §6).
+  # wgpu-core validation without a GPU on every OS (05 V38): the noop backend runs every GPU test's
+  # calls through validation; pixel asserts are skipped under it (V09).
+  gpu-noop-validation:
+    name: wgpu validation, noop backend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      WGPU_BACKEND: noop
+      WGPU_NOOP_BACKEND: "1"
+      PEBBLES_REQUIRE_GPU: "1"
+      PEBBLES_GPU_STRICT: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: System deps (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: gpu-noop-${{ matrix.os }}
+      - name: GPU tests under wgpu-core validation (no pixels)
+        shell: bash
+        run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
+
   render-check:
     name: Render check (lavapipe)
     runs-on: ubuntu-24.04
