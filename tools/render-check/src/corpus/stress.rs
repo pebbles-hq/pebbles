@@ -17,7 +17,8 @@ const H: u32 = 1080;
 pub fn cases() -> Vec<Case> {
     vec![
         ops("stress/rects_10k", Stress, Robustness, W, H, rects_10k),
-        ops("stress/rrects_strokes_5k", Stress, Robustness, W, H, rrects_strokes_5k),
+        // Random strokes do not compress: its reference would be 1.4 MB, over the 600 KB budget.
+        ops("stress/rrects_strokes_5k", Stress, Robustness, W, H, rrects_strokes_5k).no_refs(),
         harness("stress/glyph_runs_1k", Stress, Robustness, W, H, glyph_runs_1k).no_refs(),
         ops("stress/clips_8deep_x100", Stress, Robustness, W, H, clips_8deep_x100),
         ops("stress/paths_200x500seg", Stress, Robustness, W, H, paths_200x500seg).no_refs(),

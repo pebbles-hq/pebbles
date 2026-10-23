@@ -168,7 +168,9 @@ fn data_table(h: &mut Harness) {
 }
 
 fn calendar_case(h: &mut Harness) {
-    page(h, calendar(|_, _, _| {}));
+    // A fixed past month: the calendar marks today from the system clock, which would change
+    // the reference every day.
+    page(h, calendar(|_, _, _| {}).month(2024, 2).selected(2024, 2, 14));
 }
 
 fn card_grid(h: &mut Harness) {

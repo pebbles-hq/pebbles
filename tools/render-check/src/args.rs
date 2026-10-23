@@ -118,7 +118,7 @@ usage: render-check [options]
   --determinism                   render every candidate twice; differences are UNSTABLE
   --tier-a on|off                 off: tessellate Tier A shapes (pre-R10 baseline, debug)
   --keep-images                   also write PNGs for passing cases
-  --write-refs <DIR>              write passing in_refs candidates (llvmpipe only)
+  --write-refs <DIR>              write passing (and probe-clean self-golden) in_refs candidates (llvmpipe only)
   -h, --help                      this text
 exit: 0 pass/xfail, 1 any failure, 2 usage or I/O error, 3 no GPU adapter";
 

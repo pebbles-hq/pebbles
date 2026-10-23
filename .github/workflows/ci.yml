@@ -273,6 +273,9 @@ jobs:
       - name: RENDER-CHECK on WARP (informative, relaxed)
         continue-on-error: true
         run: cargo run -p render-check --release -- --out target/render-check --tolerance relaxed --determinism
+      - name: RENDER-CHECK vs committed references (informative, cross-backend)
+        continue-on-error: true
+        run: cargo run -p render-check --release -- --out target/render-check --reference dir --tolerance relaxed
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
@@ -306,6 +309,9 @@ jobs:
       - name: RENDER-CHECK on Metal (informative, relaxed)
         continue-on-error: true
         run: cargo run -p render-check --release -- --out target/render-check --tolerance relaxed --determinism
+      - name: RENDER-CHECK vs committed references (informative, cross-backend)
+        continue-on-error: true
+        run: cargo run -p render-check --release -- --out target/render-check --reference dir --tolerance relaxed
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
@@ -337,6 +343,9 @@ jobs:
           key: gpu-wgpu-linux-gl
       - name: TEST-GPU-GPU on GL
         run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
+      - name: RENDER-CHECK vs committed references (informative, cross-backend)
+        continue-on-error: true
+        run: cargo run -p render-check --release -- --out target/render-check --reference dir --tolerance relaxed
 
   # Headless-browser smoke of the web build on the WebGL2 path (05 V50, DR-27): counter in headless
   # Chrome on SwiftShader with ?pebbles-force-webgl=1 must log `GPU: … backend=gl` and not panic.
@@ -422,6 +431,9 @@ jobs:
         run: vulkaninfo --summary 2>/dev/null | grep -iE "deviceName|driverInfo" || true
       - name: RENDER-CHECK
         run: cargo run -p render-check --release -- --out target/render-check --determinism
+      # 05 V36 step 2: every in_refs case against the committed self-goldens (V12).
+      - name: RENDER-CHECK (committed references)
+        run: cargo run -p render-check --release -- --out target/render-check-dir --reference dir --determinism
       - name: Report to the job summary
         if: always()
         run: cat target/render-check/linux-lavapipe/report.md >> "$GITHUB_STEP_SUMMARY" || true

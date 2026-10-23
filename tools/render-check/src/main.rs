@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use render_check::args::{self, Args};
-use render_check::case::{Case, Expect, Slice};
+use render_check::case::{Case, Expect, Reference, Slice};
 use render_check::report::{CaseResult, RunInfo, write_report_json, write_report_md};
 use render_check::run::{RunOptions, Runner, needs_recreate};
 use render_check::{Status, corpus, exit_code, png_io};
@@ -162,8 +162,12 @@ fn run(args: Args) -> ExitCode {
             r.name,
             if r.note.is_empty() { String::new() } else { format!("  ({})", r.note) }
         );
+        // A self-golden case (widget, screen, stress) has no model to pass: with its probes green it
+        // is UNJUDGED, and its candidate is exactly what the reviewed reference records (V12).
+        let writable = r.status == Status::Pass
+            || (r.status == Status::Unjudged && case.reference == Reference::SelfGolden);
         if let (Some(refs), Some(img), true) =
-            (&args.write_refs, &outcome.candidate, case.in_refs && r.status == Status::Pass)
+            (&args.write_refs, &outcome.candidate, case.in_refs && writable)
             && let Err(e) = png_io::encode(&refs.join(format!("{}.png", case.file_stem())), img)
         {
             eprintln!("render-check: {e}");
