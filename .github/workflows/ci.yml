@@ -311,8 +311,6 @@ jobs:
     timeout-minutes: 60
     continue-on-error: true   # removed at the Phase-C exit (05 §10.3)
     env:
-      VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
-      VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
       LIBGL_ALWAYS_SOFTWARE: "1"
       WGPU_BACKEND: vulkan
       WGPU_ADAPTER_NAME: llvmpipe
@@ -324,6 +322,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: System deps (fontconfig + Mesa lavapipe + Vulkan validation layers)
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev mesa-vulkan-drivers vulkan-tools vulkan-validationlayers
+      - name: Point the Vulkan loader at lavapipe
+        # Mesa names the ICD lvp_icd.x86_64.json in older releases and lvp_icd.json from 25.x
+        # (noble-updates), so resolve it after the install instead of hard-coding either.
+        run: |
+          LVP=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json 2>/dev/null | head -1)
+          test -n "$LVP" || { echo "::error::lavapipe ICD not found"; exit 1; }
+          echo "VK_DRIVER_FILES=$LVP" >> "$GITHUB_ENV"
+          echo "VK_ICD_FILENAMES=$LVP" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: gpu-wgpu-linux
@@ -333,6 +339,49 @@ jobs:
         run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
       - name: TEST-SHELL-GPU (capture / glyph / render checks on wgpu)
         run: cargo test -p pebbles-shell --no-default-features --features wgpu -- --ignored --test-threads=1
+
+  # Render check: golden model + probes + self-goldens (+ transitional Vello smoke), in-process (05 §6).
+  render-check:
+    name: Render check (lavapipe)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    continue-on-error: true   # removed at the Phase-5 gate (05 §12.3)
+    env:
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      WGPU_BACKEND: vulkan
+      WGPU_ADAPTER_NAME: llvmpipe
+      PEBBLES_REQUIRE_GPU: "1"
+      PEBBLES_GPU_STRICT: "1"
+      PEBBLES_RENDER_CHECK_PLATFORM: linux-lavapipe
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: System deps (fontconfig + Mesa lavapipe)
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev mesa-vulkan-drivers vulkan-tools
+      - name: Point the Vulkan loader at lavapipe
+        # Mesa names the ICD lvp_icd.x86_64.json in older releases and lvp_icd.json from 25.x
+        # (noble-updates), so resolve it after the install instead of hard-coding either.
+        run: |
+          LVP=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json 2>/dev/null | head -1)
+          test -n "$LVP" || { echo "::error::lavapipe ICD not found"; exit 1; }
+          echo "VK_DRIVER_FILES=$LVP" >> "$GITHUB_ENV"
+          echo "VK_ICD_FILENAMES=$LVP" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: render-check
+      - name: Record the Vulkan device (Mesa version pins the canonical platform)
+        run: vulkaninfo --summary 2>/dev/null | grep -iE "deviceName|driverInfo" || true
+      - name: RENDER-CHECK
+        run: cargo run -p render-check --release -- --out target/render-check --determinism
+      - name: Report to the job summary
+        if: always()
+        run: cat target/render-check/linux-lavapipe/report.md >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: render-check-linux-lavapipe
+          path: target/render-check/
+          retention-days: 14
+          if-no-files-found: ignore
 
   clippy:
     name: Clippy
