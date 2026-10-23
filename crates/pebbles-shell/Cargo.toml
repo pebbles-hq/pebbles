@@ -10,20 +10,15 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme = "README.md"
-description = "The desktop shell for Pebbles: winit windowing, the wgpu surface, and the swappable GPU render backend."
+description = "The desktop shell for Pebbles: winit windowing, the wgpu surface, and the GPU renderer host."
 
 [dependencies]
 pebbles-foundation.workspace = true
 pebbles-render.workspace = true
 pebbles-core.workspace = true
 pebbles-widgets.workspace = true
-# `vello` (default features) is used ONLY by the transitional hybrid host (gpu/hybrid_host.rs) for vello::util's surface plumbing. Deleted at Phase 7.
-vello = { workspace = true, default-features = true, optional = true }
-# The Vello Hybrid GPU renderer, enabled by the `vello-hybrid` feature. `wgpu` gives the
-# GPU `Renderer`; `text` gives glyph runs (the flush resolves glyphs against its atlas).
-vello_hybrid = { workspace = true, optional = true, features = ["wgpu", "text"] }
 wgpu.workspace = true
-pebbles-gpu = { workspace = true, optional = true }
+pebbles-gpu.workspace = true
 winit.workspace = true
 raw-window-handle.workspace = true
 # A std::time drop-in that works on wasm too: on native it IS std::time (zero
@@ -44,28 +39,8 @@ kurbo.workspace = true
 global-hotkey = { version = "0.8", optional = true }
 
 [features]
-# Render backend (wgpu migration): `vello-hybrid` (default) or `wgpu` (opt-in). With both enabled, `vello-hybrid` wins until the Phase-6 flip (DR-10).
-default = ["vello-hybrid", "webgl"]
-# WebGL2 fallback for the wgpu renderer on wasm32 (no effect on native).
-webgl = ["pebbles-gpu?/webgl"]
-wgpu = [
-    "pebbles-render/wgpu",
-    "pebbles-core/wgpu",
-    "pebbles-widgets/wgpu",
-    "dep:pebbles-gpu",
-    "dep:png",
-]
-vello-hybrid = [
-    "pebbles-render/vello-hybrid",
-    "pebbles-core/vello-hybrid",
-    "pebbles-widgets/vello-hybrid",
-    "dep:vello",
-    "dep:vello_hybrid",
-    # `capture` (native) needs PNG encoding; pull it in exactly there.
-    "dep:png",
-    # `capture::CaptureError` is pebbles-gpu's on every backend (K05).
-    "dep:pebbles-gpu",
-]
+# WebGL2 fallback on wasm32 (no effect on native). The umbrella enables it by default.
+webgl = ["pebbles-gpu/webgl"]
 # Wire an `App::menu(menu_bar([...]))` native bar via `muda` (B3).
 native-menus = ["dep:muda"]
 # Enable `register_global_hotkey(..)` via `global-hotkey` (B4).
@@ -103,8 +78,8 @@ arboard = { version = "3", default-features = false }
 pollster.workspace = true
 accesskit = "0.25"
 accesskit_winit = "0.34.0"
-# PNG encoding for the offscreen `capture` API. Declared off-wasm only and enabled by both `vello-hybrid` and `wgpu` — exactly where `capture` compiles.
-png = { version = "0.18", optional = true }
+# PNG encoding for the offscreen capture API (desktop only).
+png = "0.18"
 
 # Web (wasm) runtime deps. The web GPU device request is inherently async and must
 # not block the main thread, so the surface is built off an async task and handed

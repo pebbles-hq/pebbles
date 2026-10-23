@@ -53,8 +53,6 @@ pub struct Args {
     pub list: bool,
     /// Reference mode.
     pub reference: RefMode,
-    /// Also render the transitional vello-hybrid smoke image.
-    pub smoke: bool,
     /// Committed self-goldens.
     pub reference_dir: PathBuf,
     /// Threshold set.
@@ -83,7 +81,6 @@ impl Default for Args {
             skip: Vec::new(),
             list: false,
             reference: RefMode::Golden,
-            smoke: true,
             reference_dir: PathBuf::from("tools/render-check/refs/wgpu/linux-lavapipe"),
             tolerance: Tolerance::Canonical,
             platform_tag: None,
@@ -114,7 +111,6 @@ usage: render-check [options]
   --skip <PREFIX>                 skip cases with PREFIX (repeatable, after --only)
   --list                          print the case table and exit (no GPU)
   --reference <golden|dir>        spec reference mode (default golden)
-  --smoke <on|off>                transitional vello-hybrid smoke check (default on)
   --reference-dir <DIR>           committed self-goldens
   --tolerance <canonical|relaxed> threshold set (default canonical)
   --glyph-hint <auto|on|off>  glyph hinting (default auto = the 02 §7.8 policy)
@@ -142,13 +138,6 @@ pub fn parse(args: impl Iterator<Item = String>) -> Result<Args, String> {
                     "golden" => RefMode::Golden,
                     "dir" => RefMode::Dir,
                     v => return Err(format!("--reference: expected golden|dir, got `{v}`")),
-                }
-            }
-            "--smoke" => {
-                out.smoke = match value("--smoke")?.as_str() {
-                    "on" => true,
-                    "off" => false,
-                    v => return Err(format!("--smoke: expected on|off, got `{v}`")),
                 }
             }
             "--reference-dir" => out.reference_dir = PathBuf::from(value("--reference-dir")?),
@@ -199,7 +188,6 @@ mod tests {
         assert_eq!(a, Args::default());
         assert_eq!(a.out, PathBuf::from("target/render-check"));
         assert_eq!(a.reference, RefMode::Golden);
-        assert!(a.smoke);
         assert_eq!(a.tolerance, Tolerance::Canonical);
         assert!(!a.list && !a.determinism && !a.keep_images);
         assert!(a.selects("anything/at_all"));
@@ -222,8 +210,6 @@ mod tests {
             "o",
             "--reference",
             "dir",
-            "--smoke",
-            "off",
             "--reference-dir",
             "r",
             "--tolerance",
@@ -238,7 +224,7 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(a.reference, RefMode::Dir);
-        assert!(!a.smoke && a.list && a.determinism && a.keep_images);
+        assert!(a.list && a.determinism && a.keep_images);
         assert_eq!(a.tolerance, Tolerance::Relaxed);
         assert_eq!(a.platform_tag.as_deref(), Some("t"));
         assert_eq!(a.write_refs, Some(PathBuf::from("w")));
@@ -253,6 +239,5 @@ mod tests {
     fn rejects_missing_value() {
         assert!(p(&["--out"]).unwrap_err().contains("--out"));
         assert!(p(&["--only"]).is_err());
-        assert!(p(&["--smoke", "maybe"]).is_err());
     }
 }

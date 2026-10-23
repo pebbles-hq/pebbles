@@ -1,5 +1,5 @@
 //! Compositing effects: [`RenderOpacity`] and [`RenderClipRRect`]. Both wrap a
-//! single child and push a vello layer around it.
+//! single child and push a layer around it.
 
 use kurbo::Affine;
 use pebbles_foundation::{Offset, Rect, Size};

@@ -6,6 +6,17 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — one renderer: wgpu
+Pebbles renders with its own wgpu renderer (`pebbles-gpu`) on every platform, with a WebGL2
+fallback on the web. The Vello Hybrid backend and the `vello-hybrid` / `wgpu` cargo features
+are gone, and so is every Vello and Parley dependency.
+
+**Migration:** apps on default features need nothing. Apps scaffolded before this change:
+delete the backend lines from `[features]` (`default`, `vello-hybrid`, `wgpu`) and depend on
+`pebbles` with default features (drop `default-features = false`). `pebbles run/build/create
+--renderer` is deprecated: it is accepted, ignored, and prints a warning. `CaptureError::Backend`
+is removed (it only reported the deleted capture path).
+
 ### Changed — text stack: Parley → cosmic-text
 Text now shapes and lays out with cosmic-text 0.19 on every backend; carets, selection, hit-testing and keyboard motion run on Pebbles' own geometry over the new `TextLayout`.
 

@@ -7,11 +7,5 @@ publish = false
 [dependencies]
 pebbles = { workspace = true }
 
-[features]
-# Render backend, forwarded to the pebbles umbrella (and test-harness crates). vello-hybrid is the default; try the first-party renderer with --no-default-features --features wgpu.
-default = ["vello-hybrid"]
-vello-hybrid = ["pebbles/vello-hybrid"]
-wgpu = ["pebbles/wgpu", "pebbles/webgl"]
-
 [lints]
 workspace = true

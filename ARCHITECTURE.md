@@ -8,8 +8,8 @@ the widget catalog is [WIDGETS.md](WIDGETS.md).)
 ## The one-paragraph version
 
 Pebbles pairs **Flutter's widget model** (Widget → Element → RenderObject, constraints
-down / sizes up) with **SolidJS-style signals** for state, painted through a swappable
-render backend on wgpu — **Vello Hybrid** (low-power CPU+GPU) by default, the first-party **wgpu** renderer as an opt-in during the migration — and shaped by **Parley**. A component is a plain function; reading a signal inside it
+down / sizes up) with **SolidJS-style signals** for state, painted by Pebbles' own GPU renderer
+(`pebbles-gpu`, on wgpu) and shaped by **cosmic-text**. A component is a plain function; reading a signal inside it
 subscribes it; writing a signal re-renders only the components that read it. The shell
 crate owns the winit event loop and feeds input down / draws scenes up.
 
@@ -21,9 +21,9 @@ Strictly bottom-up; a crate never depends on one above it:
 pebbles-foundation   geometry, color, layout enums (Rect, Offset, Size, EdgeInsets, …),
                      compile-time platform detection (`platform`), the diagnostic `log`
 pebbles-icons        generated Tabler icon data (outline + filled; see scripts/gen-tabler.mjs)
-pebbles-render       RenderObject trait + the built-in render objects, text (Parley),
-                     the Painter seam (backend-neutral paint verbs with two backends —
-                     paint/{mod,vello_backend,hybrid_backend}.rs), hit-test tree
+pebbles-render       RenderObject trait + the built-in render objects, text (cosmic-text),
+                     the Painter (paint verbs recorded into a display list, paint/),
+                     hit-test tree
 pebbles-gpu          the first-party renderer on wgpu: PREPARE (display list → FramePlan,
                      CPU-only, unit-testable) + EXECUTE (device, surfaces, pipelines, WGSL
                      shaders, atlases, offscreen readback). Depends on render + foundation.
@@ -33,8 +33,8 @@ pebbles-core         reactivity (signals/memos/effects/stores), the Element tree
 pebbles-widgets      the widget catalog: Flutter-style primitive widgets (grouped by
                      concern) + the shadcn-style component set, theming, overlays,
                      windows API
-pebbles-shell        the app runner: winit event loop, wgpu surface, the dual GPU host
-                     (gpu/{mod,vello_host,hybrid_host}.rs) + an offscreen capture path,
+pebbles-shell        the app runner: winit event loop, wgpu surface, the GPU host
+                     (gpu/{mod,wgpu_host}.rs) + an offscreen capture path,
                      AccessKit a11y, native menus / global hotkeys (feature-gated)
 pebbles-macros       the #[component] proc-macro
 pebbles              the umbrella crate: re-exports + `pebbles::prelude`
@@ -148,7 +148,8 @@ non-desktop surfaces: `capture.rs` (offscreen widget → PNG/RGBA with no window
 (system-wide global hotkeys, feature-gated), and `web_ime.rs` (the hidden-`<input>`
 IME / soft-keyboard bridge for wasm).
 
-Two render-backend features select the rasterizer during the wgpu migration, forwarded through the whole graph: `vello-hybrid` (low-power CPU+GPU) is the **default**; `wgpu` (first-party) is the opt-in (`--no-default-features --features wgpu`). If both are enabled, `vello-hybrid` wins.
+There is one renderer, `pebbles-gpu`; the umbrella's default `webgl` feature adds the WebGL2
+fallback on the web.
 
 The remaining integrations are **default-off cargo features**, forwarded through the
 umbrella crate: `native-menus`, `global-hotkeys` (shell), `image-view` (`ImageView` +

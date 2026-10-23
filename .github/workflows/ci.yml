@@ -20,8 +20,6 @@ jobs:
   # The support matrix. This job IS the platform-support claim in the README:
   # a supported platform is one that builds and passes the headless suites
   # here. Tests need no window and no GPU, so they run on every runner.
-  # `--all-features` resolves to vello-hybrid until the Phase-6 flip (DR-10);
-  # the wgpu chain is covered by `wgpu-backend`.
   # ───────────────────────────────────────────────────────────────────────────
   test:
     name: Test (${{ matrix.os }})
@@ -33,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # parley/fontique needs fontconfig headers; winit dlopens X11/Wayland at
+      # cosmic-text's system-font lookup needs fontconfig headers; winit dlopens X11/Wayland at
       # runtime, so no display libs are needed to build or to run headless.
       - name: System deps (Linux)
         if: runner.os == 'Linux'
@@ -146,49 +144,12 @@ jobs:
             echo "::endgroup::"
           done
 
-  # ─────────────────────────────────────────────────────────────────────────
-  # The first-party wgpu renderer chain (05 V35). `--all-features` resolves to
-  # vello-hybrid until the Phase-6 flip (DR-10), so wgpu is selected explicitly.
-  # Folded into `test` at Phase 7 (V34).
-  # ─────────────────────────────────────────────────────────────────────────
-  wgpu-backend:
-    name: wgpu backend (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: System deps (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: wgpu-backend-${{ matrix.os }}
-      - name: CHECK-WGPU
-        run: cargo check -p pebbles-render -p pebbles-core -p pebbles-widgets -p pebbles-shell -p pebbles --all-targets --no-default-features --features wgpu
-      - name: TEST-RENDER
-        run: cargo test -p pebbles-render --no-default-features --features wgpu
-      - name: TEST-WIDGETS-WGPU
-        run: cargo test -p pebbles-widgets --no-default-features --features wgpu
-      - name: TEST-SHELL-WGPU
-        run: cargo test -p pebbles-shell --no-default-features --features wgpu
-      - name: CLIPPY-WGPU
-        if: runner.os == 'Linux'
-        run: cargo clippy -p pebbles-render -p pebbles-shell -p pebbles --all-targets --no-default-features --features wgpu -- -D warnings
-      - name: DOC-WGPU
-        if: runner.os == 'Linux'
-        env:
-          RUSTDOCFLAGS: "-D rustdoc::broken_intra_doc_links -D rustdoc::private_intra_doc_links"
-        run: cargo doc -p pebbles-render -p pebbles-shell --no-deps --no-default-features --features wgpu
-
   # ───────────────────────────────────────────────────────────────────────────
   # Line coverage — NON-BLOCKING for now. Publishes a per-crate summary to the job
   # page so we can see which modules lack coverage; gate on a threshold later.
   # ───────────────────────────────────────────────────────────────────────────
   feature-matrix:
-    name: Feature matrix (backend forwarding)
+    name: Feature matrix (optional integrations)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -196,23 +157,13 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: feature-matrix
-      - name: Each backend alone, plus every integration
+      - name: No default features, then every integration
         run: |
           set -euo pipefail
-          for be in vello-hybrid wgpu; do
-            echo "::group::$be"
-            cargo check -p pebbles-render --no-default-features --features "$be"
-            cargo check -p pebbles-testing --no-default-features --features "$be"
-            cargo check -p pebbles-shell --all-targets --no-default-features --features "$be"
-            cargo check -p pebbles --no-default-features --features "$be,image-view,file-dialogs,tokio,native-menus,global-hotkeys"
-            echo "::endgroup::"
-          done
-      - name: Both backends resolve to the transition winner (DR-10)
-        run: cargo check -p pebbles --no-default-features --features vello-hybrid,wgpu
-      # Since C03 the display list is backend-neutral: pebbles-gpu builds pebbles-render with
-      # no backend feature (DR-03), so that configuration must keep compiling.
-      - name: No backend builds the display-list core
-        run: cargo check -p pebbles-render -p pebbles-gpu --no-default-features
+          cargo check -p pebbles --no-default-features
+          cargo check -p pebbles --no-default-features --features image-view,file-dialogs,tokio,native-menus,global-hotkeys
+      - name: The display-list core alone
+        run: cargo check -p pebbles-render -p pebbles-gpu
 
   coverage:
     name: Coverage (non-blocking)
@@ -241,70 +192,8 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cargo llvm-cov --workspace --all-features --ignore-run-fail --summary-only >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-
-  # ───────────────────────────────────────────────────────────────────────────
-  # GPU / rasterization path on a SOFTWARE Vulkan device (Mesa lavapipe). The
-  # offscreen-capture API (`pebbles-shell/tests/capture.rs`) is `#[ignore]`d
-  # ("requires a GPU"), so the whole rasterize→readback→encode path otherwise runs
-  # on no CI machine. lavapipe gives a headless, deterministic-enough software GPU
-  # to exercise it. NON-BLOCKING for now (driver setup varies); promote once proven.
-  # ───────────────────────────────────────────────────────────────────────────
-  gpu-raster:
-    name: GPU path (software raster)
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: System deps (fontconfig + Mesa lavapipe software Vulkan)
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev mesa-vulkan-drivers vulkan-tools
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
-        with:
-          toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: gpu-raster
-      - name: Locate the lavapipe ICD and confirm it is visible
-        run: |
-          LVP=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json 2>/dev/null | head -1)
-          echo "lavapipe ICD: ${LVP:-<not found>}"
-          echo "LAVAPIPE_ICD=$LVP" >> "$GITHUB_ENV"
-          VK_DRIVER_FILES="$LVP" vulkaninfo --summary 2>/dev/null | grep -iE "deviceName|llvmpipe|lavapipe" || true
-      - name: Run the #[ignore]d GPU/capture tests on lavapipe
-        env:
-          # Newer Vulkan loaders (1.3.275+) use VK_DRIVER_FILES; keep VK_ICD_FILENAMES
-          # too for older loaders. Point both at Mesa's lavapipe (software) ICD.
-          LIBGL_ALWAYS_SOFTWARE: "1"
-          WGPU_BACKEND: vulkan
-        run: |
-          export VK_DRIVER_FILES="$LAVAPIPE_ICD"
-          export VK_ICD_FILENAMES="$LAVAPIPE_ICD"
-          cargo test -p pebbles-shell -- --ignored
-      # The first-party wgpu renderer's GPU tests (TEST-SHELL-GPU): render_check + glyph_check
-      # under `--no-default-features --features wgpu`. Gives the wgpu path its own lavapipe
-      # coverage (C05 AC2/AC4; superseded by the dedicated V30 lane once V01/C21 land).
-      - name: Run the wgpu #[ignore]d GPU tests on lavapipe
-        if: always()
-        env:
-          LIBGL_ALWAYS_SOFTWARE: "1"
-          WGPU_BACKEND: vulkan
-        run: |
-          export VK_DRIVER_FILES="$LAVAPIPE_ICD"
-          export VK_ICD_FILENAMES="$LAVAPIPE_ICD"
-          cargo test -p pebbles-shell --no-default-features --features wgpu -- --ignored
-      # pebbles-gpu's own GPU tests (TEST-GPU-LAVAPIPE): C21's GpuInit env path + the
-      # C06 per-format render test, against the lavapipe software device (D14/C21 fix).
-      - name: Run the pebbles-gpu #[ignore]d GPU tests on lavapipe
-        if: always()
-        env:
-          LIBGL_ALWAYS_SOFTWARE: "1"
-          WGPU_BACKEND: vulkan
-        run: |
-          export VK_DRIVER_FILES="$LAVAPIPE_ICD"
-          export VK_ICD_FILENAMES="$LAVAPIPE_ICD"
-          cargo test -p pebbles-gpu -- --ignored
-
-  # wgpu GPU path on Mesa lavapipe (05 V30). Separate from `gpu-raster` (hybrid,
-  # informative) so this job can be required. Promotion: 05 §10.5.
+  # The GPU path on Mesa lavapipe (05 V30): pebbles-gpu and the shell's capture / glyph /
+  # render checks under strict validation. Promotion: 05 §10.5.
   gpu-wgpu-linux:
     name: wgpu GPU tests (Linux lavapipe)
     runs-on: ubuntu-24.04
@@ -338,9 +227,8 @@ jobs:
       - name: TEST-GPU-GPU (pebbles-gpu)
         run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
       - name: TEST-SHELL-GPU (capture / glyph / render checks on wgpu)
-        run: cargo test -p pebbles-shell --no-default-features --features wgpu -- --ignored --test-threads=1
+        run: cargo test -p pebbles-shell -- --ignored --test-threads=1
 
-  # Render check: golden model + probes + self-goldens (+ transitional Vello smoke), in-process (05 §6).
   # wgpu-core validation without a GPU on every OS (05 V38): the noop backend runs every GPU test's
   # calls through validation; pixel asserts are skipped under it (V09).
   gpu-noop-validation:
@@ -367,6 +255,7 @@ jobs:
         shell: bash
         run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
 
+  # Render check: golden model + probes + self-goldens, in-process (05 §6).
   render-check:
     name: Render check (lavapipe)
     runs-on: ubuntu-24.04

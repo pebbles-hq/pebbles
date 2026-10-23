@@ -65,7 +65,7 @@ fn navigating_between_screens_never_crashes() {
     let mut now = 0.0_f64;
     // A frame does what the shell does every tick, in the shell's order: advance
     // animations + scroll springs, reconcile, relayout, then PAINT (into a CPU-side
-    // vello Scene — a paint-time crash would surface here).
+    // Scene — a paint-time crash would surface here).
     let mut frame = |ui: &mut Ui, now: &mut f64| {
         *now += 0.016;
         pebbles_core::animation::tick(*now);

@@ -100,7 +100,6 @@ fn run(args: Args) -> ExitCode {
     pebbles_core::set_prefers_reduced_motion(true);
     let opts = RunOptions {
         reference: args.reference,
-        smoke: args.smoke,
         reference_dir: args.reference_dir.clone(),
         tolerance: args.tolerance,
         determinism: args.determinism,
@@ -132,7 +131,6 @@ fn run(args: Args) -> ExitCode {
         git_rev: git_rev(),
         platform_tag: tag,
         reference_mode: args.reference.label().to_string(),
-        smoke: args.smoke,
         tolerance: args.tolerance.label().to_string(),
         adapter_name: ai.name.clone(),
         backend: format!("{:?}", ai.backend),
@@ -218,7 +216,6 @@ fn runner_placeholder(case: &Case) -> CaseResult {
         limits: None,
         probes: Vec::new(),
         fallbacks: Vec::new(),
-        smoke: None,
         note: String::new(),
         artifacts: None,
         millis_reference: 0,

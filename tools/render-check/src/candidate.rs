@@ -20,7 +20,7 @@ impl Candidate {
             .map_err(|e| CheckError::NoAdapter(e.to_string()))
     }
 
-    /// The device (shared with the smoke reference).
+    /// The device.
     pub fn device(&self) -> &wgpu::Device {
         self.r.device()
     }

@@ -3,7 +3,7 @@
 //! output. Desktop emits a native release binary; `-d web` emits a static wasm
 //! bundle via Trunk; mobile prints next-steps guidance (packaging is v0.2.0).
 //!
-//! Deliberately thin — it reuses `run`'s platform/renderer parsing, member
+//! Deliberately thin — it reuses `run`'s platform parsing, member
 //! resolution, cargo/trunk plumbing, and the managed `index.html`, so the two
 //! commands stay in lockstep.
 
@@ -12,8 +12,8 @@ use std::process::{Command, ExitCode, Stdio};
 use std::time::Instant;
 
 use crate::run::{
-    Platform, Renderer, cargo_build, ensure_index_html, find_workspace_root, renderer_label, resolve_member,
-    rustup_target_installed, target_bin, tool_available,
+    Platform, RENDERER_DEPRECATED, cargo_build, ensure_index_html, find_workspace_root, resolve_member,
+    rustup_target_installed, target_bin, tool_available, warn_legacy_backend_features,
 };
 use crate::term;
 
@@ -23,7 +23,8 @@ use crate::term;
 struct BuildOpts {
     package: Option<String>,
     platform: Platform,
-    renderer: Option<Renderer>,
+    /// `--renderer` was passed (deprecated and ignored: there is one renderer).
+    deprecated_renderer: bool,
 }
 
 /// Parse `pebbles build` argv into [`BuildOpts`]. Pure (no I/O), so it's unit-
@@ -31,22 +32,18 @@ struct BuildOpts {
 /// message to print on a bad flag; `build takes no positional args`, so a bare
 /// token is rejected rather than silently swallowed.
 fn parse_args(args: &[String]) -> Result<BuildOpts, String> {
-    let mut o = BuildOpts { package: None, platform: Platform::Desktop, renderer: None };
-    let mut it = args.iter();
+    let mut o = BuildOpts { package: None, platform: Platform::Desktop, deprecated_renderer: false };
+    let mut it = args.iter().peekable();
     while let Some(a) = it.next() {
         match a.as_str() {
-            // Pin the render backend: `--renderer hybrid` | `wgpu` (default: hybrid).
+            // Deprecated: accept and ignore one value, but never swallow the next flag.
             "-r" | "--renderer" | "--backend" => {
-                let v = it.next().ok_or("`--renderer` needs a value: hybrid | wgpu")?;
-                o.renderer = Some(
-                    Renderer::parse(v)
-                        .ok_or_else(|| format!("unknown renderer `{v}` — use: hybrid | wgpu"))?,
-                );
+                if it.peek().is_some_and(|v| !v.starts_with('-')) {
+                    it.next();
+                }
+                o.deprecated_renderer = true;
             }
-            s if s.starts_with("--renderer=") => {
-                let v = &s["--renderer=".len()..];
-                o.renderer = Some(Renderer::parse(v).ok_or("unknown renderer — use: hybrid | wgpu")?);
-            }
+            s if s.starts_with("--renderer=") || s.starts_with("--backend=") => o.deprecated_renderer = true,
             // Flutter-style target selection: `pebbles build -d web` (default: desktop).
             "-d" | "--device" | "--platform" => {
                 let v = it.next().ok_or("`-d` needs a target: desktop | web | android | ios")?;
@@ -96,11 +93,15 @@ pub fn run(args: &[String]) -> ExitCode {
     else {
         return ExitCode::FAILURE;
     };
+    if o.deprecated_renderer {
+        term::warn(RENDERER_DEPRECATED);
+    }
+    warn_legacy_backend_features(&member_dir);
 
     // Flutter-style target dispatch. Desktop is the default native release build;
     // web emits a static bundle; mobile prints guidance only.
     match o.platform {
-        Platform::Web => return build_web(&member_dir, &bin, &o),
+        Platform::Web => return build_web(&member_dir, &bin),
         Platform::Android => return build_mobile_guidance(Platform::Android),
         Platform::Ios => return build_mobile_guidance(Platform::Ios),
         Platform::Desktop => {}
@@ -110,11 +111,10 @@ pub fn run(args: &[String]) -> ExitCode {
     // package's own target (a standalone `pebbles new` project).
     let target_root = workspace_root.unwrap_or_else(|| member_dir.clone());
 
-    term::banner(&format!("pebbles build — {bin} (release, {})", renderer_label(o.renderer)));
+    term::banner(&format!("pebbles build — {bin} (release)"));
     term::step("building an optimized release binary…");
     let t = Instant::now();
-    // A build is always release; renderer flags forward exactly as `run` does.
-    if !cargo_build(&target_root, &bin, true, o.renderer) {
+    if !cargo_build(&target_root, &bin, true) {
         term::error("build failed — fix the errors above.");
         return ExitCode::FAILURE;
     }
@@ -135,7 +135,7 @@ pub fn run(args: &[String]) -> ExitCode {
 /// not `serve`) and report the `dist/` output. Reuses `run`'s web setup: the
 /// wasm-target check, the Trunk check (same install hint), and the managed
 /// `index.html`. The result is a deployable static site.
-fn build_web(member_dir: &Path, bin: &str, o: &BuildOpts) -> ExitCode {
+fn build_web(member_dir: &Path, bin: &str) -> ExitCode {
     term::banner(&format!("pebbles build — {bin} (web, release)"));
 
     // 1. The wasm target must be installed (`cargo build --target wasm32…`).
@@ -171,10 +171,6 @@ fn build_web(member_dir: &Path, bin: &str, o: &BuildOpts) -> ExitCode {
     // 4. `trunk build` — the static-bundle analog of `trunk serve`.
     let mut cmd = Command::new("trunk");
     cmd.arg("build").arg(&index).arg("--release").arg("--dist").arg("./dist").arg("--public-url").arg("/");
-    // Trunk passes these through to cargo, so `--renderer` selects the backend on web too.
-    if let Some(r) = o.renderer {
-        cmd.arg("--no-default-features").arg("--features").arg(r.feature());
-    }
     cmd.current_dir(member_dir);
     term::step("building a static wasm bundle with Trunk…");
     cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
@@ -271,7 +267,7 @@ mod tests {
     #[test]
     fn parse_defaults_to_desktop_no_renderer_no_package() {
         let o = parse_args(&[]).unwrap();
-        assert_eq!(o, BuildOpts { package: None, platform: Platform::Desktop, renderer: None });
+        assert_eq!(o, BuildOpts { package: None, platform: Platform::Desktop, deprecated_renderer: false });
     }
 
     #[test]
@@ -284,11 +280,13 @@ mod tests {
     }
 
     #[test]
-    fn parse_selects_renderer() {
-        assert_eq!(parse_args(&argv(&["-r", "hybrid"])).unwrap().renderer, Some(Renderer::Hybrid));
-        assert_eq!(parse_args(&argv(&["--renderer", "hybrid"])).unwrap().renderer, Some(Renderer::Hybrid));
-        assert_eq!(parse_args(&argv(&["--renderer=wgpu"])).unwrap().renderer, Some(Renderer::Wgpu));
-        assert_eq!(parse_args(&argv(&["--renderer", "wgpu"])).unwrap().renderer, Some(Renderer::Wgpu));
+    fn parse_accepts_and_ignores_the_deprecated_renderer_flag() {
+        let o = parse_args(&argv(&["--renderer", "gl"])).unwrap();
+        assert!(o.deprecated_renderer);
+        let o = parse_args(&argv(&["-r", "-d", "web"])).unwrap();
+        assert!(o.deprecated_renderer);
+        assert_eq!(o.platform, Platform::Web, "the value-less -r must not swallow -d");
+        assert!(parse_args(&argv(&["--renderer=wgpu"])).unwrap().deprecated_renderer);
     }
 
     #[test]
@@ -302,25 +300,18 @@ mod tests {
         let o = parse_args(&argv(&["-p", "gallery", "-d", "web", "--renderer", "wgpu"])).unwrap();
         assert_eq!(
             o,
-            BuildOpts {
-                package: Some("gallery".into()),
-                platform: Platform::Web,
-                renderer: Some(Renderer::Wgpu),
-            }
+            BuildOpts { package: Some("gallery".into()), platform: Platform::Web, deprecated_renderer: true }
         );
     }
 
     #[test]
     fn parse_rejects_bad_input() {
-        // Unknown flag, unknown device, unknown renderer, a bare positional, and
-        // a flag missing its value are all errors (not silent).
+        // Unknown flag, unknown device, a bare positional, and a flag missing its value are
+        // all errors (not silent).
         assert!(parse_args(&argv(&["--nope"])).is_err());
         assert!(parse_args(&argv(&["-d", "toaster"])).is_err());
-        assert!(parse_args(&argv(&["-r", "crayon"])).is_err());
-        assert!(parse_args(&argv(&["--renderer", "vello"])).is_err());
         assert!(parse_args(&argv(&["counter"])).is_err());
         assert!(parse_args(&argv(&["-d"])).is_err());
-        assert!(parse_args(&argv(&["-r"])).is_err());
         assert!(parse_args(&argv(&["-p"])).is_err());
     }
 

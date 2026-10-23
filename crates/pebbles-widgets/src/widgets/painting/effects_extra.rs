@@ -1,6 +1,6 @@
 //! More painting & effects widgets: [`clip_rect`], [`clip_oval`], [`clip_path`],
 //! [`color_filtered`], [`shader_mask`], [`image_filtered`] and [`backdrop_filter`] — siblings of the existing `clip_rrect` /
-//! `opacity`. Each wraps a single child and pushes a vello layer around (or over) it.
+//! `opacity`. Each wraps a single child and pushes a layer around (or over) it.
 
 use std::rc::Rc;
 

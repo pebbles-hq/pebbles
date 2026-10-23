@@ -81,7 +81,7 @@ fn render_target_size_comes_from_texture() {
 }
 
 /// C16: on a pebbles-gpu device a validation error mentioning `Texture`/`create_view` is
-/// reported (counted by `DeviceHealth`), never swallowed by the hybrid host's Vello filter.
+/// reported (counted by `DeviceHealth`), never swallowed.
 #[test]
 #[ignore = "gpu"]
 fn validation_error_with_texture_text_is_reported() {

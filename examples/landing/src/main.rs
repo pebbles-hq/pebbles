@@ -1,7 +1,7 @@
 //! **Pebbles Atelier** — a demo storefront landing page, built to show Pebbles can
 //! carry a real, image-heavy marketing site: a sliding hero over photography, glass
 //! chrome, shop-by-category tiles, a product grid, a lifestyle split and a newsletter
-//! card on a gradient — all GPU-rendered with Vello.
+//! card on a gradient — all GPU-rendered with wgpu.
 
 mod data;
 mod sections;
@@ -36,30 +36,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
     use pebbles_testing::Harness;
-
-    /// V27: render `scene` with pebbles-gpu and the transitional smoke reference and judge it
-    /// with the Smoke metric. No adapter skips, unless `PEBBLES_REQUIRE_GPU=1`.
-    fn live_smoke(name: &str, scene: &pebbles_render::paint::Scene, w: u32, h: u32, bg: Color) {
-        use render_check::{CheckError, case::Category, live::check_scene};
-        match check_scene(name, Category::Screen, scene, w, h, bg) {
-            Ok(out) => assert!(out.passed(), "{}", out.summary()),
-            Err(CheckError::NoAdapter(e)) if std::env::var("PEBBLES_REQUIRE_GPU").as_deref() != Ok("1") => {
-                eprintln!("SKIP {name}: no GPU adapter ({e})");
-            }
-            Err(e) => panic!("{name}: {e}"),
-        }
-    }
-
-    #[test]
-    #[ignore = "gpu"]
-    fn smoke_landing_page() {
-        set_prefers_reduced_motion(true);
-        let mut h = Harness::new().window(1200.0, 860.0);
-        h.mount(page);
-        h.settle();
-        let s = h.draw();
-        live_smoke("example/landing_page", &s, 1200, 860, ui::paper());
-    }
 
     #[cfg(debug_assertions)] // element counts are debug-only (pebbles-testing)
     /// The whole page mounts and produces substantial content (all the image-heavy

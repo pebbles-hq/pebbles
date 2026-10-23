@@ -17,17 +17,8 @@ pebbles-foundation.workspace = true
 pebbles-icons.workspace = true
 # wasm-safe clock for dev-log throttles (std::time::Instant panics on wasm).
 web-time.workspace = true
-# The transitional vello-hybrid backend (transitional smoke reference; deleted at Phase 7):
-#  · vello_hybrid + vello_common → the hybrid backend's retained op-list records
-#    against these, and `Scene::flush` walks it into a live `vello_hybrid::Scene`
-#    (the shell then rasterizes that on the GPU). `text` pulls in glyph runs;
-#    `glifo` is named directly for the `Glyph` type the flush feeds `fill_glyphs`.
-vello_hybrid = { workspace = true, optional = true }
-vello_common = { workspace = true, optional = true }
-glifo = { version = "0.3", optional = true }
 peniko.workspace = true
 kurbo.workspace = true
-parley.workspace = true
 # Text (03 §3.10) — NON-optional: text is backend-neutral (DR-08).
 cosmic-text.workspace = true
 unicode-segmentation.workspace = true
@@ -38,14 +29,6 @@ smallvec = { workspace = true, features = ["union"] }
 [target.'cfg(target_family = "wasm")'.dependencies]
 cosmic-text = { workspace = true, features = ["wasm-web"] } # sys-locale reads navigator.language
 sys-locale = { workspace = true, features = ["js"] }
-
-[features]
-# Render backend (wgpu migration). Exactly ONE must be on. `vello-hybrid` is the default;
-# `wgpu` is opt-in. With both enabled, `vello-hybrid` wins until the Phase-6 flip (DR-10).
-# The seam is paint/mod.rs.
-default = ["vello-hybrid"]
-wgpu = []
-vello-hybrid = ["dep:vello_hybrid", "vello_hybrid/text", "dep:vello_common", "dep:glifo"]
 
 [lints]
 workspace = true

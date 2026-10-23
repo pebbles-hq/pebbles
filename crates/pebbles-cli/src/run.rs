@@ -22,44 +22,40 @@ struct Opts {
     app_args: Vec<String>,
     platform: Platform,
     port: u16,
-    renderer: Option<Renderer>,
+    /// `--renderer` was passed (deprecated and ignored: there is one renderer).
+    deprecated_renderer: bool,
 }
 
-/// The render backend to build with. `None` uses the crate's own default
-/// (`vello-hybrid` — the low-power path). `Some(_)` pins it explicitly, passing
-/// `--no-default-features --features <feature>` to cargo so exactly one backend is on.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum Renderer {
-    /// `vello_hybrid` — hybrid CPU+GPU raster, low power. Pebbles' default.
-    Hybrid,
-    /// `wgpu` — the first-party 2D renderer (migration backend).
-    Wgpu,
-}
+/// Printed once when `--renderer` is passed: Pebbles has a single renderer (wgpu).
+pub(crate) const RENDERER_DEPRECATED: &str = "`--renderer` is deprecated and ignored: Pebbles has a single renderer (wgpu). \
+     Remove the flag — it will be removed in a future release.";
+/// Printed when the package still declares a render-backend feature.
+pub(crate) const LEGACY_BACKEND_FEATURES: &str = "this app's Cargo.toml still declares old render-backend features (a `wgpu` feature). \
+     Pebbles has a single renderer now: delete those lines from `[features]` and depend on \
+     `pebbles` with default features (see CHANGELOG → Migration).";
 
-impl Renderer {
-    pub(crate) fn parse(s: &str) -> Option<Renderer> {
-        match s.to_ascii_lowercase().as_str() {
-            "hybrid" | "vello-hybrid" | "vello_hybrid" | "default" => Some(Renderer::Hybrid),
-            "wgpu" => Some(Renderer::Wgpu),
-            _ => None,
+/// Whether a package's own `[features]` table still declares a render-backend feature (every
+/// pre-1.0 scaffold declared a `wgpu` one).
+pub(crate) fn declares_backend_features(manifest: &str) -> bool {
+    let mut in_features = false;
+    for line in manifest.lines() {
+        let t = line.split('#').next().unwrap_or("").trim();
+        if t.starts_with('[') {
+            in_features = t == "[features]";
+            continue;
+        }
+        if in_features && t.split('=').next().unwrap_or("").trim() == "wgpu" {
+            return true;
         }
     }
-
-    /// The cargo feature that selects this backend.
-    pub(crate) fn feature(self) -> &'static str {
-        match self {
-            Renderer::Hybrid => "vello-hybrid",
-            Renderer::Wgpu => "wgpu",
-        }
-    }
+    false
 }
 
-/// Human label for the banner. `None` = the crate default (hybrid).
-pub(crate) fn renderer_label(r: Option<Renderer>) -> &'static str {
-    match r {
-        None => "hybrid (default)",
-        Some(Renderer::Hybrid) => "hybrid",
-        Some(Renderer::Wgpu) => "wgpu",
+/// Warn when `member_dir`'s manifest still declares render-backend features.
+pub(crate) fn warn_legacy_backend_features(member_dir: &Path) {
+    let manifest = std::fs::read_to_string(member_dir.join("Cargo.toml")).unwrap_or_default();
+    if declares_backend_features(&manifest) {
+        term::warn(LEGACY_BACKEND_FEATURES);
     }
 }
 
@@ -101,37 +97,24 @@ pub fn run(args: &[String]) -> ExitCode {
         app_args: vec![],
         platform: Platform::Desktop,
         port: 8080,
-        renderer: None,
+        deprecated_renderer: false,
     };
     // Did the user pin the log level on the command line? If not, `pebbles.toml`'s
     // `[dev] log` (resolved once we know the project dir) supplies the default.
     let mut log_from_cli = false;
-    let mut it = args.iter();
+    let mut it = args.iter().peekable();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--release" => o.release = true,
             "--no-reload" => o.reload = false,
-            // Pin the render backend: --renderer hybrid | wgpu (default: hybrid).
+            // Deprecated: accept and ignore one value, but never swallow the next flag.
             "-r" | "--renderer" | "--backend" => {
-                let Some(v) = it.next() else {
-                    term::error("`--renderer` needs a value: hybrid | wgpu");
-                    return ExitCode::FAILURE;
-                };
-                match Renderer::parse(v) {
-                    Some(r) => o.renderer = Some(r),
-                    None => {
-                        term::error(&format!("unknown renderer `{v}` — use: hybrid | wgpu"));
-                        return ExitCode::FAILURE;
-                    }
+                if it.peek().is_some_and(|v| !v.starts_with('-')) {
+                    it.next();
                 }
+                o.deprecated_renderer = true;
             }
-            s if s.starts_with("--renderer=") => match Renderer::parse(&s["--renderer=".len()..]) {
-                Some(r) => o.renderer = Some(r),
-                None => {
-                    term::error("unknown renderer — use: hybrid | wgpu");
-                    return ExitCode::FAILURE;
-                }
-            },
+            s if s.starts_with("--renderer=") || s.starts_with("--backend=") => o.deprecated_renderer = true,
             // Flutter-style target selection: `pebbles run -d web` (default: desktop).
             "-d" | "--device" | "--platform" => {
                 let Some(v) = it.next() else {
@@ -214,6 +197,11 @@ pub fn run(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     };
 
+    if o.deprecated_renderer {
+        term::warn(RENDERER_DEPRECATED);
+    }
+    warn_legacy_backend_features(&member_dir);
+
     // `pebbles.toml` `[dev] log` sets the default level; an explicit `--log`/`-q`
     // still wins.
     if !log_from_cli && let Some(level) = read_dev_log(&member_dir) {
@@ -251,9 +239,8 @@ pub fn run(args: &[String]) -> ExitCode {
     }
 
     term::banner(&format!(
-        "pebbles run — {bin} ({}, {}, {})",
+        "pebbles run — {bin} ({}, {})",
         if o.release { "release" } else { "dev" },
-        renderer_label(o.renderer),
         if o.reload { "hot-restart on" } else { "hot-restart off" }
     ));
     if let Some(p) = &o.log_file {
@@ -274,7 +261,7 @@ pub fn run(args: &[String]) -> ExitCode {
         // 1. Build.
         let t = Instant::now();
         term::step("building…");
-        if !cargo_build(&target_root, &bin, o.release, o.renderer) {
+        if !cargo_build(&target_root, &bin, o.release) {
             term::error("build failed — fix the errors above; waiting for a change…");
             if !o.reload || !wait_for_change(&member_dir, &watch_dirs, &running) {
                 return ExitCode::FAILURE;
@@ -341,8 +328,8 @@ enum Outcome {
 /// wasm32-unknown-unknown`, wasm-bindgen, serves over HTTP, and reloads the tab
 /// on a source change — so Pebbles doesn't reimplement any of that.
 ///
-/// Pebbles targets **WebGPU** browsers (Chrome/Edge, Safari, Firefox) — there is
-/// no WebGL2 fallback, by design (Vello is a compute-shader renderer).
+/// Pebbles prefers **WebGPU** (Chrome/Edge, Safari, Firefox) and falls back to WebGL2
+/// automatically, so any current browser runs it.
 fn run_web(member_dir: &Path, bin: &str, o: &Opts) -> ExitCode {
     term::banner(&format!("pebbles run — {bin} (web, {})", if o.release { "release" } else { "dev" }));
 
@@ -383,16 +370,10 @@ fn run_web(member_dir: &Path, bin: &str, o: &Opts) -> ExitCode {
     if o.release {
         cmd.arg("--release");
     }
-    // Trunk passes these through to cargo, so `--renderer` selects the backend on web too.
-    if let Some(r) = o.renderer {
-        cmd.arg("--no-default-features").arg("--features").arg(r.feature());
-    }
     cmd.current_dir(member_dir);
     term::hot(&format!("serving on http://localhost:{} — Ctrl+C to stop", o.port));
-    // A blank page almost always means WebGPU is off in the browser (Pebbles is
-    // WebGPU-only — no WebGL2 fallback). Spell out the fix, since a silent white
-    // canvas is the most common first-run surprise, especially on Linux.
-    term::step("needs a WebGPU browser. If the page is BLANK, WebGPU is disabled — enable it:");
+    term::step("needs a WebGPU or WebGL2 browser (WebGPU preferred; WebGL2 is the automatic fallback).");
+    term::step("For WebGPU speed:");
     println!(
         "    • Chrome/Edge:  chrome://flags → \"Unsafe WebGPU Support\" = Enabled (Linux: also \"Vulkan\"), relaunch"
     );
@@ -465,15 +446,14 @@ pub(crate) fn ensure_index_html(member_dir: &Path, bin: &str) -> std::io::Result
       margin: 12vh auto; padding: 0 1.5rem; text-align: center;
     }}
   </style>
-  <!-- Friendly message instead of a wasm panic when the browser lacks WebGPU
-       (Pebbles is WebGPU-only — no WebGL2 fallback). -->
+  <!-- Friendly message when the browser has neither WebGPU nor WebGL2 (the wgpu renderer
+       falls back to WebGL2). -->
   <script>
-    if (!navigator.gpu) {{
+    if (!navigator.gpu && !document.createElement('canvas').getContext('webgl2')) {{
       addEventListener('DOMContentLoaded', function () {{
         document.body.innerHTML =
-          '<div id="pebbles-no-webgpu"><h2>This app needs WebGPU</h2>' +
-          '<p>Open it in Chrome/Edge, Safari&nbsp;26+, or Firefox with WebGPU enabled. ' +
-          'On Linux Chrome you may need <code>chrome://flags</code> → Unsafe WebGPU + Vulkan.</p></div>';
+          '<div id="pebbles-no-webgpu"><h2>This app needs WebGPU or WebGL2</h2>' +
+          '<p>Open it in a current Chrome/Edge, Safari, or Firefox.</p></div>';
       }});
     }}
   </script>
@@ -534,15 +514,8 @@ fn run_android(member_dir: &Path, bin: &str, o: &Opts) -> ExitCode {
     //    Android base class; use NativeActivity (NDK-only, no Gradle/AAR).
     let mut cmd = Command::new("cargo");
     cmd.arg(sub).arg("run").arg("-p").arg(bin);
-    // The Android base class is always needed; `--renderer` adds the backend feature and
-    // turns off the app's default so exactly one backend is on.
-    if let Some(r) = o.renderer {
-        cmd.arg("--no-default-features")
-            .arg("--features")
-            .arg(format!("pebbles/android-native-activity,{}", r.feature()));
-    } else {
-        cmd.arg("--features").arg("pebbles/android-native-activity");
-    }
+    // The Android base class is always needed.
+    cmd.arg("--features").arg("pebbles/android-native-activity");
     cmd.current_dir(member_dir);
     if o.release {
         cmd.arg("--release");
@@ -626,17 +599,13 @@ fn cargo_apk_subcommand() -> Option<&'static str> {
     None
 }
 
-pub(crate) fn cargo_build(run_dir: &Path, package: &str, release: bool, renderer: Option<Renderer>) -> bool {
+pub(crate) fn cargo_build(run_dir: &Path, package: &str, release: bool) -> bool {
     // `-p <package>` works whether `run_dir` is a workspace root or a standalone
     // package, so a sample builds the same way as a scaffolded app.
     let mut cmd = Command::new("cargo");
     cmd.arg("build").arg("-p").arg(package).current_dir(run_dir);
     if release {
         cmd.arg("--release");
-    }
-    // Pin the backend when asked; otherwise the crate's own default (hybrid) stands.
-    if let Some(r) = renderer {
-        cmd.arg("--no-default-features").arg("--features").arg(r.feature());
     }
     cmd.stdout(Stdio::inherit()).stderr(Stdio::inherit());
     matches!(cmd.status(), Ok(s) if s.success())
@@ -1009,15 +978,11 @@ mod tests {
     }
 
     #[test]
-    fn renderer_parsing() {
-        assert_eq!(Renderer::parse("vello"), None);
-        assert_eq!(Renderer::parse("classic"), None);
-        assert_eq!(Renderer::parse("HYBRID"), Some(Renderer::Hybrid));
-        assert_eq!(Renderer::parse("vello_hybrid"), Some(Renderer::Hybrid));
-        assert_eq!(Renderer::parse("wgpu"), Some(Renderer::Wgpu));
-        assert_eq!(Renderer::parse("nonsense"), None);
-        assert_eq!(Renderer::Hybrid.feature(), "vello-hybrid");
-        assert_eq!(Renderer::Wgpu.feature(), "wgpu");
+    fn backend_features_reads_only_the_features_table() {
+        let m = "[dependencies]\nwgpu = \"29\"\n[features]\n# wgpu = []\ndefault = [\"wgpu\"]\nwgpu = [\"pebbles/wgpu\"]\n";
+        assert!(declares_backend_features(m));
+        assert!(!declares_backend_features("[dependencies]\nwgpu = \"29\"\n"));
+        assert!(!declares_backend_features("[features]\n# wgpu = []\nimage-view = []\n"));
     }
 
     #[test]

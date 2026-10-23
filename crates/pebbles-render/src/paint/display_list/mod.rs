@@ -1,7 +1,6 @@
 //! The shared, backend-neutral display list (DR-02): [`Scene`] (a retained `Vec<Op>`),
-//! [`Painter`] (the recording API) and the [`op`] vocabulary. Every renderer backend
-//! consumes the same list — the hybrid flush (until Phase 7), the wgpu backend (until C05
-//! moves it to pebbles-gpu) and the render-check tool.
+//! [`Painter`] (the recording API) and the [`op`] vocabulary, consumed by `pebbles-gpu`
+//! and the render-check tool's golden model.
 
 use std::sync::Arc;
 

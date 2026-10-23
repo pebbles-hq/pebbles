@@ -1,8 +1,7 @@
 //! The display list's vocabulary: shape primitives, glyphs and the [`Op`] enum.
 //!
 //! **Renderer contract, not app API.** [`Op`] is produced only by
-//! [`Painter`](super::Painter) and consumed by `pebbles-gpu` and (until Phase 7) the
-//! hybrid flush. New variants and new fields are added in minor releases — always
+//! [`Painter`](super::Painter) and consumed by `pebbles-gpu`. New variants and new fields are added in minor releases — always
 //! match with `..` and a wildcard arm.
 
 use std::borrow::Cow;
@@ -187,8 +186,7 @@ impl std::fmt::Debug for dyn CustomPaint {
 /// One recorded paint verb.
 ///
 /// **Renderer contract, not app API.** Produced only by [`Painter`](super::Painter);
-/// consumed by `pebbles-gpu` and (until Phase 7) the hybrid flush. New variants and new
-/// fields are added in minor releases — always match with `..` and a wildcard arm.
+/// consumed by `pebbles-gpu`. New variants and new fields are added in minor releases — always match with `..` and a wildcard arm.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Op {

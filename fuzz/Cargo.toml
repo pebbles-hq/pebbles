@@ -9,8 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-# Until Phase 7 pebbles-render needs a backend feature; drop default-features/features at X02.
-pebbles-render = { path = "../crates/pebbles-render", default-features = false, features = ["wgpu"] }
+pebbles-render = { path = "../crates/pebbles-render" }
 pebbles-gpu = { path = "../crates/pebbles-gpu" }
 
 [[bin]]

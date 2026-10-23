@@ -1,15 +1,7 @@
-//! The **render-backend seam**. RenderObjects paint into a [`Painter`], never a
-//! concrete GPU scene — so the rasterizer is swappable without touching a single
-//! widget. The display list ([`display_list`]) is backend-neutral and shared by every
-//! consumer (DR-02): the vello-hybrid host flushes it (`hybrid_flush`, until Phase 7),
-//! and the wgpu backend reads it via `wgpu_backend` (until C05 moves it into pebbles-gpu).
-//!
-//! `vello-hybrid` wins whenever it is enabled (DR-10); select wgpu with
-//! `--no-default-features --features wgpu` (the CLI's `--renderer wgpu` does exactly this).
-//! Both expose the SAME `Scene` / `scene()` / `Painter` / `Glyph` surface, so the widget
-//! layer is identical across backends. The geometry/brush vocabulary ([`Affine`], [`Fill`],
-//! [`Stroke`], [`Brush`], …) is `kurbo`/`peniko` — renderer-neutral, re-exported here and
-//! imported by RenderObjects from `crate::paint` rather than from any backend crate.
+//! The paint layer. RenderObjects paint into a [`Painter`], never a concrete GPU scene: the
+//! display list ([`display_list`]) is consumed by `pebbles-gpu`. The geometry/brush vocabulary
+//! ([`Affine`], [`Fill`], [`Stroke`], [`Brush`], …) is `kurbo`/`peniko`, re-exported here and
+//! imported by RenderObjects from `crate::paint`.
 
 // ---- backend-neutral vocabulary (identical types for all consumers) --------
 pub use kurbo::{self, Affine, BezPath, Circle, Point, Rect, Shape, Stroke};
@@ -30,8 +22,3 @@ pub use projective::Projective;
 pub use shader_program::{
     MAX_SHADER_IMAGES, MAX_SHADER_UNIFORMS, ShaderBrush, ShaderBrushError, ShaderProgram,
 };
-
-// Transitional consumer: replays the display list into a live `vello_hybrid::Scene`
-// (feature `vello-hybrid`; deleted whole at Phase 7, X01).
-#[cfg(feature = "vello-hybrid")]
-mod hybrid_flush;

@@ -1,5 +1,5 @@
 //! `brush/` image brushes on fills and strokes (05 §7) — Slice P4, 128×128, judged by the
-//! golden model and analytic probes (the transitional smoke reference skips image brushes).
+//! golden model and analytic probes.
 
 use pebbles_render::paint::{ShaderBrush, ShaderProgram, kurbo, peniko};
 

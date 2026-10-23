@@ -1,7 +1,7 @@
 //! More compositing effects: [`RenderClipOval`], [`RenderClipPath`],
 //! [`RenderColorFilter`], [`RenderShaderMask`], [`RenderImageFilter`] and
 //! [`RenderBackdropFilter`]. Each wraps a single child and
-//! pushes a vello layer around (or over) it — the same shape as [`RenderClipRRect`],
+//! pushes a layer around (or over) it — the same shape as [`RenderClipRRect`],
 //! with a different clip shape or blend.
 
 use std::rc::Rc;
@@ -173,8 +173,8 @@ impl RenderObject for RenderShaderMask {
         // (child) weighted by source alpha, so child.alpha *= luminance. This is exactly
         // a luminance mask — luminance is linear in RGB, so masking with the per-stop
         // luminance is identical to sampling the luminance of the blended gradient — and
-        // it uses only the isolated-layer + `DestIn` verbs BOTH backends support (the
-        // hybrid backend has no dedicated mask-layer primitive).
+        // it needs only the isolated-layer + `DestIn` verbs (no dedicated mask-layer
+        // primitive).
         let mask = luminance_gradient(&self.gradient, bounds);
         cx.scene.push_layer(
             Fill::NonZero,

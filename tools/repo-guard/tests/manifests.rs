@@ -1,26 +1,10 @@
-//! Manifest invariants of documentations/wgpu-migration/04 §2. Phase cards flip the
-//! constants below; never loosen a test to make it pass.
-use repo_guard::{dependency_keys, feature_keys, features, member_manifests, read};
+//! Manifest invariants of documentations/wgpu-migration/04 §2 (Phase 7 end state): one renderer,
+//! no backend features. Never loosen a test to make it pass.
+use repo_guard::{dependency_keys, feature_keys, member_manifests, read};
 
-/// The six backend-selectable framework crates (DR-10/DR-11).
-const BACKEND_CRATES: [&str; 6] = [
-    "crates/pebbles-render/Cargo.toml",
-    "crates/pebbles-core/Cargo.toml",
-    "crates/pebbles-widgets/Cargo.toml",
-    "crates/pebbles-testing/Cargo.toml",
-    "crates/pebbles-shell/Cargo.toml",
-    "crates/pebbles/Cargo.toml",
-];
-/// Backend names that can appear as feature keys during the migration.
-const BACKEND_NAMES: [&str; 3] = ["wgpu", "vello-hybrid", "vello"];
-
-/// Phase C..5: Some("vello-hybrid"). K20 (Phase 6): Some("wgpu"). K30 (Phase 7): None.
-const EXPECTED_DEFAULT_BACKEND: Option<&str> = Some("vello-hybrid");
-/// Backends every BACKEND_CRATES manifest must declare (I1). K30 sets &[].
-const TRANSITION_BACKENDS: &[&str] = &["vello-hybrid", "wgpu"];
-/// Backend feature keys every examples/* manifest must declare, exactly.
-/// K23 (Phase 6): &["wgpu"]. K30: &[].
-const EXAMPLE_BACKENDS: &[&str] = &["vello-hybrid", "wgpu"];
+/// Former render-backend feature names. None may come back (DR-11): there is one renderer.
+/// Spelled with `concat!` so this guard's own source never contains the deleted name.
+const BACKEND_NAMES: [&str; 3] = ["wgpu", concat!("vel", "lo-hybrid"), concat!("vel", "lo")];
 
 #[test]
 fn guard_parses_the_real_manifests() {
@@ -30,55 +14,46 @@ fn guard_parses_the_real_manifests() {
 }
 
 #[test]
-fn backend_crates_default_to_the_expected_backend() {
-    for m in BACKEND_CRATES {
-        let feats = features(&read(m));
-        let default = feats.iter().find(|(k, _)| k == "default").map(|(_, v)| v.clone());
-        match EXPECTED_DEFAULT_BACKEND {
-            Some(b) => {
-                let d = default.unwrap_or_else(|| panic!("{m}: no default"));
-                assert!(d.contains(&format!("\"{b}\"")), "{m}: default = {d}, want {b}");
-                for other in BACKEND_NAMES.iter().filter(|n| **n != b) {
-                    assert!(!d.contains(&format!("\"{other}\"")), "{m}: default also selects {other}");
-                }
-            }
-            None => {
-                if let Some(d) = default {
-                    for n in BACKEND_NAMES {
-                        assert!(!d.contains(&format!("\"{n}\"")), "{m}: default selects {n}");
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[test]
-fn backend_crates_declare_every_transition_backend() {
-    for m in BACKEND_CRATES {
-        let keys = feature_keys(&read(m));
-        for b in TRANSITION_BACKENDS {
-            assert!(keys.iter().any(|k| k == b), "{m} lacks feature `{b}` (invariant I1)");
-        }
-    }
-}
-
-#[test]
-fn examples_declare_exactly_the_expected_backends() {
-    for m in member_manifests().into_iter().filter(|m| m.starts_with("examples/")) {
-        let mut got: Vec<String> =
-            feature_keys(&read(&m)).into_iter().filter(|k| BACKEND_NAMES.contains(&k.as_str())).collect();
-        got.sort();
-        let mut want: Vec<String> = EXAMPLE_BACKENDS.iter().map(|s| s.to_string()).collect();
-        want.sort();
-        assert_eq!(got, want, "{m}");
-    }
-}
-
-#[test]
-fn no_manifest_declares_the_classic_vello_feature() {
+fn no_backend_feature_anywhere() {
     for m in member_manifests() {
-        assert!(!feature_keys(&read(&m)).iter().any(|k| k == "vello"), "{m} still has `vello` (C02)");
+        for k in feature_keys(&read(&m)) {
+            assert!(!BACKEND_NAMES.contains(&k.as_str()), "{m} still declares `{k}` (DR-11)");
+        }
+    }
+    let tmpl = read("crates/pebbles-cli/templates/app/Cargo.toml.tmpl");
+    assert!(!tmpl.contains("[features]"), "app template declares no features");
+}
+
+#[test]
+fn internal_workspace_deps_keep_default_features() {
+    for line in read("Cargo.toml").lines().filter(|l| l.trim_start().starts_with("pebbles")) {
+        assert!(!line.contains("default-features = false"), "{line}");
+    }
+}
+
+/// X02: no `cfg` on a former backend feature in any source file of the framework or examples.
+#[test]
+fn no_backend_cfg_anywhere() {
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() && p.file_name().is_some_and(|n| n != "target") {
+                walk(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                out.push(p);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    for d in ["crates", "examples"] {
+        walk(&repo_guard::workspace_root().join(d), &mut files);
+    }
+    assert!(files.len() > 100, "walked the sources");
+    for f in files {
+        let text = std::fs::read_to_string(&f).unwrap_or_default();
+        for n in BACKEND_NAMES {
+            assert!(!text.contains(&format!("feature = \"{n}\"")), "{}: cfg on feature `{n}`", f.display());
+        }
     }
 }
 

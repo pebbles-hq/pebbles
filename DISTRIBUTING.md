@@ -23,11 +23,7 @@ or drop to Cargo directly for the same result:
 cargo build --release            # → target/release/<name>
 ```
 
-The crate's default render backend is baked into its `Cargo.toml` (`default = ["vello-hybrid"]`). To ship the first-party renderer instead (experimental until it becomes the default):
-
-```bash
-cargo build --release --no-default-features --features wgpu
-```
+Pebbles has a single renderer (wgpu), so there is no backend to choose at build time.
 
 ---
 

@@ -22,7 +22,7 @@ pub struct EditRecord {
     words: &'static [(f64, f64, usize, usize)],
 }
 
-include!("fixtures/edit_pin_parley.rs");
+include!("fixtures/edit_pin_oracle.rs");
 
 struct EditCase {
     name: &'static str,
@@ -145,7 +145,7 @@ fn oracle_snap(y: f64) -> f64 {
 fn compare(path: Path, snap_y: bool) -> Vec<String> {
     let rows = measure_all(path);
     let mut failures = Vec::new();
-    for (pin, (name, m)) in PARLEY.iter().zip(&rows) {
+    for (pin, (name, m)) in ORACLE.iter().zip(&rows) {
         assert_eq!(pin.name, *name, "fixture order");
         let close = |a: f64, b: f64| (a - b).abs() <= 0.5;
         let y = |v: f64| if snap_y { oracle_snap(v) } else { v };
@@ -219,7 +219,7 @@ const KNOWN_DIFFS: &[(&str, &str, &str)] = &[
 
 /// Every difference from the pin must be a documented KNOWN_DIFF.
 fn assert_matches_oracle(path: Path) {
-    assert!(!PARLEY.is_empty(), "fixture empty: the frozen oracle is missing");
+    assert!(!ORACLE.is_empty(), "fixture empty: the frozen oracle is missing");
     let mut unexpected = Vec::new();
     for f in compare(path, true) {
         let known = KNOWN_DIFFS.iter().find(|(case, label, _)| {

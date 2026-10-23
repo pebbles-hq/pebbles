@@ -48,7 +48,7 @@
 //! per-state styles like `hover()` (state visuals live in components, rule 4) ·
 //! `z_index` (paint order = tree order) · `text_transform` (do it in app code) · text
 //! cascade/inheritance (a `Style`'s text props affect only the `Text` they're on) ·
-//! `blur`/`backdrop` (no cheap vello primitive today). Ambient values come from
+//! `blur`/`backdrop` (use `image_filtered` / `backdrop_filter` widgets). Ambient values come from
 //! [`theme()`](fn@crate::theme), never a style cascade.
 
 use pebbles_foundation::{Alignment, Color, EdgeInsets, TextAlign};

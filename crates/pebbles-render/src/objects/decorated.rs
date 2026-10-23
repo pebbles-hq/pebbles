@@ -70,8 +70,8 @@ impl RenderObject for RenderDecoratedBox {
         let d = &self.decoration;
 
         // A box that hasn't been laid out yet (or collapsed to nothing) has a
-        // zero/negative size. Painting a shadow/blur or image for it makes vello
-        // allocate a 0-sized GPU texture, which wgpu rejects as an invalid
+        // zero/negative size. Painting a shadow/blur or image for it would allocate a
+        // 0-sized GPU texture, which wgpu rejects as an invalid
         // texture — poisoning the device and (with the old blocking present)
         // freezing the window to black. Nothing is visible at this size anyway,
         // so skip the GPU-texture-producing draws entirely.

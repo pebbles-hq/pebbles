@@ -5,15 +5,6 @@ edition = "2024"
 publish = false
 
 [dependencies]
-# default-features = false so THIS app's features (below) choose the render backend.
-{{dep_nodefault.pebbles}}
-
-[features]
-# Render backend. `vello-hybrid` is Pebbles' current default; `wgpu` is the first-party
-# renderer (experimental until it becomes the default). Both are wired here — switch at
-# run time without editing this file:
-#   pebbles run                    # uses `default` below
-#   pebbles run --renderer wgpu    # force the first-party renderer
-default = ["{{renderer}}"]
-vello-hybrid = ["pebbles/vello-hybrid"]
-wgpu = ["pebbles/wgpu", "pebbles/webgl"]
+# Pebbles renders with its built-in wgpu renderer (WebGPU, with a WebGL2 fallback on the
+# web). Keep default features on: they include that fallback.
+{{dep.pebbles}}

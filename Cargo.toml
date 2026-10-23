@@ -10,8 +10,8 @@ license = "Apache-2.0"
 authors = ["Reyco Seguma"]
 repository = "https://github.com/pebbles-hq/pebbles"
 homepage = "https://github.com/pebbles-hq/pebbles"
-description = "Pebbles — a GUI framework for Rust built from handpicked ideas: a widget model in the spirit of Flutter, reactivity in the spirit of SolidJS, styling in the spirit of Tailwind, and pure-Rust GPU rendering on Vello."
-keywords = ["gui", "ui", "graphics", "vello", "flutter"]
+description = "Pebbles — a GUI framework for Rust built from handpicked ideas: a widget model in the spirit of Flutter, reactivity in the spirit of SolidJS, styling in the spirit of Tailwind, and pure-Rust GPU rendering on wgpu."
+keywords = ["gui", "ui", "graphics", "wgpu", "flutter"]
 categories = ["gui", "graphics", "rendering"]
 
 # Warn-only shared lints (CI ratchets with `-D warnings` once the debt is measured;
@@ -37,31 +37,22 @@ trivially_copy_pass_by_ref = "warn"
 # --- internal crates (bottom-up: foundation → render → core → widgets → shell → umbrella) ---
 pebbles-foundation = { path = "crates/pebbles-foundation", version = "0.0.1" }
 pebbles-icons = { path = "crates/pebbles-icons", version = "0.0.1" }
-# The backend-selectable crates carry `default-features = false` so the render backend
-# (`vello-hybrid` or `wgpu` during the wgpu migration) is chosen by the crate being built
-# and forwarded DOWN (each crate re-enables its own `default`, so a plain build is unchanged).
-pebbles-render = { path = "crates/pebbles-render", version = "0.0.1", default-features = false }
-pebbles-core = { path = "crates/pebbles-core", version = "0.0.1", default-features = false }
-pebbles-widgets = { path = "crates/pebbles-widgets", version = "0.0.1", default-features = false }
-pebbles-shell = { path = "crates/pebbles-shell", version = "0.0.1", default-features = false }
+pebbles-render = { path = "crates/pebbles-render", version = "0.0.1" }
+pebbles-core = { path = "crates/pebbles-core", version = "0.0.1" }
+pebbles-widgets = { path = "crates/pebbles-widgets", version = "0.0.1" }
+pebbles-shell = { path = "crates/pebbles-shell", version = "0.0.1" }
 pebbles-macros = { path = "crates/pebbles-macros", version = "0.0.1" }
-pebbles = { path = "crates/pebbles", version = "0.0.1", default-features = false }
-pebbles-testing = { path = "crates/pebbles-testing", version = "0.0.1", default-features = false }
+pebbles = { path = "crates/pebbles", version = "0.0.1" }
+pebbles-testing = { path = "crates/pebbles-testing", version = "0.0.1" }
 pebbles-gpu = { path = "crates/pebbles-gpu", version = "0.0.1" }
 # The `log` facade wgpu/naga report through (already in the graph via wgpu); pebbles-gpu bridges it (S56).
 log = "0.4"
 
 # --- Linebender 2D stack ---
 # `kurbo` (geometry) and `peniko` (brushes/colors) are the renderer-neutral paint
-# vocabulary (DR-01). `vello`, `vello_hybrid` and `vello_common` serve ONLY the
-# transitional `vello-hybrid` backend (the transitional smoke reference) and are deleted at Phase 7
-# of the wgpu migration; the hybrid host still uses `vello::util` for surface plumbing.
-vello = { version = "0.10", default-features = false }
-vello_hybrid = { version = "0.2", default-features = false }
-vello_common = { version = "0.2", default-features = false }
+# vocabulary (DR-01).
 peniko = "0.6"
 kurbo = "0.13"
-parley = "0.11"
 
 # --- text (pebbles-render only; DR-08) ---
 # No `swash` feature (text never rasterizes; pebbles-gpu depends on swash directly, DR-07) and no `peniko` (03 §3.10: as_peniko()
@@ -75,7 +66,7 @@ sys-locale = "0.3"
 # --- renderer (pebbles-gpu only; DR-03) ---
 lyon_tessellation = "1.0"
 swash = "0.2.10"
-# COLR paint graphs (02 R29, DR-23); the version swash/parley already lock.
+# COLR paint graphs (02 R29, DR-23); the version swash already locks.
 skrifa = { version = "0.44", default-features = false, features = ["std"] }
 zeno = "0.3"
 half = "2.7"

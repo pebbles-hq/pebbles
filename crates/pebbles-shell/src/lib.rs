@@ -1,8 +1,7 @@
 //! # pebbles-shell
 //!
 //! The desktop shell: the only crate that touches the GPU and the OS window. It
-//! wires [winit] windowing to a [wgpu] surface and the render backend (Vello
-//! Hybrid by default, the first-party wgpu renderer opt-in), and drives the
+//! wires [winit] windowing to a [wgpu] surface and the `pebbles-gpu` renderer, and drives the
 //! [`Ui`](pebbles_core::Ui) engine each frame.
 //!
 //! The public surface is deliberately tiny — build a widget tree and hand it to
@@ -17,9 +16,7 @@
 //! }
 //! ```
 //!
-//! The render backend is chosen by a feature that forwards to `pebbles-render`
-//! (`vello-hybrid` default, `wgpu` opt-in). The GPU host for each lives in `gpu`;
-//! the runner's frame loop is backend-agnostic.
+//! Rendering goes through `pebbles-gpu` (wgpu); the runner drives it through `gpu`.
 
 // AccessKit has no web adapter yet, so wasm gets a no-op bridge with the same
 // public surface (so the runner needs no per-call-site cfg). See
@@ -30,11 +27,11 @@ mod a11y;
 #[path = "a11y_stub.rs"]
 mod a11y;
 mod app;
-// Offscreen widget→PNG/RGBA capture. Desktop + the hybrid or wgpu backend (needs an
-// offscreen GPU device); the export primitive charts/reports build on.
-#[cfg(all(not(target_family = "wasm"), any(feature = "vello-hybrid", feature = "wgpu")))]
+// Offscreen widget→PNG/RGBA capture (desktop: needs an offscreen GPU device); the export
+// primitive charts/reports build on.
+#[cfg(not(target_family = "wasm"))]
 pub mod capture;
-// The GPU host seam (wgpu context/surface/renderer) — one impl per render backend.
+// The GPU host (wgpu context/surface/renderer).
 mod gpu;
 mod hotkeys;
 #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]

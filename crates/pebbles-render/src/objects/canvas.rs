@@ -1,5 +1,5 @@
 //! [`RenderCanvas`] (H2) — a leaf that hands its painter a [`Canvas`]: an immediate-mode
-//! drawing surface over the vello scene in the widget's local coordinates. Text stays
+//! drawing surface over the scene in the widget's local coordinates. Text stays
 //! OUT of v1 (it needs a `TextEnv` at paint) — layer `Text` widgets above instead.
 
 use std::rc::Rc;

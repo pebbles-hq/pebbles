@@ -395,7 +395,7 @@ pub fn lifestyle() -> AnyWidget {
                     gap_h(18.0),
                     text(
                         "Every frame here — the photography, the parallax layering, the translucent \
-                         chrome — is composed by Pebbles and rendered on the GPU with Vello. The same \
+                         chrome — is composed by Pebbles and rendered on the GPU with wgpu. The same \
                          widgets that build a data table build this.",
                     )
                     .size(15.5)
@@ -503,7 +503,7 @@ pub fn footer() -> AnyWidget {
                             .color(ui::white()),
                         gap_h(10.0),
                         container().width(240.0).child(
-                            text("A demo storefront rendered on the GPU with Pebbles + Vello.")
+                            text("A demo storefront rendered on the GPU with Pebbles + wgpu.")
                                 .size(13.0)
                                 .line_height(1.5)
                                 .color(ui::with_alpha(ui::white(), 0.65)),

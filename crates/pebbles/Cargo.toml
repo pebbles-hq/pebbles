@@ -10,7 +10,7 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme = "README.md"
-description = "Pebbles — a GUI framework for Rust built from handpicked ideas: Flutter-style widgets, SolidJS-style reactivity, Tailwind-style styling, and pure-Rust Vello rendering. The umbrella crate + prelude."
+description = "Pebbles — a GUI framework for Rust built from handpicked ideas: Flutter-style widgets, SolidJS-style reactivity, Tailwind-style styling, and pure-Rust wgpu rendering. The umbrella crate + prelude."
 
 [dependencies]
 pebbles-foundation.workspace = true
@@ -21,25 +21,10 @@ pebbles-shell.workspace = true
 pebbles-macros.workspace = true
 
 [features]
-# Render backend, forwarded through the whole graph (wgpu migration): `vello-hybrid` is the
-# default; the first-party `wgpu` renderer is opt-in via `--no-default-features --features wgpu`.
-# With both enabled, `vello-hybrid` wins until the Phase-6 flip. The offscreen `capture` API
-# works off-wasm under either backend.
-# webgl: WebGL2 fallback for the wgpu renderer on wasm32 (no effect on native).
-default = ["vello-hybrid", "webgl"]
+# WebGL2 fallback for the web build (no effect on native). On by default; a lean
+# WebGPU-only web bundle uses `pebbles = { …, default-features = false }`.
+default = ["webgl"]
 webgl = ["pebbles-shell/webgl"]
-wgpu = [
-    "pebbles-render/wgpu",
-    "pebbles-core/wgpu",
-    "pebbles-widgets/wgpu",
-    "pebbles-shell/wgpu",
-]
-vello-hybrid = [
-    "pebbles-render/vello-hybrid",
-    "pebbles-core/vello-hybrid",
-    "pebbles-widgets/vello-hybrid",
-    "pebbles-shell/vello-hybrid",
-]
 # Forward the shell's optional integrations so apps can opt in via the umbrella,
 # e.g. `cargo run -p todo --features pebbles/native-menus`.
 native-menus = ["pebbles-shell/native-menus"]
@@ -64,7 +49,7 @@ android-game-activity = ["pebbles-shell/android-game-activity"]
 [lints]
 workspace = true
 
-# docs.rs builds with every feature so the feature-gated API (ImageView, hotkeys, create_resource_future, offscreen capture) appears. During the wgpu migration --all-features resolves to vello-hybrid (DR-10), so this is safe.
+# docs.rs builds with every feature so the feature-gated API (ImageView, hotkeys, create_resource_future) appears.
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

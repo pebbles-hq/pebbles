@@ -52,8 +52,8 @@ impl LayoutCx<'_> {
         };
         // A non-finite (∞/NaN) size is always a bug — a widget filled an unbounded
         // constraint (e.g. a fill/stretch inside a scroll view) or divided by zero.
-        // It would become a NaN path coordinate that corrupts the GPU glyph atlas
-        // and hard-panics vello's CPU renderer, so clamp it here at the one
+        // It would become a NaN path coordinate the renderer has to drop, so clamp it
+        // here at the one
         // chokepoint every child size passes through. The clamp target is the
         // finite max constraint, else 0.
         let clean = sanitize_size(size, constraints);

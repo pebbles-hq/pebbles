@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish = false
-description = "Pixel-render-check harness: renders each corpus case with pebbles-gpu and judges it against the golden model, analytic probes and committed self-goldens (vello-hybrid only as a transitional smoke check). Dev tool; never shipped."
+description = "Pixel-render-check harness: renders each corpus case with pebbles-gpu and judges it against the golden model, analytic probes and committed self-goldens. Dev tool; never shipped."
 
 [lib]
 path = "src/lib.rs"
@@ -16,15 +16,12 @@ path = "src/main.rs"
 
 [dependencies]
 pebbles-foundation.workspace = true
-# The hybrid flush (reference side) lives behind pebbles-render's `vello-hybrid` feature.
-# Deleted at Phase 7 (V43). Display-list types themselves are backend-neutral (C03).
-pebbles-render = { workspace = true, features = ["vello-hybrid"] }
-pebbles-core = { workspace = true, features = ["vello-hybrid"] }
-pebbles-widgets = { workspace = true, features = ["vello-hybrid"] }
-pebbles-testing = { workspace = true, features = ["vello-hybrid"] }
+pebbles-render.workspace = true
+pebbles-core.workspace = true
+pebbles-widgets.workspace = true
+pebbles-testing.workspace = true
 pebbles-gpu.workspace = true
 pebbles-icons.workspace = true   # icon corpus cases (prim/icons)
-vello_hybrid = { workspace = true, features = ["wgpu", "text"] }   # transitional smoke renderer; deleted at Phase 7 (V43)
 wgpu.workspace = true
 pollster.workspace = true
 peniko.workspace = true

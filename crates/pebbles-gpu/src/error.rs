@@ -155,8 +155,6 @@ pub enum CaptureError {
     Poll(wgpu::PollError),
     /// The map callback never reported (channel closed) — treated like a lost device.
     ReadbackAborted,
-    /// The transitional `vello-hybrid` capture path failed (pebbles-shell; deleted at Phase 7).
-    Backend(String),
 }
 
 impl fmt::Display for CaptureError {
@@ -170,7 +168,6 @@ impl fmt::Display for CaptureError {
             Self::Map(e) => write!(f, "could not map the capture readback buffer: {e}"),
             Self::Poll(e) => write!(f, "waiting for the GPU failed: {e}"),
             Self::ReadbackAborted => f.write_str("the capture readback was aborted (device lost?)"),
-            Self::Backend(e) => write!(f, "capture failed: {e}"),
         }
     }
 }

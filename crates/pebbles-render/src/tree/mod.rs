@@ -91,8 +91,8 @@ impl RenderNode {
 /// Replace any non-finite (∞ / NaN) dimension of a laid-out `size` with a finite
 /// value — the finite max constraint if there is one, else 0. A non-finite size
 /// is always a layout bug (a fill/stretch inside an unbounded constraint, a
-/// divide-by-zero); left alone it becomes a NaN path coordinate that corrupts
-/// vello's GPU glyph atlas and hard-panics its CPU renderer. Clamping here — the
+/// divide-by-zero); left alone it becomes a NaN path coordinate the renderer has to
+/// drop. Clamping here — the
 /// single chokepoint every node size passes through — makes a layout bug degrade
 /// to a visual glitch instead of a crash. In dev mode the `nan_report` tripwire
 /// still surfaces the offending widget.
@@ -205,8 +205,8 @@ impl RenderTree {
     }
 
     /// Dev diagnostic: the first render node whose size or offset is non-finite
-    /// (NaN / ∞) — such a value becomes a NaN path coordinate that corrupts the
-    /// GPU glyph atlas and hard-panics vello's CPU renderer. Returns the node's
+    /// (NaN / ∞) — such a value becomes a NaN path coordinate the renderer has to
+    /// drop. Returns the node's
     /// debug name + the bad numbers so the offending widget can be found.
     pub fn nan_report(&self) -> Option<String> {
         fn bad(f: f64) -> bool {

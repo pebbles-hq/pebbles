@@ -2,7 +2,7 @@
 //!
 //! A GUI framework for Rust, built from handpicked ideas — a widget model in the
 //! spirit of Flutter, reactivity in the spirit of SolidJS, styling in the spirit of
-//! Tailwind, and pure-Rust GPU rendering on [Vello](https://vello.dev).
+//! Tailwind, and pure-Rust GPU rendering on [wgpu](https://wgpu.rs).
 //!
 //! Pebbles pairs **Flutter's widget model** for building UI with **Solid's signals**
 //! for state. It keeps Flutter's three-tree architecture — **Widget → Element →

@@ -42,30 +42,16 @@ typos:
     @if command -v typos >/dev/null 2>&1; then typos; else echo "typos not installed — skipping (cargo install typos-cli)"; fi
 
 # The full gate — everything CI would block a PR on, in one run.
-gate: fmt clippy check test doc typos
+gate: fmt clippy check test doc typos wasm
 
-# wgpu transition lanes (ci.yml: wgpu-backend). Flags removed at Phase 7 (05 V34).
-check-wgpu:
-    cargo check -p pebbles-render -p pebbles-core -p pebbles-widgets -p pebbles-shell -p pebbles --all-targets --no-default-features --features wgpu
-
-test-wgpu:
-    cargo test -p pebbles-render --no-default-features --features wgpu
-    cargo test -p pebbles-widgets --no-default-features --features wgpu
-    cargo test -p pebbles-shell --no-default-features --features wgpu
-
-clippy-wgpu:
-    cargo clippy -p pebbles-render -p pebbles-shell -p pebbles --all-targets --no-default-features --features wgpu -- -D warnings
-
-wasm-wgpu:
-    cargo check -p pebbles-shell -p pebbles --no-default-features --features wgpu --target wasm32-unknown-unknown
+# Web build check (ci.yml: wasm). The umbrella's default `webgl` feature keeps the WebGL2 fallback.
+wasm:
+    cargo check -p pebbles-shell -p pebbles --target wasm32-unknown-unknown
 
 # GPU tests (ci.yml: gpu-wgpu-linux). Prefix with the LAVAPIPE env on a GPU-less box.
-gpu-wgpu:
+gpu:
     cargo test -p pebbles-gpu -- --ignored --test-threads=1
-    cargo test -p pebbles-shell --no-default-features --features wgpu -- --ignored --test-threads=1
-
-# Everything CI blocks on during the transition.
-gate-transition: gate check-wgpu test-wgpu clippy-wgpu wasm-wgpu
+    cargo test -p pebbles-shell -- --ignored --test-threads=1
 
 # Render check (05 §6). Needs a GPU, or prefix with the LAVAPIPE env (00 §7).
 render-check:

@@ -48,7 +48,7 @@ fn linear(p0: (f64, f64), p1: (f64, f64), a: Color, b: Color) -> Gradient {
     Gradient::new_linear(Point::from(p0), Point::from(p1)).with_stops([a, b].as_slice())
 }
 
-/// Port of `paint_vello` in `spikes/renderer-bench` (the dashboard of 10 §10.5).
+/// The dashboard scene of 10 §10.5.
 pub fn dashboard(p: &mut Painter<'_>) {
     let hero =
         linear((0.0, 0.0), (1200.0, 220.0), Color::from_rgb8(99, 102, 241), Color::from_rgb8(236, 72, 153));

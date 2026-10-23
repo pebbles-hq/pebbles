@@ -2,7 +2,7 @@
 //!
 //! Every widget/component test lives here as a module of ONE test harness so the
 //! workspace links a single test binary instead of one per file (each binary
-//! statically embeds the full vello/parley dep graph — 56 of them once filled a
+//! statically embeds the full renderer + text dep graph — 56 of them once filled a
 //! disk). Add new test files to this directory and list them below.
 
 mod accordion;

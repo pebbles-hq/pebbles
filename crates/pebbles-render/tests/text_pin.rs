@@ -20,7 +20,7 @@ pub struct PinRecord {
     line_starts: &'static [usize],
 }
 
-include!("fixtures/text_pin_parley.rs");
+include!("fixtures/text_pin_oracle.rs");
 
 struct PinCase {
     name: &'static str,
@@ -244,10 +244,10 @@ fn text_pin_matches_oracle() {
         std::env::var("PEBBLES_UPDATE_TEXT_PIN").is_err(),
         "the oracle is frozen (T40): never regenerate it"
     );
-    assert!(!PARLEY.is_empty(), "fixture empty: the frozen oracle is missing");
-    assert_eq!(PARLEY.len(), rows.len(), "fixture and corpus disagree on the case count");
+    assert!(!ORACLE.is_empty(), "fixture empty: the frozen oracle is missing");
+    assert_eq!(ORACLE.len(), rows.len(), "fixture and corpus disagree on the case count");
     let mut failures = Vec::new();
-    for (pin, (name, m)) in PARLEY.iter().zip(&rows) {
+    for (pin, (name, m)) in ORACLE.iter().zip(&rows) {
         assert_eq!(pin.name, *name, "fixture order");
         let mut check = |field: &str, ok: bool, detail: String| {
             if ok {
@@ -306,13 +306,13 @@ const LAYOUT_CASES: &[&str] = &[
 
 #[test]
 fn text_pin_layout_matches_oracle() {
-    assert!(!PARLEY.is_empty(), "fixture empty: the frozen oracle is missing");
+    assert!(!ORACLE.is_empty(), "fixture empty: the frozen oracle is missing");
     let mut env = TextEnv::new();
     let cases = corpus();
     let mut failures = Vec::new();
     for name in LAYOUT_CASES {
         let c = cases.iter().find(|c| c.name == *name).expect("case in corpus");
-        let pin = PARLEY.iter().find(|p| p.name == *name).expect("case in fixture");
+        let pin = ORACLE.iter().find(|p| p.name == *name).expect("case in fixture");
         let style = ParagraphStyle {
             font_size: c.size,
             line_height: c.line_height,

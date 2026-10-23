@@ -2,8 +2,7 @@
 
 Pixel render-check harness for the wgpu migration. Renders every corpus case with the
 candidate renderer (`pebbles-gpu`) and judges it against the raster spec: the golden model,
-analytic probes and committed self-goldens. A transitional vello-hybrid smoke render is
-reported separately and never decides PASS/FAIL. Dev tool; never shipped.
+analytic probes and committed self-goldens. Dev tool; never shipped.
 
 Run from the repository root:
 

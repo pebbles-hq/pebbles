@@ -23,13 +23,12 @@ pub enum Category {
     Stress,
     SelfConsistency,
     CrossBackend,
-    Smoke,
     Analytic,
 }
 
 impl Category {
     /// Every category.
-    pub const ALL: [Category; 16] = [
+    pub const ALL: [Category; 15] = [
         Self::Exact,
         Self::Geometry,
         Self::Gradient,
@@ -44,7 +43,6 @@ impl Category {
         Self::Stress,
         Self::SelfConsistency,
         Self::CrossBackend,
-        Self::Smoke,
         Self::Analytic,
     ];
 }
@@ -87,8 +85,6 @@ pub enum Reference {
     /// Compare the candidate with itself across frames / a fresh renderer (byte-equal).
     SelfConsistency,
 }
-// The transitional Vello smoke comparison is not a Reference: it runs on every case while
-// `--smoke on` (the default until V43) and is reported separately with the Smoke metric (§6.10).
 
 /// The expected verdict.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

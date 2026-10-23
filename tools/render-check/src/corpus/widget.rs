@@ -1,5 +1,5 @@
 //! widget/ — every case through the public pebbles-widgets API (§7.2, V25). Category Screen,
-//! slice Screens, Harness 480×320; judged by self-goldens from V12 (Smoke until then).
+//! slice Screens, Harness 480×320; judged by self-goldens from V12 (unjudged until then).
 
 use pebbles_core::IntoWidget as _;
 use pebbles_foundation::{Color, EdgeInsets, Offset};

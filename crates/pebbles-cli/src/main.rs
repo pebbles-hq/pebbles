@@ -104,10 +104,6 @@ fn print_help() {
 
 {BOLD}pebbles create OPTIONS{RESET}
     -t, --template <k> app | widget      (default: app)
-    -r, --renderer <r> hybrid | wgpu   (default: hybrid) — the app's
-                      default render backend (hybrid = Vello Hybrid, today's
-                      default; wgpu = the first-party renderer). Both are
-                      wired either way, switchable at run time.
     --list            List the templates and exit
     --path            Depend on the local Pebbles checkout instead of git —
                       for developing the framework itself
@@ -115,9 +111,7 @@ fn print_help() {
 {BOLD}pebbles run OPTIONS{RESET}
     -d, --device <t>  Target platform: desktop (default) | web | android | ios
                       (aliases: chrome/safari/firefox = web; linux/macos/windows
-                      = desktop). Web serves a WebGPU build with live reload.
-    -r, --renderer <r> Render backend: hybrid (default) | wgpu (first-party,
-                      experimental). Pins it via cargo features.
+                      = desktop). Web serves a WebGPU/WebGL2 build with live reload.
     --port <n>        Dev-server port for -d web (default: 8080)
     -p, --package <n> Run a specific workspace member / sample by name
                       (aliases: --example, --bin)
@@ -134,8 +128,6 @@ fn print_help() {
 {BOLD}pebbles build OPTIONS{RESET}  {DIM}(always builds optimized/release){RESET}
     -d, --device <t>  Target: desktop (default) → target/release/<bin>; web →
                       a static wasm bundle in ./dist; android | ios → guidance.
-    -r, --renderer <r> Render backend: hybrid (default) | wgpu — same
-                      features as `run`, forwarded to cargo (and Trunk on web).
     -p, --package <n> Build a specific workspace member by name
                       (aliases: --example, --bin)
 
@@ -143,14 +135,12 @@ fn print_help() {
     pebbles create hello && cd hello && pebbles run
     pebbles create --template widget my-widget   {DIM}# a reusable widget package{RESET}
     pebbles run -p desktop          {DIM}# run a sample from the workspace root{RESET}
-    pebbles run -d web              {DIM}# build to wasm + open in a WebGPU browser{RESET}
+    pebbles run -d web              {DIM}# build to wasm + open in the browser{RESET}
     pebbles run -p counter -d web   {DIM}# run a specific sample on the web{RESET}
     pebbles run -p desktop --watch crates   {DIM}# also hot-restart on framework edits{RESET}
-    pebbles run --renderer wgpu     {DIM}# run on the first-party wgpu renderer{RESET}
-    pebbles run --release --renderer wgpu   {DIM}# optimized release on wgpu{RESET}
+    pebbles run --release           {DIM}# optimized release build{RESET}
     pebbles build                   {DIM}# release binary → target/release/<bin>{RESET}
     pebbles build -d web            {DIM}# static wasm bundle → ./dist (deployable){RESET}
-    pebbles create app2 --renderer wgpu     {DIM}# scaffold defaulting to wgpu{RESET}
     cd examples/counter && pebbles run
     pebbles run --log trace
     pebbles doctor

@@ -14,11 +14,11 @@ shell (which rasterizes the backend-neutral display list it paints into).
 - **Decoration & primitives** — `BoxDecoration`, borders, shadows, gradients,
   images, text, scrolling, and the full `Render*` object set (flex, stack,
   padding, clip, transform, paragraph, text field, and more).
-- **Text** — cosmic-text shapes and breaks lines for every backend; `TextLayout`,
+- **Text** — cosmic-text shapes and breaks lines; `TextLayout`,
   caret / selection / hit-testing and keyboard motion are Pebbles' own, and glyphs reach
-  the renderer as backend-neutral glyph runs.
+  the renderer as glyph runs.
 
-The render backend is chosen by a feature (Vello Hybrid by default; the first-party wgpu renderer is opt-in during the migration). This crate sits above `pebbles-icons` and below `pebbles-core` in
+Rendering is done by `pebbles-gpu` (wgpu), which consumes this crate's display list. This crate sits above `pebbles-icons` and below `pebbles-core` in
 the 11-crate framework
 (foundation → icons → render → {core → widgets, gpu} → shell → umbrella `pebbles`).
 

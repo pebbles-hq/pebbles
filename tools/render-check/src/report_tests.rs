@@ -14,7 +14,6 @@ fn result(name: &str, status: Status) -> CaseResult {
         limits: None,
         probes: vec![("p", Some("bad \"q\"".to_string()))],
         fallbacks: vec![("unknown-op", 2)],
-        smoke: Some(SmokeMetrics { max_tile_delta: 1.0, coverage_iou: 1.0 }),
         note: String::new(),
         artifacts: None,
         millis_reference: 1,

@@ -1,6 +1,6 @@
 # pebbles
 
-A Flutter-style, desktop-first GUI framework built on [Vello](https://vello.dev).
+A Flutter-style, desktop-first GUI framework with its own wgpu renderer.
 
 This is the front-door crate app authors depend on. Pebbles pairs Flutter's
 widget model for building UI (the three-tree Widget → Element → RenderObject

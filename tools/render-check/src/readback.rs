@@ -23,8 +23,8 @@ pub fn unpad_rows(mapped: &[u8], width: u32, height: u32, padded: u32) -> Vec<u8
     out
 }
 
-/// Premultiplied → straight alpha (`round(c * 255 / a)`; alpha 0 → all zero), so the
-/// smoke image is in the candidate's (unpremultiplied) encoding.
+/// Premultiplied → straight alpha (`round(c * 255 / a)`; alpha 0 → all zero), the
+/// candidate's (unpremultiplied) encoding.
 pub fn unpremultiply_in_place(rgba: &mut [u8]) {
     for px in rgba.as_chunks_mut::<4>().0 {
         let a = u32::from(px[3]);

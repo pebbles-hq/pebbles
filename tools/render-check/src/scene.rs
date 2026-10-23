@@ -32,7 +32,7 @@ pub fn logical_scene(case: &Case, frame: u32) -> Scene {
 }
 
 /// Mirror the runner (`app/runner/render.rs`): the logical scene appended under the DPI scale.
-/// The candidate and the smoke reference both render THIS Scene value (candidate scale 1.0).
+/// The candidate renders THIS Scene value (candidate scale 1.0).
 pub fn frame_scene(logical: &Scene, scale: f64) -> Scene {
     let mut frame = Scene::new();
     frame.append(logical, Some(kurbo::Affine::scale(scale)));

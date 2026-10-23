@@ -254,7 +254,6 @@ impl App {
 
         log::init();
         // S56: wgpu/naga `log` records (validation layers, hal errors) into the same log.
-        #[cfg(feature = "wgpu")]
         pebbles_gpu::install_log_bridge();
 
         // Reduced-motion: query the platform once at startup so widgets can default their
@@ -319,7 +318,6 @@ impl App {
             let mut runner = Runner::new(self);
             runner.set_started_at(started_at);
             // P11: the device-lost waker sends through this proxy.
-            #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
             runner.set_proxy(event_loop.create_proxy());
             event_loop.run_app(&mut runner)?;
             log::info(log::Cat::General, "pebbles app exited cleanly");

@@ -1,4 +1,4 @@
-//! The per-case runner (§6.11): build → frame scene → candidate → stability → smoke →
+//! The per-case runner (§6.11): build → frame scene → candidate → stability →
 //! verdict → artifacts. `main.rs` adds the watchdog and the report files.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -10,8 +10,7 @@ use crate::args::{RefMode, Tolerance};
 use crate::candidate::Candidate;
 use crate::case::{Case, Category, Expect, Reference};
 use crate::golden::Golden;
-use crate::metric::{Rgba8, compare, smoke_compare};
-use crate::reference::HybridReference;
+use crate::metric::{Rgba8, compare};
 use crate::report::{CaseResult, diff_image, side_by_side};
 use crate::scene::{frame_scene, logical_scene};
 use crate::status::Status;
@@ -22,7 +21,6 @@ use crate::{png_io, probe};
 #[derive(Clone, Debug)]
 pub struct RunOptions {
     pub reference: RefMode,
-    pub smoke: bool,
     pub reference_dir: PathBuf,
     pub tolerance: Tolerance,
     pub determinism: bool,
@@ -39,7 +37,6 @@ impl Default for RunOptions {
         let a = crate::args::Args::default();
         Self {
             reference: a.reference,
-            smoke: a.smoke,
             reference_dir: a.reference_dir,
             tolerance: a.tolerance,
             determinism: false,
@@ -57,10 +54,9 @@ pub struct Outcome {
     pub candidate: Option<Rgba8>,
 }
 
-/// Candidate + smoke reference on one device.
+/// The candidate renderer and the run options.
 pub struct Runner {
     pub candidate: Candidate,
-    smoke: HybridReference,
     pub opts: RunOptions,
 }
 
@@ -88,26 +84,18 @@ fn verdict(pass: bool, e: Expect) -> Status {
     }
 }
 
-/// The premultiplied RGBA8 of an opaque-forced background.
-fn bg_rgba8(c: peniko::Color) -> [u8; 4] {
-    let p = c.with_alpha(1.0).to_rgba8();
-    [p.r, p.g, p.b, p.a]
-}
-
 impl Runner {
     /// A runner on a new device; `Err(NoAdapter)` means exit 3.
     pub fn new(opts: RunOptions) -> Result<Self, CheckError> {
         let mut candidate = Candidate::new()?;
         candidate.set_tier_a(opts.tier_a);
-        let smoke = HybridReference::new(candidate.device().clone(), candidate.queue().clone());
-        Ok(Self { candidate, smoke, opts })
+        Ok(Self { candidate, opts })
     }
 
-    /// New device for both sides (after a PANIC or GPU_ERROR).
+    /// A new device (after a PANIC or GPU_ERROR).
     pub fn recreate(&mut self) -> Result<(), CheckError> {
         self.candidate.recreate()?;
         self.candidate.set_tier_a(self.opts.tier_a);
-        self.smoke = HybridReference::new(self.candidate.device().clone(), self.candidate.queue().clone());
         Ok(())
     }
 
@@ -145,7 +133,6 @@ impl Runner {
             }),
             probes: Vec::new(),
             fallbacks: Vec::new(),
-            smoke: None,
             note: String::new(),
             artifacts: None,
             millis_reference: 0,
@@ -190,25 +177,9 @@ impl Runner {
         r.millis_candidate = t.elapsed().as_millis();
 
         let t = Instant::now();
-        // The transitional vello smoke reference cannot survive the Robustness slice's hostile
-        // input (a 1e-6 dash pattern exhausts memory inside vello_hybrid); Smoke never decides
-        // a status, so it is skipped there.
-        let smoke_img = if self.opts.smoke && case.slice != crate::case::Slice::Robustness {
-            match self.render_smoke(case) {
-                Ok(img) => Some(img),
-                Err((status, note)) => {
-                    r.status = status;
-                    r.note = note;
-                    return Outcome { result: r, candidate: Some(cand) };
-                }
-            }
-        } else {
-            None
-        };
-        r.smoke = smoke_img.as_ref().and_then(|s| smoke_compare(s, &cand, bg_rgba8(case.background)).ok());
         let reference = self.judge(case, &cand, &mut r);
         r.millis_reference = t.elapsed().as_millis();
-        self.write_artifacts(case, reference.as_ref().or(smoke_img.as_ref()), &cand, &mut r);
+        self.write_artifacts(case, reference.as_ref(), &cand, &mut r);
         Outcome { result: r, candidate: Some(cand) }
     }
 
@@ -235,17 +206,6 @@ impl Runner {
                 Err((Status::Unstable, format!("frame {last} differs from a fresh renderer's at ({x},{y})")))
             }
         }
-    }
-
-    fn render_smoke(&mut self, case: &Case) -> Result<Rgba8, (Status, String)> {
-        let (w, h) = case.device_size();
-        let built = catch_unwind(|| frame_scene(&logical_scene(case, 0), case.scale))
-            .map_err(|p| (Status::Panic, format!("build: {}", panic_message(&*p))))?;
-        let smoke = &mut self.smoke;
-        let data = catch_unwind(AssertUnwindSafe(|| smoke.render_rgba(&built, w, h, case.background)))
-            .map_err(|p| (Status::Panic, format!("smoke reference: {}", panic_message(&*p))))?
-            .map_err(|e| (Status::GpuError, e.to_string()))?;
-        Ok(Rgba8 { width: w, height: h, data })
     }
 
     /// Render the case with the golden model (§6.7a). An op the model does not support yet
@@ -285,7 +245,7 @@ impl Runner {
                         r.note = e.to_string();
                         return None;
                     }
-                    // Self-goldens land with V12; until then smoke + no hard status judge.
+                    // Self-goldens land with V12; until then such cases stay unjudged.
                     Err(_) => None,
                 }
             }
@@ -310,8 +270,8 @@ impl Runner {
             }
             if r.status == Status::Unjudged {
                 r.note = match case.reference {
-                    Reference::SelfGolden => "no self-golden yet (V12); smoke only".into(),
-                    _ => "no reference image; smoke only".into(),
+                    Reference::SelfGolden => "no self-golden yet (V12)".into(),
+                    _ => "no reference image".into(),
                 };
             }
             return None;

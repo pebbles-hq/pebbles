@@ -10,8 +10,8 @@ use super::Scene;
 use super::op::{Geometry, Glyph, LayerEffect, NormalizedCoord, Op, PathHint, PixelSnap};
 
 /// The fill-rule for a recorded layer's clip path. Pebbles only ever clips with a fill
-/// rule (never a stroked-outline clip), and `vello_hybrid`'s `push_layer` clip is a filled
-/// path regardless — so a stroked clip-style degrades to `NonZero` at record time.
+/// rule (never a stroked-outline clip), so a stroked clip-style degrades to `NonZero` at
+/// record time.
 fn clip_fill_rule(s: peniko::StyleRef<'_>) -> Fill {
     match s {
         peniko::StyleRef::Fill(f) => f,
@@ -20,7 +20,7 @@ fn clip_fill_rule(s: peniko::StyleRef<'_>) -> Fill {
 }
 
 /// The drawing surface RenderObjects paint into — records each verb as an `Op` on the
-/// retained list. Signatures mirror the old vello backend exactly.
+/// retained list.
 pub struct Painter<'a> {
     scene: &'a mut Scene,
     hint: PathHint,
@@ -338,10 +338,9 @@ impl<'a> Painter<'a> {
         self.scene.push(Op::Fragment { transform, ops: Arc::clone(&fragment.ops) });
     }
 
-    /// Record a shaped glyph run (owned; the flush resolves glyphs against the hybrid
-    /// atlas in `Resources`).
-    // Mirrors the vello backend's `draw_glyphs` signature exactly (backend parity); the flat
-    // font+size+coords+brush+transforms+style+glyphs list is the call contract, not a smell.
+    /// Record a shaped glyph run (owned; `pebbles-gpu` rasterizes the glyphs into its atlas).
+    // The flat font+size+coords+brush+transforms+style+glyphs list is the call contract,
+    // not a smell.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_glyphs(
         &mut self,

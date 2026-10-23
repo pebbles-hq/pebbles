@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::CheckError;
 use crate::case::{Category, Slice};
-use crate::metric::{Metrics, Rgba8, SmokeMetrics, combined_mask, delta, luma};
+use crate::metric::{Metrics, Rgba8, combined_mask, delta, luma};
 use crate::status::Status;
 use crate::thresholds::Limits;
 
@@ -15,7 +15,6 @@ pub struct RunInfo {
     pub git_rev: String,
     pub platform_tag: String,
     pub reference_mode: String,
-    pub smoke: bool,
     pub tolerance: String,
     pub adapter_name: String,
     pub backend: String,
@@ -45,7 +44,6 @@ pub struct CaseResult {
     pub probes: Vec<(&'static str, Option<String>)>,
     /// Non-zero `label=count` pairs of the candidate's `FrameStats::unsupported`.
     pub fallbacks: Vec<(&'static str, u32)>,
-    pub smoke: Option<SmokeMetrics>,
     /// Panic message / GPU error / why a case is unjudged.
     pub note: String,
     /// Artifact directory (relative to the report), when written.
@@ -128,9 +126,8 @@ pub fn report_md(info: &RunInfo, results: &[CaseResult]) -> String {
     let msaa = info.msaa.map_or("unknown".to_string(), |n| n.to_string());
     let _ = writeln!(
         s,
-        "reference={} smoke={} candidate=pebbles-gpu adapter={} | {} | {} | {} {} msaa={msaa} tolerance={} git={}\n",
+        "reference={} candidate=pebbles-gpu adapter={} | {} | {} | {} {} msaa={msaa} tolerance={} git={}\n",
         info.reference_mode,
-        if info.smoke { "on" } else { "off" },
         info.adapter_name,
         info.backend,
         info.device_type,
@@ -167,13 +164,6 @@ pub fn report_md(info: &RunInfo, results: &[CaseResult]) -> String {
         let keys: Vec<String> = r.fallbacks.iter().map(|(k, n)| format!("{k}={n}")).collect();
         let _ = writeln!(s, "| {} | {} |", r.name, keys.join(" "));
     }
-    s.push_str("\n| case | smoke | max_tile_delta | coverage_iou |\n|---|---|---|---|\n");
-    for r in results {
-        if let Some(sm) = r.smoke {
-            let v = if sm.passes() { "PASS" } else { "FAIL" };
-            let _ = writeln!(s, "| {} | {v} | {:.2} | {:.4} |", r.name, sm.max_tile_delta, sm.coverage_iou);
-        }
-    }
     s.push_str(
         "\n| case | slice | category | status | max_interior | pct_over | mae | limits | artifacts | note |\n\
          |---|---|---|---|---|---|---|---|---|---|\n",
@@ -208,11 +198,10 @@ pub fn report_json(info: &RunInfo, results: &[CaseResult]) -> String {
     let mut s = String::new();
     let _ = write!(
         s,
-        "{{\n  \"schema\": 1,\n  \"git_rev\": \"{}\", \"platform_tag\": \"{}\", \"reference_mode\": \"{}\", \"smoke\": {}, \"tolerance\": \"{}\",\n",
+        "{{\n  \"schema\": 1,\n  \"git_rev\": \"{}\", \"platform_tag\": \"{}\", \"reference_mode\": \"{}\", \"tolerance\": \"{}\",\n",
         e(&info.git_rev),
         e(&info.platform_tag),
         e(&info.reference_mode),
-        info.smoke,
         e(&info.tolerance)
     );
     let _ = writeln!(
@@ -252,17 +241,9 @@ pub fn report_json(info: &RunInfo, results: &[CaseResult]) -> String {
             })
             .collect();
         let fb: Vec<String> = r.fallbacks.iter().map(|(k, n)| format!("\"{}\": {n}", e(k))).collect();
-        let smoke = r.smoke.map_or("null".to_string(), |sm| {
-            format!(
-                "{{ \"pass\": {}, \"max_tile_delta\": {}, \"coverage_iou\": {} }}",
-                sm.passes(),
-                f(sm.max_tile_delta),
-                f(sm.coverage_iou)
-            )
-        });
         let _ = write!(
             s,
-            "    {{ \"name\": \"{}\", \"slice\": \"{:?}\", \"category\": \"{:?}\", \"status\": \"{}\", \"expect\": \"{}\",\n      \"device_size\": [{}, {}], \"scale\": {},\n      \"metrics\": {metrics},\n      \"limits\": {limits},\n      \"probes\": [{}], \"fallbacks\": {{{}}}, \"smoke\": {smoke}, \"note\": \"{}\", \"millis_reference\": {}, \"millis_candidate\": {} }}{}\n",
+            "    {{ \"name\": \"{}\", \"slice\": \"{:?}\", \"category\": \"{:?}\", \"status\": \"{}\", \"expect\": \"{}\",\n      \"device_size\": [{}, {}], \"scale\": {},\n      \"metrics\": {metrics},\n      \"limits\": {limits},\n      \"probes\": [{}], \"fallbacks\": {{{}}}, \"note\": \"{}\", \"millis_reference\": {}, \"millis_candidate\": {} }}{}\n",
             e(&r.name),
             r.slice,
             r.category,

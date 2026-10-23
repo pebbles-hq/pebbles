@@ -301,48 +301,6 @@ mod tests {
     use super::*;
     use pebbles_testing::Harness;
 
-    /// V27: render `scene` with pebbles-gpu and the transitional smoke reference and judge it
-    /// with the Smoke metric. No adapter skips, unless `PEBBLES_REQUIRE_GPU=1`.
-    fn live_smoke(name: &str, scene: &pebbles_render::paint::Scene, w: u32, h: u32, bg: Color) {
-        use render_check::{CheckError, case::Category, live::check_scene};
-        match check_scene(name, Category::Screen, scene, w, h, bg) {
-            Ok(out) => assert!(out.passed(), "{}", out.summary()),
-            Err(CheckError::NoAdapter(e)) if std::env::var("PEBBLES_REQUIRE_GPU").as_deref() != Ok("1") => {
-                eprintln!("SKIP {name}: no GPU adapter ({e})");
-            }
-            Err(e) => panic!("{name}: {e}"),
-        }
-    }
-
-    fn desktop_scene(section: Section) -> pebbles_render::paint::Scene {
-        store::init();
-        store::go_to(section);
-        let mut h = Harness::new().window(1280.0, 840.0);
-        h.mount(app);
-        h.settle();
-        h.draw()
-    }
-
-    #[test]
-    // Known to miss the Smoke metric's coverage IoU (0.905 / 0.932 < 0.97) on anti-aliasing
-    // fringe alone (no content difference; 36 px of 1 075 200 differ by > 96): the 05 §6.10
-    // `ink > 8` rule counts AA on thin-line UI. Pending an owner decision on §6.10 (V27).
-    #[ignore = "gpu; misses the 05 §6.10 Smoke IoU on AA fringe, pending owner decision (V27)"]
-    fn smoke_desktop_dashboard() {
-        let s = desktop_scene(Section::Dashboard);
-        live_smoke("example/desktop_dashboard", &s, 1280, 840, theme().colors.background);
-    }
-
-    #[test]
-    // Known to miss the Smoke metric's coverage IoU (0.905 / 0.932 < 0.97) on anti-aliasing
-    // fringe alone (no content difference; 36 px of 1 075 200 differ by > 96): the 05 §6.10
-    // `ink > 8` rule counts AA on thin-line UI. Pending an owner decision on §6.10 (V27).
-    #[ignore = "gpu; misses the 05 §6.10 Smoke IoU on AA fringe, pending owner decision (V27)"]
-    fn smoke_desktop_products() {
-        let s = desktop_scene(Section::Products);
-        live_smoke("example/desktop_products", &s, 1280, 840, theme().colors.background);
-    }
-
     #[cfg(debug_assertions)] // only the count-asserting tests use it
     fn blank() -> impl IntoWidget {
         container()

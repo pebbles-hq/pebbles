@@ -148,59 +148,6 @@ pub fn compare(r: &Rgba8, c: &Rgba8, over_threshold: u8) -> Result<Metrics, Metr
     })
 }
 
-/// The transitional Smoke metric (§6.10).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct SmokeMetrics {
-    pub max_tile_delta: f64,
-    pub coverage_iou: f64,
-}
-
-impl SmokeMetrics {
-    /// `max tile_delta ≤ 24` and `coverage_iou ≥ 0.97`.
-    pub fn passes(&self) -> bool {
-        self.max_tile_delta <= 24.0 && self.coverage_iou >= 0.97
-    }
-}
-
-/// 8×8-tile mean delta and ink IoU against the premultiplied background `bg`.
-pub fn smoke_compare(r: &Rgba8, c: &Rgba8, bg: [u8; 4]) -> Result<SmokeMetrics, MetricError> {
-    if (r.width, r.height) != (c.width, c.height) {
-        return Err(MetricError::SizeMismatch {
-            reference: (r.width, r.height),
-            candidate: (c.width, c.height),
-        });
-    }
-    let mut max_tile_delta = 0.0f64;
-    for ty in (0..r.height).step_by(8) {
-        for tx in (0..r.width).step_by(8) {
-            let (mut sr, mut sc, mut n) = ([0u64; 4], [0u64; 4], 0u64);
-            for y in ty..(ty + 8).min(r.height) {
-                for x in tx..(tx + 8).min(r.width) {
-                    let (a, b) = (r.px(x, y), c.px(x, y));
-                    for k in 0..4 {
-                        sr[k] += u64::from(a[k]);
-                        sc[k] += u64::from(b[k]);
-                    }
-                    n += 1;
-                }
-            }
-            for k in 0..4 {
-                let d = (sr[k] as f64 - sc[k] as f64).abs() / n as f64;
-                max_tile_delta = max_tile_delta.max(d);
-            }
-        }
-    }
-    let ink = |p: &[u8]| (0..4).any(|k| p[k].abs_diff(bg[k]) > 8);
-    let (mut inter, mut union) = (0u64, 0u64);
-    for (a, b) in r.data.as_chunks::<4>().0.iter().zip(c.data.as_chunks::<4>().0.iter()) {
-        let (ia, ib) = (ink(a), ink(b));
-        inter += u64::from(ia && ib);
-        union += u64::from(ia || ib);
-    }
-    let coverage_iou = if union == 0 { 1.0 } else { inter as f64 / union as f64 };
-    Ok(SmokeMetrics { max_tile_delta, coverage_iou })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,15 +210,6 @@ mod tests {
         assert!(at(20, 30) && at(39, 30) && at(30, 19) && at(30, 40));
         assert!(!at(30, 30), "interior");
         assert!(!at(5, 5) && !at(60, 60), "background");
-    }
-
-    #[test]
-    fn smoke_ignores_aa_but_catches_missing_content() {
-        assert!(smoke_compare(&square(0), &square(0), WHITE).unwrap().passes());
-        let empty = Rgba8::filled(64, 64, WHITE);
-        let s = smoke_compare(&square(0), &empty, WHITE).unwrap();
-        assert!(!s.passes());
-        assert_eq!(s.coverage_iou, 0.0);
     }
 
     #[test]

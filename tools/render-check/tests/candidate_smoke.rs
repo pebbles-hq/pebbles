@@ -44,14 +44,13 @@ fn candidate_renders_solid_rect() {
 }
 
 /// V14 AC3: the exact rect passes end to end — judged against the golden model (V44/V47), with
-/// a passing Smoke metric and the expected candidate pixels.
+/// the expected candidate pixels.
 #[test]
 #[ignore = "gpu"]
 fn exact_rect_passes_end_to_end() {
     let Some(mut runner) = gpu_or_skip(Runner::new(RunOptions::default())) else { return };
     let out = runner.run_case(&smoke_case());
     assert_eq!(out.result.status, Status::Pass, "{}", out.result.note);
-    assert!(out.result.smoke.expect("smoke on by default").passes(), "{:?}", out.result.smoke);
     let img = out.candidate.expect("candidate image");
     assert!(near(img.px(32, 32), [0x33, 0x66, 0xFF, 255], 1));
 }

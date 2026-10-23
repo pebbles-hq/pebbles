@@ -1,4 +1,4 @@
-#![cfg(all(not(target_family = "wasm"), any(feature = "vello-hybrid", feature = "wgpu")))]
+#![cfg(not(target_family = "wasm"))]
 
 //! Headless regression checks for the wgpu glyph pipeline:
 //!   1. glyphs land on one baseline (not scattered) — catches the `placement.top`
@@ -66,12 +66,6 @@ fn bundled_families_and_weights_render() {
 #[test]
 #[ignore = "gpu"]
 fn color_emoji_renders() {
-    // vello_hybrid (the transitional smoke backend, deleted at Phase 7) cannot rasterize CBDT
-    // bitmap glyphs; the first-party wgpu renderer does (R29 color glyphs).
-    if cfg!(feature = "vello-hybrid") {
-        println!("SKIP color_emoji_renders: vello-hybrid has no CBDT bitmap glyphs (05 §8.3)");
-        return;
-    }
     // The committed CBDT test font (V22), registered before capture builds its TextEnv — no
     // system emoji font involved.
     register_emoji_font();

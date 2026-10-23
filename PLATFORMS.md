@@ -25,7 +25,7 @@ there is no per-platform widget set. That includes:
 - All layout & primitives, every input/display/feedback/navigation component, the
   full theme + styling system.
 - The reactive runtime (signals, effects, memos, resources), animations, timers.
-- GPU rendering (Vello), scrolling & fling physics.
+- GPU rendering (`pebbles-gpu` on wgpu), scrolling & fling physics.
 - **Pointer input** — mouse and trackpad, including trackpad gestures.
 - Text shaping, rich text, bidi/RTL, and in-field IME/composition.
 
@@ -198,7 +198,9 @@ rustdoc, so the restriction is visible at the call site too:
 
 ## Troubleshooting the web build
 
-**Blank white page.** Pebbles' default renderer (Vello Hybrid) is **WebGPU-only** — no WebGL2 fallback is compiled into it — so the browser must provide a WebGPU adapter. A blank canvas almost always means it could not, so enable it:
+**Blank white page.** Pebbles renders with WebGPU when the browser offers it and falls back to
+WebGL2 otherwise, so any current browser should draw. The console's `GPU:` line names the
+backend in use. For WebGPU speed (or if WebGL2 is also unavailable), enable WebGPU:
 
 - **Chrome/Edge:** `chrome://flags` → **Unsafe WebGPU Support** = Enabled; on
   **Linux** also enable **Vulkan** — then relaunch. Verify at `chrome://gpu`
@@ -207,7 +209,7 @@ rustdoc, so the restriction is visible at the call site too:
 - **Firefox:** `about:config` → `dom.webgpu.enabled = true` (Nightly / recent).
 - **Safari:** 26+ ships WebGPU on by default.
 
-If WebGPU is on and it is still blank, open DevTools → Console: Pebbles installs a
+If it is still blank, open DevTools → Console: Pebbles installs a
 panic hook, so a Rust panic prints there with a readable message.
 
 **Slow first load.** The dev (debug) wasm is large; `pebbles run -d web --release`

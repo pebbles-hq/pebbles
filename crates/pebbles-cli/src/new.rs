@@ -1,6 +1,6 @@
 //! `pebbles create <name>` — scaffold a Pebbles project from a template.
 //!
-//! The templates themselves (and the placeholder renderer) live in
+//! The templates themselves (and their placeholder substitution) live in
 //! [`crate::template`]; this module is only argument parsing and file writing.
 
 use std::fs;
@@ -16,11 +16,9 @@ pub fn run(args: &[String]) -> ExitCode {
     let mut kind = "app";
     let mut source = Source::Git; // portable by default
     let mut list = false;
-    // The app's DEFAULT render backend feature. Both backends (vello-hybrid, wgpu)
-    // are always wired; this only picks which one a plain `pebbles run` / `cargo run` uses.
-    let mut renderer = "vello-hybrid";
+    let mut deprecated_renderer = false;
 
-    let mut it = args.iter();
+    let mut it = args.iter().peekable();
     while let Some(a) = it.next() {
         match a.as_str() {
             "--list" => list = true,
@@ -39,32 +37,24 @@ pub fn run(args: &[String]) -> ExitCode {
             s if s.starts_with("--template=") => {
                 kind = &s["--template=".len()..];
             }
-            "-r" | "--renderer" | "--backend" => match it.next() {
-                Some(v) => match parse_renderer(v) {
-                    Some(r) => renderer = r,
-                    None => {
-                        term::error(&format!("unknown renderer `{v}` — use: hybrid | wgpu"));
-                        return ExitCode::FAILURE;
-                    }
-                },
-                None => {
-                    term::error("`--renderer` needs a value: hybrid | wgpu");
-                    return ExitCode::FAILURE;
+            // Deprecated: accept and ignore one value, but never swallow the next flag.
+            "-r" | "--renderer" | "--backend" => {
+                if it.peek().is_some_and(|v| !v.starts_with('-')) {
+                    it.next();
                 }
-            },
-            s if s.starts_with("--renderer=") => match parse_renderer(&s["--renderer=".len()..]) {
-                Some(r) => renderer = r,
-                None => {
-                    term::error("unknown renderer — use: hybrid | wgpu");
-                    return ExitCode::FAILURE;
-                }
-            },
+                deprecated_renderer = true;
+            }
+            s if s.starts_with("--renderer=") || s.starts_with("--backend=") => deprecated_renderer = true,
             s if s.starts_with('-') => {
                 term::error(&format!("unknown option `{s}` for `pebbles create`"));
                 return ExitCode::FAILURE;
             }
             s => name = Some(s),
         }
+    }
+
+    if deprecated_renderer {
+        term::warn(crate::run::RENDERER_DEPRECATED);
     }
 
     if list {
@@ -115,9 +105,9 @@ pub fn run(args: &[String]) -> ExitCode {
         }
     };
 
-    term::banner(&format!("Creating Pebbles {} `{name}` ({renderer})", template.name));
+    term::banner(&format!("Creating Pebbles {} `{name}`", template.name));
 
-    if let Err(code) = write_template(template, dir, name, renderer, &dep) {
+    if let Err(code) = write_template(template, dir, name, &dep) {
         // Best-effort cleanup: a half-written project is worse than none.
         let _ = fs::remove_dir_all(dir);
         return code;
@@ -137,7 +127,6 @@ fn write_template(
     template: &Template,
     dir: &Path,
     name: &str,
-    renderer: &str,
     dep: &dyn Fn(&str, bool) -> String,
 ) -> Result<(), ExitCode> {
     for file in template.files {
@@ -148,7 +137,7 @@ fn write_template(
             term::error(&format!("could not create {}: {e}", parent.display()));
             return Err(ExitCode::FAILURE);
         }
-        let contents = template::render(file.contents, name, renderer, dep);
+        let contents = template::render(file.contents, name, dep);
         if let Err(e) = fs::write(&path, contents) {
             term::error(&format!("could not write {}: {e}", path.display()));
             return Err(ExitCode::FAILURE);
@@ -184,16 +173,6 @@ fn local_crates_dir() -> Result<PathBuf, String> {
         ));
     }
     Ok(crates)
-}
-
-/// Map a `--renderer` value to the cargo feature the app should default to.
-/// Accepts friendly synonyms; returns `None` for anything unknown.
-fn parse_renderer(s: &str) -> Option<&'static str> {
-    match s.to_ascii_lowercase().as_str() {
-        "hybrid" | "vello-hybrid" | "vello_hybrid" | "default" => Some("vello-hybrid"),
-        "wgpu" => Some("wgpu"),
-        _ => None,
-    }
 }
 
 /// Cargo's rules, plus the ones that only bite later: a name that is a Rust

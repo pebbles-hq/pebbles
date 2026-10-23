@@ -278,10 +278,9 @@ impl Runner {
         self.ui.layout(&mut self.text, logical);
         let layout = t.elapsed();
 
-        // NaN tripwire (dev mode): a non-finite size/offset becomes a NaN path
-        // coordinate that corrupts vello's GPU glyph atlas and panics its CPU
-        // renderer. Throttled to every 8th frame — the full-tree scan is dev-only
-        // diagnostics, not something every frame should pay for.
+        // NaN tripwire (dev mode): a non-finite size/offset becomes a NaN path coordinate that
+        // the renderer drops (hiding a layout bug). Throttled to every 8th frame — the full-tree
+        // scan is dev-only diagnostics, not something every frame should pay for.
         if log::dev_mode()
             && fno.is_multiple_of(8)
             && let Some(bad) = self.ui.render_tree().nan_report()
@@ -599,7 +598,7 @@ fn follow_up(
     occluded: &mut bool,
 ) {
     match outcome {
-        PresentOutcome::Presented | PresentOutcome::Skipped | PresentOutcome::RedrawRequested => {}
+        PresentOutcome::Presented | PresentOutcome::RedrawRequested => {}
         PresentOutcome::Occluded => *occluded = true,
         PresentOutcome::RecreateSurface => {
             let id = surface.device_index();

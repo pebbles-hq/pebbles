@@ -1,5 +1,5 @@
 //! The winit [`ApplicationHandler`] engine behind [`App`](super::App): owns the wgpu
-//! surface(s), the Vello renderer, the [`Ui`] engine(s), and all persistent input
+//! surface(s), the `pebbles-gpu` renderer, the [`Ui`] engine(s), and all persistent input
 //! state, and drives the reconcile → layout → paint → present loop.
 //!
 //! Split by concern: [`input`] (event → intent translation), [`render`] (the frame
@@ -20,7 +20,6 @@ use pebbles_widgets::{MenuBar, View};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
-#[cfg(any(target_family = "wasm", all(feature = "wgpu", not(feature = "vello-hybrid"))))]
 use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{Key, NamedKey};
@@ -125,10 +124,7 @@ pub(crate) enum PebblesUserEvent {
     /// (web) An async GPU recovery could not rebuild the context or surface (08 §6.6).
     GpuRecoveryFailed { window: Arc<Window>, error: String },
     /// (native) A GPU device was lost — wake and recover (08 §6.8).
-    #[cfg_attr(
-        any(target_family = "wasm", feature = "vello-hybrid", not(feature = "wgpu")),
-        allow(dead_code)
-    )] // sent only by the native wgpu waker
+    #[cfg_attr(target_family = "wasm", allow(dead_code))] // sent only by the native wgpu waker
     GpuLost,
     /// (web) WebGL context lost on the canvas (08 P04): drop the GPU, wait for the restore.
     GpuContextLost,
@@ -201,7 +197,7 @@ pub(super) struct Runner {
     native_menu: Option<crate::native_menu::NativeMenus>,
 
     // gpu
-    /// The vello GPU context. `Option` because on web it is briefly moved OUT into
+    /// The GPU context. `Option` because on web it is briefly moved OUT into
     /// the async surface-creation task and handed back via [`PebblesUserEvent`]; on
     /// desktop it is always `Some` (the surface is built synchronously in `resumed`).
     /// Access with `self.context.as_ref()/as_mut().unwrap()` — it is only `None`
@@ -212,7 +208,6 @@ pub(super) struct Runner {
     host_init: Option<HostInit>,
     /// The loop's proxy: (web) the async GPU-init task delivers the finished surface
     /// through it; (native wgpu) the device-lost waker sends `GpuLost` (P11).
-    #[cfg(any(target_family = "wasm", all(feature = "wgpu", not(feature = "vello-hybrid"))))]
     proxy: Option<EventLoopProxy<PebblesUserEvent>>,
     /// (web) A surface request is in flight — don't start a second one if `resumed`
     /// fires again before it lands.
@@ -348,7 +343,6 @@ impl Runner {
             native_menu: None,
             context: None,
             host_init: None,
-            #[cfg(any(target_family = "wasm", all(feature = "wgpu", not(feature = "vello-hybrid"))))]
             proxy: None,
             #[cfg(target_family = "wasm")]
             gpu_pending: false,
@@ -412,7 +406,6 @@ impl Runner {
     /// (web) Store the proxy the async GPU-init task uses to hand the finished
     /// surface back into the loop. Called once by [`App::run`](super::App::run)
     /// before `spawn_app` (web), or before `run_app` for the device-lost waker (native wgpu).
-    #[cfg(any(target_family = "wasm", all(feature = "wgpu", not(feature = "vello-hybrid"))))]
     pub(super) fn set_proxy(&mut self, proxy: EventLoopProxy<PebblesUserEvent>) {
         self.proxy = Some(proxy);
     }
@@ -749,7 +742,6 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 let mut init = HostInit::new(event_loop);
                 // 08 §6.8 (P11): a device lost while idle wakes the loop (the waker only sends
                 // an event; the runner recovers on its own thread).
-                #[cfg(all(feature = "wgpu", not(feature = "vello-hybrid")))]
                 if let Some(p) = self.proxy.clone() {
                     init.gpu = init.gpu.clone().with_device_lost_waker(Arc::new(move || {
                         let _ = p.send_event(PebblesUserEvent::GpuLost);
