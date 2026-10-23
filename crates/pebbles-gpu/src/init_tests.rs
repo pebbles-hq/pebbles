@@ -219,3 +219,11 @@ fn parse_render_thread_env() {
     assert_eq!(web.render_threading, RenderThreading::Inline, "the web always renders inline");
     assert_eq!(GpuInit::headless().render_threading, RenderThreading::Inline);
 }
+
+/// 08 §17.8 sign-off table: no desktop row has been signed yet, so every OS renders inline.
+#[test]
+fn default_threading_matches_signoff() {
+    for os in [HostOs::Windows, HostOs::MacOs, HostOs::Linux, HostOs::Web, HostOs::Other] {
+        assert_eq!(default_threading(os), RenderThreading::Inline, "{os:?}");
+    }
+}
