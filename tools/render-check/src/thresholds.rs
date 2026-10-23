@@ -24,8 +24,10 @@ const fn l(over_threshold: u8, max_pct_over: f64, max_interior: u8, max_mae: f64
 
 /// The §8.1 table. `None` for `Analytic` (probes only). `Smoke` is structural (§6.10) and
 /// has no pixel limits of its own; it gets the all-zero row only so every non-Analytic
-/// category resolves. Canonical = Linux + lavapipe. Until §8.2 records a calibrated relaxed
-/// set (V19), `Relaxed` equals `Canonical` (it may only ever be looser, never stricter).
+/// category resolves. Canonical = Linux + lavapipe. `Relaxed` (real GPUs) is the V19
+/// calibration of 05 §8.2: the canonical row, loosened only where a real adapter's p100
+/// exceeded it, and only up to the observed value rounded up (never by a percentage); it is
+/// never stricter than canonical and stays below every mutation-failure value of §8.2.
 pub fn limits(cat: Category, tol: Tolerance) -> Option<Limits> {
     let canonical = match cat {
         Category::Exact => l(0, 0.0, 0, 0.0),
@@ -44,8 +46,16 @@ pub fn limits(cat: Category, tol: Tolerance) -> Option<Limits> {
         Category::Smoke => l(0, 0.0, 0, 0.0),
         Category::Analytic => return None,
     };
-    Some(match tol {
-        Tolerance::Canonical | Tolerance::Relaxed => canonical,
+    Some(match (tol, cat) {
+        (Tolerance::Canonical, _) => canonical,
+        // Nearest sampling under rotation: hardware sub-texel precision (Vulkan
+        // `subTexelPrecisionBits`) flips the texel for pixel centres within 1/256 of a texel
+        // edge (Iris Xe: img/brush_transform_rotate 0.708 % over, mae 0.903).
+        (Tolerance::Relaxed, Category::Image) => Limits { max_pct_over: 0.71, max_mae: 0.91, ..canonical },
+        // Fixed-function blend rounding differs by one LSB at half alpha (Iris Xe: layer/
+        // opacity_* every pixel ±1, mae 0.383).
+        (Tolerance::Relaxed, Category::Layer) => Limits { max_mae: 0.39, ..canonical },
+        (Tolerance::Relaxed, _) => canonical,
     })
 }
 

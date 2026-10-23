@@ -39,6 +39,9 @@ pub fn cases() -> Vec<Case> {
         harness("text/scaled_transform_3x", Text, P2, W, H, scaled_transform_3x),
         harness("text/selection_caret", Text, P2, W, H, selection_caret),
         ops("text/glyph_run_synthetic", Text, P2, W, H, glyph_run_synthetic),
+        // V19: three fonts drawing the SAME glyph ids at the same size and pen bins in one scene,
+        // so a glyph cache that ignores the font bytes (the C09 defect) draws the wrong shapes.
+        ops("text/two_fonts_same_glyph_ids", Text, P2, W, H, two_fonts_same_glyph_ids),
         // R42 text shadow: the run's union blurred once (V53 case).
         ops("text/shadow_blur", Text, P2, 320, 96, shadow_blur),
         // COLR (R29): the committed colr-test.ttf, judged by the golden COLR evaluator (V51).
@@ -265,6 +268,23 @@ fn glyph_run_synthetic(p: &mut Painter<'_>) {
             y,
         });
         p.draw_glyphs(&font, size, &[], &ink, Affine::IDENTITY, None, peniko::Fill::NonZero, glyphs);
+    }
+}
+
+fn two_fonts_same_glyph_ids(p: &mut Painter<'_>) {
+    let fonts = pebbles_render::fonts::builtin_fonts();
+    let ink = peniko::Brush::Solid(peniko::Color::from_rgb8(17, 24, 39));
+    // Inter, JetBrains Mono, Lora (builtin order); whole-pixel pens so every row shares the bins.
+    for (row, i) in [0usize, 2, 5].into_iter().enumerate() {
+        let Some((_, bytes)) = fonts.get(i) else { continue };
+        let font = peniko::FontData::new(peniko::Blob::from(bytes.to_vec()), 0);
+        let y = 50.0 + 80.0 * row as f32;
+        let glyphs = (36u32..=56).enumerate().map(|(k, id)| pebbles_render::paint::Glyph {
+            id,
+            x: 10.0 + k as f32 * 16.0,
+            y,
+        });
+        p.draw_glyphs(&font, 24.0, &[], &ink, Affine::IDENTITY, None, peniko::Fill::NonZero, glyphs);
     }
 }
 
