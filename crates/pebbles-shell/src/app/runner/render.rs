@@ -35,7 +35,7 @@ impl Runner {
     /// Rebuild the WHOLE GPU stack — instance, adapter, device, every surface, every renderer —
     /// when a device is lost or poisoned (08 §6.5). A renderer-level rebuild is not enough: a
     /// lost device hands out invalid resources forever. UI state survives (no remount).
-    /// Retries at most once per second. Returns whether a reset ran (the caller re-renders).
+    /// Retries are spaced by [`reset_backoff`]. Returns whether a reset ran (the caller re-renders).
     pub(super) fn recover_gpu_if_poisoned(&mut self) -> bool {
         use pebbles_foundation::log::Level;
         // (web) An async recovery is already in flight.
@@ -55,7 +55,23 @@ impl Runner {
         let Some(init) = self.host_init.clone() else { return false };
         self.gpu_reset_requested = false;
         let started = Instant::now();
-        self.gpu_retry_at = Some(started + Duration::from_secs(1));
+        // 08 §6.7: a reset that never presented counts as failed; the wait doubles from 1 s to a
+        // 10 s ceiling, and the process never exits over a lost GPU.
+        if self.gpu_reset_unconfirmed {
+            self.gpu_reset_failures += 1;
+            if self.gpu_reset_failures == 5 {
+                gpu_log(
+                    Level::Error,
+                    &format!(
+                        "GPU resets keep failing ({} in a row); retrying every 10 s. {}",
+                        self.gpu_reset_failures,
+                        crate::gpu::repeated_reset_guidance()
+                    ),
+                );
+            }
+        }
+        self.gpu_reset_unconfirmed = true;
+        self.gpu_retry_at = Some(started + reset_backoff(self.gpu_reset_failures));
         // 3. One line per lost device.
         let g = self.gpu_generation;
         for lost in self.context.as_ref().map(|c| c.lost_devices()).unwrap_or_default() {
@@ -108,12 +124,14 @@ impl Runner {
             self.renderers.resize_with(ctx.device_count(), || None);
         }
         if let Some(error) = failure {
-            self.gpu_reset_failures += 1;
             self.gpu_reset_requested = true;
-            let n = self.gpu_reset_failures;
-            gpu_log(Level::Error, &format!("GPU stack rebuild failed (attempt {n}, retry in 1 s): {error}"));
+            let n = self.gpu_reset_failures + 1;
+            let wait = reset_backoff(n).as_secs();
+            gpu_log(
+                Level::Error,
+                &format!("GPU stack rebuild failed (attempt {n}, retry in {wait} s): {error}"),
+            );
         } else {
-            self.gpu_reset_failures = 0;
             self.gpu_generation += 1;
             let ms = started.elapsed().as_millis();
             gpu_log(Level::Warn, &format!("GPU stack rebuilt (generation={}, {ms} ms)", self.gpu_generation));
@@ -372,6 +390,11 @@ impl Runner {
             self.started_at,
             outcome == PresentOutcome::Presented,
         );
+        if outcome == PresentOutcome::Presented {
+            // 08 §6.7: the first present after a reset confirms it.
+            self.gpu_reset_unconfirmed = false;
+            self.gpu_reset_failures = 0;
+        }
         if outcome != PresentOutcome::Presented {
             follow_up(
                 outcome,
@@ -518,6 +541,11 @@ impl Runner {
             self.started_at,
             outcome == PresentOutcome::Presented,
         );
+        if outcome == PresentOutcome::Presented {
+            // 08 §6.7: the first present after a reset confirms it.
+            self.gpu_reset_unconfirmed = false;
+            self.gpu_reset_failures = 0;
+        }
         if outcome != PresentOutcome::Presented {
             // Secondary windows track occlusion from P12; an occluded acquire just skips here.
             let mut occluded = false;
@@ -593,14 +621,28 @@ fn follow_up(
     }
 }
 
+/// The wait before the next GPU reset after `failures` consecutive failed resets (08 §6.7):
+/// 1 s, 2 s, 4 s, 8 s, then 10 s forever.
+pub(super) fn reset_backoff(failures: u32) -> Duration {
+    Duration::from_secs(1u64.checked_shl(failures).unwrap_or(u64::MAX).clamp(1, 10))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::should_render;
+    use super::{reset_backoff, should_render};
 
     /// 08 §5.7: an occluded window renders nothing (and so requests no frames).
     #[test]
     fn occluded_skips_frame() {
         assert!(!should_render(true));
         assert!(should_render(false));
+    }
+
+    #[test]
+    fn reset_backoff_sequence() {
+        let secs = |k| reset_backoff(k).as_secs();
+        assert_eq!([secs(0), secs(1), secs(2), secs(3), secs(4), secs(9)], [1, 2, 4, 8, 10, 10]);
+        assert_eq!(secs(64), 10, "no shift overflow");
+        assert_eq!(secs(u32::MAX), 10);
     }
 }

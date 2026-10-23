@@ -87,6 +87,11 @@ pub(crate) fn error_text(e: &HostError) -> String {
     format!("{} — {}", e.0, e.0.guidance(pebbles_gpu::HostOs::current()))
 }
 
+/// The §14.3 guidance logged once when GPU resets keep failing (08 §6.7, P19).
+pub(crate) fn repeated_reset_guidance() -> &'static str {
+    pebbles_gpu::GpuError::DeviceLost.guidance(pebbles_gpu::HostOs::current())
+}
+
 /// The native startup failure text (08 §14.3).
 #[cfg_attr(target_family = "wasm", allow(dead_code))] // native startup only
 pub(crate) fn startup_failure_text(e: &HostError) -> String {

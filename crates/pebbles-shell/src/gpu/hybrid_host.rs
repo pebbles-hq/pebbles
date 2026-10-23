@@ -130,6 +130,11 @@ pub(crate) fn census_values(_renderer: &Renderer) -> Option<[u64; 25]> {
     None
 }
 
+/// The guidance logged once when GPU resets keep failing (08 §6.7, P19).
+pub(crate) fn repeated_reset_guidance() -> &'static str {
+    "Update the GPU driver; run `pebbles doctor` to check the setup."
+}
+
 /// Recovery / secondary-window log text (the hybrid path keeps its message).
 pub(crate) fn error_text(e: &impl std::fmt::Display) -> String {
     e.to_string()

@@ -221,6 +221,8 @@ pub(super) struct Runner {
     gpu_retry_at: Option<Instant>,
     /// Consecutive failed rebuilds (0 after a success).
     gpu_reset_failures: u32,
+    /// A reset started and has not presented a frame yet (08 §6.7, P19).
+    gpu_reset_unconfirmed: bool,
     /// A reset was asked for outside `needs_reset()` (a failed rebuild, C19's `ResetGpu`, P20).
     gpu_reset_requested: bool,
     /// 1 at startup, +1 per rebuilt GPU context (logged with every loss/rebuild line).
@@ -346,6 +348,7 @@ impl Runner {
             renderers: Vec::new(),
             gpu_retry_at: None,
             gpu_reset_failures: 0,
+            gpu_reset_unconfirmed: false,
             gpu_reset_requested: false,
             gpu_generation: 1,
             #[cfg(target_family = "wasm")]
@@ -792,7 +795,6 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 #[cfg(target_family = "wasm")]
                 if let Some(started) = self.recovery_started.take() {
                     self.gpu_generation += 1;
-                    self.gpu_reset_failures = 0;
                     let line = format!(
                         "GPU stack rebuilt (generation={}, {} ms)",
                         self.gpu_generation,
@@ -808,11 +810,9 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     self.recovery_started = None;
                     self.recovery_window = Some(window);
                     self.gpu_reset_requested = true;
-                    self.gpu_reset_failures += 1;
-                    self.gpu_retry_at = Some(Instant::now() + Duration::from_secs(1));
                     let line = format!(
-                        "GPU stack rebuild failed (attempt {}, retry in 1 s): {error}",
-                        self.gpu_reset_failures
+                        "GPU stack rebuild failed (attempt {}, next retry by the 08 §6.7 backoff): {error}",
+                        self.gpu_reset_failures + 1
                     );
                     gpu_log(pebbles_foundation::log::Level::Error, &line);
                 }
@@ -1316,7 +1316,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         // `recover_gpu_if_poisoned` runs — an idle `Wait` loop would sit on a dead device.
         if self.gpu_reset_requested || self.context.as_ref().is_some_and(|c| c.needs_reset()) {
             match self.gpu_retry_at {
-                Some(t) if t > Instant::now() => event_loop.set_control_flow(ControlFlow::WaitUntil(t)),
+                Some(t) if t > Instant::now() => wake_by(event_loop, t),
                 _ => {
                     // (web) A failed async recovery left no active window to redraw.
                     #[cfg(target_family = "wasm")]
@@ -1344,7 +1344,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     }
                 }
             } else {
-                event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+                wake_by(event_loop, deadline);
             }
         }
         // Wake exactly when the next pending timeout (tooltip / hover-card delays,
@@ -1353,20 +1353,28 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         let now_secs = self.clock.elapsed().as_secs_f64();
         if let Some(at) = pebbles_core::animation::next_deadline(now_secs) {
             let remaining = (at - now_secs).max(0.0);
-            event_loop.set_control_flow(ControlFlow::WaitUntil(
-                Instant::now() + Duration::from_secs_f64(remaining),
-            ));
+            wake_by(event_loop, Instant::now() + Duration::from_secs_f64(remaining));
         }
         // Dev monkey-tester: hammer the UI with synthetic input and keep the loop hot.
         if self.storm.is_some() && self.mounted {
             self.storm_tick();
-            event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(10)));
+            wake_by(event_loop, Instant::now() + Duration::from_millis(10));
         }
         // Dev window churn: one tick per 16 ms until its cycles are done.
         if self.churn.as_ref().is_some_and(storm::WindowChurn::running) && self.mounted {
             self.churn_tick();
-            event_loop.set_control_flow(ControlFlow::WaitUntil(Instant::now() + storm::WindowChurn::TICK));
+            wake_by(event_loop, Instant::now() + storm::WindowChurn::TICK);
         }
+    }
+}
+
+/// Wake no later than `t`, keeping an earlier deadline already set this turn (a GPU retry, a
+/// long-press, an animation): the earliest wins, so no wake-up is pushed back (08 §6.7).
+fn wake_by(event_loop: &ActiveEventLoop, t: Instant) {
+    match event_loop.control_flow() {
+        ControlFlow::Poll => {}
+        ControlFlow::WaitUntil(existing) if existing <= t => {}
+        _ => event_loop.set_control_flow(ControlFlow::WaitUntil(t)),
     }
 }
 

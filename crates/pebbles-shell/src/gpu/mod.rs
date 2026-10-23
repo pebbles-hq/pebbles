@@ -20,7 +20,7 @@ mod wgpu_host;
 #[cfg_attr(target_family = "wasm", allow(unused_imports))] // startup_failure_text: native only
 pub(crate) use wgpu_host::{
     RenderContext, RenderSurface, Renderer, census_values, error_text, frame_stats_line, present_frame,
-    startup_failure_text,
+    repeated_reset_guidance, startup_failure_text,
 };
 
 #[cfg(feature = "vello-hybrid")]
@@ -29,7 +29,7 @@ mod hybrid_host;
 #[cfg_attr(target_family = "wasm", allow(unused_imports))] // startup_failure_text: native only
 pub(crate) use hybrid_host::{
     RenderContext, RenderSurface, Renderer, census_values, error_text, frame_stats_line, new_renderer,
-    present_frame, startup_failure_text,
+    present_frame, repeated_reset_guidance, startup_failure_text,
 };
 
 pub(crate) use pebbles_render::Scene;
