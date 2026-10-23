@@ -63,6 +63,14 @@ pub(crate) fn setup(name: &str) -> Option<(wgpu::Device, wgpu::Queue, Renderer)>
     Some((device, queue, renderer))
 }
 
+/// Whether the headless adapter supports texture view formats (not on GL, DR-05).
+pub(crate) fn view_formats_supported() -> bool {
+    let mut ctx = pollster::block_on(GpuContext::new(&GpuInit::headless()));
+    pollster::block_on(ctx.request_device(None)).ok().and_then(|id| ctx.device(id)).is_some_and(|gpu| {
+        gpu.adapter().get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VIEW_FORMATS)
+    })
+}
+
 /// `setup` with explicit budgets (M01 tests force tiny atlases).
 pub(crate) fn setup_with_budgets(
     name: &str,

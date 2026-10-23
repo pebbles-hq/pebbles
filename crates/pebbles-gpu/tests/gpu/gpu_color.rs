@@ -163,6 +163,11 @@ fn bgra_target_matches_rgba() {
 #[ignore = "gpu"]
 fn srgb_storage_with_unorm_view() {
     let Some((device, queue, mut r)) = setup("srgb_storage_with_unorm_view") else { return };
+    // GL has no texture view formats (DR-05): its sRGB path is `gl_srgb_fallback_opaque_matches`.
+    if !view_formats_supported() {
+        eprintln!("SKIP srgb_storage_with_unorm_view: the adapter has no VIEW_FORMATS (GL, DR-05)");
+        return;
+    }
     let want = rgba(&device, &queue, &mut r, &half_black_scene(), Color::WHITE);
     let (s, u) = (wgpu::TextureFormat::Rgba8UnormSrgb, wgpu::TextureFormat::Rgba8Unorm);
     let got = render_into(&device, &queue, &mut r, &half_black_scene(), Color::WHITE, s, u);

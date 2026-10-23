@@ -243,6 +243,101 @@ jobs:
       - name: TEST-SHELL-GPU (capture / glyph / render checks on wgpu)
         run: cargo test -p pebbles-shell -- --ignored --test-threads=1
 
+  # Windows WARP (05 V31): the DX12 software adapter, shaders through Fxc (DR-13). Informative until
+  # the Phase-5 promotion (05 §10.3); render-check on WARP is non-canonical (DR-09).
+  gpu-wgpu-windows-warp:
+    name: wgpu GPU tests (Windows WARP)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    continue-on-error: true   # 05 §10.3 promotion at the Phase-5 gate
+    defaults:
+      run:
+        shell: bash
+    env:
+      WGPU_BACKEND: dx12
+      WGPU_DX12_COMPILER: fxc
+      PEBBLES_CPU_RENDER: "1"
+      PEBBLES_REQUIRE_GPU: "1"
+      PEBBLES_GPU_STRICT: "1"
+      PEBBLES_EXPECT_ADAPTER: Microsoft Basic Render Driver
+      PEBBLES_RENDER_CHECK_PLATFORM: windows-warp
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: gpu-wgpu-windows-warp
+      - name: TEST-GPU-GPU on WARP
+        run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
+      - name: TEST-SHELL-GPU on WARP
+        run: cargo test -p pebbles-shell -- --ignored --test-threads=1
+      - name: RENDER-CHECK on WARP (informative, relaxed)
+        continue-on-error: true
+        run: cargo run -p render-check --release -- --out target/render-check --tolerance relaxed --determinism
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: render-check-windows-warp
+          path: target/render-check/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # macOS Metal (05 V32). Hosted macOS runners are VMs; whether they expose a Metal adapter to wgpu
+  # is unverified — if three runs find none, this becomes `if: false` and macOS stays manual (P02).
+  gpu-wgpu-macos-metal:
+    name: wgpu GPU tests (macOS Metal)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    continue-on-error: true   # 05 §10.3
+    env:
+      WGPU_BACKEND: metal
+      PEBBLES_REQUIRE_GPU: "1"
+      PEBBLES_GPU_STRICT: "1"
+      PEBBLES_EXPECT_ADAPTER: Apple
+      PEBBLES_RENDER_CHECK_PLATFORM: macos-metal
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: gpu-wgpu-macos-metal
+      - name: TEST-GPU-GPU on Metal
+        run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
+      - name: TEST-SHELL-GPU on Metal
+        run: cargo test -p pebbles-shell -- --ignored --test-threads=1
+      - name: RENDER-CHECK on Metal (informative, relaxed)
+        continue-on-error: true
+        run: cargo run -p render-check --release -- --out target/render-check --tolerance relaxed --determinism
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: render-check-macos-metal
+          path: target/render-check/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # Linux llvmpipe GL (05 V37): wgpu's GL backend through surfaceless EGL — the closest automated
+  # proxy for WebGL2 (not the WebGL2 release gate: that is P01/P02 + V33).
+  gpu-wgpu-linux-gl:
+    name: wgpu GPU tests (Linux llvmpipe GL)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    continue-on-error: true   # 05 §10.3
+    env:
+      WGPU_BACKEND: gl
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      PEBBLES_REQUIRE_GPU: "1"
+      PEBBLES_GPU_STRICT: "1"
+      PEBBLES_EXPECT_ADAPTER: llvmpipe
+      PEBBLES_RENDER_CHECK_PLATFORM: linux-gl
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: System deps (Mesa EGL/GLES)
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libegl-mesa0 libgl1-mesa-dri libgles2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: gpu-wgpu-linux-gl
+      - name: TEST-GPU-GPU on GL
+        run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
+
   # wgpu-core validation without a GPU on every OS (05 V38): the noop backend runs every GPU test's
   # calls through validation; pixel asserts are skipped under it (V09).
   gpu-noop-validation:
