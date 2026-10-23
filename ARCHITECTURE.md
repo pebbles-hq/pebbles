@@ -34,7 +34,7 @@ pebbles-widgets      the widget catalog: Flutter-style primitive widgets (groupe
                      concern) + the shadcn-style component set, theming, overlays,
                      windows API
 pebbles-shell        the app runner: winit event loop, wgpu surface, the GPU host
-                     (gpu/{mod,wgpu_host}.rs) + an offscreen capture path,
+                     (app/runner/gpu/{mod,wgpu_host}.rs) + an offscreen capture path,
                      AccessKit a11y, native menus / global hotkeys (feature-gated)
 pebbles-macros       the #[component] proc-macro
 pebbles              the umbrella crate: re-exports + `pebbles::prelude`

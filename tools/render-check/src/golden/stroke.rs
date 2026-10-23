@@ -1,5 +1,5 @@
 //! Stroke coverage (05 §6.7a): `kurbo::stroke` in local space at `(1/1024) / scale`, then
-//! [`fill_coverage`](super::coverage::fill_coverage); the 02 §5.5 hairline rule.
+//! [`fill_coverage`]; the 02 §5.5 hairline rule.
 
 use kurbo::{Affine, BezPath, Stroke, StrokeOpts};
 use peniko::Fill;
