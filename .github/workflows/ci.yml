@@ -338,6 +338,35 @@ jobs:
       - name: TEST-GPU-GPU on GL
         run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
 
+  # Headless-browser smoke of the web build on the WebGL2 path (05 V50, DR-27): counter in headless
+  # Chrome on SwiftShader with ?pebbles-force-webgl=1 must log `GPU: … backend=gl` and not panic.
+  web-smoke:
+    name: Web smoke (counter, WebGL2, headless Chrome)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true   # informative (DR-27)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        with:
+          tool: trunk
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: web-smoke
+      - name: Web smoke
+        run: bash scripts/web-smoke.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: web-smoke-chrome-log
+          path: chrome.log
+          retention-days: 14
+          if-no-files-found: ignore
+
   # wgpu-core validation without a GPU on every OS (05 V38): the noop backend runs every GPU test's
   # calls through validation; pixel asserts are skipped under it (V09).
   gpu-noop-validation:
