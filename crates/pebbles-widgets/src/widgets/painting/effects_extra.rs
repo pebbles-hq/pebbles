@@ -1,13 +1,13 @@
 //! More painting & effects widgets: [`clip_rect`], [`clip_oval`], [`clip_path`],
-//! [`color_filtered`], and [`shader_mask`] — siblings of the existing `clip_rrect` /
+//! [`color_filtered`], [`shader_mask`], [`image_filtered`] and [`backdrop_filter`] — siblings of the existing `clip_rrect` /
 //! `opacity`. Each wraps a single child and pushes a vello layer around (or over) it.
 
 use std::rc::Rc;
 
 use pebbles_foundation::{Color, Size};
 use pebbles_render::{
-    BezPath, BlendMode, BorderRadius, Gradient, RenderClipOval, RenderClipPath, RenderColorFilter,
-    RenderObject, RenderShaderMask,
+    BezPath, BlendMode, BorderRadius, Gradient, LayerEffect, RenderBackdropFilter, RenderClipOval,
+    RenderClipPath, RenderColorFilter, RenderImageFilter, RenderObject, RenderShaderMask,
 };
 
 use crate::widgets::{ClipRRect, clip_rrect};
@@ -150,6 +150,111 @@ impl RenderWidget for ShaderMask {
     fn update_render_object(&self, object: &mut dyn RenderObject) {
         if let Some(o) = object.downcast_mut::<RenderShaderMask>() {
             o.gradient = self.gradient.clone();
+        }
+    }
+    fn take_children(&mut self) -> Vec<AnyWidget> {
+        self.child.take().into_iter().collect()
+    }
+}
+
+// ===========================================================================
+// ImageFiltered
+// ===========================================================================
+
+/// Draws `child` through an image filter — blur, color matrix, dilate/erode or a chain
+/// (Flutter's `ImageFiltered`). The result is not clipped: a blur spreads past the child.
+/// Built by [`image_filtered`].
+#[derive(Clone)]
+pub struct ImageFiltered {
+    effect: LayerEffect,
+    child: Option<AnyWidget>,
+}
+
+/// See [`ImageFiltered`].
+pub fn image_filtered(effect: LayerEffect, child: impl IntoWidget) -> ImageFiltered {
+    ImageFiltered { effect, child: Some(child.into_widget()) }
+}
+
+pebbles_core::render_widget!(ImageFiltered);
+
+impl RenderWidget for ImageFiltered {
+    fn create_render_object(&self) -> Box<dyn RenderObject> {
+        Box::new(RenderImageFilter { effect: self.effect.clone() })
+    }
+    fn update_render_object(&self, object: &mut dyn RenderObject) {
+        if let Some(o) = object.downcast_mut::<RenderImageFilter>() {
+            o.effect = self.effect.clone();
+        }
+    }
+    fn take_children(&mut self) -> Vec<AnyWidget> {
+        self.child.take().into_iter().collect()
+    }
+}
+
+// ===========================================================================
+// BackdropFilter
+// ===========================================================================
+
+/// Filters what is painted behind its box with an image filter, then draws `child` on top —
+/// frosted glass (Flutter's `BackdropFilter` inside a `ClipRect` / `ClipRRect`: the filter is
+/// confined to this box, rounded by [`BackdropFilter::radius`]). Built by [`backdrop_filter`].
+#[derive(Clone)]
+pub struct BackdropFilter {
+    effect: LayerEffect,
+    radius: f64,
+    blend: BlendMode,
+    opacity: f32,
+    child: Option<AnyWidget>,
+}
+
+/// See [`BackdropFilter`]. Source-over at full opacity with square corners by default.
+pub fn backdrop_filter(effect: LayerEffect, child: impl IntoWidget) -> BackdropFilter {
+    BackdropFilter {
+        effect,
+        radius: 0.0,
+        blend: BlendMode::Normal,
+        opacity: 1.0,
+        child: Some(child.into_widget()),
+    }
+}
+
+impl BackdropFilter {
+    /// Round the filtered region's corners (logical px).
+    pub fn radius(mut self, radius: f64) -> Self {
+        self.radius = radius.max(0.0);
+        self
+    }
+
+    /// How the filtered backdrop is drawn back (Flutter's `BackdropFilter.blendMode`).
+    pub fn blend(mut self, blend: BlendMode) -> Self {
+        self.blend = blend;
+        self
+    }
+
+    /// Opacity of the filtered backdrop, `0.0..=1.0`.
+    pub fn opacity(mut self, opacity: f32) -> Self {
+        self.opacity = opacity.clamp(0.0, 1.0);
+        self
+    }
+}
+
+pebbles_core::render_widget!(BackdropFilter);
+
+impl RenderWidget for BackdropFilter {
+    fn create_render_object(&self) -> Box<dyn RenderObject> {
+        Box::new(RenderBackdropFilter {
+            effect: self.effect.clone(),
+            radius: self.radius,
+            blend: self.blend.into(),
+            opacity: self.opacity,
+        })
+    }
+    fn update_render_object(&self, object: &mut dyn RenderObject) {
+        if let Some(o) = object.downcast_mut::<RenderBackdropFilter>() {
+            o.effect = self.effect.clone();
+            o.radius = self.radius;
+            o.blend = self.blend.into();
+            o.opacity = self.opacity;
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {

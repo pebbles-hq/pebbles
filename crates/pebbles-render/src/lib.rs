@@ -46,24 +46,26 @@ pub use object::{HitBehavior, RenderObject, SemanticsFlag};
 pub use objects::{
     Canvas, Cursor, FlexParentData, FontFeature, FontVariation, IconData, IconKind, IconPrim, ParagraphStyle,
     Placeholder, PlaceholderAlignment, PointerButton, PointerEvent, RefreshState, RenderAlign,
-    RenderAspectRatio, RenderBaseline, RenderBoundary, RenderCanvas, RenderClipOval, RenderClipPath,
-    RenderClipRRect, RenderColorFilter, RenderColoredBox, RenderConstrainedBox, RenderCustomMultiChild,
-    RenderCustomSingleChild, RenderDecoratedBox, RenderFittedBox, RenderFlex, RenderFlow,
-    RenderFractionalTranslation, RenderFractionallySizedBox, RenderIcon, RenderIntrinsicHeight,
-    RenderIntrinsicWidth, RenderLimitedBox, RenderList, RenderMeasureProbe, RenderOffstage, RenderOpacity,
-    RenderOverflowBox, RenderPadding, RenderParagraph, RenderPointerBarrier, RenderPointerListener,
-    RenderPositionProbe, RenderRotatedBox, RenderScroll, RenderSemanticsBoundary, RenderShaderMask,
-    RenderSizedOverflowBox, RenderSpinner, RenderStack, RenderTable, RenderTextField, RenderTransform,
-    RenderView, RenderWrap, ScrollEvent, ScrollHandle, ScrollMetrics, ScrollNotification, ScrollPhysics,
-    ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps, SemanticsRole, SizeFn, StackFit,
-    StackParentData, StrutStyle, TableColumnWidth, TapCallback, TextDecorationStyle, TextFieldStyle,
-    TextShadow, TextSpanStyle, tabler,
+    RenderAspectRatio, RenderBackdropFilter, RenderBaseline, RenderBoundary, RenderCanvas, RenderClipOval,
+    RenderClipPath, RenderClipRRect, RenderColorFilter, RenderColoredBox, RenderConstrainedBox,
+    RenderCustomMultiChild, RenderCustomSingleChild, RenderDecoratedBox, RenderFittedBox, RenderFlex,
+    RenderFlow, RenderFractionalTranslation, RenderFractionallySizedBox, RenderIcon, RenderImageFilter,
+    RenderIntrinsicHeight, RenderIntrinsicWidth, RenderLimitedBox, RenderList, RenderMeasureProbe,
+    RenderOffstage, RenderOpacity, RenderOverflowBox, RenderPadding, RenderParagraph, RenderPointerBarrier,
+    RenderPointerListener, RenderPositionProbe, RenderRotatedBox, RenderScroll, RenderSemanticsBoundary,
+    RenderShaderMask, RenderSizedOverflowBox, RenderSpinner, RenderStack, RenderTable, RenderTextField,
+    RenderTransform, RenderView, RenderWrap, ScrollEvent, ScrollHandle, ScrollMetrics, ScrollNotification,
+    ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps, SemanticsRole, SizeFn,
+    StackFit, StackParentData, StrutStyle, TableColumnWidth, TapCallback, TextDecorationStyle,
+    TextFieldStyle, TextShadow, TextSpanStyle, tabler,
 };
 pub use text::{SystemFonts, TextCensus, TextEnv, TextLayout};
 pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};
 
 /// Re-export the active backend's retained scene type the paint layer targets.
 pub use crate::paint::Scene;
+/// Re-export the image filters of `ImageFiltered` / `BackdropFilter` (09 §10).
+pub use crate::paint::display_list::{BlurEdge, LayerEffect};
 /// Re-export the 2D affine transform used by [`RenderTransform`].
 pub use kurbo::Affine;
 /// Re-export the Bézier path type used by `ClipPath` clip delegates.

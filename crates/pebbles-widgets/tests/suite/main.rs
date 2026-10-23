@@ -22,6 +22,7 @@ mod control;
 mod date_field_range;
 mod default_text_style;
 mod design_language;
+mod effects;
 mod engine;
 mod error_boundary;
 mod field_lazy;

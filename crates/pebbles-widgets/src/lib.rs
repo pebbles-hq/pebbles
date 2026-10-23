@@ -112,8 +112,8 @@ pub use widgets::{
 };
 // painting & effects (siblings of clip_rrect / opacity)
 pub use widgets::{
-    ClipOval, ClipPath, ColorFiltered, ShaderMask, clip_oval, clip_path, clip_rect, color_filtered,
-    shader_mask,
+    BackdropFilter, ClipOval, ClipPath, ColorFiltered, ImageFiltered, ShaderMask, backdrop_filter, clip_oval,
+    clip_path, clip_rect, color_filtered, image_filtered, shader_mask,
 };
 // window metrics + mobile widgets (Flutter's MediaQuery / SafeArea / OrientationBuilder /
 // PopScope / SystemChrome). The `set_*` metrics are driven by the mobile shell.

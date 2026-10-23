@@ -106,8 +106,13 @@ impl From<&TextSpanStyle> for SpanSpec {
             underline: s.underline,
             strikethrough: s.strikethrough,
             overline: s.overline,
-            // A span with its own colors or decoration paint needs its own paint slot.
+            // A span with its own colors or decoration paint needs its own paint slot; so does
+            // any decorated span, so its decorations stop at its own glyphs (see
+            // `paint::paint_decorations`).
             has_color: s.color.is_some()
+                || s.underline
+                || s.overline
+                || s.strikethrough
                 || !s.shadows.is_empty()
                 || !s.font_variations.is_empty()
                 || s.decoration_color.is_some()

@@ -1,5 +1,6 @@
 //! More compositing effects: [`RenderClipOval`], [`RenderClipPath`],
-//! [`RenderColorFilter`], and [`RenderShaderMask`]. Each wraps a single child and
+//! [`RenderColorFilter`], [`RenderShaderMask`], [`RenderImageFilter`] and
+//! [`RenderBackdropFilter`]. Each wraps a single child and
 //! pushes a vello layer around (or over) it — the same shape as [`RenderClipRRect`],
 //! with a different clip shape or blend.
 
@@ -13,6 +14,7 @@ use super::decorated::gradient_brush;
 use crate::constraints::BoxConstraints;
 use crate::decoration::Gradient;
 use crate::object::RenderObject;
+use crate::paint::display_list::LayerEffect;
 use crate::tree::{LayoutCx, PaintCx};
 
 fn layout_single_child(cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
@@ -221,6 +223,76 @@ fn luminance_gradient(g: &Gradient, rect: Rect) -> peniko::Gradient {
         },
     };
     gradient_brush(&masked, rect)
+}
+
+// ---------------------------------------------------------------------------
+// RenderImageFilter — the child through an image filter
+// ---------------------------------------------------------------------------
+
+/// Paints the child offscreen and draws it through `effect` (Flutter's `ImageFiltered`). The
+/// filtered result is not clipped: a blur spreads past the child's box, as in Flutter.
+pub struct RenderImageFilter {
+    pub effect: LayerEffect,
+}
+
+impl RenderObject for RenderImageFilter {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
+        layout_single_child(cx, constraints)
+    }
+
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
+        let Some(child) = cx.children().first().copied() else { return };
+        cx.scene.push_effect_layer(self.effect.clone(), None::<&Rect>, Affine::IDENTITY);
+        cx.paint_child(child, offset + cx.child_offset(child));
+        cx.scene.pop_layer();
+    }
+
+    fn debug_name(&self) -> &'static str {
+        "RenderImageFilter"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RenderBackdropFilter — filter what is behind the box, then draw the child on top
+// ---------------------------------------------------------------------------
+
+/// Filters what is already painted under its box (rounded by `radius`) with `effect` and draws
+/// it back with `blend` at `opacity`; the child then paints on top, clipped to the same shape.
+/// Flutter's `ClipRRect(child: BackdropFilter(...))`, the frosted-glass pattern.
+pub struct RenderBackdropFilter {
+    pub effect: LayerEffect,
+    pub radius: f64,
+    pub blend: BlendMode,
+    pub opacity: f32,
+}
+
+impl RenderObject for RenderBackdropFilter {
+    fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
+        layout_single_child(cx, constraints)
+    }
+
+    fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
+        let bounds = Rect::from_origin_size(offset.to_point(), cx.size());
+        let alpha = self.opacity.clamp(0.0, 1.0);
+        if self.radius > 0.0 {
+            let shape = kurbo::RoundedRect::from_rect(bounds, self.radius);
+            cx.scene.push_backdrop_filter(self.effect.clone(), &shape, Affine::IDENTITY, self.blend, alpha);
+        } else {
+            cx.scene.push_backdrop_filter(self.effect.clone(), &bounds, Affine::IDENTITY, self.blend, alpha);
+        }
+        if let Some(child) = cx.children().first().copied() {
+            cx.paint_child_clipped(child, offset + cx.child_offset(child), bounds);
+        }
+        cx.scene.pop_layer();
+    }
+
+    fn clips_children(&self) -> bool {
+        true
+    }
+
+    fn debug_name(&self) -> &'static str {
+        "RenderBackdropFilter"
+    }
 }
 
 #[cfg(test)]

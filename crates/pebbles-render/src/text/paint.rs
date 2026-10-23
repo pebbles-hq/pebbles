@@ -162,7 +162,9 @@ pub(crate) fn paint_into(
             );
             crate::stats::bump_glyph_run();
         }
-        paint_decorations(scene, visible, line, origin, brushes);
+        // The elided line's glyph bytes index its reshaped text, not the paragraph's attrs.
+        let attrs = (!line.from_elided).then(|| &layout.shaped.paras[line.para].attrs);
+        paint_decorations(scene, visible, line, attrs, origin, brushes);
     }
 }
 
@@ -270,48 +272,98 @@ pub(crate) fn paint_backgrounds(
 
 /// Underline / overline / strikethrough of one line (§3.9.5 positions; T43 styles), never
 /// rounded. Thickness = the font's × the slot's multiplier.
+///
+/// cosmic-text 0.19 merges decoration spans too eagerly: a span is extended by the next glyph
+/// with equal decoration data even across undecorated glyphs in between, and its equality
+/// ignores our per-slot style / color / thickness. Each of its spans is therefore split into
+/// runs of consecutive glyphs that share the paint slot and the decoration actually set on
+/// their bytes (`attrs`), so every text span decorates only its own glyphs, in its own style
+/// (Flutter / CSS `text-decoration` semantics).
 fn paint_decorations(
     scene: &mut Painter<'_>,
     visible: Rect,
     line: &super::layout::VisualLine,
+    attrs: Option<&cosmic_text::AttrsList>,
     origin: Offset,
     brushes: &[TextPaint],
 ) {
     let glyphs = &line.layout.glyphs;
     let transform = Affine::translate((origin.x, origin.y));
+    // The decoration in effect on a glyph: its bytes' attrs, or the span's when unknown.
+    let deco_of = |g: &cosmic_text::LayoutGlyph, fallback: &cosmic_text::TextDecoration| {
+        attrs.map_or(*fallback, |a| a.get_span(g.start).text_decoration)
+    };
     for span in &line.layout.decorations {
-        let run = glyphs.get(span.glyph_range.clone()).unwrap_or(&[]);
-        let Some(first) = run.first() else { continue };
-        let x0 = run.iter().map(|g| g.x).fold(f32::INFINITY, f32::min);
-        let x1 = run.iter().map(|g| g.x + g.w).fold(f32::NEG_INFINITY, f32::max);
-        if origin.x + f64::from(x1) < visible.x0 || origin.x + f64::from(x0) > visible.x1 {
-            continue;
+        let range = span.glyph_range.start.min(glyphs.len())..span.glyph_range.end.min(glyphs.len());
+        let mut i = range.start;
+        while i < range.end {
+            let (slot, deco) = (glyphs[i].metadata, deco_of(&glyphs[i], &span.data.text_decoration));
+            let mut j = i + 1;
+            while j < range.end
+                && glyphs[j].metadata == slot
+                && deco_of(&glyphs[j], &span.data.text_decoration) == deco
+            {
+                j += 1;
+            }
+            paint_decoration_run(
+                scene,
+                visible,
+                line,
+                span,
+                &glyphs[i..j],
+                &deco,
+                transform,
+                origin,
+                brushes,
+            );
+            i = j;
         }
-        let paint = brushes
-            .get(first.metadata)
-            .or(brushes.first())
-            .cloned()
-            .unwrap_or_else(|| TextPaint::solid(peniko::Color::BLACK));
-        let size = span.font_size;
-        let deco = &span.data.text_decoration;
-        let underline = &span.data.underline_metrics;
-        let (x0, x1) = (f64::from(x0), f64::from(x1));
-        let mut emit = |top: f32, thickness_em: f32| {
-            let t = f64::from(thickness_em * size * paint.decoration_thickness.max(0.0));
-            let shapes = decoration::geometry(paint.decoration_style, x0, x1, f64::from(top), t);
-            decoration::paint(scene, transform, &shapes, &paint.decoration_brush);
-        };
-        if deco.underline != cosmic_text::UnderlineStyle::None {
-            emit(line.baseline - underline.offset * size, underline.thickness);
-        }
-        if deco.overline {
-            // The band's top at the font's ascent edge, the underline's thickness.
-            emit(line.baseline - span.data.ascent * size, underline.thickness);
-        }
-        if deco.strikethrough {
-            let m = &span.data.strikethrough_metrics;
-            emit(line.baseline - m.offset * size, m.thickness);
-        }
+    }
+}
+
+/// One run of [`paint_decorations`]: glyphs of one slot under one decoration.
+#[allow(clippy::too_many_arguments)] // the line, its span and the run, all used
+fn paint_decoration_run(
+    scene: &mut Painter<'_>,
+    visible: Rect,
+    line: &super::layout::VisualLine,
+    span: &cosmic_text::DecorationSpan,
+    run: &[cosmic_text::LayoutGlyph],
+    deco: &cosmic_text::TextDecoration,
+    transform: Affine,
+    origin: Offset,
+    brushes: &[TextPaint],
+) {
+    let has_any = deco.underline != cosmic_text::UnderlineStyle::None || deco.overline || deco.strikethrough;
+    let Some(first) = run.first().filter(|_| has_any) else { return };
+    let x0 = run.iter().map(|g| g.x).fold(f32::INFINITY, f32::min);
+    let x1 = run.iter().map(|g| g.x + g.w).fold(f32::NEG_INFINITY, f32::max);
+    if origin.x + f64::from(x1) < visible.x0 || origin.x + f64::from(x0) > visible.x1 {
+        return;
+    }
+    let paint = brushes
+        .get(first.metadata)
+        .or(brushes.first())
+        .cloned()
+        .unwrap_or_else(|| TextPaint::solid(peniko::Color::BLACK));
+    let size = first.font_size;
+    let underline = &span.data.underline_metrics;
+    let (x0, x1) = (f64::from(x0), f64::from(x1));
+    let mut emit = |top: f32, thickness_em: f32| {
+        let t = f64::from(thickness_em * size * paint.decoration_thickness.max(0.0));
+        let shapes = decoration::geometry(paint.decoration_style, x0, x1, f64::from(top), t);
+        decoration::paint(scene, transform, &shapes, &paint.decoration_brush);
+    };
+    if deco.underline != cosmic_text::UnderlineStyle::None {
+        emit(line.baseline - underline.offset * size, underline.thickness);
+    }
+    if deco.overline {
+        // The band's top at the font's ascent edge, the underline's thickness.
+        emit(line.baseline - span.data.ascent * size, underline.thickness);
+    }
+    if deco.strikethrough {
+        let m = &span.data.strikethrough_metrics;
+        emit(line.baseline - m.offset * size, m.thickness);
     }
 }
 
@@ -510,6 +562,44 @@ mod tests {
         let (rects, _) = deco("abcdef", &style("JetBrains Mono", 20.0), &[u]);
         assert_eq!(rects.len(), 1);
         assert!(near(rects[0].x0, 24.0, 0.01) && near(rects[0].x1, 48.0, 0.01), "{:?}", rects[0]);
+    }
+
+    /// Two underlined spans with plain text between them: two lines, none under the gap
+    /// (cosmic-text 0.19 alone merges them into one line across the gap).
+    #[test]
+    fn decorations_do_not_bridge_undecorated_text() {
+        let mut a = TextSpanStyle::new(0..1);
+        a.underline = true;
+        let mut b = TextSpanStyle::new(4..5);
+        b.underline = true;
+        let (rects, _) = deco("abcdef", &style("JetBrains Mono", 20.0), &[a, b]);
+        assert_eq!(rects.len(), 2, "{rects:?}");
+        assert!(near(rects[0].x0, 0.0, 0.01) && near(rects[0].x1, 12.0, 0.01), "{:?}", rects[0]);
+        assert!(near(rects[1].x0, 48.0, 0.01) && near(rects[1].x1, 60.0, 0.01), "{:?}", rects[1]);
+    }
+
+    /// Adjacent underlined spans with different styles each keep their own style.
+    #[test]
+    fn adjacent_decoration_styles_stay_separate() {
+        let mut solid = TextSpanStyle::new(0..2);
+        solid.underline = true;
+        let mut double = TextSpanStyle::new(2..4);
+        double.underline = true;
+        double.decoration_style = Some(TextDecorationStyle::Double);
+        let mut env = TextEnv::new();
+        let para = style("JetBrains Mono", 20.0);
+        let spans = [solid, double];
+        let layout = layout_for_test(&mut env, "abcd", &para, &spans, None);
+        let base = TextPaint::base(&para);
+        let paints: Vec<TextPaint> =
+            std::iter::once(base.clone()).chain(spans.iter().map(|s| base.for_span(s))).collect();
+        let mut scene = Scene::new();
+        paint_into(&mut Painter::new(&mut scene), &mut env, ALL, &layout, Offset::new(0.0, 0.0), &paints);
+        let rects = fills(&scene);
+        // One solid line under "ab", two parallel lines under "cd".
+        assert_eq!(rects.len(), 3, "{rects:?}");
+        assert_eq!(rects.iter().filter(|r| near(r.x0, 0.0, 0.01) && near(r.x1, 24.0, 0.01)).count(), 1);
+        assert_eq!(rects.iter().filter(|r| near(r.x0, 24.0, 0.01) && near(r.x1, 48.0, 0.01)).count(), 2);
     }
 
     /// Fills (rect, brush) painted for `text` with `style` as slot 0.

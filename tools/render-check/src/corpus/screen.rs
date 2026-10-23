@@ -8,8 +8,9 @@ use pebbles_render::paint::{Painter, kurbo, peniko};
 use pebbles_render::{BorderRadius, BoxShadow, Gradient, image_from_rgba8};
 use pebbles_testing::Harness;
 use pebbles_widgets::{
-    button, canvas, checkbox, chip, column, container, expanded, icon_button, list_tile, list_view, radio,
-    row, separator, slider, span, switch, table, text, text_field, text_rich, wrap,
+    Transform, backdrop_filter, button, canvas, checkbox, chip, column, container, expanded, icon,
+    icon_button, list_tile, list_view, positioned, radio, row, separator, slider, span, stack, switch, table,
+    text, text_field, text_rich, widget_span, wrap,
 };
 
 use kurbo::{Affine, BezPath, Point, Rect, RoundedRect, Stroke};
@@ -33,6 +34,10 @@ pub fn cases() -> Vec<Case> {
         harness("screen/code_editor_like", Screen, Screens, 900, 600, code_editor_like),
         harness("screen/markdown_like", Screen, Screens, 900, 1000, markdown_like),
         harness("screen/form", Screen, Screens, 600, 700, form),
+        // V53 step 3: Flutter-parity screens — DR-24 features used the way a Flutter app uses them.
+        harness("screen/flutter_parity_frosted_app_bar", Screen, Screens, 900, 700, frosted_app_bar),
+        harness("screen/flutter_parity_card_stack", Screen, Screens, 900, 600, card_stack),
+        harness("screen/flutter_parity_article", Screen, Screens, 800, 1000, article),
     ]);
     v
 }
@@ -129,9 +134,7 @@ fn shadow() -> BoxShadow {
 fn app_shell(h: &mut Harness) {
     let sidebar = column(
         (0..8)
-            .map(|i| {
-                list_tile(format!("Section {i}")).leading(pebbles_widgets::icon(tabler::HOME)).into_widget()
-            })
+            .map(|i| list_tile(format!("Section {i}")).leading(icon(tabler::HOME)).into_widget())
             .collect::<Vec<_>>(),
     );
     let toolbar = row(vec![
@@ -426,6 +429,172 @@ fn form(h: &mut Harness) {
     );
     h.press_tab();
     h.settle();
+}
+
+// ---- Flutter-parity screens (V53 step 3, DR-24) ----------------------------------------------
+
+/// A Flutter `Scaffold(extendBodyBehindAppBar)` with a frosted `BackdropFilter` app bar over a
+/// scrolling photo list: the blur samples the photos under the bar.
+fn frosted_app_bar(h: &mut Harness) {
+    // The list starts at the top edge, so the first photos sit under the translucent bar.
+    let mut items = Vec::new();
+    for i in 0..8u32 {
+        items.push(
+            container()
+                .margin(EdgeInsets::symmetric(16.0, 8.0))
+                .color(Color::WHITE)
+                .radius(BorderRadius::all(16.0))
+                .shadow(shadow())
+                .child(row(vec![
+                    picture(procedural(160, 110, i + 3), 160.0, 110.0).into_widget(),
+                    container()
+                        .padding(EdgeInsets::all(16.0))
+                        .child(
+                            column(vec![
+                                text(format!("Photo {}", i + 1)).size(18.0).bold().into_widget(),
+                                text("Golden hour over the harbour, shot on a long lens.").into_widget(),
+                            ])
+                            .spacing(6.0),
+                        )
+                        .into_widget(),
+                ]))
+                .into_widget(),
+        );
+    }
+    let bar = backdrop_filter(
+        pebbles_render::LayerEffect::Blur {
+            sigma_x: 10.0,
+            sigma_y: 10.0,
+            edge: pebbles_render::BlurEdge::Clamp,
+        },
+        container()
+            .height(64.0)
+            .color(Color::from_rgba8(255, 255, 255, 140))
+            .padding(EdgeInsets::symmetric(16.0, 0.0))
+            .child(row(vec![
+                icon_button(tabler::MENU_2).into_widget(),
+                expanded(text("Gallery").size(20.0).bold()).into_widget(),
+                icon_button(tabler::SEARCH).into_widget(),
+                icon_button(tabler::DOTS_VERTICAL).into_widget(),
+            ])),
+    );
+    h.mount_widget(stack(vec![
+        list_view(items).into_widget(),
+        positioned(bar).left(0.0).top(0.0).right(0.0).into_widget(),
+    ]));
+}
+
+/// Flutter's `Matrix4.identity()..setEntry(3, 2, 0.001)..rotateY(a)` (column-major).
+fn perspective_rotate_y(a: f64) -> [f64; 16] {
+    let (s, c) = a.sin_cos();
+    // P · Ry, P = identity with row 3 / column 2 = 0.001.
+    let p = 0.001;
+    [c, 0.0, -s, -p * s, 0.0, 1.0, 0.0, 0.0, s, 0.0, c, p * c, 0.0, 0.0, 0.0, 1.0]
+}
+
+fn stack_card(title: &str, seed: u32) -> pebbles_widgets::Container {
+    container()
+        .width(220.0)
+        .height(300.0)
+        .color(Color::WHITE)
+        .radius(BorderRadius::all(18.0))
+        .shadow(BoxShadow::new(Color::from_rgba8(0, 0, 0, 60), Offset::new(0.0, 10.0), 24.0, 0.0))
+        .child(column(vec![
+            picture(procedural(220, 180, seed), 220.0, 180.0).into_widget(),
+            container()
+                .padding(EdgeInsets::all(14.0))
+                .child(
+                    column(vec![
+                        text(title).size(18.0).bold().into_widget(),
+                        text("Tap to flip").into_widget(),
+                    ])
+                    .spacing(4.0),
+                )
+                .into_widget(),
+        ]))
+}
+
+/// A card stack: shadowed cards, the middle one mid-flip in perspective (Flutter's flip-card
+/// pattern), one rotated in plane and overlapping its neighbour.
+fn card_stack(h: &mut Harness) {
+    h.mount_widget(container().color(Color::from_rgb8(238, 241, 246)).padding(EdgeInsets::all(40.0)).child(
+        stack(vec![
+            positioned(stack_card("Lisbon", 1)).left(20.0).top(60.0).into_widget(),
+            positioned(Transform::matrix4(perspective_rotate_y(0.6), stack_card("Kyoto", 2)))
+                .left(300.0)
+                .top(40.0)
+                .into_widget(),
+            positioned(Transform::rotate(-0.12, stack_card("Oslo", 3))).left(560.0).top(70.0).into_widget(),
+        ]),
+    ));
+}
+
+/// A text-heavy article: decorations of every style, text shadows, highlight and inline icons.
+fn article(h: &mut Harness) {
+    use pebbles_render::{TextDecorationStyle as D, TextShadow};
+    let shade = |dy: f64, blur: f32, a: u8| TextShadow {
+        offset: Offset::new(0.0, dy),
+        blur_sigma: blur,
+        color: Color::from_rgba8(0, 0, 0, a),
+    };
+    let accent = Color::from_rgb8(220, 38, 38);
+    let para = |spans| text_rich(spans).into_widget();
+    h.mount_widget(
+        container().color(Color::WHITE).padding(EdgeInsets::all(40.0)).child(
+            column(vec![
+                text_rich(vec![span("The Quiet Harbour").size(40.0).bold().shadow(shade(3.0, 4.0, 70))])
+                    .into_widget(),
+                para(vec![
+                    widget_span(|| icon(tabler::CALENDAR).into_widget()),
+                    span(" 12 March  "),
+                    widget_span(|| icon(tabler::CLOCK).into_widget()),
+                    span(" 6 min read").color(Color::from_rgb8(100, 116, 139)),
+                ]),
+                para(vec![
+                    span("Morning fog lifts slowly. The "),
+                    span("ferries").underline(),
+                    span(" leave on time, the "),
+                    span("fishermen").underline().decoration_style(D::Wavy).decoration_color(accent),
+                    span(" mend their nets, and the "),
+                    span("market").underline().decoration_style(D::Dotted),
+                    span(" fills before nine. A "),
+                    span("double-underlined").underline().decoration_style(D::Double),
+                    span(" warning about the "),
+                    span("tide").underline().decoration_style(D::Dashed).decoration_thickness(2.0),
+                    span(" hangs by the pier."),
+                ]),
+                para(vec![
+                    span("Prices were "),
+                    span("€4.20").strikethrough().decoration_color(accent),
+                    span(" now €3.50 — an "),
+                    span("overlined").overline(),
+                    span(" note, a "),
+                    span("highlighted phrase").background(Color::from_rgb8(254, 240, 138)),
+                    span(" and a "),
+                    span("glowing").color(Color::WHITE).shadow(shade(0.0, 3.0, 200)),
+                    span(" word close the paragraph."),
+                ]),
+                container()
+                    .padding(EdgeInsets::all(20.0))
+                    .color(Color::from_rgb8(248, 250, 252))
+                    .radius(BorderRadius::all(12.0))
+                    .child(text_rich(vec![
+                        widget_span(|| icon(tabler::QUOTE).into_widget()),
+                        span(" The sea does not hurry, yet everything arrives.").italic().size(20.0),
+                    ]))
+                    .into_widget(),
+                para(vec![
+                    span("Tabular figures "),
+                    span("0123456789").font_feature(*b"tnum", 1),
+                    span(" and small caps "),
+                    span("Harbour Office").font_feature(*b"smcp", 1),
+                    span(" round out the typography."),
+                ]),
+            ])
+            .spacing(18.0)
+            .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start),
+        ),
+    );
 }
 
 #[cfg(test)]

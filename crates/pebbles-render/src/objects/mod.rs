@@ -40,7 +40,10 @@ pub use boundary::RenderBoundary;
 pub use canvas::{Canvas, RenderCanvas};
 pub use decorated::RenderDecoratedBox;
 pub use effects::{RenderClipRRect, RenderOpacity};
-pub use effects_extra::{RenderClipOval, RenderClipPath, RenderColorFilter, RenderShaderMask};
+pub use effects_extra::{
+    RenderBackdropFilter, RenderClipOval, RenderClipPath, RenderColorFilter, RenderImageFilter,
+    RenderShaderMask,
+};
 pub use fitted::RenderFittedBox;
 pub use flex::{FlexParentData, RenderFlex};
 pub use fractional::RenderFractionallySizedBox;
