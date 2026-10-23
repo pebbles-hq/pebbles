@@ -133,6 +133,33 @@ jobs:
             cargo check -p "$ex" --target ${{ matrix.target }}
             echo "::endgroup::"
           done
+      # WASM-WGPU and WASM-WEBGL (05 V33, DR-13): the shell and the umbrella with WebGPU only, and
+      # with the default-on WebGL2 fallback (the examples above already build that one).
+      - name: WASM-WGPU (shell + umbrella, WebGPU only)
+        if: matrix.target == 'wasm32-unknown-unknown'
+        run: cargo check -p pebbles-shell -p pebbles --target ${{ matrix.target }} --no-default-features
+      - name: WASM-WEBGL (shell + umbrella, WebGPU + WebGL2 fallback)
+        if: matrix.target == 'wasm32-unknown-unknown'
+        run: cargo check -p pebbles-shell -p pebbles --target ${{ matrix.target }}
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Wasm size (10 §12, M11): the counter example's raw cargo output, gzip-gated against
+  # scripts/wasm-size-budget.txt. Lowering the budget is free; raising it needs a DR.
+  # ───────────────────────────────────────────────────────────────────────────
+  wasm-size:
+    name: Wasm size (counter, WebGPU + WebGL2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: wasm-size
+      - name: Size check
+        run: ./scripts/wasm-size.sh --check
 
   # ───────────────────────────────────────────────────────────────────────────
   # Line coverage — NON-BLOCKING for now. Publishes a per-crate summary to the job
