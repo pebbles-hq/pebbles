@@ -322,7 +322,7 @@ enum Outcome {
 
 // --- web (`-d web`) ----------------------------------------------------------
 
-/// Build the app to WebAssembly and serve it in a WebGPU browser, with live
+/// Build the app to WebAssembly and serve it in a WebGPU or WebGL2 browser, with live
 /// rebuild-on-save. Delegates the wasm toolchain to **Trunk** (the standard
 /// bundler for winit/wgpu web apps): it runs `cargo build --target
 /// wasm32-unknown-unknown`, wasm-bindgen, serves over HTTP, and reloads the tab
@@ -424,8 +424,16 @@ pub(crate) fn ensure_index_html(member_dir: &Path, bin: &str) -> std::io::Result
     }
     let web_dir = member_dir.join(".pebbles").join("web");
     std::fs::create_dir_all(&web_dir)?;
+    let index = web_dir.join("index.html");
+    std::fs::write(&index, index_html(bin))?;
+    Ok(index)
+}
+
+/// The managed entry page for `<bin>`: a full-viewport canvas, a friendly message when the
+/// browser has neither WebGPU nor WebGL2, and the Trunk link that builds the crate.
+pub(crate) fn index_html(bin: &str) -> String {
     // href is relative to this index.html → back up to the crate's Cargo.toml.
-    let html = format!(
+    format!(
         r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -464,10 +472,7 @@ pub(crate) fn ensure_index_html(member_dir: &Path, bin: &str) -> std::io::Result
 <body></body>
 </html>
 "#
-    );
-    let index = web_dir.join("index.html");
-    std::fs::write(&index, html)?;
-    Ok(index)
+    )
 }
 
 // --- mobile (`-d android` / `-d ios`) ----------------------------------------
@@ -950,6 +955,21 @@ fn install_sigint(flag: Arc<AtomicBool>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn index_html_webgl_fallback_gate() {
+        let html = index_html("counter");
+        assert!(html.contains("getContext('webgl2')"));
+        assert!(html.contains("WebGPU or WebGL2"));
+        assert!(!html.contains("if (!navigator.gpu) {"));
+    }
+
+    #[test]
+    fn index_html_keeps_trunk_link() {
+        let html = index_html("counter");
+        assert!(html.contains(r#"data-trunk rel="rust""#));
+        assert!(html.contains(r#"data-bin="counter""#));
+    }
 
     #[test]
     fn package_name_parsing() {

@@ -57,19 +57,16 @@ pub fn run(_args: &[String]) -> ExitCode {
     // ── Desktop (the host) ───────────────────────────────────────────────────
     group(&format!("Desktop ({})", host_os()));
     #[cfg(target_os = "linux")]
-    match tool_version("vulkaninfo", &["--summary"]) {
-        Some(_) => item(St::Ok, "Vulkan", "vulkaninfo present"),
-        None => item(
-            St::Warn,
-            "Vulkan",
-            "vulkaninfo not found — Pebbles renders via wgpu/Vulkan; install your GPU driver \
-             (mesa-vulkan-drivers / vulkan-tools) if the window is black",
-        ),
+    {
+        let vulkan_ok = tool_version("vulkaninfo", &["--summary"]).is_some();
+        let egl_ok = !vulkan_ok && tool_version("eglinfo", &["-B"]).is_some();
+        let (status, label, message) = linux_gpu_status(vulkan_ok, egl_ok);
+        item(status, label, message);
     }
     #[cfg(target_os = "macos")]
-    item(St::Ok, "Metal", "built in on macOS");
+    item(St::Ok, "Metal", "Metal (built in)");
     #[cfg(target_os = "windows")]
-    item(St::Ok, "graphics", "Vulkan/DX12 via wgpu");
+    item(St::Ok, "graphics", "DirectX 12 via wgpu (software fallback: PEBBLES_CPU_RENDER=1 → WARP)");
     item(St::Ok, "run", "pebbles run   (the default target)");
 
     // ── Web ──────────────────────────────────────────────────────────────────
@@ -83,7 +80,11 @@ pub fn run(_args: &[String]) -> ExitCode {
         Some(v) => item(St::Ok, "trunk", &v),
         None => item(St::Warn, "trunk", "not found — `cargo install --locked trunk`"),
     }
-    item(St::Info, "browser", "needs WebGPU: Chrome/Edge, Safari 26+, or Firefox (see PLATFORMS.md)");
+    item(
+        St::Info,
+        "browser",
+        "WebGPU (preferred) or WebGL2 (automatic fallback) — Chrome/Edge, Safari, Firefox",
+    );
 
     // ── Android ──────────────────────────────────────────────────────────────
     group("Android  (pebbles run -d android)");
@@ -304,9 +305,43 @@ fn android_ndk(sdk: Option<&Path>) -> Option<PathBuf> {
     versions.pop() // newest by lexical version
 }
 
+/// The Linux GPU line: Vulkan first, then the EGL/GLES fallback wgpu uses without Vulkan.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn linux_gpu_status(vulkan_ok: bool, egl_ok: bool) -> (St, &'static str, &'static str) {
+    if vulkan_ok {
+        (St::Ok, "Vulkan", "Vulkan")
+    } else if egl_ok {
+        (St::Ok, "EGL/GLES", "EGL/GLES (no Vulkan — Pebbles uses its GL fallback)")
+    } else {
+        (
+            St::Warn,
+            "GPU",
+            "no Vulkan or EGL driver found — install mesa-vulkan-drivers (Vulkan) or libegl1 + \
+             libgl1-mesa-dri (GL); PEBBLES_CPU_RENDER=1 uses lavapipe/llvmpipe",
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{host_os, target_in_list, version_line};
+    use super::{St, host_os, linux_gpu_status, target_in_list, version_line};
+
+    #[test]
+    fn linux_vulkan_ok() {
+        assert!(matches!(linux_gpu_status(true, false), (St::Ok, "Vulkan", _)));
+    }
+
+    #[test]
+    fn linux_egl_fallback_ok() {
+        let (st, _, msg) = linux_gpu_status(false, true);
+        assert!(matches!(st, St::Ok) && msg.starts_with("EGL/GLES"));
+    }
+
+    #[test]
+    fn linux_neither_warns_and_mentions_cpu_render() {
+        let (st, _, msg) = linux_gpu_status(false, false);
+        assert!(matches!(st, St::Warn) && msg.contains("PEBBLES_CPU_RENDER=1"));
+    }
 
     #[test]
     fn version_line_prefers_stdout_and_trims() {
