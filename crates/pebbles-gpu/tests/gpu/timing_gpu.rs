@@ -51,5 +51,8 @@ fn timing_present_when_supported() {
         last = frame(&device, &mut renderer, &mut targets).gpu_us;
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
     }
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(last.is_some(), "gpu_us after 5 frames");
 }

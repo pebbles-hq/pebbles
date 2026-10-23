@@ -29,6 +29,9 @@ fn sdf_fractional_edge_is_half_covered() {
         p.set_pixel_snap(pebbles_render::paint::display_list::PixelSnap::Off);
         black(p, &Rect::new(10.5, 8.0, 30.0, 56.0));
     });
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for y in 9..=54 {
         let c = pixel(&px, W, 10, y);
         assert!((0..3).all(|i| (125..=130).contains(&c[i])), "column 10 row {y}: {c:?}");
@@ -40,6 +43,9 @@ fn sdf_fractional_edge_is_half_covered() {
 fn sdf_integer_rect_is_exact() {
     let Some((device, queue, mut r)) = setup("sdf_integer_rect_is_exact") else { return };
     let px = draw(&mut r, &device, &queue, |p| black(p, &Rect::new(8.0, 8.0, 40.0, 40.0)));
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for y in 0..W {
         for x in 0..W {
             let inside = (8..40).contains(&x) && (8..40).contains(&y);
@@ -55,6 +61,9 @@ fn sdf_circle_edge_profile() {
     let Some((device, queue, mut r)) = setup("sdf_circle_edge_profile") else { return };
     let px = draw(&mut r, &device, &queue, |p| black(p, &kurbo::Circle::new((32.0, 32.0), 20.0)));
     // Along the +x axis through the centre: pixel centres at 32.5 + k.
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, W, 49, 32)[0], 0, "distance 17.5: inside");
     assert_eq!(pixel(&px, W, 54, 32)[0], 255, "distance 22.5: outside");
     // Every pixel whose centre is within 0.1 px of the circle is about half covered.
@@ -109,6 +118,9 @@ fn stroke(p: &mut Painter<'_>, width: f64, shape: &impl kurbo::Shape) {
 fn sdf_one_px_border_is_crisp() {
     let Some((device, queue, mut r)) = setup("sdf_one_px_border_is_crisp") else { return };
     let px = draw(&mut r, &device, &queue, |p| stroke(p, 1.0, &Rect::new(10.5, 10.5, 50.5, 50.5)));
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for y in 12..48 {
         assert_eq!(pixel(&px, W, 10, y), [0, 0, 0, 255], "column 10 row {y}");
         assert_eq!(pixel(&px, W, 9, y), [255, 255, 255, 255], "column 9 row {y}");
@@ -148,6 +160,9 @@ fn card() -> kurbo::RoundedRect {
 fn sdf_border_matches_exact_coverage() {
     let Some((device, queue, mut r)) = setup("sdf_border_matches_exact_coverage") else { return };
     let sdf = draw(&mut r, &device, &queue, |p| stroke(p, 2.0, &card()));
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for y in 0..W {
         for x in 0..W {
             let (got, want) = (pixel(&sdf, W, x, y)[0], exact_border_value(card(), x, y));
@@ -206,6 +221,9 @@ fn sdf_ring() {
     let Some((device, queue, mut r)) = setup("sdf_ring") else { return };
     let px = draw(&mut r, &device, &queue, |p| stroke(p, 4.0, &kurbo::Circle::new((32.0, 32.0), 20.0)));
     // Along +x from the centre (32, 32): pixel x covers distances [x - 32, x - 31].
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, W, 51, 31)[0], 0, "distance ~20: on the ring");
     assert_eq!(pixel(&px, W, 47, 31)[0], 255, "distance ~16: inside the ring");
     assert_eq!(pixel(&px, W, 55, 31)[0], 255, "distance ~24: outside");

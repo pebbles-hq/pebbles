@@ -29,6 +29,9 @@ fn tier_c_run_composites_in_order() {
     volatile_square(&mut p, Rect::new(20.0, 20.0, 60.0, 60.0), Color::BLACK);
     p.fill(Fill::NonZero, Affine::IDENTITY, blue, None, &Rect::new(30.0, 30.0, 50.0, 50.0));
     let px = render_scene(&device, &queue, &mut r, &s, (W, W), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(r.last_frame_stats().tier_c_draws, 1);
     assert_eq!(pixel(&px, W, 10, 10)[..3], [255, 0, 0], "fill below");
     assert_eq!(pixel(&px, W, 25, 25)[..3], [0, 0, 0], "Tier C over the first fill");

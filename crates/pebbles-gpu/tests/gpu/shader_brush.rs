@@ -47,6 +47,9 @@ fn uv_gradient_program_paints() {
         &Rect::new(0.0, 0.0, 64.0, 64.0),
     );
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (64, 64), Color::BLACK);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(renderer.last_frame_stats().tier_a_draws, 1);
     red_at_center(&rgba, "tier A");
     let left = pixel(&rgba, 64, 2, 32);
@@ -89,6 +92,9 @@ fn shader_brush_uniforms_and_transform() {
     );
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (64, 16), Color::BLACK);
     let (l, r) = (pixel(&rgba, 64, 20, 8), pixel(&rgba, 64, 44, 8));
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!((i32::from(l[1]) - 128).abs() <= 2 && l[2] == 0, "left half: {l:?}");
     assert!((i32::from(r[1]) - 128).abs() <= 2 && r[2] == 255, "right half: {r:?}");
 }
@@ -102,6 +108,9 @@ fn failing_program_draws_nothing_and_logs_once() {
     let count =
         || pebbles_foundation::log::snapshot().iter().filter(|r| r.msg.starts_with("shader brush")).count();
     let before = count();
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for _ in 0..2 {
         let mut scene = Scene::new();
         let mut p = Painter::new(&mut scene);

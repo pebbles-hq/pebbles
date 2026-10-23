@@ -29,6 +29,9 @@ fn capture_boundary_sizes_never_panic() {
     let Some(mut o) = offscreen("capture_boundary_sizes_never_panic") else { return };
     let max = o.max_size();
     let img = o.render_rgba(&Scene::new(), (1, 1), Color::WHITE, 1.0).expect("1×1 capture");
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(img.pixels, [255, 255, 255, 255]);
     for size in [(max, 1), (1, max)] {
         let img = o.render_rgba(&Scene::new(), size, Color::WHITE, 1.0).expect("max-size capture");
@@ -54,6 +57,9 @@ fn readback_handles_unaligned_width() {
         &Rect::new(16.0, 0.0, 17.0, 1.0),
     );
     let image = o.render_rgba(&scene, (17, 3), Color::WHITE, 1.0).expect("capture");
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(image.pixels.len(), 17 * 3 * 4);
     assert_eq!(pixel(&image.pixels, 17, 16, 0), [0, 0, 255, 255]);
     assert_eq!(pixel(&image.pixels, 17, 0, 1), [255, 255, 255, 255]);
@@ -75,5 +81,8 @@ fn capture_is_unpremultiplied() {
     let image = o.render_rgba(&scene, (8, 8), Color::TRANSPARENT, 1.0).expect("capture");
     let px = pixel(&image.pixels, 8, 4, 4);
     let near = |v: u8, want: i32| (i32::from(v) - want).abs() <= 1;
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(near(px[0], 255) && px[1] == 0 && px[2] == 0 && near(px[3], 128), "{px:?}");
 }

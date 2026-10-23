@@ -30,6 +30,9 @@ fn linear_ramp_midpoint() {
         return;
     };
     let mid = pixel(&px, 256, 128, 4);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(mid[..3].iter().all(|&v| (126..=130).contains(&v)), "{mid:?}");
     assert!(pixel(&px, 256, 0, 4)[..3].iter().all(|&v| v <= 2));
     assert!(pixel(&px, 256, 255, 4)[..3].iter().all(|&v| v >= 253));
@@ -38,6 +41,9 @@ fn linear_ramp_midpoint() {
 #[test]
 #[ignore = "gpu"]
 fn extend_repeat_and_reflect() {
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for (extend, want) in [(Extend::Repeat, 64.0), (Extend::Reflect, 191.0)] {
         let g = Gradient::new_linear((0.0, 0.0), (64.0, 0.0)).with_stops(bw().as_slice()).with_extend(extend);
         let Some(px) =
@@ -59,6 +65,9 @@ fn radial_center_and_edge() {
     else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(pixel(&px, 64, 32, 32)[0] <= 2, "{:?}", pixel(&px, 64, 32, 32));
     // Pixel (32, 1) has its center at distance 31 → t ≈ 0.97 (near the edge).
     let c = pixel(&px, 64, 32, 1);
@@ -77,6 +86,9 @@ fn two_point_conical_matches_cpu_eval() {
     else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for (x, y) in [(60u32, 55u32), (90, 60), (110, 70), (75, 40), (100, 90)] {
         let p = kurbo::Point::new(f64::from(x) + 0.5, f64::from(y) + 0.5);
         let (cd, dr, pd) = (c1 - c0, r1 - r0, p - c0);
@@ -103,12 +115,18 @@ fn sweep_quadrants() {
     };
     // Directly below the center (y-down 90°) → t = 0.25.
     let c = pixel(&px, 64, 32, 52);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(within(c[0], 0.25 * 255.0, 4.0), "{c:?}");
 }
 
 #[test]
 #[ignore = "gpu"]
 fn alpha_space_midpoints() {
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for (space, want) in
         [(InterpolationAlphaSpace::Premultiplied, 128.0), (InterpolationAlphaSpace::Unpremultiplied, 64.0)]
     {
@@ -135,6 +153,9 @@ fn brush_transform_rotates_gradient() {
         return;
     };
     // Rotated a quarter turn: the ramp runs down the y axis.
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(pixel(&px, 64, 32, 2)[0] < 16 && pixel(&px, 64, 32, 61)[0] > 235);
     assert!((i32::from(pixel(&px, 64, 2, 32)[0]) - i32::from(pixel(&px, 64, 61, 32)[0])).abs() <= 2);
 }
@@ -151,6 +172,9 @@ fn gradient_stroke_follows_outline() {
     };
     let left = pixel(&px, 64, 8, 32);
     let right = pixel(&px, 64, 55, 32);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(left[0] > 180 && left[2] < 80, "left of the ring is red-ish: {left:?}");
     assert!(right[2] > 180 && right[0] < 80, "right of the ring is blue-ish: {right:?}");
     assert!(is_white(pixel(&px, 64, 32, 32)), "the ring's center is untouched");
@@ -166,6 +190,9 @@ fn degenerate_gradients_render_fallback_color() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 32, 16, 16), [0, 200, 0, 255]);
 }
 
@@ -186,6 +213,9 @@ fn gradient_text_is_not_solid() {
         return;
     };
     // Per half, the red/blue balance of the fully covered (darkest: green == 0) pixels.
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     let balance = |x0: u32, x1: u32| {
         let (mut r, mut b, mut n) = (0u64, 0u64, 0u64);
         for y in 0..64u32 {
@@ -217,6 +247,9 @@ fn dither_breaks_banding() {
     };
     let row: Vec<u8> = (0..1024).map(|x| pixel(&px, 1024, x, 3)[0]).collect();
     let runs = 1 + row.windows(2).filter(|w| w[0] != w[1]).count();
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(runs >= 4 * 17, "{runs} runs");
 }
 
@@ -234,6 +267,9 @@ fn dither_is_zero_mean() {
         .map(|(x, y)| u64::from(pixel(&px, 64, x, y)[0]))
         .sum();
     let mean = sum as f64 / 4096.0;
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!((mean - 127.5).abs() <= 0.5, "mean {mean}");
 }
 

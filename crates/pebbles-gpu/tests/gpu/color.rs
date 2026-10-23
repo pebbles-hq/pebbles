@@ -16,6 +16,9 @@ fn clear_is_exact_srgb() {
         (64, 64),
         Color::from_rgba8(0x80, 0x80, 0x80, 0xff),
     );
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for px in rgba.as_chunks::<4>().0 {
         assert!(
             (px[0] as i32 - 128).abs() <= 1
@@ -43,6 +46,9 @@ fn half_alpha_white_over_black_is_gamma_space() {
     );
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (64, 64), Color::BLACK);
     let c = pixel(&rgba, 64, 32, 32);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(
         (c[0] as i32 - 128).abs() <= 1 && (c[1] as i32 - 128).abs() <= 1 && (c[2] as i32 - 128).abs() <= 1,
         "pixel {c:?}"
@@ -58,6 +64,9 @@ fn premultiplied_clear_with_alpha() {
     let rgba =
         render_scene(&device, &queue, &mut renderer, &scene, (64, 64), Color::from_rgba8(255, 0, 0, 128));
     let c = pixel(&rgba, 64, 32, 32);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(
         (c[0] as i32 - 128).abs() <= 1 && c[1] <= 1 && c[2] <= 1 && (c[3] as i32 - 128).abs() <= 1,
         "pixel {c:?}"
@@ -80,6 +89,9 @@ fn border_is_two_device_px_at_scale_2() {
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (100, 100), Color::WHITE);
     // The 1-logical-px stroke at scale 2 is a 2-device-px band centered on y=50; probe column x=50.
     let dark = (0..100).filter(|&y| pixel(&rgba, 100, 50, y)[0] < 128).count();
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!((2..=3).contains(&dark), "border should be ~2 device px, got {dark}");
 }
 
@@ -115,6 +127,9 @@ fn color_filtered_multiplies_child() {
     p.pop_layer();
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (80, 80), Color::WHITE);
     // W3C multiply (L23): red × blue = black over the child, white × blue = blue elsewhere.
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&rgba, 80, 40, 40), [0, 0, 0, 255], "multiply over the red child");
     assert_eq!(pixel(&rgba, 80, 10, 10), [0, 0, 255, 255], "multiply over the white base");
     assert_eq!(renderer.last_frame_stats().unsupported[pebbles_gpu::Unsupported::LayerBlend as usize], 0);

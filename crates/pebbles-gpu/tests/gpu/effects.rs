@@ -109,6 +109,9 @@ fn blur_of_square_matches_reference_kernel() {
             worst = worst.max((i32::from(pixel(&px, 64, x, y)[0]) - expect).abs());
         }
     }
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(worst <= 2, "max deviation {worst}");
     assert!(pixel(&px, 64, 32, 32)[0] < 128, "center stays dark");
 }
@@ -146,6 +149,9 @@ fn decal_vs_clamp_edges() {
     else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(pixel(&decal, 64, 0, 32)[1] > 60, "decal: the edge blends with transparent");
     assert_eq!(pixel(&clamp, 64, 0, 32), [255, 0, 0, 255], "clamp: the edge stays red");
     assert_eq!(pixel(&decal, 64, 32, 32), [255, 0, 0, 255]);
@@ -167,6 +173,9 @@ fn blurred_fill_larger_than_mask_max_area_renders() {
         pebbles_render::paint::display_list::BlurStyle::Normal,
     );
     let px = render_scene(&device, &queue, &mut r, &s, (800, 800), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(pixel(&px, 800, 400, 400)[0] < 4, "interior dark");
     assert!(is_white(pixel(&px, 800, 40, 40)), "far outside white");
     let edge = pixel(&px, 800, 100, 400)[0];
@@ -195,6 +204,9 @@ fn grayscale_matrix_equalizes_channels() {
         return;
     };
     let c = pixel(&px, 64, 32, 32);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(c[..3].iter().all(|&v| (i32::from(v) - 54).abs() <= 1), "{c:?}");
 }
 
@@ -218,6 +230,9 @@ fn alpha_offset_reveals_transparent_pixels() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 64, 16, 32), [255, 0, 0, 255]);
     assert_eq!(pixel(&px, 64, 48, 32), [0, 0, 0, 255], "the transparent half becomes opaque black");
 }
@@ -244,6 +259,9 @@ fn dilate_grows_a_square() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(square_bounds(&px), (24, 24, 40, 40), "10×10 dilated by 3 → 16×16");
 }
 
@@ -257,6 +275,9 @@ fn erode_shrinks() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(square_bounds(&px), (25, 25, 39, 39), "20×20 eroded by 3 → 14×14");
 }
 
@@ -288,6 +309,9 @@ fn blur_then_matrix_differs_from_matrix_then_blur() {
     else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(a != c, "effect order matters");
 }
 
@@ -327,6 +351,9 @@ fn frosted_panel_blurs_behind_only() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(max_step(&px, 32, 20, 44) < 60, "inside the panel the stripes are blurred");
     assert_eq!(max_step(&px, 4, 0, 64), 255, "outside the panel the stripes stay sharp");
     assert_eq!(max_step(&px, 32, 0, 15), 255, "left of the panel, same row: sharp");
@@ -362,6 +389,9 @@ fn children_draw_sharp_over_the_backdrop() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 64, 32, 32), [255, 0, 0, 255], "the child draws sharp on top");
     assert_eq!(pixel(&px, 64, 23, 32)[2], pixel(&px, 64, 23, 32)[0], "next to it, the blurred gray backdrop");
     assert_eq!(
@@ -399,6 +429,9 @@ fn nested_backdrops_compound() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(
         max_step(&double, 32, 16, 48) < max_step(&single, 32, 16, 48),
         "the inner filter sees the outer's result"
@@ -435,6 +468,9 @@ fn projected_card_is_trapezoid() {
     let cols: Vec<u32> = (0..96).filter(|&x| column_height(&px, 96, x) > 0).collect();
     let (l, r) = (*cols.first().unwrap(), *cols.last().unwrap());
     let (hl, hr) = (column_height(&px, 96, l + 2), column_height(&px, 96, r - 2));
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(hl != hr && hl.abs_diff(hr) >= 4, "near and far edges differ: {hl} vs {hr}");
     assert!(r - l < 64, "foreshortened width {}", r - l);
 }
@@ -450,6 +486,9 @@ fn projected_edges_are_antialiased() {
             v > 20 && v < 235
         })
         .count();
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(partial > 20, "the slanted edges have partially covered pixels ({partial})");
 }
 
@@ -464,6 +503,9 @@ fn affine_projection_draws_inline() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 64, 15, 15)[0], 0, "translated content");
     assert!(is_white(pixel(&px, 64, 35, 35)), "clipped to the translated bounds");
     assert!(is_white(pixel(&px, 64, 5, 5)));

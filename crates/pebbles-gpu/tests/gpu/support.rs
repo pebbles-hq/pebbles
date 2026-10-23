@@ -75,6 +75,12 @@ pub fn adapter_summary(r: &OffscreenRenderer) -> String {
     format!("{} | {:?} | {:?} | {} {}", i.name, i.backend, i.device_type, i.driver, i.driver_info)
 }
 
+/// V09: the noop backend (`WGPU_BACKEND=noop`) validates every GPU call but renders no pixels;
+/// pixel-asserting tests return after their GPU work under it.
+pub fn noop_backend() -> bool {
+    std::env::var("WGPU_BACKEND").is_ok_and(|v| v.eq_ignore_ascii_case("noop"))
+}
+
 /// `false` on the noop backend (it renders nothing; only validation runs).
 pub fn pixels_meaningful(r: &OffscreenRenderer) -> bool {
     r.adapter_info().backend != wgpu::Backend::Noop

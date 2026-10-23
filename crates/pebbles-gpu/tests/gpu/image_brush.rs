@@ -35,6 +35,9 @@ fn fill(name: &str, b: &ImageBrush, xf: Affine) -> Option<Vec<u8>> {
 #[ignore = "gpu"]
 fn fill_pad() {
     let Some(px) = fill("image_brush_fill_pad", &brush(Extend::Pad), Affine::scale(16.0)) else { return };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for ((x, y), want) in [
         ((8, 8), RED),
         ((24, 8), GREEN),
@@ -54,6 +57,9 @@ fn fill_repeat() {
     let Some(px) = fill("image_brush_fill_repeat", &brush(Extend::Repeat), Affine::scale(16.0)) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 64, 40, 8), RED);
     assert_eq!(pixel(&px, 64, 56, 8), GREEN);
 }
@@ -64,6 +70,9 @@ fn fill_reflect() {
     let Some(px) = fill("image_brush_fill_reflect", &brush(Extend::Reflect), Affine::scale(16.0)) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 64, 40, 8), GREEN);
     assert_eq!(pixel(&px, 64, 56, 8), RED);
 }
@@ -74,6 +83,9 @@ fn alpha_half() {
     let b = brush(Extend::Pad).with_alpha(0.5);
     let Some(px) = fill("image_brush_alpha_half", &b, Affine::scale(16.0)) else { return };
     let c = pixel(&px, 64, 8, 8);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!((0..3).all(|i| (i32::from(c[i]) - [255, 128, 128][i]).abs() <= 2), "{c:?}");
 }
 
@@ -92,6 +104,9 @@ fn stroke_ring() {
     );
     let px = render_scene(&device, &queue, &mut r, &s, (64, 64), Color::WHITE);
     // On the stroke near the top-left corner: the red cell (P = scale(32): cell (0,0) = red).
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 64, 14, 20), RED);
     assert!(is_white(pixel(&px, 64, 32, 32)), "inside the ring is unstroked");
 }
@@ -105,6 +120,9 @@ fn rotated_brush_transform() {
     let xf =
         Affine::translate((32.0, 0.0)) * Affine::rotate(std::f64::consts::FRAC_PI_2) * Affine::scale(16.0);
     let Some(px) = fill("image_brush_rotated_brush_transform", &brush(Extend::Pad), xf) else { return };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for ((x, y), want) in [((8, 8), BLUE), ((24, 8), RED), ((8, 24), WHITE), ((24, 24), GREEN)] {
         assert_eq!(pixel(&px, 64, x, y), want, "({x},{y})");
     }

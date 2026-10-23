@@ -51,6 +51,9 @@ fn rect_clip_is_pixel_exact() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 64, 15, 15), [255; 4]);
     assert_eq!(pixel(&px, 64, 48, 48), [255; 4]);
     assert_eq!(pixel(&px, 64, 16, 16), RED_PX);
@@ -68,6 +71,9 @@ fn fractional_rect_clip_is_antialiased() {
         return;
     };
     let c = pixel(&px, 64, 16, 32);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(near(c, [255, 128, 128], 3), "{c:?}");
     assert_eq!(pixel(&px, 64, 17, 32), RED_PX);
     assert!(is_white(pixel(&px, 64, 15, 32)));
@@ -83,6 +89,9 @@ fn circle_clip_avatar() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 64, 32, 32), RED_PX);
     assert_eq!(pixel(&px, 64, 32, 10), RED_PX);
     assert!(is_white(pixel(&px, 64, 32, 4)));
@@ -99,6 +108,9 @@ fn rrect_clip_cuts_corners() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(is_white(pixel(&px, 64, 9, 9)));
     assert_eq!(pixel(&px, 64, 32, 9), RED_PX);
     assert_eq!(pixel(&px, 64, 24, 24), RED_PX);
@@ -116,6 +128,9 @@ fn star_clip(name: &str, fill: Fill) -> Option<Vec<u8>> {
 #[ignore = "gpu"]
 fn star_clip_nonzero_fills_center() {
     let Some(px) = star_clip("star_clip_nonzero_fills_center", Fill::NonZero) else { return };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 64, 32, 32), RED_PX);
     assert_eq!(pixel(&px, 64, 32, 8), RED_PX);
 }
@@ -124,6 +139,9 @@ fn star_clip_nonzero_fills_center() {
 #[ignore = "gpu"]
 fn star_clip_evenodd_leaves_center() {
     let Some(px) = star_clip("star_clip_evenodd_leaves_center", Fill::EvenOdd) else { return };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(is_white(pixel(&px, 64, 32, 32)));
     assert_eq!(pixel(&px, 64, 32, 8), RED_PX);
 }
@@ -139,6 +157,9 @@ fn rotated_rect_clip() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 64, 32, 32), RED_PX);
     assert!(is_white(pixel(&px, 64, 17, 17)));
     assert_eq!(pixel(&px, 64, 32, 12), RED_PX);
@@ -156,6 +177,9 @@ fn nested_circles_intersect() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 64, 32, 32), RED_PX);
     assert!(is_white(pixel(&px, 64, 12, 32)));
     assert!(is_white(pixel(&px, 64, 52, 32)));
@@ -173,6 +197,9 @@ fn clip_pop_restores_parent() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 64, 20, 32), RED_PX);
     assert!(is_white(pixel(&px, 64, 4, 4)));
 }
@@ -222,6 +249,9 @@ fn assert_clip_honored(name: &str, size: u32, xf: Affine, shape: &kurbo::BezPath
     };
     let plain = render(&mut r, false);
     let clipped = render(&mut r, true);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     let device_path = xf * shape.clone();
     let inside = |x: f64, y: f64| {
         let w = device_path.winding(kurbo::Point::new(x, y));
@@ -283,6 +313,9 @@ fn deep_clip_nesting_is_bounded() {
     }) else {
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 64, 32, 32), RED_PX);
     assert!(is_white(pixel(&px, 64, 2, 2)));
 }

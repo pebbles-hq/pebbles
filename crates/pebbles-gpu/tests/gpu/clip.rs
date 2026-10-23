@@ -28,6 +28,9 @@ fn shadow_respects_clip() {
 
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (160, 160), Color::WHITE);
     // Below the clip edge (y >= 100) everything is clipped away.
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for y in 100..160 {
         for x in 0..160 {
             assert!(is_white(pixel(&rgba, 160, x, y)), "pixel ({x},{y}) should be clipped");
@@ -108,6 +111,9 @@ fn msaa_resolve_ignores_last_clip() {
     p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &Rect::new(0.0, 0.0, 160.0, 160.0));
     p.pop_layer();
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (160, 160), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&rgba, 160, 80, 99), [0, 0, 0, 255], "inside the clip");
     assert_eq!(pixel(&rgba, 160, 80, 100), [255, 255, 255, 255], "outside the clip keeps the clear color");
 }
@@ -132,6 +138,9 @@ fn square_image_box_is_clipped() {
     p.draw_image(&peniko::ImageBrush::new(image), Affine::scale(2.0));
     p.pop_layer();
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (100, 100), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&rgba, 100, 60, 60), [255, 255, 255, 255], "outside the clip");
     assert_eq!(pixel(&rgba, 100, 20, 20), [255, 0, 0, 255], "inside the clip");
 }
@@ -154,6 +163,9 @@ fn integer_clip_is_hard_on_every_edge() {
     p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &Rect::new(0.0, 0.0, 128.0, 128.0));
     p.pop_layer();
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (128, 128), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for i in 0..128 {
         for (x, y) in [(19, i), (i, 19), (100, i), (i, 100)] {
             assert!(is_white(pixel(&rgba, 128, x, y)), "({x},{y}) leaked: {:?}", pixel(&rgba, 128, x, y));
@@ -201,6 +213,9 @@ fn circle_clip_edge_is_analytic() {
         f64::from(inside) / f64::from(n * n)
     };
     let mut partial = 0;
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for y in 0..64u32 {
         for x in 0..64u32 {
             let d = (f64::from(x) + 0.5 - 32.0).hypot(f64::from(y) + 0.5 - 32.0);
@@ -240,6 +255,9 @@ fn gpu_mask_edges_are_antialiased() {
     p.pop_layer();
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (1920, 1080), Color::WHITE);
     // Center inside, corner outside.
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&rgba, 1920, 960, 540)[0], 0);
     assert!(is_white(pixel(&rgba, 1920, 2, 2)));
     // Along row 540, the left edge of the rotated rect crosses at a fractional x.
@@ -275,6 +293,9 @@ fn nested_gpu_mask_multiplies_parent() {
     p.pop_layer();
     p.pop_layer();
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (64, 64), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&rgba, 64, 32, 40), [255, 0, 0, 255], "inside both");
     assert!(is_white(pixel(&rgba, 64, 2, 40)), "inside the GPU mask, outside the circle");
     assert!(is_white(pixel(&rgba, 64, 32, 16)), "inside the circle, outside the GPU mask");

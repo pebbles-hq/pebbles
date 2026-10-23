@@ -14,6 +14,9 @@ fn negotiated_count_renders() {
     p.set_pixel_snap(pebbles_render::paint::display_list::PixelSnap::Off);
     p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &Rect::new(10.5, 8.0, 30.0, 56.0));
     let px = render_scene(&device, &queue, &mut r, &s, (W, W), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!([1, 4].contains(&r.msaa_sample_count()), "count {}", r.msaa_sample_count());
     for y in 9..=54 {
         let edge = pixel(&px, W, 10, y);

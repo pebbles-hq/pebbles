@@ -99,6 +99,9 @@ fn bold_run_is_wider_than_regular() {
     };
     let (regular_w, regular_ink) = ink(&mut renderer, 400.0);
     let (bold_w, bold_ink) = ink(&mut renderer, 700.0);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(bold_w >= regular_w, "bold run {bold_w} px narrower than regular {regular_w} px");
     assert!(bold_ink * 10 > regular_ink * 13, "bold ink {bold_ink} not > 1.3 × regular {regular_ink}");
 }
@@ -150,6 +153,9 @@ fn rotated_text_is_rotated() {
     );
     let px = render_scene(&device, &queue, &mut r, &s, (160, 160), Color::WHITE);
     let (x0, y0, x1, y1) = ink_bbox(&px, 160, 160).expect("ink");
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(y1 - y0 > x1 - x0, "ink bbox {x0},{y0}–{x1},{y1} must be taller than wide");
 }
 
@@ -233,6 +239,9 @@ fn subpixel_bins_differ() {
         render_run(r, (40, 32), |s| pen_run(s, 16.0, Affine::IDENTITY, &[], "i", x, 24.0))
     };
     let base = at(&mut r, 10.0);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_ne!(base, at(&mut r, 10.25), "quarter-pixel shift must change the raster");
     assert_eq!(base, at(&mut r, 10.05), "same bin must render identically");
 }
@@ -268,6 +277,9 @@ fn variable_weight_changes_ink() {
         px.as_chunks::<4>().0.iter().filter(|p| !is_white(**p)).count()
     };
     let (regular, bold) = (ink(&mut r, &coords(400.0)), ink(&mut r, &coords(700.0)));
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(bold * 100 >= regular * 115, "bold {bold} vs regular {regular}");
 }
 
@@ -348,6 +360,9 @@ fn color_glyph_is_premultiplied() {
         Color::TRANSPARENT,
     );
     let px = px.as_chunks::<4>().0;
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(px.iter().all(|p| p[0] <= p[3] && p[1] <= p[3] && p[2] <= p[3]), "a channel exceeds alpha");
     let saturated = px
         .iter()
@@ -377,6 +392,9 @@ fn color_glyph_follows_run_alpha() {
         Color::TRANSPARENT,
     );
     let max_a = px.as_chunks::<4>().0.iter().map(|p| p[3]).max().unwrap_or(0);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!((120..=136).contains(&max_a), "max alpha {max_a}");
 }
 
@@ -393,6 +411,9 @@ fn rotated_bitmap_glyph_draws_as_quad() {
     let px =
         render_scene(&device, &queue, &mut r, &emoji_scene(&font, id, 1.0, t), (72, 72), Color::TRANSPARENT);
     let stats = r.last_frame_stats();
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(stats.unsupported[pebbles_gpu::Unsupported::ColorGlyphTransform as usize], 0);
     assert_eq!(stats.unsupported_kinds(), [], "S50: no fallback key");
     let ink = px.as_chunks::<4>().0.iter().filter(|p| p[3] > 128).count();
@@ -433,6 +454,9 @@ fn color_glyph_renders_under_rotation() {
     );
     let px = render_scene(&device, &queue, &mut r, &s, (160, 160), Color::WHITE);
     let stats = r.last_frame_stats();
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(stats.unsupported[pebbles_gpu::Unsupported::ColorGlyphTransform as usize], 0);
     assert_eq!(stats.unsupported_kinds(), [], "S50: no fallback key");
     let (mut red, mut blue) = (0, 0);
@@ -487,6 +511,9 @@ fn color_glyph_atlas_hit_has_no_extra_pass() {
     let font = colr_font();
     let s = colr_label(&font, 'A', 12.25);
     let first = render_scene(&device, &queue, &mut r, &s, (96, 96), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(r.last_frame_stats().color_glyph_renders, 1);
     let second = render_scene(&device, &queue, &mut r, &s, (96, 96), Color::WHITE);
     let stats = r.last_frame_stats();

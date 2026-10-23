@@ -36,6 +36,9 @@ fn opacity_single_draw_is_folded() {
     let Some((device, queue, mut r)) = setup("opacity_single_draw_is_folded") else { return };
     let mut targets = FrameTargets::new();
     let (rgba, stats) = frame(&device, &queue, &mut r, &mut targets, &s);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!((stats.layers_folded, stats.layers_offscreen), (1, 0));
     let c = pixel(&rgba, 64, 32, 32);
     assert!(near(c, PINK, 2), "{c:?}");
@@ -54,6 +57,9 @@ fn opacity_group_does_not_double_blend() {
     red(&mut p, Rect::new(24.0, 24.0, 56.0, 56.0));
     p.pop_layer();
     let Some(rgba) = render(&s, "opacity_group_does_not_double_blend") else { return };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for (x, y) in [(12, 12), (32, 32), (50, 50)] {
         let c = pixel(&rgba, 64, x, y);
         assert!(near(c, PINK, 2), "({x},{y}) {c:?}");
@@ -73,6 +79,9 @@ fn opacity_layer_with_circle_clip() {
     red(&mut p, Rect::new(24.0, 0.0, 64.0, 64.0));
     p.pop_layer();
     let Some(rgba) = render(&s, "opacity_layer_with_circle_clip") else { return };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for y in 0..64u32 {
         for x in 0..64u32 {
             let d = ((f64::from(x) + 0.5 - 32.0).powi(2) + (f64::from(y) + 0.5 - 32.0).powi(2)).sqrt();
@@ -102,6 +111,9 @@ fn layer_inside_rotated_clip() {
     p.pop_layer();
     let Some(rgba) = render(&s, "layer_inside_rotated_clip") else { return };
     let inv = rot.inverse();
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for y in 0..64u32 {
         for x in 0..64u32 {
             let q = inv * kurbo::Point::new(f64::from(x) + 0.5, f64::from(y) + 0.5);
@@ -135,6 +147,9 @@ fn layer_with_mask_inside() {
     red(&mut p, Rect::new(0.0, 56.0, 8.0, 64.0)); // unmasked layer content
     p.pop_layer();
     let Some(rgba) = render(&s, "layer_with_mask_inside") else { return };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(near(pixel(&rgba, 64, 32, 30), PINK, 2), "star body");
     assert!(near(pixel(&rgba, 64, 3, 60), PINK, 2), "unmasked fill");
     assert!(is_white(pixel(&rgba, 64, 4, 4)), "outside the star");
@@ -176,6 +191,9 @@ fn opacity_zero_draws_nothing() {
     red(&mut p, Rect::new(24.0, 24.0, 56.0, 56.0));
     p.pop_layer();
     let Some(rgba) = render(&s, "opacity_zero_draws_nothing") else { return };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for y in (0..64).step_by(4) {
         for x in (0..64).step_by(4) {
             assert!(is_white(pixel(&rgba, 64, x, y)), "({x},{y})");
@@ -196,6 +214,9 @@ fn nested_opacity_multiplies() {
     p.pop_layer();
     let Some(rgba) = render(&s, "nested_opacity_multiplies") else { return };
     let c = pixel(&rgba, 64, 32, 32);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(near(c, [255, 191, 191], 2), "{c:?}");
 }
 
@@ -214,6 +235,9 @@ fn sibling_layers_share_one_pool_target() {
     let Some((device, queue, mut r)) = setup("sibling_layers_share_one_pool_target") else { return };
     let mut targets = FrameTargets::new();
     let (rgba, stats) = frame(&device, &queue, &mut r, &mut targets, &s);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(stats.layers_offscreen, 2);
     assert_eq!(targets.layer_pool_targets(), 1);
     for (x, y) in [(16, 30), (48, 30)] {

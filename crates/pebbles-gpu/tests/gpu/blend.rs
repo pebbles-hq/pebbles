@@ -79,6 +79,9 @@ fn fixed_function_compose_modes() {
     let Some(mut r) = setup("fixed_function_compose_modes") else { return };
     let b_col = Color::from_rgba8(0x20, 0x60, 0xC0, 0xFF);
     let s_col = Color::from_rgba8(0xE0, 0x40, 0x20, 0xBF);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for compose in COMPOSES {
         let mut s = Scene::new();
         let mut p = Painter::new(&mut s);
@@ -129,6 +132,9 @@ fn multiply_backdrop_over_gray() {
     p.pop_layer();
     let px = render(&mut r, &s, (64, 64), Color::from_rgba8(0x80, 0x80, 0x80, 0xFF));
     let c = pixel(&px, 64, 32, 32);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(close(c, [0, 128, 0, 255], 2), "{c:?}");
 }
 
@@ -150,6 +156,9 @@ fn backdrop_copy_region_is_bounds() {
     p.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &Rect::new(0.0, 0.0, 64.0, 64.0));
     p.pop_layer();
     let px = render(&mut r, &s, (64, 64), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for (x, y) in [(15, 20), (32, 20), (20, 15), (20, 32)] {
         assert_eq!(pixel(&px, 64, x, y), [200, 100, 50, 255], "({x},{y})");
     }
@@ -182,6 +191,9 @@ fn backdrop_lerps_by_sdf_coverage() {
     p.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &Rect::new(0.0, 0.0, 64.0, 64.0));
     p.pop_layer();
     let px = render(&mut r, &s, (64, 64), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(close(pixel(&px, 64, 32, 32), [55, 155, 205, 255], 2));
     assert_eq!(pixel(&px, 64, 2, 2), [200, 100, 50, 255]);
     // Pixels straddling the circle edge lie strictly between the two.
@@ -225,6 +237,9 @@ fn color_filter_multiply_green() {
     );
     p.pop_layer();
     let px = render(&mut r, &s, (64, 64), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(close(pixel(&px, 64, 16, 32), [0, 255, 0, 255], 2), "{:?}", pixel(&px, 64, 16, 32));
     assert!(close(pixel(&px, 64, 48, 32), [0, 128, 0, 255], 2), "{:?}", pixel(&px, 64, 48, 32));
 }
@@ -242,6 +257,9 @@ fn screen_gray_on_gray() {
     p.fill(Fill::NonZero, Affine::IDENTITY, gray, None, &Rect::new(0.0, 0.0, 64.0, 64.0));
     p.pop_layer();
     let px = render(&mut r, &s, (64, 64), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(close(pixel(&px, 64, 32, 32), [192, 192, 192, 255], 2), "{:?}", pixel(&px, 64, 32, 32));
 }
 
@@ -272,6 +290,9 @@ fn blend_inside_pure_clip_uses_clip_layer_backdrop() {
     p.pop_layer();
     p.pop_layer();
     let px = render(&mut r, &s, (64, 64), Color::from_rgba8(0, 0, 255, 255));
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(close(pixel(&px, 64, 16, 32), [128, 0, 0, 255], 2), "{:?}", pixel(&px, 64, 16, 32));
     assert!(close(pixel(&px, 64, 48, 32), [255, 0, 0, 255], 2), "not black: {:?}", pixel(&px, 64, 48, 32));
 }
@@ -319,6 +340,9 @@ fn blend_matrix_matches_cpu_reference() {
             }
         }
     }
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(failures.is_empty(), "{} mismatches:\n{}", failures.len(), failures.join("\n"));
 }
 
@@ -343,6 +367,9 @@ fn shader_mask_dest_in_gradient() {
     // Pixel 0's center is at t = 0.5/64 (exact mask 0.008 → ≥ 253); pixel 1 is already at
     // t = 0.023 (exactly 249), so the ≥ 250 probe sits on column 0.
     let l = pixel(&px, 64, 0, 32);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(l[..3].iter().all(|&v| v >= 250), "left fades to white: {l:?}");
     // Column 63 (t = 63.5/64: exactly (255, 2, 2)); column 62 is already (255, 6, 6).
     let r = pixel(&px, 64, 63, 32);

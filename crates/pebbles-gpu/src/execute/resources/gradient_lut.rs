@@ -343,6 +343,10 @@ mod tests {
             lut.resolve(device, queue, &k, |out| k.bake(out), &mut stats).expect("room");
         }
         assert!(lut.book.rows > LUT_INITIAL_ROWS, "grew");
+        // V09: the noop backend validates the uploads above but reads back no texels.
+        if std::env::var("WGPU_BACKEND").is_ok_and(|v| v.eq_ignore_ascii_case("noop")) {
+            return;
+        }
         let rows = lut.book.rows;
         let bytes = u64::from(rows * LUT_ROW_TEXELS * 8);
         let buf = device.create_buffer(&wgpu::BufferDescriptor {

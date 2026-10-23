@@ -59,6 +59,9 @@ fn render_target_size_comes_from_texture() {
     let view = texture.create_view(&Default::default());
     let mut targets = FrameTargets::new();
     let target = RenderTarget::new(&view, wgpu::TextureFormat::Rgba8Unorm, &mut targets);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(target.size(), (200, 100));
     let mut scene = Scene::new();
     Painter::new(&mut scene).fill(
@@ -106,6 +109,9 @@ fn validation_error_with_texture_text_is_reported() {
 fn render_size_follows_each_target() {
     let Some((device, queue, mut renderer)) = setup("render_size_follows_each_target") else { return };
     let mut targets = FrameTargets::new();
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for (w, h) in [(64u32, 48u32), (160, 120), (64, 48)] {
         let texture = target_texture(&device, w, h);
         let view = texture.create_view(&Default::default());

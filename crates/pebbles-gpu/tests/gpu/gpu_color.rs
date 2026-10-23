@@ -69,6 +69,9 @@ fn overlap_scene() -> Scene {
 fn clear_color_exact() {
     let Some((device, queue, mut r)) = setup("clear_color_exact") else { return };
     let px = rgba(&device, &queue, &mut r, &Scene::new(), Color::from_rgba8(0x80, 0x80, 0x80, 0xFF));
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(px.as_chunks::<4>().0.iter().all(|p| *p == [0x80, 0x80, 0x80, 0xFF]));
 }
 
@@ -79,6 +82,9 @@ fn opaque_fill_roundtrip() {
     let mut s = Scene::new();
     fill(&mut Painter::new(&mut s), BOX, Color::from_rgba8(0x33, 0x66, 0xCC, 0xFF));
     let px = rgba(&device, &queue, &mut r, &s, Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, W, 32, 32), [0x33, 0x66, 0xCC, 0xFF]);
 }
 
@@ -88,6 +94,9 @@ fn half_black_over_white() {
     let Some((device, queue, mut r)) = setup("half_black_over_white") else { return };
     let px = rgba(&device, &queue, &mut r, &half_black_scene(), Color::WHITE);
     let c = pixel(&px, W, 32, 32);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!((0..3).all(|i| (126..=129).contains(&c[i])), "{c:?} (≈188 means linear blending)");
 }
 
@@ -97,6 +106,9 @@ fn translucent_overlap() {
     let Some((device, queue, mut r)) = setup("translucent_overlap") else { return };
     let px = rgba(&device, &queue, &mut r, &overlap_scene(), Color::WHITE);
     let (mid, left) = (pixel(&px, W, 32, 32), pixel(&px, W, 16, 32));
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(near(mid, [128, 64, 191], 2), "overlap {mid:?}");
     assert!(near(left, [255, 127, 127], 2), "red only {left:?}");
 }
@@ -111,6 +123,9 @@ fn half_covered_edge_column() {
     p.set_pixel_snap(pebbles_render::paint::display_list::PixelSnap::Off);
     fill(&mut p, Rect::new(10.5, 8.0, 30.0, 56.0), Color::BLACK);
     let px = rgba(&device, &queue, &mut r, &s, Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for y in 9..=54 {
         let edge = pixel(&px, W, 10, y);
         assert!((0..3).all(|i| (125..=130).contains(&edge[i])), "edge ({y}) {edge:?}");
@@ -124,6 +139,9 @@ fn premultiplied_clear_is_premultiplied() {
     let Some((device, queue, mut r)) = setup("premultiplied_clear_is_premultiplied") else { return };
     let px = rgba(&device, &queue, &mut r, &Scene::new(), Color::from_rgba8(0x80, 0x80, 0x80, 0x80));
     let c = pixel(&px, W, 5, 5);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(near(c, [64, 64, 64], 1) && (i32::from(c[3]) - 128).abs() <= 1, "{c:?}");
 }
 
@@ -181,6 +199,9 @@ fn gl_srgb_fallback_opaque_matches() {
     fill(&mut Painter::new(&mut opaque), BOX, Color::from_rgba8(0x33, 0x66, 0xCC, 0xFF));
     let px = render(&mut r, &opaque);
     let c = pixel(&px, W, 30, 30);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(near(c, [0x33, 0x66, 0xCC], 1), "opaque fill {c:?}");
     assert!(near(pixel(&px, W, 2, 2), [255, 255, 255], 1), "white base");
     let px = render(&mut r, &half_black_scene());

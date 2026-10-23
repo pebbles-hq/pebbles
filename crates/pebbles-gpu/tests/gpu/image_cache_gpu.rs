@@ -83,6 +83,9 @@ fn in_use_over_budget_survives_frame() {
     let images: Vec<_> = (0..5u8).map(|i| image(511, 511, [0, 0, 200 + i, 255])).collect();
     let refs: Vec<&peniko::ImageBrush> = images.iter().collect();
     let px = draw(&mut r, &refs);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 32, 16, 16), [0, 0, 204, 255], "the last image renders");
     let c = r.2.census();
     assert_eq!(c.image_entries, 5, "all pinned for the frame they were drawn");
@@ -102,6 +105,9 @@ fn no_aba_after_drop() {
     }
     let b = image(8, 8, [0, 0, 255, 255]);
     let px = draw(&mut r, &[&b]);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 32, 16, 16), [0, 0, 255, 255]);
 }
 
@@ -109,12 +115,19 @@ fn no_aba_after_drop() {
 #[ignore = "gpu"]
 fn oversized_image_downscaled() {
     let Some(mut r) = setup("oversized_image_downscaled") else { return };
+    // V09: noop reports no real texture limit, so "limit + 10" is not an oversize image there.
+    if support::noop_backend() {
+        return;
+    }
     let max = r.0.limits().max_texture_dimension_2d;
     let img = image(max + 10, 10, [0, 255, 0, 255]);
     let scope = r.0.push_error_scope(wgpu::ErrorFilter::Validation);
     let mut s = Scene::new();
     Painter::new(&mut s).draw_image(&img, Affine::scale_non_uniform(64.0 / f64::from(max + 10), 0.8));
     let px = render_scene(&r.0, &r.1, &mut r.2, &s, (64, 8), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(pollster::block_on(scope.pop()).is_none(), "validation error");
     assert_eq!(pixel(&px, 64, 32, 4), [0, 255, 0, 255]);
 }

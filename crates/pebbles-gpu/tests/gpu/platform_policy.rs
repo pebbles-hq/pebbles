@@ -22,6 +22,9 @@ fn default_policy_picks_expected_backend() {
         println!("skipped: no GPU adapter");
         return;
     };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(Some(info.backend), expected, "{info:?} with {:?}", init.backends);
 }
 

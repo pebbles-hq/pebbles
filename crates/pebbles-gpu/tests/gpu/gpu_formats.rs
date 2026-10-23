@@ -74,6 +74,9 @@ fn formats_agree_rgba_bgra_srgb_view() {
     for px in b.as_chunks_mut::<4>().0 {
         px.swap(0, 2);
     }
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     near(&a, &b, 1, "Bgra8Unorm");
     let gray = pixel(&a, 128, 10, 10);
     near(&gray, &[0x80, 0x80, 0x80, 255], 1, "50% gray is not linearized");

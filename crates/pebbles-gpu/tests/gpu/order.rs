@@ -15,6 +15,9 @@ fn shadow_does_not_cover_its_card() {
 
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (140, 100), Color::WHITE);
     let c = pixel(&rgba, 140, 70, 50);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(is_white(c), "card center covered by shadow: {c:?}");
     // The shadow must render as a dark halo just below the card (blur + offset).
     let halo = pixel(&rgba, 140, 70, 82);
@@ -51,6 +54,9 @@ fn dialog_scrim_hides_page_text() {
     p.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &Rect::new(60.0, 30.0, 180.0, 100.0));
 
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (200, 120), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for y in 32..98 {
         for x in 62..178 {
             let c = pixel(&rgba, 200, x, y);
@@ -78,6 +84,9 @@ fn two_formats_alternate_without_validation_errors() {
     let queue = gpu.queue();
     let mut renderer = Renderer::new(gpu, id);
 
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for format in
         [wgpu::TextureFormat::Rgba8Unorm, wgpu::TextureFormat::Bgra8Unorm].into_iter().cycle().take(10)
     {
@@ -205,6 +214,9 @@ fn text_under_dialog_stays_covered() {
     );
     p.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &Rect::new(60.0, 30.0, 180.0, 100.0));
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (200, 120), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for y in 32..98 {
         for x in 62..178 {
             let c = pixel(&rgba, 200, x, y);

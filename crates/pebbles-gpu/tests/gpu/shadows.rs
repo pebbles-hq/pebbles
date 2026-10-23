@@ -34,6 +34,9 @@ fn shadow_edge_midpoint_is_half() {
     // The edge y = 150 lies between pixel rows 149 and 150: their mean is the edge value (½).
     let px = shadow_px(&mut r, Affine::IDENTITY);
     let mean = (u16::from(pixel(&px, 200, 100, 149)[0]) + u16::from(pixel(&px, 200, 100, 150)[0])) / 2;
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!((124..=131).contains(&mean), "edge mean {mean}");
 }
 
@@ -42,6 +45,9 @@ fn shadow_edge_midpoint_is_half() {
 fn shadow_fades_by_2_5_sigma() {
     let Some(mut r) = setup("shadow_fades_by_2_5_sigma") else { return };
     let p = pixel(&shadow_px(&mut r, Affine::IDENTITY), 200, 100, 175);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(rgb_in(p, 253, 255), "{p:?}");
 }
 
@@ -54,6 +60,9 @@ fn rotated_shadow_is_rotated() {
     // Inside the axis-aligned bbox of the rotated square (x, y ≥ 29.3) but ≈ 2.6σ outside the
     // square itself (along the diagonal: 75.7 − 50 = 25.7 px).
     let p = pixel(&px, 200, 46, 46);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(rgb_in(p, 250, 255), "{p:?} (an AABB shader would darken it)");
     assert!(rgb_in(pixel(&px, 200, 100, 100), 0, 1));
 }
@@ -74,6 +83,9 @@ fn card_shadow_does_not_cover_card() {
     );
     p.fill(Fill::NonZero, Affine::IDENTITY, Color::WHITE, None, &card.to_rounded_rect(12.0));
     let px = render_scene(&device, &queue, &mut r, &s, (200, 200), Color::from_rgba8(0xF0, 0xF0, 0xF0, 0xFF));
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert_eq!(pixel(&px, 200, 100, 100), [255, 255, 255, 255]);
 }
 
@@ -91,6 +103,9 @@ fn zero_sigma_is_hard_edge() {
         0.0,
     );
     let px = render_scene(&r.0, &r.1, &mut r.2, &s, (200, 200), Color::WHITE);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(rgb_in(pixel(&px, 200, 100, 148), 0, 1), "{:?}", pixel(&px, 200, 100, 148));
     assert!(rgb_in(pixel(&px, 200, 100, 151), 254, 255), "{:?}", pixel(&px, 200, 100, 151));
 }
@@ -118,6 +133,9 @@ fn blurred_star_shadow() {
     let normal = draw(&mut r, BlurStyle::Normal);
     // Along the ray straight up from the tip (64, 24): strictly increasing brightness outward.
     let col: Vec<u8> = (8..24).map(|y| pixel(&normal, 128, 64, y)[0]).collect();
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(col.windows(2).all(|w| w[0] >= w[1]), "not a smooth falloff: {col:?}");
     assert!(col[0] > 240 && *col.last().unwrap() < 240, "{col:?}");
     let solid = draw(&mut r, BlurStyle::Solid);

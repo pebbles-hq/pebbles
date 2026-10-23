@@ -19,6 +19,9 @@ fn scaled(scene: &Scene, s: f64) -> Scene {
 #[ignore = "gpu"]
 fn pixel_snap_border_is_whole_columns() {
     let Some((device, queue, mut r)) = setup("pixel_snap_border_is_whole_columns") else { return };
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for s in [1.0, 1.25, 1.5, 1.75, 2.0] {
         let mut scene = Scene::new();
         let style = Stroke::new(1.0).with_join(kurbo::Join::Miter);
@@ -54,6 +57,9 @@ fn pixel_snap_animation_off_is_smooth_auto_is_on_grid() {
         pixel(&px, W, 10, 20)[0]
     };
     let off: Vec<u8> = (0..8).map(|k| edge(&mut r, PixelSnap::Off, 10.0 + 0.1 * f64::from(k))).collect();
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     assert!(off.windows(2).all(|w| w[1] > w[0]), "Off: the edge pixel lightens every frame {off:?}");
     let auto: Vec<u8> = (0..8).map(|k| edge(&mut r, PixelSnap::Auto, 10.0 + 0.1 * f64::from(k))).collect();
     assert!(auto.iter().all(|v| matches!(v, 0 | 255)), "Auto: on the grid {auto:?}");
@@ -73,6 +79,9 @@ fn exact_rect_matches_box_coverage() {
     p.fill(Fill::NonZero, Affine::IDENTITY, Color::BLACK, None, &rect);
     let px = render_scene(&device, &queue, &mut r, &scene, (32, 16), Color::WHITE);
     let overlap = |a: f64, b: f64, i: u32| (b.min(f64::from(i) + 1.0) - a.max(f64::from(i))).clamp(0.0, 1.0);
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for y in 0..16 {
         for x in 0..32 {
             let cov = overlap(rect.x0, rect.x1, x) * overlap(rect.y0, rect.y1, y);
@@ -110,6 +119,9 @@ fn texel_exact_image_at_fractional_position() {
         Color::WHITE,
     );
     // Origin (3.3, 4.6) rounds half up to (3, 5).
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
     for ty in 0..16 {
         for tx in 0..16 {
             let i = ((ty * 16 + tx) * 4) as usize;
