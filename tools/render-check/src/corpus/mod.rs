@@ -132,4 +132,292 @@ mod tests {
         assert_eq!(n("layer/blend_") - n("layer/blend_inside_clip") - n("layer/blend_in_sdf_clip"), 16);
         assert_eq!(n("layer/compose_"), 14);
     }
+
+    /// V28: a scene-level census of the corpus. Every case's logical Scene (every frame of a
+    /// frame-indexed case) is walked, recursing into fragments, and every op kind, blend mode,
+    /// brush/extend combination, stroke style and image mode the renderer supports must occur.
+    #[test]
+    fn corpus_covers_every_op_and_mode() {
+        use std::collections::BTreeSet;
+
+        use pebbles_render::paint::display_list::Op;
+        use peniko::{Brush, GradientKind};
+
+        #[derive(Default)]
+        struct Census {
+            ops: BTreeSet<&'static str>,
+            unknown: usize,
+            fill_rules: BTreeSet<String>,
+            clip_rules: BTreeSet<String>,
+            mix: BTreeSet<String>,
+            compose: BTreeSet<String>,
+            extend: BTreeSet<String>,
+            caps: BTreeSet<String>,
+            joins: BTreeSet<String>,
+            dashes: bool,
+            quality: BTreeSet<String>,
+            format: BTreeSet<String>,
+            alpha: BTreeSet<String>,
+            image_brush_on: BTreeSet<&'static str>,
+            variable_glyphs: bool,
+            fragment_depth: usize,
+            skewed: bool,
+        }
+
+        impl Census {
+            fn transform(&mut self, t: &kurbo::Affine) {
+                let [_, b, c, ..] = t.as_coeffs();
+                self.skewed |= b != 0.0 || c != 0.0;
+            }
+            fn image(&mut self, i: &peniko::ImageBrush) {
+                self.quality.insert(format!("{:?}", i.sampler.quality));
+                self.format.insert(format!("{:?}", i.image.format));
+                self.alpha.insert(format!("{:?}", i.image.alpha_type));
+            }
+            fn brush(&mut self, b: &Brush, on: &'static str) {
+                match b {
+                    Brush::Gradient(g) => {
+                        let kind = match &g.kind {
+                            GradientKind::Linear(_) => "linear",
+                            GradientKind::Radial(r)
+                                if r.start_center == r.end_center && r.start_radius == 0.0 =>
+                            {
+                                "radial"
+                            }
+                            GradientKind::Radial(_) => "two-point",
+                            GradientKind::Sweep(_) => "sweep",
+                        };
+                        self.extend.insert(format!("{kind}/{:?}", g.extend));
+                    }
+                    Brush::Image(i) => {
+                        self.image(i);
+                        self.image_brush_on.insert(on);
+                    }
+                    Brush::Solid(_) => {}
+                }
+            }
+            fn blend(&mut self, b: peniko::BlendMode) {
+                self.mix.insert(format!("{:?}", b.mix));
+                self.compose.insert(format!("{:?}", b.compose));
+            }
+            fn walk(&mut self, ops: &[Op], depth: usize) {
+                self.fragment_depth = self.fragment_depth.max(depth);
+                for op in ops {
+                    let kind = match op {
+                        Op::Fill { style, transform, brush, .. } => {
+                            self.fill_rules.insert(format!("{style:?}"));
+                            self.transform(transform);
+                            self.brush(brush, "fill");
+                            "Fill"
+                        }
+                        Op::Stroke { style, transform, brush, .. } => {
+                            self.caps.insert(format!("{:?}", style.start_cap));
+                            self.caps.insert(format!("{:?}", style.end_cap));
+                            self.joins.insert(format!("{:?}", style.join));
+                            self.dashes |= !style.dash_pattern.is_empty();
+                            self.transform(transform);
+                            self.brush(brush, "stroke");
+                            "Stroke"
+                        }
+                        Op::PushLayer { clip_fill, blend, transform, .. } => {
+                            self.clip_rules.insert(format!("{clip_fill:?}"));
+                            self.blend(*blend);
+                            self.transform(transform);
+                            "PushLayer"
+                        }
+                        Op::PopLayer => "PopLayer",
+                        Op::PushEffectLayer { transform, .. } => {
+                            self.transform(transform);
+                            "PushEffectLayer"
+                        }
+                        Op::PushBackdropFilter { blend, transform, .. } => {
+                            self.blend(*blend);
+                            self.transform(transform);
+                            "PushBackdropFilter"
+                        }
+                        Op::PushProjectedLayer { .. } => "PushProjectedLayer",
+                        Op::Custom { transform, .. } => {
+                            self.transform(transform);
+                            "Custom"
+                        }
+                        Op::ShaderFill { transform, .. } => {
+                            self.transform(transform);
+                            "ShaderFill"
+                        }
+                        Op::GpuImage { transform, .. } => {
+                            self.transform(transform);
+                            "GpuImage"
+                        }
+                        Op::Vertices { brush, transform, .. } => {
+                            self.brush(brush, "vertices");
+                            self.transform(transform);
+                            "Vertices"
+                        }
+                        Op::Atlas { image, transform, .. } => {
+                            self.image(image);
+                            self.transform(transform);
+                            "Atlas"
+                        }
+                        Op::Image { image, transform, .. } => {
+                            self.image(image);
+                            self.transform(transform);
+                            "Image"
+                        }
+                        Op::ImageNine { image, transform, .. } => {
+                            self.image(image);
+                            self.transform(transform);
+                            "ImageNine"
+                        }
+                        Op::DynamicImage { .. } => "DynamicImage",
+                        Op::BlurredFill { style, transform, .. } => {
+                            self.fill_rules.insert(format!("{style:?}"));
+                            self.transform(transform);
+                            "BlurredFill"
+                        }
+                        Op::BlurredGlyphs { .. } => "BlurredGlyphs",
+                        Op::BlurredRect { transform, .. } => {
+                            self.transform(transform);
+                            "BlurredRect"
+                        }
+                        Op::Glyphs { normalized_coords, brush, transform, .. } => {
+                            self.variable_glyphs |= !normalized_coords.is_empty();
+                            self.brush(brush, "glyphs");
+                            self.transform(transform);
+                            "Glyphs"
+                        }
+                        Op::Fragment { ops, transform, .. } => {
+                            if let Some(t) = transform {
+                                self.transform(t);
+                            }
+                            self.walk(ops, depth + 1);
+                            "Fragment"
+                        }
+                        _ => {
+                            self.unknown += 1;
+                            continue;
+                        }
+                    };
+                    self.ops.insert(kind);
+                }
+            }
+        }
+
+        let mut c = Census::default();
+        for case in all() {
+            for frame in 0..case.frames.max(1) {
+                let scene = crate::scene::logical_scene(&case, frame);
+                c.walk(scene.ops(), 0);
+            }
+        }
+
+        let strs = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<BTreeSet<String>>();
+        let mut missing: Vec<String> = Vec::new();
+        let mut need = |what: &str, have: &BTreeSet<String>, want: BTreeSet<String>| {
+            for w in want.difference(have) {
+                missing.push(format!("{what}: {w}"));
+            }
+        };
+        let mut ops: BTreeSet<String> = c.ops.iter().map(|s| (*s).to_owned()).collect();
+        // Ops that draw app-owned GPU state (a registered `CustomRenderer`, an app texture): a
+        // logical Scene cannot carry it and the CPU golden model cannot judge it, so they are
+        // pinned by pixel-asserting GPU tests instead (pebbles-gpu tests/gpu/custom.rs).
+        const GPU_TESTED: [(&str, &str); 2] = [
+            ("Custom", "custom_renders_in_painter_order, custom_inside_translucent_layer_gets_group_opacity"),
+            ("GpuImage", "gpu_image_composites_with_alpha, gpu_image_unknown_and_unregistered_are_skipped"),
+        ];
+        for (op, _tests) in GPU_TESTED {
+            assert!(!ops.contains(op), "the corpus now draws {op}: drop it from GPU_TESTED");
+            ops.insert(op.to_owned());
+        }
+        need(
+            "Op",
+            &ops,
+            strs(&[
+                "Fill",
+                "Stroke",
+                "PushEffectLayer",
+                "PushBackdropFilter",
+                "PushProjectedLayer",
+                "Custom",
+                "ShaderFill",
+                "GpuImage",
+                "Vertices",
+                "Atlas",
+                "PushLayer",
+                "PopLayer",
+                "Image",
+                "BlurredFill",
+                "BlurredGlyphs",
+                "DynamicImage",
+                "ImageNine",
+                "BlurredRect",
+                "Glyphs",
+                "Fragment",
+            ]),
+        );
+        need("Fill rule (fills)", &c.fill_rules, strs(&["NonZero", "EvenOdd"]));
+        need("Fill rule (clips)", &c.clip_rules, strs(&["NonZero", "EvenOdd"]));
+        let mix = [
+            "Normal",
+            "Multiply",
+            "Screen",
+            "Overlay",
+            "Darken",
+            "Lighten",
+            "ColorDodge",
+            "ColorBurn",
+            "HardLight",
+            "SoftLight",
+            "Difference",
+            "Exclusion",
+            "Hue",
+            "Saturation",
+            "Color",
+            "Luminosity",
+        ];
+        need("Mix", &c.mix, strs(&mix));
+        let compose = [
+            "Clear",
+            "Copy",
+            "Dest",
+            "SrcOver",
+            "DestOver",
+            "SrcIn",
+            "DestIn",
+            "SrcOut",
+            "DestOut",
+            "SrcAtop",
+            "DestAtop",
+            "Xor",
+            "Plus",
+            "PlusLighter",
+        ];
+        need("Compose", &c.compose, strs(&compose));
+        let extend: BTreeSet<String> = ["linear", "radial", "two-point", "sweep"]
+            .iter()
+            .flat_map(|k| ["Pad", "Repeat", "Reflect"].map(|e| format!("{k}/{e}")))
+            .collect();
+        need("Extend", &c.extend, extend);
+        need("Cap", &c.caps, strs(&["Butt", "Square", "Round"]));
+        need("Join", &c.joins, strs(&["Bevel", "Miter", "Round"]));
+        need("ImageQuality", &c.quality, strs(&["Low", "Medium"]));
+        need("ImageFormat", &c.format, strs(&["Rgba8", "Bgra8"]));
+        need("ImageAlphaType", &c.alpha, strs(&["Alpha", "AlphaPremultiplied"]));
+        let on: BTreeSet<String> = c.image_brush_on.iter().map(|s| (*s).to_owned()).collect();
+        need("image brush on", &on, strs(&["fill", "stroke"]));
+        if !c.dashes {
+            missing.push("dashed stroke".to_owned());
+        }
+        if !c.variable_glyphs {
+            missing.push("glyph run with normalized_coords".to_owned());
+        }
+        if c.fragment_depth < 3 {
+            missing.push(format!("append depth >= 3 (deepest {})", c.fragment_depth));
+        }
+        if !c.skewed {
+            missing.push("non-axis-aligned transform".to_owned());
+        }
+        assert_eq!(c.unknown, 0, "ops the census does not know (extend the match)");
+        assert!(missing.is_empty(), "the corpus does not exercise:\n  {}", missing.join("\n  "));
+    }
 }
