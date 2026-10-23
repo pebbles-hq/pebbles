@@ -863,7 +863,7 @@ fn parse_dollars(s: &str) -> i64 {
     (v * 100.0).round() as i64
 }
 
-#[cfg(test)]
+#[cfg(all(test, debug_assertions))] // every test here asserts debug-only element counts
 mod tests {
     use super::*;
     use pebbles_testing::Harness;

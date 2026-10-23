@@ -23,6 +23,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 ureq = "2"
 
 [dev-dependencies]
+render-check = { path = "../../tools/render-check" }   # V27: live smoke checks (dev only; transitional)
 # Headless mount/settle/inspect harness for the sample's smoke tests.
 pebbles-testing.workspace = true
 pebbles-render.workspace = true

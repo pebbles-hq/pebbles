@@ -9,6 +9,7 @@ pub mod candidate;
 pub mod case;
 pub mod corpus;
 pub mod golden;
+pub mod live;
 pub mod metric;
 pub mod png_io;
 pub mod probe;

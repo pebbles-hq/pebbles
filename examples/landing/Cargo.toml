@@ -9,6 +9,7 @@ publish = false
 pebbles = { workspace = true, features = ["image-view"] }
 
 [dev-dependencies]
+render-check = { path = "../../tools/render-check" }   # V27: live smoke checks (dev only; transitional)
 pebbles-testing.workspace = true
 pebbles-render.workspace = true
 

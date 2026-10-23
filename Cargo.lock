@@ -965,6 +965,7 @@ dependencies = [
  "pebbles-render",
  "pebbles-testing",
  "pebbles-widgets",
+ "render-check",
  "rusqlite",
  "serde",
  "serde_json",
@@ -2265,6 +2266,7 @@ dependencies = [
  "pebbles",
  "pebbles-render",
  "pebbles-testing",
+ "render-check",
 ]
 
 [[package]]
