@@ -40,6 +40,26 @@ pub(crate) fn install_context_loss_listeners(
     listen("webglcontextrestored", || PebblesUserEvent::GpuContextRestored);
 }
 
+/// 08 P05: show `message` on the page (the canvas stays empty when the GPU cannot start).
+/// Plain text only (`set_text_content`, never `innerHTML`); a second call updates the text.
+#[cfg(target_family = "wasm")]
+pub(crate) fn show_gpu_error(message: &str) {
+    let Some(document) = web_sys::window().and_then(|w| w.document()) else { return };
+    if let Some(existing) = document.get_element_by_id("pebbles-gpu-error") {
+        existing.set_text_content(Some(message));
+        return;
+    }
+    let (Some(body), Ok(div)) = (document.body(), document.create_element("div")) else { return };
+    div.set_id("pebbles-gpu-error");
+    let _ = div.set_attribute(
+        "style",
+        "font:15px/1.5 system-ui,sans-serif;color:#334155;max-width:34rem;margin:12vh auto;\
+         padding:0 1.5rem;text-align:center;position:fixed;inset:0;background:#fff;white-space:pre-line",
+    );
+    div.set_text_content(Some(message));
+    let _ = body.append_child(&div);
+}
+
 /// Pure part, unit-testable on any target.
 #[cfg_attr(not(target_family = "wasm"), allow(dead_code))] // native: tests only
 pub(crate) fn parse_query(search: &str, name: &str) -> Option<String> {

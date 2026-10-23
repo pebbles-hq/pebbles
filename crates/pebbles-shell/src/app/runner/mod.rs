@@ -779,16 +779,23 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             let proxy = self.proxy.clone().expect("event loop proxy set in App::run");
             wasm_bindgen_futures::spawn_local(async move {
                 let mut context = new_context(&init).await;
-                // A failure here is almost always "no WebGPU adapter" — spell out the
-                // fix rather than panicking with a cryptic `NoCompatibleDevice`, since
-                // this is THE first-run web blocker. console_error_panic_hook surfaces it.
-                let surface = context.create_surface(window.clone(), w, h).await.expect(
-                    "Pebbles could not get a WebGPU device. Enable WebGPU in your browser: \
-                         chrome://flags → \"Unsafe WebGPU Support\" (on Linux also \"Vulkan\"), then \
-                         relaunch and check chrome://gpu. Firefox: about:config dom.webgpu.enabled. \
-                         Pebbles is WebGPU-only — see PLATFORMS.md",
-                );
-                let _ = proxy.send_event(PebblesUserEvent::SurfaceReady { context, surface, window });
+                // 08 P05: neither WebGPU nor WebGL2 could start. No panic: log it and say so on
+                // the page. No event is sent, so `gpu_pending` stays set and nothing retries.
+                match context.create_surface(window.clone(), w, h).await {
+                    Ok(surface) => {
+                        let _ = proxy.send_event(PebblesUserEvent::SurfaceReady { context, surface, window });
+                    }
+                    Err(e) => {
+                        pebbles_core::log::error(
+                            pebbles_core::log::Cat::Gpu,
+                            format!("GPU init failed: {e}"),
+                        );
+                        crate::web_gpu::show_gpu_error(&format!(
+                            "This app needs WebGPU or WebGL2, and neither could start.\n{}",
+                            gpu::error_text(&e)
+                        ));
+                    }
+                }
             });
         }
     }
