@@ -156,14 +156,25 @@ impl FrameSink {
 
     /// Hand a packet over. Inline: rendered now, and the scene comes back for reuse with the
     /// outcome. (The threaded sink of P25 answers through `FrameDone` instead.)
-    pub(crate) fn submit(&mut self, key: WindowKey, packet: FramePacket) -> Handover {
+    /// `pre_present` runs right before an inline present (winit's `pre_present_notify`); the
+    /// render thread never calls it (T1).
+    pub(crate) fn submit(&mut self, key: WindowKey, packet: FramePacket, pre_present: &dyn Fn()) -> Handover {
         match self {
             Self::Inline(state) => {
-                let outcome = render_packet_ref(state, key, &packet);
+                let outcome = render_packet_ref(state, key, &packet, pre_present);
                 Handover::Rendered(outcome, packet.scene)
             }
             #[cfg(not(target_family = "wasm"))]
             Self::Threaded(thread) => Handover::Queued { replaced: thread.submit(key, packet).is_some() },
+        }
+    }
+
+    /// `PEBBLES_SYNTH_GPU_LOSS` (08 §6.9): destroy the real devices, wherever they live.
+    pub(crate) fn inject_synthetic_loss(&self) {
+        match self {
+            Self::Inline(state) => state.ctx.inject_synthetic_loss(),
+            #[cfg(not(target_family = "wasm"))]
+            Self::Threaded(thread) => thread.simulate_loss(),
         }
     }
 
@@ -216,11 +227,16 @@ impl FrameSink {
 /// The ONE function that renders a packet, in both modes. No winit inside (08 §17.1 T1).
 #[cfg_attr(target_family = "wasm", allow(dead_code))] // inline mode reuses the scene instead
 pub(crate) fn render_packet(state: &mut RenderState, key: WindowKey, packet: FramePacket) -> FrameOutcome {
-    render_packet_ref(state, key, &packet)
+    render_packet_ref(state, key, &packet, &|| {})
 }
 
 /// [`render_packet`] by reference, so the inline sink can hand the scene back for reuse.
-fn render_packet_ref(state: &mut RenderState, key: WindowKey, packet: &FramePacket) -> FrameOutcome {
+fn render_packet_ref(
+    state: &mut RenderState,
+    key: WindowKey,
+    packet: &FramePacket,
+    pre_present: &dyn Fn(),
+) -> FrameOutcome {
     use pebbles_foundation::log::{Cat, Level, logf};
     // 08 §5.3 rule 3: never acquire on a dead device.
     if state.ctx.needs_reset() {
@@ -252,10 +268,23 @@ fn render_packet_ref(state: &mut RenderState, key: WindowKey, packet: &FramePack
         packet.base_color,
         packet.size,
         packet.scale_factor,
+        pre_present,
         |line| {
             logf(Level::Debug, Cat::Gpu, format_args!("{line}"));
         },
     )
+}
+
+/// How long the UI thread waits for a live-resize frame to be presented (08 §17.4).
+pub(crate) const RESIZE_SYNC_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// A window's live-resize state (08 §17.4).
+#[derive(Debug, Default)]
+pub(crate) struct ResizeSync {
+    /// Set by `Resized` / `ScaleFactorChanged`; the next frame waits for its present.
+    pub pending: bool,
+    /// The timeout was logged for this window (once per window).
+    pub logged: bool,
 }
 
 /// Per-window in-flight pacing (08 §17.3 steps 1 and 5).
@@ -269,12 +298,19 @@ impl Pacer {
     /// `RedrawRequested`: whether to build a packet now. At the cap the redraw is remembered
     /// instead; a live-resize frame (P26) bypasses the cap.
     pub(crate) fn begin(&mut self, resize_sync: bool) -> bool {
-        if self.in_flight >= MAX_IN_FLIGHT && !resize_sync {
-            self.redraw_pending = true;
+        if self.defer(resize_sync) {
             return false;
         }
         self.in_flight += 1;
         true
+    }
+
+    /// Whether this `RedrawRequested` must wait (at the cap, not a live-resize frame); the
+    /// redraw is remembered. Checked before the UI frame runs (08 §17.3 step 1).
+    pub(crate) fn defer(&mut self, resize_sync: bool) -> bool {
+        let defer = self.in_flight >= MAX_IN_FLIGHT && !resize_sync;
+        self.redraw_pending |= defer;
+        defer
     }
 
     /// A packet completed (`FrameDone` or the inline return). Returns whether to request a

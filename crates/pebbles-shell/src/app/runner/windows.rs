@@ -195,6 +195,7 @@ impl Runner {
                 window,
                 pacer: Pacer::default(),
                 frame_id: 0,
+                resize_sync: ResizeSync::default(),
                 ui,
                 background: spec.background,
                 cursor: Offset::ZERO,
@@ -235,6 +236,7 @@ impl Runner {
                 // The next packet carries the new size; `render_packet` configures (08 §17.3 b).
                 w.occluded = false;
                 if size.width > 0 && size.height > 0 {
+                    w.resize_sync.pending = true;
                     w.window.request_redraw();
                 }
             }
@@ -242,6 +244,7 @@ impl Runner {
             WindowEvent::ScaleFactorChanged { .. } => {
                 pebbles_widgets::overlay::hide_overlay();
                 w.occluded = false;
+                w.resize_sync.pending = true;
                 w.window.request_redraw();
             }
             WindowEvent::Occluded(occluded) => {

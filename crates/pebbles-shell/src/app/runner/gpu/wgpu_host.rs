@@ -75,6 +75,12 @@ impl RenderContext {
         Some((r.total_allocated_bytes, r.total_reserved_bytes))
     }
 
+    /// A headless device (tests: a context with no window still has a device to lose).
+    #[cfg(test)]
+    pub(crate) fn request_headless_device(&mut self) {
+        pollster::block_on(self.inner.request_device(None)).expect("headless device");
+    }
+
     /// Soak tool (`PEBBLES_SYNTH_GPU_LOSS`): destroy the real devices (P10).
     pub(crate) fn inject_synthetic_loss(&self) {
         self.inner.simulate_device_loss();
@@ -92,6 +98,7 @@ impl RenderContext {
         base_color: Color,
         size: (u32, u32),
         scale_factor: f64,
+        pre_present: &dyn Fn(),
         debug: impl Fn(&str),
     ) -> FrameOutcome {
         use pebbles_foundation::log::{Cat, Level, logf};
@@ -139,6 +146,7 @@ impl RenderContext {
             return FrameOutcome::Skipped;
         }
         let _ = gpu.device().poll(wgpu::PollType::Poll);
+        pre_present();
         frame.present();
         if surface.0.escalate(status) == FrameAction::RenderThenReconfigure {
             reconfigure(surface);

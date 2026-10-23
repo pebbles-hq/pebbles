@@ -88,11 +88,18 @@ impl Runner {
         self.gpu_retry_at = Some(started + reset_backoff(self.gpu_reset_failures));
         // 3. One line per lost device.
         let g = self.gpu_generation;
-        for lost in self.render_state().map(|s| s.ctx.lost_devices()).unwrap_or_default() {
+        #[cfg_attr(target_family = "wasm", allow(unused_mut))]
+        let mut lost_lines = self.render_state().map(|s| s.ctx.lost_devices()).unwrap_or_default();
+        #[cfg(not(target_family = "wasm"))]
+        lost_lines.append(&mut self.lost_lines);
+        for lost in lost_lines {
             gpu_log(Level::Error, &format!("GPU device lost (generation={g}, {lost})"));
         }
         // 4. Drop every renderer and surface (old swapchains go before new ones are configured).
-        self.sink = None;
+        // The render thread already dropped its own (08 §17.6 step 1) and stays up for `ReplaceGpu`.
+        if self.render_state().is_some() {
+            self.sink = None;
+        }
         #[cfg(target_family = "wasm")]
         {
             self.start_web_recovery(init, started);
@@ -111,25 +118,47 @@ impl Runner {
         use pebbles_foundation::log::Level;
         let mut ctx = pollster::block_on(new_context(init));
         let mut failure: Option<String> = None;
-        let windows = self.active.iter().map(|a| &a.window).chain(self.windows.values().map(|w| &w.window));
-        let mut surfaces = Vec::new();
-        for window in windows {
-            let phys = window.inner_size();
-            match pollster::block_on(ctx.create_surface(
-                window.clone(),
-                phys.width.max(1),
-                phys.height.max(1),
-            )) {
-                Ok(surface) => surfaces.push((window.id(), surface)),
-                Err(e) => failure = failure.or(Some(gpu::error_text(&e))),
+        let windows: Vec<Arc<Window>> = self
+            .active
+            .iter()
+            .map(|a| Arc::clone(&a.window))
+            .chain(self.windows.values().map(|w| Arc::clone(&w.window)))
+            .collect();
+        let size = |w: &Window| {
+            let phys = w.inner_size();
+            (phys.width.max(1), phys.height.max(1))
+        };
+        match self.sink.as_mut() {
+            // 08 §17.6 step 2: a new context and one new surface per window, created here (the UI
+            // thread) with the new instance, then handed over in one `ReplaceGpu`.
+            Some(FrameSink::Threaded(thread)) => {
+                let instance = ctx.instance();
+                let mut surfaces = Vec::new();
+                for window in &windows {
+                    match instance.create_surface(Arc::clone(window)) {
+                        Ok(surface) => surfaces.push((window.id(), surface, size(window))),
+                        Err(e) => failure = failure.or(Some(e.to_string())),
+                    }
+                }
+                thread.replace_gpu(ctx, surfaces);
+            }
+            _ => {
+                let mut surfaces = Vec::new();
+                for window in &windows {
+                    let (w, h) = size(window);
+                    match pollster::block_on(ctx.create_surface(Arc::clone(window), w, h)) {
+                        Ok(surface) => surfaces.push((window.id(), surface)),
+                        Err(e) => failure = failure.or(Some(gpu::error_text(&e))),
+                    }
+                }
+                let mut state = RenderState::new(ctx);
+                for (key, surface) in surfaces {
+                    state.adopt(key, surface);
+                }
+                self.sink = Some(FrameSink::Inline(state));
+                self.thread_sink_if_configured();
             }
         }
-        let mut state = RenderState::new(ctx);
-        for (key, surface) in surfaces {
-            state.adopt(key, surface);
-        }
-        self.sink = Some(FrameSink::Inline(state));
-        self.thread_sink_if_configured();
         if let Some(error) = failure {
             self.gpu_reset_requested = true;
             let n = self.gpu_reset_failures + 1;
@@ -206,10 +235,15 @@ impl Runner {
                 .is_some_and(|i| i.gpu.render_threading == pebbles_gpu::RenderThreading::Threaded);
             let (true, Some(proxy)) = (threaded, self.proxy.clone()) else { return };
             let Some(FrameSink::Inline(state)) = self.sink.take() else { return };
-            let done: render_thread::FrameDoneFn = Box::new(move |key, frame_id, outcome| {
-                let _ = proxy.send_event(PebblesUserEvent::FrameDone { key, frame_id, outcome });
+            let events: render_thread::EventFn = Box::new(move |event| {
+                let _ = proxy.send_event(match event {
+                    render_thread::ThreadEvent::FrameDone { key, frame_id, outcome } => {
+                        PebblesUserEvent::FrameDone { key, frame_id, outcome }
+                    }
+                    render_thread::ThreadEvent::DeviceLost(lost) => PebblesUserEvent::GpuDeviceLost { lost },
+                });
             });
-            match render_thread::RenderThread::spawn(state, done) {
+            match render_thread::RenderThread::spawn(state, events) {
                 Ok(thread) => self.sink = Some(FrameSink::Threaded(thread)),
                 Err(e) => {
                     // The state moved into the failed spawn: rebuild inline on the next frame.
@@ -264,8 +298,8 @@ impl Runner {
             // stderr is invisible in a browser: echo to the console too.
             #[cfg(target_family = "wasm")]
             web_sys::console::warn_1(&format!("pebbles: SYNTH device loss injected (frame {fno})").into());
-            if let Some(state) = self.render_state() {
-                state.ctx.inject_synthetic_loss();
+            if let Some(sink) = self.sink.as_ref() {
+                sink.inject_synthetic_loss();
             }
         }
         if self.recover_gpu_if_poisoned() {
@@ -301,6 +335,10 @@ impl Runner {
         // 08 §5.4: an occluded window renders nothing and requests no frames until a
         // visibility event clears the flag (otherwise macOS spins on instant occluded acquires).
         if !should_render(active.occluded) {
+            return;
+        }
+        // 08 §17.3 step 1: at the in-flight cap, remember the redraw and skip the UI frame.
+        if active.pacer.defer(active.resize_sync.pending) {
             return;
         }
 
@@ -441,6 +479,8 @@ impl Runner {
             &active.window,
             &mut active.pacer,
             &mut active.frame_id,
+            &mut active.resize_sync,
+            &mut self.resize_sync_timeouts,
             &mut self.frame,
             self.background,
         );
@@ -524,7 +564,7 @@ impl Runner {
     /// renderers and GPU context).
     pub(super) fn render_window(&mut self, w: &mut WindowRuntime) {
         // 08 §5.7 (P12): a hidden window renders nothing and requests no frames.
-        if !should_render(w.occluded) {
+        if !should_render(w.occluded) || w.pacer.defer(w.resize_sync.pending) {
             return;
         }
         // NOTE: `w` is detached from `self.windows` during dispatch, so a reset
@@ -579,6 +619,8 @@ impl Runner {
             &w.window,
             &mut w.pacer,
             &mut w.frame_id,
+            &mut w.resize_sync,
+            &mut self.resize_sync_timeouts,
             &mut self.frame,
             w.background,
         );
@@ -614,19 +656,30 @@ fn should_render(occluded: bool) -> bool {
 /// `None`: no sink yet, or the window is at its in-flight cap (the redraw is remembered).
 /// `Some(Some(outcome))`: rendered inline (the scene came back for reuse). `Some(None)`: queued
 /// on the render thread, which reports through `FrameDone`.
+#[allow(clippy::too_many_arguments)]
 fn submit_frame(
     sink: &mut Option<FrameSink>,
     key: frame::WindowKey,
     window: &Window,
     pacer: &mut Pacer,
     frame_id: &mut u64,
+    resize: &mut ResizeSync,
+    timeouts: &mut u64,
     frame: &mut Scene,
     base_color: Color,
 ) -> Option<Option<FrameOutcome>> {
     let sink = sink.as_mut()?;
-    if !pacer.begin(false) {
+    // 08 §17.4: only the render thread needs the wait; inline frames present before returning.
+    let sync = std::mem::take(&mut resize.pending) && sink.state().is_none();
+    if !pacer.begin(sync) {
         return None;
     }
+    let (sync_tx, sync_rx) = if sync {
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
     *frame_id += 1;
     let size = window.inner_size();
     let packet = FramePacket {
@@ -635,11 +688,13 @@ fn submit_frame(
         size: (size.width, size.height),
         scale_factor: window.scale_factor(),
         base_color,
-        sync: None,
+        sync: sync_tx,
     };
-    // 08 §17.1 T1: the last winit call before the hand-over.
-    window.pre_present_notify();
-    match sink.submit(key, packet) {
+    // winit's `pre_present_notify` must come right before a real present: on Wayland it arms a
+    // frame callback, and a frame that is then not presented (lost, skipped) leaves winit
+    // withholding `RedrawRequested` for good. Inline runs it just before `present()`; threaded
+    // frames skip it (08 §17.1 T1 — they are paced by the in-flight cap and the swapchain).
+    match sink.submit(key, packet, &|| window.pre_present_notify()) {
         Handover::Rendered(outcome, scene) => {
             *frame = scene;
             if pacer.done(outcome) {
@@ -650,6 +705,17 @@ fn submit_frame(
         Handover::Queued { replaced } => {
             if replaced {
                 pacer.replaced();
+            }
+            // 08 §17.4: hold this `RedrawRequested` until the new-size frame is presented, so the
+            // content tracks the window frame during a live resize.
+            if let Some(rx) = sync_rx
+                && rx.recv_timeout(frame::RESIZE_SYNC_TIMEOUT).is_err()
+            {
+                *timeouts += 1;
+                if !std::mem::replace(&mut resize.logged, true) {
+                    use pebbles_foundation::log::{Cat, Level, logf};
+                    logf(Level::Debug, Cat::Gpu, format_args!("resize sync timed out after 100 ms"));
+                }
             }
             Some(None)
         }
@@ -705,9 +771,14 @@ fn follow_up(
             }
             window.request_redraw();
         }
+        // Inline: rebuild now. Threaded (08 §17.6 step 2): only `GpuDeviceLost` starts the
+        // recovery — late `DeviceLost` answers for frames queued before `ReplaceGpu` must not
+        // trigger another rebuild.
         FrameOutcome::DeviceLost => {
-            *reset_requested = true;
-            window.request_redraw();
+            if sink.as_ref().is_none_or(|s| s.state().is_some()) {
+                *reset_requested = true;
+                window.request_redraw();
+            }
         }
     }
 }

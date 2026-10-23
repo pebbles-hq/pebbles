@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use web_time::Instant;
 
-use frame::{FrameOutcome, FramePacket, FrameSink, Handover, Pacer, RenderState};
+use frame::{FrameOutcome, FramePacket, FrameSink, Handover, Pacer, RenderState, ResizeSync};
 use gpu::{HostInit, RenderContext, RenderSurface, Scene, new_context};
 use kurbo::Affine;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
@@ -132,6 +132,10 @@ pub(crate) enum PebblesUserEvent {
     /// (native) The render thread finished a packet (08 §17.3 step 5).
     #[cfg(not(target_family = "wasm"))]
     FrameDone { key: frame::WindowKey, frame_id: u64, outcome: FrameOutcome },
+    /// (native) The render thread lost its device (08 §17.6): one `reason=…: message` line per
+    /// lost device. Recover with `ReplaceGpu`.
+    #[cfg(not(target_family = "wasm"))]
+    GpuDeviceLost { lost: Vec<String> },
     /// (native) A GPU device was lost — wake and recover (08 §6.8).
     #[cfg_attr(target_family = "wasm", allow(dead_code))] // sent only by the native wgpu waker
     GpuLost,
@@ -148,6 +152,8 @@ struct ActiveWindow {
     pacer: Pacer,
     /// +1 per packet.
     frame_id: u64,
+    /// Live-resize sync (08 §17.4).
+    resize_sync: ResizeSync,
     /// Not visible: render nothing until a visibility event (08 §5.4).
     occluded: bool,
 }
@@ -163,6 +169,8 @@ struct WindowRuntime {
     pacer: Pacer,
     /// +1 per packet.
     frame_id: u64,
+    /// Live-resize sync (08 §17.4).
+    resize_sync: ResizeSync,
     ui: Ui,
     background: Color,
     cursor: Offset,
@@ -218,6 +226,11 @@ pub(super) struct Runner {
     sink: Option<FrameSink>,
     /// Closed windows the render thread has not released yet (08 §17.5): dropped after it stops.
     retired_windows: Vec<Arc<Window>>,
+    /// (threaded) The lost-device lines the render thread reported, logged by the next reset.
+    #[cfg(not(target_family = "wasm"))]
+    lost_lines: Vec<String>,
+    /// Live-resize frames that were not presented within `RESIZE_SYNC_TIMEOUT` (08 §17.4).
+    resize_sync_timeouts: u64,
     /// The shell-wide platform policy (display handle + env-resolved GPU settings), built
     /// once on the first `resumed` and reused by every recovery.
     host_init: Option<HostInit>,
@@ -357,6 +370,9 @@ impl Runner {
             native_menu: None,
             sink: None,
             retired_windows: Vec::new(),
+            #[cfg(not(target_family = "wasm"))]
+            lost_lines: Vec::new(),
+            resize_sync_timeouts: 0,
             host_init: None,
             proxy: None,
             #[cfg(target_family = "wasm")]
@@ -518,7 +534,13 @@ impl Runner {
         }
 
         window.request_redraw();
-        self.active = Some(ActiveWindow { window, pacer: Pacer::default(), frame_id: 0, occluded: false });
+        self.active = Some(ActiveWindow {
+            window,
+            pacer: Pacer::default(),
+            frame_id: 0,
+            resize_sync: ResizeSync::default(),
+            occluded: false,
+        });
 
         // B3: build + attach the native menu bar now that the window exists.
         #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
@@ -894,6 +916,15 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             }
             #[cfg(not(target_family = "wasm"))]
             PebblesUserEvent::FrameDone { key, frame_id: _, outcome } => self.frame_done(key, outcome),
+            #[cfg(not(target_family = "wasm"))]
+            PebblesUserEvent::GpuDeviceLost { lost } => {
+                self.lost_lines = lost;
+                self.gpu_reset_requested = true;
+                self.request_redraw();
+                for w in self.windows.values() {
+                    w.window.request_redraw();
+                }
+            }
             PebblesUserEvent::GpuLost => {
                 self.request_redraw();
                 for w in self.windows.values() {
@@ -936,8 +967,10 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     && size.width > 0
                     && size.height > 0
                 {
-                    // The next packet carries the new size; `render_packet` configures (08 §17.3 b).
+                    // The next packet carries the new size; `render_packet` configures (08 §17.3 b)
+                    // and, on the render thread, the UI waits for it (08 §17.4).
                     active.occluded = false;
+                    active.resize_sync.pending = true;
                     active.window.request_redraw();
                 }
             }
@@ -1265,6 +1298,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 pebbles_widgets::overlay::hide_overlay();
                 if let Some(active) = self.active.as_mut() {
                     active.occluded = false;
+                    active.resize_sync.pending = true;
                     active.window.request_redraw();
                 }
             }
