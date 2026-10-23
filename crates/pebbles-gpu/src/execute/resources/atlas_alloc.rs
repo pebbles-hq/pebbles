@@ -438,6 +438,7 @@ impl CoverageAtlas {
 
     /// Resident path / clip masks.
     #[cfg(any(test, debug_assertions))]
+    #[cfg(debug_assertions)] // census only (M05)
     pub(crate) fn path_entries(&self) -> usize {
         self.path_entries
     }

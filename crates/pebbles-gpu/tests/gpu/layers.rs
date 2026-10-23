@@ -240,7 +240,12 @@ fn layer_pool_steady_state_200_frames() {
     let mut at10 = None;
     for i in 1..=200 {
         let _ = frame(&device, &queue, &mut r, &mut targets, &s);
-        let snap = (r.census(), targets.layer_pool_targets(), targets.frame_target_bytes());
+        // The census is debug-only (M05); release runs still compare the pool and target bytes.
+        #[cfg(debug_assertions)]
+        let census = r.census();
+        #[cfg(not(debug_assertions))]
+        let census = ();
+        let snap = (census, targets.layer_pool_targets(), targets.frame_target_bytes());
         if i == 10 {
             at10 = Some(snap);
         } else if i == 200 {

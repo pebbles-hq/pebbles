@@ -209,6 +209,7 @@ impl RetainedCache {
     }
 
     #[cfg(any(test, debug_assertions))]
+    #[cfg(debug_assertions)] // census only (M05)
     pub(crate) fn bytes(&self) -> u64 {
         self.bytes
     }

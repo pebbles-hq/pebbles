@@ -21,6 +21,25 @@ fn capture_zero_size_is_err() {
     assert!(o.render_rgba(&Scene::new(), (16, 0), Color::WHITE, 1.0).is_err());
 }
 
+/// G31: the boundary sizes 1 and `max` capture; `max + 1` and `u32::MAX` (either side) are
+/// an `Err`. None of them panics. `max` is captured one row high to keep the readback small.
+#[test]
+#[ignore = "gpu"]
+fn capture_boundary_sizes_never_panic() {
+    let Some(mut o) = offscreen("capture_boundary_sizes_never_panic") else { return };
+    let max = o.max_size();
+    let img = o.render_rgba(&Scene::new(), (1, 1), Color::WHITE, 1.0).expect("1×1 capture");
+    assert_eq!(img.pixels, [255, 255, 255, 255]);
+    for size in [(max, 1), (1, max)] {
+        let img = o.render_rgba(&Scene::new(), size, Color::WHITE, 1.0).expect("max-size capture");
+        assert_eq!(img.pixels.len(), max as usize * 4, "{size:?}");
+    }
+    for size in [(max + 1, 1), (1, max + 1), (u32::MAX, 1), (1, u32::MAX), (u32::MAX, u32::MAX)] {
+        let r = o.render_rgba(&Scene::new(), size, Color::WHITE, 1.0);
+        assert!(matches!(r, Err(pebbles_gpu::CaptureError::InvalidSize { .. })), "{size:?}: {r:?}");
+    }
+}
+
 /// C15: an unaligned width (17 px) has its row padding removed; pixel (16, 0) is correct.
 #[test]
 #[ignore = "gpu"]
