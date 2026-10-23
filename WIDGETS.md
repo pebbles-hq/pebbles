@@ -219,6 +219,28 @@ remote-URL images) and their per-platform status live in
 | Custom drawing (`canvas`) | ✅ H2 | immediate-mode vector surface: `stroke_line`/`stroke_path`, `fill_path`, `fill_path_gradient`, dashed strokes (`stroke_line_dashed`); the substrate Charts build on — `pebbles-charts` is its own repo |
 | Lifecycle & memory hygiene | ✅ | teardown verified 2026-09-01 (screens fully unmount; zero frames/timers after navigation — `performance-standards.md` §0-1). E6 ✅ DONE 2026-09-02: `text_edit` leak fixed, `scroll_metrics` audited clean, census accessors + a slim in-repo lifecycle leak-soak (`tests/suite/lifecycle_soak.rs`); the full route-hopping soak moved to the pebbles-docs gallery |
 
+### Golden tests
+
+`pebbles_shell::capture::assert_scene_matches_golden(scene, size, scale, name)` renders a scene
+offscreen and compares it with `tests/goldens/<name>.png` in your crate. Pebbles draws the same
+pixels on every backend, so **one golden serves every OS** (no per-platform copies). A pixel may
+differ by 1 from rounding; anything more fails, writes `<name>.actual.png` and
+`<name>.diff.png` next to the golden and reports the numbers. Record or refresh a golden with
+`PEBBLES_UPDATE_GOLDENS=1`. Without a GPU adapter the check is skipped with a message
+(`PEBBLES_REQUIRE_GPU=1` makes that a failure, as CI lanes do).
+
+Build the scene from a harness on the bundled fonts, never system fonts:
+
+```rust
+#[test]
+#[ignore = "gpu"]
+fn settings_screen_matches_golden() {
+    let mut h = pebbles_testing::Harness::new(); // bundled fonts only
+    h.mount(settings_screen);
+    pebbles_shell::capture::assert_scene_matches_golden(&h.draw(), (800, 600), 1.0, "settings");
+}
+```
+
 ## 8. Open items — add-to-track (🆕 not in the p2 roadmap yet)
 
 All 2026-09-01 untracked gaps have landed: `FittedBox` · `FractionallySizedBox` ·
