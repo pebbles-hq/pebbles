@@ -55,12 +55,6 @@ impl HostInit {
             },
         }
     }
-
-    /// Capture / tests: no display.
-    #[cfg_attr(target_family = "wasm", allow(dead_code))]
-    pub(crate) fn headless() -> Self {
-        Self { gpu: pebbles_gpu::GpuInit::headless() }
-    }
 }
 
 /// A GPU context built from `init`.

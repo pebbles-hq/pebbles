@@ -31,8 +31,6 @@ mod app;
 // primitive charts/reports build on.
 #[cfg(not(target_family = "wasm"))]
 pub mod capture;
-// The GPU host (wgpu context/surface/renderer).
-mod gpu;
 mod hotkeys;
 #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
 mod native_menu;

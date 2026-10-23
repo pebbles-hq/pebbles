@@ -35,8 +35,6 @@ use pebbles_foundation::{Color, Size};
 use pebbles_render::{Scene, TextEnv};
 use pebbles_widgets::{OverlayHost, View};
 
-use crate::gpu;
-
 /// Maximum capture dimension per side. A capture allocates a `width×height×4` GPU texture
 /// plus a 256-byte-row-padded readback buffer, so an unbounded size is a memory-exhaustion
 /// vector; this ceiling also stays within the max 2D texture size of common GPUs and keeps
@@ -153,7 +151,7 @@ struct WgpuCapture(OffscreenRenderer);
 
 impl WgpuCapture {
     fn new() -> Result<Self, CaptureError> {
-        Ok(WgpuCapture(OffscreenRenderer::with_init(gpu::HostInit::headless().gpu)?))
+        Ok(WgpuCapture(OffscreenRenderer::with_init(pebbles_gpu::GpuInit::headless())?))
     }
 
     fn render(&mut self, scene: &Scene, w: u32, h: u32, base: Color) -> Result<Vec<u8>, CaptureError> {

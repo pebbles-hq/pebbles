@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use web_time::Instant;
 
-use crate::gpu::{HostInit, RenderContext, RenderSurface, Renderer, Scene, new_context};
+use gpu::{HostInit, RenderContext, RenderSurface, Renderer, Scene, new_context};
 use kurbo::Affine;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
 use pebbles_foundation::{Color, Offset, Size, TextDirection};
@@ -32,6 +32,8 @@ use super::App;
 mod input;
 mod render;
 mod soak_csv;
+// The GPU host: a thin, runner-private adapter over pebbles-gpu (X02).
+mod gpu;
 mod storm;
 mod windows;
 
@@ -679,7 +681,7 @@ impl Runner {
     fn soak_sample(&mut self) {
         let device = self.active.as_ref().map_or(0, |a| a.surface.device_index());
         let gpu = self.context.as_ref().and_then(|c| c.allocator_report(device));
-        let census = self.renderers.get(device).and_then(Option::as_ref).and_then(crate::gpu::census_values);
+        let census = self.renderers.get(device).and_then(Option::as_ref).and_then(gpu::census_values);
         #[cfg(debug_assertions)]
         let ui = Some([
             self.ui.element_count(),
@@ -759,7 +761,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                         // The #1 first-run failure on Linux/Windows: no compatible GPU/driver.
                         // Exit with a readable message pointing at `pebbles doctor`, not a
                         // one-word `expect` panic + backtrace.
-                        eprintln!("{}", crate::gpu::startup_failure_text(&e));
+                        eprintln!("{}", gpu::startup_failure_text(&e));
                         std::process::exit(1);
                     }
                 };

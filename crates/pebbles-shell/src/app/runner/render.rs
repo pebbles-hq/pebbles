@@ -6,7 +6,7 @@
 use super::*;
 
 use super::gpu_log;
-use crate::gpu::{PresentOutcome, present_frame};
+use gpu::{PresentOutcome, present_frame};
 
 use kurbo::Stroke;
 use peniko::Brush;
@@ -71,7 +71,7 @@ impl Runner {
                     &format!(
                         "GPU resets keep failing ({} in a row); retrying every 10 s. {}",
                         self.gpu_reset_failures,
-                        crate::gpu::repeated_reset_guidance()
+                        gpu::repeated_reset_guidance()
                     ),
                 );
             }
@@ -111,7 +111,7 @@ impl Runner {
                 phys.height.max(1),
             )) {
                 Ok(surface) => active.surface = surface,
-                Err(e) => failure = Some(crate::gpu::error_text(&e)),
+                Err(e) => failure = Some(gpu::error_text(&e)),
             }
         }
         for w in self.windows.values_mut() {
@@ -123,7 +123,7 @@ impl Runner {
                 phys.height.max(1),
             )) {
                 Ok(surface) => w.surface = surface,
-                Err(e) => failure = failure.or(Some(crate::gpu::error_text(&e))),
+                Err(e) => failure = failure.or(Some(gpu::error_text(&e))),
             }
         }
         if let Some(ctx) = self.context.as_ref() {
@@ -171,7 +171,7 @@ impl Runner {
             let mut context = new_context(&init).await;
             let event = match context.create_surface(window.clone(), w, h).await {
                 Ok(surface) => PebblesUserEvent::SurfaceReady { context, surface, window },
-                Err(e) => PebblesUserEvent::GpuRecoveryFailed { window, error: crate::gpu::error_text(&e) },
+                Err(e) => PebblesUserEvent::GpuRecoveryFailed { window, error: gpu::error_text(&e) },
             };
             let _ = proxy.send_event(event);
         });
@@ -395,7 +395,7 @@ impl Runner {
             self.background,
             &active.window,
         );
-        if stats && let Some(line) = crate::gpu::frame_stats_line(renderer) {
+        if stats && let Some(line) = gpu::frame_stats_line(renderer) {
             eprintln!("[pebbles gpu] {line}");
         }
         note_first_present(
@@ -549,7 +549,7 @@ impl Runner {
             &w.window,
         );
         if frame_stats_enabled()
-            && let Some(line) = crate::gpu::frame_stats_line(renderer)
+            && let Some(line) = gpu::frame_stats_line(renderer)
         {
             eprintln!("[pebbles gpu] {line}");
         }
