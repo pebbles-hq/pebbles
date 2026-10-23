@@ -129,6 +129,7 @@ impl Runner {
             state.adopt(key, surface);
         }
         self.sink = Some(FrameSink::Inline(state));
+        self.thread_sink_if_configured();
         if let Some(error) = failure {
             self.gpu_reset_requested = true;
             let n = self.gpu_reset_failures + 1;
@@ -175,6 +176,69 @@ impl Runner {
             };
             let _ = proxy.send_event(event);
         });
+    }
+
+    /// 08 §17.3 step 5 for a finished frame of `window`: log the first present, confirm a reset,
+    /// and follow up a frame that was not presented. Returns whether it was presented; the
+    /// caller marks the window occluded on `Occluded`.
+    pub(super) fn settle_frame(&mut self, window: &Arc<Window>, outcome: FrameOutcome) -> bool {
+        let presented = outcome == FrameOutcome::Presented;
+        note_first_present(&mut self.first_present_logged, self.started_at, presented);
+        if presented {
+            // 08 §6.7: the first present after a reset confirms it.
+            self.gpu_reset_unconfirmed = false;
+            self.gpu_reset_failures = 0;
+        } else {
+            follow_up(outcome, &mut self.sink, &mut self.gpu_reset_requested, window);
+        }
+        presented
+    }
+
+    /// Move the render state onto the render thread when `PEBBLES_RENDER_THREAD` / the per-OS
+    /// default asks for it (08 §17.7, §17.8). Inline otherwise, and always on the web.
+    #[cfg(not(target_family = "wasm"))]
+    pub(super) fn thread_sink_if_configured(&mut self) {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let threaded = self
+                .host_init
+                .as_ref()
+                .is_some_and(|i| i.gpu.render_threading == pebbles_gpu::RenderThreading::Threaded);
+            let (true, Some(proxy)) = (threaded, self.proxy.clone()) else { return };
+            let Some(FrameSink::Inline(state)) = self.sink.take() else { return };
+            let done: render_thread::FrameDoneFn = Box::new(move |key, frame_id, outcome| {
+                let _ = proxy.send_event(PebblesUserEvent::FrameDone { key, frame_id, outcome });
+            });
+            match render_thread::RenderThread::spawn(state, done) {
+                Ok(thread) => self.sink = Some(FrameSink::Threaded(thread)),
+                Err(e) => {
+                    // The state moved into the failed spawn: rebuild inline on the next frame.
+                    gpu_log(
+                        pebbles_foundation::log::Level::Error,
+                        &format!("could not start the render thread: {e}"),
+                    );
+                    self.gpu_reset_requested = true;
+                }
+            }
+        }
+    }
+
+    /// `FrameDone` from the render thread (08 §17.3 step 5).
+    #[cfg(not(target_family = "wasm"))]
+    pub(super) fn frame_done(&mut self, key: frame::WindowKey, outcome: FrameOutcome) {
+        let (window, redraw) = if let Some(a) = self.active.as_mut().filter(|a| a.window.id() == key) {
+            a.occluded |= outcome == FrameOutcome::Occluded;
+            (Arc::clone(&a.window), a.pacer.done(outcome))
+        } else if let Some(w) = self.windows.get_mut(&key) {
+            w.occluded |= outcome == FrameOutcome::Occluded;
+            (Arc::clone(&w.window), w.pacer.done(outcome))
+        } else {
+            return; // closed meanwhile
+        };
+        if redraw {
+            window.request_redraw();
+        }
+        self.settle_frame(&window, outcome);
     }
 
     pub(super) fn render(&mut self) {
@@ -370,7 +434,8 @@ impl Runner {
         // 4. Hand the packet to the sink (08 §17.3). NOTHING here may panic — a failed frame is
         // skipped and retried; a poisoned device reaches the reset via `needs_reset()`.
         let key = active.window.id();
-        let Some(outcome) = submit_frame(
+        let window = Arc::clone(&active.window);
+        let submitted = submit_frame(
             &mut self.sink,
             key,
             &active.window,
@@ -378,32 +443,26 @@ impl Runner {
             &mut active.frame_id,
             &mut self.frame,
             self.background,
-        ) else {
-            return;
-        };
+        );
         if stats && let Some(line) = self.render_state().and_then(|s| stats_line(s, key)) {
             eprintln!("[pebbles gpu] {line}");
         }
-        let Some(active) = self.active.as_mut() else { return };
-        note_first_present(
-            &mut self.first_present_logged,
-            self.started_at,
-            outcome == FrameOutcome::Presented,
-        );
-        if outcome == FrameOutcome::Presented {
-            // 08 §6.7: the first present after a reset confirms it.
-            self.gpu_reset_unconfirmed = false;
-            self.gpu_reset_failures = 0;
-        } else {
-            follow_up(
-                outcome,
-                &mut self.sink,
-                &mut self.gpu_reset_requested,
-                &active.window,
-                &mut active.occluded,
-            );
-            return;
+        match submitted {
+            None => return,
+            // Threaded: `FrameDone` settles it.
+            Some(None) => {}
+            Some(Some(outcome)) => {
+                if !self.settle_frame(&window, outcome) {
+                    if outcome == FrameOutcome::Occluded
+                        && let Some(active) = self.active.as_mut()
+                    {
+                        active.occluded = true;
+                    }
+                    return;
+                }
+            }
         }
+        let Some(active) = self.active.as_mut() else { return };
 
         // Keep the frames coming while any animation or scroll spring is running —
         // or while a lazy paint-time measurement requested a corrective relayout
@@ -514,7 +573,7 @@ impl Runner {
         self.text.finish_frame();
 
         let key = w.window.id();
-        let Some(outcome) = submit_frame(
+        let submitted = submit_frame(
             &mut self.sink,
             key,
             &w.window,
@@ -522,27 +581,22 @@ impl Runner {
             &mut w.frame_id,
             &mut self.frame,
             w.background,
-        ) else {
-            return;
-        };
+        );
         if frame_stats_enabled()
             && let Some(line) = self.render_state().and_then(|s| stats_line(s, key))
         {
             eprintln!("[pebbles gpu] {line}");
         }
-        note_first_present(
-            &mut self.first_present_logged,
-            self.started_at,
-            outcome == FrameOutcome::Presented,
-        );
-        if outcome == FrameOutcome::Presented {
-            // 08 §6.7: the first present after a reset confirms it.
-            self.gpu_reset_unconfirmed = false;
-            self.gpu_reset_failures = 0;
-        } else {
-            // An occluded acquire marks the window hidden until a visibility event (P12).
-            follow_up(outcome, &mut self.sink, &mut self.gpu_reset_requested, &w.window, &mut w.occluded);
-            return;
+        match submitted {
+            None => return,
+            Some(None) => {}
+            Some(Some(outcome)) => {
+                if !self.settle_frame(&w.window, outcome) {
+                    // An occluded acquire marks the window hidden until a visibility event (P12).
+                    w.occluded |= outcome == FrameOutcome::Occluded;
+                    return;
+                }
+            }
         }
 
         if pending_tasks || corrective || pebbles_core::animation::active() {
@@ -556,9 +610,10 @@ fn should_render(occluded: bool) -> bool {
     !occluded
 }
 
-/// Build `window`'s packet from the painted `frame` and hand it to the sink (08 §17.3 steps 1–2
-/// and 5). The scene comes back for reuse. `None`: no sink yet, or the window is at its
-/// in-flight cap (the redraw is remembered).
+/// Build `window`'s packet from the painted `frame` and hand it to the sink (08 §17.3 steps 1–3).
+/// `None`: no sink yet, or the window is at its in-flight cap (the redraw is remembered).
+/// `Some(Some(outcome))`: rendered inline (the scene came back for reuse). `Some(None)`: queued
+/// on the render thread, which reports through `FrameDone`.
 fn submit_frame(
     sink: &mut Option<FrameSink>,
     key: frame::WindowKey,
@@ -567,7 +622,7 @@ fn submit_frame(
     frame_id: &mut u64,
     frame: &mut Scene,
     base_color: Color,
-) -> Option<FrameOutcome> {
+) -> Option<Option<FrameOutcome>> {
     let sink = sink.as_mut()?;
     if !pacer.begin(false) {
         return None;
@@ -584,12 +639,21 @@ fn submit_frame(
     };
     // 08 §17.1 T1: the last winit call before the hand-over.
     window.pre_present_notify();
-    let (outcome, scene) = sink.submit(key, packet);
-    *frame = scene;
-    if pacer.done(outcome) {
-        window.request_redraw();
+    match sink.submit(key, packet) {
+        Handover::Rendered(outcome, scene) => {
+            *frame = scene;
+            if pacer.done(outcome) {
+                window.request_redraw();
+            }
+            Some(Some(outcome))
+        }
+        Handover::Queued { replaced } => {
+            if replaced {
+                pacer.replaced();
+            }
+            Some(None)
+        }
     }
-    Some(outcome)
 }
 
 /// The `[pebbles gpu]` stats line of the renderer that drew window `key`.
@@ -599,33 +663,29 @@ fn stats_line(state: &RenderState, key: frame::WindowKey) -> Option<String> {
 }
 
 /// The runner's follow-up for a frame that was not presented (08 §5.1, §5.6, §17.3 step 5):
-/// every window ends presented, with a redraw scheduled, or occluded.
+/// every window ends presented, with a redraw scheduled, or occluded (the caller's flag).
 fn follow_up(
     outcome: FrameOutcome,
     sink: &mut Option<FrameSink>,
     reset_requested: &mut bool,
     window: &Arc<Window>,
-    occluded: &mut bool,
 ) {
     match outcome {
         // `Pacer::done` already re-requested a skipped frame (§5.6).
-        FrameOutcome::Presented | FrameOutcome::Skipped => {}
-        FrameOutcome::Occluded => *occluded = true,
+        FrameOutcome::Presented | FrameOutcome::Skipped | FrameOutcome::Occluded => {}
         FrameOutcome::SurfaceLost => {
+            // 08 §17.5: a new surface for the same window, created on this (the UI) thread.
             #[cfg(not(target_family = "wasm"))]
             {
                 use pebbles_foundation::log::{Cat, Level, logf};
                 let phys = window.inner_size();
-                let state = sink.as_mut().and_then(FrameSink::state_mut);
-                let recreated = state.map(|state| {
-                    let surface = pollster::block_on(state.ctx.create_surface(
-                        window.clone(),
-                        phys.width.max(1),
-                        phys.height.max(1),
-                    ));
-                    surface.map(|surface| state.adopt(window.id(), surface))
+                let size = (phys.width.max(1), phys.height.max(1));
+                let replaced = sink.as_mut().map(|sink| {
+                    let surface =
+                        sink.instance().create_surface(Arc::clone(window)).map_err(|e| e.to_string())?;
+                    sink.add_window(window.id(), surface, size)
                 });
-                match recreated {
+                match replaced {
                     Some(Ok(())) => {
                         logf(
                             Level::Warn,

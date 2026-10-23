@@ -21,13 +21,10 @@ impl Runner {
             if let Some(wid) = self.window_by_id.remove(&id)
                 && let Some(w) = self.windows.remove(&wid)
             {
-                // The surface (it holds a window clone) goes before the window (08 §17.1 T2).
-                if let Some(state) = self.render_state_mut() {
-                    state.surfaces.remove(&wid);
-                }
                 if let Some(f) = &w.on_close {
                     f();
                 }
+                self.release_window(w.window);
             }
         }
         // Runtime window changes (set_title / maximize / minimize / move / …).
@@ -166,24 +163,21 @@ impl Runner {
         };
         window.set_ime_allowed(true); // enable IME composition on secondary windows too
         let physical = window.inner_size();
-        let Some(state) = self.render_state_mut() else { return };
-        let surface = match pollster::block_on(state.ctx.create_surface(
-            window.clone(),
-            physical.width.max(1),
-            physical.height.max(1),
-        )) {
-            Ok(s) => s,
-            Err(e) => {
-                pebbles_core::log::warn(
-                    pebbles_core::log::Cat::General,
-                    format!("could not create a GPU surface for a secondary window: {}", gpu::error_text(&e)),
-                );
-                return;
-            }
-        };
-        let idx = surface.device_index();
-        state.adopt(window.id(), surface);
-        state.renderer(idx);
+        // 08 §17.5: the surface is created here (the UI thread) and adopted by the sink.
+        let Some(sink) = self.sink.as_mut() else { return };
+        let size = (physical.width.max(1), physical.height.max(1));
+        let added = sink
+            .instance()
+            .create_surface(Arc::clone(&window))
+            .map_err(|e| e.to_string())
+            .and_then(|surface| sink.add_window(window.id(), surface, size));
+        if let Err(e) = added {
+            pebbles_core::log::warn(
+                pebbles_core::log::Cat::General,
+                format!("could not create a GPU surface for a secondary window: {e}"),
+            );
+            return;
+        }
         // A fresh Ui → a fresh window_id in the shared runtime. Wrap the root in an
         // OverlayHost so this window has its own popover/menu/dialog layer (the overlay
         // + dialog signals are namespaced per window id).
@@ -407,9 +401,17 @@ impl Runner {
         }
         if keep {
             self.windows.insert(window_id, w);
-        } else if let Some(state) = self.render_state_mut() {
-            // The surface (it holds a window clone) goes before the window (08 §17.1 T2).
-            state.surfaces.remove(&window_id);
+        } else {
+            self.release_window(w.window);
+        }
+    }
+
+    /// 08 §17.5 close: the surface (it holds a window clone) goes before the window (T2). If the
+    /// render thread does not acknowledge in time, the window is kept until shutdown.
+    fn release_window(&mut self, window: Arc<Window>) {
+        let released = self.sink.as_mut().is_none_or(|sink| sink.remove_window(window.id()));
+        if !released {
+            self.retired_windows.push(window);
         }
     }
 }

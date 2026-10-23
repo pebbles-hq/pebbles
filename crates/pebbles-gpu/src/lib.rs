@@ -59,7 +59,7 @@ pub use execute::resources::shader_programs::{ShaderError, validate_shader_progr
 pub use frame_targets::{FrameParams, FrameTargets, RenderTarget};
 #[cfg(not(target_family = "wasm"))]
 pub use init::backend_rank;
-pub use init::{GpuInit, GpuPower, HostOs};
+pub use init::{GpuInit, GpuPower, HostOs, RenderThreading, default_threading};
 pub use limits::RendererLimits;
 #[cfg(not(target_family = "wasm"))]
 pub use offscreen::{OffscreenRenderer, RgbaImage};

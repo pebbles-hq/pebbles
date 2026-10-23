@@ -13,6 +13,23 @@ pub enum GpuPower {
     HighPerformance,
 }
 
+/// Where frames are rendered (08 §17.8). pebbles-gpu only carries the value; the shell acts on it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RenderThreading {
+    /// On the UI thread, inside `RedrawRequested`.
+    Inline,
+    /// On a dedicated `pebbles-render` thread (native only).
+    Threaded,
+}
+
+/// The per-OS default (08 §17.8): `Inline` everywhere until P27 signs an OS off.
+pub const fn default_threading(os: HostOs) -> RenderThreading {
+    match os {
+        HostOs::Web | HostOs::Other => RenderThreading::Inline,
+        HostOs::Windows | HostOs::MacOs | HostOs::Linux => RenderThreading::Inline, // P27 sign-off per OS
+    }
+}
+
 /// The platform family the policy is chosen for. Compile-time; never queried at runtime.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HostOs {
@@ -83,6 +100,8 @@ pub struct GpuInit {
     pub gpu_timing: bool,
     /// Called from ANY thread when a device is lost. Must be cheap and non-blocking.
     pub on_device_lost: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// `PEBBLES_RENDER_THREAD`: where frames are rendered (08 §17.8).
+    pub render_threading: RenderThreading,
 }
 
 impl fmt::Debug for GpuInit {
@@ -103,6 +122,7 @@ impl fmt::Debug for GpuInit {
             .field("gpu_trace", &self.gpu_trace)
             .field("gpu_timing", &self.gpu_timing)
             .field("on_device_lost", &self.on_device_lost.is_some())
+            .field("render_threading", &self.render_threading)
             .finish()
     }
 }
@@ -163,6 +183,17 @@ impl GpuInit {
         let gpu_trace = get("PEBBLES_GPU_TRACE").is_some();
         // 10. gpu_timing (M22).
         let gpu_timing = get("PEBBLES_GPU_TIMING").is_some_and(|s| parse_flag(&s));
+        // 11. render_threading (08 §17.8): the web never threads.
+        let render_threading = match (os, get("PEBBLES_RENDER_THREAD").as_deref().map(str::trim)) {
+            (HostOs::Web, _) | (_, None) => default_threading(os),
+            (_, Some("0")) => RenderThreading::Inline,
+            (_, Some("1")) => RenderThreading::Threaded,
+            (_, Some(s)) => {
+                let fallback = default_threading(os);
+                warn(format_args!("unknown PEBBLES_RENDER_THREAD={s}; using {fallback:?}"));
+                fallback
+            }
+        };
         Self {
             display: None,
             os,
@@ -179,12 +210,18 @@ impl GpuInit {
             gpu_trace,
             gpu_timing,
             on_device_lost: None,
+            render_threading,
         }
     }
 
     /// `from_env()` for offscreen use (no display; `on_device_lost` cleared).
     pub fn headless() -> Self {
-        Self { display: None, on_device_lost: None, ..Self::from_env() }
+        Self {
+            display: None,
+            on_device_lost: None,
+            render_threading: RenderThreading::Inline,
+            ..Self::from_env()
+        }
     }
 
     /// Set the display connection (winit's `OwnedDisplayHandle`).

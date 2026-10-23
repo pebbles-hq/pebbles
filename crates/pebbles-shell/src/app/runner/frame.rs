@@ -21,7 +21,7 @@ pub(crate) const MAX_IN_FLIGHT: u32 = 2;
 /// One window's frame, built on the UI thread.
 pub(crate) struct FramePacket {
     /// Per window, +1 per packet.
-    #[cfg_attr(not(test), allow(dead_code))] // read by the render thread's `FrameDone` (P25)
+    #[cfg_attr(target_family = "wasm", allow(dead_code))] // read by the render thread's `FrameDone`
     pub frame_id: u64,
     pub scene: Scene,
     /// `window.inner_size()` in physical px at paint time.
@@ -52,10 +52,10 @@ pub(crate) enum FrameOutcome {
 
 /// Latest-wins slot: `post` replaces an unconsumed packet and returns it (it counts as `Skipped`).
 #[derive(Default)]
-#[allow(dead_code)] // the render thread's per-window slot (P25)
+#[cfg_attr(target_family = "wasm", allow(dead_code))] // the render thread's per-window slot
 pub(crate) struct Mailbox(Mutex<Option<FramePacket>>);
 
-#[allow(dead_code)] // the render thread's per-window slot (P25)
+#[cfg_attr(target_family = "wasm", allow(dead_code))] // the render thread's per-window slot
 impl Mailbox {
     pub(crate) fn post(&self, packet: FramePacket) -> Option<FramePacket> {
         self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).replace(packet)
@@ -63,6 +63,15 @@ impl Mailbox {
 
     pub(crate) fn take(&self) -> Option<FramePacket> {
         self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take()
+    }
+
+    /// Whether the waiting packet carries a live-resize `sync` (08 §17.3 step 4 ordering).
+    pub(crate) fn has_sync(&self) -> bool {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .is_some_and(|p| p.sync.is_some())
     }
 }
 
@@ -112,6 +121,19 @@ impl RenderState {
 /// Where the UI thread sends frames.
 pub(crate) enum FrameSink {
     Inline(RenderState),
+    /// Native only (08 §17.8).
+    #[cfg(not(target_family = "wasm"))]
+    Threaded(super::render_thread::RenderThread),
+}
+
+/// What [`FrameSink::submit`] did with a packet.
+pub(crate) enum Handover {
+    /// Rendered inline; the scene comes back for reuse.
+    Rendered(FrameOutcome, Scene),
+    /// Queued on the render thread; `FrameDone` reports it. `replaced` is true when it displaced
+    /// an unconsumed packet (that one counts as completed, `Skipped`).
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    Queued { replaced: bool },
 }
 
 impl FrameSink {
@@ -119,29 +141,80 @@ impl FrameSink {
     pub(crate) fn state(&self) -> Option<&RenderState> {
         match self {
             Self::Inline(state) => Some(state),
+            #[cfg(not(target_family = "wasm"))]
+            Self::Threaded(_) => None,
         }
     }
 
     pub(crate) fn state_mut(&mut self) -> Option<&mut RenderState> {
         match self {
             Self::Inline(state) => Some(state),
+            #[cfg(not(target_family = "wasm"))]
+            Self::Threaded(_) => None,
         }
     }
 
     /// Hand a packet over. Inline: rendered now, and the scene comes back for reuse with the
     /// outcome. (The threaded sink of P25 answers through `FrameDone` instead.)
-    pub(crate) fn submit(&mut self, key: WindowKey, packet: FramePacket) -> (FrameOutcome, Scene) {
+    pub(crate) fn submit(&mut self, key: WindowKey, packet: FramePacket) -> Handover {
         match self {
             Self::Inline(state) => {
                 let outcome = render_packet_ref(state, key, &packet);
-                (outcome, packet.scene)
+                Handover::Rendered(outcome, packet.scene)
             }
+            #[cfg(not(target_family = "wasm"))]
+            Self::Threaded(thread) => Handover::Queued { replaced: thread.submit(key, packet).is_some() },
+        }
+    }
+
+    /// The instance the UI thread creates surfaces with (08 §17.5).
+    #[cfg(not(target_family = "wasm"))]
+    pub(crate) fn instance(&self) -> wgpu::Instance {
+        match self {
+            Self::Inline(state) => state.ctx.instance(),
+            Self::Threaded(thread) => thread.instance(),
+        }
+    }
+
+    /// 08 §17.5: adopt a surface the UI thread created (a new window, or a replacement after
+    /// `SurfaceLost`). Inline adopts now; threaded hands it to the render thread.
+    #[cfg(not(target_family = "wasm"))]
+    pub(crate) fn add_window(
+        &mut self,
+        key: WindowKey,
+        surface: wgpu::Surface<'static>,
+        size: (u32, u32),
+    ) -> Result<(), String> {
+        match self {
+            Self::Inline(state) => {
+                let surface = pollster::block_on(state.ctx.adopt_surface(surface, size))
+                    .map_err(|e| super::gpu::error_text(&e))?;
+                state.adopt(key, surface);
+                Ok(())
+            }
+            Self::Threaded(thread) => {
+                thread.add_window(key, surface, size);
+                Ok(())
+            }
+        }
+    }
+
+    /// 08 §17.5 close: drop the window's surface before its window. `false` when the render
+    /// thread did not acknowledge in time — keep the window alive (T2).
+    pub(crate) fn remove_window(&mut self, key: WindowKey) -> bool {
+        match self {
+            Self::Inline(state) => {
+                state.surfaces.remove(&key);
+                true
+            }
+            #[cfg(not(target_family = "wasm"))]
+            Self::Threaded(thread) => thread.remove_window(key),
         }
     }
 }
 
 /// The ONE function that renders a packet, in both modes. No winit inside (08 §17.1 T1).
-#[allow(dead_code)] // the render thread's entry point (P25); inline mode reuses the scene
+#[cfg_attr(target_family = "wasm", allow(dead_code))] // inline mode reuses the scene instead
 pub(crate) fn render_packet(state: &mut RenderState, key: WindowKey, packet: FramePacket) -> FrameOutcome {
     render_packet_ref(state, key, &packet)
 }
@@ -153,9 +226,10 @@ fn render_packet_ref(state: &mut RenderState, key: WindowKey, packet: &FramePack
     if state.ctx.needs_reset() {
         return FrameOutcome::DeviceLost;
     }
-    // (a) A window without a surface, or minimized / 0×0 (§4.4 `Hidden`), presents nothing.
+    // (a) A window without a surface (its adoption failed) asks the UI thread for a new one
+    // rather than spinning on skipped frames; minimized / 0×0 (§4.4 `Hidden`) presents nothing.
     let Some(idx) = state.surfaces.get(&key).map(RenderSurface::device_index) else {
-        return FrameOutcome::Skipped;
+        return FrameOutcome::SurfaceLost;
     };
     if packet.size.0 == 0 || packet.size.1 == 0 {
         return FrameOutcome::Skipped;
@@ -215,6 +289,11 @@ impl Pacer {
             FrameOutcome::Presented => std::mem::take(&mut self.redraw_pending),
             FrameOutcome::Occluded | FrameOutcome::SurfaceLost | FrameOutcome::DeviceLost => false,
         }
+    }
+    /// A queued packet was displaced in the mailbox before rendering (08 §17.3 step 3).
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    pub(crate) fn replaced(&mut self) {
+        self.in_flight = self.in_flight.saturating_sub(1);
     }
 }
 

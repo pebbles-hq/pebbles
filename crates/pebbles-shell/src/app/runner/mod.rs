@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use web_time::Instant;
 
-use frame::{FrameOutcome, FramePacket, FrameSink, Pacer, RenderState};
+use frame::{FrameOutcome, FramePacket, FrameSink, Handover, Pacer, RenderState};
 use gpu::{HostInit, RenderContext, RenderSurface, Scene, new_context};
 use kurbo::Affine;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
@@ -33,6 +33,8 @@ use super::App;
 mod frame;
 mod input;
 mod render;
+#[cfg(not(target_family = "wasm"))]
+mod render_thread;
 mod soak_csv;
 // The GPU host: a thin, runner-private adapter over pebbles-gpu (X02).
 mod gpu;
@@ -127,6 +129,9 @@ pub(crate) enum PebblesUserEvent {
     RouteChanged,
     /// (web) An async GPU recovery could not rebuild the context or surface (08 §6.6).
     GpuRecoveryFailed { window: Arc<Window>, error: String },
+    /// (native) The render thread finished a packet (08 §17.3 step 5).
+    #[cfg(not(target_family = "wasm"))]
+    FrameDone { key: frame::WindowKey, frame_id: u64, outcome: FrameOutcome },
     /// (native) A GPU device was lost — wake and recover (08 §6.8).
     #[cfg_attr(target_family = "wasm", allow(dead_code))] // sent only by the native wgpu waker
     GpuLost,
@@ -211,6 +216,8 @@ pub(super) struct Runner {
     /// every window's surface. `None` before the GPU is up (on web, during the async
     /// surface-creation gap, when no frame renders) and while a recovery rebuilds it.
     sink: Option<FrameSink>,
+    /// Closed windows the render thread has not released yet (08 §17.5): dropped after it stops.
+    retired_windows: Vec<Arc<Window>>,
     /// The shell-wide platform policy (display handle + env-resolved GPU settings), built
     /// once on the first `resumed` and reused by every recovery.
     host_init: Option<HostInit>,
@@ -349,6 +356,7 @@ impl Runner {
             #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
             native_menu: None,
             sink: None,
+            retired_windows: Vec::new(),
             host_init: None,
             proxy: None,
             #[cfg(target_family = "wasm")]
@@ -724,6 +732,9 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         if self.soak.is_some() {
             self.soak_sample();
         }
+        // 08 §17.7: stop the render thread (it drops every surface) before any window goes (T2).
+        self.sink = None;
+        self.retired_windows.clear();
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -776,6 +787,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             };
             self.sink = Some(FrameSink::Inline(RenderState::new(context)));
             self.on_gpu_ready(window, surface);
+            self.thread_sink_if_configured();
         }
 
         // Web: the GPU device request is async and MUST NOT block the browser main
@@ -880,6 +892,8 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     }
                 }
             }
+            #[cfg(not(target_family = "wasm"))]
+            PebblesUserEvent::FrameDone { key, frame_id: _, outcome } => self.frame_done(key, outcome),
             PebblesUserEvent::GpuLost => {
                 self.request_redraw();
                 for w in self.windows.values() {

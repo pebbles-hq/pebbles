@@ -29,6 +29,22 @@ impl RenderContext {
         Ok(RenderSurface(surface))
     }
 
+    /// The instance surfaces are created with (08 §17.5: on the UI thread, in both modes).
+    #[cfg_attr(target_family = "wasm", allow(dead_code))] // native surface replacement only
+    pub(crate) fn instance(&self) -> wgpu::Instance {
+        self.inner.instance()
+    }
+
+    /// Finish a surface created from [`instance`](Self::instance) (08 §17.2).
+    #[cfg_attr(target_family = "wasm", allow(dead_code))] // native surface replacement only
+    pub(crate) async fn adopt_surface(
+        &mut self,
+        surface: wgpu::Surface<'static>,
+        size: (u32, u32),
+    ) -> Result<RenderSurface<'static>, HostError> {
+        Ok(RenderSurface(self.inner.adopt_surface(surface, size).await.map_err(HostError)?))
+    }
+
     pub(crate) fn device_count(&self) -> usize {
         self.inner.devices().count()
     }

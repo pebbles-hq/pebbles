@@ -202,3 +202,20 @@ fn wgpu_backend_env_reaches_the_instance_descriptor() {
     assert_eq!(init.backends, wgpu::Backends::GL & compiled);
     assert_eq!(crate::context::instance_descriptor(&init).backends, init.backends);
 }
+
+#[test]
+fn parse_render_thread_env() {
+    for os in [HostOs::Windows, HostOs::MacOs, HostOs::Linux] {
+        let at = |v: Option<&str>| {
+            let map = v.map_or_else(empty, |v| env(&[("PEBBLES_RENDER_THREAD", v)]));
+            GpuInit::from_env_with(os, get(&map)).render_threading
+        };
+        assert_eq!(at(Some("0")), RenderThreading::Inline);
+        assert_eq!(at(Some("1")), RenderThreading::Threaded);
+        assert_eq!(at(Some("yes")), default_threading(os), "garbage → the default");
+        assert_eq!(at(None), default_threading(os));
+    }
+    let web = GpuInit::from_env_with(HostOs::Web, get(&env(&[("PEBBLES_RENDER_THREAD", "1")])));
+    assert_eq!(web.render_threading, RenderThreading::Inline, "the web always renders inline");
+    assert_eq!(GpuInit::headless().render_threading, RenderThreading::Inline);
+}
