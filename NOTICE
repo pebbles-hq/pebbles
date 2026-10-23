@@ -59,9 +59,9 @@ Bundled fonts (crates/pebbles-render/assets/fonts/)
 -------------------------------------------------------------------------------
 
 The following fonts are embedded into every Pebbles binary (include_bytes! in
-crates/pebbles-render/src/fonts.rs). Each is licensed under the SIL Open Font
-License, Version 1.1; its copyright notice and the full license text are in the
-matching *-OFL.txt file in that directory.
+crates/pebbles-render/src/fonts.rs). Each is licensed under the
+SIL Open Font License, Version 1.1; its copyright notice and the full license
+text are in the matching *-OFL.txt file in that directory.
 
   Inter (InterVariable.ttf, InterVariable-Italic.ttf)
     Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter)
