@@ -102,6 +102,34 @@ pub const fn action_for(status: AcquireStatus) -> FrameAction {
     }
 }
 
+/// Consecutive non-`Success` acquires of one surface (08 §5.5). `Occluded` never counts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AcquireStreak {
+    status: Option<AcquireStatus>,
+    count: u8,
+}
+
+/// The action for `status` after updating `streak` (08 §5.5): `Success` resets the streak;
+/// a repeat of the previous status extends it, any other status restarts it at 1. A streak
+/// of 3 `Validation` (a lost device shows up as one) escalates to [`FrameAction::FullReset`],
+/// 3 `Timeout` (a wedged swapchain) to a reconfigure, and 5 `Outdated` (each already
+/// reconfigured) to a surface recreation; otherwise [`action_for`] decides. A recreation
+/// that fails after `Lost` is escalated by the caller (it rebuilds the stack).
+pub fn escalate(streak: &mut AcquireStreak, status: AcquireStatus) -> FrameAction {
+    match status {
+        AcquireStatus::Success => *streak = AcquireStreak::default(),
+        AcquireStatus::Occluded => {}
+        s if streak.status == Some(s) => streak.count = streak.count.saturating_add(1),
+        s => *streak = AcquireStreak { status: Some(s), count: 1 },
+    }
+    match (status, streak.count) {
+        (AcquireStatus::Validation, n) if n >= 3 => FrameAction::FullReset,
+        (AcquireStatus::Timeout, n) if n >= 3 => FrameAction::ReconfigureAndRedraw,
+        (AcquireStatus::Outdated, n) if n >= 5 => FrameAction::RecreateSurfaceAndRedraw,
+        _ => action_for(status),
+    }
+}
+
 impl AcquireError {
     /// The status this error reports.
     pub const fn status(self) -> AcquireStatus {
@@ -158,6 +186,8 @@ pub struct RenderSurface<'window> {
     pub(crate) encoding: OutputEncoding,
     /// This surface's own targets (the Tier C / layer pool, 10 §4, E3).
     targets: FrameTargets,
+    /// Consecutive failed acquires (08 §5.5, P20).
+    streak: AcquireStreak,
 }
 
 /// 08 §4.2: Pebbles has no transparent windows — `Opaque` when offered, else `Auto`.
@@ -243,6 +273,11 @@ impl<'window> RenderSurface<'window> {
             ..Default::default()
         });
         Acquire::Frame(SurfaceFrame { texture, view, suboptimal })
+    }
+
+    /// The action for an acquire `status` of this surface, escalated by its streak (08 §5.5).
+    pub fn escalate(&mut self, status: AcquireStatus) -> FrameAction {
+        escalate(&mut self.streak, status)
     }
 
     /// Reconfigure at `width`×`height` even when the size is unchanged (Outdated/Suboptimal).
@@ -359,6 +394,7 @@ impl<'window> RenderSurface<'window> {
             view_format: choice.view_format,
             encoding: choice.encoding,
             targets: FrameTargets::new(),
+            streak: AcquireStreak::default(),
         })
     }
 }
@@ -391,6 +427,54 @@ mod tests {
     fn size_clamp() {
         assert_eq!(clamp_surface_size(0, 10, 8192), None);
         assert_eq!(clamp_surface_size(9000, 100, 8192), Some(((8192, 100), true)));
+    }
+
+    #[test]
+    fn escalation_rules() {
+        use AcquireStatus as S;
+        use FrameAction as A;
+        let run = |seq: &[S]| {
+            let mut streak = AcquireStreak::default();
+            seq.iter().map(|s| escalate(&mut streak, *s)).collect::<Vec<_>>()
+        };
+        // 3 × Validation → FullReset (a single one only reconfigures).
+        assert_eq!(
+            run(&[S::Validation, S::Validation, S::Validation]),
+            [A::ReconfigureAndRedraw, A::ReconfigureAndRedraw, A::FullReset]
+        );
+        // 3 × Timeout → reconfigure instead of skipping.
+        assert_eq!(
+            run(&[S::Timeout, S::Timeout, S::Timeout]),
+            [A::SkipAndRedraw, A::SkipAndRedraw, A::ReconfigureAndRedraw]
+        );
+        // 5 × Outdated → recreate.
+        let outdated = run(&[S::Outdated; 5]);
+        assert_eq!(outdated[..4], [A::ReconfigureAndRedraw; 4]);
+        assert_eq!(outdated[4], A::RecreateSurfaceAndRedraw);
+        // Success resets the streak; a different status restarts it at 1.
+        assert_eq!(
+            run(&[S::Validation, S::Validation, S::Success, S::Validation])[3],
+            A::ReconfigureAndRedraw
+        );
+        assert_eq!(
+            run(&[S::Validation, S::Validation, S::Timeout, S::Validation])[3],
+            A::ReconfigureAndRedraw
+        );
+        // Occluded never counts and never breaks a streak.
+        assert_eq!(
+            run(&[S::Validation, S::Occluded, S::Validation, S::Occluded, S::Validation]),
+            [
+                A::ReconfigureAndRedraw,
+                A::SkipUntilVisible,
+                A::ReconfigureAndRedraw,
+                A::SkipUntilVisible,
+                A::FullReset
+            ]
+        );
+        // Lost keeps its action (the caller escalates a failed recreation).
+        assert_eq!(run(&[S::Lost, S::Lost, S::Lost]), [A::RecreateSurfaceAndRedraw; 3]);
+        // The count saturates instead of wrapping.
+        assert_eq!(run(&[S::Validation; 300])[299], A::FullReset);
     }
 
     #[test]

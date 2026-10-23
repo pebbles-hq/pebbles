@@ -145,7 +145,7 @@ pub(crate) fn present_frame(
     window: &winit::window::Window,
 ) -> PresentOutcome {
     use pebbles_foundation::log::{Cat, Level, logf};
-    use pebbles_gpu::{Acquire, FrameAction, action_for};
+    use pebbles_gpu::{Acquire, FrameAction};
     // 08 §5.3 rule 3: never acquire on a dead device.
     if ctx.needs_reset() {
         return PresentOutcome::ResetGpu;
@@ -161,8 +161,9 @@ pub(crate) fn present_frame(
             let status = frame.status();
             (frame, status)
         }
+        // 08 §5.5 (P20): a streak of the same failure escalates (3 × Validation → full reset).
         Acquire::NotReady(e) => {
-            return match action_for(e.status()) {
+            return match surface.0.escalate(e.status()) {
                 FrameAction::SkipUntilVisible => PresentOutcome::Occluded,
                 FrameAction::RecreateSurfaceAndRedraw => PresentOutcome::RecreateSurface,
                 FrameAction::FullReset => PresentOutcome::ResetGpu,
@@ -196,7 +197,7 @@ pub(crate) fn present_frame(
     let _ = gpu.device().poll(wgpu::PollType::Poll);
     window.pre_present_notify();
     frame.present();
-    if action_for(status) == FrameAction::RenderThenReconfigure {
+    if surface.0.escalate(status) == FrameAction::RenderThenReconfigure {
         reconfigure(surface);
         logf(Level::Debug, Cat::Gpu, format_args!("surface #{id} Suboptimal — reconfigured"));
         window.request_redraw();

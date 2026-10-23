@@ -80,4 +80,6 @@ pub fn __tier_b_mask_for_check(
 ) -> Vec<u8> {
     raster::coverage::full_mask(path, device, rule, w, h)
 }
-pub use surface::{Acquire, AcquireStatus, FrameAction, RenderSurface, SurfaceFrame, action_for};
+pub use surface::{
+    Acquire, AcquireStatus, AcquireStreak, FrameAction, RenderSurface, SurfaceFrame, action_for, escalate,
+};
