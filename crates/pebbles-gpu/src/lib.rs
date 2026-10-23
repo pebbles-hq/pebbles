@@ -81,5 +81,6 @@ pub fn __tier_b_mask_for_check(
     raster::coverage::full_mask(path, device, rule, w, h)
 }
 pub use surface::{
-    Acquire, AcquireStatus, AcquireStreak, FrameAction, RenderSurface, SurfaceFrame, action_for, escalate,
+    Acquire, AcquireStatus, AcquireStreak, ConfigureDecision, FrameAction, RenderSurface, SurfaceFrame,
+    action_for, configure_decision, escalate,
 };

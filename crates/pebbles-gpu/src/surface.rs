@@ -188,6 +188,9 @@ pub struct RenderSurface<'window> {
     targets: FrameTargets,
     /// Consecutive failed acquires (08 §5.5, P20).
     streak: AcquireStreak,
+    /// Real `configure` calls (debug census, P13).
+    #[cfg(debug_assertions)]
+    configures: u64,
 }
 
 /// 08 §4.2: Pebbles has no transparent windows — `Opaque` when offered, else `Auto`.
@@ -233,6 +236,32 @@ pub fn clamp_surface_size(width: u32, height: u32, max_dim: u32) -> Option<((u32
     Some(((w, h), w != width || h != height))
 }
 
+/// What a resize does to a surface (08 §4.4, P13).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConfigureDecision {
+    /// The surface already has this size: no `configure` (it would wait for the GPU to idle).
+    Skip,
+    /// The window is minimized / 0-sized: never configure.
+    Hidden,
+    /// Configure at this (clamped) size.
+    Configure(u32, u32),
+}
+
+/// P13: never reconfigure to the size the surface already has unless `forced` (acquire said
+/// Outdated / Suboptimal / Validation, or the format or present mode changed).
+pub fn configure_decision(
+    current: (u32, u32),
+    requested: (u32, u32),
+    max_dim: u32,
+    forced: bool,
+) -> ConfigureDecision {
+    match clamp_surface_size(requested.0, requested.1, max_dim) {
+        None => ConfigureDecision::Hidden,
+        Some((size, _)) if size == current && !forced => ConfigureDecision::Skip,
+        Some(((w, h), _)) => ConfigureDecision::Configure(w, h),
+    }
+}
+
 impl<'window> RenderSurface<'window> {
     /// The surface's device id.
     pub fn device_id(&self) -> DeviceId {
@@ -251,10 +280,30 @@ impl<'window> RenderSurface<'window> {
 
     /// Reconfigure to `width`×`height` (clamped to `1..=max_texture_dimension_2d`).
     pub fn resize(&mut self, gpu: &GpuDevice, width: u32, height: u32) {
+        self.configure_to(gpu, width, height, false);
+    }
+
+    /// 08 §4.4 (P13): configure only when the clamped size changed or `forced`; a hidden
+    /// (0-sized) window is never configured (`Surface::configure` panics on 0).
+    fn configure_to(&mut self, gpu: &GpuDevice, width: u32, height: u32, forced: bool) {
         let max = gpu.device().limits().max_texture_dimension_2d;
-        self.config.width = width.clamp(1, max);
-        self.config.height = height.clamp(1, max);
-        self.surface.configure(gpu.device(), &self.config);
+        let current = (self.config.width, self.config.height);
+        if let ConfigureDecision::Configure(w, h) = configure_decision(current, (width, height), max, forced)
+        {
+            self.config.width = w;
+            self.config.height = h;
+            self.surface.configure(gpu.device(), &self.config);
+            #[cfg(debug_assertions)]
+            {
+                self.configures += 1;
+            }
+        }
+    }
+
+    /// Real `configure` calls on this surface (debug census, 10 §9).
+    #[cfg(debug_assertions)]
+    pub fn configure_count(&self) -> u64 {
+        self.configures
     }
 
     /// Acquire the next frame — the ONLY place Pebbles matches `CurrentSurfaceTexture` (08 §5.2).
@@ -283,7 +332,7 @@ impl<'window> RenderSurface<'window> {
     /// Reconfigure at `width`×`height` even when the size is unchanged (Outdated/Suboptimal).
     /// Never call while a [`SurfaceFrame`] of this surface is alive.
     pub fn reconfigure(&mut self, gpu: &GpuDevice, width: u32, height: u32) {
-        self.resize(gpu, width, height);
+        self.configure_to(gpu, width, height, true);
     }
 
     /// Whether frames must decode sRGB in the shader (GL sRGB-only surface, 02 §3.8): pass to
@@ -395,6 +444,8 @@ impl<'window> RenderSurface<'window> {
             encoding: choice.encoding,
             targets: FrameTargets::new(),
             streak: AcquireStreak::default(),
+            #[cfg(debug_assertions)]
+            configures: 0,
         })
     }
 }
@@ -427,6 +478,23 @@ mod tests {
     fn size_clamp() {
         assert_eq!(clamp_surface_size(0, 10, 8192), None);
         assert_eq!(clamp_surface_size(9000, 100, 8192), Some(((8192, 100), true)));
+    }
+
+    #[test]
+    fn configure_skips_unchanged() {
+        use ConfigureDecision as D;
+        assert_eq!(configure_decision((800, 600), (800, 600), 8192, false), D::Skip);
+        assert_eq!(configure_decision((800, 600), (0, 600), 8192, false), D::Hidden);
+        assert_eq!(configure_decision((800, 600), (801, 600), 8192, false), D::Configure(801, 600));
+        // A clamped surface asks for the same clamped size every frame: still a Skip.
+        assert_eq!(configure_decision((8192, 600), (9000, 600), 8192, false), D::Skip);
+    }
+
+    #[test]
+    fn configure_forced_even_if_unchanged() {
+        use ConfigureDecision as D;
+        assert_eq!(configure_decision((800, 600), (800, 600), 8192, true), D::Configure(800, 600));
+        assert_eq!(configure_decision((800, 600), (0, 0), 8192, true), D::Hidden, "never configure at 0");
     }
 
     #[test]
