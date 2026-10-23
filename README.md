@@ -161,9 +161,9 @@ claim — the platform builds and passes the headless test suites in
 | **Linux** (X11 + Wayland) | ✅ Supported | The primary development platform: built, tested and run daily, including GPU device-loss recovery and long input-storm soaks. |
 | **Windows** | ✅ Supported | Builds and passes the full suite on `windows-latest` in CI. Native window menu behind `native-menus`. Less interactive polish than Linux — visual/input reports welcome. |
 | **macOS** | ✅ Supported | Builds and passes the full suite on `macos-latest` in CI. Has the most platform-specific code (global menu bar, `Mod`→⌘ shortcut mapping). Same interactive-polish caveat as Windows. |
-| **Web** (wasm) | 🟢 Runs (WebGPU) | `pebbles run -d web` builds the wasm bundle, serves it (via Trunk), and opens the browser — GPU init is async (no main-thread block), the canvas entry uses winit `spawn_app`, and pointer input works. Runs in any current browser: WebGPU where available, WebGL2 otherwise. Fully buildable from Linux. |
+| **Web** (wasm) | 🟢 Runs (WebGPU; WebGL2 fallback) | `pebbles run -d web` builds the wasm bundle, serves it (via Trunk), and opens the browser — GPU init is async (no main-thread block), the canvas entry uses winit `spawn_app`, and pointer input works. Runs in any current browser: WebGPU where available, WebGL2 otherwise. Fully buildable from Linux. |
 
-Legend: ✅ built + tested in CI · 🟢 runs (WebGPU browser) · ⛔ not supported.
+Legend: ✅ built + tested in CI · 🟢 runs (WebGPU or WebGL2 browser) · ⛔ not supported.
 
 Run on any target with a familiar `-d` device flag: `pebbles run` (desktop, the default),
 `pebbles run -d web` (needs [Trunk](https://trunkrs.dev): `cargo install --locked

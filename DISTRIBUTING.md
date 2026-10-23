@@ -31,7 +31,9 @@ Pebbles has a single renderer (wgpu), so there is no backend to choose at build 
 
 `cargo build --release` produces a **runnable bare binary** at
 `target/release/<name>` — copy it anywhere and run it; there is nothing else to
-install for a local run.
+install for a local run. At runtime the binary needs a Vulkan driver or, failing that,
+EGL + GLES 3.0 from Mesa; distro packages should depend on `libvulkan1 | libegl1` plus Mesa
+(`mesa-vulkan-drivers` or `libgl1-mesa-dri libegl-mesa0`).
 
 To make it a first-class desktop app (launcher entry + icon), install the binary
 and add a `.desktop` file:
@@ -62,7 +64,8 @@ Then refresh the caches (`update-desktop-database ~/.local/share/applications`,
 
 ## Windows
 
-`cargo build --release` produces `target\release\<name>.exe`.
+`cargo build --release` produces `target\release\<name>.exe`. It needs no extra DLLs: the
+shader compiler (FXC, `d3dcompiler_47.dll`) is part of Windows.
 
 **Suppress the console window.** A plain binary opens a console window that
 flashes behind the GUI. Add the crate-level attribute at the top of `main.rs`
@@ -155,9 +158,9 @@ separate `lipo` step — single-arch is fine for 0.1.0.
 
 ## Web
 
-Pebbles builds to WebAssembly and runs in **WebGPU** browsers (Chrome/Edge,
-Safari 26+, Firefox with WebGPU on). There is **no WebGL2 fallback** — a browser
-without WebGPU shows a "needs WebGPU" message, not your app.
+Pebbles builds to WebAssembly and runs in any current browser: **WebGPU** where it is
+available, **WebGL2** as the automatic fallback. A browser with neither shows a "needs WebGPU
+or WebGL2" message, not your app.
 
 The one-command path is `pebbles build -d web` — it checks the wasm target and Trunk,
 then emits a static bundle to `dist/` and prints its size:
@@ -204,7 +207,7 @@ root — Trunk uses a project's own `index.html` untouched. A minimal one:
 </html>
 ```
 
-(Copy the canvas CSS and the WebGPU-missing message from the managed page in
+(Copy the canvas CSS and the no-GPU message from the managed page in
 `.pebbles/web/index.html` if you want them.)
 
 ### Host requirements

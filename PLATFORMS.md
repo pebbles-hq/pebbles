@@ -12,7 +12,7 @@ Platform runtime status (see [README](README.md#platform-support) for detail):
 **Linux** is the primary target — built, tested and **run daily**. **macOS · Windows**
 build and pass the **headless** suites in CI on `macos-latest`/`windows-latest`, but
 they are **not run in a window** there, so interactive polish is unverified (visual/input
-reports welcome). **Web** runs (`pebbles run -d web`, WebGPU browsers). The marks below
+reports welcome). **Web** runs (`pebbles run -d web`, WebGPU browsers with a WebGL2 fallback). The marks below
 describe the *coded* support, runtime-verified on desktop + web.
 
 ---
@@ -195,6 +195,22 @@ The affected widgets and APIs carry a **`# Platform support`** section in their
 rustdoc, so the restriction is visible at the call site too:
 `window()`, `App::menu`, `register_global_hotkey`, `pick_folder`,
 `ImageView::network`. Run `cargo doc --open` to browse them.
+
+## GPU requirements
+
+Pebbles renders through [wgpu](https://wgpu.rs). Each OS has a hardware path and, where one
+exists, a software fallback.
+
+| OS | Runtime requirements | Software fallback | Overrides |
+|---|---|---|---|
+| Windows 10/11 | a DX12-capable driver (WARP is always present) | `PEBBLES_CPU_RENDER=1` → WARP | `WGPU_BACKEND`, `PEBBLES_CPU_RENDER`, `WGPU_POWER_PREF` |
+| macOS | a Metal-capable Mac | none | `WGPU_POWER_PREF` |
+| Linux | `libvulkan.so.1` + a Vulkan driver (Mesa radv/anv, NVIDIA), **or** `libEGL.so.1` + GLES 3.0 (Mesa) | `PEBBLES_CPU_RENDER=1` → lavapipe (`mesa-vulkan-drivers`) or llvmpipe (`libgl1-mesa-dri` + `libegl-mesa0`) | `WGPU_BACKEND`, `PEBBLES_CPU_RENDER`, `WGPU_POWER_PREF` |
+| Web | a WebGPU or WebGL2 browser | n/a | — |
+
+Debian/Ubuntu packages: `libvulkan1 mesa-vulkan-drivers` (Vulkan) · `libegl1 libegl-mesa0
+libgl1-mesa-dri` (GL fallback) · `vulkan-tools` (`vulkaninfo`) · `mesa-utils-bin` or
+`mesa-utils` (`eglinfo`, used by `pebbles doctor`).
 
 ## Troubleshooting the web build
 
