@@ -29,6 +29,8 @@ fn check(scene: &Scene, skipped: u32, kinds: &[&str]) {
     let (plan, stats) = prepare_scene_tessellated(scene, 100, 100);
     assert_eq!(stats.non_finite_skipped, skipped);
     assert_eq!(stats.unsupported[Unsupported::NonFinite as usize], skipped);
+    let expected: &[Unsupported] = if skipped == 0 { &[] } else { &[Unsupported::NonFinite] };
+    assert_eq!(stats.unsupported_kinds(), expected, "S50: exact key set");
     assert_eq!(cmd_kinds(&plan), kinds);
     assert!(plan.solid_vertices.iter().all(|v| v.pos.iter().all(|c| c.is_finite())));
 }

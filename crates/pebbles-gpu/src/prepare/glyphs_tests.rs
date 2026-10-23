@@ -36,6 +36,7 @@ fn nan_font_size_skips_run() {
     assert!(plan.glyphs.is_empty());
     assert_eq!(stats.non_finite_skipped, 1);
     assert!(stats.unsupported[Unsupported::NonFinite as usize] > 0);
+    assert_eq!(stats.unsupported_kinds(), [Unsupported::NonFinite], "S50: exact key set");
 }
 
 #[test]
@@ -62,6 +63,7 @@ fn glyph_id_above_u16_skipped() {
     let (plan, stats) = prepare_scene(&s, 64, 64);
     assert_eq!(plan.glyphs.len(), 1);
     assert_eq!(stats.unsupported[Unsupported::GlyphIdRange as usize], 1);
+    assert_eq!(stats.unsupported_kinds(), [Unsupported::GlyphIdRange], "S50: exact key set");
 }
 
 #[test]

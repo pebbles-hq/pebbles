@@ -173,6 +173,7 @@ fn blurred_fill_larger_than_mask_max_area_renders() {
     assert!((100..160).contains(&edge), "the edge is half covered: {edge}");
     let stats = r.last_frame_stats();
     assert_eq!(stats.unsupported[pebbles_gpu::Unsupported::BlurMaskTooLarge as usize], 0);
+    assert_eq!(stats.unsupported_kinds(), [], "S50: no fallback key");
 }
 
 // ---- L63: color matrix ----

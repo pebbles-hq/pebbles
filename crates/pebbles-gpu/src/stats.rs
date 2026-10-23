@@ -55,7 +55,7 @@ pub enum Unsupported {
     /// The gradient LUT had no room even after eviction: drawn as its first stop (09 §5.3).
     LutFull,
     /// A layer nested deeper than `RendererLimits::max_layer_depth`: flattened (11 §2.5).
-    LayerDepthExceeded,
+    LayerDepth,
     /// More live offscreen layers than `RendererLimits::max_layer_targets`: flattened.
     LayerPoolExhausted,
     /// A mesh with a gradient brush: drawn with the first stop's color (R63).
@@ -68,7 +68,7 @@ pub enum Unsupported {
     /// 11 §2.6 degradation applied (S09).
     GpuOom,
     /// A multisampled target hit out-of-memory: single-sampled instead (S09).
-    MsaaOomFallback1x,
+    MsaaOomFallback,
     /// One draw's geometry alone exceeds an arena cap / the portable vertex rule: dropped (M07).
     GeometryTooLarge,
 }
@@ -191,13 +191,13 @@ impl Unsupported {
         Self::BlurMaskTooLarge,
         Self::ClipOverflow,
         Self::LutFull,
-        Self::LayerDepthExceeded,
+        Self::LayerDepth,
         Self::LayerPoolExhausted,
         Self::MeshGradient,
         Self::CustomUnregistered,
         Self::GpuTextureUnregistered,
         Self::GpuOom,
-        Self::MsaaOomFallback1x,
+        Self::MsaaOomFallback,
         Self::GeometryTooLarge,
     ];
 
@@ -228,19 +228,66 @@ impl Unsupported {
             Self::BlurMaskTooLarge => "blur-mask-too-large",
             Self::ClipOverflow => "clip-mask-overflow",
             Self::LutFull => "gradient-lut-full",
-            Self::LayerDepthExceeded => "layer-depth-exceeded",
+            Self::LayerDepth => "layer-depth-exceeded",
             Self::LayerPoolExhausted => "layer-pool-exhausted",
             Self::MeshGradient => "mesh-gradient-unsupported",
             Self::CustomUnregistered => "custom-paint-unregistered",
             Self::GpuTextureUnregistered => "gpu-texture-unregistered",
             Self::GpuOom => "gpu-oom",
-            Self::MsaaOomFallback1x => "msaa-oom-fallback-1x",
+            Self::MsaaOomFallback => "msaa-oom-fallback-1x",
             Self::GeometryTooLarge => "geometry-too-large",
         }
     }
 }
 
 const _: () = assert!(Unsupported::COUNT <= 64);
+
+/// 11 §4.2 rows marked **No**: a fallback the op-coverage matrix and every non-adversarial corpus
+/// case must never record at Phase 5 (S50). Moving a key out of here needs a DR.
+#[cfg_attr(not(test), allow(dead_code))] // read by the R01 / S50 tests
+pub(crate) const NOT_ALLOWED_AT_PHASE5: &[Unsupported] = &[
+    Unsupported::NonRectClip,
+    Unsupported::LayerAlpha,
+    Unsupported::LayerBlend,
+    Unsupported::GradientBrush,
+    Unsupported::ImageBrush,
+    Unsupported::GradientText,
+    Unsupported::ImageExtend,
+    Unsupported::VertexLimit,
+    Unsupported::UnknownOp,
+    Unsupported::GlyphContent,
+    Unsupported::ColorGlyphTransform,
+    Unsupported::BlurMaskTooLarge,
+];
+
+/// 11 §4.2 rows marked **Adversarial only**: recorded only by malformed or hostile input.
+#[cfg_attr(not(test), allow(dead_code))] // read by the R01 / S50 tests
+pub(crate) const ADVERSARIAL_ONLY: &[Unsupported] = &[
+    Unsupported::AtlasFull,
+    Unsupported::TessError,
+    Unsupported::NonFinite,
+    Unsupported::ImageMalformed,
+    Unsupported::CoordOutOfRange,
+    Unsupported::DashDegenerate,
+    Unsupported::DashCountCapped,
+    Unsupported::StrokeWidthClamped,
+    Unsupported::GlyphIdRange,
+    Unsupported::GeometryTooLarge,
+    Unsupported::LutFull,
+    Unsupported::ClipOverflow,
+    Unsupported::LayerDepth,
+    Unsupported::LayerPoolExhausted,
+    Unsupported::CustomUnregistered,
+    Unsupported::GpuTextureUnregistered,
+    Unsupported::MeshGradient,
+];
+
+impl FrameStats {
+    /// The fallback kinds recorded this frame, in `Unsupported::ALL` order.
+    pub fn unsupported_kinds(&self) -> Vec<Unsupported> {
+        Unsupported::ALL.into_iter().filter(|k| self.unsupported[*k as usize] > 0).collect()
+    }
+}
 
 /// One bit per `Unsupported` kind; lives on the Renderer (no globals, DR-12).
 #[derive(Debug, Default)]
@@ -573,5 +620,47 @@ mod display_tests {
         );
         let timed = FrameStats { gpu_us: Some(1234), ..FrameStats::default() };
         assert!(timed.to_string().contains("gpu=1.23ms"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ADVERSARIAL_ONLY, NOT_ALLOWED_AT_PHASE5, Unsupported, WarnOnce};
+
+    #[test]
+    fn labels_match_registry() {
+        let labels: Vec<&str> = Unsupported::ALL.iter().map(|k| k.label()).collect();
+        let mut sorted = labels.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), Unsupported::COUNT, "duplicate label");
+        for l in labels {
+            let kebab = !l.is_empty()
+                && !l.starts_with('-')
+                && !l.ends_with('-')
+                && !l.contains("--")
+                && l.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
+            assert!(kebab, "{l} is not kebab-case");
+        }
+        for (i, k) in Unsupported::ALL.iter().enumerate() {
+            assert_eq!(*k as usize, i, "{k:?} out of discriminant order");
+        }
+        // The two policy lists are disjoint (a key is No, Adversarial only, or Yes).
+        assert!(NOT_ALLOWED_AT_PHASE5.iter().all(|k| !ADVERSARIAL_ONLY.contains(k)));
+    }
+
+    #[test]
+    fn logged_once_per_renderer() {
+        let mut once = WarnOnce::default();
+        for _ in 0..10 {
+            once.report(Unsupported::DashCountCapped, 1);
+        }
+        let line = format!("wgpu renderer fallback: {} ", Unsupported::DashCountCapped.label());
+        let n = pebbles_foundation::log::snapshot().iter().filter(|r| r.msg.starts_with(&line)).count();
+        assert_eq!(n, 1);
+        // A second Renderer has its own `WarnOnce`, so it logs its first occurrence too.
+        WarnOnce::default().report(Unsupported::DashCountCapped, 1);
+        let n = pebbles_foundation::log::snapshot().iter().filter(|r| r.msg.starts_with(&line)).count();
+        assert_eq!(n, 2);
     }
 }

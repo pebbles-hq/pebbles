@@ -1242,7 +1242,7 @@ impl Walk<'_> {
                     // pure clip (its content still draws; opacity and blend are ignored).
                     if !matches!(plan_kind, layer::LayerPlan::Skip | layer::LayerPlan::PureClip) {
                         if self.layers.open() >= self.limits.max_layer_depth as usize {
-                            self.stats.record(Unsupported::LayerDepthExceeded);
+                            self.stats.record(Unsupported::LayerDepth);
                             plan_kind = layer::LayerPlan::PureClip;
                         } else if matches!(plan_kind, layer::LayerPlan::Offscreen { .. })
                             && self.layers.offscreen_open() >= self.limits.max_layer_targets as usize

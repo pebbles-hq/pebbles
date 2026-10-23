@@ -99,6 +99,7 @@ fn lyon_error_records_tessellation_error() {
     assert_eq!((plan.solid_vertices.len(), plan.solid_indices.len()), before);
     assert!(plan.cmds.is_empty());
     assert_eq!(stats.unsupported[Unsupported::TessError as usize], 1);
+    assert_eq!(stats.unsupported_kinds(), [Unsupported::TessError], "S50: exact key set");
     assert_eq!(stats.fallbacks, 1);
 }
 

@@ -93,6 +93,11 @@ fn oversize_image_is_downscaled_not_rejected() {
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (64, 16), Color::WHITE);
     assert_eq!(pixel(&rgba, 64, 32, 8), [0, 0, 255, 255]);
     assert_eq!(renderer.last_frame_stats().unsupported[pebbles_gpu::Unsupported::ImageTooLarge as usize], 1);
+    assert_eq!(
+        renderer.last_frame_stats().unsupported_kinds(),
+        [pebbles_gpu::Unsupported::ImageTooLarge],
+        "S50: exact key set"
+    );
 }
 
 // ---- R30: sampler quality and extend ----

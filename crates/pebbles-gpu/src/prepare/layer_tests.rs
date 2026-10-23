@@ -474,7 +474,8 @@ fn nesting_beyond_depth_cap_flattens() {
     };
     crate::prepare::prepare(&s, &input, &limits, &mut scratch, &mut stats);
     assert_eq!(scratch.plan.layers.len(), limits.max_layer_depth as usize);
-    assert_eq!(stats.unsupported[crate::stats::Unsupported::LayerDepthExceeded as usize], 40 - 32);
+    assert_eq!(stats.unsupported[crate::stats::Unsupported::LayerDepth as usize], 40 - 32);
+    assert_eq!(stats.unsupported_kinds(), [crate::stats::Unsupported::LayerDepth], "S50: exact key set");
     // The flattened layers' content still draws.
     assert!(scratch.plan.cmds.len() > 40);
 }

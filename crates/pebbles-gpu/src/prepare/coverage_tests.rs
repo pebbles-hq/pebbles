@@ -7,6 +7,7 @@ use peniko::{BlendMode, Brush, Color, Compose, Extend, Fill, ImageQuality, Mix};
 
 use super::{ALL, DELIVERED, Feature as F, Policy, policy};
 use crate::prepare::test_util::prepare_scene;
+use crate::stats::{ADVERSARIAL_ONLY, NOT_ALLOWED_AT_PHASE5};
 
 /// Rows no display-list op can produce yet (their ops / data are added by the delivering card).
 const NOT_PRODUCIBLE: &[(F, &str)] =
@@ -380,4 +381,24 @@ fn all_must_features_delivered() {
             assert!(DELIVERED.contains(&f), "{f:?} is MUST but not delivered");
         }
     }
+}
+
+/// S50: the defensive rows (OC-31, OC-40, OC-44, OC-54, OC-56) feed malformed input on purpose.
+const DEFENSIVE: &[F] =
+    &[F::LayerUnbalanced, F::ImageMalformed, F::ShadowDegenerate, F::GlyphsDegenerate, F::NonFinite];
+
+#[test]
+fn op_matrix_records_no_phase5_disallowed_key() {
+    let mut bad = Vec::new();
+    for f in ALL {
+        let Some(scene) = fixture(f) else { continue };
+        let (_, stats) = prepare_scene(&scene, 64, 64);
+        let kinds = stats.unsupported_kinds();
+        let disallowed = kinds.iter().any(|k| NOT_ALLOWED_AT_PHASE5.contains(k));
+        let defensive_extra = DEFENSIVE.contains(&f) && !kinds.iter().all(|k| ADVERSARIAL_ONLY.contains(k));
+        if disallowed || defensive_extra {
+            bad.push((f, kinds));
+        }
+    }
+    assert!(bad.is_empty(), "rows recording a key §4.2 does not allow: {bad:?}");
 }

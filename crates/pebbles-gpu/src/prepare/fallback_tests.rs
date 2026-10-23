@@ -159,6 +159,7 @@ fn warn_once_logs_once_per_kind() {
     for _frame in 0..3 {
         let (_, stats) = plan_and_stats(&scene);
         assert_eq!(stats.unsupported[Unsupported::NonFinite as usize], 100);
+        assert_eq!(stats.unsupported_kinds(), [Unsupported::NonFinite], "S50: exact key set");
         for kind in Unsupported::ALL {
             lines += u32::from(warn.report(kind, stats.unsupported[kind as usize]));
         }

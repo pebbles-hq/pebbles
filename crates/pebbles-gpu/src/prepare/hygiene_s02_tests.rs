@@ -21,6 +21,7 @@ fn nan_color_skips_op_and_records_non_finite() {
     assert!(plan.cmds.is_empty());
     assert_eq!(stats.non_finite_skipped, 4);
     assert_eq!(stats.unsupported[Unsupported::NonFinite as usize], 4);
+    assert_eq!(stats.unsupported_kinds(), [Unsupported::NonFinite], "S50: exact key set");
     // Skipped before the brush fallback: no `gradient-brush-unsupported`.
     assert_eq!(stats.fallbacks, 4);
 }
@@ -53,6 +54,7 @@ fn nan_layer_alpha_becomes_zero_and_keeps_stack_balanced() {
     assert_eq!(clip.scissor, crate::prepare::ScissorRect::full((100, 100)));
     assert!(plan.solid_vertices.iter().all(|v| v.color[3] == 1.0));
     assert_eq!(stats.unsupported[Unsupported::NonFinite as usize], 1);
+    assert_eq!(stats.unsupported_kinds(), [Unsupported::NonFinite], "S50: exact key set");
     assert_eq!(stats.unsupported[Unsupported::LayerAlpha as usize], 0);
 }
 
@@ -62,6 +64,7 @@ fn huge_coordinates_record_coord_out_of_range() {
     fill(&mut Painter::new(&mut scene), Affine::IDENTITY, &Rect::new(10.0, 10.0, 1e7, 50.0));
     let (plan, stats) = prepare_scene_tessellated(&scene, 100, 100);
     assert_eq!(stats.unsupported[Unsupported::CoordOutOfRange as usize], 1);
+    assert_eq!(stats.unsupported_kinds(), [Unsupported::CoordOutOfRange], "S50: exact key set");
     assert_eq!(cmd_kinds(&plan), ["triangles"], "still drawn");
 }
 

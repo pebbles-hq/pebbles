@@ -118,4 +118,5 @@ fn color_filtered_multiplies_child() {
     assert_eq!(pixel(&rgba, 80, 40, 40), [0, 0, 0, 255], "multiply over the red child");
     assert_eq!(pixel(&rgba, 80, 10, 10), [0, 0, 255, 255], "multiply over the white base");
     assert_eq!(renderer.last_frame_stats().unsupported[pebbles_gpu::Unsupported::LayerBlend as usize], 0);
+    assert_eq!(renderer.last_frame_stats().unsupported_kinds(), [], "S50: no fallback key");
 }

@@ -156,6 +156,7 @@ fn custom_unregistered_is_skipped_and_counted() {
     assert!(is_white(pixel(&rgba, 64, 30, 10)));
     let stats = renderer.last_frame_stats();
     assert_eq!(stats.unsupported[Unsupported::CustomUnregistered as usize], 1);
+    assert_eq!(stats.unsupported_kinds(), [Unsupported::CustomUnregistered], "S50: exact key set");
 }
 
 #[test]
@@ -245,6 +246,11 @@ fn gpu_image_unknown_and_unregistered_are_skipped() {
     let rgba = render_scene(&device, &queue, &mut renderer, &scene, (32, 16), Color::WHITE);
     assert!(is_white(pixel(&rgba, 32, 8, 8)) && is_white(pixel(&rgba, 32, 24, 8)), "nothing drawn");
     assert_eq!(renderer.last_frame_stats().unsupported[Unsupported::GpuTextureUnregistered as usize], 2);
+    assert_eq!(
+        renderer.last_frame_stats().unsupported_kinds(),
+        [Unsupported::GpuTextureUnregistered],
+        "S50: exact key set"
+    );
 }
 
 /// Paint data for the depth test: two overlapping quads at different depths.

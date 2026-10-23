@@ -129,6 +129,7 @@ fn zero_period_strokes_solid() {
     let (plan, stats) = prepare_stroke(&style, &line(100.0));
     assert_eq!(plan.cmds.len(), 1);
     assert_eq!(stats.unsupported[Unsupported::DashDegenerate as usize], 1);
+    assert_eq!(stats.unsupported_kinds(), [Unsupported::DashDegenerate], "S50: exact key set");
 }
 
 #[test]
@@ -160,6 +161,7 @@ fn microscopic_dashes_fall_back() {
     let (plan, stats) = prepare_stroke(&style, &line(2000.0));
     let elapsed = start.elapsed();
     assert_eq!(stats.unsupported[Unsupported::DashCountCapped as usize], 1);
+    assert_eq!(stats.unsupported_kinds(), [Unsupported::DashCountCapped], "S50: exact key set");
     assert!(plan.solid_vertices.len() < 64, "{} vertices", plan.solid_vertices.len());
     // Brush alpha (1.0) × duty cycle (0.5), premultiplied.
     assert!(plan.solid_vertices.iter().all(|v| (v.color[3] - 0.5).abs() < 1e-6));
@@ -226,6 +228,12 @@ fn huge_width_still_covers_target() {
     );
     let (plan, stats) = crate::prepare::test_util::prepare_scene(&scene, 100, 100);
     assert_eq!(stats.unsupported[Unsupported::StrokeWidthClamped as usize], 1);
+    // The far-away path is also beyond `max_coord_px` (S02), so both keys are expected.
+    assert_eq!(
+        stats.unsupported_kinds(),
+        [Unsupported::StrokeWidthClamped, Unsupported::CoordOutOfRange],
+        "S50: exact key set"
+    );
     for corner in [(0.0, 0.0), (100.0, 0.0), (0.0, 100.0), (100.0, 100.0)] {
         assert!(crate::prepare::test_util::covers(&plan, Point::new(corner.0, corner.1)), "{corner:?}");
     }

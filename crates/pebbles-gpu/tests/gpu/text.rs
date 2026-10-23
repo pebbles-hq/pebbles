@@ -394,6 +394,7 @@ fn rotated_bitmap_glyph_draws_as_quad() {
         render_scene(&device, &queue, &mut r, &emoji_scene(&font, id, 1.0, t), (72, 72), Color::TRANSPARENT);
     let stats = r.last_frame_stats();
     assert_eq!(stats.unsupported[pebbles_gpu::Unsupported::ColorGlyphTransform as usize], 0);
+    assert_eq!(stats.unsupported_kinds(), [], "S50: no fallback key");
     let ink = px.as_chunks::<4>().0.iter().filter(|p| p[3] > 128).count();
     assert!(ink > 500, "rotated emoji ink {ink}");
 }
@@ -433,6 +434,7 @@ fn color_glyph_renders_under_rotation() {
     let px = render_scene(&device, &queue, &mut r, &s, (160, 160), Color::WHITE);
     let stats = r.last_frame_stats();
     assert_eq!(stats.unsupported[pebbles_gpu::Unsupported::ColorGlyphTransform as usize], 0);
+    assert_eq!(stats.unsupported_kinds(), [], "S50: no fallback key");
     let (mut red, mut blue) = (0, 0);
     // The glyph box: pen (40, 120), font units 0..800 at k = 0.1 → x 40..120, y 40..120 (y-down).
     let inv = t.inverse();
