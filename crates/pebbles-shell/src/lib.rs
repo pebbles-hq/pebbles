@@ -42,6 +42,8 @@ mod native_menu;
 // Opt-in hidden-input IME bridge (App::web_ime) — winit can't do IME on a canvas.
 #[cfg(target_family = "wasm")]
 mod web_ime;
+// Web GPU helpers: URL test hooks, WebGL context loss, the on-page GPU error (08 P03–P05).
+mod web_gpu;
 // Router ↔ browser-URL bridge (history, Back/Forward, deep links).
 #[cfg(target_family = "wasm")]
 mod web_router;

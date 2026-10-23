@@ -19,7 +19,8 @@ fn frame_stats_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("PEBBLES_FRAME_STATS").is_ok_and(|v| v == "1" || v == "true"))
 }
 
-/// X.6 — synthetic device-loss injection: `PEBBLES_SYNTH_GPU_LOSS=N` poisons the
+/// X.6 — synthetic device-loss injection: `PEBBLES_SYNTH_GPU_LOSS=N` (on the web the
+/// `?pebbles-synth-gpu-loss=N` query, 08 P03) poisons the
 /// GPU error counter every N frames, driving the SAME full-stack recovery a real
 /// lost device triggers (fresh instance/adapter/device, every surface and
 /// renderer rebuilt). Soak tool only — unset in normal runs.
@@ -27,7 +28,11 @@ fn synth_gpu_loss_every() -> u64 {
     use std::sync::OnceLock;
     static EVERY: OnceLock<u64> = OnceLock::new();
     *EVERY.get_or_init(|| {
-        std::env::var("PEBBLES_SYNTH_GPU_LOSS").ok().and_then(|v| v.parse().ok()).unwrap_or(0)
+        #[cfg(target_family = "wasm")]
+        let every = crate::web_gpu::query_param("pebbles-synth-gpu-loss");
+        #[cfg(not(target_family = "wasm"))]
+        let every = std::env::var("PEBBLES_SYNTH_GPU_LOSS").ok();
+        every.and_then(|v| v.parse().ok()).unwrap_or(0)
     })
 }
 
@@ -186,6 +191,9 @@ impl Runner {
         let synth = synth_gpu_loss_every();
         if synth > 0 && self.frame_no.is_multiple_of(synth) {
             eprintln!("pebbles: SYNTH device loss injected (frame {fno})");
+            // stderr is invisible in a browser: echo to the console too.
+            #[cfg(target_family = "wasm")]
+            web_sys::console::warn_1(&format!("pebbles: SYNTH device loss injected (frame {fno})").into());
             if let Some(ctx) = self.context.as_ref() {
                 ctx.inject_synthetic_loss();
             }

@@ -112,7 +112,6 @@ impl Runner {
                 pebbles_core::log::Cat::General,
                 "window() (secondary windows) is desktop-only — ignored on web".to_string(),
             );
-            return;
         }
 
         #[cfg(not(target_family = "wasm"))]

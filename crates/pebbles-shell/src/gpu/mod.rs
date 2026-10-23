@@ -52,7 +52,26 @@ impl HostInit {
         Self {
             #[cfg(feature = "wgpu")]
             gpu: {
-                let init = pebbles_gpu::GpuInit::from_env();
+                #[cfg_attr(not(target_family = "wasm"), allow(unused_mut))]
+                let mut init = pebbles_gpu::GpuInit::from_env();
+                // 08 P03: `?pebbles-force-webgl=1` drops WebGPU so the WebGL2 path is testable in
+                // a browser that has WebGPU.
+                #[cfg(target_family = "wasm")]
+                if crate::web_gpu::query_param("pebbles-force-webgl").as_deref() == Some("1") {
+                    use pebbles_foundation::log::{Cat, Level, logf};
+                    let forced = init.backends - wgpu::Backends::BROWSER_WEBGPU;
+                    // Echoed to the browser console too, like the GPU lines (08 §15): testers read it there.
+                    if forced.contains(wgpu::Backends::GL) {
+                        init.backends = forced;
+                        let line = "WebGL2 forced by ?pebbles-force-webgl=1";
+                        logf(Level::Info, Cat::Gpu, format_args!("{line}"));
+                        web_sys::console::info_1(&format!("pebbles: {line}").into());
+                    } else {
+                        let line = "?pebbles-force-webgl=1 ignored: built without the `webgl` feature";
+                        logf(Level::Warn, Cat::Gpu, format_args!("{line}"));
+                        web_sys::console::warn_1(&format!("pebbles: {line}").into());
+                    }
+                }
                 // GL presentation on Wayland/X11 needs the display handle; the other
                 // backends ignore it. None on web (no display handle).
                 #[cfg(not(target_family = "wasm"))]
