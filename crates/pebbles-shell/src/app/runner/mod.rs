@@ -155,6 +155,8 @@ struct WindowRuntime {
     pan_target: Option<u64>,
     current_cursor: Cursor,
     on_close: Option<Rc<dyn Fn()>>,
+    /// Hidden by the window system (08 §5.7, P12): render nothing, request no frames.
+    occluded: bool,
 }
 
 /// The winit application handler. Holds all persistent runtime state.

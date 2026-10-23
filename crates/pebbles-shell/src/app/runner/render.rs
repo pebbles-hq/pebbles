@@ -466,6 +466,10 @@ impl Runner {
     /// Render one secondary window (mirrors [`render`], reusing the shared scene,
     /// renderers and GPU context).
     pub(super) fn render_window(&mut self, w: &mut WindowRuntime) {
+        // 08 §5.7 (P12): a hidden window renders nothing and requests no frames.
+        if !should_render(w.occluded) {
+            return;
+        }
         // NOTE: `w` is detached from `self.windows` during dispatch, so a reset
         // here cannot refresh its surface in the map — recreate it directly (native only:
         // the web rebuild is async, 08 §6.6).
@@ -547,15 +551,14 @@ impl Runner {
             self.gpu_reset_failures = 0;
         }
         if outcome != PresentOutcome::Presented {
-            // Secondary windows track occlusion from P12; an occluded acquire just skips here.
-            let mut occluded = false;
+            // An occluded acquire marks the window hidden until a visibility event (P12).
             follow_up(
                 outcome,
                 &mut self.context,
                 &mut self.gpu_reset_requested,
                 &w.window,
                 &mut w.surface,
-                &mut occluded,
+                &mut w.occluded,
             );
             return;
         }

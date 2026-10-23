@@ -205,6 +205,7 @@ impl Runner {
                 pan_target: None,
                 current_cursor: Cursor::Default,
                 on_close: spec.on_close,
+                occluded: false,
             },
         );
     }
@@ -234,10 +235,31 @@ impl Runner {
                 keep = false;
             }
             WindowEvent::Resized(size) => {
+                w.occluded = false;
                 if size.width > 0 && size.height > 0 {
                     self.context.as_mut().unwrap().resize_surface(&mut w.surface, size.width, size.height);
                     w.window.request_redraw();
                 }
+            }
+            // P12: the main window's scale / occlusion / focus handling, for this window.
+            WindowEvent::ScaleFactorChanged { .. } => {
+                pebbles_widgets::overlay::hide_overlay();
+                w.occluded = false;
+                let size = w.window.inner_size();
+                if size.width > 0 && size.height > 0 {
+                    self.context.as_mut().unwrap().resize_surface(&mut w.surface, size.width, size.height);
+                }
+                w.window.request_redraw();
+            }
+            WindowEvent::Occluded(occluded) => {
+                w.occluded = occluded;
+                if !occluded {
+                    w.window.request_redraw();
+                }
+            }
+            WindowEvent::Focused(true) => {
+                w.occluded = false;
+                w.window.request_redraw();
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let scale = w.window.scale_factor();
