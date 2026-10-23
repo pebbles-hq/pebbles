@@ -130,6 +130,10 @@ pub(crate) enum PebblesUserEvent {
         allow(dead_code)
     )] // sent only by the native wgpu waker
     GpuLost,
+    /// (web) WebGL context lost on the canvas (08 P04): drop the GPU, wait for the restore.
+    GpuContextLost,
+    /// (web) WebGL context restored on the canvas (08 P04): rebuild the GPU stack.
+    GpuContextRestored,
 }
 
 /// The live window + its GPU surface.
@@ -232,6 +236,9 @@ pub(super) struct Runner {
     /// (web) The window whose surface a failed async recovery released; the retry uses it.
     #[cfg(target_family = "wasm")]
     recovery_window: Option<Arc<Window>>,
+    /// (web) The WebGL context is lost: render and recover nothing until it is restored (P04).
+    #[cfg(target_family = "wasm")]
+    gpu_suspended: bool,
     /// (web) When the in-flight async recovery started (None at startup).
     #[cfg(target_family = "wasm")]
     recovery_started: Option<Instant>,
@@ -356,6 +363,8 @@ impl Runner {
             #[cfg(target_family = "wasm")]
             recovery_window: None,
             #[cfg(target_family = "wasm")]
+            gpu_suspended: false,
+            #[cfg(target_family = "wasm")]
             recovery_started: None,
             active: None,
             a11y: None,
@@ -472,6 +481,10 @@ impl Runner {
                 // Harmless if the app never navigates.
                 if let Some(proxy) = self.proxy.clone() {
                     crate::web_router::enable(proxy);
+                }
+                // WebGL context loss / restore on this canvas (08 P04), once per canvas.
+                if let Some(proxy) = self.proxy.clone() {
+                    crate::web_gpu::install_context_loss_listeners(&window, proxy);
                 }
             }
         }
@@ -820,6 +833,27 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 }
                 #[cfg(not(target_family = "wasm"))]
                 let _ = (window, error);
+            }
+            PebblesUserEvent::GpuContextLost =>
+            {
+                #[cfg(target_family = "wasm")]
+                if !self.gpu_suspended {
+                    self.gpu_suspended = true;
+                    self.renderers.clear();
+                    self.context = None;
+                    if let Some(window) = self.active.take().map(|a| a.window) {
+                        self.recovery_window = Some(window);
+                    }
+                    gpu_log(pebbles_foundation::log::Level::Warn, "WebGL context lost; waiting for restore");
+                }
+            }
+            PebblesUserEvent::GpuContextRestored => {
+                #[cfg(target_family = "wasm")]
+                if std::mem::replace(&mut self.gpu_suspended, false)
+                    && let Some(init) = self.host_init.clone()
+                {
+                    self.start_web_recovery(init, Instant::now());
+                }
             }
             // (web) The hidden-input IME bridge queued edit intents; drain them into
             // the focused editor. Never sent off wasm.

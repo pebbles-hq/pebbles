@@ -43,9 +43,10 @@ impl Runner {
     /// Retries are spaced by [`reset_backoff`]. Returns whether a reset ran (the caller re-renders).
     pub(super) fn recover_gpu_if_poisoned(&mut self) -> bool {
         use pebbles_foundation::log::Level;
-        // (web) An async recovery is already in flight.
+        // (web) An async recovery is already in flight, or the WebGL context is lost (P04:
+        // nothing can be rebuilt until the browser restores it).
         #[cfg(target_family = "wasm")]
-        if self.gpu_pending {
+        if self.gpu_pending || self.gpu_suspended {
             return false;
         }
         // 1. Poisoned?
@@ -150,7 +151,7 @@ impl Runner {
     /// 08 §6.6 (web): never block the browser thread — rebuild on a `spawn_local` task and hand
     /// the result back through the event-loop proxy (`SurfaceReady` / `GpuRecoveryFailed`).
     #[cfg(target_family = "wasm")]
-    fn start_web_recovery(&mut self, init: HostInit, started: Instant) {
+    pub(super) fn start_web_recovery(&mut self, init: HostInit, started: Instant) {
         use pebbles_foundation::log::Level;
         let window = self.active.take().map(|a| a.window).or_else(|| self.recovery_window.take());
         let (Some(window), Some(proxy)) = (window, self.proxy.clone()) else {
@@ -177,6 +178,11 @@ impl Runner {
     }
 
     pub(super) fn render(&mut self) {
+        // (web) The WebGL context is lost: nothing to draw with until it is restored (P04).
+        #[cfg(target_family = "wasm")]
+        if self.gpu_suspended {
+            return;
+        }
         use pebbles_core::log;
         // Frame heartbeat: bump the counter and log a periodic pulse (and every
         // slow frame). If the log stops pulsing, the loop froze — and the LAST

@@ -121,7 +121,7 @@ console_error_panic_hook = "0.1"
 web-sys = { version = "0.3", features = [
     "Window", "Navigator", "Clipboard",
     "Document", "Element", "Node", "HtmlElement", "HtmlInputElement", "EventTarget",
-    "Event", "InputEvent", "CompositionEvent", "KeyboardEvent", "MediaQueryList",
+    "Event", "HtmlCanvasElement", "InputEvent", "CompositionEvent", "KeyboardEvent", "MediaQueryList",
     # Router ↔ browser-URL bridge (web_router.rs).
     "History", "Location", "PopStateEvent",
     # GPU recovery lines on wasm (C20): `pebbles_foundation::log` does not echo there.
