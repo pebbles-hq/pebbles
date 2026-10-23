@@ -3,9 +3,6 @@
 # These recipes mirror .github/workflows/ci.yml so you can run the whole gate
 # before pushing: `just gate`. Std tooling only (cargo + rustfmt/clippy + typos);
 # install `just` with `cargo install just`. Keep this in sync with ci.yml.
-#
-# Linux note: the build needs fontconfig headers — `sudo apt-get install -y
-# libfontconfig1-dev` (the CI runners do the same).
 
 # List the recipes.
 default:

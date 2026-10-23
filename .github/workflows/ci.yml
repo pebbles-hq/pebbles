@@ -31,12 +31,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # cosmic-text's system-font lookup needs fontconfig headers; winit dlopens X11/Wayland at
-      # runtime, so no display libs are needed to build or to run headless.
-      - name: System deps (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
-
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: ${{ matrix.os }}
@@ -55,7 +49,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - name: Install the MSRV toolchain
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
@@ -102,9 +95,6 @@ jobs:
             shell_args: ""
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: System deps (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           toolchain: stable
@@ -153,7 +143,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: feature-matrix
@@ -171,8 +160,6 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: System deps (Linux)
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           toolchain: stable
@@ -209,8 +196,8 @@ jobs:
       PEBBLES_EXPECT_ADAPTER: llvmpipe
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: System deps (fontconfig + Mesa lavapipe + Vulkan validation layers)
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev mesa-vulkan-drivers vulkan-tools vulkan-validationlayers
+      - name: System deps (Mesa lavapipe + Vulkan validation layers)
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers vulkan-tools vulkan-validationlayers
       - name: Point the Vulkan loader at lavapipe
         # Mesa names the ICD lvp_icd.x86_64.json in older releases and lvp_icd.json from 25.x
         # (noble-updates), so resolve it after the install instead of hard-coding either.
@@ -245,9 +232,6 @@ jobs:
       PEBBLES_GPU_STRICT: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: System deps (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: gpu-noop-${{ matrix.os }}
@@ -270,8 +254,8 @@ jobs:
       PEBBLES_RENDER_CHECK_PLATFORM: linux-lavapipe
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: System deps (fontconfig + Mesa lavapipe)
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev mesa-vulkan-drivers vulkan-tools
+      - name: System deps (Mesa lavapipe)
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers vulkan-tools
       - name: Point the Vulkan loader at lavapipe
         # Mesa names the ICD lvp_icd.x86_64.json in older releases and lvp_icd.json from 25.x
         # (noble-updates), so resolve it after the install instead of hard-coding either.
@@ -303,7 +287,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: clippy
@@ -328,7 +311,6 @@ jobs:
     # broken link, not a warning to skim past.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: docs
