@@ -20,9 +20,14 @@ impl Runner {
         for id in pebbles_widgets::window::take_close_requests() {
             if let Some(wid) = self.window_by_id.remove(&id)
                 && let Some(w) = self.windows.remove(&wid)
-                && let Some(f) = &w.on_close
             {
-                f();
+                // The surface (it holds a window clone) goes before the window (08 §17.1 T2).
+                if let Some(state) = self.render_state_mut() {
+                    state.surfaces.remove(&wid);
+                }
+                if let Some(f) = &w.on_close {
+                    f();
+                }
             }
         }
         // Runtime window changes (set_title / maximize / minimize / move / …).
@@ -161,7 +166,8 @@ impl Runner {
         };
         window.set_ime_allowed(true); // enable IME composition on secondary windows too
         let physical = window.inner_size();
-        let surface = match pollster::block_on(self.context.as_mut().unwrap().create_surface(
+        let Some(state) = self.render_state_mut() else { return };
+        let surface = match pollster::block_on(state.ctx.create_surface(
             window.clone(),
             physical.width.max(1),
             physical.height.max(1),
@@ -175,9 +181,9 @@ impl Runner {
                 return;
             }
         };
-        self.renderers.resize_with(self.context.as_ref().unwrap().device_count(), || None);
         let idx = surface.device_index();
-        self.renderers[idx].get_or_insert_with(|| self.context.as_ref().unwrap().new_renderer(idx).unwrap());
+        state.adopt(window.id(), surface);
+        state.renderer(idx);
         // A fresh Ui → a fresh window_id in the shared runtime. Wrap the root in an
         // OverlayHost so this window has its own popover/menu/dialog layer (the overlay
         // + dialog signals are namespaced per window id).
@@ -193,7 +199,8 @@ impl Runner {
             WindowRuntime {
                 id: spec.id,
                 window,
-                surface,
+                pacer: Pacer::default(),
+                frame_id: 0,
                 ui,
                 background: spec.background,
                 cursor: Offset::ZERO,
@@ -231,9 +238,9 @@ impl Runner {
                 keep = false;
             }
             WindowEvent::Resized(size) => {
+                // The next packet carries the new size; `render_packet` configures (08 §17.3 b).
                 w.occluded = false;
                 if size.width > 0 && size.height > 0 {
-                    self.context.as_mut().unwrap().resize_surface(&mut w.surface, size.width, size.height);
                     w.window.request_redraw();
                 }
             }
@@ -241,10 +248,6 @@ impl Runner {
             WindowEvent::ScaleFactorChanged { .. } => {
                 pebbles_widgets::overlay::hide_overlay();
                 w.occluded = false;
-                let size = w.window.inner_size();
-                if size.width > 0 && size.height > 0 {
-                    self.context.as_mut().unwrap().resize_surface(&mut w.surface, size.width, size.height);
-                }
                 w.window.request_redraw();
             }
             WindowEvent::Occluded(occluded) => {
@@ -404,6 +407,9 @@ impl Runner {
         }
         if keep {
             self.windows.insert(window_id, w);
+        } else if let Some(state) = self.render_state_mut() {
+            // The surface (it holds a window clone) goes before the window (08 §17.1 T2).
+            state.surfaces.remove(&window_id);
         }
     }
 }

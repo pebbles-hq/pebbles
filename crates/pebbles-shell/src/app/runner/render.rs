@@ -6,7 +6,6 @@
 use super::*;
 
 use super::gpu_log;
-use gpu::{PresentOutcome, present_frame};
 
 use kurbo::Stroke;
 use peniko::Brush;
@@ -37,6 +36,15 @@ fn synth_gpu_loss_every() -> u64 {
 }
 
 impl Runner {
+    /// The render state, when this thread owns it (inline mode, 08 §17.8).
+    pub(super) fn render_state(&self) -> Option<&RenderState> {
+        self.sink.as_ref().and_then(FrameSink::state)
+    }
+
+    pub(super) fn render_state_mut(&mut self) -> Option<&mut RenderState> {
+        self.sink.as_mut().and_then(FrameSink::state_mut)
+    }
+
     /// Rebuild the WHOLE GPU stack — instance, adapter, device, every surface, every renderer —
     /// when a device is lost or poisoned (08 §6.5). A renderer-level rebuild is not enough: a
     /// lost device hands out invalid resources forever. UI state survives (no remount).
@@ -50,7 +58,7 @@ impl Runner {
             return false;
         }
         // 1. Poisoned?
-        let poisoned = self.gpu_reset_requested || self.context.as_ref().is_some_and(|c| c.needs_reset());
+        let poisoned = self.gpu_reset_requested || self.render_state().is_some_and(|s| s.ctx.needs_reset());
         if !poisoned {
             return false;
         }
@@ -80,11 +88,11 @@ impl Runner {
         self.gpu_retry_at = Some(started + reset_backoff(self.gpu_reset_failures));
         // 3. One line per lost device.
         let g = self.gpu_generation;
-        for lost in self.context.as_ref().map(|c| c.lost_devices()).unwrap_or_default() {
+        for lost in self.render_state().map(|s| s.ctx.lost_devices()).unwrap_or_default() {
             gpu_log(Level::Error, &format!("GPU device lost (generation={g}, {lost})"));
         }
-        // 4. Drop every renderer.
-        self.renderers = Vec::new();
+        // 4. Drop every renderer and surface (old swapchains go before new ones are configured).
+        self.sink = None;
         #[cfg(target_family = "wasm")]
         {
             self.start_web_recovery(init, started);
@@ -101,34 +109,26 @@ impl Runner {
     #[cfg(not(target_family = "wasm"))]
     fn rebuild_gpu_native(&mut self, init: &HostInit, started: Instant) {
         use pebbles_foundation::log::Level;
-        self.context = Some(pollster::block_on(new_context(init)));
+        let mut ctx = pollster::block_on(new_context(init));
         let mut failure: Option<String> = None;
-        if let (Some(active), Some(ctx)) = (self.active.as_mut(), self.context.as_mut()) {
-            let phys = active.window.inner_size();
+        let windows = self.active.iter().map(|a| &a.window).chain(self.windows.values().map(|w| &w.window));
+        let mut surfaces = Vec::new();
+        for window in windows {
+            let phys = window.inner_size();
             match pollster::block_on(ctx.create_surface(
-                active.window.clone(),
+                window.clone(),
                 phys.width.max(1),
                 phys.height.max(1),
             )) {
-                Ok(surface) => active.surface = surface,
-                Err(e) => failure = Some(gpu::error_text(&e)),
-            }
-        }
-        for w in self.windows.values_mut() {
-            let Some(ctx) = self.context.as_mut() else { break };
-            let phys = w.window.inner_size();
-            match pollster::block_on(ctx.create_surface(
-                w.window.clone(),
-                phys.width.max(1),
-                phys.height.max(1),
-            )) {
-                Ok(surface) => w.surface = surface,
+                Ok(surface) => surfaces.push((window.id(), surface)),
                 Err(e) => failure = failure.or(Some(gpu::error_text(&e))),
             }
         }
-        if let Some(ctx) = self.context.as_ref() {
-            self.renderers.resize_with(ctx.device_count(), || None);
+        let mut state = RenderState::new(ctx);
+        for (key, surface) in surfaces {
+            state.adopt(key, surface);
         }
+        self.sink = Some(FrameSink::Inline(state));
         if let Some(error) = failure {
             self.gpu_reset_requested = true;
             let n = self.gpu_reset_failures + 1;
@@ -163,7 +163,7 @@ impl Runner {
             return;
         };
         self.gpu_pending = true;
-        self.context = None;
+        self.sink = None;
         self.recovery_started = Some(started);
         let phys = window.inner_size();
         let (w, h) = (phys.width.max(1), phys.height.max(1));
@@ -200,8 +200,8 @@ impl Runner {
             // stderr is invisible in a browser: echo to the console too.
             #[cfg(target_family = "wasm")]
             web_sys::console::warn_1(&format!("pebbles: SYNTH device loss injected (frame {fno})").into());
-            if let Some(ctx) = self.context.as_ref() {
-                ctx.inject_synthetic_loss();
+            if let Some(state) = self.render_state() {
+                state.ctx.inject_synthetic_loss();
             }
         }
         if self.recover_gpu_if_poisoned() {
@@ -252,16 +252,6 @@ impl Runner {
         let phys = active.window.inner_size();
         if phys.width == 0 || phys.height == 0 {
             return;
-        }
-        // Web: the true canvas size only arrives AFTER creation (winit reports 0×0
-        // right after `create_window`), and the `Resized` carrying it fires during
-        // the async GPU-init gap while `self.active` is still `None`, so that event
-        // is dropped. Self-heal — make the surface match the window before drawing,
-        // so we never render into a stale 1×1 target (which shows as a grey box).
-        // Only on size change, to avoid the known wasm dpr resize feedback loop.
-        #[cfg(target_family = "wasm")]
-        if active.surface.size() != (phys.width, phys.height) {
-            self.context.as_mut().unwrap().resize_surface(&mut active.surface, phys.width, phys.height);
         }
         let logical = Size::new(phys.width as f64 / scale, phys.height as f64 / scale);
         pebbles_widgets::overlay::set_window_size(logical.width, logical.height);
@@ -377,44 +367,39 @@ impl Runner {
             eprintln!("[pebbles reactive] {}", pebbles_core::reactive_stats::summary());
         }
 
-        // 4. Render + present. The host's `present_frame` acquires the swapchain image,
-        // renders straight into it and presents. NOTHING here may panic — on failure the
-        // host logs and skips THIS frame; a poisoned device reaches the reset via `needs_reset()`.
-        let surface = &mut active.surface;
-        let idx = surface.device_index();
-        let renderer = match self.renderers[idx].as_mut() {
-            Some(r) => r,
-            None => self.renderers[idx]
-                .insert(self.context.as_ref().unwrap().new_renderer(idx).expect("renderer")),
-        };
-        let outcome = present_frame(
-            self.context.as_ref().unwrap(),
-            renderer,
-            surface,
-            &self.frame,
-            self.background,
+        // 4. Hand the packet to the sink (08 §17.3). NOTHING here may panic — a failed frame is
+        // skipped and retried; a poisoned device reaches the reset via `needs_reset()`.
+        let key = active.window.id();
+        let Some(outcome) = submit_frame(
+            &mut self.sink,
+            key,
             &active.window,
-        );
-        if stats && let Some(line) = gpu::frame_stats_line(renderer) {
+            &mut active.pacer,
+            &mut active.frame_id,
+            &mut self.frame,
+            self.background,
+        ) else {
+            return;
+        };
+        if stats && let Some(line) = self.render_state().and_then(|s| stats_line(s, key)) {
             eprintln!("[pebbles gpu] {line}");
         }
+        let Some(active) = self.active.as_mut() else { return };
         note_first_present(
             &mut self.first_present_logged,
             self.started_at,
-            outcome == PresentOutcome::Presented,
+            outcome == FrameOutcome::Presented,
         );
-        if outcome == PresentOutcome::Presented {
+        if outcome == FrameOutcome::Presented {
             // 08 §6.7: the first present after a reset confirms it.
             self.gpu_reset_unconfirmed = false;
             self.gpu_reset_failures = 0;
-        }
-        if outcome != PresentOutcome::Presented {
+        } else {
             follow_up(
                 outcome,
-                &mut self.context,
+                &mut self.sink,
                 &mut self.gpu_reset_requested,
                 &active.window,
-                &mut active.surface,
                 &mut active.occluded,
             );
             return;
@@ -487,19 +472,16 @@ impl Runner {
         // here cannot refresh its surface in the map — recreate it directly (native only:
         // the web rebuild is async, 08 §6.6).
         #[cfg(not(target_family = "wasm"))]
-        if self.recover_gpu_if_poisoned() {
+        if self.recover_gpu_if_poisoned()
+            && let Some(state) = self.render_state_mut()
+        {
             let phys = w.window.inner_size();
-            if let Ok(surface) = pollster::block_on(self.context.as_mut().unwrap().create_surface(
+            if let Ok(surface) = pollster::block_on(state.ctx.create_surface(
                 w.window.clone(),
                 phys.width.max(1),
                 phys.height.max(1),
             )) {
-                self.renderers.resize_with(self.context.as_ref().unwrap().device_count(), || None);
-                let idx = surface.device_index();
-                if self.renderers[idx].is_none() {
-                    self.renderers[idx] = self.context.as_ref().unwrap().new_renderer(idx);
-                }
-                w.surface = surface;
+                state.adopt(w.window.id(), surface);
             }
         }
         let now = self.clock.elapsed().as_secs_f64();
@@ -531,48 +513,35 @@ impl Runner {
         self.frame.append(&self.scene, Some(Affine::scale(scale)));
         self.text.finish_frame();
 
-        let surface = &mut w.surface;
-        let idx = surface.device_index();
-        // Same no-panic policy as render(): recreate a missing renderer, skip the
-        // frame (and schedule the GPU reset) on a render failure.
-        let renderer = match self.renderers[idx].as_mut() {
-            Some(r) => r,
-            None => self.renderers[idx]
-                .insert(self.context.as_ref().unwrap().new_renderer(idx).expect("renderer")),
-        };
-        let outcome = present_frame(
-            self.context.as_ref().unwrap(),
-            renderer,
-            surface,
-            &self.frame,
-            w.background,
+        let key = w.window.id();
+        let Some(outcome) = submit_frame(
+            &mut self.sink,
+            key,
             &w.window,
-        );
+            &mut w.pacer,
+            &mut w.frame_id,
+            &mut self.frame,
+            w.background,
+        ) else {
+            return;
+        };
         if frame_stats_enabled()
-            && let Some(line) = gpu::frame_stats_line(renderer)
+            && let Some(line) = self.render_state().and_then(|s| stats_line(s, key))
         {
             eprintln!("[pebbles gpu] {line}");
         }
         note_first_present(
             &mut self.first_present_logged,
             self.started_at,
-            outcome == PresentOutcome::Presented,
+            outcome == FrameOutcome::Presented,
         );
-        if outcome == PresentOutcome::Presented {
+        if outcome == FrameOutcome::Presented {
             // 08 §6.7: the first present after a reset confirms it.
             self.gpu_reset_unconfirmed = false;
             self.gpu_reset_failures = 0;
-        }
-        if outcome != PresentOutcome::Presented {
+        } else {
             // An occluded acquire marks the window hidden until a visibility event (P12).
-            follow_up(
-                outcome,
-                &mut self.context,
-                &mut self.gpu_reset_requested,
-                &w.window,
-                &mut w.surface,
-                &mut w.occluded,
-            );
+            follow_up(outcome, &mut self.sink, &mut self.gpu_reset_requested, &w.window, &mut w.occluded);
             return;
         }
 
@@ -587,36 +556,82 @@ fn should_render(occluded: bool) -> bool {
     !occluded
 }
 
-/// The runner's follow-up for a frame that was not presented (08 §5.1, §5.6): every window ends
-/// presented, with a redraw scheduled, or occluded.
+/// Build `window`'s packet from the painted `frame` and hand it to the sink (08 §17.3 steps 1–2
+/// and 5). The scene comes back for reuse. `None`: no sink yet, or the window is at its
+/// in-flight cap (the redraw is remembered).
+fn submit_frame(
+    sink: &mut Option<FrameSink>,
+    key: frame::WindowKey,
+    window: &Window,
+    pacer: &mut Pacer,
+    frame_id: &mut u64,
+    frame: &mut Scene,
+    base_color: Color,
+) -> Option<FrameOutcome> {
+    let sink = sink.as_mut()?;
+    if !pacer.begin(false) {
+        return None;
+    }
+    *frame_id += 1;
+    let size = window.inner_size();
+    let packet = FramePacket {
+        frame_id: *frame_id,
+        scene: std::mem::replace(frame, Scene::new()),
+        size: (size.width, size.height),
+        scale_factor: window.scale_factor(),
+        base_color,
+        sync: None,
+    };
+    // 08 §17.1 T1: the last winit call before the hand-over.
+    window.pre_present_notify();
+    let (outcome, scene) = sink.submit(key, packet);
+    *frame = scene;
+    if pacer.done(outcome) {
+        window.request_redraw();
+    }
+    Some(outcome)
+}
+
+/// The `[pebbles gpu]` stats line of the renderer that drew window `key`.
+fn stats_line(state: &RenderState, key: frame::WindowKey) -> Option<String> {
+    let renderer = state.renderers.get(state.device_of(key))?.as_ref()?;
+    gpu::frame_stats_line(renderer)
+}
+
+/// The runner's follow-up for a frame that was not presented (08 §5.1, §5.6, §17.3 step 5):
+/// every window ends presented, with a redraw scheduled, or occluded.
 fn follow_up(
-    outcome: PresentOutcome,
-    context: &mut Option<RenderContext>,
+    outcome: FrameOutcome,
+    sink: &mut Option<FrameSink>,
     reset_requested: &mut bool,
     window: &Arc<Window>,
-    surface: &mut RenderSurface<'static>,
     occluded: &mut bool,
 ) {
     match outcome {
-        PresentOutcome::Presented | PresentOutcome::RedrawRequested => {}
-        PresentOutcome::Occluded => *occluded = true,
-        PresentOutcome::RecreateSurface => {
-            let id = surface.device_index();
+        // `Pacer::done` already re-requested a skipped frame (§5.6).
+        FrameOutcome::Presented | FrameOutcome::Skipped => {}
+        FrameOutcome::Occluded => *occluded = true,
+        FrameOutcome::SurfaceLost => {
             #[cfg(not(target_family = "wasm"))]
             {
                 use pebbles_foundation::log::{Cat, Level, logf};
                 let phys = window.inner_size();
-                let recreated = context.as_mut().map(|ctx| {
-                    pollster::block_on(ctx.create_surface(
+                let state = sink.as_mut().and_then(FrameSink::state_mut);
+                let recreated = state.map(|state| {
+                    let surface = pollster::block_on(state.ctx.create_surface(
                         window.clone(),
                         phys.width.max(1),
                         phys.height.max(1),
-                    ))
+                    ));
+                    surface.map(|surface| state.adopt(window.id(), surface))
                 });
                 match recreated {
-                    Some(Ok(new)) => {
-                        *surface = new;
-                        logf(Level::Warn, Cat::Gpu, format_args!("surface #{id} lost — recreated"));
+                    Some(Ok(())) => {
+                        logf(
+                            Level::Warn,
+                            Cat::Gpu,
+                            format_args!("surface of {:?} lost — recreated", window.id()),
+                        );
                     }
                     // Recreation failed: rebuild the whole stack (08 §5.1 `Lost` row).
                     _ => *reset_requested = true,
@@ -625,12 +640,12 @@ fn follow_up(
             // wasm recreates asynchronously through the GPU recovery path (C20).
             #[cfg(target_family = "wasm")]
             {
-                let _ = (context, id);
+                let _ = sink;
                 *reset_requested = true;
             }
             window.request_redraw();
         }
-        PresentOutcome::ResetGpu => {
+        FrameOutcome::DeviceLost => {
             *reset_requested = true;
             window.request_redraw();
         }

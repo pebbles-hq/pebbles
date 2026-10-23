@@ -19,6 +19,15 @@ use super::limits::RendererLimits;
 use super::prepare::{PrepareInput, PrepareScratch, VERTEX_LIMIT_NO_FULL_INDEX, prepare};
 use super::stats::{FrameStats, Unsupported, WarnOnce};
 
+// 08 §17.1 T3/T4: the render thread owns these (native only; wgpu handles are `!Send` on wasm).
+#[cfg(not(target_family = "wasm"))]
+const _: () = {
+    const fn assert_send<T: Send>() {}
+    assert_send::<crate::GpuContext>();
+    assert_send::<Renderer>();
+    assert_send::<crate::RenderSurface<'static>>();
+};
+
 /// Pipelines + caches for ONE device. Shared by every surface/target on that device.
 pub struct Renderer {
     pub(crate) sample_count: u32,

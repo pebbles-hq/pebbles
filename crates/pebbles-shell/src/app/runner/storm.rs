@@ -292,8 +292,13 @@ impl Runner {
     fn churn_report(&self) {
         use pebbles_foundation::log::{Cat, Level, logf};
         logf(Level::Warn, Cat::Gpu, format_args!("window churn done"));
-        let device = self.active.as_ref().map_or(0, |a| a.surface.device_index());
-        let census = self.renderers.get(device).and_then(Option::as_ref).and_then(gpu::census_values);
+        let state = self.render_state();
+        let device = match (state, self.active.as_ref()) {
+            (Some(state), Some(a)) => state.device_of(a.window.id()),
+            _ => 0,
+        };
+        let census =
+            state.and_then(|s| s.renderers.get(device)).and_then(Option::as_ref).and_then(gpu::census_values);
         let line = match census {
             Some(values) => pebbles_gpu::GpuCensus::COLUMNS
                 .iter()

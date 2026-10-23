@@ -152,7 +152,23 @@ impl GpuContext {
                 return Err(GpuError::from(e));
             }
         };
-        super::surface::RenderSurface::configure_new(self, surface, width, height).await
+        self.adopt_surface(surface, (width, height)).await
+    }
+
+    /// The instance this context's surfaces are created with (a cheap clone, 08 §17.2): the UI
+    /// thread creates surfaces with it and hands them to [`adopt_surface`](Self::adopt_surface).
+    pub fn instance(&self) -> wgpu::Instance {
+        self.instance.clone()
+    }
+
+    /// Finish a surface created from [`instance`](Self::instance): pick its device (§3.7), format,
+    /// alpha and present mode (§4.1–§4.3) and configure it at `size` (§4.4).
+    pub async fn adopt_surface<'window>(
+        &mut self,
+        surface: wgpu::Surface<'window>,
+        size: (u32, u32),
+    ) -> Result<super::surface::RenderSurface<'window>, GpuError> {
+        super::surface::RenderSurface::configure_new(self, surface, size.0, size.1).await
     }
 
     /// Soak tooling (`PEBBLES_SYNTH_GPU_LOSS`, 08 §6.9): destroys every device so the real

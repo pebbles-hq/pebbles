@@ -1,11 +1,11 @@
 //! The GPU host the runner drives: a thin adapter over `pebbles-gpu` (`RenderContext`,
-//! `RenderSurface`, `Renderer`, `present_frame`, `PresentOutcome`). The scene type is
+//! `RenderSurface`, `Renderer`). The scene type is
 //! `pebbles_render::Scene`.
 
 mod wgpu_host;
 #[cfg_attr(target_family = "wasm", allow(unused_imports))] // startup_failure_text: native only
 pub(crate) use wgpu_host::{
-    RenderContext, RenderSurface, Renderer, census_values, error_text, frame_stats_line, present_frame,
+    RenderContext, RenderSurface, Renderer, census_values, error_text, frame_stats_line,
     repeated_reset_guidance, startup_failure_text,
 };
 
@@ -60,19 +60,4 @@ impl HostInit {
 /// A GPU context built from `init`.
 pub(crate) async fn new_context(init: &HostInit) -> RenderContext {
     RenderContext::new(&init.gpu).await
-}
-
-/// The outcome of `present_frame` (06 §3.5); the runner performs the follow-up (08 §5).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PresentOutcome {
-    /// The frame was presented.
-    Presented,
-    /// Nothing was presented and a redraw is already scheduled.
-    RedrawRequested,
-    /// The window is not visible: stop rendering until a visibility event (08 §5.4).
-    Occluded,
-    /// The surface is lost: recreate it, then redraw.
-    RecreateSurface,
-    /// The device is poisoned: rebuild the GPU stack (08 §6.5).
-    ResetGpu,
 }

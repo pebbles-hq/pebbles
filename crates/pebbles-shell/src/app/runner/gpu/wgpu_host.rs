@@ -6,7 +6,7 @@ use pebbles_gpu::{
 use pebbles_render::Scene;
 use peniko::Color;
 
-use super::PresentOutcome;
+use super::super::frame::FrameOutcome;
 
 /// Thin wrapper over `pebbles_gpu::GpuContext`.
 pub(crate) struct RenderContext {
@@ -27,12 +27,6 @@ impl RenderContext {
         let surface = self.inner.create_surface(window, width, height).await.map_err(HostError)?;
         // pebbles-gpu installed its device hooks (`DeviceHealth`) in `request_device` (C18).
         Ok(RenderSurface(surface))
-    }
-
-    pub(crate) fn resize_surface(&self, surface: &mut RenderSurface<'_>, width: u32, height: u32) {
-        if let Some(gpu) = self.inner.device(surface.0.device_id()) {
-            surface.0.resize(gpu, width, height);
-        }
     }
 
     pub(crate) fn device_count(&self) -> usize {
@@ -68,6 +62,75 @@ impl RenderContext {
     /// Soak tool (`PEBBLES_SYNTH_GPU_LOSS`): destroy the real devices (P10).
     pub(crate) fn inject_synthetic_loss(&self) {
         self.inner.simulate_device_loss();
+    }
+
+    /// Acquire the swapchain image, render `scene` straight into it, present, and map every
+    /// acquire outcome (08 §5.1, §17.3 (b)–(f)). No winit: the size and scale come from the
+    /// packet (08 §17.1 T1). Reconfigures happen only after the frame is presented or dropped.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn present(
+        &self,
+        renderer: &mut Renderer,
+        surface: &mut RenderSurface<'_>,
+        scene: &Scene,
+        base_color: Color,
+        size: (u32, u32),
+        scale_factor: f64,
+        debug: impl Fn(&str),
+    ) -> FrameOutcome {
+        use pebbles_foundation::log::{Cat, Level, logf};
+        use pebbles_gpu::{Acquire, FrameAction};
+        let Some(gpu) = self.inner.device(surface.0.device_id()) else { return FrameOutcome::DeviceLost };
+        let id = surface.0.device_id().index();
+        let reconfigure = |surface: &mut RenderSurface<'_>| {
+            surface.0.reconfigure(gpu, size.0.max(1), size.1.max(1));
+        };
+        // 08 §4.4 (P13): configure between frames when the packet's (clamped) size differs.
+        surface.0.resize(gpu, size.0, size.1);
+        let (frame, status) = match surface.0.acquire() {
+            Acquire::Frame(frame) => {
+                let status = frame.status();
+                (frame, status)
+            }
+            // 08 §5.5 (P20): a streak of the same failure escalates (3 × Validation → full reset).
+            Acquire::NotReady(e) => {
+                return match surface.0.escalate(e.status()) {
+                    FrameAction::SkipUntilVisible => FrameOutcome::Occluded,
+                    FrameAction::RecreateSurfaceAndRedraw => FrameOutcome::SurfaceLost,
+                    FrameAction::FullReset => FrameOutcome::DeviceLost,
+                    FrameAction::ReconfigureAndRedraw => {
+                        reconfigure(surface);
+                        debug(&format!("surface #{id} {e:?} — reconfigured"));
+                        FrameOutcome::Skipped
+                    }
+                    FrameAction::Render | FrameAction::RenderThenReconfigure | FrameAction::SkipAndRedraw => {
+                        FrameOutcome::Skipped
+                    }
+                };
+            }
+        };
+        let format = surface.0.view_format();
+        // The size comes from the acquired texture (DR-12).
+        let decode = surface.0.decode_srgb_output();
+        let target =
+            RenderTarget::new(frame.view(), format, surface.0.targets_mut()).with_decode_srgb_output(decode);
+        // The device-pixel ratio drives the 02 §7.8 hinting policy (R27).
+        let params = FrameParams::new(base_color).with_scale_factor(scale_factor);
+        if let Err(e) = renderer.render(target, scene, &params) {
+            // A lost or poisoned device reaches the reset through `needs_reset()` (C18).
+            logf(Level::Error, Cat::Gpu, format_args!("wgpu render failed (frame skipped): {e}"));
+            drop(frame);
+            return FrameOutcome::Skipped;
+        }
+        let _ = gpu.device().poll(wgpu::PollType::Poll);
+        frame.present();
+        if surface.0.escalate(status) == FrameAction::RenderThenReconfigure {
+            reconfigure(surface);
+            debug(&format!("surface #{id} Suboptimal — reconfigured"));
+            // The next frame catches up at the new configuration.
+            return FrameOutcome::Skipped;
+        }
+        FrameOutcome::Presented
     }
 }
 
@@ -110,7 +173,7 @@ impl RenderSurface<'_> {
         self.0.device_id().index()
     }
 
-    #[allow(dead_code)] // the seam contract; present_frame sizes from the acquired texture
+    #[allow(dead_code)] // the seam contract; `present` sizes from the packet
     pub(crate) fn size(&self) -> (u32, u32) {
         self.0.size()
     }
@@ -132,75 +195,4 @@ pub(crate) fn census_values(renderer: &Renderer) -> Option<[u64; 25]> {
 
 pub(crate) fn frame_stats_line(renderer: &Renderer) -> Option<String> {
     Some(renderer.last_frame_stats().to_string())
-}
-
-/// Acquire the swapchain image, render `scene` straight into it, present, and act on every
-/// acquire outcome (08 §5.1). Reconfigures happen only after the frame is presented or dropped.
-pub(crate) fn present_frame(
-    ctx: &RenderContext,
-    renderer: &mut Renderer,
-    surface: &mut RenderSurface<'_>,
-    scene: &Scene,
-    base_color: Color,
-    window: &winit::window::Window,
-) -> PresentOutcome {
-    use pebbles_foundation::log::{Cat, Level, logf};
-    use pebbles_gpu::{Acquire, FrameAction};
-    // 08 §5.3 rule 3: never acquire on a dead device.
-    if ctx.needs_reset() {
-        return PresentOutcome::ResetGpu;
-    }
-    let Some(gpu) = ctx.inner.device(surface.0.device_id()) else { return PresentOutcome::ResetGpu };
-    let id = surface.0.device_id().index();
-    let reconfigure = |surface: &mut RenderSurface<'_>| {
-        let size = window.inner_size();
-        surface.0.reconfigure(gpu, size.width.max(1), size.height.max(1));
-    };
-    let (frame, status) = match surface.0.acquire() {
-        Acquire::Frame(frame) => {
-            let status = frame.status();
-            (frame, status)
-        }
-        // 08 §5.5 (P20): a streak of the same failure escalates (3 × Validation → full reset).
-        Acquire::NotReady(e) => {
-            return match surface.0.escalate(e.status()) {
-                FrameAction::SkipUntilVisible => PresentOutcome::Occluded,
-                FrameAction::RecreateSurfaceAndRedraw => PresentOutcome::RecreateSurface,
-                FrameAction::FullReset => PresentOutcome::ResetGpu,
-                FrameAction::ReconfigureAndRedraw => {
-                    reconfigure(surface);
-                    logf(Level::Debug, Cat::Gpu, format_args!("surface #{id} {e:?} — reconfigured"));
-                    window.request_redraw();
-                    PresentOutcome::RedrawRequested
-                }
-                FrameAction::Render | FrameAction::RenderThenReconfigure | FrameAction::SkipAndRedraw => {
-                    window.request_redraw();
-                    PresentOutcome::RedrawRequested
-                }
-            };
-        }
-    };
-    let format = surface.0.view_format();
-    // The size comes from the acquired texture, never from the window (DR-12).
-    let decode = surface.0.decode_srgb_output();
-    let target =
-        RenderTarget::new(frame.view(), format, surface.0.targets_mut()).with_decode_srgb_output(decode);
-    // The device-pixel ratio drives the 02 §7.8 hinting policy (R27).
-    let params = FrameParams::new(base_color).with_scale_factor(window.scale_factor());
-    if let Err(e) = renderer.render(target, scene, &params) {
-        // A lost or poisoned device reaches the reset through `needs_reset()` (C18).
-        logf(Level::Error, Cat::Gpu, format_args!("wgpu render failed (frame skipped): {e}"));
-        drop(frame);
-        window.request_redraw();
-        return PresentOutcome::RedrawRequested;
-    }
-    let _ = gpu.device().poll(wgpu::PollType::Poll);
-    window.pre_present_notify();
-    frame.present();
-    if surface.0.escalate(status) == FrameAction::RenderThenReconfigure {
-        reconfigure(surface);
-        logf(Level::Debug, Cat::Gpu, format_args!("surface #{id} Suboptimal — reconfigured"));
-        window.request_redraw();
-    }
-    PresentOutcome::Presented
 }

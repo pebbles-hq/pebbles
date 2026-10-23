@@ -12,7 +12,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use web_time::Instant;
 
-use gpu::{HostInit, RenderContext, RenderSurface, Renderer, Scene, new_context};
+use frame::{FrameOutcome, FramePacket, FrameSink, Pacer, RenderState};
+use gpu::{HostInit, RenderContext, RenderSurface, Scene, new_context};
 use kurbo::Affine;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
 use pebbles_foundation::{Color, Offset, Size, TextDirection};
@@ -29,6 +30,7 @@ use pebbles_render::{Cursor, SystemFonts, TextEnv};
 
 use super::App;
 
+mod frame;
 mod input;
 mod render;
 mod soak_csv;
@@ -137,7 +139,10 @@ pub(crate) enum PebblesUserEvent {
 /// The live window + its GPU surface.
 struct ActiveWindow {
     window: Arc<Window>,
-    surface: RenderSurface<'static>,
+    /// In-flight pacing (08 §17.3).
+    pacer: Pacer,
+    /// +1 per packet.
+    frame_id: u64,
     /// Not visible: render nothing until a visibility event (08 §5.4).
     occluded: bool,
 }
@@ -149,7 +154,10 @@ struct ActiveWindow {
 struct WindowRuntime {
     id: u64,
     window: Arc<Window>,
-    surface: RenderSurface<'static>,
+    /// In-flight pacing (08 §17.3).
+    pacer: Pacer,
+    /// +1 per packet.
+    frame_id: u64,
     ui: Ui,
     background: Color,
     cursor: Offset,
@@ -199,12 +207,10 @@ pub(super) struct Runner {
     native_menu: Option<crate::native_menu::NativeMenus>,
 
     // gpu
-    /// The GPU context. `Option` because on web it is briefly moved OUT into
-    /// the async surface-creation task and handed back via [`PebblesUserEvent`]; on
-    /// desktop it is always `Some` (the surface is built synchronously in `resumed`).
-    /// Access with `self.context.as_ref()/as_mut().unwrap()` — it is only `None`
-    /// during that async gap, when no frame renders (see the `active`-None guard).
-    context: Option<RenderContext>,
+    /// Where frames go (08 §17): inline, the render state with the GPU context, renderers and
+    /// every window's surface. `None` before the GPU is up (on web, during the async
+    /// surface-creation gap, when no frame renders) and while a recovery rebuilds it.
+    sink: Option<FrameSink>,
     /// The shell-wide platform policy (display handle + env-resolved GPU settings), built
     /// once on the first `resumed` and reused by every recovery.
     host_init: Option<HostInit>,
@@ -218,7 +224,6 @@ pub(super) struct Runner {
     /// (web) Whether the opt-in hidden-input IME bridge is on (`App::web_ime`).
     #[cfg(target_family = "wasm")]
     web_ime: bool,
-    renderers: Vec<Option<Renderer>>,
     /// No GPU reset starts before this instant (1 s after each started or failed reset;
     /// P19 swaps in the backoff).
     gpu_retry_at: Option<Instant>,
@@ -343,14 +348,13 @@ impl Runner {
             inspect_rect: None,
             #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
             native_menu: None,
-            context: None,
+            sink: None,
             host_init: None,
             proxy: None,
             #[cfg(target_family = "wasm")]
             gpu_pending: false,
             #[cfg(target_family = "wasm")]
             web_ime: app.web_ime,
-            renderers: Vec::new(),
             gpu_retry_at: None,
             gpu_reset_failures: 0,
             gpu_reset_unconfirmed: false,
@@ -457,7 +461,7 @@ impl Runner {
 
     /// Install the GPU state for the first window and mount the widget tree — the
     /// tail shared by the synchronous desktop path (`resumed`) and the async web
-    /// path ([`user_event`](Self::user_event)). `self.context` must be `Some` here.
+    /// path ([`user_event`](Self::user_event)). `self.sink` must be `Some` here.
     fn on_gpu_ready(&mut self, window: Arc<Window>, surface: RenderSurface<'static>) {
         #[cfg(target_family = "wasm")]
         {
@@ -483,10 +487,12 @@ impl Runner {
                 }
             }
         }
-        // Ensure a renderer exists for this surface's device.
-        self.renderers.resize_with(self.context.as_ref().unwrap().device_count(), || None);
-        let idx = surface.device_index();
-        self.renderers[idx].get_or_insert_with(|| self.context.as_ref().unwrap().new_renderer(idx).unwrap());
+        // Adopt the surface and make sure its device has a renderer.
+        if let Some(state) = self.render_state_mut() {
+            let idx = surface.device_index();
+            state.adopt(window.id(), surface);
+            state.renderer(idx);
+        }
 
         // Mount the widget tree once, wrapped in the root View.
         if !self.mounted {
@@ -504,7 +510,7 @@ impl Runner {
         }
 
         window.request_redraw();
-        self.active = Some(ActiveWindow { window, surface, occluded: false });
+        self.active = Some(ActiveWindow { window, pacer: Pacer::default(), frame_id: 0, occluded: false });
 
         // B3: build + attach the native menu bar now that the window exists.
         #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
@@ -679,9 +685,14 @@ impl Runner {
 
     /// Append one soak row now.
     fn soak_sample(&mut self) {
-        let device = self.active.as_ref().map_or(0, |a| a.surface.device_index());
-        let gpu = self.context.as_ref().and_then(|c| c.allocator_report(device));
-        let census = self.renderers.get(device).and_then(Option::as_ref).and_then(gpu::census_values);
+        let state = self.render_state();
+        let device = match (state, self.active.as_ref()) {
+            (Some(state), Some(a)) => state.device_of(a.window.id()),
+            _ => 0,
+        };
+        let gpu = state.and_then(|s| s.ctx.allocator_report(device));
+        let census =
+            state.and_then(|s| s.renderers.get(device)).and_then(Option::as_ref).and_then(gpu::census_values);
         #[cfg(debug_assertions)]
         let ui = Some([
             self.ui.element_count(),
@@ -752,19 +763,18 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 self.host_init = Some(init);
             }
             let init = self.host_init.get_or_insert_with(|| HostInit::new(event_loop));
-            self.context = Some(pollster::block_on(new_context(init)));
-            let surface =
-                match pollster::block_on(self.context.as_mut().unwrap().create_surface(window.clone(), w, h))
-                {
-                    Ok(s) => s,
-                    Err(e) => {
-                        // The #1 first-run failure on Linux/Windows: no compatible GPU/driver.
-                        // Exit with a readable message pointing at `pebbles doctor`, not a
-                        // one-word `expect` panic + backtrace.
-                        eprintln!("{}", gpu::startup_failure_text(&e));
-                        std::process::exit(1);
-                    }
-                };
+            let mut context = pollster::block_on(new_context(init));
+            let surface = match pollster::block_on(context.create_surface(window.clone(), w, h)) {
+                Ok(s) => s,
+                Err(e) => {
+                    // The #1 first-run failure on Linux/Windows: no compatible GPU/driver.
+                    // Exit with a readable message pointing at `pebbles doctor`, not a
+                    // one-word `expect` panic + backtrace.
+                    eprintln!("{}", gpu::startup_failure_text(&e));
+                    std::process::exit(1);
+                }
+            };
+            self.sink = Some(FrameSink::Inline(RenderState::new(context)));
             self.on_gpu_ready(window, surface);
         }
 
@@ -805,7 +815,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: PebblesUserEvent) {
         match event {
             PebblesUserEvent::SurfaceReady { context, surface, window } => {
-                self.context = Some(context);
+                self.sink = Some(FrameSink::Inline(RenderState::new(context)));
                 self.on_gpu_ready(window, surface);
                 // After an async recovery (not the first bring-up): bump the generation, log.
                 #[cfg(target_family = "wasm")]
@@ -840,8 +850,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 #[cfg(target_family = "wasm")]
                 if !self.gpu_suspended {
                     self.gpu_suspended = true;
-                    self.renderers.clear();
-                    self.context = None;
+                    self.sink = None;
                     if let Some(window) = self.active.take().map(|a| a.window) {
                         self.recovery_window = Some(window);
                     }
@@ -913,12 +922,8 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     && size.width > 0
                     && size.height > 0
                 {
+                    // The next packet carries the new size; `render_packet` configures (08 §17.3 b).
                     active.occluded = false;
-                    self.context.as_mut().unwrap().resize_surface(
-                        &mut active.surface,
-                        size.width,
-                        size.height,
-                    );
                     active.window.request_redraw();
                 }
             }
@@ -1246,14 +1251,6 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 pebbles_widgets::overlay::hide_overlay();
                 if let Some(active) = self.active.as_mut() {
                     active.occluded = false;
-                    let size = active.window.inner_size();
-                    if size.width > 0 && size.height > 0 {
-                        self.context.as_mut().unwrap().resize_surface(
-                            &mut active.surface,
-                            size.width,
-                            size.height,
-                        );
-                    }
                     active.window.request_redraw();
                 }
             }
@@ -1351,7 +1348,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         event_loop.set_control_flow(ControlFlow::Wait);
         // A poisoned GPU (or a pending retry): wake when the retry is due, then redraw so
         // `recover_gpu_if_poisoned` runs — an idle `Wait` loop would sit on a dead device.
-        if self.gpu_reset_requested || self.context.as_ref().is_some_and(|c| c.needs_reset()) {
+        if self.gpu_reset_requested || self.render_state().is_some_and(|s| s.ctx.needs_reset()) {
             match self.gpu_retry_at {
                 Some(t) if t > Instant::now() => wake_by(event_loop, t),
                 _ => {
