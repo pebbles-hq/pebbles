@@ -16,6 +16,7 @@ use super::execute::targets::{TargetCheck, check_target_size};
 use super::frame_targets::{FrameParams, RenderTarget};
 use super::gpu_types::QuadInstance;
 use super::limits::RendererLimits;
+use super::prepare::damage::{Damage, FrameKey};
 use super::prepare::{PrepareInput, PrepareScratch, VERTEX_LIMIT_NO_FULL_INDEX, prepare};
 use super::stats::{FrameStats, Unsupported, WarnOnce};
 
@@ -534,8 +535,11 @@ impl Renderer {
             );
         }
         resolve_frame(self, device, queue, &mut stats);
+        // M30: a frame whose draws were dropped leaves the persistent root stale.
+        let mut draws_dropped = false;
         // M07: the first segment's slices (the only one on normal frames).
         if !self.upload_segment(device, queue, 0, &mut stats) {
+            draws_dropped = true;
             // 11 §2.6: an arena could not grow even after a retry — skip this frame's draws
             // (the passes still clear; nothing references the missing data).
             let plan = &mut self.scratch.plan;
@@ -589,8 +593,10 @@ impl Renderer {
         let mut segments = std::mem::take(&mut self.segments);
         super::prepare::passes::segment_passes(&self.scratch.plan, &mut segments);
         // 09 §4.4: a backdrop composite into the root copies from it, so the root renders into a
-        // copyable intermediate that is blitted to the frame target at the end.
-        let root_color = if self.scratch.plan.root_needs_backdrop {
+        // copyable intermediate that is blitted to the frame target at the end. M30: a target
+        // that tracks damage always does — that intermediate is its persistent frame.
+        let tracking = !nested && target.targets.tracks_damage();
+        let root_color = if self.scratch.plan.root_needs_backdrop || tracking {
             target
                 .targets
                 .root_color(device, size, format, &mut stats)
@@ -598,9 +604,44 @@ impl Renderer {
         } else {
             None
         };
+        let damage = self.frame_damage(
+            scene,
+            params,
+            target.targets,
+            target.decode_srgb_output,
+            tracking && root_color.is_some(),
+            size,
+        );
+        // A partial frame renders its damage into a cleared scratch target, copied into the root.
+        let scratch = match damage {
+            Damage::Rect(_) => target
+                .targets
+                .damage_scratch(device, size, format, &mut stats)
+                .map(|r| (r.texture.clone(), r.view.clone())),
+            Damage::Full | Damage::Empty => None,
+        };
+        let damage =
+            if matches!(damage, Damage::Rect(_)) && scratch.is_none() { Damage::Full } else { damage };
+        match damage {
+            Damage::Full => {
+                stats.full_redraws += 1;
+                stats.damage_px = u64::from(size.0) * u64::from(size.1);
+            }
+            Damage::Rect(r) => stats.damage_px = u64::from(r.x1 - r.x0) * u64::from(r.y1 - r.y0),
+            Damage::Empty => stats.damage_px = 0,
+        }
+        let damage_rect = match damage {
+            Damage::Rect(r) => Some(r),
+            Damage::Full | Damage::Empty => None,
+        };
         target.targets.end_frame_root(root_color.is_some());
-        let root_view = root_color.as_ref().map_or(target.view, |r| &r.1);
-        for seg in &segments {
+        let root_view = match (&scratch, &root_color) {
+            (Some(s), _) => &s.1,
+            (None, Some(r)) => &r.1,
+            (None, None) => target.view,
+        };
+        // M30: nothing changed — the persistent root is presented as it is.
+        for seg in segments.iter().filter(|_| damage != Damage::Empty) {
             let Some(seg_target) = super::execute::layers::segment_target(seg.target, size, &layers) else {
                 continue;
             };
@@ -650,7 +691,12 @@ impl Renderer {
             if layer_seg {
                 pass.push_debug_group("pebbles.gpu.layer");
             }
-            encode(self, &mut pass, format, &mut stats, &composites, range, seg_target, &layers);
+            let seg_damage = match seg.target {
+                super::prepare::plan::TargetRef::Root => damage_rect,
+                // Layers render whole (their targets are cleared every frame).
+                super::prepare::plan::TargetRef::Layer(_) => None,
+            };
+            encode(self, &mut pass, format, &mut stats, &composites, range, seg_target, &layers, seg_damage);
             if layer_seg {
                 pass.pop_debug_group();
             }
@@ -750,6 +796,7 @@ impl Renderer {
                 encoder.push_debug_group("pebbles.gpu.frame");
                 if !self.upload_segment(device, queue, k as usize, &mut stats) {
                     // 11 §2.6: the rest of the frame's draws are skipped.
+                    draws_dropped = true;
                     break;
                 }
                 self.render_segment_offscreen(
@@ -763,8 +810,27 @@ impl Renderer {
             }
         }
         self.segments = segments;
-        if let Some((_, view)) = &root_color {
-            self.blit_root(device, &mut encoder, view, target.view, format, &mut stats);
+        // M30: the redrawn damage joins the persistent root.
+        if let (Some(r), Some((scratch, _)), Some((root, _))) = (damage_rect, &scratch, &root_color) {
+            let at = |texture| wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x: r.x0, y: r.y0, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            };
+            encoder.copy_texture_to_texture(
+                at(scratch),
+                at(root),
+                wgpu::Extent3d { width: r.x1 - r.x0, height: r.y1 - r.y0, depth_or_array_layers: 1 },
+            );
+        }
+        if draws_dropped {
+            target.targets.reset_damage();
+        }
+        if root_color.is_some()
+            && let Some(group) = target.targets.root_blit_group(device, &self.layouts.blit, &mut stats)
+        {
+            self.blit_root(device, &mut encoder, &group, target.view, format, &mut stats);
         }
         if !nested && let Some(t) = &mut self.timer {
             t.end(&mut encoder, target.view);
@@ -867,11 +933,43 @@ impl Renderer {
     }
 
     /// 09 §4.4 `BlitRoot`: the root intermediate into the frame target (`blend: None`).
+    /// M30: what this frame of `target` must redraw. Backdrop composites read the root
+    /// mid-frame and custom renderers paint arbitrary pixels, so either forces a full frame;
+    /// the tracker still records the frame.
+    fn frame_damage(
+        &self,
+        scene: &Scene,
+        params: &FrameParams,
+        targets: &mut super::FrameTargets,
+        decode_srgb: bool,
+        tracking: bool,
+        size: (u32, u32),
+    ) -> Damage {
+        if !tracking {
+            return Damage::Full;
+        }
+        let key = FrameKey {
+            size,
+            root_transform: params.root_transform.as_coeffs(),
+            scale_factor: params.scale_factor,
+            glyph_hint: params.glyph_hint,
+            base_color: params.base_color.components,
+            decode_srgb,
+            persistent_generation: targets.root_generation(),
+        };
+        let damage = targets.damage_frame(scene, key);
+        if self.scratch.plan.root_needs_backdrop || !self.scratch.plan.customs.is_empty() {
+            Damage::Full
+        } else {
+            damage
+        }
+    }
+
     fn blit_root(
         &mut self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
-        src: &wgpu::TextureView,
+        group: &wgpu::BindGroup,
         dst: &wgpu::TextureView,
         format: wgpu::TextureFormat,
         stats: &mut FrameStats,
@@ -885,15 +983,6 @@ impl Renderer {
             variant: 0,
         };
         self.pipelines.ensure(device, &self.shaders, &self.layouts, key, stats);
-        let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("pebbles.gpu.bind.blit"),
-            layout: &self.layouts.blit,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(src),
-            }],
-        });
-        stats.bind_groups_created += 1;
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("pebbles.gpu.pass.blit"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -914,7 +1003,7 @@ impl Renderer {
         let Some(pipeline) = self.pipelines.get_ensured(key) else { return };
         pass.set_pipeline(pipeline);
         pass.set_bind_group(0, &self.globals_bg, &[0, 0, 0]);
-        pass.set_bind_group(1, &group, &[]);
+        pass.set_bind_group(1, group, &[]);
         stats.bind_group_switches += 2;
         pass.draw(0..3, 0..1);
         stats.draw_calls += 1;

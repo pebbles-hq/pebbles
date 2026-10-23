@@ -17,6 +17,8 @@ struct PassState {
     origin: (u32, u32),
     /// Target size (scissors clamp to it).
     size: (u32, u32),
+    /// M30: a partial frame — every scissor is intersected with this device rect.
+    damage: Option<ScissorRect>,
 }
 
 impl PassState {
@@ -38,12 +40,22 @@ impl PassState {
             pipeline_switches: 0,
             origin: (0, 0),
             size: (u32::MAX, u32::MAX),
+            damage: None,
         }
     }
 
     /// Set the scissor in the current target's space (device px − target origin, clamped to
     /// the target size); false when it is empty there (the draw must be skipped, 09 §3.6).
     fn set_scissor(&mut self, pass: &mut wgpu::RenderPass<'_>, scissor: ScissorRect) -> bool {
+        let scissor = match self.damage {
+            Some(d) => ScissorRect {
+                x0: scissor.x0.max(d.x0),
+                y0: scissor.y0.max(d.y0),
+                x1: scissor.x1.min(d.x1),
+                y1: scissor.y1.min(d.y1),
+            },
+            None => scissor,
+        };
         let (ox, oy) = self.origin;
         let (w, h) = self.size;
         let x0 = scissor.x0.saturating_sub(ox).min(w);
@@ -202,6 +214,7 @@ pub(crate) fn encode(
     range: std::ops::Range<usize>,
     target: SegmentTarget,
     layers: &[Option<super::layers::LayerTarget>],
+    damage: Option<ScissorRect>,
 ) {
     // Group 0: Globals slot 0 + the NONE clips; rebound when a cmd's SDF or mask clip changes
     // (09 §2.4, L08).
@@ -227,6 +240,15 @@ pub(crate) fn encode(
     let mut state = PassState::new();
     state.origin = target.origin;
     state.size = target.size;
+    // M30: confine the whole pass to the damage, including draws that keep the pass scissor.
+    state.damage = damage;
+    if damage.is_some() {
+        let (ox, oy) = state.origin;
+        let full = ScissorRect { x0: ox, y0: oy, x1: ox + state.size.0, y1: oy + state.size.1 };
+        if !state.set_scissor(pass, full) {
+            return;
+        }
+    }
 
     let mut runs = composites.iter().filter(|c| range.contains(&c.run.cmds.start)).peekable();
     // Debug groups (S52): one per maximal run of same-kind draws; balanced within the pass.

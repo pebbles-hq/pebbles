@@ -442,7 +442,7 @@ impl<'window> RenderSurface<'window> {
             dev_id,
             view_format: choice.view_format,
             encoding: choice.encoding,
-            targets: FrameTargets::new(),
+            targets: FrameTargets::new().with_damage_tracking(),
             streak: AcquireStreak::default(),
             #[cfg(debug_assertions)]
             configures: 0,

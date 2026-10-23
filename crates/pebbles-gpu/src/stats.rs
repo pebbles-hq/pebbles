@@ -574,14 +574,16 @@ impl std::fmt::Display for FrameStats {
             img,
             self.fallbacks
         )?;
-        // Phase 4 (09 L52): backdrop copies, LUT bakes / rows uploaded, layer pool KiB.
+        // Phase 4 (09 L52): backdrop copies, LUT bakes / rows uploaded, layer pool KiB; M30 damage.
         write!(
             f,
-            " backdrop={} lut={}/{} pool={}KiB",
+            " backdrop={} lut={}/{} pool={}KiB damage={}px full={}",
             self.backdrop_copies,
             self.lut_bakes,
             self.gradient_rows_uploaded,
-            self.layer_pool_bytes / 1024
+            self.layer_pool_bytes / 1024,
+            self.damage_px,
+            self.full_redraws
         )
     }
 }
@@ -616,7 +618,7 @@ mod display_tests {
             s.to_string(),
             "prepare=0.42ms upload=0.03ms encode=0.11ms submit=0.05ms gpu=n/a draws=37 switches=9 passes=1 \
              segs=1 verts=12034 inst=842 buf_up=196KiB tex_up=0KiB raster=0 new=buf:0,tex:0,view:0,bg:0,smp:0,pipe:0 \
-             atlas=12%/0% evict=0 overflow=0 img=12.3MiB fallbacks=0 backdrop=0 lut=0/0 pool=0KiB"
+             atlas=12%/0% evict=0 overflow=0 img=12.3MiB fallbacks=0 backdrop=0 lut=0/0 pool=0KiB damage=0px full=0"
         );
         let timed = FrameStats { gpu_us: Some(1234), ..FrameStats::default() };
         assert!(timed.to_string().contains("gpu=1.23ms"));

@@ -19,6 +19,7 @@ mod clip;
 pub(crate) mod color;
 pub(crate) mod coverage;
 mod cull;
+pub(crate) mod damage;
 pub(crate) mod effects;
 mod features;
 pub(crate) mod glyph_outline;

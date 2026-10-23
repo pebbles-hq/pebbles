@@ -10,6 +10,14 @@ pub struct FrameTargets {
     /// 09 §4.4: the root renders here (then is blitted) when a backdrop composite must copy
     /// from it; dropped after `TARGET_IDLE_FRAMES` unused frames.
     root_color: Option<RootColor>,
+    /// M30 (DR-25): damage tracking for this target — `Some` when enabled. The root then always
+    /// renders into `root_color`, which persists between frames, and partial frames redraw only
+    /// the damage (into `scratch`, copied into `root_color`).
+    damage: Option<crate::prepare::damage::DamageTracker>,
+    /// Bumped whenever `root_color` is (re)created: its content is undefined (a full redraw).
+    root_generation: u64,
+    /// M30: the cleared texture a partial frame renders its damage into.
+    scratch: Option<RootColor>,
     /// Depth textures for depth-requesting custom renderers (R62), created on first use: one
     /// per attachment key (the root, or a layer target hosting a custom op).
     depth: Vec<DepthTarget>,
@@ -168,6 +176,47 @@ pub(crate) struct RootColor {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
     idle: u32,
+    /// The blit's bind group over `view`, built once (a per-frame one would break B5).
+    pub blit_group: Option<wgpu::BindGroup>,
+}
+
+/// `PEBBLES_GPU_DAMAGE=0` turns damage tracking off everywhere (M30), read once.
+fn damage_allowed() -> bool {
+    static ALLOWED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ALLOWED.get_or_init(|| std::env::var("PEBBLES_GPU_DAMAGE").map_or(true, |v| v.trim() != "0"))
+}
+
+/// A single-sample color target the root can render into, copy from and blit from.
+fn color_target(
+    device: &wgpu::Device,
+    size: (u32, u32),
+    format: wgpu::TextureFormat,
+    label: &'static str,
+    stats: &mut crate::stats::FrameStats,
+) -> Option<RootColor> {
+    let d = wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    };
+    // 11 §2.6: on a second OOM the frame renders without the intermediate.
+    let Some(texture) = crate::execute::alloc::create_with_retry(device, || device.create_texture(&d), || {})
+    else {
+        stats.record(crate::stats::Unsupported::GpuOom);
+        return None;
+    };
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+    stats.textures_created += 1;
+    stats.texture_views_created += 1;
+    Some(RootColor { texture, view, idle: 0, blit_group: None })
 }
 
 impl std::fmt::Debug for FrameTargets {
@@ -267,12 +316,16 @@ impl FrameTargets {
     }
 
     fn root_color_bytes(&self) -> u64 {
-        self.root_color.as_ref().map_or(0, |r| {
-            let t = &r.texture;
-            u64::from(t.width())
-                * u64::from(t.height())
-                * u64::from(t.format().block_copy_size(None).unwrap_or(4))
-        })
+        [&self.root_color, &self.scratch]
+            .into_iter()
+            .flatten()
+            .map(|r| {
+                let t = &r.texture;
+                u64::from(t.width())
+                    * u64::from(t.height())
+                    * u64::from(t.format().block_copy_size(None).unwrap_or(4))
+            })
+            .sum()
     }
 
     /// The root intermediate of `size` / `format` (created or recreated on demand).
@@ -282,42 +335,101 @@ impl FrameTargets {
         size: (u32, u32),
         format: wgpu::TextureFormat,
         stats: &mut crate::stats::FrameStats,
-    ) -> Option<&RootColor> {
+    ) -> Option<&mut RootColor> {
         let fresh = self
             .root_color
             .as_ref()
             .is_some_and(|r| (r.texture.width(), r.texture.height()) == size && r.texture.format() == format);
         if !fresh {
-            {
-                let d = wgpu::TextureDescriptor {
-                    label: Some("pebbles.gpu.root_color"),
-                    size: wgpu::Extent3d { width: size.0, height: size.1, depth_or_array_layers: 1 },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format,
-                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                        | wgpu::TextureUsages::COPY_SRC
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                };
-                // 11 §2.6: on a second OOM the frame renders without the root intermediate.
-                self.root_color = None;
-                let Some(texture) =
-                    crate::execute::alloc::create_with_retry(device, || device.create_texture(&d), || {})
-                else {
-                    stats.record(crate::stats::Unsupported::GpuOom);
-                    return None;
-                };
-                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-                stats.textures_created += 1;
-                stats.texture_views_created += 1;
-                self.root_color = Some(RootColor { texture, view, idle: 0 });
-            }
+            self.root_color = None;
+            self.root_color = color_target(device, size, format, "pebbles.gpu.root_color", stats);
+            self.root_generation += 1;
         }
         let r = self.root_color.as_mut()?;
         r.idle = 0;
         Some(r)
+    }
+
+    /// M30: the scratch target of a partial frame, `size` / `format` like the root.
+    pub(crate) fn damage_scratch(
+        &mut self,
+        device: &wgpu::Device,
+        size: (u32, u32),
+        format: wgpu::TextureFormat,
+        stats: &mut crate::stats::FrameStats,
+    ) -> Option<&RootColor> {
+        let fresh = self
+            .scratch
+            .as_ref()
+            .is_some_and(|r| (r.texture.width(), r.texture.height()) == size && r.texture.format() == format);
+        if !fresh {
+            self.scratch = None;
+            self.scratch = color_target(device, size, format, "pebbles.gpu.damage_scratch", stats);
+        }
+        let r = self.scratch.as_mut()?;
+        r.idle = 0;
+        Some(r)
+    }
+
+    /// Turn on damage tracking for this target (M30, DR-25): window surfaces redraw only what
+    /// changed. `PEBBLES_GPU_DAMAGE=0` keeps it off.
+    #[must_use]
+    pub fn with_damage_tracking(mut self) -> Self {
+        if damage_allowed() {
+            self.damage = Some(crate::prepare::damage::DamageTracker::default());
+        }
+        self
+    }
+
+    /// Whether this target tracks damage.
+    pub(crate) fn tracks_damage(&self) -> bool {
+        self.damage.is_some()
+    }
+
+    /// The generation of the persistent root (bumped on every (re)creation).
+    pub(crate) fn root_generation(&self) -> u64 {
+        self.root_generation
+    }
+
+    /// M30: this frame's damage against the previous frame of this target.
+    pub(crate) fn damage_frame(
+        &mut self,
+        scene: &pebbles_render::paint::Scene,
+        key: crate::prepare::damage::FrameKey,
+    ) -> crate::prepare::damage::Damage {
+        match &mut self.damage {
+            Some(t) => t.frame(scene, key),
+            None => crate::prepare::damage::Damage::Full,
+        }
+    }
+
+    /// The blit's bind group over the root intermediate, built once per root texture.
+    pub(crate) fn root_blit_group(
+        &mut self,
+        device: &wgpu::Device,
+        layout: &wgpu::BindGroupLayout,
+        stats: &mut crate::stats::FrameStats,
+    ) -> Option<wgpu::BindGroup> {
+        let r = self.root_color.as_mut()?;
+        let group = r.blit_group.get_or_insert_with(|| {
+            stats.bind_groups_created += 1;
+            device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("pebbles.gpu.bind.blit"),
+                layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&r.view),
+                }],
+            })
+        });
+        Some(group.clone())
+    }
+
+    /// Forget the previous frame (the persistent root may be stale): the next frame is full.
+    pub(crate) fn reset_damage(&mut self) {
+        if let Some(t) = &mut self.damage {
+            t.reset();
+        }
     }
 
     /// End of frame: age the root intermediate (09 §4.4).
@@ -332,6 +444,12 @@ impl FrameTargets {
             r.idle += 1;
             if r.idle >= TARGET_IDLE_FRAMES {
                 self.root_color = None;
+            }
+        }
+        if let Some(r) = &mut self.scratch {
+            r.idle += 1;
+            if r.idle >= TARGET_IDLE_FRAMES {
+                self.scratch = None;
             }
         }
     }
