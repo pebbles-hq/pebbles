@@ -61,7 +61,12 @@ pub(crate) fn prepare(
     let stride = super::tier_c::slot_stride(device);
     for i in 0..renderer.scratch.plan.image_brushes.len() {
         let d = &renderer.scratch.plan.image_brushes[i];
-        let params: ImageBrushParams = d.params;
+        let mut params: ImageBrushParams = d.params;
+        // DR-21: `brush_paint` filters in code by these bits (an exact small integer as f32).
+        #[allow(clippy::cast_precision_loss)] // ≤ 63
+        {
+            params.m0[3] = d.sampler.mode() as f32;
+        }
         queue.write_buffer(&renderer.image_brushes.buffer, i as u64 * stride, bytemuck::bytes_of(&params));
         let drawable = renderer.image_cache.ensure(device, queue, &d.image, false, stats);
         let group = match (drawable, renderer.image_cache.view(&d.key)) {

@@ -130,6 +130,12 @@ impl ImageCache {
         self.entries.get(key).map(|e| &e.view)
     }
 
+    /// The last mip level of the resident texture of `key` (0: one level; after any S10
+    /// downscale). `sample_portable` never reads past it.
+    pub(crate) fn top_level(&self, key: &ImageKey) -> u32 {
+        self.entries.get(key).map_or(0, |e| e._texture.mip_level_count() - 1)
+    }
+
     /// The bind group for `key` sampled with `sampler`, if `ensure_bind_group` made it.
     pub(crate) fn bind_group(&self, key: &ImageKey, sampler: SamplerKey) -> Option<&wgpu::BindGroup> {
         self.entries.get(key)?.bind_groups.iter().find(|(k, _)| *k == sampler).map(|(_, g)| g)
@@ -149,7 +155,7 @@ impl ImageCache {
         if entry.bind_groups.iter().any(|(k, _)| *k == sampler) {
             return;
         }
-        let s = samplers.get_or_create(device, sampler, stats);
+        let (s, mode) = samplers.get_with_mode(device, sampler, stats);
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("pebbles.gpu.bind.image"),
             layout,
@@ -159,6 +165,7 @@ impl ImageCache {
                     resource: wgpu::BindingResource::TextureView(&entry.view),
                 },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(s) },
+                wgpu::BindGroupEntry { binding: 2, resource: mode.as_entire_binding() },
             ],
         });
         stats.bind_groups_created += 1;
@@ -685,7 +692,7 @@ impl ExternalTextures {
         if entry.bind_groups.iter().any(|(k, _)| *k == sampler) {
             return true;
         }
-        let s = samplers.get_or_create(device, sampler, stats);
+        let (s, mode) = samplers.get_with_mode(device, sampler, stats);
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("pebbles.gpu.bind.external"),
             layout,
@@ -695,6 +702,7 @@ impl ExternalTextures {
                     resource: wgpu::BindingResource::TextureView(&entry.view),
                 },
                 wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(s) },
+                wgpu::BindGroupEntry { binding: 2, resource: mode.as_entire_binding() },
             ],
         });
         stats.bind_groups_created += 1;

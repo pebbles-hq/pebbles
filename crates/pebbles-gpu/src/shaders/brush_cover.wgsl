@@ -100,7 +100,9 @@ fn vs_mask(i: GQuadIn, @builtin(vertex_index) vi: u32) -> GQuadOut {
 fn fs_mask(in: GQuadOut) -> @location(0) vec4<f32> {
     let size = vec2<i32>(textureDimensions(clip_atlas));
     let texel = clamp(vec2<i32>(floor(in.atlas_px)), vec2<i32>(0), size - vec2<i32>(1));
-    let layer = min(i32(in.layer), i32(textureNumLayers(clip_atlas)) - 1);
+    // No `textureNumLayers` clamp: naga's HLSL backend returns the MIP count for arrayed
+    // textures (always 1 here), which pinned every slot to layer 0 on DX12. Slots are valid layers.
+    let layer = i32(in.layer);
     let m = textureLoad(clip_atlas, texel, layer, 0).r;
     return finish_color(brush_out(device_pos(in.p), m * in.alpha));
 }

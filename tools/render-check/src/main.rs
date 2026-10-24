@@ -107,6 +107,7 @@ fn run(args: Args) -> ExitCode {
         tier_a: args.tier_a,
         glyph_hint: args.glyph_hint,
         cases_dir: None,
+        cross_backend: false,
     };
     let mut runner = match Runner::new(opts) {
         Ok(r) => r,
@@ -120,6 +121,7 @@ fn run(args: Args) -> ExitCode {
         eprintln!("render-check: --write-refs needs an llvmpipe adapter, got `{}`", ai.name);
         return ExitCode::from(2);
     }
+    runner.opts.cross_backend = !ai.name.to_lowercase().contains("llvmpipe");
     let tag = args
         .platform_tag
         .clone()

@@ -27,14 +27,14 @@ fn layer_texel(p: vec2<f32>) -> vec4<f32> {
 @fragment
 fn fs_over(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
     let p = device_pos(frag_coord);
-    return layer_texel(p) * (comp.alpha * clip_coverage(p) * clip_mask_coverage(p));
+    return store_target(layer_texel(p) * (comp.alpha * clip_coverage(p) * clip_mask_coverage(p)));
 }
 
 // CompositeCompose (L21): a Normal-mix layer under a scissor-only clip; the fixed-function
 // blend state of 09 §4.3 applies the Porter-Duff operator (coverage is binary there).
 @fragment
 fn fs_compose(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
-    return layer_texel(device_pos(frag_coord)) * comp.alpha;
+    return store_target(layer_texel(device_pos(frag_coord)) * comp.alpha);
 }
 
 // CompositeBackdrop (L23): W3C Compositing and Blending Level 1 in premultiplied gamma space
@@ -160,5 +160,5 @@ fn fs_backdrop(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f3
     let texel = vec2<i32>(floor(p - comp.bounds.xy));
     let s = textureLoad(layer_tex, texel, 0) * comp.alpha;
     let b = textureLoad(backdrop_tex, texel, 0);
-    return mix(b, composite_px(b, s, comp.mix_mode, comp.compose), clip_coverage(p) * clip_mask_coverage(p));
+    return store_target(mix(b, composite_px(b, s, comp.mix_mode, comp.compose), clip_coverage(p) * clip_mask_coverage(p)));
 }

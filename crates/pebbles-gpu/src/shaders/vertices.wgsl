@@ -4,6 +4,7 @@
 // the texture is the image brush (Modulate) or a 1×1 white texel.
 @group(1) @binding(0) var mesh_tex: texture_2d<f32>;
 @group(1) @binding(1) var mesh_sampler: sampler;
+@group(1) @binding(2) var<uniform> mesh_mode: vec4<u32>;
 
 struct MeshIn {
     @location(0) pos: vec2<f32>,
@@ -28,7 +29,7 @@ fn vs(i: MeshIn) -> MeshOut {
 
 @fragment
 fn fs(i: MeshOut) -> @location(0) vec4<f32> {
-    let t = textureSampleLevel(mesh_tex, mesh_sampler, i.uv, 0.0);
+    let t = sample_portable(mesh_tex, i.uv, 0.0, 0.0, mesh_mode.x);
     let p = device_pos(i.p);
     return finish_color(t * i.color * (clip_coverage(p) * clip_mask_coverage(p)));
 }

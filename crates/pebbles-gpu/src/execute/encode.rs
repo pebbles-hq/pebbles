@@ -102,7 +102,14 @@ pub(crate) fn resolve_frame(
             renderer.image_cache.ensure_bind_group(device, layout, &req.key, req.sampler, samplers, stats);
         }
         // An image that cannot be drawn becomes a zero-area quad so ranges stay valid.
-        renderer.image_instances.push(if drawable { req.quad } else { bytemuck::Zeroable::zeroed() });
+        let mut quad = req.quad;
+        // The texture's own last level (a downscaled or single-level texture has fewer than
+        // prepare assumed): `sample_portable` loads levels up to it only (DR-21).
+        #[allow(clippy::cast_precision_loss)] // ≤ 31
+        if quad.layer_kind[1] != 3 {
+            quad.color[1] = quad.color[1].min(renderer.image_cache.top_level(&req.key) as f32);
+        }
+        renderer.image_instances.push(if drawable { quad } else { bytemuck::Zeroable::zeroed() });
     }
     // R61: GPU-texture quads follow the uploaded images; an unknown or unregistered id becomes
     // a zero-area quad and is counted.

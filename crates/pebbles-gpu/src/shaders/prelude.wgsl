@@ -43,12 +43,33 @@ fn srgb_to_linear(c: f32) -> f32 {
     return select(pow((c + 0.055) / 1.055, 2.4), c / 12.92, c <= 0.04045);
 }
 
-// Identity on the contract path. On a GL sRGB-only surface, convert the premultiplied encoded
+// Round a fragment output to the 8-bit UNORM grid, half up, before the fixed-function blend
+// (DR-21). The float→unorm8 conversion of an exact tie (k + 0.5)/255 — e.g. any opaque color
+// at coverage or opacity 0.5 — is implementation-defined: lavapipe and WARP round 127.5 down
+// or up differently, Metal blends unconverted floats. Pre-rounded source color and alpha make
+// the blend `s + d·(255 − a)/255` land at least 1/510 LSB away from any tie (d·(255 − a) is
+// never an odd multiple of 255/2), so every backend stores the same byte.
+fn store_unorm8(c: vec4<f32>) -> vec4<f32> {
+    return floor(clamp(c, vec4<f32>(0.0), vec4<f32>(1.0)) * 255.0 + 0.5) / 255.0;
+}
+
+// `store_unorm8` on the contract path; unchanged on a GL sRGB surface (R13), whose store
+// encodes linear values and has no 8-bit grid in this space.
+fn store_target(c: vec4<f32>) -> vec4<f32> {
+    if ((globals.color_flags & COLOR_FLAG_DECODE_SRGB_OUTPUT) == 0u) {
+        return store_unorm8(c);
+    }
+    return c;
+}
+
+// Identity on the contract path (up to `store_unorm8`). On a GL sRGB-only surface, convert the premultiplied encoded
 // color to premultiplied linear, so the hardware's linear→sRGB store reproduces the encoded value
 // for opaque pixels (02 §3.8, R13).
+//
+// On the contract path the output is pre-rounded to the 8-bit grid (`store_unorm8`).
 fn finish_color(premul: vec4<f32>) -> vec4<f32> {
     if ((globals.color_flags & COLOR_FLAG_DECODE_SRGB_OUTPUT) == 0u) {
-        return premul;
+        return store_unorm8(premul);
     }
     if (premul.a <= 0.0) {
         return vec4<f32>(0.0);
@@ -131,11 +152,75 @@ fn clip_mask_coverage(p: vec2<f32>) -> f32 {
     let inside = all(local >= vec2<f32>(0.0)) && all(local < mask_clip.rect.zw);
     let size = vec2<i32>(textureDimensions(clip_atlas));
     let texel = clamp(vec2<i32>(mask_clip.atlas.xy + local), vec2<i32>(0), size - vec2<i32>(1));
-    let layer = clamp(i32(mask_clip.atlas.z), 0, i32(textureNumLayers(clip_atlas)) - 1);
+    // No `textureNumLayers` clamp (see brush_cover.wgsl `fs_mask`): the record's layer is a
+    // resident slot's, and the NONE record's 0 is always valid.
+    let layer = max(i32(mask_clip.atlas.z), 0);
     let v = textureLoad(clip_atlas, texel, layer, 0).r;
     // atlas.w == 2: a GPU mask (L09) at (0, 0) of the texture bound at binding 4.
     let gsize = vec2<i32>(textureDimensions(gpu_mask));
     let g = textureLoad(gpu_mask, clamp(vec2<i32>(local), vec2<i32>(0), gsize - vec2<i32>(1)), 0).r;
     let m = select(v, g, mask_clip.atlas.w > 1.5);
     return select(1.0, select(0.0, m, inside), mask_clip.atlas.w > 0.5);
+}
+
+// ---- Portable filtering (DR-21) ----
+// Images, image brushes and textured meshes are filtered in code from `textureLoad` texels,
+// never by the sampler: hardware bilinear weights carry an implementation-defined sub-texel
+// precision and arithmetic (WARP filters 8-bit texels in reduced precision; Vulkan only
+// guarantees 4 sub-texel bits), and nearest picks at exact texel boundaries differ. `mode`
+// is `SamplerKey::mode`: bit 0 linear, bit 1 linear between levels, bits 2–3 / 4–5 the
+// u / v address mode (0 clamp-to-edge, 1 repeat, 2 mirror-repeat).
+
+fn wrap_texel(i: i32, n: i32, address: u32) -> i32 {
+    if (address == 1u) {
+        return ((i % n) + n) % n;
+    }
+    if (address == 2u) {
+        let p = 2 * n;
+        let m = ((i % p) + p) % p;
+        return select(m, p - 1 - m, m >= n);
+    }
+    return clamp(i, 0, n - 1);
+}
+
+fn load_wrapped(t: texture_2d<f32>, c: vec2<i32>, size: vec2<i32>, level: i32, mode: u32) -> vec4<f32> {
+    let x = wrap_texel(c.x, size.x, (mode >> 2u) & 3u);
+    let y = wrap_texel(c.y, size.y, (mode >> 4u) & 3u);
+    return textureLoad(t, vec2<i32>(x, y), level);
+}
+
+// One level: nearest = the texel containing `uv`; linear = bilinear around the texel centers,
+// with weights on the 1/256 grid (the 8 sub-texel bits D3D and most Vulkan drivers use).
+fn sample_level_portable(t: texture_2d<f32>, uv: vec2<f32>, level: i32, mode: u32) -> vec4<f32> {
+    let size = vec2<i32>(textureDimensions(t, level));
+    // Bounded so the i32 conversions below stay exact (repeat/mirror far from the image).
+    let p = clamp(uv * vec2<f32>(size), vec2<f32>(-8388608.0), vec2<f32>(8388608.0));
+    if ((mode & 1u) == 0u) {
+        // Snapped to 1/65536 texel first: a pixel center exactly on a texel boundary (e.g. the
+        // diagonal of a 45°-rotated brush) must not pick its texel by the last-bit rounding
+        // of the backend's (possibly fused) multiply-adds.
+        return load_wrapped(t, vec2<i32>(floor(floor(p * 65536.0 + vec2<f32>(0.5)) / 65536.0)), size, level, mode);
+    }
+    let q = p - vec2<f32>(0.5);
+    let base = floor(q);
+    let f = floor((q - base) * 256.0 + vec2<f32>(0.5)) / 256.0;
+    let i = vec2<i32>(base);
+    let a = load_wrapped(t, i, size, level, mode);
+    let b = load_wrapped(t, i + vec2<i32>(1, 0), size, level, mode);
+    let c = load_wrapped(t, i + vec2<i32>(0, 1), size, level, mode);
+    let d = load_wrapped(t, i + vec2<i32>(1, 1), size, level, mode);
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+// `textureSampleLevel` semantics at an explicit LOD, clamped to `0..=top` (the last level,
+// passed in: `textureNumLevels` does not exist on GLSL ES 3.0); nearest level = round half up.
+fn sample_portable(t: texture_2d<f32>, uv: vec2<f32>, lod: f32, top: f32, mode: u32) -> vec4<f32> {
+    let l = clamp(lod, 0.0, top);
+    if ((mode & 2u) == 0u) {
+        return sample_level_portable(t, uv, i32(floor(l + 0.5)), mode);
+    }
+    let l0 = floor(l);
+    let lo = sample_level_portable(t, uv, i32(l0), mode);
+    let hi = sample_level_portable(t, uv, i32(min(l0 + 1.0, top)), mode);
+    return mix(lo, hi, l - l0);
 }

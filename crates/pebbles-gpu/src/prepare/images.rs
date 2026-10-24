@@ -65,6 +65,7 @@ pub(crate) fn dynamic_image(
         req.key = key;
         req.mips = false;
         req.quad.color[0] = 0.0; // LOD 0: one level
+        req.quad.color[1] = 0.0;
         req.dynamic = Some(frame.clone());
     }
     range
@@ -110,11 +111,19 @@ pub(crate) fn image(
     } else {
         0.0
     };
+    // The last level the shader may read (`sample_portable` clamps the LOD to it).
+    #[allow(clippy::cast_precision_loss)] // ≤ 31
+    let top_level = if mips {
+        (crate::execute::resources::image_mips::mip_level_count(image.image.width, image.image.height) - 1)
+            as f32
+    } else {
+        0.0
+    };
     let quad = QuadInstance {
         xform: [f(x.x), f(x.y), f(y.x), f(y.y)],
         origin: [f(o.x), f(o.y)],
         uv: [0.0, 0.0, 1.0, 1.0],
-        color: [f(lod), 0.0, 0.0, opacity],
+        color: [f(lod), top_level, 0.0, opacity],
         layer_kind: [super::image_nine::EDGE_ALL, 2],
     };
     let start = index_u32(plan.images.len());

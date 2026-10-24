@@ -1569,12 +1569,15 @@ fn white_texture(
         label: Some("pebbles.gpu.sampler.white"),
         ..Default::default()
     });
+    // Nearest, clamp: mode 0.
+    let mode = super::execute::resources::bind_groups::mode_buffer(device, 0);
     let bg = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("pebbles.gpu.bind.white"),
         layout: &layouts.texture,
         entries: &[
             wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&sampler) },
+            wgpu::BindGroupEntry { binding: 2, resource: mode.as_entire_binding() },
         ],
     });
     (tex, bg)
