@@ -151,11 +151,10 @@ pub(crate) fn eval_t(geom: &GradientGeom, p: Point) -> Option<f64> {
     match geom.kind {
         0 => Some(g.x + 1e-5),
         1 => Some(p0[0] + p0[1] * g.to_vec2().hypot()),
-        2 => {
-            let q = p0[0] - g.y * g.y;
-            (q >= 0.0).then(|| g.x + q.sqrt())
-        }
         4 => {
+            if g.x.abs() < 1.0 / 4096.0 && g.y.abs() < 1.0 / 4096.0 {
+                return Some(-p0[0] * p0[1]);
+            }
             let mut a = g.y.atan2(g.x);
             if a < 0.0 {
                 a += std::f64::consts::TAU;
@@ -163,35 +162,23 @@ pub(crate) fn eval_t(geom: &GradientGeom, p: Point) -> Option<f64> {
             Some((a - p0[0]) * p0[1])
         }
         _ => {
-            let (fp0, fp1, fr1, focal_x) = (p0[0], p0[1], p0[2], p0[3]);
-            let swapped = geom.p1[0] != 0.0;
-            let on_circle = (1.0 - fr1).abs() <= TOL;
-            let well_behaved = !on_circle && fr1 > 1.0;
-            let negate = 1.0 - focal_x < 0.0;
-            let (mut t, ok) = if on_circle {
-                let t = g.x + g.y * g.y / g.x;
-                (t, t >= 0.0 && g.x != 0.0)
-            } else if well_behaved {
-                (g.to_vec2().hypot() - g.x * fp0, true)
-            } else {
-                let disc = g.x * g.x - g.y * g.y;
-                let root = disc.max(0.0).sqrt();
-                let t = if swapped || negate { -root } else { root } - g.x * fp0;
-                (t, disc >= 0.0 && t >= 0.0)
-            };
-            if !ok {
+            // The gradient.wgsl two-circle quadratic, in f64.
+            let (rho0, delta, a) = (p0[0], p0[1], p0[2]);
+            let b = g.x + rho0 * delta;
+            let c = g.to_vec2().hypot2() - rho0 * rho0;
+            let disc = b * b - a * c;
+            if disc < 0.0 {
                 return None;
             }
-            if negate {
-                t = -t;
+            let k = b + if b >= 0.0 { 1.0 } else { -1.0 } * disc.sqrt();
+            let mut roots = Vec::new();
+            if k != 0.0 {
+                roots.push(c / k);
             }
-            if focal_x.abs() > TOL {
-                t += fp1;
+            if a != 0.0 {
+                roots.push(k / a);
             }
-            if swapped {
-                t = 1.0 - t;
-            }
-            Some(t)
+            roots.into_iter().filter(|&w| rho0 + w * delta >= 0.0).reduce(f64::max)
         }
     }
 }
@@ -287,4 +274,21 @@ fn brush_transform_is_applied() {
     let c = eval_t(&geom, Point::new(50.0, 10.0)).unwrap();
     assert!((b - a - 0.5).abs() < 1e-4, "varies along y");
     assert!((c - a).abs() < 1e-4, "constant along x");
+}
+
+#[test]
+fn touching_circles_have_one_root() {
+    // |c1 − c0| = 30 = r1 − r0: the start circle touches the end circle from inside, the
+    // quadratic's leading coefficient is 0 and every valid pixel has exactly one root.
+    let (c0, r0, c1, r1) = (Point::new(20.0, 50.0), 10.0, Point::new(50.0, 50.0), 40.0);
+    let g = Gradient::new_two_point_radial(c0, 10.0, c1, 40.0).with_stops(stops(&BW).as_slice());
+    let geom = gradient_geom(&g, Affine::IDENTITY);
+    assert_eq!((geom.kind, geom.p0[2]), (3, 0.0));
+    for p in [Point::new(60.0, 50.0), Point::new(50.0, 80.0), Point::new(85.0, 55.0)] {
+        let t = eval_t(&geom, p).unwrap();
+        let r = r0 + t * (r1 - r0);
+        let on = (p - (c0 + (c1 - c0) * t)).hypot();
+        assert!(r >= 0.0 && (on - r).abs() < 1e-3, "{p:?}: t {t}");
+    }
+    assert!(eval_t(&geom, Point::new(-5.0, 50.0)).is_none(), "behind the touching point");
 }

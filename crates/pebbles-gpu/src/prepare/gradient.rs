@@ -1,11 +1,24 @@
 //! Gradients (09 §5): validation (§5.1), ramp encoding and baking (§5.2) and the
 //! gradient-space transform of every kind (§5.4).
 //!
-//! Ported from vello_common 0.2.0 `encode.rs` (`FocalData::create`, gradient transforms),
-//! Copyright the Vello Authors, Apache-2.0 OR MIT (used under Apache-2.0); the two-point
-//! conical decomposition follows Skia's `SkTwoPointConicalGradient` (BSD-3-Clause). See NOTICE.
-
-use kurbo::{Affine, Point, Vec2};
+//! The geometry is written from the public definitions: CSS Images Level 3/4 for linear and
+//! conic (sweep) gradients and the HTML Canvas 2D `createRadialGradient` definition for
+//! two-circle radial gradients. Every kind maps a device pixel `p` to gradient space with one
+//! affine `G`; the shader turns `G·p` into the ramp parameter `t`:
+//!
+//! - linear: `G` sends the start point to (0, 0) and the end point to (1, 0), so `t = x`;
+//! - sweep: `G` moves the center to the origin; `t` is the angle in [0, 2π) rescaled so the
+//!   start angle maps to 0 and the end angle to 1;
+//! - radial with (nearly) one center: `G` moves the center to the origin and divides by
+//!   `|r1 − r0|`, so `t = (|q|·|r1 − r0| − r0) / (r1 − r0)`, an affine function of `|q|`;
+//! - radial with two centers (the Canvas 2D two-circle model): `G` sends `c0` to (0, 0) and
+//!   `c1` to (1, 0), with the radii divided by the same length `d = |c1 − c0|`. The circle of
+//!   parameter `ω` is centered at `(ω, 0)` with radius `ρ0 + ω·Δ` (`ρ0 = r0/d`,
+//!   `Δ = (r1 − r0)/d`), so a point `q` lies on it when
+//!   `(1 − Δ²)·ω² − 2·(q.x + ρ0·Δ)·ω + (|q|² − ρ0²) = 0`. The shader solves this quadratic
+//!   and keeps the largest root whose radius is non-negative; no root means the pixel is
+//!   outside every circle and paints nothing.
+use kurbo::{Affine, Point};
 
 use super::num::narrow_f32;
 use peniko::color::{AlphaColor, ColorSpaceTag, HueDirection, Srgb};
@@ -178,7 +191,7 @@ pub(crate) fn lut_len(ranges: &[RampRange]) -> u32 {
 }
 
 /// §5.2 `bake_ramp`: `len` premultiplied texels in `[0, 1]` (stored as f16 in the LUT so
-/// the §5.8 dither has sub-LSB precision to work with, like Skia's float gradients).
+/// the §5.8 dither has sub-LSB precision to work with).
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -274,13 +287,15 @@ impl Eq for RampKey {}
 // ---- §5.4 geometry ----
 
 /// The orientation-preserving similarity mapping `p0 → (0, 0)` and `p1 → (1, 0)`.
+///
+/// Read points as complex numbers: `z ↦ (z − p0) / (p1 − p0)`; dividing by `w = u + iv` is
+/// multiplying by `conj(w) / |w|²`.
 pub(crate) fn line_to_unit(p0: Point, p1: Point) -> Affine {
-    let d = p1 - p0;
-    let l2 = d.hypot2();
-    let (a, b, c, dd) = (d.x / l2, -d.y / l2, d.y / l2, d.x / l2);
-    let e = -(a * p0.x + c * p0.y);
-    let f = -(b * p0.x + dd * p0.y);
-    Affine::new([a, b, c, dd, e, f])
+    let w = p1 - p0;
+    let inv = 1.0 / w.hypot2();
+    let (re, im) = (w.x * inv, -w.y * inv);
+    // (x + iy)·(re + i·im) = (re·x − im·y) + i(im·x + re·y)
+    Affine::new([re, im, -im, re, 0.0, 0.0]) * Affine::translate(-p0.to_vec2())
 }
 
 /// The CPU part of a gradient draw (§5.4); the executor adds the ramp's LUT placement.
@@ -295,65 +310,58 @@ pub(crate) struct GradientGeom {
     pub(crate) p1: [f32; 4],
 }
 
+/// Gradient kinds (`info.x`). Kind 5 (the LUT-full solid) is assigned by the executor.
+pub(crate) const KIND_LINEAR: u32 = 0;
+pub(crate) const KIND_RADIAL_CONCENTRIC: u32 = 1;
+pub(crate) const KIND_RADIAL_STRIP: u32 = 2;
+pub(crate) const KIND_RADIAL_TWO_CIRCLE: u32 = 3;
+pub(crate) const KIND_SWEEP: u32 = 4;
+
 /// §5.4 for a validated gradient under paint transform `paint_xf`.
 pub(crate) fn gradient_geom(g: &Gradient, paint_xf: Affine) -> GradientGeom {
-    let (kind, base, p0, p1) = match g.kind {
-        GradientKind::Linear(l) => (0, line_to_unit(l.start, l.end), [0.0; 4], [0.0; 4]),
+    let (kind, base, p0) = match g.kind {
+        GradientKind::Linear(l) => (KIND_LINEAR, line_to_unit(l.start, l.end), [0.0; 4]),
         GradientKind::Radial(r) => {
             radial(r.start_center, f64::from(r.start_radius), r.end_center, f64::from(r.end_radius))
         }
         GradientKind::Sweep(s) => {
-            let (a0, a1) = (s.start_angle, s.end_angle);
-            (4, Affine::translate(-s.center.to_vec2()), [a0, 1.0 / (a1 - a0), 0.0, 0.0], [0.0; 4])
+            let (a0, a1) = (f64::from(s.start_angle), f64::from(s.end_angle));
+            let p0 = [narrow_f32(a0), narrow_f32(1.0 / (a1 - a0)), 0.0, 0.0];
+            (KIND_SWEEP, Affine::translate(-s.center.to_vec2()), p0)
         }
     };
-    let gm = base * paint_xf.inverse();
-    let [a, b, c, d, e, f] = gm.as_coeffs();
+    let m = (base * paint_xf.inverse()).as_coeffs().map(narrow_f32);
     GradientGeom {
         kind,
         extend: g.extend as u32,
-        m0: [narrow_f32(a), narrow_f32(c), narrow_f32(e), 0.0],
-        m1: [narrow_f32(b), narrow_f32(d), narrow_f32(f), 0.0],
+        m0: [m[0], m[2], m[4], 0.0],
+        m1: [m[1], m[3], m[5], 0.0],
         p0,
-        p1,
+        p1: [0.0; 4],
     }
 }
 
-fn radial(c0: Point, r0: f64, c1: Point, r1: f64) -> (u32, Affine, [f32; 4], [f32; 4]) {
-    let dc = (c1 - c0).hypot();
-    if dc <= TOL {
-        // Concentric.
-        let rmax = r0.max(r1);
-        let base = Affine::scale(1.0 / rmax) * Affine::translate(-c1.to_vec2());
-        let p0 = [narrow_f32(-r0 / (r1 - r0)), narrow_f32(rmax / (r1 - r0)), 0.0, 0.0];
-        return (1, base, p0, [0.0; 4]);
+/// The radial kinds (module docs). `p0` per kind:
+/// - concentric: `(−r0 / (r1 − r0), sign(r1 − r0), 0, 0)` — `t = p0.x + p0.y·|q|`;
+/// - strip / two-circle: `(ρ0, Δ, 1 − Δ², 0)` — the quadratic's coefficients.
+fn radial(c0: Point, r0: f64, c1: Point, r1: f64) -> (u32, Affine, [f32; 4]) {
+    let dist = (c1 - c0).hypot();
+    let dr = r1 - r0;
+    if dist <= TOL && dr.abs() > EPS {
+        // One center: the circles are |q| = r0 + ω·dr.
+        let base = Affine::scale(1.0 / dr.abs()) * Affine::translate(-c0.to_vec2());
+        let p0 = [narrow_f32(-r0 / dr), narrow_f32(dr.signum()), 0.0, 0.0];
+        return (KIND_RADIAL_CONCENTRIC, base, p0);
     }
-    if (r1 - r0).abs() <= TOL {
-        // Strip.
-        let p0 = [narrow_f32((r1 / dc) * (r1 / dc)), 0.0, 0.0, 0.0];
-        return (2, line_to_unit(c0, c1), p0, [0.0; 4]);
-    }
-    // Focal (two-point conical), §5.4 steps 1–6.
-    let (mut r0n, mut r1n) = (r0 / dc, r1 / dc);
-    let mut base = line_to_unit(c0, c1);
-    let mut focal_x = r0n / (r0n - r1n);
-    let mut swapped = false;
-    if (focal_x - 1.0).abs() <= TOL {
-        base = base.then_translate(Vec2::new(-1.0, 0.0)).then_scale_non_uniform(-1.0, 1.0);
-        std::mem::swap(&mut r0n, &mut r1n);
-        focal_x = 0.0;
-        swapped = true;
-    }
-    base = line_to_unit(Point::new(focal_x, 0.0), Point::new(1.0, 0.0)) * base;
-    let fr1 = r1n / (1.0 - focal_x).abs();
-    if (1.0 - fr1).abs() <= TOL {
-        base = base.then_scale(0.5);
-    } else {
-        base = base.then_scale_non_uniform(fr1 / (fr1 * fr1 - 1.0), 1.0 / (fr1 * fr1 - 1.0).abs().sqrt());
-    }
-    base = base.then_scale((1.0 - focal_x).abs());
-    let p0 = [narrow_f32(1.0 / fr1), narrow_f32(focal_x), narrow_f32(fr1), narrow_f32(focal_x)];
-    (3, base, p0, [f32::from(u8::from(swapped)), 0.0, 0.0, 0.0])
+    let (rho0, delta) = (r0 / dist, dr / dist);
+    let kind = if dr.abs() <= TOL { KIND_RADIAL_STRIP } else { KIND_RADIAL_TWO_CIRCLE };
+    // When one circle touches the other from inside (|Δ| = 1) the quadratic degenerates to a
+    // linear equation; snapping a within-tolerance leading coefficient to exactly 0 keeps the
+    // f32 shader from inventing a spurious far root on that boundary.
+    let a = 1.0 - delta * delta;
+    let a = if a.abs() <= TOL { 0.0 } else { a };
+    let p0 = [narrow_f32(rho0), narrow_f32(delta), narrow_f32(a), 0.0];
+    (kind, line_to_unit(c0, c1), p0)
 }
 
 #[cfg(test)]

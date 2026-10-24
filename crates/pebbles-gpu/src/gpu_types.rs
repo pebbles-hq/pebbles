@@ -46,13 +46,13 @@ pub(crate) struct ShadowInstance {
     pub xform: [f32; 4],
     /// xy = M · (rect.x0, rect.y0) in device px; zw = (width, height) local.
     pub origin_size: [f32; 4],
-    /// exponent, recip_exponent, scale, std_dev_inv (02 §8.2).
+    /// half width, half height, corner radius (clamped), Gaussian σ — local units (02 §8.2).
     pub params0: [f32; 4],
-    /// min_edge, w, h, r1.
+    /// Reserved (zero).
     pub params1: [f32; 4],
     /// Premultiplied (02 §3).
     pub color: [f32; 4],
-    /// x = 2.5 · std_dev (local units, quad inflation); yzw = 0.
+    /// x = quad inflation (local units): 3σ, bounded by the coordinate limit; yzw = 0.
     pub kernel: [f32; 4],
 }
 

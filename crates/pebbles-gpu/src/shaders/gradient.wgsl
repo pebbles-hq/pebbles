@@ -3,9 +3,9 @@
 // atlas at group 0 binding 3) and Mesh (Tier C lyon mesh inside the MSAA run). The LUT holds
 // premultiplied sRGB-encoded ramps read with textureLoad (no sampler, WebGL2-safe).
 //
-// Ported from vello_sparse_shaders 0.2.0 / vello_common 0.2.0 (the focal branch of gradient
-// evaluation), Copyright the Vello Authors, Apache-2.0 OR MIT (used under Apache-2.0); it
-// follows Skia's SkTwoPointConicalGradient (BSD-3-Clause). See NOTICE.
+// The ramp parameter t is computed from the gradient-space point q = G·p (prepare/gradient.rs
+// documents G and p0 per kind). Written from CSS Images Level 3/4 (linear, conic) and the HTML
+// Canvas 2D createRadialGradient definition (two circles, largest ω with r(ω) ≥ 0).
 struct GradientParams {
     m0: vec4<f32>,
     m1: vec4<f32>,
@@ -28,7 +28,7 @@ fn lut_texel(i: u32) -> vec4<f32> {
 }
 
 // Linear between the two nearest ramp texels (two textureLoads, no sampler): the 8-bit LUT
-// keeps sub-LSB precision for the §5.8 dither, like Skia's float gradient evaluation.
+// keeps sub-LSB precision for the §5.8 dither (float evaluation between texels).
 fn lut_lookup(t: f32) -> vec4<f32> {
     var te = apply_extend(t, gparams.info.y);
     te = select(0.0, te, te == te);
@@ -39,51 +39,51 @@ fn lut_lookup(t: f32) -> vec4<f32> {
     return mix(lut_texel(i0), lut_texel(i1), f - f32(i0));
 }
 
-fn sweep_t(g_in: vec2<f32>) -> f32 {
-    let g = select(g_in, vec2<f32>(0.0, 0.0), abs(g_in) < vec2<f32>(1.0 / 4096.0, 1.0 / 4096.0));
-    var a = 0.0;
-    if (g.x != 0.0 || g.y != 0.0) { a = atan2(g.y, g.x); }
-    if (a < 0.0) { a = a + 6.283185307179586; }
-    return (a - gparams.p0.x) * gparams.p0.y;
+// Conic (sweep) gradient: the angle of q in [0, 2π), measured from +x towards +y (y down, so
+// clockwise on screen), rescaled so p0.x maps to 0 and p0.x + 1/p0.y to 1. The center itself
+// has no direction and takes angle 0.
+fn sweep_t(q: vec2<f32>) -> f32 {
+    let tiny = 1.0 / 4096.0;
+    var angle = 0.0;
+    if (abs(q.x) >= tiny || abs(q.y) >= tiny) {
+        angle = atan2(q.y, q.x);
+        if (angle < 0.0) { angle = angle + 6.283185307179586; }
+    }
+    return (angle - gparams.p0.x) * gparams.p0.y;
 }
 
-fn radial_t(g: vec2<f32>, kind: u32) -> vec2<f32> {
+// Radial gradients: returns (t, valid) with valid 1.0 or 0.0.
+//
+// Concentric (kind 1): t = p0.x + p0.y·|q|.
+// Two circles (kinds 2, 3): in gradient space the circle ω is centered at (ω, 0) with radius
+// ρ0 + ω·Δ, so q lies on it when A·ω² − 2·B·ω + C = 0 with A = 1 − Δ², B = q.x + ρ0·Δ and
+// C = |q|² − ρ0². The roots are ω = (B ± √(B² − A·C)) / A; they are formed as k / A and C / k
+// with k = B + sign(B)·√(B² − A·C), which avoids cancellation (and A = 0, the circle touching
+// case, leaves the single root C / (2B)). Canvas 2D paints the largest root whose radius is
+// non-negative; with none the pixel is transparent.
+fn radial_t(q: vec2<f32>, kind: u32) -> vec2<f32> {
     if (kind == 1u) {
-        return vec2<f32>(gparams.p0.x + gparams.p0.y * length(g), 1.0);
+        return vec2<f32>(gparams.p0.x + gparams.p0.y * length(q), 1.0);
     }
-    if (kind == 2u) {
-        let q = gparams.p0.x - g.y * g.y;
-        if (q < 0.0) { return vec2<f32>(0.0, 0.0); }
-        return vec2<f32>(g.x + sqrt(q), 1.0);
+    let rho0 = gparams.p0.x;
+    let delta = gparams.p0.y;
+    let a = gparams.p0.z;
+    let b = q.x + rho0 * delta;
+    let c = dot(q, q) - rho0 * rho0;
+    let disc = b * b - a * c;
+    if (disc < 0.0) { return vec2<f32>(0.0, 0.0); }
+    let k = b + select(-1.0, 1.0, b >= 0.0) * sqrt(disc);
+    var best = 0.0;
+    var found = false;
+    if (k != 0.0) {
+        let near = c / k;
+        if (rho0 + near * delta >= 0.0) { best = near; found = true; }
     }
-    let fp0 = gparams.p0.x;
-    let fp1 = gparams.p0.y;
-    let fr1 = gparams.p0.z;
-    let focal_x = gparams.p0.w;
-    let swapped = gparams.p1.x != 0.0;
-    let tol = 1.0 / 4096.0;
-    let on_circle = abs(1.0 - fr1) <= tol;
-    let well_behaved = !on_circle && fr1 > 1.0;
-    let negate = (1.0 - focal_x) < 0.0;
-    var t = 0.0;
-    var ok = true;
-    if (on_circle) {
-        t = g.x + g.y * g.y / g.x;
-        ok = t >= 0.0 && g.x != 0.0;
-    } else if (well_behaved) {
-        t = length(g) - g.x * fp0;
-    } else {
-        let disc = g.x * g.x - g.y * g.y;
-        let root = sqrt(max(disc, 0.0));
-        t = select(root, -root, swapped || negate) - g.x * fp0;
-        ok = disc >= 0.0 && t >= 0.0;
+    if (a != 0.0) {
+        let far = k / a;
+        if (rho0 + far * delta >= 0.0 && (!found || far > best)) { best = far; found = true; }
     }
-    if (ok) {
-        if (negate) { t = -t; }
-        if (abs(focal_x) > tol) { t = t + fp1; }
-        if (swapped) { t = 1.0 - t; }
-    }
-    return vec2<f32>(t, select(0.0, 1.0, ok));
+    return vec2<f32>(best, select(0.0, 1.0, found));
 }
 
 // The premultiplied paint at device position `p` (kind 5: the LUT-full solid fallback).

@@ -2,19 +2,10 @@
 use repo_guard::{read, workspace_root};
 
 /// X06 zero trace: no file in the repository names the removed renderer or text stack.
-/// Exempt: `CHANGELOG.md` (it records what past releases shipped) and the license attributions
-/// of code ported from that project, which Apache-2.0 requires us to keep (`ATTRIBUTIONS`).
+/// Exempt: `CHANGELOG.md` (it records what past releases shipped); nothing else is.
 /// Names are spelled with `concat!` so this guard's own source never matches.
 #[test]
 fn no_trace_of_the_removed_renderer_or_text_stack() {
-    const ATTRIBUTIONS: [&str; 5] = [
-        "NOTICE",
-        // The cargo-deny ban list names the removed crates on purpose (S38).
-        "deny.toml",
-        "crates/pebbles-gpu/src/prepare/gradient.rs",
-        "crates/pebbles-gpu/src/prepare/shadows.rs",
-        "crates/pebbles-gpu/src/shaders/gradient.wgsl",
-    ];
     const BANNED: [&str; 4] =
         [concat!("vel", "lo"), concat!("par", "ley"), concat!("gl", "ifo"), concat!("font", "ique")];
     fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
@@ -37,9 +28,6 @@ fn no_trace_of_the_removed_renderer_or_text_stack() {
     let mut hits = Vec::new();
     for f in files {
         let rel = f.strip_prefix(&root).unwrap_or(&f).to_string_lossy().replace('\\', "/");
-        if ATTRIBUTIONS.contains(&rel.as_str()) {
-            continue;
-        }
         let Ok(text) = std::fs::read_to_string(&f) else { continue }; // binary files
         let lower = text.to_lowercase();
         for b in BANNED {

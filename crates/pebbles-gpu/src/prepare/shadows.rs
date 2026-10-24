@@ -1,8 +1,22 @@
-//! Shadow preparation (02 §8.2, R40): the closed-form Gaussian blur of a rounded rect,
-//! evaluated in the rect's local space so it is exact under any affine. The parameters are
-//! computed once on the CPU; `shadow.wgsl` evaluates them per pixel. Constants credited to
-//! vello_common-0.2.0 `src/encode.rs:899-970` and `erf7` to `src/math.rs:20-29` (Apache-2.0 OR
-//! MIT; formulas, re-typed from the spec).
+//! Shadow preparation (02 §8.2, R40): a rounded rect convolved with an isotropic Gaussian of
+//! standard deviation σ (`std_dev`, the true Gaussian σ as in Flutter's `MaskFilter.blur`),
+//! evaluated in the rect's LOCAL space so it is exact under any affine. Prepare only places the
+//! quad and normalizes the parameters; `shadow.wgsl` evaluates the convolution per pixel.
+//!
+//! The math (written for this crate from the definition of the convolution): with the rect
+//! centered at the origin, half extents `(hw, hh)` and corner radius `r`, each horizontal row
+//! `y'` of the shape is the interval `|x'| ≤ X(y')`, where `X = hw` on the straight part
+//! (`|y'| ≤ hh − r`) and `X = hw − r + √(r² − (|y'| − (hh − r))²)` across the corner arcs. The
+//! Gaussian is separable, so the blurred value at `(x, y)` is
+//!
+//! ```text
+//! ∫ g_σ(y − y') · [Φ((X(y') − x)/σ) − Φ((−X(y') − x)/σ)] dy',   Φ(z) = ½·(1 + erf(z/√2)).
+//! ```
+//!
+//! The straight band has constant `X`, so its part is a product of two exact `Φ` differences.
+//! The two corner bands (height `r` each) are cut into slices; each slice is weighted by the
+//! exact Gaussian mass of its `y'` interval (a `Φ` difference) and uses `X` at the slice
+//! midpoint. See `shadow.wgsl` for the slice count and the erf approximation.
 
 use std::ops::Range;
 
@@ -14,104 +28,99 @@ use super::num::{index_u32, narrow_f32};
 use super::plan::FramePlan;
 use crate::gpu_types::ShadowInstance;
 
-/// A 7th-order rational approximation of `erf`.
-pub(crate) fn erf7(x: f32) -> f32 {
-    let x = x.clamp(-10.0, 10.0) * std::f32::consts::FRAC_2_SQRT_PI;
-    let xx = x * x;
-    let x = x + (0.24295 + (0.03395 + 0.0104 * xx) * xx) * (x * xx);
-    x / (1.0 + x * x).sqrt()
+/// The smallest σ: a non-positive `std_dev` draws the hard-edged rounded rect (R41).
+const MIN_SIGMA: f32 = 1e-6;
+
+/// The Gaussian's visible extent in σ: beyond 3σ less than 0.14 % of the mass remains.
+const EXTENT_SIGMAS: f64 = 3.0;
+
+/// erf(x) after Abramowitz & Stegun, *Handbook of Mathematical Functions* (1964), formula
+/// 7.1.26 (absolute error ≤ 1.5·10⁻⁷ for x ≥ 0), extended to x < 0 by oddness. `shadow.wgsl`
+/// evaluates the same formula; this copy documents and tests it.
+#[cfg(test)]
+pub(crate) fn erf(x: f32) -> f32 {
+    const P: f32 = 0.327_591_1;
+    const A: [f32; 5] = [0.254_829_6, -0.284_496_74, 1.421_413_7, -1.453_152_1, 1.061_405_4];
+    let ax = x.abs();
+    let t = 1.0 / (1.0 + P * ax);
+    let poly = t * (A[0] + t * (A[1] + t * (A[2] + t * (A[3] + t * A[4]))));
+    let y = 1.0 - poly * (-ax * ax).exp();
+    y.copysign(x)
 }
 
+/// The normalized local-space shape: the rect centered at the origin.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ShadowParams {
-    pub width: f32,
-    pub height: f32,
-    pub exponent: f32,
-    pub recip_exponent: f32,
-    pub scale: f32,
-    pub std_dev_inv: f32,
-    pub min_edge: f32,
-    pub w: f32,
-    pub h: f32,
-    pub r1: f32,
+    pub half_width: f32,
+    pub half_height: f32,
+    /// Corner radius, clamped to `[0, min(half_width, half_height)]`.
+    pub radius: f32,
+    /// Gaussian σ (local units), at least `MIN_SIGMA`.
+    pub sigma: f32,
 }
 
-/// `None` when the rect is degenerate (min edge ≤ 0) or any input is non-finite (R41).
+/// `None` for an empty or non-finite rect or non-finite parameters (R41: skip the op).
 pub(crate) fn shadow_params(rect: Rect, radius: f32, std_dev: f32) -> Option<ShadowParams> {
-    let rect = rect.abs();
-    let width = narrow_f32(rect.width());
-    let height = narrow_f32(rect.height());
-    if !(width.is_finite() && height.is_finite() && radius.is_finite() && std_dev.is_finite()) {
+    let r = rect.abs();
+    let (w, h) = (narrow_f32(r.width()), narrow_f32(r.height()));
+    if !(w.is_finite() && h.is_finite() && radius.is_finite() && std_dev.is_finite()) {
         return None;
     }
-    let min_edge = width.min(height);
-    if min_edge <= 0.0 {
+    if w <= 0.0 || h <= 0.0 {
         return None;
     }
-    let radius = radius.max(0.0).min(0.5 * min_edge);
-    let std_dev = std_dev.max(1e-6);
-    let rmax = 0.5 * min_edge;
-    let r0 = radius.hypot(std_dev * 1.15).min(rmax);
-    let r1 = radius.hypot(std_dev * 2.0).min(rmax);
-    let exponent = 2.0 * r1 / r0;
-    let std_dev_inv = std_dev.recip();
-    let delta = 1.25
-        * std_dev
-        * ((-(0.5 * std_dev_inv * width).powi(2)).exp() - (-(0.5 * std_dev_inv * height).powi(2)).exp());
-    let w = width + delta.min(0.0);
-    let h = height - delta.max(0.0);
-    let scale = 0.5 * erf7(std_dev_inv * 0.5 * (w.max(h) - 0.5 * radius));
+    let (half_width, half_height) = (0.5 * w, 0.5 * h);
     Some(ShadowParams {
-        width,
-        height,
-        exponent,
-        recip_exponent: exponent.recip(),
-        scale,
-        std_dev_inv,
-        min_edge,
-        w,
-        h,
-        r1,
+        half_width,
+        half_height,
+        radius: radius.clamp(0.0, half_width.min(half_height)),
+        sigma: std_dev.max(MIN_SIGMA),
     })
 }
 
-/// Append one shadow instance for `rect` under `m` (local → device) and return its range;
-/// `None` when the rect is empty (R41: skipped silently). `max_coord_px` bounds the quad
-/// inflation (S05): beyond it the shadow is outside every possible target.
+/// Pushes one shadow instance for `rect` under `xf`; `None` when nothing is drawn.
 pub(crate) fn shadow(
     plan: &mut FramePlan,
     rect: &Rect,
-    m: Affine,
+    xf: Affine,
     radius: f64,
     std_dev: f64,
     color: Color,
     max_coord_px: f32,
 ) -> Option<Range<u32>> {
-    let p = shadow_params(*rect, narrow_f32(radius), narrow_f32(std_dev))?;
+    let params = shadow_params(*rect, narrow_f32(radius), narrow_f32(std_dev))?;
     let r = rect.abs();
-    let [a, b, c, d, _, _] = m.as_coeffs().map(narrow_f32);
-    let o = m * kurbo::Point::new(r.x0, r.y0);
-    let start = index_u32(plan.shadows.len());
-    plan.shadows.push(ShadowInstance {
-        xform: [a, b, c, d],
-        origin_size: [narrow_f32(o.x), narrow_f32(o.y), p.width, p.height],
-        // (corner radius clamped to half the min edge, Gaussian σ = std_dev (Skia/Flutter), 0, 0).
-        params0: [narrow_f32(radius).max(0.0).min(0.5 * p.min_edge), narrow_f32(std_dev).max(1e-6), 0.0, 0.0],
+    let [a, b, c, d, _, _] = xf.as_coeffs();
+    let origin = xf * r.origin();
+    let extent = kernel_extent(f64::from(params.sigma), xf, max_coord_px);
+    let instance = ShadowInstance {
+        xform: [a, b, c, d].map(narrow_f32),
+        origin_size: [
+            narrow_f32(origin.x),
+            narrow_f32(origin.y),
+            narrow_f32(r.width()),
+            narrow_f32(r.height()),
+        ],
+        params0: [params.half_width, params.half_height, params.radius, params.sigma],
         params1: [0.0; 4],
         color: premul(color),
-        kernel: [kernel_extent(std_dev, m, max_coord_px), 0.0, 0.0, 0.0],
-    });
+        kernel: [extent, 0.0, 0.0, 0.0],
+    };
+    if !instance.xform.iter().chain(&instance.origin_size).all(|v| v.is_finite()) {
+        return None;
+    }
+    let start = index_u32(plan.shadows.len());
+    plan.shadows.push(instance);
     Some(start..start + 1)
 }
 
-/// `3 · std_dev` (local units), clamped to `max_coord_px / σmax(M)` so the inflated quad stays
-/// finite for absurd σ (S05). σ itself is never clamped (R41).
-fn kernel_extent(std_dev: f64, m: Affine, max_coord_px: f32) -> f32 {
-    // 3σ: the Gaussian's visible extent (Skia's blur kernel extent).
-    let k = 3.0 * std_dev.max(1e-6);
-    let (smax, _) = super::stroke::singular_values(&m);
-    let bound = if smax > 0.0 { f64::from(max_coord_px) / smax } else { k };
-    narrow_f32(k.min(bound))
+/// How far (local units) the quad extends past the rect: `EXTENT_SIGMAS`·σ, limited so the
+/// device-space inflation stays within `max_coord_px` (a huge σ must keep the quad finite).
+fn kernel_extent(sigma: f64, m: Affine, max_coord_px: f32) -> f32 {
+    let [a, b, c, d, _, _] = m.as_coeffs();
+    // A local step of length 1 moves at most this far in device px (∞-norm bound).
+    let stretch = (a.abs() + c.abs()).max(b.abs() + d.abs()).max(1e-12);
+    narrow_f32((EXTENT_SIGMAS * sigma).min(f64::from(max_coord_px) / stretch))
 }
 
 #[cfg(test)]
@@ -119,21 +128,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn erf7_values() {
-        assert_eq!(erf7(0.0), 0.0);
-        assert!((erf7(1.0) - 0.8427).abs() < 1e-3, "{}", erf7(1.0));
-        assert!((erf7(20.0) - 1.0).abs() < 1e-6);
+    fn erf_values() {
+        assert!(erf(0.0).abs() < 1e-6);
+        assert!((erf(1.0) - 0.842_700_8).abs() < 1e-6, "{}", erf(1.0));
+        assert!((erf(0.5) - 0.520_499_9).abs() < 1e-6, "{}", erf(0.5));
+        assert!((erf(20.0) - 1.0).abs() < 1e-6);
         for x in [0.1f32, 0.7, 2.3] {
-            assert_eq!(erf7(-x), -erf7(x));
+            assert_eq!(erf(-x), -erf(x));
         }
     }
 
     #[test]
     fn params_square_sigma10() {
         let p = shadow_params(Rect::new(0.0, 0.0, 100.0, 100.0), 0.0, 10.0).unwrap();
-        assert!((p.exponent - 3.4783).abs() < 1e-3, "{}", p.exponent);
-        assert_eq!((p.w, p.h), (100.0, 100.0));
-        assert!((p.scale - 0.5).abs() < 1e-3, "{}", p.scale);
+        assert_eq!(p, ShadowParams { half_width: 50.0, half_height: 50.0, radius: 0.0, sigma: 10.0 });
     }
 
     #[test]
@@ -141,6 +149,13 @@ mod tests {
         let clamped = shadow_params(Rect::new(0.0, 0.0, 100.0, 50.0), 80.0, 6.0).unwrap();
         let exact = shadow_params(Rect::new(0.0, 0.0, 100.0, 50.0), 25.0, 6.0).unwrap();
         assert_eq!(clamped, exact);
+    }
+
+    #[test]
+    fn non_finite_params_skip() {
+        let r = Rect::new(0.0, 0.0, 10.0, 10.0);
+        assert_eq!(shadow_params(r, f32::NAN, 2.0), None);
+        assert_eq!(shadow_params(r, 2.0, f32::INFINITY), None);
     }
 
     fn one(rect: Rect, radius: f64, std_dev: f64, color: Color) -> (FramePlan, crate::stats::FrameStats) {

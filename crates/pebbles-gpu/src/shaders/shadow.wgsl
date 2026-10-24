@@ -1,7 +1,14 @@
-// Box shadows (02 §8.2, R40): the Gaussian blur of a rounded rect evaluated in the rect's LOCAL
-// space, so it is exact under any affine. x is integrated exactly (erf); y numerically over ±3σ
-// (Evan Wallace's rounded-box shadow, MIT). σ = std_dev: the true Gaussian standard deviation
-// (Skia `MaskFilter.blur` / Flutter semantics, 02 §8.2).
+// Box shadows (02 §8.2, R40): a rounded rect convolved with a Gaussian of standard deviation σ
+// (the true Gaussian σ, Flutter `MaskFilter.blur` semantics), evaluated in the rect's LOCAL
+// space so it is exact under any affine. prepare/shadows.rs derives the formula; in short, with
+// Φ the standard normal CDF and X(y') the half width of the shape's row y':
+//
+//   value(x, y) = ∫ g_σ(y − y') · [Φ((X(y') − x)/σ) − Φ((−X(y') − x)/σ)] dy'
+//
+// The straight band (X = half width) is integrated exactly; each corner band is cut into
+// CORNER_SLICES slices whose weights are their exact Gaussian masses, with X taken at the slice
+// midpoint. Only the part of a corner band within ±4σ of y is sliced (the rest has < 4·10⁻⁵ of
+// the mass), so the slices stay narrow next to σ.
 // The local position is an interpolated varying: affine maps interpolate exactly.
 
 struct ShadowIn {
@@ -16,68 +23,79 @@ struct ShadowIn {
 
 struct ShadowOut {
     @builtin(position) clip: vec4<f32>,
-    @location(0) local: vec2<f32>,
-    @location(1) @interpolate(flat) size: vec2<f32>,
-    @location(2) @interpolate(flat) params0: vec4<f32>,
-    @location(3) @interpolate(flat) params1: vec4<f32>,
-    @location(4) @interpolate(flat) color: vec4<f32>,
+    // Local position relative to the rect's center.
+    @location(0) centered: vec2<f32>,
+    // (half width, half height, corner radius, σ).
+    @location(1) @interpolate(flat) shape: vec4<f32>,
+    @location(2) @interpolate(flat) color: vec4<f32>,
 };
 
 @vertex
 fn vs(in: ShadowIn) -> ShadowOut {
-    let corner = vec2<f32>(f32(in.vi & 1u), f32((in.vi >> 1u) & 1u));
     let k = in.kernel.x;
-    let local = mix(vec2<f32>(-k), in.origin_size.zw + vec2<f32>(k), corner);
-    let m = mat2x2<f32>(in.xform.xy, in.xform.zw); // columns (a, b) and (c, d)
+    let size = in.origin_size.zw;
+    // The local quad [−k, size + k]², placed by the linear part (columns (a, b) and (c, d)).
+    let local = quad_corner(in.vi) * (size + vec2<f32>(2.0 * k)) - vec2<f32>(k);
+    let lin = mat2x2<f32>(in.xform.xy, in.xform.zw);
     var out: ShadowOut;
-    out.clip = to_clip(in.origin_size.xy + m * local);
-    out.local = local;
-    out.size = in.origin_size.zw;
-    out.params0 = in.params0;
-    out.params1 = in.params1;
+    out.clip = to_clip(in.origin_size.xy + lin * local);
+    out.centered = local - 0.5 * size;
+    out.shape = in.params0;
     out.color = in.color;
     return out;
 }
 
-fn erf7(x: f32) -> f32 {
-    let y = clamp(x * 1.1283791671, -100.0, 100.0);
-    let yy = y * y;
-    let z = y + (0.24295 + (0.03395 + 0.0104 * yy) * yy) * (y * yy);
-    return z / sqrt(1.0 + z * z);
+// erf after Abramowitz & Stegun, Handbook of Mathematical Functions (1964), 7.1.26: absolute
+// error ≤ 1.5e-7; odd extension for negative arguments (same formula as prepare/shadows.rs).
+fn erf_as(x: f32) -> f32 {
+    let ax = abs(x);
+    let t = 1.0 / (1.0 + 0.3275911 * ax);
+    let poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+    let y = 1.0 - poly * exp(-ax * ax);
+    return select(-y, y, x >= 0.0);
 }
 
-// Coverage of one row of the rounded box along x (exact Gaussian integral in x): the row at
-// height `y` spans ±curved, shortened by the corner arc (Evan Wallace's rounded-box shadow).
-fn row_x(x: f32, y: f32, sigma: f32, corner: f32, half: vec2<f32>) -> f32 {
-    let delta = min(half.y - corner - abs(y), 0.0);
-    let curved = half.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
-    let k = 0.70710678 / sigma;
-    return 0.5 * (erf7((x + curved) * k) - erf7((x - curved) * k));
+// Gaussian mass of the row |x'| ≤ half_w seen from x: Φ((half_w − x)/σ) − Φ((−half_w − x)/σ),
+// with `s` = 1/(σ·√2).
+fn row_mass(x: f32, half_w: f32, s: f32) -> f32 {
+    return 0.5 * (erf_as((x + half_w) * s) - erf_as((x - half_w) * s));
 }
 
-const SHADOW_SAMPLES: u32 = 12u;
+const CORNER_SLICES: u32 = 12u;
+
+// One corner band y' ∈ [lo, hi] (on one side, |y'| ≥ straight), clipped to ±4σ around y.
+fn corner_band(x: f32, y: f32, lo_in: f32, hi_in: f32, shape: vec4<f32>, straight: f32, s: f32) -> f32 {
+    let reach = 4.0 * shape.w;
+    let lo = max(lo_in, y - reach);
+    let hi = min(hi_in, y + reach);
+    if (!(hi > lo)) { return 0.0; }
+    let r = shape.z;
+    let step = (hi - lo) / f32(CORNER_SLICES);
+    var e_prev = erf_as((lo - y) * s);
+    var sum = 0.0;
+    for (var i = 0u; i < CORNER_SLICES; i = i + 1u) {
+        let e_next = erf_as((lo + f32(i + 1u) * step - y) * s);
+        let mid = lo + (f32(i) + 0.5) * step;
+        let into_arc = abs(mid) - straight;
+        let half_w = shape.x - r + sqrt(max(r * r - into_arc * into_arc, 0.0));
+        sum = sum + 0.5 * (e_next - e_prev) * row_mass(x, half_w, s);
+        e_prev = e_next;
+    }
+    return sum;
+}
 
 @fragment
 fn fs(in: ShadowOut) -> @location(0) vec4<f32> {
-    // params0 = (corner radius (clamped), σ (Gaussian std, local units), 0, 0).
-    let corner = in.params0.x;
-    let sigma = max(in.params0.y, 1e-6);
-    let half = 0.5 * in.size;
-    let p = in.local - half;
-    // Integrate the row coverage against the Gaussian in y over ±3σ (midpoint rule), clamped to
-    // the rows the box occupies.
-    let low = p.y - half.y;
-    let high = p.y + half.y;
-    let start = clamp(-3.0 * sigma, low, high);
-    let end = clamp(3.0 * sigma, low, high);
-    let step = (end - start) / f32(SHADOW_SAMPLES);
-    var y = start + 0.5 * step;
-    var value = 0.0;
-    let norm = 0.39894228 / sigma; // 1 / (σ √(2π))
-    for (var i = 0u; i < SHADOW_SAMPLES; i = i + 1u) {
-        let g = norm * exp(-0.5 * y * y / (sigma * sigma));
-        value = value + row_x(p.x, p.y - y, sigma, corner, half) * g * step;
-        y = y + step;
+    let shape = in.shape;
+    let p = in.centered;
+    let s = 0.70710678 / max(shape.w, 1e-6);
+    // The straight band |y'| ≤ hh − r: separable, exact.
+    let straight = shape.y - shape.z;
+    var value = 0.5 * (erf_as((straight - p.y) * s) - erf_as((-straight - p.y) * s)) * row_mass(p.x, shape.x, s);
+    if (shape.z > 0.0) {
+        value = value + corner_band(p.x, p.y, straight, shape.y, shape, straight, s);
+        value = value + corner_band(p.x, p.y, -shape.y, -straight, shape, straight, s);
     }
-    return finish_color(in.color * (clamp(value, 0.0, 1.0) * (clip_coverage(device_pos(in.clip)) * clip_mask_coverage(device_pos(in.clip)))));
+    let dp = device_pos(in.clip);
+    return finish_color(in.color * (clamp(value, 0.0, 1.0) * (clip_coverage(dp) * clip_mask_coverage(dp))));
 }
