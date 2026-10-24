@@ -29,6 +29,13 @@ const _: () = {
     assert_send::<crate::RenderSurface<'static>>();
 };
 
+/// How many submitted frames the CPU may run ahead of the GPU before `render` blocks — the usual
+/// engine bound (2–3 frames). A window's swapchain throttles on its own; offscreen loops would
+/// otherwise queue unbounded GPU work and staging memory (a software adapter like WARP can then
+/// still be busy many seconds later, when wgpu's `Queue` drop gives up and panics).
+#[cfg(not(target_family = "wasm"))]
+const MAX_FRAMES_IN_FLIGHT: usize = 3;
+
 /// Pipelines + caches for ONE device. Shared by every surface/target on that device.
 pub struct Renderer {
     pub(crate) sample_count: u32,
@@ -95,6 +102,10 @@ pub struct Renderer {
     created_at: Option<web_time::Instant>,
     /// Opt-in GPU frame timing (M22); `None` without `TIMESTAMP_QUERY`.
     timer: Option<super::timing::GpuTimer>,
+    /// Submissions of the last frames, oldest first: the CPU may run at most
+    /// [`MAX_FRAMES_IN_FLIGHT`] frames ahead of the GPU (native only).
+    #[cfg(not(target_family = "wasm"))]
+    in_flight: std::collections::VecDeque<wgpu::SubmissionIndex>,
     /// Pass segments, reused across frames (09 §3.6).
     pub(crate) segments: Vec<super::prepare::passes::PassSegment>,
     pub(crate) arenas: FrameArenas,
@@ -336,6 +347,8 @@ impl Renderer {
             seg_indices: Vec::new(),
             seg_quads: Vec::new(),
             timer: super::timing::GpuTimer::new(device, gpu.queue()),
+            #[cfg(not(target_family = "wasm"))]
+            in_flight: std::collections::VecDeque::new(),
             created_at: Some(web_time::Instant::now()),
             targets_book: super::frame_targets::TargetBook::new(budgets.frame_targets_bytes),
             frame: 0,
@@ -839,7 +852,10 @@ impl Renderer {
         let command_buffer = encoder.finish();
         stats.encode_us = u32::try_from(encode_started.elapsed().as_micros()).unwrap_or(u32::MAX);
         let submit_started = web_time::Instant::now();
-        queue.submit([command_buffer]);
+        let submission = queue.submit([command_buffer]);
+        if !nested {
+            self.throttle(device, submission);
+        }
         if !nested && let Some(t) = &mut self.timer {
             t.after_submit();
             stats.gpu_us = t.poll(device);
@@ -887,6 +903,26 @@ impl Renderer {
 }
 
 impl Renderer {
+    /// Record a frame's submission and wait for the oldest one past [`MAX_FRAMES_IN_FLIGHT`].
+    /// Native only: wasm cannot block, and the browser paces frames itself.
+    fn throttle(&mut self, device: &wgpu::Device, submission: wgpu::SubmissionIndex) {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            self.in_flight.push_back(submission);
+            while self.in_flight.len() > MAX_FRAMES_IN_FLIGHT {
+                let Some(oldest) = self.in_flight.pop_front() else { break };
+                // A timeout or a lost device is not this frame's error: loss is reported by the
+                // device hooks and the next `render` (08 §6).
+                let _ = device.poll(wgpu::PollType::Wait {
+                    submission_index: Some(oldest),
+                    timeout: Some(std::time::Duration::from_secs(30)),
+                });
+            }
+        }
+        #[cfg(target_family = "wasm")]
+        let _ = (device, submission);
+    }
+
     /// 09 §4.4 `AfterPass::CopyBackdrop(layer)`: after the parent's segment before the layer's
     /// push, copy the parent's pixels under the layer bounds into the layer's backdrop texture
     /// (the parent does not change again until the layer composites).
