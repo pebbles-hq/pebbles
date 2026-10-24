@@ -71,6 +71,8 @@ fn check_golden(name: &str, actual: &str) {
     }
     let expected = std::fs::read_to_string(&path)
         .unwrap_or_else(|_| panic!("missing golden {path} — regen with PEBBLES_UPDATE_GOLDENS=1"));
+    // A Windows checkout may turn the golden's line endings into CRLF.
+    let expected = expected.replace("\r\n", "\n");
     assert_eq!(
         actual.trim_end(),
         expected.trim_end(),
@@ -124,10 +126,10 @@ fn golden_dialog_over_overlay() {
 // is what makes a token regression cheap to catch.
 
 #[test]
-fn golden_design_compact() {
+fn golden_design_default() {
     set_theme(Theme::light());
     set_design(DesignLanguage::Default);
-    check_golden("design_compact", &render_fingerprint(Size::new(200.0, 80.0), a_button));
+    check_golden("design_default", &render_fingerprint(Size::new(200.0, 80.0), a_button));
 }
 
 #[test]

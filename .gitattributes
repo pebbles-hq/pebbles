@@ -1,3 +1,4 @@
 # Generated files: collapsed in diffs and excluded from language stats.
 crates/pebbles-icons/src/tabler.rs linguist-generated=true -diff
 Cargo.lock linguist-generated=true
+crates/pebbles-widgets/tests/suite/goldens/*.txt text eol=lf
