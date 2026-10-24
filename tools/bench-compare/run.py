@@ -1,0 +1,93 @@
+#!/usr/bin/env python3
+"""M32 driver (Linux only; README.md). Runs each toolkit's app on each scene and prints a
+markdown table: frame interval p50/p95, startup to first frame tick, idle CPU after the
+animation stops, and resident memory.
+
+    python3 tools/bench-compare/run.py pebbles=target/release/bench-compare \
+        iced=tools/bench-compare/iced/target/release/m32-iced \
+        flutter=tools/bench-compare/flutter/build/linux/x64/release/bundle/m32_flutter
+"""
+
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+
+SCENES = ["dashboard", "rects_10k", "list_10k_scroll"]
+SECS, WARM, IDLE = 12.0, 2.0, 5.0
+TCK = os.sysconf("SC_CLK_TCK")
+
+
+def cpu_ticks(pid):
+    with open(f"/proc/{pid}/stat") as f:
+        parts = f.read().rsplit(")", 1)[1].split()
+    return int(parts[11]) + int(parts[12])  # utime + stime
+
+
+def mem_kib(pid, key):
+    with open(f"/proc/{pid}/status") as f:
+        for line in f:
+            if line.startswith(key + ":"):
+                return int(line.split()[1])
+    return 0
+
+
+def run(toolkit, exe, scene):
+    env = dict(os.environ, M32_SCENE=scene, M32_SECS=str(SECS), M32_WARM=str(WARM))
+    t0 = time.time() * 1000.0
+    p = subprocess.Popen([exe], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                         cwd=os.path.dirname(os.path.abspath(exe)))
+    lines = []
+    threading.Thread(target=lambda: lines.extend(iter(p.stdout.readline, "")), daemon=True).start()
+    deadline = time.time() + SECS + 60
+    while time.time() < deadline and not any(l.startswith("M32 ") for l in lines) and p.poll() is None:
+        time.sleep(0.2)
+    res = {"toolkit": toolkit, "scene": scene}
+    if p.poll() is None:
+        time.sleep(1.0)  # let the last frame settle
+        c0 = cpu_ticks(p.pid)
+        time.sleep(IDLE)
+        res["idle_cpu"] = 100.0 * (cpu_ticks(p.pid) - c0) / TCK / IDLE
+        res["rss"] = mem_kib(p.pid, "VmRSS") / 1024.0
+        res["hwm"] = mem_kib(p.pid, "VmHWM") / 1024.0
+        p.kill()
+    p.wait()
+    time.sleep(0.5)
+    for l in lines:
+        if l.startswith("M32 "):
+            res.update(dict(kv.split("=", 1) for kv in l.split()[1:]))
+        elif l.startswith("M32-first-frame"):
+            res["startup_ms"] = int(re.search(r"epoch_ms=(\d+)", l).group(1)) - t0
+        elif l.startswith("M32-own"):
+            res["own"] = l.strip()
+    if "frames" not in res:
+        res["error"] = "".join(lines[-15:])
+    return res
+
+
+def main():
+    apps = [(t, os.path.abspath(e)) for t, e in (a.split("=", 1) for a in sys.argv[1:])]
+    print("| scene | toolkit | frames (10 s) | interval p50 ms | interval p95 ms | startup ms | idle CPU % | RSS MiB (peak) |")
+    print("|---|---|---|---|---|---|---|---|")
+    extra = []
+    for scene in SCENES:
+        for toolkit, exe in apps:
+            r = run(toolkit, exe, scene)
+            if "error" in r:
+                print(f"| {scene} | {toolkit} | error | | | | | |")
+                extra.append(f"{toolkit} {scene}:\n{r['error']}")
+                continue
+            print(f"| {scene} | {toolkit} | {r['frames']} | {r['p50_ms']} | {r['p95_ms']} | "
+                  f"{r.get('startup_ms', 0):.0f} | {r.get('idle_cpu', float('nan')):.1f} | "
+                  f"{r.get('rss', 0):.0f} ({r.get('hwm', 0):.0f}) |", flush=True)
+            if "own" in r:
+                extra.append(r["own"])
+    print()
+    for e in extra:
+        print(e)
+
+
+if __name__ == "__main__":
+    main()

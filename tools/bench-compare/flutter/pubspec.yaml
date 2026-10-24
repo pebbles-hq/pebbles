@@ -1,0 +1,11 @@
+name: m32_flutter
+description: M32 matched scenes, Flutter side (informative benchmark; see ../README.md).
+publish_to: none
+version: 0.0.0
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter

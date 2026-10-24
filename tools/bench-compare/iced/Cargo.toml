@@ -1,0 +1,14 @@
+[package]
+name = "m32-iced"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Not a member of the Pebbles workspace: a standalone scratch project (M32, README.md).
+[workspace]
+
+[dependencies]
+iced = { version = "=0.13.1", features = ["canvas"] }
+
+[profile.release]
+lto = "thin"

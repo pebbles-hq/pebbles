@@ -1,0 +1,192 @@
+# Performance protocols (10 §10.4, M10) on hosted runners. Manual only: wall-clock numbers never
+# gate CI (P8). Hosted runners are NOT the reference machines (10 §10.3): macOS is an Apple
+# Paravirtual Metal VM (an R-M1 stand-in, not R-M1) and Windows is WARP (software DX12). Label
+# every number taken from here with the runner and the adapter line the bench prints.
+name: bench
+
+on:
+  workflow_dispatch:
+    inputs:
+      frames:
+        description: "Timed frames per case (10 §10.4: 300)"
+        default: "300"
+      m26:
+        description: "M26 step 3: also time the dashboard with the MSAA Discard patched back to Store"
+        type: boolean
+        default: true
+      windows:
+        description: "Run the window protocols (B8 idle, B9 storm, B10/B11 startup); best effort on hosted runners"
+        type: boolean
+        default: true
+      compare:
+        description: "M32: Pebbles vs Flutter vs iced on matched scenes (Linux runner, software rendering)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+  RUST_BACKTRACE: "1"
+
+jobs:
+  bench:
+    name: bench (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macos-metal-vm
+            wgpu_backend: metal
+            py: python3
+          - os: windows-latest
+            label: windows-warp
+            wgpu_backend: dx12
+            py: python
+    defaults:
+      run:
+        shell: bash
+    env:
+      WGPU_BACKEND: ${{ matrix.wgpu_backend }}
+      WGPU_DX12_COMPILER: fxc
+      FRAMES: ${{ inputs.frames || '300' }}
+      OUT: target/bench-out
+      PY: ${{ matrix.py }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: bench-${{ matrix.label }}
+      - name: Record the machine
+        run: |
+          mkdir -p "$OUT"
+          {
+            echo "date: $(date -u +%F)"
+            echo "commit: $(git rev-parse --short HEAD)"
+            echo "runner: ${{ matrix.os }} (${{ matrix.label }}) $RUNNER_OS $RUNNER_ARCH"
+            if [ "$RUNNER_OS" = macOS ]; then sw_vers; sysctl -n machdep.cpu.brand_string; system_profiler SPDisplaysDataType; fi
+            if [ "$RUNNER_OS" = Windows ]; then powershell -NoProfile -Command "(Get-CimInstance Win32_OperatingSystem).Caption; (Get-CimInstance Win32_Processor).Name; Get-CimInstance Win32_VideoController | Format-List Name,DriverVersion"; fi
+          } 2>&1 | tee "$OUT/machine.txt"
+      - name: Build (release)
+        run: cargo build --release -p render-check -p desktop -p counter
+      - name: B1-B3 (3 runs; keep the run with the median dashboard frame p50)
+        run: |
+          for i in 1 2 3; do
+            target/release/render-check bench --frames "$FRAMES" --warmup 30 --out "$OUT/b1-b3-run$i" | tee "$OUT/b1-b3-run$i.log"
+          done
+      - name: B4 GPU time (timestamp queries)
+        run: |
+          PEBBLES_GPU_TIMING=1 target/release/render-check bench --frames "$FRAMES" --warmup 30 \
+            --cases bench/dashboard_1200x800 --out "$OUT/b4" | tee "$OUT/b4.log"
+      - name: M26 step 3 before (MSAA Discard -> Store, measurement-only patch)
+        if: inputs.m26 || github.event_name != 'workflow_dispatch'
+        run: |
+          # "after" = this commit: dashboard frame + GPU time, same machine, same job.
+          for i in 1 2 3; do
+            PEBBLES_GPU_TIMING=1 target/release/render-check bench --frames "$FRAMES" --warmup 30 \
+              --cases bench/dashboard_1200x800,bench/shadows_200 --out "$OUT/m26-after-$i" | tee "$OUT/m26-after-$i.log"
+          done
+          # "before": put Store back on every MSAA attachment that M26 discards. Never committed.
+          perl -0pi -e 's/wgpu::StoreOp::Discard/wgpu::StoreOp::Store/g' \
+            crates/pebbles-gpu/src/renderer.rs crates/pebbles-gpu/src/execute/tier_c.rs crates/pebbles-gpu/src/execute/gpu_masks.rs
+          git diff --stat
+          cargo build --release -p render-check
+          for i in 1 2 3; do
+            PEBBLES_GPU_TIMING=1 target/release/render-check bench --frames "$FRAMES" --warmup 30 \
+              --cases bench/dashboard_1200x800,bench/shadows_200 --out "$OUT/m26-before-$i" | tee "$OUT/m26-before-$i.log"
+          done
+          git checkout -- crates/pebbles-gpu
+          cargo build --release -p render-check
+      - name: B8 idle (20 s untouched; frames)
+        if: inputs.windows || github.event_name != 'workflow_dispatch'
+        continue-on-error: true
+        run: |
+          PEBBLES_FRAME_STATS=1 "$PY" scripts/run-for.py 20 "$OUT/b8.log" -- target/release/desktop || true
+          echo "B8 frames: $(grep -c '\[pebbles frame\]' "$OUT/b8.log")" | tee -a "$OUT/windows.txt"
+          tail -n 20 "$OUT/b8.log"
+      - name: B9 input storm (30 s, Mailbox; p95 encode)
+        if: inputs.windows || github.event_name != 'workflow_dispatch'
+        continue-on-error: true
+        run: |
+          PEBBLES_INPUT_STORM=1 PEBBLES_PRESENT_MODE=mailbox PEBBLES_FRAME_STATS=1 \
+            "$PY" scripts/run-for.py 30 "$OUT/b9.log" -- target/release/desktop || true
+          grep -o 'encode=[0-9.]*' "$OUT/b9.log" | cut -d= -f2 | sort -n \
+            | awk '{a[NR]=$1} END {print "B9 frames:", NR, "p95 encode ms:", a[int(NR*0.95)], "max:", a[NR]}' | tee -a "$OUT/windows.txt"
+      - name: B10/B11 startup (5 runs of counter)
+        if: inputs.windows || github.event_name != 'workflow_dispatch'
+        continue-on-error: true
+        run: |
+          for i in 1 2 3 4 5; do
+            PEBBLES_LOG=info "$PY" scripts/run-for.py 15 "$OUT/b10-$i.log" -- target/release/counter || true
+            grep -hE 'first frame presented|renderer ready' "$OUT/b10-$i.log" | tee -a "$OUT/windows.txt"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: bench-${{ matrix.label }}
+          path: target/bench-out/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  # M32 (informative): the same scenes in Pebbles, Flutter and iced on ONE runner, measured with
+  # one method (tools/bench-compare/README.md). Software rendering under Xvfb: Pebbles and iced on
+  # lavapipe (Vulkan), Flutter on llvmpipe (GL, its Linux embedder). Never a gate.
+  compare:
+    name: M32 compare (Linux, lavapipe/llvmpipe)
+    if: inputs.compare || github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: System deps (Xvfb, Mesa lavapipe/llvmpipe, Flutter Linux toolchain)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb mesa-vulkan-drivers libvulkan1 vulkan-tools libgl1-mesa-dri libegl1 \
+            libgtk-3-dev ninja-build clang cmake pkg-config liblzma-dev libxkbcommon-x11-0 libxcursor1 libxi6 libxrandr2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: bench-compare
+          workspaces: |
+            . -> target
+            tools/bench-compare/iced -> target
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+      - name: Build the three apps (release)
+        run: |
+          cargo build --release -p bench-compare
+          cargo build --release --manifest-path tools/bench-compare/iced/Cargo.toml
+          cd tools/bench-compare/flutter
+          flutter create --platforms=linux --project-name m32_flutter .
+          flutter build linux --release
+      - name: Versions
+        run: |
+          mkdir -p target/bench-out
+          {
+            echo "date: $(date -u +%F) commit: $(git rev-parse --short HEAD) runner: ubuntu-24.04, $(nproc) vCPU"
+            flutter --version | head -1
+            grep -A1 '^name = "iced"$' tools/bench-compare/iced/Cargo.lock | tail -1
+            xvfb-run -a vulkaninfo --summary 2>/dev/null | grep -E 'deviceName|driverInfo' || true
+          } | tee target/bench-out/compare-versions.txt
+      - name: Run the matched scenes
+        env:
+          ICED_BACKEND: wgpu
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          xvfb-run -a -s "-screen 0 1280x900x24" python3 tools/bench-compare/run.py \
+            pebbles=target/release/bench-compare \
+            iced=tools/bench-compare/iced/target/release/m32-iced \
+            flutter=tools/bench-compare/flutter/build/linux/x64/release/bundle/m32_flutter \
+            | tee target/bench-out/compare.md
+          cat target/bench-out/compare.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: bench-compare-linux
+          path: target/bench-out/
+          retention-days: 30
+          if-no-files-found: ignore

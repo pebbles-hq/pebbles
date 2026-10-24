@@ -1,0 +1,14 @@
+iced/target/
+iced/Cargo.lock
+# `flutter create --platforms=linux .` regenerates these in CI.
+flutter/linux/
+flutter/build/
+flutter/.dart_tool/
+flutter/.metadata
+flutter/.gitignore
+flutter/pubspec.lock
+flutter/analysis_options.yaml
+flutter/README.md
+flutter/test/
+flutter/*.iml
+flutter/.idea/

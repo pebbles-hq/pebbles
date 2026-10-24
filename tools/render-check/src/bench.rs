@@ -196,6 +196,7 @@ pub fn run(a: &BenchArgs) -> u8 {
     let selected: Vec<_> =
         BENCH_CASES.iter().filter(|(n, ..)| a.cases.is_empty() || a.cases.iter().any(|c| c == n)).collect();
     let mut all = Vec::new();
+    let adapter;
     {
         let mut r = match OffscreenRenderer::new() {
             Ok(r) => r,
@@ -204,6 +205,12 @@ pub fn run(a: &BenchArgs) -> u8 {
                 return 2;
             }
         };
+        let ai = r.adapter_info();
+        adapter = format!(
+            "{} · {:?} · driver {} {} · {:?}",
+            ai.name, ai.backend, ai.driver, ai.driver_info, ai.device_type
+        );
+        println!("render-check bench: adapter {adapter}");
         for (name, size, f) in &selected {
             let mut scene = Scene::new();
             f(&mut Painter::new(&mut scene));
@@ -220,7 +227,10 @@ pub fn run(a: &BenchArgs) -> u8 {
         eprintln!("render-check bench: {}: {e}", a.out.display());
         return 2;
     }
-    let files = vec![("summary.md".to_owned(), summary(&all)), ("wgpu.tsv".to_owned(), tsv(&all, "wgpu"))];
+    let files = vec![
+        ("summary.md".to_owned(), format!("{}\nadapter: {adapter}\n", summary(&all))),
+        ("wgpu.tsv".to_owned(), tsv(&all, "wgpu")),
+    ];
     for (f, body) in files {
         if let Err(e) = std::fs::write(a.out.join(&f), body) {
             eprintln!("render-check bench: {f}: {e}");

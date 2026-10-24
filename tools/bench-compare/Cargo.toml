@@ -1,0 +1,12 @@
+[package]
+name = "bench-compare"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "M32: the Pebbles side of the matched-scene comparison with Flutter and iced. Informative only."
+
+[dependencies]
+pebbles = { workspace = true }
+
+[lints]
+workspace = true
