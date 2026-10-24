@@ -1,8 +1,7 @@
 //! # Pebbles
 //!
-//! A GUI framework for Rust, built from handpicked ideas — a widget model in the
-//! spirit of Flutter, reactivity in the spirit of SolidJS, styling in the spirit of
-//! Tailwind, and pure-Rust GPU rendering on [wgpu](https://wgpu.rs).
+//! A GUI framework for Rust: a Flutter-inspired widget model with SolidJS-style
+//! fine-grained reactivity.
 //!
 //! Pebbles pairs **Flutter's widget model** for building UI with **Solid's signals**
 //! for state. It keeps Flutter's three-tree architecture — **Widget → Element →
@@ -101,7 +100,7 @@ pub mod prelude {
     pub use pebbles_widgets::{builtins, families, has, is_builtin};
 
     // theming + the general style system (RN/CSS-like, apply anywhere), incl. the
-    // design languages (Compact / Tailwind / Material) applied across the whole catalog
+    // design languages (Default / Material / Tailwind) applied across the whole catalog
     pub use pebbles_widgets::{
         Colors, DesignLanguage, ModifierExt, Style, StyleExt, Theme, design, set_design, set_text_direction,
         set_theme, style, styled, styles, text_direction, theme, theme_override, toggle_theme,
@@ -213,7 +212,7 @@ pub mod prelude {
         text_signal, transform, use_carousel_controller, use_scroll_controller, use_scroll_restoration, wrap,
     };
 
-    // the shadcn-style component catalog
+    // the component catalog
     pub use pebbles_widgets::components::*;
 
     // B3 native OS menu bar spec (attached via `App::menu`; needs the `native-menus`

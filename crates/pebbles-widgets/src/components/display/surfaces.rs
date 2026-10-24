@@ -127,7 +127,7 @@ impl IntoWidget for Card {
         };
 
         // Base presentation as a Style; the user's `.style(..)` merges on top (wins).
-        // Radius + border + lift all follow the design language (Compact = flat &
+        // Radius + border + lift all follow the design language (Default = flat &
         // square, Tailwind = subtle lift, Material = rounded & elevated).
         let th = theme();
         let mut base = style()
@@ -192,7 +192,7 @@ impl IntoWidget for Badge {
             BadgeVariant::Success => (Some(c.success), Color::WHITE, false),
             BadgeVariant::Outline => (None, c.foreground, true),
         };
-        // Pill in Tailwind/Material, rectangular (square) + tighter in Compact.
+        // Pill in Tailwind/Material, rectangular (square) + tighter in Default.
         let mut base = style().radius_all(th.pill()).padding(th.pad(10.0, 3.0));
         if let Some(bg) = bg {
             base = base.background(bg);

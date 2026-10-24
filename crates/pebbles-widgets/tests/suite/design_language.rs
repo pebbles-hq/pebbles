@@ -1,4 +1,4 @@
-//! Design languages (§2 blocker): `DesignLanguage::{Compact,Tailwind,Material}` is
+//! Design languages (§2 blocker): `DesignLanguage::{Default,Material,Tailwind}` is
 //! applied across the whole catalog via `set_design`, yet nothing tested that the
 //! switch actually reshapes the tokens. A token regression would silently restyle
 //! every catalog widget. One test per language pins the seeded radius / spacing /
@@ -23,17 +23,17 @@ fn draw_a_widget() {
 }
 
 #[test]
-fn compact_seeds_sharp_dense_tokens() {
-    set_design(DesignLanguage::Compact);
+fn default_seeds_sharp_dense_tokens() {
+    set_design(DesignLanguage::Default);
     let t = theme();
-    assert_eq!(t.design, DesignLanguage::Compact);
-    assert_eq!(t.radius, 0.0, "Compact is truly square");
+    assert_eq!(t.design, DesignLanguage::Default);
+    assert_eq!(t.radius, 0.0, "Default is truly square");
     assert_eq!(t.spacing, 6.0);
     assert_eq!(t.control_pad_x, 10.0);
     assert_eq!(t.control_pad_y, 4.0);
     assert_eq!(t.control_height, 28.0);
     assert_eq!(t.density, 0.82);
-    assert_eq!(t.pill(), t.radius, "Compact tags are square, not pills");
+    assert_eq!(t.pill(), t.radius, "Default tags are square, not pills");
     assert_eq!(t.pad_all(8.0), EdgeInsets::all(8.0 * 0.82), "padding scales by density");
     draw_a_widget();
     set_theme(Theme::light());

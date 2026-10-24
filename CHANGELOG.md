@@ -6,6 +6,13 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — design languages: `Compact` is now `Default`
+`DesignLanguage::Compact` is renamed `DesignLanguage::Default` (still the default) and the
+languages are ordered `Default`, `Material`, `Tailwind`. `Theme::compact()` is removed: use
+`Theme::default()` (`Theme` now implements `Default`) or `Theme::light()`. **Migration:** replace
+`DesignLanguage::Compact` with `DesignLanguage::Default` and `Theme::compact()` with
+`Theme::default()`.
+
 ### Changed — one renderer: wgpu
 Pebbles renders with its own wgpu renderer (`pebbles-gpu`) on every platform, with a WebGL2
 fallback on the web. The previous hybrid backend and the renderer-selection cargo features

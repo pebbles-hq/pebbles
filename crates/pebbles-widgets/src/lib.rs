@@ -1,6 +1,6 @@
 //! # pebbles-widgets
 //!
-//! The catalog layer — the Flutter-style widgets and shadcn-style components
+//! The catalog layer — the Flutter-inspired widgets and components
 //! developers actually compose. The runtime that builds and reconciles them lives
 //! in [`pebbles_core`] (re-exported through the `pebbles` umbrella's prelude).
 //!
@@ -15,7 +15,7 @@
 //! Five groups, each a directory:
 //!
 //! * [`widgets`] — the Flutter-style primitives (each backed by a render object)
-//! * [`components`] — the shadcn-style catalog, by role (input / display /
+//! * [`components`] — the component catalog, by role (input / display /
 //!   layout / navigation)
 //! * `design` — the look: theme tokens, the style system, modifiers, fonts,
 //!   text direction

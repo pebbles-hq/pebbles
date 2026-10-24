@@ -8,7 +8,7 @@
 //! * **layout enums** — [`Axis`], [`MainAxisAlignment`], [`CrossAxisAlignment`], … the
 //!   Flutter layout vocabulary.
 //! * **color** — the [`peniko::Color`] re-export.
-//! * **palette** — the full Tailwind/shadcn color scale (every family, shades 50–950).
+//! * **palette** — a full color scale (every family, shades 50–950).
 //!
 //! Everything here is `Copy`, allocation-free and cheap to pass by value.
 

@@ -155,7 +155,7 @@ fn render_tile(p: &TileProps) -> AnyWidget {
     if p.selected {
         bg = mix(bg, p.selected_color.unwrap_or(c.accent), 0.14);
     }
-    // Row padding follows the design language's density (Compact tight, Material
+    // Row padding follows the design language's density (Default tight, Material
     // roomy); it drives the row height, since the row sizes to content.
     let th = theme();
     let default_pad = if p.dense { th.pad(12.0, 6.0) } else { th.pad(12.0, 10.0) };

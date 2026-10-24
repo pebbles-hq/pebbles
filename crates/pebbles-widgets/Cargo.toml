@@ -10,7 +10,7 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme = "README.md"
-description = "The Pebbles catalog: Flutter-style widgets, shadcn-style components, theme and styling."
+description = "The Pebbles catalog: Flutter-inspired widgets and components, theme and styling."
 
 [features]
 # `ImageView` + `image_from_bytes`/`image_from_path` (pulls in the image codecs and,

@@ -281,7 +281,7 @@ impl Button {
         }
         // Interior padding follows the design language's control density; the size
         // just scales it (Md = the base). For the Tailwind base these reproduce the
-        // original 12/6 · 16/9 · 22/12 padding; Compact tightens, Material widens.
+        // original 12/6 · 16/9 · 22/12 padding; Default tightens, Material widens.
         let th = theme();
         let (sx, sy) = match self.size {
             ButtonSize::Sm => (0.75, 0.72),
@@ -406,7 +406,7 @@ fn render_button(b: &Button) -> Element {
         && matches!(b.variant, ButtonVariant::Primary | ButtonVariant::Secondary | ButtonVariant::Destructive)
         && let Some(sh) = th.elevation_shadow(th.elevation)
     {
-        // Filled buttons lift only under Material; Compact/Tailwind keep buttons
+        // Filled buttons lift only under Material; Default/Tailwind keep buttons
         // flat (surfaces like cards still use the elevation token more broadly).
         decoration = decoration.shadow(sh);
     }

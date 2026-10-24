@@ -288,7 +288,7 @@ impl Table {
         self
     }
     /// The cells' padding (default `(12, 10)` — horizontal 12, vertical 10 —
-    /// scaled by the design language's density; tighter on Compact, roomier on
+    /// scaled by the design language's density; tighter on Default, roomier on
     /// Material). An explicit value here is used verbatim.
     pub fn cell_padding(mut self, insets: EdgeInsets) -> Self {
         self.cell_padding = Some(insets);
@@ -482,7 +482,7 @@ fn data_slot(
 fn render_data_table(t: &Table) -> AnyWidget {
     let th = theme();
     let c = th.colors;
-    // Cell padding follows the design language's density (Compact tight, Material
+    // Cell padding follows the design language's density (Default tight, Material
     // roomy) — which also drives the row height, since rows size to content.
     let cell_padding = t.cell_padding.unwrap_or_else(|| th.pad(12.0, 10.0));
 

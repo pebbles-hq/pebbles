@@ -37,19 +37,12 @@ picked the approaches that already got it right across different ecosystems and
 reimplemented them natively as one **pure-Rust** stack. Pebbles is not a clone of any one
 of them — it's the curated set, made to work well together in idiomatic Rust.
 
-Each part is an idea we admired, brought to Rust:
+Two ideas at its core:
 
-- **Interface** — a declarative, composable widget model *in the spirit of* **Flutter**:
+- **Interface** — a declarative, composable widget model inspired by **Flutter**:
   `Row`/`Column`/`Container`/`Text`, the box layout protocol, and plain function components.
-- **State** — fine-grained reactivity *in the spirit of* **SolidJS**: signals, memos, and
+- **State** — fine-grained reactivity inspired by **SolidJS**: signals, memos, and
   effects, in place of `setState`-style ceremony.
-- **Styling** — utility- and token-driven styling *in the spirit of* **Tailwind**, with a
-  themed default design and live light/dark.
-- **Rendering** — Pebbles' own GPU 2D renderer on **[wgpu](https://wgpu.rs)** (WebGPU, with
-  a WebGL2 fallback on the web), text shaped by cosmic-text, and the pure-Rust kurbo · peniko
-  vocabulary — no platform toolkit underneath (see [Renderer](#renderer)).
-
-We expect to keep picking — more good ideas, added over time.
 
 > Status: early but broad. Catalog, reactivity, layout, text editing (incl. **IME/CJK**),
 > scrolling, theming (**live light/dark**), **multi-window + IPC**, **async data**, and an
@@ -246,13 +239,13 @@ Layered so the GPU stack is quarantined and the core compiles in seconds:
 
 | Crate | Responsibility |
 |-------|----------------|
-| [`pebbles-foundation`](crates/pebbles-foundation) | geometry (kurbo), layout enums, color + the full Tailwind/shadcn palette |
+| [`pebbles-foundation`](crates/pebbles-foundation) | geometry (kurbo), layout enums, color + a full color palette |
 | [`pebbles-icons`](crates/pebbles-icons) | the icon data model + the bundled Tabler set (~5100 outline + ~1050 filled); pluggable — any `IconData` drops in |
 | [`pebbles-render`](crates/pebbles-render) | `BoxConstraints`, render tree, layout/paint, text (cosmic-text), icons, accessibility nodes |
 | [`pebbles-gpu`](crates/pebbles-gpu) | the first-party GPU renderer on wgpu: display list → ordered draw plan (tessellation, clips, glyph/image placement) → pipelines and atlases; window surfaces and offscreen rendering |
 | [`pebbles-core`](crates/pebbles-core) | the runtime: `Widget`/`Element`, reconciler, reactivity, focus, keyboard, animation, async tasks, IPC, clipboard, router |
 | [`pebbles-macros`](crates/pebbles-macros) | proc-macros: the `#[component]` authoring form (re-exported from the prelude) |
-| [`pebbles-widgets`](crates/pebbles-widgets) | the catalog: primitives + shadcn-style components, theme, styling, overlays, dialogs, windows, routing |
+| [`pebbles-widgets`](crates/pebbles-widgets) | the catalog: primitives + components, theme, styling, overlays, dialogs, windows, routing |
 | [`pebbles-shell`](crates/pebbles-shell) | winit window + wgpu surface + the `pebbles-gpu` renderer host + event loop + AccessKit bridge + offscreen capture |
 | [`pebbles-testing`](crates/pebbles-testing) | the headless test harness: mount, frame/draw, input, queries |
 | [`pebbles`](crates/pebbles) | umbrella crate + `prelude` + the [`hooks`](crates/pebbles/src/hooks.rs) index |
@@ -264,7 +257,7 @@ keeping layout/paint logic unit-testable headlessly. `pebbles-gpu` renders that 
 
 ## What's in the box
 
-Everything below is built and shown live in the [gallery](https://github.com/pebbles-hq/pebbles-docs), styled to **shadcn**.
+Everything below is built and shown live in the [gallery](https://github.com/pebbles-hq/pebbles-docs).
 
 - **Layout & primitives** — `Text`, `Container`, `Row`/`Column` (Flutter's
   `.main_axis_alignment()/.cross_axis_alignment()/.main_axis_size()/.spacing()`),
@@ -318,10 +311,10 @@ Everything below is built and shown live in the [gallery](https://github.com/peb
   chart/report export, server-side rendering, and golden-image tests. Desktop only (it needs an offscreen GPU device).
 - **Accessibility** — an AccessKit bridge (AT-SPI / UIA / VoiceOver): interactive widgets
   publish role/label/value/toggled/disabled + bounds, and keyboard focus is announced.
-- **Theming & styling** — a **reactive** global `Theme` (shadcn light/dark; `toggle_theme()`
-  flips the whole tree live), switchable **design languages** (`DesignLanguage::{Compact,
-  Tailwind, Material}` via `design()`/`set_design()` — density, radius, and elevation re-skin
-  every component live), the complete Tailwind/shadcn palette, and a CSS-like `Style` system
+- **Theming & styling** — a **reactive** global `Theme` (light/dark; `toggle_theme()`
+  flips the whole tree live), switchable **design languages** (`DesignLanguage::{Default,
+  Material, Tailwind}` via `design()`/`set_design()` — density, radius, and elevation re-skin
+  every component live), a full color palette, and a CSS-like `Style` system
   applicable to any widget.
 - **Animation** — a spring + tween driver (`animated`/`animate_to`), a looping ticker
   (`create_loop`) and a one-shot `create_timeout`, behind hover fades, sliding switches,
@@ -329,8 +322,7 @@ Everything below is built and shown live in the [gallery](https://github.com/peb
 
 ## Styling
 
-One universal **`Style`** — React-Native's `StyleSheet`, not Flutter's per-widget style
-objects. A `Style` is a bag of optional properties that applies where it makes sense and
+One universal **`Style`** instead of per-widget style objects. A `Style` is a bag of optional properties that applies where it makes sense and
 no-ops where it doesn't (text props on a box do nothing); define styles as functions and
 layer them like CSS classes:
 
@@ -391,7 +383,7 @@ just ran on — so a test cannot assert against unsettled geometry.
 |------|-------|
 | Reactivity (signals/memos/effects/stores, memo dedup) | ✅ |
 | Layout + box protocol, flex, stack, scroll (spring + virtualized) | ✅ |
-| Widget catalog (shadcn-style; most of the useful subset) | ✅ broad |
+| Widget catalog (most of the useful subset) | ✅ broad |
 | Text editing + IME/CJK composition | ✅ |
 | Theming (reactive light/dark) + styling | ✅ |
 | Multi-window + cross-window IPC (`Channel`) | ✅ |

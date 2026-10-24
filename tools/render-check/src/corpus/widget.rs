@@ -19,8 +19,8 @@ const H: u32 = 320;
 
 pub fn cases() -> Vec<Case> {
     vec![
-        harness("widget/button_variants_compact", Screen, Screens, W, H, |h| {
-            buttons(h, DesignLanguage::Compact)
+        harness("widget/button_variants_default", Screen, Screens, W, H, |h| {
+            buttons(h, DesignLanguage::Default)
         }),
         harness("widget/button_variants_tailwind", Screen, Screens, W, H, |h| {
             buttons(h, DesignLanguage::Tailwind)

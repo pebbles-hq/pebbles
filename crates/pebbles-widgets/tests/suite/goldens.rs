@@ -3,7 +3,7 @@
 //! indented by depth — diffed against a committed golden. Catches "wrong widget
 //! painted / missing nodes / design language silently changed the geometry" without
 //! a GPU (structural + geometric, not pixels). The three `DesignLanguage` fixtures
-//! are the point: Compact (radius 0, dense padding) vs Tailwind vs Material produce
+//! are the point: Default (radius 0, dense padding) vs Tailwind vs Material produce
 //! visibly different geometry, so a token regression flips a golden.
 //!
 //! Regenerate after an intended layout change: `PEBBLES_UPDATE_GOLDENS=1 cargo test
@@ -120,13 +120,13 @@ fn golden_dialog_over_overlay() {
 }
 
 // The design-language fixtures: the SAME button under each language must produce a
-// DIFFERENT golden (Compact is square + dense, Material is rounded + roomier), which
+// DIFFERENT golden (Default is square + dense, Material is rounded + roomier), which
 // is what makes a token regression cheap to catch.
 
 #[test]
 fn golden_design_compact() {
     set_theme(Theme::light());
-    set_design(DesignLanguage::Compact);
+    set_design(DesignLanguage::Default);
     check_golden("design_compact", &render_fingerprint(Size::new(200.0, 80.0), a_button));
 }
 
