@@ -100,6 +100,17 @@ impl BindGroupLayouts {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // DR-21: the sampler's `SamplerKey::mode` (16 B); the shaders filter in code.
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(16),
+                    },
+                    count: None,
+                },
             ],
         });
         let array = |binding| wgpu::BindGroupLayoutEntry {
@@ -361,12 +372,40 @@ impl SamplerKey {
         };
         Self { filter, mipmap, address_u: address(s.x_extend), address_v: address(s.y_extend) }
     }
+
+    /// The bits `sample_portable` (prelude.wgsl) filters by: bit 0 linear, bit 1 linear
+    /// between levels, bits 2–3 / 4–5 the u / v address mode (0 clamp, 1 repeat, 2 mirror).
+    pub(crate) fn mode(self) -> u32 {
+        let address = |a: wgpu::AddressMode| match a {
+            wgpu::AddressMode::Repeat => 1,
+            wgpu::AddressMode::MirrorRepeat => 2,
+            _ => 0,
+        };
+        u32::from(self.filter == wgpu::FilterMode::Linear)
+            | u32::from(self.mipmap == wgpu::MipmapFilterMode::Linear) << 1
+            | address(self.address_u) << 2
+            | address(self.address_v) << 4
+    }
+}
+
+/// A 16-byte uniform holding `mode` (binding 2 of the texture layout).
+pub(crate) fn mode_buffer(device: &wgpu::Device, mode: u32) -> wgpu::Buffer {
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("pebbles.gpu.buffer.sampler_mode"),
+        size: 16,
+        usage: wgpu::BufferUsages::UNIFORM,
+        mapped_at_creation: true,
+    });
+    buffer.slice(..).get_mapped_range_mut().copy_from_slice(bytemuck::bytes_of(&[mode, 0, 0, 0]));
+    buffer.unmap();
+    buffer
 }
 
 /// Samplers by key, created once per Renderer (10 §3.5).
 #[derive(Default)]
 pub(crate) struct SamplerCache {
     samplers: std::collections::HashMap<SamplerKey, wgpu::Sampler>,
+    modes: std::collections::HashMap<SamplerKey, wgpu::Buffer>,
 }
 
 impl SamplerCache {
@@ -374,6 +413,21 @@ impl SamplerCache {
     #[cfg(debug_assertions)]
     pub(crate) fn len(&self) -> usize {
         self.samplers.len()
+    }
+
+    /// The sampler of `key` and its `SamplerKey::mode` uniform, created on first use.
+    pub(crate) fn get_with_mode(
+        &mut self,
+        device: &wgpu::Device,
+        key: SamplerKey,
+        stats: &mut crate::stats::FrameStats,
+    ) -> (&wgpu::Sampler, &wgpu::Buffer) {
+        self.get_or_create(device, key, stats);
+        if let std::collections::hash_map::Entry::Vacant(e) = self.modes.entry(key) {
+            stats.buffers_created += 1;
+            e.insert(mode_buffer(device, key.mode()));
+        }
+        (&self.samplers[&key], &self.modes[&key])
     }
 
     /// The sampler for `key`, created on first use (`stats.samplers_created`).

@@ -6,6 +6,7 @@
 // integer pixels stays texel-exact (every center has d ≥ ½ → coverage 1).
 @group(1) @binding(0) var image: texture_2d<f32>;
 @group(1) @binding(1) var image_sampler: sampler;
+@group(1) @binding(2) var<uniform> image_mode: vec4<u32>;
 
 struct QuadIn {
     @location(0) xform: vec4<f32>,
@@ -29,6 +30,8 @@ struct QuadOut {
     // Sprites (kind 3, R64): the premultiplied tint and the UV rect inset by half a texel.
     @location(5) @interpolate(flat) tint: vec4<f32>,
     @location(6) @interpolate(flat) uv_clamp: vec4<f32>,
+    // The image's last mip level (`color.y` of a non-sprite quad; 0 = one level).
+    @location(7) @interpolate(flat) top_level: f32,
 }
 
 // Area of the unit pixel square on the inner side of a line at signed distance `d` (px) from
@@ -75,6 +78,7 @@ fn vs(i: QuadIn, @builtin(vertex_index) vi: u32) -> QuadOut {
     let sprite = i.layer_kind.y == 3u;
     o.span = vec4<f32>(hx, hy, select(i.color.a, 1.0, sprite), select(i.color.x, 0.0, sprite));
     o.tint = select(vec4<f32>(1.0), i.color, sprite);
+    o.top_level = select(i.color.y, 0.0, sprite);
     o.uv_clamp = select(vec4<f32>(-1e9, -1e9, 1e9, 1e9), vec4<f32>(min(i.uv.xy, i.uv.zw), max(i.uv.xy, i.uv.zw)), sprite);
     // u edges run along y (normal ⟂ y); v edges along x.
     o.normals = vec4<f32>(sorted_abs(vec2<f32>(-y.y, y.x)), sorted_abs(vec2<f32>(-x.y, x.x)));
@@ -89,7 +93,7 @@ fn fs(i: QuadOut) -> @location(0) vec4<f32> {
     let half = vec2<f32>(0.5) / vec2<f32>(textureDimensions(image));
     let lo = i.uv_clamp.xy + half;
     let uv = clamp(i.uv, lo, max(lo, i.uv_clamp.zw - half));
-    let t = textureSampleLevel(image, image_sampler, uv, i.span.w) * i.tint;
+    let t = sample_portable(image, uv, i.span.w, i.top_level, image_mode.x) * i.tint;
     let du = vec2<f32>(i.q.x, 1.0 - i.q.x) * i.span.x;
     let dv = vec2<f32>(i.q.y, 1.0 - i.q.y) * i.span.y;
     let nu = i.normals.xy;

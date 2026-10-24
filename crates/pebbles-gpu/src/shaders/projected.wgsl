@@ -42,7 +42,8 @@ fn edge_distance(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>, inside: vec2<f32>) ->
 @fragment
 fn fs_main(in: ProjOut) -> @location(0) vec4<f32> {
     let p = device_pos(in.pos);
-    let c = textureSampleLevel(layer_tex, layer_sampler, in.uv, 0.0);
+    // Bilinear, clamp-to-edge (the Medium sampler bound at binding 1), filtered in code (DR-21).
+    let c = sample_portable(layer_tex, in.uv, 0.0, 0.0, 1u);
     var cov = 1.0;
     if (pp.aa.x > 0.5) {
         let c0 = pp.corners[0].xy;
@@ -56,5 +57,5 @@ fn fs_main(in: ProjOut) -> @location(0) vec4<f32> {
         cov = clamp(0.5 + d, 0.0, 1.0);
     }
     // The layer's texels already passed through finish_color when they were drawn.
-    return c * (cov * clip_coverage(p) * clip_mask_coverage(p));
+    return store_target(c * (cov * clip_coverage(p) * clip_mask_coverage(p)));
 }

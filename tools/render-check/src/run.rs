@@ -30,6 +30,9 @@ pub struct RunOptions {
     pub glyph_hint: Option<bool>,
     /// `<out>/<tag>/cases`; `None` = write no artifacts.
     pub cases_dir: Option<PathBuf>,
+    /// The candidate adapter is not the one the self-goldens were recorded on (llvmpipe):
+    /// a self-golden comparison is then a cross-backend one (DR-21 `CrossBackend` limits).
+    pub cross_backend: bool,
 }
 
 impl Default for RunOptions {
@@ -44,6 +47,7 @@ impl Default for RunOptions {
             tier_a: true,
             glyph_hint: None,
             cases_dir: None,
+            cross_backend: false,
         }
     }
 }
@@ -276,7 +280,8 @@ impl Runner {
             }
             return None;
         };
-        let lim = if dir_mode { limits(Category::CrossBackend, self.opts.tolerance) } else { r.limits };
+        let cross = dir_mode || (case.reference == Reference::SelfGolden && self.opts.cross_backend);
+        let lim = if cross { limits(Category::CrossBackend, self.opts.tolerance) } else { r.limits };
         r.limits = lim;
         match lim.map(|l| (compare(&reference_img, cand, l.over_threshold), l)) {
             Some((Ok(m), l)) => {

@@ -1,6 +1,7 @@
 // Layer effects (09 §10.2–§10.6, L61/L63/L64): one full-target triangle per step; every step
 // reads its source with textureLoad (texel-exact, no sampler) and writes an Rgba8Unorm pool
-// texture, so each pass quantizes like the CPU kernel (raster/blur.rs) and the golden model.
+// texture, so each pass quantizes like the CPU kernel (raster/blur.rs) and the golden model —
+// rounded half up in the shader (`store_unorm8`), not by the backend's float→unorm8 store.
 // Only the content rect `src.xy` / `dst.xy` is meaningful; outside it reads as transparent
 // (Decal) or the nearest content texel (Clamp).
 struct EffectParams {
@@ -46,7 +47,7 @@ fn axis() -> vec2<i32> {
 fn fs_down(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     let p = vec2<i32>(floor(frag.xy)) * 2;
     let s = src_clamped(p) + src_clamped(p + vec2<i32>(1, 0)) + src_clamped(p + vec2<i32>(0, 1)) + src_clamped(p + vec2<i32>(1, 1));
-    return s * 0.25;
+    return store_unorm8(s * 0.25);
 }
 
 @fragment
@@ -58,7 +59,7 @@ fn fs_blur(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     for (var i = 1; i <= r; i = i + 1) {
         acc = acc + (src_at(p + d * i) + src_at(p - d * i)) * weight(u32(i));
     }
-    return acc;
+    return store_unorm8(acc);
 }
 
 @fragment
@@ -69,7 +70,7 @@ fn fs_up(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
     let i = vec2<i32>(f0);
     let top = mix(src_clamped(i), src_clamped(i + vec2<i32>(1, 0)), fr.x);
     let bot = mix(src_clamped(i + vec2<i32>(0, 1)), src_clamped(i + vec2<i32>(1, 1)), fr.x);
-    return mix(top, bot, fr.y);
+    return store_unorm8(mix(top, bot, fr.y));
 }
 
 // 09 §10.5: unpremultiply, M · (r, g, b, a, 1), clamp, premultiply.
@@ -87,7 +88,7 @@ fn fs_matrix(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
         let b = row * 5u;
         v[row] = clamp(m[b] * x.r + m[b + 1u] * x.g + m[b + 2u] * x.b + m[b + 3u] * x.a + m[b + 4u], 0.0, 1.0);
     }
-    return vec4<f32>(v.rgb * v.a, v.a);
+    return store_unorm8(vec4<f32>(v.rgb * v.a, v.a));
 }
 
 // 09 §10.6: per-channel max / min over the axis window (Decal: outside counts as transparent).
