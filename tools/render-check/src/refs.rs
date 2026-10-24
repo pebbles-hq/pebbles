@@ -55,8 +55,8 @@ mod tests {
         for path in walk(Path::new(REFS)) {
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
             assert!(
-                name == "README.txt" || name.ends_with(".png"),
-                "refs/ holds only PNGs and README.txt: {}",
+                matches!(name, "README.txt" | "REVIEW.md") || name.ends_with(".png"),
+                "refs/ holds only PNGs, README.txt and REVIEW.md: {}",
                 path.display()
             );
             if name.ends_with(".png") {

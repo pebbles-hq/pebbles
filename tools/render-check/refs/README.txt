@@ -8,9 +8,12 @@ wgpu/linux-lavapipe/
   mesa:      mesa-vulkan-drivers 25.2.8-0ubuntu0.24.04.2
   cases:     302
   bytes:     2604199
+  ci-check:  regenerated on the canonical CI runner (render-check job, workflow_dispatch write_refs=true),
+             https://github.com/pebbles-hq/pebbles/actions/runs/40100538800 (d8a860e), Mesa
+             25.2.8-0ubuntu0.24.04.4: all 302 PNGs byte-identical to these
   command:   cargo run -p render-check --release -- --out target/render-check --write-refs <dir> --determinism
 
 Every case passed the golden model, or (widget/screen/stress self-golden cases) had green probes
-and was deterministic. Review each image in target/render-check/<platform>/report.md before
+and was deterministic. Review each image (REVIEW.md lists them all by case name) and target/render-check/<platform>/report.md before
 relying on it. Regenerate only via a dedicated PR (05 §9.4) — never together with renderer
 changes, never on a hardware GPU.
