@@ -36,6 +36,15 @@ struct ShapeOut {
 }
 
 @fragment fn fs_shape(in: ShapeOut) -> @location(0) vec4<f32> {
+    // M33: a border's hollow interior. ≥ 1.5 px inside the inner shape (inset by its corner
+    // arcs' inscribed square, r·(1 − 1/√2) ≤ 0.3·r, plus 2 px) both coverages are exactly 1
+    // (every 8×8 arc subsample too), so the ring coverage is 0 and the blend keeps the
+    // destination: skip the fragment instead of computing that.
+    let ir = max(max(in.inner_radii.x, in.inner_radii.y), max(in.inner_radii.z, in.inner_radii.w));
+    let hollow = in.inner + vec4<f32>(1.0, 1.0, -1.0, -1.0) * (0.3 * ir + 2.0);
+    if (in.p.x > hollow.x && in.p.x < hollow.z && in.p.y > hollow.y && in.p.y < hollow.w) {
+        discard;
+    }
     var coverage = rrect_coverage(in.p, in.outer, in.outer_radii);
     if (in.inner.z > in.inner.x && in.inner.w > in.inner.y) {
         // A border is the ring between nested shapes: outer minus inner area.

@@ -20,8 +20,8 @@ const _: () = assert!(core::mem::offset_of!(Globals, color_flags) == 24);
 /// Bit 0 of `Globals::color_flags`: decode sRGB output for the GL sRGB-only fallback (DR-05).
 pub(crate) const COLOR_FLAG_DECODE_SRGB_OUTPUT: u32 = 1;
 
-/// The frame's Globals slots, staged for ONE upload (10 §2.6): slot `i` lives at `i × stride`;
-/// the gaps stay zero. The `Vec` is reused across frames (cleared, capacity kept).
+/// The frame's Globals slots (or any other per-slot uniform records, M33), staged for ONE
+/// upload (10 §2.6): slot `i` lives at `i × stride`; the gaps stay zero. The `Vec` is reused across frames (cleared, capacity kept).
 #[derive(Debug, Default)]
 pub(crate) struct UniformSlots {
     staging: Vec<u8>,
@@ -38,16 +38,16 @@ impl UniformSlots {
     }
 
     /// Append the next slot; returns its index.
-    pub(crate) fn push(&mut self, g: &Globals) -> u32 {
+    pub(crate) fn push<T: bytemuck::Pod>(&mut self, g: &T) -> u32 {
         let slot = self.count;
         self.set(slot, g);
         slot
     }
 
     /// Write slot `slot` (zero-filling any gap before it).
-    pub(crate) fn set(&mut self, slot: u32, g: &Globals) {
+    pub(crate) fn set<T: bytemuck::Pod>(&mut self, slot: u32, g: &T) {
         let Ok(at) = usize::try_from(u64::from(slot) * self.stride) else { return };
-        let end = at + size_of::<Globals>();
+        let end = at + size_of::<T>();
         if self.staging.len() < end {
             self.staging.resize(end, 0);
         }
@@ -55,9 +55,23 @@ impl UniformSlots {
         self.count = self.count.max(slot + 1);
     }
 
-    /// The staged bytes (`(count − 1) × stride + 32` long).
+    /// The staged bytes (`(count − 1) × stride + size_of` the last slot long).
+    #[cfg(test)]
     pub(crate) fn bytes(&self) -> &[u8] {
         &self.staging
+    }
+
+    /// M33: stage the slots for `buffer` (`label`, recreated → new `generation`) at offset 0 as
+    /// ONE region of the frame's upload, skipped when the buffer already holds them.
+    pub(crate) fn write(
+        &self,
+        uploads: &mut super::uploads::FrameUploads,
+        label: &'static str,
+        generation: u64,
+        queue: &wgpu::Queue,
+        buffer: &wgpu::Buffer,
+    ) {
+        uploads.write_whole(label, generation, queue, buffer, &self.staging);
     }
 }
 

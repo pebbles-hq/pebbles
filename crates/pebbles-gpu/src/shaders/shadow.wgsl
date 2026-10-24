@@ -28,6 +28,8 @@ struct ShadowOut {
     // (half width, half height, corner radius, σ).
     @location(1) @interpolate(flat) shape: vec4<f32>,
     @location(2) @interpolate(flat) color: vec4<f32>,
+    // M33: the occluded hole (centered local x0, y0, x1, y1; empty = none).
+    @location(3) @interpolate(flat) hole: vec4<f32>,
 };
 
 @vertex
@@ -42,6 +44,7 @@ fn vs(in: ShadowIn) -> ShadowOut {
     out.centered = local - 0.5 * size;
     out.shape = in.params0;
     out.color = in.color;
+    out.hole = in.params1;
     return out;
 }
 
@@ -88,6 +91,11 @@ fn corner_band(x: f32, y: f32, lo_in: f32, hi_in: f32, shape: vec4<f32>, straigh
 fn fs(in: ShadowOut) -> @location(0) vec4<f32> {
     let shape = in.shape;
     let p = in.centered;
+    // M33: covered by the opaque fill drawn next (prepare/plan.rs `occlude_shadows`).
+    let h = in.hole;
+    if (p.x > h.x && p.x < h.z && p.y > h.y && p.y < h.w) {
+        discard;
+    }
     let s = 0.70710678 / max(shape.w, 1e-6);
     // The straight band |y'| ≤ hh − r: separable, exact.
     let straight = shape.y - shape.z;

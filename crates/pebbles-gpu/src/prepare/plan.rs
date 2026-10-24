@@ -626,6 +626,7 @@ impl FramePlan {
             }
             return false;
         }
+        self.occlude_shadows(&cmd);
         if self.arena_caps.bytes != u64::MAX
             && let DrawCmd::Solid { indices, .. } | DrawCmd::Brush { cover: BrushCover::Mesh(indices), .. } =
                 &cmd
@@ -635,6 +636,66 @@ impl FramePlan {
         }
         self.cmds.push(cmd);
         true
+    }
+
+    /// M33: shadows drawn right before an opaque Tier A fill skip the fill's interior.
+    ///
+    /// When `cmd` (about to start a new command) is a solid-color fill whose color is opaque,
+    /// and the previous command draws shadows under the same clip with no SDF or mask clip, every
+    /// pixel strictly inside the fill (≥ 1.5 px from its edge and arcs) gets coverage exactly 1
+    /// from `rrect_coverage`, so the fill stores its own color there whatever lies below (`src +
+    /// dst·0`). Those shadow fragments are dead: each shadow instance gets the fill's interior as
+    /// its `params1` hole and discards fragments inside it. Pixels outside the hole run the
+    /// unchanged shadow math, so the frame is byte-identical — only the shaded area shrinks.
+    fn occlude_shadows(&mut self, cmd: &DrawCmd) {
+        let DrawCmd::Shapes { instances, clip } = cmd else { return };
+        let Some(DrawCmd::Shadows { instances: shadows, clip: shadow_clip }) = self.cmds.last() else {
+            return;
+        };
+        if shadow_clip != clip || clip.sdf != SdfClipId::NONE || clip.mask != MaskClipId::NONE {
+            return;
+        }
+        let Some(fill) = self.shapes.get(instances.start as usize) else { return };
+        // A fill (no inner ring) of an exactly opaque color, finite and non-empty.
+        let [x0, y0, x1, y1] = fill.outer;
+        if fill.inner != [0.0; 4]
+            || fill.color[3] != 1.0
+            || !fill.outer.iter().chain(&fill.outer_radii).all(|v| v.is_finite())
+        {
+            return;
+        }
+        // The inscribed square of a corner arc of radius r starts r·(1 − 1/√2) ≤ 0.3·r in; 2 px
+        // more keeps every pixel box 1.5 px inside (all 8×8 arc subsamples fully covered).
+        // Rounded up to 1/16 px so the sums below stay exact for grid-aligned geometry.
+        let r = fill.outer_radii.iter().fold(0.0f32, |m, v| m.max(*v));
+        let m = ((0.3 * r + 2.0) * 16.0).ceil() / 16.0;
+        if !(x1 - x0 > 2.0 * m && y1 - y0 > 2.0 * m) {
+            return;
+        }
+        let range = shadows.start as usize..shadows.end as usize;
+        for s in self.shadows.get_mut(range).into_iter().flatten() {
+            // Only an unrotated, unscaled shadow: its centered local position is device px minus
+            // a constant, so the hole test needs no transform.
+            if s.xform != [1.0, 0.0, 0.0, 1.0] || s.params1 != [0.0; 4] {
+                continue;
+            }
+            // Fill edges relative to the shadow rect first (0 when they coincide), then centered,
+            // then shrunk inward to the 1/16 grid: the hole does not depend on where the pair
+            // sits, so a retained fragment replayed elsewhere (M29) carries the same bytes.
+            let [ox, oy, w, h] = s.origin_size;
+            let (hw, hh) = (0.5 * w, 0.5 * h);
+            let lo = |v: f32| (v * 16.0).ceil() / 16.0;
+            let hi = |v: f32| (v * 16.0).floor() / 16.0;
+            let hole = [
+                lo((x0 - ox) - hw + m),
+                lo((y0 - oy) - hh + m),
+                hi((x1 - ox) - hw - m),
+                hi((y1 - oy) - hh - m),
+            ];
+            if hole.iter().all(|v| v.is_finite()) && hole[2] > hole[0] && hole[3] > hole[1] {
+                s.params1 = hole;
+            }
+        }
     }
 
     /// M07: a merged command must stay under the arena caps (merging never crosses a segment).

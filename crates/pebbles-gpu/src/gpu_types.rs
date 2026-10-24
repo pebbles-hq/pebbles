@@ -48,7 +48,8 @@ pub(crate) struct ShadowInstance {
     pub origin_size: [f32; 4],
     /// half width, half height, corner radius (clamped), Gaussian σ — local units (02 §8.2).
     pub params0: [f32; 4],
-    /// Reserved (zero).
+    /// M33: the occluded hole x0, y0, x1, y1 in centered local units — fragments strictly inside
+    /// are discarded (an opaque fill drawn next covers them); all zero = none.
     pub params1: [f32; 4],
     /// Premultiplied (02 §3).
     pub color: [f32; 4],

@@ -58,7 +58,7 @@ pub(crate) fn prepare(
         renderer.image_brushes.buffer = params_buffer(device, renderer.image_brushes.slots);
         stats.buffers_created += 1;
     }
-    let stride = super::tier_c::slot_stride(device);
+    renderer.uniform_scratch.begin(super::tier_c::slot_stride(device));
     for i in 0..renderer.scratch.plan.image_brushes.len() {
         let d = &renderer.scratch.plan.image_brushes[i];
         let mut params: ImageBrushParams = d.params;
@@ -67,7 +67,7 @@ pub(crate) fn prepare(
         {
             params.m0[3] = d.sampler.mode() as f32;
         }
-        queue.write_buffer(&renderer.image_brushes.buffer, i as u64 * stride, bytemuck::bytes_of(&params));
+        renderer.uniform_scratch.set(u32::try_from(i).unwrap_or(u32::MAX), &params);
         let drawable = renderer.image_cache.ensure(device, queue, &d.image, false, stats);
         let group = match (drawable, renderer.image_cache.view(&d.key)) {
             (true, Some(view)) => {
@@ -101,6 +101,15 @@ pub(crate) fn prepare(
         };
         renderer.image_brushes.groups.push(group);
     }
+    // M33: one upload for every brush's params.
+    let slots = renderer.image_brushes.slots;
+    renderer.uniform_scratch.write(
+        &mut renderer.uploads,
+        "image_brushes",
+        slots,
+        queue,
+        &renderer.image_brushes.buffer,
+    );
     let mesh_samples = renderer.sample_count;
     for (variant, samples) in [(0u8, 1u32), (1, 1), (2, mesh_samples)] {
         let key = PipelineKey {

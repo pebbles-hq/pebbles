@@ -148,6 +148,10 @@ fn clip_coverage(p: vec2<f32>) -> f32 {
 // Coverage of the active mask clip at device px `p` (09 L08): the atlas texel under the pixel
 // (texel-exact, `textureLoad`); 0 outside the clip rect; 1 when no mask clip is active.
 fn clip_mask_coverage(p: vec2<f32>) -> f32 {
+    // M33: no mask clip (the common case) skips both texture loads; uniform branch.
+    if (mask_clip.atlas.w <= 0.5) {
+        return 1.0;
+    }
     let local = floor(p - mask_clip.rect.xy);
     let inside = all(local >= vec2<f32>(0.0)) && all(local < mask_clip.rect.zw);
     let size = vec2<i32>(textureDimensions(clip_atlas));

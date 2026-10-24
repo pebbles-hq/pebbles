@@ -107,15 +107,20 @@ fn gradient_paint(p: vec2<f32>) -> vec4<f32> {
 
 // 09 §5.8 (L37): ordered 8×8 dither, zero-mean ±0.5 LSB, keyed by the integer DEVICE pixel
 // (identical in layer targets and in the golden model); alpha is never dithered.
-var<private> BAYER8: array<u32, 64> = array<u32, 64>(
-     0u, 32u,  8u, 40u,  2u, 34u, 10u, 42u,   48u, 16u, 56u, 24u, 50u, 18u, 58u, 26u,
-    12u, 44u,  4u, 36u, 14u, 46u,  6u, 38u,   60u, 28u, 52u, 20u, 62u, 30u, 54u, 22u,
-     3u, 35u, 11u, 43u,  1u, 33u,  9u, 41u,   51u, 19u, 59u, 27u, 49u, 17u, 57u, 25u,
-    15u, 47u,  7u, 39u, 13u, 45u,  5u, 37u,   63u, 31u, 55u, 23u, 61u, 29u, 53u, 21u);
+// The standard 8×8 Bayer index matrix
+//      0 32  8 40  2 34 10 42 / 48 16 56 24 50 18 58 26 / 12 44  4 36 14 46  6 38 / 60 28 52 20 62 30 54 22
+//      3 35 11 43  1 33  9 41 / 51 19 59 27 49 17 57 25 / 15 47  7 39 13 45  5 37 / 63 31 55 23 61 29 53 21
+// (rows y = 0..7), computed by bit interleaving instead of a table: with v = x ^ y, the bits from
+// most to least significant are v0 y0 v1 y1 v2 y2 (M33: a `var<private>` table is copied into
+// every invocation's registers or scratch; the integer result is identical).
+fn bayer8(x: u32, y: u32) -> u32 {
+    let v = x ^ y;
+    return ((v & 1u) << 5u) | ((y & 1u) << 4u) | ((v & 2u) << 2u) | ((y & 2u) << 1u) | ((v & 4u) >> 1u) | ((y & 4u) >> 2u);
+}
 
 fn dither(c: vec4<f32>, p: vec2<f32>) -> vec4<f32> {
     let pix = vec2<u32>(max(floor(p), vec2<f32>(0.0)));
-    let b = f32(BAYER8[(pix.y % 8u) * 8u + (pix.x % 8u)]);
+    let b = f32(bayer8(pix.x % 8u, pix.y % 8u));
     let d = (b - 31.5) / (64.0 * 255.0);
     return vec4<f32>(clamp(c.rgb + vec3<f32>(d), vec3<f32>(0.0), vec3<f32>(c.a)), c.a);
 }

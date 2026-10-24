@@ -50,6 +50,13 @@ pub struct Renderer {
     /// This frame's Globals slots, uploaded once (10 §2.6, M08).
     pub(crate) globals_staging: super::execute::resources::globals::UniformSlots,
     globals_bg: wgpu::BindGroup,
+    /// M33: reused staging for the other per-slot uniform buffers (clips, mask clips, gradient
+    /// and brush params), each uploaded with one `write_buffer`.
+    pub(crate) uniform_scratch: super::execute::resources::globals::UniformSlots,
+    /// M33: the frame's buffer writes, uploaded once and copied into place before each submit.
+    pub(crate) uploads: super::execute::resources::uploads::FrameUploads,
+    /// M33: this frame's composite params (Tier C runs and layers), uploaded once before the passes.
+    pub(crate) composite_staging: super::execute::resources::globals::UniformSlots,
     /// SDF clip records (09 §2.4, L04): one `ClipParams` per slot; `clip_slots` slots.
     clip_buffer: wgpu::Buffer,
     clip_slots: u64,
@@ -175,9 +182,11 @@ impl Renderer {
         let r = |x: &std::ops::Range<u32>| x.start as usize..x.end as usize;
         let plan = &self.scratch.plan;
         let arenas = &mut self.arenas;
+        let uploads = &mut self.uploads;
         let mut ok = arenas.solid_vertices.upload(
             device,
             queue,
+            uploads,
             bytemuck::cast_slice(plan.solid_vertices.get(r(&a[VERTICES])).unwrap_or_default()),
             stats,
         );
@@ -190,22 +199,25 @@ impl Renderer {
             self.seg_indices.extend(indices.iter().map(|i| i.saturating_sub(vbase)));
             &self.seg_indices
         };
-        ok &= arenas.solid_indices.upload(device, queue, bytemuck::cast_slice(indices), stats);
+        ok &= arenas.solid_indices.upload(device, queue, uploads, bytemuck::cast_slice(indices), stats);
         ok &= arenas.shape_instances.upload(
             device,
             queue,
+            uploads,
             bytemuck::cast_slice(plan.shapes.get(r(&a[SHAPES])).unwrap_or_default()),
             stats,
         );
         ok &= arenas.shadow_instances.upload(
             device,
             queue,
+            uploads,
             bytemuck::cast_slice(plan.shadows.get(r(&a[SHADOWS])).unwrap_or_default()),
             stats,
         );
         ok &= arenas.glyphs.upload(
             device,
             queue,
+            uploads,
             bytemuck::cast_slice(self.glyph_instances.get(r(&a[GLYPHS])).unwrap_or_default()),
             stats,
         );
@@ -221,10 +233,11 @@ impl Renderer {
             self.seg_quads.extend_from_slice(self.image_instances.get(gpu).unwrap_or_default());
             &self.seg_quads
         };
-        ok &= arenas.images.upload(device, queue, bytemuck::cast_slice(images), stats);
+        ok &= arenas.images.upload(device, queue, uploads, bytemuck::cast_slice(images), stats);
         ok &= arenas.meshes.upload(
             device,
             queue,
+            uploads,
             bytemuck::cast_slice(plan.mesh_vertices.get(r(&a[MESHES])).unwrap_or_default()),
             stats,
         );
@@ -320,6 +333,11 @@ impl Renderer {
             globals_buffer,
             globals_staging: Default::default(),
             globals_bg,
+            uniform_scratch: Default::default(),
+            uploads: super::execute::resources::uploads::FrameUploads::new(
+                gpu.caps().info.backend != wgpu::Backend::Gl,
+            ),
+            composite_staging: Default::default(),
             clip_buffer,
             clip_slots: 1,
             mask_clip_buffer,
@@ -530,6 +548,7 @@ impl Renderer {
         };
         // 10 §2.6: every pass target's slot is staged, then uploaded once before the passes.
         self.globals_staging.begin(super::execute::tier_c::slot_stride(device));
+        self.composite_staging.begin(super::execute::tier_c::slot_stride(device));
         let root_slot = self.globals_staging.push(&globals);
         debug_assert_eq!(root_slot, 0);
         self.write_clips(device, queue, &mut stats);
@@ -583,7 +602,7 @@ impl Renderer {
         super::execute::image_brushes::prepare(self, device, queue, format, &mut stats);
         super::execute::shader_brushes::prepare(self, device, queue, format, &mut stats);
         let composites =
-            super::execute::tier_c::prepare_runs(self, device, queue, target.targets, format, &mut stats);
+            super::execute::tier_c::prepare_runs(self, device, target.targets, format, &mut stats);
         self.render_segment_offscreen(&mut encoder, 0, target.targets, &composites, format, &mut stats);
         let layers =
             super::execute::layers::acquire_layers(self, device, queue, target.targets, format, &mut stats);
@@ -602,9 +621,44 @@ impl Renderer {
                 None => stats.record(Unsupported::CustomUnregistered),
             }
         }
-        queue.write_buffer(&self.globals_buffer, 0, self.globals_staging.bytes());
+        self.globals_staging.write(
+            &mut self.uploads,
+            "globals",
+            self.globals_slots,
+            queue,
+            &self.globals_buffer,
+        );
+        self.composite_staging.write(
+            &mut self.uploads,
+            "composite",
+            self.composite_slots,
+            queue,
+            &self.composite_buffer,
+        );
         let mut segments = std::mem::take(&mut self.segments);
         super::prepare::passes::segment_passes(&self.scratch.plan, &mut segments);
+        // M33: each offscreen layer in one pass, before its parent (no resumed passes) — when
+        // no two layers share a pool slot and none needs MSAA, effects, a backdrop or a projection.
+        {
+            let plan = &self.scratch.plan;
+            let pool = &target.targets.pool;
+            let slots: Vec<usize> = layers.iter().flatten().map(|l| l.slot).collect();
+            let unique = slots.iter().enumerate().all(|(i, s)| !slots[..i].contains(s));
+            super::prepare::passes::hoist_layer_passes(&mut segments, |l| {
+                let (Some(Some(t)), Some(d)) = (layers.get(l as usize), plan.layers.get(l as usize)) else {
+                    return false;
+                };
+                unique
+                    && t.backdrop.is_none()
+                    && t.effect_passes.is_empty()
+                    && pool.textures(t.slot).msaa.is_none()
+                    && matches!(
+                        d.path,
+                        super::prepare::plan::CompositePath::Over
+                            | super::prepare::plan::CompositePath::Compose
+                    )
+            });
+        }
         // 09 §4.4: a backdrop composite into the root copies from it, so the root renders into a
         // copyable intermediate that is blitted to the frame target at the end. M30: a target
         // that tracks damage always does — that intermediate is its persistent frame.
@@ -654,7 +708,17 @@ impl Renderer {
             (None, None) => target.view,
         };
         // M30: nothing changed — the persistent root is presented as it is.
-        for seg in segments.iter().filter(|_| damage != Damage::Empty) {
+        // M33: a group is a segment plus the ones that continue its pass.
+        let mut groups = Vec::new();
+        for (i, s) in segments.iter().enumerate().filter(|_| damage != Damage::Empty) {
+            match groups.last_mut() {
+                Some((_, end)) if s.continues => *end = i + 1,
+                _ => groups.push((i, i + 1)),
+            }
+        }
+        for &(first, end) in &groups {
+            let (seg, group) = (&segments[first], &segments[first..end]);
+            let last = &segments[end - 1];
             let Some(seg_target) = super::execute::layers::segment_target(seg.target, size, &layers) else {
                 continue;
             };
@@ -666,7 +730,7 @@ impl Renderer {
                     // M26: a multisampled layer resolves only where the plan says so (its final
                     // pass, or before a backdrop capture of it).
                     let (v, r) = match &tex.msaa {
-                        Some((_, m)) => (m, seg.resolve.then_some(&tex.color.1)),
+                        Some((_, m)) => (m, last.resolve.then_some(&tex.color.1)),
                         None => (&tex.color.1, None),
                     };
                     (v, r, wgpu::Color::TRANSPARENT, "pebbles.gpu.pass.layer")
@@ -686,7 +750,7 @@ impl Renderer {
                     // color again — discard it (free on tilers). Every other pass stores.
                     ops: wgpu::Operations {
                         load,
-                        store: if resolve_target.is_some() && seg.is_final {
+                        store: if resolve_target.is_some() && last.is_final {
                             wgpu::StoreOp::Discard
                         } else {
                             wgpu::StoreOp::Store
@@ -698,7 +762,6 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            let range = seg.cmds.start as usize..seg.cmds.end as usize;
             // 09 L52: layer segments are grouped for frame debuggers.
             let layer_seg = matches!(seg.target, super::prepare::plan::TargetRef::Layer(_));
             if layer_seg {
@@ -709,20 +772,33 @@ impl Renderer {
                 // Layers render whole (their targets are cleared every frame).
                 super::prepare::plan::TargetRef::Layer(_) => None,
             };
-            encode(self, &mut pass, format, &mut stats, &composites, range, seg_target, &layers, seg_damage);
+            for g in group {
+                let range = g.cmds.start as usize..g.cmds.end as usize;
+                encode(
+                    self,
+                    &mut pass,
+                    format,
+                    &mut stats,
+                    &composites,
+                    range,
+                    seg_target,
+                    &layers,
+                    seg_damage,
+                );
+            }
             if layer_seg {
                 pass.pop_debug_group();
             }
             drop(pass);
             stats.render_passes += 1;
             if let super::prepare::plan::TargetRef::Layer(i) = seg.target
-                && seg.is_final
+                && last.is_final
                 && let Some(l) = layers.get(i as usize).and_then(Option::as_ref)
                 && !l.effect_passes.is_empty()
             {
                 self.run_effect(device, &mut encoder, l, target.targets, format, &mut stats);
             }
-            if let super::prepare::passes::AfterPass::Custom(i) = seg.after
+            if let super::prepare::passes::AfterPass::Custom(i) = last.after
                 && let Some(&super::prepare::plan::DrawCmd::Custom { op }) =
                     self.scratch.plan.cmds.get(i as usize)
                 && let Some(item) = self.scratch.plan.customs.get(op as usize)
@@ -794,18 +870,19 @@ impl Renderer {
                     encoder.pop_debug_group();
                 }
             }
-            if let super::prepare::passes::AfterPass::CopyBackdrop(l) = seg.after {
+            if let super::prepare::passes::AfterPass::CopyBackdrop(l) = last.after {
                 let root = root_color.as_ref().map(|r| &r.0);
                 self.copy_backdrop(&mut encoder, l, &layers, target.targets, root, &mut stats);
             }
-            if let super::prepare::passes::AfterPass::NextSegment(k) = seg.after {
+            if let super::prepare::passes::AfterPass::NextSegment(k) = last.after {
                 // M07: submit this segment, upload the next one's slices (the arenas are reused,
                 // so a submit must separate them), and render its offscreen jobs and runs.
                 encoder.pop_debug_group();
                 let next = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
                     label: Some("pebbles.gpu.encoder.segment"),
                 });
-                queue.submit([std::mem::replace(&mut encoder, next).finish()]);
+                let uploads = self.uploads.flush(device, queue, &mut stats);
+                queue.submit(uploads.into_iter().chain([std::mem::replace(&mut encoder, next).finish()]));
                 encoder.push_debug_group("pebbles.gpu.frame");
                 if !self.upload_segment(device, queue, k as usize, &mut stats) {
                     // 11 §2.6: the rest of the frame's draws are skipped.
@@ -852,7 +929,9 @@ impl Renderer {
         let command_buffer = encoder.finish();
         stats.encode_us = u32::try_from(encode_started.elapsed().as_micros()).unwrap_or(u32::MAX);
         let submit_started = web_time::Instant::now();
-        let submission = queue.submit([command_buffer]);
+        // M33: the frame's batched buffer writes land first (as `write_buffer` would).
+        let uploads = self.uploads.flush(device, queue, &mut stats);
+        let submission = queue.submit(uploads.into_iter().chain([command_buffer]));
         if !nested {
             self.throttle(device, submission);
         }
@@ -1056,11 +1135,11 @@ impl Renderer {
             // Group 0 is rebuilt by `write_mask_clips` (its key includes `clip_slots`).
             stats.buffers_created += 1;
         }
-        let stride = super::execute::tier_c::slot_stride(device);
-        for (i, c) in self.scratch.plan.sdf_clips.iter().enumerate() {
-            let p = super::gpu_types::ClipParams { rect: c.rect, radii: c.radii };
-            queue.write_buffer(&self.clip_buffer, i as u64 * stride, bytemuck::bytes_of(&p));
+        self.uniform_scratch.begin(super::execute::tier_c::slot_stride(device));
+        for c in &self.scratch.plan.sdf_clips {
+            self.uniform_scratch.push(&super::gpu_types::ClipParams { rect: c.rect, radii: c.radii });
         }
+        self.uniform_scratch.write(&mut self.uploads, "clips", self.clip_slots, queue, &self.clip_buffer);
     }
 
     /// 09 L08: resolve every mask-clip record into the coverage atlas (stages uploads; call
@@ -1101,7 +1180,7 @@ impl Renderer {
             self.mask_clip_slots = slots;
             stats.buffers_created += 1;
         }
-        let stride = super::execute::tier_c::slot_stride(device);
+        self.uniform_scratch.begin(super::execute::tier_c::slot_stride(device));
         for (i, rec) in self.scratch.plan.mask_clips.iter().enumerate() {
             let slot = self.mask_clip_slots_resolved.get(i).copied().flatten();
             #[allow(clippy::cast_precision_loss)] // device px and atlas texels ≪ 2^24
@@ -1128,8 +1207,15 @@ impl Renderer {
                 // No record (index 0) or an atlas overflow: coverage 1 (the scissor still clips).
                 None => super::gpu_types::MaskClipParams { rect: [0.0; 4], atlas: [0.0; 4] },
             };
-            queue.write_buffer(&self.mask_clip_buffer, i as u64 * stride, bytemuck::bytes_of(&p));
+            self.uniform_scratch.set(u32::try_from(i).unwrap_or(u32::MAX), &p);
         }
+        self.uniform_scratch.write(
+            &mut self.uploads,
+            "mask_clips",
+            self.mask_clip_slots,
+            queue,
+            &self.mask_clip_buffer,
+        );
         let (view, generation) = self.glyph_atlas.mask_view();
         let key = (self.globals_slots, self.clip_slots, self.mask_clip_slots, generation);
         if key != self.globals_bg_key {

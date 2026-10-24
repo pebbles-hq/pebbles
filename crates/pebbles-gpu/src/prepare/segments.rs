@@ -200,6 +200,12 @@ pub(crate) fn build(plan: &mut FramePlan, caps: ArenaCaps) -> u32 {
         }
         dropped += 1;
     }
+    // M33: a dropped fill no longer covers its shadows' holes.
+    if dropped > 0 {
+        for s in &mut plan.shadows {
+            s.params1 = [0.0; 4];
+        }
+    }
     let mut seg_start = 0;
     let mut cur = empty();
     let mut job = 0;

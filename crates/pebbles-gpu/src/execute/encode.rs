@@ -13,6 +13,9 @@ struct PassState {
     /// Address of the bound pipeline (identity only, never dereferenced).
     pipeline: Option<*const wgpu::RenderPipeline>,
     pipeline_switches: u32,
+    /// M33: addresses of the bound vertex (slot 0) and index buffers (identity only).
+    vertex: Option<*const wgpu::Buffer>,
+    index: Option<*const wgpu::Buffer>,
     /// Device px of the target's (0, 0).
     origin: (u32, u32),
     /// Target size (scissors clamp to it).
@@ -25,11 +28,31 @@ impl PassState {
     /// Bind `pipeline`, counting a switch when it differs from the bound one (10 §9.1).
     fn set_pipeline(&mut self, pass: &mut wgpu::RenderPass<'_>, pipeline: &wgpu::RenderPipeline) {
         let id: *const wgpu::RenderPipeline = pipeline;
+        // M33: rebinding the bound pipeline is skipped (the driver re-emits its state).
         if self.pipeline != Some(id) {
             self.pipeline = Some(id);
             self.pipeline_switches += 1;
+            pass.set_pipeline(pipeline);
         }
-        pass.set_pipeline(pipeline);
+    }
+
+    /// M33: bind `buffer` (whole) as vertex buffer 0 unless it already is; vertex and index
+    /// bindings persist across pipeline changes.
+    fn set_vertex_buffer(&mut self, pass: &mut wgpu::RenderPass<'_>, buffer: &wgpu::Buffer) {
+        let id: *const wgpu::Buffer = buffer;
+        if self.vertex != Some(id) {
+            self.vertex = Some(id);
+            pass.set_vertex_buffer(0, buffer.slice(..));
+        }
+    }
+
+    /// M33: bind `buffer` (whole, `u32`) as the index buffer unless it already is.
+    fn set_index_buffer(&mut self, pass: &mut wgpu::RenderPass<'_>, buffer: &wgpu::Buffer) {
+        let id: *const wgpu::Buffer = buffer;
+        if self.index != Some(id) {
+            self.index = Some(id);
+            pass.set_index_buffer(buffer.slice(..), wgpu::IndexFormat::Uint32);
+        }
     }
 
     fn new() -> Self {
@@ -38,6 +61,8 @@ impl PassState {
             scissor_changes: 0,
             pipeline: None,
             pipeline_switches: 0,
+            vertex: None,
+            index: None,
             origin: (0, 0),
             size: (u32::MAX, u32::MAX),
             damage: None,
@@ -307,8 +332,8 @@ pub(crate) fn encode(
                     continue;
                 };
                 state.set_pipeline(pass, pipeline);
-                pass.set_vertex_buffer(0, vb.slice(..));
-                pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                state.set_vertex_buffer(pass, vb);
+                state.set_index_buffer(pass, ib);
                 if !state.set_scissor(pass, clip.scissor) {
                     continue;
                 }
@@ -325,7 +350,7 @@ pub(crate) fn encode(
                     continue;
                 };
                 state.set_pipeline(pass, pipeline);
-                pass.set_vertex_buffer(0, vb.slice(..));
+                state.set_vertex_buffer(pass, vb);
                 if !state.set_scissor(pass, clip.scissor) {
                     continue;
                 }
@@ -341,7 +366,7 @@ pub(crate) fn encode(
                     continue;
                 };
                 state.set_pipeline(pass, pipeline);
-                pass.set_vertex_buffer(0, vb.slice(..));
+                state.set_vertex_buffer(pass, vb);
                 if !state.set_scissor(pass, clip.scissor) {
                     continue;
                 }
@@ -364,7 +389,7 @@ pub(crate) fn encode(
                 state.set_pipeline(pass, pipeline);
                 pass.set_bind_group(1, bg, &[]);
                 stats.bind_group_switches += 1;
-                pass.set_vertex_buffer(0, vb.slice(..));
+                state.set_vertex_buffer(pass, vb);
                 pass.draw(0..4, sb.rebase(GLYPHS, glyphs));
                 stats.draw_calls += 1;
             }
@@ -384,7 +409,7 @@ pub(crate) fn encode(
                 state.set_pipeline(pass, pipeline);
                 pass.set_bind_group(1, bg, &[]);
                 stats.bind_group_switches += 1;
-                pass.set_vertex_buffer(0, vb.slice(..));
+                state.set_vertex_buffer(pass, vb);
                 pass.draw(0..4, sb.rebase(IMAGES, images));
                 stats.draw_calls += 1;
             }
@@ -404,7 +429,7 @@ pub(crate) fn encode(
                 state.set_pipeline(pass, pipeline);
                 pass.set_bind_group(1, bg, &[]);
                 stats.bind_group_switches += 1;
-                pass.set_vertex_buffer(0, vb.slice(..));
+                state.set_vertex_buffer(pass, vb);
                 let i = sb.gpu_instance(*image);
                 pass.draw(0..4, i..i + 1);
                 stats.draw_calls += 1;
@@ -462,7 +487,7 @@ pub(crate) fn encode(
                 state.set_pipeline(pass, pipeline);
                 pass.set_bind_group(1, bg, &[offset]);
                 stats.bind_group_switches += 1;
-                pass.set_vertex_buffer(0, vb.slice(..));
+                state.set_vertex_buffer(pass, vb);
                 pass.draw(0..4, range);
                 stats.draw_calls += 1;
             }
@@ -485,7 +510,7 @@ pub(crate) fn encode(
                 state.set_pipeline(pass, pipeline);
                 pass.set_bind_group(1, bg, &[]);
                 stats.bind_group_switches += 1;
-                pass.set_vertex_buffer(0, vb.slice(..));
+                state.set_vertex_buffer(pass, vb);
                 pass.draw(sb.rebase(MESHES, vertices), 0..1);
                 stats.draw_calls += 1;
             }

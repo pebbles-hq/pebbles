@@ -31,6 +31,9 @@ pub(crate) struct PassSegment {
     /// Resolve MSAA at the end of this pass (final pass, or a backdrop capture).
     pub resolve: bool,
     pub after: AfterPass,
+    /// M33 ([`hoist_layer_passes`]): draw into the render pass of the previous segment (same
+    /// target) instead of opening a new one.
+    pub continues: bool,
 }
 
 struct Open {
@@ -60,6 +63,7 @@ pub(crate) fn segment_passes(plan: &FramePlan, out: &mut Vec<PassSegment>) {
                 is_final,
                 resolve,
                 after,
+                continues: false,
             });
         }
         o.started = true;
@@ -115,6 +119,52 @@ pub(crate) fn segment_passes(plan: &FramePlan, out: &mut Vec<PassSegment>) {
             parent.start = end;
         }
     }
+}
+
+/// M33: render every offscreen layer's segments before its parent's, each target in ONE pass.
+///
+/// `segment_passes` interleaves targets in painter's order: the parent's pass ends at a push,
+/// the layer renders, and the parent resumes with `Load` — 2 extra passes per layer, each a
+/// full pass begin/end on the GPU and a command-buffer switch on the CPU. A layer's content
+/// never reads its parent (only `Backdrop` layers do, and they are excluded), so every target
+/// can instead be rendered whole, in the order the targets are finished: a child's final
+/// segment precedes its parent's composite of it, so children still complete before they are
+/// sampled. Each target receives exactly the same draws in the same order — the pixels are
+/// unchanged; only the order *between* targets moves, and the resumed passes disappear.
+///
+/// Applied only when every segment is a plain one (`AfterPass::None`: no backdrop copy,
+/// custom op or arena resubmit between passes) and `hoistable(layer)` holds for every layer
+/// (the renderer checks that no two layers share a pool slot, and no MSAA or effect passes).
+/// Returns whether the segments were rewritten.
+pub(crate) fn hoist_layer_passes(segs: &mut Vec<PassSegment>, hoistable: impl Fn(u32) -> bool) -> bool {
+    let layered = segs.iter().any(|s| matches!(s.target, TargetRef::Layer(_)));
+    if !layered
+        || segs
+            .iter()
+            .any(|s| s.after != AfterPass::None || matches!(s.target, TargetRef::Layer(l) if !hoistable(l)))
+    {
+        return false;
+    }
+    // Targets in the order of their final segment.
+    let finals: Vec<TargetRef> = segs.iter().filter(|s| s.is_final).map(|s| s.target).collect();
+    if finals.len() != segs.iter().filter(|s| s.is_final).count()
+        || finals.iter().enumerate().any(|(i, t)| finals.get(..i).is_some_and(|before| before.contains(t)))
+    {
+        return false;
+    }
+    let mut out = Vec::with_capacity(segs.len());
+    for t in finals {
+        let mut first = true;
+        for s in segs.iter().filter(|s| s.target == t) {
+            out.push(PassSegment { continues: !first, ..s.clone() });
+            first = false;
+        }
+    }
+    if out.len() != segs.len() {
+        return false;
+    }
+    *segs = out;
+    true
 }
 
 #[cfg(test)]
@@ -176,6 +226,45 @@ mod tests {
             ]
         );
         assert_eq!(out[2].cmds, 4..5, "the composite runs in the resumed root pass");
+    }
+
+    #[test]
+    fn hoisted_layers_render_whole_before_their_parent() {
+        let cmds = vec![
+            solid(),
+            DrawCmd::PushLayer { layer: 0 },
+            solid(),
+            DrawCmd::PushLayer { layer: 1 },
+            solid(),
+            DrawCmd::PopLayer { layer: 1 },
+            DrawCmd::Composite { layer: 1, clip: ClipState::full((8, 8)) },
+            solid(),
+            DrawCmd::PopLayer { layer: 0 },
+            DrawCmd::Composite { layer: 0, clip: ClipState::full((8, 8)) },
+            solid(),
+        ];
+        let mut out = Vec::new();
+        segment_passes(&plan(cmds, 2), &mut out);
+        assert_eq!(out.len(), 5);
+        let mut never = out.clone();
+        assert!(!hoist_layer_passes(&mut never, |_| false), "a non-hoistable layer keeps the order");
+        assert_eq!(never, out);
+        assert!(hoist_layer_passes(&mut out, |_| true));
+        let got: Vec<_> = out.iter().map(|s| (s.target, s.cmds.clone(), s.color_load, s.continues)).collect();
+        assert_eq!(
+            got,
+            vec![
+                (TargetRef::Layer(1), 4..5, SegmentLoad::Clear, false),
+                (TargetRef::Layer(0), 2..3, SegmentLoad::Clear, false),
+                (TargetRef::Layer(0), 6..8, SegmentLoad::Load, true),
+                (TargetRef::Root, 0..1, SegmentLoad::Clear, false),
+                (TargetRef::Root, 9..11, SegmentLoad::Load, true),
+            ]
+        );
+        // Without layers there is nothing to hoist.
+        let mut flat = Vec::new();
+        segment_passes(&plan(vec![solid()], 0), &mut flat);
+        assert!(!hoist_layer_passes(&mut flat, |_| true));
     }
 
     #[test]

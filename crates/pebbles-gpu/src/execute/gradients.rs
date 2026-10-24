@@ -66,8 +66,9 @@ pub(crate) fn prepare(
         res.buffer_generation += 1;
         stats.buffers_created += 1;
     }
-    let stride = super::tier_c::slot_stride(device);
-    for (i, d) in renderer.scratch.plan.gradients.iter().enumerate() {
+    let staging = &mut renderer.uniform_scratch;
+    staging.begin(super::tier_c::slot_stride(device));
+    for d in &renderer.scratch.plan.gradients {
         let placed = res.lut.resolve(device, queue, &d.ramp, |out| d.ramp.bake(out), stats);
         let g = &d.geom;
         let params = match placed {
@@ -84,8 +85,10 @@ pub(crate) fn prepare(
                 GradientParams { m0: g.m0, m1: g.m1, info: [5, 0, 0, 1], p0: g.p0, p1: d.first }
             }
         };
-        queue.write_buffer(&res.buffer, i as u64 * stride, bytemuck::bytes_of(&params));
+        staging.push(&params);
     }
+    // M33: one upload for every gradient's params.
+    staging.write(&mut renderer.uploads, "gradients", res.slots, queue, &res.buffer);
     let (view, lut_gen) = res.lut.view();
     let key = (lut_gen, res.buffer_generation);
     if res.group.as_ref().is_none_or(|(k, _)| *k != key) {

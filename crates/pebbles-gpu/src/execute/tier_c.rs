@@ -99,7 +99,6 @@ pub(crate) struct Composite {
 pub(crate) fn prepare_runs(
     renderer: &mut Renderer,
     device: &wgpu::Device,
-    queue: &wgpu::Queue,
     targets: &mut FrameTargets,
     format: wgpu::TextureFormat,
     stats: &mut FrameStats,
@@ -170,7 +169,7 @@ pub(crate) fn prepare_runs(
             compose: 3, // SrcOver
             _pad: 0,
         };
-        queue.write_buffer(renderer.composite_buffer(), (base + k64) * stride, bytemuck::bytes_of(&params));
+        renderer.composite_staging.set(u32::try_from(base + k64).unwrap_or(u32::MAX), &params);
         // 10 §3.4: one composite bind group per pool slot, rebuilt only when the params buffer
         // is recreated (its slot count is the generation).
         let (layout, params, generation) =

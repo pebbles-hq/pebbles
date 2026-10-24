@@ -324,8 +324,9 @@ fn layer_pool_respects_budget() {
     }
 }
 
-/// L52 AC2: an Over layer splits the root into 3 passes and copies nothing; a Multiply layer
-/// copies its backdrop once.
+/// L52 AC2: an Over layer copies nothing; a Multiply layer copies its backdrop once. M33: the
+/// Over layer renders whole before the root (layer pass + one root pass) instead of splitting
+/// the root around it (3 passes).
 #[test]
 #[ignore = "gpu"]
 fn frame_stats_count_passes_and_copies() {
@@ -341,7 +342,7 @@ fn frame_stats_count_passes_and_copies() {
     };
     let mut targets = FrameTargets::new();
     let (_, over) = frame(&device, &queue, &mut r, &mut targets, &scene(peniko::BlendMode::default()));
-    assert_eq!((over.render_passes, over.backdrop_copies), (3, 0));
+    assert_eq!((over.render_passes, over.backdrop_copies), (2, 0));
     let (_, mul) = frame(&device, &queue, &mut r, &mut targets, &scene(Mix::Multiply.into()));
     assert_eq!(mul.backdrop_copies, 1);
 }

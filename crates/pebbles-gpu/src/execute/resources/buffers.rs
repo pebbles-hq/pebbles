@@ -87,6 +87,7 @@ impl GpuArena {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
+        uploads: &mut super::uploads::FrameUploads,
         bytes: &[u8],
         stats: &mut FrameStats,
     ) -> bool {
@@ -117,18 +118,9 @@ impl GpuArena {
             }
         }
         if let Some(buffer) = &self.buffer {
-            let rem = (len % wgpu::COPY_BUFFER_ALIGNMENT) as usize;
-            if rem == 0 {
-                queue.write_buffer(buffer, 0, bytes);
-            } else {
-                // Pad the tail to COPY_BUFFER_ALIGNMENT; the extra bytes are never read.
-                let split = bytes.len() - rem;
-                queue.write_buffer(buffer, 0, &bytes[..split]);
-                let mut tail = [0u8; 4];
-                const _: () = assert!(wgpu::COPY_BUFFER_ALIGNMENT == 4);
-                tail[..rem].copy_from_slice(&bytes[split..]);
-                queue.write_buffer(buffer, split as u64, &tail);
-            }
+            // Padded to COPY_BUFFER_ALIGNMENT (the extra bytes are never read); batched into
+            // the frame's one upload (M33).
+            uploads.write_whole(self.label, self.generation, queue, buffer, bytes);
         }
         stats.buffer_bytes_uploaded += len;
         self.high_water = self.high_water.max(padded);
@@ -276,13 +268,14 @@ mod tests {
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let mut stats = FrameStats::default();
         let mut a = GpuArena::new(wgpu::BufferUsages::VERTEX, "pebbles.gpu.buffer.test", 16 * MIB);
-        a.upload(device, queue, &vec![0u8; 1 << 20], &mut stats);
+        let mut uploads = super::super::uploads::FrameUploads::new(false);
+        a.upload(device, queue, &mut uploads, &vec![0u8; 1 << 20], &mut stats);
         a.end_frame(device, &mut stats);
         assert_eq!((a.capacity(), a.generation()), (MIB, 1));
         let small = vec![0u8; 1024];
         let mut frames = 0;
         while a.capacity() != GpuArena::INITIAL_BYTES && frames < 2 * GpuArena::SHRINK_WINDOW_FRAMES {
-            a.upload(device, queue, &small, &mut stats);
+            a.upload(device, queue, &mut uploads, &small, &mut stats);
             queue.submit([]);
             a.end_frame(device, &mut stats);
             frames += 1;

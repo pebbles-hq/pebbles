@@ -110,7 +110,7 @@ pub(crate) fn acquire_layers(
             _pad: 0,
         };
         let params_offset = i as u64 * stride;
-        queue.write_buffer(renderer.composite_buffer(), params_offset, bytemuck::bytes_of(&params));
+        renderer.composite_staging.set(u32::try_from(i).unwrap_or(u32::MAX), &params);
         let params_binding = |buffer| {
             wgpu::BindingResource::Buffer(wgpu::BufferBinding {
                 buffer,

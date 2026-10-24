@@ -235,4 +235,36 @@ mod tests {
         let kinds = crate::prepare::test_util::cmd_kinds(&plan);
         assert!(kinds == ["shadows", "triangles"] || kinds == ["shadows", "shapes"], "{kinds:?}");
     }
+
+    /// M33: a shadow followed by an opaque fill gets the fill's interior as its hole (centered
+    /// local units, ≥ 0.3·r + 2 px inside, on the 1/16 grid); anything else gets none.
+    #[test]
+    fn opaque_fill_occludes_shadow_interior() {
+        use pebbles_render::paint::{Painter, Scene};
+        let hole = |fill: Color, radius: f64, clip: bool| {
+            let mut s = Scene::new();
+            let mut p = Painter::new(&mut s);
+            let r = Rect::new(20.0, 20.0, 80.0, 60.0);
+            if clip {
+                p.push_layer(
+                    peniko::Fill::NonZero,
+                    peniko::Mix::Normal,
+                    1.0,
+                    Affine::IDENTITY,
+                    &kurbo::Circle::new((50.0, 40.0), 30.0),
+                );
+            }
+            p.draw_blurred_rounded_rect(Affine::IDENTITY, r, Color::BLACK, radius, 6.0);
+            p.fill(peniko::Fill::NonZero, Affine::IDENTITY, fill, None, &r.to_rounded_rect(radius));
+            if clip {
+                p.pop_layer();
+            }
+            crate::prepare::test_util::prepare_scene(&s, 100, 100).0.shadows[0].params1
+        };
+        // r = 8: m = ceil((0.3·8 + 2)·16)/16 = 4.4375; the rect is 60 × 40 (half 30 × 20).
+        assert_eq!(hole(Color::WHITE, 8.0, false), [-25.5625, -15.5625, 25.5625, 15.5625]);
+        assert_eq!(hole(Color::WHITE, 0.0, false), [-28.0, -18.0, 28.0, 18.0]);
+        assert_eq!(hole(Color::from_rgba8(255, 255, 255, 254), 8.0, false), [0.0; 4], "translucent");
+        assert_eq!(hole(Color::WHITE, 8.0, true), [0.0; 4], "under an SDF clip");
+    }
 }
