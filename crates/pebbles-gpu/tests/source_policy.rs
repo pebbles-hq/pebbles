@@ -74,14 +74,15 @@ fn no_handwritten_unsafe() {
     // `unsafe_code` in lint attributes is an identifier, not the keyword.
     let v: Vec<String> = violations(|c| has_word(c, "unsafe"))
         .into_iter()
-        .filter(|l| !UNSAFE_ALLOWED.iter().any(|f| l.contains(f)))
+        .filter(|l| !UNSAFE_ALLOWED.iter().any(|f| l.replace('\\', "/").contains(f)))
         .collect();
     assert!(v.is_empty(), "hand-written unsafe:\n{}", v.join("\n"));
 }
 
 #[test]
 fn sanctioned_unsafe_is_test_only() {
-    let lib = std::fs::read_to_string(src_dir().join("lib.rs")).unwrap_or_default();
+    // A Windows checkout may have CRLF line endings.
+    let lib = std::fs::read_to_string(src_dir().join("lib.rs")).unwrap_or_default().replace("\r\n", "\n");
     assert!(lib.contains("#[cfg(test)]\nmod test_alloc;"), "test_alloc must stay #[cfg(test)]");
 }
 

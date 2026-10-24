@@ -47,6 +47,11 @@ fn forced_software_picks_cpu_adapter() {
 #[ignore = "gpu"]
 #[cfg(target_os = "macos")]
 fn macos_has_no_software_adapter() {
+    // The noop validation lane enables wgpu's noop adapter, which reports itself as `Cpu`.
+    if support::noop_backend() {
+        println!("skipped: noop backend");
+        return;
+    }
     let mut init = GpuInit::headless();
     init.force_software = true;
     let r = device(&init).expect("result");

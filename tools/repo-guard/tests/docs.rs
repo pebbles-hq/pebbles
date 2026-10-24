@@ -7,14 +7,16 @@ use repo_guard::{read, workspace_root};
 /// Names are spelled with `concat!` so this guard's own source never matches.
 #[test]
 fn no_trace_of_the_removed_renderer_or_text_stack() {
-    const ATTRIBUTIONS: [&str; 4] = [
+    const ATTRIBUTIONS: [&str; 5] = [
         "NOTICE",
+        // The cargo-deny ban list names the removed crates on purpose (S38).
+        "deny.toml",
         "crates/pebbles-gpu/src/prepare/gradient.rs",
         "crates/pebbles-gpu/src/prepare/shadows.rs",
         "crates/pebbles-gpu/src/shaders/gradient.wgsl",
     ];
     const BANNED: [&str; 4] =
-        [concat!("vel", "lo"), concat!("par", "ley"), concat!("gli", "fo"), concat!("font", "ique")];
+        [concat!("vel", "lo"), concat!("par", "ley"), concat!("gl", "ifo"), concat!("font", "ique")];
     fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
         for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
             let p = e.path();
