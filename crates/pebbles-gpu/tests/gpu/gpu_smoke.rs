@@ -7,6 +7,8 @@ use super::*;
 #[ignore = "gpu"]
 fn adapter_matches_expectation() {
     let Some(r) = gpu_or_skip("adapter_matches_expectation") else { return };
+    // The CI lanes record which adapter they ran on (05 V30–V32, V37).
+    eprintln!("GPU adapter_matches_expectation: {}", adapter_summary(&r));
     if let Ok(expect) = std::env::var("PEBBLES_EXPECT_ADAPTER") {
         let got = adapter_summary(&r);
         assert!(

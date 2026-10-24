@@ -238,6 +238,8 @@ jobs:
           key: gpu-wgpu-linux
       - name: Record the Vulkan device
         run: vulkaninfo --summary 2>/dev/null | grep -iE "deviceName|driverInfo|apiVersion" || true
+      - name: Record the adapter (05 V30–V32, V37)
+        run: cargo test -p pebbles-gpu --test gpu gpu_smoke::adapter_matches_expectation -- --ignored --nocapture
       - name: TEST-GPU-GPU (pebbles-gpu)
         run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
       - name: TEST-SHELL-GPU (capture / glyph / render checks on wgpu)
@@ -266,6 +268,8 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: gpu-wgpu-windows-warp
+      - name: Record the adapter (05 V30–V32, V37)
+        run: cargo test -p pebbles-gpu --test gpu gpu_smoke::adapter_matches_expectation -- --ignored --nocapture
       - name: TEST-GPU-GPU on WARP
         run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
       - name: TEST-SHELL-GPU on WARP
@@ -302,6 +306,8 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: gpu-wgpu-macos-metal
+      - name: Record the adapter (05 V30–V32, V37)
+        run: cargo test -p pebbles-gpu --test gpu gpu_smoke::adapter_matches_expectation -- --ignored --nocapture
       - name: TEST-GPU-GPU on Metal
         run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
       - name: TEST-SHELL-GPU on Metal
@@ -341,6 +347,8 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: gpu-wgpu-linux-gl
+      - name: Record the adapter (05 V30–V32, V37)
+        run: cargo test -p pebbles-gpu --test gpu gpu_smoke::adapter_matches_expectation -- --ignored --nocapture
       - name: TEST-GPU-GPU on GL
         run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
       - name: RENDER-CHECK vs committed references (informative, cross-backend)
