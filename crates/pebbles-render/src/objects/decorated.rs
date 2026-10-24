@@ -135,6 +135,13 @@ impl RenderObject for RenderDecoratedBox {
         }
     }
 
+    /// Cards and panels retain their content (Flutter places boundaries by hand; Pebbles
+    /// puts one on every decorated container so an update inside a sibling card leaves
+    /// this one's fragment untouched).
+    fn is_container_repaint_boundary(&self) -> bool {
+        true
+    }
+
     fn debug_name(&self) -> &'static str {
         "RenderDecoratedBox"
     }

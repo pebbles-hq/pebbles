@@ -278,7 +278,7 @@ impl RenderObject for RenderTextField {
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
-        self.publish_ime_caret(offset);
+        self.publish_ime_caret(cx.window_offset(offset));
         if let Some(table) = &self.table {
             let table = table.clone();
             self.paint_lines(cx, offset, &table);
@@ -338,6 +338,19 @@ impl RenderObject for RenderTextField {
             );
             cx.scene.fill(Fill::NonZero, Affine::IDENTITY, self.style.caret_color, None, &rect);
         }
+    }
+
+    /// A text field repaints alone (caret blink, typing) without re-recording its
+    /// surroundings.
+    fn is_repaint_boundary(&self) -> bool {
+        true
+    }
+
+    /// A focused field publishes its caret in WINDOW coordinates while painting (the OS
+    /// IME candidate window): it must paint every frame so a move of any ancestor (a
+    /// scroll) re-publishes it, so no enclosing layer may be replayed.
+    fn paint_is_volatile(&self) -> bool {
+        self.focused
     }
 
     fn debug_name(&self) -> &'static str {

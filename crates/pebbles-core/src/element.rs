@@ -101,6 +101,9 @@ pub struct Ui {
     render: RenderTree,
     root: Option<ElementId>,
     dirty: Vec<ElementId>,
+    /// Parent-data elements updated this build: their (new) parent data is a layout input
+    /// of the enclosing container, so `apply_parent_data` re-dirties their render child.
+    parent_data_updated: Vec<ElementId>,
     /// The render node currently hovered plus its stored exit handlers. Keyed by
     /// render id — stable across rebuilds because a reconciled listener updates its
     /// render object in place rather than recreating it — so hover-out fires reliably.
@@ -213,6 +216,7 @@ impl Ui {
             self.sync_render(root);
             self.apply_parent_data(root);
         }
+        self.parent_data_updated.clear();
         true
     }
 

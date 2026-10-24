@@ -799,7 +799,9 @@ impl RenderObject for RenderScroll {
         // too, so offscreen content is never encoded (not merely clipped away).
         let clip = Rect::from_origin_size(offset.to_point(), size);
         cx.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &clip);
-        cx.paint_child_clipped(child, offset + cx.child_offset(child), clip);
+        // The content is a repaint boundary: re-recorded only when it changed or the
+        // scroll moved what the viewport culls.
+        cx.paint_child_clipped_as_boundary(child, offset + cx.child_offset(child), clip);
         cx.scene.pop_layer();
 
         // Scrollbar.

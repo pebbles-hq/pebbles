@@ -125,6 +125,14 @@ impl OffscreenRenderer {
         self.targets = FrameTargets::new();
     }
 
+    /// Track damage across renders like a window surface does (M30, DR-25): each render
+    /// redraws only what changed since the previous one of the same size, and
+    /// [`last_frame_stats`](Self::last_frame_stats) reports `damage_px` / `full_redraws`.
+    /// The read-back pixels are the same either way. `PEBBLES_GPU_DAMAGE=0` keeps it off.
+    pub fn set_damage_tracking(&mut self, on: bool) {
+        self.targets = if on { FrameTargets::new().with_damage_tracking() } else { FrameTargets::new() };
+    }
+
     /// `min(MAX_DIM, RendererLimits::max_texture_dim)`.
     pub fn max_size(&self) -> u32 {
         Self::MAX_DIM.min(self.renderer.limits().max_texture_dim)

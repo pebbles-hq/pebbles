@@ -129,6 +129,27 @@ pub trait RenderObject: Any {
         None
     }
 
+    /// Flutter `isRepaintBoundary`: this node's subtree is recorded into a retained
+    /// layer that is re-appended unchanged (same op list) until something inside it is
+    /// invalidated - a paint/layout mark, a layout pass reaching it, a mutable access.
+    fn is_repaint_boundary(&self) -> bool {
+        false
+    }
+
+    /// Like [`is_repaint_boundary`](Self::is_repaint_boundary), but only while the node has
+    /// children: decorated containers (cards, panels) retain their content, leaf boxes stay
+    /// inline.
+    fn is_container_repaint_boundary(&self) -> bool {
+        false
+    }
+
+    /// Whether what this object paints can change without any invalidation reaching the
+    /// render tree (e.g. a paint closure reading app state). Enclosing repaint boundaries
+    /// then re-record every frame instead of keeping a stale layer.
+    fn paint_is_volatile(&self) -> bool {
+        false
+    }
+
     /// A human-readable name for diagnostics and tree dumps.
     fn debug_name(&self) -> &'static str {
         "RenderObject"

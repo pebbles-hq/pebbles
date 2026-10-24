@@ -66,6 +66,14 @@ pub struct RenderNode {
     pub last_constraints: Option<BoxConstraints>,
     pub needs_layout: bool,
     pub needs_paint: bool,
+    /// Repaint boundaries (Flutter `isRepaintBoundary`): the subtree's retained paint at
+    /// the LOCAL origin, plus the local visible window it was recorded under. Re-appended
+    /// (same `Arc`) while [`layer_valid`](Self::layer_valid) holds.
+    pub(crate) layer: std::cell::RefCell<Option<(crate::paint::Scene, Rect)>>,
+    /// Whether [`layer`](Self::layer) still equals what painting this subtree would record.
+    /// Cleared on every node of a dirty path (paint marks, layout marks, a layout pass that
+    /// ran this node, mutable object access); set when a boundary records its layer.
+    pub(crate) layer_valid: std::cell::Cell<bool>,
 }
 
 impl RenderNode {
@@ -84,6 +92,8 @@ impl RenderNode {
             last_constraints: None,
             needs_layout: true,
             needs_paint: true,
+            layer: std::cell::RefCell::new(None),
+            layer_valid: std::cell::Cell::new(false),
         }
     }
 }
@@ -288,6 +298,9 @@ impl RenderTree {
     /// currently taken out of the tree (i.e. called during that node's own layout pass).
     /// Use [`try_object_mut`](Self::try_object_mut) when the node may be gone.
     pub fn object_mut(&mut self, id: RenderId) -> &mut dyn RenderObject {
+        // A mutable borrow may change what the object paints: drop the retained layers on
+        // its path (conservative — a stale repaint boundary is a bug, a re-record is not).
+        self.invalidate_layers(id);
         self.nodes[id].object.as_deref_mut().expect("object present outside of layout")
     }
 
@@ -303,6 +316,7 @@ impl RenderTree {
     /// Like [`object_mut`](Self::object_mut) but returns `None` if the node no longer
     /// exists (e.g. an animating scroll view was unmounted mid-tick).
     pub fn try_object_mut(&mut self, id: RenderId) -> Option<&mut dyn RenderObject> {
+        self.invalidate_layers(id);
         self.nodes.get_mut(id)?.object.as_deref_mut()
     }
 
@@ -332,6 +346,7 @@ impl RenderTree {
     /// tree onto the render tree after a build.
     pub fn set_children(&mut self, parent: RenderId, children: Vec<RenderId>) {
         let old = std::mem::take(&mut self.nodes[parent].children);
+        let unchanged = old.len() == children.len() && old.iter().zip(&children).all(|(a, b)| a == b);
         for c in old {
             if self.nodes.contains_key(c) {
                 self.nodes[c].parent = None;
@@ -345,7 +360,12 @@ impl RenderTree {
             }
         }
         self.nodes[parent].children = next;
-        self.mark_needs_layout(parent);
+        // The widget layer re-projects the whole tree after every build: an unchanged child
+        // list is not a change (object updates mark their own nodes), so it must not dirty
+        // the path — that would invalidate every repaint boundary on every rebuild.
+        if !unchanged {
+            self.mark_needs_layout(parent);
+        }
     }
 
     /// Remove a single node (not its descendants), detaching it from its parent.
@@ -360,6 +380,7 @@ impl RenderTree {
             && let Some(pos) = self.nodes[parent].children.iter().position(|&c| c == id)
         {
             self.nodes[parent].children.remove(pos);
+            self.mark_needs_layout(parent);
         }
         self.nodes.remove(id);
         if self.root == Some(id) {
@@ -545,11 +566,7 @@ impl RenderTree {
     /// font set changed (a system-font scan merged), so every shaped text may differ.
     pub fn mark_all_needs_layout(&mut self) {
         for node in self.nodes.values_mut() {
-            if let Some(b) =
-                node.object.as_deref_mut().and_then(|o| o.downcast_mut::<crate::objects::RenderBoundary>())
-            {
-                b.mark_dirty();
-            }
+            node.layer_valid.set(false);
             node.needs_layout = true;
             node.needs_paint = true;
         }
@@ -562,17 +579,16 @@ impl RenderTree {
             // node they drive by a frame) — a dirty-mark on a dead node is a
             // no-op, never a panic.
             let Some(node) = self.nodes.get_mut(c) else { return };
-            // A repaint boundary on the dirty path must re-encode its fragment.
-            // (Ancestors above an already-dirty node were flagged when IT was
-            // first marked, so the early break below stays sound.)
-            if let Some(b) =
-                node.object.as_deref_mut().and_then(|o| o.downcast_mut::<crate::objects::RenderBoundary>())
-            {
-                b.mark_dirty();
-            }
+            node.layer_valid.set(false);
             if node.needs_layout {
-                // Ancestors above an already-dirty node are dirty too; stop early.
+                // Ancestors above an already-dirty node are dirty too; stop early. Their
+                // retained layers may have been re-recorded since (a parent that skipped
+                // laying this node out still painted), so keep invalidating those.
                 node.needs_paint = true;
+                let parent = node.parent;
+                if let Some(p) = parent {
+                    self.invalidate_layers(p);
+                }
                 break;
             }
             node.needs_layout = true;
@@ -581,22 +597,38 @@ impl RenderTree {
         }
     }
 
-    /// Mark `id` as needing paint, walking up and invalidating the nearest
-    /// enclosing repaint boundary's retained fragment (paint-only changes —
-    /// scroll offsets, recolors — must re-encode the fragment they live in).
+    /// Mark `id` as needing paint: every retained layer on the path to the root is
+    /// invalidated. An enclosing boundary's layer holds the inner boundary's fragment by
+    /// `Arc`, so it must be re-recorded too (cheaply: its clean child boundaries re-append).
     pub fn mark_needs_paint(&mut self, id: RenderId) {
         let mut cur = Some(id);
         while let Some(c) = cur {
             let Some(node) = self.nodes.get_mut(c) else { return };
             node.needs_paint = true;
-            if let Some(b) =
-                node.object.as_deref_mut().and_then(|o| o.downcast_mut::<crate::objects::RenderBoundary>())
-            {
-                b.mark_dirty();
-                return; // contained: outer composition re-appends fragments anyway
-            }
+            node.layer_valid.set(false);
             cur = node.parent;
         }
+    }
+
+    /// Drop the retained layers of `id` and its ancestors.
+    fn invalidate_layers(&self, id: RenderId) {
+        let mut cur = Some(id);
+        while let Some(c) = cur {
+            let Some(node) = self.nodes.get(c) else { return };
+            node.layer_valid.set(false);
+            cur = node.parent;
+        }
+    }
+
+    /// Whether `id` currently holds a valid retained layer (tests / diagnostics).
+    pub fn has_valid_layer(&self, id: RenderId) -> bool {
+        self.nodes.get(id).is_some_and(|n| n.layer_valid.get() && n.layer.borrow().is_some())
+    }
+
+    /// The retained layer's op list address, if `id` is a recorded repaint boundary
+    /// (tests / diagnostics: the same address frame to frame means the same fragment).
+    pub fn layer_ptr(&self, id: RenderId) -> Option<usize> {
+        self.nodes.get(id)?.layer.borrow().as_ref().map(|(s, _)| s.ops().as_ptr() as usize)
     }
 
     /// Re-position a scroll viewport's (single, clipped) content child without a
@@ -610,6 +642,7 @@ impl RenderTree {
         if let Some(node) = self.nodes.get_mut(child) {
             node.offset = offset;
         }
+        self.invalidate_layers(viewport);
     }
 
     /// Run a layout pass from the root under `root_constraints`.
@@ -626,6 +659,7 @@ impl RenderTree {
         if !self.nodes[root].needs_layout && self.last_constraints == Some(root_constraints) {
             return;
         }
+        self.nodes[root].layer_valid.set(false);
         let mut object = self.nodes[root].object.take().expect("root object present");
         let size = {
             let mut cx = LayoutCx { tree: self, current: root, text };
@@ -680,6 +714,7 @@ impl RenderTree {
     pub fn paint(&self, text: &mut TextEnv, scene: &mut crate::paint::Scene) -> SmallVec<[RenderId; 2]> {
         let Some(root) = self.root else { return SmallVec::new() };
         let relayout = std::cell::RefCell::new(SmallVec::new());
+        let volatile = std::cell::Cell::new(false);
         let visible = Rect::from_origin_size((0.0, 0.0), self.nodes[root].size);
         let mut cx = PaintCx {
             scene: crate::paint::Painter::new(scene),
@@ -688,6 +723,8 @@ impl RenderTree {
             current: root,
             visible,
             relayout: &relayout,
+            volatile: &volatile,
+            origin: Offset::ZERO,
         };
         cx.paint_child(root, Offset::ZERO);
         relayout.into_inner()

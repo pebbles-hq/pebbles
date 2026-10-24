@@ -59,11 +59,26 @@ mod tests {
                 if d.starts_with("Glyphs") || d.starts_with("Image") {
                     d.split([' ', '{']).next().unwrap_or_default().to_string()
                 } else {
-                    d
+                    // Repaint boundaries nest glyph runs inside fragments: mask the
+                    // per-load font blob ids wherever they appear.
+                    mask_blob_ids(&d)
                 }
             })
             .collect();
         (s.len(), ops)
+    }
+
+    fn mask_blob_ids(d: &str) -> String {
+        const KEY: &str = "Blob { id: ";
+        let mut out = String::with_capacity(d.len());
+        let mut rest = d;
+        while let Some(i) = rest.find(KEY) {
+            out.push_str(&rest[..i + KEY.len()]);
+            rest = rest[i + KEY.len()..].trim_start_matches(|c: char| c.is_ascii_digit());
+            out.push('_');
+        }
+        out.push_str(rest);
+        out
     }
 
     fn hello(h: &mut Harness) {

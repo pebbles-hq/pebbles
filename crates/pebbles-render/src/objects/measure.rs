@@ -109,14 +109,21 @@ impl RenderObject for RenderPositionProbe {
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
-        // `offset` is this node's absolute window-space top-left (accumulated down
-        // the tree), so it plus the laid-out size is the trigger's window rect.
+        // `offset` plus the recording origin is this node's window-space top-left (inside
+        // a retained layer, paint offsets are layer-local), so with the laid-out size it
+        // is the trigger's window rect.
         if let Some(report) = &self.report {
-            report(offset, self.size);
+            report(cx.window_offset(offset), self.size);
         }
         if let Some(child) = cx.children().first().copied() {
             cx.paint_child(child, offset + cx.child_offset(child));
         }
+    }
+
+    /// The report must run every frame (an ancestor may have moved), so no enclosing
+    /// layer may be replayed while one is attached.
+    fn paint_is_volatile(&self) -> bool {
+        self.report.is_some()
     }
 
     fn debug_name(&self) -> &'static str {

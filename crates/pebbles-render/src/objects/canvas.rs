@@ -166,6 +166,11 @@ impl RenderObject for RenderCanvas {
         (self.painter)(&mut canvas);
     }
 
+    /// The paint closure may read app state no invalidation tracks: never replay it.
+    fn paint_is_volatile(&self) -> bool {
+        true
+    }
+
     fn debug_name(&self) -> &'static str {
         "RenderCanvas"
     }

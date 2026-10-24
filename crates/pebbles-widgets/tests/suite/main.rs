@@ -59,6 +59,7 @@ mod popover;
 mod pressable;
 mod property_parity;
 mod reactive;
+mod repaint_boundary;
 mod resize_flood;
 mod router;
 mod scroll_notification;

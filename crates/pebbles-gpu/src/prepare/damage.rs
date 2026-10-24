@@ -156,6 +156,9 @@ fn diff(
                     diff(a, b, inner, acc, seen, keep);
                 }
             }
+            // A re-recorded list (a repaint boundary whose child changed) repeats most of
+            // its ops verbatim: an equal op at the same place paints the same pixels.
+            (Some(p), Some(c)) if same_pixels(p, c) => {}
             (p, c) => {
                 for op in [p, c].into_iter().flatten() {
                     acc.add(op_bounds(op, m));
@@ -185,6 +188,102 @@ fn list_is_volatile(ops: &[Op], seen: &mut HashMap<usize, bool>, keep: &mut Hash
         Op::Fragment { ops, .. } => is_volatile(ops, seen, keep),
         other => op_bounds(other, Affine::IDENTITY).is_none(),
     })
+}
+
+/// Whether `a` and `b` are the same op of a kind whose pixels are a function of the op (and
+/// of what is painted before it, which the positional walk covers). Unlisted kinds compare
+/// unequal: they are damaged as before.
+fn same_pixels(a: &Op, b: &Op) -> bool {
+    match (a, b) {
+        (
+            Op::Fill {
+                style: s0,
+                transform: t0,
+                brush: b0,
+                brush_transform: bt0,
+                shape: g0,
+                hint: h0,
+                snap: n0,
+                ..
+            },
+            Op::Fill {
+                style: s1,
+                transform: t1,
+                brush: b1,
+                brush_transform: bt1,
+                shape: g1,
+                hint: h1,
+                snap: n1,
+                ..
+            },
+        ) => s0 == s1 && t0 == t1 && b0 == b1 && bt0 == bt1 && g0 == g1 && h0 == h1 && n0 == n1,
+        (
+            Op::Stroke {
+                style: s0,
+                transform: t0,
+                brush: b0,
+                brush_transform: bt0,
+                shape: g0,
+                hint: h0,
+                snap: n0,
+                ..
+            },
+            Op::Stroke {
+                style: s1,
+                transform: t1,
+                brush: b1,
+                brush_transform: bt1,
+                shape: g1,
+                hint: h1,
+                snap: n1,
+                ..
+            },
+        ) => s0 == s1 && t0 == t1 && b0 == b1 && bt0 == bt1 && g0 == g1 && h0 == h1 && n0 == n1,
+        (
+            Op::Glyphs {
+                font: f0,
+                font_size: z0,
+                normalized_coords: c0,
+                brush: b0,
+                transform: t0,
+                glyph_transform: g0,
+                style: s0,
+                glyphs: l0,
+                ..
+            },
+            Op::Glyphs {
+                font: f1,
+                font_size: z1,
+                normalized_coords: c1,
+                brush: b1,
+                transform: t1,
+                glyph_transform: g1,
+                style: s1,
+                glyphs: l1,
+                ..
+            },
+        ) => {
+            z0 == z1
+                && t0 == t1
+                && g0 == g1
+                && s0 == s1
+                && b0 == b1
+                && c0 == c1
+                && f0 == f1
+                && l0.len() == l1.len()
+                && l0.iter().zip(l1).all(|(x, y)| x.id == y.id && x.x == y.x && x.y == y.y)
+        }
+        (
+            Op::BlurredRect { transform: t0, rect: r0, brush: b0, radius: a0, std_dev: d0, .. },
+            Op::BlurredRect { transform: t1, rect: r1, brush: b1, radius: a1, std_dev: d1, .. },
+        ) => t0 == t1 && r0 == r1 && b0 == b1 && a0 == a1 && d0 == d1,
+        (
+            Op::PushLayer { clip_fill: f0, blend: b0, alpha: a0, transform: t0, clip: c0, hint: h0, .. },
+            Op::PushLayer { clip_fill: f1, blend: b1, alpha: a1, transform: t1, clip: c1, hint: h1, .. },
+        ) => f0 == f1 && b0 == b1 && a0 == a1 && t0 == t1 && c0 == c1 && h0 == h1,
+        (Op::PopLayer, Op::PopLayer) => true,
+        _ => false,
+    }
 }
 
 /// Conservative device bounds of `op` under `m`; `None` when it has no local bound.
@@ -315,9 +414,11 @@ mod tests {
             s
         };
         t.frame(&frame(50.0), key());
-        match t.frame(&frame(50.0), key()) {
-            // The raw caret-like rect is re-recorded every frame; the fragment costs nothing.
-            Damage::Rect(r) => assert!(r.x0 >= 46 && r.x1 <= 57 && r.y0 >= 96 && r.y1 <= 128, "{r:?}"),
+        // Re-recorded verbatim: an equal raw op at the same place is free too.
+        assert_eq!(t.frame(&frame(50.0), key()), Damage::Empty);
+        match t.frame(&frame(60.0), key()) {
+            // The caret-like rect moved: its old and new bounds; the fragment costs nothing.
+            Damage::Rect(r) => assert!(r.x0 >= 46 && r.x1 <= 67 && r.y0 >= 96 && r.y1 <= 128, "{r:?}"),
             d => panic!("{d:?}"),
         }
     }

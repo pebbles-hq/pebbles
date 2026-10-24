@@ -887,13 +887,18 @@ fn text_field_preedit_is_underlined_at_the_caret() {
     let layout = pebbles_render::text::layout_for_test(&mut text, "aにほ", &style, &[], None);
     let x0 = layout.caret_rect(1, pebbles_render::text::Affinity::Downstream, 0.0).x0;
     let x1 = layout.caret_rect(7, pebbles_render::text::Affinity::Downstream, 0.0).x0;
-    let underline = scene.ops().iter().find_map(|op| match op {
-        Op::Fill { shape, .. } => {
-            let r = shape.bounding_box();
-            ((r.height() - 1.0).abs() < 1e-6).then_some(r)
-        }
-        _ => None,
-    });
+    // The field is a repaint boundary: its ops arrive inside one fragment at the origin.
+    fn find_underline(ops: &[Op]) -> Option<kurbo::Rect> {
+        ops.iter().find_map(|op| match op {
+            Op::Fill { shape, .. } => {
+                let r = shape.bounding_box();
+                ((r.height() - 1.0).abs() < 1e-6).then_some(r)
+            }
+            Op::Fragment { ops, .. } => find_underline(ops),
+            _ => None,
+        })
+    }
+    let underline = find_underline(scene.ops());
     let r = underline.expect("a 1 px preedit underline");
     assert!((r.x0 - x0).abs() < 0.01 && (r.x1 - x1).abs() < 0.01, "{r:?} vs {x0}..{x1}");
 }

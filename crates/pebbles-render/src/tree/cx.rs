@@ -42,6 +42,9 @@ impl LayoutCx<'_> {
             }
         }
         crate::stats::bump_layout();
+        // Layout runs top-down, so every boundary enclosing this node ran too: dropping
+        // this node's retained layer covers any size/offset change below it.
+        self.tree.nodes[child].layer_valid.set(false);
         // Clear any parent-applied transform; a parent that wants one re-sets it with
         // `set_child_transform` after this call (so stale transforms never linger).
         self.tree.nodes[child].layout_transform = None;
@@ -187,6 +190,13 @@ pub struct PaintCx<'a> {
     pub(super) visible: Rect,
     /// Corrective-relayout requests (see [`RenderTree::paint`]).
     pub(super) relayout: &'a std::cell::RefCell<SmallVec<[RenderId; 2]>>,
+    /// Set when something painted into the current recording is volatile
+    /// ([`RenderObject::paint_is_volatile`]): the enclosing repaint boundaries must not
+    /// keep their layer.
+    pub(super) volatile: &'a std::cell::Cell<bool>,
+    /// Window-space position of the current recording's origin: a retained layer records
+    /// at its LOCAL origin, so paint offsets inside it are relative to this.
+    pub(super) origin: Offset,
 }
 impl PaintCx<'_> {
     /// The size of the object currently painting (computed during layout).
@@ -224,8 +234,45 @@ impl PaintCx<'_> {
     /// parent); a pure-translation transform folds into the offset with no
     /// sub-scene cost.
     pub fn paint_child(&mut self, child: RenderId, absolute_offset: Offset) {
+        self.paint_child_impl(child, absolute_offset, false);
+    }
+
+    /// Like [`paint_child`](Self::paint_child), but treats `child` as a repaint boundary
+    /// whatever its object says (scroll viewports retain their content this way).
+    pub fn paint_child_as_boundary(&mut self, child: RenderId, absolute_offset: Offset) {
+        self.paint_child_impl(child, absolute_offset, true);
+    }
+
+    /// [`paint_child_clipped`](Self::paint_child_clipped) with `child` as a repaint
+    /// boundary (see [`paint_child_as_boundary`](Self::paint_child_as_boundary)).
+    pub fn paint_child_clipped_as_boundary(&mut self, child: RenderId, absolute_offset: Offset, clip: Rect) {
+        let saved = self.visible;
+        self.visible = Rect::new(
+            saved.x0.max(clip.x0),
+            saved.y0.max(clip.y0),
+            saved.x1.min(clip.x1),
+            saved.y1.min(clip.y1),
+        );
+        self.paint_child_impl(child, absolute_offset, true);
+        self.visible = saved;
+    }
+
+    /// The window-space position of `offset` (a paint offset handed to this object): paint
+    /// inside a retained layer is recorded relative to the layer's origin. Only for side
+    /// channels that need window coordinates (the IME caret); never for drawing.
+    pub fn window_offset(&self, offset: Offset) -> Offset {
+        self.origin + offset
+    }
+
+    fn paint_child_impl(&mut self, child: RenderId, absolute_offset: Offset, force_boundary: bool) {
         let node = &self.tree.nodes[child];
         let Some(object) = node.object.as_deref() else { return };
+        let boundary = force_boundary
+            || object.is_repaint_boundary()
+            || (object.is_container_repaint_boundary() && !node.children.is_empty());
+        if object.paint_is_volatile() {
+            self.volatile.set(true);
+        }
         let local = node.paint_rect;
         if let Some(h) = object.projection(node.size) {
             // 09 §10.7 (L66): the subtree paints in local space into a projected layer.
@@ -242,6 +289,8 @@ impl PaintCx<'_> {
                 current: child,
                 visible: Rect::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::INFINITY),
                 relayout: self.relayout,
+                volatile: self.volatile,
+                origin: self.origin,
             };
             object.paint(&mut sub, Offset::ZERO);
             self.scene.push_projected_layer(placed, local, None::<&Rect>);
@@ -260,6 +309,10 @@ impl PaintCx<'_> {
                     return;
                 }
                 crate::stats::bump_painted();
+                if boundary {
+                    self.paint_layer(child, object, at);
+                    return;
+                }
                 let mut sub = PaintCx {
                     scene: self.scene.reborrow(),
                     text: &mut *self.text,
@@ -267,6 +320,8 @@ impl PaintCx<'_> {
                     current: child,
                     visible: self.visible,
                     relayout: self.relayout,
+                    volatile: self.volatile,
+                    origin: self.origin,
                 };
                 object.paint(&mut sub, at);
             }
@@ -293,6 +348,8 @@ impl PaintCx<'_> {
                     current: child,
                     visible: local_visible,
                     relayout: self.relayout,
+                    volatile: self.volatile,
+                    origin: self.origin,
                 };
                 object.paint(&mut sub, Offset::ZERO);
                 self.scene.append(&sub_scene, Some(placement));
@@ -309,6 +366,10 @@ impl PaintCx<'_> {
                     return;
                 }
                 crate::stats::bump_painted();
+                if boundary {
+                    self.paint_layer(child, object, absolute_offset);
+                    return;
+                }
                 let mut sub = PaintCx {
                     scene: self.scene.reborrow(),
                     text: &mut *self.text,
@@ -316,6 +377,8 @@ impl PaintCx<'_> {
                     current: child,
                     visible: self.visible,
                     relayout: self.relayout,
+                    volatile: self.volatile,
+                    origin: self.origin,
                 };
                 object.paint(&mut sub, absolute_offset);
             }
@@ -338,20 +401,52 @@ impl PaintCx<'_> {
         self.visible = saved;
     }
 
-    /// Encode `child`'s subtree into `fragment` at the LOCAL origin with an
-    /// unbounded visible window. Repaint boundaries call this: fragments must be
-    /// viewport-INDEPENDENT so re-appending them at any scroll offset is sound.
-    pub fn encode_fragment(&mut self, child: RenderId, fragment: &mut crate::paint::Scene) {
-        fragment.reset();
-        let mut sub = PaintCx {
-            scene: crate::paint::Painter::new(fragment),
-            text: &mut *self.text,
-            tree: self.tree,
-            current: child,
-            visible: Rect::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::INFINITY),
-            relayout: self.relayout,
-        };
-        sub.paint_child(child, Offset::ZERO);
+    /// Paint repaint boundary `child` at `at` through its retained layer: re-record the
+    /// layer (at the LOCAL origin, under the visible window mapped into local space) only
+    /// when it was invalidated or the window changed what culling would keep, then append
+    /// it as ONE `Op::Fragment` translated to `at`. A clean boundary re-appends the SAME
+    /// op list (`Arc`) frame after frame, which is what lets the renderer's damage tracking
+    /// skip it.
+    fn paint_layer(&mut self, child: RenderId, object: &dyn RenderObject, at: Offset) {
+        let node = &self.tree.nodes[child];
+        let v = self.visible;
+        let local_visible = Rect::new(v.x0 - at.x, v.y0 - at.y, v.x1 - at.x, v.y1 - at.y);
+        let reach = node.paint_rect;
+        let covers = |w: Rect| w.x0 <= reach.x0 && w.y0 <= reach.y0 && w.x1 >= reach.x1 && w.y1 >= reach.y1;
+        let mut slot = node.layer.borrow_mut();
+        // The recorded layer stands for any window that culls the same: the identical
+        // window, or - when nothing was culled - any window that still covers the subtree.
+        let reusable = node.layer_valid.get()
+            && slot
+                .as_ref()
+                .is_some_and(|(_, w)| *w == local_visible || (covers(*w) && covers(local_visible)));
+        let (layer, window) = slot.get_or_insert_with(|| (crate::paint::scene(), local_visible));
+        if reusable {
+            crate::stats::bump_fragment_reuse();
+        } else {
+            layer.reset();
+            let volatile = std::cell::Cell::new(false);
+            let mut sub = PaintCx {
+                scene: crate::paint::Painter::new(layer),
+                text: &mut *self.text,
+                tree: self.tree,
+                current: child,
+                visible: local_visible,
+                relayout: self.relayout,
+                volatile: &volatile,
+                origin: self.origin + at,
+            };
+            object.paint(&mut sub, Offset::ZERO);
+            *window = local_visible;
+            // A volatile subtree re-records every frame, and so does every boundary
+            // around it (they hold its fragment by `Arc`).
+            node.layer_valid.set(!volatile.get());
+            if volatile.get() {
+                self.volatile.set(true);
+            }
+            crate::stats::bump_fragment_encode();
+        }
+        self.scene.append(layer, Some(Affine::translate((at.x, at.y))));
     }
 
     /// The relative offset a child was assigned during layout.

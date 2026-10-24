@@ -141,6 +141,9 @@ impl Ui {
                 let child_widgets = new_widget.as_render_mut().unwrap().take_children();
                 if let Some(rid) = self.elements[id].render_id {
                     new_widget.as_render().unwrap().update_render_object(self.render.object_mut(rid));
+                    // Flutter's setters mark: the new configuration may change layout or
+                    // paint. (The render-tree projection no longer dirties unchanged nodes.)
+                    self.render.mark_needs_layout(rid);
                 }
                 self.elements[id].widget = new_widget;
                 self.reconcile_children(id, child_widgets);
@@ -148,6 +151,7 @@ impl Ui {
             Category::ParentData => {
                 let child_widget = new_widget.as_parent_data_mut().unwrap().take_child();
                 self.elements[id].widget = new_widget;
+                self.parent_data_updated.push(id);
                 let old_child = self.elements[id].children.first().copied();
                 let new_child = self.update_child(id, old_child, child_widget);
                 self.elements[id].children = new_child.into_iter().collect();
@@ -334,6 +338,9 @@ impl Ui {
         if let Some(pd) = self.elements[el].widget.as_parent_data() {
             let data = pd.parent_data();
             if let Some(rid) = self.render_children_of(el).first().copied() {
+                if self.parent_data_updated.contains(&el) {
+                    self.render.mark_needs_layout(rid);
+                }
                 // A `Semantics` widget rides the same parent-data channel but routes to
                 // the node's accessibility slot instead of its layout parent-data.
                 match data.downcast::<pebbles_render::SemanticsProps>() {

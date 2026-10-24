@@ -420,7 +420,9 @@ impl RouteView {
 
 impl IntoWidget for RouteView {
     fn into_widget(self) -> AnyWidget {
-        let matched = self.render_match();
+        // Each screen is a repaint boundary: an update elsewhere (app chrome, an overlay)
+        // re-appends the page's retained layer instead of re-recording it.
+        let matched = crate::widgets::repaint_boundary(self.render_match()).into_widget();
         match self.transition {
             Some(secs) => {
                 // Key the switcher by the current path so a route change cross-fades.
