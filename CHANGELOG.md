@@ -8,16 +8,16 @@ All notable changes to Pebbles are documented here. The format follows
 
 ### Changed — one renderer: wgpu
 Pebbles renders with its own wgpu renderer (`pebbles-gpu`) on every platform, with a WebGL2
-fallback on the web. The Vello Hybrid backend and the `vello-hybrid` / `wgpu` cargo features
-are gone, and so is every Vello and Parley dependency.
+fallback on the web. The previous hybrid backend and the renderer-selection cargo features
+are gone, and so is every dependency of the previous renderer and text stack.
 
 **Migration:** apps on default features need nothing. Apps scaffolded before this change:
-delete the backend lines from `[features]` (`default`, `vello-hybrid`, `wgpu`) and depend on
+delete the backend lines from `[features]` (the renderer-selection entries) and depend on
 `pebbles` with default features (drop `default-features = false`). `pebbles run/build/create
 --renderer` is deprecated: it is accepted, ignored, and prints a warning. `CaptureError::Backend`
 is removed (it only reported the deleted capture path).
 
-### Changed — text stack: Parley → cosmic-text
+### Changed — text stack: cosmic-text
 Text now shapes and lays out with cosmic-text 0.19 on every backend; carets, selection, hit-testing and keyboard motion run on Pebbles' own geometry over the new `TextLayout`.
 
 **Changed**
@@ -34,10 +34,10 @@ Text now shapes and lays out with cosmic-text 0.19 on every backend; carets, sel
 - `text_edit::{caret_rect, set_ime_caret, clear_ime_caret, ime_caret}`.
 
 **Breaking**
-- The `TextEnv::fonts` / `TextEnv::layout` Parley fields and `fonts::FontBlob` are removed.
+- The `TextEnv::fonts` / `TextEnv::layout` previous text-stack fields and `fonts::FontBlob` are removed.
 - `text_edit::get` returns and `text_edit::store` takes `Rc<TextLayout>` (`text_edit::store_text` is a deprecated alias for one release).
 
-**Migration:** code that needs OS fonts builds its `TextEnv` with `TextEnv::with_system_fonts(SystemFonts::Background)` (the runner already does; capture uses `Blocking`); code that read the Parley fields or `fonts::FontBlob` uses the `TextEnv` methods listed under **Added** (`register_font` for runtime fonts).
+**Migration:** code that needs OS fonts builds its `TextEnv` with `TextEnv::with_system_fonts(SystemFonts::Background)` (the runner already does; capture uses `Blocking`); code that read the previous text-stack fields or `fonts::FontBlob` uses the `TextEnv` methods listed under **Added** (`register_font` for runtime fonts).
 
 ### Added — layer effects (wgpu renderer)
 wgpu renderer: blur, backdrop filter, color matrix, dilate/erode and perspective layers (`Painter::push_effect_layer`, `push_backdrop_filter`, `push_projected_layer`; `Transform::matrix4`).
@@ -61,12 +61,12 @@ wgpu renderer: Opacity is exact (no double blending of overlapping children); Op
 A reusable headless renderer (one device for many frames/windows) with typed `CaptureError`s;
 `capture_rgba`/`capture_png` now use it. Capture works under every render backend.
 
-### Removed — the classic `vello` (GPU-compute) backend
-The opt-in `vello` render backend is gone (the `vello` Cargo feature on every crate, its
-host, and `pebbles run/build/create --renderer vello`). Vello Hybrid stays the default
-while the first-party `wgpu` renderer completes its gates. **Migration:** drop `--features vello`
-and `--renderer vello` (use the default, or `--renderer wgpu` to try the new renderer);
-in apps scaffolded by `pebbles create`, delete the line `vello = ["pebbles/vello"]`.
+### Removed — the classic GPU-compute backend
+The opt-in GPU-compute render backend is gone (its Cargo feature on every crate, its host, and
+the matching `pebbles run/build/create --renderer` value). The hybrid backend stays the default
+while the first-party `wgpu` renderer completes its gates. **Migration:** drop that feature and
+`--renderer` value (use the default, or `--renderer wgpu` to try the new renderer); in apps
+scaffolded by `pebbles create`, delete its line from `[features]`.
 
 ### Changed — bundled icon set: Lucide → Tabler (outline + filled)
 The default icon set is now **Tabler Icons** (MIT), replacing Lucide. Tabler is more
@@ -105,7 +105,7 @@ Render any widget tree to a PNG or raw RGBA with no window, via
 `pebbles_shell::capture::{capture_png, capture_rgba}` — the export primitive for
 chart/report export, server-side rendering and golden-image tests. Animations settle to
 their final (reduced-motion) frame first, so entry/transition tweens don't leave a
-half-drawn capture. Desktop + the default `vello-hybrid` backend only (it needs an
+half-drawn capture. Desktop + the default hybrid backend only (it needs an
 offscreen GPU device); it shares the hybrid GPU host's render path, so image content in
 the captured tree rasterizes correctly.
 
@@ -214,7 +214,7 @@ glide under jittery frame times (`objects/scroll.rs` tests).
 ### Added — text selection + keyboard link traversal primitives
 `RichText`/`RenderParagraph` gained the primitives the ecosystem widgets needed:
 `on_link_hover` (link hover reporting), `selectable`/`selectable_in` + a
-`SelectionGroup` for **cross-block** drag-select-and-copy (paint via parley
+`SelectionGroup` for **cross-block** drag-select-and-copy (paint via the text layout
 `Selection`, point→byte hit-testing through `text_edit`), and `keyboard_nav` + a
 `RenderParagraph` keyboard-focus ring for **Tab/arrow link traversal**. All
 additive; existing `text_rich` usage is unchanged.
@@ -423,7 +423,7 @@ parsing, with editor shaping O(window).
 `GALLERY_CAPTURE=<dir> cargo run -p gallery --release` renders the real
 Windows & IPC screen and its secondary counter window off-screen — two `Ui`s
 sharing one runtime — driving the actual shared signal + typed channel and
-rasterizing each window through vello to a texture it reads back to raw RGBA
+rasterizing each window through the previous renderer to a texture it reads back to raw RGBA
 (no screenshot tool or display server). `demo/build_demo.py` composites the
 looping GIF + screenshot strip (committed under `demo/`, embedded in the
 README). Captures exact rendered pixels, reproducible in CI.
@@ -476,7 +476,7 @@ shaped-text cache instead of one layout for the whole document:
   hits (tested at 3000 lines: one edit = one shape). A caret blink re-uses the
   whole table untouched (Rc-identity tested).
 - Caret motion, word motion, Home/End, Up/Down, click/drag-select and
-  double-click word-select all run parley WITHIN the line's layout (BiDi,
+  double-click word-select all run the text layout WITHIN the line's layout (BiDi,
   graphemes, and wrapped visual lines inside a source line stay correct) and hop
   source lines at the boundaries. The public `text_edit` API is unchanged — the
   widget layer needed zero edits.
@@ -521,7 +521,7 @@ the content. Landed as one coordinated set:
   a fling frame runs ZERO layout. Clean subtrees also early-out of layout under
   byte-identical constraints, so local changes are O(dirty path), not O(tree).
 - **Rich text spans: one block = ONE shaped layout.** `text_rich(spans)` /
-  `TextSpan` push per-range styles through parley's ranged builder — the
+  `TextSpan` push per-range styles through the text layout's ranged builder — the
   markdown reader stopped building a widget per word (and per code token). Real
   spaces, real newlines, engine-owned wrapping; underline/strikethrough
   decorations now actually paint; inline-code chips are range-box backgrounds;
@@ -533,7 +533,7 @@ the content. Landed as one coordinated set:
   BUILT, whatever the document size; the parse is memoized per source value.
 - **Window-level shape cache + retained fragments.** Shaped layouts are shared
   through the `TextEnv` (content-keyed, generation-evicted): rebuilt paragraphs
-  reuse shapes instead of re-running parley. Every list item is a repaint
+  reuse shapes instead of re-running text layout. Every list item is a repaint
   boundary (`repaint_boundary(..)` for anything else): clean items re-APPEND a
   retained scene fragment each frame instead of re-encoding glyphs and paths.
 
@@ -564,7 +564,7 @@ plus `#` (Python/Ruby/Bash/YAML/TOML) and `--` (SQL/Lua/Haskell) line comments.
   comment, number, ident, punct }` — every token color is a plain `Color`, so a
   theme recolors the whole scheme. Default derives from the palette; the gallery's
   Serif/Compact themes ship warm and cool syntax palettes to show it off.
-- Whitespace renders as non-breaking spaces so indentation is preserved (parley
+- Whitespace renders as non-breaking spaces so indentation is preserved (the text layout
   trims ordinary trailing whitespace). Tests cover token coloring + indentation.
 
 ### Fixed — Markdown View rendering (three separate bugs)
@@ -572,15 +572,15 @@ plus `#` (Python/Ruby/Bash/YAML/TOML) and `--` (SQL/Lua/Haskell) line comments.
   bare `Text` events (no `Paragraph`), so it was never flushed into the item and
   spilled into the following heading. Now flushed at item-end and nested-list start.
 - **Words jammed together**: word-chunks relied on a trailing space for
-  separation, but parley trims trailing whitespace — so `wrap` spacing now adds a
+  separation, but the text layout trims trailing whitespace — so `wrap` spacing now adds a
   real ~0.26em inter-word gap.
 
 ### Fixed — the markdown-screen crash, ROOT CAUSE (a non-finite layout size)
 The real cause, found at last with the dev tooling: a widget on the markdown
 screen laid out to **infinite height** (a `RenderDecoratedBox` sized `1×∞`). That
-∞ became a NaN path coordinate that (a) corrupted vello's GPU glyph atlas —
+∞ became a NaN path coordinate that (a) corrupted the previous renderer's GPU glyph atlas —
 surfacing as the recurring `Texture … is invalid` warning and blank/broken text —
-and (b) hard-panics vello's CPU renderer (`assertion failed: !n.is_nan()`). It
+and (b) hard-panics the previous CPU renderer (`assertion failed: !n.is_nan()`). It
 was never the renderer or the markdown widget; it was one bad layout size.
 - **The fix**: `layout_child` (the single chokepoint every node size passes
   through) now **clamps any non-finite (∞/NaN) size** to the finite max
@@ -593,7 +593,7 @@ was never the renderer or the markdown widget; it was one bad layout size.
   (`clamped non-finite size on RenderDecoratedBox: 1×inf → 1×0 …`) and a
   `nan_report` tripwire scans each frame, so the underlying sizing bug can still
   be fixed properly.
-- **Escape hatch**: `PEBBLES_CPU_RENDER=1` forces vello's CPU pipeline for GPU
+- **Escape hatch**: `PEBBLES_CPU_RENDER=1` forces the CPU pipeline for GPU
   drivers with other issues (slower, but now crash-free on this content).
 
 ### Added — the `pebbles` developer CLI (`crates/pebbles-cli`)
@@ -655,11 +655,11 @@ timeline leading up to it.
 The markdown screen froze to a black window. Root-caused with the new UI log
 (below), which showed the frame loop stalling in exactly one place:
 - **A blocking GPU barrier deadlocked the render thread.** An earlier "driver
-  race" fix called `device.poll(Wait)` with no timeout between the vello pass
+  race" fix called `device.poll(Wait)` with no timeout between the previous renderer's pass
   and present. On this Intel/Vulkan setup that submission never signalled, so
   the main thread blocked forever → black window. Replaced with a non-blocking
   `poll(Poll)` (the swapchain + AutoVsync already pace frames).
-- **Aggressive GPU-stack resets turned a harmless warning into a freeze.** vello
+- **Aggressive GPU-stack resets turned a harmless warning into a freeze.** The previous renderer
   0.10 emits a spurious per-frame `create_view` *validation* error for the
   markdown scene on this GPU — but the frame still renders correctly (measured
   125 fps straight through it). The shell was rebuilding the entire GPU stack
@@ -709,7 +709,7 @@ outliving its owner — plus a policy fix:
   ordering). All component-scoped openers converted: select, dropdown menu,
   context menu, menubar, combobox, multi-select, popover, date field, time
   field.
-- **The frame loop can no longer panic on GPU trouble**: a vello render failure
+- **The frame loop can no longer panic on GPU trouble**: a render failure
   logs, bumps the error counter (scheduling the existing full GPU reset) and
   skips the frame instead of `.expect`-crashing the app; a missing renderer is
   recreated in place.
@@ -812,23 +812,23 @@ outliving its owner — plus a policy fix:
   (GALLERY_TOUR=<ms>) with zero panics and zero GPU errors.
 - **The GPU validation-error crash is root-caused and fixed.** On some
   Linux/Vulkan drivers (seen on RADV/Wayland), queueing the swapchain
-  blit/present while the vello compute submission of the same frame is still
+  blit/present while the previous renderer's compute submission of the same frame is still
   in flight races inside the driver — surfacing as spurious, timing-dependent
   validation errors ("Texture/Buffer … is invalid"; any logging overhead made
   them vanish) that then poison the device, which is why heavy screens (the
   Markdown workbench) crashed and lighter ones didn't. The shell now waits the
-  vello pass out (`device.poll(Wait)`) before touching the swapchain — one
-  frame in flight, zero errors across every screen. Vello itself is pristine
+  previous renderer's pass out (`device.poll(Wait)`) before touching the swapchain — one
+  frame in flight, zero errors across every screen. The renderer itself is pristine
   upstream 0.10; no fork.
 - GPU error recovery now resets the ENTIRE GPU stack — instance, adapter,
   device, all surfaces, all renderers (throttled to ~1/second): a lost device
   hands out invalid resources forever, so renderer-level rebuilds could never
-  recover (observed as `Buffer 'vello.scene' is invalid` on a fresh renderer).
+  recover (observed as `Buffer 'scene' is invalid` on a fresh renderer).
   The event loop also wakes itself when the error count moves, so recovery
   runs even from an idle `Wait` state. Empirically: one recovered error at
   startup, zero repeats, zero panics.
 - GPU error recovery now REBUILDS the poisoned state instead of merely
-  skipping the frame: a failed resource could stay cached inside vello's
+  skipping the frame: a failed resource could stay cached inside the previous renderer's
   renderer pool, erroring on every subsequent frame. The render loop watches
   the uncaptured-error count and recreates the renderer + surface target the
   moment it moves — one recovered error at startup, clean frames after.
@@ -869,7 +869,7 @@ outliving its owner — plus a policy fix:
 
 Initial development version: the full P2 roadmap — widget catalog +
 shadcn-style components, SolidJS-style reactivity, Flutter three-tree layout,
-Vello/wgpu rendering, Parley text (IME/CJK), theming with live light/dark,
+GPU rendering (wgpu), text (IME/CJK), theming with live light/dark,
 multi-window + IPC, async resources, AccessKit accessibility, native menus and
 global hotkeys (feature-gated), `#[component]` macro, tooltips/overlays,
 virtualized lists, canvas, and the gallery example.
