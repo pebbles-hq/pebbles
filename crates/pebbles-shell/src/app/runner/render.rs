@@ -357,6 +357,8 @@ impl Runner {
         }
         let logical = Size::new(phys.width as f64 / scale, phys.height as f64 / scale);
         pebbles_widgets::overlay::set_window_size(logical.width, logical.height);
+        // `media_query().device_pixel_ratio` (Flutter's `MediaQuery.devicePixelRatio`).
+        pebbles_widgets::set_device_pixel_ratio(scale);
         // One font poll per frame, on the main window: a merged system-font scan re-lays out
         // every window.
         if self.text.poll_fonts() {
@@ -601,6 +603,7 @@ impl Runner {
         // Publish this window's size so its popovers can flip/shift on-screen.
         w.ui.make_current();
         pebbles_widgets::overlay::set_window_size(logical.width, logical.height);
+        pebbles_widgets::set_device_pixel_ratio(scale);
         w.ui.layout(&mut self.text, logical);
 
         self.scene.reset();

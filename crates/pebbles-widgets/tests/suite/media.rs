@@ -81,3 +81,17 @@ fn orientation_builder_calls_its_builder() {
     // value depends on the shell publishing bounds — here we assert it built at all).
     assert!(!ORI.with(|o| o.borrow().is_empty()), "the builder was called with an orientation");
 }
+
+/// The shell reports the window's scale every frame (desktop scale 2 → `device_pixel_ratio` 2).
+#[test]
+fn device_pixel_ratio_follows_the_reported_scale() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    pebbles_widgets::set_device_pixel_ratio(2.0);
+    assert_eq!(media_query().device_pixel_ratio, 2.0);
+    pebbles_widgets::set_device_pixel_ratio(2.0); // unchanged: a no-op
+    assert_eq!(media_query().device_pixel_ratio, 2.0);
+    pebbles_widgets::set_device_pixel_ratio(1.25);
+    assert_eq!(media_query().device_pixel_ratio, 1.25);
+    pebbles_widgets::set_device_pixel_ratio(1.0);
+}

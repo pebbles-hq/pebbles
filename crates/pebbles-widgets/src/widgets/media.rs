@@ -74,8 +74,13 @@ pub fn set_safe_area_padding(padding: EdgeInsets) {
 }
 
 /// Report the device pixel ratio (physical px per logical px).
+/// Unchanged values notify nothing, so the shell can report it every frame.
 pub fn set_device_pixel_ratio(dpr: f64) {
-    metrics_signal().update(|m| m.device_pixel_ratio = dpr.max(0.1));
+    let dpr = dpr.max(0.1);
+    let metrics = metrics_signal();
+    if metrics.peek().device_pixel_ratio != dpr {
+        metrics.update(|m| m.device_pixel_ratio = dpr);
+    }
 }
 
 /// Report the user text-scale factor.
