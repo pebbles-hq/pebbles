@@ -27,7 +27,9 @@ comparable with each other on the same machine. They never gate anything (10 §M
   takes a wall-clock timestamp. Intervals between consecutive ticks from `M32_WARM` (2 s) to
   `M32_SECS` (12 s) give p50/p95 **frame interval**. With vsync this is capped at the refresh
   interval; under Xvfb there is no real display, so it tracks the frame cost.
-- **Startup** = epoch time of the first frame tick − the driver's spawn time.
+- **Startup** = epoch time of the first frame tick − the driver's spawn time. Before measuring,
+  the driver launches each app once untimed so no toolkit pays the runner's cold page cache
+  (binary, Vulkan/GL driver, LLVM) inside its first measured scene (M34).
 - After the window the animation stops; the driver waits 1 s, then reads **idle CPU** (process
   utime+stime over 5 s) and **RSS** / peak RSS from `/proc`.
 - Flutter also prints its own `FrameTiming.totalSpan` p50/p95 (`M32-own` line).

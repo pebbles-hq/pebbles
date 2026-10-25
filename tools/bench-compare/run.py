@@ -67,8 +67,27 @@ def run(toolkit, exe, scene):
     return res
 
 
+def warm_up(exe):
+    """One untimed launch per toolkit before any measurement (M34). Without it the first
+    (toolkit, scene) pair pays the cold page cache for the binary, the Vulkan/GL driver and LLVM,
+    so its startup measured disk I/O rather than the toolkit (dashboard, run first, read 1584 ms
+    on CI while every later Pebbles launch took ~160 ms)."""
+    env = dict(os.environ, M32_SCENE=SCENES[0], M32_SECS="1", M32_WARM="0.5")
+    p = subprocess.Popen([exe], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                         cwd=os.path.dirname(os.path.abspath(exe)))
+    deadline = time.time() + 60
+    for line in iter(p.stdout.readline, ""):
+        if line.startswith("M32 ") or time.time() > deadline:
+            break
+    p.kill()
+    p.wait()
+    time.sleep(0.5)
+
+
 def main():
     apps = [(t, os.path.abspath(e)) for t, e in (a.split("=", 1) for a in sys.argv[1:])]
+    for _, exe in apps:
+        warm_up(exe)
     print("| scene | toolkit | frames (10 s) | interval p50 ms | interval p95 ms | startup ms | idle CPU % | RSS MiB (peak) |")
     print("|---|---|---|---|---|---|---|---|")
     extra = []
