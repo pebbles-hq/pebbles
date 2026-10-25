@@ -137,6 +137,10 @@ pub(crate) enum PebblesUserEvent {
     /// lost device. Recover with `ReplaceGpu`.
     #[cfg(not(target_family = "wasm"))]
     GpuDeviceLost { lost: Vec<String> },
+    /// (native) The render thread could not adopt a window's surface (08 §17.5): a failed
+    /// surface creation, so a full reset with the §6.7 backoff.
+    #[cfg(not(target_family = "wasm"))]
+    SurfaceAdoptFailed { key: frame::WindowKey, error: String },
     /// (native) A GPU device was lost — wake and recover (08 §6.8).
     #[cfg_attr(target_family = "wasm", allow(dead_code))] // sent only by the native wgpu waker
     GpuLost,
@@ -156,7 +160,7 @@ struct ActiveWindow {
     /// Live-resize sync (08 §17.4).
     resize_sync: ResizeSync,
     /// Not visible: render nothing until a visibility event (08 §5.4).
-    occluded: bool,
+    occlusion: frame::Occlusion,
 }
 
 /// A secondary OS window opened via [`window`](fn@pebbles_widgets::window). It has its
@@ -179,8 +183,8 @@ struct WindowRuntime {
     pan_target: Option<u64>,
     current_cursor: Cursor,
     on_close: Option<Rc<dyn Fn()>>,
-    /// Hidden by the window system (08 §5.7, P12): render nothing, request no frames.
-    occluded: bool,
+    /// Hidden (08 §5.7, P12): render nothing, request no frames.
+    occlusion: frame::Occlusion,
 }
 
 /// The winit application handler. Holds all persistent runtime state.
@@ -543,7 +547,7 @@ impl Runner {
             pacer: Pacer::default(),
             frame_id: 0,
             resize_sync: ResizeSync::default(),
-            occluded: false,
+            occlusion: frame::Occlusion::default(),
         });
 
         // B3: build + attach the native menu bar now that the window exists.
@@ -919,7 +923,16 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 }
             }
             #[cfg(not(target_family = "wasm"))]
-            PebblesUserEvent::FrameDone { key, frame_id: _, outcome } => self.frame_done(key, outcome),
+            PebblesUserEvent::FrameDone { key, frame_id, outcome } => self.frame_done(key, frame_id, outcome),
+            #[cfg(not(target_family = "wasm"))]
+            PebblesUserEvent::SurfaceAdoptFailed { key, error } => {
+                gpu_log(
+                    pebbles_foundation::log::Level::Error,
+                    &format!("could not adopt the surface of {key:?}: {error}"),
+                );
+                // 08 §5.5 `Lost` row: recreation failed → full reset (`about_to_wait` schedules it).
+                self.gpu_reset_requested = true;
+            }
             #[cfg(not(target_family = "wasm"))]
             PebblesUserEvent::GpuDeviceLost { lost } => {
                 self.lost_lines = lost;
@@ -961,6 +974,11 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         {
             a11y.process_event(&win, &event);
         }
+        if input::is_user_input(&event)
+            && let Some(active) = self.active.as_mut()
+        {
+            active.pacer.note_input();
+        }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
 
@@ -973,7 +991,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 {
                     // The next packet carries the new size; `render_packet` configures (08 §17.3 b)
                     // and, on the render thread, the UI waits for it (08 §17.4).
-                    active.occluded = false;
+                    active.occlusion.shown(active.frame_id);
                     active.resize_sync.pending = true;
                     active.window.request_redraw();
                 }
@@ -1301,7 +1319,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             WindowEvent::ScaleFactorChanged { .. } => {
                 pebbles_widgets::overlay::hide_overlay();
                 if let Some(active) = self.active.as_mut() {
-                    active.occluded = false;
+                    active.occlusion.shown(active.frame_id);
                     active.resize_sync.pending = true;
                     active.window.request_redraw();
                 }
@@ -1309,26 +1327,24 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
 
             WindowEvent::RedrawRequested => {
                 let started = Instant::now();
-                self.render();
-                if render::frame_stats_enabled() {
+                if self.render() && render::frame_stats_enabled() {
                     self.run_stats.ui_frame(started.elapsed().as_secs_f64() * 1e3);
                 }
             }
 
             // 08 §5.4: stop rendering while hidden; redraw when visible again.
             WindowEvent::Occluded(occluded) => {
-                if let Some(active) = self.active.as_mut() {
-                    active.occluded = occluded;
-                    if !occluded {
-                        active.window.request_redraw();
-                    }
+                if let Some(active) = self.active.as_mut()
+                    && active.occlusion.system(occluded, active.frame_id)
+                {
+                    active.window.request_redraw();
                 }
             }
             WindowEvent::Focused(true) => {
                 if let Some(active) = self.active.as_mut()
-                    && active.occluded
+                    && active.occlusion.is_occluded()
                 {
-                    active.occluded = false;
+                    active.occlusion.shown(active.frame_id);
                     active.window.request_redraw();
                 }
             }
@@ -1422,6 +1438,23 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 }
             }
         }
+        // 08 §5.4: an `Occluded` acquire the window system never confirmed gets one probe frame
+        // per `OCCLUDED_PROBE` (a window must never stay blank with nothing left to wake it).
+        let now = Instant::now();
+        if let Some(active) = self.active.as_mut() {
+            if active.occlusion.probe_due(now) {
+                active.window.request_redraw();
+            } else if let Some(t) = active.occlusion.probe_at() {
+                wake_by(event_loop, t);
+            }
+        }
+        for w in self.windows.values_mut() {
+            if w.occlusion.probe_due(now) {
+                w.window.request_redraw();
+            } else if let Some(t) = w.occlusion.probe_at() {
+                wake_by(event_loop, t);
+            }
+        }
         // Recognize a long press once held past the deadline: fires on_long_press +
         // on_long_press_start, then the gesture becomes "active" (moves/end follow).
         if let Some(deadline) = self.press_deadline {
@@ -1450,7 +1483,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         // Dev monkey-tester: hammer the UI with synthetic input and keep the loop hot.
         if self.storm.is_some() && self.mounted {
             self.storm_tick();
-            wake_by(event_loop, Instant::now() + Duration::from_millis(10));
+            wake_by(event_loop, Instant::now() + storm::STORM_PERIOD);
         }
         // `[pebbles run]` summary (PEBBLES_FRAME_STATS): once a second, idle or not.
         self.run_stats_tick();

@@ -120,11 +120,11 @@ impl Runner {
                     .outer_position()
                     .map(|p| format!("{},{}", p.x, p.y))
                     .unwrap_or_else(|_| "?".into());
-                (format!("{}x{}", s.width, s.height), p, a.window.scale_factor(), a.occluded)
+                (format!("{}x{}", s.width, s.height), p, a.window.scale_factor(), a.occlusion.is_occluded())
             }
             None => ("0x0".into(), "?".into(), 0.0, false),
         };
-        let occluded_secondary = self.windows.values().filter(|w| w.occluded).count();
+        let occluded_secondary = self.windows.values().filter(|w| w.occlusion.is_occluded()).count();
         let r = &mut self.run_stats;
         let now = Instant::now();
         let t = r.started.map_or(0.0, |s| (now - s).as_secs_f64());

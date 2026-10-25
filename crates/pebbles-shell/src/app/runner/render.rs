@@ -123,6 +123,12 @@ impl Runner {
     #[cfg(not(target_family = "wasm"))]
     fn rebuild_gpu_native(&mut self, init: &HostInit, started: Instant) {
         use pebbles_foundation::log::Level;
+        // 08 §6.5 step 4 on the render thread: its old swapchains go before new ones are
+        // configured (after a device loss it already dropped them; a reset for another reason
+        // finds them still there).
+        if let Some(FrameSink::Threaded(thread)) = self.sink.as_ref() {
+            thread.drop_surfaces();
+        }
         let mut ctx = pollster::block_on(new_context(init));
         let mut failure: Option<String> = None;
         let windows: Vec<Arc<Window>> = self
@@ -131,37 +137,27 @@ impl Runner {
             .map(|a| Arc::clone(&a.window))
             .chain(self.windows.values().map(|w| Arc::clone(&w.window)))
             .collect();
-        let size = |w: &Window| {
-            let phys = w.inner_size();
-            (phys.width.max(1), phys.height.max(1))
-        };
-        match self.sink.as_mut() {
-            // 08 §17.6 step 2: a new context and one new surface per window, created here (the UI
-            // thread) with the new instance, then handed over in one `ReplaceGpu`.
-            Some(FrameSink::Threaded(thread)) => {
-                let instance = ctx.instance();
-                let mut surfaces = Vec::new();
-                for window in &windows {
-                    match instance.create_surface(Arc::clone(window)) {
-                        Ok(surface) => surfaces.push((window.id(), surface, size(window))),
-                        Err(e) => failure = failure.or(Some(e.to_string())),
-                    }
-                }
-                thread.replace_gpu(ctx, surfaces);
+        // Both modes build the new state here, on the UI thread: the device request and every
+        // surface's adoption fail or succeed HERE, so a dead GPU is a failed reset with the
+        // §6.7 backoff in both modes (08 §17.6 step 4). (Adopting on the render thread hid the
+        // failure: the rebuild "succeeded", every frame then found no surface and recreated it.)
+        let mut surfaces = Vec::new();
+        for window in &windows {
+            let phys = window.inner_size();
+            let (w, h) = (phys.width.max(1), phys.height.max(1));
+            match pollster::block_on(ctx.create_surface(Arc::clone(window), w, h)) {
+                Ok(surface) => surfaces.push((window.id(), surface)),
+                Err(e) => failure = failure.or(Some(gpu::error_text(&e))),
             }
+        }
+        let mut state = RenderState::new(ctx);
+        for (key, surface) in surfaces {
+            state.adopt(key, surface);
+        }
+        match self.sink.as_mut() {
+            // 08 §17.6 step 2: hand the new state over in one `ReplaceGpu`.
+            Some(FrameSink::Threaded(thread)) => thread.replace_gpu(state),
             _ => {
-                let mut surfaces = Vec::new();
-                for window in &windows {
-                    let (w, h) = size(window);
-                    match pollster::block_on(ctx.create_surface(Arc::clone(window), w, h)) {
-                        Ok(surface) => surfaces.push((window.id(), surface)),
-                        Err(e) => failure = failure.or(Some(gpu::error_text(&e))),
-                    }
-                }
-                let mut state = RenderState::new(ctx);
-                for (key, surface) in surfaces {
-                    state.adopt(key, surface);
-                }
                 self.sink = Some(FrameSink::Inline(state));
                 self.thread_sink_if_configured();
             }
@@ -258,6 +254,9 @@ impl Runner {
                         PebblesUserEvent::FrameDone { key, frame_id, outcome }
                     }
                     render_thread::ThreadEvent::DeviceLost(lost) => PebblesUserEvent::GpuDeviceLost { lost },
+                    render_thread::ThreadEvent::AdoptFailed { key, error } => {
+                        PebblesUserEvent::SurfaceAdoptFailed { key, error }
+                    }
                 });
             });
             match render_thread::RenderThread::spawn(state, events) {
@@ -276,13 +275,21 @@ impl Runner {
 
     /// `FrameDone` from the render thread (08 §17.3 step 5).
     #[cfg(not(target_family = "wasm"))]
-    pub(super) fn frame_done(&mut self, key: frame::WindowKey, outcome: FrameOutcome) {
+    pub(super) fn frame_done(&mut self, key: frame::WindowKey, frame_id: u64, outcome: FrameOutcome) {
+        let now = Instant::now();
+        // An `Occluded` for a packet built before the latest visibility event is stale: the
+        // window is visible, so the frame is retried rather than the window parked (08 §5.4).
+        let occlude = |pacer: &mut Pacer, occlusion: &mut frame::Occlusion| {
+            let redraw = pacer.done(outcome);
+            if outcome == FrameOutcome::Occluded && !occlusion.acquire_occluded(frame_id, now) {
+                return true;
+            }
+            redraw
+        };
         let (window, redraw) = if let Some(a) = self.active.as_mut().filter(|a| a.window.id() == key) {
-            a.occluded |= outcome == FrameOutcome::Occluded;
-            (Arc::clone(&a.window), a.pacer.done(outcome))
+            (Arc::clone(&a.window), occlude(&mut a.pacer, &mut a.occlusion))
         } else if let Some(w) = self.windows.get_mut(&key) {
-            w.occluded |= outcome == FrameOutcome::Occluded;
-            (Arc::clone(&w.window), w.pacer.done(outcome))
+            (Arc::clone(&w.window), occlude(&mut w.pacer, &mut w.occlusion))
         } else {
             return; // closed meanwhile
         };
@@ -292,11 +299,43 @@ impl Runner {
         self.settle_frame(&window, outcome);
     }
 
-    pub(super) fn render(&mut self) {
+    /// Whether a GPU reset is due but its §6.7 backoff has not elapsed: no window can present,
+    /// so none builds a frame (`about_to_wait` wakes the loop when the retry is due). Without
+    /// this every frame on a dead GPU came back lost and re-requested itself — a hot loop that
+    /// recreated surfaces (and devices) as fast as the loop could spin.
+    pub(super) fn gpu_reset_waiting(&self) -> bool {
+        let poisoned = self.gpu_reset_requested || self.render_state().is_some_and(|s| s.ctx.needs_reset());
+        poisoned && self.gpu_retry_at.is_some_and(|t| t > Instant::now())
+    }
+
+    /// The main window's frame. Returns whether a UI frame was built (a deferred, occluded or
+    /// backed-off `RedrawRequested` builds none and costs nothing).
+    pub(super) fn render(&mut self) -> bool {
         // (web) The WebGL context is lost: nothing to draw with until it is restored (P04).
         #[cfg(target_family = "wasm")]
         if self.gpu_suspended {
-            return;
+            return false;
+        }
+        // The gates come BEFORE any per-frame work (08 §17.3 step 1, §5.4, §6.7): a redraw that
+        // builds no packet must not tick animations, pump tasks or count toward
+        // `PEBBLES_SYNTH_GPU_LOSS` — each of those requests the next frame, so a deferred
+        // redraw used to re-arm itself and spin the UI thread while frames were in flight.
+        if self.gpu_reset_waiting() {
+            return false;
+        }
+        {
+            let Some(active) = self.active.as_mut() else { return false };
+            // 08 §5.4: an occluded window renders nothing and requests no frames until a
+            // visibility event clears the flag (otherwise macOS spins on instant occluded acquires).
+            if !should_render(active.occlusion.is_occluded()) {
+                return false;
+            }
+            // 08 §17.3 step 1: at the in-flight cap, or with the last packet still queued,
+            // remember the redraw and skip the UI frame.
+            let queued = self.sink.as_ref().is_some_and(|s| s.queued(active.window.id()));
+            if active.pacer.defer(active.resize_sync.pending, queued) {
+                return false;
+            }
         }
         use pebbles_core::log;
         // Frame heartbeat: bump the counter and log a periodic pulse (and every
@@ -348,16 +387,8 @@ impl Runner {
         self.ui.make_current();
         pebbles_widgets::overlay::gc_dead();
 
-        let Some(active) = self.active.as_mut() else { return };
-        // 08 §5.4: an occluded window renders nothing and requests no frames until a
-        // visibility event clears the flag (otherwise macOS spins on instant occluded acquires).
-        if !should_render(active.occluded) {
-            return;
-        }
-        // 08 §17.3 step 1: at the in-flight cap, remember the redraw and skip the UI frame.
-        if active.pacer.defer(active.resize_sync.pending) {
-            return;
-        }
+        // (A reset above may have replaced the sink; the gates still hold for this window.)
+        let Some(active) = self.active.as_mut() else { return false };
 
         let stats = frame_stats_enabled();
 
@@ -370,7 +401,7 @@ impl Runner {
         let scale = active.window.scale_factor();
         let phys = active.window.inner_size();
         if phys.width == 0 || phys.height == 0 {
-            return;
+            return true;
         }
         let logical = Size::new(phys.width as f64 / scale, phys.height as f64 / scale);
         pebbles_widgets::overlay::set_window_size(logical.width, logical.height);
@@ -507,7 +538,7 @@ impl Runner {
             eprintln!("[pebbles gpu] {line}");
         }
         match submitted {
-            None => return,
+            None => return true,
             // Threaded: `FrameDone` settles it.
             Some(None) => {}
             Some(Some(outcome)) => {
@@ -515,13 +546,13 @@ impl Runner {
                     if outcome == FrameOutcome::Occluded
                         && let Some(active) = self.active.as_mut()
                     {
-                        active.occluded = true;
+                        active.occlusion.acquire_occluded(active.frame_id, Instant::now());
                     }
-                    return;
+                    return true;
                 }
             }
         }
-        let Some(active) = self.active.as_mut() else { return };
+        let Some(active) = self.active.as_mut() else { return true };
 
         // Keep the frames coming while any animation or scroll spring is running —
         // or while a lazy paint-time measurement requested a corrective relayout
@@ -577,13 +608,19 @@ impl Runner {
             );
             self.last_objects = objects;
         }
+        true
     }
 
     /// Render one secondary window (mirrors [`render`], reusing the shared scene,
     /// renderers and GPU context).
     pub(super) fn render_window(&mut self, w: &mut WindowRuntime) {
-        // 08 §5.7 (P12): a hidden window renders nothing and requests no frames.
-        if !should_render(w.occluded) || w.pacer.defer(w.resize_sync.pending) {
+        // 08 §5.7 (P12): a hidden window renders nothing and requests no frames; a window at its
+        // in-flight cap or with a packet still queued waits for its `FrameDone` (08 §17.3 step 1).
+        if self.gpu_reset_waiting() || !should_render(w.occlusion.is_occluded()) {
+            return;
+        }
+        let queued = self.sink.as_ref().is_some_and(|s| s.queued(w.window.id()));
+        if w.pacer.defer(w.resize_sync.pending, queued) {
             return;
         }
         // NOTE: `w` is detached from `self.windows` during dispatch, so a reset
@@ -655,7 +692,9 @@ impl Runner {
             Some(Some(outcome)) => {
                 if !self.settle_frame(&w.window, outcome) {
                     // An occluded acquire marks the window hidden until a visibility event (P12).
-                    w.occluded |= outcome == FrameOutcome::Occluded;
+                    if outcome == FrameOutcome::Occluded {
+                        w.occlusion.acquire_occluded(w.frame_id, Instant::now());
+                    }
                     return;
                 }
             }
@@ -690,7 +729,9 @@ fn submit_frame(
 ) -> Option<Option<FrameOutcome>> {
     let sink = sink.as_mut()?;
     // 08 §17.4: only the render thread needs the wait; inline frames present before returning.
-    let sync = std::mem::take(&mut resize.pending) && sink.state().is_none();
+    // Before the window's first present there is nothing on screen to keep in step (and that
+    // frame builds the renderer and its pipelines, which can outlast the timeout).
+    let sync = std::mem::take(&mut resize.pending) && sink.state().is_none() && pacer.has_presented();
     if !pacer.begin(sync) {
         return None;
     }
@@ -709,6 +750,7 @@ fn submit_frame(
         scale_factor: window.scale_factor(),
         base_color,
         sync: sync_tx,
+        input: pacer.take_input(),
     };
     // winit's `pre_present_notify` must come right before a real present: on Wayland it arms a
     // frame callback, and a frame that is then not presented (lost, skipped) leaves winit
@@ -759,6 +801,8 @@ fn follow_up(
     match outcome {
         // `Pacer::done` already re-requested a skipped frame (§5.6).
         FrameOutcome::Presented | FrameOutcome::Skipped | FrameOutcome::Occluded => {}
+        // A full reset is pending: it recreates every surface (after its §6.7 backoff).
+        FrameOutcome::SurfaceLost if *reset_requested => {}
         FrameOutcome::SurfaceLost => {
             // 08 §17.5: a new surface for the same window, created on this (the UI) thread.
             #[cfg(not(target_family = "wasm"))]

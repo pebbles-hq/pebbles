@@ -203,7 +203,7 @@ impl Runner {
                 pan_target: None,
                 current_cursor: Cursor::Default,
                 on_close: spec.on_close,
-                occluded: false,
+                occlusion: frame::Occlusion::default(),
             },
         );
     }
@@ -214,6 +214,9 @@ impl Runner {
         // Route window-scoped globals (overlay/dialog signals) to THIS window while we
         // handle its input — event handlers don't otherwise set the current window.
         w.ui.make_current();
+        if input::is_user_input(&event) {
+            w.pacer.note_input();
+        }
         let mut keep = true;
         match event {
             WindowEvent::CloseRequested => {
@@ -234,8 +237,8 @@ impl Runner {
             }
             WindowEvent::Resized(size) => {
                 // The next packet carries the new size; `render_packet` configures (08 §17.3 b).
-                w.occluded = false;
                 if size.width > 0 && size.height > 0 {
+                    w.occlusion.shown(w.frame_id);
                     w.resize_sync.pending = true;
                     w.window.request_redraw();
                 }
@@ -243,18 +246,17 @@ impl Runner {
             // P12: the main window's scale / occlusion / focus handling, for this window.
             WindowEvent::ScaleFactorChanged { .. } => {
                 pebbles_widgets::overlay::hide_overlay();
-                w.occluded = false;
+                w.occlusion.shown(w.frame_id);
                 w.resize_sync.pending = true;
                 w.window.request_redraw();
             }
             WindowEvent::Occluded(occluded) => {
-                w.occluded = occluded;
-                if !occluded {
+                if w.occlusion.system(occluded, w.frame_id) {
                     w.window.request_redraw();
                 }
             }
             WindowEvent::Focused(true) => {
-                w.occluded = false;
+                w.occlusion.shown(w.frame_id);
                 w.window.request_redraw();
             }
             WindowEvent::CursorMoved { position, .. } => {

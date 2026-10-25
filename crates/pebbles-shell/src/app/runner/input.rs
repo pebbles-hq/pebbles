@@ -5,6 +5,22 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+/// Whether `event` is user input (keyboard, IME, pointer, wheel, touch): the window's next
+/// frame is input-driven and the render thread draws it ahead of animation-only frames
+/// (`FramePacket::input`, 08 §17.3 step 4).
+pub(super) fn is_user_input(event: &WindowEvent) -> bool {
+    matches!(
+        event,
+        WindowEvent::KeyboardInput { .. }
+            | WindowEvent::Ime(_)
+            | WindowEvent::CursorMoved { .. }
+            | WindowEvent::MouseInput { .. }
+            | WindowEvent::MouseWheel { .. }
+            | WindowEvent::Touch(_)
+            | WindowEvent::PinchGesture { .. }
+    )
+}
+
 /// C6 — route a wheel `dy` when an overlay popover is open, so a scroll behind the
 /// popover slides it to stay glued to its trigger (and dismisses it when nothing
 /// scrolls). Shared by the main window and every secondary window — the overlay

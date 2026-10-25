@@ -18,7 +18,14 @@ pub(super) struct InputStorm {
     /// screen's content area (e.g. exclude the nav sidebar so the storm can
     /// never navigate away from the screen under test).
     region: Option<(f64, f64, f64, f64)>,
+    /// The next turn is due (one turn per [`STORM_PERIOD`]).
+    next_at: Option<Instant>,
 }
+
+/// One storm turn per 10 ms of wall time. (It used to run once per event-loop turn, so a mode
+/// whose loop turns more often — the render thread's `FrameDone` events — got several times the
+/// input, and the window resizes it makes, for the same run length.)
+pub(super) const STORM_PERIOD: Duration = Duration::from_millis(10);
 
 impl InputStorm {
     /// Build from the environment: any non-empty, non-"0" `PEBBLES_INPUT_STORM` (on the web the
@@ -39,7 +46,7 @@ impl InputStorm {
         if let Some(r) = region {
             eprintln!("pebbles: storm pinned to region {r:?}");
         }
-        Some(InputStorm { rng: 0x9E37_79B9_7F4A_7C15, steps: 0, region })
+        Some(InputStorm { rng: 0x9E37_79B9_7F4A_7C15, steps: 0, region, next_at: None })
     }
 
     /// xorshift64 — cheap, deterministic, good enough for a monkey.
@@ -60,6 +67,12 @@ impl Runner {
     pub(super) fn storm_tick(&mut self) {
         // Move the storm out so `self` stays free for dispatch calls.
         let Some(mut storm) = self.storm.take() else { return };
+        let now = Instant::now();
+        if storm.next_at.is_some_and(|t| now < t) {
+            self.storm = Some(storm);
+            return;
+        }
+        storm.next_at = Some(now + STORM_PERIOD);
         let Some((w, h)) = self.active.as_ref().map(|a| {
             let scale = a.window.scale_factor();
             let phys = a.window.inner_size();
@@ -208,6 +221,9 @@ impl Runner {
         }
         if render::frame_stats_enabled() {
             self.run_stats.input();
+        }
+        if let Some(a) = self.active.as_mut() {
+            a.pacer.note_input();
         }
         if storm.steps.is_multiple_of(1200) {
             eprintln!("pebbles: storm at {} steps — still alive", storm.steps);

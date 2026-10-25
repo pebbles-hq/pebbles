@@ -11,7 +11,6 @@ use std::time::Duration;
 use pebbles_foundation::log::{Cat, Level, logf};
 
 use super::frame::{FrameOutcome, FramePacket, Mailbox, RenderState, WindowKey, render_packet};
-use super::gpu::RenderContext;
 
 /// How long closing a window waits for the render thread to drop its surface (08 §17.5).
 pub(crate) const WINDOW_REMOVE_TIMEOUT: Duration = Duration::from_secs(1);
@@ -25,6 +24,10 @@ pub(crate) enum ThreadEvent {
     /// The device is lost (08 §17.6 step 1): one `reason=…: message` line per lost device, sent
     /// once before the thread drops its renderers and surfaces.
     DeviceLost(Vec<String>),
+    /// A surface handed over with `AddWindow` could not be adopted (08 §17.5): the UI thread
+    /// treats it like a failed surface creation (a full reset with the §6.7 backoff) instead of
+    /// recreating the surface on every frame.
+    AdoptFailed { key: WindowKey, error: String },
 }
 
 /// Delivers [`ThreadEvent`]s through the event-loop proxy. Never blocks.
@@ -43,10 +46,14 @@ pub(crate) enum RenderMsg {
         key: WindowKey,
         ack: SyncSender<()>,
     },
-    /// Device-loss recovery (08 §17.6): a new context and one new surface per window.
-    ReplaceGpu {
-        gpu: RenderContext,
-        surfaces: Vec<(WindowKey, wgpu::Surface<'static>, (u32, u32))>,
+    /// Device-loss recovery (08 §17.6): the render state the UI thread rebuilt (a new context
+    /// and every window's adopted surface), exactly as inline mode rebuilds it.
+    ReplaceGpu(RenderState),
+    /// Before a rebuild (08 §6.5 step 4): drop the whole render state — context, renderers and
+    /// surfaces, so old swapchains are gone before new ones are configured — and answer frames
+    /// `DeviceLost` until `ReplaceGpu`.
+    DropSurfaces {
+        ack: SyncSender<()>,
     },
     Shutdown {
         ack: SyncSender<()>,
@@ -106,6 +113,12 @@ impl RenderThread {
         let _ = self.tx.send(RenderMsg::AddWindow { key, surface, size });
     }
 
+    /// Whether `key`'s last packet is still waiting in its mailbox (08 §17.3 step 1).
+    pub(crate) fn queued(&self, key: WindowKey) -> bool {
+        let map = self.mailboxes.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        map.get(&key).is_some_and(|m| m.is_full())
+    }
+
     /// 08 §17.3 step 3: post the packet and wake the thread. Returns the packet it replaced,
     /// which the caller counts as completed (`Skipped`).
     pub(crate) fn submit(&self, key: WindowKey, packet: FramePacket) -> Option<FramePacket> {
@@ -119,13 +132,24 @@ impl RenderThread {
         let _ = self.tx.send(RenderMsg::SimulateLoss);
     }
 
-    /// 08 §17.6 step 2: a new context and one new surface per open window.
-    pub(crate) fn replace_gpu(
-        &self,
-        gpu: RenderContext,
-        surfaces: Vec<(WindowKey, wgpu::Surface<'static>, (u32, u32))>,
-    ) {
-        let _ = self.tx.send(RenderMsg::ReplaceGpu { gpu, surfaces });
+    /// 08 §17.6 step 2: the rebuilt render state (new context, every window's surface).
+    pub(crate) fn replace_gpu(&self, state: RenderState) {
+        let _ = self.tx.send(RenderMsg::ReplaceGpu(state));
+    }
+
+    /// 08 §6.5 step 4 before a rebuild: the render thread drops its surfaces; waits for the ack
+    /// (`WINDOW_REMOVE_TIMEOUT`, then one warning).
+    pub(crate) fn drop_surfaces(&self) {
+        let (ack, done) = mpsc::sync_channel(1);
+        if self.tx.send(RenderMsg::DropSurfaces { ack }).is_ok()
+            && done.recv_timeout(WINDOW_REMOVE_TIMEOUT) == Err(RecvTimeoutError::Timeout)
+        {
+            logf(
+                Level::Warn,
+                Cat::Gpu,
+                format_args!("render thread did not drop its surfaces within {WINDOW_REMOVE_TIMEOUT:?}"),
+            );
+        }
     }
 
     /// 08 §17.5 close: drop the window's surface on the render thread and wait for it. `false`
@@ -182,24 +206,30 @@ impl Drop for RenderThread {
 }
 
 /// 08 §17.3 step 4: lifecycle messages first (arrival order), then frames whose packet carries
-/// a live-resize `sync`, then the remaining frames (arrival order).
-fn order_batch(batch: Vec<RenderMsg>, has_sync: impl Fn(WindowKey) -> bool) -> Vec<RenderMsg> {
-    let (mut lifecycle, frames): (Vec<_>, Vec<_>) = batch.into_iter().partition(RenderMsg::is_lifecycle);
-    let (synced, rest): (Vec<_>, Vec<_>) =
-        frames.into_iter().partition(|m| matches!(m, RenderMsg::Frame(k) if has_sync(*k)));
-    lifecycle.extend(synced);
-    lifecycle.extend(rest);
+/// a live-resize `sync`, then frames built after user input, then the remaining frames
+/// (arrival order within each group). `rank` is [`Mailbox::rank`] of the frame's window.
+fn order_batch(batch: Vec<RenderMsg>, rank: impl Fn(WindowKey) -> u8) -> Vec<RenderMsg> {
+    let (mut lifecycle, mut frames): (Vec<_>, Vec<_>) = batch.into_iter().partition(RenderMsg::is_lifecycle);
+    // Stable: arrival order is kept within a rank.
+    frames.sort_by_key(|m| match m {
+        RenderMsg::Frame(k) => rank(*k),
+        _ => u8::MAX,
+    });
+    lifecycle.extend(frames);
     lifecycle
 }
 
 fn render_loop(
-    mut state: RenderState,
+    state: RenderState,
     rx: &Receiver<RenderMsg>,
     mailboxes: &std::sync::Mutex<HashMap<WindowKey, Arc<Mailbox>>>,
     events: &EventFn,
 ) {
-    // 08 §17.6: after a loss every frame answers `DeviceLost` until `ReplaceGpu`.
-    let mut lost = false;
+    // 08 §17.6: `None` after a loss (or `DropSurfaces`): every frame answers `DeviceLost` until
+    // `ReplaceGpu`. The whole state goes — context and device included — so nothing of the old
+    // stack still holds a swapchain while the UI thread configures new ones (DXGI refuses a
+    // second swapchain on a window with `E_ACCESSDENIED`).
+    let mut state = Some(state);
     let mailbox =
         |key| mailboxes.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(&key).cloned();
     #[cfg(test)]
@@ -207,38 +237,40 @@ fn render_loop(
     while let Ok(first) = rx.recv() {
         let mut batch = vec![first];
         batch.extend(rx.try_iter());
-        let batch = order_batch(batch, |k| mailbox(k).is_some_and(|m| m.has_sync()));
+        let batch = order_batch(batch, |k| mailbox(k).map_or(2, |m| m.rank()));
         for msg in batch {
             match msg {
                 RenderMsg::AddWindow { key, surface, size } => {
+                    // Without a state a full rebuild is under way; it brings every surface.
+                    let Some(state) = state.as_mut() else { continue };
                     match pollster::block_on(state.ctx.adopt_surface(surface, size)) {
                         Ok(surface) => state.adopt(key, surface),
-                        // The next frame reports `SurfaceLost`; the UI thread retries (08 §17.5).
+                        // The UI thread treats it as a failed surface creation (08 §5.5 `Lost` row).
                         Err(e) => {
                             state.surfaces.remove(&key);
-                            logf(Level::Error, Cat::Gpu, format_args!("could not adopt a surface: {e}"));
+                            events(ThreadEvent::AdoptFailed { key, error: e.to_string() });
                         }
                     }
                 }
                 RenderMsg::Frame(key) => {
                     let Some(packet) = mailbox(key).and_then(|m| m.take()) else { continue };
                     let (frame_id, sync) = (packet.frame_id, packet.sync.clone());
-                    let outcome =
-                        if lost { FrameOutcome::DeviceLost } else { render_packet(&mut state, key, packet) };
+                    let outcome = match state.as_mut() {
+                        Some(s) => render_packet(s, key, packet),
+                        None => FrameOutcome::DeviceLost,
+                    };
                     // `PEBBLES_FRAME_STATS`: the same `[pebbles gpu]` line the inline path prints.
-                    if !lost
-                        && super::render::frame_stats_enabled()
-                        && let Some(line) = super::render::stats_line(&state, key)
+                    if super::render::frame_stats_enabled()
+                        && let Some(line) = state.as_ref().and_then(|s| super::render::stats_line(s, key))
                     {
                         eprintln!("[pebbles gpu] {line}");
                     }
-                    if outcome == FrameOutcome::DeviceLost && !lost {
-                        // 08 §17.6 step 1: report once, then drop every renderer and surface (old
-                        // swapchains must be gone before the UI thread configures new ones).
-                        lost = true;
-                        events(ThreadEvent::DeviceLost(state.ctx.lost_devices()));
-                        state.renderers.clear();
-                        state.surfaces.clear();
+                    if outcome == FrameOutcome::DeviceLost
+                        && let Some(old) = state.take()
+                    {
+                        // 08 §17.6 step 1: report once, then drop the whole stack.
+                        events(ThreadEvent::DeviceLost(old.ctx.lost_devices()));
+                        drop(old);
                     }
                     if let Some(sync) = sync {
                         let _ = sync.try_send(outcome);
@@ -246,27 +278,26 @@ fn render_loop(
                     events(ThreadEvent::FrameDone { key, frame_id, outcome });
                 }
                 RenderMsg::RemoveWindow { key, ack } => {
-                    state.surfaces.remove(&key);
+                    if let Some(state) = state.as_mut() {
+                        state.surfaces.remove(&key);
+                    }
                     let _ = ack.send(());
                 }
-                RenderMsg::ReplaceGpu { gpu, surfaces } => {
-                    lost = false;
-                    state = RenderState::new(gpu);
-                    for (key, surface, size) in surfaces {
-                        match pollster::block_on(state.ctx.adopt_surface(surface, size)) {
-                            Ok(surface) => state.adopt(key, surface),
-                            Err(e) => {
-                                logf(Level::Error, Cat::Gpu, format_args!("could not adopt a surface: {e}"))
-                            }
-                        }
-                    }
+                RenderMsg::ReplaceGpu(new) => state = Some(new),
+                RenderMsg::DropSurfaces { ack } => {
+                    drop(state.take());
+                    let _ = ack.send(());
                 }
                 RenderMsg::Shutdown { ack } => {
                     drop(state);
                     let _ = ack.send(());
                     return;
                 }
-                RenderMsg::SimulateLoss => state.ctx.inject_synthetic_loss(),
+                RenderMsg::SimulateLoss => {
+                    if let Some(state) = state.as_ref() {
+                        state.ctx.inject_synthetic_loss();
+                    }
+                }
                 #[cfg(test)]
                 RenderMsg::Readback { packet, reply } => {
                     let offscreen = offscreen
@@ -286,6 +317,7 @@ fn render_loop(
 
 #[cfg(test)]
 mod tests {
+    use super::super::gpu::RenderContext;
     use super::*;
     use winit::window::WindowId;
 
@@ -314,9 +346,17 @@ mod tests {
             RenderMsg::Frame(key(2)),
             RenderMsg::Frame(key(3)),
             RenderMsg::Shutdown { ack: ack() },
+            RenderMsg::Frame(key(4)),
+            RenderMsg::Frame(key(5)),
         ];
-        let ordered: Vec<_> = order_batch(batch, |k| k == key(3)).iter().map(label).collect();
-        assert_eq!(ordered, ["remove9", "shutdown", "frame3", "frame1", "frame2"]);
+        // 3 carries a resize sync; 2 and 5 were built after input.
+        let rank = |k| match u64::from(k) {
+            3 => 0,
+            2 | 5 => 1,
+            _ => 2,
+        };
+        let ordered: Vec<_> = order_batch(batch, rank).iter().map(label).collect();
+        assert_eq!(ordered, ["remove9", "shutdown", "frame3", "frame2", "frame5", "frame1", "frame4"]);
     }
 
     /// The test plays the render thread on the channel.
@@ -386,6 +426,7 @@ mod tests {
                 scale_factor: 1.0,
                 base_color: peniko::Color::WHITE,
                 sync: None,
+                input: false,
             };
             let (reply, rx) = mpsc::sync_channel(1);
             thread.sender().send(RenderMsg::Readback { packet, reply }).unwrap();
@@ -404,6 +445,7 @@ mod tests {
             scale_factor: 1.0,
             base_color: peniko::Color::WHITE,
             sync: None,
+            input: false,
         };
         let (reply, rx) = mpsc::sync_channel(1);
         thread.sender().send(RenderMsg::Readback { packet, reply }).unwrap();
@@ -423,6 +465,7 @@ mod tests {
             let _ = tx.send(match e {
                 ThreadEvent::FrameDone { outcome, .. } => format!("{outcome:?}"),
                 ThreadEvent::DeviceLost(_) => "lost".to_owned(),
+                ThreadEvent::AdoptFailed { .. } => "adopt failed".to_owned(),
             });
         });
         let thread = RenderThread::spawn(RenderState::new(ctx), report).expect("spawn");
@@ -434,6 +477,7 @@ mod tests {
             scale_factor: 1.0,
             base_color: peniko::Color::WHITE,
             sync: None,
+            input: false,
         };
         let next = || events.recv_timeout(Duration::from_secs(30)).expect("event");
         thread.sender().send(RenderMsg::SimulateLoss).unwrap();
@@ -443,7 +487,7 @@ mod tests {
         thread.submit(key(1), frame(2));
         assert_eq!(next(), "DeviceLost", "every later frame answers DeviceLost");
         let gpu = pollster::block_on(RenderContext::new(&init));
-        thread.sender().send(RenderMsg::ReplaceGpu { gpu, surfaces: Vec::new() }).unwrap();
+        thread.replace_gpu(RenderState::new(gpu));
         thread.submit(key(1), frame(3));
         assert_eq!(next(), "SurfaceLost", "the device is back; only this window lacks a surface");
         assert_eq!(readback(&thread, 3).pixels, before.pixels);
