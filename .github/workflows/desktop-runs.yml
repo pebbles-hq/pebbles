@@ -153,6 +153,11 @@ jobs:
         run: cargo run -q -p pebbles-cli -- build -d web -p counter
       - name: W-HIDPI
         run: |
+          # A Vulkan ICD (Mesa lavapipe): with `--enable-features=Vulkan` and none installed, the
+          # GPU-less runner's Chrome has no shared-image backing for a WebGPU canvas swapchain and
+          # destroys the device two frames after every configure (a rebuild loop, once a second).
+          sudo apt-get update -q
+          sudo apt-get install -y -q mesa-vulkan-drivers
           python -m pip install --quiet playwright
           google-chrome --version
           python scripts/web-hidpi.py --dist examples/counter/dist --out runs

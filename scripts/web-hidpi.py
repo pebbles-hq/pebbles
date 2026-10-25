@@ -79,6 +79,7 @@ def run_case(p, url, name, width, args, out):
     runs = [m for _, _, t in lines for m in [RUN_RE.search(t)] if m]
     gpu = [t for _, _, t in lines if "GPU:" in t]
     panics = [t for _, k, t in lines if "panicked" in t or k == "pageerror"]
+    lost = [t for _, _, t in lines if "GPU device lost" in t]
     confs = [m.group(5) for m in runs]
     # A reconfigure is only allowed where the canvas size changed (the storm resizes rarely).
     spurious = [(a.group(0)[-80:], b.group(0)[-80:]) for a, b in zip(runs, runs[1:])
@@ -91,6 +92,7 @@ def run_case(p, url, name, width, args, out):
          f"canvas width,height,clientWidth,clientHeight = {canvas}"),
         ("GPU line", bool(gpu), gpu[0] if gpu else "none"),
         ("no panic / page error", not panics, "; ".join(panics[:3])),
+        ("no GPU device lost", not lost, f"{len(lost)} lines; first: {lost[0] if lost else '-'}"),
         (">= 100 frames presented after the first summary", presented_after_first >= 100,
          f"{presented_after_first} frames over {len(runs)} summary lines"),
         ("configure count unchanged at an unchanged size over those frames (P13)", len(runs) > 1 and not spurious,
