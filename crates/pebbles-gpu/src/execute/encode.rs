@@ -371,6 +371,7 @@ pub(crate) fn encode(
                     continue;
                 }
                 bind_clip(pass, *clip, stats);
+                pass.set_bind_group(1, &renderer.shadow_profile.bind_group, &[]);
                 pass.draw(0..4, sb.rebase(SHADOWS, instances));
                 stats.draw_calls += 1;
             }

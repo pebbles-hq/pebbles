@@ -94,7 +94,7 @@ pub(crate) fn pipeline_descs() -> Vec<PipelineDesc> {
             fs: "fs",
             topology: TriangleStrip,
             layout: layout(size_of::<ShadowInstance>(), Instance, &SHADOW_ATTRIBUTES),
-            group1: false,
+            group1: true,
         },
         // 09 §6 brush × tier rule: each brush kind's three coverage variants (key.variant
         // 0 Shape, 1 Mask, 2 Mesh); `desc_for` picks the row by variant.

@@ -228,6 +228,8 @@ impl PipelineCache {
             PipelineKind::CompositeOver | PipelineKind::CompositeCompose => Some(&layouts.composite),
             PipelineKind::CompositeBackdrop => Some(&layouts.composite_backdrop),
             PipelineKind::Blit => Some(&layouts.blit),
+            // M33: the blur profile (one `textureLoad` texture, the blit layout).
+            PipelineKind::Shadow => Some(&layouts.blit),
             PipelineKind::Gradient => Some(&layouts.gradient),
             PipelineKind::ImageBrush => Some(&layouts.image_brush),
             PipelineKind::Blur | PipelineKind::ColorMatrix | PipelineKind::Morphology => {

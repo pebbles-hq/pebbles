@@ -80,6 +80,8 @@ pub struct Renderer {
     effect_slots: u64,
     /// 1×1 white texture + sampler with the image layout (R63).
     white_bg: wgpu::BindGroup,
+    /// M33: the rounded-corner blur profile (shadow pipeline group 1).
+    pub(crate) shadow_profile: super::execute::resources::shadow_profile::ShadowProfile,
     _white_tex: wgpu::Texture,
     /// Projected-layer params (09 §10.7), filled in frame order.
     proj_buffer: wgpu::Buffer,
@@ -312,6 +314,8 @@ impl Renderer {
         let gpu_masks = super::execute::gpu_masks::GpuMasks::new(device);
         let lut_rows = budgets.gradient_lut_max_rows;
         let (white_tex, white_bg) = white_texture(device, gpu.queue(), &layouts);
+        let shadow_profile =
+            super::execute::resources::shadow_profile::ShadowProfile::new(device, gpu.queue(), &layouts.blit);
         let globals_bg = globals_bind_group(
             device,
             &layouts,
@@ -355,6 +359,7 @@ impl Renderer {
             effect_buffer: uniform_buffer(device, "pebbles.gpu.buffer.effects", 1),
             effect_slots: 1,
             white_bg,
+            shadow_profile,
             _white_tex: white_tex,
             proj_buffer: uniform_buffer(device, "pebbles.gpu.buffer.projected", 4),
             proj_slots: 4,

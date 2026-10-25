@@ -111,13 +111,15 @@ fn table_matches_doc_02_section_9() {
         .map(|d| (d.kind, d.topology, d.layout.map(|l| (l.array_stride, l.step_mode))))
         .collect();
     assert_eq!(code, doc);
-    // Group 1 per §9: glyph atlas, image texture, composite layer (+ backdrop), blit source.
+    // Group 1 per §9: glyph atlas, image texture, composite layer (+ backdrop), blit source,
+    // shadow blur profile (M33).
     let group1: Vec<_> = pipeline_descs().into_iter().filter(|d| d.group1).map(|d| d.kind).collect();
     assert_eq!(
         group1,
         [
             PipelineKind::Glyph,
             PipelineKind::Image,
+            PipelineKind::Shadow,
             PipelineKind::Gradient,
             PipelineKind::Gradient,
             PipelineKind::Gradient,

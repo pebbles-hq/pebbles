@@ -14,9 +14,15 @@
 //! ```
 //!
 //! The straight band has constant `X`, so its part is a product of two exact `Φ` differences.
-//! The two corner bands (height `r` each) are cut into slices; each slice is weighted by the
-//! exact Gaussian mass of its `y'` interval (a `Φ` difference) and uses `X` at the slice
-//! midpoint. See `shadow.wgsl` for the slice count and the erf approximation.
+//! For the two corner bands (height `r` each), write the row mass as
+//! `Φ((X − x)/σ) + Φ((X + x)/σ) − 1`; in σ units around the corner (`u = (±x − (hw − r))/σ`,
+//! `v` = the distance past `hh − r` in σ, `ρ = r/σ`) each band is then
+//! `T(u₊, v; ρ) + T(u₋, v; ρ) − (Φ(v) − Φ(v − ρ))` with the precomputed blur profile
+//! `T` (`execute/resources/shadow_profile.rs`, M33): a few texel loads per pixel instead of
+//! ~40 erf evaluations, within 0.8 levels (of 255) of the converged integral.
+//! Above the table's ρ the shader keeps the per-pixel integration: each band cut into slices
+//! weighted by the exact Gaussian masses of their `y'` intervals, `X` at the slice midpoint.
+//! See `shadow.wgsl` for the details and the erf approximation.
 
 use std::ops::Range;
 
@@ -126,6 +132,132 @@ fn kernel_extent(sigma: f64, m: Affine, max_coord_px: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::execute::resources::shadow_profile as prof;
+
+    /// `shadow.wgsl`'s per-pixel corner integration with `slices` slices per band (12: the pre-M33
+    /// path, still the fallback above the table's ρ; 256: the reference).
+    fn slices_value(x: f32, y: f32, [hw, hh, r, sig]: [f32; 4], slices: u16) -> f32 {
+        let s = std::f32::consts::FRAC_1_SQRT_2 / sig;
+        let rm = |x: f32, w: f32| 0.5 * (erf((x + w) * s) - erf((x - w) * s));
+        let st = hh - r;
+        let mut v = 0.5 * (erf((st - y) * s) - erf((-st - y) * s)) * rm(x, hw);
+        if r > 0.0 {
+            for (lo_in, hi_in) in [(st, hh), (-hh, -st)] {
+                let (lo, hi) = (lo_in.max(y - 4.0 * sig), hi_in.min(y + 4.0 * sig));
+                if hi <= lo {
+                    continue;
+                }
+                let step = (hi - lo) / f32::from(slices);
+                let mut ep = erf((lo - y) * s);
+                for i in 0..slices {
+                    let en = erf((lo + f32::from(i + 1) * step - y) * s);
+                    let ia = (lo + (f32::from(i) + 0.5) * step).abs() - st;
+                    let w = hw - r + (r * r - ia * ia).max(0.0).sqrt();
+                    v += 0.5 * (en - ep) * rm(x, w);
+                    ep = en;
+                }
+            }
+        }
+        v.clamp(0.0, 1.0)
+    }
+
+    /// `shadow.wgsl`'s profile lookup (bilinear in (u, v), linear in ρ).
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // clamped ≥ 0 indices
+    fn profile(u: f32, v: f32, rho: f32) -> f32 {
+        let t = prof::texels();
+        let level_at = |level: u32| {
+            let n = prof::level_size(level);
+            let (cx, cy) = (level % prof::COLS * prof::CELL, level / prof::COLS * prof::CELL);
+            let fu = ((u + prof::PAD) / prof::STEP).clamp(0.0, (n - 1) as f32);
+            let fv = ((v + prof::PAD) / prof::STEP).clamp(0.0, (n - 1) as f32);
+            let (iu, iv) = ((fu as u32).min(n - 2), (fv as u32).min(n - 2));
+            let (au, av) = (fu - iu as f32, fv - iv as f32);
+            let at = |i: u32, j: u32| t[((cy + iv + j) * prof::WIDTH + cx + iu + i) as usize];
+            let a = at(0, 0) + (at(1, 0) - at(0, 0)) * au;
+            let b = at(0, 1) + (at(1, 1) - at(0, 1)) * au;
+            a + (b - a) * av
+        };
+        let f = rho / prof::RHO_STEP;
+        let level = (f as u32).min(prof::LEVELS - 2);
+        let (a, b) = (level_at(level), level_at(level + 1));
+        a + (b - a) * (f - level as f32)
+    }
+
+    /// `shadow.wgsl`'s value with the profile (ρ ≤ RHO_MAX).
+    fn profile_value(x: f32, y: f32, [hw, hh, r, sig]: [f32; 4]) -> f32 {
+        let (x, y) = (x.abs(), y.abs());
+        let s = std::f32::consts::FRAC_1_SQRT_2 / sig;
+        let st = hh - r;
+        let wide = x + hw >= 4.0 * sig;
+        let near = if wide { 1.0 } else { erf((x + hw) * s) };
+        let mut v = 0.5 * (erf((st - y) * s) + erf((st + y) * s)) * 0.5 * (near - erf((x - hw) * s));
+        let rho = r / sig;
+        for vb in [(y - st) / sig, (-y - st) / sig] {
+            if r == 0.0 || vb <= -prof::PAD || vb >= rho + prof::PAD {
+                continue;
+            }
+            let core = hw - r;
+            v += profile((x - core) / sig, vb, rho);
+            let u_far = (-x - core) / sig;
+            if u_far > -prof::PAD {
+                let mass = 0.5
+                    * (erf(vb * std::f32::consts::FRAC_1_SQRT_2)
+                        - erf((vb - rho) * std::f32::consts::FRAC_1_SQRT_2));
+                v += profile(u_far, vb, rho) - mass;
+            }
+        }
+        v.clamp(0.0, 1.0)
+    }
+
+    /// M33: the profile path against the converged integral (256 slices) and against the
+    /// 12-slice per-pixel integration it replaces, in levels of 255 at full opacity, over a sweep
+    /// of σ, radius and size (ρ ≤ RHO_MAX; larger ρ still integrates per pixel).
+    #[test]
+    fn profile_matches_integration() {
+        // (max, its shape, sum) against [reference, 12 slices].
+        let mut acc = [(0f32, [0f32; 4], 0f64); 2];
+        let mut n = 0u32;
+        for sig in [0.5f32, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 14.0, 24.0, 40.0] {
+            for r in [1.0f32, 3.0, 5.0, 8.0, 12.0, 16.0, 24.0, 32.0] {
+                for (w, h) in [
+                    (6.0f32, 6.0f32),
+                    (20.0, 20.0),
+                    (44.0, 60.0),
+                    (60.0, 40.0),
+                    (349.0, 150.0),
+                    (30.0, 300.0),
+                ] {
+                    let (hw, hh) = (0.5 * w, 0.5 * h);
+                    let r = r.min(hw).min(hh);
+                    if r / sig > prof::RHO_MAX {
+                        continue;
+                    }
+                    let shape = [hw, hh, r, sig];
+                    let k = 3.0 * sig + 2.0;
+                    for j in 0..=40u8 {
+                        for i in 0..=40u8 {
+                            let x = -hw - k + (w + 2.0 * k) * f32::from(i) / 40.0;
+                            let y = -hh - k + (h + 2.0 * k) * f32::from(j) / 40.0;
+                            let p = profile_value(x, y, shape);
+                            for (a, slices) in acc.iter_mut().zip([256, 12]) {
+                                let d = (p - slices_value(x, y, shape, slices)).abs() * 255.0;
+                                if d > a.0 {
+                                    (a.0, a.1) = (d, shape);
+                                }
+                                a.2 += f64::from(d);
+                            }
+                            n += 1;
+                        }
+                    }
+                }
+            }
+        }
+        let [(ref_max, ref_at, ref_sum), (old_max, old_at, old_sum)] = acc;
+        let (ref_mean, old_mean) = (ref_sum / f64::from(n), old_sum / f64::from(n));
+        assert!(ref_max <= 1.0 && ref_mean < 0.1, "vs converged: {ref_max} at {ref_at:?}, mean {ref_mean}");
+        // The 12-slice path itself is up to ~2 levels off the converged integral at ρ ≈ 4.
+        assert!(old_max <= 2.1 && old_mean < 0.1, "vs 12 slices: {old_max} at {old_at:?}, mean {old_mean}");
+    }
 
     #[test]
     fn erf_values() {
