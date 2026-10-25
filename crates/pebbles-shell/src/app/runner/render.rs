@@ -178,7 +178,7 @@ impl Runner {
         }
         self.request_redraw();
         for w in self.windows.values() {
-            w.window.request_redraw();
+            redraw::request(&w.window);
         }
     }
 
@@ -294,7 +294,7 @@ impl Runner {
             return; // closed meanwhile
         };
         if redraw {
-            window.request_redraw();
+            redraw::request(&window);
         }
         self.settle_frame(&window, outcome);
     }
@@ -361,7 +361,7 @@ impl Runner {
         if self.recover_gpu_if_poisoned() {
             // Render fresh state this same frame; also repaint secondary windows.
             for w in self.windows.values() {
-                w.window.request_redraw();
+                redraw::request(&w.window);
             }
         }
         // Advance animations for this frame before reconciling, so interpolated
@@ -413,7 +413,7 @@ impl Runner {
             self.ui.invalidate_layout();
             for w in self.windows.values_mut() {
                 w.ui.invalidate_layout();
-                w.window.request_redraw();
+                redraw::request(&w.window);
             }
         }
         let t = Instant::now();
@@ -558,7 +558,7 @@ impl Runner {
         // or while a lazy paint-time measurement requested a corrective relayout
         // (P5.2 estimate-then-measure settle).
         if scrolling || pending_tasks || corrective || pebbles_core::animation::active() {
-            active.window.request_redraw();
+            redraw::request(&active.window);
         }
 
         // 5. Publish the accessibility tree + focus for this frame (post-layout, so
@@ -701,7 +701,7 @@ impl Runner {
         }
 
         if pending_tasks || corrective || pebbles_core::animation::active() {
-            w.window.request_redraw();
+            redraw::request(&w.window);
         }
     }
 }
@@ -760,7 +760,7 @@ fn submit_frame(
         Handover::Rendered(outcome, scene) => {
             *frame = scene;
             if pacer.done(outcome) {
-                window.request_redraw();
+                redraw::request(window);
             }
             Some(Some(outcome))
         }
@@ -833,7 +833,7 @@ fn follow_up(
                 let _ = sink;
                 *reset_requested = true;
             }
-            window.request_redraw();
+            redraw::request(window);
         }
         // Inline: rebuild now. Threaded (08 §17.6 step 2): only `GpuDeviceLost` starts the
         // recovery — late `DeviceLost` answers for frames queued before `ReplaceGpu` must not
@@ -841,7 +841,7 @@ fn follow_up(
         FrameOutcome::DeviceLost => {
             if sink.as_ref().is_none_or(|s| s.state().is_some()) {
                 *reset_requested = true;
-                window.request_redraw();
+                redraw::request(window);
             }
         }
     }

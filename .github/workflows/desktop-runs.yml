@@ -10,7 +10,7 @@ on:
     inputs:
       scenarios:
         description: "Scenarios (space separated; see scripts/desktop-run.py)"
-        default: "c1 c2 multi thread storm occ p14 p19 c5"
+        default: "c1 c2 multi thread storm occ p14 minrestore p19 c5"
       c5_seconds:
         description: "C5 loss-injection run length (s); 08 §15 asks for 600"
         default: "600"
@@ -80,7 +80,7 @@ jobs:
         run: cargo build --profile soak -p desktop -p counter
       - name: Runs
         env:
-          SCENARIOS: ${{ inputs.scenarios || 'c1 c2 multi thread storm occ p14 p19 c5' }}
+          SCENARIOS: ${{ inputs.scenarios || 'c1 c2 multi thread storm occ p14 minrestore p19 c5' }}
           C5_SECONDS: ${{ inputs.c5_seconds || '600' }}
           ROW: ${{ matrix.row }}
           EXE: ${{ matrix.exe }}
@@ -112,6 +112,7 @@ jobs:
               occ) # M-OCC rows are M1, M2, L2, L4 (08 §15.3); Windows does not report occlusion.
                 if [ "$RUNNER_OS" != Windows ]; then run occ inline desktop; run occ threaded desktop; fi ;;
               p14) run p14 inline counter ;;
+              minrestore) run minrestore inline counter; run minrestore threaded counter ;;
               p19) run p19 inline counter; run p19 threaded counter ;;
               c5) run c5 inline desktop --duration "$C5_SECONDS"; run c5 threaded desktop --duration "$C5_SECONDS" ;;
             esac

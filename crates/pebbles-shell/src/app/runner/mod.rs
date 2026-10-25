@@ -32,6 +32,7 @@ use super::App;
 
 mod frame;
 mod input;
+mod redraw;
 mod render;
 #[cfg(not(target_family = "wasm"))]
 mod render_thread;
@@ -263,6 +264,8 @@ pub(super) struct Runner {
     /// (web) The window whose surface a failed async recovery released; the retry uses it.
     #[cfg(target_family = "wasm")]
     recovery_window: Option<Arc<Window>>,
+    /// Inside a `RedrawRequested` that also draws starved windows (`redraw`).
+    serving_starved: bool,
     /// (web) The WebGL context is lost: render and recover nothing until it is restored (P04).
     #[cfg(target_family = "wasm")]
     gpu_suspended: bool,
@@ -393,6 +396,7 @@ impl Runner {
             gpu_generation: 1,
             #[cfg(target_family = "wasm")]
             recovery_window: None,
+            serving_starved: false,
             #[cfg(target_family = "wasm")]
             gpu_suspended: false,
             #[cfg(target_family = "wasm")]
@@ -437,7 +441,7 @@ impl Runner {
 
     fn request_redraw(&self) {
         if let Some(active) = self.active.as_ref() {
-            active.window.request_redraw();
+            redraw::request(&active.window);
         }
     }
 
@@ -541,7 +545,7 @@ impl Runner {
             self.mounted = true;
         }
 
-        window.request_redraw();
+        redraw::request(&window);
         self.active = Some(ActiveWindow {
             window,
             pacer: Pacer::default(),
@@ -939,13 +943,13 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 self.gpu_reset_requested = true;
                 self.request_redraw();
                 for w in self.windows.values() {
-                    w.window.request_redraw();
+                    redraw::request(&w.window);
                 }
             }
             PebblesUserEvent::GpuLost => {
                 self.request_redraw();
                 for w in self.windows.values() {
-                    w.window.request_redraw();
+                    redraw::request(&w.window);
                 }
             }
             PebblesUserEvent::RouteChanged => {
@@ -959,6 +963,27 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
+        // A `RedrawRequested` already served on another window's turn is skipped; on Windows,
+        // windows starved of their own turn are drawn after it (see `redraw`).
+        if matches!(event, WindowEvent::RedrawRequested) && !self.serving_starved {
+            if !redraw::begin(window_id) {
+                return;
+            }
+            if redraw::SERVE_STARVED {
+                self.serving_starved = true;
+                self.window_event(event_loop, window_id, event);
+                for id in redraw::drain_starved(window_id) {
+                    let main = self.active.as_ref().is_some_and(|a| a.window.id() == id);
+                    if !main && !self.windows.contains_key(&id) {
+                        redraw::forget(id);
+                        continue;
+                    }
+                    self.window_event(event_loop, id, WindowEvent::RedrawRequested);
+                }
+                self.serving_starved = false;
+                return;
+            }
+        }
         // Route events for a secondary window to its own handler.
         if self.windows.contains_key(&window_id) {
             self.secondary_event(window_id, event);
@@ -993,7 +1018,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     // and, on the render thread, the UI waits for it (08 §17.4).
                     active.occlusion.shown(active.frame_id);
                     active.resize_sync.pending = true;
-                    active.window.request_redraw();
+                    redraw::request(&active.window);
                 }
             }
 
@@ -1321,7 +1346,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 if let Some(active) = self.active.as_mut() {
                     active.occlusion.shown(active.frame_id);
                     active.resize_sync.pending = true;
-                    active.window.request_redraw();
+                    redraw::request(&active.window);
                 }
             }
 
@@ -1337,7 +1362,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 if let Some(active) = self.active.as_mut()
                     && active.occlusion.system(occluded, active.frame_id)
                 {
-                    active.window.request_redraw();
+                    redraw::request(&active.window);
                 }
             }
             WindowEvent::Focused(true) => {
@@ -1345,7 +1370,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     && active.occlusion.is_occluded()
                 {
                     active.occlusion.shown(active.frame_id);
-                    active.window.request_redraw();
+                    redraw::request(&active.window);
                 }
             }
 
@@ -1369,7 +1394,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             if fired {
                 self.request_redraw();
                 for w in self.windows.values() {
-                    w.window.request_redraw();
+                    redraw::request(&w.window);
                 }
             }
         }
@@ -1380,7 +1405,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             if crate::hotkeys::drain() {
                 self.request_redraw();
                 for w in self.windows.values() {
-                    w.window.request_redraw();
+                    redraw::request(&w.window);
                 }
             }
         }
@@ -1411,7 +1436,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         if pebbles_core::reactive::frame_requested() {
             self.request_redraw();
             for w in self.windows.values() {
-                w.window.request_redraw();
+                redraw::request(&w.window);
             }
         }
         // Sleep until the next OS event instead of winit 0.30's DEFAULT `Poll`, which
@@ -1433,7 +1458,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     }
                     self.request_redraw();
                     for w in self.windows.values() {
-                        w.window.request_redraw();
+                        redraw::request(&w.window);
                     }
                 }
             }
@@ -1443,14 +1468,14 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         let now = Instant::now();
         if let Some(active) = self.active.as_mut() {
             if active.occlusion.probe_due(now) {
-                active.window.request_redraw();
+                redraw::request(&active.window);
             } else if let Some(t) = active.occlusion.probe_at() {
                 wake_by(event_loop, t);
             }
         }
         for w in self.windows.values_mut() {
             if w.occlusion.probe_due(now) {
-                w.window.request_redraw();
+                redraw::request(&w.window);
             } else if let Some(t) = w.occlusion.probe_at() {
                 wake_by(event_loop, t);
             }

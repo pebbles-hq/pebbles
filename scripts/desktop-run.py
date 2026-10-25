@@ -20,6 +20,11 @@ Scenarios (08 §15 / §17.8):
           30 s: all keep presenting; no per-frame texture reallocation in [pebbles gpu]
   thread  M-THREAD: `multi` + the input storm typing into the main window: input-to-present
           latency and both windows' present rates (recorded)
+  minrestore  C19 AC3 (RUN-WGPU counter): minimize/restore the main window 10× through the
+          window system (xdotool windowminimize/windowactivate under openbox; ShowWindow
+          SW_MINIMIZE/SW_RESTORE on Windows; AXMinimized via the accessibility API on macOS, else
+          NSRunningApplication hide/unhide): presents resume after every restore with no input,
+          the window rect is not blank in a screenshot, no panic, no surface error or warning
   storm   input storm + secondary-window churn: no panic, presents every second, churn done
   occ     M-OCC/P12: three still secondary windows (`multi-static`), then a full-screen window
           covers everything for 12 s: occlusion reported, presents stop while covered and resume
@@ -418,6 +423,110 @@ def cover_screen(seconds, notes):
     return out.returncode == 0
 
 
+WIN_MINIMIZE_PS1 = r"""
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class M {
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+}
+"@
+$p = Get-Process -Id __PID__
+$h = [IntPtr]__HWND__
+if ($h -eq 0) { $h = $p.MainWindowHandle }
+for ($i = 0; $i -lt 50 -and $h -eq 0; $i++) { Start-Sleep -Milliseconds 200; $p.Refresh(); $h = $p.MainWindowHandle }
+if ($h -eq 0) { Write-Output "no window"; exit 2 }
+if ("__ACT__" -eq "min") { [M]::ShowWindow($h, 6) | Out-Null } else { [M]::ShowWindow($h, 9) | Out-Null; [M]::SetForegroundWindow($h) | Out-Null }
+Start-Sleep -Milliseconds 200
+Write-Output "hwnd=$h iconic=$([M]::IsIconic($h))"
+"""
+
+MAC_MINIMIZE_SWIFT = r"""
+import AppKit
+import ApplicationServices
+let pid = pid_t(CommandLine.arguments[1])!
+let minimize = CommandLine.arguments[2] == "min"
+let app = AXUIElementCreateApplication(pid)
+var value: CFTypeRef?
+AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value)
+let wins = (value as? [AXUIElement]) ?? []
+var ok = false
+if let w = wins.first {
+  let e = AXUIElementSetAttributeValue(w, kAXMinimizedAttribute as CFString,
+                                       (minimize ? kCFBooleanTrue : kCFBooleanFalse)!)
+  ok = e == .success
+  usleep(300_000)
+  var m: CFTypeRef?
+  AXUIElementCopyAttributeValue(w, kAXMinimizedAttribute as CFString, &m)
+  print("ax=\(e.rawValue) iconic=\((m as? Bool).map { $0 ? "True" : "False" } ?? "?")")
+}
+if !ok, let ra = NSRunningApplication(processIdentifier: pid) {
+  // No accessibility trust: hide/unhide the app instead (the window leaves the screen too).
+  if minimize { print("hide=\(ra.hide()) iconic=\(ra.isHidden ? "True" : "?")") }
+  else { print("unhide=\(ra.unhide()) activate=\(ra.activate(options: [])) iconic=False") }
+}
+print("trusted=\(AXIsProcessTrusted()) windows=\(wins.count)")
+"""
+
+MAC_MINIMIZE_BIN = os.path.join(tempfile.gettempdir(), "pebbles_minimize")
+
+
+def prepare_mac_minimize():
+    path = MAC_MINIMIZE_BIN + ".swift"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(MAC_MINIMIZE_SWIFT)
+    subprocess.run(["swiftc", "-O", path, "-o", MAC_MINIMIZE_BIN], capture_output=True, timeout=600)
+
+
+def set_minimized(run, minimize, notes):
+    """Minimize (or restore) the main window through the window system; returns the driver's
+    report of the resulting state ("iconic=True" after a minimize, "iconic=False" after a restore)."""
+    act = "min" if minimize else "restore"
+    try:
+        if IS_LINUX:
+            wid = x11_window_id(run) if minimize else getattr(run, "x11_wid", None)
+            if minimize:
+                run.x11_wid = wid
+            if not wid:
+                return "no window"
+            if minimize:
+                subprocess.run(["xdotool", "windowminimize", "--sync", wid], capture_output=True, timeout=10)
+            else:
+                subprocess.run(["xdotool", "windowactivate", "--sync", wid], capture_output=True, timeout=10)
+            time.sleep(0.2)
+            st = subprocess.run(["xprop", "-id", wid, "_NET_WM_STATE", "WM_STATE"], capture_output=True, text=True,
+                                timeout=10).stdout
+            iconic = "_NET_WM_STATE_HIDDEN" in st or "Iconic" in st
+            return f"iconic={iconic}"
+        if IS_WIN:
+            # Reuse the handle found on the first (un-minimized) call: `MainWindowHandle` of a
+            # process whose window is minimized can name a different top-level window.
+            hwnd = getattr(run, "win_hwnd", "0")
+            script = (WIN_MINIMIZE_PS1.replace("__PID__", str(run.proc.pid)).replace("__ACT__", act)
+                      .replace("__HWND__", hwnd))
+            path = os.path.join(tempfile.gettempdir(), "pebbles-minimize.ps1")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(script)
+            out = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path],
+                                 capture_output=True, text=True, timeout=60)
+            m = re.search(r"hwnd=(\d+)", out.stdout)
+            if m and hwnd == "0":
+                run.win_hwnd = m.group(1)
+            return (out.stdout.strip() + out.stderr.strip()[:200]).replace("\n", " ")
+        if IS_MAC:
+            if not os.path.exists(MAC_MINIMIZE_BIN):
+                prepare_mac_minimize()
+            out = subprocess.run([MAC_MINIMIZE_BIN, str(run.proc.pid), act], capture_output=True, text=True,
+                                 timeout=60)
+            return (out.stdout.strip() + out.stderr.strip()[-200:]).replace("\n", " ")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        notes.append(f"minimize driver: {e}")
+        return f"error {e}"
+    return "unsupported"
+
+
 # --- screenshots ------------------------------------------------------------------------------
 
 
@@ -541,6 +650,8 @@ def main():
     ap.add_argument("--env", action="append", default=[], help="extra K=V")
     ap.add_argument("--tag", default="", help="file-name suffix for a variant run (e.g. gl)")
     a = ap.parse_args()
+    # The summary has non-ASCII text; a Windows console defaults to cp1252.
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     os.makedirs(a.out, exist_ok=True)
     tag = f"{a.scenario}-{a.mode}" + (f"-{a.tag}" if a.tag else "")
@@ -554,7 +665,7 @@ def main():
         if os.path.exists(env["PEBBLES_SOAK_CSV"]):
             os.remove(env["PEBBLES_SOAK_CSV"])
     duration = a.duration or {
-        "c1": 15, "c2": 30, "multi": 45, "thread": 45, "storm": 100, "occ": 70, "c5": 600, "p14": 12, "p19": 50,
+        "c1": 15, "c2": 30, "minrestore": 70, "multi": 45, "thread": 45, "storm": 100, "occ": 70, "c5": 600, "p14": 12, "p19": 50,
     }.get(a.scenario, 20)
     log_path = os.path.join(a.out, f"{tag}.log")
     notes, results, shots = [], [], []
@@ -562,6 +673,8 @@ def main():
     if a.scenario == "c2" and IS_MAC:
         # Compile the drag tool before the app starts (swift compiles for ~10 s on first use).
         prepare_mac_drag()
+    if a.scenario == "minrestore" and IS_MAC:
+        prepare_mac_minimize()
     run = Run([a.bin], env, log_path)
     first = run.wait_for(r"first frame presented", 120)
     events = {"first_present": first[0] if first else None}
@@ -610,6 +723,27 @@ def main():
             events["cover_end"] = run.elapsed()
             time.sleep(3.0)
             shot("uncovered")
+        elif a.scenario == "minrestore":
+            rect = window_rect(run)
+            events["rect"] = rect
+            before = shot("before")
+            events["before_black"] = region_stats(before, rect)[0] if before and region_stats(before, rect) else None
+            cycles = []
+            for i in range(10):
+                if not run.alive():
+                    break
+                tm = run.elapsed()
+                st_min = set_minimized(run, True, notes)
+                time.sleep(2.0)
+                tr = run.elapsed()
+                st_restore = set_minimized(run, False, notes)
+                time.sleep(1.5)
+                p = shot(f"restored{i}")
+                stats = region_stats(p, rect) if p else None
+                time.sleep(1.5)
+                cycles.append({"minimized_at": round(tm, 2), "restored_at": round(tr, 2), "min": st_min,
+                               "restore": st_restore, "black_in_window": stats[0] if stats else None})
+            events["cycles"] = cycles
         elif a.scenario == "c5":
             time.sleep(1.0)
             shot("t0")
@@ -702,6 +836,10 @@ def main():
             summary["secondary_fps"] = sec
             summary["input_to_present_ms"] = inp
             summary["main_gap_p95_ms"] = gp
+            # The storm types into the main window every tick: it must present while the
+            # secondary windows animate (Windows starved it to 0 fps before `redraw`).
+            check(results, main and min(main) > 0, "main window presented in every second next to the secondaries",
+                  f"main presents/s: {main}")
             frames = [i / g for i, g in zip(inp, gp) if g > 0]
             check(results, frames and max(frames) <= 2.5,
                   "typed input presented by the next frame (input→present ≤ 2.5 frame intervals)",
@@ -720,6 +858,32 @@ def main():
                   f"{[r['ps'] for r in covered]}")
             check(results, after and max(r["ps"] for r in after) > 0, "repaints after uncover with no input",
                   f"{[r['ps'] for r in after]}")
+    elif a.scenario == "minrestore":
+        cycles = events.get("cycles", [])
+        rows = []
+        for c in cycles:
+            tm, tr = c["minimized_at"], c["restored_at"]
+            # Presents while minimized (the second after the minimize settles) and after the
+            # restore: every line logged in (tr, tr + 3] counts frames from after the restore.
+            c["presents_minimized"] = sum(r["pm"] for r in runs if tm + 1.0 < r["at"] <= tr)
+            c["presents_after_restore"] = sum(r["pm"] for r in runs if tr < r["at"] <= tr + 3.0)
+            rows.append(c)
+        summary["cycles"] = rows
+        check(results, len(rows) == 10, "10 minimize/restore cycles driven", f"{len(rows)} cycles")
+        minimized = [c for c in rows if "iconic=True" in str(c["min"])]
+        check(results, len(minimized) == len(rows) and rows, "the window system minimized the window every cycle",
+              f"driver reports after minimize: {[c['min'] for c in rows][:3]} …")
+        resumed = [c["presents_after_restore"] for c in rows]
+        check(results, rows and min(resumed) > 0, "presents resume after every restore with no input",
+              f"presents in the 3 s after each restore: {resumed}; while minimized: "
+              f"{[c['presents_minimized'] for c in rows]}")
+        base = events.get("before_black") or 0.0
+        blacks = [c["black_in_window"] for c in rows]
+        blank = [b for b in blacks if b is None or b > base + 0.02]
+        check(results, rows and not blank, "window not blank after every restore (screenshot of the window rect)",
+              f"black fraction in the window rect: before {base}, after each restore {blacks}")
+        surf = grep(lines, r"(?i)(WARN|ERROR).*surface")
+        check(results, not surf, "no surface errors or warnings", "; ".join(t for _, t in surf[:3]))
     elif a.scenario == "storm":
         done = grep(lines, r"window churn done")
         check(results, bool(done), "window churn done (20 cycles × 10 windows)", done[0][1] if done else "")

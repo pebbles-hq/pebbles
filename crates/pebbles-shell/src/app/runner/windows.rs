@@ -186,7 +186,7 @@ impl Runner {
         let root = pebbles_widgets::OverlayHost::wrap(spec.root).into_widget();
         ui.mount_root(View::new(spec.background, root).into_widget());
         let wid = window.id();
-        window.request_redraw();
+        redraw::request(&window);
         self.window_by_id.insert(spec.id, wid);
         self.windows.insert(
             wid,
@@ -240,7 +240,7 @@ impl Runner {
                 if size.width > 0 && size.height > 0 {
                     w.occlusion.shown(w.frame_id);
                     w.resize_sync.pending = true;
-                    w.window.request_redraw();
+                    redraw::request(&w.window);
                 }
             }
             // P12: the main window's scale / occlusion / focus handling, for this window.
@@ -248,22 +248,22 @@ impl Runner {
                 pebbles_widgets::overlay::hide_overlay();
                 w.occlusion.shown(w.frame_id);
                 w.resize_sync.pending = true;
-                w.window.request_redraw();
+                redraw::request(&w.window);
             }
             WindowEvent::Occluded(occluded) => {
                 if w.occlusion.system(occluded, w.frame_id) {
-                    w.window.request_redraw();
+                    redraw::request(&w.window);
                 }
             }
             WindowEvent::Focused(true) => {
                 w.occlusion.shown(w.frame_id);
-                w.window.request_redraw();
+                redraw::request(&w.window);
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let scale = w.window.scale_factor();
                 w.cursor = Offset::new(position.x / scale, position.y / scale);
                 if w.ui.dispatch_hover(w.cursor) {
-                    w.window.request_redraw();
+                    redraw::request(&w.window);
                 }
                 let moved = if w.ui.content_drag_active() {
                     w.ui.update_content_drag(w.cursor)
@@ -273,7 +273,7 @@ impl Runner {
                     false
                 };
                 if moved {
-                    w.window.request_redraw();
+                    redraw::request(&w.window);
                 }
                 let want = w.ui.cursor_at(w.cursor).unwrap_or(Cursor::Default);
                 if want != w.current_cursor {
@@ -288,7 +288,7 @@ impl Runner {
                 };
                 // C6: secondary windows now follow the popover on wheel (was main-only).
                 if wheel_with_overlay(&mut w.ui, w.cursor, dy) {
-                    w.window.request_redraw();
+                    redraw::request(&w.window);
                 }
             }
             WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
@@ -323,7 +323,7 @@ impl Runner {
                     }
                 };
                 if handled {
-                    w.window.request_redraw();
+                    redraw::request(&w.window);
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
@@ -354,7 +354,7 @@ impl Runner {
                             consumed = true;
                         }
                         if consumed {
-                            w.window.request_redraw();
+                            redraw::request(&w.window);
                             if keep {
                                 self.windows.insert(window_id, w);
                             }
@@ -387,7 +387,7 @@ impl Runner {
                         ) && w.ui.dispatch_activate()
                     };
                     if handled {
-                        w.window.request_redraw();
+                        redraw::request(&w.window);
                     }
                 }
             }
@@ -398,7 +398,7 @@ impl Runner {
                     Ime::Enabled | Ime::Disabled => false,
                 };
                 if handled {
-                    w.window.request_redraw();
+                    redraw::request(&w.window);
                 }
             }
             WindowEvent::RedrawRequested => self.render_window(&mut w),
@@ -414,6 +414,7 @@ impl Runner {
     /// 08 §17.5 close: the surface (it holds a window clone) goes before the window (T2). If the
     /// render thread does not acknowledge in time, the window is kept until shutdown.
     fn release_window(&mut self, window: Arc<Window>) {
+        redraw::forget(window.id());
         let released = self.sink.as_mut().is_none_or(|sink| sink.remove_window(window.id()));
         if !released {
             self.retired_windows.push(window);
