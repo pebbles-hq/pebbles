@@ -225,6 +225,13 @@ fn render_loop(
                     let (frame_id, sync) = (packet.frame_id, packet.sync.clone());
                     let outcome =
                         if lost { FrameOutcome::DeviceLost } else { render_packet(&mut state, key, packet) };
+                    // `PEBBLES_FRAME_STATS`: the same `[pebbles gpu]` line the inline path prints.
+                    if !lost
+                        && super::render::frame_stats_enabled()
+                        && let Some(line) = super::render::stats_line(&state, key)
+                    {
+                        eprintln!("[pebbles gpu] {line}");
+                    }
                     if outcome == FrameOutcome::DeviceLost && !lost {
                         // 08 §17.6 step 1: report once, then drop every renderer and surface (old
                         // swapchains must be gone before the UI thread configures new ones).

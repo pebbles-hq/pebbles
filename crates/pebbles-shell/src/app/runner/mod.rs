@@ -35,6 +35,7 @@ mod input;
 mod render;
 #[cfg(not(target_family = "wasm"))]
 mod render_thread;
+mod run_stats;
 mod soak_csv;
 // The GPU host: a thin, runner-private adapter over pebbles-gpu (X02).
 mod gpu;
@@ -325,6 +326,8 @@ pub(super) struct Runner {
     /// `PEBBLES_SOAK_CSV` sampler (11 §2.9) and the rendered-frame counter.
     soak: Option<soak_csv::SoakCsv>,
     soak_frames: u64,
+    /// `PEBBLES_FRAME_STATS` run summary (`[pebbles run]` lines, scripted desktop runs).
+    run_stats: run_stats::RunStats,
 }
 
 /// 10 §12.1: once per process, on the first successful present (both backends).
@@ -424,6 +427,7 @@ impl Runner {
             churn: storm::WindowChurn::from_env(),
             soak: soak_csv::SoakCsv::from_env(),
             soak_frames: 0,
+            run_stats: run_stats::RunStats::default(),
         }
     }
 
@@ -1303,7 +1307,13 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 }
             }
 
-            WindowEvent::RedrawRequested => self.render(),
+            WindowEvent::RedrawRequested => {
+                let started = Instant::now();
+                self.render();
+                if render::frame_stats_enabled() {
+                    self.run_stats.ui_frame(started.elapsed().as_secs_f64() * 1e3);
+                }
+            }
 
             // 08 §5.4: stop rendering while hidden; redraw when visible again.
             WindowEvent::Occluded(occluded) => {
@@ -1441,6 +1451,11 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         if self.storm.is_some() && self.mounted {
             self.storm_tick();
             wake_by(event_loop, Instant::now() + Duration::from_millis(10));
+        }
+        // `[pebbles run]` summary (PEBBLES_FRAME_STATS): once a second, idle or not.
+        self.run_stats_tick();
+        if render::frame_stats_enabled() {
+            wake_by(event_loop, Instant::now() + Duration::from_secs(1));
         }
         // Dev window churn: one tick per 16 ms until its cycles are done.
         if self.churn.as_ref().is_some_and(storm::WindowChurn::running) && self.mounted {

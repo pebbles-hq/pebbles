@@ -83,6 +83,26 @@ pub struct GpuContext {
     instance: wgpu::Instance,
     init: GpuInit,
     devices: Vec<GpuDevice>,
+    /// `PEBBLES_SYNTH_GPU_DEAD` (soak/test tool): this context finds no adapter.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))]
+    synth_dead: bool,
+}
+
+/// Soak/test tool (08 §6.7, P19): with `PEBBLES_SYNTH_GPU_DEAD=1`, every context after the
+/// process's first finds no adapter — a GPU that vanished after startup (an unplugged eGPU, a
+/// driver that never comes back). Combine with `PEBBLES_SYNTH_GPU_LOSS=N` to lose the first
+/// device; every rebuild then fails like a real missing driver, and the reset backoff runs.
+/// Native only; unset in normal runs.
+fn synth_gpu_dead() -> bool {
+    #[cfg(not(target_family = "wasm"))]
+    {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static CONTEXTS: AtomicU32 = AtomicU32::new(0);
+        let n = CONTEXTS.fetch_add(1, Ordering::Relaxed);
+        n > 0 && std::env::var("PEBBLES_SYNTH_GPU_DEAD").is_ok_and(|v| v == "1")
+    }
+    #[cfg(target_family = "wasm")]
+    false
 }
 
 /// Build the [`wgpu::InstanceDescriptor`] from [`GpuInit`] (never the env-blind default instance).
@@ -123,7 +143,7 @@ impl GpuContext {
                 if init.display.is_some() { "yes" } else { "no" }
             ),
         );
-        Self { instance, init: init.clone(), devices: Vec::new() }
+        Self { instance, init: init.clone(), devices: Vec::new(), synth_dead: synth_gpu_dead() }
     }
 
     /// Create + configure a surface for `window` (on its compatible device).
@@ -221,6 +241,15 @@ impl GpuContext {
 
         #[cfg(not(target_family = "wasm"))]
         {
+            if self.synth_dead {
+                logf(Level::Warn, Cat::Gpu, format_args!("PEBBLES_SYNTH_GPU_DEAD: no adapter (synthetic)"));
+                return Err(GpuError::NoAdapter {
+                    backends: self.init.backends,
+                    software_only: self.init.force_software,
+                    enumerated: 0,
+                    source: None,
+                });
+            }
             let all = self.instance.enumerate_adapters(self.init.backends).await;
             let enumerated = all.len();
             let adapters: Vec<wgpu::Adapter> = all

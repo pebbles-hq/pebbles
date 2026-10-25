@@ -197,6 +197,15 @@ impl RenderSurface<'_> {
         self.0.device_id().index()
     }
 
+    /// Real `configure` calls on this surface (debug census, 10 §9); `None` without debug
+    /// assertions.
+    pub(crate) fn configure_count(&self) -> Option<u64> {
+        #[cfg(debug_assertions)]
+        return Some(self.0.configure_count());
+        #[cfg(not(debug_assertions))]
+        None
+    }
+
     #[allow(dead_code)] // the seam contract; `present` sizes from the packet
     pub(crate) fn size(&self) -> (u32, u32) {
         self.0.size()

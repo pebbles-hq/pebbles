@@ -73,6 +73,8 @@ genuinely infra-timeout-prone job (not a logic failure) is re-run, not weakened.
 | `PEBBLES_PRESENT_MODE`, `PEBBLES_FRAME_LATENCY` | Override the present mode and the frame latency. |
 | `PEBBLES_GPU_TIMING=1` | Request timestamp queries and report `FrameStats::gpu_us`. |
 | `PEBBLES_SYNTH_GPU_LOSS` | Simulate a lost device to exercise the rebuild path. |
+| `PEBBLES_SYNTH_GPU_DEAD=1` | Test tool: every GPU context after the first finds no adapter, so with `PEBBLES_SYNTH_GPU_LOSS` every rebuild fails and the reset backoff (1, 2, 4, 8, then 10 s) runs. |
+| `PEBBLES_FRAME_STATS=1` | Per-frame `[pebbles frame]` / `[pebbles gpu]` lines plus a once-a-second `[pebbles run]` summary (presents per window, `resize_sync_timeouts`, present gaps, configure counts). On the web: `?pebbles-frame-stats=1`. |
 
 ### Reading the `GPU:` line
 

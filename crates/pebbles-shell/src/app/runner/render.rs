@@ -12,10 +12,17 @@ use peniko::Brush;
 
 /// E2: whether `PEBBLES_FRAME_STATS=1` (or `true`) is set — checked once. Gates the
 /// opt-in per-frame timing print in `render()`.
-fn frame_stats_enabled() -> bool {
+/// On the web the `?pebbles-frame-stats=1` query turns it on.
+pub(super) fn frame_stats_enabled() -> bool {
     use std::sync::OnceLock;
     static ENABLED: OnceLock<bool> = OnceLock::new();
-    *ENABLED.get_or_init(|| std::env::var("PEBBLES_FRAME_STATS").is_ok_and(|v| v == "1" || v == "true"))
+    *ENABLED.get_or_init(|| {
+        #[cfg(target_family = "wasm")]
+        let v = crate::web_gpu::query_param("pebbles-frame-stats");
+        #[cfg(not(target_family = "wasm"))]
+        let v = std::env::var("PEBBLES_FRAME_STATS").ok();
+        v.is_some_and(|v| v == "1" || v == "true")
+    })
 }
 
 /// X.6 — synthetic device-loss injection: `PEBBLES_SYNTH_GPU_LOSS=N` (on the web the
@@ -162,7 +169,8 @@ impl Runner {
         if let Some(error) = failure {
             self.gpu_reset_requested = true;
             let n = self.gpu_reset_failures + 1;
-            let wait = reset_backoff(n).as_secs();
+            // The retry this attempt already scheduled (`gpu_retry_at`, 08 §6.7).
+            let wait = reset_backoff(self.gpu_reset_failures).as_secs();
             gpu_log(
                 Level::Error,
                 &format!("GPU stack rebuild failed (attempt {n}, retry in {wait} s): {error}"),
@@ -212,6 +220,15 @@ impl Runner {
     /// caller marks the window occluded on `Occluded`.
     pub(super) fn settle_frame(&mut self, window: &Arc<Window>, outcome: FrameOutcome) -> bool {
         let presented = outcome == FrameOutcome::Presented;
+        if frame_stats_enabled() {
+            let main = self.active.as_ref().is_some_and(|a| a.window.id() == window.id());
+            self.run_stats.frame(main, outcome);
+            // Also from here: a modal live-resize loop (Windows, macOS) may not reach `about_to_wait`.
+            // Main window only: a secondary window is out of `self.windows` while it renders.
+            if main {
+                self.run_stats_tick();
+            }
+        }
         note_first_present(&mut self.first_present_logged, self.started_at, presented);
         if presented {
             // 08 §6.7: the first present after a reset confirms it.
@@ -726,7 +743,7 @@ fn submit_frame(
 }
 
 /// The `[pebbles gpu]` stats line of the renderer that drew window `key`.
-fn stats_line(state: &RenderState, key: frame::WindowKey) -> Option<String> {
+pub(super) fn stats_line(state: &RenderState, key: frame::WindowKey) -> Option<String> {
     let renderer = state.renderers.get(state.device_of(key))?.as_ref()?;
     gpu::frame_stats_line(renderer)
 }

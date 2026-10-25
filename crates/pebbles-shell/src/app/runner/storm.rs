@@ -21,8 +21,12 @@ pub(super) struct InputStorm {
 }
 
 impl InputStorm {
-    /// Build from the environment: any non-empty, non-"0" `PEBBLES_INPUT_STORM`.
+    /// Build from the environment: any non-empty, non-"0" `PEBBLES_INPUT_STORM` (on the web the
+    /// `?pebbles-input-storm=1` query, for the headless W-HIDPI run).
     pub(super) fn from_env() -> Option<Self> {
+        #[cfg(target_family = "wasm")]
+        let v = crate::web_gpu::query_param("pebbles-input-storm")?;
+        #[cfg(not(target_family = "wasm"))]
         let v = std::env::var("PEBBLES_INPUT_STORM").ok()?;
         if v.is_empty() || v == "0" {
             return None;
@@ -202,6 +206,9 @@ impl Runner {
                 }
             }
         }
+        if render::frame_stats_enabled() {
+            self.run_stats.input();
+        }
         if storm.steps.is_multiple_of(1200) {
             eprintln!("pebbles: storm at {} steps — still alive", storm.steps);
         }
@@ -216,6 +223,10 @@ impl Runner {
 /// 10 surfaces with their `FrameTargets`, so a per-window leak shows up in the census line.
 /// Desktop only; the main window is never touched.
 ///
+/// `PEBBLES_WINDOW_CHURN=multi` instead keeps three windows of different sizes open for 30 s — a
+/// spinner (always animating) and two text windows — resizes each of them every half second (wall
+/// time; `multi-static` never resizes them), then closes them and logs `window multi done` plus the census (08 §15 M-MULTI, M-THREAD).
+///
 /// Paced by a 16 ms event-loop tick, not by main-window frames: once the new windows cover the
 /// main window, a Wayland compositor stops sending it frame callbacks and frame pacing stalls.
 pub(super) struct WindowChurn {
@@ -226,6 +237,12 @@ pub(super) struct WindowChurn {
     last: Option<Instant>,
     /// The final report ran (a half-second after the last close, once those windows dropped).
     reported: bool,
+    /// (`multi`) When the windows opened.
+    started: Option<Instant>,
+    /// (`multi`) Resize the windows (`multi-static` keeps their sizes, for occlusion runs).
+    resize: bool,
+    /// `multi` mode (three long-lived, resized windows).
+    multi: bool,
 }
 
 impl WindowChurn {
@@ -241,8 +258,23 @@ impl WindowChurn {
         if v.is_empty() || v == "0" {
             return None;
         }
-        eprintln!("pebbles: WINDOW CHURN armed — {} cycles of {} windows", Self::CYCLES, Self::WINDOWS);
-        Some(WindowChurn { cycle: 0, frame: 0, open: Vec::new(), last: None, reported: false })
+        let multi = v == "multi" || v == "multi-static";
+        let resize = v == "multi";
+        if multi {
+            eprintln!("pebbles: WINDOW MULTI armed — 3 windows resized every 0.5 s for 30 s");
+        } else {
+            eprintln!("pebbles: WINDOW CHURN armed — {} cycles of {} windows", Self::CYCLES, Self::WINDOWS);
+        }
+        Some(WindowChurn {
+            cycle: 0,
+            frame: 0,
+            open: Vec::new(),
+            last: None,
+            reported: false,
+            multi,
+            resize,
+            started: None,
+        })
     }
 
     /// The tick period (one 60 Hz frame).
@@ -264,6 +296,10 @@ impl Runner {
         churn.last = Some(Instant::now());
         let frame = churn.frame;
         churn.frame += 1;
+        if churn.multi {
+            self.multi_tick(frame);
+            return;
+        }
         if frame % 60 == 0 && churn.cycle == WindowChurn::CYCLES {
             churn.reported = true;
             self.churn_report();
@@ -288,10 +324,66 @@ impl Runner {
         }
     }
 
+    /// One `multi` tick: open at 0, resize every 30 ticks, close at 1800, report at 1830.
+    /// Paced by wall time (a slow software adapter must not stretch the 30 s run): `cycle` is the
+    /// last resize step (one per 0.5 s).
+    fn multi_tick(&mut self, frame: u64) {
+        const SIZES: [(u32, u32); 3] = [(360, 260), (560, 380), (820, 520)];
+        const RUN: Duration = Duration::from_secs(30);
+        let Some(churn) = self.churn.as_mut() else { return };
+        let elapsed = churn.started.map(|t| t.elapsed());
+        if frame == 0 {
+            churn.started = Some(Instant::now());
+            self.ui.make_current();
+            let mut ids = Vec::new();
+            for (i, (w, h)) in SIZES.into_iter().enumerate() {
+                let content = if i == 0 {
+                    pebbles_widgets::spinner(48.0).into_widget()
+                } else {
+                    pebbles_widgets::text(format!("multi window {i}")).into_widget()
+                };
+                ids.push(
+                    pebbles_widgets::window::window(content)
+                        .title(format!("pebbles multi {i}"))
+                        .size(w, h)
+                        .open(),
+                );
+            }
+            churn.open = ids;
+        } else if let Some(elapsed) =
+            elapsed.filter(|e| *e < RUN && e.as_millis() / 500 > u128::from(churn.cycle))
+        {
+            let step = u64::try_from(elapsed.as_millis() / 500).unwrap_or(0);
+            churn.cycle = u32::try_from(step).unwrap_or(u32::MAX);
+            for (i, id) in churn.open.iter().enumerate().filter(|_| churn.resize) {
+                let Some(w) = self.window_by_id.get(id).and_then(|wid| self.windows.get(wid)) else {
+                    continue;
+                };
+                let (bw, bh) = SIZES[i];
+                // A different size every step: grow and shrink by up to 200 × 120 logical px.
+                let k = u32::try_from((step + i as u64) % 5).unwrap_or(0);
+                let _ = w.window.request_inner_size(LogicalSize::new(bw + 50 * k, bh + 30 * k));
+            }
+        } else if elapsed.is_some_and(|e| e >= RUN) && !churn.open.is_empty() {
+            let ids = std::mem::take(&mut churn.open);
+            self.ui.make_current();
+            for id in ids {
+                pebbles_widgets::window::close_window(id);
+            }
+        } else if elapsed.is_some_and(|e| e >= RUN + Duration::from_millis(500)) {
+            churn.reported = true;
+            use pebbles_foundation::log::{Cat, Level, logf};
+            logf(Level::Warn, Cat::Gpu, format_args!("window multi done"));
+            self.churn_report();
+        }
+    }
+
     /// `window churn done` plus the renderer census (10 §9) of the main window's device.
     fn churn_report(&self) {
         use pebbles_foundation::log::{Cat, Level, logf};
-        logf(Level::Warn, Cat::Gpu, format_args!("window churn done"));
+        if !self.churn.as_ref().is_some_and(|c| c.multi) {
+            logf(Level::Warn, Cat::Gpu, format_args!("window churn done"));
+        }
         let state = self.render_state();
         let device = match (state, self.active.as_ref()) {
             (Some(state), Some(a)) => state.device_of(a.window.id()),
