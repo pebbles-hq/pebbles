@@ -10,8 +10,34 @@ comparable with each other on the same machine. They never gate anything (10 §M
 | `flutter/` | Flutter app (`lib/main.dart`); `flutter create --platforms=linux .` adds the embedder |
 | `run.py` | Linux driver: runs every (toolkit, scene) and prints a markdown table |
 
-## Scenes (`M32_SCENE`), window 1200×800
+## Scenes (`M32_SCENE`), window 1200×800 logical at scale 2 (2400×1600 physical)
 
+The driver runs `list_10k_scroll`, `dashboard`, `effects`, `text_heavy` (override with
+`M32_SCENES=a,b`). `rects_10k` is still built into every app but no longer in the default set.
+
+**Scale factor** (`M32_SCALE`, default 2): the driver sets `WINIT_X11_SCALE_FACTOR` (winit, so
+Pebbles and iced) and `GDK_SCALE` (+ `GDK_DPI_SCALE=1`, so GTK text is not scaled twice) for the
+Flutter Linux embedder, on every app. The table's `dpr / window px` column proves it took: iced
+and Flutter print the device pixel ratio they saw (Pebbles prints `-`: its desktop shell does not
+feed `media_query().device_pixel_ratio` yet), and the driver reads every app's physical window
+size with `xwininfo` (expect 2400x1600).
+The Xvfb screen is 2560×1700 so the 2400×1600 window fits. CI also patches the generated Flutter
+runner from its default 1280×720 to 1200×800 (`linux/runner/my_application.cc`).
+
+- `effects` — a moving striped background (33 stripes + a band) under 3 frosted panels
+  (backdrop blur σ 12 clipped to a 16 px rounded rect, translucent white fill), 3 cards drawn
+  through a blur (σ 4, decal edges) and 3 cards whose group opacity animates. Pebbles uses
+  `backdrop_filter` / `image_filtered` / `opacity`; Flutter `ClipRRect`+`BackdropFilter`,
+  `ImageFiltered`, `Opacity`. **iced 0.13 has none of the three**, so its closest equivalent is:
+  frosted panels are the translucent fill only (no backdrop blur), blurred cards are the card plus
+  a same-colour 8 px blurred shadow halo (its only blur primitive), and opacity is multiplied into
+  each colour's alpha instead of an offscreen group. iced therefore does much less work here; its
+  `effects` numbers are not like-for-like.
+- `text_heavy` — a long article: 200 paragraphs of 90 words (deterministic word formula shared by
+  all three apps) at 16 px / 1.5 line height, a 26 px bold heading every 10 paragraphs, in a
+  760 px column, scrolled at 1200 px/s. All three lay the whole article out in one scroll view
+  (Pebbles `scroll_view`, Flutter `SingleChildScrollView`, iced `scrollable`) — no virtualization.
+  Fonts are each toolkit's default sans, so line breaks (and the article's height) differ slightly.
 - `dashboard` — 6 rounded cards (14 px radius, 24 px blurred drop shadow), two text labels each
   (one changes every frame) and a 61-point line chart path that animates every frame.
 - `rects_10k` — a 100×100 grid of 8×8 solid rects in two colours, translated every frame.
@@ -19,7 +45,6 @@ comparable with each other on the same machine. They never gate anything (10 §M
   through the toolkit's scroll controller. Pebbles and Flutter use their virtualized list builder;
   iced has no virtualized list, so it lays out a 10 000-row column (its normal idiom).
 
-`effects` and `text_heavy` from the card are not built yet (iced has no blur/backdrop).
 
 ## Method (identical in all three apps)
 

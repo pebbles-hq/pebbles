@@ -3,7 +3,7 @@
 // (build + raster) is reported as an extra line.
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui' show FrameTiming;
+import 'dart:ui' show FrameTiming, ImageFilter, PlatformDispatcher, TileMode;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -64,12 +64,13 @@ class _BenchState extends State<Bench> with SingleTickerProviderStateMixin {
       samples.sort();
       final t = List<double>.from(widget.timings)..sort();
       stdout.writeln('M32 toolkit=flutter scene=$scene frames=${samples.length} '
-          'p50_ms=${pct(samples, 50).toStringAsFixed(2)} p95_ms=${pct(samples, 95).toStringAsFixed(2)}');
+          'p50_ms=${pct(samples, 50).toStringAsFixed(2)} p95_ms=${pct(samples, 95).toStringAsFixed(2)} '
+          'dpr=${PlatformDispatcher.instance.views.first.devicePixelRatio}');
       stdout.writeln('M32-own toolkit=flutter scene=$scene frametiming_total p50_ms=${pct(t, 50).toStringAsFixed(2)} '
           'p95_ms=${pct(t, 95).toStringAsFixed(2)} n=${t.length}');
       return;
     }
-    if (scene == 'list_10k_scroll' && list.hasClients && list.position.hasContentDimensions) {
+    if ((scene == 'list_10k_scroll' || scene == 'text_heavy') && list.hasClients && list.position.hasContentDimensions) {
       list.jumpTo(math.min(now * 1200, list.position.maxScrollExtent));
     }
     setState(() => phase = now);
@@ -97,6 +98,26 @@ class _BenchState extends State<Bench> with SingleTickerProviderStateMixin {
             const SizedBox(width: 16),
             Text('The quick brown fox jumps over the lazy dog — item $i', style: const TextStyle(fontSize: 14)),
           ]),
+        );
+      case 'effects':
+        body = effects();
+      case 'text_heavy':
+        body = SingleChildScrollView(
+          controller: list,
+          child: Container(
+            width: 1200,
+            padding: const EdgeInsets.symmetric(horizontal: 220, vertical: 24),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              for (var p = 0; p < 200; p++) ...[
+                if (p % 10 == 0) ...[
+                  Text('Section ${p ~/ 10 + 1}', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 8),
+                ],
+                Text(article[p], style: const TextStyle(fontSize: 16, height: 1.5)),
+                const SizedBox(height: 12),
+              ],
+            ]),
+          ),
         );
       default:
         body = dashboard();
@@ -132,6 +153,85 @@ class _BenchState extends State<Bench> with SingleTickerProviderStateMixin {
           Row(children: [card(3), card(4), card(5)]),
         ]),
       );
+}
+
+const words = [
+  'the', 'render', 'pipeline', 'frame', 'budget', 'layout', 'glyph', 'atlas', 'shadow', 'layer', 'scroll', //
+  'physics', 'texture', 'upload', 'batch', 'paint', 'widget', 'tree', 'signal', 'commit', 'raster', 'cache', //
+  'a', 'of', 'and', 'with', 'every', 'between', 'measured', 'quickly', 'under', 'across',
+];
+
+// Paragraph p of the shared article (same formula as the Pebbles and iced apps).
+String paragraph(int p) =>
+    '${List.generate(90, (j) => words[(p * 7 + j * 13 + j ~/ 5) % words.length]).join(' ')}.';
+final List<String> article = List.generate(200, paragraph);
+
+Widget effectCard(String label, Color fill, Color ink, double h) => Container(
+      width: 360,
+      height: h,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.circular(16)),
+      child: Text(label, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: ink)),
+    );
+
+extension Effects on _BenchState {
+  // 3 frosted panels (backdrop blur sigma 12), 3 cards through a blur (sigma 4), 3 cards with
+  // animated opacity, over a moving background.
+  Widget effects() => SizedBox(
+        width: 1200,
+        height: 800,
+        child: Stack(children: [
+          Positioned(left: 0, top: 0, child: CustomPaint(size: const Size(1200, 800), painter: StripesPainter(phase))),
+          for (var i = 0; i < 3; i++) ...[
+            Positioned(
+              left: 30.0 + i * 390,
+              top: 40,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12, tileMode: TileMode.clamp),
+                  child: effectCard('Frosted $i', const Color.fromARGB(60, 255, 255, 255), Colors.white, 220),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 30.0 + i * 390,
+              top: 300,
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 4, sigmaY: 4, tileMode: TileMode.decal),
+                child: effectCard('Blurred $i', const Color.fromARGB(255, 32, 36, 52), Colors.white, 200),
+              ),
+            ),
+            Positioned(
+              left: 30.0 + i * 390,
+              top: 560,
+              child: Opacity(
+                opacity: (0.55 + 0.45 * math.sin(phase * 3 + i)).clamp(0.0, 1.0),
+                child: effectCard('Opacity $i', const Color.fromARGB(255, 250, 250, 250),
+                    const Color.fromARGB(255, 20, 20, 30), 200),
+              ),
+            ),
+          ],
+        ]),
+      );
+}
+
+class StripesPainter extends CustomPainter {
+  StripesPainter(this.phase);
+  final double phase;
+  @override
+  void paint(Canvas c, Size size) {
+    const cols = [Color.fromARGB(255, 66, 133, 244), Color.fromARGB(255, 234, 67, 53), Color.fromARGB(255, 251, 188, 5)];
+    final shift = (phase * 120) % 120;
+    for (var i = -3; i < 30; i++) {
+      c.drawRect(Rect.fromLTWH(i * 40 + shift, 0, 40, 800), Paint()..color = cols[i % 3]);
+    }
+    final y = (phase * 90) % 800;
+    c.drawRect(Rect.fromLTWH(0, y, 1200, 60), Paint()..color = const Color.fromARGB(255, 20, 160, 90));
+  }
+
+  @override
+  bool shouldRepaint(StripesPainter old) => old.phase != phase;
 }
 
 class RectsPainter extends CustomPainter {

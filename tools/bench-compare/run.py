@@ -15,9 +15,29 @@ import sys
 import threading
 import time
 
-SCENES = ["dashboard", "rects_10k", "list_10k_scroll"]
+SCENES = os.environ.get("M32_SCENES", "list_10k_scroll,dashboard,effects,text_heavy").split(",")
+# Device scale factor for every app: winit (Pebbles, iced) reads WINIT_X11_SCALE_FACTOR, the
+# Flutter GTK embedder reads GDK_SCALE. Each app echoes the dpr it saw in its M32 line.
+SCALE = os.environ.get("M32_SCALE", "2")
 SECS, WARM, IDLE = 12.0, 2.0, 5.0
 TCK = os.sysconf("SC_CLK_TCK")
+
+
+def scale_env():
+    return {"WINIT_X11_SCALE_FACTOR": SCALE, "GDK_SCALE": SCALE, "GDK_DPI_SCALE": "1"}
+
+
+def window_px(pid):
+    """Physical size of the app's largest top-level X window (proves the scale factor took)."""
+    try:
+        out = subprocess.run(["xwininfo", "-root", "-children"], capture_output=True, text=True).stdout
+    except OSError:
+        return "?"
+    best = (0, "?")
+    for m in re.finditer(r'"(?:M32|m32)[^"]*":.*?(\d+)x(\d+)\+', out):
+        w, h = int(m.group(1)), int(m.group(2))
+        best = max(best, (w * h, f"{w}x{h}"))
+    return best[1]
 
 
 def cpu_ticks(pid):
@@ -35,7 +55,7 @@ def mem_kib(pid, key):
 
 
 def run(toolkit, exe, scene):
-    env = dict(os.environ, M32_SCENE=scene, M32_SECS=str(SECS), M32_WARM=str(WARM))
+    env = dict(os.environ, M32_SCENE=scene, M32_SECS=str(SECS), M32_WARM=str(WARM), **scale_env())
     t0 = time.time() * 1000.0
     p = subprocess.Popen([exe], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                          cwd=os.path.dirname(os.path.abspath(exe)))
@@ -47,6 +67,7 @@ def run(toolkit, exe, scene):
     res = {"toolkit": toolkit, "scene": scene}
     if p.poll() is None:
         time.sleep(1.0)  # let the last frame settle
+        res["win"] = window_px(p.pid)
         c0 = cpu_ticks(p.pid)
         time.sleep(IDLE)
         res["idle_cpu"] = 100.0 * (cpu_ticks(p.pid) - c0) / TCK / IDLE
@@ -72,7 +93,7 @@ def warm_up(exe):
     (toolkit, scene) pair pays the cold page cache for the binary, the Vulkan/GL driver and LLVM,
     so its startup measured disk I/O rather than the toolkit (dashboard, run first, read 1584 ms
     on CI while every later Pebbles launch took ~160 ms)."""
-    env = dict(os.environ, M32_SCENE=SCENES[0], M32_SECS="1", M32_WARM="0.5")
+    env = dict(os.environ, M32_SCENE=SCENES[0], M32_SECS="1", M32_WARM="0.5", **scale_env())
     p = subprocess.Popen([exe], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                          cwd=os.path.dirname(os.path.abspath(exe)))
     deadline = time.time() + 60
@@ -88,17 +109,17 @@ def main():
     apps = [(t, os.path.abspath(e)) for t, e in (a.split("=", 1) for a in sys.argv[1:])]
     for _, exe in apps:
         warm_up(exe)
-    print("| scene | toolkit | frames (10 s) | interval p50 ms | interval p95 ms | startup ms | idle CPU % | RSS MiB (peak) |")
-    print("|---|---|---|---|---|---|---|---|")
+    print("| scene | toolkit | dpr / window px | frames (10 s) | interval p50 ms | interval p95 ms | startup ms | idle CPU % | RSS MiB (peak) |")
+    print("|---|---|---|---|---|---|---|---|---|")
     extra = []
     for scene in SCENES:
         for toolkit, exe in apps:
             r = run(toolkit, exe, scene)
             if "error" in r:
-                print(f"| {scene} | {toolkit} | error | | | | | |")
+                print(f"| {scene} | {toolkit} | | error | | | | | |")
                 extra.append(f"{toolkit} {scene}:\n{r['error']}")
                 continue
-            print(f"| {scene} | {toolkit} | {r['frames']} | {r['p50_ms']} | {r['p95_ms']} | "
+            print(f"| {scene} | {toolkit} | {r.get('dpr', '-')} / {r.get('win', '?')} | {r['frames']} | {r['p50_ms']} | {r['p95_ms']} | "
                   f"{r.get('startup_ms', 0):.0f} | {r.get('idle_cpu', float('nan')):.1f} | "
                   f"{r.get('rss', 0):.0f} ({r.get('hwm', 0):.0f}) |", flush=True)
             if "own" in r:

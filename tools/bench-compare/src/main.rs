@@ -4,16 +4,18 @@
 //! - every frame tick takes a wall-clock timestamp; from `M32_WARM` s to `M32_SECS` s the
 //!   intervals between consecutive frames are collected, then the animation stops (the app stays
 //!   open and idle so the driver can sample idle CPU and RSS);
-//! - one `M32 …` line is printed (frames, p50/p95 interval in ms), and one `M32-first-frame` line
-//!   with the wall-clock epoch (ms) of the first frame, which the driver subtracts from its spawn
-//!   time for startup.
+//! - one `M32 …` line is printed (frames, p50/p95 interval in ms), and one `M32-first-frame` line with the wall-clock epoch (ms) of the first frame,
+//!   which the driver subtracts from its spawn time for startup.
 //!
-//! Scene from `M32_SCENE`: `rects_10k`, `dashboard`, `list_10k_scroll`.
+//! Scene from `M32_SCENE`: `list_10k_scroll`, `dashboard`, `effects`, `text_heavy` (plus the
+//! legacy `rects_10k`). The scale factor comes from the window: the driver sets
+//! `WINIT_X11_SCALE_FACTOR=2`.
 
 use std::cell::RefCell;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use pebbles::prelude::*;
+use pebbles::render::ScrollHandle;
 
 const W: f64 = 1200.0;
 const H: f64 = 800.0;
@@ -33,6 +35,7 @@ struct Clock {
 thread_local! {
     static CLOCK: RefCell<Clock> =
         RefCell::new(Clock { start: Instant::now(), first: false, last: None, samples: Vec::new(), done: false });
+    static ARTICLE: ScrollHandle = ScrollHandle::new();
 }
 
 fn elapsed() -> f64 {
@@ -150,6 +153,105 @@ fn row_item(i: usize) -> impl IntoWidget {
     ])
 }
 
+/// Background for `effects`: vertical stripes in three colours plus a horizontal band, both
+/// moving every frame so every blur has fresh content to filter.
+fn stripes(phase: f64) -> impl IntoWidget {
+    canvas(move |c: &mut Canvas<'_>| {
+        let cols = [
+            Color::from_rgba8(66, 133, 244, 255),
+            Color::from_rgba8(234, 67, 53, 255),
+            Color::from_rgba8(251, 188, 5, 255),
+        ];
+        let shift = (phase * 120.0) % 120.0;
+        for i in -3_i32..30 {
+            let x = f64::from(i) * 40.0 + shift;
+            c.fill_rect(Rect::new(x, 0.0, x + 40.0, H), cols[i.rem_euclid(3) as usize]);
+        }
+        let y = (phase * 90.0) % H;
+        c.fill_rect(Rect::new(0.0, y, W, y + 60.0), Color::from_rgba8(20, 160, 90, 255));
+    })
+    .width(W)
+    .height(H)
+}
+
+fn effect_card(label: String, fill: Color, ink: Color, height: f64) -> impl IntoWidget {
+    container()
+        .width(360.0)
+        .height(height)
+        .padding(EdgeInsets::all(16.0))
+        .decoration(BoxDecoration::new().color(fill).radius(BorderRadius::all(16.0)))
+        .child(text(label).size(22.0).weight(600.0).color(ink))
+}
+
+/// `effects`: 3 frosted panels (backdrop blur σ 12 under a translucent fill), 3 cards drawn
+/// through a blur (σ 4) and 3 cards whose opacity animates, over a moving background.
+fn effects(phase: f64) -> impl IntoWidget {
+    let white = Color::from_rgba8(255, 255, 255, 255);
+    let mut kids: Vec<AnyWidget> = vec![positioned(stripes(phase)).left(0.0).top(0.0).into_widget()];
+    for i in 0..3_u8 {
+        let x = 30.0 + f64::from(i) * 390.0;
+        let frosted = backdrop_filter(
+            LayerEffect::Blur { sigma_x: 12.0, sigma_y: 12.0, edge: BlurEdge::Clamp },
+            effect_card(format!("Frosted {i}"), Color::from_rgba8(255, 255, 255, 60), white, 220.0),
+        )
+        .radius(16.0);
+        kids.push(positioned(frosted).left(x).top(40.0).into_widget());
+        let blurred = image_filtered(
+            LayerEffect::Blur { sigma_x: 4.0, sigma_y: 4.0, edge: BlurEdge::Decal },
+            effect_card(format!("Blurred {i}"), Color::from_rgba8(32, 36, 52, 255), white, 200.0),
+        );
+        kids.push(positioned(blurred).left(x).top(300.0).into_widget());
+        let a = 0.55 + 0.45 * (phase * 3.0 + f64::from(i)).sin();
+        let faded = opacity(
+            a as f32,
+            effect_card(
+                format!("Opacity {i}"),
+                Color::from_rgba8(250, 250, 250, 255),
+                Color::from_rgba8(20, 20, 30, 255),
+                200.0,
+            ),
+        );
+        kids.push(positioned(faded).left(x).top(560.0).into_widget());
+    }
+    container().width(W).height(H).child(stack(kids))
+}
+
+const WORDS: [&str; 32] = [
+    "the", "render", "pipeline", "frame", "budget", "layout", "glyph", "atlas", "shadow", "layer", "scroll",
+    "physics", "texture", "upload", "batch", "paint", "widget", "tree", "signal", "commit", "raster",
+    "cache", "a", "of", "and", "with", "every", "between", "measured", "quickly", "under", "across",
+];
+
+/// Paragraph `p` of the shared article: 90 words picked deterministically from [`WORDS`]
+/// (the Flutter and iced apps use the same formula).
+fn paragraph(p: usize) -> String {
+    let mut s = String::new();
+    for j in 0..90 {
+        if j > 0 {
+            s.push(' ');
+        }
+        s.push_str(WORDS[(p * 7 + j * 13 + j / 5) % WORDS.len()]);
+    }
+    s.push('.');
+    s
+}
+
+/// `text_heavy`: a 200-paragraph article (a heading every 10) in a 760 px column, scrolled at
+/// 1200 px/s through a single-child scroll view (the whole article is laid out once).
+fn article() -> impl IntoWidget {
+    let mut kids: Vec<AnyWidget> = Vec::new();
+    for p in 0..200 {
+        if p % 10 == 0 {
+            kids.push(text(format!("Section {}", p / 10 + 1)).size(26.0).weight(700.0).into_widget());
+            kids.push(gap_h(8.0).into_widget());
+        }
+        kids.push(text(paragraph(p)).size(16.0).line_height(1.5).into_widget());
+        kids.push(gap_h(12.0).into_widget());
+    }
+    let body = container().width(W).padding(EdgeInsets::symmetric(220.0, 24.0)).child(column(kids));
+    scroll_view(body).controller(ARTICLE.with(Clone::clone))
+}
+
 fn bench() -> impl IntoWidget {
     let scene = std::env::var("M32_SCENE").unwrap_or_else(|_| "dashboard".into());
     let active = create_signal(true);
@@ -166,12 +268,15 @@ fn bench() -> impl IntoWidget {
         }
         // A constant-speed fling: 1200 px/s.
         list.jump_to(elapsed() * 1200.0);
+        ARTICLE.with(|a| a.scroll_to(elapsed() * 1200.0));
     });
     let _ = tick.get(); // re-render every frame while active
     let phase = elapsed();
     match scene.as_str() {
         "rects_10k" => rects(phase).into_widget(),
         "list_10k_scroll" => ListView::builder(10_000, 48.0, row_item).controller(list).into_widget(),
+        "effects" => effects(phase).into_widget(),
+        "text_heavy" => article().into_widget(),
         _ => dashboard(phase).into_widget(),
     }
 }

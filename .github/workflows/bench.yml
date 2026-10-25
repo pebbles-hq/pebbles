@@ -146,7 +146,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb mesa-vulkan-drivers libvulkan1 vulkan-tools libgl1-mesa-dri libegl1 \
-            libgtk-3-dev ninja-build clang cmake pkg-config liblzma-dev libxkbcommon-x11-0 libxcursor1 libxi6 libxrandr2
+            libgtk-3-dev ninja-build clang cmake pkg-config liblzma-dev libxkbcommon-x11-0 libxcursor1 libxi6 libxrandr2 x11-utils
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: bench-compare
@@ -162,6 +162,9 @@ jobs:
           cargo build --release --manifest-path tools/bench-compare/iced/Cargo.toml
           cd tools/bench-compare/flutter
           flutter create --platforms=linux --project-name m32_flutter .
+          # The generated runner opens 1280x720; match the other apps' 1200x800 logical window.
+          sed -i 's/1280, 720/1200, 800/' linux/runner/my_application.cc
+          grep -q '1200, 800' linux/runner/my_application.cc
           flutter build linux --release
       - name: Versions
         run: |
@@ -172,12 +175,14 @@ jobs:
             grep -A1 '^name = "iced"$' tools/bench-compare/iced/Cargo.lock | tail -1
             xvfb-run -a vulkaninfo --summary 2>/dev/null | grep -E 'deviceName|driverInfo' || true
           } | tee target/bench-out/compare-versions.txt
-      - name: Run the matched scenes
+      - name: Run the matched scenes (scale 2)
         env:
           ICED_BACKEND: wgpu
           LIBGL_ALWAYS_SOFTWARE: "1"
+          M32_SCALE: "2"
         run: |
-          xvfb-run -a -s "-screen 0 1280x900x24" python3 tools/bench-compare/run.py \
+          # 1200x800 logical at scale 2 = 2400x1600 physical; the screen must hold it.
+          xvfb-run -a -s "-screen 0 2560x1700x24" python3 tools/bench-compare/run.py \
             pebbles=target/release/bench-compare \
             iced=tools/bench-compare/iced/target/release/m32-iced \
             flutter=tools/bench-compare/flutter/build/linux/x64/release/bundle/m32_flutter \
