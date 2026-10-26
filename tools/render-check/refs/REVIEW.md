@@ -214,7 +214,7 @@ Contents: [brush](#brush) (6), [clip](#clip) (25), [effect](#effect) (11), [frag
 | ok | case | size | bytes | image |
 |---|---|---|---|---|
 | [ ] | `screen/app_shell` | 1200×800 | 102714 | <img src="wgpu/linux-lavapipe/screen__app_shell.png" width="240"> |
-| [ ] | `screen/charts_like` | 900×600 | 24514 | <img src="wgpu/linux-lavapipe/screen__charts_like.png" width="240"> |
+| [ ] | `screen/charts_like` | 900×600 | 24308 | <img src="wgpu/linux-lavapipe/screen__charts_like.png" width="240"> |
 | [ ] | `screen/code_editor_like` | 900×600 | 57970 | <img src="wgpu/linux-lavapipe/screen__code_editor_like.png" width="240"> |
 | [ ] | `screen/dashboard_1200x800` | 1200×800 | 191874 | <img src="wgpu/linux-lavapipe/screen__dashboard_1200x800.png" width="240"> |
 | [ ] | `screen/flutter_parity_article` | 800×1000 | 55716 | <img src="wgpu/linux-lavapipe/screen__flutter_parity_article.png" width="240"> |
@@ -375,7 +375,7 @@ Contents: [brush](#brush) (6), [clip](#clip) (25), [effect](#effect) (11), [frag
 | [ ] | `widget/popover_open` | 480×320 | 2625 | <img src="wgpu/linux-lavapipe/widget__popover_open.png" width="240"> |
 | [ ] | `widget/sheet_open` | 480×320 | 2353 | <img src="wgpu/linux-lavapipe/widget__sheet_open.png" width="240"> |
 | [ ] | `widget/spinner_settled` | 480×320 | 2331 | <img src="wgpu/linux-lavapipe/widget__spinner_settled.png" width="240"> |
-| [ ] | `widget/tabs` | 480×320 | 2630 | <img src="wgpu/linux-lavapipe/widget__tabs.png" width="240"> |
+| [ ] | `widget/tabs` | 480×320 | 2626 | <img src="wgpu/linux-lavapipe/widget__tabs.png" width="240"> |
 | [ ] | `widget/text_field_states` | 480×320 | 5051 | <img src="wgpu/linux-lavapipe/widget__text_field_states.png" width="240"> |
 | [ ] | `widget/toast_shown` | 480×320 | 2353 | <img src="wgpu/linux-lavapipe/widget__toast_shown.png" width="240"> |
 | [ ] | `widget/toggles` | 480×320 | 4766 | <img src="wgpu/linux-lavapipe/widget__toggles.png" width="240"> |

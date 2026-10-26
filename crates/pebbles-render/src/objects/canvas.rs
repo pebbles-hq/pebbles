@@ -4,7 +4,7 @@
 
 use std::rc::Rc;
 
-use kurbo::{Affine, BezPath, Circle, Line, Point, Rect as KRect, RoundedRect, Shape, Stroke};
+use kurbo::{Affine, BezPath, Cap, Circle, Line, Point, Rect as KRect, RoundedRect, Shape, Stroke};
 use pebbles_foundation::{Color, Offset, Rect, Size};
 use peniko::{Brush, Fill};
 
@@ -13,6 +13,11 @@ use crate::decoration::{BlendMode, Gradient};
 use crate::object::RenderObject;
 use crate::objects::decorated::gradient_brush;
 use crate::tree::{LayoutCx, PaintCx};
+
+/// A `width` stroke with butt caps (the Skia / Flutter / CSS default).
+fn butt(width: f64) -> Stroke {
+    Stroke::new(width).with_caps(Cap::Butt)
+}
 
 /// An immediate-mode drawing surface, in the canvas widget's **local** coordinates
 /// (`(0,0)` = the widget's top-left). Every shape is translated to the widget's paint
@@ -52,15 +57,16 @@ impl Canvas<'_> {
         self.scene.fill(Fill::NonZero, self.xf(), &Brush::Solid(color), None, &c);
     }
 
-    /// Stroke a straight line.
+    /// Stroke a straight line. Caps are butt — the line ends exactly at `a` and `b`, as
+    /// Skia / Flutter `Paint` / CSS `stroke-linecap` default to (kurbo's default is round).
     pub fn stroke_line(&mut self, a: Offset, b: Offset, width: f64, color: Color) {
         let l = Line::new(Point::new(a.x, a.y), Point::new(b.x, b.y));
-        self.scene.stroke(&Stroke::new(width), self.xf(), &Brush::Solid(color), None, &l);
+        self.scene.stroke(&butt(width), self.xf(), &Brush::Solid(color), None, &l);
     }
 
-    /// Stroke an arbitrary kurbo path (build one with `BezPath`).
+    /// Stroke an arbitrary kurbo path, butt-capped (build one with `BezPath`).
     pub fn stroke_path(&mut self, path: &BezPath, width: f64, color: Color) {
-        self.scene.stroke(&Stroke::new(width), self.xf(), &Brush::Solid(color), None, path);
+        self.scene.stroke(&butt(width), self.xf(), &Brush::Solid(color), None, path);
     }
 
     /// Fill an arbitrary kurbo path (non-zero winding) — the basis for area fills, pie
@@ -111,7 +117,7 @@ impl Canvas<'_> {
         dash_offset: f64,
     ) {
         let l = Line::new(Point::new(a.x, a.y), Point::new(b.x, b.y));
-        let stroke = Stroke::new(width).with_dashes(dash_offset, dashes);
+        let stroke = butt(width).with_dashes(dash_offset, dashes);
         self.scene.stroke(&stroke, self.xf(), &Brush::Solid(color), None, &l);
     }
 
@@ -124,7 +130,7 @@ impl Canvas<'_> {
         dashes: &[f64],
         dash_offset: f64,
     ) {
-        let stroke = Stroke::new(width).with_dashes(dash_offset, dashes);
+        let stroke = butt(width).with_dashes(dash_offset, dashes);
         self.scene.stroke(&stroke, self.xf(), &Brush::Solid(color), None, path);
     }
 

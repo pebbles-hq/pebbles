@@ -10,6 +10,7 @@ pub(crate) use pebbles_gpu::{FrameParams, FrameTargets, GpuContext, GpuInit, Ren
 mod atlas_gpu;
 mod blend;
 mod blend_ref;
+mod butt_cap;
 mod capture;
 mod clip;
 mod clips;

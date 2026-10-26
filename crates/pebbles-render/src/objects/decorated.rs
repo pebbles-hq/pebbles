@@ -1,7 +1,7 @@
 //! [`RenderDecoratedBox`] — paints a [`BoxDecoration`] (shadows, background,
 //! border, rounded corners) behind and around its child.
 
-use kurbo::{Affine, BezPath, Circle, Point, Stroke};
+use kurbo::{Affine, BezPath, Cap, Circle, Point, Stroke};
 use pebbles_foundation::{Alignment, Axis, Offset, Rect, Size};
 use peniko::Fill;
 
@@ -318,7 +318,9 @@ pub(crate) fn gradient_brush(g: &Gradient, rect: Rect) -> peniko::Gradient {
     }
 }
 
-/// Stroke a single border edge as a straight line from `p0` to `p1`.
+/// Stroke a single border edge as a straight line from `p0` to `p1`. Butt caps: the edge ends
+/// exactly at the box (kurbo's `Stroke::new` defaults to round caps, which bled `width / 2`
+/// past each corner and anti-aliased about a pixel outside a 1 px border).
 fn paint_side(cx: &mut PaintCx<'_>, side: BorderSide, p0: (f64, f64), p1: (f64, f64)) {
     if side.width <= 0.0 {
         return;
@@ -326,7 +328,7 @@ fn paint_side(cx: &mut PaintCx<'_>, side: BorderSide, p0: (f64, f64), p1: (f64, 
     let mut line = BezPath::new();
     line.move_to(p0);
     line.line_to(p1);
-    cx.scene.stroke(&Stroke::new(side.width), Affine::IDENTITY, side.color, None, &line);
+    cx.scene.stroke(&Stroke::new(side.width).with_caps(Cap::Butt), Affine::IDENTITY, side.color, None, &line);
 }
 
 #[cfg(test)]
@@ -405,6 +407,29 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// A per-side border edge ends at the box: butt caps (Skia / CSS), not kurbo's default
+    /// round caps, whose half-width overhang anti-aliased about a pixel past each corner.
+    #[test]
+    fn per_side_border_edges_are_butt_capped_within_the_box() {
+        let black = Color::from_rgba8(0, 0, 0, 255);
+        let side = BorderSide::new(black, 1.0);
+        let ops =
+            ops_of(BoxDecoration::new().border(Border::only(side, BorderSide::NONE, side, BorderSide::NONE)));
+        let strokes: Vec<_> = ops
+            .iter()
+            .filter_map(|op| match op {
+                Op::Stroke { style, shape, .. } => Some((style, shape)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(strokes.len(), 2, "top and bottom edges: {ops:?}");
+        for (style, shape) in strokes {
+            assert_eq!((style.start_cap, style.end_cap), (Cap::Butt, Cap::Butt));
+            let b = shape.bounding_box();
+            assert!(b.x0 >= 0.0 && b.x1 <= 100.0, "edge stays within the box: {b:?}");
+        }
     }
 
     #[test]
