@@ -36,6 +36,8 @@ Scenarios (08 §15 / §17.8):
           presented in every minute; every injection logs `GPU device lost (… reason=Destroyed`
           and then `GPU stack rebuilt`; screenshots every 30 s compared against the first frame
           (window rect not blank, structure kept: text/images/shadows); census flat, RSS reported
+  idle    11 G20 SOAK-IDLE (`counter`, no storm, nothing touches the window): <= 2 `[pebbles gpu]`
+          frame-stats lines in the 15 s after the first presented frame
   p14     PEBBLES_PRESENT_MODE=mailbox: exactly one fallback warning, present=AutoVsync
   p19     PEBBLES_SYNTH_GPU_LOSS + PEBBLES_SYNTH_GPU_DEAD: rebuild attempts 1, 2, 4, 8, 10,
           10 s apart; the process stays alive
@@ -733,7 +735,7 @@ def main():
         if os.path.exists(env["PEBBLES_SOAK_CSV"]):
             os.remove(env["PEBBLES_SOAK_CSV"])
     duration = a.duration or {
-        "c1": 15, "c2": 30, "minrestore": 70, "multi": 45, "thread": 45, "storm": 100, "occ": 70, "c5": 600, "p10": 600, "p14": 12, "p19": 50,
+        "c1": 15, "c2": 30, "minrestore": 70, "multi": 45, "thread": 45, "storm": 100, "occ": 70, "c5": 600, "p10": 600, "p14": 12, "p19": 50, "idle": 30,
     }.get(a.scenario, 20)
     log_path = os.path.join(a.out, f"{tag}.log")
     notes, results, shots = [], [], []
@@ -1038,6 +1040,14 @@ def main():
             summary["rss_mb"] = [(round(t), round(k / 1024, 1)) for t, k in rss[:: max(1, len(rss) // 20)]]
         if a.scenario == "p10":
             p10_checks(results, summary, lines, runs, shots, events, a.out, duration)
+    elif a.scenario == "idle":
+        t0 = first[0] if first else 0.0
+        frames = [t for t, _ in grep(lines, r"\[pebbles gpu\]") if t0 < t <= t0 + 15.0]
+        summary["idle_frames_15s"] = len(frames)
+        summary["idle_frame_times"] = [round(t - t0, 2) for t in frames]
+        check(results, first is not None and len(frames) <= 2,
+              "SOAK-IDLE: <= 2 frame-stats lines in the 15 s after the first frame (11 §6.3)",
+              f"{len(frames)} `[pebbles gpu]` lines at +{summary['idle_frame_times']} s")
     elif a.scenario == "p14":
         warn = grep(lines, r"present mode Mailbox unsupported")
         surf = grep(lines, r"surface: format=")

@@ -111,6 +111,7 @@ jobs:
               storm) run storm inline desktop; run storm threaded desktop ;;
               occ) # M-OCC rows are M1, M2, L2, L4 (08 §15.3); Windows does not report occlusion.
                 if [ "$RUNNER_OS" != Windows ]; then run occ inline desktop; run occ threaded desktop; fi ;;
+              idle) run idle inline counter; run idle threaded counter ;;
               p14) run p14 inline counter ;;
               minrestore) run minrestore inline counter; run minrestore threaded counter ;;
               p19) run p19 inline counter; run p19 threaded counter ;;
