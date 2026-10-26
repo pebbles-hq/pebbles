@@ -197,6 +197,13 @@ impl GpuContext {
         for d in &self.devices {
             d.device.destroy();
             let _ = d.device.poll(wgpu::PollType::Poll);
+            // Vulkan fires the lost callback inside `destroy`; Metal and DX12 defer it past the
+            // poll (or never fire it once the device is dropped by the reset), so the reset ran
+            // without its `reason=Destroyed` line. The destroy is certain: record it now (the
+            // callback, if it fires later, records the same reason).
+            if !d.health.is_lost() {
+                d.health.mark_lost(wgpu::DeviceLostReason::Destroyed);
+            }
         }
     }
 

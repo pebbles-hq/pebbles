@@ -29,11 +29,27 @@ pub struct SurfaceFormatChoice {
 
 /// Pick the surface format (08 §4.1; DR-05). Prefer `Bgra8Unorm`/`Rgba8Unorm`; only fall back
 /// to the sRGB formats when no Unorm format is offered.
+///
+/// `prefer_first` (WebGPU in a browser): wgpu lists `navigator.gpu.getPreferredCanvasFormat()`
+/// first; when that is one of the two Unorm formats it wins, so the browser composites the
+/// canvas without an extra copy (Chrome warns otherwise). Both are 8-bit Unorm with the same
+/// `Gamma` encoding, so the pixels are identical either way.
 pub fn choose_surface_format(
     formats: &[wgpu::TextureFormat],
     surface_view_formats: bool,
+    prefer_first: bool,
 ) -> Option<SurfaceFormatChoice> {
     use wgpu::TextureFormat::{Bgra8Unorm, Bgra8UnormSrgb, Rgba8Unorm, Rgba8UnormSrgb};
+    if prefer_first
+        && let Some(&first) = formats.first()
+        && matches!(first, Bgra8Unorm | Rgba8Unorm)
+    {
+        return Some(SurfaceFormatChoice {
+            format: first,
+            view_format: first,
+            encoding: OutputEncoding::Gamma,
+        });
+    }
     for unorm in [Bgra8Unorm, Rgba8Unorm] {
         if formats.contains(&unorm) {
             return Some(SurfaceFormatChoice {
@@ -365,7 +381,8 @@ impl<'window> RenderSurface<'window> {
             .get_downlevel_capabilities()
             .flags
             .contains(wgpu::DownlevelFlags::SURFACE_VIEW_FORMATS);
-        let choice = choose_surface_format(&capabilities.formats, surface_view_formats)
+        let browser_webgpu = device.adapter().get_info().backend == wgpu::Backend::BrowserWebGpu;
+        let choice = choose_surface_format(&capabilities.formats, surface_view_formats, browser_webgpu)
             .ok_or(GpuError::NoSurfaceFormat { offered: capabilities.formats.clone() })?;
         if choice.encoding == OutputEncoding::SrgbHardware {
             pebbles_foundation::log::logf(
@@ -582,7 +599,20 @@ mod tests {
     use wgpu::TextureFormat::{Bgra8Unorm, Bgra8UnormSrgb, Rgba8Unorm, Rgba8UnormSrgb, Rgba16Float};
 
     fn choice(formats: &[wgpu::TextureFormat], view_formats: bool) -> Option<SurfaceFormatChoice> {
-        choose_surface_format(formats, view_formats)
+        choose_surface_format(formats, view_formats, false)
+    }
+
+    /// Browser WebGPU: the preferred canvas format (listed first) wins when it is Unorm.
+    #[test]
+    fn format_browser_preferred_first() {
+        for f in [Rgba8Unorm, Bgra8Unorm] {
+            let other = if f == Rgba8Unorm { Bgra8Unorm } else { Rgba8Unorm };
+            let c = choose_surface_format(&[f, other, Rgba16Float], false, true).unwrap();
+            assert_eq!((c.format, c.view_format, c.encoding), (f, f, OutputEncoding::Gamma));
+        }
+        // A non-Unorm first entry falls back to the native order.
+        let c = choose_surface_format(&[Rgba16Float, Rgba8Unorm, Bgra8Unorm], false, true).unwrap();
+        assert_eq!(c.format, Bgra8Unorm);
     }
 
     #[test]

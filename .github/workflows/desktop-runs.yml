@@ -114,6 +114,7 @@ jobs:
               p14) run p14 inline counter ;;
               minrestore) run minrestore inline counter; run minrestore threaded counter ;;
               p19) run p19 inline counter; run p19 threaded counter ;;
+              p10) run p10 inline desktop; run p10 threaded desktop ;;
               c5) run c5 inline desktop --duration "$C5_SECONDS"; run c5 threaded desktop --duration "$C5_SECONDS" ;;
             esac
           done
@@ -161,6 +162,13 @@ jobs:
           python -m pip install --quiet playwright
           google-chrome --version
           python scripts/web-hidpi.py --dist examples/counter/dist --out runs
+      - name: P04 AC1 (B7 Firefox WebGL context loss/restore)
+        if: always()
+        run: |
+          python -m pip install --quiet playwright pillow
+          python -m playwright install --with-deps firefox
+          sudo apt-get install -y -q xvfb libgl1-mesa-dri libegl-mesa0
+          xvfb-run -a -s "-screen 0 1280x1024x24" python scripts/web-context-loss.py --dist examples/counter/dist --out runs
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:

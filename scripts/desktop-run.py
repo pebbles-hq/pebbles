@@ -32,6 +32,10 @@ Scenarios (08 §15 / §17.8):
   c5      PEBBLES_SYNTH_GPU_LOSS=300 (+ the input storm, so frames keep coming) for --duration s:
           every reset rebuilt and presented again, no panic, the renderer census (soak CSV,
           inline only) flat across resets; screenshots every minute are kept for inspection
+  p10     08 P10 AC2: c5 under PEBBLES_GPU_STRICT=1 (a validation error panics) for 10 min: frames
+          presented in every minute; every injection logs `GPU device lost (… reason=Destroyed`
+          and then `GPU stack rebuilt`; screenshots every 30 s compared against the first frame
+          (window rect not blank, structure kept: text/images/shadows); census flat, RSS reported
   p14     PEBBLES_PRESENT_MODE=mailbox: exactly one fallback warning, present=AutoVsync
   p19     PEBBLES_SYNTH_GPU_LOSS + PEBBLES_SYNTH_GPU_DEAD: rebuild attempts 1, 2, 4, 8, 10,
           10 s apart; the process stays alive
@@ -628,11 +632,75 @@ def scenario_env(name, mode):
         "storm": {"PEBBLES_WINDOW_CHURN": "1", "PEBBLES_INPUT_STORM": "1"},
         # The loss is injected every N rendered frames: the input storm keeps frames coming.
         "c5": {"PEBBLES_SYNTH_GPU_LOSS": "300", "PEBBLES_INPUT_STORM": "1", "PEBBLES_SOAK_CSV": "__CSV__"},
+        "p10": {"PEBBLES_SYNTH_GPU_LOSS": "300", "PEBBLES_GPU_STRICT": "1", "PEBBLES_INPUT_STORM": "1",
+                "PEBBLES_SOAK_CSV": "__CSV__"},
         "p14": {"PEBBLES_PRESENT_MODE": "mailbox"},
         "p19": {"PEBBLES_SYNTH_GPU_LOSS": "120", "PEBBLES_SYNTH_GPU_DEAD": "1", "PEBBLES_INPUT_STORM": "1"},
     }.get(name, {})
     env.update(extra)
     return env
+
+
+def edge_density(path, rect):
+    """Fraction of pixels on a strong luminance edge inside `rect` (text, image and shadow
+    detail; an unpainted or blank window has next to none), or None."""
+    try:
+        from PIL import Image, ImageFilter
+    except ImportError:
+        return None
+    try:
+        img = Image.open(path).convert("L")
+    except OSError:
+        return None
+    if rect:
+        x, y, w, h = rect
+        box = (max(0, x), max(0, y), min(img.width, x + w), min(img.height, y + h))
+        if box[2] - box[0] > 16 and box[3] - box[1] > 16:
+            img = img.crop(box)
+    px = list(img.filter(ImageFilter.FIND_EDGES).getdata())
+    return round(sum(1 for p in px if p > 40) / len(px), 4)
+
+
+def p10_checks(results, summary, lines, runs, shots, events, out, duration):
+    """08 P10 AC2 on top of the c5 checks."""
+    lost = grep(lines, r"GPU device lost")
+    rebuilt = grep(lines, r"GPU stack rebuilt")
+    destroyed = [x for x in lost if "reason=Destroyed" in x[1]]
+    # Each loss is followed by a rebuild before the next loss (inline: strictly paired).
+    seq = sorted([(t, "L") for t, _ in lost] + [(t, "R") for t, _ in rebuilt])
+    unpaired = sum(1 for (_, k1), (_, k2) in zip(seq, seq[1:]) if k1 == k2 == "L")
+    summary["losses"], summary["rebuilds"] = len(lost), len(rebuilt)
+    summary["first_loss_line"] = lost[0][1].strip() if lost else None
+    summary["first_rebuilt_line"] = rebuilt[0][1].strip() if rebuilt else None
+    check(results, lost and len(destroyed) == len(lost) and unpaired == 0,
+          "every loss logs `GPU device lost (… reason=Destroyed` then `GPU stack rebuilt`",
+          f"{len(lost)} lost ({len(destroyed)} reason=Destroyed), {len(rebuilt)} rebuilt, "
+          f"{unpaired} losses not followed by a rebuild; first: {summary['first_loss_line']}")
+    strict = grep(lines, r"PEBBLES_GPU_STRICT|wgpu error|(?i:validation error)")
+    check(results, not strict, "no validation error (strict would panic)", "; ".join(t for _, t in strict[:3]))
+    # Presents through the whole run: every 60 s bucket after the first frame has presents.
+    last = runs[-1]["at"] if runs else 0
+    buckets = []
+    t = runs[0]["at"] if runs else 0
+    while t < last:
+        buckets.append(sum(r["pm"] for r in runs if t <= r["at"] < t + 60))
+        t += 60
+    summary["presents_per_minute"] = buckets
+    check(results, buckets and min(buckets) > 0 and last >= duration - 15,
+          "frames presented in every minute of the run",
+          f"presents per minute {buckets}; last summary line at {last:.0f} s of {duration:.0f}")
+    # The input storm switches pages, themes and the window size, so a pixel diff against the
+    # first frame is meaningless; instead every 30 s shot's window rect must carry at least a
+    # sixth of the first frame's edge detail (text, images, shadows) — a blank, unpainted or
+    # half-drawn window after a reset has next to none (a sparse "no results" page has ~1/3).
+    dens = [(s["label"], edge_density(os.path.join(out, s["file"]), s.get("rect") or events.get("rect")))
+            for s in shots]
+    summary["edge_density"] = dens
+    ref = dens[0][1] if dens and dens[0][1] else None
+    poor = [d for d in dens if ref is None or d[1] is None or d[1] < ref / 6]
+    check(results, len(shots) >= 10 and not poor,
+          "every 30 s screenshot shows a painted window (edge detail >= 1/6 of the first frame's)",
+          f"(label, edge-pixel fraction in the window rect) {dens}; below: {poor}")
 
 
 def check(results, ok, label, detail=""):
@@ -665,7 +733,7 @@ def main():
         if os.path.exists(env["PEBBLES_SOAK_CSV"]):
             os.remove(env["PEBBLES_SOAK_CSV"])
     duration = a.duration or {
-        "c1": 15, "c2": 30, "minrestore": 70, "multi": 45, "thread": 45, "storm": 100, "occ": 70, "c5": 600, "p14": 12, "p19": 50,
+        "c1": 15, "c2": 30, "minrestore": 70, "multi": 45, "thread": 45, "storm": 100, "occ": 70, "c5": 600, "p10": 600, "p14": 12, "p19": 50,
     }.get(a.scenario, 20)
     log_path = os.path.join(a.out, f"{tag}.log")
     notes, results, shots = [], [], []
@@ -683,7 +751,8 @@ def main():
         p = os.path.join(a.out, f"{tag}-{label}.png")
         if screenshot(p):
             st = region_stats(p, None)
-            shots.append({"label": label, "at": round(run.elapsed(), 2), "file": os.path.basename(p), "stats": st})
+            shots.append({"label": label, "at": round(run.elapsed(), 2), "file": os.path.basename(p), "stats": st,
+                          "rect": window_rect(run)})
             return p
         return None
 
@@ -744,17 +813,19 @@ def main():
                 cycles.append({"minimized_at": round(tm, 2), "restored_at": round(tr, 2), "min": st_min,
                                "restore": st_restore, "black_in_window": stats[0] if stats else None})
             events["cycles"] = cycles
-        elif a.scenario == "c5":
+        elif a.scenario in ("c5", "p10"):
             time.sleep(1.0)
+            events["rect"] = window_rect(run)
             shot("t0")
-            while run.elapsed() < duration - 65 and run.alive():
-                time.sleep(60)
+            step = 30 if a.scenario == "p10" else 60
+            while run.elapsed() < duration - step - 5 and run.alive():
+                time.sleep(step)
                 shot(f"t{int(run.elapsed())}")
         else:
             shot("first")
     while run.elapsed() < duration and run.alive():
         time.sleep(0.5)
-    if a.scenario not in ("c5",):
+    if a.scenario not in ("c5", "p10"):
         shot("end")
     alive = run.stop()
     if backdrop:
@@ -772,7 +843,7 @@ def main():
     want_backend = env.get("WGPU_BACKEND") or backend
     gpu_ok = any(f"backend={want_backend}" in t for _, t in gpu)
     check(results, gpu_ok, f"GPU line names backend={want_backend}", gpu[0][1].strip() if gpu else "no GPU: line")
-    expected_errors = a.scenario in ("p19", "c5")
+    expected_errors = a.scenario in ("p19", "c5", "p10")
     if not expected_errors:
         check(results, not errors, "no ERROR log", "; ".join(t for _, t in errors[:3]))
     # (The line says `inline` while a recovery has no sink yet; judge the steady state.)
@@ -891,7 +962,7 @@ def main():
         check(results, bool(storms), "input storm ran", storms[-1][1] if storms else "")
         main = [r["pm"] for r in runs[1:-1]]
         check(results, main and min(main) > 0, "main window presented every second", f"{main}")
-    elif a.scenario == "c5":
+    elif a.scenario in ("c5", "p10"):
         injected = grep(lines, r"SYNTH device loss injected")
         rebuilt = grep(lines, r"GPU stack rebuilt")
         failed = grep(lines, r"GPU stack rebuild failed")
@@ -933,15 +1004,40 @@ def main():
                 "pipelines", "layer_pool_textures", "gpu_mask_textures"]
         if len(rows) >= 4:
             first, last = rows[len(rows) // 4], rows[-1]
-            grew = {k: (first[k], last[k]) for k in keys if int(last[k] or 0) > int(first[k] or 0)}
+            # The storm switches pages and every reset starts a fresh renderer, so counts follow
+            # the page on screen: a leak raises the floor. Judge the floor (the second half's
+            # minimum never above the first half's) rather than first vs last.
+            half = len(rows) // 2
+            floor = {k: min(int(r[k] or 0) for r in rows[:half]) for k in keys}
+            peak = {k: max(int(r[k] or 0) for r in rows[:half]) for k in keys}
+            # A leak raises both the floor and the peak; a page-dependent count moves one.
+            grew = {k: (floor[k], min(int(r[k] or 0) for r in rows[half:])) for k in keys
+                    if min(int(r[k] or 0) for r in rows[half:]) > floor[k]
+                    and max(int(r[k] or 0) for r in rows[half:]) > peak[k]}
+            summary["census_floor_first_second_half"] = {
+                k: (floor[k], min(int(r[k] or 0) for r in rows[half:])) for k in keys}
+            summary["census_peak_first_second_half"] = {
+                k: (max(int(r[k] or 0) for r in rows[:half]), max(int(r[k] or 0) for r in rows[half:])) for k in keys}
+            rk = [int(r["rss_kib"]) for r in rows if r.get("rss_kib")]
+            if rk:
+                summary["rss_mb_peak_first_second_half"] = (round(max(rk[:half]) / 1024, 1),
+                                                            round(max(rk[half:]) / 1024, 1))
             summary["census_first_last"] = {k: (first[k], last[k]) for k in keys}
             check(results, not grew, "renderer census flat across resets (11 §2.9 soak CSV)",
-                  f"{len(rows)} rows; grew: {grew or 'none'}; RSS growth (info) {summary.get('rss_growth_pct_info')} %")
+                  f"{len(rows)} rows; second-half floor and peak above the first half's: {grew or 'none'}; RSS growth (info) "
+                  f"{summary.get('rss_growth_pct_info')} %, RSS peak first/second half (MB) "
+                  f"{summary.get('rss_mb_peak_first_second_half')}")
+        elif a.scenario == "p10" and a.mode == "threaded":
+            summary["census"] = "n/a threaded (read on the UI thread); judged in the inline run"
         else:
             check(results, False, "renderer census flat across resets (11 §2.9 soak CSV)",
                   f"{len(rows)} census rows (the census is read on the UI thread: inline mode only); "
                   f"RSS growth (info) {summary.get('rss_growth_pct_info')} %")
         summary["screenshots"] = [s["file"] for s in shots]
+        if rss:
+            summary["rss_mb"] = [(round(t), round(k / 1024, 1)) for t, k in rss[:: max(1, len(rss) // 20)]]
+        if a.scenario == "p10":
+            p10_checks(results, summary, lines, runs, shots, events, a.out, duration)
     elif a.scenario == "p14":
         warn = grep(lines, r"present mode Mailbox unsupported")
         surf = grep(lines, r"surface: format=")

@@ -80,6 +80,10 @@ def run_case(p, url, name, width, args, out):
     gpu = [t for _, _, t in lines if "GPU:" in t]
     panics = [t for _, k, t in lines if "panicked" in t or k == "pageerror"]
     lost = [t for _, _, t in lines if "GPU device lost" in t]
+    # Chrome warns when the canvas is configured with a format other than its preferred one
+    # (an extra copy per frame); the surface takes the preferred format on WebGPU.
+    fmt_warn = [t for _, _, t in lines if "than is preferred by this device" in t or "extra copy" in t]
+    surf = [t for _, _, t in lines if "surface: format=" in t]
     confs = [m.group(5) for m in runs]
     # A reconfigure is only allowed where the canvas size changed (the storm resizes rarely).
     spurious = [(a.group(0)[-80:], b.group(0)[-80:]) for a, b in zip(runs, runs[1:])
@@ -92,6 +96,8 @@ def run_case(p, url, name, width, args, out):
          f"canvas width,height,clientWidth,clientHeight = {canvas}"),
         ("GPU line", bool(gpu), gpu[0] if gpu else "none"),
         ("no panic / page error", not panics, "; ".join(panics[:3])),
+        ("no preferred-canvas-format warning", not fmt_warn,
+         f"{len(fmt_warn)} lines; first: {fmt_warn[0] if fmt_warn else '-'}; surface: {surf[:1]}"),
         ("no GPU device lost", not lost, f"{len(lost)} lines; first: {lost[0] if lost else '-'}"),
         (">= 100 frames presented after the first summary", presented_after_first >= 100,
          f"{presented_after_first} frames over {len(runs)} summary lines"),
