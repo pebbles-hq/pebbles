@@ -11,6 +11,10 @@ on:
         description: "Render check: also write candidate self-goldens (--write-refs) and upload them as the render-check-refs artifact (05 V12)"
         type: boolean
         default: false
+      inject_vk_validation_error:
+        description: "Lavapipe GPU lane: make one raw Vulkan call the validation layer rejects; the lane must go red (11 S56 AC2)"
+        type: boolean
+        default: false
 
 # Least privilege by default; no job here needs more.
 permissions:
@@ -226,6 +230,8 @@ jobs:
       PEBBLES_REQUIRE_GPU: "1"
       PEBBLES_GPU_STRICT: "1"
       WGPU_VALIDATION: "1"        # Khronos validation layer on (11 §4.6; S56 counts its errors)
+      # S56 AC2 negative check, manual dispatch only: robustness::injected_vulkan_validation_error_fails_the_test.
+      PEBBLES_INJECT_VK_VALIDATION_ERROR: ${{ github.event_name == 'workflow_dispatch' && inputs.inject_vk_validation_error && '1' || '0' }}
       PEBBLES_EXPECT_ADAPTER: llvmpipe
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

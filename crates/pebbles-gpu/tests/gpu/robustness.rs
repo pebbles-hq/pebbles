@@ -281,3 +281,39 @@ fn deep_layer_nesting() {
         targets.layer_pool_targets()
     );
 }
+
+/// S56 AC2 (negative half): with `PEBBLES_INJECT_VK_VALIDATION_ERROR=1` (CI's dispatch-only
+/// `inject_vk_validation_error` input on the lavapipe lane, `WGPU_VALIDATION=1`), make one raw
+/// Vulkan call the Khronos validation layer rejects (`VUID-VkBufferCreateInfo-size-00912`: a
+/// zero-sized buffer). The layer reports through wgpu-hal's debug messenger → `log::error!` →
+/// the S56 bridge, so [`support::GpuTest`]'s drop check fails this test — proving a validation-
+/// layer error turns the GPU lane red. Without the variable the test does nothing.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "gpu"]
+fn injected_vulkan_validation_error_fails_the_test() {
+    if std::env::var("PEBBLES_INJECT_VK_VALIDATION_ERROR").as_deref() != Ok("1") {
+        return;
+    }
+    let Some(r) = support::gpu_or_skip("injected_vulkan_validation_error") else { return };
+    // SAFETY: the hal device outlives this block; the buffer is destroyed before it ends, and the
+    // invalid create-info is the point of the test (the driver tolerates size 0 on lavapipe).
+    unsafe {
+        let hal = r
+            .device()
+            .as_hal::<wgpu::hal::api::Vulkan>()
+            .expect("PEBBLES_INJECT_VK_VALIDATION_ERROR needs the Vulkan backend");
+        let raw = hal.raw_device();
+        let info = ash::vk::BufferCreateInfo::default()
+            .size(0)
+            .usage(ash::vk::BufferUsageFlags::TRANSFER_DST)
+            .sharing_mode(ash::vk::SharingMode::EXCLUSIVE);
+        if let Ok(buffer) = raw.create_buffer(&info, None) {
+            raw.destroy_buffer(buffer, None);
+        }
+    }
+    eprintln!(
+        "injected one zero-sized vkCreateBuffer; backend errors so far: {}",
+        pebbles_gpu::backend_error_count()
+    );
+}

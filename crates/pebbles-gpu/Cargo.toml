@@ -51,5 +51,10 @@ swash.workspace = true
 # V09: validation-only GPU runs (`WGPU_BACKEND=noop WGPU_NOOP_BACKEND=1`); test builds only.
 wgpu = { workspace = true, features = ["noop"] }
 
+# S56 AC2: the dispatch-only validation-error injection drives one raw Vulkan call (already in
+# Cargo.lock through wgpu-hal; same version, no new package).
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+ash = "0.38"
+
 [lints]
 workspace = true
