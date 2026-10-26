@@ -66,8 +66,8 @@ sys-locale = "0.3"
 # --- renderer (pebbles-gpu only; DR-03) ---
 lyon_tessellation = "1.0"
 swash = "0.2.10"
-# COLR paint graphs (02 R29, DR-23); the version swash already locks.
-skrifa = { version = "0.44", default-features = false, features = ["std"] }
+# COLR paint graphs (02 R29, DR-23); the version cosmic-text pins, so swash and the font stack resolve to one skrifa (12 X04 AC4).
+skrifa = { version = "0.40", default-features = false, features = ["std"] }
 zeno = "0.3"
 half = "2.7"
 guillotiere = "0.7"
