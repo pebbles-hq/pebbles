@@ -99,6 +99,22 @@ pub(crate) struct FontRegistry {
     loader: Option<std::thread::JoinHandle<fontdb::Database>>,
 }
 
+/// Whether `data` is safe to hand to `fontdb::Database::load_font_source`. For a TrueType
+/// collection ("ttcf") fontdb trusts the header's `numFonts` and does
+/// `TinyVec::with_capacity(numFonts)` before parsing any face, so a forged count (up to 2^32)
+/// makes it allocate up to 32 GiB and then loop that many times. A real collection stores one
+/// u32 offset per face after the 12-byte header, so the count is bounded by the data length;
+/// reject anything claiming more faces than its offset table can hold.
+fn font_source_plausible(data: &[u8]) -> bool {
+    if data.get(..4) != Some(b"ttcf".as_slice()) {
+        return true;
+    }
+    let Some(n) = data.get(8..12).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]])) else {
+        return false;
+    };
+    (n as usize).checked_mul(4).and_then(|t| t.checked_add(12)).is_some_and(|end| end <= data.len())
+}
+
 /// Load `bytes` into `db`, renaming every face to `rename` when given; returns the new ids
 /// with their face data. Unparseable bytes add nothing (logged once by the caller).
 fn load(
@@ -419,7 +435,11 @@ impl FontRegistry {
     /// Register runtime font bytes (one or more faces) under their own family names; returns
     /// the number of faces added. Unparseable bytes add nothing (logged once).
     pub(crate) fn register(&mut self, data: FontBytes) -> usize {
-        let ids = self.system.db_mut().load_font_source(fontdb::Source::Binary(data.clone()));
+        let ids = if font_source_plausible(data.as_ref().as_ref()) {
+            self.system.db_mut().load_font_source(fontdb::Source::Binary(data.clone()))
+        } else {
+            Default::default()
+        };
         for id in &ids {
             let Some(face) = self.system.db().face(*id) else { continue };
             self.protected.extend(face.families.iter().map(|(n, _)| n.to_lowercase()));
@@ -610,6 +630,18 @@ mod tests {
         let before = r.generation();
         assert_eq!(r.register(Arc::new(vec![0u8; 64])), 0);
         assert_eq!(r.generation(), before);
+    }
+
+    /// Fuzz regression (security.yml font_bytes OOM): a "ttcf" header claiming ~1.95e9 faces
+    /// made fontdb allocate ~15.6 GB up front. It must be rejected without allocating.
+    #[test]
+    fn register_forged_collection_count_is_rejected() {
+        let input = include_bytes!("../../../../fuzz/regressions/font_bytes/oom-ttc-num-fonts");
+        let mut r = registry();
+        assert_eq!(r.register(Arc::new(input[2..].to_vec())), 0);
+        assert!(!font_source_plausible(b"ttcf\0\x01\0\0\0\0\0\x02\0\0\0\x0c"));
+        assert!(font_source_plausible(b"ttcf\0\x01\0\0\0\0\0\x01\0\0\0\x0c"));
+        assert!(!font_source_plausible(b"ttcf\0\x01"));
     }
 
     fn renamed(bytes: &'static [u8], family: &str) -> fontdb::Database {

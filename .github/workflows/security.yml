@@ -169,7 +169,7 @@ jobs:
           toolchain: nightly
       - run: cargo install cargo-fuzz --locked
       - name: Seed the font corpus from the bundled fonts
-        run: mkdir -p fuzz/corpus/font_bytes && cp crates/pebbles-render/assets/fonts/*.ttf fuzz/corpus/font_bytes/
+        run: mkdir -p fuzz/corpus/font_bytes && cp crates/pebbles-render/assets/fonts/*.ttf fuzz/regressions/font_bytes/* fuzz/corpus/font_bytes/
       # `+nightly`: rust-toolchain.toml pins stable (see the miri job).
       - run: cargo +nightly fuzz run font_bytes -- -max_total_time=600 -timeout=10
       - run: cargo +nightly fuzz run text_layout -- -max_total_time=600 -timeout=10
