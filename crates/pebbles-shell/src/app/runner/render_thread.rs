@@ -427,6 +427,7 @@ mod tests {
                 base_color: peniko::Color::WHITE,
                 sync: None,
                 input: false,
+                perf_overlay: false,
             };
             let (reply, rx) = mpsc::sync_channel(1);
             thread.sender().send(RenderMsg::Readback { packet, reply }).unwrap();
@@ -446,6 +447,7 @@ mod tests {
             base_color: peniko::Color::WHITE,
             sync: None,
             input: false,
+            perf_overlay: false,
         };
         let (reply, rx) = mpsc::sync_channel(1);
         thread.sender().send(RenderMsg::Readback { packet, reply }).unwrap();
@@ -478,6 +480,7 @@ mod tests {
             base_color: peniko::Color::WHITE,
             sync: None,
             input: false,
+            perf_overlay: false,
         };
         let next = || events.recv_timeout(Duration::from_secs(30)).expect("event");
         thread.sender().send(RenderMsg::SimulateLoss).unwrap();

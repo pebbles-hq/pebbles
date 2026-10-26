@@ -26,6 +26,8 @@ pub struct FrameTargets {
     /// The book's retire list: dropping these targets hands `id` back so the book forgets them at
     /// once (an idle app renders no frames, so the stale-frame sweep alone would never run).
     retire: Option<Retired>,
+    /// S57: this window's performance overlay, created on the first frame that asks for it.
+    pub(crate) perf_overlay: Option<Box<crate::perf_overlay::PerfOverlay>>,
 }
 
 /// Ids of dropped `FrameTargets`, drained by their `TargetBook`.
@@ -458,8 +460,8 @@ impl FrameTargets {
 /// Where one frame renders: a view, its format, and the target's own textures.
 pub struct RenderTarget<'a> {
     pub(crate) view: &'a wgpu::TextureView,
-    format: wgpu::TextureFormat,
-    size: (u32, u32),
+    pub(crate) format: wgpu::TextureFormat,
+    pub(crate) size: (u32, u32),
     pub(crate) targets: &'a mut FrameTargets,
     /// GL sRGB-only surface: shaders decode sRGB before the hardware re-encodes (02 §3.8, R13).
     pub(crate) decode_srgb_output: bool,
@@ -510,18 +512,34 @@ pub struct FrameParams {
     /// Force glyph hinting on/off for experiments (render-check `--glyph-hint`); `None` = the
     /// 02 §7.8 policy.
     pub glyph_hint: Option<bool>,
+    /// Draw the on-screen performance overlay over this frame (S57). Window frames only: the
+    /// offscreen API never sets it, so captures and goldens never contain the overlay.
+    pub perf_overlay: bool,
 }
 
 impl FrameParams {
     /// Clear to `base_color`, identity root transform.
     pub fn new(base_color: peniko::Color) -> Self {
-        Self { base_color, root_transform: kurbo::Affine::IDENTITY, scale_factor: 1.0, glyph_hint: None }
+        Self {
+            base_color,
+            root_transform: kurbo::Affine::IDENTITY,
+            scale_factor: 1.0,
+            glyph_hint: None,
+            perf_overlay: false,
+        }
     }
 
     /// Replace the root transform.
     #[must_use]
     pub fn with_root_transform(mut self, root_transform: kurbo::Affine) -> Self {
         self.root_transform = root_transform;
+        self
+    }
+
+    /// Draw the performance overlay over this frame (S57).
+    #[must_use]
+    pub fn with_perf_overlay(mut self, on: bool) -> Self {
+        self.perf_overlay = on;
         self
     }
 

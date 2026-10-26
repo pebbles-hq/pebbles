@@ -533,6 +533,7 @@ impl Runner {
             &mut self.resize_sync_timeouts,
             &mut self.frame,
             self.background,
+            self.perf_overlay,
         );
         if stats && let Some(line) = self.render_state().and_then(|s| stats_line(s, key)) {
             eprintln!("[pebbles gpu] {line}");
@@ -680,6 +681,7 @@ impl Runner {
             &mut self.resize_sync_timeouts,
             &mut self.frame,
             w.background,
+            self.perf_overlay,
         );
         if frame_stats_enabled()
             && let Some(line) = self.render_state().and_then(|s| stats_line(s, key))
@@ -726,6 +728,7 @@ fn submit_frame(
     timeouts: &mut u64,
     frame: &mut Scene,
     base_color: Color,
+    perf_overlay: bool,
 ) -> Option<Option<FrameOutcome>> {
     let sink = sink.as_mut()?;
     // 08 §17.4: only the render thread needs the wait; inline frames present before returning.
@@ -751,6 +754,7 @@ fn submit_frame(
         base_color,
         sync: sync_tx,
         input: pacer.take_input(),
+        perf_overlay,
     };
     // winit's `pre_present_notify` must come right before a real present: on Wayland it arms a
     // frame callback, and a frame that is then not presented (lost, skipped) leaves winit

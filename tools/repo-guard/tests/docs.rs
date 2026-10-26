@@ -2,7 +2,8 @@
 use repo_guard::{read, workspace_root};
 
 /// X06 zero trace: no file in the repository names the removed renderer or text stack.
-/// Exempt: `CHANGELOG.md` (it records what past releases shipped); nothing else is.
+/// Exempt: `CHANGELOG.md` (it records what past releases shipped) and `deny.toml` (its `[bans]`
+/// list must spell the banned crate names, S38); nothing else is.
 /// Names are spelled with `concat!` so this guard's own source never matches.
 #[test]
 fn no_trace_of_the_removed_renderer_or_text_stack() {
@@ -17,7 +18,7 @@ fn no_trace_of_the_removed_renderer_or_text_stack() {
                 if !matches!(name.as_ref(), "target" | ".git" | "corpus" | "artifacts" | "dist") {
                     walk(&p, out);
                 }
-            } else if name != "CHANGELOG.md" {
+            } else if !matches!(name.as_ref(), "CHANGELOG.md" | "deny.toml") {
                 out.push(p);
             }
         }

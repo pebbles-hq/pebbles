@@ -98,6 +98,7 @@ impl RenderContext {
         base_color: Color,
         size: (u32, u32),
         scale_factor: f64,
+        perf_overlay: bool,
         pre_present: &dyn Fn(),
         debug: impl Fn(&str),
     ) -> FrameOutcome {
@@ -138,7 +139,8 @@ impl RenderContext {
         let target =
             RenderTarget::new(frame.view(), format, surface.0.targets_mut()).with_decode_srgb_output(decode);
         // The device-pixel ratio drives the 02 §7.8 hinting policy (R27).
-        let params = FrameParams::new(base_color).with_scale_factor(scale_factor);
+        let params =
+            FrameParams::new(base_color).with_scale_factor(scale_factor).with_perf_overlay(perf_overlay);
         if let Err(e) = renderer.render(target, scene, &params) {
             // A lost or poisoned device reaches the reset through `needs_reset()` (C18).
             logf(Level::Error, Cat::Gpu, format_args!("wgpu render failed (frame skipped): {e}"));

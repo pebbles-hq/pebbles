@@ -13,16 +13,23 @@ languages are ordered `Default`, `Material`, `Tailwind`. `Theme::compact()` is r
 `DesignLanguage::Compact` with `DesignLanguage::Default` and `Theme::compact()` with
 `Theme::default()`.
 
-### Changed — one renderer: wgpu
+### Changed — wgpu is the default renderer (and the only one)
 Pebbles renders with its own wgpu renderer (`pebbles-gpu`) on every platform, with a WebGL2
 fallback on the web. The previous hybrid backend and the renderer-selection cargo features
 are gone, and so is every dependency of the previous renderer and text stack.
 
 **Migration:** apps on default features need nothing. Apps scaffolded before this change:
 delete the backend lines from `[features]` (the renderer-selection entries) and depend on
-`pebbles` with default features (drop `default-features = false`). `pebbles run/build/create
---renderer` is deprecated: it is accepted, ignored, and prints a warning. `CaptureError::Backend`
+`pebbles` with default features (drop `default-features = false`). The `--renderer` flag of
+`pebbles run/build/create` is removed (see Removed above). `CaptureError::Backend`
 is removed (it only reported the deleted capture path).
+
+### Removed — the deprecated `--renderer` flag
+`pebbles run`, `build` and `create` no longer accept `-r` / `--renderer` / `--backend`: they are
+now unknown options and the command fails. The guard that rejected render-backend feature keys
+in an app's `[features]` is gone too (cargo reports those itself).
+
+**Migration:** delete the flag from scripts.
 
 ### Changed — text stack: cosmic-text
 Text now shapes and lays out with cosmic-text 0.19 on every backend; carets, selection, hit-testing and keyboard motion run on Pebbles' own geometry over the new `TextLayout`.

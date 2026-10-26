@@ -16,7 +16,6 @@ pub fn run(args: &[String]) -> ExitCode {
     let mut kind = "app";
     let mut source = Source::Git; // portable by default
     let mut list = false;
-    let mut deprecated_renderer = false;
 
     let mut it = args.iter().peekable();
     while let Some(a) = it.next() {
@@ -37,24 +36,12 @@ pub fn run(args: &[String]) -> ExitCode {
             s if s.starts_with("--template=") => {
                 kind = &s["--template=".len()..];
             }
-            // Deprecated: accept and ignore one value, but never swallow the next flag.
-            "-r" | "--renderer" | "--backend" => {
-                if it.peek().is_some_and(|v| !v.starts_with('-')) {
-                    it.next();
-                }
-                deprecated_renderer = true;
-            }
-            s if s.starts_with("--renderer=") || s.starts_with("--backend=") => deprecated_renderer = true,
             s if s.starts_with('-') => {
                 term::error(&format!("unknown option `{s}` for `pebbles create`"));
                 return ExitCode::FAILURE;
             }
             s => name = Some(s),
         }
-    }
-
-    if deprecated_renderer {
-        term::warn(crate::run::RENDERER_DEPRECATED);
     }
 
     if list {

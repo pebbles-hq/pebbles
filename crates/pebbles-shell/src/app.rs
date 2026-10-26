@@ -92,6 +92,7 @@ pub struct App {
     /// keyboard). Off by default; no effect off wasm (read only in the wasm runner).
     #[cfg_attr(not(target_family = "wasm"), allow(dead_code))]
     web_ime: bool,
+    perf_overlay: bool,
     /// Main-window icon (RGBA8 + dimensions), applied at window creation. `None` = OS default.
     /// Mirrors the secondary-window `WindowSpec::icon`. Windows taskbar/titlebar + Linux;
     /// macOS takes its icon from the `.app` bundle, not this call.
@@ -117,6 +118,7 @@ impl App {
             menu: None,
             text_direction: TextDirection::Ltr,
             web_ime: false,
+            perf_overlay: false,
             icon: None,
         }
     }
@@ -212,6 +214,17 @@ impl App {
     /// wasm.
     pub fn web_ime(mut self, on: bool) -> Self {
         self.web_ime = on;
+        self
+    }
+
+    /// Draw the on-screen **performance overlay** in every window (Flutter's
+    /// `PerformanceOverlay`): a 240×96 panel at the top-right with the last 120 frame times as
+    /// bars (renderer CPU time, plus GPU time with `PEBBLES_GPU_TIMING=1`), a 16.7 ms line, and a
+    /// line of counters (draw calls, masks rasterized, Tier A/B/C draws, damage %, retained
+    /// ops). Off by default; `PEBBLES_PERF_OVERLAY=1` turns it on without a code change. It is
+    /// never part of a capture or golden.
+    pub fn perf_overlay(mut self, on: bool) -> Self {
+        self.perf_overlay = on;
         self
     }
 

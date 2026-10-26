@@ -56,9 +56,34 @@ impl<T> Resource<T> {
 /// [`pump`] can drop it).
 type Poller = Box<dyn FnMut() -> bool>;
 
+/// A thread-safe "a background result is ready" wake-up the shell installs with
+/// [`set_waker`] (native: an event-loop proxy send). Called from the worker thread.
+pub type Waker = Arc<dyn Fn() + Send + Sync>;
+
+/// One in-flight task: its poller, and whether it wakes the shell itself when done
+/// (`false` means the shell must keep polling it every frame).
+struct Pending {
+    poll: Poller,
+    wakes: bool,
+}
+
 thread_local! {
     // UI-thread only: background threads write to each task's `slot`, never this list.
-    static PENDING: RefCell<Vec<Poller>> = const { RefCell::new(Vec::new()) };
+    static PENDING: RefCell<Vec<Pending>> = const { RefCell::new(Vec::new()) };
+    // The UI thread's waker (none in headless tests: those poll `pump`).
+    static WAKER: RefCell<Option<Waker>> = const { RefCell::new(None) };
+}
+
+/// Install (or clear) this UI thread's [`Waker`]. With a waker, a finished background
+/// task wakes the shell, so an idle window draws nothing while work is in flight; without
+/// one, [`pump`] reports in-flight work and the shell keeps drawing frames to poll it.
+pub fn set_waker(waker: Option<Waker>) {
+    WAKER.with(|w| *w.borrow_mut() = waker);
+}
+
+#[cfg_attr(target_family = "wasm", allow(dead_code))] // web tasks are polled
+fn current_waker() -> Option<Waker> {
+    WAKER.with(|w| w.borrow().clone())
 }
 
 /// Run `work` on a background thread, then deliver its result to `on_done` on the UI
@@ -74,12 +99,21 @@ where
     let write = slot.clone();
     // Native: run `work` on a background thread.
     #[cfg(not(target_family = "wasm"))]
+    let waker = current_waker();
+    #[cfg(not(target_family = "wasm"))]
+    let wakes = waker.is_some();
+    #[cfg(not(target_family = "wasm"))]
     std::thread::spawn(move || {
         let result = work();
         if let Ok(mut s) = write.lock() {
             *s = Some(result);
         }
+        if let Some(wake) = waker {
+            wake();
+        }
     });
+    #[cfg(target_family = "wasm")]
+    let wakes = false;
     // Web: no OS threads (`std::thread::spawn` panics at runtime). Run `work` on the
     // microtask queue via `spawn_local` so it yields the current frame first (the
     // UI paints, THEN the task runs) instead of blocking inline; the result still
@@ -92,20 +126,22 @@ where
             *s = Some(result);
         }
     });
-    // The result lands on a later frame; ask the shell to keep drawing until then.
-    request_frame();
+    // The result lands on a later frame: with a waker the worker wakes the shell then;
+    // without one, ask the shell to keep drawing until it arrives.
+    if !wakes {
+        request_frame();
+    }
     let mut on_done = Some(on_done);
-    PENDING.with(|p| {
-        p.borrow_mut().push(Box::new(move || match slot.lock().ok().and_then(|mut s| s.take()) {
-            Some(v) => {
-                if let Some(cb) = on_done.take() {
-                    cb(v);
-                }
-                true
+    let poll: Poller = Box::new(move || match slot.lock().ok().and_then(|mut s| s.take()) {
+        Some(v) => {
+            if let Some(cb) = on_done.take() {
+                cb(v);
             }
-            None => false,
-        }));
+            true
+        }
+        None => false,
     });
+    PENDING.with(|p| p.borrow_mut().push(Pending { poll, wakes }));
 }
 
 /// Web-only async counterpart of [`spawn`]: drive `fut` on the browser microtask queue
@@ -130,17 +166,16 @@ where
     });
     request_frame();
     let mut on_done = Some(on_done);
-    PENDING.with(|p| {
-        p.borrow_mut().push(Box::new(move || match slot.borrow_mut().take() {
-            Some(v) => {
-                if let Some(cb) = on_done.take() {
-                    cb(v);
-                }
-                true
+    let poll: Poller = Box::new(move || match slot.borrow_mut().take() {
+        Some(v) => {
+            if let Some(cb) = on_done.take() {
+                cb(v);
             }
-            None => false,
-        }));
+            true
+        }
+        None => false,
     });
+    PENDING.with(|p| p.borrow_mut().push(Pending { poll, wakes: false }));
 }
 
 /// Kick off `fetcher` on a background thread **once** and return a signal that tracks
@@ -194,25 +229,31 @@ mod tokio_support {
     {
         let slot: Arc<Mutex<Option<T>>> = Arc::new(Mutex::new(None));
         let write = slot.clone();
+        let waker = current_waker();
+        let wakes = waker.is_some();
         runtime().spawn(async move {
             let result = fut.await;
             if let Ok(mut s) = write.lock() {
                 *s = Some(result);
             }
+            if let Some(wake) = waker {
+                wake();
+            }
         });
-        request_frame();
+        if !wakes {
+            request_frame();
+        }
         let mut on_done = Some(on_done);
-        PENDING.with(|p| {
-            p.borrow_mut().push(Box::new(move || match slot.lock().ok().and_then(|mut s| s.take()) {
-                Some(v) => {
-                    if let Some(cb) = on_done.take() {
-                        cb(v);
-                    }
-                    true
+        let poll: Poller = Box::new(move || match slot.lock().ok().and_then(|mut s| s.take()) {
+            Some(v) => {
+                if let Some(cb) = on_done.take() {
+                    cb(v);
                 }
-                None => false,
-            }));
+                true
+            }
+            None => false,
         });
+        PENDING.with(|p| p.borrow_mut().push(Pending { poll, wakes }));
     }
 
     /// The future counterpart of [`create_resource`]: `make` runs once on mount to
@@ -261,17 +302,85 @@ mod tokio_tests {
 }
 
 /// Drain finished background tasks and deliver their results (writing signals) on the
-/// UI thread. Called once per frame by the shell. Returns whether any tasks are still
-/// in flight (so the shell keeps requesting frames until they complete).
+/// UI thread. Called once per frame by the shell. Returns whether the shell must keep
+/// requesting frames to poll in-flight work: `true` only while a task that cannot wake
+/// the shell (no [`Waker`] installed when it was spawned) is still running.
 pub fn pump() -> bool {
     // Take the list so a task's `on_done` may itself `spawn` (re-entrant) without
     // aliasing the borrow; newly-spawned tasks land in the fresh list and are merged.
     let mut taken = PENDING.with(|p| std::mem::take(&mut *p.borrow_mut()));
-    taken.retain_mut(|poll| !poll());
+    taken.retain_mut(|t| !(t.poll)());
     PENDING.with(|p| {
         let mut cur = p.borrow_mut();
         taken.append(&mut cur);
         *cur = taken;
-        !cur.is_empty()
+        cur.iter().any(|t| !t.wakes)
     })
+}
+
+#[cfg(all(test, not(target_family = "wasm")))]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::mpsc;
+
+    /// M35: with a waker, in-flight work does not keep the shell drawing; the worker
+    /// wakes it once, and the next pump delivers.
+    #[test]
+    fn a_woken_task_needs_no_polling_frames() {
+        let woke = Arc::new(AtomicUsize::new(0));
+        let w = woke.clone();
+        set_waker(Some(Arc::new(move || {
+            w.fetch_add(1, Ordering::SeqCst);
+        })));
+        let (go, gate) = mpsc::channel::<()>();
+        let got = Rc::new(Cell::new(0));
+        let g = got.clone();
+        spawn(
+            move || {
+                gate.recv().ok();
+                7
+            },
+            move |v| g.set(v),
+        );
+        assert!(!pump(), "a task that wakes the shell needs no polling frames");
+        go.send(()).unwrap();
+        for _ in 0..2000 {
+            if woke.load(Ordering::SeqCst) == 1 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert_eq!(woke.load(Ordering::SeqCst), 1, "the worker woke the shell once");
+        assert!(!pump());
+        assert_eq!(got.get(), 7, "the woken pump delivered the result");
+        set_waker(None);
+    }
+
+    /// Without a waker (headless), in-flight work asks for polling frames until it lands.
+    #[test]
+    fn an_unwoken_task_keeps_polling() {
+        set_waker(None);
+        let (go, gate) = mpsc::channel::<()>();
+        let got = Rc::new(Cell::new(0));
+        let g = got.clone();
+        spawn(
+            move || {
+                gate.recv().ok();
+                3
+            },
+            move |v| g.set(v),
+        );
+        assert!(pump(), "no waker: keep drawing to poll");
+        go.send(()).unwrap();
+        for _ in 0..2000 {
+            if !pump() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert_eq!(got.get(), 3);
+    }
 }

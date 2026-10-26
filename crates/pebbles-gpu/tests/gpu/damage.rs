@@ -200,3 +200,51 @@ fn resize_forces_full_redraw() {
     assert_eq!(big.frame(&mut r, &scene).full_redraws, 1);
     queue.submit([]);
 }
+
+/// S57: the performance overlay paints only its top-right panel of a window frame (also on a
+/// damage-tracked partial frame), and the offscreen capture of the same scene equals the
+/// overlay-off frame byte for byte (the capture API never draws the overlay).
+#[test]
+#[ignore = "gpu"]
+fn perf_overlay_stays_in_its_panel_and_out_of_captures() {
+    let Some((device, queue, mut r)) = setup("perf_overlay_stays_in_its_panel_and_out_of_captures") else {
+        return;
+    };
+    let Some(mut capture) = offscreen("perf_overlay_stays_in_its_panel_and_out_of_captures") else { return };
+    let ui = Ui::new();
+    let scene = ui.scene(true, 100.0);
+    let frame = |win: &mut Window, r: &mut Renderer, on: bool| {
+        let target = RenderTarget::new(&win.view, wgpu::TextureFormat::Rgba8Unorm, &mut win.targets);
+        r.render(target, &scene, &FrameParams::new(Color::WHITE).with_perf_overlay(on)).expect("render");
+        readback(&device, &queue, &win.texture)
+    };
+    let mut off_win = Window::new(&device, SIZE);
+    let off = frame(&mut off_win, &mut r, false);
+    let mut on_win = Window::new(&device, SIZE);
+    frame(&mut on_win, &mut r, true);
+    // A second frame: the content is unchanged, so only the overlay panel is damaged.
+    let on = frame(&mut on_win, &mut r, true);
+    let shot = capture.render_rgba(&scene, SIZE, Color::WHITE, 1.0).expect("capture");
+    if support::noop_backend() {
+        return; // V09: noop renders no pixels
+    }
+    assert_eq!(shot.pixels, off, "the capture equals the overlay-off frame");
+    // The panel: 240×96 at 8 px from the top-right corner (scale 1).
+    let panel = |x: u32, y: u32| (SIZE.0 - 248..SIZE.0 - 8).contains(&x) && (8..104).contains(&y);
+    let (mut inside_diff, mut outside_diff) = (0, 0);
+    for y in 0..SIZE.1 {
+        for x in 0..SIZE.0 {
+            let i = ((y * SIZE.0 + x) * 4) as usize;
+            if on[i..i + 4] != off[i..i + 4] {
+                if panel(x, y) {
+                    inside_diff += 1;
+                } else {
+                    eprintln!("outside the panel ({x}, {y}): {:?} vs {:?}", &on[i..i + 4], &off[i..i + 4]);
+                    outside_diff += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(outside_diff, 0, "the overlay painted outside its panel");
+    assert!(inside_diff > 240 * 96 / 2, "the overlay panel is drawn ({inside_diff} px differ)");
+}

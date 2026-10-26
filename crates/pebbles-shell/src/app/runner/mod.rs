@@ -145,6 +145,9 @@ pub(crate) enum PebblesUserEvent {
     /// (native) A GPU device was lost — wake and recover (08 §6.8).
     #[cfg_attr(target_family = "wasm", allow(dead_code))] // sent only by the native wgpu waker
     GpuLost,
+    /// (native) A `pebbles_core::task` background result is ready (M35): draw so `pump` delivers it.
+    #[cfg_attr(target_family = "wasm", allow(dead_code))] // sent only by the native task waker
+    TaskDone,
     /// (web) WebGL context lost on the canvas (08 P04): drop the GPU, wait for the restore.
     GpuContextLost,
     /// (web) WebGL context restored on the canvas (08 P04): rebuild the GPU stack.
@@ -250,6 +253,9 @@ pub(super) struct Runner {
     /// (web) Whether the opt-in hidden-input IME bridge is on (`App::web_ime`).
     #[cfg(target_family = "wasm")]
     web_ime: bool,
+    /// The performance overlay is drawn in every window (`App::perf_overlay` or
+    /// `PEBBLES_PERF_OVERLAY=1`, S57).
+    perf_overlay: bool,
     /// No GPU reset starts before this instant (1 s after each started or failed reset;
     /// P19 swaps in the backoff).
     gpu_retry_at: Option<Instant>,
@@ -330,6 +336,8 @@ pub(super) struct Runner {
     storm: Option<storm::InputStorm>,
     /// Dev-only secondary-window churn (`PEBBLES_WINDOW_CHURN=1`, S16); `None` normally.
     churn: Option<storm::WindowChurn>,
+    /// Dev-only main-window resize storm (`PEBBLES_RESIZE_STORM=1`, S15); `None` normally.
+    resize_storm: Option<storm::ResizeStorm>,
     /// `PEBBLES_SOAK_CSV` sampler (11 §2.9) and the rendered-frame counter.
     soak: Option<soak_csv::SoakCsv>,
     soak_frames: u64,
@@ -389,6 +397,7 @@ impl Runner {
             gpu_pending: false,
             #[cfg(target_family = "wasm")]
             web_ime: app.web_ime,
+            perf_overlay: app.perf_overlay || perf_overlay_from_env(),
             gpu_retry_at: None,
             gpu_reset_failures: 0,
             gpu_reset_unconfirmed: false,
@@ -433,6 +442,7 @@ impl Runner {
             last_objects: 0,
             storm: storm::InputStorm::from_env(),
             churn: storm::WindowChurn::from_env(),
+            resize_storm: storm::ResizeStorm::from_env(),
             soak: soak_csv::SoakCsv::from_env(),
             soak_frames: 0,
             run_stats: run_stats::RunStats::default(),
@@ -449,6 +459,15 @@ impl Runner {
     /// surface back into the loop. Called once by [`App::run`](super::App::run)
     /// before `spawn_app` (web), or before `run_app` for the device-lost waker (native wgpu).
     pub(super) fn set_proxy(&mut self, proxy: EventLoopProxy<PebblesUserEvent>) {
+        // M35: a finished background task (`pebbles_core::task::spawn`) wakes the loop through
+        // the proxy, so in-flight work (image loads) no longer keeps an idle window drawing.
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let waker = proxy.clone();
+            pebbles_core::task::set_waker(Some(Arc::new(move || {
+                let _ = waker.send_event(PebblesUserEvent::TaskDone);
+            })));
+        }
         self.proxy = Some(proxy);
     }
 
@@ -946,6 +965,13 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     redraw::request(&w.window);
                 }
             }
+            PebblesUserEvent::TaskDone => {
+                // A background result is ready: the next frame's `task::pump` delivers it.
+                self.request_redraw();
+                for w in self.windows.values() {
+                    redraw::request(&w.window);
+                }
+            }
             PebblesUserEvent::GpuLost => {
                 self.request_redraw();
                 for w in self.windows.values() {
@@ -1355,6 +1381,10 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 if self.render() && render::frame_stats_enabled() {
                     self.run_stats.ui_frame(started.elapsed().as_secs_f64() * 1e3);
                 }
+                // Dev resize storm: next to the input storm, paced by main-window redraws.
+                if let (Some(rs), Some(a)) = (self.resize_storm.as_mut(), self.active.as_ref()) {
+                    rs.tick(&a.window);
+                }
             }
 
             // 08 §5.4: stop rendering while hidden; redraw when visible again.
@@ -1521,6 +1551,11 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             wake_by(event_loop, Instant::now() + storm::WindowChurn::TICK);
         }
     }
+}
+
+/// `PEBBLES_PERF_OVERLAY`: any non-empty, non-"0" value turns the overlay on (S57).
+fn perf_overlay_from_env() -> bool {
+    std::env::var("PEBBLES_PERF_OVERLAY").is_ok_and(|v| !v.is_empty() && v != "0")
 }
 
 /// Wake no later than `t`, keeping an earlier deadline already set this turn (a GPU retry, a

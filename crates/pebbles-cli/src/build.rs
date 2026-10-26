@@ -12,8 +12,8 @@ use std::process::{Command, ExitCode, Stdio};
 use std::time::Instant;
 
 use crate::run::{
-    Platform, RENDERER_DEPRECATED, cargo_build, ensure_index_html, find_workspace_root, resolve_member,
-    rustup_target_installed, target_bin, tool_available, warn_legacy_backend_features,
+    Platform, cargo_build, ensure_index_html, find_workspace_root, resolve_member, rustup_target_installed,
+    target_bin, tool_available,
 };
 use crate::term;
 
@@ -23,27 +23,17 @@ use crate::term;
 struct BuildOpts {
     package: Option<String>,
     platform: Platform,
-    /// `--renderer` was passed (deprecated and ignored: there is one renderer).
-    deprecated_renderer: bool,
 }
 
 /// Parse `pebbles build` argv into [`BuildOpts`]. Pure (no I/O), so it's unit-
-/// testable — mirrors `run`'s `-d` / `-r` / `-p` handling. Returns the error
+/// testable — mirrors `run`'s `-d` / `-p` handling. Returns the error
 /// message to print on a bad flag; `build takes no positional args`, so a bare
 /// token is rejected rather than silently swallowed.
 fn parse_args(args: &[String]) -> Result<BuildOpts, String> {
-    let mut o = BuildOpts { package: None, platform: Platform::Desktop, deprecated_renderer: false };
+    let mut o = BuildOpts { package: None, platform: Platform::Desktop };
     let mut it = args.iter().peekable();
     while let Some(a) = it.next() {
         match a.as_str() {
-            // Deprecated: accept and ignore one value, but never swallow the next flag.
-            "-r" | "--renderer" | "--backend" => {
-                if it.peek().is_some_and(|v| !v.starts_with('-')) {
-                    it.next();
-                }
-                o.deprecated_renderer = true;
-            }
-            s if s.starts_with("--renderer=") || s.starts_with("--backend=") => o.deprecated_renderer = true,
             // Flutter-style target selection: `pebbles build -d web` (default: desktop).
             "-d" | "--device" | "--platform" => {
                 let v = it.next().ok_or("`-d` needs a target: desktop | web | android | ios")?;
@@ -93,11 +83,6 @@ pub fn run(args: &[String]) -> ExitCode {
     else {
         return ExitCode::FAILURE;
     };
-    if o.deprecated_renderer {
-        term::warn(RENDERER_DEPRECATED);
-    }
-    warn_legacy_backend_features(&member_dir);
-
     // Flutter-style target dispatch. Desktop is the default native release build;
     // web emits a static bundle; mobile prints guidance only.
     match o.platform {
@@ -267,7 +252,7 @@ mod tests {
     #[test]
     fn parse_defaults_to_desktop_no_renderer_no_package() {
         let o = parse_args(&[]).unwrap();
-        assert_eq!(o, BuildOpts { package: None, platform: Platform::Desktop, deprecated_renderer: false });
+        assert_eq!(o, BuildOpts { package: None, platform: Platform::Desktop });
     }
 
     #[test]
@@ -280,16 +265,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_accepts_and_ignores_the_deprecated_renderer_flag() {
-        let o = parse_args(&argv(&["--renderer", "gl"])).unwrap();
-        assert!(o.deprecated_renderer);
-        let o = parse_args(&argv(&["-r", "-d", "web"])).unwrap();
-        assert!(o.deprecated_renderer);
-        assert_eq!(o.platform, Platform::Web, "the value-less -r must not swallow -d");
-        assert!(parse_args(&argv(&["--renderer=wgpu"])).unwrap().deprecated_renderer);
-    }
-
-    #[test]
     fn parse_selects_package() {
         assert_eq!(parse_args(&argv(&["-p", "counter"])).unwrap().package.as_deref(), Some("counter"));
         assert_eq!(parse_args(&argv(&["--bin", "gallery"])).unwrap().package.as_deref(), Some("gallery"));
@@ -297,11 +272,8 @@ mod tests {
 
     #[test]
     fn parse_combines_flags() {
-        let o = parse_args(&argv(&["-p", "gallery", "-d", "web", "--renderer", "wgpu"])).unwrap();
-        assert_eq!(
-            o,
-            BuildOpts { package: Some("gallery".into()), platform: Platform::Web, deprecated_renderer: true }
-        );
+        let o = parse_args(&argv(&["-p", "gallery", "-d", "web"])).unwrap();
+        assert_eq!(o, BuildOpts { package: Some("gallery".into()), platform: Platform::Web });
     }
 
     #[test]
@@ -313,6 +285,7 @@ mod tests {
         assert!(parse_args(&argv(&["counter"])).is_err());
         assert!(parse_args(&argv(&["-d"])).is_err());
         assert!(parse_args(&argv(&["-p"])).is_err());
+        assert!(parse_args(&argv(&["--renderer", "wgpu"])).is_err());
     }
 
     #[test]

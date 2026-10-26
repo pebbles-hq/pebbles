@@ -22,41 +22,6 @@ struct Opts {
     app_args: Vec<String>,
     platform: Platform,
     port: u16,
-    /// `--renderer` was passed (deprecated and ignored: there is one renderer).
-    deprecated_renderer: bool,
-}
-
-/// Printed once when `--renderer` is passed: Pebbles has a single renderer (wgpu).
-pub(crate) const RENDERER_DEPRECATED: &str = "`--renderer` is deprecated and ignored: Pebbles has a single renderer (wgpu). \
-     Remove the flag — it will be removed in a future release.";
-/// Printed when the package still declares a render-backend feature.
-pub(crate) const LEGACY_BACKEND_FEATURES: &str = "this app's Cargo.toml still declares old render-backend features (a `wgpu` feature). \
-     Pebbles has a single renderer now: delete those lines from `[features]` and depend on \
-     `pebbles` with default features (see CHANGELOG → Migration).";
-
-/// Whether a package's own `[features]` table still declares a render-backend feature (every
-/// pre-1.0 scaffold declared a `wgpu` one).
-pub(crate) fn declares_backend_features(manifest: &str) -> bool {
-    let mut in_features = false;
-    for line in manifest.lines() {
-        let t = line.split('#').next().unwrap_or("").trim();
-        if t.starts_with('[') {
-            in_features = t == "[features]";
-            continue;
-        }
-        if in_features && t.split('=').next().unwrap_or("").trim() == "wgpu" {
-            return true;
-        }
-    }
-    false
-}
-
-/// Warn when `member_dir`'s manifest still declares render-backend features.
-pub(crate) fn warn_legacy_backend_features(member_dir: &Path) {
-    let manifest = std::fs::read_to_string(member_dir.join("Cargo.toml")).unwrap_or_default();
-    if declares_backend_features(&manifest) {
-        term::warn(LEGACY_BACKEND_FEATURES);
-    }
 }
 
 /// The target Pebbles runs on — Flutter's `-d`. Default is the host desktop.
@@ -97,7 +62,6 @@ pub fn run(args: &[String]) -> ExitCode {
         app_args: vec![],
         platform: Platform::Desktop,
         port: 8080,
-        deprecated_renderer: false,
     };
     // Did the user pin the log level on the command line? If not, `pebbles.toml`'s
     // `[dev] log` (resolved once we know the project dir) supplies the default.
@@ -107,14 +71,6 @@ pub fn run(args: &[String]) -> ExitCode {
         match a.as_str() {
             "--release" => o.release = true,
             "--no-reload" => o.reload = false,
-            // Deprecated: accept and ignore one value, but never swallow the next flag.
-            "-r" | "--renderer" | "--backend" => {
-                if it.peek().is_some_and(|v| !v.starts_with('-')) {
-                    it.next();
-                }
-                o.deprecated_renderer = true;
-            }
-            s if s.starts_with("--renderer=") || s.starts_with("--backend=") => o.deprecated_renderer = true,
             // Flutter-style target selection: `pebbles run -d web` (default: desktop).
             "-d" | "--device" | "--platform" => {
                 let Some(v) = it.next() else {
@@ -196,11 +152,6 @@ pub fn run(args: &[String]) -> ExitCode {
     else {
         return ExitCode::FAILURE;
     };
-
-    if o.deprecated_renderer {
-        term::warn(RENDERER_DEPRECATED);
-    }
-    warn_legacy_backend_features(&member_dir);
 
     // `pebbles.toml` `[dev] log` sets the default level; an explicit `--log`/`-q`
     // still wins.
@@ -995,14 +946,6 @@ mod tests {
         let root = Path::new("/w");
         assert_eq!(target_bin(root, "app", false), Path::new("/w/target/debug/app"));
         assert_eq!(target_bin(root, "app", true), Path::new("/w/target/release/app"));
-    }
-
-    #[test]
-    fn backend_features_reads_only_the_features_table() {
-        let m = "[dependencies]\nwgpu = \"29\"\n[features]\n# wgpu = []\ndefault = [\"wgpu\"]\nwgpu = [\"pebbles/wgpu\"]\n";
-        assert!(declares_backend_features(m));
-        assert!(!declares_backend_features("[dependencies]\nwgpu = \"29\"\n"));
-        assert!(!declares_backend_features("[features]\n# wgpu = []\nimage-view = []\n"));
     }
 
     #[test]

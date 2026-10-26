@@ -419,3 +419,62 @@ impl Runner {
         logf(Level::Warn, Cat::Gpu, format_args!("census: {line}"));
     }
 }
+
+/// Dev-only resize storm (`PEBBLES_RESIZE_STORM=1`, 11 SOAK-RESIZE): every second main-window
+/// redraw asks the window for a new inner size from a fixed sequence, so a surface-reconfigure
+/// bug (stale targets, a size race) shows up within seconds. Desktop only; secondary windows are
+/// never resized.
+pub(super) struct ResizeStorm {
+    /// Resizes requested so far (also the sequence index).
+    k: u64,
+    /// Main-window redraws seen (resize on every second one).
+    redraws: u64,
+}
+
+impl ResizeStorm {
+    /// Build from the environment: any non-empty, non-"0" `PEBBLES_RESIZE_STORM`; `None` on wasm.
+    pub(super) fn from_env() -> Option<Self> {
+        #[cfg(target_family = "wasm")]
+        return None;
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let v = std::env::var("PEBBLES_RESIZE_STORM").ok()?;
+            if v.is_empty() || v == "0" {
+                return None;
+            }
+            eprintln!("pebbles: RESIZE STORM armed");
+            Some(ResizeStorm { k: 0, redraws: 0 })
+        }
+    }
+
+    /// The `k`-th requested size (physical px): 400–1599 × 300–1099.
+    pub(super) fn size(k: u64) -> (u32, u32) {
+        (400 + (k * 37 % 1200) as u32, 300 + (k * 23 % 800) as u32)
+    }
+
+    /// One main-window redraw: on every second one, request the next size and a redraw.
+    pub(super) fn tick(&mut self, window: &Window) {
+        self.redraws += 1;
+        if !self.redraws.is_multiple_of(2) {
+            return;
+        }
+        let (w, h) = Self::size(self.k);
+        let _ = window.request_inner_size(winit::dpi::PhysicalSize::new(w, h));
+        self.k += 1;
+        window.request_redraw();
+        if self.k.is_multiple_of(500) {
+            eprintln!("resize storm: {} resizes", self.k);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ResizeStorm;
+
+    #[test]
+    fn resize_sequence_is_deterministic() {
+        let first: Vec<_> = (0..5).map(ResizeStorm::size).collect();
+        assert_eq!(first, [(400, 300), (437, 323), (474, 346), (511, 369), (548, 392)]);
+    }
+}

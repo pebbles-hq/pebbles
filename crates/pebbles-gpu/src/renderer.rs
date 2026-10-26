@@ -488,6 +488,35 @@ impl Renderer {
         scene: &Scene,
         params: &FrameParams,
     ) -> Result<FrameStats, GpuError> {
+        if !params.perf_overlay || self.nested {
+            return self.render_scene(target, scene, params);
+        }
+        // S57: draw the window's overlay over the content, then record this frame into it.
+        let mut overlay = target.targets.perf_overlay.take().unwrap_or_default();
+        let size = target.size;
+        let inner = RenderTarget {
+            view: target.view,
+            format: target.format,
+            size,
+            targets: &mut *target.targets,
+            decode_srgb_output: target.decode_srgb_output,
+        };
+        let combined = overlay.compose(scene, size, params.scale_factor);
+        let result = self.render_scene(inner, combined, params);
+        if let Ok(stats) = &result {
+            overlay.record(stats, u64::from(size.0) * u64::from(size.1));
+        }
+        target.targets.perf_overlay = Some(overlay);
+        result
+    }
+
+    /// [`render`](Self::render) without the performance overlay.
+    fn render_scene(
+        &mut self,
+        target: RenderTarget<'_>,
+        scene: &Scene,
+        params: &FrameParams,
+    ) -> Result<FrameStats, GpuError> {
         if self.health.is_lost() {
             return Err(GpuError::DeviceLost);
         }

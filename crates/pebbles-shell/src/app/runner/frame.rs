@@ -37,6 +37,8 @@ pub(crate) struct FramePacket {
     /// queued behind other windows' animation frames.
     #[cfg_attr(target_family = "wasm", allow(dead_code))]
     pub input: bool,
+    /// Draw the performance overlay over this frame (S57).
+    pub perf_overlay: bool,
 }
 
 /// What happened to a packet (mapped from the 08 §5 acquire outcomes).
@@ -292,6 +294,7 @@ fn render_packet_ref(
         packet.base_color,
         packet.size,
         packet.scale_factor,
+        packet.perf_overlay,
         pre_present,
         |line| {
             logf(Level::Debug, Cat::Gpu, format_args!("{line}"));
@@ -485,6 +488,7 @@ mod tests {
             base_color: Color::WHITE,
             sync: None,
             input: false,
+            perf_overlay: false,
         }
     }
 

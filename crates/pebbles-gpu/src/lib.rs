@@ -35,6 +35,7 @@ mod init;
 mod limits;
 #[cfg(not(target_family = "wasm"))]
 mod offscreen;
+mod perf_overlay;
 mod prepare;
 mod raster;
 #[cfg(not(target_family = "wasm"))]

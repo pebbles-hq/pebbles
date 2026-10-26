@@ -124,6 +124,22 @@ group, with nested `pebbles.gpu.layer`, `pebbles.gpu.effect` and `pebbles.gpu.cu
 groups, so the event browser follows the layer tree. An unnamed resource is a bug;
 please report it.
 
+## Rendering regressions
+
+The post-removal regression policy (wgpu migration 11 §7.4):
+
+1. The golden lane (05 §9) is blocking. A golden/reference update is allowed only in a dedicated commit titled
+   `goldens: <reason>` whose PR attaches the render-check report and side-by-side images and has reviewer sign-off.
+2. The committed self-goldens of our renderer stay the regression baseline (DR-21); a deliberate visual change is a
+   reviewed spec change that updates the spec, the golden model and the affected self-goldens in one PR (05 §9).
+3. Any rendering regression is **P1**: fixed or reverted within 5 working days.
+4. Bisect with `just render-check-refs` (O07): `git bisect start <bad> <good>` then `git bisect run just
+   render-check-refs` (only between commits that contain tools/render-check, i.e. after V10).
+5. Write the policy into `pebbles/CONTRIBUTING.md` (O07).
+
+`just render-check-refs` checks against the golden model and the committed self-goldens and exits non-zero on any
+FAIL; it never updates goldens.
+
 ## Publish checklist (future)
 
 - [ ] Per-crate `README.md`s (crates.io renders them)

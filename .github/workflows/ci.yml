@@ -257,8 +257,8 @@ jobs:
       - name: TEST-SHELL-GPU (capture / glyph / render checks on wgpu)
         run: cargo test -p pebbles-shell -- --ignored --test-threads=1
 
-  # Windows WARP (05 V31): the DX12 software adapter, shaders through Fxc (DR-13). Informative until
-  # the Phase-5 promotion (05 §10.3); render-check on WARP is non-canonical (DR-09).
+  # Windows WARP (05 V31): the DX12 software adapter, shaders through Fxc (DR-13). Blocking since the
+  # 2026-10-26 promotion (05 §10.5); render-check on WARP uses the relaxed limits (DR-09).
   gpu-wgpu-windows-warp:
     name: wgpu GPU tests (Windows WARP)
     runs-on: windows-latest
@@ -287,11 +287,9 @@ jobs:
         run: cargo test -p pebbles-shell -- --ignored --test-threads=1
       - name: Golden test API on WARP (05 V54 AC1)
         run: cargo test -p pebbles-shell golden -- --include-ignored --test-threads=1
-      - name: RENDER-CHECK on WARP (informative, relaxed)
-        continue-on-error: true
+      - name: RENDER-CHECK on WARP (relaxed)
         run: cargo run -p render-check --release -- --out target/render-check --tolerance relaxed --determinism
-      - name: RENDER-CHECK vs committed references (informative, cross-backend)
-        continue-on-error: true
+      - name: RENDER-CHECK vs committed references (cross-backend)
         run: cargo run -p render-check --release -- --out target/render-check --reference dir --tolerance relaxed
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
@@ -326,11 +324,9 @@ jobs:
         run: cargo test -p pebbles-shell -- --ignored --test-threads=1
       - name: Golden test API on Metal (05 V54 AC1)
         run: cargo test -p pebbles-shell golden -- --include-ignored --test-threads=1
-      - name: RENDER-CHECK on Metal (informative, relaxed)
-        continue-on-error: true
+      - name: RENDER-CHECK on Metal (relaxed)
         run: cargo run -p render-check --release -- --out target/render-check --tolerance relaxed --determinism
-      - name: RENDER-CHECK vs committed references (informative, cross-backend)
-        continue-on-error: true
+      - name: RENDER-CHECK vs committed references (cross-backend)
         run: cargo run -p render-check --release -- --out target/render-check --reference dir --tolerance relaxed
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
@@ -366,8 +362,7 @@ jobs:
         run: cargo test -p pebbles-gpu --test gpu gpu_formats -- --ignored --nocapture --test-threads=1
       - name: TEST-GPU-GPU on GL
         run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
-      - name: RENDER-CHECK vs committed references (informative, cross-backend)
-        continue-on-error: true
+      - name: RENDER-CHECK vs committed references (cross-backend)
         run: cargo run -p render-check --release -- --out target/render-check --reference dir --tolerance relaxed
 
   # Headless-browser smoke of the web build on the WebGL2 path (05 V50, DR-27): counter in headless
