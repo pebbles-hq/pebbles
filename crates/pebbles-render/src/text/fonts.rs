@@ -115,6 +115,183 @@ fn font_source_plausible(data: &[u8]) -> bool {
     (n as usize).checked_mul(4).and_then(|t| t.checked_add(12)).is_some_and(|end| end <= data.len())
 }
 
+/// The system-font scan. Mirrors the directories `fontdb::Database::load_system_fonts` walks,
+/// but checks each file's header with [`font_source_plausible`] before handing it to fontdb:
+/// fontdb trusts a collection's `numFonts` and would loop up to 2^32 times on a forged `.ttc`
+/// dropped into a font directory.
+#[cfg(not(target_family = "wasm"))]
+mod system_scan {
+    use super::fontdb;
+    use std::collections::HashSet;
+    use std::io::Read;
+    use std::path::{Path, PathBuf};
+
+    pub(super) fn scan() -> fontdb::Database {
+        let mut db = fontdb::Database::new();
+        let mut seen = HashSet::new();
+        for dir in dirs() {
+            load_dir(&mut db, &dir, &mut seen, 0);
+        }
+        db
+    }
+
+    /// Recursively load font files under `dir` (symlinks resolved, each file/dir once).
+    pub(super) fn load_dir(db: &mut fontdb::Database, dir: &Path, seen: &mut HashSet<PathBuf>, depth: u32) {
+        if depth > 32 {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let Ok(path) = std::fs::canonicalize(entry.path()) else { continue };
+            if !seen.insert(path.clone()) {
+                continue;
+            }
+            let Ok(meta) = std::fs::metadata(&path) else { continue };
+            if meta.is_dir() {
+                load_dir(db, &path, seen, depth + 1);
+            } else if meta.is_file() && is_font_ext(&path) {
+                if !file_plausible(&path, meta.len()) {
+                    pebbles_foundation::log::warn(
+                        pebbles_foundation::log::Cat::General,
+                        format!("skipping implausible font collection {}", path.display()),
+                    );
+                    continue;
+                }
+                let _ = db.load_font_file(&path);
+            }
+        }
+    }
+
+    fn is_font_ext(path: &Path) -> bool {
+        path.extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "ttf" | "ttc" | "otf" | "otc"))
+    }
+
+    /// [`super::font_source_plausible`] on the 12-byte header, against the file's real length.
+    fn file_plausible(path: &Path, len: u64) -> bool {
+        let mut head = [0u8; 12];
+        let Ok(mut f) = std::fs::File::open(path) else { return false };
+        let n = f.read(&mut head).unwrap_or(0);
+        let head = &head[..n];
+        if head.get(..4) != Some(b"ttcf".as_slice()) {
+            return true;
+        }
+        let Some(count) = head.get(8..12).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]])) else {
+            return false;
+        };
+        u64::from(count) * 4 + 12 <= len
+    }
+
+    #[cfg(target_os = "windows")]
+    fn dirs() -> Vec<PathBuf> {
+        let root = std::env::var_os("SYSTEMROOT").map(PathBuf::from).unwrap_or_else(|| "C:\\Windows".into());
+        let mut v = vec![root.join("Fonts")];
+        if let Some(home) = std::env::var_os("USERPROFILE").map(PathBuf::from) {
+            v.push(home.join("AppData\\Local\\Microsoft\\Windows\\Fonts"));
+            v.push(home.join("AppData\\Roaming\\Microsoft\\Windows\\Fonts"));
+        }
+        v
+    }
+
+    #[cfg(target_os = "macos")]
+    fn dirs() -> Vec<PathBuf> {
+        let mut v: Vec<PathBuf> = vec!["/Library/Fonts".into(), "/System/Library/Fonts".into()];
+        if let Ok(rd) = std::fs::read_dir("/System/Library/AssetsV2") {
+            for e in rd.flatten() {
+                if e.file_name().to_string_lossy().starts_with("com_apple_MobileAsset_Font") {
+                    v.push(e.path());
+                }
+            }
+        }
+        v.push("/Network/Library/Fonts".into());
+        if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+            v.push(home.join("Library/Fonts"));
+        }
+        v
+    }
+
+    /// Linux/BSD: the `<dir>` entries of the fontconfig configs fontdb reads, plus the
+    /// well-known directories (fontdb's no-fontconfig fallback) so nothing is lost.
+    #[cfg(all(unix, not(any(target_os = "macos", target_os = "android", target_os = "ios"))))]
+    fn dirs() -> Vec<PathBuf> {
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let xdg_config = std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| home.as_ref().map(|h| h.join(".config")));
+        let xdg_data = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .or_else(|| home.as_ref().map(|h| h.join(".local/share")));
+        let mut confs: Vec<PathBuf> = match std::env::var_os("FONTCONFIG_FILE") {
+            Some(f) => vec![f.into()],
+            None => {
+                let mut c: Vec<PathBuf> =
+                    vec!["/etc/fonts/fonts.conf".into(), "/etc/fonts/local.conf".into()];
+                if let Some(x) = &xdg_config {
+                    c.push(x.join("fontconfig/fonts.conf"));
+                }
+                c
+            }
+        };
+        if let Ok(rd) = std::fs::read_dir("/etc/fonts/conf.d") {
+            confs.extend(rd.flatten().map(|e| e.path()));
+        }
+        let mut v = Vec::new();
+        for conf in confs {
+            let Ok(text) = std::fs::read_to_string(&conf) else { continue };
+            v.extend(fontconfig_dirs(&text, home.as_deref(), xdg_data.as_deref()));
+        }
+        v.push("/usr/share/fonts".into());
+        v.push("/usr/local/share/fonts".into());
+        if let Some(h) = &home {
+            v.push(h.join(".fonts"));
+        }
+        if let Some(x) = &xdg_data {
+            v.push(x.join("fonts"));
+        }
+        v
+    }
+
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    fn dirs() -> Vec<PathBuf> {
+        Vec::new()
+    }
+
+    /// Extract `<dir>` paths from a fontconfig XML file (`~` and `prefix="xdg"` resolved).
+    #[cfg_attr(not(unix), allow(dead_code))]
+    pub(super) fn fontconfig_dirs(text: &str, home: Option<&Path>, xdg_data: Option<&Path>) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        let mut rest = text;
+        while let Some(i) = rest.find("<dir") {
+            rest = &rest[i + 4..];
+            let Some(close) = rest.find('>') else { break };
+            let attrs = &rest[..close];
+            if !(attrs.is_empty() || attrs.starts_with(char::is_whitespace)) || attrs.ends_with('/') {
+                continue;
+            }
+            rest = &rest[close + 1..];
+            let Some(end) = rest.find("</dir>") else { break };
+            let raw = rest[..end].trim();
+            rest = &rest[end..];
+            let path = if attrs.contains("prefix=\"xdg\"") {
+                match xdg_data {
+                    Some(x) => x.join(raw),
+                    None => continue,
+                }
+            } else if let Some(tail) = raw.strip_prefix('~') {
+                match home {
+                    Some(h) => h.join(tail.trim_start_matches('/')),
+                    None => continue,
+                }
+            } else {
+                PathBuf::from(raw)
+            };
+            out.push(path);
+        }
+        out
+    }
+}
+
 /// Load `bytes` into `db`, renaming every face to `rename` when given; returns the new ids
 /// with their face data. Unparseable bytes add nothing (logged once by the caller).
 fn load(
@@ -244,9 +421,7 @@ impl FontRegistry {
     pub(crate) fn scan_blocking(&mut self) {
         #[cfg(not(target_family = "wasm"))]
         {
-            let mut tmp = fontdb::Database::new();
-            tmp.load_system_fonts();
-            self.merge(tmp);
+            self.merge(system_scan::scan());
         }
     }
 
@@ -255,11 +430,8 @@ impl FontRegistry {
     pub(crate) fn start_background(&mut self) {
         #[cfg(not(target_family = "wasm"))]
         {
-            let spawned = std::thread::Builder::new().name("pebbles-font-scan".into()).spawn(|| {
-                let mut tmp = fontdb::Database::new();
-                tmp.load_system_fonts();
-                tmp
-            });
+            let spawned =
+                std::thread::Builder::new().name("pebbles-font-scan".into()).spawn(system_scan::scan);
             match spawned {
                 Ok(handle) => self.loader = Some(handle),
                 Err(e) => pebbles_foundation::log::warn(
@@ -526,6 +698,32 @@ impl FontRegistry {
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(not(target_family = "wasm"))]
+    #[test]
+    fn system_scan_skips_forged_collection_count() {
+        let dir = std::env::temp_dir().join(format!("pebbles-fontscan-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        // Claims 2^32-1 faces in a 16-byte file: fontdb would loop ~4 billion times.
+        std::fs::write(dir.join("sub/evil.ttc"), b"ttcf\0\x01\0\0\xff\xff\xff\xff\0\0\0\x0c").unwrap();
+        let start = std::time::Instant::now();
+        let mut db = fontdb::Database::new();
+        system_scan::load_dir(&mut db, &dir, &mut Default::default(), 0);
+        assert_eq!(db.len(), 0);
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    #[test]
+    fn fontconfig_dir_extraction() {
+        let conf = r#"<fontconfig><dir>/usr/share/fonts</dir><dir prefix="xdg">fonts</dir>
+            <dir>~/.fonts</dir><cachedir>/x</cachedir><dir/></fontconfig>"#;
+        let got = system_scan::fontconfig_dirs(conf, Some("/h".as_ref()), Some("/h/.local/share".as_ref()));
+        let want: Vec<std::path::PathBuf> =
+            ["/usr/share/fonts", "/h/.local/share/fonts", "/h/.fonts"].iter().map(Into::into).collect();
+        assert_eq!(got, want);
+    }
     use super::*;
     use fontdb::{Family, Query, Stretch, Style, Weight};
 
