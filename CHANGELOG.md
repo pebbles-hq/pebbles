@@ -6,6 +6,19 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — `ThemeMode`: follow the system light/dark setting
+`theme::ThemeMode { System, Light, Dark }` (default `System`, like Flutter's `ThemeMode.system`).
+In `System` the app follows the platform brightness the shell reads from the window at startup
+and on `WindowEvent::ThemeChanged` (`theme::set_platform_brightness`), falling back to light
+when the platform reports none. New: `set_theme_mode`, `theme_mode`, `platform_brightness`,
+`Brightness`. `set_theme` / `toggle_theme` pin an explicit `Light` / `Dark`; `set_design` keeps
+the mode. Linux: winit reports no desktop color-scheme (X11: none; Wayland: only an app-set
+override), so Linux apps start light until the app picks a mode.
+
+**Changed:** an app that never calls `set_theme` / `toggle_theme` now starts dark on a
+macOS / Windows / web system set to dark. **Migration:** call `set_theme_mode(ThemeMode::Light)`
+at startup to keep the previous always-light behaviour.
+
 ### Changed — design languages: `Compact` is now `Default`
 `DesignLanguage::Compact` is renamed `DesignLanguage::Default` (still the default) and the
 languages are ordered `Default`, `Material`, `Tailwind`. `Theme::compact()` is removed: use

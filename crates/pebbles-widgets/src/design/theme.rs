@@ -3,6 +3,11 @@
 //! [`theme`] reads it (subscribing the calling component), and [`set_theme`]/
 //! [`toggle_theme`] swap it and re-render every component that read it — so a live
 //! light/dark toggle just works, no restart, no provider plumbing.
+//!
+//! Light vs dark follows a [`ThemeMode`] (like Flutter's `ThemeMode`): the default,
+//! [`ThemeMode::System`], tracks the platform [`Brightness`] the shell reports
+//! ([`set_platform_brightness`]); [`set_theme`] / [`toggle_theme`] /
+//! [`set_theme_mode`] pin an explicit `Light` or `Dark`.
 
 use std::cell::RefCell;
 
@@ -322,9 +327,86 @@ impl Theme {
     }
 }
 
+/// Which brightness the app uses — Flutter's `ThemeMode`. The default, [`System`](Self::System),
+/// follows the platform's light/dark setting (falling back to light when the platform reports
+/// none); `Light` / `Dark` pin it regardless of the platform.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ThemeMode {
+    /// Follow the platform brightness ([`set_platform_brightness`]); light if unknown.
+    #[default]
+    System,
+    /// Always light.
+    Light,
+    /// Always dark.
+    Dark,
+}
+
+/// A platform light/dark preference (Flutter's `Brightness`, CSS `prefers-color-scheme`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Brightness {
+    Light,
+    Dark,
+}
+
+impl ThemeMode {
+    /// Whether this mode is dark given the platform brightness (`None` = unknown ⇒ light,
+    /// as Flutter's `platformBrightness` defaults to light).
+    pub fn resolve(self, platform: Option<Brightness>) -> bool {
+        match self {
+            ThemeMode::Light => false,
+            ThemeMode::Dark => true,
+            ThemeMode::System => platform == Some(Brightness::Dark),
+        }
+    }
+}
+
 thread_local! {
     /// The global theme signal, created lazily at app scope by [`theme_signal`].
     static CURRENT: RefCell<Option<Signal<Theme>>> = const { RefCell::new(None) };
+    /// The global [`ThemeMode`] signal (lazily, like `CURRENT`).
+    static MODE: RefCell<Option<Signal<ThemeMode>>> = const { RefCell::new(None) };
+    /// The last platform brightness the shell reported (`None` = unknown / unsupported).
+    static PLATFORM: std::cell::Cell<Option<Brightness>> = const { std::cell::Cell::new(None) };
+}
+
+fn mode_signal() -> Signal<ThemeMode> {
+    MODE.with(|cell| *cell.borrow_mut().get_or_insert_with(|| create_root_signal(ThemeMode::System)))
+}
+
+/// The active [`ThemeMode`] (reactive read).
+pub fn theme_mode() -> ThemeMode {
+    mode_signal().get()
+}
+
+/// The last platform brightness reported by the shell (`None` if the platform reports none).
+pub fn platform_brightness() -> Option<Brightness> {
+    PLATFORM.with(std::cell::Cell::get)
+}
+
+/// Switch the [`ThemeMode`]. Re-seeds the global theme's colors from the light/dark palette
+/// when the resolved brightness changes (keeping the [`DesignLanguage`], like [`toggle_theme`]).
+pub fn set_theme_mode(mode: ThemeMode) {
+    mode_signal().set(mode);
+    apply_brightness(mode.resolve(platform_brightness()));
+}
+
+/// Report the platform brightness (the shell calls this at startup and whenever the OS
+/// setting changes; `None` = the platform does not expose one). Only affects the theme in
+/// [`ThemeMode::System`].
+pub fn set_platform_brightness(b: Option<Brightness>) {
+    PLATFORM.with(|c| c.set(b));
+    let mode = mode_signal().peek();
+    if mode == ThemeMode::System {
+        apply_brightness(mode.resolve(b));
+    }
+}
+
+/// Swap the global theme to the light/dark palette matching `dark`, if it does not already.
+fn apply_brightness(dark: bool) {
+    let cur = theme_signal().peek();
+    if cur.dark != dark {
+        theme_signal().set(if dark { Theme::dark() } else { Theme::light() }.design(cur.design));
+    }
 }
 
 /// Create the global theme signal. Call once at startup (before the tree runs) so the
@@ -354,8 +436,15 @@ pub fn theme() -> Theme {
     pebbles_core::reactive::consume_context::<Theme>().unwrap_or(global)
 }
 
-/// Swap the current theme. Every component that read [`theme`] re-renders.
+/// Swap the current theme. Every component that read [`theme`] re-renders. This pins an
+/// explicit [`ThemeMode`] (`Dark` if `theme.dark`, else `Light`), so a later platform
+/// brightness change no longer overrides it; call [`set_theme_mode`]`(ThemeMode::System)` to
+/// follow the platform again.
 pub fn set_theme(theme: Theme) {
+    let mode = if theme.dark { ThemeMode::Dark } else { ThemeMode::Light };
+    if mode_signal().peek() != mode {
+        mode_signal().set(mode);
+    }
     theme_signal().set(theme);
 }
 
@@ -369,7 +458,8 @@ pub fn set_design(lang: DesignLanguage) {
     // `theme()`: inside a `theme_override` subtree `theme()` returns that subtree's private
     // theme, and writing it back would promote the override to the whole app. `.design(lang)`
     // keeps the global theme's colors and only swaps the design language.
-    set_theme(theme_signal().peek().design(lang));
+    // Writes the signal directly (not `set_theme`): a design switch keeps the ThemeMode.
+    theme_signal().set(theme_signal().peek().design(lang));
 }
 
 /// The active base [`DesignLanguage`] (reactive read).
@@ -380,7 +470,7 @@ pub fn design() -> DesignLanguage {
 /// Flip the whole app between light and dark, **keeping the active [`DesignLanguage`]**.
 /// Colors re-seed from the base light/dark palette, so app-specific color customizations are
 /// reset on the flip (there is no 1:1 light↔dark mapping for a custom color) — re-apply them
-/// after toggling if they must persist across modes.
+/// after toggling if they must persist across modes. Pins an explicit [`ThemeMode`].
 pub fn toggle_theme() {
     // Global theme (`peek`), never a `theme_override` subtree — see `set_design`.
     let cur = theme_signal().peek();
@@ -430,5 +520,77 @@ impl Default for Theme {
     /// The light theme on the default design language.
     fn default() -> Self {
         Self::light()
+    }
+}
+
+#[cfg(test)]
+mod mode_tests {
+    use super::*;
+
+    fn reset() {
+        set_theme_mode(ThemeMode::System);
+        set_platform_brightness(None);
+        set_theme(Theme::light());
+        set_theme_mode(ThemeMode::System);
+    }
+
+    #[test]
+    fn resolve_table() {
+        assert!(!ThemeMode::System.resolve(None), "unknown platform falls back to light");
+        assert!(!ThemeMode::System.resolve(Some(Brightness::Light)));
+        assert!(ThemeMode::System.resolve(Some(Brightness::Dark)));
+        assert!(ThemeMode::Dark.resolve(Some(Brightness::Light)));
+        assert!(!ThemeMode::Light.resolve(Some(Brightness::Dark)));
+        assert_eq!(ThemeMode::default(), ThemeMode::System);
+    }
+
+    #[test]
+    fn system_follows_platform_and_keeps_design() {
+        reset();
+        set_design(DesignLanguage::Material);
+        set_platform_brightness(Some(Brightness::Dark));
+        assert!(theme_signal().peek().dark);
+        assert_eq!(theme_signal().peek().design, DesignLanguage::Material);
+        set_platform_brightness(Some(Brightness::Light));
+        assert!(!theme_signal().peek().dark);
+        set_platform_brightness(None);
+        assert!(!theme_signal().peek().dark);
+        assert_eq!(theme_mode(), ThemeMode::System);
+    }
+
+    #[test]
+    fn explicit_modes_ignore_platform() {
+        reset();
+        set_theme_mode(ThemeMode::Dark);
+        assert!(theme_signal().peek().dark);
+        set_platform_brightness(Some(Brightness::Light));
+        assert!(theme_signal().peek().dark, "Dark mode is pinned");
+        set_theme_mode(ThemeMode::System);
+        assert!(!theme_signal().peek().dark, "System re-resolves from the stored platform value");
+    }
+
+    #[test]
+    fn set_theme_and_toggle_pin_an_explicit_mode() {
+        reset();
+        set_theme(Theme::dark());
+        assert_eq!(theme_mode(), ThemeMode::Dark);
+        set_platform_brightness(Some(Brightness::Light));
+        assert!(theme_signal().peek().dark);
+        toggle_theme();
+        assert_eq!(theme_mode(), ThemeMode::Light);
+        assert!(!theme_signal().peek().dark);
+        set_platform_brightness(Some(Brightness::Dark));
+        assert!(!theme_signal().peek().dark);
+    }
+
+    #[test]
+    fn system_keeps_custom_theme_when_brightness_matches() {
+        reset();
+        let mut t = Theme::light();
+        t.radius = 3.0;
+        set_theme(t);
+        set_theme_mode(ThemeMode::System);
+        set_platform_brightness(Some(Brightness::Light));
+        assert_eq!(theme_signal().peek().radius, 3.0, "no re-seed when the brightness already matches");
     }
 }

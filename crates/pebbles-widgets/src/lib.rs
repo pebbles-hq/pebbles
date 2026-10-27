@@ -69,7 +69,8 @@ pub use style::{Style, StyleExt, style, styled, styles};
 pub use style::{image_from_bytes, image_from_path};
 pub use text_direction::{set_text_direction, text_direction};
 pub use theme::{
-    Colors, DesignLanguage, Theme, design, set_design, set_theme, theme, theme_override, toggle_theme,
+    Brightness, Colors, DesignLanguage, Theme, ThemeMode, design, platform_brightness, set_design, set_theme,
+    set_theme_mode, theme, theme_mode, theme_override, toggle_theme,
 };
 pub use toast::{Toast, ToastId, ToastVariant, dismiss_toast, toast};
 pub use widgets::{

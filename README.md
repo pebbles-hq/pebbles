@@ -311,7 +311,7 @@ Everything below is built and shown live in the [gallery](https://github.com/peb
   chart/report export, server-side rendering, and golden-image tests. Desktop only (it needs an offscreen GPU device).
 - **Accessibility** — an AccessKit bridge (AT-SPI / UIA / VoiceOver): interactive widgets
   publish role/label/value/toggled/disabled + bounds, and keyboard focus is announced.
-- **Theming & styling** — a **reactive** global `Theme` (light/dark; `toggle_theme()`
+- **Theming & styling** — a **reactive** global `Theme` (light/dark following the OS by default via `ThemeMode::System`; `toggle_theme()`
   flips the whole tree live), switchable **design languages** (`DesignLanguage::{Default,
   Material, Tailwind}` via `design()`/`set_design()` — density, radius, and elevation re-skin
   every component live), a full color palette, and a CSS-like `Style` system

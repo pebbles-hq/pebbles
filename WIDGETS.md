@@ -196,7 +196,7 @@ remote-URL images) and their per-platform status live in
 |---------|--------|-------|
 | `Style` builder (`style()`, `styled`, `styles`, `.merge`) | ✅ | box: background/gradient/image/border (+ per-side)/radius/shape/shadow/opacity/blend/padding/margin/size/min-max/aspect_ratio/align/cursor · text: color/family/size/weight/bold/semibold/italic/underline/strikethrough/letter_spacing/line_height/text_align/max_lines/ellipsis · transform: rotate/scale/translate · presets: card/heading/circle |
 | `BoxDecoration` | ✅ | `Gradient::{linear,vertical,horizontal,radial}`, `Border` per-side, `BorderRadius`, `BoxShadow` (offset/blur/spread), `BoxShape`, blend, image fill + `ImageFit` |
-| Theme | ✅ | `Theme::light()/dark()`, `set_theme`/`toggle_theme`, `Colors` tokens, `shade`/`mix`; reactive |
+| Theme | ✅ | `Theme::light()/dark()`, `set_theme`/`toggle_theme`, `ThemeMode` (System/Light/Dark, follows the OS), `Colors` tokens, `shade`/`mix`; reactive |
 | `DesignLanguage` (`Default`/`Material`/`Tailwind`) | ✅ | base design language seeding shape/density/elevation tokens; `Theme::design(..)` + global `design()`/`set_design(..)` (reactive), `Theme::{compact,tailwind,material}()` presets; every component re-skins radius/padding/height. Default = **Compact** |
 | `palette` | ✅ | foundation color set |
 | Sweep gradient | ✅ | `Gradient::sweep` / `sweep_arc` (conic fills) |

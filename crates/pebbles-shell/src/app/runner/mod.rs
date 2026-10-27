@@ -556,6 +556,8 @@ impl Runner {
             pebbles_widgets::dialog::init(); // and the global modal-dialog signal
             pebbles_widgets::sheet::init(); // and the global sheet/drawer signal
             pebbles_widgets::theme::init(); // and the global reactive theme signal
+            // ThemeMode::System: seed the platform light/dark preference (None ⇒ light).
+            pebbles_widgets::theme::set_platform_brightness(platform_brightness(window.theme()));
             pebbles_widgets::text_direction::init(); // D2: the reactive direction signal
             pebbles_widgets::set_text_direction(self.text_direction); // apply the app's direction
             install_clipboard(); // wire the system clipboard for Ctrl+C/X/V
@@ -1376,6 +1378,14 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 }
             }
 
+            // The OS light/dark setting changed (ThemeMode::System follows it).
+            WindowEvent::ThemeChanged(t) => {
+                pebbles_widgets::theme::set_platform_brightness(platform_brightness(Some(t)));
+                if let Some(active) = self.active.as_ref() {
+                    redraw::request(&active.window);
+                }
+            }
+
             WindowEvent::RedrawRequested => {
                 let started = Instant::now();
                 if self.render() && render::frame_stats_enabled() {
@@ -1594,4 +1604,16 @@ fn place_ime(window: &Window, caret: kurbo::Rect, scale: f64) {
     window.set_ime_cursor_area(pos, size);
     #[cfg(target_family = "wasm")]
     crate::web_ime::place(caret);
+}
+
+/// winit's window theme → the widget layer's platform brightness. winit 0.30 reports `None` on
+/// X11, and on Wayland only an app-set override (it never reads the desktop's color-scheme and
+/// emits no `ThemeChanged` there), so Linux falls back to light; macOS, Windows and the web
+/// report the real setting.
+fn platform_brightness(t: Option<winit::window::Theme>) -> Option<pebbles_widgets::theme::Brightness> {
+    use pebbles_widgets::theme::Brightness;
+    t.map(|t| match t {
+        winit::window::Theme::Light => Brightness::Light,
+        winit::window::Theme::Dark => Brightness::Dark,
+    })
 }
