@@ -58,8 +58,17 @@ pub fn run(_args: &[String]) -> ExitCode {
     group(&format!("Desktop ({})", host_os()));
     #[cfg(target_os = "linux")]
     {
-        let vulkan_ok = tool_version("vulkaninfo", &["--summary"]).is_some();
-        let egl_ok = !vulkan_ok && tool_version("eglinfo", &["-B"]).is_some();
+        // `vulkaninfo`/`eglinfo` (vulkan-tools / mesa-utils) are often not installed even
+        // when the drivers are; then fall back to looking for the driver files themselves.
+        let vulkan_ok = match Command::new("vulkaninfo").arg("--summary").output() {
+            Ok(out) => out.status.success(),
+            Err(_) => vulkan_icd_present(),
+        };
+        let egl_ok = !vulkan_ok
+            && match Command::new("eglinfo").arg("-B").output() {
+                Ok(out) => out.status.success(),
+                Err(_) => egl_lib_present(),
+            };
         let (status, label, message) = linux_gpu_status(vulkan_ok, egl_ok);
         item(status, label, message);
     }
@@ -303,6 +312,34 @@ fn android_ndk(sdk: Option<&Path>) -> Option<PathBuf> {
         std::fs::read_dir(&ndk_root).ok()?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
     versions.sort();
     versions.pop() // newest by lexical version
+}
+
+/// A Vulkan ICD manifest the loader would find (honours `VK_DRIVER_FILES` / `VK_ICD_FILENAMES`).
+#[cfg(target_os = "linux")]
+fn vulkan_icd_present() -> bool {
+    if let Some(list) = std::env::var_os("VK_DRIVER_FILES").or_else(|| std::env::var_os("VK_ICD_FILENAMES")) {
+        return std::env::split_paths(&list).any(|p| p.is_file());
+    }
+    let mut dirs: Vec<PathBuf> = vec![
+        "/etc/vulkan/icd.d".into(),
+        "/usr/share/vulkan/icd.d".into(),
+        "/usr/local/share/vulkan/icd.d".into(),
+    ];
+    if let Some(h) = std::env::var_os("HOME") {
+        dirs.push(PathBuf::from(h).join(".local/share/vulkan/icd.d"));
+    }
+    dirs.iter().any(|d| {
+        std::fs::read_dir(d)
+            .is_ok_and(|rd| rd.flatten().any(|e| e.path().extension().is_some_and(|x| x == "json")))
+    })
+}
+
+/// `libEGL.so.1` in a standard library directory (what wgpu's GL backend dlopens).
+#[cfg(target_os = "linux")]
+fn egl_lib_present() -> bool {
+    ["/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu", "/usr/lib64", "/usr/lib", "/lib64", "/lib"]
+        .iter()
+        .any(|d| Path::new(d).join("libEGL.so.1").exists())
 }
 
 /// The Linux GPU line: Vulkan first, then the EGL/GLES fallback wgpu uses without Vulkan.
