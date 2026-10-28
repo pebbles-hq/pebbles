@@ -13,6 +13,10 @@ wgpu/linux-lavapipe/
              25.2.8-0ubuntu0.24.04.4: all 302 PNGs byte-identical to these
   command:   cargo run -p render-check --release -- --out target/render-check --write-refs <dir> --determinism
 
+gallery/ (286 cases, added 2026-10-28): generated locally on the same lavapipe stack with
+  command:   render-check --out target/render-check --only gallery/ --platform-tag linux-lavapipe --determinism --write-refs <dir>
+  bytes:     10296106 (all refs now 12899813 of the 15 MiB budget)
+
 Every case passed the golden model, or (widget/screen/stress self-golden cases) had green probes
 and was deterministic. Review each image (REVIEW.md lists them all by case name) and target/render-check/<platform>/report.md before
 relying on it. Regenerate only via a dedicated PR (05 §9.4) — never together with renderer

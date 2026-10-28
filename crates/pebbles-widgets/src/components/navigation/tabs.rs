@@ -196,6 +196,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
                     size: label_size,
                     weight: label_weight,
                     active_color,
+                    solid_active_label: p.active_color.unwrap_or(th.colors.foreground),
                     tab_padding,
                 },
             )
@@ -270,6 +271,9 @@ struct TabButtonProps {
     size: f32,
     weight: f32,
     active_color: pebbles_foundation::Color,
+    /// Solid: the selected label sits on the raised `background` card, not on the strip,
+    /// so it takes `.active_color(..)` (else the foreground), never the strip's text color.
+    solid_active_label: pebbles_foundation::Color,
     tab_padding: EdgeInsets,
 }
 
@@ -314,6 +318,7 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
         }
         TabsVariant::Solid => {
             let bg = if p.selected { c.background } else { palette::TRANSPARENT };
+            let label_color = if p.selected { p.solid_active_label } else { label_color };
             Container::new()
                 .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(theme().radius)))
                 .child(Padding::new(

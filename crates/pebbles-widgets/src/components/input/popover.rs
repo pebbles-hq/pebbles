@@ -77,6 +77,7 @@ pub fn popover(content: impl IntoWidget, trigger: impl IntoWidget) -> Popover {
         width: 280.0,
         height: 220.0,
         trigger_height: 40.0,
+        pad: 8.0, // the documented default (`Default` would give 0: content flush to the border)
         ..Default::default()
     }
 }

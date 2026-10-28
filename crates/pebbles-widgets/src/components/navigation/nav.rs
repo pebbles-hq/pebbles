@@ -291,14 +291,19 @@ fn page_window(page: usize, total: usize, max: usize) -> Vec<PageItem> {
     if total <= max {
         return (1..=total).map(PageItem::Page).collect();
     }
+    // `max` slots = first + last + two ellipses + the current page + `siblings` on each side
+    // (7 ⇒ one sibling each side, 9 ⇒ two, 5 ⇒ none).
+    let siblings = max.saturating_sub(5) / 2;
+    let start = page.saturating_sub(siblings).max(2);
+    let end = (page + siblings).min(total - 1);
     let mut items = vec![PageItem::Page(1)];
-    if page > 3 {
+    if start > 2 {
         items.push(PageItem::Ellipsis);
     }
-    for p in (page.saturating_sub(1)).max(2)..=(page + 1).min(total - 1) {
+    for p in start..=end {
         items.push(PageItem::Page(p));
     }
-    if page < total.saturating_sub(2) {
+    if end < total - 1 {
         items.push(PageItem::Ellipsis);
     }
     items.push(PageItem::Page(total));

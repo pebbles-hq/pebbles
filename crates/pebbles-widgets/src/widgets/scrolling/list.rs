@@ -1062,7 +1062,36 @@ fn render_grid(p: &GridProps) -> ListViewport {
     let last_row = last_row.min(rows_used);
 
     let mut items: Vec<AnyWidget> = Vec::new();
+    // A uniform grid (fixed column count, no spans, fixed row extent) needs no measured
+    // cross extent: each visible row is a Row of equal Expanded cells pinned to both edges,
+    // so cell widths come from THIS layout's width (Flutter's SliverGridDelegate) instead of
+    // last frame's metrics, and the row mirrors under RTL.
+    let uniform = p.spans.is_none() && p.max_extent.is_none() && p.aspect_ratio.is_none();
+    if uniform {
+        for r in first_row..last_row.min(rows_used) {
+            let mut cells: Vec<AnyWidget> = Vec::with_capacity(cols);
+            for c in 0..cols {
+                let i = r * cols + c;
+                let cell =
+                    if i < p.count { (p.builder)(i) } else { crate::widgets::gap_w(0.0).into_widget() };
+                cells.push(crate::widgets::Expanded::new(cell).into_widget());
+            }
+            let mut top = r as f64 * stride + pad.top;
+            if p.reverse {
+                top = padded_extent - top - row_h;
+            }
+            let line = crate::widgets::row(cells)
+                .spacing(gap)
+                .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Stretch);
+            items.push(
+                Positioned::new(line).top(top).left(pad.left).right(pad.right).height(row_h).into_widget(),
+            );
+        }
+    }
     for (i, &(row, col, cs, rs)) in placements.iter().enumerate() {
+        if uniform {
+            break;
+        }
         let row_end = row + rs as usize;
         if row_end <= first_row || row > last_row {
             continue;

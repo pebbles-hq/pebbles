@@ -81,11 +81,11 @@ fn carousel_dots_are_centered_and_clickable() {
     let ctl = CTL.with(|c| c.borrow().expect("controller captured"));
     assert_eq!(ctl.page(), 0, "starts on the first page");
 
-    // The indicator dots are centered along the strip (they were bottom-LEFT and
-    // non-interactive before the fix). In a 320px viewport the three dots span x
-    // 133..187 (centered on 160); tapping the right one jumps to its page — proving
-    // both the centering and the click-to-jump.
-    let third_dot = Offset::new(180.0, 60.0);
+    // The indicator dots are centered along the strip and pinned 10px above the bottom
+    // edge of the 140px slide. In a 320px viewport the three dots span x 133..187
+    // (centered on 160); tapping the right one jumps to its page — proving the
+    // centering, the bottom placement and the click-to-jump.
+    let third_dot = Offset::new(180.0, 123.0);
     assert!(ui.dispatch_tap(third_dot), "a centered dot is tappable");
     frame(&mut ui, &mut env, win);
     frame(&mut ui, &mut env, win);

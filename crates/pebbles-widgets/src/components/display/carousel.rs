@@ -255,10 +255,10 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
                 .on_tap(move || offset.set(i as f64 * width.peek().max(1.0)));
             dots.push(dot.into_widget());
         }
-        // `center` fills the positioned strip and centers the (shrink-wrapped) dot row —
-        // otherwise the row sits at the strip's left edge.
+        // A full-width row centering its dots: only as tall as the dots, so `bottom` pins it
+        // to the bottom edge (a `center` would fill the loose height and sit mid-slide).
         overlay.push(
-            Positioned::new(center(row(dots).main_axis_size(MainAxisSize::Min)))
+            Positioned::new(row(dots).main_axis_alignment(pebbles_foundation::MainAxisAlignment::Center))
                 .bottom(10.0)
                 .left(0.0)
                 .right(0.0)
@@ -276,7 +276,7 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
                     offset.set(page as f64 * w);
                 }
             });
-            overlay.push(Positioned::new(prev).left(8.0).top(0.0).bottom(0.0).into_widget());
+            overlay.push(Positioned::new(v_center(prev)).left(8.0).top(0.0).bottom(0.0).into_widget());
         }
         if !at_last {
             let next = icon_button(pebbles_render::IconKind::ChevronRight).size(20.0).on_pressed({
@@ -286,7 +286,7 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
                     offset.set(page as f64 * w);
                 }
             });
-            overlay.push(Positioned::new(next).right(8.0).top(0.0).bottom(0.0).into_widget());
+            overlay.push(Positioned::new(v_center(next)).right(8.0).top(0.0).bottom(0.0).into_widget());
         }
     }
 
@@ -302,4 +302,12 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false));
     body.into_widget()
+}
+
+/// `child` vertically centered in the full height it is given, at its own width (an arrow
+/// pinned `top(0).bottom(0)` to an edge).
+fn v_center(child: impl IntoWidget) -> AnyWidget {
+    column(vec![child.into_widget()])
+        .main_axis_alignment(pebbles_foundation::MainAxisAlignment::Center)
+        .into_widget()
 }

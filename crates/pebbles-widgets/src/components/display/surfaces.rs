@@ -279,7 +279,12 @@ impl IntoWidget for Alert {
         let body = row(children![
             icon(kind).size(18.0).color(accent),
             gap_w(12.0),
-            column(texts).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min),
+            // Loose-flexible so long text wraps at the alert's max width instead of overflowing.
+            crate::widgets::flexible(
+                column(texts)
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .main_axis_size(MainAxisSize::Min),
+            ),
         ])
         .cross_axis_alignment(CrossAxisAlignment::Start)
         .main_axis_size(MainAxisSize::Min);
@@ -430,6 +435,18 @@ fn initials_face(initials: String, bg: Color, fg: Color, size: f64, radius: f64)
     .into_widget()
 }
 
+/// Black or white, whichever reads on `bg` (Flutter's `estimateBrightnessForColor`:
+/// `(L + 0.05)² > 0.15` ⇒ light background ⇒ black).
+fn on_color(bg: Color) -> Color {
+    let [r, g, b, _] = bg.to_rgba8().to_u8_array();
+    let lin = |v: u8| {
+        let v = f64::from(v) / 255.0;
+        if v <= 0.03928 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+    };
+    let l = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+    if (l + 0.05) * (l + 0.05) > 0.15 { Color::BLACK } else { Color::WHITE }
+}
+
 impl IntoWidget for Avatar {
     fn into_widget(mut self) -> AnyWidget {
         let c = theme().colors;
@@ -437,7 +454,13 @@ impl IntoWidget for Avatar {
         let size = self.size;
         let radius = self.radius();
         let initials = std::mem::take(&mut self.initials);
-        let mk = |init: String| initials_face(init, bg, c.secondary_foreground, size, radius);
+        // A custom background picks black or white initials by its brightness (Flutter's
+        // `ThemeData.estimateBrightnessForColor`); the themed default keeps its on-color.
+        let fg = match self.color {
+            Some(custom) => on_color(custom),
+            None => c.secondary_foreground,
+        };
+        let mk = |init: String| initials_face(init, bg, fg, size, radius);
 
         let face: AnyWidget = match self.src.take() {
             #[cfg(feature = "image-view")]

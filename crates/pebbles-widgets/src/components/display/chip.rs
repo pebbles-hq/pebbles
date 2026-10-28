@@ -170,6 +170,7 @@ fn render_chip(p: &Chip) -> AnyWidget {
         // Enter/Space-activatable for free; a label announces it to screen readers.
         let close = icon_button(IconKind::Close)
             .size(12.0)
+            .padding(0.0)
             .label(format!("Remove {}", p.label))
             .on_pressed(on_deleted);
         let close_styled = styled(close, style().padding(th.pad_all(2.0)).radius_all(th.pill()));

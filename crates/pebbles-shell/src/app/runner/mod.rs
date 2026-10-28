@@ -148,6 +148,18 @@ pub(crate) enum PebblesUserEvent {
     /// (native) A `pebbles_core::task` background result is ready (M35): draw so `pump` delivers it.
     #[cfg_attr(target_family = "wasm", allow(dead_code))] // sent only by the native task waker
     TaskDone,
+    /// (Linux/BSD) The desktop portal reported the light/dark preference (startup or change).
+    #[cfg_attr(
+        not(any(
+            target_os = "linux",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "dragonfly"
+        )),
+        allow(dead_code)
+    )]
+    PlatformBrightness(Option<pebbles_widgets::theme::Brightness>),
     /// (web) WebGL context lost on the canvas (08 P04): drop the GPU, wait for the restore.
     GpuContextLost,
     /// (web) WebGL context restored on the canvas (08 P04): rebuild the GPU stack.
@@ -288,6 +300,9 @@ pub(super) struct Runner {
     scene: Scene,
     frame: Scene,
     mounted: bool,
+    /// The last desktop-portal brightness (Linux/BSD), kept so a report that arrives before
+    /// the tree is mounted still seeds the theme. `None` = no report yet.
+    portal_brightness: Option<Option<pebbles_widgets::theme::Brightness>>,
 
     // input
     cursor: Offset,
@@ -419,6 +434,7 @@ impl Runner {
             scene: Scene::new(),
             frame: Scene::new(),
             mounted: false,
+            portal_brightness: None,
             cursor: Offset::ZERO,
             last_click: None,
             last_tap_target: None,
@@ -467,6 +483,20 @@ impl Runner {
             pebbles_core::task::set_waker(Some(Arc::new(move || {
                 let _ = waker.send_event(PebblesUserEvent::TaskDone);
             })));
+        }
+        // winit never reads the desktop color scheme on Linux/BSD: follow the XDG portal.
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "dragonfly"
+        ))]
+        {
+            let waker = proxy.clone();
+            crate::portal_theme::spawn(move |b| {
+                let _ = waker.send_event(PebblesUserEvent::PlatformBrightness(b));
+            });
         }
         self.proxy = Some(proxy);
     }
@@ -557,7 +587,9 @@ impl Runner {
             pebbles_widgets::sheet::init(); // and the global sheet/drawer signal
             pebbles_widgets::theme::init(); // and the global reactive theme signal
             // ThemeMode::System: seed the platform light/dark preference (None ⇒ light).
-            pebbles_widgets::theme::set_platform_brightness(platform_brightness(window.theme()));
+            // The portal's answer (Linux/BSD) wins over winit's, which is `None` there.
+            let platform = self.portal_brightness.unwrap_or_else(|| platform_brightness(window.theme()));
+            pebbles_widgets::theme::set_platform_brightness(platform);
             pebbles_widgets::text_direction::init(); // D2: the reactive direction signal
             pebbles_widgets::set_text_direction(self.text_direction); // apply the app's direction
             install_clipboard(); // wire the system clipboard for Ctrl+C/X/V
@@ -965,6 +997,17 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 self.request_redraw();
                 for w in self.windows.values() {
                     redraw::request(&w.window);
+                }
+            }
+            PebblesUserEvent::PlatformBrightness(b) => {
+                self.portal_brightness = Some(b);
+                if self.mounted {
+                    self.ui.make_current();
+                    pebbles_widgets::theme::set_platform_brightness(b);
+                    self.request_redraw();
+                    for w in self.windows.values() {
+                        redraw::request(&w.window);
+                    }
                 }
             }
             PebblesUserEvent::TaskDone => {
@@ -1608,8 +1651,8 @@ fn place_ime(window: &Window, caret: kurbo::Rect, scale: f64) {
 
 /// winit's window theme → the widget layer's platform brightness. winit 0.30 reports `None` on
 /// X11, and on Wayland only an app-set override (it never reads the desktop's color-scheme and
-/// emits no `ThemeChanged` there), so Linux falls back to light; macOS, Windows and the web
-/// report the real setting.
+/// emits no `ThemeChanged` there), so on Linux/BSD the shell reads the XDG desktop portal
+/// instead (`portal_theme`); macOS, Windows and the web report the real setting here.
 fn platform_brightness(t: Option<winit::window::Theme>) -> Option<pebbles_widgets::theme::Brightness> {
     use pebbles_widgets::theme::Brightness;
     t.map(|t| match t {

@@ -1,0 +1,25 @@
+[package]
+name = "gallery"
+version.workspace = true
+edition.workspace = true
+publish = false
+description = "A test bench: every pebbles-widgets component and widget group on its own page, in all states, under every theme."
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "gallery"
+path = "src/main.rs"
+
+[features]
+# Deterministic headless mounting (fixed size, settled animations, bundled fonts) through the
+# GPU-free test harness, for tools/render-check.
+headless = ["dep:pebbles-testing"]
+
+[dependencies]
+pebbles = { workspace = true, features = ["image-view"] }
+pebbles-testing = { workspace = true, optional = true }
+
+[lints]
+workspace = true

@@ -71,6 +71,9 @@ pub enum Build {
     Harness(fn(&mut Harness)),
     /// Frame-indexed ops for stability cases (`frame` is 0-based).
     FrameOps(fn(&mut Painter<'_>, u32)),
+    /// Like [`Build::Harness`], with a case argument (one builder shared by many cases, e.g.
+    /// a gallery page index).
+    HarnessArg(fn(&mut Harness, usize), usize),
 }
 
 /// What judges the case.
@@ -166,6 +169,19 @@ pub fn ops(name: &str, category: Category, slice: Slice, w: u32, h: u32, f: fn(&
 /// A widget case built through `pebbles_testing::Harness`.
 pub fn harness(name: &str, category: Category, slice: Slice, w: u32, h: u32, f: fn(&mut Harness)) -> Case {
     base(name, category, slice, w, h, Build::Harness(f))
+}
+
+/// A widget case built through `pebbles_testing::Harness` by a builder shared across cases.
+pub fn harness_arg(
+    name: &str,
+    category: Category,
+    slice: Slice,
+    w: u32,
+    h: u32,
+    f: fn(&mut Harness, usize),
+    arg: usize,
+) -> Case {
+    base(name, category, slice, w, h, Build::HarnessArg(f, arg))
 }
 
 /// A frame-indexed stability case (SelfConsistency).

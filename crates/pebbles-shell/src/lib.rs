@@ -32,8 +32,17 @@ mod app;
 #[cfg(not(target_family = "wasm"))]
 pub mod capture;
 mod hotkeys;
+// Linux/BSD desktop dark/light preference via the XDG desktop portal (winit does not read it).
 #[cfg(all(feature = "native-menus", any(target_os = "macos", target_os = "windows")))]
 mod native_menu;
+#[cfg(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
+mod portal_theme;
 // Opt-in hidden-input IME bridge (App::web_ime) — winit can't do IME on a canvas.
 #[cfg(target_family = "wasm")]
 mod web_ime;

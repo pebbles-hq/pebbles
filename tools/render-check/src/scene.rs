@@ -18,17 +18,23 @@ pub fn logical_scene(case: &Case, frame: u32) -> Scene {
             f(&mut Painter::new(&mut s), frame);
             s
         }
-        Build::Harness(f) => {
-            // Theme is thread-local global state: reset it so no case leaks its theme.
-            pebbles_widgets::theme::set_theme(pebbles_widgets::theme::Theme::light());
-            let mut h = Harness::new()
-                .window(f64::from(case.logical.0), f64::from(case.logical.1))
-                .background(case.background);
-            f(&mut h); // mounts (h.mount / h.mount_widget) and interacts
-            h.settle();
-            h.draw()
-        }
+        Build::Harness(f) => harness_scene(case, f),
+        Build::HarnessArg(f, arg) => harness_scene(case, |h| f(h, arg)),
     }
+}
+
+fn harness_scene(case: &Case, f: impl FnOnce(&mut Harness)) -> Scene {
+    // Theme and text direction are thread-local global state: reset them so no case leaks.
+    pebbles_widgets::theme::set_theme(pebbles_widgets::theme::Theme::light());
+    pebbles_widgets::set_text_direction(pebbles_foundation::TextDirection::Ltr);
+    let mut h = Harness::new()
+        .window(f64::from(case.logical.0), f64::from(case.logical.1))
+        .background(case.background);
+    f(&mut h); // mounts (h.mount / h.mount_widget) and interacts
+    h.settle();
+    let scene = h.draw();
+    pebbles_widgets::set_text_direction(pebbles_foundation::TextDirection::Ltr);
+    scene
 }
 
 /// Mirror the runner (`app/runner/render.rs`): the logical scene appended under the DPI scale.

@@ -555,6 +555,7 @@ fn render_button(b: &Button) -> Element {
 pub struct IconButton {
     kind: IconData,
     icon_size: f64,
+    padding: f64,
     variant: ButtonVariant,
     on_pressed: Option<Callback>,
     disabled: bool,
@@ -566,6 +567,7 @@ pub fn icon_button(kind: impl Into<IconData>) -> IconButton {
     IconButton {
         kind: kind.into(),
         icon_size: 18.0,
+        padding: 8.0,
         variant: ButtonVariant::Ghost,
         on_pressed: None,
         disabled: false,
@@ -580,6 +582,11 @@ impl IconButton {
     }
     pub fn size(mut self, size: f64) -> Self {
         self.icon_size = size;
+        self
+    }
+    /// Inset around the icon on every side (default 8). Compact hosts (a chip's ✕) use less.
+    pub fn padding(mut self, padding: f64) -> Self {
+        self.padding = padding;
         self
     }
     pub fn on_pressed(mut self, cb: impl IntoCallback) -> Self {
@@ -612,18 +619,18 @@ fn render_icon_button(b: &IconButton) -> Element {
     let pressed = create_signal(false);
     let node = create_focus();
     let th = theme();
-    let (base_bg, border) = match b.variant {
-        ButtonVariant::Primary => (Some(th.colors.primary), false),
-        ButtonVariant::Secondary => (Some(th.colors.secondary), false),
-        ButtonVariant::Outline => (Some(th.colors.background), true),
-        ButtonVariant::Destructive => (Some(th.colors.destructive), false),
-        _ => (None, false),
+    // The icon takes the variant's on-color, like a labelled button's text.
+    let (base_bg, fg, border) = match b.variant {
+        ButtonVariant::Primary => (Some(th.colors.primary), th.colors.primary_foreground, false),
+        ButtonVariant::Secondary => (Some(th.colors.secondary), th.colors.secondary_foreground, false),
+        ButtonVariant::Outline => (Some(th.colors.background), th.colors.foreground, true),
+        ButtonVariant::Destructive => (Some(th.colors.destructive), th.colors.destructive_foreground, false),
+        _ => (None, th.colors.foreground, false),
     };
     let hv = if b.disabled { 0.0 } else { animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12) };
     let pr = if b.disabled { 0.0 } else { animated(if pressed.get() { 1.0 } else { 0.0 }, 0.07) };
     let focused = !b.disabled && node.is_focused();
     let bg = interactive_bg(b.variant, base_bg, false, hv, pr);
-    let fg = th.colors.foreground;
 
     let mut decoration = BoxDecoration::new().radius(BorderRadius::all(th.radius));
     if let Some(bg) = bg {
@@ -638,7 +645,7 @@ fn render_icon_button(b: &IconButton) -> Element {
     }
     let container = Container::new()
         .decoration(decoration)
-        .padding(EdgeInsets::all(8.0))
+        .padding(EdgeInsets::all(b.padding))
         .child(icon(b.kind).size(b.icon_size).color(fg));
 
     // Accessibility wrapper — applied at every exit so a disabled button is announced

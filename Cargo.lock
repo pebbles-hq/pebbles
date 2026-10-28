@@ -1227,6 +1227,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gallery"
+version = "0.0.1"
+dependencies = [
+ "pebbles",
+ "pebbles-testing",
+]
+
+[[package]]
 name = "gdk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2795,6 +2803,7 @@ dependencies = [
  "web-time",
  "wgpu",
  "winit",
+ "zbus",
 ]
 
 [[package]]
@@ -3245,6 +3254,7 @@ dependencies = [
 name = "render-check"
 version = "0.0.1"
 dependencies = [
+ "gallery",
  "kurbo",
  "pebbles-core",
  "pebbles-foundation",

@@ -10,6 +10,7 @@ pub mod clip;
 pub mod effects;
 pub mod frag;
 pub mod frames;
+pub mod gallery;
 pub mod grad;
 pub mod img;
 pub mod layer;
@@ -45,6 +46,7 @@ pub fn all() -> Vec<Case> {
     out.extend(stress::cases());
     out.extend(adversarial::cases());
     out.extend(frames::cases());
+    out.extend(gallery::cases());
     out
 }
 
@@ -91,6 +93,7 @@ mod tests {
             "sprite",
             "widget",
             "screen",
+            "gallery",
             "stress",
             "adversarial",
             "frames",

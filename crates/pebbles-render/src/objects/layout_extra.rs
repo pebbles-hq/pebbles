@@ -593,11 +593,18 @@ impl RenderObject for RenderFlow {
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
-        // Each child's transform is carried on its node, so a plain paint_child at the
-        // child's (zero) offset applies it.
+        // Each child's transform is carried on its node, so painting at the child's (zero)
+        // offset applies it. Clipped to the box like Flutter's `Flow` (`Clip.hardEdge`).
+        let bounds = Rect::from_origin_size(offset.to_point(), cx.size());
+        cx.scene.push_layer(Fill::NonZero, peniko::Mix::Normal, 1.0, Affine::IDENTITY, &bounds);
         for child in cx.children() {
-            cx.paint_child(child, offset + cx.child_offset(child));
+            cx.paint_child_clipped(child, offset + cx.child_offset(child), bounds);
         }
+        cx.scene.pop_layer();
+    }
+
+    fn clips_children(&self) -> bool {
+        true
     }
 
     fn debug_name(&self) -> &'static str {
