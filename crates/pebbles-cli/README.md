@@ -36,7 +36,9 @@ so the dock matches the window to the `.desktop` file (`App::app_id(..)` sets it
 Runtime dependencies on the target machine (from the system, not bundled): a Vulkan
 driver (Mesa or vendor) — OpenGL ES 3 / GL via Mesa is the fallback; Wayland
 (`libwayland-client`) or X11 (`libX11`, `libxcb`, `libXcursor`, `libXi`, `libXrandr`);
-and `libxkbcommon`.
+and `libxkbcommon` (+ `libxkbcommon-x11` on X11). Verified in minimal `ubuntu:24.04` and
+`fedora:latest` containers (mesa + Xvfb only): the counter AppDir also needed `libXcursor`, `libXi` and
+`libxkbcommon-x11` there, then started on lavapipe; desktop installs ship all three.
 
 It is deliberately std-only — no clap, no notify. Arg parsing is hand-rolled,
 file watching is a light mtime poll, and process control is `std::process`.

@@ -35,7 +35,9 @@ pub const RUNTIME_DEPS: &str = "\
     - a GPU driver: Vulkan (mesa-vulkan-drivers, or the NVIDIA/AMD vendor driver);
       OpenGL ES 3 / GL 3.3 via Mesa is used as a fallback
     - Wayland (libwayland-client) or X11 (libX11, libxcb, libXcursor, libXi, libXrandr)
-    - libxkbcommon (keyboard layouts); fontconfig fonts are optional";
+    - libxkbcommon (keyboard layouts), plus libxkbcommon-x11 on X11; fontconfig fonts are optional
+    (a minimal container needs libxcursor1 libxi6 libxkbcommon-x11-0 on Ubuntu,
+    libXcursor libXi libxkbcommon-x11 on Fedora; desktop installs ship them)";
 
 #[derive(Debug, PartialEq, Eq)]
 struct BundleOpts {

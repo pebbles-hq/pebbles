@@ -43,7 +43,10 @@ mod gpu;
 mod storm;
 mod windows;
 
-use input::{editor_chord_intent, to_command, to_shortcut_key, to_winit_cursor, wheel_with_overlay};
+use input::{
+    cursor_update, editor_chord_intent, file_drop_event, to_command, to_shortcut_key, to_winit_cursor,
+    wheel_with_overlay,
+};
 
 /// Max interval between two primary clicks to count as a double-tap.
 const DOUBLE_CLICK: Duration = Duration::from_millis(400);
@@ -755,6 +758,19 @@ impl Runner {
         }
     }
 
+    /// Point the OS cursor at what the widget under the pointer asks for, unless a
+    /// drag holds the pointer (see [`input::cursor_update`]).
+    fn sync_cursor(&mut self) {
+        let captured =
+            self.pan_target.is_some() || self.ui.content_drag_active() || self.ui.scrollbar_dragging();
+        if let Some(want) = cursor_update(self.current_cursor, self.ui.cursor_at(self.cursor), captured) {
+            self.current_cursor = want;
+            if let Some(active) = self.active.as_ref() {
+                active.window.set_cursor(to_winit_cursor(want));
+            }
+        }
+    }
+
     /// Route an unclaimed key press to scroll the view under the pointer.
     fn scroll_key(&mut self, event: &KeyEvent) -> bool {
         let cursor = self.cursor;
@@ -1082,6 +1098,12 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         {
             active.pacer.note_input();
         }
+        if let Some(repaint) = file_drop_event(&event, self.cursor) {
+            if repaint {
+                self.request_redraw();
+            }
+            return;
+        }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
 
@@ -1107,6 +1129,9 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     self.cursor = Offset::new(x / scale, y / scale);
                 }
                 let cursor = self.cursor;
+                if pebbles_widgets::file_drop::move_to(cursor) {
+                    self.request_redraw();
+                }
                 // F2: in inspect mode, outline the deepest render object under the cursor.
                 if self.inspect_mode {
                     let chain = pebbles_render::inspect_at(self.ui.render_tree(), cursor);
@@ -1142,14 +1167,9 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 {
                     self.request_redraw();
                 }
-                // Update the OS cursor to match the widget under the pointer.
-                let want = self.ui.cursor_at(cursor).unwrap_or(Cursor::Default);
-                if want != self.current_cursor {
-                    self.current_cursor = want;
-                    if let Some(active) = self.active.as_ref() {
-                        active.window.set_cursor(to_winit_cursor(want));
-                    }
-                }
+                // Update the OS cursor to match the widget under the pointer (held
+                // while a drag captures the pointer).
+                self.sync_cursor();
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
@@ -1199,6 +1219,10 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 let handled = self.dispatch_pointer(cursor, button, state);
                 if handled {
                     self.request_redraw();
+                }
+                // A release ends pointer capture: catch the icon up with what is under it.
+                if state == ElementState::Released {
+                    self.sync_cursor();
                 }
             }
 
@@ -1469,6 +1493,14 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // Deliver a finished OS file drop (one batch per drop, after all its `DroppedFile`s).
+        self.ui.make_current();
+        if pebbles_widgets::file_drop::flush() {
+            self.request_redraw();
+            for w in self.windows.values() {
+                redraw::request(&w.window);
+            }
+        }
         // (web) Raise/lower the hidden IME input to match whether a text editor is
         // focused (soft keyboard + composition appear exactly when editing).
         #[cfg(target_family = "wasm")]

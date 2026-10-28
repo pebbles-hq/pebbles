@@ -402,6 +402,12 @@ pub const PAGES: &[Page] = &[
         build: pages::dnd::drag_target_screen,
     },
     Page {
+        id: "file-drop-target",
+        group: "Interaction",
+        title: "File Drop Target",
+        build: pages::dnd::file_drop_target_screen,
+    },
+    Page {
         id: "long-press-draggable",
         group: "Interaction",
         title: "Long Press Draggable",

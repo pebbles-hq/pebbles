@@ -4,12 +4,15 @@ use crate::ui::{doc, samples, screen};
 
 /// Embedded at compile time (the repository's own sample images; no network).
 const JPEG: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/pebbles-white.jpeg"));
+const GREY: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/pebbles-grey.jpeg"));
 const PNG_ALPHA: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/pebbles-transparent.png"));
 
 pub fn images() -> Element {
     let img = || ImageView::memory(JPEG);
-    let grey = || ImageView::asset(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/pebbles-grey.jpeg"));
+    // Embedded so the released gallery binary needs no files beside it; only the
+    // "file asset" sample below reads from disk (and shows its fallback if absent).
+    let grey = || ImageView::memory(GREY);
     screen("Images").body(children![
         doc("Sources").body(samples(vec![
             ("memory bytes (JPEG)", img().size(200.0, 140.0).radius(BorderRadius::all(10.0)).into_widget()),

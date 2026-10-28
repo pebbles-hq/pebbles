@@ -73,3 +73,42 @@ fn ime_preedit_is_uncommitted_then_commit_inserts() {
     frame(&mut ui, &mut text);
     assert_eq!(bound().peek(), "a日本!");
 }
+
+/// Dead keys / compose through an input method (IBus, fcitx5 and XIM all do this on
+/// Linux): the dead accent shows as preedit, then the composed letter commits. Also
+/// the no-IME xkb path, where winit delivers the composed text on the key event
+/// itself (the shell maps it to the same `Insert`).
+#[test]
+fn dead_key_composition_commits_the_composed_letter() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let _ = bound();
+
+    let mut ui = Ui::new();
+    let mut text = TextEnv::new();
+    let window = Size::new(400.0, 200.0);
+    ui.mount_root(View::new(palette::WHITE, component(root)).into_widget());
+    let frame = |ui: &mut Ui, text: &mut TextEnv| {
+        ui.rebuild_if_dirty();
+        ui.layout(text, window);
+        let mut scene = pebbles_render::Scene::new();
+        ui.paint(text, &mut scene);
+    };
+    frame(&mut ui, &mut text);
+
+    // IME path: ´ (preedit) + e → é (commit).
+    assert!(ui.dispatch_key(KeyInput::Preedit("´".to_string())));
+    frame(&mut ui, &mut text);
+    assert_eq!(bound().peek(), "", "the pending dead key is not committed");
+    ui.dispatch_key(KeyInput::Insert("é".to_string()));
+    frame(&mut ui, &mut text);
+    assert_eq!(bound().peek(), "é");
+
+    // Compose ¨ + u → ü, then the xkb (no-IME) path's composed key text: ß, ñ.
+    ui.dispatch_key(KeyInput::Preedit("¨".to_string()));
+    ui.dispatch_key(KeyInput::Insert("ü".to_string()));
+    ui.dispatch_key(KeyInput::Insert("ß".to_string()));
+    ui.dispatch_key(KeyInput::Insert("ñ".to_string()));
+    frame(&mut ui, &mut text);
+    assert_eq!(bound().peek(), "éüßñ");
+}

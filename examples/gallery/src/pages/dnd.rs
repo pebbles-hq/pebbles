@@ -1,5 +1,5 @@
 //! Drag & drop / pointer control — one screen per widget: `Draggable`,
-//! `DragTarget`, `LongPressDraggable`, `IgnorePointer`, `AbsorbPointer`,
+//! `DragTarget`, `FileDropTarget`, `LongPressDraggable`, `IgnorePointer`, `AbsorbPointer`,
 //! `InteractiveViewer`, and `ReorderableListView`.
 
 use pebbles::prelude::*;
@@ -119,6 +119,44 @@ pub fn drag_target_screen() -> Element {
                         .on_accept::<Tool>(move |_| toolbox.update(|n| *n += 1)),
                 ])
                 .main_axis_size(MainAxisSize::Min),
+            ])
+            .cross_axis_alignment(CrossAxisAlignment::Start)
+            .main_axis_size(MainAxisSize::Min)
+        )
+    ])
+}
+
+// ===========================================================================
+// FileDropTarget — files dragged in from the OS file manager
+// ===========================================================================
+
+pub fn file_drop_target_screen() -> Element {
+    let files = create_signal(Vec::<String>::new());
+
+    screen("File Drop Target").body(children![
+        doc("file_drop_target(builder).on_drop(|paths| ..)").body(
+            column(children![
+                file_drop_target(move |h| {
+                    let names = files.get();
+                    let label = if names.is_empty() {
+                        "Drag files here from the file manager".to_string()
+                    } else {
+                        format!("Dropped {}: {}", names.len(), names.join(", "))
+                    };
+                    well(label, h, 420.0, 120.0)
+                })
+                .on_drop(move |paths| {
+                    files.set(
+                        paths
+                            .iter()
+                            .map(|p| p.file_name().unwrap_or(p.as_os_str()).to_string_lossy().into_owned())
+                            .collect(),
+                    )
+                }),
+                gap_h(8.0),
+                text("Native Wayland: winit 0.30 has no file drag-and-drop there; it works on X11/XWayland.")
+                    .size(12.0)
+                    .color(theme().colors.muted_foreground),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Start)
             .main_axis_size(MainAxisSize::Min)

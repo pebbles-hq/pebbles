@@ -108,9 +108,11 @@ pub use widgets::{StreamBuilder, stream_builder};
 pub use widgets::{error_boundary, for_each, suspense};
 // drag & drop / pointer control (Flutter's Draggable / DragTarget / Ignore/AbsorbPointer
 // / ReorderableListView / InteractiveViewer)
+pub use widgets::file_drop;
 pub use widgets::{
-    DragTarget, Draggable, InteractiveViewer, PointerControl, ReorderableListView, absorb_pointer,
-    drag_target, draggable, ignore_pointer, interactive_viewer, long_press_draggable, reorderable_list_view,
+    DragTarget, Draggable, FileDropTarget, InteractiveViewer, PointerControl, ReorderableListView,
+    absorb_pointer, drag_target, draggable, file_drop_target, ignore_pointer, interactive_viewer,
+    long_press_draggable, reorderable_list_view,
 };
 // painting & effects (siblings of clip_rrect / opacity)
 pub use widgets::{

@@ -219,6 +219,13 @@ impl Runner {
             w.pacer.note_input();
         }
         let mut keep = true;
+        if let Some(repaint) = file_drop_event(&event, w.cursor) {
+            if repaint {
+                redraw::request(&w.window);
+            }
+            self.windows.insert(window_id, w);
+            return;
+        }
         match event {
             WindowEvent::CloseRequested => {
                 self.window_by_id.remove(&w.id);
@@ -263,6 +270,9 @@ impl Runner {
             WindowEvent::CursorMoved { position, .. } => {
                 let scale = w.window.scale_factor();
                 w.cursor = Offset::new(position.x / scale, position.y / scale);
+                if pebbles_widgets::file_drop::move_to(w.cursor) {
+                    redraw::request(&w.window);
+                }
                 if w.ui.dispatch_hover(w.cursor) {
                     redraw::request(&w.window);
                 }
@@ -276,11 +286,7 @@ impl Runner {
                 if moved {
                     redraw::request(&w.window);
                 }
-                let want = w.ui.cursor_at(w.cursor).unwrap_or(Cursor::Default);
-                if want != w.current_cursor {
-                    w.current_cursor = want;
-                    w.window.set_cursor(to_winit_cursor(want));
-                }
+                sync_window_cursor(&mut w);
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let dy = match delta {
@@ -320,6 +326,7 @@ impl Runner {
                         } else {
                             false
                         };
+                        sync_window_cursor(&mut w);
                         up || tapped || drag_ended
                     }
                 };
@@ -420,5 +427,14 @@ impl Runner {
         if !released {
             self.retired_windows.push(window);
         }
+    }
+}
+
+/// [`Runner::sync_cursor`] for a secondary window.
+fn sync_window_cursor(w: &mut WindowRuntime) {
+    let captured = w.pan_target.is_some() || w.ui.content_drag_active();
+    if let Some(want) = cursor_update(w.current_cursor, w.ui.cursor_at(w.cursor), captured) {
+        w.current_cursor = want;
+        w.window.set_cursor(to_winit_cursor(want));
     }
 }
