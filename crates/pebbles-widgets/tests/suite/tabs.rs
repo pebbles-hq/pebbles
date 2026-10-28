@@ -136,3 +136,32 @@ fn taps_switch_and_both_variants_paint() {
     frame(&mut ui);
     assert_eq!(SEL.with(|s| *s.borrow()), 0, "tapping tab 0 reports selection 0");
 }
+
+fn solid_on_violet() -> impl IntoWidget {
+    tabs(0)
+        .variant(TabsVariant::Solid)
+        .tab("Chat", body("a"), || {})
+        .tab("Files", body("b"), || {})
+        .style(pebbles_widgets::style().background(palette::violet::S600))
+}
+
+/// Regression: unselected labels on a caller-coloured Solid strip used the theme's muted
+/// grey (unreadable on violet). Like Flutter's TabBar they now take the strip's readable
+/// on-colour (white on a dark strip) at 70 %.
+#[test]
+fn unselected_label_reads_on_a_coloured_strip() {
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(View::new(palette::WHITE, component(solid_on_violet)).into_widget());
+    ui.layout(&mut env, Size::new(400.0, 300.0));
+    let tree = ui.render_tree();
+    let files = tree
+        .find_all::<pebbles_render::RenderParagraph>()
+        .into_iter()
+        .map(|id| tree.object_ref(id).downcast_ref::<pebbles_render::RenderParagraph>().unwrap())
+        .find(|p| p.text == "Files")
+        .expect("the Files label");
+    let [r, g, b, a] = files.style.color.components;
+    assert!(r > 0.95 && g > 0.95 && b > 0.95, "white on violet, got {:?}", files.style.color);
+    assert!((a - 0.7).abs() < 0.01, "70 % like Flutter's unselected label, got {a}");
+}

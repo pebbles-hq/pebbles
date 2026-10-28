@@ -72,6 +72,10 @@ const KNOWN_DIFFS: &[(&str /*case*/, &str /*field*/, &str /*reason*/)] = &[
         "baseline",
         "Q-14: a mixed-size line places its baseline by the CSS/Flutter half-leading model",
     ),
+    // Q-15: a paragraph's trailing whitespace is real advance (Flutter's maxIntrinsicWidth);
+    // the pre-swap oracle dropped it, so "Press " ran into the next widget.
+    ("inter16_trailing_ws", "width", "Q-15: trailing whitespace is kept in the width (Flutter)"),
+    ("mono20_trailing_ws", "width", "Q-15: trailing whitespace is kept in the width (Flutter)"),
 ];
 
 /// Q-9: the oracle pixel-snaps line tops and baselines and starts the first line box at y = -1;

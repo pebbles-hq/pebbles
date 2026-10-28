@@ -104,10 +104,10 @@ pub struct Ui {
     /// Parent-data elements updated this build: their (new) parent data is a layout input
     /// of the enclosing container, so `apply_parent_data` re-dirties their render child.
     parent_data_updated: Vec<ElementId>,
-    /// The render node currently hovered plus its stored exit handlers. Keyed by
-    /// render id — stable across rebuilds because a reconciled listener updates its
-    /// render object in place rather than recreating it — so hover-out fires reliably.
-    hovered: Option<HoverTarget>,
+    /// Every hover listener currently under the pointer (innermost first) plus its
+    /// stored exit handlers — like Flutter's MouseTracker, each region on the hit path
+    /// gets its own enter/exit, so a tooltip around a hoverable button still sees it.
+    hovered: Vec<HoverTarget>,
     /// The scroll viewport whose scrollbar is being dragged, if any.
     scrollbar_drag: Option<RenderId>,
     /// The drag-scroll viewport a content drag is currently driving, if any.
@@ -240,6 +240,50 @@ impl Ui {
         let sane = |v: f64| if v.is_finite() && v >= 0.0 { v } else { 0.0 };
         let window = Size::new(sane(window.width), sane(window.height));
         self.render.layout(text, BoxConstraints::tight(window));
+    }
+
+    /// Publish the laid-out window-space rect of every component reading
+    /// [`use_bounds`](crate::use_bounds) (GC-ing keys whose element unmounted) and of the
+    /// focused element ([`focus_bounds`](crate::bounds::focus_bounds)). Call after every
+    /// [`layout`](Self::layout): the shell and the headless harness both do, so
+    /// `layout_builder`, tooltip focus anchoring, … see the same geometry everywhere.
+    /// Returns whether any published rect changed (its readers will rebuild next frame).
+    pub fn publish_bounds(&self) -> bool {
+        let mut changed = false;
+        let win = self.window_id();
+        let tree = self.render_tree();
+        let rect_of = |rid| {
+            let o = tree.absolute_offset(rid);
+            let s = tree.size_of(rid);
+            pebbles_foundation::Rect::new(o.x, o.y, o.x + s.width, o.y + s.height)
+        };
+        for (w, iid) in crate::bounds::wanted_bounds() {
+            if w != win {
+                continue;
+            }
+            // The key is the component's *instance* id (`owner_id`), not a render source: map
+            // it to its element, then to the render node its subtree lays out as.
+            match crate::reactive::element_of_instance(w, iid).and_then(|e| self.render_of(e)) {
+                Some(rid) => changed |= crate::bounds::publish_bounds(w, iid, rect_of(rid)),
+                None => crate::bounds::forget_bounds(w, iid),
+            }
+        }
+        let focus_rect = crate::focus::focused_element_ffi(win)
+            .and_then(|ffi| self.render_of(ElementId::from(slotmap::KeyData::from_ffi(ffi))))
+            .map(rect_of);
+        changed | crate::bounds::set_focus_bounds(focus_rect)
+    }
+
+    /// The render node an element lays out as: its own, or (component / parent-data
+    /// element) its first descendant's.
+    fn render_of(&self, mut id: ElementId) -> Option<RenderId> {
+        loop {
+            let n = self.elements.get(id)?;
+            if let Some(r) = n.render_id {
+                return Some(r);
+            }
+            id = *n.children.first()?;
+        }
     }
 
     /// Paint the tree into `scene`. `text` gives paint-time shaping access

@@ -359,6 +359,7 @@ Every `examples/gallery` page, headless (800×1000, bundled fonts, settled): Def
 | [ ] | `gallery/tooltips_dark` | 800×1000 | 24613 | <img src="wgpu/linux-lavapipe/gallery__tooltips_dark.png" width="240"> |
 | [ ] | `gallery/tooltips_material` | 800×1000 | 25823 | <img src="wgpu/linux-lavapipe/gallery__tooltips_material.png" width="240"> |
 | [ ] | `gallery/tooltips_tailwind` | 800×1000 | 24318 | <img src="wgpu/linux-lavapipe/gallery__tooltips_tailwind.png" width="240"> |
+| [ ] | `gallery/tooltips_open` | 800×1000 | 25145 | <img src="wgpu/linux-lavapipe/gallery__tooltips_open.png" width="240"> |
 | [ ] | `gallery/typography` | 800×1000 | 98727 | <img src="wgpu/linux-lavapipe/gallery__typography.png" width="240"> |
 | [ ] | `gallery/unconstrained_box` | 800×1000 | 13747 | <img src="wgpu/linux-lavapipe/gallery__unconstrained_box.png" width="240"> |
 | [ ] | `gallery/visibility` | 800×1000 | 19192 | <img src="wgpu/linux-lavapipe/gallery__visibility.png" width="240"> |

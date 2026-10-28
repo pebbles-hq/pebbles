@@ -437,7 +437,7 @@ fn initials_face(initials: String, bg: Color, fg: Color, size: f64, radius: f64)
 
 /// Black or white, whichever reads on `bg` (Flutter's `estimateBrightnessForColor`:
 /// `(L + 0.05)² > 0.15` ⇒ light background ⇒ black).
-fn on_color(bg: Color) -> Color {
+pub(crate) fn on_color(bg: Color) -> Color {
     let [r, g, b, _] = bg.to_rgba8().to_u8_array();
     let lin = |v: u8| {
         let v = f64::from(v) / 255.0;

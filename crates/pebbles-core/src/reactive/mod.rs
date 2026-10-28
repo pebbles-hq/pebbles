@@ -1526,6 +1526,11 @@ pub fn owner_id() -> Option<u64> {
     with_rt(|rt| rt.owner.and_then(|key| rt.instances.get(&key).copied()))
 }
 
+/// The element a component instance id (from [`owner_id`]) belongs to in `window`.
+pub(crate) fn element_of_instance(window: u32, instance: u64) -> Option<ElementId> {
+    with_rt(|rt| rt.instances.iter().find(|(k, v)| k.0 == window && **v == instance).map(|(k, _)| k.1))
+}
+
 /// The globally-unique instance id for `(window, element)`, assigning one if the
 /// component hasn't rendered yet. Lets a focus node recover its render-registry key.
 pub fn instance_id(window: u32, element: ElementId) -> u64 {

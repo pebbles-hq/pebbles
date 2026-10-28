@@ -32,11 +32,14 @@ pub fn focus_bounds() -> Option<Rect> {
 }
 
 /// Shell-only: publish the focused element's rect each frame (no-op when unchanged).
-pub fn set_focus_bounds(rect: Option<Rect>) {
+/// Returns whether it changed.
+pub fn set_focus_bounds(rect: Option<Rect>) -> bool {
     let sig = focus_bounds_signal();
-    if sig.peek() != rect {
+    let changed = sig.peek() != rect;
+    if changed {
         sig.set(rect);
     }
+    changed
 }
 
 /// Component hook: this component's own laid-out rect in window space, from the last
@@ -69,14 +72,16 @@ pub fn wanted_bounds() -> Vec<(u32, u64)> {
 }
 
 /// Shell-only: publish `rect` for `(window, source)` (no-op when unchanged, so it never
-/// spuriously re-renders).
-pub fn publish_bounds(window: u32, source: u64, rect: Rect) {
+/// spuriously re-renders). Returns whether it changed.
+pub fn publish_bounds(window: u32, source: u64, rect: Rect) -> bool {
     let sig = BOUNDS.with(|b| b.borrow().get(&(window, source)).copied());
     if let Some(sig) = sig
         && sig.peek() != rect
     {
         sig.set(rect);
+        return true;
     }
+    false
 }
 
 /// Shell-only: drop a key whose element is gone from the tree (unmounted) —

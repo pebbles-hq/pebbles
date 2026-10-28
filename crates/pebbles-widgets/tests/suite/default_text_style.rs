@@ -61,3 +61,33 @@ fn without_a_provider_text_keeps_its_own_style() {
     let s = paragraph_style(no_provider_root);
     assert_eq!(s.font_size, 13.0, "no inheritance → the Text's own style");
 }
+
+fn unstyled_root() -> pebbles_core::AnyWidget {
+    text("hi").into_widget()
+}
+
+/// Regression: with no `default_text_style` above it, unstyled text used to paint in
+/// `ParagraphStyle::default()` black, unreadable on a dark theme. Like Flutter's root
+/// `DefaultTextStyle` (from the theme), it now takes the theme's foreground colour.
+#[test]
+fn unstyled_text_takes_the_theme_foreground() {
+    pebbles_widgets::set_theme(pebbles_widgets::Theme::dark());
+    let dark = paragraph_style(unstyled_root);
+    pebbles_widgets::set_theme(pebbles_widgets::Theme::light());
+    let light = paragraph_style(unstyled_root);
+    assert_eq!(dark.color, pebbles_widgets::Theme::dark().colors.foreground, "dark theme foreground");
+    assert_eq!(light.color, pebbles_widgets::Theme::light().colors.foreground, "light theme foreground");
+}
+
+fn provider_at_root() -> pebbles_core::AnyWidget {
+    default_text_style(text("hi")).size(20.0).into_widget()
+}
+
+#[test]
+fn root_provider_without_color_keeps_the_theme_foreground() {
+    pebbles_widgets::set_theme(pebbles_widgets::Theme::dark());
+    let s = paragraph_style(provider_at_root);
+    pebbles_widgets::set_theme(pebbles_widgets::Theme::light());
+    assert_eq!(s.font_size, 20.0);
+    assert_eq!(s.color, pebbles_widgets::Theme::dark().colors.foreground);
+}

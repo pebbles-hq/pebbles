@@ -44,15 +44,11 @@ pub fn kbd_screen() -> Element {
         ),
         doc("Inline").body(
             row(children![
-                text("Press").size(14.0),
-                gap_w(6.0),
+                text("Press ").size(14.0),
                 kbd("Enter"),
-                gap_w(6.0),
-                text("to confirm, or").size(14.0),
-                gap_w(6.0),
+                text(" to confirm, or ").size(14.0),
                 kbd("Esc"),
-                gap_w(6.0),
-                text("to cancel.").size(14.0),
+                text(" to cancel.").size(14.0),
             ])
             .main_axis_size(MainAxisSize::Min),
         ),

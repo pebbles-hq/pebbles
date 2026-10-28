@@ -44,13 +44,14 @@ fn build(h: &mut Harness, arg: usize) {
 }
 
 /// Overlay pages, rendered again with their first overlay open: (page, control, hover?).
-const OPEN: [(&str, &str, bool); 6] = [
+const OPEN: [(&str, &str, bool); 7] = [
     ("dialog", "Open dialog", false),
     ("popovers", "Open popover", false),
     ("sheets", "Open right sheet", false),
     ("toasts", "Long-lived", false), // 10 s: outlives both settles
     ("menubar", "File", false),
     ("command", "Open palette", false),
+    ("tooltips", "Hover me", true),
 ];
 
 fn build_open(h: &mut Harness, i: usize) {

@@ -11,9 +11,9 @@
 use pebbles_foundation::{Color, TextAlign};
 use pebbles_render::ParagraphStyle;
 
-use super::text::{InheritedTextStyle, TextFields, overlay_fields};
+use super::text::{InheritedTextStyle, TextFields, ambient_text_style, overlay_fields};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{animated, component_props, consume_context, provide_context};
+use pebbles_core::{animated, component_props, provide_context};
 
 /// An ambient text style for a subtree. Build with [`default_text_style`] or
 /// [`animated_default_text_style`].
@@ -165,7 +165,7 @@ fn ease_toward(target: &ParagraphStyle, secs: f64) -> ParagraphStyle {
 fn render(p: &DefaultTextStyle) -> AnyWidget {
     // Start from the ancestor's ambient style (nesting composes), overlay this
     // provider's set properties → the target.
-    let mut target = consume_context::<InheritedTextStyle>().map(|s| s.0).unwrap_or_default();
+    let mut target = ambient_text_style();
     overlay_fields(&mut target, &p.style, p.set);
 
     let provided = match p.animate {

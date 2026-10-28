@@ -68,6 +68,7 @@ pub fn frame(ui: &mut Ui, env: &mut TextEnv, window: Size) {
     ui.make_current();
     ui.rebuild_if_dirty();
     ui.layout(env, window);
+    let _ = ui.publish_bounds();
 }
 
 /// Reconcile + lay out + paint, looping the corrective-relayout settle (see
@@ -81,10 +82,12 @@ pub fn draw_frame(ui: &mut Ui, env: &mut TextEnv, window: Size) {
         ui.make_current();
         ui.rebuild_if_dirty();
         ui.layout(env, window);
+        // New bounds (use_bounds, layout_builder) rebuild their readers: run another pass.
+        let moved = ui.publish_bounds();
         let mut scene = Scene::new();
         let corrective = ui.paint(env, &mut scene);
         env.finish_frame();
-        if !corrective {
+        if !corrective && !moved {
             return;
         }
     }
@@ -104,6 +107,16 @@ pub struct Harness {
     background: Color,
     /// The animation clock, advanced by [`tick`](Self::tick) / [`settle`](Self::settle).
     now: f64,
+}
+
+/// Tear the tree down like the shell does when a window closes: component cleanups run,
+/// focus/scroll registrations are released. Without this a dropped harness left its
+/// focused node as the global focus, so the next harness's `autofocus` (which only grabs
+/// when nothing holds focus) never fired and no focus ring rendered.
+impl Drop for Harness {
+    fn drop(&mut self) {
+        self.ui.dispose();
+    }
 }
 
 impl Default for Harness {
@@ -160,6 +173,8 @@ impl Harness {
         self.publish_window();
         self.ui.rebuild_if_dirty();
         self.ui.layout(&mut self.env, self.window);
+        // Like the shell: publish `use_bounds` rects after layout (layout_builder, …).
+        let _ = self.ui.publish_bounds();
     }
 
     /// Publish the window size to the reactive window/media-query signals, exactly as
@@ -192,8 +207,10 @@ impl Harness {
             self.ui.make_current();
             self.ui.rebuild_if_dirty();
             self.ui.layout(&mut self.env, self.window);
+            // New bounds (use_bounds, layout_builder) rebuild their readers: run another pass.
+            let moved = self.ui.publish_bounds();
             let mut scene = Scene::new();
-            if !self.ui.paint(&mut self.env, &mut scene) {
+            if !self.ui.paint(&mut self.env, &mut scene) && !moved {
                 self.env.finish_frame();
                 return scene;
             }
@@ -231,6 +248,18 @@ impl Harness {
                 return;
             }
         }
+    }
+
+    /// Advance the clock by `secs` in [`FRAME`] steps (timers — hover delays, toast
+    /// dismissals — fire when due), then [`settle`](Self::settle). Flutter's `pump(duration)`.
+    pub fn advance(&mut self, secs: f64) {
+        let mut left = secs;
+        while left > 1e-9 {
+            let dt = left.min(FRAME);
+            self.tick(dt);
+            left -= dt;
+        }
+        self.settle();
     }
 
     /// The current animation-clock time.
@@ -434,6 +463,70 @@ mod tests {
         h.mount(plain);
         h.draw(); // must return (settle), not panic
         assert!(h.element_count() > 0, "a mounted tree has live elements");
+    }
+
+    // ----- layout_builder sees its size headless --------------------------
+
+    thread_local! {
+        static SEEN: Cell<f64> = const { Cell::new(0.0) };
+    }
+
+    fn sized_probe() -> impl IntoWidget {
+        pebbles_widgets::layout_builder(|size| {
+            SEEN.with(|s| s.set(size.width));
+            container().height(20.0)
+        })
+    }
+
+    /// Regression: the harness never published `use_bounds` rects after layout (only the
+    /// shell did), so `layout_builder` built against `Size::ZERO` in every headless render.
+    #[test]
+    fn layout_builder_sees_its_laid_out_size() {
+        SEEN.with(|s| s.set(0.0));
+        let mut h = Harness::new();
+        h.mount(sized_probe);
+        h.draw();
+        assert_eq!(SEEN.with(Cell::get), super::DEFAULT_WINDOW.width, "builder got the window width");
+    }
+
+    // ----- a hover-delayed tooltip opens headless -------------------------
+
+    fn tooltip_probe() -> impl IntoWidget {
+        pebbles_widgets::tooltip("Hint", button("Hover"))
+    }
+
+    /// Regression: hover enter/exit went only to the innermost hover listener, so a tooltip
+    /// around a (hover-aware) button never armed its delay. Flutter's MouseTracker notifies
+    /// every region under the pointer.
+    #[test]
+    fn hover_then_settle_opens_a_tooltip() {
+        let mut h = Harness::new();
+        h.mount(tooltip_probe);
+        h.draw();
+        h.hover(Offset::new(20.0, 15.0));
+        h.settle();
+        assert!(pebbles_widgets::overlay::passive_is_open(), "tooltip chip shown after its hover delay");
+    }
+
+    // ----- autofocus is deterministic across harnesses ---------------------
+
+    fn autofocus_probe() -> impl IntoWidget {
+        button("First").autofocus()
+    }
+
+    #[test]
+    fn autofocus_fires_in_a_fresh_harness_after_another_one() {
+        for _ in 0..2 {
+            let mut h = Harness::new();
+            h.mount(autofocus_probe);
+            h.settle();
+            h.draw();
+            let win = h.ui.window_id();
+            assert!(
+                pebbles_core::focus::focused_element_ffi(win).is_some(),
+                "the autofocus button holds focus in every harness"
+            );
+        }
     }
 
     // ----- click reaches a widget -----------------------------------------

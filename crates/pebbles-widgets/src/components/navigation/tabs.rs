@@ -139,6 +139,17 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
     let label_size = merged.font_size.unwrap_or(14.0);
     let label_weight = merged.font_weight.unwrap_or(500.0);
     let active_color = p.active_color.unwrap_or(th.colors.primary);
+    // Unselected labels: the theme's muted foreground on the default strip. On a strip
+    // the caller coloured, muted grey can vanish (grey on violet), so — like Flutter's
+    // TabBar, whose unselected label is the label colour at 70 % — use the strip's text
+    // colour (or black/white by the strip's brightness) at 70 %.
+    let inactive_color = match p.style.as_ref().and_then(|s| s.background) {
+        Some(strip) => merged
+            .color
+            .unwrap_or_else(|| crate::components::display::surfaces::on_color(strip))
+            .with_alpha(0.7),
+        None => th.colors.muted_foreground,
+    };
 
     // Keyboard: while the strip is focused, Left/Right cycle to the next enabled
     // tab (wrapping); disabled tabs are skipped.
@@ -193,6 +204,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
                     variant: p.variant,
                     on_tap: tab.on_select.clone(),
                     color: label_color,
+                    inactive_color,
                     size: label_size,
                     weight: label_weight,
                     active_color,
@@ -268,6 +280,8 @@ struct TabButtonProps {
     variant: TabsVariant,
     on_tap: Option<Callback>,
     color: pebbles_foundation::Color,
+    /// Unselected label colour (readable on the strip).
+    inactive_color: pebbles_foundation::Color,
     size: f32,
     weight: f32,
     active_color: pebbles_foundation::Color,
@@ -283,7 +297,7 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
     let c = theme().colors;
     let hovered = create_signal(false);
     let hv = if p.disabled { 0.0 } else { animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12) };
-    let label_color = if p.selected { p.color } else { mix(c.muted_foreground, p.color, 0.3 * hv as f32) };
+    let label_color = if p.selected { p.color } else { mix(p.inactive_color, p.color, 0.3 * hv as f32) };
 
     let cell: AnyWidget = match p.variant {
         TabsVariant::Underline => {

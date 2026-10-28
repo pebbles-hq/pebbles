@@ -22,11 +22,9 @@ impl Screen {
         let mut items: Vec<AnyWidget> =
             vec![text(self.title.clone()).size(24.0).bold().into_widget(), gap_h(20.0).into_widget()];
         items.extend(body.into_children());
-        // Unstyled text on the page takes the theme's foreground (readable in dark mode).
-        default_text_style(scroll_view(container().padding(EdgeInsets::all(24.0)).child(
+        scroll_view(container().padding(EdgeInsets::all(24.0)).child(
             column(items).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
-        )))
-        .color(theme().colors.foreground)
+        ))
         .into_widget()
     }
 }

@@ -1,5 +1,6 @@
 //! Laid-out text (03 §3.7): line breaking per paragraph through cosmic-text, cosmic's vertical
-//! metrics, pre-swap-parity measurement (trailing whitespace excluded, justified text measured
+//! metrics, pre-swap-parity measurement (whitespace hanging at a soft wrap excluded, a
+//! paragraph's trailing whitespace kept as in Flutter, justified text measured
 //! unjustified, the empty last line of a text ending with a separator counted) and a common
 //! alignment width for unbounded multi-paragraph text.
 
@@ -430,10 +431,23 @@ impl TextLayout {
     /// that ends with a separator (the pre-swap build and Flutter both count it, §3.7.6).
     fn measure(&mut self) {
         let mut width: f32 = 0.0;
-        for line in &self.lines {
+        for (i, line) in self.lines.iter().enumerate() {
             if line.from_elided || !self.shaped.paras[line.para].placeholder {
-                width = width.max(content_width(&line.layout, self.line_text(line)));
+                // Whitespace a soft wrap hangs past the line end is not measured, but whitespace
+                // ending a paragraph is real advance: Flutter's paragraph (SkParagraph) keeps it
+                // in maxIntrinsicWidth, which TextPainter reports as the width, so "Press "
+                // leaves its space before the next widget in a row.
+                let ends_para = self.lines.get(i + 1).is_none_or(|n| n.para != line.para);
+                let w = if ends_para && !line.from_elided {
+                    line.layout.glyphs.iter().map(|g| g.w).sum()
+                } else {
+                    content_width(&line.layout, self.line_text(line))
+                };
+                width = width.max(w);
             }
+        }
+        if let Some(max) = self.params.width {
+            width = width.min(max.max(0.0));
         }
         self.width = width;
         self.height = self.lines.iter().map(|l| l.height).sum();
@@ -594,8 +608,19 @@ mod tests {
     }
 
     #[test]
-    fn trailing_whitespace_excluded() {
-        assert!(near(lay("abc   ", &mono(), None).width(), 36.0, 0.01));
+    fn trailing_whitespace_kept_at_paragraph_end() {
+        // Regression: "Press " dropped its space and ran into the next widget. Flutter keeps a
+        // paragraph's trailing whitespace in its (intrinsic) width.
+        assert!(near(lay("abc   ", &mono(), None).width(), 72.0, 0.01));
+        assert!(near(lay("ab \ncd", &mono(), None).width(), 36.0, 0.01), "hard-break line keeps it");
+    }
+
+    #[test]
+    fn whitespace_hanging_at_a_soft_wrap_is_not_measured() {
+        // "abc def" wrapped at 50 px: line 1 is "abc " whose space hangs — width stays 36.
+        let l = lay("abc def", &mono(), Some(50.0));
+        assert_eq!(l.line_count(), 2);
+        assert!(near(l.width(), 36.0, 0.01), "{}", l.width());
     }
 
     #[test]

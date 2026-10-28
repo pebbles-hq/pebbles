@@ -282,7 +282,7 @@ impl Ui {
         // ever drain them again.
         let _ = crate::reactive::take_pending_components(self.ui_id);
         self.dirty.clear();
-        self.hovered = None;
+        self.hovered.clear();
         self.scrollbar_drag = None;
         self.scroll_anim.clear();
     }

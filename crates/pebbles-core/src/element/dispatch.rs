@@ -447,26 +447,32 @@ impl Ui {
     }
 
     /// Update hover state for the pointer at `point`, firing enter/exit callbacks as
-    /// the topmost hover-listener changes. Identity is by element id (stable across
+    /// the set of hover-listeners under it changes (every one on the hit path). Identity is by element id (stable across
     /// rebuilds); exit actions are stored on enter so they fire reliably even after
     /// the widget restyles itself. A pointer staying over the same widget is a no-op.
     pub fn dispatch_hover(&mut self, point: Offset) -> bool {
         let hits = self.render.hit_test(point);
-        // (render id, enter, move, exit) invoke lists — a local one-shot tuple, clearer inline
-        // than a named type for a single find_map.
+        // Every hover listener on the hit path, innermost first: (source, enter, exit, move).
+        // Flutter's MouseTracker delivers enter/exit to each MouseRegion under the pointer,
+        // not only the innermost, so an ancestor (a tooltip) still sees a hoverable child.
         #[allow(clippy::type_complexity)]
-        let found: Option<(u64, Vec<Invoke>, Vec<Invoke>, Vec<Invoke>)> =
-            hits.iter().rev().find_map(|&rid| {
-                let listener = self.render.object_ref(rid).downcast_ref::<RenderPointerListener>()?;
-                if !listener.wants_hover() {
-                    return None;
-                }
-                let source = self.render.source_of(rid)?;
-                let enters = Self::invokes_of(listener, |l| &l.on_enter);
-                let exits = Self::invokes_of(listener, |l| &l.on_exit);
-                let moves = Self::invokes_of(listener, |l| &l.on_move);
-                Some((source, enters, exits, moves))
-            });
+        let mut found: Vec<(u64, Vec<Invoke>, Vec<Invoke>, Vec<Invoke>)> = Vec::new();
+        for &rid in hits.iter().rev() {
+            let Some(listener) = self.render.object_ref(rid).downcast_ref::<RenderPointerListener>() else {
+                continue;
+            };
+            if !listener.wants_hover() {
+                continue;
+            }
+            let Some(source) = self.render.source_of(rid) else { continue };
+            if found.iter().any(|f| f.0 == source) {
+                continue;
+            }
+            let enters = Self::invokes_of(listener, |l| &l.on_enter);
+            let exits = Self::invokes_of(listener, |l| &l.on_exit);
+            let moves = Self::invokes_of(listener, |l| &l.on_move);
+            found.push((source, enters, exits, moves));
+        }
 
         let hover_event = PointerEvent {
             position: point,
@@ -474,49 +480,40 @@ impl Ui {
             button: PointerButton::Primary,
             delta: Offset::ZERO,
         };
-
-        let new_key = found.as_ref().map(|(s, _, _, _)| *s);
-        let old_key = self.hovered.as_ref().map(|h| h.source);
         let mut fired = false;
 
-        if new_key == old_key {
-            // Still over the same widget (or nothing): fire only its continuous move
-            // handlers with the current position. Enter/exit are edge-triggered below.
-            if let Some((_, _, _, moves)) = found {
-                for invoke in moves {
-                    self.run_invoke(invoke, hover_event);
-                    fired = true;
-                }
-            }
-            return fired;
-        }
-
-        if let Some(old) = self.hovered.take() {
-            // Only fire the previously-hovered widget's exit handlers if its element
-            // still exists. If it unmounted while hovered (e.g. a click swapped the
-            // panel out from under the cursor), its handler closures capture now-freed
-            // signals — invoking them would use-after-free. Keying by the stable source
-            // (not the render id) means a mere re-render that reassigned render ids
-            // still counts as "exists", so exit fires correctly.
-            if self.render.find_by_source(old.source).is_some() {
-                for invoke in old.exits {
+        // Exits first (regions the pointer left), innermost first.
+        let old = std::mem::take(&mut self.hovered);
+        let old_sources: Vec<u64> = old.iter().map(|t| t.source).collect();
+        for target in old.into_iter().filter(|t| !found.iter().any(|f| f.0 == t.source)) {
+            // Only fire the exit handlers if the element still exists. If it unmounted while
+            // hovered (e.g. a click swapped the panel out from under the cursor), its handler
+            // closures capture now-freed signals — invoking them would use-after-free. Keying
+            // by the stable source (not the render id) means a mere re-render that reassigned
+            // render ids still counts as "exists", so exit fires correctly.
+            if self.render.find_by_source(target.source).is_some() {
+                for invoke in target.exits {
                     self.run_invoke(invoke, hover_event);
                     fired = true;
                 }
             }
         }
-        if let Some((source, enters, exits, moves)) = found {
-            for invoke in enters {
-                self.run_invoke(invoke, hover_event);
-                fired = true;
+        // Then enters for newly entered regions, and moves for all of them.
+        let mut now_hovered = Vec::with_capacity(found.len());
+        for (source, enters, exits, moves) in found {
+            if !old_sources.contains(&source) {
+                for invoke in enters {
+                    self.run_invoke(invoke, hover_event);
+                    fired = true;
+                }
             }
-            // Seed the initial position for the newly-entered widget's move handlers.
             for invoke in moves {
                 self.run_invoke(invoke, hover_event);
                 fired = true;
             }
-            self.hovered = Some(HoverTarget { source, exits });
+            now_hovered.push(HoverTarget { source, exits });
         }
+        self.hovered = now_hovered;
         fired
     }
 

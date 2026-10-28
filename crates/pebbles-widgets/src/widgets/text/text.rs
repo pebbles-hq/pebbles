@@ -104,6 +104,18 @@ impl TextFields {
 #[derive(Clone)]
 pub(crate) struct InheritedTextStyle(pub ParagraphStyle);
 
+/// The ambient text style at this point of the tree: the nearest
+/// [`default_text_style`](crate::default_text_style), or — with none above — the theme's
+/// body style (default metrics in the theme's `foreground` colour). Flutter's root
+/// `DefaultTextStyle` likewise comes from the theme, so unstyled text stays readable in dark
+/// mode instead of falling back to black.
+pub(crate) fn ambient_text_style() -> ParagraphStyle {
+    pebbles_core::consume_context::<InheritedTextStyle>().map(|s| s.0).unwrap_or_else(|| ParagraphStyle {
+        color: crate::design::theme::theme().colors.foreground,
+        ..ParagraphStyle::default()
+    })
+}
+
 /// Overlay the properties marked in `set` (from `style`) onto `base` — the shared
 /// merge used by both `Text` resolution and `default_text_style` nesting.
 pub(crate) fn overlay_fields(base: &mut ParagraphStyle, style: &ParagraphStyle, set: TextFields) {
@@ -300,13 +312,9 @@ impl Text {
     /// Resolve the style against an inherited `default_text_style` (if any): start
     /// from the ancestor's style and overlay the properties this `Text` set.
     fn resolved(&self) -> ParagraphStyle {
-        match pebbles_core::consume_context::<InheritedTextStyle>() {
-            Some(InheritedTextStyle(mut base)) => {
-                overlay_fields(&mut base, &self.style, self.set);
-                base
-            }
-            None => self.style.clone(),
-        }
+        let mut base = ambient_text_style();
+        overlay_fields(&mut base, &self.style, self.set);
+        base
     }
 
     /// Apply a general [`Style`](crate::Style): its text properties (color, font

@@ -981,11 +981,14 @@ impl FileExplorer {
 
         // Empty-space right-click → New File / New Folder; empty-space drop
         // (while dragging) → move to the root.
+        // Every hover region under the pointer gets events (rows sit inside this one), so
+        // the root is the drop target only while no row has claimed it.
         let root_gesture = GestureDetector::new(body)
-            .on_hover_enter({
+            .on_hover_move({
                 move || {
-                    if self.dragging.get() {
-                        self.root_drop.set(true);
+                    let want = self.dragging.peek() && self.drop_target.peek().is_none();
+                    if self.root_drop.peek() != want {
+                        self.root_drop.set(want);
                     }
                 }
             })

@@ -200,8 +200,7 @@ pub fn buttons() -> Element {
                 card().child(title(format!("Focus change: {}", focus_note.get()))),
                 gap_h(12.0),
                 wrap(children![
-                    button("First (autofocus)")
-                        .autofocus()
+                    button("First")
                         .on_focus_change(move |f| {
                             if f {
                                 focus_note.set("First focused".into());
@@ -269,8 +268,12 @@ fn states() -> Element {
     let rows: Vec<AnyWidget> = variants
         .into_iter()
         .map(|(name, v)| {
-            crate::ui::samples(vec![
-                ("normal", button(name).variant(v).into_widget()),
+            let mut items = vec![("normal", button(name).variant(v).into_widget())];
+            // One autofocused button shows the focus ring (only one node can hold focus).
+            if v == ButtonVariant::Primary {
+                items.push(("focused (autofocus)", button(name).variant(v).autofocus().into_widget()));
+            }
+            items.extend([
                 ("disabled", button(name).variant(v).disabled(true).into_widget()),
                 ("loading", button(name).variant(v).loading(true).into_widget()),
                 ("with icon", button(name).variant(v).leading(IconKind::Plus).into_widget()),
@@ -279,8 +282,8 @@ fn states() -> Element {
                     "icon only, disabled",
                     icon_button(IconKind::Plus).variant(v).disabled(true).label(name).into_widget(),
                 ),
-            ])
-            .into_widget()
+            ]);
+            crate::ui::samples(items).into_widget()
         })
         .collect();
     doc("States").body(column(rows).spacing(12.0).cross_axis_alignment(CrossAxisAlignment::Start))

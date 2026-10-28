@@ -431,37 +431,8 @@ impl Runner {
         }
 
         // 2b. Publish laid-out rects for components using `use_bounds()` (C2 tooltip
-        // focus positioning, …); GC keys whose element unmounted.
-        {
-            let win = self.ui.window_id();
-            let tree = self.ui.render_tree();
-            for (w, src) in pebbles_core::bounds::wanted_bounds() {
-                if w != win {
-                    continue;
-                }
-                match tree.find_by_source(src) {
-                    Some(rid) => {
-                        let o = tree.absolute_offset(rid);
-                        let s = tree.size_of(rid);
-                        pebbles_core::bounds::publish_bounds(
-                            w,
-                            src,
-                            pebbles_foundation::Rect::new(o.x, o.y, o.x + s.width, o.y + s.height),
-                        );
-                    }
-                    None => pebbles_core::bounds::forget_bounds(w, src),
-                }
-            }
-            // Publish the focused element's rect (C2 tooltip show_on_focus).
-            let focus_rect = pebbles_core::focus::focused_element_ffi(win)
-                .and_then(|id| tree.find_by_source(id))
-                .map(|rid| {
-                    let o = tree.absolute_offset(rid);
-                    let s = tree.size_of(rid);
-                    pebbles_foundation::Rect::new(o.x, o.y, o.x + s.width, o.y + s.height)
-                });
-            pebbles_core::bounds::set_focus_bounds(focus_rect);
-        }
+        // focus positioning, layout_builder, …) and the focused element's rect.
+        let _ = self.ui.publish_bounds();
 
         // 3. Paint the logical scene, then scale it to physical pixels.
         let t = Instant::now();

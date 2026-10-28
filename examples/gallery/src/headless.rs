@@ -71,10 +71,6 @@ pub fn click(h: &mut Harness, label: &str) {
 pub fn hover(h: &mut Harness, label: &str) {
     let at = find(h, label).unwrap_or_else(|| panic!("no control labelled {label:?} on the page"));
     h.hover(at);
-    // A hover delay is a timer, not an animation, so `settle` alone would stop before it
-    // fires: run the clock 1.5 s first.
-    for _ in 0..90 {
-        h.tick(1.0 / 60.0);
-    }
-    h.settle();
+    // Run the clock past any hover delay (tooltips default to 0.5 s; slow ones 0.6 s).
+    h.advance(1.0);
 }

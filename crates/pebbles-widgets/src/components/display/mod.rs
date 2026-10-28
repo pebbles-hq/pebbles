@@ -14,7 +14,7 @@ mod kbd;
 mod list_tile;
 mod placeholder;
 mod progress;
-mod surfaces;
+pub(crate) mod surfaces;
 mod tooltip;
 mod tree;
 mod typography;

@@ -8,8 +8,9 @@ use pebbles_render::{BorderRadius, BoxShadow};
 use pebbles_testing::Harness;
 use pebbles_widgets::theme::{DesignLanguage, set_design};
 use pebbles_widgets::{
-    ButtonVariant, button, calendar, checkbox, chip, column, container, dialog, list_tile, popover, radio,
-    row, separator, sheet, slider, spinner, switch, table, tabs, text, text_field, toast, tooltip, wrap,
+    ButtonVariant, button, calendar, center, checkbox, chip, column, container, dialog, list_tile, popover,
+    radio, row, separator, sheet, slider, spinner, switch, table, tabs, text, text_field, toast, tooltip,
+    wrap,
 };
 
 use crate::case::{Case, Category::Screen, Slice::Screens, harness};
@@ -135,9 +136,15 @@ fn popover_open(h: &mut Harness) {
 }
 
 fn tooltip_visible(h: &mut Harness) {
-    page(h, tooltip("Hint", button("Hover")));
-    h.hover(Offset::new(50.0, 40.0));
+    // The tooltip chip lives in the passive overlay layer, so the page needs the overlay
+    // host the shell gives every app; the trigger is centred so the chip has room above it.
+    h.mount_widget(pebbles_widgets::View::new(
+        Color::WHITE,
+        pebbles_widgets::OverlayHost::wrap(center(tooltip("Hint", button("Hover"))).into_widget()),
+    ));
     h.settle();
+    h.hover(Offset::new(f64::from(W) / 2.0, f64::from(H) / 2.0));
+    h.advance(1.0); // past the 0.5 s hover delay
 }
 
 fn toast_shown(h: &mut Harness) {
