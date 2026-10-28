@@ -97,6 +97,11 @@ pub struct App {
     /// Mirrors the secondary-window `WindowSpec::icon`. Windows taskbar/titlebar + Linux;
     /// macOS takes its icon from the `.app` bundle, not this call.
     icon: Option<pebbles_widgets::window::WindowIcon>,
+    /// Desktop app id (reverse-DNS, e.g. `org.example.Counter`): the Wayland `app_id` and
+    /// X11 `WM_CLASS`, which docks match against the installed `.desktop` file. `None`
+    /// falls back to `$PEBBLES_APP_ID` (set by `pebbles bundle` launchers), then winit's
+    /// default (the executable name).
+    app_id: Option<String>,
 }
 
 impl App {
@@ -120,7 +125,18 @@ impl App {
             web_ime: false,
             perf_overlay: false,
             icon: None,
+            app_id: None,
         }
+    }
+
+    /// The desktop app id (reverse-DNS, e.g. `org.example.Counter`) — on Linux the
+    /// Wayland `app_id` and X11 `WM_CLASS`, so the dock/taskbar matches the window to the
+    /// `<app_id>.desktop` file (GTK's `application_id` / Flutter Linux's `APPLICATION_ID`).
+    /// No effect on other platforms. Defaults to `$PEBBLES_APP_ID`, which the
+    /// `pebbles bundle` launcher sets from `pebbles.toml`.
+    pub fn app_id(mut self, id: impl Into<String>) -> Self {
+        self.app_id = Some(id.into());
+        self
     }
 
     pub fn title(mut self, title: impl Into<String>) -> Self {

@@ -508,6 +508,34 @@ mod tests {
         assert!(pebbles_widgets::overlay::passive_is_open(), "tooltip chip shown after its hover delay");
     }
 
+    /// Flutter's `Tooltip` exposes its message as the trigger's semantics tooltip, so a
+    /// screen reader announces it without hovering: the button node carries it as its
+    /// description (label unchanged).
+    #[test]
+    fn tooltip_message_is_the_trigger_description() {
+        let mut h = Harness::new();
+        h.mount(tooltip_probe);
+        h.draw();
+        let tree = h.semantics_tree();
+        let trigger = tree.iter().find(|n| n.props.label == "Hover").expect("the trigger button node");
+        assert_eq!(trigger.props.description.as_deref(), Some("Hint"));
+        assert!(tree.iter().all(|n| n.props.label != "Hint"), "no extra node for the message");
+    }
+
+    fn bare_tooltip_probe() -> impl IntoWidget {
+        pebbles_widgets::tooltip("Info", pebbles_widgets::gap_w(24.0))
+    }
+
+    /// A trigger with no semantics of its own still exposes the message.
+    #[test]
+    fn tooltip_on_a_non_semantic_child_gets_its_own_node() {
+        let mut h = Harness::new();
+        h.mount(bare_tooltip_probe);
+        h.draw();
+        let tree = h.semantics_tree();
+        assert!(tree.iter().any(|n| n.props.description.as_deref() == Some("Info")), "{tree:?}");
+    }
+
     // ----- autofocus is deterministic across harnesses ---------------------
 
     fn autofocus_probe() -> impl IntoWidget {

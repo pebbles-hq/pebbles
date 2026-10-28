@@ -254,7 +254,7 @@ fn render_tooltip(p: &Props) -> AnyWidget {
         }
     };
 
-    GestureDetector::new(p.child.clone())
+    GestureDetector::new(crate::widgets::describe_semantics(p.label.clone(), p.child.clone()))
         .on_hover_enter(action_event({
             let show_chip = show_chip.clone();
             move |e: PointerEvent| {

@@ -42,6 +42,10 @@ pub enum SemanticsFlag {
     /// Drop the semantics of everything painted BEFORE this node's subtree in the same
     /// parent (earlier siblings / lower layers) — a modal barrier.
     Block,
+    /// Attach the owning boundary's description (a tooltip message) to the FIRST
+    /// semantics node of the subtree — the trigger — or, when the subtree has none,
+    /// emit a node of its own. Flutter's `Semantics(tooltip: ..)` from `Tooltip`.
+    Describe,
 }
 
 /// A node in the render tree: it computes its own [`Size`] under a set of
@@ -126,6 +130,11 @@ pub trait RenderObject: Any {
     /// [`RenderSemanticsBoundary`](crate::RenderSemanticsBoundary) overrides this to
     /// back `MergeSemantics` / `ExcludeSemantics` / `BlockSemantics`.
     fn semantics_flag(&self) -> Option<SemanticsFlag> {
+        None
+    }
+
+    /// The description a [`SemanticsFlag::Describe`] boundary attaches (default `None`).
+    fn semantics_description(&self) -> Option<&str> {
         None
     }
 

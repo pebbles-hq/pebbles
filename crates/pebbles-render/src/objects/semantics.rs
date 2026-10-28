@@ -58,12 +58,22 @@ pub struct SemanticsProps {
     pub checked: Option<bool>,
     /// Whether the control is disabled (announced, and not actionable).
     pub disabled: bool,
+    /// Supplementary text read after the label — e.g. a `tooltip`'s message on its
+    /// trigger (AccessKit `description`, Flutter's `SemanticsProperties.tooltip`).
+    pub description: Option<String>,
 }
 
 impl SemanticsProps {
     /// A node with just a role + label (the common case).
     pub fn new(role: SemanticsRole, label: impl Into<String>) -> Self {
-        SemanticsProps { role, label: label.into(), value: None, checked: None, disabled: false }
+        SemanticsProps {
+            role,
+            label: label.into(),
+            value: None,
+            checked: None,
+            disabled: false,
+            description: None,
+        }
     }
     pub fn value(mut self, value: impl Into<String>) -> Self {
         self.value = Some(value.into());
@@ -75,6 +85,10 @@ impl SemanticsProps {
     }
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.disabled = disabled;
+        self
+    }
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
         self
     }
 }

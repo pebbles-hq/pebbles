@@ -772,8 +772,23 @@ fn dev_log_from(text: &str) -> Option<String> {
 }
 
 pub(crate) fn target_bin(target_root: &Path, bin: &str, release: bool) -> PathBuf {
+    target_bin_in(target_root, std::env::var_os("CARGO_TARGET_DIR"), bin, release)
+}
+
+/// [`target_bin`] with the `CARGO_TARGET_DIR` value passed in (pure, for tests): an
+/// override is honoured like cargo does, relative paths resolving against the build root.
+fn target_bin_in(
+    target_root: &Path,
+    target_dir: Option<std::ffi::OsString>,
+    bin: &str,
+    release: bool,
+) -> PathBuf {
     let profile = if release { "release" } else { "debug" };
-    target_root.join("target").join(profile).join(bin)
+    let target = target_dir
+        .filter(|d| !d.is_empty())
+        .map(|d| target_root.join(d))
+        .unwrap_or_else(|| target_root.join("target"));
+    target.join(profile).join(bin)
 }
 
 /// The nearest ancestor whose Cargo.toml declares `[workspace]` — a member's
@@ -944,8 +959,11 @@ mod tests {
     #[test]
     fn target_bin_path() {
         let root = Path::new("/w");
-        assert_eq!(target_bin(root, "app", false), Path::new("/w/target/debug/app"));
-        assert_eq!(target_bin(root, "app", true), Path::new("/w/target/release/app"));
+        assert_eq!(target_bin_in(root, None, "app", false), Path::new("/w/target/debug/app"));
+        assert_eq!(target_bin_in(root, None, "app", true), Path::new("/w/target/release/app"));
+        // CARGO_TARGET_DIR: absolute replaces, relative resolves against the root.
+        assert_eq!(target_bin_in(root, Some("/t".into()), "app", true), Path::new("/t/release/app"));
+        assert_eq!(target_bin_in(root, Some("out".into()), "app", true), Path::new("/w/out/release/app"));
     }
 
     #[test]

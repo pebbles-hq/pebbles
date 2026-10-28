@@ -452,6 +452,36 @@ impl RenderTree {
                 }
                 return;
             }
+            // Describe the subtree's first node (the trigger), or stand in for it.
+            Some(SemanticsFlag::Describe) => {
+                let desc = self.nodes[id]
+                    .object
+                    .as_deref()
+                    .and_then(|o| o.semantics_description())
+                    .map(str::to_owned);
+                let before = out.len();
+                self.collect_semantics_children(id, out, synth);
+                if let Some(desc) = desc.filter(|d| !d.is_empty()) {
+                    if let Some(first) = out.get_mut(before) {
+                        if first.props.description.is_none() {
+                            first.props.description = Some(desc);
+                        }
+                    } else {
+                        let node = &self.nodes[id];
+                        let origin = self.absolute_offset(id);
+                        out.push(crate::SemanticsNode {
+                            id: node.source.unwrap_or_else(|| Self::synth_id(synth)),
+                            props: crate::SemanticsProps::new(crate::SemanticsRole::Label, "")
+                                .description(desc),
+                            bounds: Rect::from_origin_size(
+                                (origin.x, origin.y),
+                                (node.size.width, node.size.height),
+                            ),
+                        });
+                    }
+                }
+                return;
+            }
             // Block is handled by the PARENT's child loop below; here it's ordinary.
             _ => {}
         }
@@ -466,10 +496,14 @@ impl RenderTree {
                 bounds: Rect::from_origin_size((origin.x, origin.y), (node.size.width, node.size.height)),
             });
         }
+        self.collect_semantics_children(id, out, synth);
+    }
+
+    fn collect_semantics_children(&self, id: RenderId, out: &mut Vec<crate::SemanticsNode>, synth: &mut u64) {
         // A `Block` child drops the semantics of everything collected from EARLIER
         // siblings in this parent (lower layers) — the modal-barrier behavior.
         let after_self = out.len();
-        for &child in &node.children {
+        for &child in &self.nodes[id].children {
             if self.semantics_flag_of(child) == Some(SemanticsFlag::Block) {
                 out.truncate(after_self);
             }
@@ -499,6 +533,7 @@ impl RenderTree {
                 value,
                 checked,
                 disabled,
+                description: None,
             },
             bounds: Rect::from_origin_size((origin.x, origin.y), (node.size.width, node.size.height)),
         })

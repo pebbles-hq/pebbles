@@ -5,6 +5,8 @@
 //! ```text
 //! pebbles create <name>   scaffold a new Pebbles project (app or widget package)
 //! pebbles run             build + run in dev mode (rich logs, hot-restart on save)
+//! pebbles build           build an optimized release artifact
+//! pebbles bundle          package for Linux desktops (AppDir/AppImage + .desktop)
 //! pebbles doctor          check your environment
 //! ```
 //!
@@ -12,6 +14,7 @@
 //! watching is a light mtime poll, process control is `std::process`.
 
 mod build;
+mod bundle;
 mod doctor;
 mod new;
 mod run;
@@ -39,6 +42,7 @@ enum Cmd {
     New,
     Run,
     Build,
+    Bundle,
     Doctor,
     Version,
     Help,
@@ -52,6 +56,7 @@ fn classify(cmd: Option<&str>) -> Cmd {
         Some("new") | Some("create") => Cmd::New,
         Some("run") | Some("dev") => Cmd::Run,
         Some("build") => Cmd::Build,
+        Some("bundle") => Cmd::Bundle,
         Some("doctor") => Cmd::Doctor,
         Some("--version") | Some("-V") | Some("version") => Cmd::Version,
         Some("--help") | Some("-h") | Some("help") | None => Cmd::Help,
@@ -66,6 +71,7 @@ fn main() -> ExitCode {
         Cmd::New => new::run(&args[1..]),
         Cmd::Run => run::run(&args[1..]),
         Cmd::Build => build::run(&args[1..]),
+        Cmd::Bundle => bundle::run(&args[1..]),
         Cmd::Doctor => doctor::run(&args[1..]),
         Cmd::Version => {
             println!("pebbles {VERSION}");
@@ -99,6 +105,9 @@ fn print_help() {
                       hot-restart on every file save
     {CYAN}build{RESET}             Build an optimized release artifact (native binary,
                       or a static wasm bundle with -d web)
+    {CYAN}bundle{RESET}            Package a release build for Linux desktops: an AppDir
+                      with a .desktop entry + hicolor icons, and an AppImage
+                      when appimagetool is installed
     {CYAN}doctor{RESET}            Check your toolchain and environment
     {CYAN}help{RESET}              Show this help
 
@@ -131,6 +140,13 @@ fn print_help() {
     -p, --package <n> Build a specific workspace member by name
                       (aliases: --example, --bin)
 
+{BOLD}pebbles bundle OPTIONS{RESET}  {DIM}(Linux; metadata from pebbles.toml [app]: name, id, icon){RESET}
+    -p, --package <n> Bundle a specific workspace member by name
+    --format <f>      appimage (default; falls back to the AppDir when
+                      appimagetool is missing) | appdir
+                      Output: target/bundle/linux/<bin>/. Needs a Vulkan or GL
+                      driver on the target machine.
+
 {BOLD}EXAMPLES{RESET}
     pebbles create hello && cd hello && pebbles run
     pebbles create --template widget my-widget   {DIM}# a reusable widget package{RESET}
@@ -141,6 +157,7 @@ fn print_help() {
     pebbles run --release           {DIM}# optimized release build{RESET}
     pebbles build                   {DIM}# release binary → target/release/<bin>{RESET}
     pebbles build -d web            {DIM}# static wasm bundle → ./dist (deployable){RESET}
+    pebbles bundle -p counter       {DIM}# AppDir/AppImage + .desktop + icons{RESET}
     cd examples/counter && pebbles run
     pebbles run --log trace
     pebbles doctor
@@ -159,6 +176,7 @@ mod tests {
         assert_eq!(classify(Some("run")), Cmd::Run);
         assert_eq!(classify(Some("dev")), Cmd::Run); // alias
         assert_eq!(classify(Some("build")), Cmd::Build);
+        assert_eq!(classify(Some("bundle")), Cmd::Bundle);
         assert_eq!(classify(Some("doctor")), Cmd::Doctor);
     }
 

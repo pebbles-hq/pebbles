@@ -149,6 +149,7 @@ impl Runner {
         {
             attrs = attrs.with_window_icon(Some(i));
         }
+        attrs = with_app_id(attrs, self.app_id.as_deref());
         // A secondary window failing must NOT take down the app (the main window is fine) —
         // log and skip opening it, unlike the fatal main-window path.
         let window = match event_loop.create_window(attrs) {

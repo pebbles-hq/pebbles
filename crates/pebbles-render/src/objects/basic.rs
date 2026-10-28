@@ -263,11 +263,17 @@ impl RenderObject for RenderPointerBarrier {
 /// Layout and paint pass straight through.
 pub struct RenderSemanticsBoundary {
     pub flag: SemanticsFlag,
+    /// The description a [`SemanticsFlag::Describe`] boundary attaches.
+    pub description: Option<String>,
 }
 
 impl RenderSemanticsBoundary {
     pub fn new(flag: SemanticsFlag) -> Self {
-        RenderSemanticsBoundary { flag }
+        RenderSemanticsBoundary { flag, description: None }
+    }
+    /// A [`SemanticsFlag::Describe`] boundary carrying `description` (a tooltip message).
+    pub fn describe(description: impl Into<String>) -> Self {
+        RenderSemanticsBoundary { flag: SemanticsFlag::Describe, description: Some(description.into()) }
     }
 }
 
@@ -299,6 +305,10 @@ impl RenderObject for RenderSemanticsBoundary {
 
     fn semantics_flag(&self) -> Option<SemanticsFlag> {
         Some(self.flag)
+    }
+
+    fn semantics_description(&self) -> Option<&str> {
+        self.description.as_deref()
     }
 
     fn debug_name(&self) -> &'static str {

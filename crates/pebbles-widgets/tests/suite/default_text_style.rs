@@ -91,3 +91,32 @@ fn root_provider_without_color_keeps_the_theme_foreground() {
     assert_eq!(s.font_size, 20.0);
     assert_eq!(s.color, pebbles_widgets::Theme::dark().colors.foreground);
 }
+
+fn unstyled_rich_root() -> pebbles_core::AnyWidget {
+    pebbles_widgets::text_rich(vec![pebbles_widgets::span("hi")]).into_widget()
+}
+
+/// Regression: `text_rich` with no base colour painted `ParagraphStyle::default()` black.
+/// Like Flutter's `Text.rich` (which merges with `DefaultTextStyle`), it now inherits the
+/// ambient style — the theme foreground at the root.
+#[test]
+fn unstyled_rich_text_takes_the_theme_foreground() {
+    pebbles_widgets::set_theme(pebbles_widgets::Theme::dark());
+    let s = paragraph_style(unstyled_rich_root);
+    pebbles_widgets::set_theme(pebbles_widgets::Theme::light());
+    assert_eq!(s.color, pebbles_widgets::Theme::dark().colors.foreground);
+}
+
+fn rich_under_provider() -> pebbles_core::AnyWidget {
+    default_text_style(pebbles_widgets::text_rich(vec![pebbles_widgets::span("hi")]).size(13.0))
+        .size(28.0)
+        .color(palette::RED)
+        .into_widget()
+}
+
+#[test]
+fn rich_text_inherits_unset_properties_and_keeps_explicit_ones() {
+    let s = paragraph_style(rich_under_provider);
+    assert_eq!(s.color, palette::RED, "inherited colour");
+    assert_eq!(s.font_size, 13.0, "explicit size wins");
+}

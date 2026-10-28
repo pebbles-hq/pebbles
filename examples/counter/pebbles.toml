@@ -1,0 +1,6 @@
+# Pebbles project config, read by `pebbles run` and `pebbles bundle`.
+[app]
+name = "Counter"
+id = "dev.pebbles.Counter"
+comment = "The smallest complete Pebbles app"
+categories = "Utility;"

@@ -579,6 +579,8 @@ impl TextSpan {
 /// as clickable as its glyphs, with no per-word widgets.
 pub struct RichText {
     base: ParagraphStyle,
+    /// Base properties set explicitly; the rest inherit the ambient text style.
+    set: TextFields,
     spans: Vec<TextSpan>,
     on_link: Option<LinkCb>,
     on_link_hover: Option<LinkHoverCb>,
@@ -592,6 +594,7 @@ pub struct RichText {
 pub fn text_rich(spans: Vec<TextSpan>) -> RichText {
     RichText {
         base: ParagraphStyle::default(),
+        set: TextFields::default(),
         spans,
         on_link: None,
         on_link_hover: None,
@@ -606,48 +609,58 @@ impl RichText {
     /// Base font size (spans may override per-range).
     pub fn size(mut self, px: f32) -> Self {
         self.base.font_size = px;
+        self.set.mark(TextFields::FONT_SIZE);
         self
     }
     /// Base text color.
     pub fn color(mut self, color: Color) -> Self {
         self.base.color = color;
+        self.set.mark(TextFields::COLOR);
         self
     }
     pub fn line_height(mut self, factor: f32) -> Self {
         self.base.line_height = factor;
+        self.set.mark(TextFields::LINE_HEIGHT);
         self
     }
     /// Extra spacing between glyphs in logical px (0 = none).
     pub fn letter_spacing(mut self, px: f32) -> Self {
         self.base.letter_spacing = px;
+        self.set.mark(TextFields::LETTER_SPACING);
         self
     }
     /// TAB advance in space widths (default 1: one column in monospace; 0 counts as 1).
     pub fn tab_width(mut self, w: u16) -> Self {
         self.base.tab_width = w;
+        self.set.mark(TextFields::TAB_WIDTH);
         self
     }
     pub fn align(mut self, align: TextAlign) -> Self {
         self.base.align = align;
+        self.set.mark(TextFields::ALIGN);
         self
     }
     pub fn font_family(mut self, family: impl Into<String>) -> Self {
         self.base.font_family = Some(family.into());
+        self.set.mark(TextFields::FONT_FAMILY);
         self
     }
     /// Base weight (spans may override).
     pub fn weight(mut self, w: f32) -> Self {
         self.base.weight = w;
+        self.set.mark(TextFields::WEIGHT);
         self
     }
     /// Style the whole paragraph from an explicit [`ParagraphStyle`].
     pub fn paragraph_style(mut self, style: ParagraphStyle) -> Self {
         self.base = style;
+        self.set.mark(TextFields::ALL);
         self
     }
     /// Disable soft wrapping: lines break only at `\n` (code blocks).
     pub fn soft_wrap(mut self, wrap: bool) -> Self {
         self.base.soft_wrap = wrap;
+        self.set.mark(TextFields::SOFT_WRAP);
         self
     }
     /// Called with the URL when any link span is tapped.
@@ -703,6 +716,9 @@ impl RichText {
 struct RichTextLeaf {
     text: String,
     style: ParagraphStyle,
+    /// Properties of `style` set explicitly; the rest resolve against the ambient
+    /// text style at render-object time (like [`Text`]).
+    set: TextFields,
     spans: Vec<pebbles_render::TextSpanStyle>,
     boxes: Option<LinkBoxes>,
     /// When set, the paragraph publishes its shaped layout under this id for
@@ -718,9 +734,17 @@ struct RichTextLeaf {
 
 pebbles_core::render_widget!(RichTextLeaf);
 
+impl RichTextLeaf {
+    fn resolved(&self) -> ParagraphStyle {
+        let mut base = ambient_text_style();
+        overlay_fields(&mut base, &self.style, self.set);
+        base
+    }
+}
+
 impl RenderWidget for RichTextLeaf {
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        let mut p = RenderParagraph::with_spans(self.text.clone(), self.style.clone(), self.spans.clone());
+        let mut p = RenderParagraph::with_spans(self.text.clone(), self.resolved(), self.spans.clone());
         p.link_boxes = self.boxes.clone();
         p.select_id = self.select_id;
         p.selection = self.selection;
@@ -732,7 +756,7 @@ impl RenderWidget for RichTextLeaf {
     fn update_render_object(&self, object: &mut dyn RenderObject) {
         if let Some(p) = object.downcast_mut::<RenderParagraph>() {
             p.text = self.text.clone();
-            p.style = self.style.clone();
+            p.style = self.resolved();
             p.spans = self.spans.clone();
             p.link_boxes = self.boxes.clone();
             p.select_id = self.select_id;
@@ -824,6 +848,7 @@ fn wire_links(
 #[derive(Clone)]
 struct SelectableRichProps {
     base: ParagraphStyle,
+    set: TextFields,
     spans: Vec<TextSpan>,
     on_link: Option<LinkCb>,
     on_link_hover: Option<LinkHoverCb>,
@@ -872,6 +897,7 @@ fn render_group_leaf(p: &SelectableRichProps, group: SelectionGroup, index: usiz
     let leaf = RichTextLeaf {
         text: (*text).clone(),
         style: p.base.clone(),
+        set: p.set,
         spans: rspans,
         boxes: boxes.clone(),
         select_id: Some(sid),
@@ -950,6 +976,7 @@ fn render_selectable_rich(p: &SelectableRichProps) -> AnyWidget {
     let leaf = RichTextLeaf {
         text: (*text).clone(),
         style: p.base.clone(),
+        set: p.set,
         spans: rspans,
         boxes: boxes.clone(),
         select_id: Some(id),
@@ -995,6 +1022,7 @@ fn render_selectable_rich(p: &SelectableRichProps) -> AnyWidget {
 #[derive(Clone)]
 struct KeyboardRichProps {
     base: ParagraphStyle,
+    set: TextFields,
     spans: Vec<TextSpan>,
     on_link: Option<LinkCb>,
     on_link_hover: Option<LinkHoverCb>,
@@ -1017,6 +1045,7 @@ fn render_keyboard_rich(p: &KeyboardRichProps) -> AnyWidget {
         let leaf = RichTextLeaf {
             text,
             style: p.base.clone(),
+            set: p.set,
             spans: rspans,
             boxes: None,
             select_id: None,
@@ -1080,6 +1109,7 @@ fn render_keyboard_rich(p: &KeyboardRichProps) -> AnyWidget {
     let leaf = RichTextLeaf {
         text,
         style: p.base.clone(),
+        set: p.set,
         spans: rspans,
         boxes: Some(boxes.clone()),
         select_id: None,
@@ -1110,6 +1140,7 @@ impl IntoWidget for RichText {
                 render_keyboard_rich,
                 KeyboardRichProps {
                     base: self.base,
+                    set: self.set,
                     spans: self.spans,
                     on_link: self.on_link,
                     on_link_hover: self.on_link_hover,
@@ -1121,6 +1152,7 @@ impl IntoWidget for RichText {
                 render_selectable_rich,
                 SelectableRichProps {
                     base: self.base,
+                    set: self.set,
                     spans: self.spans,
                     on_link: self.on_link,
                     on_link_hover: self.on_link_hover,
@@ -1137,6 +1169,7 @@ impl IntoWidget for RichText {
             let leaf = RichTextLeaf {
                 text,
                 style: self.base,
+                set: self.set,
                 spans: rspans,
                 boxes: boxes.clone(),
                 select_id: None,

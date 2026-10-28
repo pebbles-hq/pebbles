@@ -51,8 +51,8 @@ pub use mobile_runtime::{
 };
 pub use probe::{ExtentProbe, PositionProbe, extent_probe, position_probe};
 pub use semantics::{
-    Semantics, SemanticsBoundary, SemanticsExt, block_semantics, exclude_semantics, merge_semantics,
-    semantics,
+    Semantics, SemanticsBoundary, SemanticsExt, block_semantics, describe_semantics, exclude_semantics,
+    merge_semantics, semantics,
 };
 pub use spinner::{Spinner, spinner};
 pub use stream_builder::{StreamBuilder, stream_builder};

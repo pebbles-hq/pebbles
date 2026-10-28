@@ -210,6 +210,8 @@ pub(super) struct Runner {
     first_present_logged: bool,
     // configuration
     title: String,
+    /// Resolved desktop app id (see [`App::app_id`]); applied to every window.
+    app_id: Option<String>,
     background: Color,
     size: (u32, u32),
     min_size: Option<(u32, u32)>,
@@ -385,6 +387,10 @@ impl Runner {
             started_at: Instant::now(),
             first_present_logged: false,
             title: app.title,
+            app_id: app
+                .app_id
+                .or_else(|| std::env::var("PEBBLES_APP_ID").ok())
+                .filter(|s| !s.trim().is_empty()),
             background: app.background,
             size: app.size,
             min_size: app.min_size,
@@ -528,6 +534,7 @@ impl Runner {
         {
             attrs = attrs.with_window_icon(Some(i));
         }
+        attrs = with_app_id(attrs, self.app_id.as_deref());
         // Desktop: create hidden so the AccessKit adapter can attach before the
         // window is shown (it panics if the window is already visible).
         #[cfg(not(target_family = "wasm"))]
@@ -1659,4 +1666,21 @@ fn platform_brightness(t: Option<winit::window::Theme>) -> Option<pebbles_widget
         winit::window::Theme::Light => Brightness::Light,
         winit::window::Theme::Dark => Brightness::Dark,
     })
+}
+
+/// Apply the desktop app id: Wayland `app_id` and X11 `WM_CLASS` (instance and class both
+/// set to the id, as GTK does), so docks match windows to `<app_id>.desktop`. A no-op
+/// elsewhere (macOS/Windows identify apps by bundle / AUMID instead).
+pub(super) fn with_app_id(attrs: WindowAttributes, id: Option<&str>) -> WindowAttributes {
+    #[cfg(all(
+        unix,
+        not(any(target_os = "macos", target_os = "ios", target_os = "android")),
+        not(target_family = "wasm")
+    ))]
+    if let Some(id) = id {
+        let attrs = winit::platform::x11::WindowAttributesExtX11::with_name(attrs, id, id);
+        return winit::platform::wayland::WindowAttributesExtWayland::with_name(attrs, id, id);
+    }
+    let _ = id;
+    attrs
 }

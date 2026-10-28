@@ -1,7 +1,14 @@
-# Pebbles project config, read by `pebbles run`.
+# Pebbles project config, read by `pebbles run` and `pebbles bundle`.
 [dev]
 # Log level the dev runner starts the app at (trace|debug|info|warn|error).
 # Overridden by `--log <level>` / `-q`.
 log = "debug"
 # Directories watched for hot-restart (relative to this file).
 watch = ["src"]
+
+[app]
+# Desktop metadata used by `pebbles bundle` (the .desktop entry, icons, window app id).
+name = "{{name}}"
+# Reverse-DNS app id — change `com.example` to a domain you control.
+id = "com.example.{{name_snake}}"
+# icon = "assets/icon.png"   # PNG (square, e.g. 256x256) or SVG

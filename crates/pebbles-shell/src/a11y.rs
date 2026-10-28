@@ -182,6 +182,9 @@ fn build_update(nodes: &[SemanticsNode], focus: Option<u64>) -> TreeUpdate {
         if let Some(v) = &n.props.value {
             node.set_value(v.clone());
         }
+        if let Some(d) = &n.props.description {
+            node.set_description(d.clone());
+        }
         if let Some(checked) = n.props.checked {
             node.set_toggled(if checked { Toggled::True } else { Toggled::False });
         }

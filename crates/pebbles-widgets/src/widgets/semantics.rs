@@ -75,25 +75,37 @@ impl<W: IntoWidget> SemanticsExt for W {}
 #[derive(Clone)]
 pub struct SemanticsBoundary {
     flag: SemanticsFlag,
+    description: Option<String>,
     child: Option<AnyWidget>,
 }
 
 /// Collapse `child`'s subtree into ONE semantics node (its labels joined) — a screen
 /// reader reads the group as a single item. Flutter's `MergeSemantics`.
 pub fn merge_semantics(child: impl IntoWidget) -> SemanticsBoundary {
-    SemanticsBoundary { flag: SemanticsFlag::Merge, child: Some(child.into_widget()) }
+    SemanticsBoundary { flag: SemanticsFlag::Merge, description: None, child: Some(child.into_widget()) }
 }
 
 /// Hide `child`'s subtree from the accessibility tree entirely (still painted).
 /// Flutter's `ExcludeSemantics`.
 pub fn exclude_semantics(child: impl IntoWidget) -> SemanticsBoundary {
-    SemanticsBoundary { flag: SemanticsFlag::Exclude, child: Some(child.into_widget()) }
+    SemanticsBoundary { flag: SemanticsFlag::Exclude, description: None, child: Some(child.into_widget()) }
+}
+
+/// Attach `description` to the first semantics node of `child` (its trigger control) —
+/// read after the label. Backs [`tooltip`](crate::tooltip), like Flutter's `Tooltip`
+/// semantics; emits its own node when `child` has none.
+pub fn describe_semantics(description: impl Into<String>, child: impl IntoWidget) -> SemanticsBoundary {
+    SemanticsBoundary {
+        flag: SemanticsFlag::Describe,
+        description: Some(description.into()),
+        child: Some(child.into_widget()),
+    }
 }
 
 /// Drop the semantics of everything painted BEFORE `child` in the same parent (lower
 /// layers / earlier siblings) — a modal barrier. Flutter's `BlockSemantics`.
 pub fn block_semantics(child: impl IntoWidget) -> SemanticsBoundary {
-    SemanticsBoundary { flag: SemanticsFlag::Block, child: Some(child.into_widget()) }
+    SemanticsBoundary { flag: SemanticsFlag::Block, description: None, child: Some(child.into_widget()) }
 }
 
 impl Widget for SemanticsBoundary {
@@ -116,11 +128,14 @@ impl Widget for SemanticsBoundary {
 
 impl RenderWidget for SemanticsBoundary {
     fn create_render_object(&self) -> Box<dyn RenderObject> {
-        Box::new(RenderSemanticsBoundary::new(self.flag))
+        let mut b = RenderSemanticsBoundary::new(self.flag);
+        b.description = self.description.clone();
+        Box::new(b)
     }
     fn update_render_object(&self, object: &mut dyn RenderObject) {
         if let Some(b) = object.downcast_mut::<RenderSemanticsBoundary>() {
             b.flag = self.flag;
+            b.description = self.description.clone();
         }
     }
     fn take_children(&mut self) -> Vec<AnyWidget> {
