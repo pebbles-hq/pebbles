@@ -83,7 +83,7 @@ mod tree;
 
 #[cfg(feature = "file-dialogs")]
 pub use tree::pick_folder;
-pub use tree::{FileTree, FsKind, FsNode};
+pub use tree::{FileTree, FsKind, FsNode, natural_cmp};
 
 use node::{NodeProps, render_node};
 use tree::{copy_path, read_dir, unique_name};

@@ -342,8 +342,8 @@ pub(super) fn read_dir(path: &Path, keep: Option<&KeepEntry>) -> std::io::Result
             });
         }
     }
-    folders.sort_by_key(|a| a.name.to_lowercase());
-    files.sort_by_key(|a| a.name.to_lowercase());
+    folders.sort_by(|a, b| natural_cmp(&a.name, &b.name));
+    files.sort_by(|a, b| natural_cmp(&a.name, &b.name));
     folders.extend(files);
     Ok(folders)
 }
@@ -406,5 +406,45 @@ pub(super) fn unique_name(base: &str, taken: &[&str]) -> String {
             return candidate;
         }
         n += 1;
+    }
+}
+
+/// Natural, case-insensitive name order (VS Code's default explorer sort):
+/// digit runs compare by value, so `file2` < `file10`; ties fall back to the
+/// raw name so the order is total.
+pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (mut x, mut y) = (a.chars().peekable(), b.chars().peekable());
+    loop {
+        match (x.peek().copied(), y.peek().copied()) {
+            (None, None) => return a.cmp(b),
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(c), Some(d)) if c.is_ascii_digit() && d.is_ascii_digit() => {
+                let mut na = String::new();
+                while let Some(&c) = x.peek().filter(|c| c.is_ascii_digit()) {
+                    na.push(c);
+                    x.next();
+                }
+                let mut nb = String::new();
+                while let Some(&d) = y.peek().filter(|d| d.is_ascii_digit()) {
+                    nb.push(d);
+                    y.next();
+                }
+                let (ta, tb) = (na.trim_start_matches('0'), nb.trim_start_matches('0'));
+                let ord = ta.len().cmp(&tb.len()).then_with(|| ta.cmp(tb));
+                if ord != Ordering::Equal {
+                    return ord;
+                }
+            }
+            (Some(c), Some(d)) => {
+                let ord = c.to_lowercase().cmp(d.to_lowercase());
+                if ord != Ordering::Equal {
+                    return ord;
+                }
+                x.next();
+                y.next();
+            }
+        }
     }
 }

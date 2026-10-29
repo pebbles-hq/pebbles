@@ -1040,3 +1040,22 @@ fn rows_id(ex: &pebbles_widgets::FileExplorer, name: &str) -> u64 {
     }
     t.root.iter().find(|n| n.name == name).unwrap().id
 }
+
+#[test]
+fn natural_sort_folders_first() {
+    use std::cmp::Ordering;
+    assert_eq!(pebbles_widgets::natural_cmp("file2", "file10"), Ordering::Less);
+    assert_eq!(pebbles_widgets::natural_cmp("B.txt", "a.txt"), Ordering::Greater);
+    let dir = temp_dir("natsort");
+    for f in ["file10.txt", "file2.txt", "File1.txt"] {
+        std::fs::write(dir.join(f), "").unwrap();
+    }
+    std::fs::create_dir(dir.join("z10")).unwrap();
+    std::fs::create_dir(dir.join("z9")).unwrap();
+    let tree = create_signal(FileTree::new());
+    let ex = file_explorer(tree);
+    assert!(ex.open_folder(&dir));
+    let names: Vec<String> = tree.peek().root.iter().map(|n| n.name.clone()).collect();
+    assert_eq!(names, ["z9", "z10", "File1.txt", "file2.txt", "file10.txt"]);
+    std::fs::remove_dir_all(&dir).ok();
+}
