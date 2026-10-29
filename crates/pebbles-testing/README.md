@@ -20,6 +20,14 @@ fn it_counts() {
 }
 ```
 
+Input helpers mirror the shell: `click`, `hover`, `drag`, `scroll` / `wheel` (pointer
+signal first, then the scroll view), `button_down` / `pointer_move` / `button_up` (any
+button, captured moves), `press("Ctrl+Shift+P")` (a US-layout chord through the shell's
+full key routing: raw `on_key_event` → editing intent → shortcuts → Tab → activation) and
+`key_down` / `key_up` for raw `KeyEvent`s. `frame` / `draw` / `settle` deliver finished
+background tasks (`spawn`, `create_resource`) and `wait_for_tasks` waits for in-flight ones,
+so a test never pumps `task::pump` by hand.
+
 The lifecycle lives here once instead of being hand-rolled in every test file, so
 a change to the frame pipeline is a single edit. `Harness::draw` also runs the
 corrective-relayout settle loop (a lazy paint-time measurement can invalidate the

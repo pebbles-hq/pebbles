@@ -48,7 +48,7 @@ remote-URL images) and their per-platform status live in
 | `EditableText` / `editable` | ✅ | low-level editor under TextField |
 | `Icon` (Tabler set) | ✅ | |
 | `Spinner` | ✅ | indeterminate arc |
-| `GestureDetector` | ✅ | tap/double/secondary/down/up/hover/cursor/pan + long-press lifecycle + vertical/horizontal axis-drag trios |
+| `GestureDetector` | ✅ | tap/double/secondary/down/up/hover/cursor/pan + long-press lifecycle + vertical/horizontal axis-drag trios + `Listener` callbacks (`on_pointer_signal` wheel/trackpad, `on_button_down`/`up` any button, captured `on_pointer_move`, `on_pointer_hover`) |
 | `pressable` / `ink_well` / `ink_response` / `ink` (InkWell/InkResponse/Ink) | ✅ | make any widget a tappable region with hover/press tint + focus ring + keyboard activation + Button semantics; `ink_response` = circular highlight, `ink` = the decorated surface the tint draws over. shadcn state feedback, **no Material ripple** (§10) |
 | `Semantics` (+ `SemanticsRole`) | ✅ 🔶C7 | long-tail roles (Menu/Tab/Dialog/…) open (C7) |
 | `merge_semantics` · `exclude_semantics` · `block_semantics` | ✅ | a11y combinators: collapse a subtree into one announcement · hide a subtree from AT · modal barrier that blocks lower layers from AT |
@@ -209,14 +209,14 @@ remote-URL images) and their per-platform status live in
 |-----------|--------|-------|
 | Reactivity (signals, memo, `Store`, resource, `spawn`) | ✅ | `select_memo` (E4 ✅) — `Store`'s deduped, field-scoped selector → `Signal<R>`, lazy, `PartialEq`-cut; tokio feature (F3) open |
 | Focus (Tab traversal, activate, editor routing, focus ring) | ✅ | scoped `FocusScope`/focus-trap primitive ✅ |
-| Keyboard | ✅ | Alt/Meta modifiers (B1) + app shortcut map (B2, `create_shortcut`) done; native menu bar (B3, `native-menus` feat, macOS/Windows) + global hotkeys (B4, `global-hotkeys` feat) implemented behind default-off features (pending build-verify) |
+| Keyboard | ✅ | Alt/Meta modifiers (B1) + app shortcut map (B2, `create_shortcut`; `Shortcut::physical` key-position bindings) + raw key events for focused widgets (`FocusNode::on_key_event`, Flutter `Focus.onKeyEvent`) done; native menu bar (B3, `native-menus` feat, macOS/Windows) + global hotkeys (B4, `global-hotkeys` feat) implemented behind default-off features (pending build-verify) |
 | Animation (`animated`, `animate_to`, loops, keyed timeouts, timer-wake) | ✅ 🔶H1 | curves/springs/`transition()` presence (H1) open |
 | Clipboard · IME preedit | ✅ | |
 | Router (`pebbles_core::router`) | ✅ | `Location` (path + parsed `?query`) history driven by a reactive signal: `navigate`/`replace`/`back`/`forward`/`can_back`/`can_forward`, `path`/`location`/`query`/`set_query`/`remove_query`/`update_query`, `add_guard`/`remove_guard` (`NavGuard`), `set_title`/`title`, `save_scroll`/`saved_scroll` (scroll restoration). One in-memory model everywhere; on web the shell installs a `UrlSync` bridge (deep links + Back/Forward + `popstate`). Path params matched at the widget layer (`RouteView`) |
 | Offscreen capture (`pebbles_shell::capture`) | ✅ | render any widget tree to pixels with no window/display: `capture_png`/`capture_rgba` (settles animations to their final frame first) — the export primitive for charts/reports, SSR, golden-image tests. Desktop only (needs an offscreen GPU device). `OffscreenCapture` reuses one device for multi-frame or multi-window capture. |
 | Accessibility (AccessKit: read + focus announce) | ✅ 🔶D1/C7 | AT-driven actions (D1), long-tail roles (C7) open |
 | RTL / `TextDirection` threading | ✅ D2 | `set_text_direction`/`text_direction` ship (prelude); `Row`/text/alignment mirror on RTL |
-| Custom drawing (`canvas`) | ✅ H2 | immediate-mode vector surface: `stroke_line`/`stroke_path`, `fill_path`, `fill_path_gradient`, dashed strokes (`stroke_line_dashed`); the substrate Charts build on — `pebbles-charts` is its own repo |
+| Custom drawing (`canvas`) | ✅ H2 | immediate-mode vector surface: `stroke_line`/`stroke_path`, `fill_path`, `fill_path_gradient`, dashed strokes (`stroke_line_dashed`), text (`draw_text`/`draw_paragraph`, `measure_text`, `monospace_cell` — same layout as `Text`); the substrate Charts build on — `pebbles-charts` is its own repo |
 | Lifecycle & memory hygiene | ✅ | teardown verified 2026-09-01 (screens fully unmount; zero frames/timers after navigation — `performance-standards.md` §0-1). E6 ✅ DONE 2026-09-02: `text_edit` leak fixed, `scroll_metrics` audited clean, census accessors + a slim in-repo lifecycle leak-soak (`tests/suite/lifecycle_soak.rs`); the full route-hopping soak moved to the pebbles-docs gallery |
 
 ### Golden tests
