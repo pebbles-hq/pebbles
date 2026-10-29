@@ -1,6 +1,7 @@
 //! File operations: open/refresh/watch, create, rename, move, copy,
 //! trash/delete and the undo stack. Child module of `file_explorer`.
 
+use super::caps::ItemPred;
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
@@ -9,7 +10,7 @@ impl FileExplorer {
     /// their own children lazily on first expand). Clears the selection and
     /// expansion; reports failures through [`last_error`](Self::last_error).
     pub fn open_folder(&self, path: impl AsRef<Path>) -> bool {
-        match read_dir(path.as_ref(), self.load_filter.peek().as_deref()) {
+        match read_dir(path.as_ref(), self.keep_fn().as_deref()) {
             Ok(children) => {
                 self.fs_root.set(Some(path.as_ref().to_path_buf()));
                 self.tree.update(|t| {
@@ -36,7 +37,7 @@ impl FileExplorer {
     /// tree changed. (The Refresh button; also what [`watch`](Self::watch) polls.)
     pub fn refresh(&self) -> bool {
         let Some(root) = self.fs_root.peek().clone() else { return false };
-        let keep = self.load_filter.peek().clone();
+        let keep = self.keep_fn();
         fn rebuild(dir: &Path, old: &[FsNode], keep: Option<&tree::KeepEntry>) -> Option<Vec<FsNode>> {
             let fresh = read_dir(dir, keep).ok()?;
             Some(
@@ -99,6 +100,7 @@ impl FileExplorer {
     /// seconds ([`refresh`](Self::refresh) — only loaded folders are read, and
     /// nothing re-renders unless something changed). `None` stops watching.
     pub fn watch(&self, secs: Option<f64>) {
+        let secs = secs.filter(|_| self.caps.peek().allows(Capability::FileWatching));
         self.watch_secs.set(secs);
         match secs {
             Some(s) => self.arm_watch(s),
@@ -117,6 +119,19 @@ impl FileExplorer {
         });
     }
 
+    /// The effective load filter: the app's [`set_load_filter`](Self::set_load_filter)
+    /// plus the hidden-files switch ([`Capability::ShowHidden`]).
+    pub(super) fn keep_fn(&self) -> Option<LoadFilter> {
+        let app = self.load_filter.peek().clone();
+        if self.caps.peek().allows(Capability::ShowHidden) {
+            return app;
+        }
+        Some(Rc::new(move |p: &Path, is_dir: bool| {
+            let hidden = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'));
+            !hidden && app.as_ref().is_none_or(|f| f(p, is_dir))
+        }))
+    }
+
     /// Leave filesystem mode: detach from the disk. The model stays as-is and
     /// mutations become in-memory only (pair with setting a fresh tree).
     pub fn detach_folder(&self) {
@@ -133,7 +148,7 @@ impl FileExplorer {
             return;
         }
         if let Some(dir) = self.path_of(id) {
-            match read_dir(&dir, self.load_filter.peek().as_deref()) {
+            match read_dir(&dir, self.keep_fn().as_deref()) {
                 Ok(children) => {
                     self.tree.update(|t| {
                         let mut children = children;
@@ -152,93 +167,84 @@ impl FileExplorer {
     }
 
     /// Rename a node — on disk in filesystem mode, in the model otherwise.
-    pub fn rename_node(&self, id: u64, name: impl Into<String>) -> bool {
-        let name = name.into();
+    /// A `a/b/c.txt` name creates the intermediate folders and moves the node
+    /// into the last one. Never overwrites an existing entry. Undoable.
+    pub fn rename_node(&self, id: u64, name: impl Into<String>) -> Result<(), ExplorerError> {
+        let r = self.rename_inner(id, name.into());
+        self.renaming.set(None);
+        r
+    }
+
+    fn rename_inner(&self, id: u64, name: String) -> Result<(), ExplorerError> {
         let name = name.trim().trim_matches('/').to_string();
-        if name.is_empty() {
-            self.renaming.set(None);
-            return false;
+        self.require(Capability::Rename)?;
+        let Some(entry) = self.entry(id) else {
+            return self.fail(ExplorerError::Invalid("No such node".into()));
+        };
+        if name == entry.name {
+            return Ok(());
         }
         if let Err(e) = self.validate_name(id, &name) {
-            self.last_error.set(Some(e));
-            self.renaming.set(None);
-            return false;
+            return self.fail(ExplorerError::Invalid(e));
         }
-        // "a/b/c.txt": create the intermediate folders, then the node lands in
-        // the last one under the last segment's name (VS Code's nested create).
+        self.check_items(ItemPred::Rename, std::slice::from_ref(&entry))?;
         let mut parts: Vec<&str> = name.split('/').filter(|p| !p.is_empty()).collect();
         let leaf = parts.pop().unwrap_or_default().to_string();
-        let mut parent = self.tree.peek().parent_of(id);
+        if !parts.is_empty() {
+            self.require(Capability::CreateFolder)?;
+        }
+        let op = ExplorerOp::Rename { entry: entry.clone(), new_name: name.clone() };
+        self.before(&op)?;
+        // "a/b/c.txt": create the intermediate folders (VS Code's nested create).
+        let old_parent = entry.parent;
+        let mut parent = old_parent;
         for dir in parts {
-            match self.ensure_child_folder(parent, dir) {
-                Some(p) => parent = Some(p),
-                None => {
-                    self.renaming.set(None);
-                    return false;
-                }
+            parent = Some(self.ensure_child_folder(parent, dir)?);
+        }
+        if parent != old_parent && self.child_named(parent, &leaf).is_some() {
+            return self.fail(ExplorerError::Invalid(format!("'{leaf}' already exists")));
+        }
+        let old_path = entry.path.clone();
+        if let Some(root) = self.fs_root.peek().clone() {
+            let Some(old) = old_path.clone() else {
+                return self.fail(ExplorerError::Invalid("Could not resolve a path for the node".into()));
+            };
+            let dir = match parent {
+                Some(p) => self.path_of(p),
+                None => Some(root),
+            };
+            let new = dir.map(|d| d.join(&leaf)).unwrap_or_else(|| old.with_file_name(&leaf));
+            // Never clobber: rename(2) silently replaces an existing file.
+            let case_only = new.parent() == old.parent()
+                && new.file_name().map(|n| n.to_string_lossy().to_lowercase())
+                    == old.file_name().map(|n| n.to_string_lossy().to_lowercase());
+            if new.exists() && !case_only {
+                return self.fail(ExplorerError::Invalid(format!("'{leaf}' already exists")));
+            }
+            if let Err(e) = std::fs::rename(&old, &new) {
+                return self.fail(ExplorerError::Io(format!("Could not rename: {e}")));
             }
         }
-        if parent != self.tree.peek().parent_of(id) {
-            // Moving into the (new) folder must not hit an existing name there.
-            if self.child_named(parent, &leaf).is_some() {
-                self.last_error.set(Some(format!("'{leaf}' already exists")));
-                self.renaming.set(None);
-                return false;
+        self.tree.update(|t| {
+            if parent != old_parent {
+                t.move_node(id, parent);
             }
-        }
-        let old_path = self.path_of(id);
-        let old_name = self.tree.peek().node(id).map(|n| n.name.clone()).unwrap_or_default();
-        let old_parent = self.tree.peek().parent_of(id);
-        let done = if let Some(root) = self.fs_root.peek().clone() {
-            match old_path.clone() {
-                Some(old) => {
-                    let dir = match parent {
-                        Some(p) => self.path_of(p),
-                        None => Some(root.clone()),
-                    };
-                    let new = dir.map(|d| d.join(&leaf)).unwrap_or_else(|| old.with_file_name(&leaf));
-                    // Never clobber: rename(2) silently replaces an existing file.
-                    let case_only = new.parent() == old.parent()
-                        && new.file_name().map(|n| n.to_string_lossy().to_lowercase())
-                            == old.file_name().map(|n| n.to_string_lossy().to_lowercase());
-                    if new.exists() && !case_only {
-                        self.last_error.set(Some(format!("'{leaf}' already exists")));
-                        false
-                    } else {
-                        match std::fs::rename(&old, &new) {
-                            Ok(()) => true,
-                            Err(e) => {
-                                self.last_error.set(Some(format!("Could not rename: {e}")));
-                                false
-                            }
-                        }
-                    }
-                }
-                None => {
-                    self.last_error.set(Some(format!("Could not resolve a path for a node in {root:?}")));
-                    false
-                }
-            }
-        } else {
-            true
-        };
-        if done {
-            self.tree.update(|t| {
-                if parent != old_parent {
-                    t.move_node(id, parent);
-                }
-                t.rename(id, leaf.clone());
+            t.rename(id, leaf.clone());
+        });
+        if let Some(p) = parent {
+            self.expanded.update(|e| {
+                e.insert(p);
             });
-            if let Some(p) = parent {
-                self.expanded.update(|e| {
-                    e.insert(p);
-                });
-            }
-            let new_path = self.path_of(id);
-            self.push_history(FileOp::Rename { id, old_name, old_parent, paths: old_path.zip(new_path) });
         }
-        self.renaming.set(None);
-        done
+        let new_path = self.path_of(id);
+        self.push_history(FileOp::Rename {
+            id,
+            old_name: entry.name,
+            old_parent,
+            paths: old_path.zip(new_path),
+        });
+        self.after(&op);
+        Ok(())
     }
 
     /// Validate a rename / new name (VS Code's rules): not `.`/`..`, no NUL or
@@ -246,20 +252,7 @@ impl FileExplorer {
     /// already using it (a case-only change of the node's own name is fine).
     pub fn validate_name(&self, id: u64, name: &str) -> Result<(), String> {
         let name = name.trim_matches('/');
-        if name.is_empty() {
-            return Err("A file or folder name must be provided".into());
-        }
-        for seg in name.split('/').filter(|s| !s.is_empty()) {
-            if seg == "." || seg == ".." {
-                return Err(format!("'{seg}' is not a valid name"));
-            }
-            if seg.contains('\0') || seg.contains('\\') {
-                return Err(format!("'{seg}' contains an invalid character"));
-            }
-            if seg.trim() != seg {
-                return Err("Leading or trailing whitespace is not allowed".into());
-            }
-        }
+        tree::validate_segments(name)?;
         if !name.contains('/') {
             let parent = self.tree.peek().parent_of(id);
             if let Some(other) = self.child_named(parent, name)
@@ -282,35 +275,34 @@ impl FileExplorer {
     }
 
     /// The folder `name` under `parent`, created (on disk too) when missing.
-    pub(super) fn ensure_child_folder(&self, parent: Option<u64>, name: &str) -> Option<u64> {
+    pub(super) fn ensure_child_folder(&self, parent: Option<u64>, name: &str) -> Result<u64, ExplorerError> {
         if let Some(p) = parent {
             self.ensure_loaded(p);
         }
         if let Some(id) = self.child_named(parent, name) {
             let is_dir = self.tree.peek().node(id).is_some_and(|n| n.kind == FsKind::Folder);
             if !is_dir {
-                self.last_error.set(Some(format!("'{name}' is a file")));
-                return None;
+                return self.fail(ExplorerError::Invalid(format!("'{name}' is a file")));
             }
-            return Some(id);
+            return Ok(id);
         }
         if let Some(root) = self.fs_root.peek().clone() {
             let dir = match parent {
-                Some(p) => self.path_of(p)?,
+                Some(p) => self.path_of(p).unwrap_or(root),
                 None => root,
             };
             if let Err(e) = std::fs::create_dir(dir.join(name)) {
-                self.last_error.set(Some(format!("Could not create folder {name}: {e}")));
-                return None;
+                return self.fail(ExplorerError::Io(format!("Could not create folder {name}: {e}")));
             }
         }
         let cell = RefCell::new(None);
         self.tree.update(|t| *cell.borrow_mut() = Some(t.insert(parent, FsKind::Folder, name)));
-        cell.take()
+        Ok(cell.take().expect("inserted"))
     }
 
     /// Delete nodes — on disk in filesystem mode, in the model otherwise.
-    pub(super) fn delete_nodes(&self, ids: &[u64]) {
+    pub(super) fn delete_nodes(&self, ids: &[u64]) -> usize {
+        let mut n = 0;
         for id in ids {
             if self.fs_root.get().is_some() {
                 if let Some(path) = self.path_of(*id) {
@@ -329,10 +321,43 @@ impl FileExplorer {
             self.tree.update(|t| {
                 t.delete(*id);
             });
+            n += 1;
         }
         self.selected.set(Vec::new());
         self.active.set(None);
         self.renaming.set(None);
+        n
+    }
+
+    /// Permanently delete nodes (no trash, no undo) — gated by
+    /// [`Capability::Delete`], `can_delete` and the before-hooks. The
+    /// confirmation dialog is the caller's job ([`request_delete`](Self::request_delete) asks).
+    pub fn delete_permanently(&self, ids: &[u64]) -> Result<usize, ExplorerError> {
+        let ids = self.top_level(ids);
+        if ids.is_empty() {
+            return self.fail(ExplorerError::Invalid("Nothing to delete".into()));
+        }
+        // In-memory trees: either removal capability allows it.
+        if self.fs_root.peek().is_some() || !self.caps.peek().allows(Capability::Trash) {
+            self.require(Capability::Delete)?;
+        }
+        let entries = self.entries(&ids);
+        self.refuse_root(&entries)?;
+        self.check_items(ItemPred::Delete, &entries)?;
+        let op = ExplorerOp::Delete { entries, permanent: true };
+        self.before(&op)?;
+        let n = self.delete_nodes(&ids);
+        self.after(&op);
+        Ok(n)
+    }
+
+    /// Refuse operating on the opened root folder itself.
+    pub(super) fn refuse_root(&self, entries: &[ExplorerEntry]) -> Result<(), ExplorerError> {
+        let root = self.fs_root.peek().clone();
+        if root.is_some() && entries.iter().any(|e| e.path.is_some() && e.path == root) {
+            return self.fail(ExplorerError::Invalid("The root folder can't be changed".into()));
+        }
+        Ok(())
     }
 
     /// Allow (default) or refuse moves that touch the disk. With `false`,
@@ -376,42 +401,55 @@ impl FileExplorer {
             .collect()
     }
 
-    /// A drop: validate, then (filesystem mode) refuse when disk moves are
-    /// disabled, or ask for confirmation, then move. Returns whether a move
-    /// was performed or is pending confirmation.
-    pub fn request_move(&self, ids: &[u64], target: Option<u64>) -> bool {
+    /// Every gate a move must pass (capability, disk switch, predicates,
+    /// hooks) — returns the validated plan and the op for the after-event.
+    fn gate_move(&self, ids: &[u64], target: Option<u64>) -> Result<(Vec<u64>, ExplorerOp), ExplorerError> {
+        self.require(Capability::Move)?;
+        if let Some(t) = target
+            && self.tree.peek().node(t).is_none_or(|n| n.kind != FsKind::Folder)
+        {
+            return self.fail(ExplorerError::Invalid("The target is not a folder".into()));
+        }
         let plan = self.plan_move(ids, target);
         if plan.is_empty() {
-            return false;
+            return self
+                .fail(ExplorerError::Invalid("Nothing to move (already there, or into itself)".into()));
         }
-        let fs = self.fs_root.peek().is_some();
-        if fs && !self.fs_moves_allowed.peek() {
-            self.last_error.set(Some("Moving files on disk is disabled".into()));
-            return false;
+        if self.fs_root.peek().is_some() && !self.fs_moves_allowed.peek() {
+            return self.fail(ExplorerError::Invalid("Moving files on disk is disabled".into()));
         }
-        if !fs || !self.confirm_moves.peek() {
-            return self.move_nodes(&plan, target);
+        let entries = self.entries(&plan);
+        self.refuse_root(&entries)?;
+        self.check_items(ItemPred::Move, &entries)?;
+        self.check_drop(target, &entries)?;
+        let op = ExplorerOp::Move { entries, target: target.and_then(|t| self.entry(t)) };
+        self.before(&op)?;
+        Ok((plan, op))
+    }
+
+    /// A drop: validate and gate, then (filesystem mode) ask for confirmation,
+    /// then move. `Ok` = moved, or pending the confirmation.
+    pub fn request_move(&self, ids: &[u64], target: Option<u64>) -> Result<(), ExplorerError> {
+        let (plan, op) = self.gate_move(ids, target)?;
+        if self.fs_root.peek().is_none() || !self.confirm_moves.peek() {
+            return self.move_planned(&plan, target, &op).map(|_| ());
         }
-        let (names, target_name) = {
-            let t = self.tree.peek();
-            let names = plan.iter().filter_map(|&id| t.node(id).map(|n| n.name.clone())).collect();
-            let target_name = match target {
-                Some(tg) => t.node(tg).map(|n| n.name.clone()).unwrap_or_default(),
-                None => self
-                    .fs_root
-                    .peek()
-                    .as_ref()
-                    .and_then(|r| r.file_name().map(|n| n.to_string_lossy().into_owned()))
-                    .unwrap_or_else(|| "/".into()),
-            };
-            (names, target_name)
+        let ExplorerOp::Move { entries, target: tentry } = &op else { unreachable!() };
+        let names = entries.iter().map(|e| e.name.clone()).collect();
+        let target_name = match tentry {
+            Some(t) => t.name.clone(),
+            None => self
+                .fs_root
+                .peek()
+                .as_ref()
+                .and_then(|r| r.file_name().map(|n| n.to_string_lossy().into_owned()))
+                .unwrap_or_else(|| "/".into()),
         };
-        let req = MoveRequest { ids: plan, names, target, target_name };
+        let req = MoveRequest { ids: plan.clone(), names, target, target_name };
         let this = *self;
-        let ids = req.ids.clone();
         let resolve: Rc<dyn Fn(bool)> = Rc::new(move |ok| {
             if ok {
-                this.move_nodes(&ids, target);
+                let _ = this.move_planned(&plan, target, &op);
             }
         });
         if let Some(hook) = self.confirm_hook.peek().clone() {
@@ -430,59 +468,62 @@ impl FileExplorer {
                 .on_cancel(move || resolve(false))
                 .open();
         }
-        true
+        Ok(())
     }
 
     /// Move nodes into a folder (or the root) — on disk in filesystem mode,
-    /// in the model otherwise. No confirmation (programmatic); invalid moves
-    /// (into itself/a descendant, no-ops, over an existing name) are skipped,
-    /// and disk moves are refused when [`allow_fs_moves`](Self::allow_fs_moves)
-    /// is off. Completed moves are recorded for [`undo`](Self::undo).
-    /// Returns whether anything moved.
-    pub fn move_nodes(&self, ids: &[u64], target: Option<u64>) -> bool {
-        let plan = self.plan_move(ids, target);
+    /// in the model otherwise. No confirmation (programmatic), but every gate
+    /// applies ([`Capability::Move`], [`allow_fs_moves`](Self::allow_fs_moves),
+    /// `can_move`, `can_drop_into`, before-hooks). Moves into itself/a
+    /// descendant, no-ops and the root are refused; an existing name at the
+    /// destination is never overwritten. Undoable. Returns how many moved.
+    pub fn move_nodes(&self, ids: &[u64], target: Option<u64>) -> Result<usize, ExplorerError> {
+        let (plan, op) = self.gate_move(ids, target)?;
+        self.move_planned(&plan, target, &op)
+    }
+
+    fn move_planned(
+        &self,
+        plan: &[u64],
+        target: Option<u64>,
+        op: &ExplorerOp,
+    ) -> Result<usize, ExplorerError> {
         let fs_root = self.fs_root.peek().clone();
-        if fs_root.is_some() && !self.fs_moves_allowed.peek() {
-            if !plan.is_empty() {
-                self.last_error.set(Some("Moving files on disk is disabled".into()));
-            }
-            return false;
-        }
         // Load an unexpanded target first: a later lazy load would otherwise
         // replace its children and orphan the moved nodes' ids.
-        if let Some(t) = target
-            && !plan.is_empty()
-        {
+        if let Some(t) = target {
             self.ensure_loaded(t);
         }
         let mut done = Vec::new();
-        for id in plan {
+        let mut err = None;
+        for &id in plan {
             let old_parent = self.tree.peek().parent_of(id);
             let mut paths = None;
             if let Some(root) = &fs_root {
-                let Some(from) = self.path_of(id) else {
-                    self.last_error.set(Some("Could not resolve a path for a node".into()));
-                    continue;
-                };
-                let into = match target {
-                    Some(t) => self.path_of(t),
-                    None => Some(root.clone()),
-                };
-                let Some(into) = into else {
-                    self.last_error.set(Some("Could not resolve the target folder".into()));
+                let (Some(from), Some(into)) = (
+                    self.path_of(id),
+                    match target {
+                        Some(t) => self.path_of(t),
+                        None => Some(root.clone()),
+                    },
+                ) else {
+                    err = Some(ExplorerError::Invalid("Could not resolve a path".into()));
                     continue;
                 };
                 if &from == root || into.starts_with(&from) {
-                    self.last_error.set(Some(format!("Refusing to move {} into itself", from.display())));
+                    err = Some(ExplorerError::Invalid(format!(
+                        "Refusing to move {} into itself",
+                        from.display()
+                    )));
                     continue;
                 }
                 let to = into.join(from.file_name().unwrap_or_default());
                 if to.exists() {
-                    self.last_error.set(Some(format!("{} already exists", to.display())));
+                    err = Some(ExplorerError::Invalid(format!("{} already exists", to.display())));
                     continue;
                 }
                 if let Err(e) = std::fs::rename(&from, &to) {
-                    self.last_error.set(Some(format!("Could not move {}: {e}", from.display())));
+                    err = Some(ExplorerError::Io(format!("Could not move {}: {e}", from.display())));
                     continue;
                 }
                 paths = Some((from, to));
@@ -500,11 +541,19 @@ impl FileExplorer {
                 e.insert(t);
             });
         }
-        let any = !done.is_empty();
-        if any {
+        let n = done.len();
+        if n > 0 {
             self.push_history(FileOp::Move(done));
+            self.after(op);
         }
-        any
+        match err {
+            Some(e) if n == 0 => self.fail(e),
+            Some(e) => {
+                self.last_error.set(Some(e.to_string()));
+                Ok(n)
+            }
+            None => Ok(n),
+        }
     }
 
     pub(super) fn push_history(&self, op: FileOp) {
@@ -685,24 +734,31 @@ impl FileExplorer {
         Some(out)
     }
 
-    /// Move nodes to the trash (filesystem mode; undoable). In-memory trees
-    /// just delete. Returns whether anything was removed.
-    pub fn trash_nodes(&self, ids: &[u64]) -> bool {
+    /// Move nodes to the trash (filesystem mode; undoable) — gated by
+    /// [`Capability::Trash`], `can_delete` and the before-hooks. In-memory
+    /// trees just delete. Returns how many were removed.
+    pub fn trash_nodes(&self, ids: &[u64]) -> Result<usize, ExplorerError> {
         let ids = self.top_level(ids);
         if ids.is_empty() {
-            return false;
+            return self.fail(ExplorerError::Invalid("Nothing to delete".into()));
         }
+        if self.fs_root.peek().is_some() || !self.caps.peek().allows(Capability::Delete) {
+            self.require(Capability::Trash)?;
+        }
+        let entries = self.entries(&ids);
+        self.refuse_root(&entries)?;
+        self.check_items(ItemPred::Delete, &entries)?;
+        let op = ExplorerOp::Delete { entries, permanent: false };
+        self.before(&op)?;
         if self.fs_root.peek().is_none() {
-            self.delete_nodes(&ids);
-            return true;
+            let n = self.delete_nodes(&ids);
+            self.after(&op);
+            return Ok(n);
         }
         let mut done = Vec::new();
         let mut gone = Vec::new();
         for id in ids {
             let Some(path) = self.path_of(id) else { continue };
-            if self.fs_root.peek().as_ref() == Some(&path) {
-                continue;
-            }
             match self.trash_paths(std::slice::from_ref(&path)) {
                 Some(mut e) => {
                     done.append(&mut e);
@@ -718,11 +774,14 @@ impl FileExplorer {
         });
         self.selected.set(Vec::new());
         self.active.set(None);
-        let any = !done.is_empty();
-        if any {
-            self.push_history(FileOp::Trash(done));
+        let n = gone.len();
+        if n == 0 {
+            let msg = self.last_error.peek().clone().unwrap_or_else(|| "Could not move to the trash".into());
+            return Err(ExplorerError::Io(msg));
         }
-        any
+        self.push_history(FileOp::Trash(done));
+        self.after(&op);
+        Ok(n)
     }
 
     /// `ids` without the ones whose ancestor is also in `ids`.
@@ -737,30 +796,33 @@ impl FileExplorer {
 
     /// The Delete action (key, menu): in filesystem mode, confirm then move
     /// the selection to the trash (VS Code) — or, with `permanent`
-    /// (Shift+Delete) or no trash available, confirm a permanent delete.
-    /// In-memory trees delete immediately.
-    pub fn request_delete(&self, permanent: bool) -> bool {
+    /// (Shift+Delete) or no trash (none available, or [`Capability::Trash`]
+    /// off), confirm a permanent delete. In-memory trees delete immediately.
+    /// Gates are checked BEFORE the dialog opens.
+    pub fn request_delete(&self, permanent: bool) -> Result<(), ExplorerError> {
         let ids = self.top_level(&self.selected.peek());
         if ids.is_empty() {
-            return false;
+            return Err(ExplorerError::Invalid("Nothing selected".into()));
         }
         if self.fs_root.peek().is_none() {
-            self.delete_nodes(&ids);
-            return true;
+            return if permanent { self.delete_permanently(&ids) } else { self.trash_nodes(&ids) }
+                .map(|_| ());
         }
-        let what = if ids.len() == 1 {
-            let t = self.tree.peek();
-            format!("'{}'", t.node(ids[0]).map(|n| n.name.clone()).unwrap_or_default())
-        } else {
-            format!("{} items", ids.len())
-        };
+        let caps = self.caps.peek();
+        let use_trash = !permanent && caps.allows(Capability::Trash) && self.trash_dir().is_some();
+        self.require(if use_trash { Capability::Trash } else { Capability::Delete })?;
+        let entries = self.entries(&ids);
+        self.refuse_root(&entries)?;
+        self.check_items(ItemPred::Delete, &entries)?;
+        let what =
+            if ids.len() == 1 { format!("'{}'", entries[0].name) } else { format!("{} items", ids.len()) };
         let this = *self;
-        if !permanent && self.trash_dir().is_some() {
+        if use_trash {
             crate::alert_dialog(format!("Are you sure you want to delete {what}?"))
                 .description("You can restore from the Trash (or undo with Ctrl+Z).")
                 .confirm("Move to Trash")
                 .on_confirm(move || {
-                    this.trash_nodes(&ids);
+                    let _ = this.trash_nodes(&ids);
                 })
                 .open();
         } else {
@@ -768,10 +830,12 @@ impl FileExplorer {
                 .description("This item will be deleted immediately. You can't undo this action.")
                 .destructive(true)
                 .confirm("Delete")
-                .on_confirm(move || this.delete_nodes(&ids))
+                .on_confirm(move || {
+                    let _ = this.delete_permanently(&ids);
+                })
                 .open();
         }
-        true
+        Ok(())
     }
 
     /// Put `to` back at `from` (refusing when `from` exists again).
@@ -790,67 +854,91 @@ impl FileExplorer {
     }
 
     /// Copy the selection to the explorer clipboard (paste with Mod+V / the menu).
-    pub fn copy_selection(&self) {
+    pub fn copy_selection(&self) -> Result<(), ExplorerError> {
+        self.require(Capability::CopyPaste)?;
         let ids = self.selected.peek().clone();
-        if !ids.is_empty() {
-            self.clipboard.set(Some((ids, ClipMode::Copy)));
+        if ids.is_empty() {
+            return Err(ExplorerError::Invalid("Nothing selected".into()));
         }
+        self.clipboard.set(Some((ids, ClipMode::Copy)));
+        Ok(())
     }
 
     /// Cut the selection: pasting MOVES it. Cut rows render dimmed until pasted
-    /// or cancelled (Escape).
-    pub fn cut_selection(&self) {
+    /// or cancelled (Escape). Needs [`Capability::CopyPaste`] and [`Capability::Move`].
+    pub fn cut_selection(&self) -> Result<(), ExplorerError> {
+        self.require(Capability::CopyPaste)?;
+        self.require(Capability::Move)?;
         let ids = self.selected.peek().clone();
-        if !ids.is_empty() {
-            self.clipboard.set(Some((ids, ClipMode::Cut)));
+        if ids.is_empty() {
+            return Err(ExplorerError::Invalid("Nothing selected".into()));
         }
+        let entries = self.entries(&ids);
+        self.check_items(ItemPred::Move, &entries)?;
+        self.clipboard.set(Some((ids, ClipMode::Cut)));
+        Ok(())
     }
 
     /// Paste the clipboard into the active folder (the selected folder, else the
     /// selected file's parent, else the root — VSCode's target rules). Cut moves;
-    /// Copy duplicates the whole subtree (on disk too, in filesystem mode) with
-    /// sibling-deduped names.
-    pub fn paste_clipboard(&self) {
-        let Some((ids, mode)) = self.clipboard.peek().clone() else { return };
+    /// Copy duplicates the whole subtree (on disk too) named `x copy.txt`.
+    pub fn paste_clipboard(&self) -> Result<(), ExplorerError> {
+        self.require(Capability::CopyPaste)?;
+        let Some((ids, mode)) = self.clipboard.peek().clone() else {
+            return Err(ExplorerError::Invalid("The clipboard is empty".into()));
+        };
         let target = self.insertion_parent();
         match mode {
             ClipMode::Cut => {
-                self.move_nodes(&ids, target);
+                let r = self.move_nodes(&ids, target).map(|_| ());
                 self.clipboard.set(None);
+                r
             }
-            ClipMode::Copy => {
-                self.copy_nodes(&ids, target);
-            }
+            ClipMode::Copy => self.copy_nodes(&ids, target).map(|_| ()),
         }
     }
 
     /// Copy nodes into `target` (`None` = root) — whole subtrees, on disk in
-    /// filesystem mode, named like VS Code (`a copy.txt`). Undoable. Used by
-    /// paste and Ctrl/Alt-drag. Returns the new node ids.
-    pub fn copy_nodes(&self, ids: &[u64], target: Option<u64>) -> Vec<u64> {
+    /// filesystem mode, named like VS Code (`a copy.txt`). Gated by
+    /// [`Capability::CopyPaste`], `can_drop_into` and the before-hooks.
+    /// Undoable. Used by paste and Ctrl/Alt-drag. Returns the new node ids.
+    pub fn copy_nodes(&self, ids: &[u64], target: Option<u64>) -> Result<Vec<u64>, ExplorerError> {
+        self.require(Capability::CopyPaste)?;
+        if let Some(t) = target
+            && self.tree.peek().node(t).is_none_or(|n| n.kind != FsKind::Folder)
+        {
+            return self.fail(ExplorerError::Invalid("The target is not a folder".into()));
+        }
+        let ids = self.top_level(ids);
+        if ids.is_empty() {
+            return self.fail(ExplorerError::Invalid("Nothing to copy".into()));
+        }
+        let entries = self.entries(&ids);
+        self.check_drop(target, &entries)?;
+        let op = ExplorerOp::Copy { entries, target: target.and_then(|t| self.entry(t)) };
+        self.before(&op)?;
         if let Some(t) = target {
             self.ensure_loaded(t);
         }
         let mut new_ids = Vec::new();
         let mut new_paths = Vec::new();
-        for &id in ids {
+        let mut err = None;
+        for &id in &ids {
             // Snapshot the subtree first, so pasting into itself is safe.
             let Some(mut src) = self.tree.peek().node(id).cloned() else { continue };
-            if self.fs_root.get().is_some() {
-                let Some(from) = self.path_of(id) else {
-                    self.last_error.set(Some("Could not resolve a path for a node".into()));
-                    continue;
-                };
-                let dir = match target {
-                    Some(t) => self.path_of(t),
-                    None => self.fs_root.get(),
-                };
-                let Some(dir) = dir else {
-                    self.last_error.set(Some("Could not resolve the target folder".into()));
+            if let Some(root) = self.fs_root.peek().clone() {
+                let (Some(from), Some(dir)) = (
+                    self.path_of(id),
+                    match target {
+                        Some(t) => self.path_of(t),
+                        None => Some(root),
+                    },
+                ) else {
+                    err = Some(ExplorerError::Invalid("Could not resolve a path".into()));
                     continue;
                 };
                 if dir.starts_with(&from) {
-                    self.last_error.set(Some(format!("Cannot copy {} into itself", from.display())));
+                    err = Some(ExplorerError::Invalid(format!("Cannot copy {} into itself", from.display())));
                     continue;
                 }
                 // De-dup against the REAL directory, then mirror on disk.
@@ -864,7 +952,7 @@ impl FileExplorer {
                 let taken_refs: Vec<&str> = taken.iter().map(|s| s.as_str()).collect();
                 let name = tree::copy_name(&src.name, &taken_refs);
                 if let Err(e) = copy_path(&from, &dir.join(&name)) {
-                    self.last_error.set(Some(format!("Could not copy {}: {e}", from.display())));
+                    err = Some(ExplorerError::Io(format!("Could not copy {}: {e}", from.display())));
                     continue;
                 }
                 new_paths.push(dir.join(&name));
@@ -882,8 +970,16 @@ impl FileExplorer {
         }
         if !new_ids.is_empty() {
             self.push_history(FileOp::Copy { ids: new_ids.clone(), paths: new_paths });
+            self.after(&op);
         }
-        new_ids
+        match err {
+            Some(e) if new_ids.is_empty() => self.fail(e),
+            Some(e) => {
+                self.last_error.set(Some(e.to_string()));
+                Ok(new_ids)
+            }
+            None => Ok(new_ids),
+        }
     }
 
     /// Insert a fully-built node (fresh subtree ids, name deduped) and reveal it.
@@ -897,49 +993,63 @@ impl FileExplorer {
         id
     }
 
-    /// Create a node — on disk in filesystem mode (unique name probed against
-    /// the real directory), then inserted into the model.
-    pub(super) fn create_node(&self, parent: Option<u64>, kind: FsKind, base: &'static str) -> (u64, String) {
-        if let Some(root) = self.fs_root.get() {
-            let dir = match parent {
-                Some(p) => self.path_of(p).unwrap_or_else(|| root.clone()),
+    /// Create a file or folder named `name` (a nested `a/b/c.txt` creates the
+    /// intermediate folders) in `parent` (`None` = root) — on disk in
+    /// filesystem mode. Gated by [`Capability::CreateFile`] /
+    /// [`Capability::CreateFolder`] and the before-hooks; never overwrites.
+    /// Undoable. Returns the new node's id.
+    pub fn create_entry(&self, parent: Option<u64>, kind: FsKind, name: &str) -> Result<u64, ExplorerError> {
+        let name = name.trim().trim_matches('/').to_string();
+        self.require(if kind == FsKind::Folder { Capability::CreateFolder } else { Capability::CreateFile })?;
+        if let Some(p) = parent
+            && self.tree.peek().node(p).is_none_or(|n| n.kind != FsKind::Folder)
+        {
+            return self.fail(ExplorerError::Invalid("The parent is not a folder".into()));
+        }
+        if let Err(e) = tree::validate_segments(&name) {
+            return self.fail(ExplorerError::Invalid(e));
+        }
+        let mut parts: Vec<&str> = name.split('/').filter(|p| !p.is_empty()).collect();
+        let leaf = parts.pop().unwrap_or_default().to_string();
+        if !parts.is_empty() {
+            self.require(Capability::CreateFolder)?;
+        }
+        let op = ExplorerOp::Create { parent: parent.and_then(|p| self.entry(p)), kind, name: name.clone() };
+        self.before(&op)?;
+        let mut dir_id = parent;
+        for d in parts {
+            dir_id = Some(self.ensure_child_folder(dir_id, d)?);
+        }
+        if let Some(p) = dir_id {
+            self.ensure_loaded(p);
+        }
+        if self.child_named(dir_id, &leaf).is_some() {
+            return self.fail(ExplorerError::Invalid(format!("'{leaf}' already exists")));
+        }
+        let mut path = None;
+        if let Some(root) = self.fs_root.peek().clone() {
+            let dir = match dir_id {
+                Some(p) => self.path_of(p).unwrap_or(root),
                 None => root,
             };
-            let taken = std::fs::read_dir(&dir)
-                .map(|rd| {
-                    rd.filter_map(|e| e.ok())
-                        .map(|e| e.file_name().to_string_lossy().to_string())
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            let taken_refs: Vec<&str> = taken.iter().map(|s| s.as_str()).collect();
-            let name = unique_name(base, &taken_refs);
-            let target = dir.join(&name);
+            let target = dir.join(&leaf);
             let created = if kind == FsKind::Folder {
-                std::fs::create_dir(&target).map_err(|e| e.to_string())
+                std::fs::create_dir(&target)
             } else {
-                std::fs::File::create(&target).map(|_| ()).map_err(|e| e.to_string())
+                std::fs::OpenOptions::new().write(true).create_new(true).open(&target).map(|_| ())
             };
-            match created {
-                Ok(()) => {
-                    let id = self.insert_at(parent, kind, Box::leak(name.clone().into_boxed_str()));
-                    self.push_history(FileOp::Create { id, path: Some(target.clone()) });
-                    (id, name)
-                }
-                Err(e) => {
-                    self.last_error.set(Some(format!("Could not create {}: {e}", target.display())));
-                    let id = self.insert_at(parent, kind, base);
-                    (id, base.to_string())
-                }
+            if let Err(e) = created {
+                return self.fail(ExplorerError::Io(format!("Could not create {}: {e}", target.display())));
             }
-        } else {
-            let id = self.insert_at(parent, kind, base);
-            self.push_history(FileOp::Create { id, path: None });
-            (id, base.to_string())
+            path = Some(target);
         }
+        let id = self.insert_at(dir_id, kind, &leaf);
+        self.push_history(FileOp::Create { id, path });
+        self.after(&op);
+        Ok(id)
     }
 
-    pub(super) fn insert_at(&self, parent: Option<u64>, kind: FsKind, name: &'static str) -> u64 {
+    pub(super) fn insert_at(&self, parent: Option<u64>, kind: FsKind, name: &str) -> u64 {
         let cell = RefCell::new(None);
         self.tree.update(|t| {
             *cell.borrow_mut() = Some(t.insert(parent, kind, name));

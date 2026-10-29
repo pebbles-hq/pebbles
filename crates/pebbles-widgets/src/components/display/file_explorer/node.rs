@@ -125,7 +125,7 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
                     // Hovering a folder while dragging marks it as the drop
                     // target; hovering a collapsed one also starts the
                     // expand-on-hold timer.
-                    if explorer.dragging.peek() && is_folder {
+                    if explorer.dragging.peek() && is_folder && explorer.drop_ok(Some(id)) {
                         explorer.drop_target.set(Some(id));
                         explorer.root_drop.set(false);
                         if !explorer.expanded.get().contains(&id) {
@@ -182,6 +182,7 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
                 if let Some(h) = explorer.row_hover.peek()
                     && h != id
                     && explorer.tree.peek().node(h).is_some_and(|n| n.kind == FsKind::Folder)
+                    && explorer.drop_ok(Some(h))
                 {
                     explorer.drop_target.set(Some(h));
                 }
@@ -207,10 +208,10 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
                     };
                     match dest {
                         Some(d) if copy => {
-                            explorer.copy_nodes(&ids, d);
+                            let _ = explorer.copy_nodes(&ids, d);
                         }
                         Some(d) => {
-                            explorer.request_move(&ids, d);
+                            let _ = explorer.request_move(&ids, d);
                         }
                         // Released over a file, the dragged row, or outside
                         // the tree: no target, nothing moves.
@@ -248,17 +249,19 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
             .item(menu_item("New File").on_select(explorer.new_file()))
             .item(menu_item("New Folder").on_select(explorer.new_folder()))
             .separator()
-            .item(menu_item("Cut").on_select(move || explorer.cut_selection()))
-            .item(menu_item("Copy").on_select(move || explorer.copy_selection()))
-            .item(
-                menu_item("Paste")
-                    .disabled(explorer.clipboard.get().is_none())
-                    .on_select(move || explorer.paste_clipboard()),
-            )
+            .item(menu_item("Cut").on_select(move || {
+                let _ = explorer.cut_selection();
+            }))
+            .item(menu_item("Copy").on_select(move || {
+                let _ = explorer.copy_selection();
+            }))
+            .item(menu_item("Paste").disabled(explorer.clipboard.get().is_none()).on_select(move || {
+                let _ = explorer.paste_clipboard();
+            }))
             .separator()
             .item(menu_item("Rename").shortcut("F2").on_select(explorer.rename_selected()))
             .item(menu_item("Delete").shortcut("Del").destructive().on_select(move || {
-                explorer.request_delete(false);
+                let _ = explorer.request_delete(false);
             }))
             .into_widget()
     };
@@ -299,13 +302,12 @@ fn render_rename_editor(p: &RenameProps) -> AnyWidget {
     let id = p.id;
     let buf = p.buf;
     let commit = move || {
-        let name = buf.peek().trim().to_string();
-        if !name.is_empty() {
-            // Filesystem mode renames on disk; in-memory renames the model.
-            explorer.rename_node(id, name);
-        } else {
-            explorer.renaming.set(None);
+        // Only the editor that is still live commits (blur after Enter/Escape).
+        if explorer.renaming.peek() != Some(id) {
+            return;
         }
+        let name = buf.peek().clone();
+        let _ = explorer.commit_rename(id, &name);
     };
     // Select the stem (name without the extension) so typing replaces it while
     // Right/End lets you edit in place — the standard rename UX. New nodes have
@@ -330,7 +332,7 @@ fn render_rename_editor(p: &RenameProps) -> AnyWidget {
         })
         .on_nav(move |k| {
             if matches!(k, KeyInput::Escape) {
-                explorer.renaming.set(None);
+                explorer.cancel_rename();
                 true
             } else {
                 false

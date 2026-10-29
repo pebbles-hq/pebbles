@@ -506,3 +506,24 @@ pub(super) fn local_iso_now() -> String {
     let y = yoe + era * 400 + i64::from(m <= 2);
     format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}", rem / 3600, rem % 3600 / 60, rem % 60)
 }
+
+/// VS Code's name rules for every `/`-separated segment: non-empty, not
+/// `.`/`..`, no NUL or backslash, no leading/trailing whitespace.
+pub(super) fn validate_segments(name: &str) -> Result<(), String> {
+    let name = name.trim_matches('/');
+    if name.is_empty() {
+        return Err("A file or folder name must be provided".into());
+    }
+    for seg in name.split('/').filter(|s| !s.is_empty()) {
+        if seg == "." || seg == ".." {
+            return Err(format!("'{seg}' is not a valid name"));
+        }
+        if seg.contains('\0') || seg.contains('\\') {
+            return Err(format!("'{seg}' contains an invalid character"));
+        }
+        if seg.trim() != seg {
+            return Err("Leading or trailing whitespace is not allowed".into());
+        }
+    }
+    Ok(())
+}

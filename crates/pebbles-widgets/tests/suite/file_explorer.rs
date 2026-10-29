@@ -386,8 +386,11 @@ fn filesystem_mode_reads_creates_renames_deletes_and_moves_on_disk() {
         .unwrap_or_default();
     assert_eq!(docs_children, vec!["guide.md".to_string()], "folder children read from disk");
 
-    // Create a real file on disk (via the public action).
+    // New File: an inline editor first — nothing on disk until committed.
     ex.new_file()();
+    let pending = ex.renaming().get().expect("inline editor open");
+    assert!(!root.join("docs/new_file.txt").exists(), "not created before the name is committed");
+    ex.commit_rename(pending, "").unwrap(); // empty = the suggested name
     let fid = tree
         .peek()
         .node(docs)
@@ -400,12 +403,12 @@ fn filesystem_mode_reads_creates_renames_deletes_and_moves_on_disk() {
     assert!(root.join("docs/new_file.txt").exists(), "created on disk");
 
     // Rename it on disk.
-    ex.rename_node(fid, "renamed.txt".to_string());
+    ex.rename_node(fid, "renamed.txt".to_string()).unwrap();
     assert!(root.join("docs/renamed.txt").exists(), "rename hit the disk");
     assert!(!root.join("docs/new_file.txt").exists());
 
     // Move it to the root (real fs move).
-    ex.move_nodes(&[fid], None);
+    ex.move_nodes(&[fid], None).unwrap();
     assert!(root.join("renamed.txt").exists(), "move to root hit the disk");
     assert!(!root.join("docs/renamed.txt").exists());
 
@@ -999,7 +1002,7 @@ fn disallowed_fs_moves_move_nothing() {
     assert!(dir.join("outer/inner/deep.txt").exists(), "disabled → untouched");
     // Programmatic moves are refused too.
     let inner = rows_id(&ex, "outer_inner");
-    assert!(!ex.move_nodes(&[inner], None));
+    assert!(ex.move_nodes(&[inner], None).is_err());
     assert!(dir.join("outer/inner/deep.txt").exists());
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -1024,9 +1027,9 @@ fn drops_without_an_explicit_target_and_invalid_moves_do_nothing() {
     // A folder into itself / its descendant is refused; so is a no-op.
     let inner = rows_id(&ex, "outer_inner");
     let outer = rows_id(&ex, "outer");
-    assert!(!ex.move_nodes(&[outer], Some(inner)), "into a descendant");
-    assert!(!ex.move_nodes(&[outer], Some(outer)), "into itself");
-    assert!(!ex.move_nodes(&[inner], Some(outer)), "already there");
+    assert!(ex.move_nodes(&[outer], Some(inner)).is_err(), "into a descendant");
+    assert!(ex.move_nodes(&[outer], Some(outer)).is_err(), "into itself");
+    assert!(ex.move_nodes(&[inner], Some(outer)).is_err(), "already there");
     assert!(dir.join("outer/inner/deep.txt").exists());
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -1093,7 +1096,7 @@ fn rename_validates_never_clobbers_and_creates_nested_paths_and_undoes() {
     assert!(ex.open_folder(&dir));
     let a = id_of(tree, "a.txt");
     // Onto an existing sibling: refused, nothing overwritten.
-    assert!(!ex.rename_node(a, "b.txt"));
+    assert!(ex.rename_node(a, "b.txt").is_err());
     assert_eq!(std::fs::read_to_string(dir.join("b.txt")).unwrap(), "B");
     assert!(ex.last_error().get().is_some());
     for bad in ["..", ".", " x", "a\\b"] {
@@ -1102,7 +1105,7 @@ fn rename_validates_never_clobbers_and_creates_nested_paths_and_undoes() {
     // Case-only rename of itself is allowed.
     assert!(ex.validate_name(a, "A.txt").is_ok());
     // Nested path: folders created, file moved in.
-    assert!(ex.rename_node(a, "x/y/c.txt"));
+    assert!(ex.rename_node(a, "x/y/c.txt").is_ok());
     assert_eq!(std::fs::read_to_string(dir.join("x/y/c.txt")).unwrap(), "A");
     assert!(!dir.join("a.txt").exists());
     assert_eq!(id_of(tree, "x/y/c.txt"), a);
@@ -1153,7 +1156,7 @@ fn trash_writes_freedesktop_entries_and_undo_restores() {
     std::fs::write(dir.join("f.txt"), "f").unwrap();
     assert!(ex.open_folder(&dir));
     let (d, f) = (id_of(tree, "d"), id_of(tree, "f.txt"));
-    assert!(ex.trash_nodes(&[d, f]));
+    assert!(ex.trash_nodes(&[d, f]).is_ok());
     assert!(!dir.join("d").exists() && !dir.join("f.txt").exists());
     assert_eq!(std::fs::read_to_string(trash.join("files/d/x.txt")).unwrap(), "x");
     let info = std::fs::read_to_string(trash.join("info/f.txt.trashinfo")).unwrap();
@@ -1177,18 +1180,19 @@ fn paste_copy_uses_copy_suffix_and_undo_removes_copies_and_creates() {
     assert!(ex.open_folder(&dir));
     let a = id_of(tree, "a.txt");
     ex.select_only(a);
-    ex.copy_selection();
+    ex.copy_selection().unwrap();
     ex.selection().set(Vec::new());
-    ex.paste_clipboard();
-    ex.paste_clipboard();
+    ex.paste_clipboard().unwrap();
+    ex.paste_clipboard().unwrap();
     assert!(dir.join("a copy.txt").exists() && dir.join("a copy 2.txt").exists());
     assert!(ex.undo(), "undo the second paste");
     assert!(!dir.join("a copy 2.txt").exists() && dir.join("a copy.txt").exists());
     // New File → undo removes the (still empty) file.
     ex.selection().set(Vec::new());
     ex.new_file()();
+    let pending = ex.renaming().get().expect("inline editor open");
+    ex.commit_rename(pending, "").unwrap();
     assert!(dir.join("new_file.txt").exists());
-    ex.renaming().set(None);
     assert!(ex.undo());
     assert!(!dir.join("new_file.txt").exists());
     std::fs::remove_dir_all(&dir).ok();
@@ -1209,6 +1213,178 @@ fn ctrl_drag_copies_instead_of_moving() {
     assert!(dir.join("zother/inner/deep.txt").exists(), "copied into zother");
     assert!(ex.undo(), "undo removes the copy");
     assert!(!dir.join("zother/inner").exists());
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::remove_dir_all(dir.with_extension("trash")).ok();
+}
+
+// ---------------------------------------------------------------------------
+// Developer controls: capabilities, read-only, predicates, hooks
+// ---------------------------------------------------------------------------
+
+fn snapshot(dir: &std::path::Path) -> Vec<String> {
+    fn walk(d: &std::path::Path, base: &std::path::Path, out: &mut Vec<String>) {
+        for e in std::fs::read_dir(d).unwrap().flatten() {
+            let p = e.path();
+            out.push(format!(
+                "{}={}",
+                p.strip_prefix(base).unwrap().display(),
+                std::fs::read_to_string(&p).unwrap_or_default()
+            ));
+            if p.is_dir() {
+                walk(&p, base, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(dir, dir, &mut out);
+    out.sort();
+    out
+}
+
+fn sample_project(
+    tag: &str,
+) -> (std::path::PathBuf, pebbles_core::Signal<FileTree>, pebbles_widgets::FileExplorer) {
+    let (dir, tree, ex) = fs_explorer(tag);
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::create_dir_all(dir.join("docs")).unwrap();
+    std::fs::write(dir.join("src/main.rs"), "fn main() {}").unwrap();
+    std::fs::write(dir.join("Cargo.toml"), "[package]").unwrap();
+    std::fs::write(dir.join(".env"), "SECRET=1").unwrap();
+    assert!(ex.open_folder(&dir));
+    let src = id_of(tree, "src");
+    ex.toggle_folder(src);
+    (dir, tree, ex)
+}
+
+#[test]
+fn read_only_refuses_every_mutation_without_touching_disk() {
+    use pebbles_widgets::{Capability, ExplorerCapabilities, ExplorerError};
+    let (dir, tree, ex) = sample_project("readonly");
+    let ex = ex.read_only();
+    assert!(ex.get_capabilities().is_read_only());
+    assert_eq!(ExplorerCapabilities::read_only(), ex.get_capabilities());
+    let before = snapshot(&dir);
+    let (main, cargo, src, docs) =
+        (id_of(tree, "src/main.rs"), id_of(tree, "Cargo.toml"), id_of(tree, "src"), id_of(tree, "docs"));
+    assert_eq!(ex.rename_node(main, "x.rs"), Err(ExplorerError::NotAllowed(Capability::Rename)));
+    assert_eq!(ex.move_nodes(&[main], Some(docs)), Err(ExplorerError::NotAllowed(Capability::Move)));
+    assert_eq!(ex.copy_nodes(&[main], Some(docs)), Err(ExplorerError::NotAllowed(Capability::CopyPaste)));
+    assert_eq!(ex.trash_nodes(&[cargo]), Err(ExplorerError::NotAllowed(Capability::Trash)));
+    assert_eq!(ex.delete_permanently(&[cargo]), Err(ExplorerError::NotAllowed(Capability::Delete)));
+    assert_eq!(
+        ex.create_entry(Some(src), FsKind::File, "new.rs"),
+        Err(ExplorerError::NotAllowed(Capability::CreateFile))
+    );
+    assert_eq!(
+        ex.create_entry(None, FsKind::Folder, "x"),
+        Err(ExplorerError::NotAllowed(Capability::CreateFolder))
+    );
+    ex.select_only(main);
+    assert!(ex.copy_selection().is_err() && ex.cut_selection().is_err());
+    assert!(ex.request_delete(false).is_err() && ex.request_delete(true).is_err());
+    ex.new_file()();
+    assert!(ex.renaming().get().is_none(), "New File does nothing");
+    ex.rename_selected()();
+    assert!(ex.renaming().get().is_none(), "Rename does nothing");
+    ex.delete_selected()();
+    assert_eq!(snapshot(&dir), before, "disk untouched");
+    // Browsing and selection still work.
+    ex.select_only(cargo);
+    assert_eq!(ex.selection().get(), vec![cargo]);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn individual_capabilities_switch_independently() {
+    use pebbles_widgets::{Capability, ExplorerCapabilities, ExplorerError};
+    let (dir, tree, ex) = sample_project("caps");
+    assert!(tree.peek().root.iter().any(|n| n.name == ".env"), "hidden shown by default");
+    ex.set_capabilities(ExplorerCapabilities::all().allow_delete(false).show_hidden(false));
+    assert!(!tree.peek().root.iter().any(|n| n.name == ".env"), "hidden files filtered");
+    let cargo = id_of(tree, "Cargo.toml");
+    assert_eq!(ex.delete_permanently(&[cargo]), Err(ExplorerError::NotAllowed(Capability::Delete)));
+    assert!(dir.join("Cargo.toml").exists());
+    // Rename still allowed.
+    assert!(ex.rename_node(cargo, "Cargo2.toml").is_ok());
+    assert!(ex.allows(Capability::Rename) && !ex.allows(Capability::Delete));
+    // Multi-select off: Ctrl-toggle behaves as a single select.
+    ex.set_capabilities(ExplorerCapabilities::all().allow_multi_select(false));
+    let (docs, src) = (id_of(tree, "docs"), id_of(tree, "src"));
+    ex.select_only(docs);
+    ex.toggle_selected(src);
+    assert_eq!(ex.selection().get(), vec![src], "no multi-select: replaces");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn per_item_predicates_protect_specific_entries() {
+    use pebbles_widgets::ExplorerError;
+    let (dir, tree, ex) = sample_project("preds");
+    ex.can_rename(|e| e.name != "Cargo.toml");
+    ex.can_delete(|e| e.name != "src");
+    ex.can_move(|e| !e.name.ends_with(".toml"));
+    ex.can_drop_into(|target, _items| target.is_none_or(|t| t.name != "docs"));
+    let (cargo, src, main, docs) =
+        (id_of(tree, "Cargo.toml"), id_of(tree, "src"), id_of(tree, "src/main.rs"), id_of(tree, "docs"));
+    assert!(matches!(ex.rename_node(cargo, "x.toml"), Err(ExplorerError::Refused(_))));
+    assert!(matches!(ex.trash_nodes(&[src]), Err(ExplorerError::Refused(_))));
+    assert!(matches!(ex.move_nodes(&[cargo], Some(src)), Err(ExplorerError::Refused(_))));
+    assert!(matches!(ex.move_nodes(&[main], Some(docs)), Err(ExplorerError::Refused(_))));
+    assert!(matches!(ex.copy_nodes(&[main], Some(docs)), Err(ExplorerError::Refused(_))));
+    assert!(dir.join("Cargo.toml").exists() && dir.join("src/main.rs").exists());
+    // Unprotected entries still work.
+    assert!(ex.move_nodes(&[main], None).is_ok());
+    assert!(dir.join("main.rs").exists());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn before_hooks_veto_and_after_events_fire() {
+    use pebbles_widgets::{ExplorerError, ExplorerOp};
+    let (dir, tree, ex) = sample_project("hooks");
+    let log = std::rc::Rc::new(RefCell::new(Vec::<String>::new()));
+    let l = log.clone();
+    ex.on_after_op(move |op| {
+        l.borrow_mut().push(match op {
+            ExplorerOp::Create { name, .. } => format!("create {name}"),
+            ExplorerOp::Rename { entry, new_name } => format!("rename {} {new_name}", entry.name),
+            ExplorerOp::Delete { entries, permanent } => format!("delete {} {permanent}", entries[0].name),
+            ExplorerOp::Move { entries, .. } => format!("move {}", entries[0].name),
+            ExplorerOp::Copy { entries, .. } => format!("copy {}", entries[0].name),
+        })
+    });
+    ex.on_before_rename(|_, new| !new.contains("bad"));
+    ex.on_before_delete(|_, permanent| !permanent);
+    ex.on_before_create(|_, _, name| name != "nope.txt");
+    ex.on_before_move(|_, target| target.is_some());
+    ex.on_before_copy(|items, _| items.len() == 1);
+    let (cargo, main, docs, src) =
+        (id_of(tree, "Cargo.toml"), id_of(tree, "src/main.rs"), id_of(tree, "docs"), id_of(tree, "src"));
+    assert_eq!(ex.rename_node(cargo, "bad.toml"), Err(ExplorerError::Vetoed));
+    assert_eq!(ex.delete_permanently(&[cargo]), Err(ExplorerError::Vetoed));
+    assert_eq!(ex.create_entry(None, FsKind::File, "nope.txt"), Err(ExplorerError::Vetoed));
+    assert_eq!(ex.move_nodes(&[main], None), Err(ExplorerError::Vetoed));
+    assert_eq!(ex.copy_nodes(&[main, cargo], Some(docs)), Err(ExplorerError::Vetoed));
+    assert!(log.borrow().is_empty(), "nothing happened");
+    assert!(
+        !dir.join("nope.txt").exists() && dir.join("Cargo.toml").exists() && dir.join("src/main.rs").exists()
+    );
+    // Allowed ones go through and report.
+    ex.rename_node(cargo, "Good.toml").unwrap();
+    ex.create_entry(Some(src), FsKind::File, "lib.rs").unwrap();
+    ex.move_nodes(&[main], Some(docs)).unwrap();
+    ex.copy_nodes(&[main], Some(src)).unwrap();
+    ex.trash_nodes(&[id_of(tree, "Good.toml")]).unwrap();
+    assert_eq!(
+        *log.borrow(),
+        [
+            "rename Cargo.toml Good.toml",
+            "create lib.rs",
+            "move main.rs",
+            "copy main.rs",
+            "delete Good.toml false"
+        ]
+    );
     std::fs::remove_dir_all(&dir).ok();
     std::fs::remove_dir_all(dir.with_extension("trash")).ok();
 }

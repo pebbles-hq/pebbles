@@ -10,127 +10,182 @@ impl FileExplorer {
     /// to whatever else wants them. While the rename editor is focused, the
     /// editor's own key precedence applies — none of these fire.
     pub(super) fn install_keys(self) {
+        // Every binding is also gated by Capability::Keyboard.
+        let create_shortcut_if = move |combo: &str, f: Box<dyn Fn() -> bool>| {
+            create_shortcut_if(combo, move || self.caps.peek().allows(Capability::Keyboard) && f());
+        };
+        let multi = move || self.caps.peek().allows(Capability::MultiSelect);
         // F2 — rename the active node.
-        create_shortcut_if("F2", move || {
-            if self.renaming.peek().is_some() {
-                return true; // already renaming — swallow the repeat
-            }
-            match self.active() {
-                Some(id) => {
-                    self.start_rename_for(id);
-                    true
+        create_shortcut_if(
+            "F2",
+            Box::new(move || {
+                if self.renaming.peek().is_some() {
+                    return true; // already renaming — swallow the repeat
                 }
-                None => false,
-            }
-        });
-        // Delete — delete the selection. On disk this is an irreversible recursive
-        // remove (no trash, no undo), so confirm first; a single Delete keypress must
-        // not be able to destroy user data. Model-only mode deletes immediately.
-        create_shortcut_if("Delete", move || self.request_delete(false));
-        create_shortcut_if("Shift+Delete", move || self.request_delete(true));
+                match self.active() {
+                    Some(id) => {
+                        if !self.caps.peek().allows(Capability::Rename) {
+                            return true;
+                        }
+                        self.start_rename_for(id);
+                        true
+                    }
+                    None => false,
+                }
+            }),
+        );
+        // Delete — confirm, then move the selection to the trash (undoable);
+        // Shift+Delete — confirm a permanent delete. A single keypress never
+        // destroys data. Model-only mode deletes immediately.
+        create_shortcut_if(
+            "Delete",
+            Box::new(move || {
+                let engaged = !self.selected.peek().is_empty();
+                let _ = self.request_delete(false);
+                engaged
+            }),
+        );
+        create_shortcut_if(
+            "Shift+Delete",
+            Box::new(move || {
+                let engaged = !self.selected.peek().is_empty();
+                let _ = self.request_delete(true);
+                engaged
+            }),
+        );
         // Mod+Z — undo the last file operation (VS Code); declines with nothing to undo,
         // and a focused editor's own undo wins first.
-        create_shortcut_if("Mod+Z", move || {
-            if self.history.peek().is_empty() {
-                return false;
-            }
-            self.undo();
-            true
-        });
+        create_shortcut_if(
+            "Mod+Z",
+            Box::new(move || {
+                if self.history.peek().is_empty() {
+                    return false;
+                }
+                self.undo();
+                true
+            }),
+        );
         // Mod+A — select every visible node, from idle too (a focused editor's
         // own Select All never reaches here — editor precedence). Declines only
         // over an empty tree.
-        create_shortcut_if("Mod+A", move || {
-            let all = self.visible_ids();
-            if all.is_empty() {
-                return false;
-            }
-            self.selected.set(all);
-            true
-        });
+        create_shortcut_if(
+            "Mod+A",
+            Box::new(move || {
+                let all = self.visible_ids();
+                if all.is_empty() || !multi() {
+                    return false;
+                }
+                self.selected.set(all);
+                true
+            }),
+        );
         // Mod+C / Mod+X / Mod+V — the explorer clipboard (a focused editor's
         // clipboard intents win first, as everywhere).
-        create_shortcut_if("Mod+C", move || {
-            if self.selected.peek().is_empty() {
-                return false;
-            }
-            self.copy_selection();
-            true
-        });
-        create_shortcut_if("Mod+X", move || {
-            if self.selected.peek().is_empty() {
-                return false;
-            }
-            self.cut_selection();
-            true
-        });
-        create_shortcut_if("Mod+V", move || {
-            if self.clipboard.peek().is_none() {
-                return false;
-            }
-            self.paste_clipboard();
-            true
-        });
+        create_shortcut_if(
+            "Mod+C",
+            Box::new(move || {
+                if self.selected.peek().is_empty() {
+                    return false;
+                }
+                let _ = self.copy_selection();
+                true
+            }),
+        );
+        create_shortcut_if(
+            "Mod+X",
+            Box::new(move || {
+                if self.selected.peek().is_empty() {
+                    return false;
+                }
+                let _ = self.cut_selection();
+                true
+            }),
+        );
+        create_shortcut_if(
+            "Mod+V",
+            Box::new(move || {
+                if self.clipboard.peek().is_none() {
+                    return false;
+                }
+                let _ = self.paste_clipboard();
+                true
+            }),
+        );
         // Home / End — jump to the first/last visible row (while engaged, so an
         // idle explorer never steals page scrolling).
-        create_shortcut_if("Home", move || self.key_jump(true));
-        create_shortcut_if("End", move || self.key_jump(false));
+        create_shortcut_if("Home", Box::new(move || self.key_jump(true)));
+        create_shortcut_if("End", Box::new(move || self.key_jump(false)));
         // Mod+↑/↓ — move the focus row WITHOUT changing the selection, then
         // Mod+Space toggles the focused row in/out (one-by-one multi-select).
-        create_shortcut_if("Mod+ArrowDown", move || self.key_focus(1));
-        create_shortcut_if("Mod+ArrowUp", move || self.key_focus(-1));
-        create_shortcut_if("Mod+Space", move || {
-            let Some(id) = self.active() else { return false };
-            self.toggle_select(id);
-            true
-        });
+        create_shortcut_if("Mod+ArrowDown", Box::new(move || self.key_focus(1)));
+        create_shortcut_if("Mod+ArrowUp", Box::new(move || self.key_focus(-1)));
+        create_shortcut_if(
+            "Mod+Space",
+            Box::new(move || {
+                let Some(id) = self.active() else { return false };
+                if !multi() {
+                    return false;
+                }
+                self.toggle_select(id);
+                true
+            }),
+        );
         // Arrows — walk the visible rows; Shift extends the selection.
-        create_shortcut_if("ArrowDown", move || self.key_step(1, false));
-        create_shortcut_if("ArrowUp", move || self.key_step(-1, false));
-        create_shortcut_if("Shift+ArrowDown", move || self.key_step(1, true));
-        create_shortcut_if("Shift+ArrowUp", move || self.key_step(-1, true));
+        create_shortcut_if("ArrowDown", Box::new(move || self.key_step(1, false)));
+        create_shortcut_if("ArrowUp", Box::new(move || self.key_step(-1, false)));
+        create_shortcut_if("Shift+ArrowDown", Box::new(move || self.key_step(1, multi())));
+        create_shortcut_if("Shift+ArrowUp", Box::new(move || self.key_step(-1, multi())));
         // ArrowLeft — collapse the active folder, else jump to the parent.
-        create_shortcut_if("ArrowLeft", move || {
-            let Some(id) = self.active() else { return false };
-            let is_open = self.tree.peek().node(id).is_some_and(|n| n.kind == FsKind::Folder)
-                && self.expanded.peek().contains(&id);
-            if is_open {
-                self.expanded.update(|e| {
-                    e.remove(&id);
-                });
-            } else if let Some(parent) = self.tree.peek().parent_of(id) {
-                self.select_only(parent);
-            }
-            true
-        });
+        create_shortcut_if(
+            "ArrowLeft",
+            Box::new(move || {
+                let Some(id) = self.active() else { return false };
+                let is_open = self.tree.peek().node(id).is_some_and(|n| n.kind == FsKind::Folder)
+                    && self.expanded.peek().contains(&id);
+                if is_open {
+                    self.expanded.update(|e| {
+                        e.remove(&id);
+                    });
+                } else if let Some(parent) = self.tree.peek().parent_of(id) {
+                    self.select_only(parent);
+                }
+                true
+            }),
+        );
         // ArrowRight — expand the active folder, else step into its first child.
-        create_shortcut_if("ArrowRight", move || {
-            let Some(id) = self.active() else { return false };
-            let node = self.tree.peek().node(id).cloned();
-            let Some(node) = node else { return false };
-            if node.kind != FsKind::Folder {
-                return true; // engaged but nothing to expand — consume, like VSCode
-            }
-            if !self.expanded.peek().contains(&id) {
-                self.toggle_folder(id);
-            } else if let Some(first) = node.children.first() {
-                self.select_only(first.id);
-            }
-            true
-        });
+        create_shortcut_if(
+            "ArrowRight",
+            Box::new(move || {
+                let Some(id) = self.active() else { return false };
+                let node = self.tree.peek().node(id).cloned();
+                let Some(node) = node else { return false };
+                if node.kind != FsKind::Folder {
+                    return true; // engaged but nothing to expand — consume, like VSCode
+                }
+                if !self.expanded.peek().contains(&id) {
+                    self.toggle_folder(id);
+                } else if let Some(first) = node.children.first() {
+                    self.select_only(first.id);
+                }
+                true
+            }),
+        );
         // Escape — cancel a pending cut/copy first (VSCode), then drop the
         // selection (disengages the key set).
-        create_shortcut_if("Escape", move || {
-            if self.clipboard.peek().is_some() {
-                self.clipboard.set(None);
-                true
-            } else if self.selected.peek().is_empty() {
-                false
-            } else {
-                self.selected.set(Vec::new());
-                true
-            }
-        });
+        create_shortcut_if(
+            "Escape",
+            Box::new(move || {
+                if self.clipboard.peek().is_some() {
+                    self.clipboard.set(None);
+                    true
+                } else if self.selected.peek().is_empty() {
+                    false
+                } else {
+                    self.selected.set(Vec::new());
+                    true
+                }
+            }),
+        );
     }
 
     /// Home/End — select the first/last visible row (declines while idle).

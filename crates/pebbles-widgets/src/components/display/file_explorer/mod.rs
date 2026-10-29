@@ -78,17 +78,19 @@ use pebbles_core::keyboard::{KeyInput, ctrl_held, shift_held};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, animated, component_props, create_shortcut_if, create_signal};
 
+mod caps;
 mod keys;
 mod node;
 mod ops;
 mod tree;
 
+pub use caps::{Capability, ExplorerCapabilities, ExplorerEntry, ExplorerError, ExplorerOp};
 #[cfg(feature = "file-dialogs")]
 pub use tree::pick_folder;
 pub use tree::{FileTree, FsKind, FsNode, natural_cmp};
 
 use node::{NodeProps, render_node};
-use tree::{copy_path, read_dir, unique_name};
+use tree::{copy_path, read_dir};
 
 // ---------------------------------------------------------------------------
 // The explorer controller
@@ -151,6 +153,10 @@ pub struct FileExplorer {
     /// The trash directory (freedesktop layout: `files/` + `info/`); `None` =
     /// the platform default (see [`set_trash_dir`](Self::set_trash_dir)).
     trash_dir: Signal<Option<PathBuf>>,
+    /// Which capabilities are on (see [`ExplorerCapabilities`]).
+    caps: Signal<ExplorerCapabilities>,
+    /// Predicates and hooks (see [`caps`]).
+    controls: Signal<caps::Controls>,
     /// Undo stack of completed file operations (Mod+Z / [`undo`](Self::undo)).
     history: Signal<Vec<FileOp>>,
     hover_key: u64,
@@ -162,6 +168,8 @@ pub struct FileExplorer {
     fs_root: Signal<Option<PathBuf>>,
     /// The last filesystem error, if any (read for toasts/inline hints).
     last_error: Signal<Option<String>>,
+    /// The placeholder row of an inline New File/New Folder (not on disk yet).
+    pub(super) pending_create: Signal<Option<u64>>,
     /// The inline-rename buffer — prefilled with the current name at rename start.
     pub(super) rename_buf: Signal<String>,
     /// The explorer clipboard: node ids + copy/cut, filled by Mod+C/X and the menus.
@@ -252,12 +260,15 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         confirm_hook: create_signal(None),
         history: create_signal(Vec::new()),
         trash_dir: create_signal(None),
+        caps: create_signal(ExplorerCapabilities::all()),
+        controls: create_signal(caps::Controls::default()),
         hover_key: create_signal(()).raw_id(),
         watch_key: create_signal(()).raw_id(),
         watch_secs: create_signal(None),
         fs_root: create_signal(None),
         last_error: create_signal(None),
         rename_buf: create_signal(String::new()),
+        pending_create: create_signal(None),
         clipboard: create_signal(None),
         icon_theme: create_signal(None),
         active: create_signal(None),
@@ -449,7 +460,22 @@ impl FileExplorer {
         self.active.set(Some(id));
     }
 
+    /// Ctrl/Cmd-click semantics: toggle `id` in/out of the selection (a plain
+    /// select when [`Capability::MultiSelect`] is off).
+    pub fn toggle_selected(&self, id: u64) {
+        self.toggle_select(id);
+    }
+
+    /// Shift-click semantics: select the range from the anchor to `id`.
+    pub fn select_range_to(&self, id: u64) {
+        self.range_select(id);
+    }
+
     fn toggle_select(&self, id: u64) {
+        if !self.caps.peek().allows(Capability::MultiSelect) {
+            self.select_only(id);
+            return;
+        }
         self.active.set(Some(id));
         self.selected.update(|s| {
             if let Some(i) = s.iter().position(|&v| v == id) {
@@ -461,6 +487,10 @@ impl FileExplorer {
     }
 
     fn range_select(&self, id: u64) {
+        if !self.caps.peek().allows(Capability::MultiSelect) {
+            self.select_only(id);
+            return;
+        }
         let visible = self.visible_ids();
         // The range anchors on the focus row only while it is still SELECTED
         // (a ctrl-click deselect moves focus but must not anchor), else on the
@@ -520,46 +550,103 @@ impl FileExplorer {
         self.renaming.set(Some(id));
     }
 
-    /// Create a file (in the active folder) and start renaming it. In
-    /// filesystem mode the file is created on disk.
+    /// New File: an inline name editor appears in the active folder; the file
+    /// is created (on disk in filesystem mode) only when the name is
+    /// committed (Enter/blur — empty keeps the suggested `new_file.txt`;
+    /// `a/b/c.txt` creates the folders). Escape cancels. VS Code's flow.
     pub fn new_file(self) -> impl Fn() + 'static {
-        move || {
-            let parent = self.insertion_parent();
-            let (id, name) = self.create_node(parent, FsKind::File, "new_file.txt");
-            self.start_rename_for(id);
-            // A NEW node starts from an empty field (the created default shows as
-            // the placeholder; committing empty keeps it) — only renames prefill.
-            self.rename_buf.set(String::new());
-            let _ = name;
-        }
+        move || self.begin_create(FsKind::File)
     }
 
-    /// Create a folder (in the active folder) and start renaming it. In
-    /// filesystem mode the folder is created on disk.
+    /// New Folder: like [`new_file`](Self::new_file), for a folder.
     pub fn new_folder(self) -> impl Fn() + 'static {
-        move || {
-            let parent = self.insertion_parent();
-            let (id, _name) = self.create_node(parent, FsKind::Folder, "New Folder");
-            self.start_rename_for(id);
-            self.rename_buf.set(String::new());
+        move || self.begin_create(FsKind::Folder)
+    }
+
+    /// Start an inline create of `kind` in the active folder.
+    pub fn begin_create(&self, kind: FsKind) {
+        let cap = if kind == FsKind::Folder { Capability::CreateFolder } else { Capability::CreateFile };
+        if self.require(cap).is_err() {
+            return;
+        }
+        self.cancel_pending_create();
+        let parent = self.insertion_parent();
+        if let Some(p) = parent {
+            self.ensure_loaded(p);
+        }
+        let base = if kind == FsKind::Folder { "New Folder" } else { "new_file.txt" };
+        // A placeholder row (model only) carries the editor; nothing is on disk yet.
+        let id = self.insert_at(parent, kind, base);
+        self.pending_create.set(Some(id));
+        self.start_rename_for(id);
+        // A NEW node starts from an empty field (the suggestion shows as the
+        // placeholder) — only renames prefill.
+        self.rename_buf.set(String::new());
+    }
+
+    /// Commit the inline editor for `id`: finishes a pending create (empty =
+    /// the suggested name) or renames. Errors land in [`last_error`](Self::last_error).
+    pub fn commit_rename(&self, id: u64, text: &str) -> Result<(), ExplorerError> {
+        let text = text.trim();
+        if self.pending_create.peek() == Some(id) {
+            self.pending_create.set(None);
+            let (parent, kind, suggested) = {
+                let t = self.tree.peek();
+                let n = t.node(id).cloned();
+                (t.parent_of(id), n.as_ref().map(|n| n.kind), n.map(|n| n.name))
+            };
+            self.tree.update(|t| {
+                t.delete(id);
+            });
+            self.renaming.set(None);
+            let (Some(kind), Some(suggested)) = (kind, suggested) else { return Ok(()) };
+            let name = if text.is_empty() { suggested } else { text.to_string() };
+            let new = self.create_entry(parent, kind, &name)?;
+            self.select_only(new);
+            return Ok(());
+        }
+        if text.is_empty() {
+            self.renaming.set(None);
+            return Ok(());
+        }
+        self.rename_node(id, text)
+    }
+
+    /// Cancel the inline editor (Escape): drops a pending create's placeholder.
+    pub fn cancel_rename(&self) {
+        self.cancel_pending_create();
+        self.renaming.set(None);
+    }
+
+    fn cancel_pending_create(&self) {
+        if let Some(id) = self.pending_create.peek() {
+            self.pending_create.set(None);
+            self.tree.update(|t| {
+                t.delete(id);
+            });
+            self.renaming.set(None);
         }
     }
 
-    /// Start renaming the active node (a no-op with no selection).
+    /// Start renaming the active node (a no-op with no selection, or with
+    /// [`Capability::Rename`] off).
     pub fn rename_selected(self) -> impl Fn() + 'static {
         move || {
-            if let Some(id) = self.active() {
+            if let Some(id) = self.active()
+                && self.require(Capability::Rename).is_ok()
+            {
                 self.start_rename_for(id);
             }
         }
     }
 
-    /// Delete the selection (all selected nodes, subtrees included) — on
-    /// disk in filesystem mode.
+    /// Permanently delete the selection (subtrees included; on disk in
+    /// filesystem mode) WITHOUT a confirmation — for your own confirmed UI.
+    /// All gates apply. The Delete key/menu use [`request_delete`](Self::request_delete).
     pub fn delete_selected(self) -> impl Fn() + 'static {
         move || {
             let ids = self.selected.get();
-            self.delete_nodes(&ids);
+            let _ = self.delete_permanently(&ids);
         }
     }
 
@@ -631,7 +718,8 @@ impl FileExplorer {
                     // file, the dragged row itself) is not a root drop.
                     let want = self.dragging.peek()
                         && self.drop_target.peek().is_none()
-                        && self.row_hover.peek().is_none();
+                        && self.row_hover.peek().is_none()
+                        && self.drop_ok(None);
                     if self.root_drop.peek() != want {
                         self.root_drop.set(want);
                     }
@@ -642,10 +730,8 @@ impl FileExplorer {
             .item(menu_item("New File").on_select(self.new_file()))
             .item(menu_item("New Folder").on_select(self.new_folder()))
             .separator()
-            .item(
-                menu_item("Paste")
-                    .disabled(self.clipboard.get().is_none())
-                    .on_select(move || self.paste_clipboard()),
-            )
+            .item(menu_item("Paste").disabled(self.clipboard.get().is_none()).on_select(move || {
+                let _ = self.paste_clipboard();
+            }))
     }
 }
