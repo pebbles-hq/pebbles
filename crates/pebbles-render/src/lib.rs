@@ -60,7 +60,7 @@ pub use objects::{
     SizeFn, StackFit, StackParentData, StrutStyle, TableColumnWidth, TapCallback, TextDecorationStyle,
     TextFieldStyle, TextShadow, TextSpanStyle, tabler,
 };
-pub use text::{SystemFonts, TextCensus, TextEnv, TextLayout};
+pub use text::{SystemFonts, TextCensus, TextEnv, TextLayout, measure_text, monospace_cell};
 pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};
 
 /// Re-export the active backend's retained scene type the paint layer targets.

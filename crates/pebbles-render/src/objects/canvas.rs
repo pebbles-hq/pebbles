@@ -1,6 +1,6 @@
 //! [`RenderCanvas`] (H2) — a leaf that hands its painter a [`Canvas`]: an immediate-mode
-//! drawing surface over the scene in the widget's local coordinates. Text stays
-//! OUT of v1 (it needs a `TextEnv` at paint) — layer `Text` widgets above instead.
+//! drawing surface over the scene in the widget's local coordinates — shapes, gradients,
+//! dashes, clips, and text laid out exactly like the `Text` widget.
 
 use std::rc::Rc;
 
@@ -12,7 +12,10 @@ use crate::constraints::BoxConstraints;
 use crate::decoration::{BlendMode, Gradient};
 use crate::object::RenderObject;
 use crate::objects::decorated::gradient_brush;
+use crate::objects::{ParagraphStyle, TextSpanStyle};
+use crate::text::paint::TextPaint;
 use crate::tree::{LayoutCx, PaintCx};
+use smallvec::SmallVec;
 
 /// A `width` stroke with butt caps (the Skia / Flutter / CSS default).
 fn butt(width: f64) -> Stroke {
@@ -24,8 +27,11 @@ fn butt(width: f64) -> Stroke {
 /// origin for you. Keep painters allocation-light — they run on every paint.
 pub struct Canvas<'a> {
     scene: crate::paint::Painter<'a>,
+    text: &'a mut crate::text::TextEnv,
     origin: Offset,
     size: Size,
+    /// The window-space rect that can show (culls off-screen text lines).
+    visible: Rect,
 }
 
 impl Canvas<'_> {
@@ -144,6 +150,57 @@ impl Canvas<'_> {
     pub fn pop_clip(&mut self) {
         self.scene.pop_layer();
     }
+
+    // ---- text ---------------------------------------------------------------
+    // Laid out by the same pipeline as the `Text` widget (style resolution, fonts, line
+    // breaking, decorations), through the window's text caches — so a canvas-drawn row
+    // lines up with a `Text` row in the same style.
+
+    /// Draw `text` in `style` as ONE unbounded line with its top-left at `at` (local).
+    /// Returns the laid-out size. Flutter: `TextPainter(..)..layout()..paint(canvas, at)`.
+    pub fn draw_text(&mut self, text: &str, style: &ParagraphStyle, at: Offset) -> Size {
+        self.draw_paragraph(text, &[], style, at, None)
+    }
+
+    /// Draw a (rich) paragraph: `spans` style byte ranges of `text` over `style`, wrapped
+    /// at `max_width` when `style.soft_wrap`, top-left at `at` (local). Returns its size.
+    /// Flutter: `canvas.drawParagraph(paragraph..layout(width), at)`.
+    pub fn draw_paragraph(
+        &mut self,
+        text: &str,
+        spans: &[TextSpanStyle],
+        style: &ParagraphStyle,
+        at: Offset,
+        max_width: Option<f64>,
+    ) -> Size {
+        let layout = crate::text::layout_paragraph(self.text, text, spans, style, max_width);
+        let base = TextPaint::base(style);
+        let brushes: SmallVec<[TextPaint; 4]> =
+            std::iter::once(base.clone()).chain(spans.iter().map(|s| base.for_span(s))).collect();
+        crate::text::paint::paint_into(
+            &mut self.scene,
+            self.text,
+            self.visible,
+            &layout,
+            self.origin + at,
+            &brushes,
+        );
+        let (w, h) = layout.size();
+        Size::new(f64::from(w), f64::from(h))
+    }
+
+    /// Measure `text` in `style` without drawing (wraps at `max_width` when
+    /// `style.soft_wrap`) — the size [`draw_paragraph`](Canvas::draw_paragraph) would return.
+    pub fn measure_text(&mut self, text: &str, style: &ParagraphStyle, max_width: Option<f64>) -> Size {
+        self.text.measure_text(text, style, max_width)
+    }
+
+    /// The monospace grid cell (advance × line height) of `family` at `font_size` /
+    /// `line_height`, measured with this window's fonts (see
+    /// [`TextEnv::monospace_cell`](crate::TextEnv::monospace_cell)).
+    pub fn monospace_cell(&mut self, family: &str, font_size: f32, line_height: f32) -> Size {
+        self.text.monospace_cell(family, font_size, line_height)
+    }
 }
 
 /// A leaf render object that runs a painter closure each paint. Sizes to the biggest
@@ -168,7 +225,9 @@ impl RenderObject for RenderCanvas {
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
         let size = cx.size();
-        let mut canvas = Canvas { scene: cx.scene.reborrow(), origin: offset, size };
+        let visible = cx.visible();
+        let mut canvas =
+            Canvas { scene: cx.scene.reborrow(), text: &mut *cx.text, origin: offset, size, visible };
         (self.painter)(&mut canvas);
     }
 

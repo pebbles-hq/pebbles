@@ -127,6 +127,103 @@ pub fn layout_for_test(
     env.layout_text(&req, key)
 }
 
+/// Lay out `text` with `spans` exactly as a `Text` / `RichText` widget would
+/// (`RenderParagraph`'s style resolution and line breaking; wraps at `max_width` only when
+/// `style.soft_wrap`), through `env`'s caches.
+pub(crate) fn layout_paragraph(
+    env: &mut TextEnv,
+    text: &str,
+    spans: &[crate::objects::TextSpanStyle],
+    style: &crate::objects::ParagraphStyle,
+    max_width: Option<f64>,
+) -> std::rc::Rc<TextLayout> {
+    let width = max_width.filter(|w| w.is_finite()).map(|w| w.max(0.0) as f32);
+    layout_for_test(env, text, style, spans, width)
+}
+
+impl TextEnv {
+    /// Measure `text` laid out as a `Text` widget with `style` would be (Flutter's
+    /// `TextPainter.layout` + `size`): the width of the longest line and the total height.
+    /// `max_width` wraps when `style.soft_wrap` (pass `None` for one unbounded line).
+    pub fn measure_text(
+        &mut self,
+        text: &str,
+        style: &crate::objects::ParagraphStyle,
+        max_width: Option<f64>,
+    ) -> pebbles_foundation::Size {
+        let layout = layout_paragraph(self, text, &[], style, max_width);
+        let (w, h) = layout.size();
+        pebbles_foundation::Size::new(f64::from(w), f64::from(h))
+    }
+
+    /// The cell of a monospace grid in `family` at `font_size` and `line_height` (a
+    /// multiple of the size, as in `ParagraphStyle::line_height`): the advance of one
+    /// character and the height of one line — exactly what a `Text` row in that font
+    /// occupies, so a terminal / code grid can position cells with `Text` or the canvas.
+    pub fn monospace_cell(
+        &mut self,
+        family: &str,
+        font_size: f32,
+        line_height: f32,
+    ) -> pebbles_foundation::Size {
+        const N: usize = 64;
+        let style = crate::objects::ParagraphStyle {
+            font_size,
+            line_height,
+            font_family: Some(family.to_string()),
+            soft_wrap: false,
+            ..Default::default()
+        };
+        // Average over a run so sub-pixel advances don't round per glyph.
+        let row = "0".repeat(N);
+        let size = self.measure_text(&row, &style, None);
+        pebbles_foundation::Size::new(size.width / N as f64, size.height)
+    }
+}
+
+thread_local! {
+    /// The measuring environment behind [`measure_text`] / [`monospace_cell`].
+    static MEASURE_ENV: std::cell::RefCell<Option<TextEnv>> = const { std::cell::RefCell::new(None) };
+}
+
+fn with_measure_env<R>(f: impl FnOnce(&mut TextEnv) -> R) -> R {
+    MEASURE_ENV.with(|cell| {
+        let mut cell = cell.borrow_mut();
+        // Not `TextEnv::new()`: that republishes the global family list, which must keep
+        // reflecting the runner's (system-font) environment.
+        let env = cell.get_or_insert_with(|| TextEnv {
+            registry: fonts::FontRegistry::new_bundled(&crate::fonts::user_fonts_snapshot(), "en-US".into()),
+            scratch: Default::default(),
+            caches: Default::default(),
+        });
+        f(env)
+    })
+}
+
+/// Measure `text` as a `Text` widget with `style` would lay it out — usable anywhere
+/// (build, `layout_builder`, event handlers), no paint context needed. Measures with the
+/// bundled fonts (Inter, JetBrains Mono, …) and every `App::font`; a family that exists
+/// only as an installed system font falls back here, so use [`TextEnv::measure_text`] /
+/// [`Canvas::measure_text`](crate::Canvas::measure_text) for those.
+pub fn measure_text(
+    text: &str,
+    style: &crate::objects::ParagraphStyle,
+    max_width: Option<f64>,
+) -> pebbles_foundation::Size {
+    with_measure_env(|env| env.measure_text(text, style, max_width))
+}
+
+/// The monospace cell size (advance × line height) for `family` at `font_size` /
+/// `line_height` — see [`TextEnv::monospace_cell`]; same font scope as [`measure_text`].
+///
+/// ```no_run
+/// let cell = pebbles_render::monospace_cell("JetBrains Mono", 13.0, 1.3);
+/// let cols = (640.0 / cell.width).floor() as usize;
+/// ```
+pub fn monospace_cell(family: &str, font_size: f32, line_height: f32) -> pebbles_foundation::Size {
+    with_measure_env(|env| env.monospace_cell(family, font_size, line_height))
+}
+
 /// Count one shape (no-op in release).
 #[inline]
 pub(crate) fn count_shape() {
