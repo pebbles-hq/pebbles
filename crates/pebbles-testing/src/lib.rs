@@ -804,4 +804,53 @@ mod tests {
         h.ime("あ");
         assert_eq!(ime_bound().get(), "あ", "ime() composes then commits the text into the field");
     }
+
+    // ----- raw key events (Focus.onKeyEvent) -------------------------------
+
+    thread_local! {
+        static RAW_LOG: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// A focusable that consumes PageUp/PageDown (down and up) and ignores the rest.
+    fn raw_key_probe() -> impl IntoWidget {
+        use pebbles_core::keyboard::NamedKey;
+        use pebbles_core::{KeyEventResult, LogicalKey};
+        let node = pebbles_core::create_focus();
+        node.register(std::rc::Rc::new(|| {}), None, true);
+        node.on_key_event(std::rc::Rc::new(|e| {
+            RAW_LOG.with(|l| l.borrow_mut().push(format!("{:?} {:?}", e.kind, e.logical)));
+            match e.logical {
+                LogicalKey::Named(NamedKey::PageUp | NamedKey::PageDown) => KeyEventResult::Handled,
+                _ => KeyEventResult::Ignored,
+            }
+        }));
+        container().width(50.0).height(50.0)
+    }
+
+    /// Regression (Gravel terminal): a focused widget had no way to see raw keys —
+    /// PageUp/PageDown/Insert/F-keys never reached it, only the editing-intent subset.
+    #[test]
+    fn focused_widget_receives_raw_key_events_first() {
+        use pebbles_core::keyboard::NamedKey;
+        use pebbles_core::{KeyEvent, KeyEventKind, KeyEventResult, LogicalKey, PhysicalKey};
+        RAW_LOG.with(|l| l.borrow_mut().clear());
+        let mut h = Harness::new();
+        h.mount(raw_key_probe);
+        h.draw();
+        let page_up = KeyEvent::down(LogicalKey::Named(NamedKey::PageUp), PhysicalKey::new("PageUp"));
+        assert_eq!(h.ui.dispatch_key_event(&page_up), KeyEventResult::Handled);
+        let up = KeyEvent { kind: KeyEventKind::Up, ..page_up };
+        assert_eq!(h.ui.dispatch_key_event(&up), KeyEventResult::Handled);
+        let f5 = KeyEvent::down(LogicalKey::Named(NamedKey::F(5)), PhysicalKey::new("F5"));
+        assert_eq!(h.ui.dispatch_key_event(&f5), KeyEventResult::Ignored, "ignored keys fall through");
+        RAW_LOG.with(|l| {
+            assert_eq!(
+                *l.borrow(),
+                ["Down Named(PageUp)", "Up Named(PageUp)", "Down Named(F(5))"].map(String::from).to_vec()
+            )
+        });
+        // Nothing focused → nothing to offer the event to.
+        pebbles_core::focus::set_focus(None);
+        assert_eq!(h.ui.dispatch_key_event(&f5), KeyEventResult::Ignored);
+    }
 }

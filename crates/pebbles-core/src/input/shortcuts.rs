@@ -5,7 +5,7 @@
 //! `[Ctrl+|Shift+|Alt+|Meta+|Mod+]* key` — `Mod` = Ctrl on Windows/Linux, Meta
 //! (Command) on macOS, resolved at parse time. Key tokens: single characters,
 //! `F1..F12`, `Enter`, `Escape`, `Space`, `Tab`, `Arrow{Up,Down,Left,Right}`,
-//! `Home`, `End`, `Delete`, `Backspace`.
+//! `Home`, `End`, `Delete`, `Backspace`, `PageUp`, `PageDown`, `Insert`.
 //!
 //! # Dispatch precedence (the shell honors this order per key press)
 //! 1. window chrome (Escape → dialog/sheet dismiss)
@@ -41,6 +41,9 @@ pub enum ShortcutKey {
     End,
     Delete,
     Backspace,
+    PageUp,
+    PageDown,
+    Insert,
 }
 
 /// The modifier set a shortcut requires (all listed must be held; unlisted must
@@ -143,6 +146,9 @@ fn key_token(token: &str) -> Result<ShortcutKey, String> {
         "END" => Ok(ShortcutKey::End),
         "DELETE" | "DEL" => Ok(ShortcutKey::Delete),
         "BACKSPACE" => Ok(ShortcutKey::Backspace),
+        "PAGEUP" | "PGUP" => Ok(ShortcutKey::PageUp),
+        "PAGEDOWN" | "PGDN" => Ok(ShortcutKey::PageDown),
+        "INSERT" | "INS" => Ok(ShortcutKey::Insert),
         _ => {
             let mut chars = token.chars();
             match (chars.next(), chars.next()) {
@@ -239,6 +245,16 @@ pub fn dispatch(window: u32, mods: Mods, key: ShortcutKey) -> bool {
     cbs.into_iter().any(|cb| cb())
 }
 
+/// Dispatch a raw key press to `window`'s registry by its logical
+/// [`ShortcutKey`](crate::keyboard::KeyEvent::shortcut_key) under the event's
+/// modifiers. Releases never match. Returns whether a registration consumed it.
+pub fn dispatch_key_event(window: u32, event: &crate::keyboard::KeyEvent) -> bool {
+    if !event.is_press() {
+        return false;
+    }
+    event.shortcut_key().is_some_and(|sk| dispatch(window, event.mods, sk))
+}
+
 /// Number of live shortcut registrations (debug-only observability).
 #[cfg(debug_assertions)]
 pub fn census_shortcuts() -> usize {
@@ -272,6 +288,9 @@ fn key_code(key: ShortcutKey) -> String {
         End => "End".to_string(),
         Delete => "Delete".to_string(),
         Backspace => "Backspace".to_string(),
+        PageUp => "PageUp".to_string(),
+        PageDown => "PageDown".to_string(),
+        Insert => "Insert".to_string(),
     }
 }
 

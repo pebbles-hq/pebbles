@@ -536,6 +536,16 @@ impl Ui {
         crate::focus::dispatch_key(key)
     }
 
+    /// Offer a raw key event (down / repeat / up) to the focused widget's
+    /// [`on_key_event`](crate::focus::FocusNode::on_key_event) handler — the first stage
+    /// of key routing, before [`dispatch_key`](Self::dispatch_key).
+    pub fn dispatch_key_event(
+        &mut self,
+        event: &crate::keyboard::KeyEvent,
+    ) -> crate::keyboard::KeyEventResult {
+        crate::focus::dispatch_key_event(event)
+    }
+
     /// Whether the focused node is a text editor (shell key-routing precedence).
     pub fn focused_is_editor(&self) -> bool {
         crate::focus::focused_is_editor()

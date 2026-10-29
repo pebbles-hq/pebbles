@@ -97,68 +97,120 @@ pub(super) fn to_winit_cursor(cursor: Cursor) -> CursorIcon {
 /// if it isn't one the focused editor cares about. Shift extends selections; Ctrl
 /// switches arrows to word motion and enables the clipboard/undo/select-all set.
 ///
-/// A thin wrapper over [`command_for`], which owns the pure logical-key → intent
-/// mapping (so it can be unit-tested without constructing a winit `KeyEvent`).
+/// A thin wrapper over [`command_for`], which converts to the platform-neutral key
+/// types and applies [`pebbles_core::keyboard::intent_for`] (the single mapping the
+/// headless test harness uses too).
 pub(super) fn to_command(event: &KeyEvent, ctrl: bool, shift: bool) -> Option<KeyInput> {
     command_for(event.logical_key.as_ref(), event.text.as_deref(), event.physical_key, ctrl, shift)
 }
 
-/// The Latin letter printed on a physical key of the US layout (`KeyA` → `'a'`).
-fn us_letter(physical: PhysicalKey) -> Option<char> {
-    use winit::keyboard::KeyCode as K;
-    let PhysicalKey::Code(code) = physical else { return None };
-    let letters = [
-        K::KeyA,
-        K::KeyB,
-        K::KeyC,
-        K::KeyD,
-        K::KeyE,
-        K::KeyF,
-        K::KeyG,
-        K::KeyH,
-        K::KeyI,
-        K::KeyJ,
-        K::KeyK,
-        K::KeyL,
-        K::KeyM,
-        K::KeyN,
-        K::KeyO,
-        K::KeyP,
-        K::KeyQ,
-        K::KeyR,
-        K::KeyS,
-        K::KeyT,
-        K::KeyU,
-        K::KeyV,
-        K::KeyW,
-        K::KeyX,
-        K::KeyY,
-        K::KeyZ,
-    ];
-    letters.iter().position(|&k| k == code).map(|i| char::from(b'a' + i as u8))
+/// A winit logical key as the platform-neutral [`LogicalKey`](pebbles_core::LogicalKey).
+pub(super) fn logical_key(key: Key<&str>) -> pebbles_core::LogicalKey {
+    use pebbles_core::LogicalKey as L;
+    use pebbles_core::keyboard::NamedKey as N;
+    match key {
+        Key::Character(s) => L::Character(s.to_string()),
+        Key::Dead(c) => L::Dead(c),
+        Key::Unidentified(_) => L::Unidentified,
+        Key::Named(n) => L::Named(match n {
+            NamedKey::Enter => N::Enter,
+            NamedKey::Tab => N::Tab,
+            NamedKey::Space => N::Space,
+            NamedKey::Backspace => N::Backspace,
+            NamedKey::Delete => N::Delete,
+            NamedKey::Insert => N::Insert,
+            NamedKey::Escape => N::Escape,
+            NamedKey::Home => N::Home,
+            NamedKey::End => N::End,
+            NamedKey::PageUp => N::PageUp,
+            NamedKey::PageDown => N::PageDown,
+            NamedKey::ArrowUp => N::ArrowUp,
+            NamedKey::ArrowDown => N::ArrowDown,
+            NamedKey::ArrowLeft => N::ArrowLeft,
+            NamedKey::ArrowRight => N::ArrowRight,
+            NamedKey::Shift => N::Shift,
+            NamedKey::Control => N::Control,
+            NamedKey::Alt | NamedKey::AltGraph => N::Alt,
+            NamedKey::Super | NamedKey::Meta => N::Meta,
+            NamedKey::CapsLock => N::CapsLock,
+            NamedKey::NumLock => N::NumLock,
+            NamedKey::ScrollLock => N::ScrollLock,
+            NamedKey::PrintScreen => N::PrintScreen,
+            NamedKey::Pause => N::Pause,
+            NamedKey::ContextMenu => N::ContextMenu,
+            NamedKey::Compose => N::Compose,
+            other => function_key(other).map_or(N::Other, N::F),
+        }),
+    }
 }
 
-/// The character a shortcut matches on, from the layout-aware logical key: the
-/// character the user's layout produces (so AZERTY / QWERTZ / Dvorak users press
-/// the key labelled Z for Ctrl+Z wherever it sits), lowercased. On a non-Latin
-/// layout (Cyrillic, Greek, Hebrew, Arabic, …) the logical key is a non-ASCII
-/// letter, and shortcuts fall back to the US letter of the physical key — what
-/// Chromium, GTK and VS Code do, so Ctrl+С on a Russian layout still copies.
-fn shortcut_char(logical: &str, physical: PhysicalKey) -> Option<char> {
-    let mut chars = logical.chars();
-    let (Some(c), None) = (chars.next(), chars.next()) else { return None };
-    if c.is_control() {
-        return None;
+/// `F1`..=`F35` → its number.
+fn function_key(key: NamedKey) -> Option<u8> {
+    const KEYS: [NamedKey; 35] = [
+        NamedKey::F1,
+        NamedKey::F2,
+        NamedKey::F3,
+        NamedKey::F4,
+        NamedKey::F5,
+        NamedKey::F6,
+        NamedKey::F7,
+        NamedKey::F8,
+        NamedKey::F9,
+        NamedKey::F10,
+        NamedKey::F11,
+        NamedKey::F12,
+        NamedKey::F13,
+        NamedKey::F14,
+        NamedKey::F15,
+        NamedKey::F16,
+        NamedKey::F17,
+        NamedKey::F18,
+        NamedKey::F19,
+        NamedKey::F20,
+        NamedKey::F21,
+        NamedKey::F22,
+        NamedKey::F23,
+        NamedKey::F24,
+        NamedKey::F25,
+        NamedKey::F26,
+        NamedKey::F27,
+        NamedKey::F28,
+        NamedKey::F29,
+        NamedKey::F30,
+        NamedKey::F31,
+        NamedKey::F32,
+        NamedKey::F33,
+        NamedKey::F34,
+        NamedKey::F35,
+    ];
+    KEYS.iter().position(|&k| k == key).map(|i| i as u8 + 1)
+}
+
+/// A winit physical key as its W3C `code` name ([`pebbles_core::PhysicalKey`]). winit's
+/// `KeyCode` variants are named after the W3C codes, so `Debug` is the code.
+pub(super) fn physical_key(physical: PhysicalKey) -> pebbles_core::PhysicalKey {
+    match physical {
+        PhysicalKey::Code(code) => pebbles_core::PhysicalKey::new(format!("{code:?}")),
+        PhysicalKey::Unidentified(_) => pebbles_core::PhysicalKey::unidentified(),
     }
-    if c.is_ascii() {
-        return Some(c.to_ascii_lowercase());
+}
+
+/// The platform-neutral raw [`KeyEvent`](pebbles_core::KeyEvent) for a winit key event,
+/// offered to the focused widget's `on_key_event` handler before intents and shortcuts.
+pub(super) fn to_key_event(event: &KeyEvent, mods: pebbles_core::Mods) -> pebbles_core::KeyEvent {
+    use pebbles_core::KeyEventKind;
+    let kind = match (event.state, event.repeat) {
+        (ElementState::Released, _) => KeyEventKind::Up,
+        (ElementState::Pressed, true) => KeyEventKind::Repeat,
+        (ElementState::Pressed, false) => KeyEventKind::Down,
+    };
+    pebbles_core::KeyEvent {
+        kind,
+        logical: logical_key(event.logical_key.as_ref()),
+        physical: physical_key(event.physical_key),
+        text: if kind == KeyEventKind::Up { None } else { event.text.as_ref().map(|t| t.to_string()) },
+        mods,
     }
-    if c.is_alphabetic()
-        && let Some(latin) = us_letter(physical)
-    {
-        return Some(latin);
-    }
-    c.to_lowercase().next()
 }
 
 /// The pure key → editing-command mapping behind [`to_command`]. Kept free of the
@@ -166,11 +218,6 @@ fn shortcut_char(logical: &str, physical: PhysicalKey) -> Option<char> {
 /// can't be built in a test) — it takes the event's borrowed logical [`Key`], its
 /// `text`, its physical key and the Ctrl/Shift flags, which ARE constructible
 /// headlessly.
-///
-/// Typed text comes from `text` (the characters the key produced after dead-key /
-/// compose processing — winit's documented field for text input), falling back to
-/// the logical key; a bare dead key (`Key::Dead`, no text) types nothing and waits
-/// for the next key. Shortcuts match on [`shortcut_char`].
 fn command_for(
     key: Key<&str>,
     text: Option<&str>,
@@ -178,48 +225,7 @@ fn command_for(
     ctrl: bool,
     shift: bool,
 ) -> Option<KeyInput> {
-    use KeyInput::*;
-    use Motion::*;
-    let mv = |m: Motion| Some(Move { motion: m, extend: shift });
-    match key {
-        Key::Named(NamedKey::Backspace) => Some(if ctrl { DeleteWordBack } else { Backspace }),
-        Key::Named(NamedKey::Delete) => Some(if ctrl { DeleteWordForward } else { Delete }),
-        Key::Named(NamedKey::ArrowLeft) => mv(if ctrl { WordLeft } else { Left }),
-        Key::Named(NamedKey::ArrowRight) => mv(if ctrl { WordRight } else { Right }),
-        Key::Named(NamedKey::ArrowUp) => mv(Up),
-        Key::Named(NamedKey::ArrowDown) => mv(Down),
-        Key::Named(NamedKey::Home) => mv(if ctrl { DocStart } else { LineStart }),
-        Key::Named(NamedKey::End) => mv(if ctrl { DocEnd } else { LineEnd }),
-        Key::Named(NamedKey::Enter) => Some(Enter),
-        Key::Named(NamedKey::Escape) => Some(Escape),
-        Key::Named(NamedKey::F12) => Some(GoToDefinition),
-        Key::Named(NamedKey::Space) if ctrl => Some(TriggerCompletion),
-        Key::Named(NamedKey::Space) if !ctrl => Some(Insert(" ".to_string())),
-        Key::Character(s) if ctrl => match shortcut_char(s, physical)? {
-            'a' => Some(SelectAll),
-            'c' => Some(Copy),
-            'x' => Some(Cut),
-            'v' => Some(Paste),
-            'z' => Some(if shift { Redo } else { Undo }),
-            'y' => Some(Redo),
-            'd' => Some(SelectNextOccurrence),
-            '/' => Some(ToggleComment),
-            // VS Code conventions: Shift is significant. Ctrl+F / Ctrl+H are the
-            // editor's find / replace, but Ctrl+Shift+F / Ctrl+Shift+H are workbench
-            // "find/replace in files" and Ctrl+P is workbench Quick Open — none of
-            // those belong to the focused editor, so they map to no intent and the key
-            // falls through to app-level shortcuts. Ctrl+Shift+P is the command palette.
-            'f' if !shift => Some(Find),
-            'h' if !shift => Some(Replace),
-            'p' if shift => Some(CommandPalette),
-            _ => None,
-        },
-        Key::Character(s) => {
-            let typed = text.unwrap_or(s);
-            (!typed.is_empty() && typed.chars().all(|ch| !ch.is_control())).then(|| Insert(typed.to_string()))
-        }
-        _ => None,
-    }
+    pebbles_core::keyboard::intent_for(&logical_key(key), text, &physical_key(physical), ctrl, shift)
 }
 
 /// The editor "chord" intents the shell resolves from a shortcut token + modifiers,
@@ -249,39 +255,7 @@ pub(super) fn to_shortcut_key(event: &KeyEvent) -> Option<pebbles_core::Shortcut
 /// The pure logical-key → [`ShortcutKey`] mapping behind [`to_shortcut_key`] (see
 /// [`command_for`] for why the winit `KeyEvent` wrapper is peeled off first).
 fn shortcut_key_for(key: Key<&str>, physical: PhysicalKey) -> Option<pebbles_core::ShortcutKey> {
-    use pebbles_core::ShortcutKey as SK;
-    use winit::keyboard::{Key, NamedKey};
-    match key {
-        Key::Named(n) => match n {
-            NamedKey::Enter => Some(SK::Enter),
-            NamedKey::Escape => Some(SK::Escape),
-            NamedKey::Space => Some(SK::Space),
-            NamedKey::Tab => Some(SK::Tab),
-            NamedKey::ArrowUp => Some(SK::ArrowUp),
-            NamedKey::ArrowDown => Some(SK::ArrowDown),
-            NamedKey::ArrowLeft => Some(SK::ArrowLeft),
-            NamedKey::ArrowRight => Some(SK::ArrowRight),
-            NamedKey::Home => Some(SK::Home),
-            NamedKey::End => Some(SK::End),
-            NamedKey::Delete => Some(SK::Delete),
-            NamedKey::Backspace => Some(SK::Backspace),
-            NamedKey::F1 => Some(SK::F(1)),
-            NamedKey::F2 => Some(SK::F(2)),
-            NamedKey::F3 => Some(SK::F(3)),
-            NamedKey::F4 => Some(SK::F(4)),
-            NamedKey::F5 => Some(SK::F(5)),
-            NamedKey::F6 => Some(SK::F(6)),
-            NamedKey::F7 => Some(SK::F(7)),
-            NamedKey::F8 => Some(SK::F(8)),
-            NamedKey::F9 => Some(SK::F(9)),
-            NamedKey::F10 => Some(SK::F(10)),
-            NamedKey::F11 => Some(SK::F(11)),
-            NamedKey::F12 => Some(SK::F(12)),
-            _ => None,
-        },
-        Key::Character(s) => shortcut_char(s, physical).map(SK::Char),
-        _ => None,
-    }
+    pebbles_core::keyboard::shortcut_key_for(&logical_key(key), &physical_key(physical))
 }
 
 #[cfg(test)]
@@ -552,6 +526,31 @@ mod tests {
         assert_eq!(sk(Key::Named(NamedKey::Enter)), Some(ShortcutKey::Enter));
         // A multi-char logical key is not a shortcut token.
         assert_eq!(sk(ch("ab")), None);
+    }
+
+    // ----- raw key events: winit → platform-neutral KeyEvent ------------------
+
+    #[test]
+    fn raw_keys_beyond_the_intent_set_convert() {
+        use pebbles_core::LogicalKey as L;
+        use pebbles_core::keyboard::NamedKey as N;
+
+        use super::{logical_key, physical_key};
+        // Keys with no editing intent still reach a raw handler with their identity.
+        assert_eq!(logical_key(Key::Named(NamedKey::PageUp)), L::Named(N::PageUp));
+        assert_eq!(logical_key(Key::Named(NamedKey::PageDown)), L::Named(N::PageDown));
+        assert_eq!(logical_key(Key::Named(NamedKey::Insert)), L::Named(N::Insert));
+        assert_eq!(logical_key(Key::Named(NamedKey::F5)), L::Named(N::F(5)));
+        assert_eq!(logical_key(Key::Named(NamedKey::F24)), L::Named(N::F(24)));
+        assert_eq!(logical_key(Key::Named(NamedKey::Control)), L::Named(N::Control));
+        assert_eq!(logical_key(ch("é")), L::Character("é".into()));
+        // Physical keys are W3C `code` names.
+        assert_eq!(physical_key(PhysicalKey::Code(KeyCode::Backquote)).code(), "Backquote");
+        assert_eq!(physical_key(PhysicalKey::Code(KeyCode::KeyA)).code(), "KeyA");
+        assert_eq!(physical_key(PhysicalKey::Code(KeyCode::PageUp)).code(), "PageUp");
+        assert_eq!(physical_key(NO_PHYSICAL).code(), "Unidentified");
+        // PageUp is now a shortcut token too.
+        assert_eq!(sk(Key::Named(NamedKey::PageUp)), Some(ShortcutKey::PageUp));
     }
 
     // ----- file_drop_event: winit OS file drag → file_drop -------------------

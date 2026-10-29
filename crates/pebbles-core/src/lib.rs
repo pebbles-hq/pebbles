@@ -58,7 +58,7 @@ pub use element::{ElementId, Ui};
 pub use focus::{FocusNode, ScopeTag, create_focus, create_focus_scope, editor_is_focused, registered_nodes};
 pub use ipc::{Channel, channel};
 pub use key::Key;
-pub use keyboard::{KeyInput, Motion};
+pub use keyboard::{KeyEvent, KeyEventKind, KeyEventResult, KeyInput, LogicalKey, Motion, PhysicalKey};
 pub use reactive::{
     ErrorBoundaryHandle, RootDisposer, Signal, Store, consume_context, create_cleanup, create_effect,
     create_memo, create_memo_with, create_root, create_root_signal, create_selector, create_signal,
