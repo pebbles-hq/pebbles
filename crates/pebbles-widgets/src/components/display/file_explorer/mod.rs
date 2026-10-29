@@ -345,7 +345,13 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         filter: create_signal(String::new()),
         load_filter: create_signal(None),
     };
-    explorer.menu.set(explorer.default_menu());
+    // `file_explorer` runs on every render of its component; build the default
+    // menu only the first time so app customizations survive re-renders.
+    let menu_built = create_signal(false);
+    if !menu_built.peek() {
+        menu_built.set(true);
+        explorer.menu.set(explorer.default_menu());
+    }
     explorer.install_keys();
     explorer
 }

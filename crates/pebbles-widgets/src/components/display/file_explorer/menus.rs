@@ -181,16 +181,17 @@ pub enum OpenMode {
 }
 
 impl FileExplorer {
-    /// The built-in VS Code menu set (in VS Code's order).
+    /// The built-in VS Code menu set (in VS Code's order). Predicates read
+    /// signals with `get` so the row menus re-evaluate when they change.
     pub(super) fn default_menu(self) -> Vec<ExplorerMenuItem> {
         use MenuContext::*;
         use menu_ids as m;
         let ex = self;
-        let has = move |id: &'static str| move |_: &MenuTarget| ex.menu_handlers.peek().contains_key(id);
-        let cap = move |c: Capability| move |_: &MenuTarget| ex.caps.peek().allows(c);
+        let has = move |id: &'static str| move |_: &MenuTarget| ex.menu_handlers.get().contains_key(id);
+        let cap = move |c: Capability| move |_: &MenuTarget| ex.caps.get().allows(c);
         let handler = move |id: &'static str| {
             move |t: &MenuTarget| {
-                let h = ex.menu_handlers.peek().get(id).cloned();
+                let h = ex.menu_handlers.get().get(id).cloned();
                 if let Some(h) = h {
                     h(t);
                 }
@@ -245,8 +246,8 @@ impl FileExplorer {
             })
             .visible_when(move |t| t.context == File && has(m::COMPARE_WITH_SELECTED)(t)),
             ExplorerMenuItem::new(m::COMPARE_WITH_SELECTED, "Compare with Selected", move |t| {
-                let src = ex.compare_source.peek().and_then(|id| ex.entry(id));
-                let h = ex.menu_handlers.peek().get(m::COMPARE_WITH_SELECTED).cloned();
+                let src = ex.compare_source.get().and_then(|id| ex.entry(id));
+                let h = ex.menu_handlers.get().get(m::COMPARE_WITH_SELECTED).cloned();
                 if let (Some(src), Some(e), Some(h)) = (src, t.entry(), h) {
                     h(&MenuTarget { context: Multi, entries: vec![src, e.clone()] });
                 }
@@ -254,7 +255,7 @@ impl FileExplorer {
             .visible_when(move |t| {
                 t.context == File
                     && has(m::COMPARE_WITH_SELECTED)(t)
-                    && ex.compare_source.peek().is_some_and(|s| t.entry().is_some_and(|e| e.id != s))
+                    && ex.compare_source.get().is_some_and(|s| t.entry().is_some_and(|e| e.id != s))
             }),
             ExplorerMenuItem::new(m::COMPARE_SELECTED, "Compare Selected", handler(m::COMPARE_WITH_SELECTED))
                 .visible_when(move |t| {
@@ -281,18 +282,18 @@ impl FileExplorer {
             })
             .shortcut("Ctrl+V")
             .in_contexts(&[File, Folder, Empty])
-            .enabled_when(move |t| cap(Capability::CopyPaste)(t) && ex.clipboard.peek().is_some()),
+            .enabled_when(move |t| cap(Capability::CopyPaste)(t) && ex.clipboard.get().is_some()),
             sep(),
             ExplorerMenuItem::new(m::COPY_PATH, "Copy Path", move |t| {
                 ex.copy_paths(t, false);
             })
             .shortcut("Shift+Alt+C")
-            .visible_when(move |t| t.context != Empty && ex.fs_root.peek().is_some()),
+            .visible_when(move |t| t.context != Empty && ex.fs_root.get().is_some()),
             ExplorerMenuItem::new(m::COPY_RELATIVE_PATH, "Copy Relative Path", move |t| {
                 ex.copy_paths(t, true);
             })
             .shortcut("Ctrl+K Ctrl+Shift+Alt+C")
-            .visible_when(move |t| t.context != Empty && ex.fs_root.peek().is_some()),
+            .visible_when(move |t| t.context != Empty && ex.fs_root.get().is_some()),
             sep(),
             ExplorerMenuItem::new(m::RENAME, "Rename…", move |t| {
                 if let Some(e) = t.entry() {
@@ -318,13 +319,13 @@ impl FileExplorer {
                 }
             })
             .visible_when(move |t| {
-                t.context == Folder && t.entry().is_some_and(|e| ex.expanded.peek().contains(&e.id))
+                t.context == Folder && t.entry().is_some_and(|e| ex.expanded.get().contains(&e.id))
             }),
             ExplorerMenuItem::new(m::REFRESH, "Refresh", move |_| {
                 ex.refresh();
             })
             .in_contexts(&[Empty])
-            .visible_when(move |t| t.context == Empty && ex.fs_root.peek().is_some()),
+            .visible_when(move |t| t.context == Empty && ex.fs_root.get().is_some()),
             ExplorerMenuItem::new(m::COLLAPSE_ALL, "Collapse All", move |_| ex.expanded.set(HashSet::new()))
                 .in_contexts(&[Empty]),
         ]

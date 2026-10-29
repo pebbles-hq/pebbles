@@ -1906,3 +1906,37 @@ fn files_dropped_from_the_os_are_copied_in_and_undo_removes_them() {
     std::fs::remove_dir_all(&outside).ok();
     std::fs::remove_dir_all(dir.with_extension("trash")).ok();
 }
+
+thread_local! {
+    static RERENDER: RefCell<Option<pebbles_core::Signal<u32>>> = const { RefCell::new(None) };
+    static RR_EX: RefCell<Option<pebbles_widgets::FileExplorer>> = const { RefCell::new(None) };
+}
+
+fn rerender_root() -> impl IntoWidget {
+    let bump = RERENDER.with(|r| r.borrow().unwrap());
+    let _ = bump.get(); // re-run this component on demand
+    let tree = create_signal(FileTree::new());
+    let ex = file_explorer(tree);
+    RR_EX.with(|c| *c.borrow_mut() = Some(ex));
+    OverlayHost::wrap(container().height(100.0).child(ex.tree()))
+}
+
+#[test]
+fn menu_customizations_survive_component_re_renders() {
+    use pebbles_widgets::ExplorerMenuItem;
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let bump = create_signal(0u32);
+    RERENDER.with(|r| *r.borrow_mut() = Some(bump));
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(300.0, 200.0);
+    ui.mount_root(View::new(palette::WHITE, component(rerender_root)).into_widget());
+    frame(&mut ui, &mut env, win);
+    let ex = RR_EX.with(|c| c.borrow().unwrap());
+    ex.add_menu_item(ExplorerMenuItem::new("app.x", "X", |_| {}));
+    bump.set(1);
+    frame(&mut ui, &mut env, win);
+    let ex = RR_EX.with(|c| c.borrow().unwrap());
+    assert!(ex.menu_items().iter().any(|i| i.id == "app.x"), "custom item kept across a re-render");
+}
