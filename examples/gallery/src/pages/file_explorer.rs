@@ -47,14 +47,19 @@ fn custom_theme() -> IconTheme {
             ExplorerIcon::colored(tabler::PHOTO, palette::violet::S500),
             Some(ExplorerIcon::colored(tabler::PHOTO_SEARCH, palette::violet::S500)),
         )
-        .file_name("Cargo.toml", ExplorerIcon::widget(|size| {
-            // Any widget can be an icon.
-            container()
-                .width(size)
-                .height(size)
-                .decoration(BoxDecoration::new().color(palette::orange::S500).radius(BorderRadius::all(3.0)))
-                .into_widget()
-        }))
+        .file_name(
+            "Cargo.toml",
+            ExplorerIcon::widget(|size| {
+                // Any widget can be an icon.
+                container()
+                    .width(size)
+                    .height(size)
+                    .decoration(
+                        BoxDecoration::new().color(palette::orange::S500).radius(BorderRadius::all(3.0)),
+                    )
+                    .into_widget()
+            }),
+        )
 }
 
 fn framed(child: impl IntoWidget, height: f64) -> impl IntoWidget {
@@ -76,7 +81,9 @@ pub fn file_explorer_screen() -> Element {
     // Decorations: a pretend git status + problems (the app owns the data).
     let dirty = create_signal(false);
     explorer.set_decorations(move |e| match e.name.as_str() {
-        "main.rs" => Some(Decoration { git: Some(GitStatus::Modified), dirty: dirty.get(), ..Default::default() }),
+        "main.rs" => {
+            Some(Decoration { git: Some(GitStatus::Modified), dirty: dirty.get(), ..Default::default() })
+        }
         "lib.rs" => Some(Decoration { git: Some(GitStatus::Added), ..Default::default() }),
         "menu.rs" => Some(Decoration { errors: 2, ..Default::default() }),
         "smoke.rs" => Some(Decoration { warnings: 1, ..Default::default() }),
@@ -87,7 +94,8 @@ pub fn file_explorer_screen() -> Element {
     let opened = create_signal(String::from("—"));
     explorer.on_open(move |e, mode| opened.set(format!("{} ({mode:?})", e.name)));
     explorer.set_menu_handler(menu_ids::OPEN_TO_SIDE, move |t| {
-        opened.set(format!("{} (to the side)", t.entries.first().map(|e| e.name.clone()).unwrap_or_default()));
+        opened
+            .set(format!("{} (to the side)", t.entries.first().map(|e| e.name.clone()).unwrap_or_default()));
     });
     explorer.insert_menu_item_after(
         menu_ids::OPEN,
