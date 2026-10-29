@@ -1255,7 +1255,9 @@ fn trash_writes_freedesktop_entries_and_undo_restores() {
     assert!(!dir.join("d").exists() && !dir.join("f.txt").exists());
     assert_eq!(std::fs::read_to_string(trash.join("files/d/x.txt")).unwrap(), "x");
     let info = std::fs::read_to_string(trash.join("info/f.txt.trashinfo")).unwrap();
-    assert!(info.starts_with("[Trash Info]\nPath=/") && info.contains("f.txt\nDeletionDate="), "{info}");
+    assert!(info.starts_with("[Trash Info]\nPath=") && info.contains("f.txt\nDeletionDate="), "{info}");
+    #[cfg(unix)]
+    assert!(info.starts_with("[Trash Info]\nPath=/"), "absolute path: {info}");
     assert!(tree.peek().root.is_empty());
     assert!(ex.undo());
     assert_eq!(std::fs::read_to_string(dir.join("d/x.txt")).unwrap(), "x");
@@ -1657,7 +1659,7 @@ fn read_only_greys_mutating_menu_items_and_copy_path_works() {
     }
     let item = |id: &str| ex.menu_for(&t).into_iter().find(|i| i.id == id).unwrap();
     item(m::COPY_PATH).run(&t);
-    assert_eq!(pebbles_core::clipboard::read(), dir.join("src/main.rs").display().to_string());
+    assert_eq!(pebbles_core::clipboard::read(), dir.join("src").join("main.rs").display().to_string());
     item(m::COPY_RELATIVE_PATH).run(&t);
     assert_eq!(
         pebbles_core::clipboard::read(),
