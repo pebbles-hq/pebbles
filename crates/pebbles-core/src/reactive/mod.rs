@@ -240,6 +240,13 @@ struct Runtime {
     /// [`push_ancestor_contexts`] — so `consume_context` resolves the same as in a
     /// top-down render (fixes e.g. a themed button reverting on hover).
     provided: std::collections::HashMap<CompKey, Vec<Rc<dyn Any>>>,
+    /// Per-component snapshot of the render-time context stack as it stood when the
+    /// component last rendered (its ancestors' contexts, before its own provides).
+    /// Holding the `Rc`s keeps their addresses from being reused, so a pointer
+    /// comparison is exact. Lets the reconciler skip re-running a component handed
+    /// back unchanged by its parent only when every context it can see is unchanged
+    /// (see [`contexts_unchanged_since_render`]).
+    render_contexts: std::collections::HashMap<CompKey, Vec<Rc<dyn Any>>>,
     /// A globally-unique u64 per component instance — the id the render-side
     /// registries (text-edit layout, scroll) key by, so they never collide across
     /// windows even though raw element ids do.
@@ -1252,6 +1259,8 @@ pub(crate) fn begin_component(id: ElementId) -> ComponentGuard {
         // Provided contexts are re-declared each render; drop the previous set so a
         // component that stops providing a context doesn't keep a stale entry.
         rt.provided.remove(&key);
+        let snapshot: Vec<Rc<dyn Any>> = rt.contexts.iter().map(|e| e.value.clone()).collect();
+        rt.render_contexts.insert(key, snapshot);
         // Clear this component's old subscriptions so tracking is fresh each run —
         // touching only the signals it actually read (via the reverse index).
         if let Some(sids) = rt.subs_of.remove(&key) {
@@ -1325,7 +1334,22 @@ pub(crate) fn dispose_component(id: ElementId) {
         }
         rt.instances.remove(&key);
         rt.provided.remove(&key);
+        rt.render_contexts.remove(&key);
     });
+}
+
+/// `true` if the render-time context stack visible right now is identical (same
+/// provided values, by `Rc` identity) to the one component `id` saw on its last
+/// render. The reconciler uses this before skipping a component whose parent handed
+/// back the very same instance: a re-rendered ancestor provider (new theme, new focus
+/// scope) produces fresh context values, which forces the re-run.
+pub(crate) fn contexts_unchanged_since_render(id: ElementId) -> bool {
+    with_rt(|rt| {
+        let key = (rt.current_window, id);
+        let Some(prev) = rt.render_contexts.get(&key) else { return false };
+        prev.len() == rt.contexts.len()
+            && prev.iter().zip(rt.contexts.iter()).all(|(a, e)| Rc::ptr_eq(a, &e.value))
+    })
 }
 
 /// Register a callback to run when the current component unmounts (React's
