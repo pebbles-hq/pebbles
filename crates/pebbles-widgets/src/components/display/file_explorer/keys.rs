@@ -12,7 +12,15 @@ impl FileExplorer {
     pub(super) fn install_keys(self) {
         // Every binding is also gated by Capability::Keyboard.
         let create_shortcut_if = move |combo: &str, f: Box<dyn Fn() -> bool>| {
-            create_shortcut_if(combo, move || self.caps.peek().allows(Capability::Keyboard) && f());
+            // A handled key reveals the active row (VS Code: keyboard focus
+            // never leaves the viewport — arrows, Home/End, type-to-find, F2).
+            create_shortcut_if(combo, move || {
+                let handled = self.caps.peek().allows(Capability::Keyboard) && f();
+                if handled {
+                    self.scroll_active_into_view();
+                }
+                handled
+            });
         };
         let multi = move || self.caps.peek().allows(Capability::MultiSelect);
         // F2 — rename the active node.

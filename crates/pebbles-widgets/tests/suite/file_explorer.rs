@@ -1998,3 +1998,181 @@ fn rows_clip_and_scroll_inside_a_bounded_box() {
     let rh = h.size_of(last).height;
     assert!(y1 >= top - 0.5 && y1 + rh <= top + vh + 0.5, "the last row is inside the viewport ({y1})");
 }
+
+// ---------------------------------------------------------------------------
+// Reveal: keyboard focus never leaves a scrolled viewport (VS Code)
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    static RV_EX: RefCell<Option<pebbles_widgets::FileExplorer>> = const { RefCell::new(None) };
+}
+
+fn reveal_root() -> impl IntoWidget {
+    let mut t = FileTree::new();
+    for i in 0..30 {
+        t.insert(None, FsKind::File, format!("file{i:02}.txt"));
+    }
+    let ex = file_explorer(create_signal(t));
+    RV_EX.with(|c| *c.borrow_mut() = Some(ex));
+    ex.set_decorations(|e| {
+        Some(pebbles_widgets::Decoration { errors: 1 + e.name.len() % 7, ..Default::default() })
+    });
+    column(vec![container().height(120.0).child(ex.tree()).into_widget()])
+        .cross_axis_alignment(CrossAxisAlignment::Stretch)
+}
+
+/// (viewport top, viewport height, scroll offset).
+fn viewport(h: &pebbles_testing::Harness) -> (f64, f64, f64) {
+    use pebbles_render::RenderScroll;
+    let sid = h.find::<RenderScroll>().expect("scroll viewport");
+    let top = h.ui.render_tree().absolute_offset(sid).y;
+    (top, h.size_of(sid).height, h.object::<RenderScroll>(sid).offset)
+}
+
+/// Whether the row labelled `name` is fully inside the viewport.
+fn row_visible(h: &pebbles_testing::Harness, name: &str) -> bool {
+    let (top, vh, _) = viewport(h);
+    let Some(&t) = h.find_all_text(name).first() else { return false };
+    let y = h.ui.render_tree().absolute_offset(t).y;
+    let rh = h.size_of(t).height;
+    y >= top - 0.5 && y + rh <= top + vh + 0.5
+}
+
+#[test]
+fn keyboard_navigation_reveals_the_active_row_with_minimal_scroll() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    pebbles_core::keyboard::set_modifiers(false, false, false, false);
+    let mut h = pebbles_testing::Harness::new().window(300.0, 400.0);
+    h.mount(reveal_root);
+    h.draw();
+    let ex = RV_EX.with(|c| c.borrow().unwrap());
+    let ids = ex.visible_rows();
+    let name = |i: usize| format!("file{i:02}.txt");
+
+    // End jumps to the last row and scrolls it into view (bottom-aligned).
+    ex.select_only(ids[0]);
+    h.press("End");
+    h.settle();
+    h.draw();
+    assert!(row_visible(&h, &name(29)), "End revealed the last row");
+    let (_, _, off_end) = viewport(&h);
+    assert!(off_end > 0.0, "the viewport scrolled ({off_end})");
+
+    // ArrowUp within the viewport moves the focus without scrolling.
+    h.press("ArrowUp");
+    h.settle();
+    h.draw();
+    assert!((viewport(&h).2 - off_end).abs() < 0.5, "a visible row needs no scroll");
+
+    // Home scrolls back to the top.
+    h.press("Home");
+    h.settle();
+    h.draw();
+    assert!(viewport(&h).2.abs() < 0.5, "Home scrolled to the top");
+    assert!(row_visible(&h, &name(0)));
+
+    // Walking down past the bottom edge scrolls by the minimum: the active row
+    // sits exactly at the bottom of the viewport each step.
+    for i in 1..12 {
+        h.press("ArrowDown");
+        h.settle();
+        h.draw();
+        assert!(row_visible(&h, &name(i)), "ArrowDown kept row {i} in view");
+    }
+    // Exactly minimal: row 11's bottom edge is the viewport's bottom edge.
+    let (top, vh, off) = viewport(&h);
+    let y = |i: usize| h.ui.render_tree().absolute_offset(h.find_all_text(&name(i))[0]).y;
+    let rh = y(11) - y(10);
+    assert!(
+        (off - (12.0 * rh - vh)).abs() < 1.0,
+        "minimal scroll (offset {off}, row {rh}, viewport {vh}, top {top})"
+    );
+
+    // Type-to-find jumps to (and reveals) a far row.
+    h.press("Home");
+    h.settle();
+    h.draw();
+    ex.select_only(ids[0]);
+    for ch in "file25".chars() {
+        h.press(&ch.to_string());
+    }
+    h.settle();
+    h.draw();
+    assert_eq!(ex.selection().peek(), vec![ids[25]], "type-to-find selected file25");
+    assert!(row_visible(&h, &name(25)), "type-to-find revealed it");
+
+    // The programmatic reveal (what auto-reveal of the active editor's file
+    // calls via `reveal_path`) does the same minimal scroll.
+    h.press("Home");
+    h.settle();
+    h.draw();
+    ex.scroll_into_view(ids[15]);
+    h.settle();
+    h.draw();
+    assert!(row_visible(&h, &name(15)), "scroll_into_view revealed row 15");
+
+    // F2 rename reveals the row being renamed.
+    h.press("Home");
+    h.settle();
+    h.draw();
+    ex.select_only(ids[20]);
+    h.press("F2");
+    h.settle();
+    h.draw();
+    assert_eq!(ex.renaming().peek(), Some(ids[20]));
+    assert!(viewport(&h).2 > 0.0, "F2 revealed the renamed row");
+}
+
+#[test]
+fn new_file_input_is_scrolled_into_view() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let mut h = pebbles_testing::Harness::new().window(300.0, 400.0);
+    h.mount(reveal_root);
+    h.draw();
+    let ex = RV_EX.with(|c| c.borrow().unwrap());
+    let ids = ex.visible_rows();
+    // Active row at the bottom while the viewport shows the top.
+    ex.select_only(ids[29]);
+    h.draw();
+    assert!(viewport(&h).2.abs() < 0.5);
+    ex.begin_create(FsKind::File);
+    h.settle();
+    h.draw();
+    assert!(ex.renaming().peek().is_some(), "inline create started");
+    assert!(viewport(&h).2 > 0.0, "the viewport scrolled to the new-file input");
+    let pending = ex.renaming().peek().unwrap();
+    let pos = ex.visible_rows().iter().position(|&v| v == pending).unwrap();
+    // Rows are uniform: the input row (last) is bottom-aligned in the viewport.
+    let y = |n: &str| h.ui.render_tree().absolute_offset(h.find_all_text(n)[0]).y;
+    let rh = y("file29.txt") - y("file28.txt");
+    let (_, vh, off) = viewport(&h);
+    assert!(
+        pos as f64 * rh >= off - 0.5 && (pos as f64 + 1.0) * rh <= off + vh + 0.5,
+        "the new-file input row (#{pos}) is inside the viewport (offset {off})"
+    );
+}
+
+#[test]
+fn decoration_badges_stay_clear_of_the_scrollbar() {
+    use pebbles_render::RenderScroll;
+    pebbles_widgets::overlay::init();
+    let mut h = pebbles_testing::Harness::new().window(300.0, 400.0);
+    h.mount(reveal_root);
+    h.draw();
+    let sid = h.find::<RenderScroll>().unwrap();
+    let tree = h.ui.render_tree();
+    let right = tree.absolute_offset(sid).x + h.size_of(sid).width;
+    let sb = pebbles_render::ScrollbarStyle::default();
+    let bar_left = right - sb.margin - sb.thickness;
+    let mut checked = 0;
+    for b in ["1", "2", "3", "4", "5", "6", "7"] {
+        for t in h.find_all_text(b) {
+            let x1 = tree.absolute_offset(t).x + h.size_of(t).width;
+            assert!(x1 <= bar_left + 0.5, "badge {b} ends at {x1}, under the scrollbar (starts {bar_left})");
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "badges rendered");
+}

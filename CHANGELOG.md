@@ -6,6 +6,14 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — file explorer: keyboard focus stays in view; badges clear the scrollbar
+In a scrolled explorer every handled key (arrows, Home/End, type-to-find, F2) reveals the
+active row with VS Code's minimal scroll, as do `reveal_path` (auto-reveal of the active
+file), the inline New File/New Folder input and rename. New `FileExplorer::scroll_into_view`.
+Row content keeps a right gutter the width of the overlay scrollbar, so git/problem badges
+never sit under it. `ScrollHandle` now reports the applied/painted offset immediately, so
+back-to-back `ensure_visible` calls measure from the position on screen.
+
 ### Added — raw key events for focused widgets (Flutter `Focus.onKeyEvent`)
 `FocusNode::on_key_event(Rc::new(|e: &KeyEvent| -> KeyEventResult))`: while focused, a widget
 sees every key down / repeat / up — `LogicalKey`, `PhysicalKey` (W3C `code`), text, `Mods` —
