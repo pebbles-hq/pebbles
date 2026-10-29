@@ -159,6 +159,45 @@ fn split_mods(binding: &str) -> Result<(Mods, &str), String> {
     }
 }
 
+/// Build the key-down [`KeyEvent`](crate::KeyEvent) a US-layout keyboard produces for a
+/// chord in the binding grammar — `"Ctrl+Shift+P"`, `"PageUp"`, `"F5"`, `"a"`, `` "Ctrl+`" ``:
+/// modifiers, the logical key (Shift upper-cases a letter), its physical position and, for
+/// an unmodified printable key, its text. The basis of the test harness's `press`.
+pub fn chord_event(chord: &str) -> Result<crate::KeyEvent, String> {
+    use crate::keyboard::{LogicalKey, NamedKey as N};
+    let (mods, token) = split_mods(chord)?;
+    let key = key_token(token)?;
+    let physical =
+        physical_code(token).map_or_else(|_| crate::PhysicalKey::unidentified(), crate::PhysicalKey::new);
+    let logical = match key {
+        ShortcutKey::Char(c) => {
+            LogicalKey::Character(if mods.shift { c.to_uppercase().collect() } else { c.to_string() })
+        }
+        ShortcutKey::F(n) => LogicalKey::Named(N::F(n)),
+        ShortcutKey::Enter => LogicalKey::Named(N::Enter),
+        ShortcutKey::Escape => LogicalKey::Named(N::Escape),
+        ShortcutKey::Space => LogicalKey::Named(N::Space),
+        ShortcutKey::Tab => LogicalKey::Named(N::Tab),
+        ShortcutKey::ArrowUp => LogicalKey::Named(N::ArrowUp),
+        ShortcutKey::ArrowDown => LogicalKey::Named(N::ArrowDown),
+        ShortcutKey::ArrowLeft => LogicalKey::Named(N::ArrowLeft),
+        ShortcutKey::ArrowRight => LogicalKey::Named(N::ArrowRight),
+        ShortcutKey::Home => LogicalKey::Named(N::Home),
+        ShortcutKey::End => LogicalKey::Named(N::End),
+        ShortcutKey::Delete => LogicalKey::Named(N::Delete),
+        ShortcutKey::Backspace => LogicalKey::Named(N::Backspace),
+        ShortcutKey::PageUp => LogicalKey::Named(N::PageUp),
+        ShortcutKey::PageDown => LogicalKey::Named(N::PageDown),
+        ShortcutKey::Insert => LogicalKey::Named(N::Insert),
+    };
+    let text = match &logical {
+        LogicalKey::Character(s) if !mods.ctrl && !mods.alt && !mods.meta => Some(s.clone()),
+        LogicalKey::Named(N::Space) if !mods.ctrl && !mods.alt && !mods.meta => Some(" ".to_string()),
+        _ => None,
+    };
+    Ok(crate::KeyEvent { kind: crate::KeyEventKind::Down, logical, physical, text, mods })
+}
+
 /// Parse a [`Shortcut::physical`] binding to `(mods, Physical(code))`.
 fn parse_physical(binding: &str) -> Result<(Mods, ShortcutTrigger), String> {
     let (mods, token) = split_mods(binding)?;
@@ -469,6 +508,22 @@ mod physical_tests {
         assert_eq!(phys("NumpadEnter").1, ShortcutTrigger::Physical("NumpadEnter".into()));
         assert!(Shortcut::physical("Ctrl+é").parsed().is_err());
         assert!(Shortcut::physical("Ctrl+").parsed().is_err());
+    }
+
+    #[test]
+    fn chord_events_model_a_us_keyboard() {
+        use crate::keyboard::{LogicalKey, NamedKey};
+        let e = chord_event("Ctrl+Shift+P").unwrap();
+        assert_eq!(e.logical, LogicalKey::char("P"));
+        assert_eq!(e.physical.code(), "KeyP");
+        assert_eq!(e.text, None);
+        assert_eq!(e.intent(), Some(crate::KeyInput::CommandPalette));
+        let e = chord_event("a").unwrap();
+        assert_eq!(e.text.as_deref(), Some("a"));
+        let e = chord_event("PageDown").unwrap();
+        assert_eq!(e.logical, LogicalKey::Named(NamedKey::PageDown));
+        assert_eq!(e.physical.code(), "PageDown");
+        assert!(chord_event("Ctrl+").is_err());
     }
 
     #[test]
