@@ -26,10 +26,10 @@ pub use empty::{Empty, empty};
 #[cfg(feature = "file-dialogs")]
 pub use file_explorer::pick_folder;
 pub use file_explorer::{
-    Capability, ConfirmMoveFn, ExplorerCapabilities, ExplorerEntry, ExplorerError, ExplorerIcon,
-    ExplorerMenuItem, ExplorerOp, ExplorerStyle, FileExplorer, FileTree, FsKind, FsNode, IconTheme,
-    LanguageResolver, MenuAction, MenuContext, MenuTarget, MoveRequest, OpenMode, file_explorer, language_of,
-    menu_ids, natural_cmp,
+    Capability, ConfirmMoveFn, Decoration, ExplorerCapabilities, ExplorerEntry, ExplorerError, ExplorerIcon,
+    ExplorerMenuItem, ExplorerOp, ExplorerStyle, FileExplorer, FileTree, FsKind, FsNode, GitStatus,
+    IconTheme, LanguageResolver, MenuAction, MenuContext, MenuTarget, MoveRequest, OpenMode, file_explorer,
+    language_of, menu_ids, natural_cmp,
 };
 pub use grid_tile::{GridTile, GridTileBar, grid_tile, grid_tile_bar};
 pub use hover_card::{HoverCard, hover_card};

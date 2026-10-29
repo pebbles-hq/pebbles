@@ -20,11 +20,16 @@ pub(super) struct NodeProps {
 pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     let st = p.explorer.style();
     let explorer = p.explorer;
-    let node = &p.node;
-    let is_folder = node.kind == FsKind::Folder;
     let q = explorer.filter.get().trim().to_lowercase();
     let filtering = !q.is_empty();
-    let expanded = is_folder && (explorer.expanded.get().contains(&node.id) || filtering);
+    // Compact folders: a single-child folder chain renders as one row whose
+    // identity is its LAST folder, labelled `a/b/c`.
+    let chain = if filtering { vec![p.node.clone()] } else { explorer.compact_chain(&p.node) };
+    let node = chain.last().expect("non-empty");
+    let chain_label = chain.iter().map(|n| n.name.as_str()).collect::<Vec<_>>().join("/");
+    let is_folder = node.kind == FsKind::Folder;
+    let exp = explorer.expanded.get();
+    let expanded = is_folder && (chain.iter().all(|c| exp.contains(&c.id)) || filtering);
     let sel = explorer.selected.get();
     let selected = sel.contains(&node.id);
     // The FOCUS row gets the ring — driven by the focus signal (Mod+↑/↓ walks
@@ -63,7 +68,8 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     } else {
         gap_w(st.twistie_size).into_widget()
     };
-    let glyph = explorer.resolved_icon(&p.node, expanded).build(st.icon_size, dim);
+    let glyph = explorer.resolved_icon(node, expanded).build(st.icon_size, dim);
+    let deco = explorer.decoration(node.id);
 
     let label: AnyWidget = if renaming {
         component_props(
@@ -72,21 +78,33 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
         )
         .into_widget()
     } else {
-        let mut t = text(node.name.clone()).size(st.font_size as f32).color(if dragged || cut_pending {
-            st.muted_text
-        } else if selected {
-            sel_fg
-        } else {
-            st.text
-        });
+        let deco_color = deco.as_ref().and_then(|d| d.label_color(&st));
+        let faded = deco.as_ref().is_some_and(|d| d.faded);
+        let mut t =
+            text(chain_label.clone()).size(st.font_size as f32).color(if dragged || cut_pending || faded {
+                st.muted_text
+            } else if selected {
+                sel_fg
+            } else {
+                deco_color.unwrap_or(st.text)
+            });
         if let Some(f) = &st.font_family {
             t = t.font_family(f.clone());
         }
         t.into_widget()
     };
+    // The trailing decoration badge (git letter, problem count, ● dirty, •).
+    let badge: AnyWidget = match deco.as_ref().and_then(|d| d.badge_text().map(|b| (b, d.label_color(&st)))) {
+        Some((b, c)) if !renaming => text(b)
+            .size((st.font_size - 1.5) as f32)
+            .color(if selected { sel_fg } else { c.unwrap_or(st.muted_text) })
+            .into_widget(),
+        _ => gap_w(0.0).into_widget(),
+    };
 
-    let content = row(children![twistie, gap_w(4.0), glyph, gap_w(6.0), Expanded::new(label)])
-        .main_axis_size(MainAxisSize::Min);
+    let content =
+        row(children![twistie, gap_w(4.0), glyph, gap_w(6.0), Expanded::new(label), gap_w(4.0), badge])
+            .main_axis_size(MainAxisSize::Min);
     let mut inner = Container::new().padding(st.row_padding).child(content);
     if let Some(h) = st.row_height {
         inner = inner.height(h).alignment(pebbles_foundation::Alignment::CENTER_LEFT);
@@ -273,7 +291,7 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
 
     let mut kids = vec![row_widget];
     if is_folder && expanded && !renaming {
-        let anc_match = p.anc_match || name_matches(&p.node, &q);
+        let anc_match = p.anc_match || name_matches(node, &q);
         for child in &node.children {
             if filtering && !filter_keeps(child, &q, anc_match) {
                 continue;

@@ -79,6 +79,7 @@ use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, animated, component_props, create_shortcut_if, create_signal};
 
 mod caps;
+mod deco;
 mod icons;
 mod keys;
 mod menus;
@@ -88,6 +89,7 @@ mod style;
 mod tree;
 
 pub use caps::{Capability, ExplorerCapabilities, ExplorerEntry, ExplorerError, ExplorerOp};
+pub use deco::{Decoration, GitStatus};
 pub use icons::{ExplorerIcon, IconTheme, LanguageResolver, language_of};
 pub use menus::{ExplorerMenuItem, MenuAction, MenuContext, MenuTarget, OpenMode, menu_ids};
 pub use style::ExplorerStyle;
@@ -189,6 +191,10 @@ pub struct FileExplorer {
     pub(super) menu_handlers: Signal<std::collections::HashMap<String, MenuAction>>,
     /// "Select for Compare" source.
     pub(super) compare_source: Signal<Option<u64>>,
+    /// The decoration hook (see [`set_decorations`](Self::set_decorations)).
+    pub(super) deco_fn: Signal<Option<deco::DecoFn>>,
+    /// Compact folders on/off.
+    pub(super) compact: Signal<bool>,
     /// Type-to-find buffer and the time of the last key.
     pub(super) find_buf: Signal<(String, Option<std::time::Instant>)>,
     /// The open hook (see [`on_open`](Self::on_open)).
@@ -297,6 +303,8 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         compare_source: create_signal(None),
         open_hook: create_signal(None),
         find_buf: create_signal((String::new(), None)),
+        deco_fn: create_signal(None),
+        compact: create_signal(false),
         path_icons: create_signal(std::collections::HashMap::new()),
         active: create_signal(None),
         filter: create_signal(String::new()),
@@ -405,11 +413,47 @@ impl FileExplorer {
     /// filesystem mode).
     pub fn toggle_folder(&self, id: u64) {
         self.ensure_loaded(id);
+        if self.compact.peek() {
+            // A compact row toggles its whole chain (head … id).
+            let head = self.compact_head(id);
+            let chain: Vec<u64> = {
+                let t = self.tree.peek();
+                t.node(head).map(|n| self.compact_chain(n).iter().map(|c| c.id).collect()).unwrap_or_default()
+            };
+            let open = chain.iter().all(|c| self.expanded.peek().contains(c));
+            self.expanded.update(|ex| {
+                for c in &chain {
+                    if open {
+                        ex.remove(c);
+                    } else {
+                        ex.insert(*c);
+                    }
+                }
+            });
+            if !open {
+                self.extend_compact_chain(*chain.last().unwrap_or(&id));
+            }
+            return;
+        }
         self.expanded.update(|ex| {
             if !ex.remove(&id) {
                 ex.insert(id);
             }
         });
+    }
+
+    /// The first folder of the compact chain `id` belongs to.
+    pub(super) fn compact_head(&self, id: u64) -> u64 {
+        let t = self.tree.peek();
+        let mut head = id;
+        while let Some(p) = t.parent_of(head) {
+            let only_child = t.node(p).is_some_and(|n| n.loaded && n.children.len() == 1);
+            if !only_child {
+                break;
+            }
+            head = p;
+        }
+        head
     }
 
     /// The active node: the keyboard-focus row when set (and still present),
@@ -424,22 +468,45 @@ impl FileExplorer {
     /// The visible nodes in display order (folders expanded), honoring the
     /// filter with the SAME rules the renderer uses — keyboard navigation always
     /// walks exactly what's on screen.
+    /// The rows on screen, top to bottom (node ids; a compact chain is its
+    /// last folder) — what the keyboard walks.
+    pub fn visible_rows(&self) -> Vec<u64> {
+        self.visible_ids()
+    }
+
     fn visible_ids(&self) -> Vec<u64> {
         let q = self.filter.peek().trim().to_lowercase();
-        fn walk(nodes: &[FsNode], expanded: &HashSet<u64>, q: &str, anc: bool, out: &mut Vec<u64>) {
-            for n in nodes {
-                if !filter_keeps(n, q, anc) {
-                    continue;
-                }
-                out.push(n.id);
-                let open = if q.is_empty() { expanded.contains(&n.id) } else { true };
-                if n.kind == FsKind::Folder && open {
-                    walk(&n.children, expanded, q, anc || name_matches(n, q), out);
+        let compact = self.compact.peek();
+        let walk = |nodes: &[FsNode], expanded: &HashSet<u64>, out: &mut Vec<u64>| {
+            fn go(
+                ex: &FileExplorer,
+                compact: bool,
+                nodes: &[FsNode],
+                expanded: &HashSet<u64>,
+                q: &str,
+                anc: bool,
+                out: &mut Vec<u64>,
+            ) {
+                for n in nodes {
+                    if !filter_keeps(n, q, anc) {
+                        continue;
+                    }
+                    // Compact folders: the chain is ONE row (its last folder).
+                    let chain = if compact && q.is_empty() { ex.compact_chain(n) } else { vec![n.clone()] };
+                    let last = chain.last().expect("non-empty");
+                    out.push(last.id);
+                    let open =
+                        if q.is_empty() { chain.iter().all(|c| expanded.contains(&c.id)) } else { true };
+                    if last.kind == FsKind::Folder && open {
+                        go(ex, compact, &last.children, expanded, q, anc || name_matches(n, q), out);
+                    }
                 }
             }
-        }
+            go(self, compact, nodes, expanded, &q, false, out);
+        };
         let mut out = Vec::new();
-        walk(&self.tree.peek().root, &self.expanded.peek(), &q, false, &mut out);
+        let root = self.tree.peek().root.clone();
+        walk(&root, &self.expanded.peek(), &mut out);
         out
     }
 

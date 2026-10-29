@@ -1799,3 +1799,67 @@ fn reveal_path_expands_lazily_and_selects() {
     assert!(ex.reveal_path("/definitely/elsewhere").is_none());
     std::fs::remove_dir_all(&dir).ok();
 }
+
+// ---------------------------------------------------------------------------
+// Decorations and compact folders
+// ---------------------------------------------------------------------------
+
+#[test]
+fn decorations_color_badge_and_propagate_to_folders() {
+    use pebbles_widgets::{Decoration, ExplorerStyle, GitStatus, Theme};
+    let (mut ui, mut env, dir, ex) = mount_fs("deco");
+    let tree = TREE_FS.with(|t| t.borrow().unwrap());
+    let status = create_signal(std::collections::HashMap::<String, Decoration>::new());
+    ex.set_decorations(move |e| status.get().get(&e.name).cloned());
+    status.update(|m| {
+        m.insert("inner".into(), Decoration { git: Some(GitStatus::Modified), ..Default::default() });
+        m.insert("zother".into(), Decoration { errors: 2, warnings: 1, ..Default::default() });
+    });
+    let st = ExplorerStyle::from_theme(&Theme::tailwind());
+    let inner = ex.decoration(id_of(tree, "outer/inner")).unwrap();
+    assert_eq!(inner.badge_text().as_deref(), Some("M"));
+    assert_eq!(inner.label_color(&st), Some(st.git_modified));
+    let z = ex.decoration(id_of(tree, "zother")).unwrap();
+    assert_eq!(z.badge_text().as_deref(), Some("3"));
+    assert_eq!(z.label_color(&st), Some(st.error), "errors win over git");
+    // outer has no decoration of its own: it inherits a dot from inner.
+    let outer = ex.decoration(id_of(tree, "outer")).unwrap();
+    assert_eq!(outer.badge_text().as_deref(), Some("•"));
+    assert_eq!(outer.git, Some(GitStatus::Modified));
+    // Dirty badge, and the row actually renders the badge text.
+    status.update(|m| {
+        m.insert("inner".into(), Decoration { dirty: true, ..Default::default() });
+    });
+    frame(&mut ui, &mut env, Size::new(400.0, 300.0));
+    assert_eq!(ex.decoration(id_of(tree, "outer/inner")).unwrap().badge_text().as_deref(), Some("●"));
+    let rt = ui.render_tree();
+    let painted = rt.find_all::<pebbles_render::RenderParagraph>().into_iter().any(|id| {
+        rt.object_ref(id).downcast_ref::<pebbles_render::RenderParagraph>().is_some_and(|p| p.text == "●")
+    });
+    assert!(painted, "the ● badge is painted");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn compact_folders_render_chains_as_one_row() {
+    let (dir, tree, ex) = fs_explorer("compact");
+    std::fs::create_dir_all(dir.join("a/b/c")).unwrap();
+    std::fs::write(dir.join("a/b/c/leaf.txt"), "").unwrap();
+    std::fs::write(dir.join("top.txt"), "").unwrap();
+    assert!(ex.open_folder(&dir));
+    let ex = ex.compact_folders(true);
+    let a = id_of(tree, "a");
+    ex.toggle_folder(a); // expanding the head loads and opens the whole chain
+    let c = id_of(tree, "a/b/c");
+    let leaf = id_of(tree, "a/b/c/leaf.txt");
+    let visible = ex.visible_rows();
+    assert_eq!(visible, vec![c, leaf, id_of(tree, "top.txt")], "a/b/c is ONE row");
+    // Collapsing the row collapses the chain.
+    ex.toggle_folder(c);
+    assert_eq!(ex.visible_rows(), vec![c, id_of(tree, "top.txt")]);
+    // Off again: the plain tree.
+    let ex = ex.compact_folders(false);
+    ex.toggle_folder(a);
+    assert_eq!(ex.visible_rows()[0], a);
+    std::fs::remove_dir_all(&dir).ok();
+}
