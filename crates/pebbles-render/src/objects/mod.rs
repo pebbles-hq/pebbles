@@ -60,7 +60,10 @@ pub use paragraph::{
     FontFeature, FontVariation, ParagraphStyle, Placeholder, PlaceholderAlignment, RenderParagraph,
     StrutStyle, TextDecorationStyle, TextShadow, TextSpanStyle,
 };
-pub use pointer::{Cursor, PointerButton, PointerEvent, RenderPointerListener, TapCallback};
+pub use pointer::{
+    Cursor, PointerButton, PointerEvent, PointerScrollEvent, PointerSignalCallback, RenderPointerListener,
+    ScrollUnit, TapCallback,
+};
 pub use scroll::{
     RefreshState, RenderScroll, ScrollEvent, ScrollHandle, ScrollMetrics, ScrollNotification, ScrollPhysics,
     ScrollbarPolicy, ScrollbarStyle,

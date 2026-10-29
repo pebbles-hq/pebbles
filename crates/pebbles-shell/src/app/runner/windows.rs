@@ -275,12 +275,12 @@ impl Runner {
                 sync_window_cursor(&mut w);
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let dy = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => -(y as f64) * LINE_SCROLL,
-                    MouseScrollDelta::PixelDelta(p) => -p.y / w.window.scale_factor(),
-                };
-                // C6: secondary windows now follow the popover on wheel (was main-only).
-                if wheel_with_overlay(&mut w.ui, w.cursor, dy) {
+                let signal = scroll_signal(delta, w.window.scale_factor(), w.cursor);
+                // Pointer signal first; then C6: secondary windows follow the popover
+                // on wheel (was main-only).
+                if w.ui.dispatch_pointer_signal(w.cursor, signal)
+                    || wheel_with_overlay(&mut w.ui, w.cursor, signal.delta.y)
+                {
                     redraw::request(&w.window);
                 }
             }

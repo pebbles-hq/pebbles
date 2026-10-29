@@ -107,6 +107,12 @@ pub struct Harness {
     background: Color,
     /// The animation clock, advanced by [`tick`](Self::tick) / [`settle`](Self::settle).
     now: f64,
+    /// Held pointer buttons ([`button_down`](Self::button_down) / [`button_up`](Self::button_up)).
+    buttons: u8,
+    /// The captured `on_pointer_move` listener while a button is held.
+    move_target: Option<u64>,
+    /// The last pointer position fed by the button/move helpers.
+    pointer_at: Offset,
 }
 
 /// Tear the tree down like the shell does when a window closes: component cleanups run,
@@ -132,7 +138,16 @@ impl Harness {
         init_services();
         let ui = Ui::new();
         ui_make_current(&ui);
-        Harness { ui, env: TextEnv::new(), window: DEFAULT_WINDOW, background: palette::WHITE, now: 0.0 }
+        Harness {
+            ui,
+            env: TextEnv::new(),
+            window: DEFAULT_WINDOW,
+            background: palette::WHITE,
+            now: 0.0,
+            buttons: 0,
+            move_target: None,
+            pointer_at: Offset::ZERO,
+        }
     }
 
     /// Set the window size (builder form).
@@ -318,11 +333,69 @@ impl Harness {
         self.frame();
     }
 
-    /// Wheel-scroll `delta` at `at`, then run a frame. The spring keeps moving
+    /// Wheel-scroll `delta` (logical px, +down) at `at`, then run a frame — like the
+    /// shell: the pointer signal goes to `on_pointer_signal` listeners first, and only an
+    /// unconsumed scroll moves the scroll view under the pointer. The spring keeps moving
     /// afterwards — follow with [`settle`](Self::settle) to land it.
     pub fn scroll(&mut self, at: Offset, delta: f64) {
+        self.wheel(at, Offset::new(0.0, delta), pebbles_render::ScrollUnit::Pixels);
+    }
+
+    /// A wheel / trackpad scroll of `delta` (logical px, Flutter `scrollDelta` sign) at
+    /// `at`, reported in `unit`, then a frame. Pointer-signal listeners first; an
+    /// unconsumed vertical delta scrolls the scroll view under the pointer.
+    pub fn wheel(&mut self, at: Offset, delta: Offset, unit: pebbles_render::ScrollUnit) {
         self.ui.make_current();
-        self.ui.dispatch_scroll(at, delta);
+        let signal = pebbles_render::PointerScrollEvent { position: at, global: at, delta, unit };
+        if !self.ui.dispatch_pointer_signal(at, signal) && delta.y != 0.0 {
+            self.ui.dispatch_scroll(at, delta.y);
+        }
+        self.frame();
+    }
+
+    /// Press `button` at `at` (Listener `on_button_down`; a primary press also fires
+    /// `on_pointer_down`), capturing the `on_pointer_move` listener under it, then a frame.
+    /// Pair with [`pointer_move`](Self::pointer_move) / [`button_up`](Self::button_up).
+    pub fn button_down(&mut self, at: Offset, button: pebbles_render::PointerButton) {
+        use pebbles_render::{PointerButton, PointerEvent};
+        self.ui.make_current();
+        if self.buttons == 0 {
+            self.move_target = self.ui.pointer_move_target_at(at);
+        }
+        self.buttons |= PointerEvent::bit(button);
+        self.pointer_at = at;
+        self.ui.dispatch_button_down(at, button, self.buttons);
+        if button == PointerButton::Primary {
+            self.ui.dispatch_pointer_down(at);
+        }
+        self.frame();
+    }
+
+    /// Move the held pointer to `to`: the captured `on_pointer_move` listener gets it
+    /// (local position, delta, held buttons), and hover listeners update. Then a frame.
+    pub fn pointer_move(&mut self, to: Offset) {
+        self.ui.make_current();
+        if let Some(t) = self.move_target {
+            self.ui.dispatch_pointer_move(t, to, self.pointer_at, self.buttons);
+        }
+        self.pointer_at = to;
+        self.ui.dispatch_hover(to);
+        self.frame();
+    }
+
+    /// Release `button` at `at` (Listener `on_button_up`; primary also `on_pointer_up`).
+    pub fn button_up(&mut self, at: Offset, button: pebbles_render::PointerButton) {
+        use pebbles_render::{PointerButton, PointerEvent};
+        self.ui.make_current();
+        self.buttons &= !PointerEvent::bit(button);
+        if self.buttons == 0 {
+            self.move_target = None;
+        }
+        self.pointer_at = at;
+        self.ui.dispatch_button_up(at, button, self.buttons);
+        if button == PointerButton::Primary {
+            self.ui.dispatch_pointer_up(at);
+        }
         self.frame();
     }
 
@@ -892,5 +965,75 @@ mod tests {
             KeyEvent { mods: cs, ..KeyEvent::down(LogicalKey::char("`"), PhysicalKey::new("IntlBackslash")) };
         assert!(!pebbles_core::shortcuts::dispatch_key_event(window, &other));
         assert_eq!(TOGGLES.with(Cell::get), 3);
+    }
+
+    // ----- Listener-style pointer callbacks -------------------------------
+
+    thread_local! {
+        static PTR_LOG: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    }
+
+    fn ptr_log(s: String) {
+        PTR_LOG.with(|l| l.borrow_mut().push(s));
+    }
+
+    /// A 400-px scroll view whose second child (at y = 300 in content) is a 100×100
+    /// listener that consumes wheel scrolls and logs raw pointer events locally.
+    fn pointer_probe() -> impl IntoWidget {
+        use pebbles_core::action_event;
+        let pad = container().height(300.0);
+        let target = gesture_detector(container().width(100.0).height(100.0))
+            .on_pointer_signal(|e| {
+                ptr_log(format!("signal {:?} at {:?}", e.delta, e.position));
+                true
+            })
+            .on_button_down(action_event(|e| {
+                ptr_log(format!("down {:?} {} at {:?}", e.button, e.buttons, e.position))
+            }))
+            .on_button_up(action_event(|e| ptr_log(format!("up {:?} {}", e.button, e.buttons))))
+            .on_pointer_move(action_event(|e| {
+                ptr_log(format!("move {:?} d{:?} b{}", e.position, e.delta, e.buttons))
+            }))
+            .on_pointer_hover(action_event(|e| ptr_log(format!("hover {:?}", e.position))));
+        let tail = container().height(2000.0);
+        container().height(400.0).child(pebbles_widgets::scroll_view(
+            column(vec![pad.into_widget(), target.into_widget(), tail.into_widget()])
+                .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start),
+        ))
+    }
+
+    /// Regression (Gravel terminal): no wheel callback — a terminal could not scroll its
+    /// own scrollback nor stop the page behind from scrolling; hover moves reported
+    /// window coordinates; only the primary button reached on_pointer_down.
+    #[test]
+    fn pointer_signal_consumes_wheel_and_listener_events_are_local() {
+        use pebbles_render::PointerButton;
+        PTR_LOG.with(|l| l.borrow_mut().clear());
+        let mut h = Harness::new();
+        h.mount(pointer_probe);
+        h.draw();
+        let scroll = h.find::<pebbles_render::RenderScroll>().expect("scroll view");
+        let offset = |h: &Harness| h.object::<pebbles_render::RenderScroll>(scroll).offset;
+
+        // Over the listener: consumed — the scroll view stays put.
+        h.scroll(Offset::new(10.0, 310.0), 40.0);
+        h.settle();
+        assert_eq!(offset(&h), 0.0, "a consuming pointer-signal handler stops the scroll");
+        // Elsewhere: the scroll view scrolls as before.
+        h.scroll(Offset::new(10.0, 100.0), 40.0);
+        h.settle();
+        assert!(offset(&h) > 0.0, "unclaimed wheel still scrolls");
+
+        PTR_LOG.with(|l| l.borrow_mut().clear());
+        let top = 300.0 - offset(&h);
+        h.hover(Offset::new(20.0, top + 30.0));
+        h.button_down(Offset::new(20.0, top + 30.0), PointerButton::Secondary);
+        h.pointer_move(Offset::new(150.0, top + 35.0)); // leaves the box: still captured
+        h.button_up(Offset::new(150.0, top + 35.0), PointerButton::Secondary);
+        let log = PTR_LOG.with(|l| l.borrow().clone());
+        assert_eq!(log[0], "hover Vec2 { x: 20.0, y: 30.0 }", "{log:?}");
+        assert_eq!(log[1], "down Secondary 2 at Vec2 { x: 20.0, y: 30.0 }", "{log:?}");
+        assert_eq!(log[2], "move Vec2 { x: 150.0, y: 35.0 } dVec2 { x: 130.0, y: 5.0 } b2", "{log:?}");
+        assert!(!log.iter().any(|e| e.starts_with("up")), "release off the box isn't its up: {log:?}");
     }
 }

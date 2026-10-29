@@ -66,6 +66,37 @@ pub(super) fn wheel_with_overlay(ui: &mut Ui, cursor: Offset, dy: f64) -> bool {
     }
 }
 
+/// The winit mouse button as a Pebbles [`PointerButton`](pebbles_render::PointerButton)
+/// (`None` for Back/Forward/other buttons, which drive router history instead).
+pub(super) fn pointer_button(button: MouseButton) -> Option<pebbles_render::PointerButton> {
+    use pebbles_render::PointerButton as P;
+    match button {
+        MouseButton::Left => Some(P::Primary),
+        MouseButton::Right => Some(P::Secondary),
+        MouseButton::Middle => Some(P::Middle),
+        _ => None,
+    }
+}
+
+/// A winit wheel delta as a [`PointerScrollEvent`](pebbles_render::PointerScrollEvent) in
+/// Flutter's `scrollDelta` sign (+y scrolls down): line deltas are converted at
+/// [`LINE_SCROLL`] px per line, pixel deltas from physical to logical pixels.
+pub(super) fn scroll_signal(
+    delta: MouseScrollDelta,
+    scale: f64,
+    at: Offset,
+) -> pebbles_render::PointerScrollEvent {
+    use pebbles_render::{PointerScrollEvent, ScrollUnit};
+    let (delta, unit) = match delta {
+        MouseScrollDelta::LineDelta(x, y) => {
+            let lines = Offset::new(-f64::from(x), -f64::from(y));
+            (Offset::new(lines.x * LINE_SCROLL, lines.y * LINE_SCROLL), ScrollUnit::Lines(lines))
+        }
+        MouseScrollDelta::PixelDelta(p) => (Offset::new(-p.x / scale, -p.y / scale), ScrollUnit::Pixels),
+    };
+    PointerScrollEvent { position: at, global: at, delta, unit }
+}
+
 /// The cursor icon to switch to, or `None` to keep `current`. While the pointer is
 /// captured by a drag (a resize handle, a text selection, a pan, a drag-scroll), the
 /// icon the drag started with stays put even when the pointer leaves the widget —
@@ -551,6 +582,28 @@ mod tests {
         assert_eq!(physical_key(NO_PHYSICAL).code(), "Unidentified");
         // PageUp is now a shortcut token too.
         assert_eq!(sk(Key::Named(NamedKey::PageUp)), Some(ShortcutKey::PageUp));
+    }
+
+    // ----- wheel → pointer signal -------------------------------------------
+
+    #[test]
+    fn wheel_deltas_become_scroll_signals_in_flutter_sign() {
+        use pebbles_foundation::Offset;
+        use pebbles_render::ScrollUnit;
+        use winit::dpi::PhysicalPosition;
+        use winit::event::MouseScrollDelta;
+
+        use super::{LINE_SCROLL, scroll_signal};
+        let at = Offset::new(5.0, 6.0);
+        // A notch toward the user (winit +y = up) scrolls up: negative delta.
+        let s = scroll_signal(MouseScrollDelta::LineDelta(0.0, 1.0), 2.0, at);
+        assert_eq!(s.delta, Offset::new(0.0, -LINE_SCROLL));
+        assert_eq!(s.unit, ScrollUnit::Lines(Offset::new(0.0, -1.0)));
+        assert_eq!(s.global, at);
+        // Pixel deltas are physical: divided by the scale factor.
+        let s = scroll_signal(MouseScrollDelta::PixelDelta(PhysicalPosition::new(4.0, -20.0)), 2.0, at);
+        assert_eq!(s.delta, Offset::new(-2.0, 10.0));
+        assert_eq!(s.unit, ScrollUnit::Pixels);
     }
 
     // ----- file_drop_event: winit OS file drag → file_drop -------------------

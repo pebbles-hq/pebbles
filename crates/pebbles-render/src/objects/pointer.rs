@@ -5,6 +5,7 @@
 //! crate stay below the widget crate in the dependency graph.
 
 use std::any::Any;
+use std::rc::Rc;
 
 use pebbles_foundation::{Offset, Size};
 
@@ -32,7 +33,62 @@ pub struct PointerEvent {
     /// Movement since the previous update (drag deltas; `Offset::ZERO` for
     /// non-drag events).
     pub delta: Offset,
+    /// The buttons held while this event fired, as a bit set (Flutter's
+    /// `PointerEvent.buttons`): [`PRIMARY_BUTTON`](PointerEvent::PRIMARY_BUTTON) |
+    /// [`SECONDARY_BUTTON`](PointerEvent::SECONDARY_BUTTON) |
+    /// [`MIDDLE_BUTTON`](PointerEvent::MIDDLE_BUTTON). The live set for the Listener-style
+    /// `on_button_down` / `on_button_up` / `on_pointer_move` (after a release it no longer
+    /// holds the released button); `0` for hover; the event's own button bit for the
+    /// gesture callbacks (tap, pan, long-press, …).
+    pub buttons: u8,
 }
+
+impl PointerEvent {
+    /// Bit of the primary (left) button in [`buttons`](PointerEvent::buttons).
+    pub const PRIMARY_BUTTON: u8 = 1;
+    /// Bit of the secondary (right) button.
+    pub const SECONDARY_BUTTON: u8 = 2;
+    /// Bit of the middle (tertiary) button.
+    pub const MIDDLE_BUTTON: u8 = 4;
+
+    /// The [`buttons`](PointerEvent::buttons) bit of `button`.
+    pub fn bit(button: PointerButton) -> u8 {
+        match button {
+            PointerButton::Primary => Self::PRIMARY_BUTTON,
+            PointerButton::Secondary => Self::SECONDARY_BUTTON,
+            PointerButton::Middle => Self::MIDDLE_BUTTON,
+        }
+    }
+}
+
+/// How a wheel / trackpad reported its scroll (see [`PointerScrollEvent::unit`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ScrollUnit {
+    /// A notched mouse wheel: the raw line counts (positive = scroll down / right), which
+    /// the shell converted to [`delta`](PointerScrollEvent::delta) pixels at its line height.
+    Lines(Offset),
+    /// A precise (trackpad / high-resolution) device: `delta` is the reported pixels.
+    Pixels,
+}
+
+/// A pointer **signal**: a wheel or trackpad scroll over a widget (Flutter's
+/// `PointerScrollEvent`, delivered via `Listener.onPointerSignal`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PointerScrollEvent {
+    /// Pointer position within the receiving widget's local space.
+    pub position: Offset,
+    /// Pointer position in window coordinates.
+    pub global: Offset,
+    /// The scroll amount in logical pixels, Flutter's `scrollDelta` sign: positive `y`
+    /// scrolls DOWN (content moves up), positive `x` scrolls right.
+    pub delta: Offset,
+    /// Whether the device reported lines (with the raw counts) or pixels.
+    pub unit: ScrollUnit,
+}
+
+/// A pointer-signal handler: return `true` to CONSUME the scroll (no ancestor handler
+/// and no scroll view sees it), `false` to let it continue outward.
+pub type PointerSignalCallback = Rc<dyn Fn(PointerScrollEvent) -> bool>;
 
 /// The mouse cursor a widget requests while hovered. The shell maps these to the
 /// platform cursor (kept here so the render crate has no windowing dependency).
@@ -122,6 +178,19 @@ pub struct RenderPointerListener {
     pub on_horizontal_drag_update: Vec<TapCallback>,
     /// The horizontal drag ended.
     pub on_horizontal_drag_end: Vec<TapCallback>,
+    /// Wheel / trackpad scroll over this box (Flutter `Listener.onPointerSignal`); a
+    /// handler returning `true` consumes the scroll.
+    pub on_pointer_signal: Vec<PointerSignalCallback>,
+    /// Any button pressed over this box (Flutter `Listener.onPointerDown`); the event's
+    /// `button` says which, `buttons` holds the full set.
+    pub on_button_down: Vec<TapCallback>,
+    /// Any button released (Flutter `Listener.onPointerUp`), fired on the box under the
+    /// pointer.
+    pub on_button_up: Vec<TapCallback>,
+    /// The pointer moved while a button that went down over this box is held (Flutter
+    /// `Listener.onPointerMove`): captured — keeps firing after the pointer leaves the box,
+    /// with the position in this box's local space.
+    pub on_pointer_move: Vec<TapCallback>,
     /// The cursor to show while hovered.
     pub cursor: Option<Cursor>,
 }
