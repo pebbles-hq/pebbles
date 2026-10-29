@@ -170,6 +170,46 @@ impl FileExplorer {
                 true
             }),
         );
+        // Enter — open the active file (pinned) / toggle a folder; Space —
+        // preview it; Mod+Enter — Open to the Side (when the app plugs it).
+        create_shortcut_if(
+            "Enter",
+            Box::new(move || {
+                let Some(id) = self.active() else { return false };
+                self.open_entry(id, OpenMode::Open);
+                true
+            }),
+        );
+        create_shortcut_if(
+            "Space",
+            Box::new(move || {
+                let Some(id) = self.active() else { return false };
+                self.open_entry(id, OpenMode::Preview);
+                true
+            }),
+        );
+        create_shortcut_if(
+            "Mod+Enter",
+            Box::new(move || {
+                let Some(id) = self.active() else { return false };
+                let h = self.menu_handlers.peek().get(menu_ids::OPEN_TO_SIDE).cloned();
+                match (h, self.entry(id)) {
+                    (Some(h), Some(e)) if !e.is_folder() => {
+                        h(&MenuTarget { context: MenuContext::File, entries: vec![e] });
+                        true
+                    }
+                    _ => false,
+                }
+            }),
+        );
+        // Type-to-find: printable keys jump to the next visible row whose
+        // name starts with what was typed (the buffer resets after 1 s idle).
+        for ch in "abcdefghijklmnopqrstuvwxyz0123456789._-".chars() {
+            create_shortcut_if(&ch.to_string(), Box::new(move || self.type_to_find(ch)));
+            if ch.is_ascii_alphabetic() {
+                create_shortcut_if(&format!("Shift+{ch}"), Box::new(move || self.type_to_find(ch)));
+            }
+        }
         // Escape — cancel a pending cut/copy first (VSCode), then drop the
         // selection (disengages the key set).
         create_shortcut_if(
@@ -234,6 +274,37 @@ impl FileExplorer {
         let next = pos as i64 + dir;
         if next >= 0 && (next as usize) < visible.len() {
             self.active.set(Some(visible[next as usize]));
+        }
+        true
+    }
+
+    /// Type-to-find (see `install_keys`). Declines while idle.
+    pub fn type_to_find(&self, ch: char) -> bool {
+        if self.active().is_none() {
+            return false;
+        }
+        let now = std::time::Instant::now();
+        let mut buf = self.find_buf.peek().clone();
+        if buf.1.is_none_or(|t| now.duration_since(t).as_secs_f64() > 1.0) {
+            buf.0.clear();
+        }
+        buf.0.push(ch.to_ascii_lowercase());
+        buf.1 = Some(now);
+        let prefix = buf.0.clone();
+        self.find_buf.set(buf);
+        let visible = self.visible_ids();
+        let t = self.tree.peek();
+        let name = |id: u64| t.node(id).map(|n| n.name.to_lowercase()).unwrap_or_default();
+        let start = self.active().and_then(|a| visible.iter().position(|&v| v == a)).unwrap_or(0);
+        // A fresh single letter moves past the current row (cycling); a longer
+        // prefix may stay on it.
+        let from = if prefix.chars().count() == 1 { start + 1 } else { start };
+        let hit = (0..visible.len())
+            .map(|k| visible[(from + k) % visible.len()])
+            .find(|&id| name(id).starts_with(&prefix));
+        drop(t);
+        if let Some(id) = hit {
+            self.select_only(id);
         }
         true
     }

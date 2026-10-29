@@ -1709,3 +1709,93 @@ fn menus_are_customizable_and_compare_flows_through_the_handler() {
     assert_eq!(*got.borrow(), ["main.rs", "Cargo.toml"]);
     std::fs::remove_dir_all(&dir).ok();
 }
+
+// ---------------------------------------------------------------------------
+// Keyboard: Enter/Space open, type-to-find, keyboard switch, auto-reveal
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    static KB_DIR: RefCell<Option<std::path::PathBuf>> = const { RefCell::new(None) };
+    static KB_EX: RefCell<Option<(pebbles_widgets::FileExplorer, pebbles_core::Signal<FileTree>)>> = const { RefCell::new(None) };
+}
+
+fn kb_root() -> impl IntoWidget {
+    // The explorer is created INSIDE the component so its shortcuts register
+    // for this window (as in an app).
+    let tree = create_signal(FileTree::new());
+    let ex = file_explorer(tree);
+    ex.set_trash_dir(KB_DIR.with(|d| d.borrow().clone().unwrap()).with_extension("trash"));
+    ex.open_folder(KB_DIR.with(|d| d.borrow().clone().unwrap()));
+    KB_EX.with(|c| *c.borrow_mut() = Some((ex, tree)));
+    OverlayHost::wrap(container().height(260.0).child(ex.tree()))
+}
+
+fn mount_kb(
+    tag: &str,
+) -> (Ui, std::path::PathBuf, pebbles_widgets::FileExplorer, pebbles_core::Signal<FileTree>) {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    pebbles_core::keyboard::set_modifiers(false, false, false, false);
+    let dir = temp_dir(tag);
+    for f in ["alpha.rs", "beta.rs", "bravo.txt", "charlie.md"] {
+        std::fs::write(dir.join(f), "").unwrap();
+    }
+    std::fs::create_dir_all(dir.join("deep/er")).unwrap();
+    std::fs::write(dir.join("deep/er/target.txt"), "").unwrap();
+    KB_DIR.with(|d| *d.borrow_mut() = Some(dir.clone()));
+    let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(View::new(palette::WHITE, component(kb_root)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+    let (ex, tree) = KB_EX.with(|c| c.borrow().unwrap());
+    (ui, dir, ex, tree)
+}
+
+#[test]
+fn enter_space_open_type_to_find_and_the_keyboard_switch() {
+    use pebbles_core::{Mods, ShortcutKey, shortcuts};
+    use pebbles_widgets::{ExplorerCapabilities, OpenMode};
+    let (ui, dir, ex, tree) = mount_kb("kbopen");
+    let w = ui.window_id();
+    let none = Mods::default();
+    let opened = std::rc::Rc::new(RefCell::new(Vec::<(String, OpenMode)>::new()));
+    let o = opened.clone();
+    ex.on_open(move |e, m| o.borrow_mut().push((e.name.clone(), m)));
+    assert!(!shortcuts::dispatch(w, none, ShortcutKey::Char('b')), "idle: typing falls through");
+    ex.select_only(id_of(tree, "alpha.rs"));
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::Enter));
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::Space));
+    assert_eq!(
+        *opened.borrow(),
+        [("alpha.rs".to_string(), OpenMode::Open), ("alpha.rs".to_string(), OpenMode::Preview)]
+    );
+    // Type-to-find: "b" jumps to beta.rs, then "br" refines to bravo.txt.
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::Char('b')));
+    assert_eq!(ex.selection().get(), vec![id_of(tree, "beta.rs")]);
+    assert!(shortcuts::dispatch(w, none, ShortcutKey::Char('r')));
+    assert_eq!(ex.selection().get(), vec![id_of(tree, "bravo.txt")]);
+    // Keyboard switched off: every binding declines.
+    ex.set_capabilities(ExplorerCapabilities::all().keyboard_shortcuts(false));
+    assert!(!shortcuts::dispatch(w, none, ShortcutKey::Enter));
+    assert!(!shortcuts::dispatch(w, none, ShortcutKey::ArrowDown));
+    assert!(!shortcuts::dispatch(w, none, ShortcutKey::Delete));
+    assert_eq!(opened.borrow().len(), 2);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn reveal_path_expands_lazily_and_selects() {
+    let (_ui, dir, ex, tree) = mount_kb("reveal");
+    let id = ex.reveal_path(dir.join("deep/er/target.txt")).expect("revealed");
+    assert_eq!(ex.selection().get(), vec![id]);
+    assert_eq!(id_of(tree, "deep/er/target.txt"), id);
+    assert!(
+        ex.expanded().get().contains(&id_of(tree, "deep"))
+            && ex.expanded().get().contains(&id_of(tree, "deep/er"))
+    );
+    assert!(ex.reveal_path("/definitely/elsewhere").is_none());
+    std::fs::remove_dir_all(&dir).ok();
+}

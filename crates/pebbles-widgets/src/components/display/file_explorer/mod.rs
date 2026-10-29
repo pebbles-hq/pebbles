@@ -189,6 +189,8 @@ pub struct FileExplorer {
     pub(super) menu_handlers: Signal<std::collections::HashMap<String, MenuAction>>,
     /// "Select for Compare" source.
     pub(super) compare_source: Signal<Option<u64>>,
+    /// Type-to-find buffer and the time of the last key.
+    pub(super) find_buf: Signal<(String, Option<std::time::Instant>)>,
     /// The open hook (see [`on_open`](Self::on_open)).
     pub(super) open_hook: Signal<Option<menus::OpenHook>>,
     /// Per-path icon overrides.
@@ -294,6 +296,7 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         menu_handlers: create_signal(std::collections::HashMap::new()),
         compare_source: create_signal(None),
         open_hook: create_signal(None),
+        find_buf: create_signal((String::new(), None)),
         path_icons: create_signal(std::collections::HashMap::new()),
         active: create_signal(None),
         filter: create_signal(String::new()),
@@ -512,6 +515,32 @@ impl FileExplorer {
 
     /// Expand every ancestor of `id` so it is visible — the "Reveal in
     /// Explorer" hook (pair with [`select_only`](Self::select_only)).
+    /// Auto-reveal: expand (loading folders lazily) down to `path`, select it
+    /// and make it the focus row — what an IDE calls when the active editor
+    /// changes. Returns the node id, or `None` when the path isn't under the
+    /// opened folder (or is filtered out).
+    pub fn reveal_path(&self, path: impl AsRef<Path>) -> Option<u64> {
+        let root = self.fs_root.peek().clone()?;
+        let rel = path.as_ref().strip_prefix(&root).ok()?;
+        let mut parent: Option<u64> = None;
+        let mut id = None;
+        for comp in rel.components() {
+            let name = comp.as_os_str().to_string_lossy().to_string();
+            if let Some(p) = parent {
+                self.ensure_loaded(p);
+            }
+            let found = self.child_named(parent, &name)?;
+            id = Some(found);
+            parent = Some(found);
+        }
+        let id = id?;
+        self.reveal(id);
+        if self.selected.peek().as_slice() != [id] {
+            self.select_only(id);
+        }
+        Some(id)
+    }
+
     pub fn reveal(&self, id: u64) {
         let mut cur = self.tree.peek().parent_of(id);
         while let Some(p) = cur {
