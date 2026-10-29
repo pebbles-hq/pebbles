@@ -536,7 +536,7 @@ fn render_data_table(t: &Table) -> AnyWidget {
         let all = all_selected;
         let mut cb = checkbox(all).indeterminate(some_selected);
         if let Some(f) = on_selection {
-            cb = cb.on_changed(move || {
+            cb = cb.on_changed(move |_| {
                 let next: Vec<usize> = if all { Vec::new() } else { (0..n).collect() };
                 f(&next);
             });
@@ -609,7 +609,7 @@ fn render_data_table(t: &Table) -> AnyWidget {
                     f(&next);
                 }
             });
-            let cb = center(checkbox(checked).on_changed(move || toggle())).into_widget();
+            let cb = center(checkbox(checked).on_changed(move |_| toggle())).into_widget();
             drow.push(data_slot(r, striped, t.row_hover, hovered, cb));
         }
         // `i` indexes align/overflow/cells/caps together, so a range loop is clearest.

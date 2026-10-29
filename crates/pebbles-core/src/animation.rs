@@ -226,12 +226,20 @@ pub fn animate_spring(value: Signal<f64>, to: f64, spring: Spring) {
     });
 }
 
-/// Whether any animation (tween, loop, or pending timeout) is currently running (the
-/// shell polls this to decide whether to schedule another frame).
+/// Whether any animation (tween, spring or loop) is currently running (the shell polls
+/// this to decide whether to schedule another frame).
+///
+/// Pending timeouts do **not** count: a timer is not an animation, and counting it made an
+/// idle app redraw every frame for the timer's whole delay. The shell instead sleeps until
+/// [`next_deadline`] and draws one frame when the timer is due (Flutter's `Timer` likewise
+/// doesn't schedule frames).
 pub fn active() -> bool {
-    TRACKS.with(|t| !t.borrow().is_empty())
-        || LOOPS.with(|l| !l.borrow().is_empty())
-        || TIMEOUTS.with(|t| !t.borrow().is_empty())
+    TRACKS.with(|t| !t.borrow().is_empty()) || LOOPS.with(|l| !l.borrow().is_empty())
+}
+
+/// Whether any timeout is pending (fired or not yet anchored).
+pub fn has_pending_timeouts() -> bool {
+    TIMEOUTS.with(|t| !t.borrow().is_empty())
 }
 
 /// Number of live loops (debug-only).
@@ -293,8 +301,17 @@ pub fn clear_timeout(id: u64) {
 /// timeouts, if any. The shell uses this to wake a waiting event loop exactly
 /// when the next timer is due — otherwise hover timers (tooltips, hover cards)
 /// would sleep until the next unrelated event.
+///
+/// Not-yet-anchored timeouts are anchored at `now` here, so the deadline doesn't recede on
+/// every call while no frame runs (timers no longer keep frames coming; see [`active`]).
 pub fn next_deadline(now: f64) -> Option<f64> {
-    TIMEOUTS.with(|t| t.borrow().values().map(|to| to.at.unwrap_or(now + to.delay)).min_by(f64::total_cmp))
+    TIMEOUTS.with(|t| {
+        t.borrow_mut()
+            .values_mut()
+            .filter(|to| to.guard.is_none_or(|g| g.alive()))
+            .map(|to| *to.at.get_or_insert(now + to.delay))
+            .min_by(f64::total_cmp)
+    })
 }
 
 /// A component hook: returns a value that cycles `0.0..1.0` every `period` seconds,
@@ -424,8 +441,8 @@ pub fn tick(now: f64) -> bool {
     for f in &due {
         f();
     }
-    let timing_out = TIMEOUTS.with(|t| !t.borrow().is_empty());
-    tweening || looping || timing_out
+    // Pending timeouts don't keep the driver hot (see `active`).
+    tweening || looping
 }
 
 /// Reset the driver (used when tearing down between apps/tests).
@@ -542,5 +559,36 @@ mod tests {
         now += 1.0 / 60.0;
         tick(now);
         assert!(s.peek() >= mid, "retarget keeps forward motion");
+    }
+
+    #[test]
+    fn pending_timeout_is_not_animation_and_draws_no_frames_until_due() {
+        // Regression: a pending 2 s timeout kept `active()` true, so an idle shell
+        // redrew every frame. Model the shell loop: draw a frame only while `active()`
+        // or when `next_deadline` is due; otherwise sleep until the deadline.
+        reset();
+        let fired = Rc::new(Cell::new(0));
+        let f = fired.clone();
+        set_timeout(42, 2.0, move || f.set(f.get() + 1));
+        assert!(!active(), "a timer is not an animation");
+        assert!(has_pending_timeouts());
+        // The shell's `about_to_wait` right after the registering event anchors it.
+        assert_eq!(next_deadline(0.0), Some(2.0));
+        let mut frames = 0;
+        let mut now = 0.0;
+        while now < 1.99 {
+            now += 1.0 / 60.0;
+            let due = next_deadline(now).is_some_and(|at| at <= now);
+            if active() || due {
+                frames += 1;
+                tick(now);
+            }
+        }
+        assert_eq!(frames, 0, "idle app draws no frames while a timer is pending");
+        assert_eq!(next_deadline(now), Some(2.0), "deadline anchored at registration, not receding");
+        assert_eq!(fired.get(), 0);
+        assert!(!tick(2.0), "firing the timer leaves the driver idle");
+        assert_eq!(fired.get(), 1);
+        assert!(!has_pending_timeouts());
     }
 }

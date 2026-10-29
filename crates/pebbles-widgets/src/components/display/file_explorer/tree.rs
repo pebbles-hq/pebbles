@@ -300,15 +300,26 @@ impl FileTree {
     }
 }
 
+/// A directory-load filter: `(entry path, is_dir) -> keep`.
+pub(super) type KeepEntry = dyn Fn(&Path, bool) -> bool;
+
 /// Read a real directory into nodes: folders first, then files, both sorted
-/// by name (folders start unloaded — their children load on expand).
-pub(super) fn read_dir(path: &Path) -> std::io::Result<Vec<FsNode>> {
+/// by name (folders start unloaded — their children load on expand). Entries
+/// `keep` rejects are skipped.
+pub(super) fn read_dir(path: &Path, keep: Option<&KeepEntry>) -> std::io::Result<Vec<FsNode>> {
     let mut folders: Vec<FsNode> = Vec::new();
     let mut files: Vec<FsNode> = Vec::new();
     for entry in std::fs::read_dir(path)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().to_string();
         let ft = entry.file_type()?;
+        // The app's load filter (ignore rules: .git, target/, node_modules, ...).
+        if let Some(keep) = keep
+            && (ft.is_dir() || ft.is_file())
+            && !keep(&entry.path(), ft.is_dir())
+        {
+            continue;
+        }
         if ft.is_dir() {
             folders.push(FsNode {
                 id: 0,

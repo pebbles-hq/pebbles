@@ -6,6 +6,36 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (breaking) — `Checkbox::on_changed` receives the new value
+`checkbox(v).on_changed(|new: bool| ..)` now gets the new value (`!v`, or `true` from the
+indeterminate state), like Flutter `Checkbox.onChanged`. **Migration:** `.on_changed(move || x)`
+→ `.on_changed(move |_| x)`, or keep the argument-less shape with the new `.on_tap(..)` (which
+also still accepts an `action(..)` `Callback`).
+
+### Changed — `Harness::find_text` matches rendered text (Flutter `find.text`)
+`find_text` now also matches any rendered `Text` / rich-text paragraph whose full content is
+exactly the query (previously only accessibility labels). New `Harness::find_all_text`.
+
+### Added — `FileExplorer::set_load_filter` (ignore hook)
+`set_load_filter(|path, is_dir| bool)` / `clear_load_filter()`: in filesystem mode, entries
+for which the filter returns `false` are skipped when `open_folder` reads the root and when
+folders load lazily on expand (VS Code `files.exclude`-style: `.git`, `target/`, ...).
+
+### Fixed — pending timers no longer keep the app redrawing every frame
+`animation::active()` (and `tick`'s return) no longer count pending `set_timeout` /
+`create_timeout` timers; the shell sleeps until `animation::next_deadline` and draws one frame
+when a timer is due. `next_deadline` now anchors not-yet-anchored timers. New
+`animation::has_pending_timeouts()`. `pebbles_testing` `settle()` still waits for pending timers.
+
+### Changed — Shift-significant editor chords; unhandled keys bubble to app shortcuts
+Ctrl+P no longer maps to `KeyInput::CommandPalette` (VS Code: it is workbench Quick Open);
+Ctrl+Shift+P does. Ctrl+Shift+F / Ctrl+Shift+H no longer map to `Find` / `Replace` (they are
+"find/replace in files"). Those keys now reach app-level `create_shortcut` bindings.
+New `FocusNode::register_editor_bubbling` / `register_code_editor_bubbling`: the handler returns
+whether it handled the intent, and `false` lets the key bubble to app shortcuts (Flutter
+`Shortcuts`/`Actions` semantics). `TextField` declines code-editor commands (Find, Replace,
+CommandPalette, Format, ...), so app shortcuts fire while a text field is focused.
+
 ### Added — `ThemeMode`: follow the system light/dark setting
 `theme::ThemeMode { System, Light, Dark }` (default `System`, like Flutter's `ThemeMode.system`).
 In `System` the app follows the platform brightness the shell reads from the window at startup

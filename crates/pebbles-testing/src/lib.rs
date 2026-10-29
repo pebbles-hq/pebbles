@@ -244,7 +244,12 @@ impl Harness {
     pub fn settle(&mut self) {
         for _ in 0..240 {
             let scrolling = self.tick(FRAME);
-            if !scrolling && !pebbles_core::animation::active() {
+            // Pending timers (hover delays) aren't animations any more, but settling
+            // still waits for them (bounded) so "hover then settle" shows the tooltip.
+            if !scrolling
+                && !pebbles_core::animation::active()
+                && !pebbles_core::animation::has_pending_timeouts()
+            {
                 return;
             }
         }
@@ -406,11 +411,27 @@ impl Harness {
         self.ui.render_tree().semantics_tree()
     }
 
-    /// Whether any semantics node's accessible label is exactly `label` — the
-    /// harness "is this text on screen (to a screen reader)?" query. Matches the
-    /// announced name (a button's text, a labeled field), not raw glyph runs.
-    pub fn find_text(&self, label: &str) -> bool {
-        self.semantics_tree().iter().any(|n| n.props.label == label)
+    /// Whether `text` is on screen — Flutter's `find.text`: true if any rendered
+    /// `Text` / rich text paragraph's full content is exactly `text`, or any semantics
+    /// node's accessible label is (a button's text, a labeled field).
+    pub fn find_text(&self, text: &str) -> bool {
+        self.find_paragraphs(text).next().is_some()
+            || self.semantics_tree().iter().any(|n| n.props.label == text)
+    }
+
+    /// Every rendered text paragraph (`Text`, rich text) whose full content is exactly
+    /// `text` — the render ids, e.g. to read their [`size_of`](Self::size_of).
+    pub fn find_all_text(&self, text: &str) -> Vec<pebbles_render::RenderId> {
+        self.find_paragraphs(text).collect()
+    }
+
+    fn find_paragraphs<'a>(&'a self, text: &'a str) -> impl Iterator<Item = pebbles_render::RenderId> + 'a {
+        let tree = self.ui.render_tree();
+        tree.find_all::<pebbles_render::RenderParagraph>().into_iter().filter(move |&id| {
+            tree.object_ref(id)
+                .downcast_ref::<pebbles_render::RenderParagraph>()
+                .is_some_and(|p| p.text == text)
+        })
     }
 
     /// Feed a run of text the way an IME commit does — compose it as preedit
@@ -446,7 +467,8 @@ mod tests {
     use pebbles_foundation::{Offset, Size, palette};
     use pebbles_render::{BoxConstraints, LayoutCx, PaintCx, RenderObject};
     use pebbles_widgets::{
-        ScrollController, button, container, gesture_detector, text, text_field, use_scroll_controller,
+        ScrollController, button, column, container, gesture_detector, span, text, text_field, text_rich,
+        use_scroll_controller,
     };
 
     use super::Harness;
@@ -699,6 +721,26 @@ mod tests {
         assert!(!h.semantics_tree().is_empty(), "a mounted button produces a semantics node");
         assert!(h.find_text("Save"), "find_text matches the button's accessible label");
         assert!(!h.find_text("Cancel"), "find_text does not match an absent label");
+    }
+
+    fn plain_and_rich_text() -> impl IntoWidget {
+        column(vec![
+            text("Hello world").into_widget(),
+            text_rich(vec![span("Rich "), span("text")]).into_widget(),
+        ])
+    }
+
+    #[test]
+    fn find_text_matches_plain_rendered_text_like_flutter() {
+        // Regression: find_text only matched accessibility labels, so a plain `text()`
+        // was invisible to it.
+        let mut h = Harness::new();
+        h.mount(|| component(plain_and_rich_text));
+        h.draw();
+        assert!(h.find_text("Hello world"), "plain Text content");
+        assert!(h.find_text("Rich text"), "RichText full content");
+        assert!(!h.find_text("Hello"), "exact match, not substring");
+        assert_eq!(h.find_all_text("Hello world").len(), 1);
     }
 
     // ----- press_tab moves focus -------------------------------------------

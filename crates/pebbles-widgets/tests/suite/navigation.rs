@@ -19,7 +19,7 @@ fn toggles_page() -> impl IntoWidget {
         // the focused editor mid-session.
         text_field().placeholder("type here").width(200.0).into_widget(),
         switch(a.get()).on_changed(action(move || a.update(|v| *v = !*v))).into_widget(),
-        checkbox(b.get()).on_changed(action(move || b.update(|v| *v = !*v))).into_widget(),
+        checkbox(b.get()).on_changed(move |v| b.set(v)).into_widget(),
         radio(c.get()).on_selected(action(move || c.update(|v| *v = !*v))).into_widget(),
     ];
     // Pad it out so the content overflows and the scroll view actually scrolls,
@@ -114,4 +114,53 @@ fn navigating_between_screens_never_crashes() {
         ui.dispatch_tap(nav);
         frame(&mut ui, &mut now);
     }
+}
+
+thread_local! {
+    static GOT: std::cell::RefCell<Vec<bool>> = const { std::cell::RefCell::new(Vec::new()) };
+    static CFG: std::cell::Cell<(bool, bool)> = const { std::cell::Cell::new((false, false)) };
+}
+
+fn cb_root() -> impl IntoWidget {
+    let (value, indeterminate) = CFG.with(std::cell::Cell::get);
+    column(vec![
+        checkbox(value)
+            .indeterminate(indeterminate)
+            .autofocus()
+            .on_changed(|v| GOT.with(|g| g.borrow_mut().push(v)))
+            .into_widget(),
+    ])
+}
+
+/// Flutter `Checkbox.onChanged(bool)`: the callback gets the NEW value. One Ui per
+/// test thread (focus registrations are thread-local).
+fn assert_checkbox_reports(value: bool, indeterminate: bool, want: bool) {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    GOT.with(|g| g.borrow_mut().clear());
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let window = Size::new(200.0, 100.0);
+    CFG.with(|c| c.set((value, indeterminate)));
+    ui.mount_root(View::new(palette::WHITE, component(cb_root)).into_widget());
+    ui.layout(&mut env, window);
+    ui.rebuild_if_dirty();
+    ui.layout(&mut env, window); // autofocus lands
+    assert!(ui.dispatch_activate(), "Space/Enter activates the focused checkbox");
+    assert_eq!(GOT.with(|g| g.borrow().clone()), vec![want], "value={value} indeterminate={indeterminate}");
+}
+
+#[test]
+fn checkbox_on_changed_unchecked_reports_true() {
+    assert_checkbox_reports(false, false, true);
+}
+
+#[test]
+fn checkbox_on_changed_checked_reports_false() {
+    assert_checkbox_reports(true, false, false);
+}
+
+#[test]
+fn checkbox_on_changed_indeterminate_reports_true() {
+    assert_checkbox_reports(false, true, true);
 }

@@ -204,9 +204,14 @@ fn command_for(
             'y' => Some(Redo),
             'd' => Some(SelectNextOccurrence),
             '/' => Some(ToggleComment),
-            'f' => Some(Find),
-            'h' => Some(Replace),
-            'p' => Some(CommandPalette),
+            // VS Code conventions: Shift is significant. Ctrl+F / Ctrl+H are the
+            // editor's find / replace, but Ctrl+Shift+F / Ctrl+Shift+H are workbench
+            // "find/replace in files" and Ctrl+P is workbench Quick Open — none of
+            // those belong to the focused editor, so they map to no intent and the key
+            // falls through to app-level shortcuts. Ctrl+Shift+P is the command palette.
+            'f' if !shift => Some(Find),
+            'h' if !shift => Some(Replace),
+            'p' if shift => Some(CommandPalette),
             _ => None,
         },
         Key::Character(s) => {
@@ -320,13 +325,25 @@ mod tests {
         // ctrl = true, shift = false unless noted.
         assert_eq!(cmd(ch("f"), true, false), Some(KeyInput::Find));
         assert_eq!(cmd(ch("h"), true, false), Some(KeyInput::Replace));
-        assert_eq!(cmd(ch("p"), true, false), Some(KeyInput::CommandPalette));
+        assert_eq!(cmd(ch("p"), true, true), Some(KeyInput::CommandPalette));
         assert_eq!(cmd(ch("d"), true, false), Some(KeyInput::SelectNextOccurrence));
         assert_eq!(cmd(ch("/"), true, false), Some(KeyInput::ToggleComment));
         assert_eq!(cmd(ch("a"), true, false), Some(KeyInput::SelectAll));
         assert_eq!(cmd(ch("c"), true, false), Some(KeyInput::Copy));
         assert_eq!(cmd(ch("x"), true, false), Some(KeyInput::Cut));
         assert_eq!(cmd(ch("v"), true, false), Some(KeyInput::Paste));
+    }
+
+    #[test]
+    fn shift_is_significant_for_p_f_h() {
+        // Ctrl+P (Quick Open) and Ctrl+Shift+F/H (find/replace in files) are app-level:
+        // the editor gets no intent, so the key reaches app shortcuts.
+        assert_eq!(cmd(ch("p"), true, false), None);
+        assert_eq!(cmd(ch("p"), true, true), Some(KeyInput::CommandPalette));
+        assert_eq!(cmd(ch("f"), true, false), Some(KeyInput::Find));
+        assert_eq!(cmd(ch("f"), true, true), None);
+        assert_eq!(cmd(ch("F"), true, true), None);
+        assert_eq!(cmd(ch("h"), true, true), None);
     }
 
     #[test]

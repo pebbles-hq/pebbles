@@ -53,14 +53,12 @@ fn checkbox_section() -> impl IntoWidget {
         column(children![
             // interactive, labeled
             column(children![
-                checkbox(terms.get())
-                    .label("Accept terms and conditions")
-                    .on_changed(move || terms.update(|v| *v = !*v)),
+                checkbox(terms.get()).label("Accept terms and conditions").on_changed(move |v| terms.set(v)),
                 gap_h(12.0),
                 checkbox(notify.get())
                     .label("Email notifications")
                     .description("Get notified about product updates and account activity.")
-                    .on_changed(move || notify.update(|v| *v = !*v)),
+                    .on_changed(move |v| notify.set(v)),
             ])
             .cross_axis_alignment(CrossAxisAlignment::Start)
             .main_axis_size(MainAxisSize::Min),

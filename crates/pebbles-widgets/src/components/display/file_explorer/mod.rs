@@ -90,6 +90,8 @@ use tree::{copy_path, read_dir, unique_name};
 /// and an optional color. Return `None` to fall through to the default
 /// folder/file look for that node. Installed with
 /// [`FileExplorer::set_icon_theme`] — the hook an IDE's icon theming plugs into.
+/// An installed load filter (see [`FileExplorer::set_load_filter`]).
+pub(super) type LoadFilter = Rc<dyn Fn(&Path, bool) -> bool>;
 pub(super) type IconTheme = Rc<dyn Fn(&FsNode, bool) -> Option<(IconData, Option<Color>)>>;
 
 /// Whether `n`'s own name matches the (lowercased) filter query.
@@ -142,6 +144,8 @@ pub struct FileExplorer {
     pub(super) active: Signal<Option<u64>>,
     /// The live filter query (case-insensitive substring) — bind your own input.
     pub(super) filter: Signal<String>,
+    /// Filesystem mode: which disk entries to load (see [`set_load_filter`](Self::set_load_filter)).
+    pub(super) load_filter: Signal<Option<LoadFilter>>,
 }
 
 /// Create an explorer over `tree` (the app's `Signal<FileTree>`). Call inside
@@ -163,6 +167,7 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         icon_theme: create_signal(None),
         active: create_signal(None),
         filter: create_signal(String::new()),
+        load_filter: create_signal(None),
     };
     explorer.install_keys();
     explorer
@@ -192,6 +197,27 @@ impl FileExplorer {
     /// ```
     pub fn set_icon_theme(&self, f: impl Fn(&FsNode, bool) -> Option<(IconData, Option<Color>)> + 'static) {
         self.icon_theme.set(Some(Rc::new(f)));
+    }
+
+    /// Install a filesystem load filter — the ignore hook (VS Code `files.exclude`).
+    /// `f(path, is_dir)` is called for every disk entry as a folder's children are read
+    /// ([`open_folder`](Self::open_folder) and lazy expansion); return `false` to skip it
+    /// (`.git`, `target/`, `node_modules`, ...). Applies to subsequent loads, so install
+    /// it before `open_folder`.
+    ///
+    /// ```ignore
+    /// explorer.set_load_filter(|path, is_dir| {
+    ///     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    ///     !(is_dir && matches!(name, ".git" | "target" | "node_modules"))
+    /// });
+    /// ```
+    pub fn set_load_filter(&self, f: impl Fn(&Path, bool) -> bool + 'static) {
+        self.load_filter.set(Some(Rc::new(f)));
+    }
+
+    /// Remove the load filter (load every entry again on subsequent reads).
+    pub fn clear_load_filter(&self) {
+        self.load_filter.set(None);
     }
 
     /// Remove the installed icon theme (back to the default folder/file glyphs).
@@ -270,7 +296,7 @@ impl FileExplorer {
     /// their own children lazily on first expand). Clears the selection and
     /// expansion; reports failures through [`last_error`](Self::last_error).
     pub fn open_folder(&self, path: impl AsRef<Path>) -> bool {
-        match read_dir(path.as_ref()) {
+        match read_dir(path.as_ref(), self.load_filter.peek().as_deref()) {
             Ok(children) => {
                 self.fs_root.set(Some(path.as_ref().to_path_buf()));
                 self.tree.update(|t| {
@@ -322,7 +348,7 @@ impl FileExplorer {
             return;
         }
         if let Some(dir) = self.path_of(id) {
-            match read_dir(&dir) {
+            match read_dir(&dir, self.load_filter.peek().as_deref()) {
                 Ok(children) => {
                     self.tree.update(|t| {
                         let mut children = children;

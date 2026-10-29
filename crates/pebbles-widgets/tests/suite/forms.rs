@@ -128,3 +128,27 @@ fn read_only_field_receives_keys_but_ignores_edits() {
     ui.layout(&mut text, window);
     assert_eq!(ro_bound().peek(), "locked", "typing/deletion are ignored in read-only mode");
 }
+
+#[test]
+fn focused_text_field_lets_unhandled_commands_bubble_to_app_shortcuts() {
+    // Regression: a focused text field swallowed every intent (Ctrl+Shift+P/F/H...), so
+    // app-level shortcuts never fired while typing. Now it declines non-text commands and
+    // the shell falls through to `shortcuts::dispatch`.
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    RO.with(|c| *c.borrow_mut() = None);
+    let _ = ro_bound();
+
+    let mut ui = Ui::new();
+    let mut text = TextEnv::new();
+    let window = Size::new(300.0, 150.0);
+    ui.mount_root(View::new(palette::WHITE, component(ro_root)).into_widget());
+    ui.layout(&mut text, window);
+    ui.rebuild_if_dirty();
+    ui.layout(&mut text, window);
+
+    assert!(ui.dispatch_key(KeyInput::Move { motion: pebbles_core::Motion::Left, extend: false }));
+    for k in [KeyInput::CommandPalette, KeyInput::Find, KeyInput::Replace, KeyInput::Format] {
+        assert!(!ui.dispatch_key(k.clone()), "{k:?} must bubble past a focused text field");
+    }
+}

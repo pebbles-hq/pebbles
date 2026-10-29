@@ -39,7 +39,7 @@ struct FocusManager {
     /// `onFocusChange(bool)` handlers.
     on_change: HashMap<FocusKey, Rc<dyn Fn(bool)>>,
     /// Text-editor key handlers — the routing target for [`dispatch_key`].
-    edit: HashMap<FocusKey, Rc<dyn Fn(KeyInput)>>,
+    edit: HashMap<FocusKey, Rc<dyn Fn(KeyInput) -> bool>>,
     /// Non-editor key handlers (e.g. chart keyboard traversal). Consulted by
     /// [`dispatch_key`] AFTER editors; the handler returns whether it consumed the key.
     /// Unlike editors these do NOT set [`focused_is_editor`], so shell shortcuts and IME
@@ -221,6 +221,18 @@ impl FocusNode {
     /// Register this node as a text editor: while focused, keyboard edit intents
     /// ([`KeyInput`]) route to `handler`. Called each render (idempotent).
     pub fn register_editor(&self, handler: Rc<dyn Fn(KeyInput)>) {
+        self.register_editor_bubbling(Rc::new(move |k| {
+            handler(k);
+            true
+        }));
+    }
+
+    /// Like [`register_editor`](Self::register_editor), but `handler` reports whether it
+    /// handled the intent. Returning `false` lets the key **bubble** to app-level
+    /// shortcuts (Flutter `Shortcuts`/`Actions` semantics: a focused widget that does not
+    /// handle a key leaves it for its ancestors). Use this so e.g. Ctrl+Shift+F reaches the
+    /// app's "find in files" while a text field is focused.
+    pub fn register_editor_bubbling(&self, handler: Rc<dyn Fn(KeyInput) -> bool>) {
         let key = self.key();
         with_mgr(|m| {
             m.edit.insert(key, handler);
@@ -233,6 +245,16 @@ impl FocusNode {
     /// moving focus. Plain text fields use [`register_editor`](Self::register_editor) so Tab
     /// still traverses focus. Called each render (idempotent).
     pub fn register_code_editor(&self, handler: Rc<dyn Fn(KeyInput)>) {
+        self.register_code_editor_bubbling(Rc::new(move |k| {
+            handler(k);
+            true
+        }));
+    }
+
+    /// [`register_code_editor`](Self::register_code_editor) whose handler reports whether
+    /// it handled the intent; unhandled intents bubble to app shortcuts (see
+    /// [`register_editor_bubbling`](Self::register_editor_bubbling)).
+    pub fn register_code_editor_bubbling(&self, handler: Rc<dyn Fn(KeyInput) -> bool>) {
         let key = self.key();
         with_mgr(|m| {
             m.edit.insert(key, handler);
@@ -336,14 +358,15 @@ pub fn census_registrations() -> usize {
 }
 
 /// Route a keyboard edit intent to the focused editor. Returns whether it was
-/// handled (i.e. an editor was focused).
+/// handled; `false` means the key should bubble to app-level shortcuts.
 pub fn dispatch_key(key: KeyInput) -> bool {
     let focused = focus_signal().peek();
     // Editors take precedence (they consume all text intents).
     let editor = with_mgr(|m| focused.and_then(|k| m.edit.get(&k).cloned()));
+    // An editor that declines the intent (bubbling registration) lets it fall through to
+    // app shortcuts.
     if let Some(h) = editor {
-        h(key);
-        return true;
+        return h(key);
     }
     // Otherwise offer it to a non-editor key handler (chart traversal, etc.), which
     // reports whether it actually used the key so unhandled keys fall through to Tab.
