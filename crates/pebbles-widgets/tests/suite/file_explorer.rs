@@ -967,11 +967,11 @@ fn drag_past_slop_onto_a_folder_moves_after_confirm_and_undo_restores() {
     assert_eq!(asked.get(), 1, "confirmation asked once");
     assert!(dir.join("zother/inner/deep.txt").exists(), "moved into zother on disk");
     assert!(!dir.join("outer/inner").exists());
-    assert!(ex.can_undo_move());
-    assert!(ex.undo_move(), "undo restores");
+    assert!(ex.can_undo());
+    assert!(ex.undo(), "undo restores");
     assert!(dir.join("outer/inner/deep.txt").exists(), "back in outer on disk");
     assert!(!dir.join("zother/inner").exists());
-    assert!(!ex.can_undo_move());
+    assert!(!ex.can_undo());
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -983,7 +983,7 @@ fn rejected_confirmation_moves_nothing() {
     runner_drag(&mut ui, &mut env, rows[1], rows[2]);
     assert_eq!(asked.get(), 1);
     assert!(dir.join("outer/inner/deep.txt").exists(), "rejected → untouched");
-    assert!(!ex.can_undo_move());
+    assert!(!ex.can_undo());
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -1057,5 +1057,57 @@ fn natural_sort_folders_first() {
     assert!(ex.open_folder(&dir));
     let names: Vec<String> = tree.peek().root.iter().map(|n| n.name.clone()).collect();
     assert_eq!(names, ["z9", "z10", "File1.txt", "file2.txt", "file10.txt"]);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+fn fs_explorer(
+    tag: &str,
+) -> (std::path::PathBuf, pebbles_core::Signal<FileTree>, pebbles_widgets::FileExplorer) {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let dir = temp_dir(tag);
+    let tree = create_signal(FileTree::new());
+    let ex = file_explorer(tree);
+    (dir, tree, ex)
+}
+
+fn id_of(tree: pebbles_core::Signal<FileTree>, path: &str) -> u64 {
+    let t = tree.peek();
+    let mut nodes = &t.root;
+    let mut id = 0;
+    for seg in path.split('/') {
+        let n = nodes.iter().find(|n| n.name == seg).unwrap_or_else(|| panic!("{path}: no {seg}"));
+        id = n.id;
+        nodes = &n.children;
+    }
+    id
+}
+
+#[test]
+fn rename_validates_never_clobbers_and_creates_nested_paths_and_undoes() {
+    let (dir, tree, ex) = fs_explorer("renamev");
+    std::fs::write(dir.join("a.txt"), "A").unwrap();
+    std::fs::write(dir.join("b.txt"), "B").unwrap();
+    assert!(ex.open_folder(&dir));
+    let a = id_of(tree, "a.txt");
+    // Onto an existing sibling: refused, nothing overwritten.
+    assert!(!ex.rename_node(a, "b.txt"));
+    assert_eq!(std::fs::read_to_string(dir.join("b.txt")).unwrap(), "B");
+    assert!(ex.last_error().get().is_some());
+    for bad in ["..", ".", " x", "a\\b"] {
+        assert!(ex.validate_name(a, bad).is_err(), "{bad:?} rejected");
+    }
+    // Case-only rename of itself is allowed.
+    assert!(ex.validate_name(a, "A.txt").is_ok());
+    // Nested path: folders created, file moved in.
+    assert!(ex.rename_node(a, "x/y/c.txt"));
+    assert_eq!(std::fs::read_to_string(dir.join("x/y/c.txt")).unwrap(), "A");
+    assert!(!dir.join("a.txt").exists());
+    assert_eq!(id_of(tree, "x/y/c.txt"), a);
+    // Undo puts it back (the created folders stay, as in VS Code).
+    assert!(ex.can_undo());
+    assert!(ex.undo());
+    assert_eq!(std::fs::read_to_string(dir.join("a.txt")).unwrap(), "A");
+    assert_eq!(id_of(tree, "a.txt"), a);
     std::fs::remove_dir_all(&dir).ok();
 }

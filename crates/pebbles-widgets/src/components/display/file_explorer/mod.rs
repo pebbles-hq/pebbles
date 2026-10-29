@@ -22,7 +22,7 @@
 //! anything — and a drop needs an explicit highlighted target. On disk,
 //! moves ask first ("Move 'x' into 'y'?", or your
 //! [`set_confirm_move`](FileExplorer::set_confirm_move) hook), are undoable
-//! ([`undo_move`](FileExplorer::undo_move), Mod+Z), and can be switched off
+//! ([`undo`](FileExplorer::undo), Mod+Z), and can be switched off
 //! with [`allow_fs_moves(false)`](FileExplorer::allow_fs_moves).
 //!
 //! **Right-click is built in and always on** — the explorer's own context
@@ -146,8 +146,8 @@ pub struct FileExplorer {
     confirm_moves: Signal<bool>,
     /// The app's confirm hook (default: an alert dialog).
     confirm_hook: Signal<Option<ConfirmMoveFn>>,
-    /// Undo stack of completed moves (one entry per drop / call).
-    move_history: Signal<Vec<Vec<MoveRecord>>>,
+    /// Undo stack of completed file operations (Mod+Z / [`undo`](Self::undo)).
+    history: Signal<Vec<FileOp>>,
     hover_key: u64,
     /// Filesystem mode: the directory the explorer mirrors (None = in-memory).
     fs_root: Signal<Option<PathBuf>>,
@@ -201,6 +201,13 @@ struct MoveRecord {
     paths: Option<(PathBuf, PathBuf)>,
 }
 
+/// One undoable file operation.
+#[derive(Clone, Debug)]
+enum FileOp {
+    Move(Vec<MoveRecord>),
+    Rename { id: u64, old_name: String, old_parent: Option<u64>, paths: Option<(PathBuf, PathBuf)> },
+}
+
 /// Create an explorer over `tree` (the app's `Signal<FileTree>`). Call inside
 /// a component render.
 pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
@@ -217,7 +224,7 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         fs_moves_allowed: create_signal(true),
         confirm_moves: create_signal(true),
         confirm_hook: create_signal(None),
-        move_history: create_signal(Vec::new()),
+        history: create_signal(Vec::new()),
         hover_key: create_signal(()).raw_id(),
         fs_root: create_signal(None),
         last_error: create_signal(None),
@@ -439,26 +446,63 @@ impl FileExplorer {
     /// Rename a node — on disk in filesystem mode, in the model otherwise.
     pub fn rename_node(&self, id: u64, name: impl Into<String>) -> bool {
         let name = name.into();
-        let name = name.trim().to_string();
+        let name = name.trim().trim_matches('/').to_string();
         if name.is_empty() {
             self.renaming.set(None);
             return false;
         }
-        let done = if let Some(root) = self.fs_root.get() {
-            let old = self.path_of(id);
-            match old {
+        if let Err(e) = self.validate_name(id, &name) {
+            self.last_error.set(Some(e));
+            self.renaming.set(None);
+            return false;
+        }
+        // "a/b/c.txt": create the intermediate folders, then the node lands in
+        // the last one under the last segment's name (VS Code's nested create).
+        let mut parts: Vec<&str> = name.split('/').filter(|p| !p.is_empty()).collect();
+        let leaf = parts.pop().unwrap_or_default().to_string();
+        let mut parent = self.tree.peek().parent_of(id);
+        for dir in parts {
+            match self.ensure_child_folder(parent, dir) {
+                Some(p) => parent = Some(p),
+                None => {
+                    self.renaming.set(None);
+                    return false;
+                }
+            }
+        }
+        if parent != self.tree.peek().parent_of(id) {
+            // Moving into the (new) folder must not hit an existing name there.
+            if self.child_named(parent, &leaf).is_some() {
+                self.last_error.set(Some(format!("'{leaf}' already exists")));
+                self.renaming.set(None);
+                return false;
+            }
+        }
+        let old_path = self.path_of(id);
+        let old_name = self.tree.peek().node(id).map(|n| n.name.clone()).unwrap_or_default();
+        let old_parent = self.tree.peek().parent_of(id);
+        let done = if let Some(root) = self.fs_root.peek().clone() {
+            match old_path.clone() {
                 Some(old) => {
-                    let new = old.with_file_name(&name);
-                    match std::fs::rename(&old, &new) {
-                        Ok(()) => {
-                            self.tree.update(|t| {
-                                t.rename(id, name);
-                            });
-                            true
-                        }
-                        Err(e) => {
-                            self.last_error.set(Some(format!("Could not rename: {e}")));
-                            false
+                    let dir = match parent {
+                        Some(p) => self.path_of(p),
+                        None => Some(root.clone()),
+                    };
+                    let new = dir.map(|d| d.join(&leaf)).unwrap_or_else(|| old.with_file_name(&leaf));
+                    // Never clobber: rename(2) silently replaces an existing file.
+                    let case_only = new.parent() == old.parent()
+                        && new.file_name().map(|n| n.to_string_lossy().to_lowercase())
+                            == old.file_name().map(|n| n.to_string_lossy().to_lowercase());
+                    if new.exists() && !case_only {
+                        self.last_error.set(Some(format!("'{leaf}' already exists")));
+                        false
+                    } else {
+                        match std::fs::rename(&old, &new) {
+                            Ok(()) => true,
+                            Err(e) => {
+                                self.last_error.set(Some(format!("Could not rename: {e}")));
+                                false
+                            }
                         }
                     }
                 }
@@ -468,13 +512,93 @@ impl FileExplorer {
                 }
             }
         } else {
-            self.tree.update(|t| {
-                t.rename(id, name);
-            });
             true
         };
+        if done {
+            self.tree.update(|t| {
+                if parent != old_parent {
+                    t.move_node(id, parent);
+                }
+                t.rename(id, leaf.clone());
+            });
+            if let Some(p) = parent {
+                self.expanded.update(|e| {
+                    e.insert(p);
+                });
+            }
+            let new_path = self.path_of(id);
+            self.push_history(FileOp::Rename { id, old_name, old_parent, paths: old_path.zip(new_path) });
+        }
         self.renaming.set(None);
         done
+    }
+
+    /// Validate a rename / new name (VS Code's rules): not `.`/`..`, no NUL or
+    /// backslash, no leading/trailing whitespace per segment, and no sibling
+    /// already using it (a case-only change of the node's own name is fine).
+    pub fn validate_name(&self, id: u64, name: &str) -> Result<(), String> {
+        let name = name.trim_matches('/');
+        if name.is_empty() {
+            return Err("A file or folder name must be provided".into());
+        }
+        for seg in name.split('/').filter(|s| !s.is_empty()) {
+            if seg == "." || seg == ".." {
+                return Err(format!("'{seg}' is not a valid name"));
+            }
+            if seg.contains('\0') || seg.contains('\\') {
+                return Err(format!("'{seg}' contains an invalid character"));
+            }
+            if seg.trim() != seg {
+                return Err("Leading or trailing whitespace is not allowed".into());
+            }
+        }
+        if !name.contains('/') {
+            let parent = self.tree.peek().parent_of(id);
+            if let Some(other) = self.child_named(parent, name)
+                && other != id
+            {
+                return Err(format!("A file or folder '{name}' already exists here"));
+            }
+        }
+        Ok(())
+    }
+
+    /// The child of `parent` (`None` = root) named exactly `name`.
+    fn child_named(&self, parent: Option<u64>, name: &str) -> Option<u64> {
+        let t = self.tree.peek();
+        let kids = match parent {
+            Some(p) => &t.node(p)?.children,
+            None => &t.root,
+        };
+        kids.iter().find(|n| n.name == name).map(|n| n.id)
+    }
+
+    /// The folder `name` under `parent`, created (on disk too) when missing.
+    fn ensure_child_folder(&self, parent: Option<u64>, name: &str) -> Option<u64> {
+        if let Some(p) = parent {
+            self.ensure_loaded(p);
+        }
+        if let Some(id) = self.child_named(parent, name) {
+            let is_dir = self.tree.peek().node(id).is_some_and(|n| n.kind == FsKind::Folder);
+            if !is_dir {
+                self.last_error.set(Some(format!("'{name}' is a file")));
+                return None;
+            }
+            return Some(id);
+        }
+        if let Some(root) = self.fs_root.peek().clone() {
+            let dir = match parent {
+                Some(p) => self.path_of(p)?,
+                None => root,
+            };
+            if let Err(e) = std::fs::create_dir(dir.join(name)) {
+                self.last_error.set(Some(format!("Could not create folder {name}: {e}")));
+                return None;
+            }
+        }
+        let cell = RefCell::new(None);
+        self.tree.update(|t| *cell.borrow_mut() = Some(t.insert(parent, FsKind::Folder, name)));
+        cell.take()
     }
 
     /// Delete nodes — on disk in filesystem mode, in the model otherwise.
@@ -605,7 +729,7 @@ impl FileExplorer {
     /// in the model otherwise. No confirmation (programmatic); invalid moves
     /// (into itself/a descendant, no-ops, over an existing name) are skipped,
     /// and disk moves are refused when [`allow_fs_moves`](Self::allow_fs_moves)
-    /// is off. Completed moves are recorded for [`undo_move`](Self::undo_move).
+    /// is off. Completed moves are recorded for [`undo`](Self::undo).
     /// Returns whether anything moved.
     pub fn move_nodes(&self, ids: &[u64], target: Option<u64>) -> bool {
         let plan = self.plan_move(ids, target);
@@ -670,40 +794,76 @@ impl FileExplorer {
         }
         let any = !done.is_empty();
         if any {
-            self.move_history.update(|h| h.push(done));
+            self.push_history(FileOp::Move(done));
         }
         any
     }
 
-    /// Whether there is a move to undo (reactive).
-    pub fn can_undo_move(&self) -> bool {
-        !self.move_history.get().is_empty()
+    fn push_history(&self, op: FileOp) {
+        self.history.update(|h| {
+            h.push(op);
+            if h.len() > 100 {
+                h.remove(0);
+            }
+        });
     }
 
-    /// Undo the most recent move (drop / [`move_nodes`](Self::move_nodes)):
-    /// the nodes go back to their previous folders — on disk too. Returns
-    /// whether anything was restored.
-    pub fn undo_move(&self) -> bool {
-        let mut batch = None;
-        self.move_history.update(|h| batch = h.pop());
-        let Some(batch) = batch else { return false };
+    /// Whether there is a file operation to undo (reactive).
+    pub fn can_undo(&self) -> bool {
+        !self.history.get().is_empty()
+    }
+
+    /// Undo the most recent file operation (move, rename, …) — on disk too,
+    /// never overwriting anything that has reappeared since. Returns whether
+    /// anything was restored. Mod+Z in the tree.
+    pub fn undo(&self) -> bool {
+        let mut op = None;
+        self.history.update(|h| op = h.pop());
+        let Some(op) = op else { return false };
         let mut any = false;
-        for rec in batch.into_iter().rev() {
-            if let Some((from, to)) = &rec.paths {
-                if from.exists() {
-                    self.last_error.set(Some(format!("Cannot undo: {} exists again", from.display())));
-                    continue;
-                }
-                if let Err(e) = std::fs::rename(to, from) {
-                    self.last_error.set(Some(format!("Could not undo move of {}: {e}", to.display())));
-                    continue;
+        match op {
+            FileOp::Move(batch) => {
+                for rec in batch.into_iter().rev() {
+                    if let Some((from, to)) = &rec.paths
+                        && !self.undo_rename_on_disk(from, to)
+                    {
+                        continue;
+                    }
+                    self.tree.update(|t| {
+                        any |= t.move_node(rec.id, rec.old_parent);
+                    });
                 }
             }
-            self.tree.update(|t| {
-                any |= t.move_node(rec.id, rec.old_parent);
-            });
+            FileOp::Rename { id, old_name, old_parent, paths } => {
+                if let Some((from, to)) = &paths
+                    && !self.undo_rename_on_disk(from, to)
+                {
+                    return false;
+                }
+                self.tree.update(|t| {
+                    if t.parent_of(id) != old_parent {
+                        t.move_node(id, old_parent);
+                    }
+                    any = t.rename(id, old_name);
+                });
+            }
         }
         any
+    }
+
+    /// Put `to` back at `from` (refusing when `from` exists again).
+    fn undo_rename_on_disk(&self, from: &Path, to: &Path) -> bool {
+        let case_only = from.parent() == to.parent()
+            && from.to_string_lossy().to_lowercase() == to.to_string_lossy().to_lowercase();
+        if from.exists() && !case_only {
+            self.last_error.set(Some(format!("Cannot undo: {} exists again", from.display())));
+            return false;
+        }
+        if let Err(e) = std::fs::rename(to, from) {
+            self.last_error.set(Some(format!("Could not undo {}: {e}", to.display())));
+            return false;
+        }
+        true
     }
 
     /// The active node: the keyboard-focus row when set (and still present),
@@ -844,13 +1004,13 @@ impl FileExplorer {
             }
             true
         });
-        // Mod+Z — undo the last move (VS Code); declines with nothing to undo,
+        // Mod+Z — undo the last file operation (VS Code); declines with nothing to undo,
         // and a focused editor's own undo wins first.
         create_shortcut_if("Mod+Z", move || {
-            if self.move_history.peek().is_empty() {
+            if self.history.peek().is_empty() {
                 return false;
             }
-            self.undo_move();
+            self.undo();
             true
         });
         // Mod+A — select every visible node, from idle too (a focused editor's
