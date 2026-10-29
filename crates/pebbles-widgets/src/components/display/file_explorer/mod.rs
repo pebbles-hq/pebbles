@@ -18,6 +18,12 @@
 //! right-clicking empty space offers New File/New Folder; and **dragging a
 //! selection onto a folder moves them all** (hovering a collapsed folder
 //! during a drag expands it; dropping on empty space moves to the root).
+//! A press becomes a drag only past an 8 px slop — a click never moves
+//! anything — and a drop needs an explicit highlighted target. On disk,
+//! moves ask first ("Move 'x' into 'y'?", or your
+//! [`set_confirm_move`](FileExplorer::set_confirm_move) hook), are undoable
+//! ([`undo_move`](FileExplorer::undo_move), Mod+Z), and can be switched off
+//! with [`allow_fs_moves(false)`](FileExplorer::allow_fs_moves).
 //!
 //! **Right-click is built in and always on** — the explorer's own context
 //! menus work regardless of the app-wide global-menu switch
@@ -61,7 +67,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
+use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, Offset};
 use pebbles_render::{Border, BoxDecoration, Cursor, IconData, IconKind, tabler};
 
 use crate::components::{ButtonVariant, context_menu, icon, icon_button, menu_item, muted, text_field};
@@ -128,6 +134,20 @@ pub struct FileExplorer {
     dragging: Signal<bool>,
     drop_target: Signal<Option<u64>>,
     root_drop: Signal<bool>,
+    /// The row pressed (pointer down) and where (global) — a press only turns
+    /// into a drag once the pointer travels past [`DRAG_SLOP`].
+    pub(super) press: Signal<Option<(u64, Offset)>>,
+    /// The row currently under the pointer (any row, file or folder) — the
+    /// empty-space root target is live only while this is `None`.
+    pub(super) row_hover: Signal<Option<u64>>,
+    /// Whether moves may touch the disk (filesystem mode). `false` refuses them.
+    fs_moves_allowed: Signal<bool>,
+    /// Whether filesystem moves ask for confirmation first (default `true`).
+    confirm_moves: Signal<bool>,
+    /// The app's confirm hook (default: an alert dialog).
+    confirm_hook: Signal<Option<ConfirmMoveFn>>,
+    /// Undo stack of completed moves (one entry per drop / call).
+    move_history: Signal<Vec<Vec<MoveRecord>>>,
     hover_key: u64,
     /// Filesystem mode: the directory the explorer mirrors (None = in-memory).
     fs_root: Signal<Option<PathBuf>>,
@@ -148,6 +168,39 @@ pub struct FileExplorer {
     pub(super) load_filter: Signal<Option<LoadFilter>>,
 }
 
+/// How far (logical px) the pointer must travel from the press before a row
+/// press becomes a drag — the desktop drag threshold (GTK's default
+/// `gtk-dnd-drag-threshold`, which Chromium/VS Code use on Linux). Below it a
+/// press is a click and never moves anything.
+const DRAG_SLOP: f64 = 8.0;
+
+/// A move awaiting confirmation (see [`FileExplorer::set_confirm_move`]).
+#[derive(Clone, Debug)]
+pub struct MoveRequest {
+    /// The nodes to move (already validated: no no-ops, no self/descendant moves).
+    pub ids: Vec<u64>,
+    /// Their display names, parallel to `ids`.
+    pub names: Vec<String>,
+    /// The target folder (`None` = the explorer root).
+    pub target: Option<u64>,
+    /// The target's display name (the root folder's name for `None`).
+    pub target_name: String,
+}
+
+/// The app's move-confirmation hook: called with the request and a `resolve`
+/// callback — call `resolve(true)` to perform the move, `resolve(false)` to
+/// drop it (may be called later, e.g. from your own dialog).
+pub type ConfirmMoveFn = Rc<dyn Fn(&MoveRequest, Rc<dyn Fn(bool)>)>;
+
+/// One completed node move (for undo).
+#[derive(Clone, Debug)]
+struct MoveRecord {
+    id: u64,
+    old_parent: Option<u64>,
+    /// Filesystem mode: the on-disk paths before / after.
+    paths: Option<(PathBuf, PathBuf)>,
+}
+
 /// Create an explorer over `tree` (the app's `Signal<FileTree>`). Call inside
 /// a component render.
 pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
@@ -159,6 +212,12 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         dragging: create_signal(false),
         drop_target: create_signal(None),
         root_drop: create_signal(false),
+        press: create_signal(None),
+        row_hover: create_signal(None),
+        fs_moves_allowed: create_signal(true),
+        confirm_moves: create_signal(true),
+        confirm_hook: create_signal(None),
+        move_history: create_signal(Vec::new()),
         hover_key: create_signal(()).raw_id(),
         fs_root: create_signal(None),
         last_error: create_signal(None),
@@ -444,39 +503,207 @@ impl FileExplorer {
         self.renaming.set(None);
     }
 
+    /// Allow (default) or refuse moves that touch the disk. With `false`,
+    /// drag-and-drop and [`move_nodes`](Self::move_nodes) never rename on disk
+    /// in filesystem mode (in-memory trees still move).
+    pub fn allow_fs_moves(self, allow: bool) -> Self {
+        self.fs_moves_allowed.set(allow);
+        self
+    }
+
+    /// Ask before drag-and-drop moves on disk (default `true`, like VS Code's
+    /// `explorer.confirmDragAndDrop`).
+    pub fn confirm_moves(self, confirm: bool) -> Self {
+        self.confirm_moves.set(confirm);
+        self
+    }
+
+    /// Supply your own move confirmation (replaces the default dialog
+    /// "Move 'x' into 'y'?"). See [`ConfirmMoveFn`].
+    pub fn set_confirm_move(&self, f: impl Fn(&MoveRequest, Rc<dyn Fn(bool)>) + 'static) {
+        self.confirm_hook.set(Some(Rc::new(f)));
+    }
+
+    /// Validate a move: drop missing nodes, nodes whose ancestor is also
+    /// moving, no-ops (already in `target`), and moves into the node itself or
+    /// a descendant. A file target is refused outright.
+    fn plan_move(&self, ids: &[u64], target: Option<u64>) -> Vec<u64> {
+        let t = self.tree.peek();
+        if let Some(tg) = target {
+            match t.node(tg) {
+                Some(n) if n.kind == FsKind::Folder => {}
+                _ => return Vec::new(),
+            }
+        }
+        ids.iter()
+            .copied()
+            .filter(|&id| t.node(id).is_some())
+            .filter(|&id| !ids.iter().any(|&o| o != id && t.is_descendant(o, id)))
+            .filter(|&id| t.parent_of(id) != target)
+            .filter(|&id| target.is_none_or(|tg| !t.is_descendant(id, tg)))
+            .collect()
+    }
+
+    /// A drop: validate, then (filesystem mode) refuse when disk moves are
+    /// disabled, or ask for confirmation, then move. Returns whether a move
+    /// was performed or is pending confirmation.
+    pub fn request_move(&self, ids: &[u64], target: Option<u64>) -> bool {
+        let plan = self.plan_move(ids, target);
+        if plan.is_empty() {
+            return false;
+        }
+        let fs = self.fs_root.peek().is_some();
+        if fs && !self.fs_moves_allowed.peek() {
+            self.last_error.set(Some("Moving files on disk is disabled".into()));
+            return false;
+        }
+        if !fs || !self.confirm_moves.peek() {
+            return self.move_nodes(&plan, target);
+        }
+        let (names, target_name) = {
+            let t = self.tree.peek();
+            let names = plan.iter().filter_map(|&id| t.node(id).map(|n| n.name.clone())).collect();
+            let target_name = match target {
+                Some(tg) => t.node(tg).map(|n| n.name.clone()).unwrap_or_default(),
+                None => self
+                    .fs_root
+                    .peek()
+                    .as_ref()
+                    .and_then(|r| r.file_name().map(|n| n.to_string_lossy().into_owned()))
+                    .unwrap_or_else(|| "/".into()),
+            };
+            (names, target_name)
+        };
+        let req = MoveRequest { ids: plan, names, target, target_name };
+        let this = *self;
+        let ids = req.ids.clone();
+        let resolve: Rc<dyn Fn(bool)> = Rc::new(move |ok| {
+            if ok {
+                this.move_nodes(&ids, target);
+            }
+        });
+        if let Some(hook) = self.confirm_hook.peek().clone() {
+            hook(&req, resolve);
+        } else {
+            let what = if req.names.len() == 1 {
+                format!("'{}'", req.names[0])
+            } else {
+                format!("{} items", req.names.len())
+            };
+            let r2 = resolve.clone();
+            crate::alert_dialog(format!("Move {what} into '{}'?", req.target_name))
+                .description("The files are moved on disk. You can undo this with Ctrl+Z.")
+                .confirm("Move")
+                .on_confirm(move || r2(true))
+                .on_cancel(move || resolve(false))
+                .open();
+        }
+        true
+    }
+
     /// Move nodes into a folder (or the root) — on disk in filesystem mode,
-    /// in the model otherwise. Also used programmatically.
-    pub fn move_nodes(&self, ids: &[u64], target: Option<u64>) {
-        let fs = self.fs_root.get().is_some();
-        for id in ids {
-            if fs {
-                let Some(from) = self.path_of(*id) else {
+    /// in the model otherwise. No confirmation (programmatic); invalid moves
+    /// (into itself/a descendant, no-ops, over an existing name) are skipped,
+    /// and disk moves are refused when [`allow_fs_moves`](Self::allow_fs_moves)
+    /// is off. Completed moves are recorded for [`undo_move`](Self::undo_move).
+    /// Returns whether anything moved.
+    pub fn move_nodes(&self, ids: &[u64], target: Option<u64>) -> bool {
+        let plan = self.plan_move(ids, target);
+        let fs_root = self.fs_root.peek().clone();
+        if fs_root.is_some() && !self.fs_moves_allowed.peek() {
+            if !plan.is_empty() {
+                self.last_error.set(Some("Moving files on disk is disabled".into()));
+            }
+            return false;
+        }
+        // Load an unexpanded target first: a later lazy load would otherwise
+        // replace its children and orphan the moved nodes' ids.
+        if let Some(t) = target
+            && !plan.is_empty()
+        {
+            self.ensure_loaded(t);
+        }
+        let mut done = Vec::new();
+        for id in plan {
+            let old_parent = self.tree.peek().parent_of(id);
+            let mut paths = None;
+            if let Some(root) = &fs_root {
+                let Some(from) = self.path_of(id) else {
                     self.last_error.set(Some("Could not resolve a path for a node".into()));
                     continue;
                 };
                 let into = match target {
                     Some(t) => self.path_of(t),
-                    None => self.fs_root.get(),
+                    None => Some(root.clone()),
                 };
                 let Some(into) = into else {
                     self.last_error.set(Some("Could not resolve the target folder".into()));
                     continue;
                 };
+                if &from == root || into.starts_with(&from) {
+                    self.last_error.set(Some(format!("Refusing to move {} into itself", from.display())));
+                    continue;
+                }
                 let to = into.join(from.file_name().unwrap_or_default());
+                if to.exists() {
+                    self.last_error.set(Some(format!("{} already exists", to.display())));
+                    continue;
+                }
                 if let Err(e) = std::fs::rename(&from, &to) {
                     self.last_error.set(Some(format!("Could not move {}: {e}", from.display())));
                     continue;
                 }
+                paths = Some((from, to));
             }
+            let mut moved = false;
             self.tree.update(|t| {
-                t.move_node(*id, target);
+                moved = t.move_node(id, target);
             });
+            if moved {
+                done.push(MoveRecord { id, old_parent, paths });
+            }
         }
         if let Some(t) = target {
             self.expanded.update(|e| {
                 e.insert(t);
             });
         }
+        let any = !done.is_empty();
+        if any {
+            self.move_history.update(|h| h.push(done));
+        }
+        any
+    }
+
+    /// Whether there is a move to undo (reactive).
+    pub fn can_undo_move(&self) -> bool {
+        !self.move_history.get().is_empty()
+    }
+
+    /// Undo the most recent move (drop / [`move_nodes`](Self::move_nodes)):
+    /// the nodes go back to their previous folders — on disk too. Returns
+    /// whether anything was restored.
+    pub fn undo_move(&self) -> bool {
+        let mut batch = None;
+        self.move_history.update(|h| batch = h.pop());
+        let Some(batch) = batch else { return false };
+        let mut any = false;
+        for rec in batch.into_iter().rev() {
+            if let Some((from, to)) = &rec.paths {
+                if from.exists() {
+                    self.last_error.set(Some(format!("Cannot undo: {} exists again", from.display())));
+                    continue;
+                }
+                if let Err(e) = std::fs::rename(to, from) {
+                    self.last_error.set(Some(format!("Could not undo move of {}: {e}", to.display())));
+                    continue;
+                }
+            }
+            self.tree.update(|t| {
+                any |= t.move_node(rec.id, rec.old_parent);
+            });
+        }
+        any
     }
 
     /// The active node: the keyboard-focus row when set (and still present),
@@ -615,6 +842,15 @@ impl FileExplorer {
             } else {
                 self.delete_nodes(&ids);
             }
+            true
+        });
+        // Mod+Z — undo the last move (VS Code); declines with nothing to undo,
+        // and a focused editor's own undo wins first.
+        create_shortcut_if("Mod+Z", move || {
+            if self.move_history.peek().is_empty() {
+                return false;
+            }
+            self.undo_move();
             true
         });
         // Mod+A — select every visible node, from idle too (a focused editor's
@@ -1012,7 +1248,11 @@ impl FileExplorer {
         let root_gesture = GestureDetector::new(body)
             .on_hover_move({
                 move || {
-                    let want = self.dragging.peek() && self.drop_target.peek().is_none();
+                    // Only over EMPTY space: any row under the pointer (a
+                    // file, the dragged row itself) is not a root drop.
+                    let want = self.dragging.peek()
+                        && self.drop_target.peek().is_none()
+                        && self.row_hover.peek().is_none();
                     if self.root_drop.peek() != want {
                         self.root_drop.set(want);
                     }

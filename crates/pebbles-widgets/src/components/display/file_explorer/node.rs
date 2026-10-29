@@ -109,14 +109,23 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     } else {
         let g = GestureDetector::new(body)
             .cursor(Cursor::Pointer)
-            .on_hover_enter(move || hovered.set(true))
-            .on_hover_exit(move || hovered.set(false))
+            .on_hover_enter(move || {
+                hovered.set(true);
+                explorer.row_hover.set(Some(id));
+                explorer.root_drop.set(false);
+            })
+            .on_hover_exit(move || {
+                hovered.set(false);
+                if explorer.row_hover.peek() == Some(id) {
+                    explorer.row_hover.set(None);
+                }
+            })
             .on_hover_enter({
                 move || {
                     // Hovering a folder while dragging marks it as the drop
                     // target; hovering a collapsed one also starts the
                     // expand-on-hold timer.
-                    if explorer.dragging.get() && is_folder {
+                    if explorer.dragging.peek() && is_folder {
                         explorer.drop_target.set(Some(id));
                         explorer.root_drop.set(false);
                         if !explorer.expanded.get().contains(&id) {
@@ -144,28 +153,62 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
                     pebbles_core::animation::clear_timeout(explorer.hover_key);
                 }
             })
-            .on_pan_start({
-                move || {
-                    // Dragging an unselected node selects it; a selected node
-                    // drags the whole selection with it.
-                    if !explorer.selected.get().contains(&id) {
-                        explorer.select_only(id);
-                    }
-                    explorer.dragging.set(true);
+            // A press only ARMS a drag; it becomes one after the pointer
+            // travels past DRAG_SLOP (a click — even with jitter — never moves
+            // anything). Dropping needs an explicit highlighted target.
+            .on_pan_start(pebbles_core::action_event(move |e: pebbles_render::PointerEvent| {
+                explorer.press.set(Some((id, e.global)));
+            }))
+            .on_pan_update(pebbles_core::action_event(move |e: pebbles_render::PointerEvent| {
+                if explorer.dragging.peek() {
+                    return;
                 }
-            })
+                let Some((pid, origin)) = explorer.press.peek() else { return };
+                if pid != id {
+                    return;
+                }
+                let (dx, dy) = (e.global.x - origin.x, e.global.y - origin.y);
+                if (dx * dx + dy * dy).sqrt() < DRAG_SLOP {
+                    return;
+                }
+                // Dragging an unselected node selects it; a selected node
+                // drags the whole selection with it.
+                if !explorer.selected.peek().contains(&id) {
+                    explorer.select_only(id);
+                }
+                explorer.dragging.set(true);
+                // Already over another folder when the slop is crossed: it is
+                // the target (its hover-enter fired before the drag began).
+                if let Some(h) = explorer.row_hover.peek()
+                    && h != id
+                    && explorer.tree.peek().node(h).is_some_and(|n| n.kind == FsKind::Folder)
+                {
+                    explorer.drop_target.set(Some(h));
+                }
+            }))
             .on_pan_end({
                 move || {
-                    if !explorer.dragging.get() {
+                    explorer.press.set(None);
+                    if !explorer.dragging.peek() {
                         return;
                     }
-                    let ids = explorer.selected.get();
-                    let target = explorer.drop_target.get();
-                    let root = explorer.root_drop.get();
-                    explorer.move_nodes(&ids, if root { None } else { target });
+                    let ids = explorer.selected.peek().clone();
+                    let target = explorer.drop_target.peek();
+                    let root = explorer.root_drop.peek() && explorer.row_hover.peek().is_none();
                     explorer.dragging.set(false);
                     explorer.drop_target.set(None);
                     explorer.root_drop.set(false);
+                    match (target, root) {
+                        (Some(t), _) => {
+                            explorer.request_move(&ids, Some(t));
+                        }
+                        (None, true) => {
+                            explorer.request_move(&ids, None);
+                        }
+                        // Released over a file, the dragged row, or outside
+                        // the tree: no target, nothing moves.
+                        (None, false) => {}
+                    }
                 }
             })
             .on_tap({

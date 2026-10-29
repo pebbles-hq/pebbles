@@ -188,7 +188,7 @@ fn drag_onto_folder_moves() {
     let src_row = Offset::new(60.0, 80.0);
     let target = ui.pan_target_at(readme).expect("a draggable row");
     ui.dispatch_pan_start(target, readme);
-    ui.dispatch_pan_update(target, readme);
+    ui.dispatch_pan_update(target, src_row); // past the drag slop
     ui.dispatch_hover(src_row); // hovering the folder marks the drop target
     frame(&mut ui, &mut env, win);
     ui.dispatch_pan_end(target, src_row);
@@ -304,7 +304,7 @@ fn dragging_a_selection_moves_them_all() {
     // Drag README (one of the selected) onto src → BOTH move.
     let target = ui.pan_target_at(readme).expect("a draggable row");
     ui.dispatch_pan_start(target, readme);
-    ui.dispatch_pan_update(target, readme);
+    ui.dispatch_pan_update(target, src_row); // past the drag slop
     ui.dispatch_hover(src_row);
     frame(&mut ui, &mut env, win);
     ui.dispatch_pan_end(target, src_row);
@@ -827,4 +827,216 @@ fn load_filter_skips_ignored_entries_on_open_and_lazy_expand() {
     let kids: Vec<String> = tree.peek().node(src).unwrap().children.iter().map(|c| c.name.clone()).collect();
     assert_eq!(kids, vec!["main.rs".to_string()], "filter applies to lazy folder loads too");
     let _ = std::fs::remove_dir_all(&root);
+}
+
+// ---------------------------------------------------------------------------
+// Data-loss regression: a click (press → tiny jitter → release, exactly as
+// the shell runner dispatches it) must never move anything on disk.
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    static FS_EX: RefCell<Option<pebbles_widgets::FileExplorer>> = const { RefCell::new(None) };
+    static TREE_FS: RefCell<Option<pebbles_core::Signal<FileTree>>> = const { RefCell::new(None) };
+}
+
+fn fs_root_widget() -> impl IntoWidget {
+    let ex = FS_EX.with(|c| c.borrow().expect("fs explorer stored"));
+    OverlayHost::wrap(container().height(260.0).child(ex.tree()))
+}
+
+/// Mount an explorer over a temp dir holding `outer/inner/deep.txt` with
+/// `outer` expanded. Returns (ui, env, root dir, explorer).
+fn mount_fs(tag: &str) -> (Ui, TextEnv, std::path::PathBuf, pebbles_widgets::FileExplorer) {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    let dir = temp_dir(tag);
+    std::fs::create_dir_all(dir.join("outer/inner")).unwrap();
+    std::fs::write(dir.join("outer/inner/deep.txt"), "x").unwrap();
+    std::fs::create_dir(dir.join("zother")).unwrap();
+    let mut ui = Ui::new();
+    let tree = create_signal(FileTree::new());
+    let ex = file_explorer(tree);
+    assert!(ex.open_folder(&dir));
+    let outer = tree.peek().root.iter().find(|n| n.name == "outer").unwrap().id;
+    ex.toggle_folder(outer);
+    FS_EX.with(|c| *c.borrow_mut() = Some(ex));
+    TREE_FS.with(|c| *c.borrow_mut() = Some(tree));
+    pebbles_widgets::Theme::tailwind().make_current();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(View::new(palette::WHITE, component(fs_root_widget)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+    (ui, env, dir, ex)
+}
+
+/// Find the row (by y probe) whose pan target differs per row: returns the y
+/// of the nth row (0-based), probing every 2px.
+fn row_points(ui: &mut Ui) -> Vec<Offset> {
+    let mut out: Vec<Offset> = Vec::new();
+    let mut last = None;
+    let mut y = 1.0;
+    while y < 250.0 {
+        let p = Offset::new(60.0, y);
+        let t = ui.pan_target_at(p);
+        if t.is_some() && t != last {
+            out.push(Offset::new(60.0, y + 6.0));
+        }
+        last = t;
+        y += 2.0;
+    }
+    out
+}
+
+/// The shell runner's exact click sequence: pan_start at PRESS, hover moves
+/// while held (with pan updates), pan_end + tap at release.
+fn runner_click(ui: &mut Ui, env: &mut TextEnv, at: Offset, jitter: &[Offset]) {
+    let win = Size::new(400.0, 300.0);
+    let target = ui.pan_target_at(at);
+    let armed = ui.tap_target_at(at);
+    if let Some(t) = target {
+        ui.dispatch_pan_start(t, at);
+    }
+    ui.dispatch_pointer_down(at);
+    frame(ui, env, win);
+    let mut end = at;
+    for j in jitter {
+        end = *j;
+        ui.dispatch_hover(end);
+        if let Some(t) = target {
+            ui.dispatch_pan_update(t, end);
+        }
+        frame(ui, env, win);
+    }
+    if let Some(t) = target {
+        ui.dispatch_pan_end(t, end);
+    }
+    ui.dispatch_pointer_up(end);
+    // The runner taps only when released over the widget it pressed.
+    if armed.is_some() && ui.tap_target_at(end) == armed {
+        ui.dispatch_tap(end);
+    }
+    frame(ui, env, win);
+}
+
+#[test]
+fn click_with_jitter_on_a_nested_row_never_moves_anything() {
+    let (mut ui, mut env, dir, _ex) = mount_fs("jitter");
+    let rows = row_points(&mut ui);
+    assert!(rows.len() >= 3, "rows: outer, inner, zother ({rows:?})");
+    let inner = rows[1];
+    // Plain click, then a click with 1–3 px of jitter.
+    runner_click(&mut ui, &mut env, inner, &[]);
+    assert!(dir.join("outer/inner/deep.txt").exists(), "plain click moved outer/inner");
+    runner_click(
+        &mut ui,
+        &mut env,
+        inner,
+        &[Offset::new(inner.x + 1.0, inner.y + 1.0), Offset::new(inner.x + 3.0, inner.y + 2.0)],
+    );
+    assert!(dir.join("outer/inner/deep.txt").exists(), "jittery click moved outer/inner");
+    assert!(!dir.join("inner").exists(), "nothing landed at the root");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A real drag: press on `from`, travel past the slop to `to` (hovering it),
+/// release there.
+fn runner_drag(ui: &mut Ui, env: &mut TextEnv, from: Offset, to: Offset) {
+    let mid = Offset::new(from.x, (from.y + to.y) / 2.0);
+    runner_click(ui, env, from, &[Offset::new(from.x + 2.0, from.y), mid, to]);
+}
+
+fn set_confirm(ex: pebbles_widgets::FileExplorer, answer: bool) -> std::rc::Rc<std::cell::Cell<usize>> {
+    let asked = std::rc::Rc::new(std::cell::Cell::new(0));
+    let a = asked.clone();
+    ex.set_confirm_move(move |req, resolve| {
+        assert_eq!(req.names, vec!["inner".to_string()]);
+        assert_eq!(req.target_name, "zother");
+        a.set(a.get() + 1);
+        resolve(answer);
+    });
+    asked
+}
+
+#[test]
+fn drag_past_slop_onto_a_folder_moves_after_confirm_and_undo_restores() {
+    let (mut ui, mut env, dir, ex) = mount_fs("dragok");
+    let asked = set_confirm(ex, true);
+    let rows = row_points(&mut ui);
+    runner_drag(&mut ui, &mut env, rows[1], rows[2]);
+    assert_eq!(asked.get(), 1, "confirmation asked once");
+    assert!(dir.join("zother/inner/deep.txt").exists(), "moved into zother on disk");
+    assert!(!dir.join("outer/inner").exists());
+    assert!(ex.can_undo_move());
+    assert!(ex.undo_move(), "undo restores");
+    assert!(dir.join("outer/inner/deep.txt").exists(), "back in outer on disk");
+    assert!(!dir.join("zother/inner").exists());
+    assert!(!ex.can_undo_move());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn rejected_confirmation_moves_nothing() {
+    let (mut ui, mut env, dir, ex) = mount_fs("dragno");
+    let asked = set_confirm(ex, false);
+    let rows = row_points(&mut ui);
+    runner_drag(&mut ui, &mut env, rows[1], rows[2]);
+    assert_eq!(asked.get(), 1);
+    assert!(dir.join("outer/inner/deep.txt").exists(), "rejected → untouched");
+    assert!(!ex.can_undo_move());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn disallowed_fs_moves_move_nothing() {
+    let (mut ui, mut env, dir, ex) = mount_fs("dragoff");
+    let ex = ex.allow_fs_moves(false);
+    let asked = set_confirm(ex, true);
+    let rows = row_points(&mut ui);
+    runner_drag(&mut ui, &mut env, rows[1], rows[2]);
+    assert_eq!(asked.get(), 0, "never even asks");
+    assert!(dir.join("outer/inner/deep.txt").exists(), "disabled → untouched");
+    // Programmatic moves are refused too.
+    let inner = rows_id(&ex, "outer_inner");
+    assert!(!ex.move_nodes(&[inner], None));
+    assert!(dir.join("outer/inner/deep.txt").exists());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn drops_without_an_explicit_target_and_invalid_moves_do_nothing() {
+    let (mut ui, mut env, dir, ex) = mount_fs("notarget");
+    let asked = std::rc::Rc::new(std::cell::Cell::new(0));
+    let a = asked.clone();
+    ex.set_confirm_move(move |_, resolve| {
+        a.set(a.get() + 1);
+        resolve(true);
+    });
+    let rows = row_points(&mut ui);
+    // Drag `inner` past the slop but release back over itself / its parent row
+    // / outside the window: no target → nothing.
+    runner_drag(&mut ui, &mut env, rows[1], Offset::new(rows[1].x + 30.0, rows[1].y));
+    runner_drag(&mut ui, &mut env, rows[1], rows[0]); // its own parent: no-op
+    runner_drag(&mut ui, &mut env, rows[1], Offset::new(60.0, 900.0));
+    assert_eq!(asked.get(), 0, "nothing to confirm");
+    assert!(dir.join("outer/inner/deep.txt").exists());
+    // A folder into itself / its descendant is refused; so is a no-op.
+    let inner = rows_id(&ex, "outer_inner");
+    let outer = rows_id(&ex, "outer");
+    assert!(!ex.move_nodes(&[outer], Some(inner)), "into a descendant");
+    assert!(!ex.move_nodes(&[outer], Some(outer)), "into itself");
+    assert!(!ex.move_nodes(&[inner], Some(outer)), "already there");
+    assert!(dir.join("outer/inner/deep.txt").exists());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+fn rows_id(ex: &pebbles_widgets::FileExplorer, name: &str) -> u64 {
+    let _ = ex;
+    let tree = TREE_FS.with(|t| t.borrow().unwrap());
+    let t = tree.peek();
+    let outer = t.root.iter().find(|n| n.name == "outer").unwrap();
+    if name == "outer_inner" {
+        return outer.children.iter().find(|n| n.name == "inner").unwrap().id;
+    }
+    t.root.iter().find(|n| n.name == name).unwrap().id
 }
