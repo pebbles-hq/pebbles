@@ -853,4 +853,44 @@ mod tests {
         pebbles_core::focus::set_focus(None);
         assert_eq!(h.ui.dispatch_key_event(&f5), KeyEventResult::Ignored);
     }
+
+    // ----- physical shortcuts ---------------------------------------------
+
+    thread_local! {
+        static TOGGLES: Cell<u32> = const { Cell::new(0) };
+    }
+
+    fn physical_shortcut_probe() -> impl IntoWidget {
+        pebbles_core::create_shortcut(pebbles_core::Shortcut::physical("Ctrl+Shift+`"), || {
+            TOGGLES.with(|t| t.set(t.get() + 1));
+        });
+        container().width(10.0).height(10.0)
+    }
+
+    /// Regression (Gravel terminal toggle): Ctrl+Shift+` only matched layouts whose
+    /// Backquote key produces '`'. A physical binding matches the key position on any
+    /// layout; the logical character is irrelevant.
+    #[test]
+    fn physical_shortcut_matches_on_any_layout() {
+        use pebbles_core::{KeyEvent, LogicalKey, Mods, PhysicalKey};
+        TOGGLES.with(|t| t.set(0));
+        let mut h = Harness::new();
+        h.mount(physical_shortcut_probe);
+        h.draw();
+        let window = h.ui.window_id();
+        let cs = Mods { ctrl: true, shift: true, ..Default::default() };
+        // US: '~' (shifted backquote); German: dead '^'; French: '²'.
+        for logical in [LogicalKey::char("~"), LogicalKey::Dead(Some('^')), LogicalKey::char("²")] {
+            let e = KeyEvent { mods: cs, ..KeyEvent::down(logical, PhysicalKey::new("Backquote")) };
+            assert!(pebbles_core::shortcuts::dispatch_key_event(window, &e));
+        }
+        assert_eq!(TOGGLES.with(Cell::get), 3);
+        // Wrong modifiers or another key position never match.
+        let plain = KeyEvent::down(LogicalKey::char("`"), PhysicalKey::new("Backquote"));
+        assert!(!pebbles_core::shortcuts::dispatch_key_event(window, &plain));
+        let other =
+            KeyEvent { mods: cs, ..KeyEvent::down(LogicalKey::char("`"), PhysicalKey::new("IntlBackslash")) };
+        assert!(!pebbles_core::shortcuts::dispatch_key_event(window, &other));
+        assert_eq!(TOGGLES.with(Cell::get), 3);
+    }
 }
