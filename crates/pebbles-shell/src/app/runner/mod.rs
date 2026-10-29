@@ -1642,9 +1642,14 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         // create_timeout callbacks) is due — a fully still mouse must still show
         // the tooltip. No pending timers means plain `Wait` above.
         let now_secs = self.clock.elapsed().as_secs_f64();
+        // Timers don't keep frames coming (they aren't animations): when one is due,
+        // draw exactly one frame (whose `animation::tick` fires it); otherwise sleep.
         if let Some(at) = pebbles_core::animation::next_deadline(now_secs) {
-            let remaining = (at - now_secs).max(0.0);
-            wake_by(event_loop, Instant::now() + Duration::from_secs_f64(remaining));
+            if at <= now_secs {
+                self.request_redraw();
+            } else {
+                wake_by(event_loop, Instant::now() + Duration::from_secs_f64(at - now_secs));
+            }
         }
         // Dev monkey-tester: hammer the UI with synthetic input and keep the loop hot.
         if self.storm.is_some() && self.mounted {

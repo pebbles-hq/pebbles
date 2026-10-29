@@ -244,7 +244,10 @@ impl Harness {
     pub fn settle(&mut self) {
         for _ in 0..240 {
             let scrolling = self.tick(FRAME);
-            if !scrolling && !pebbles_core::animation::active() {
+            // Pending timers (hover delays) aren't animations any more, but settling
+            // still waits for them (bounded) so "hover then settle" shows the tooltip.
+            if !scrolling && !pebbles_core::animation::active() && !pebbles_core::animation::has_pending_timeouts()
+            {
                 return;
             }
         }

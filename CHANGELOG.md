@@ -6,6 +6,12 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — pending timers no longer keep the app redrawing every frame
+`animation::active()` (and `tick`'s return) no longer count pending `set_timeout` /
+`create_timeout` timers; the shell sleeps until `animation::next_deadline` and draws one frame
+when a timer is due. `next_deadline` now anchors not-yet-anchored timers. New
+`animation::has_pending_timeouts()`. `pebbles_testing` `settle()` still waits for pending timers.
+
 ### Changed — Shift-significant editor chords; unhandled keys bubble to app shortcuts
 Ctrl+P no longer maps to `KeyInput::CommandPalette` (VS Code: it is workbench Quick Open);
 Ctrl+Shift+P does. Ctrl+Shift+F / Ctrl+Shift+H no longer map to `Find` / `Replace` (they are

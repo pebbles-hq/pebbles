@@ -41,7 +41,12 @@ fn create_timeout_fires_once_after_the_delay() {
     ui.layout(&mut env, Size::new(100.0, 100.0));
 
     // First tick anchors the deadline at now + 0.05 = 0.06.
-    assert!(animation::tick(0.01), "a pending timeout keeps the driver active");
+    // A timer is not an animation: it doesn't keep the driver hot (the shell wakes at
+    // `next_deadline` instead).
+    assert!(!animation::tick(0.01), "a pending timeout does not keep frames coming");
+    assert!(animation::has_pending_timeouts());
+    let at = animation::next_deadline(0.02).expect("pending");
+    assert!((at - 0.06).abs() < 1e-9, "anchored on the first tick, got {at}");
     assert_eq!(FIRED.with(Cell::get), 0, "not yet due");
 
     // Past the deadline → fires exactly once.
