@@ -6,6 +6,11 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — `FileExplorer::set_load_filter` (ignore hook)
+`set_load_filter(|path, is_dir| bool)` / `clear_load_filter()`: in filesystem mode, entries
+for which the filter returns `false` are skipped when `open_folder` reads the root and when
+folders load lazily on expand (VS Code `files.exclude`-style: `.git`, `target/`, ...).
+
 ### Fixed — pending timers no longer keep the app redrawing every frame
 `animation::active()` (and `tick`'s return) no longer count pending `set_timeout` /
 `create_timeout` timers; the shell sleeps until `animation::next_deadline` and draws one frame

@@ -798,3 +798,33 @@ fn external_filter_prunes_the_tree_and_keyboard_follows() {
     assert!(shortcuts::dispatch(w, none, ShortcutKey::End));
     assert_eq!(ex().selection().peek(), vec![2], "unfiltered again: End reaches README");
 }
+
+#[test]
+fn load_filter_skips_ignored_entries_on_open_and_lazy_expand() {
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+
+    let root = temp_dir("filter");
+    std::fs::create_dir(root.join(".git")).unwrap();
+    std::fs::create_dir(root.join("target")).unwrap();
+    std::fs::create_dir(root.join("src")).unwrap();
+    std::fs::write(root.join("Cargo.toml"), "").unwrap();
+    std::fs::write(root.join("src").join("main.rs"), "").unwrap();
+    std::fs::write(root.join("src").join("main.rs.bak"), "").unwrap();
+
+    let tree = create_signal(FileTree::new());
+    let ex = file_explorer(tree);
+    ex.set_load_filter(|path, is_dir| {
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if is_dir { !matches!(name, ".git" | "target") } else { !name.ends_with(".bak") }
+    });
+    assert!(ex.open_folder(&root));
+    let names: Vec<String> = tree.peek().root.iter().map(|n| n.name.clone()).collect();
+    assert_eq!(names, vec!["src".to_string(), "Cargo.toml".to_string()], "ignored dirs skipped");
+
+    let src = tree.peek().root[0].id;
+    ex.toggle_folder(src);
+    let kids: Vec<String> = tree.peek().node(src).unwrap().children.iter().map(|c| c.name.clone()).collect();
+    assert_eq!(kids, vec!["main.rs".to_string()], "filter applies to lazy folder loads too");
+    let _ = std::fs::remove_dir_all(&root);
+}
