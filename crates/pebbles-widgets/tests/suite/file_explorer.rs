@@ -1863,3 +1863,44 @@ fn compact_folders_render_chains_as_one_row() {
     assert_eq!(ex.visible_rows()[0], a);
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn files_dropped_from_the_os_are_copied_in_and_undo_removes_them() {
+    use pebbles_widgets::{Capability, ExplorerCapabilities, ExplorerError, file_drop};
+    let (mut ui, mut env, dir, ex) = mount_fs("osdrop");
+    let tree = TREE_FS.with(|t| t.borrow().unwrap());
+    let outside = temp_dir("osdrop-src");
+    std::fs::write(outside.join("photo.png"), "png").unwrap();
+    std::fs::create_dir_all(outside.join("pkg/sub")).unwrap();
+    std::fs::write(outside.join("pkg/sub/x.txt"), "x").unwrap();
+    std::fs::write(dir.join("photo.png"), "existing").unwrap();
+    ex.refresh();
+    // Through the OS drag-and-drop path (the lone drop target catches it).
+    let win = Size::new(400.0, 300.0);
+    frame(&mut ui, &mut env, win);
+    frame(&mut ui, &mut env, win);
+    file_drop::hover(outside.join("photo.png"), Offset::new(100.0, 250.0));
+    file_drop::drop_file(outside.join("photo.png"), Offset::new(100.0, 250.0));
+    file_drop::drop_file(outside.join("pkg"), Offset::new(100.0, 250.0));
+    assert!(file_drop::flush());
+    assert_eq!(std::fs::read_to_string(dir.join("photo.png")).unwrap(), "existing", "never overwritten");
+    assert_eq!(std::fs::read_to_string(dir.join("photo copy.png")).unwrap(), "png");
+    assert_eq!(std::fs::read_to_string(dir.join("pkg/sub/x.txt")).unwrap(), "x");
+    assert!(outside.join("pkg/sub/x.txt").exists(), "the source is untouched (copied, not moved)");
+    let _ = id_of(tree, "pkg");
+    // Into a specific folder via the API.
+    let z = id_of(tree, "zother");
+    ex.import_paths(&[outside.join("photo.png")], Some(z)).unwrap();
+    assert!(dir.join("zother/photo.png").exists());
+    assert!(ex.undo());
+    assert!(!dir.join("zother/photo.png").exists());
+    // Switched off: refused.
+    ex.set_capabilities(ExplorerCapabilities::all().allow_drop_from_os(false));
+    assert_eq!(
+        ex.import_paths(&[outside.join("photo.png")], Some(z)),
+        Err(ExplorerError::NotAllowed(Capability::DropFromOs))
+    );
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::remove_dir_all(&outside).ok();
+    std::fs::remove_dir_all(dir.with_extension("trash")).ok();
+}

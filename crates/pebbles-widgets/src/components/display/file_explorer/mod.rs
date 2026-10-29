@@ -763,6 +763,40 @@ impl FileExplorer {
     /// space offers New File/New Folder; dropping on empty space moves to the
     /// root.
     pub fn tree(self) -> impl IntoWidget {
+        // Files dragged in from the OS (filesystem mode, DropFromOs on): drop
+        // onto a folder row → into it; onto a file → its folder; else the root.
+        if self.fs_root.get().is_some() && self.caps.get().allows(Capability::DropFromOs) {
+            let tint = self.style().drop_target_bg;
+            let strength = self.style().drop_target_strength;
+            return crate::widgets::file_drop_target(move |hovering| {
+                let body = self.tree_inner();
+                if hovering {
+                    Container::new().color(tint.multiply_alpha(strength)).child(body).into_widget()
+                } else {
+                    body
+                }
+            })
+            .on_drop(move |paths| {
+                let _ = self.import_paths(&paths, self.os_drop_target());
+            })
+            .into_widget();
+        }
+        self.tree_inner()
+    }
+
+    /// Where an OS drop lands: the folder row under the pointer, a file row's
+    /// folder, else the root.
+    fn os_drop_target(&self) -> Option<u64> {
+        let h = self.row_hover.peek()?;
+        let t = self.tree.peek();
+        match t.node(h) {
+            Some(n) if n.kind == FsKind::Folder => Some(h),
+            Some(_) => t.parent_of(h),
+            None => None,
+        }
+    }
+
+    fn tree_inner(self) -> AnyWidget {
         let model = self.tree.get();
         let q = self.filter.get().trim().to_lowercase();
         let mut kids: Vec<AnyWidget> = Vec::new();

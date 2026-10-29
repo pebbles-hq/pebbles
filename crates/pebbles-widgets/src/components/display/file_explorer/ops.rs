@@ -1058,4 +1058,86 @@ impl FileExplorer {
         self.reveal(id);
         id
     }
+
+    /// Copy files/folders from elsewhere on disk (an OS drag-and-drop) into
+    /// `target` (`None` = root), named like VS Code on conflicts (`a copy.txt`
+    /// — never overwrites). Gated by [`Capability::DropFromOs`],
+    /// `can_drop_into` and the before-hooks (as an [`ExplorerOp::Copy`] whose
+    /// entries have `id == u64::MAX`). Undoable. Returns the new node ids.
+    pub fn import_paths(&self, paths: &[PathBuf], target: Option<u64>) -> Result<Vec<u64>, ExplorerError> {
+        self.require(Capability::DropFromOs)?;
+        let Some(root) = self.fs_root.peek().clone() else {
+            return self.fail(ExplorerError::Invalid("Not in filesystem mode".into()));
+        };
+        let dir = match target {
+            Some(t) => match self.tree.peek().node(t) {
+                Some(n) if n.kind == FsKind::Folder => self.path_of(t).unwrap_or(root.clone()),
+                _ => return self.fail(ExplorerError::Invalid("The target is not a folder".into())),
+            },
+            None => root.clone(),
+        };
+        let entries: Vec<ExplorerEntry> = paths
+            .iter()
+            .map(|p| ExplorerEntry {
+                id: u64::MAX,
+                name: p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                kind: if p.is_dir() { FsKind::Folder } else { FsKind::File },
+                parent: None,
+                path: Some(p.clone()),
+            })
+            .collect();
+        if entries.is_empty() {
+            return self.fail(ExplorerError::Invalid("Nothing to import".into()));
+        }
+        self.check_drop(target, &entries)?;
+        let op = ExplorerOp::Copy { entries, target: target.and_then(|t| self.entry(t)) };
+        self.before(&op)?;
+        if let Some(t) = target {
+            self.ensure_loaded(t);
+        }
+        let mut made = Vec::new();
+        let mut err = None;
+        for from in paths {
+            if dir.starts_with(from) {
+                err = Some(ExplorerError::Invalid(format!("Cannot copy {} into itself", from.display())));
+                continue;
+            }
+            let taken: Vec<String> = std::fs::read_dir(&dir)
+                .map(|rd| {
+                    rd.filter_map(|e| e.ok()).map(|e| e.file_name().to_string_lossy().to_string()).collect()
+                })
+                .unwrap_or_default();
+            let taken_refs: Vec<&str> = taken.iter().map(|s| s.as_str()).collect();
+            let base = from.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let name = tree::copy_name(&base, &taken_refs);
+            let to = dir.join(&name);
+            if let Err(e) = copy_path(from, &to) {
+                err = Some(ExplorerError::Io(format!("Could not copy {}: {e}", from.display())));
+                continue;
+            }
+            made.push((name, to));
+        }
+        // Mirror into the model (the target folder is loaded, the root always is).
+        let mut ids = Vec::new();
+        let mut new_paths = Vec::new();
+        for (name, to) in made {
+            let kind = if to.is_dir() { FsKind::Folder } else { FsKind::File };
+            let mut node = if kind == FsKind::Folder { FsNode::folder(name) } else { FsNode::file(name) };
+            node.loaded = kind != FsKind::Folder;
+            ids.push(self.insert_subtree(target, node));
+            new_paths.push(to);
+        }
+        if !ids.is_empty() {
+            self.push_history(FileOp::Copy { ids: ids.clone(), paths: new_paths });
+            self.after(&op);
+        }
+        match err {
+            Some(e) if ids.is_empty() => self.fail(e),
+            Some(e) => {
+                self.last_error.set(Some(e.to_string()));
+                Ok(ids)
+            }
+            None => Ok(ids),
+        }
+    }
 }
