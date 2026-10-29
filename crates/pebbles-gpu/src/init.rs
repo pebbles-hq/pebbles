@@ -375,6 +375,31 @@ pub(crate) fn rank_adapters(cands: &[AdapterCandidate], init: &GpuInit) -> Ranke
     Ranked { order, name_filter_ignored }
 }
 
+/// Try `attempt` for each index of `order` (best first) and return the first success; every
+/// failure but the last is reported to `on_fail` before moving on. With every attempt failed,
+/// the FIRST error is returned (it names the adapter the user expects); an empty `order`
+/// returns `if_empty()`.
+#[cfg(not(target_family = "wasm"))]
+pub(crate) async fn first_ok<S, T, E>(
+    state: &mut S,
+    order: &[usize],
+    mut attempt: impl AsyncFnMut(&mut S, usize) -> Result<T, E>,
+    mut on_fail: impl FnMut(usize, &E),
+    if_empty: impl FnOnce() -> E,
+) -> Result<T, E> {
+    let mut first_err = None;
+    for &i in order {
+        match attempt(state, i).await {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                on_fail(i, &e);
+                first_err.get_or_insert(e);
+            }
+        }
+    }
+    Err(first_err.unwrap_or_else(if_empty))
+}
+
 #[cfg(not(target_family = "wasm"))]
 fn type_rank(t: wgpu::DeviceType, power: GpuPower) -> u8 {
     use wgpu::DeviceType::{Cpu, DiscreteGpu, IntegratedGpu, Other, VirtualGpu};

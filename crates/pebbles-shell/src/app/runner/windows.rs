@@ -2,6 +2,7 @@
 //! handling, all sharing the GPU context and the reactive runtime with the main
 //! window.
 
+use super::lifecycle::Lifecycle;
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
@@ -243,30 +244,15 @@ impl Runner {
                 pebbles_widgets::window::drop_window_state(w.ui.window_id());
                 keep = false;
             }
+            // P12: the main window's size / scale / occlusion / focus rules, for this window.
             WindowEvent::Resized(size) => {
-                // The next packet carries the new size; `render_packet` configures (08 §17.3 b).
-                if size.width > 0 && size.height > 0 {
-                    w.occlusion.shown(w.frame_id);
-                    w.resize_sync.pending = true;
-                    redraw::request(&w.window);
-                }
+                secondary_lifecycle(&mut w, Lifecycle::Resized(size.width, size.height))
             }
-            // P12: the main window's scale / occlusion / focus handling, for this window.
             WindowEvent::ScaleFactorChanged { .. } => {
-                pebbles_widgets::overlay::hide_overlay();
-                w.occlusion.shown(w.frame_id);
-                w.resize_sync.pending = true;
-                redraw::request(&w.window);
+                secondary_lifecycle(&mut w, Lifecycle::ScaleFactorChanged)
             }
-            WindowEvent::Occluded(occluded) => {
-                if w.occlusion.system(occluded, w.frame_id) {
-                    redraw::request(&w.window);
-                }
-            }
-            WindowEvent::Focused(true) => {
-                w.occlusion.shown(w.frame_id);
-                redraw::request(&w.window);
-            }
+            WindowEvent::Occluded(occluded) => secondary_lifecycle(&mut w, Lifecycle::Occluded(occluded)),
+            WindowEvent::Focused(focused) => secondary_lifecycle(&mut w, Lifecycle::Focused(focused)),
             WindowEvent::CursorMoved { position, .. } => {
                 let scale = w.window.scale_factor();
                 w.cursor = Offset::new(position.x / scale, position.y / scale);
@@ -431,6 +417,17 @@ impl Runner {
 }
 
 /// [`Runner::sync_cursor`] for a secondary window.
+/// A lifecycle event on a secondary window (the caller made its `Ui` current).
+fn secondary_lifecycle(w: &mut WindowRuntime, event: Lifecycle) {
+    let fx = lifecycle::apply(&mut w.occlusion, &mut w.resize_sync, w.frame_id, event);
+    if fx.hide_overlay {
+        pebbles_widgets::overlay::hide_overlay();
+    }
+    if fx.redraw {
+        redraw::request(&w.window);
+    }
+}
+
 fn sync_window_cursor(w: &mut WindowRuntime) {
     let captured = w.pan_target.is_some() || w.ui.content_drag_active();
     if let Some(want) = cursor_update(w.current_cursor, w.ui.cursor_at(w.cursor), captured) {

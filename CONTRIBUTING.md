@@ -145,3 +145,18 @@ FAIL; it never updates goldens.
 - [ ] Per-crate `README.md`s (crates.io renders them)
 - [ ] `CHANGELOG.md` entry + version bump across `workspace.package`
 - [ ] `cargo publish` bottom-up: foundation → icons → render → core → widgets → shell → macros → pebbles
+
+## Release gate: every required CI lane green on the release commit
+
+```sh
+GH_TOKEN=$(gh auth token) scripts/release-check.py <sha> \
+  --sibling pebbles-hq/pebbles-markdown=<sha> \
+  --sibling pebbles-hq/pebbles-charts=<sha> \
+  --sibling pebbles-hq/pebbles-code-editor=<sha>
+```
+
+For each workflow (CI, Security, Licenses) the latest run on `<sha>` counts, whatever triggered it
+(re-run or `gh workflow run ci.yml --ref <branch>` to refresh it). The script prints every required
+lane (`REQUIRED` in the script) as `ok`, `RED` or `MISSING` with its run URL and exits 1 unless
+all are green; each `--sibling owner/repo=sha` needs a run on that sha with every non-skipped job
+green. `scripts/release-check.py --self-test` checks the matching logic offline.

@@ -87,8 +87,13 @@ fn destroy_fires_loss_and_rebuild_renders_identically() {
         }
     }
     assert!(lost, "a destroyed device reports DeviceLost");
+    // G22: the first good frame after a loss comes within 3 s (instance, adapter, device and
+    // pipelines rebuilt from scratch, as the shell does; software rasterizers included).
+    let started = std::time::Instant::now();
     let Some(mut fresh) = offscreen("rebuild") else { return };
     let b = fresh.render_rgba(&scene, (128, 96), Color::WHITE, 1.0).expect("rebuilt render");
+    let took = started.elapsed();
+    assert!(took < std::time::Duration::from_secs(3), "rebuild to first frame took {took:?} (budget 3 s)");
     assert_eq!(a, b, "the rebuilt stack renders identically");
 }
 

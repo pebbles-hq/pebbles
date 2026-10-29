@@ -719,6 +719,8 @@ def main():
     ap.add_argument("--row", default="", help="the row label for the summary (e.g. 'L-ci Xvfb lavapipe')")
     ap.add_argument("--env", action="append", default=[], help="extra K=V")
     ap.add_argument("--tag", default="", help="file-name suffix for a variant run (e.g. gl)")
+    ap.add_argument("--expect-session", default="", choices=["", "x11", "wayland"],
+                    help="fail unless the app logs `window system: <session>` (the Linux X11 smoke lane)")
     a = ap.parse_args()
     # The summary has non-ASCII text; a Windows console defaults to cp1252.
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -845,6 +847,10 @@ def main():
     want_backend = env.get("WGPU_BACKEND") or backend
     gpu_ok = any(f"backend={want_backend}" in t for _, t in gpu)
     check(results, gpu_ok, f"GPU line names backend={want_backend}", gpu[0][1].strip() if gpu else "no GPU: line")
+    if a.expect_session:
+        ws = grep(lines, r"window system: \w+")
+        check(results, any(f"window system: {a.expect_session}" in t for _, t in ws),
+              f"window system is {a.expect_session}", ws[0][1].strip() if ws else "no `window system:` line")
     expected_errors = a.scenario in ("p19", "c5", "p10")
     if not expected_errors:
         check(results, not errors, "no ERROR log", "; ".join(t for _, t in errors[:3]))
@@ -1029,7 +1035,7 @@ def main():
                   f"{len(rows)} rows; second-half floor and peak above the first half's: {grew or 'none'}; RSS growth (info) "
                   f"{summary.get('rss_growth_pct_info')} %, RSS peak first/second half (MB) "
                   f"{summary.get('rss_mb_peak_first_second_half')}")
-        elif a.scenario == "p10" and a.mode == "threaded":
+        elif a.mode == "threaded":
             summary["census"] = "n/a threaded (read on the UI thread); judged in the inline run"
         else:
             check(results, False, "renderer census flat across resets (11 §2.9 soak CSV)",

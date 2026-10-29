@@ -49,3 +49,36 @@ shell → umbrella `pebbles`.
 
 Part of [Pebbles](https://github.com/pebbles-hq/pebbles).
 Licensed under Apache-2.0.
+
+## Soak runs: `pebbles soak`
+
+Long-running memory and frame-time soaks (wgpu plan 11 §2.9 / §6.3: SOAK-TOUR, SOAK-DAILY).
+
+```sh
+# 60-minute memory soak (SOAK-TOUR: gallery tour + input storm, strict GPU validation)
+cargo build --profile soak -p gallery
+pebbles soak run --bin target/soak/gallery --tour
+
+# Daily use: start the app through the soak wrapper and use it normally
+pebbles soak run --bin target/soak/gallery
+
+# The trend at any time (exit code 1 on a failure)
+pebbles soak summary
+```
+
+Each run writes into `$XDG_STATE_HOME/pebbles-soak/<YYYY-MM-DD>/` (default
+`~/.local/state/pebbles-soak`; `--dir` overrides): `soak.csv` (`PEBBLES_SOAK_CSV`: RSS, GPU
+allocator bytes, UI and renderer census every 600 frames) and `app.log` (the app's output with
+`PEBBLES_FRAME_STATS` frame-time lines). Days are UTC and the log rotates at midnight.
+`--minutes N` stops the app after N minutes; `--strict` sets `PEBBLES_GPU_STRICT=1`. Build with
+`--profile soak` (release + debug assertions) or the census columns stay empty.
+
+`summary` judges every run of at least 30 minutes by the §2.9 rules — census counts: max over
+the last 10 minutes ≤ max over minutes 10–20; GPU allocator bytes at the end ≤ minute 10 × 1.02;
+RSS at the end ≤ minute 10 × 1.05 (a warning only: the census decides) — fails on any panic or
+strict-mode GPU error, and flags day-over-day growth (peak RSS or GPU bytes up more than 10 %, or
+the median p95 UI frame time up more than 50 % and 2 ms) across the days on record.
+
+`pebbles soak systemd --bin <app>` prints a systemd `--user` service (starts the app under the
+soak wrapper with the graphical session) and a daily summary timer, with the enable commands.
+Nothing is installed.

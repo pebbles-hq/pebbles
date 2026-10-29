@@ -418,6 +418,66 @@ jobs:
         run: cargo test -p pebbles-gpu -- --ignored --test-threads=1
 
   # Render check: golden model + probes + self-goldens, in-process (05 §6).
+  # Linux desktop smoke under X11 (checklist §2): the `desktop` and `counter` examples on Xvfb +
+  # openbox with WAYLAND_DISPLAY unset, so winit's X11 backend (XIM, X11 cursors, WM-drawn
+  # decorations, WM_CLASS) is the one exercised. Pebbles has no desktop-environment-specific
+  # code: windowing, decorations, IME, clipboard and cursors come from winit / arboard /
+  # AccessKit. Checks: first frame presented, `window system: x11`, GPU line, no panic, no ERROR,
+  # frames rendered inline and threaded, idle costs no frames.
+  desktop-smoke-x11:
+    name: Desktop smoke (Linux X11)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: System deps (Mesa lavapipe, Xvfb + openbox)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers vulkan-tools xvfb openbox x11-utils xdotool imagemagick \
+            libxkbcommon-x11-0 libxcursor1 libxi6 libxrandr2 libegl1 libegl-mesa0 libgl1-mesa-dri \
+            python3-psutil python3-pil
+          LVP=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json 2>/dev/null | head -1)
+          test -n "$LVP" || { echo "::error::lavapipe ICD not found"; exit 1; }
+          echo "VK_DRIVER_FILES=$LVP" >> "$GITHUB_ENV"
+          echo "VK_ICD_FILENAMES=$LVP" >> "$GITHUB_ENV"
+      - name: X11 session (Xvfb + openbox)
+        run: |
+          Xvfb :99 -screen 0 1920x1080x24 +extension GLX +extension RANDR -nolisten tcp > /tmp/xvfb.log 2>&1 &
+          sleep 2
+          DISPLAY=:99 openbox > /tmp/openbox.log 2>&1 &
+          sleep 1
+          DISPLAY=:99 xdpyinfo | head -5
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: desktop-smoke
+      - name: Build desktop + counter
+        run: cargo build -p desktop -p counter
+      - name: Smoke runs
+        run: |
+          unset WAYLAND_DISPLAY # winit prefers Wayland when it is set
+          fails=0
+          run() { # scenario mode bin
+            echo "::group::$1 ($2, $3)"
+            python3 scripts/desktop-run.py --scenario "$1" --mode "$2" --bin "target/debug/$3" --out runs \
+              --row "Linux X11 (CI, lavapipe)" --expect-session x11 || { echo "::error::$1 ($2) failed"; fails=$((fails+1)); }
+            echo "::endgroup::"
+          }
+          run c1 inline desktop
+          run c1 threaded desktop
+          run idle inline counter
+          exit $fails
+      - name: Session logs
+        if: failure()
+        run: tail -n 50 /tmp/xvfb.log /tmp/openbox.log 2>/dev/null || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: desktop-smoke-x11
+          path: runs/
+          retention-days: 14
+          if-no-files-found: ignore
+
   render-check:
     name: Render check (lavapipe)
     runs-on: ubuntu-24.04

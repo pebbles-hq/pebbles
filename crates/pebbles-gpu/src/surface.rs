@@ -486,6 +486,23 @@ mod tests {
         assert_eq!(choose_present_mode(P::Fifo, &[]), (P::Fifo, false));
     }
 
+    /// Driver-specific surface capability lists (captured shapes): the choice stays generic.
+    /// NVIDIA proprietary on Wayland offers no Immediate; RADV/ANV on X11 offer all four; a
+    /// 10-bit-first list (NVIDIA X11 at depth 30) still gets the 8-bit Unorm format.
+    #[test]
+    fn driver_capability_lists_fall_back_generically() {
+        use wgpu::PresentMode as P;
+        use wgpu::TextureFormat::{Bgra8Unorm, Bgra8UnormSrgb, Rgb10a2Unorm};
+        let nvidia_wayland = [P::Fifo, P::Mailbox, P::FifoRelaxed];
+        assert_eq!(choose_present_mode(P::Immediate, &nvidia_wayland), (P::AutoVsync, true));
+        assert_eq!(choose_present_mode(P::Mailbox, &nvidia_wayland), (P::Mailbox, false));
+        let mesa_x11 = [P::Immediate, P::Mailbox, P::Fifo, P::FifoRelaxed];
+        assert_eq!(choose_present_mode(P::Immediate, &mesa_x11), (P::Immediate, false));
+        let c = choose_surface_format(&[Rgb10a2Unorm, Bgra8UnormSrgb, Bgra8Unorm], true, false).unwrap();
+        assert_eq!(c.format, Bgra8Unorm);
+        assert_eq!(c.encoding, OutputEncoding::Gamma);
+    }
+
     #[test]
     fn latency_clamped() {
         assert_eq!((frame_latency(0), frame_latency(2), frame_latency(9)), (1, 2, 3));

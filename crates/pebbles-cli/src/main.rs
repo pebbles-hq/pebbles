@@ -8,6 +8,7 @@
 //! pebbles build           build an optimized release artifact
 //! pebbles bundle          package for Linux desktops (AppDir/AppImage + .desktop)
 //! pebbles doctor          check your environment
+//! pebbles soak            long-running soak runs + memory/frame-time trend summary
 //! ```
 //!
 //! Deliberately std-only — no clap, no notify. Arg parsing is hand-rolled, file
@@ -18,6 +19,7 @@ mod bundle;
 mod doctor;
 mod new;
 mod run;
+mod soak;
 mod template;
 mod term;
 
@@ -44,6 +46,7 @@ enum Cmd {
     Build,
     Bundle,
     Doctor,
+    Soak,
     Version,
     Help,
     Unknown(String),
@@ -58,6 +61,7 @@ fn classify(cmd: Option<&str>) -> Cmd {
         Some("build") => Cmd::Build,
         Some("bundle") => Cmd::Bundle,
         Some("doctor") => Cmd::Doctor,
+        Some("soak") => Cmd::Soak,
         Some("--version") | Some("-V") | Some("version") => Cmd::Version,
         Some("--help") | Some("-h") | Some("help") | None => Cmd::Help,
         Some(other) => Cmd::Unknown(other.to_string()),
@@ -73,6 +77,7 @@ fn main() -> ExitCode {
         Cmd::Build => build::run(&args[1..]),
         Cmd::Bundle => bundle::run(&args[1..]),
         Cmd::Doctor => doctor::run(&args[1..]),
+        Cmd::Soak => soak::run(&args[1..]),
         Cmd::Version => {
             println!("pebbles {VERSION}");
             ExitCode::SUCCESS
@@ -109,6 +114,10 @@ fn print_help() {
                       with a .desktop entry + hicolor icons, and an AppImage
                       when appimagetool is installed
     {CYAN}doctor{RESET}            Check your toolchain and environment
+    {CYAN}soak{RESET}              Soak tooling: `soak run --bin <app> [--minutes N]
+                      [--tour]` logs RSS / GPU memory / frame times into a
+                      daily directory; `soak summary` judges and trends them;
+                      `soak systemd --bin <app>` prints a user unit + timer
     {CYAN}help{RESET}              Show this help
 
 {BOLD}pebbles create OPTIONS{RESET}
@@ -178,6 +187,7 @@ mod tests {
         assert_eq!(classify(Some("build")), Cmd::Build);
         assert_eq!(classify(Some("bundle")), Cmd::Bundle);
         assert_eq!(classify(Some("doctor")), Cmd::Doctor);
+        assert_eq!(classify(Some("soak")), Cmd::Soak);
     }
 
     #[test]

@@ -16,7 +16,7 @@ use frame::{FrameOutcome, FramePacket, FrameSink, Handover, Pacer, RenderState, 
 use gpu::{HostInit, RenderContext, RenderSurface, Scene, new_context};
 use kurbo::Affine;
 use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
-use pebbles_foundation::{Color, Offset, Size, TextDirection};
+use pebbles_foundation::{Color, Offset, TextDirection};
 use pebbles_widgets::{MenuBar, View};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalPosition};
@@ -32,6 +32,7 @@ use super::App;
 
 mod frame;
 mod input;
+mod lifecycle;
 mod redraw;
 mod render;
 #[cfg(not(target_family = "wasm"))]
@@ -791,6 +792,23 @@ impl Runner {
 
 impl Runner {
     /// Soak CSV (11 §2.9): count a rendered frame; every `EVERY_FRAMES` append a row.
+    /// A lifecycle event on the main window (shared rules with secondary windows: [`lifecycle`]).
+    fn main_lifecycle(&mut self, event: lifecycle::Lifecycle) {
+        let Some(active) = self.active.as_mut() else {
+            if matches!(event, lifecycle::Lifecycle::Resized(..) | lifecycle::Lifecycle::ScaleFactorChanged) {
+                pebbles_widgets::overlay::hide_overlay();
+            }
+            return;
+        };
+        let fx = lifecycle::apply(&mut active.occlusion, &mut active.resize_sync, active.frame_id, event);
+        if fx.hide_overlay {
+            pebbles_widgets::overlay::hide_overlay();
+        }
+        if fx.redraw {
+            redraw::request(&active.window);
+        }
+    }
+
     pub(super) fn soak_frame(&mut self) {
         if self.soak.is_none() {
             return;
@@ -848,7 +866,16 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
     }
 
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.active.is_some() {
+        // G26: a resume with the window still alive (after a suspend) repaints every window.
+        if lifecycle::on_resumed(self.active.is_some()) == lifecycle::Resume::RepaintAll {
+            if let Some(active) = self.active.as_mut() {
+                active.occlusion.shown(active.frame_id);
+                redraw::request(&active.window);
+            }
+            for w in self.windows.values_mut() {
+                w.occlusion.shown(w.frame_id);
+                redraw::request(&w.window);
+            }
             return;
         }
         // (web) A surface request is already in flight from a prior `resumed` —
@@ -859,6 +886,18 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         }
 
         let window = self.create_window(event_loop);
+        // Which window system winit picked (Wayland vs X11/XWayland on Linux): the desktop smoke
+        // lanes assert it, and bug reports need it next to the `GPU:` line.
+        {
+            use raw_window_handle::HasWindowHandle as _;
+            if let Ok(handle) = window.window_handle() {
+                pebbles_foundation::log::logf(
+                    pebbles_foundation::log::Level::Info,
+                    pebbles_foundation::log::Cat::General,
+                    format_args!("window system: {}", window_system_name(&handle.as_raw())),
+                );
+            }
+        }
         window.set_ime_allowed(true); // enable IME composition (CJK, dead keys, etc.)
         self.a11y = Some(crate::a11y::Bridge::new(event_loop, &window));
         #[cfg(not(target_family = "wasm"))]
@@ -1108,18 +1147,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             WindowEvent::CloseRequested => event_loop.exit(),
 
             WindowEvent::Resized(size) => {
-                // A resize invalidates any popover's anchored position — dismiss it.
-                pebbles_widgets::overlay::hide_overlay();
-                if let Some(active) = self.active.as_mut()
-                    && size.width > 0
-                    && size.height > 0
-                {
-                    // The next packet carries the new size; `render_packet` configures (08 §17.3 b)
-                    // and, on the render thread, the UI waits for it (08 §17.4).
-                    active.occlusion.shown(active.frame_id);
-                    active.resize_sync.pending = true;
-                    redraw::request(&active.window);
-                }
+                self.main_lifecycle(lifecycle::Lifecycle::Resized(size.width, size.height))
             }
 
             WindowEvent::CursorMoved { position, .. } => {
@@ -1438,18 +1466,12 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 }
             }
 
-            // DPI changed (e.g. dragging across mixed-DPI monitors). Anchored popovers shift,
-            // and the swapchain must track the new physical size — resize to the window's current
-            // inner size and repaint. Layout picks up the new scale via `window.scale_factor()`.
-            // (winit follows this with a `Resized` in most cases, but handling it here avoids a
-            // blurry/mis-scaled frame in the ones where it doesn't.)
+            // DPI changed (e.g. dragging across mixed-DPI monitors): anchored popovers shift, the
+            // swapchain tracks the new physical size (winit applies its suggested size: the same
+            // logical size at the new scale), layout reads `window.scale_factor()` and glyphs are
+            // re-rasterized at the new device size (their atlas keys carry it). P12.
             WindowEvent::ScaleFactorChanged { .. } => {
-                pebbles_widgets::overlay::hide_overlay();
-                if let Some(active) = self.active.as_mut() {
-                    active.occlusion.shown(active.frame_id);
-                    active.resize_sync.pending = true;
-                    redraw::request(&active.window);
-                }
+                self.main_lifecycle(lifecycle::Lifecycle::ScaleFactorChanged)
             }
 
             // The OS light/dark setting changed (ThemeMode::System follows it).
@@ -1472,21 +1494,8 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             }
 
             // 08 §5.4: stop rendering while hidden; redraw when visible again.
-            WindowEvent::Occluded(occluded) => {
-                if let Some(active) = self.active.as_mut()
-                    && active.occlusion.system(occluded, active.frame_id)
-                {
-                    redraw::request(&active.window);
-                }
-            }
-            WindowEvent::Focused(true) => {
-                if let Some(active) = self.active.as_mut()
-                    && active.occlusion.is_occluded()
-                {
-                    active.occlusion.shown(active.frame_id);
-                    redraw::request(&active.window);
-                }
-            }
+            WindowEvent::Occluded(occluded) => self.main_lifecycle(lifecycle::Lifecycle::Occluded(occluded)),
+            WindowEvent::Focused(focused) => self.main_lifecycle(lifecycle::Lifecycle::Focused(focused)),
 
             _ => {}
         }
@@ -1567,14 +1576,24 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         // re-requests frames while animations/scroll springs/background tasks are
         // live, and a pending long-press overrides this with `WaitUntil` below.
         event_loop.set_control_flow(ControlFlow::Wait);
-        // A poisoned GPU (or a pending retry): wake when the retry is due, then redraw so
-        // `recover_gpu_if_poisoned` runs — an idle `Wait` loop would sit on a dead device.
-        if self.gpu_reset_requested || self.render_state().is_some_and(|s| s.ctx.needs_reset()) {
-            match self.gpu_retry_at {
-                Some(t) if t > Instant::now() => wake_by(event_loop, t),
-                _ => {
+        // A poisoned GPU (or a pending retry): wake when the retry is due, then rebuild on that
+        // turn (P11, G22). Native rebuilds here, not from a frame: an idle or hidden window builds
+        // no frame, and a redraw-driven recovery behind a lock screen spun the loop forever.
+        let poisoned = self.gpu_reset_requested || self.render_state().is_some_and(|s| s.ctx.needs_reset());
+        match lifecycle::gpu_wake(poisoned, self.gpu_retry_at, Instant::now()) {
+            lifecycle::GpuWake::Idle => {}
+            lifecycle::GpuWake::WakeAt(t) => wake_by(event_loop, t),
+            lifecycle::GpuWake::RecoverNow => {
+                #[cfg(not(target_family = "wasm"))]
+                {
+                    self.recover_gpu_if_poisoned();
+                    if let Some(t) = self.gpu_retry_at.filter(|_| self.gpu_reset_requested) {
+                        wake_by(event_loop, t);
+                    }
+                }
+                #[cfg(target_family = "wasm")]
+                {
                     // (web) A failed async recovery left no active window to redraw.
-                    #[cfg(target_family = "wasm")]
                     if self.active.is_none() && !self.gpu_pending {
                         self.recover_gpu_if_poisoned();
                     }
@@ -1698,6 +1717,20 @@ fn platform_brightness(t: Option<winit::window::Theme>) -> Option<pebbles_widget
         winit::window::Theme::Light => Brightness::Light,
         winit::window::Theme::Dark => Brightness::Dark,
     })
+}
+
+/// A short name for the window system behind a window handle (`window system: …` log line).
+fn window_system_name(handle: &raw_window_handle::RawWindowHandle) -> &'static str {
+    use raw_window_handle::RawWindowHandle as H;
+    match handle {
+        H::Wayland(_) => "wayland",
+        H::Xlib(_) | H::Xcb(_) => "x11",
+        H::Win32(_) | H::WinRt(_) => "windows",
+        H::AppKit(_) | H::UiKit(_) => "apple",
+        H::Web(_) | H::WebCanvas(_) | H::WebOffscreenCanvas(_) => "web",
+        H::AndroidNdk(_) => "android",
+        _ => "other",
+    }
 }
 
 /// Apply the desktop app id: Wayland `app_id` and X11 `WM_CLASS` (instance and class both

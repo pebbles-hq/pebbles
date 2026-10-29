@@ -400,10 +400,9 @@ impl Runner {
         // 2. Layout in logical pixels.
         let scale = active.window.scale_factor();
         let phys = active.window.inner_size();
-        if phys.width == 0 || phys.height == 0 {
+        let Some(logical) = lifecycle::logical_size((phys.width, phys.height), scale) else {
             return true;
-        }
-        let logical = Size::new(phys.width as f64 / scale, phys.height as f64 / scale);
+        };
         pebbles_widgets::overlay::set_window_size(logical.width, logical.height);
         // `media_query().device_pixel_ratio` (Flutter's `MediaQuery.devicePixelRatio`).
         pebbles_widgets::set_device_pixel_ratio(scale);
@@ -622,10 +621,9 @@ impl Runner {
         w.ui.rebuild_if_dirty();
         let scale = w.window.scale_factor();
         let phys = w.window.inner_size();
-        if phys.width == 0 || phys.height == 0 {
+        let Some(logical) = lifecycle::logical_size((phys.width, phys.height), scale) else {
             return;
-        }
-        let logical = Size::new(phys.width as f64 / scale, phys.height as f64 / scale);
+        };
         // Publish this window's size so its popovers can flip/shift on-screen.
         w.ui.make_current();
         pebbles_widgets::overlay::set_window_size(logical.width, logical.height);

@@ -227,3 +227,72 @@ fn default_threading_matches_signoff() {
         assert_eq!(default_threading(os), RenderThreading::Inline, "{os:?}");
     }
 }
+
+/// 08 §3.1 fallback: a failing best adapter falls through to the next ranked one; all failing
+/// returns the first error and reports every failure.
+#[test]
+fn first_ok_falls_through_failed_adapters() {
+    let mut tried = Vec::new();
+    let mut failed = Vec::new();
+    let r: Result<usize, String> = pollster::block_on(first_ok(
+        &mut tried,
+        &[2, 0, 1],
+        async |t: &mut Vec<usize>, i: usize| {
+            t.push(i);
+            if i == 1 { Ok(i) } else { Err(format!("dev{i}")) }
+        },
+        |i, _| failed.push(i),
+        || "empty".to_string(),
+    ));
+    assert_eq!(r, Ok(1));
+    assert_eq!(tried, [2, 0, 1]);
+    assert_eq!(failed, [2, 0]);
+
+    let mut n = 0;
+    let r: Result<(), String> = pollster::block_on(first_ok(
+        &mut n,
+        &[3, 4],
+        async |n: &mut i32, i: usize| {
+            *n += 1;
+            Err(format!("dev{i}"))
+        },
+        |_, _| {},
+        || "empty".to_string(),
+    ));
+    assert_eq!(r, Err("dev3".to_string()));
+    assert_eq!(n, 2);
+    let r: Result<(), String> = pollster::block_on(first_ok(
+        &mut n,
+        &[],
+        async |_: &mut i32, _| Ok(()),
+        |_, _| {},
+        || "empty".into(),
+    ));
+    assert_eq!(r, Err("empty".to_string()), "no candidate: the NoAdapter error");
+}
+
+/// Linux hybrid laptops (Intel/AMD iGPU + NVIDIA/AMD dGPU under PRIME): the default low-power
+/// preference picks the integrated GPU; `WGPU_POWER_PREF=high` picks the discrete one; both
+/// stay on Vulkan before GL; the other GPU is the fallback.
+#[test]
+fn rank_linux_hybrid_laptop() {
+    let cands = [
+        cand("NVIDIA GeForce RTX 3060 Laptop GPU", wgpu::Backend::Vulkan, wgpu::DeviceType::DiscreteGpu),
+        cand("Intel(R) Iris(R) Xe Graphics", wgpu::Backend::Vulkan, wgpu::DeviceType::IntegratedGpu),
+        cand("NVIDIA GeForce RTX 3060/PCIe/SSE2", wgpu::Backend::Gl, wgpu::DeviceType::DiscreteGpu),
+        cand("llvmpipe (LLVM 17)", wgpu::Backend::Vulkan, wgpu::DeviceType::Cpu),
+    ];
+    let low = rank_adapters(&cands, &GpuInit::from_env_with(HostOs::Linux, get(&empty())));
+    assert_eq!(low.order, vec![1, 0, 2, 3]);
+    let high = GpuInit::from_env_with(HostOs::Linux, get(&env(&[("WGPU_POWER_PREF", "high")])));
+    assert_eq!(rank_adapters(&cands, &high).order, vec![0, 1, 2, 3]);
+    // An AMD desktop (RADV) with an AMD APU: same rules, vendor-agnostic.
+    let amd = [
+        cand("AMD Radeon Graphics (RADV RENOIR)", wgpu::Backend::Vulkan, wgpu::DeviceType::IntegratedGpu),
+        cand("AMD Radeon RX 6700 XT (RADV NAVI22)", wgpu::Backend::Vulkan, wgpu::DeviceType::DiscreteGpu),
+    ];
+    assert_eq!(rank_adapters(&amd, &high).order, vec![1, 0]);
+    // WGPU_ADAPTER_NAME is case-insensitive.
+    let named = GpuInit::from_env_with(HostOs::Linux, get(&env(&[("WGPU_ADAPTER_NAME", "NVIDIA")])));
+    assert_eq!(rank_adapters(&cands, &named).order, vec![0, 2]);
+}

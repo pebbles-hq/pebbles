@@ -175,3 +175,30 @@ fn atlas_keys_follow_hint_policy() {
     assert!(key_hint(1.0));
     assert!(!key_hint(2.0));
 }
+
+/// P12: moving a window to a monitor with another scale re-rasterizes its text at the new device
+/// size — the atlas key carries the device-pixel size, so a 1× glyph is never stretched to 1.5×.
+#[test]
+fn scale_change_rekeys_glyphs_at_device_size() {
+    let size_q = |scale: f64| {
+        let mut s = Scene::new();
+        // The shell paints in logical px under the root transform `scale(scale_factor)`.
+        run(&mut s, 16.0, &[], Affine::scale(scale), vec![g(40, 0.0)]);
+        let input = crate::prepare::PrepareInput {
+            target_size: (256, 256),
+            root_transform: Affine::IDENTITY,
+            vertex_limit: u32::MAX,
+            scale_factor: scale,
+            glyph_hint: None,
+        };
+        let (plan, _) = crate::prepare::test_util::prepare_with(&s, &input);
+        match plan.glyphs[0].key {
+            crate::execute::resources::atlas_alloc::CoverageKey::Glyph(k) => k.size_q,
+            _ => panic!("glyph expected"),
+        }
+    };
+    assert_eq!(size_q(1.0), 16 * 64);
+    assert_eq!(size_q(1.5), 24 * 64);
+    assert_eq!(size_q(1.25), 20 * 64);
+    assert_eq!(size_q(2.0), 32 * 64);
+}

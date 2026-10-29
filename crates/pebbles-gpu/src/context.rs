@@ -11,7 +11,7 @@ use super::init::GpuInit;
 #[cfg(target_family = "wasm")]
 use super::init::GpuPower;
 #[cfg(not(target_family = "wasm"))]
-use super::init::{AdapterCandidate, rank_adapters};
+use super::init::{AdapterCandidate, first_ok, rank_adapters};
 
 /// Index of a device in its [`GpuContext`]. Invalid after the context is dropped/rebuilt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -275,15 +275,27 @@ impl GpuContext {
                     format_args!("WGPU_ADAPTER_NAME=\"{filter}\" matched no adapter; ignoring it"),
                 );
             }
-            let Some(&best) = ranked.order.first() else {
-                return Err(GpuError::NoAdapter {
-                    backends: self.init.backends,
-                    software_only: self.init.force_software,
-                    enumerated,
-                    source: None,
-                });
-            };
-            self.finish_device(&adapters[best]).await
+            let (backends, software_only) = (self.init.backends, self.init.force_software);
+            // 08 §3.1: a ranked adapter whose device request fails (a broken or mismatched
+            // driver: an NVIDIA kernel/userspace mismatch, a stale ICD, a hybrid laptop's
+            // powered-down dGPU) falls through to the next one instead of failing start-up.
+            first_ok(
+                self,
+                &ranked.order,
+                async |ctx: &mut Self, i: usize| ctx.finish_device(&adapters[i]).await,
+                |i, e| {
+                    logf(
+                        Level::Warn,
+                        Cat::Gpu,
+                        format_args!(
+                            "GPU adapter \"{}\" failed ({e}); trying the next one",
+                            candidates[i].name
+                        ),
+                    );
+                },
+                || GpuError::NoAdapter { backends, software_only, enumerated, source: None },
+            )
+            .await
         }
     }
 
