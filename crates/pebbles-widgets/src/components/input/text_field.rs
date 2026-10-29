@@ -841,12 +841,30 @@ fn render_field(p: &Props) -> AnyWidget {
         let format = eff_format.clone();
         let on_nav = p.on_nav.clone();
         let read_only = p.read_only;
-        focus.register_editor(Rc::new(move |k: KeyInput| {
+        focus.register_editor_bubbling(Rc::new(move |k: KeyInput| {
+            // Code-editor / workbench commands (find, palette, format, ...) aren't text-field
+            // intents: decline them so they bubble to the app's shortcuts (Flutter
+            // Shortcuts/Actions semantics) instead of being silently swallowed.
+            if matches!(
+                k,
+                KeyInput::Indent
+                    | KeyInput::Outdent
+                    | KeyInput::SelectNextOccurrence
+                    | KeyInput::ToggleComment
+                    | KeyInput::TriggerCompletion
+                    | KeyInput::GoToDefinition
+                    | KeyInput::Format
+                    | KeyInput::Find
+                    | KeyInput::Replace
+                    | KeyInput::CommandPalette
+            ) {
+                return false;
+            }
             // A consumer (list navigation) gets first refusal on each key.
             if let Some(nav) = &on_nav
                 && nav(k.clone())
             {
-                return;
+                return true;
             }
             // Read-only: allow only selection/copy keys; ignore anything that mutates.
             if read_only
@@ -855,7 +873,7 @@ fn render_field(p: &Props) -> AnyWidget {
                     KeyInput::Move { .. } | KeyInput::SelectAll | KeyInput::Copy | KeyInput::Escape
                 )
             {
-                return;
+                return true;
             }
             let (changed, submit) = ed.apply(k, filter.as_deref(), max_length, format.as_deref());
             if changed {
@@ -872,6 +890,7 @@ fn render_field(p: &Props) -> AnyWidget {
                     cb(&ed.value.peek());
                 }
             }
+            true
         }));
     }
 

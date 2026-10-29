@@ -6,6 +6,15 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — Shift-significant editor chords; unhandled keys bubble to app shortcuts
+Ctrl+P no longer maps to `KeyInput::CommandPalette` (VS Code: it is workbench Quick Open);
+Ctrl+Shift+P does. Ctrl+Shift+F / Ctrl+Shift+H no longer map to `Find` / `Replace` (they are
+"find/replace in files"). Those keys now reach app-level `create_shortcut` bindings.
+New `FocusNode::register_editor_bubbling` / `register_code_editor_bubbling`: the handler returns
+whether it handled the intent, and `false` lets the key bubble to app shortcuts (Flutter
+`Shortcuts`/`Actions` semantics). `TextField` declines code-editor commands (Find, Replace,
+CommandPalette, Format, ...), so app shortcuts fire while a text field is focused.
+
 ### Added — `ThemeMode`: follow the system light/dark setting
 `theme::ThemeMode { System, Light, Dark }` (default `System`, like Flutter's `ThemeMode.system`).
 In `System` the app follows the platform brightness the shell reads from the window at startup
