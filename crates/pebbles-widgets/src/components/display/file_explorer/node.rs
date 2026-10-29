@@ -250,7 +250,9 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
             )
             .separator()
             .item(menu_item("Rename").shortcut("F2").on_select(explorer.rename_selected()))
-            .item(menu_item("Delete").shortcut("Del").destructive().on_select(explorer.delete_selected()))
+            .item(menu_item("Delete").shortcut("Del").destructive().on_select(move || {
+                explorer.request_delete(false);
+            }))
             .into_widget()
     };
 

@@ -638,7 +638,7 @@ fn clipboard_copy_cut_paste_and_the_remaining_common_shortcuts() {
     let src = t.root.iter().find(|n| n.name == "src").expect("src");
     let kids: Vec<&str> = src.children.iter().map(|n| n.name.as_str()).collect();
     assert!(
-        kids.contains(&"main.rs") && kids.contains(&"main 2.rs"),
+        kids.contains(&"main.rs") && kids.contains(&"main copy.rs"),
         "copy duplicated with a deduped name: {kids:?}"
     );
 
@@ -1139,4 +1139,56 @@ fn refresh_merges_external_changes_keeping_ids_and_watch_polls() {
     assert!(tree.peek().root.iter().any(|n| n.name == "new.txt"), "watcher saw new.txt");
     ex.watch(None);
     std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn trash_writes_freedesktop_entries_and_undo_restores() {
+    let (dir, tree, ex) = fs_explorer("trash");
+    let trash = temp_dir("trashbin");
+    ex.set_trash_dir(&trash);
+    std::fs::create_dir(dir.join("d")).unwrap();
+    std::fs::write(dir.join("d/x.txt"), "x").unwrap();
+    std::fs::write(dir.join("f.txt"), "f").unwrap();
+    assert!(ex.open_folder(&dir));
+    let (d, f) = (id_of(tree, "d"), id_of(tree, "f.txt"));
+    assert!(ex.trash_nodes(&[d, f]));
+    assert!(!dir.join("d").exists() && !dir.join("f.txt").exists());
+    assert_eq!(std::fs::read_to_string(trash.join("files/d/x.txt")).unwrap(), "x");
+    let info = std::fs::read_to_string(trash.join("info/f.txt.trashinfo")).unwrap();
+    assert!(info.starts_with("[Trash Info]\nPath=/") && info.contains("f.txt\nDeletionDate="), "{info}");
+    assert!(tree.peek().root.is_empty());
+    assert!(ex.undo());
+    assert_eq!(std::fs::read_to_string(dir.join("d/x.txt")).unwrap(), "x");
+    assert_eq!(std::fs::read_to_string(dir.join("f.txt")).unwrap(), "f");
+    assert!(!trash.join("info/f.txt.trashinfo").exists());
+    assert_eq!(tree.peek().root.len(), 2, "back in the tree");
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::remove_dir_all(&trash).ok();
+}
+
+#[test]
+fn paste_copy_uses_copy_suffix_and_undo_removes_copies_and_creates() {
+    let (dir, tree, ex) = fs_explorer("copysfx");
+    let trash = temp_dir("copysfx-trash");
+    ex.set_trash_dir(&trash);
+    std::fs::write(dir.join("a.txt"), "A").unwrap();
+    assert!(ex.open_folder(&dir));
+    let a = id_of(tree, "a.txt");
+    ex.select_only(a);
+    ex.copy_selection();
+    ex.selection().set(Vec::new());
+    ex.paste_clipboard();
+    ex.paste_clipboard();
+    assert!(dir.join("a copy.txt").exists() && dir.join("a copy 2.txt").exists());
+    assert!(ex.undo(), "undo the second paste");
+    assert!(!dir.join("a copy 2.txt").exists() && dir.join("a copy.txt").exists());
+    // New File → undo removes the (still empty) file.
+    ex.selection().set(Vec::new());
+    ex.new_file()();
+    assert!(dir.join("new_file.txt").exists());
+    ex.renaming().set(None);
+    assert!(ex.undo());
+    assert!(!dir.join("new_file.txt").exists());
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::remove_dir_all(&trash).ok();
 }

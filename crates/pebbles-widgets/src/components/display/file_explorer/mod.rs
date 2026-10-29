@@ -146,6 +146,9 @@ pub struct FileExplorer {
     confirm_moves: Signal<bool>,
     /// The app's confirm hook (default: an alert dialog).
     confirm_hook: Signal<Option<ConfirmMoveFn>>,
+    /// The trash directory (freedesktop layout: `files/` + `info/`); `None` =
+    /// the platform default (see [`set_trash_dir`](Self::set_trash_dir)).
+    trash_dir: Signal<Option<PathBuf>>,
     /// Undo stack of completed file operations (Mod+Z / [`undo`](Self::undo)).
     history: Signal<Vec<FileOp>>,
     hover_key: u64,
@@ -209,7 +212,24 @@ struct MoveRecord {
 #[derive(Clone, Debug)]
 enum FileOp {
     Move(Vec<MoveRecord>),
-    Rename { id: u64, old_name: String, old_parent: Option<u64>, paths: Option<(PathBuf, PathBuf)> },
+    Rename {
+        id: u64,
+        old_name: String,
+        old_parent: Option<u64>,
+        paths: Option<(PathBuf, PathBuf)>,
+    },
+    /// A New File / New Folder (the node and, on disk, its path).
+    Create {
+        id: u64,
+        path: Option<PathBuf>,
+    },
+    /// Pasted copies (node ids and, on disk, their paths).
+    Copy {
+        ids: Vec<u64>,
+        paths: Vec<PathBuf>,
+    },
+    /// Moved to the trash: (original path, trashed path, .trashinfo path).
+    Trash(Vec<(PathBuf, PathBuf, PathBuf)>),
 }
 
 /// Create an explorer over `tree` (the app's `Signal<FileTree>`). Call inside
@@ -229,6 +249,7 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         confirm_moves: create_signal(true),
         confirm_hook: create_signal(None),
         history: create_signal(Vec::new()),
+        trash_dir: create_signal(None),
         hover_key: create_signal(()).raw_id(),
         watch_key: create_signal(()).raw_id(),
         watch_secs: create_signal(None),
@@ -940,8 +961,223 @@ impl FileExplorer {
                     any = t.rename(id, old_name);
                 });
             }
+            FileOp::Create { id, path } => {
+                if let Some(path) = &path {
+                    let empty = if path.is_dir() {
+                        std::fs::read_dir(path).map(|mut d| d.next().is_none()).unwrap_or(false)
+                    } else {
+                        std::fs::metadata(path).map(|m| m.len() == 0).unwrap_or(false)
+                    };
+                    if !empty {
+                        self.last_error
+                            .set(Some(format!("Not undoing: {} is no longer empty", path.display())));
+                        return false;
+                    }
+                    let res =
+                        if path.is_dir() { std::fs::remove_dir(path) } else { std::fs::remove_file(path) };
+                    if let Err(e) = res {
+                        self.last_error.set(Some(format!("Could not undo: {e}")));
+                        return false;
+                    }
+                }
+                self.tree.update(|t| any = t.delete(id));
+            }
+            FileOp::Copy { ids, paths } => {
+                // The copies are ours — remove them (to the trash when there is one).
+                if !paths.is_empty() && self.trash_paths(&paths).is_none() {
+                    return false;
+                }
+                self.tree.update(|t| {
+                    for id in &ids {
+                        any |= t.delete(*id);
+                    }
+                });
+            }
+            FileOp::Trash(entries) => {
+                for (orig, trashed, info) in entries.iter().rev() {
+                    if orig.exists() {
+                        self.last_error.set(Some(format!("Cannot restore: {} exists", orig.display())));
+                        continue;
+                    }
+                    if let Err(e) = std::fs::rename(trashed, orig) {
+                        self.last_error.set(Some(format!("Could not restore {}: {e}", orig.display())));
+                        continue;
+                    }
+                    let _ = std::fs::remove_file(info);
+                    any = true;
+                }
+                if any {
+                    self.refresh();
+                }
+            }
         }
         any
+    }
+
+    /// Use `dir` as the trash (freedesktop layout: `dir/files`, `dir/info`).
+    /// By default the explorer uses the freedesktop home trash on Linux/BSD
+    /// (`$XDG_DATA_HOME/Trash`, else `~/.local/share/Trash`) and has no trash
+    /// elsewhere (Delete then deletes permanently, after confirmation).
+    pub fn set_trash_dir(&self, dir: impl Into<PathBuf>) {
+        self.trash_dir.set(Some(dir.into()));
+    }
+
+    /// The trash directory in use, if any.
+    pub fn trash_dir(&self) -> Option<PathBuf> {
+        if let Some(d) = self.trash_dir.peek().clone() {
+            return Some(d);
+        }
+        #[cfg(all(unix, not(any(target_os = "macos", target_os = "ios", target_os = "android"))))]
+        {
+            let base = std::env::var_os("XDG_DATA_HOME")
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from)
+                .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))?;
+            Some(base.join("Trash"))
+        }
+        #[cfg(not(all(unix, not(any(target_os = "macos", target_os = "ios", target_os = "android")))))]
+        {
+            None
+        }
+    }
+
+    /// Move `paths` to the trash; returns the (orig, trashed, info) entries,
+    /// or `None` when there is no trash or any item failed (those that made it
+    /// stay trashed and are still returned via the error path's history).
+    fn trash_paths(&self, paths: &[PathBuf]) -> Option<Vec<(PathBuf, PathBuf, PathBuf)>> {
+        let Some(trash) = self.trash_dir() else {
+            self.last_error.set(Some("No trash available".into()));
+            return None;
+        };
+        let (files, info) = (trash.join("files"), trash.join("info"));
+        if let Err(e) = std::fs::create_dir_all(&files).and_then(|_| std::fs::create_dir_all(&info)) {
+            self.last_error.set(Some(format!("Could not open the trash: {e}")));
+            return None;
+        }
+        let mut out = Vec::new();
+        for path in paths {
+            let base = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let mut name = base.clone();
+            let mut n = 2;
+            while files.join(&name).exists() || info.join(format!("{name}.trashinfo")).exists() {
+                name = format!("{base}.{n}");
+                n += 1;
+            }
+            let info_path = info.join(format!("{name}.trashinfo"));
+            let abs = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+            let body = format!(
+                "[Trash Info]\nPath={}\nDeletionDate={}\n",
+                tree::percent_encode_path(&abs),
+                tree::local_iso_now()
+            );
+            if let Err(e) = std::fs::write(&info_path, body) {
+                self.last_error.set(Some(format!("Could not write the trash info: {e}")));
+                return None;
+            }
+            let dest = files.join(&name);
+            if let Err(e) = std::fs::rename(path, &dest) {
+                let _ = std::fs::remove_file(&info_path);
+                self.last_error.set(Some(format!(
+                    "Could not move {} to the trash ({e}) — use Shift+Delete to delete permanently",
+                    path.display()
+                )));
+                if !out.is_empty() {
+                    self.push_history(FileOp::Trash(out));
+                }
+                return None;
+            }
+            out.push((path.clone(), dest, info_path));
+        }
+        Some(out)
+    }
+
+    /// Move nodes to the trash (filesystem mode; undoable). In-memory trees
+    /// just delete. Returns whether anything was removed.
+    pub fn trash_nodes(&self, ids: &[u64]) -> bool {
+        let ids = self.top_level(ids);
+        if ids.is_empty() {
+            return false;
+        }
+        if self.fs_root.peek().is_none() {
+            self.delete_nodes(&ids);
+            return true;
+        }
+        let mut done = Vec::new();
+        let mut gone = Vec::new();
+        for id in ids {
+            let Some(path) = self.path_of(id) else { continue };
+            if self.fs_root.peek().as_ref() == Some(&path) {
+                continue;
+            }
+            match self.trash_paths(std::slice::from_ref(&path)) {
+                Some(mut e) => {
+                    done.append(&mut e);
+                    gone.push(id);
+                }
+                None => break,
+            }
+        }
+        self.tree.update(|t| {
+            for id in &gone {
+                t.delete(*id);
+            }
+        });
+        self.selected.set(Vec::new());
+        self.active.set(None);
+        let any = !done.is_empty();
+        if any {
+            self.push_history(FileOp::Trash(done));
+        }
+        any
+    }
+
+    /// `ids` without the ones whose ancestor is also in `ids`.
+    fn top_level(&self, ids: &[u64]) -> Vec<u64> {
+        let t = self.tree.peek();
+        ids.iter()
+            .copied()
+            .filter(|&id| t.node(id).is_some())
+            .filter(|&id| !ids.iter().any(|&o| o != id && t.is_descendant(o, id)))
+            .collect()
+    }
+
+    /// The Delete action (key, menu): in filesystem mode, confirm then move
+    /// the selection to the trash (VS Code) — or, with `permanent`
+    /// (Shift+Delete) or no trash available, confirm a permanent delete.
+    /// In-memory trees delete immediately.
+    pub fn request_delete(&self, permanent: bool) -> bool {
+        let ids = self.top_level(&self.selected.peek());
+        if ids.is_empty() {
+            return false;
+        }
+        if self.fs_root.peek().is_none() {
+            self.delete_nodes(&ids);
+            return true;
+        }
+        let what = if ids.len() == 1 {
+            let t = self.tree.peek();
+            format!("'{}'", t.node(ids[0]).map(|n| n.name.clone()).unwrap_or_default())
+        } else {
+            format!("{} items", ids.len())
+        };
+        let this = *self;
+        if !permanent && self.trash_dir().is_some() {
+            crate::alert_dialog(format!("Are you sure you want to delete {what}?"))
+                .description("You can restore from the Trash (or undo with Ctrl+Z).")
+                .confirm("Move to Trash")
+                .on_confirm(move || {
+                    this.trash_nodes(&ids);
+                })
+                .open();
+        } else {
+            crate::alert_dialog(format!("Are you sure you want to permanently delete {what}?"))
+                .description("This item will be deleted immediately. You can't undo this action.")
+                .destructive(true)
+                .confirm("Delete")
+                .on_confirm(move || this.delete_nodes(&ids))
+                .open();
+        }
+        true
     }
 
     /// Put `to` back at `from` (refusing when `from` exists again).
@@ -1075,28 +1311,8 @@ impl FileExplorer {
         // Delete — delete the selection. On disk this is an irreversible recursive
         // remove (no trash, no undo), so confirm first; a single Delete keypress must
         // not be able to destroy user data. Model-only mode deletes immediately.
-        create_shortcut_if("Delete", move || {
-            let ids = self.selected.peek().clone();
-            if ids.is_empty() {
-                return false;
-            }
-            if self.fs_root.get().is_some() {
-                let count = ids.len();
-                let noun = if count == 1 { "item" } else { "items" };
-                crate::alert_dialog(format!("Delete {count} {noun}?"))
-                    .description(
-                        "This permanently deletes the selected files and folders from disk. \
-                         This can't be undone.",
-                    )
-                    .destructive(true)
-                    .confirm("Delete")
-                    .on_confirm(move || self.delete_nodes(&ids))
-                    .open();
-            } else {
-                self.delete_nodes(&ids);
-            }
-            true
-        });
+        create_shortcut_if("Delete", move || self.request_delete(false));
+        create_shortcut_if("Shift+Delete", move || self.request_delete(true));
         // Mod+Z — undo the last file operation (VS Code); declines with nothing to undo,
         // and a focused editor's own undo wins first.
         create_shortcut_if("Mod+Z", move || {
@@ -1245,6 +1461,8 @@ impl FileExplorer {
                 self.clipboard.set(None);
             }
             ClipMode::Copy => {
+                let mut new_ids = Vec::new();
+                let mut new_paths = Vec::new();
                 for id in ids {
                     // Snapshot the subtree first, so pasting into itself is safe.
                     let Some(mut src) = self.tree.peek().node(id).cloned() else { continue };
@@ -1270,14 +1488,26 @@ impl FileExplorer {
                             })
                             .unwrap_or_default();
                         let taken_refs: Vec<&str> = taken.iter().map(|s| s.as_str()).collect();
-                        let name = unique_name(&src.name, &taken_refs);
+                        let name = tree::copy_name(&src.name, &taken_refs);
                         if let Err(e) = copy_path(&from, &dir.join(&name)) {
                             self.last_error.set(Some(format!("Could not copy {}: {e}", from.display())));
                             continue;
                         }
+                        new_paths.push(dir.join(&name));
                         src.name = name;
+                    } else {
+                        let t = self.tree.peek();
+                        let sibs = match target {
+                            Some(p) => t.node(p).map(|n| n.children.clone()).unwrap_or_default(),
+                            None => t.root.clone(),
+                        };
+                        let taken: Vec<&str> = sibs.iter().map(|n| n.name.as_str()).collect();
+                        src.name = tree::copy_name(&src.name, &taken);
                     }
-                    self.insert_subtree(target, src);
+                    new_ids.push(self.insert_subtree(target, src));
+                }
+                if !new_ids.is_empty() {
+                    self.push_history(FileOp::Copy { ids: new_ids, paths: new_paths });
                 }
             }
         }
@@ -1395,6 +1625,7 @@ impl FileExplorer {
             match created {
                 Ok(()) => {
                     let id = self.insert_at(parent, kind, Box::leak(name.clone().into_boxed_str()));
+                    self.push_history(FileOp::Create { id, path: Some(target.clone()) });
                     (id, name)
                 }
                 Err(e) => {
@@ -1405,6 +1636,7 @@ impl FileExplorer {
             }
         } else {
             let id = self.insert_at(parent, kind, base);
+            self.push_history(FileOp::Create { id, path: None });
             (id, base.to_string())
         }
     }
