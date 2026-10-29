@@ -856,6 +856,7 @@ fn mount_fs(tag: &str) -> (Ui, TextEnv, std::path::PathBuf, pebbles_widgets::Fil
     let mut ui = Ui::new();
     let tree = create_signal(FileTree::new());
     let ex = file_explorer(tree);
+    ex.set_trash_dir(dir.with_extension("trash")); // never the real trash
     assert!(ex.open_folder(&dir));
     let outer = tree.peek().root.iter().find(|n| n.name == "outer").unwrap().id;
     ex.toggle_folder(outer);
@@ -1068,6 +1069,7 @@ fn fs_explorer(
     let dir = temp_dir(tag);
     let tree = create_signal(FileTree::new());
     let ex = file_explorer(tree);
+    ex.set_trash_dir(dir.with_extension("trash")); // never the real trash
     (dir, tree, ex)
 }
 
@@ -1191,4 +1193,22 @@ fn paste_copy_uses_copy_suffix_and_undo_removes_copies_and_creates() {
     assert!(!dir.join("new_file.txt").exists());
     std::fs::remove_dir_all(&dir).ok();
     std::fs::remove_dir_all(&trash).ok();
+}
+
+#[test]
+fn ctrl_drag_copies_instead_of_moving() {
+    let (mut ui, mut env, dir, ex) = mount_fs("ctrldrag");
+    let asked = set_confirm(ex, true);
+    let rows = row_points(&mut ui);
+    pebbles_core::keyboard::set_modifiers(false, true, false, false);
+    // Press without Ctrl semantics on select: start the drag then hold Ctrl at drop.
+    runner_drag(&mut ui, &mut env, rows[1], rows[2]);
+    pebbles_core::keyboard::set_modifiers(false, false, false, false);
+    assert_eq!(asked.get(), 0, "copies need no move confirmation");
+    assert!(dir.join("outer/inner/deep.txt").exists(), "original stays");
+    assert!(dir.join("zother/inner/deep.txt").exists(), "copied into zother");
+    assert!(ex.undo(), "undo removes the copy");
+    assert!(!dir.join("zother/inner").exists());
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::remove_dir_all(dir.with_extension("trash")).ok();
 }

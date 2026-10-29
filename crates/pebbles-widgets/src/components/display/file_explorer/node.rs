@@ -198,16 +198,23 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
                     explorer.dragging.set(false);
                     explorer.drop_target.set(None);
                     explorer.root_drop.set(false);
-                    match (target, root) {
-                        (Some(t), _) => {
-                            explorer.request_move(&ids, Some(t));
+                    // Ctrl (Windows/Linux) or Alt/Option (macOS) held on drop copies.
+                    let copy = ctrl_held() || pebbles_core::keyboard::alt_held();
+                    let dest = match (target, root) {
+                        (Some(t), _) => Some(Some(t)),
+                        (None, true) => Some(None),
+                        (None, false) => None,
+                    };
+                    match dest {
+                        Some(d) if copy => {
+                            explorer.copy_nodes(&ids, d);
                         }
-                        (None, true) => {
-                            explorer.request_move(&ids, None);
+                        Some(d) => {
+                            explorer.request_move(&ids, d);
                         }
                         // Released over a file, the dragged row, or outside
                         // the tree: no target, nothing moves.
-                        (None, false) => {}
+                        None => {}
                     }
                 }
             })

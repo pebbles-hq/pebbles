@@ -1461,56 +1461,71 @@ impl FileExplorer {
                 self.clipboard.set(None);
             }
             ClipMode::Copy => {
-                let mut new_ids = Vec::new();
-                let mut new_paths = Vec::new();
-                for id in ids {
-                    // Snapshot the subtree first, so pasting into itself is safe.
-                    let Some(mut src) = self.tree.peek().node(id).cloned() else { continue };
-                    if self.fs_root.get().is_some() {
-                        let Some(from) = self.path_of(id) else {
-                            self.last_error.set(Some("Could not resolve a path for a node".into()));
-                            continue;
-                        };
-                        let dir = match target {
-                            Some(t) => self.path_of(t),
-                            None => self.fs_root.get(),
-                        };
-                        let Some(dir) = dir else {
-                            self.last_error.set(Some("Could not resolve the target folder".into()));
-                            continue;
-                        };
-                        // De-dup against the REAL directory, then mirror on disk.
-                        let taken = std::fs::read_dir(&dir)
-                            .map(|rd| {
-                                rd.filter_map(|e| e.ok())
-                                    .map(|e| e.file_name().to_string_lossy().to_string())
-                                    .collect::<Vec<_>>()
-                            })
-                            .unwrap_or_default();
-                        let taken_refs: Vec<&str> = taken.iter().map(|s| s.as_str()).collect();
-                        let name = tree::copy_name(&src.name, &taken_refs);
-                        if let Err(e) = copy_path(&from, &dir.join(&name)) {
-                            self.last_error.set(Some(format!("Could not copy {}: {e}", from.display())));
-                            continue;
-                        }
-                        new_paths.push(dir.join(&name));
-                        src.name = name;
-                    } else {
-                        let t = self.tree.peek();
-                        let sibs = match target {
-                            Some(p) => t.node(p).map(|n| n.children.clone()).unwrap_or_default(),
-                            None => t.root.clone(),
-                        };
-                        let taken: Vec<&str> = sibs.iter().map(|n| n.name.as_str()).collect();
-                        src.name = tree::copy_name(&src.name, &taken);
-                    }
-                    new_ids.push(self.insert_subtree(target, src));
-                }
-                if !new_ids.is_empty() {
-                    self.push_history(FileOp::Copy { ids: new_ids, paths: new_paths });
-                }
+                self.copy_nodes(&ids, target);
             }
         }
+    }
+
+    /// Copy nodes into `target` (`None` = root) — whole subtrees, on disk in
+    /// filesystem mode, named like VS Code (`a copy.txt`). Undoable. Used by
+    /// paste and Ctrl/Alt-drag. Returns the new node ids.
+    pub fn copy_nodes(&self, ids: &[u64], target: Option<u64>) -> Vec<u64> {
+        if let Some(t) = target {
+            self.ensure_loaded(t);
+        }
+        let mut new_ids = Vec::new();
+        let mut new_paths = Vec::new();
+        for &id in ids {
+            // Snapshot the subtree first, so pasting into itself is safe.
+            let Some(mut src) = self.tree.peek().node(id).cloned() else { continue };
+            if self.fs_root.get().is_some() {
+                let Some(from) = self.path_of(id) else {
+                    self.last_error.set(Some("Could not resolve a path for a node".into()));
+                    continue;
+                };
+                let dir = match target {
+                    Some(t) => self.path_of(t),
+                    None => self.fs_root.get(),
+                };
+                let Some(dir) = dir else {
+                    self.last_error.set(Some("Could not resolve the target folder".into()));
+                    continue;
+                };
+                if dir.starts_with(&from) {
+                    self.last_error.set(Some(format!("Cannot copy {} into itself", from.display())));
+                    continue;
+                }
+                // De-dup against the REAL directory, then mirror on disk.
+                let taken = std::fs::read_dir(&dir)
+                    .map(|rd| {
+                        rd.filter_map(|e| e.ok())
+                            .map(|e| e.file_name().to_string_lossy().to_string())
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let taken_refs: Vec<&str> = taken.iter().map(|s| s.as_str()).collect();
+                let name = tree::copy_name(&src.name, &taken_refs);
+                if let Err(e) = copy_path(&from, &dir.join(&name)) {
+                    self.last_error.set(Some(format!("Could not copy {}: {e}", from.display())));
+                    continue;
+                }
+                new_paths.push(dir.join(&name));
+                src.name = name;
+            } else {
+                let t = self.tree.peek();
+                let sibs = match target {
+                    Some(p) => t.node(p).map(|n| n.children.clone()).unwrap_or_default(),
+                    None => t.root.clone(),
+                };
+                let taken: Vec<&str> = sibs.iter().map(|n| n.name.as_str()).collect();
+                src.name = tree::copy_name(&src.name, &taken);
+            }
+            new_ids.push(self.insert_subtree(target, src));
+        }
+        if !new_ids.is_empty() {
+            self.push_history(FileOp::Copy { ids: new_ids.clone(), paths: new_paths });
+        }
+        new_ids
     }
 
     /// Insert a fully-built node (fresh subtree ids, name deduped) and reveal it.
