@@ -1045,7 +1045,7 @@ fn runner_drag(ui: &mut Ui, env: &mut TextEnv, from: Offset, to: Offset) {
     runner_click(ui, env, from, &[Offset::new(from.x + 2.0, from.y), mid, to]);
 }
 
-fn set_confirm(ex: pebbles_widgets::FileExplorer, answer: bool) -> std::rc::Rc<std::cell::Cell<usize>> {
+fn set_confirm(ex: &pebbles_widgets::FileExplorer, answer: bool) -> std::rc::Rc<std::cell::Cell<usize>> {
     let asked = std::rc::Rc::new(std::cell::Cell::new(0));
     let a = asked.clone();
     ex.set_confirm_move(move |req, resolve| {
@@ -1060,7 +1060,7 @@ fn set_confirm(ex: pebbles_widgets::FileExplorer, answer: bool) -> std::rc::Rc<s
 #[test]
 fn drag_past_slop_onto_a_folder_moves_after_confirm_and_undo_restores() {
     let (mut ui, mut env, dir, ex) = mount_fs("dragok");
-    let asked = set_confirm(ex, true);
+    let asked = set_confirm(&ex, true);
     let rows = row_points(&mut ui);
     runner_drag(&mut ui, &mut env, rows[1], rows[2]);
     assert_eq!(asked.get(), 1, "confirmation asked once");
@@ -1077,7 +1077,7 @@ fn drag_past_slop_onto_a_folder_moves_after_confirm_and_undo_restores() {
 #[test]
 fn rejected_confirmation_moves_nothing() {
     let (mut ui, mut env, dir, ex) = mount_fs("dragno");
-    let asked = set_confirm(ex, false);
+    let asked = set_confirm(&ex, false);
     let rows = row_points(&mut ui);
     runner_drag(&mut ui, &mut env, rows[1], rows[2]);
     assert_eq!(asked.get(), 1);
@@ -1090,7 +1090,7 @@ fn rejected_confirmation_moves_nothing() {
 fn disallowed_fs_moves_move_nothing() {
     let (mut ui, mut env, dir, ex) = mount_fs("dragoff");
     let ex = ex.allow_fs_moves(false);
-    let asked = set_confirm(ex, true);
+    let asked = set_confirm(&ex, true);
     let rows = row_points(&mut ui);
     runner_drag(&mut ui, &mut env, rows[1], rows[2]);
     assert_eq!(asked.get(), 0, "never even asks");
@@ -1297,7 +1297,7 @@ fn paste_copy_uses_copy_suffix_and_undo_removes_copies_and_creates() {
 #[test]
 fn ctrl_drag_copies_instead_of_moving() {
     let (mut ui, mut env, dir, ex) = mount_fs("ctrldrag");
-    let asked = set_confirm(ex, true);
+    let asked = set_confirm(&ex, true);
     let rows = row_points(&mut ui);
     pebbles_core::keyboard::set_modifiers(false, true, false, false);
     // Press without Ctrl semantics on select: start the drag then hold Ctrl at drop.
@@ -1518,5 +1518,194 @@ fn fixed_row_height_token_lays_rows_out_at_that_height() {
     assert!(rows.len() >= 3);
     let gap = rows[1].y - rows[0].y;
     assert!((gap - 40.0).abs() < 2.5, "rows are 40px apart: {rows:?}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+// ---------------------------------------------------------------------------
+// Context menus (VS Code sets, pluggable, customizable)
+// ---------------------------------------------------------------------------
+
+fn labels(ex: &pebbles_widgets::FileExplorer, t: &pebbles_widgets::MenuTarget) -> Vec<String> {
+    ex.menu_for(t).iter().map(|i| if i.is_separator() { "-".to_string() } else { i.label.clone() }).collect()
+}
+
+#[test]
+fn context_menus_match_vs_code_per_context() {
+    use pebbles_widgets::menu_ids as m;
+    let (dir, tree, ex) = sample_project("menus");
+    let (main, src, cargo) = (id_of(tree, "src/main.rs"), id_of(tree, "src"), id_of(tree, "Cargo.toml"));
+    // Without app handlers the app-specific items stay hidden.
+    let file = ex.menu_target(Some(main));
+    assert_eq!(
+        labels(&ex, &file),
+        [
+            "Open",
+            "-",
+            "Cut",
+            "Copy",
+            "Paste",
+            "-",
+            "Copy Path",
+            "Copy Relative Path",
+            "-",
+            "Rename…",
+            "Delete"
+        ]
+    );
+    // Plug the app actions (what Gravel wires).
+    for id in [
+        m::OPEN_TO_SIDE,
+        m::OPEN_WITH,
+        m::REVEAL_IN_FILE_MANAGER,
+        m::OPEN_IN_TERMINAL,
+        m::FIND_IN_FOLDER,
+        m::COMPARE_WITH_SELECTED,
+    ] {
+        ex.set_menu_handler(id, |_| {});
+    }
+    assert_eq!(
+        labels(&ex, &file),
+        [
+            "Open",
+            "Open to the Side",
+            "Open With…",
+            "-",
+            "Reveal in File Manager",
+            "Open in Integrated Terminal",
+            "-",
+            "Select for Compare",
+            "-",
+            "Cut",
+            "Copy",
+            "Paste",
+            "-",
+            "Copy Path",
+            "Copy Relative Path",
+            "-",
+            "Rename…",
+            "Delete"
+        ]
+    );
+    let folder = ex.menu_target(Some(src));
+    assert_eq!(
+        labels(&ex, &folder),
+        [
+            "New File…",
+            "New Folder…",
+            "Reveal in File Manager",
+            "Open in Integrated Terminal",
+            "-",
+            "Find in Folder…",
+            "-",
+            "Cut",
+            "Copy",
+            "Paste",
+            "-",
+            "Copy Path",
+            "Copy Relative Path",
+            "-",
+            "Rename…",
+            "Delete",
+            "Collapse"
+        ]
+    );
+    let empty = ex.menu_target(None);
+    assert_eq!(
+        labels(&ex, &empty),
+        ["New File…", "New Folder…", "-", "Paste", "-", "Refresh", "Collapse All"]
+    );
+    // Multi-selection: two files.
+    ex.select_only(main);
+    ex.toggle_selected(cargo);
+    let multi = ex.menu_target(Some(main));
+    assert_eq!(multi.entries.len(), 2);
+    assert_eq!(
+        labels(&ex, &multi),
+        [
+            "Open to the Side",
+            "-",
+            "Compare Selected",
+            "-",
+            "Cut",
+            "Copy",
+            "-",
+            "Copy Path",
+            "Copy Relative Path",
+            "-",
+            "Delete"
+        ]
+    );
+    // Paste is greyed until something is on the clipboard.
+    let paste = ex.menu_for(&empty).into_iter().find(|i| i.id == m::PASTE).unwrap();
+    assert!(!paste.is_enabled(&empty));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn read_only_greys_mutating_menu_items_and_copy_path_works() {
+    use pebbles_widgets::menu_ids as m;
+    let (dir, tree, ex) = sample_project("menuro");
+    let ex = ex.read_only();
+    let main = id_of(tree, "src/main.rs");
+    let t = ex.menu_target(Some(main));
+    for i in ex.menu_for(&t) {
+        if i.is_separator() {
+            continue;
+        }
+        let should = matches!(i.id.as_str(), m::OPEN | m::COPY_PATH | m::COPY_RELATIVE_PATH);
+        assert_eq!(i.is_enabled(&t), should, "{} enabled={}", i.label, i.is_enabled(&t));
+    }
+    let item = |id: &str| ex.menu_for(&t).into_iter().find(|i| i.id == id).unwrap();
+    item(m::COPY_PATH).run(&t);
+    assert_eq!(pebbles_core::clipboard::read(), dir.join("src/main.rs").display().to_string());
+    item(m::COPY_RELATIVE_PATH).run(&t);
+    assert_eq!(
+        pebbles_core::clipboard::read(),
+        std::path::Path::new("src").join("main.rs").display().to_string()
+    );
+    // Running a greyed item still can't mutate: the API refuses.
+    item(m::DELETE).run(&t);
+    assert!(dir.join("src/main.rs").exists());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn menus_are_customizable_and_compare_flows_through_the_handler() {
+    use pebbles_widgets::{ExplorerMenuItem, MenuContext, menu_ids as m};
+    let (dir, tree, ex) = sample_project("menucustom");
+    let (main, cargo) = (id_of(tree, "src/main.rs"), id_of(tree, "Cargo.toml"));
+    ex.remove_menu_item(m::COPY_RELATIVE_PATH);
+    ex.move_menu_item(m::DELETE, 0);
+    let hits = std::rc::Rc::new(std::cell::Cell::new(0));
+    let h = hits.clone();
+    ex.insert_menu_item_after(
+        m::OPEN,
+        ExplorerMenuItem::new("app.runFile", "Run File", move |_| h.set(h.get() + 1))
+            .visible_when(|t| t.entry().is_some_and(|e| e.name.ends_with(".rs")))
+            .enabled_when(|t| t.context == MenuContext::File),
+    );
+    let t = ex.menu_target(Some(main));
+    let ls = labels(&ex, &t);
+    assert_eq!(ls[0], "Delete", "reordered");
+    assert_eq!(ls[1..3], ["Open".to_string(), "Run File".to_string()]);
+    assert!(!ls.contains(&"Copy Relative Path".to_string()), "removed");
+    ex.menu_for(&t).into_iter().find(|i| i.id == "app.runFile").unwrap().run(&t);
+    assert_eq!(hits.get(), 1);
+    assert!(
+        !labels(&ex, &ex.menu_target(Some(cargo))).contains(&"Run File".to_string()),
+        "visible predicate"
+    );
+    // Compare: select one, compare with another — the handler gets both.
+    let got = std::rc::Rc::new(RefCell::new(Vec::<String>::new()));
+    let g = got.clone();
+    ex.set_menu_handler(m::COMPARE_WITH_SELECTED, move |t| {
+        *g.borrow_mut() = t.entries.iter().map(|e| e.name.clone()).collect();
+    });
+    let tm = ex.menu_target(Some(main));
+    ex.menu_for(&tm).into_iter().find(|i| i.id == m::SELECT_FOR_COMPARE).unwrap().run(&tm);
+    ex.select_only(cargo);
+    let tc = ex.menu_target(Some(cargo));
+    ex.menu_for(&tc).into_iter().find(|i| i.id == m::COMPARE_WITH_SELECTED).expect("offered").run(&tc);
+    assert_eq!(*got.borrow(), ["main.rs", "Cargo.toml"]);
     std::fs::remove_dir_all(&dir).ok();
 }

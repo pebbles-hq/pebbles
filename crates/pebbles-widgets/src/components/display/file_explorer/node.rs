@@ -242,45 +242,33 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
                         explorer.toggle_select(id);
                     } else if shift_held() {
                         explorer.range_select(id);
-                    } else {
+                    } else if is_folder {
                         explorer.select_only(id);
-                        if is_folder {
-                            explorer.toggle_folder(id);
-                        }
+                        explorer.toggle_folder(id);
+                    } else {
+                        // A single click opens a preview (VS Code).
+                        explorer.open_entry(id, OpenMode::Preview);
                     }
                 }
             })
-            .on_double_tap(move || explorer.start_rename_for(id));
-        context_menu(g)
-            // The selection sync lives on the menu's OWN right-click handler:
-            // pointer dispatch fires only the TOPMOST listener per slot, so a
-            // handler on the inner row would starve the menu (the bug where the
-            // explorer's menu never opened).
-            .on_open(move |_| {
-                // Right-clicking an unselected node selects just it (keeps the
-                // selection otherwise) — the standard behavior.
-                if !explorer.selected.get().contains(&id) {
-                    explorer.select_only(id);
+            // Double-click: open a file (pinned); a folder toggles again.
+            .on_double_tap(move || {
+                if is_folder {
+                    explorer.toggle_folder(id);
+                } else {
+                    explorer.open_entry(id, OpenMode::Open);
                 }
-            })
-            .item(menu_item("New File").on_select(explorer.new_file()))
-            .item(menu_item("New Folder").on_select(explorer.new_folder()))
-            .separator()
-            .item(menu_item("Cut").on_select(move || {
-                let _ = explorer.cut_selection();
-            }))
-            .item(menu_item("Copy").on_select(move || {
-                let _ = explorer.copy_selection();
-            }))
-            .item(menu_item("Paste").disabled(explorer.clipboard.get().is_none()).on_select(move || {
-                let _ = explorer.paste_clipboard();
-            }))
-            .separator()
-            .item(menu_item("Rename").shortcut("F2").on_select(explorer.rename_selected()))
-            .item(menu_item("Delete").shortcut("Del").destructive().on_select(move || {
-                let _ = explorer.request_delete(false);
-            }))
-            .into_widget()
+            });
+        // The selection sync lives on the menu's OWN right-click handler:
+        // pointer dispatch fires only the TOPMOST listener per slot. Right-
+        // clicking an unselected node selects just it (keeps the selection
+        // otherwise) — the standard behavior.
+        let sync: Rc<dyn Fn()> = Rc::new(move || {
+            if !explorer.selected.get().contains(&id) {
+                explorer.select_only(id);
+            }
+        });
+        explorer.with_menu(g.into_widget(), explorer.menu_target(Some(id)), Some(sync))
     };
 
     let mut kids = vec![row_widget];

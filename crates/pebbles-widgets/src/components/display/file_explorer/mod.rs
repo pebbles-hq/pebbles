@@ -81,6 +81,7 @@ use pebbles_core::{Signal, animated, component_props, create_shortcut_if, create
 mod caps;
 mod icons;
 mod keys;
+mod menus;
 mod node;
 mod ops;
 mod style;
@@ -88,6 +89,7 @@ mod tree;
 
 pub use caps::{Capability, ExplorerCapabilities, ExplorerEntry, ExplorerError, ExplorerOp};
 pub use icons::{ExplorerIcon, IconTheme, LanguageResolver, language_of};
+pub use menus::{ExplorerMenuItem, MenuAction, MenuContext, MenuTarget, OpenMode, menu_ids};
 pub use style::ExplorerStyle;
 #[cfg(feature = "file-dialogs")]
 pub use tree::pick_folder;
@@ -181,6 +183,14 @@ pub struct FileExplorer {
     pub(super) icon_resolver: Signal<Option<IconResolver>>,
     /// The style override (see [`set_style`](Self::set_style)).
     pub(super) style_fn: Signal<Option<style::StyleFn>>,
+    /// The context-menu items (built-ins first; see [`menus`]).
+    pub(super) menu: Signal<Vec<ExplorerMenuItem>>,
+    /// App handlers for the pluggable built-in items.
+    pub(super) menu_handlers: Signal<std::collections::HashMap<String, MenuAction>>,
+    /// "Select for Compare" source.
+    pub(super) compare_source: Signal<Option<u64>>,
+    /// The open hook (see [`on_open`](Self::on_open)).
+    pub(super) open_hook: Signal<Option<menus::OpenHook>>,
     /// Per-path icon overrides.
     pub(super) path_icons: Signal<std::collections::HashMap<PathBuf, ExplorerIcon>>,
     /// The keyboard-focus row (the ring) — independent of the selection, so
@@ -280,11 +290,16 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         icon_theme: create_signal(None),
         icon_resolver: create_signal(None),
         style_fn: create_signal(None),
+        menu: create_signal(Vec::new()),
+        menu_handlers: create_signal(std::collections::HashMap::new()),
+        compare_source: create_signal(None),
+        open_hook: create_signal(None),
         path_icons: create_signal(std::collections::HashMap::new()),
         active: create_signal(None),
         filter: create_signal(String::new()),
         load_filter: create_signal(None),
     };
+    explorer.menu.set(explorer.default_menu());
     explorer.install_keys();
     explorer
 }
@@ -696,12 +711,6 @@ impl FileExplorer {
                 }
             })
             .on_hover_exit(move || self.root_drop.set(false));
-        context_menu(root_gesture)
-            .item(menu_item("New File").on_select(self.new_file()))
-            .item(menu_item("New Folder").on_select(self.new_folder()))
-            .separator()
-            .item(menu_item("Paste").disabled(self.clipboard.get().is_none()).on_select(move || {
-                let _ = self.paste_clipboard();
-            }))
+        self.with_menu(root_gesture.into_widget(), self.menu_target(None), None)
     }
 }
