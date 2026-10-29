@@ -45,21 +45,22 @@ pub use fonts::{
 pub use object::{HitBehavior, RenderObject, SemanticsFlag};
 pub use objects::{
     Canvas, Cursor, FlexParentData, FontFeature, FontVariation, IconData, IconKind, IconPrim, ParagraphStyle,
-    Placeholder, PlaceholderAlignment, PointerButton, PointerEvent, RefreshState, RenderAlign,
-    RenderAspectRatio, RenderBackdropFilter, RenderBaseline, RenderBoundary, RenderCanvas, RenderClipOval,
-    RenderClipPath, RenderClipRRect, RenderColorFilter, RenderColoredBox, RenderConstrainedBox,
-    RenderCustomMultiChild, RenderCustomSingleChild, RenderDecoratedBox, RenderFittedBox, RenderFlex,
-    RenderFlow, RenderFractionalTranslation, RenderFractionallySizedBox, RenderIcon, RenderImageFilter,
+    Placeholder, PlaceholderAlignment, PointerButton, PointerEvent, PointerScrollEvent,
+    PointerSignalCallback, RefreshState, RenderAlign, RenderAspectRatio, RenderBackdropFilter,
+    RenderBaseline, RenderBoundary, RenderCanvas, RenderClipOval, RenderClipPath, RenderClipRRect,
+    RenderColorFilter, RenderColoredBox, RenderConstrainedBox, RenderCustomMultiChild,
+    RenderCustomSingleChild, RenderDecoratedBox, RenderFittedBox, RenderFlex, RenderFlow,
+    RenderFractionalTranslation, RenderFractionallySizedBox, RenderIcon, RenderImageFilter,
     RenderIntrinsicHeight, RenderIntrinsicWidth, RenderLimitedBox, RenderList, RenderMeasureProbe,
     RenderOffstage, RenderOpacity, RenderOverflowBox, RenderPadding, RenderParagraph, RenderPointerBarrier,
     RenderPointerListener, RenderPositionProbe, RenderRotatedBox, RenderScroll, RenderSemanticsBoundary,
     RenderShaderMask, RenderSizedOverflowBox, RenderSpinner, RenderStack, RenderTable, RenderTextField,
     RenderTransform, RenderView, RenderWrap, ScrollEvent, ScrollHandle, ScrollMetrics, ScrollNotification,
-    ScrollPhysics, ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps, SemanticsRole, SizeFn,
-    StackFit, StackParentData, StrutStyle, TableColumnWidth, TapCallback, TextDecorationStyle,
+    ScrollPhysics, ScrollUnit, ScrollbarPolicy, ScrollbarStyle, SemanticsNode, SemanticsProps, SemanticsRole,
+    SizeFn, StackFit, StackParentData, StrutStyle, TableColumnWidth, TapCallback, TextDecorationStyle,
     TextFieldStyle, TextShadow, TextSpanStyle, tabler,
 };
-pub use text::{SystemFonts, TextCensus, TextEnv, TextLayout};
+pub use text::{SystemFonts, TextCensus, TextEnv, TextLayout, measure_text, monospace_cell};
 pub use tree::{IntrinsicCx, LayoutCx, PaintCx, RenderId, RenderNode, RenderTree};
 
 /// Re-export the active backend's retained scene type the paint layer targets.

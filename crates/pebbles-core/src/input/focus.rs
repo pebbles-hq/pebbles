@@ -14,13 +14,16 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use crate::element::ElementId;
-use crate::keyboard::KeyInput;
+use crate::keyboard::{KeyEvent, KeyEventResult, KeyInput};
 use crate::reactive::{
     Signal, consume_context, create_root_signal, current_owner, current_window, instance_id, provide_context,
 };
 
 /// A focus node's identity: `(window, element id)`.
 type FocusKey = (u32, ElementId);
+
+/// A raw key handler (see [`FocusNode::on_key_event`]).
+pub type RawKeyHandler = Rc<dyn Fn(&KeyEvent) -> KeyEventResult>;
 
 /// The render-time context a `FocusScope` provides to its subtree (see
 /// [`create_focus_scope`]). Focusable nodes registered inside it inherit the
@@ -45,6 +48,9 @@ struct FocusManager {
     /// Unlike editors these do NOT set [`focused_is_editor`], so shell shortcuts and IME
     /// stay off for them.
     keys: HashMap<FocusKey, Rc<dyn Fn(KeyInput) -> bool>>,
+    /// Raw key-event handlers (Flutter's `Focus.onKeyEvent`): offered every key down /
+    /// repeat / up of the focused node BEFORE intents and shortcuts ([`dispatch_key_event`]).
+    raw: HashMap<FocusKey, RawKeyHandler>,
     /// Editors that consume Tab for indent/outdent (code editors) rather than letting Tab
     /// traverse focus (single-line text fields). Read by the shell via [`focused_wants_tab`].
     wants_tab: HashSet<FocusKey>,
@@ -74,6 +80,7 @@ fn with_mgr<R>(f: impl FnOnce(&mut FocusManager) -> R) -> R {
                 on_change: HashMap::new(),
                 edit: HashMap::new(),
                 keys: HashMap::new(),
+                raw: HashMap::new(),
                 wants_tab: HashSet::new(),
                 autofocused: HashSet::new(),
                 scope_of: HashMap::new(),
@@ -273,6 +280,31 @@ impl FocusNode {
         });
     }
 
+    /// Install a raw key handler (Flutter's `Focus.onKeyEvent`): while this node is
+    /// focused, every key event — down, auto-repeat and up, including PageUp/PageDown,
+    /// Insert, F1–F35 and bare modifiers — reaches `handler` FIRST, before the shell maps
+    /// it to an editing intent ([`KeyInput`]) or an app shortcut. Return
+    /// [`KeyEventResult::Handled`] to consume it, [`KeyEventResult::Ignored`] to let the
+    /// normal intent → shortcut → Tab → activation → key-scroll chain run. Called each
+    /// render (idempotent).
+    ///
+    /// ```no_run
+    /// use std::rc::Rc;
+    /// use pebbles_core::create_focus;
+    /// use pebbles_core::keyboard::{KeyEventResult, LogicalKey, NamedKey};
+    /// let node = create_focus();
+    /// node.on_key_event(Rc::new(|e| match e.logical {
+    ///     LogicalKey::Named(NamedKey::PageUp) if e.is_press() => KeyEventResult::Handled,
+    ///     _ => KeyEventResult::Ignored,
+    /// }));
+    /// ```
+    pub fn on_key_event(&self, handler: RawKeyHandler) {
+        let key = self.key();
+        with_mgr(|m| {
+            m.raw.insert(key, handler);
+        });
+    }
+
     /// Register this node's keyboard-activation + focus-change handlers (called each
     /// render; idempotent). `autofocus` grabs focus if nothing is focused yet.
     pub fn register(&self, activation: Rc<dyn Fn()>, on_change: Option<Rc<dyn Fn(bool)>>, autofocus: bool) {
@@ -314,6 +346,7 @@ pub fn unregister(id: ElementId) {
         m.on_change.remove(&key);
         m.edit.remove(&key);
         m.keys.remove(&key);
+        m.raw.remove(&key);
         m.wants_tab.remove(&key);
         m.scope_of.remove(&key);
         // Let a genuine remount of this id autofocus again.
@@ -374,6 +407,18 @@ pub fn dispatch_key(key: KeyInput) -> bool {
     match keys {
         Some(h) => h(key),
         None => false,
+    }
+}
+
+/// Offer a raw key event to the focused node's [`FocusNode::on_key_event`] handler.
+/// [`KeyEventResult::Ignored`] when nothing is focused or the node has no handler —
+/// the caller then runs the intent / shortcut chain (releases stop here).
+pub fn dispatch_key_event(event: &KeyEvent) -> KeyEventResult {
+    let focused = focus_signal().peek();
+    let handler = with_mgr(|m| focused.and_then(|k| m.raw.get(&k).cloned()));
+    match handler {
+        Some(h) => h(event),
+        None => KeyEventResult::Ignored,
     }
 }
 

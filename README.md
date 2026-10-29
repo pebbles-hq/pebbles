@@ -270,7 +270,12 @@ Everything below is built and shown live in the [gallery](https://github.com/peb
   + ~1050 **filled** (`tabler::filled::CAMERA`), addressable by const, by name, or via
   `IconKind`. Icons are plain data, so your own drop in anywhere.
 - **Gestures** — `GestureDetector` with the full pointer set: tap, double-tap,
-  secondary/tertiary click, the long-press lifecycle, hover enter/exit, and drag/pan.
+  secondary/tertiary click, the long-press lifecycle, hover enter/exit, and drag/pan, plus
+  the Flutter `Listener` callbacks: wheel/trackpad `on_pointer_signal` (consumable),
+  any-button `on_button_down`/`on_button_up`, captured `on_pointer_move`, local hover.
+- **Raw keys** — `FocusNode::on_key_event` (Flutter `Focus.onKeyEvent`): a focused widget sees
+  every key down/repeat/up (logical + physical key, text, modifiers) before editing intents
+  and shortcuts; `Shortcut::physical("Ctrl+Shift+`")` binds a key position on any layout.
 - **Buttons** — `Button` (Primary/Secondary/Outline/Ghost/Destructive/Link · Sm/Md/Lg ·
   custom colors · leading/trailing icons · `.shadow()` · `.loading()` · full event set ·
   focus ring + keyboard activation), `IconButton`, `ButtonGroup`, `ToggleGroup`.

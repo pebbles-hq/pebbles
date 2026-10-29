@@ -46,6 +46,17 @@ impl Ui {
         button: PointerButton,
         pick: impl Fn(&RenderPointerListener) -> &[pebbles_render::TapCallback],
     ) -> bool {
+        self.fire_pointer_with(point, button, PointerEvent::bit(button), pick)
+    }
+
+    /// [`fire_pointer`](Self::fire_pointer) with an explicit held-`buttons` set.
+    fn fire_pointer_with(
+        &mut self,
+        point: Offset,
+        button: PointerButton,
+        buttons: u8,
+        pick: impl Fn(&RenderPointerListener) -> &[pebbles_render::TapCallback],
+    ) -> bool {
         let hits = self.render.hit_test(point); // ordered root -> leaf
         for &rid in hits.iter().rev() {
             let invokes = self
@@ -56,7 +67,8 @@ impl Ui {
                 .unwrap_or_default();
             if !invokes.is_empty() {
                 let local = point - self.render.absolute_offset(rid);
-                let event = PointerEvent { position: local, global: point, button, delta: Offset::ZERO };
+                let event =
+                    PointerEvent { position: local, global: point, button, delta: Offset::ZERO, buttons };
                 for invoke in invokes {
                     self.run_invoke(invoke, event);
                 }
@@ -111,6 +123,93 @@ impl Ui {
         self.fire_pointer(point, PointerButton::Primary, |l| &l.on_pointer_up)
     }
 
+    /// Any button pressed at `point` (Flutter `Listener.onPointerDown`): fires the topmost
+    /// `on_button_down` listener with `button` and the held set `buttons` (including it).
+    pub fn dispatch_button_down(&mut self, point: Offset, button: PointerButton, buttons: u8) -> bool {
+        self.fire_pointer_with(point, button, buttons, |l| &l.on_button_down)
+    }
+
+    /// Any button released at `point` (Flutter `Listener.onPointerUp`); `buttons` is the
+    /// set still held after the release.
+    pub fn dispatch_button_up(&mut self, point: Offset, button: PointerButton, buttons: u8) -> bool {
+        self.fire_pointer_with(point, button, buttons, |l| &l.on_button_up)
+    }
+
+    /// The source id of the topmost `on_pointer_move` listener under `point` — the
+    /// shell captures it at the first button press and feeds it every move until the
+    /// last button is released ([`dispatch_pointer_move`](Self::dispatch_pointer_move)).
+    pub fn pointer_move_target_at(&self, point: Offset) -> Option<u64> {
+        let hits = self.render.hit_test(point);
+        hits.iter().rev().find_map(|&rid| {
+            let l = self.render.object_ref(rid).downcast_ref::<RenderPointerListener>()?;
+            if l.on_pointer_move.is_empty() { None } else { self.render.source_of(rid) }
+        })
+    }
+
+    /// The pointer moved to `point` with `buttons` held: fire `on_pointer_move` on the
+    /// captured listener `source` (position in its local space, `delta` since `prev`).
+    pub fn dispatch_pointer_move(&mut self, source: u64, point: Offset, prev: Offset, buttons: u8) -> bool {
+        let Some(rid) = self.render.find_by_source(source) else { return false };
+        let invokes = self
+            .render
+            .object_ref(rid)
+            .downcast_ref::<RenderPointerListener>()
+            .map(|l| Self::invokes_of(l, |l| &l.on_pointer_move))
+            .unwrap_or_default();
+        if invokes.is_empty() {
+            return false;
+        }
+        let button = if buttons & PointerEvent::PRIMARY_BUTTON != 0 {
+            PointerButton::Primary
+        } else if buttons & PointerEvent::SECONDARY_BUTTON != 0 {
+            PointerButton::Secondary
+        } else {
+            PointerButton::Middle
+        };
+        let local = point - self.render.absolute_offset(rid);
+        let event = PointerEvent { position: local, global: point, button, delta: point - prev, buttons };
+        for invoke in invokes {
+            self.run_invoke(invoke, event);
+        }
+        true
+    }
+
+    /// A wheel / trackpad scroll at `point` (Flutter's pointer signal): offered to every
+    /// `on_pointer_signal` listener under the pointer, innermost first, until one returns
+    /// `true` (consumed). `event.position` is rewritten into each listener's local space.
+    /// Returns whether it was consumed — the shell then skips scrolling scroll views.
+    pub fn dispatch_pointer_signal(
+        &mut self,
+        point: Offset,
+        event: pebbles_render::PointerScrollEvent,
+    ) -> bool {
+        let hits = self.render.hit_test(point);
+        for &rid in hits.iter().rev() {
+            let handlers: Vec<pebbles_render::PointerSignalCallback> = self
+                .render
+                .object_ref(rid)
+                .downcast_ref::<RenderPointerListener>()
+                .map(|l| l.on_pointer_signal.clone())
+                .unwrap_or_default();
+            if handlers.is_empty() {
+                continue;
+            }
+            let local = pebbles_render::PointerScrollEvent {
+                position: point - self.render.absolute_offset(rid),
+                global: point,
+                ..event
+            };
+            let mut consumed = false;
+            for h in handlers {
+                consumed |= h(local);
+            }
+            if consumed {
+                return true;
+            }
+        }
+        false
+    }
+
     /// The source id of the topmost primary-tap-family listener under `point` (tap
     /// or double-tap) — used to arm a press so a release elsewhere becomes a cancel,
     /// and so a double-tap-only widget (no `on_tap`) still receives its event.
@@ -147,7 +246,13 @@ impl Ui {
             return false;
         }
         let local = point - self.render.absolute_offset(rid);
-        let event = PointerEvent { position: local, global: point, button, delta: Offset::ZERO };
+        let event = PointerEvent {
+            position: local,
+            global: point,
+            button,
+            delta: Offset::ZERO,
+            buttons: PointerEvent::bit(button),
+        };
         for invoke in invokes {
             self.run_invoke(invoke, event);
         }
@@ -405,7 +510,13 @@ impl Ui {
             return false;
         }
         let local = point - self.render.absolute_offset(rid);
-        let event = PointerEvent { position: local, global: point, button: PointerButton::Primary, delta };
+        let event = PointerEvent {
+            position: local,
+            global: point,
+            button: PointerButton::Primary,
+            delta,
+            buttons: PointerEvent::PRIMARY_BUTTON,
+        };
         for invoke in invokes {
             self.run_invoke(invoke, event);
         }
@@ -456,7 +567,7 @@ impl Ui {
         // Flutter's MouseTracker delivers enter/exit to each MouseRegion under the pointer,
         // not only the innermost, so an ancestor (a tooltip) still sees a hoverable child.
         #[allow(clippy::type_complexity)]
-        let mut found: Vec<(u64, Vec<Invoke>, Vec<Invoke>, Vec<Invoke>)> = Vec::new();
+        let mut found: Vec<(u64, Vec<Invoke>, Vec<Invoke>, Vec<Invoke>, Offset)> = Vec::new();
         for &rid in hits.iter().rev() {
             let Some(listener) = self.render.object_ref(rid).downcast_ref::<RenderPointerListener>() else {
                 continue;
@@ -471,14 +582,18 @@ impl Ui {
             let enters = Self::invokes_of(listener, |l| &l.on_enter);
             let exits = Self::invokes_of(listener, |l| &l.on_exit);
             let moves = Self::invokes_of(listener, |l| &l.on_move);
-            found.push((source, enters, exits, moves));
+            found.push((source, enters, exits, moves, self.render.absolute_offset(rid)));
         }
 
-        let hover_event = PointerEvent {
-            position: point,
+        // Each listener gets the position in ITS local space (like every other pointer
+        // callback); exits of a region that is gone from under the pointer use its last
+        // known origin when it still exists.
+        let hover_event = |origin: Offset| PointerEvent {
+            position: point - origin,
             global: point,
             button: PointerButton::Primary,
             delta: Offset::ZERO,
+            buttons: 0,
         };
         let mut fired = false;
 
@@ -491,24 +606,26 @@ impl Ui {
             // closures capture now-freed signals — invoking them would use-after-free. Keying
             // by the stable source (not the render id) means a mere re-render that reassigned
             // render ids still counts as "exists", so exit fires correctly.
-            if self.render.find_by_source(target.source).is_some() {
+            if let Some(rid) = self.render.find_by_source(target.source) {
+                let event = hover_event(self.render.absolute_offset(rid));
                 for invoke in target.exits {
-                    self.run_invoke(invoke, hover_event);
+                    self.run_invoke(invoke, event);
                     fired = true;
                 }
             }
         }
         // Then enters for newly entered regions, and moves for all of them.
         let mut now_hovered = Vec::with_capacity(found.len());
-        for (source, enters, exits, moves) in found {
+        for (source, enters, exits, moves, origin) in found {
+            let event = hover_event(origin);
             if !old_sources.contains(&source) {
                 for invoke in enters {
-                    self.run_invoke(invoke, hover_event);
+                    self.run_invoke(invoke, event);
                     fired = true;
                 }
             }
             for invoke in moves {
-                self.run_invoke(invoke, hover_event);
+                self.run_invoke(invoke, event);
                 fired = true;
             }
             now_hovered.push(HoverTarget { source, exits });
@@ -534,6 +651,16 @@ impl Ui {
     /// editor consumed it.
     pub fn dispatch_key(&mut self, key: crate::keyboard::KeyInput) -> bool {
         crate::focus::dispatch_key(key)
+    }
+
+    /// Offer a raw key event (down / repeat / up) to the focused widget's
+    /// [`on_key_event`](crate::focus::FocusNode::on_key_event) handler — the first stage
+    /// of key routing, before [`dispatch_key`](Self::dispatch_key).
+    pub fn dispatch_key_event(
+        &mut self,
+        event: &crate::keyboard::KeyEvent,
+    ) -> crate::keyboard::KeyEventResult {
+        crate::focus::dispatch_key_event(event)
     }
 
     /// Whether the focused node is a text editor (shell key-routing precedence).

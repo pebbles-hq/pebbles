@@ -275,12 +275,12 @@ impl Runner {
                 sync_window_cursor(&mut w);
             }
             WindowEvent::MouseWheel { delta, .. } => {
-                let dy = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => -(y as f64) * LINE_SCROLL,
-                    MouseScrollDelta::PixelDelta(p) => -p.y / w.window.scale_factor(),
-                };
-                // C6: secondary windows now follow the popover on wheel (was main-only).
-                if wheel_with_overlay(&mut w.ui, w.cursor, dy) {
+                let signal = scroll_signal(delta, w.window.scale_factor(), w.cursor);
+                // Pointer signal first; then C6: secondary windows follow the popover
+                // on wheel (was main-only).
+                if w.ui.dispatch_pointer_signal(w.cursor, signal)
+                    || wheel_with_overlay(&mut w.ui, w.cursor, signal.delta.y)
+                {
                     redraw::request(&w.window);
                 }
             }
@@ -333,7 +333,19 @@ impl Runner {
                 );
             }
             WindowEvent::KeyboardInput { event, .. } => {
-                if event.state == ElementState::Pressed {
+                let mods = pebbles_core::Mods {
+                    shift: self.shift_down,
+                    ctrl: self.ctrl_down,
+                    alt: self.alt_down,
+                    meta: self.meta_down,
+                };
+                let raw = to_key_event(&event, mods);
+                if event.state == ElementState::Released {
+                    // Releases reach only the focused widget's raw handler.
+                    if w.ui.dispatch_key_event(&raw) == pebbles_core::KeyEventResult::Handled {
+                        redraw::request(&w.window);
+                    }
+                } else if event.state == ElementState::Pressed {
                     // Escape, topmost-first (mirrors the main window): a transient
                     // overlay (menu/popover/dropdown/date-time picker) closes before
                     // any modal, then the topmost modal (dialog vs sheet) — so Escape
@@ -355,22 +367,17 @@ impl Runner {
                             return;
                         }
                     }
-                    // B2 precedence: focused editor → shortcuts → Tab → activation.
-                    let intent = to_command(&event, self.ctrl_down, self.shift_down);
-                    let mods = pebbles_core::Mods {
-                        shift: self.shift_down,
-                        ctrl: self.ctrl_down,
-                        alt: self.alt_down,
-                        meta: self.meta_down,
-                    };
+                    // B2 precedence: raw key handler → focused editor → shortcuts → Tab
+                    // → activation.
+                    let intent = raw.intent();
                     // Ordered precedence: each branch's condition has an essential side
                     // effect (dispatch), so the identical `true` arms must stay separate.
                     #[allow(clippy::if_same_then_else)]
-                    let handled = if intent.is_some_and(|ki| w.ui.dispatch_key(ki)) {
-                        true
-                    } else if to_shortcut_key(&event)
-                        .is_some_and(|sk| pebbles_core::shortcuts::dispatch(w.ui.window_id(), mods, sk))
+                    let handled = if w.ui.dispatch_key_event(&raw) == pebbles_core::KeyEventResult::Handled
+                        || intent.is_some_and(|ki| w.ui.dispatch_key(ki))
                     {
+                        true
+                    } else if pebbles_core::shortcuts::dispatch_key_event(w.ui.window_id(), &raw) {
                         true
                     } else if event.logical_key == Key::Named(NamedKey::Tab) {
                         w.ui.focus_move(!self.shift_down)

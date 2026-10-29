@@ -124,6 +124,25 @@ impl Ui {
         match category(&*new_widget) {
             Category::Function => {
                 let (_, render) = new_widget.as_component().unwrap();
+                // Same-instance bailout (Flutter's `identical(oldWidget, newWidget)`,
+                // React's same-element bailout): a parent that hands back the very
+                // same component instance (a cloned `Component` shares its render
+                // closure, and with it its props) describes no new configuration, so
+                // the existing subtree stands and the body is NOT re-run. Re-run
+                // anyway when this element is itself dirty (its own signals fired) or
+                // when any render-time context it can see changed (a re-rendered
+                // ancestor provider). A dirty element that was moved out of
+                // `self.dirty` by `rebuild_if_dirty` is still re-rendered by that loop.
+                let same_instance = self.elements[id]
+                    .widget
+                    .as_component()
+                    .is_some_and(|(_, old_render)| Rc::ptr_eq(&old_render, &render));
+                if same_instance
+                    && !self.dirty.contains(&id)
+                    && crate::reactive::contexts_unchanged_since_render(id)
+                {
+                    return;
+                }
                 self.elements[id].widget = new_widget;
                 let old_child = self.elements[id].children.first().copied();
                 // Keep the component guard alive across the child reconcile so the
@@ -371,5 +390,129 @@ fn guarded_render(render: &Rc<dyn Fn() -> AnyWidget>) -> Option<AnyWidget> {
                 std::panic::resume_unwind(payload);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod same_instance_bailout {
+    //! A parent that re-renders but hands back the SAME child component instance must
+    //! not re-run the child (Flutter identical-widget / React same-element bailout);
+    //! new props, a dirty child, or a changed render-time context still re-run it.
+    use std::cell::Cell;
+
+    use crate::Ui;
+    use crate::component::{Component, component_props};
+    use crate::reactive::{Signal, create_signal, provide_context};
+    use crate::widget::{AnyWidget, IntoWidget, RenderWidget, Widget};
+
+    #[derive(Clone)]
+    struct Leaf;
+    impl Widget for Leaf {
+        fn debug_name(&self) -> &'static str {
+            "Leaf"
+        }
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn clone_box(&self) -> AnyWidget {
+            Box::new(self.clone())
+        }
+        fn as_render(&self) -> Option<&dyn RenderWidget> {
+            Some(self)
+        }
+        fn as_render_mut(&mut self) -> Option<&mut dyn RenderWidget> {
+            Some(self)
+        }
+    }
+    impl RenderWidget for Leaf {
+        fn create_render_object(&self) -> Box<dyn pebbles_render::RenderObject> {
+            Box::new(pebbles_render::RenderBoundary::new())
+        }
+        fn update_render_object(&self, _object: &mut dyn pebbles_render::RenderObject) {}
+    }
+
+    thread_local! {
+        static CHILD_RUNS: Cell<u32> = const { Cell::new(0) };
+    }
+
+    struct ChildProps {
+        own: Signal<i32>,
+        #[allow(dead_code)]
+        tag: i32,
+    }
+    fn child(p: &ChildProps) -> Leaf {
+        CHILD_RUNS.with(|c| c.set(c.get() + 1));
+        let _ = p.own.get();
+        Leaf
+    }
+
+    struct ParentProps {
+        child: Component,
+        own: Signal<i32>,
+        tick: Signal<i32>,
+        fresh: Signal<bool>,
+        provide: Signal<bool>,
+    }
+    fn parent(p: &ParentProps) -> AnyWidget {
+        let tick = p.tick.get();
+        if p.provide.get() {
+            provide_context(tick);
+        }
+        if p.fresh.get() {
+            component_props(child, ChildProps { own: p.own, tag: tick }).into_widget()
+        } else {
+            p.child.clone().into_widget()
+        }
+    }
+
+    fn runs() -> u32 {
+        CHILD_RUNS.with(Cell::get)
+    }
+
+    #[test]
+    fn same_child_instance_is_not_rerun_but_new_props_dirty_and_context_are() {
+        let own = create_signal(0);
+        let tick = create_signal(0);
+        let fresh = create_signal(false);
+        let provide = create_signal(false);
+        let stored = component_props(child, ChildProps { own, tag: 0 });
+        let mut ui = Ui::new();
+        ui.mount_root(
+            component_props(parent, ParentProps { child: stored, own, tick, fresh, provide }).into_widget(),
+        );
+        assert_eq!(runs(), 1, "mount runs the child once");
+
+        // Parent re-renders, hands back the same instance: child body must not re-run.
+        tick.set(1);
+        assert!(ui.rebuild_if_dirty());
+        assert_eq!(runs(), 1, "same instance → child skipped");
+        tick.set(2);
+        ui.rebuild_if_dirty();
+        assert_eq!(runs(), 1, "still skipped on repeated parent rebuilds");
+
+        // The child's own signal still re-runs it (alone, and together with the parent).
+        own.set(1);
+        ui.rebuild_if_dirty();
+        assert_eq!(runs(), 2, "dirty child re-runs");
+        own.set(2);
+        tick.set(3);
+        ui.rebuild_if_dirty();
+        assert_eq!(runs(), 3, "dirty child re-runs exactly once even when its parent also rebuilt");
+
+        // A changed render-time context above the child forces a re-run.
+        provide.set(true);
+        ui.rebuild_if_dirty();
+        assert_eq!(runs(), 4, "new context value → child re-runs");
+        provide.set(false);
+        ui.rebuild_if_dirty();
+        assert_eq!(runs(), 5, "removed context → child re-runs");
+
+        // A fresh instance (new props) re-runs every time.
+        fresh.set(true);
+        ui.rebuild_if_dirty();
+        assert_eq!(runs(), 6, "new instance → child re-runs");
+        tick.set(4);
+        ui.rebuild_if_dirty();
+        assert_eq!(runs(), 7, "new instance each parent render → child re-runs each time");
     }
 }

@@ -107,6 +107,12 @@ pub struct Harness {
     background: Color,
     /// The animation clock, advanced by [`tick`](Self::tick) / [`settle`](Self::settle).
     now: f64,
+    /// Held pointer buttons ([`button_down`](Self::button_down) / [`button_up`](Self::button_up)).
+    buttons: u8,
+    /// The captured `on_pointer_move` listener while a button is held.
+    move_target: Option<u64>,
+    /// The last pointer position fed by the button/move helpers.
+    pointer_at: Offset,
 }
 
 /// Tear the tree down like the shell does when a window closes: component cleanups run,
@@ -132,7 +138,16 @@ impl Harness {
         init_services();
         let ui = Ui::new();
         ui_make_current(&ui);
-        Harness { ui, env: TextEnv::new(), window: DEFAULT_WINDOW, background: palette::WHITE, now: 0.0 }
+        Harness {
+            ui,
+            env: TextEnv::new(),
+            window: DEFAULT_WINDOW,
+            background: palette::WHITE,
+            now: 0.0,
+            buttons: 0,
+            move_target: None,
+            pointer_at: Offset::ZERO,
+        }
     }
 
     /// Set the window size (builder form).
@@ -170,6 +185,8 @@ impl Harness {
     /// assert geometry or state.
     pub fn frame(&mut self) {
         self.ui.make_current();
+        // Like the shell's frame: deliver finished background tasks (spawn / resources).
+        pebbles_core::task::pump();
         self.publish_window();
         self.ui.rebuild_if_dirty();
         self.ui.layout(&mut self.env, self.window);
@@ -202,6 +219,9 @@ impl Harness {
     /// Panics if the geometry does not settle within 8 layout/paint passes (an
     /// oscillating tree) — by design, so the bug surfaces instead of hanging the test.
     pub fn draw(&mut self) -> Scene {
+        self.ui.make_current();
+        // Like the shell's frame: deliver finished background tasks (spawn / resources).
+        pebbles_core::task::pump();
         self.publish_window();
         for _ in 0..8 {
             self.ui.make_current();
@@ -241,6 +261,10 @@ impl Harness {
     /// Pump frames until every animation and scroll spring goes idle (bounded,
     /// so a legitimately looping animation — a spinner, a shimmer — can't hang
     /// the test).
+    ///
+    /// Every frame delivers background tasks (`spawn` / `create_resource`) that have
+    /// already finished; to wait for work still running on another thread, use
+    /// [`wait_for_tasks`](Self::wait_for_tasks).
     pub fn settle(&mut self) {
         for _ in 0..240 {
             let scrolling = self.tick(FRAME);
@@ -253,6 +277,29 @@ impl Harness {
                 return;
             }
         }
+    }
+
+    /// Wait in real time (up to `timeout`) for in-flight background tasks — `spawn` /
+    /// `create_resource` work running on another thread — delivering each as it finishes,
+    /// then [`settle`](Self::settle). The animation clock does NOT advance while waiting
+    /// (Flutter's `runAsync`). Returns whether every task finished in time.
+    pub fn wait_for_tasks(&mut self, timeout: std::time::Duration) -> bool {
+        let deadline = std::time::Instant::now() + timeout;
+        let mut done = false;
+        loop {
+            self.ui.make_current();
+            if !pebbles_core::task::pump() {
+                done = true;
+                break;
+            }
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        self.frame();
+        self.settle();
+        done
     }
 
     /// Advance the clock by `secs` in [`FRAME`] steps (timers — hover delays, toast
@@ -318,11 +365,140 @@ impl Harness {
         self.frame();
     }
 
-    /// Wheel-scroll `delta` at `at`, then run a frame. The spring keeps moving
+    /// Press and release a key chord on a US layout — `"Ctrl+Shift+P"`, `"PageUp"`,
+    /// `"F5"`, `"a"`, `"Mod+S"` — through the shell's full routing (see
+    /// [`key_down`](Self::key_down)), then a frame.
+    ///
+    /// # Panics
+    /// Panics on a chord outside the shortcut grammar (a test typo).
+    pub fn press(&mut self, chord: &str) {
+        let down =
+            pebbles_core::shortcuts::chord_event(chord).unwrap_or_else(|e| panic!("press({chord:?}): {e}"));
+        let up = pebbles_core::KeyEvent { kind: pebbles_core::KeyEventKind::Up, text: None, ..down.clone() };
+        self.key_down(down);
+        self.key_up(up);
+    }
+
+    /// Deliver a raw key press (its `kind` should be `Down` or `Repeat`) the way the
+    /// shell does: an open overlay closes on Escape; then the focused widget's
+    /// `on_key_event` handler; if ignored, Shift+Alt+F format, Escape-dismiss of the top
+    /// modal, the editing intent to the focused editor, app shortcuts (logical, then
+    /// physical), Tab indent / focus traversal and Enter/Space activation. Then a frame.
+    /// Returns which stage consumed it (`"unhandled"` if none).
+    pub fn key_down(&mut self, event: pebbles_core::KeyEvent) -> &'static str {
+        use pebbles_core::keyboard::{LogicalKey, NamedKey};
+        use pebbles_core::{KeyEventResult, KeyInput, ShortcutKey};
+        self.ui.make_current();
+        let escape = event.logical == LogicalKey::Named(NamedKey::Escape);
+        let stage = if escape && pebbles_widgets::overlay::is_open() {
+            pebbles_widgets::overlay::hide_overlay();
+            "overlay"
+        } else if self.ui.dispatch_key_event(&event) == KeyEventResult::Handled {
+            "raw"
+        } else if event.mods.shift
+            && event.mods.alt
+            && event.shortcut_key() == Some(ShortcutKey::Char('f'))
+            && self.ui.dispatch_key(KeyInput::Format)
+        {
+            "format"
+        } else if escape && (pebbles_widgets::dialog::is_open() || pebbles_widgets::sheet::is_open()) {
+            pebbles_widgets::overlay::dismiss_topmost_modal();
+            "modal"
+        } else if event.intent().is_some_and(|ki| self.ui.dispatch_key(ki)) {
+            "editor"
+        } else if pebbles_core::shortcuts::dispatch_key_event(self.ui.window_id(), &event) {
+            "shortcut"
+        } else if event.logical == LogicalKey::Named(NamedKey::Tab) {
+            if pebbles_core::focus::focused_wants_tab() {
+                let ki = if event.mods.shift { KeyInput::Outdent } else { KeyInput::Indent };
+                self.ui.dispatch_key(ki);
+                "editor-indent"
+            } else {
+                self.ui.focus_move(!event.mods.shift);
+                "focus-move"
+            }
+        } else if matches!(event.logical, LogicalKey::Named(NamedKey::Enter | NamedKey::Space))
+            && self.ui.dispatch_activate()
+        {
+            "activate"
+        } else {
+            "unhandled"
+        };
+        self.frame();
+        stage
+    }
+
+    /// Deliver a raw key release: only the focused widget's `on_key_event` handler sees
+    /// it (as in the shell). Then a frame.
+    pub fn key_up(&mut self, event: pebbles_core::KeyEvent) {
+        self.ui.make_current();
+        self.ui.dispatch_key_event(&event);
+        self.frame();
+    }
+
+    /// Wheel-scroll `delta` (logical px, +down) at `at`, then run a frame — like the
+    /// shell: the pointer signal goes to `on_pointer_signal` listeners first, and only an
+    /// unconsumed scroll moves the scroll view under the pointer. The spring keeps moving
     /// afterwards — follow with [`settle`](Self::settle) to land it.
     pub fn scroll(&mut self, at: Offset, delta: f64) {
+        self.wheel(at, Offset::new(0.0, delta), pebbles_render::ScrollUnit::Pixels);
+    }
+
+    /// A wheel / trackpad scroll of `delta` (logical px, Flutter `scrollDelta` sign) at
+    /// `at`, reported in `unit`, then a frame. Pointer-signal listeners first; an
+    /// unconsumed vertical delta scrolls the scroll view under the pointer.
+    pub fn wheel(&mut self, at: Offset, delta: Offset, unit: pebbles_render::ScrollUnit) {
         self.ui.make_current();
-        self.ui.dispatch_scroll(at, delta);
+        let signal = pebbles_render::PointerScrollEvent { position: at, global: at, delta, unit };
+        if !self.ui.dispatch_pointer_signal(at, signal) && delta.y != 0.0 {
+            self.ui.dispatch_scroll(at, delta.y);
+        }
+        self.frame();
+    }
+
+    /// Press `button` at `at` (Listener `on_button_down`; a primary press also fires
+    /// `on_pointer_down`), capturing the `on_pointer_move` listener under it, then a frame.
+    /// Pair with [`pointer_move`](Self::pointer_move) / [`button_up`](Self::button_up).
+    pub fn button_down(&mut self, at: Offset, button: pebbles_render::PointerButton) {
+        use pebbles_render::{PointerButton, PointerEvent};
+        self.ui.make_current();
+        if self.buttons == 0 {
+            self.move_target = self.ui.pointer_move_target_at(at);
+        }
+        self.buttons |= PointerEvent::bit(button);
+        self.pointer_at = at;
+        self.ui.dispatch_button_down(at, button, self.buttons);
+        if button == PointerButton::Primary {
+            self.ui.dispatch_pointer_down(at);
+        }
+        self.frame();
+    }
+
+    /// Move the held pointer to `to`: the captured `on_pointer_move` listener gets it
+    /// (local position, delta, held buttons), and hover listeners update. Then a frame.
+    pub fn pointer_move(&mut self, to: Offset) {
+        self.ui.make_current();
+        if let Some(t) = self.move_target {
+            self.ui.dispatch_pointer_move(t, to, self.pointer_at, self.buttons);
+        }
+        self.pointer_at = to;
+        self.ui.dispatch_hover(to);
+        self.frame();
+    }
+
+    /// Release `button` at `at` (Listener `on_button_up`; primary also `on_pointer_up`).
+    pub fn button_up(&mut self, at: Offset, button: pebbles_render::PointerButton) {
+        use pebbles_render::{PointerButton, PointerEvent};
+        self.ui.make_current();
+        self.buttons &= !PointerEvent::bit(button);
+        if self.buttons == 0 {
+            self.move_target = None;
+        }
+        self.pointer_at = at;
+        self.ui.dispatch_button_up(at, button, self.buttons);
+        if button == PointerButton::Primary {
+            self.ui.dispatch_pointer_up(at);
+        }
         self.frame();
     }
 
@@ -803,5 +979,238 @@ mod tests {
         h.draw(); // autofocus lands
         h.ime("あ");
         assert_eq!(ime_bound().get(), "あ", "ime() composes then commits the text into the field");
+    }
+
+    // ----- raw key events (Focus.onKeyEvent) -------------------------------
+
+    thread_local! {
+        static RAW_LOG: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// A focusable that consumes PageUp/PageDown (down and up) and ignores the rest.
+    fn raw_key_probe() -> impl IntoWidget {
+        use pebbles_core::keyboard::NamedKey;
+        use pebbles_core::{KeyEventResult, LogicalKey};
+        let node = pebbles_core::create_focus();
+        node.register(std::rc::Rc::new(|| {}), None, true);
+        node.on_key_event(std::rc::Rc::new(|e| {
+            RAW_LOG.with(|l| l.borrow_mut().push(format!("{:?} {:?}", e.kind, e.logical)));
+            match e.logical {
+                LogicalKey::Named(NamedKey::PageUp | NamedKey::PageDown) => KeyEventResult::Handled,
+                _ => KeyEventResult::Ignored,
+            }
+        }));
+        container().width(50.0).height(50.0)
+    }
+
+    /// Regression (Gravel terminal): a focused widget had no way to see raw keys —
+    /// PageUp/PageDown/Insert/F-keys never reached it, only the editing-intent subset.
+    #[test]
+    fn focused_widget_receives_raw_key_events_first() {
+        use pebbles_core::keyboard::NamedKey;
+        use pebbles_core::{KeyEvent, KeyEventKind, KeyEventResult, LogicalKey, PhysicalKey};
+        RAW_LOG.with(|l| l.borrow_mut().clear());
+        let mut h = Harness::new();
+        h.mount(raw_key_probe);
+        h.draw();
+        let page_up = KeyEvent::down(LogicalKey::Named(NamedKey::PageUp), PhysicalKey::new("PageUp"));
+        assert_eq!(h.ui.dispatch_key_event(&page_up), KeyEventResult::Handled);
+        let up = KeyEvent { kind: KeyEventKind::Up, ..page_up };
+        assert_eq!(h.ui.dispatch_key_event(&up), KeyEventResult::Handled);
+        let f5 = KeyEvent::down(LogicalKey::Named(NamedKey::F(5)), PhysicalKey::new("F5"));
+        assert_eq!(h.ui.dispatch_key_event(&f5), KeyEventResult::Ignored, "ignored keys fall through");
+        RAW_LOG.with(|l| {
+            assert_eq!(
+                *l.borrow(),
+                ["Down Named(PageUp)", "Up Named(PageUp)", "Down Named(F(5))"].map(String::from).to_vec()
+            )
+        });
+        // Nothing focused → nothing to offer the event to.
+        pebbles_core::focus::set_focus(None);
+        assert_eq!(h.ui.dispatch_key_event(&f5), KeyEventResult::Ignored);
+    }
+
+    // ----- physical shortcuts ---------------------------------------------
+
+    thread_local! {
+        static TOGGLES: Cell<u32> = const { Cell::new(0) };
+    }
+
+    fn physical_shortcut_probe() -> impl IntoWidget {
+        pebbles_core::create_shortcut(pebbles_core::Shortcut::physical("Ctrl+Shift+`"), || {
+            TOGGLES.with(|t| t.set(t.get() + 1));
+        });
+        container().width(10.0).height(10.0)
+    }
+
+    /// Regression (Gravel terminal toggle): Ctrl+Shift+` only matched layouts whose
+    /// Backquote key produces '`'. A physical binding matches the key position on any
+    /// layout; the logical character is irrelevant.
+    #[test]
+    fn physical_shortcut_matches_on_any_layout() {
+        use pebbles_core::{KeyEvent, LogicalKey, Mods, PhysicalKey};
+        TOGGLES.with(|t| t.set(0));
+        let mut h = Harness::new();
+        h.mount(physical_shortcut_probe);
+        h.draw();
+        let window = h.ui.window_id();
+        let cs = Mods { ctrl: true, shift: true, ..Default::default() };
+        // US: '~' (shifted backquote); German: dead '^'; French: '²'.
+        for logical in [LogicalKey::char("~"), LogicalKey::Dead(Some('^')), LogicalKey::char("²")] {
+            let e = KeyEvent { mods: cs, ..KeyEvent::down(logical, PhysicalKey::new("Backquote")) };
+            assert!(pebbles_core::shortcuts::dispatch_key_event(window, &e));
+        }
+        assert_eq!(TOGGLES.with(Cell::get), 3);
+        // Wrong modifiers or another key position never match.
+        let plain = KeyEvent::down(LogicalKey::char("`"), PhysicalKey::new("Backquote"));
+        assert!(!pebbles_core::shortcuts::dispatch_key_event(window, &plain));
+        let other =
+            KeyEvent { mods: cs, ..KeyEvent::down(LogicalKey::char("`"), PhysicalKey::new("IntlBackslash")) };
+        assert!(!pebbles_core::shortcuts::dispatch_key_event(window, &other));
+        assert_eq!(TOGGLES.with(Cell::get), 3);
+    }
+
+    // ----- Listener-style pointer callbacks -------------------------------
+
+    thread_local! {
+        static PTR_LOG: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    }
+
+    fn ptr_log(s: String) {
+        PTR_LOG.with(|l| l.borrow_mut().push(s));
+    }
+
+    /// A 400-px scroll view whose second child (at y = 300 in content) is a 100×100
+    /// listener that consumes wheel scrolls and logs raw pointer events locally.
+    fn pointer_probe() -> impl IntoWidget {
+        use pebbles_core::action_event;
+        let pad = container().height(300.0);
+        let target = gesture_detector(container().width(100.0).height(100.0))
+            .on_pointer_signal(|e| {
+                ptr_log(format!("signal {:?} at {:?}", e.delta, e.position));
+                true
+            })
+            .on_button_down(action_event(|e| {
+                ptr_log(format!("down {:?} {} at {:?}", e.button, e.buttons, e.position))
+            }))
+            .on_button_up(action_event(|e| ptr_log(format!("up {:?} {}", e.button, e.buttons))))
+            .on_pointer_move(action_event(|e| {
+                ptr_log(format!("move {:?} d{:?} b{}", e.position, e.delta, e.buttons))
+            }))
+            .on_pointer_hover(action_event(|e| ptr_log(format!("hover {:?}", e.position))));
+        let tail = container().height(2000.0);
+        container().height(400.0).child(pebbles_widgets::scroll_view(
+            column(vec![pad.into_widget(), target.into_widget(), tail.into_widget()])
+                .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Start),
+        ))
+    }
+
+    /// Regression (Gravel terminal): no wheel callback — a terminal could not scroll its
+    /// own scrollback nor stop the page behind from scrolling; hover moves reported
+    /// window coordinates; only the primary button reached on_pointer_down.
+    #[test]
+    fn pointer_signal_consumes_wheel_and_listener_events_are_local() {
+        use pebbles_render::PointerButton;
+        PTR_LOG.with(|l| l.borrow_mut().clear());
+        let mut h = Harness::new();
+        h.mount(pointer_probe);
+        h.draw();
+        let scroll = h.find::<pebbles_render::RenderScroll>().expect("scroll view");
+        let offset = |h: &Harness| h.object::<pebbles_render::RenderScroll>(scroll).offset;
+
+        // Over the listener: consumed — the scroll view stays put.
+        h.scroll(Offset::new(10.0, 310.0), 40.0);
+        h.settle();
+        assert_eq!(offset(&h), 0.0, "a consuming pointer-signal handler stops the scroll");
+        // Elsewhere: the scroll view scrolls as before.
+        h.scroll(Offset::new(10.0, 100.0), 40.0);
+        h.settle();
+        assert!(offset(&h) > 0.0, "unclaimed wheel still scrolls");
+
+        PTR_LOG.with(|l| l.borrow_mut().clear());
+        let top = 300.0 - offset(&h);
+        h.hover(Offset::new(20.0, top + 30.0));
+        h.button_down(Offset::new(20.0, top + 30.0), PointerButton::Secondary);
+        h.pointer_move(Offset::new(150.0, top + 35.0)); // leaves the box: still captured
+        h.button_up(Offset::new(150.0, top + 35.0), PointerButton::Secondary);
+        let log = PTR_LOG.with(|l| l.borrow().clone());
+        assert_eq!(log[0], "hover Vec2 { x: 20.0, y: 30.0 }", "{log:?}");
+        assert_eq!(log[1], "down Secondary 2 at Vec2 { x: 20.0, y: 30.0 }", "{log:?}");
+        assert_eq!(log[2], "move Vec2 { x: 150.0, y: 35.0 } dVec2 { x: 130.0, y: 5.0 } b2", "{log:?}");
+        assert!(!log.iter().any(|e| e.starts_with("up")), "release off the box isn't its up: {log:?}");
+    }
+
+    // ----- press(): chords through the full key routing --------------------
+
+    thread_local! {
+        static PALETTE: Cell<u32> = const { Cell::new(0) };
+    }
+
+    fn chord_probe() -> impl IntoWidget {
+        pebbles_core::create_shortcut("Ctrl+Shift+K", || PALETTE.with(|p| p.set(p.get() + 1)));
+        raw_key_probe()
+    }
+
+    /// `press` runs the shell's routing: the focused raw handler first (PageUp handled),
+    /// ignored keys continue to app shortcuts, and releases reach the raw handler only.
+    #[test]
+    fn press_routes_chords_like_the_shell() {
+        RAW_LOG.with(|l| l.borrow_mut().clear());
+        PALETTE.with(|p| p.set(0));
+        let mut h = Harness::new();
+        h.mount(chord_probe);
+        h.draw();
+        h.press("PageUp");
+        h.press("Ctrl+Shift+K");
+        assert_eq!(PALETTE.with(Cell::get), 1, "ignored by the raw handler → app shortcut");
+        RAW_LOG.with(|l| {
+            assert_eq!(
+                *l.borrow(),
+                ["Down Named(PageUp)", "Up Named(PageUp)", "Down Character(\"K\")", "Up Character(\"K\")"]
+                    .map(String::from)
+                    .to_vec()
+            )
+        });
+        let ev = pebbles_core::shortcuts::chord_event("F5").unwrap();
+        assert_eq!(h.key_down(ev), "unhandled");
+    }
+
+    // ----- draw()/settle() deliver background tasks ------------------------
+
+    thread_local! {
+        static LOADED: RefCell<Option<Signal<String>>> = const { RefCell::new(None) };
+    }
+
+    fn task_probe() -> impl IntoWidget {
+        let value = create_signal(String::from("loading"));
+        LOADED.with(|l| *l.borrow_mut() = Some(value));
+        pebbles_core::on_mount(move || {
+            pebbles_core::spawn(
+                || {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    String::from("done")
+                },
+                move |v| value.set(v),
+            );
+        });
+        text(value.get())
+    }
+
+    /// Regression: tests had to loop `task::pump()` by hand — no harness frame delivered
+    /// finished `spawn` work, so a resource-backed widget stayed "loading" headless.
+    #[test]
+    fn frames_deliver_finished_background_tasks() {
+        let mut h = Harness::new();
+        h.mount(task_probe);
+        h.draw();
+        assert!(h.find_text("loading"));
+        // The worker finishes in real time; the next frame delivers it, no manual pump.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        h.draw();
+        h.draw(); // the delivered signal write re-renders
+        assert_eq!(LOADED.with(|l| l.borrow().unwrap().get()), "done");
+        assert!(h.find_text("done"), "the delivered value re-rendered");
+        // Nothing left in flight.
+        assert!(h.wait_for_tasks(std::time::Duration::from_secs(5)));
     }
 }

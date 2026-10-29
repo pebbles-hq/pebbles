@@ -17,6 +17,31 @@
 //!
 //! Two forms: no props — `fn() -> impl IntoWidget` via [`component`]; with props —
 //! `fn(&P) -> impl IntoWidget` via [`component_props`].
+//!
+//! # When the body re-runs
+//!
+//! A component body is **not** guaranteed to run only once. It runs on mount, and
+//! re-runs when:
+//!
+//! - a signal it read during its last run changes (it is marked dirty), or
+//! - its parent re-renders and hands back a **new** component instance — a fresh
+//!   [`component`]/[`component_props`] call, even with equal props (there is no
+//!   props-equality bailout), or
+//! - its parent re-renders and a render-time context it can see changed (an
+//!   ancestor's [`provide_context`](crate::reactive::provide_context) produced a new
+//!   value).
+//!
+//! It does **not** re-run when its parent re-renders but hands back the *same*
+//! instance (a clone of the same `Component`, e.g. a `child` stored in props and
+//! returned again, as `OverlayHost` does) with nothing above it changed — the
+//! existing subtree is kept, like Flutter's identical-widget and React's
+//! same-element bailouts.
+//!
+//! So keep state that must survive re-runs in [`create_signal`](crate::reactive::create_signal)
+//! (a component-local hook, preserved across re-runs by call order and disposed on
+//! unmount). A [`create_root_signal`](crate::reactive::create_root_signal) called in a
+//! body creates a **new** app-owned signal on every run — it is for lazily
+//! initialized global state, not per-component state.
 
 use std::any::Any;
 use std::rc::Rc;

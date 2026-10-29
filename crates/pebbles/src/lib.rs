@@ -77,7 +77,10 @@ pub mod prelude {
     };
     // shortcut key vocabulary + wasm-safe timers (siblings of create_shortcut / create_timeout,
     // which were in the prelude while their companion types/fns were not).
-    pub use pebbles_core::{Key, Mods, ShortcutKey, clear_timeout, set_timeout};
+    pub use pebbles_core::{Key, Mods, Shortcut, ShortcutKey, clear_timeout, set_timeout};
+    // raw key events (Flutter's KeyEvent / Focus.onKeyEvent) — `FocusNode::on_key_event`.
+    pub use pebbles_core::keyboard::NamedKey;
+    pub use pebbles_core::{KeyEvent, KeyEventKind, KeyEventResult, LogicalKey, PhysicalKey};
     // The rest of the hook surface (was reachable only via `pebbles::core::…`).
     pub use pebbles_core::{
         ErrorBoundaryHandle, RootDisposer, create_cleanup, create_loop, create_loop_while, create_memo_with,

@@ -93,3 +93,59 @@ fn context_menu_opens_on_secondary_click_at_the_cursor() {
     frame(&mut ui);
     assert!(!overlay::is_open(), "dismissed");
 }
+
+// ---------------------------------------------------------------------------
+// Regression (Gravel IDE): opening/closing an overlay re-renders `OverlayHost`,
+// which hands back its stored `child` (the SAME component instance). That used to
+// re-run the whole app root every time, so `create_root_signal` state created in the
+// root body was recreated (lost) on every tooltip/menu/toast/dialog open or close.
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    static APP_RUNS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    static APP_STATE: std::cell::RefCell<Option<pebbles_core::Signal<i32>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn stateful_app() -> impl IntoWidget {
+    APP_RUNS.with(|c| c.set(c.get() + 1));
+    let count = pebbles_core::create_root_signal(0);
+    APP_STATE.with(|s| *s.borrow_mut() = Some(count));
+    text("app")
+}
+
+#[test]
+fn overlay_open_close_does_not_rerun_root_or_lose_root_signal_state() {
+    overlay::init();
+    pebbles_core::focus::init();
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let window = Size::new(500.0, 400.0);
+    ui.mount_root(View::new(palette::WHITE, OverlayHost::wrap(component(stateful_app))).into_widget());
+    ui.layout(&mut env, window);
+    let mut frame = |ui: &mut Ui| {
+        ui.rebuild_if_dirty();
+        ui.layout(&mut env, window);
+        let mut scene = pebbles_render::Scene::new();
+        ui.paint(&mut env, &mut scene);
+    };
+    frame(&mut ui);
+    let state = APP_STATE.with(|s| s.borrow().expect("root rendered"));
+    state.set(42);
+    frame(&mut ui);
+    let runs = APP_RUNS.with(std::cell::Cell::get);
+
+    for _ in 0..2 {
+        overlay::show_overlay(text("tip").into_widget(), 10.0, 10.0, 80.0, 30.0);
+        frame(&mut ui);
+        assert!(overlay::is_open(), "overlay opened");
+        overlay::hide_overlay();
+        frame(&mut ui);
+        assert!(!overlay::is_open(), "overlay closed");
+    }
+
+    assert_eq!(APP_RUNS.with(std::cell::Cell::get), runs, "overlay open/close must not re-run the app root");
+    let now = APP_STATE.with(|s| s.borrow().expect("root rendered"));
+    assert_eq!(now.get(), 42, "root-signal state survives overlay open/close");
+}

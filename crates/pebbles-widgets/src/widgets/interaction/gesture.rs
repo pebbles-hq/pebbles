@@ -1,13 +1,19 @@
 //! [`GestureDetector`] — makes its child interactive with the full pointer event
 //! set: tap, double-tap, secondary (right) click, long-press, pointer down/up, and
-//! hover enter/exit. Backs [`pebbles_render::RenderPointerListener`].
+//! hover enter/exit, plus the raw Flutter `Listener` callbacks — wheel/trackpad
+//! scroll signals, any-button down/up, captured pointer moves and hover moves.
+//! Backs [`pebbles_render::RenderPointerListener`].
 //!
 //! Each `on_*` builder can be called more than once; all handlers fire. This lets a
 //! higher-level widget attach its own internal handler *and* the developer's handler
 //! to the same event.
 
 use pebbles_core::IntoCallback;
-use pebbles_render::{Cursor, RenderObject, RenderPointerListener, TapCallback};
+use std::rc::Rc;
+
+use pebbles_render::{
+    Cursor, PointerScrollEvent, PointerSignalCallback, RenderObject, RenderPointerListener, TapCallback,
+};
 
 use pebbles_core::context::Callback;
 use pebbles_core::widget::{AnyWidget, RenderWidget};
@@ -63,6 +69,10 @@ pub struct GestureDetector {
     on_horizontal_drag_start: Vec<Callback>,
     on_horizontal_drag_update: Vec<Callback>,
     on_horizontal_drag_end: Vec<Callback>,
+    on_pointer_signal: Vec<PointerSignalCallback>,
+    on_button_down: Vec<Callback>,
+    on_button_up: Vec<Callback>,
+    on_pointer_move: Vec<Callback>,
     cursor: Option<Cursor>,
     child: Option<AnyWidget>,
 }
@@ -162,9 +172,9 @@ impl GestureDetector {
         self.on_exit.push(cb.into_callback());
         self
     }
-    /// The pointer moved while hovering this widget (no button held). Fires continuously
-    /// with the current position; use `action_event` to read it in the widget's local
-    /// space. This is the hook for cursor-following UI like chart tooltips.
+    /// The pointer moved while hovering this widget. Fires continuously with the current
+    /// position; use `action_event` to read it — `position` is in the widget's local
+    /// space, `global` in window space. This is the hook for cursor-following UI like chart tooltips.
     pub fn on_hover_move(mut self, cb: impl IntoCallback) -> Self {
         self.on_move.push(cb.into_callback());
         self
@@ -217,6 +227,50 @@ impl GestureDetector {
         self.on_horizontal_drag_end.push(cb.into_callback());
         self
     }
+    /// A wheel / trackpad scroll over this widget (Flutter `Listener.onPointerSignal`).
+    /// The [`PointerScrollEvent`] carries the local position, the delta in logical pixels
+    /// (Flutter's `scrollDelta` sign: +y scrolls down) and whether the device reported
+    /// lines or pixels. Return `true` to CONSUME it — ancestors' handlers and scroll views
+    /// never see it; `false` lets it continue outward (the scroll view under it scrolls).
+    ///
+    /// ```no_run
+    /// use pebbles_widgets::{GestureDetector, text};
+    /// let view = GestureDetector::new(text("terminal")).on_pointer_signal(|e| {
+    ///     let rows = (e.delta.y / 17.0).round() as i32; // scroll the scrollback by rows
+    ///     rows != 0 // consume, so the page behind doesn't scroll too
+    /// });
+    /// ```
+    pub fn on_pointer_signal(mut self, cb: impl Fn(PointerScrollEvent) -> bool + 'static) -> Self {
+        self.on_pointer_signal.push(Rc::new(cb));
+        self
+    }
+    /// Any mouse button pressed over this widget (Flutter `Listener.onPointerDown`). Read
+    /// `button` / `buttons` / the local `position` with `action_event`. (`on_pointer_down`
+    /// stays primary-only.)
+    pub fn on_button_down(mut self, cb: impl IntoCallback) -> Self {
+        self.on_button_down.push(cb.into_callback());
+        self
+    }
+    /// Any mouse button released over this widget (Flutter `Listener.onPointerUp`);
+    /// `buttons` is the set still held.
+    pub fn on_button_up(mut self, cb: impl IntoCallback) -> Self {
+        self.on_button_up.push(cb.into_callback());
+        self
+    }
+    /// The pointer moved while a button pressed over this widget is held (Flutter
+    /// `Listener.onPointerMove`). Captured: keeps firing outside the widget until the last
+    /// button is released; `position` is local, `delta` the movement, `buttons` the held set.
+    /// Unlike `on_pan_*` there is no drag slop and any button counts — e.g. a terminal's
+    /// mouse-reporting drag.
+    pub fn on_pointer_move(mut self, cb: impl IntoCallback) -> Self {
+        self.on_pointer_move.push(cb.into_callback());
+        self
+    }
+    /// The pointer moved over this widget (Flutter `Listener.onPointerHover`) — the same
+    /// event as [`on_hover_move`](Self::on_hover_move); `position` is local.
+    pub fn on_pointer_hover(self, cb: impl IntoCallback) -> Self {
+        self.on_hover_move(cb)
+    }
     /// The cursor to show while hovering this widget.
     pub fn cursor(mut self, cursor: Cursor) -> Self {
         self.cursor = Some(cursor);
@@ -257,6 +311,10 @@ impl GestureDetector {
             on_horizontal_drag_start: erase(&self.on_horizontal_drag_start),
             on_horizontal_drag_update: erase(&self.on_horizontal_drag_update),
             on_horizontal_drag_end: erase(&self.on_horizontal_drag_end),
+            on_pointer_signal: self.on_pointer_signal.clone(),
+            on_button_down: erase(&self.on_button_down),
+            on_button_up: erase(&self.on_button_up),
+            on_pointer_move: erase(&self.on_pointer_move),
             // Default to a pointer cursor when this detector is clickable.
             cursor: self.cursor.or_else(|| (!self.on_tap.is_empty()).then_some(Cursor::Pointer)),
         }

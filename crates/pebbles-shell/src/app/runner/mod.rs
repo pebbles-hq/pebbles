@@ -15,7 +15,7 @@ use web_time::Instant;
 use frame::{FrameOutcome, FramePacket, FrameSink, Handover, Pacer, RenderState, ResizeSync};
 use gpu::{HostInit, RenderContext, RenderSurface, Scene, new_context};
 use kurbo::Affine;
-use pebbles_core::{IntoWidget, KeyInput, Motion, Ui};
+use pebbles_core::{IntoWidget, KeyInput, Ui};
 use pebbles_foundation::{Color, Offset, TextDirection};
 use pebbles_widgets::{MenuBar, View};
 use winit::application::ApplicationHandler;
@@ -45,8 +45,8 @@ mod storm;
 mod windows;
 
 use input::{
-    cursor_update, editor_chord_intent, file_drop_event, to_command, to_shortcut_key, to_winit_cursor,
-    wheel_with_overlay,
+    cursor_update, editor_chord_intent, file_drop_event, pointer_button, scroll_signal, to_command,
+    to_key_event, to_shortcut_key, to_winit_cursor, wheel_with_overlay,
 };
 
 /// Max interval between two primary clicks to count as a double-tap.
@@ -337,6 +337,11 @@ pub(super) struct Runner {
     lp_active: bool,
     /// The drag (pan) target armed at pointer-down; receives move/end until release.
     pan_target: Option<u64>,
+    /// Held mouse buttons as a `PointerEvent::buttons` bit set.
+    buttons: u8,
+    /// The `on_pointer_move` listener captured at the first button press; fed every
+    /// move until the last button is released.
+    move_target: Option<u64>,
     /// Monotonic clock start — the time base for animations.
     clock: Instant,
     /// Elapsed seconds at the previous frame, for the per-frame scroll-spring `dt`.
@@ -460,6 +465,8 @@ impl Runner {
             lp_target: None,
             lp_active: false,
             pan_target: None,
+            buttons: 0,
+            move_target: None,
             clock: Instant::now(),
             last_frame_t: 0.0,
             windows: HashMap::new(),
@@ -664,6 +671,28 @@ impl Runner {
         button: MouseButton,
         state: ElementState,
     ) -> bool {
+        // Listener-style raw button events (any button) + pointer-move capture.
+        let raw = pointer_button(button).is_some_and(|b| {
+            let bit = pebbles_render::PointerEvent::bit(b);
+            if state == ElementState::Pressed {
+                if self.buttons == 0 {
+                    self.move_target = self.ui.pointer_move_target_at(cursor);
+                }
+                self.buttons |= bit;
+                self.ui.dispatch_button_down(cursor, b, self.buttons)
+            } else {
+                self.buttons &= !bit;
+                if self.buttons == 0 {
+                    self.move_target = None;
+                }
+                self.ui.dispatch_button_up(cursor, b, self.buttons)
+            }
+        });
+        self.dispatch_gesture(cursor, button, state) || raw
+    }
+
+    /// The gesture half of [`dispatch_pointer`](Self::dispatch_pointer).
+    fn dispatch_gesture(&mut self, cursor: Offset, button: MouseButton, state: ElementState) -> bool {
         match (button, state) {
             (MouseButton::Left, ElementState::Pressed) if self.ui.begin_scrollbar_drag(cursor) => {
                 // Grabbed a scrollbar — it captures the pointer until release.
@@ -1151,6 +1180,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             }
 
             WindowEvent::CursorMoved { position, .. } => {
+                let prev = self.cursor;
                 if let Some(active) = self.active.as_ref() {
                     let scale = active.window.scale_factor();
                     let PhysicalPosition { x, y } = position;
@@ -1177,6 +1207,12 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 if self.ui.dispatch_hover(cursor) {
                     self.request_redraw();
                 }
+                // Listener-style captured move (any held button).
+                if let Some(t) = self.move_target
+                    && self.ui.dispatch_pointer_move(t, cursor, prev, self.buttons)
+                {
+                    self.request_redraw();
+                }
                 // Feed movement into an active content drag (A4 drag-scroll) or pan.
                 let moved = if self.ui.content_drag_active() {
                     self.ui.update_content_drag(cursor)
@@ -1201,14 +1237,16 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
-                let dy = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => -(y as f64) * LINE_SCROLL,
-                    MouseScrollDelta::PixelDelta(p) => {
-                        let scale = self.active.as_ref().map_or(1.0, |a| a.window.scale_factor());
-                        -p.y / scale
-                    }
-                };
+                let scale = self.active.as_ref().map_or(1.0, |a| a.window.scale_factor());
+                let signal = scroll_signal(delta, scale, self.cursor);
+                let dy = signal.delta.y;
                 let cursor = self.cursor;
+                // Pointer signal first (Flutter Listener.onPointerSignal): a consuming
+                // handler keeps the scroll views under it still.
+                if self.ui.dispatch_pointer_signal(cursor, signal) {
+                    self.request_redraw();
+                    return;
+                }
                 let scrolled = wheel_with_overlay(&mut self.ui, cursor, dy);
                 if pebbles_core::log::dev_mode() {
                     pebbles_core::log::trace(
@@ -1319,13 +1357,22 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 if self.web_ime && pebbles_core::focus::focused_is_editor() {
                     return;
                 }
+                let mods = pebbles_core::Mods {
+                    shift: self.shift_down,
+                    ctrl: self.ctrl_down,
+                    alt: self.alt_down,
+                    meta: self.meta_down,
+                };
+                // A release only reaches the focused widget's raw handler (Flutter's
+                // KeyUpEvent) — intents, shortcuts and activation act on presses.
+                if event.state == ElementState::Released {
+                    let raw = to_key_event(&event, mods);
+                    if self.ui.dispatch_key_event(&raw) == pebbles_core::KeyEventResult::Handled {
+                        self.request_redraw();
+                    }
+                    return;
+                }
                 if event.state == ElementState::Pressed {
-                    let mods = pebbles_core::Mods {
-                        shift: self.shift_down,
-                        ctrl: self.ctrl_down,
-                        alt: self.alt_down,
-                        meta: self.meta_down,
-                    };
                     // F2: Mod+Shift+I toggles the widget inspector (devtools v1).
                     if (self.ctrl_down || self.meta_down)
                         && self.shift_down
@@ -1352,6 +1399,31 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                         pebbles_core::log::dump("Mod+Shift+D render-tree capture");
                         return;
                     }
+                    // Escape, topmost-first. Transient overlays (menus, popovers,
+                    // dropdowns, context menus, the date/time pickers) float ABOVE
+                    // modals AND the focused widget, so close the topmost one before
+                    // anything else sees the key — otherwise Escape would close the
+                    // sheet/dialog underneath and orphan the menu above it.
+                    if event.logical_key == Key::Named(NamedKey::Escape)
+                        && pebbles_widgets::overlay::is_open()
+                    {
+                        pebbles_widgets::overlay::hide_overlay();
+                        self.request_redraw();
+                        return;
+                    }
+                    // Raw key event to the focused widget first (Flutter's
+                    // Focus.onKeyEvent): Handled stops here; Ignored continues below.
+                    let raw = to_key_event(&event, mods);
+                    if self.ui.dispatch_key_event(&raw) == pebbles_core::KeyEventResult::Handled {
+                        if pebbles_core::log::dev_mode() {
+                            pebbles_core::log::debug(
+                                pebbles_core::log::Cat::Input,
+                                format!("key {:?} → raw", event.logical_key),
+                            );
+                        }
+                        self.request_redraw();
+                        return;
+                    }
                     // Shift+Alt+F: format the focused code editor via its format provider.
                     if to_shortcut_key(&event).and_then(|sk| editor_chord_intent(mods, sk, false))
                         == Some(KeyInput::Format)
@@ -1360,17 +1432,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                         self.request_redraw();
                         return;
                     }
-                    // Escape, topmost-first. Transient overlays (menus, popovers,
-                    // dropdowns, context menus, the date/time pickers) float ABOVE
-                    // modals, so close the topmost one before touching any modal —
-                    // otherwise Escape would close the sheet/dialog underneath and
-                    // orphan the menu above it.
                     if event.logical_key == Key::Named(NamedKey::Escape) {
-                        if pebbles_widgets::overlay::is_open() {
-                            pebbles_widgets::overlay::hide_overlay();
-                            self.request_redraw();
-                            return;
-                        }
                         // Otherwise close only the TOPMOST modal (dialog vs sheet by
                         // open order). While any modal is open, consume Escape so it
                         // can't reach the page behind — even if the top modal is
@@ -1393,9 +1455,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     let mut handled = if intent.is_some_and(|ki| self.ui.dispatch_key(ki)) {
                         stage = "editor";
                         true
-                    } else if to_shortcut_key(&event)
-                        .is_some_and(|sk| pebbles_core::shortcuts::dispatch(self.ui.window_id(), mods, sk))
-                    {
+                    } else if pebbles_core::shortcuts::dispatch_key_event(self.ui.window_id(), &raw) {
                         stage = "shortcut";
                         true
                     } else if event.logical_key == Key::Named(NamedKey::Tab) {

@@ -6,6 +6,48 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — raw key events for focused widgets (Flutter `Focus.onKeyEvent`)
+`FocusNode::on_key_event(Rc::new(|e: &KeyEvent| -> KeyEventResult))`: while focused, a widget
+sees every key down / repeat / up — `LogicalKey`, `PhysicalKey` (W3C `code`), text, `Mods` —
+before the shell maps it to a `KeyInput` intent or a shortcut. `Handled` consumes; `Ignored`
+continues to the intent → shortcut → Tab → activation → key-scroll chain. PageUp/PageDown,
+Insert, F1–F35 and bare modifiers now reach a widget. The key → intent mapping moved into
+`pebbles_core::keyboard` (`intent_for`, `shortcut_key_for`, `KeyEvent::intent`), shared by
+the shell and the test harness. `ShortcutKey` gains `PageUp`, `PageDown`, `Insert`.
+
+### Added — `Shortcut::physical`: bindings by key position
+`create_shortcut(Shortcut::physical("Ctrl+Shift+`"), ..)` matches the key at the W3C `code`
+position (`Backquote`) whatever the layout prints there. `create_shortcut` /
+`create_shortcut_if` now take `impl Into<Shortcut>`; strings stay logical (unchanged).
+`shortcuts::dispatch_key_event` / `dispatch_physical`, `shortcuts::chord_event`.
+
+### Added — `Listener`-style pointer callbacks on `GestureDetector`
+`on_pointer_signal(|e: PointerScrollEvent| -> bool)` (wheel / trackpad: local position,
+`delta` in logical px with Flutter's `scrollDelta` sign, `ScrollUnit::Lines`/`Pixels`; `true`
+consumes, so ancestors and scroll views don't scroll), `on_button_down` / `on_button_up`
+(any button), `on_pointer_move` (captured from the press, any button, no slop) and
+`on_pointer_hover`. `PointerEvent` gains `buttons` (bit set; **breaking** for code that
+builds `PointerEvent` literals).
+
+### Fixed — hover callbacks reported window coordinates
+`on_hover_enter` / `on_hover_exit` / `on_hover_move` received the window position in
+`PointerEvent::position` (documented as local); they now get local coordinates. This also
+fixes the menubar's hover-switch anchor and text link hover hit-testing inside offset text.
+
+### Added — canvas text + text measurement
+`Canvas::draw_text`, `draw_paragraph` (rich spans, wrap), `measure_text`, `monospace_cell`,
+laid out like `Text`. `TextEnv::measure_text` / `monospace_cell` and the context-free
+`pebbles_render::measure_text` / `monospace_cell` (bundled + `App::font` faces).
+
+### Changed — `pebbles-testing` delivers background tasks; key chords
+`Harness::frame` / `draw` (and so `tick` / `settle`) call `task::pump`, delivering finished
+`spawn` / `create_resource` work; `wait_for_tasks(timeout)` waits in real time for in-flight
+work without advancing the animation clock (Flutter `runAsync`). New `press("Ctrl+Shift+P")`, `key_down` /
+`key_up` (raw `KeyEvent`s through the shell's key routing), `wheel`, `button_down` /
+`pointer_move` / `button_up`; `scroll` now goes through the pointer signal first.
+
+### Added — gallery "Listener & Raw Keys" page (Interaction)
+
 ### Changed (breaking) — `Checkbox::on_changed` receives the new value
 `checkbox(v).on_changed(|new: bool| ..)` now gets the new value (`!v`, or `true` from the
 indeterminate state), like Flutter `Checkbox.onChanged`. **Migration:** `.on_changed(move || x)`

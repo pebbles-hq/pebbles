@@ -426,6 +426,12 @@ pub const PAGES: &[Page] = &[
         build: pages::dnd::absorb_pointer_screen,
     },
     Page {
+        id: "listener",
+        group: "Interaction",
+        title: "Listener & Raw Keys",
+        build: pages::listener::listener_screen,
+    },
+    Page {
         id: "interactive-viewer",
         group: "Interaction",
         title: "Interactive Viewer",
