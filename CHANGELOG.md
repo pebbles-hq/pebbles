@@ -6,6 +6,12 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (breaking) — `Checkbox::on_changed` receives the new value
+`checkbox(v).on_changed(|new: bool| ..)` now gets the new value (`!v`, or `true` from the
+indeterminate state), like Flutter `Checkbox.onChanged`. **Migration:** `.on_changed(move || x)`
+→ `.on_changed(move |_| x)`, or keep the argument-less shape with the new `.on_tap(..)` (which
+also still accepts an `action(..)` `Callback`).
+
 ### Changed — `Harness::find_text` matches rendered text (Flutter `find.text`)
 `find_text` now also matches any rendered `Text` / rich-text paragraph whose full content is
 exactly the query (previously only accessibility labels). New `Harness::find_all_text`.

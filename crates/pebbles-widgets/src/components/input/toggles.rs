@@ -162,7 +162,8 @@ fn wire(
 // Checkbox
 // ---------------------------------------------------------------------------
 
-/// A checkbox. `value` is the current state; `on_changed` fires on tap.
+/// A checkbox. `value` is the current state; `on_changed` fires on tap with the new
+/// value (Flutter `Checkbox.onChanged`).
 #[derive(Clone, Default)]
 pub struct Checkbox {
     value: bool,
@@ -173,7 +174,8 @@ pub struct Checkbox {
     autofocus: bool,
     label: Option<String>,
     description: Option<String>,
-    on_changed: Option<Callback>,
+    on_changed: Option<Rc<dyn Fn(bool)>>,
+    on_tap: Option<Callback>,
 }
 
 /// Create a [`Checkbox`].
@@ -215,9 +217,30 @@ impl Checkbox {
         self.description = Some(s.into());
         self
     }
-    pub fn on_changed(mut self, cb: impl IntoCallback) -> Self {
-        self.on_changed = Some(cb.into_callback());
+    /// Called on tap / Space / Enter with the **new** value: `!value`, or `true` from the
+    /// indeterminate state (Flutter `Checkbox.onChanged(bool?)`, non-tristate).
+    pub fn on_changed(mut self, cb: impl Fn(bool) + 'static) -> Self {
+        self.on_changed = Some(Rc::new(cb));
         self
+    }
+    /// Argument-less tap callback (the pre-0.x `on_changed` shape) — for callers that
+    /// flip their own state. Prefer [`on_changed`](Self::on_changed).
+    pub fn on_tap(mut self, cb: impl IntoCallback) -> Self {
+        self.on_tap = Some(cb.into_callback());
+        self
+    }
+    /// The combined tap callback handed to the gesture/focus wiring.
+    fn tap_callback(&self) -> Option<Callback> {
+        let next = self.indeterminate || !self.value;
+        match (self.on_changed.clone(), self.on_tap.clone()) {
+            (None, tap) => tap,
+            (Some(f), tap) => Some(pebbles_core::action(move || {
+                f(next);
+                if let Some(Callback::Plain(t)) = &tap {
+                    t();
+                }
+            })),
+        }
     }
 }
 
@@ -257,7 +280,7 @@ fn render_checkbox(p: &Checkbox) -> AnyWidget {
         .child(center(Opacity::new(t as f32, icon(glyph).size(dim * 0.72).color(c.primary_foreground))));
 
     let body = labeled(box_.into_widget(), p.size, p.label.clone(), p.description.clone(), p.disabled);
-    let out = wire(body, p.disabled, &p.on_changed, hovered, node, p.autofocus);
+    let out = wire(body, p.disabled, &p.tap_callback(), hovered, node, p.autofocus);
     crate::widgets::semantics(
         crate::widgets::SemanticsRole::Checkbox,
         p.label.clone().unwrap_or_default(),

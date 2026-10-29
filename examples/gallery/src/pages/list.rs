@@ -57,7 +57,7 @@ pub fn lists() -> Element {
                             .subtitle("Play a sound on events")
                             .trailing(switch(false).on_changed(|| {})),
                         separator(),
-                        list_tile("Keep me signed in").trailing(checkbox(true).on_changed(|| {})),
+                        list_tile("Keep me signed in").trailing(checkbox(true).on_changed(|_| {})),
                     ])
                     .cross_axis_alignment(CrossAxisAlignment::Stretch)
                     .main_axis_size(MainAxisSize::Min),

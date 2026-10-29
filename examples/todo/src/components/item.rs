@@ -14,7 +14,7 @@ pub fn item(todo: &Todo) -> impl IntoWidget {
     label = if done { label.strikethrough().color(c.muted_foreground) } else { label.color(c.foreground) };
 
     row(children![
-        checkbox(done).on_changed(move || store::toggle(id)),
+        checkbox(done).on_changed(move |_| store::toggle(id)),
         gap_w(12.0),
         Expanded::new(label),
         icon_button(IconKind::Close).variant(ButtonVariant::Ghost).on_pressed(move || store::remove(id)),
