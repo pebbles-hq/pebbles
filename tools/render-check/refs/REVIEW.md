@@ -237,6 +237,7 @@ Every `examples/gallery` page, headless (800×1000, bundled fonts, settled): Def
 | [ ] | `gallery/list_tiles_dark` | 800×1000 | 21604 | <img src="wgpu/linux-lavapipe/gallery__list_tiles_dark.png" width="240"> |
 | [ ] | `gallery/list_tiles_material` | 800×1000 | 20885 | <img src="wgpu/linux-lavapipe/gallery__list_tiles_material.png" width="240"> |
 | [ ] | `gallery/list_tiles_tailwind` | 800×1000 | 20821 | <img src="wgpu/linux-lavapipe/gallery__list_tiles_tailwind.png" width="240"> |
+| [ ] | `gallery/listener` | 800×1000 | 38643 | <img src="wgpu/linux-lavapipe/gallery__listener.png" width="240"> |
 | [ ] | `gallery/list_view` | 800×1000 | 45398 | <img src="wgpu/linux-lavapipe/gallery__list_view.png" width="240"> |
 | [ ] | `gallery/long_press_draggable` | 800×1000 | 16409 | <img src="wgpu/linux-lavapipe/gallery__long_press_draggable.png" width="240"> |
 | [ ] | `gallery/media_query` | 800×1000 | 26136 | <img src="wgpu/linux-lavapipe/gallery__media_query.png" width="240"> |
