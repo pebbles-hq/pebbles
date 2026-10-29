@@ -1,66 +1,101 @@
-//! [`FileExplorer`] — a VSCode-style file explorer built from separate,
+//! [`FileExplorer`] — a VS Code-grade file explorer built from separate,
 //! composable pieces:
 //!
 //! * [`FileTree`] — the app-owned data model (wrap it in a `Signal`): stable
 //!   node ids, and the mutation helpers (`insert`, `rename`, `delete`,
 //!   `move_node`).
-//! * [`file_explorer`] — a `Copy` controller over that signal: multi-selection,
-//!   expansion, inline-rename and drag state, plus the action closures.
+//! * [`file_explorer`] — a `Copy` controller over that signal: selection,
+//!   expansion, inline rename, drag state, file operations, undo, menus.
 //! * [`FileExplorer::toolbar`] / [`FileExplorer::tree`] — the default widget
-//!   pieces; skip them and compose your own buttons from the action closures
-//!   (`new_file`, `new_folder`, `rename_selected`, `delete_selected`,
-//!   `collapse_all`) wherever your layout wants them.
+//!   pieces; skip them and compose your own chrome from the action closures
+//!   (`new_file`, `new_folder`, `rename_selected`, `collapse_all`, …).
 //!
-//! The tree follows the desktop file-explorer standards: click selects,
-//! **Ctrl/Cmd-click toggles**, **Shift-click range-selects**; double-click
-//! renames inline (Enter/blur commits, Escape cancels); right-click opens a
-//! context menu (new/rename/delete — new nodes land in the selected folder);
-//! right-clicking empty space offers New File/New Folder; and **dragging a
-//! selection onto a folder moves them all** (hovering a collapsed folder
-//! during a drag expands it; dropping on empty space moves to the root).
-//! A press becomes a drag only past an 8 px slop — a click never moves
-//! anything — and a drop needs an explicit highlighted target. On disk,
-//! moves ask first ("Move 'x' into 'y'?", or your
-//! [`set_confirm_move`](FileExplorer::set_confirm_move) hook), are undoable
-//! ([`undo`](FileExplorer::undo), Mod+Z), and can be switched off
-//! with [`allow_fs_moves(false)`](FileExplorer::allow_fs_moves).
+//! In **filesystem mode** ([`open_folder`](FileExplorer::open_folder)) every
+//! operation hits the real disk; otherwise the tree is in-memory.
 //!
-//! **Right-click is built in and always on** — the explorer's own context
-//! menus work regardless of the app-wide global-menu switch
-//! ([`set_global_menu_enabled`](crate::set_global_menu_enabled)); that switch
-//! only controls the *fallback* menu on unclaimed surfaces. Widget-specific
-//! always wins.
+//! ```ignore
+//! let tree = create_signal(FileTree::new());
+//! let ex = file_explorer(tree);
+//! ex.set_icon_theme(IconTheme::default_theme());
+//! ex.set_load_filter(|p, is_dir| !(is_dir && p.ends_with("target")));
+//! ex.open_folder("/path/to/project");
+//! ex.watch(Some(2.0));                                // pick up external changes
+//! ex.on_open(|e, mode| open_in_editor(e.path.as_deref(), mode));
+//! column(children![ex.toolbar(), ex.tree()])
+//! ```
 //!
-//! **Keyboard** (every binding is conditional — it declines when it doesn't
-//! apply, so nothing is hijacked): **↑/↓** walk the visible rows (**Shift**
-//! extends), **Mod+↑/↓** move the FOCUS ring without selecting and
-//! **Mod+Space** toggles the focused row in/out (one-by-one multi-select, the
-//! Windows/VSCode pattern), **→** expands / steps into, **←** collapses /
-//! jumps to the parent, **Home/End** jump to the first/last row, **F2**
-//! renames (the editor opens PREFILLED with the current name, stem selected),
-//! **Delete** deletes, **Mod+A** selects all visible (works from idle),
-//! **Mod+C/X/V** copy/cut/paste (cut rows dim; Copy duplicates whole subtrees,
-//! on disk too in filesystem mode), **Escape** cancels a pending cut/copy,
-//! then clears the selection. A focused editor always wins its own keys first.
+//! # Interaction (VS Code's)
 //!
-//! **Controllable from outside** — the widget ships the tree, you ship the
-//! chrome: bind any input to [`filter`](FileExplorer::filter) (live pruning,
-//! matched folders keep their subtree, folders force-expand while filtering,
-//! the keyboard walks exactly the filtered rows), drive
-//! [`selection`](FileExplorer::selection)/[`expanded`](FileExplorer::expanded)/
-//! [`active_row`](FileExplorer::active_row) directly, and use
-//! [`reveal`](FileExplorer::reveal) + [`select_only`](FileExplorer::select_only)
-//! for "Reveal in Explorer", [`expand_all`](FileExplorer::expand_all)/
-//! [`collapse_all`](FileExplorer::collapse_all), [`open_folder`](FileExplorer::open_folder)/
-//! [`detach_folder`](FileExplorer::detach_folder).
+//! Click selects and **previews** a file (folders toggle); double-click /
+//! **Enter** opens; **Space** previews; **Ctrl/Cmd-click** toggles,
+//! **Shift-click** ranges, **Mod+A** selects all, **Shift+↑/↓** extend;
+//! **←/→** collapse/expand, **Home/End**, **Mod+↑/↓** + **Mod+Space** walk and
+//! toggle one by one; **F2** renames inline (prefilled, stem selected,
+//! validated, never overwrites, `a/b/c.txt` creates folders); **Delete**
+//! moves to the trash after a confirmation, **Shift+Delete** deletes
+//! permanently after one; **Mod+C/X/V** copy/cut/paste (`x copy.txt` on
+//! conflicts); **Mod+Z** undoes the last file operation; typing letters jumps
+//! to matching rows. New File / New Folder open an inline name editor and
+//! create on disk only once the name is committed.
 //!
-//! **Icons are themable** ([`set_icon_theme`](FileExplorer::set_icon_theme) —
-//! the hook an IDE's icon theming plugs into): a resolver maps every node to
-//! any bundled tabler glyph + color, per-node [`FsNode::icon`]/[`FsNode::color`]
-//! overrides win, and the defaults show open/closed folder glyphs.
+//! **Drag and drop** — a press only becomes a drag past an 8 px slop (a click
+//! never moves anything), drops need an explicit highlighted target (a folder,
+//! or empty space for the root), moving into the current parent / itself / a
+//! descendant is refused, disk moves ask "Move 'x' into 'y'?"
+//! ([`set_confirm_move`](FileExplorer::set_confirm_move) to supply your own,
+//! [`confirm_moves`](FileExplorer::confirm_moves) to skip) and are undoable;
+//! Ctrl/Alt-drag copies; files dragged in from the OS are copied in.
 //!
-//! Rows carry the standard state set: hover tint, selected (accent), active
-//! (focus ring), cut (dimmed), drop target.
+//! # Context menus
+//!
+//! VS Code's file / folder / empty-space / multi-selection menus are a list
+//! of [`ExplorerMenuItem`]s. App-specific items (Open to the Side, Open With…,
+//! Reveal in File Manager, Open in Integrated Terminal, Find in Folder,
+//! Compare) appear once you plug them:
+//!
+//! ```ignore
+//! ex.set_menu_handler(menu_ids::OPEN_IN_TERMINAL, |t| terminal.cd(t.entries[0].path.clone()));
+//! ex.remove_menu_item(menu_ids::COPY_RELATIVE_PATH);
+//! ex.move_menu_item(menu_ids::DELETE, 0);
+//! ex.insert_menu_item_after(menu_ids::OPEN, ExplorerMenuItem::new("app.run", "Run File", |t| run(t))
+//!     .visible_when(|t| t.entry().is_some_and(|e| e.name.ends_with(".rs")))
+//!     .enabled_when(|_| !busy()));
+//! ```
+//!
+//! # Controls for developers
+//!
+//! Every capability is switchable ([`ExplorerCapabilities`]), with a
+//! read-only preset; disabled actions grey out in the menus, their shortcuts
+//! decline and the API refuses them ([`ExplorerError::NotAllowed`]) before
+//! touching the disk. Per-item predicates and before/after hooks cover the
+//! rest:
+//!
+//! ```ignore
+//! let ex = file_explorer(tree).read_only();                       // browse/select/open only
+//! let ex = file_explorer(tree)
+//!     .capabilities(ExplorerCapabilities::all().allow_delete(false).show_hidden(false));
+//! ex.can_rename(|e| e.name != "Cargo.toml");
+//! ex.can_drop_into(|target, _| target.is_none_or(|t| t.name != "vendor"));
+//! ex.on_before_delete(|entries, permanent| !permanent || confirm_twice(entries));
+//! ex.on_after_op(|op| log::info!("{op:?}"));
+//! ```
+//!
+//! # Look
+//!
+//! Icons follow VS Code icon themes ([`IconTheme`]: file name > compound
+//! extension > extension > language id > default; folder name with open/closed
+//! icons > root > default), any icon can be a glyph, an image or a widget
+//! ([`ExplorerIcon`]), and per-path overrides
+//! ([`set_path_icon`](FileExplorer::set_path_icon)) plus a resolver that wins
+//! over everything ([`set_icon_resolver`](FileExplorer::set_icon_resolver))
+//! exist for custom logic. Every colour and size comes from [`ExplorerStyle`]
+//! tokens derived from the Pebbles theme (override with
+//! [`set_style`](FileExplorer::set_style)). Rows show app-supplied
+//! [`Decoration`]s (git status, problems, dirty, badges) and can compact
+//! single-child folder chains ([`compact_folders`](FileExplorer::compact_folders)).
+//!
+//! **Right-click is built in** — the explorer's menus work regardless of the
+//! app-wide global-menu switch ([`set_global_menu_enabled`](crate::set_global_menu_enabled)).
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -736,26 +771,52 @@ impl FileExplorer {
         move || self.expanded.set(HashSet::new())
     }
 
-    /// The default action row: New File · New Folder · Collapse All. Optional —
-    /// compose your own buttons from the action closures wherever you want.
+    /// The default action row (VS Code's explorer title bar): New File ·
+    /// New Folder · Refresh (filesystem mode) · Collapse All. Buttons for
+    /// switched-off capabilities are disabled. Optional — compose your own
+    /// from the action closures wherever you want.
     pub fn toolbar(self) -> impl IntoWidget {
-        row(children![
+        let caps = self.caps.get();
+        let mut kids: Vec<AnyWidget> = vec![
             icon_button(tabler::FILE_PLUS)
                 .variant(ButtonVariant::Ghost)
                 .size(15.0)
-                .on_pressed(self.new_file()),
-            gap_w(2.0),
+                .label("New File…")
+                .disabled(!caps.allows(Capability::CreateFile))
+                .on_pressed(self.new_file())
+                .into_widget(),
+            gap_w(2.0).into_widget(),
             icon_button(tabler::FOLDER_PLUS)
                 .variant(ButtonVariant::Ghost)
                 .size(15.0)
-                .on_pressed(self.new_folder()),
-            gap_w(2.0),
+                .label("New Folder…")
+                .disabled(!caps.allows(Capability::CreateFolder))
+                .on_pressed(self.new_folder())
+                .into_widget(),
+            gap_w(2.0).into_widget(),
+        ];
+        if self.fs_root.get().is_some() {
+            kids.push(
+                icon_button(tabler::REFRESH)
+                    .variant(ButtonVariant::Ghost)
+                    .size(15.0)
+                    .label("Refresh Explorer")
+                    .on_pressed(move || {
+                        self.refresh();
+                    })
+                    .into_widget(),
+            );
+            kids.push(gap_w(2.0).into_widget());
+        }
+        kids.push(
             icon_button(tabler::FOLD)
                 .variant(ButtonVariant::Ghost)
                 .size(15.0)
-                .on_pressed(self.collapse_all()),
-        ])
-        .main_axis_size(MainAxisSize::Min)
+                .label("Collapse Folders in Explorer")
+                .on_pressed(self.collapse_all())
+                .into_widget(),
+        );
+        row(kids).main_axis_size(MainAxisSize::Min)
     }
 
     /// The tree: select (Ctrl/Shift multi), expand, inline rename, context
