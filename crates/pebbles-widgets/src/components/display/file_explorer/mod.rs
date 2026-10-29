@@ -243,6 +243,27 @@ pub struct FileExplorer {
     pub(super) filter: Signal<String>,
     /// Filesystem mode: which disk entries to load (see [`set_load_filter`](Self::set_load_filter)).
     pub(super) load_filter: Signal<Option<LoadFilter>>,
+    /// The rows' scroll viewport (reveal = minimal scroll to a row).
+    pub(super) scroll: Signal<pebbles_render::ScrollHandle>,
+    /// The measured height of one row (all rows share the style), from the
+    /// last layout; `0` until laid out.
+    pub(super) row_extent: Signal<f64>,
+    /// Bumped by every reveal so the tree re-lays out and the viewport applies
+    /// the queued scroll even when nothing else changed.
+    pub(super) scroll_req: Signal<u64>,
+}
+
+/// The scrollbar the rows' viewport paints (the default overlay bar).
+fn rows_scrollbar() -> pebbles_render::ScrollbarStyle {
+    pebbles_render::ScrollbarStyle::default()
+}
+
+/// The right-edge gutter row CONTENT keeps clear of the overlay scrollbar, so
+/// trailing badges never sit under it (VS Code insets its decorations the same
+/// way). The row background still spans the full width.
+pub(super) fn scrollbar_gutter() -> f64 {
+    let sb = rows_scrollbar();
+    sb.thickness + 2.0 * sb.margin
 }
 
 /// How far (logical px) the pointer must travel from the press before a row
@@ -344,6 +365,9 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         active: create_signal(None),
         filter: create_signal(String::new()),
         load_filter: create_signal(None),
+        scroll: create_signal(pebbles_render::ScrollHandle::new()),
+        row_extent: create_signal(0.0),
+        scroll_req: create_signal(0),
     };
     // `file_explorer` runs on every render of its component; build the default
     // menu only the first time so app customizations survive re-renders.
@@ -646,6 +670,7 @@ impl FileExplorer {
         if self.selected.peek().as_slice() != [id] {
             self.select_only(id);
         }
+        self.scroll_into_view(id);
         Some(id)
     }
 
@@ -659,8 +684,34 @@ impl FileExplorer {
         }
     }
 
+    /// Scroll the rows' viewport the MINIMUM amount that shows row `id` whole
+    /// (VS Code's reveal: nothing moves when it is already fully visible; a row
+    /// above the viewport aligns to the top, one below to the bottom). A no-op
+    /// for a row that isn't on screen (collapsed away or filtered out).
+    pub fn scroll_into_view(&self, id: u64) {
+        let Some(idx) = self.visible_ids().iter().position(|&v| v == id) else { return };
+        let mut h = self.row_extent.peek();
+        if h <= 0.0 {
+            // Not laid out yet: estimate from the style.
+            let st = self.style();
+            h = st.row_height.unwrap_or(st.font_size * 1.4 + st.row_padding.top + st.row_padding.bottom);
+        }
+        let top = idx as f64 * h;
+        let sc = self.scroll.peek().clone();
+        sc.ensure_visible(top, top + h, 0.0);
+        self.scroll_req.update(|n| *n = n.wrapping_add(1));
+    }
+
+    /// Reveal the active (keyboard-focus) row — see [`scroll_into_view`](Self::scroll_into_view).
+    pub(super) fn scroll_active_into_view(&self) {
+        if let Some(id) = self.active() {
+            self.scroll_into_view(id);
+        }
+    }
+
     fn start_rename_for(&self, id: u64) {
         self.select_only(id);
+        self.scroll_into_view(id);
         // Prefill the editor with the CURRENT name (the standard rename UX —
         // the field selects the stem so typing replaces it, and arrow keys let
         // you edit in place instead of retyping the whole name).
@@ -865,6 +916,7 @@ impl FileExplorer {
 
     fn tree_inner(self) -> AnyWidget {
         let model = self.tree.get();
+        let _ = self.scroll_req.get(); // re-lay out on a reveal request
         let q = self.filter.get().trim().to_lowercase();
         let mut kids: Vec<AnyWidget> = Vec::new();
         for node in &model.root {
@@ -890,7 +942,27 @@ impl FileExplorer {
         // the viewport shrink-wraps the rows.
         let rows =
             column(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min);
-        let body = crate::widgets::SingleChildScrollView::vertical(rows).fill_viewport(true);
+        // Every row shares the style, so one row = the rows' natural height /
+        // the visible count (what `scroll_into_view` multiplies by the index).
+        // Measured inside a loose column so `fill_viewport` can't inflate it.
+        let n_rows = self.visible_ids().len();
+        let row_extent = self.row_extent;
+        let rows = crate::widgets::extent_probe(
+            pebbles_foundation::Axis::Vertical,
+            move |h| {
+                if n_rows > 0 {
+                    row_extent.set(h / n_rows as f64);
+                }
+            },
+            rows,
+        );
+        let rows = column(vec![rows.into_widget()])
+            .cross_axis_alignment(CrossAxisAlignment::Stretch)
+            .main_axis_size(MainAxisSize::Min);
+        let body = crate::widgets::SingleChildScrollView::vertical(rows)
+            .fill_viewport(true)
+            .scrollbar(rows_scrollbar())
+            .controller(self.scroll.peek().clone());
 
         // Empty-space right-click → New File / New Folder; empty-space drop
         // (while dragging) → move to the root.

@@ -105,7 +105,10 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     let content =
         row(children![twistie, gap_w(4.0), glyph, gap_w(6.0), Expanded::new(label), gap_w(4.0), badge])
             .main_axis_size(MainAxisSize::Min);
-    let mut inner = Container::new().padding(st.row_padding).child(content);
+    // Keep the content (the trailing badge above all) clear of the overlay scrollbar.
+    let mut pad = st.row_padding;
+    pad.right += scrollbar_gutter();
+    let mut inner = Container::new().padding(pad).child(content);
     if let Some(h) = st.row_height {
         inner = inner.height(h).alignment(pebbles_foundation::Alignment::CENTER_LEFT);
     }

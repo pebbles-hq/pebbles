@@ -776,6 +776,9 @@ impl RenderObject for RenderScroll {
             && let Some(t) = ctrl.sync(self.offset, self.max_offset, self.viewport_extent)
         {
             let t = t.clamp(0.0, self.max_offset);
+            // Report the APPLIED offset, so a second request before the next
+            // layout measures from where the view now is (not one frame stale).
+            ctrl.0.borrow_mut().offset = t;
             let delta = t - self.offset;
             self.offset = t;
             self.target = t;
@@ -799,6 +802,14 @@ impl RenderObject for RenderScroll {
     }
 
     fn paint(&self, cx: &mut PaintCx<'_>, offset: Offset) {
+        // Wheel/drag/fling moves can repaint without a re-layout: keep the
+        // controller's offset current so `ensure_visible` measures from the
+        // position actually on screen.
+        if let Some(ctrl) = &self.controller
+            && let Ok(mut st) = ctrl.0.try_borrow_mut()
+        {
+            st.offset = self.offset;
+        }
         let size = cx.size();
         let Some(child) = cx.children().first().copied() else { return };
 
