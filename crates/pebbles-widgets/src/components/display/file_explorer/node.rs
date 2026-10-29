@@ -64,8 +64,7 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     };
     // Glyph resolution: per-node override → installed icon theme → the
     // defaults (open/closed folder, plain file).
-    let (glyph_data, glyph_color) = explorer.resolved_icon(&p.node, expanded);
-    let glyph = icon(glyph_data).size(16.0).color(glyph_color.unwrap_or(dim));
+    let glyph = explorer.resolved_icon(&p.node, expanded).build(16.0, dim);
 
     let label: AnyWidget = if renaming {
         component_props(

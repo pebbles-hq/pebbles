@@ -689,27 +689,122 @@ fn icon_theme_resolution_priority() {
     let folder = t.node(0).expect("src").clone();
     let file = t.node(1).expect("main.rs").clone();
 
+    use pebbles_widgets::{ExplorerIcon, IconTheme};
+    let g = |d| ExplorerIcon::Glyph(d, None);
     // Defaults: closed/open folder glyphs differ; plain file glyph.
-    assert_eq!(ex().resolved_icon(&folder, false).0, IconKind::Folder.data());
-    assert_eq!(ex().resolved_icon(&folder, true).0, tabler::FOLDER_OPEN, "open folders get their own glyph");
-    assert_eq!(ex().resolved_icon(&file, false).0, IconKind::File.data());
+    assert_eq!(ex().resolved_icon(&folder, false), g(IconKind::Folder.data()));
+    assert_eq!(ex().resolved_icon(&folder, true), g(tabler::FOLDER_OPEN), "open folders get their own glyph");
+    assert_eq!(ex().resolved_icon(&file, false), g(IconKind::File.data()));
 
-    // An installed theme wins over the defaults; returning None falls through.
-    ex().set_icon_theme(|n, _open| {
-        n.name.ends_with(".rs").then_some((tabler::FILE_CODE, Some(palette::WHITE)))
-    });
-    assert_eq!(ex().resolved_icon(&file, false), (tabler::FILE_CODE, Some(palette::WHITE)));
-    assert_eq!(ex().resolved_icon(&folder, false).0, IconKind::Folder.data(), "None keeps the default");
+    // An installed theme wins over the defaults; unset slots fall through.
+    ex().set_icon_theme(
+        IconTheme::new().file_extension("rs", ExplorerIcon::colored(tabler::FILE_CODE, palette::WHITE)),
+    );
+    assert_eq!(ex().resolved_icon(&file, false), ExplorerIcon::colored(tabler::FILE_CODE, palette::WHITE));
+    assert_eq!(ex().resolved_icon(&folder, false), g(IconKind::Folder.data()), "unset keeps the default");
 
-    // A per-node override wins over everything.
+    // A per-node override wins over the theme.
     let mut starred = file.clone();
     starred.icon = Some(tabler::STAR);
     starred.color = Some(palette::BLACK);
-    assert_eq!(ex().resolved_icon(&starred, false), (tabler::STAR, Some(palette::BLACK)));
+    assert_eq!(ex().resolved_icon(&starred, false), ExplorerIcon::colored(tabler::STAR, palette::BLACK));
+
+    // The resolver wins over everything.
+    ex().set_icon_resolver(|e, _| (e.name == "main.rs").then(|| ExplorerIcon::glyph(tabler::BUG)));
+    assert_eq!(ex().resolved_icon(&starred, false), g(tabler::BUG));
+    ex().clear_icon_resolver();
 
     // Clearing restores the defaults.
     ex().clear_icon_theme();
-    assert_eq!(ex().resolved_icon(&file, false).0, IconKind::File.data());
+    assert_eq!(ex().resolved_icon(&file, false), g(IconKind::File.data()));
+}
+
+#[test]
+fn icon_theme_precedence_matches_vs_code() {
+    use pebbles_render::tabler as t;
+    use pebbles_widgets::{ExplorerIcon, IconTheme};
+    let gl = ExplorerIcon::glyph;
+    let th = IconTheme::new()
+        .file(gl(t::FILE))
+        .folder(gl(t::FOLDER), Some(gl(t::FOLDER_OPEN)))
+        .root_folder(gl(t::FOLDER_ROOT), Some(gl(t::FOLDER_UP)))
+        .file_name("Cargo.toml", gl(t::PACKAGE))
+        .file_extension("toml", gl(t::SETTINGS))
+        .file_extension("ts", gl(t::BRAND_TYPESCRIPT))
+        .file_extension("d.ts", gl(t::FILE_TYPE_TS))
+        .file_extension("test.ts", gl(t::TEST_PIPE))
+        .file_extension("tar.gz", gl(t::FILE_ZIP))
+        .file_extension("gz", gl(t::ARCHIVE))
+        .language("rust", gl(t::BRAND_RUST))
+        .folder_name("src", gl(t::FOLDER_CODE), Some(gl(t::FOLDERS)))
+        .folder_name("tests", gl(t::FLASK), None);
+    let file = |n: &str| th.resolve(n, false, false, false);
+    // file name > extension (case-insensitive like VS Code)
+    assert_eq!(file("Cargo.toml"), Some(gl(t::PACKAGE)));
+    assert_eq!(file("CARGO.TOML"), Some(gl(t::PACKAGE)));
+    assert_eq!(file("other.toml"), Some(gl(t::SETTINGS)));
+    // longest compound extension first
+    assert_eq!(file("index.d.ts"), Some(gl(t::FILE_TYPE_TS)));
+    assert_eq!(file("app.test.ts"), Some(gl(t::TEST_PIPE)));
+    assert_eq!(file("app.ts"), Some(gl(t::BRAND_TYPESCRIPT)));
+    assert_eq!(file("x.tar.gz"), Some(gl(t::FILE_ZIP)));
+    assert_eq!(file("x.gz"), Some(gl(t::ARCHIVE)));
+    assert_eq!(file("APP.TS"), Some(gl(t::BRAND_TYPESCRIPT)));
+    // extension > language id > default
+    assert_eq!(file("main.rs"), Some(gl(t::BRAND_RUST)), "language id via the built-in map");
+    assert_eq!(file("notes.unknown"), Some(gl(t::FILE)));
+    assert_eq!(file(".env"), Some(gl(t::FILE)), "a leading dot is not an extension");
+    // custom language resolver
+    let th2 = th.clone().language_resolver(|n| n.ends_with(".rsx").then(|| "rust".to_string()));
+    assert_eq!(th2.resolve("view.rsx", false, false, false), Some(gl(t::BRAND_RUST)));
+    // folders: name (expanded variant) > root > default
+    assert_eq!(th.resolve("src", true, false, false), Some(gl(t::FOLDER_CODE)));
+    assert_eq!(th.resolve("SRC", true, true, false), Some(gl(t::FOLDERS)), "expanded variant");
+    assert_eq!(th.resolve("tests", true, true, false), Some(gl(t::FLASK)), "no expanded variant → closed");
+    assert_eq!(th.resolve("proj", true, false, true), Some(gl(t::FOLDER_ROOT)));
+    assert_eq!(th.resolve("proj", true, true, true), Some(gl(t::FOLDER_UP)));
+    assert_eq!(th.resolve("other", true, false, false), Some(gl(t::FOLDER)));
+    assert_eq!(th.resolve("other", true, true, false), Some(gl(t::FOLDER_OPEN)));
+    // The built-in theme covers the common cases.
+    let d = IconTheme::default_theme();
+    for n in [
+        "Cargo.toml",
+        "package.json",
+        "README.md",
+        "LICENSE",
+        "Dockerfile",
+        ".gitignore",
+        "a.rs",
+        "a.py",
+        "a.go",
+        "a.png",
+    ] {
+        assert!(
+            d.resolve(n, false, false, false).is_some_and(|i| matches!(i, ExplorerIcon::Glyph(_, Some(_)))),
+            "{n} coloured"
+        );
+    }
+    for n in ["src", "tests", "docs", "target", "node_modules", ".github"] {
+        assert!(d.resolve(n, true, false, false).is_some(), "{n}");
+    }
+}
+
+#[test]
+fn per_path_override_and_widget_icons() {
+    use pebbles_render::tabler as t;
+    use pebbles_widgets::{ExplorerIcon, IconTheme};
+    let (dir, tree, ex) = sample_project("pathicon");
+    ex.set_icon_theme(IconTheme::default_theme());
+    let main = tree.peek().node(id_of(tree, "src/main.rs")).cloned().unwrap();
+    assert!(matches!(ex.resolved_icon(&main, false), ExplorerIcon::Glyph(d, _) if d == t::BRAND_RUST));
+    ex.set_path_icon(dir.join("src/main.rs"), Some(ExplorerIcon::glyph(t::STAR)));
+    assert_eq!(ex.resolved_icon(&main, false), ExplorerIcon::glyph(t::STAR));
+    let w = ExplorerIcon::widget(|size| pebbles_widgets::gap_w(size).into_widget());
+    ex.set_path_icon(dir.join("src/main.rs"), Some(w.clone()));
+    assert_eq!(ex.resolved_icon(&main, false), w);
+    ex.set_path_icon(dir.join("src/main.rs"), None);
+    assert!(matches!(ex.resolved_icon(&main, false), ExplorerIcon::Glyph(d, _) if d == t::BRAND_RUST));
+    std::fs::remove_dir_all(&dir).ok();
 }
 
 // ---------------------------------------------------------------------------

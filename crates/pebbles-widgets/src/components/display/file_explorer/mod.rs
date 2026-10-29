@@ -79,12 +79,14 @@ use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{Signal, animated, component_props, create_shortcut_if, create_signal};
 
 mod caps;
+mod icons;
 mod keys;
 mod node;
 mod ops;
 mod tree;
 
 pub use caps::{Capability, ExplorerCapabilities, ExplorerEntry, ExplorerError, ExplorerOp};
+pub use icons::{ExplorerIcon, IconTheme, LanguageResolver, language_of};
 #[cfg(feature = "file-dialogs")]
 pub use tree::pick_folder;
 pub use tree::{FileTree, FsKind, FsNode, natural_cmp};
@@ -96,13 +98,10 @@ use tree::{copy_path, read_dir};
 // The explorer controller
 // ---------------------------------------------------------------------------
 
-/// An icon theme: resolves a node (+ whether it renders expanded) to a glyph
-/// and an optional color. Return `None` to fall through to the default
-/// folder/file look for that node. Installed with
-/// [`FileExplorer::set_icon_theme`] — the hook an IDE's icon theming plugs into.
 /// An installed load filter (see [`FileExplorer::set_load_filter`]).
 pub(super) type LoadFilter = Rc<dyn Fn(&Path, bool) -> bool>;
-pub(super) type IconTheme = Rc<dyn Fn(&FsNode, bool) -> Option<(IconData, Option<Color>)>>;
+/// An installed icon resolver (see [`FileExplorer::set_icon_resolver`]).
+pub(super) type IconResolver = Rc<dyn Fn(&ExplorerEntry, bool) -> Option<ExplorerIcon>>;
 
 /// Whether `n`'s own name matches the (lowercased) filter query.
 pub(super) fn name_matches(n: &FsNode, q: &str) -> bool {
@@ -175,7 +174,11 @@ pub struct FileExplorer {
     /// The explorer clipboard: node ids + copy/cut, filled by Mod+C/X and the menus.
     pub(super) clipboard: Signal<Option<(Vec<u64>, ClipMode)>>,
     /// The installed icon theme, if any (see [`set_icon_theme`](Self::set_icon_theme)).
-    pub(super) icon_theme: Signal<Option<IconTheme>>,
+    pub(super) icon_theme: Signal<Option<Rc<IconTheme>>>,
+    /// The icon resolver that wins over everything (see [`set_icon_resolver`](Self::set_icon_resolver)).
+    pub(super) icon_resolver: Signal<Option<IconResolver>>,
+    /// Per-path icon overrides.
+    pub(super) path_icons: Signal<std::collections::HashMap<PathBuf, ExplorerIcon>>,
     /// The keyboard-focus row (the ring) — independent of the selection, so
     /// Mod+↑/↓ can walk rows without selecting (toggle with Mod+Space).
     pub(super) active: Signal<Option<u64>>,
@@ -271,6 +274,8 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         pending_create: create_signal(None),
         clipboard: create_signal(None),
         icon_theme: create_signal(None),
+        icon_resolver: create_signal(None),
+        path_icons: create_signal(std::collections::HashMap::new()),
         active: create_signal(None),
         filter: create_signal(String::new()),
         load_filter: create_signal(None),
@@ -288,21 +293,6 @@ impl FileExplorer {
     /// The node being inline-renamed, if any (double-click / F2 / menu Rename).
     pub fn renaming(&self) -> Signal<Option<u64>> {
         self.renaming
-    }
-
-    /// Install an icon theme — the VSCode-style theming hook. `f` maps a node
-    /// (+ whether it renders expanded) to a glyph and optional color; return
-    /// `None` per node to keep the default look. Per-node [`FsNode::icon`]
-    /// overrides always win over the theme. Rows re-render on theme change.
-    ///
-    /// ```ignore
-    /// explorer.set_icon_theme(|n, _open| match n.name.rsplit('.').next() {
-    ///     Some("rs") => Some((tabler::FILE_CODE, None)),
-    ///     _ => None,
-    /// });
-    /// ```
-    pub fn set_icon_theme(&self, f: impl Fn(&FsNode, bool) -> Option<(IconData, Option<Color>)> + 'static) {
-        self.icon_theme.set(Some(Rc::new(f)));
     }
 
     /// Install a filesystem load filter — the ignore hook (VS Code `files.exclude`).
@@ -324,31 +314,6 @@ impl FileExplorer {
     /// Remove the load filter (load every entry again on subsequent reads).
     pub fn clear_load_filter(&self) {
         self.load_filter.set(None);
-    }
-
-    /// Remove the installed icon theme (back to the default folder/file glyphs).
-    pub fn clear_icon_theme(&self) {
-        self.icon_theme.set(None);
-    }
-
-    /// Resolve a node's glyph: per-node override → icon theme → the defaults
-    /// (open/closed folder, plain file). A `None` color means "the theme's
-    /// muted foreground".
-    pub fn resolved_icon(&self, node: &FsNode, expanded: bool) -> (IconData, Option<Color>) {
-        if let Some(d) = node.icon {
-            return (d, node.color);
-        }
-        if let Some(theme) = self.icon_theme.get()
-            && let Some((d, c)) = theme(node, expanded)
-        {
-            return (d, c.or(node.color));
-        }
-        let d = if node.kind == FsKind::Folder {
-            if expanded { tabler::FOLDER_OPEN } else { IconKind::Folder.data() }
-        } else {
-            IconKind::File.data()
-        };
-        (d, node.color)
     }
 
     /// The live filter query — **bind your own input to it**:
