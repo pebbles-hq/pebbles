@@ -1111,3 +1111,32 @@ fn rename_validates_never_clobbers_and_creates_nested_paths_and_undoes() {
     assert_eq!(id_of(tree, "a.txt"), a);
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn refresh_merges_external_changes_keeping_ids_and_watch_polls() {
+    let (dir, tree, ex) = fs_explorer("refresh");
+    std::fs::create_dir(dir.join("src")).unwrap();
+    std::fs::write(dir.join("src/a.rs"), "").unwrap();
+    std::fs::write(dir.join("gone.txt"), "").unwrap();
+    assert!(ex.open_folder(&dir));
+    let src = id_of(tree, "src");
+    ex.toggle_folder(src);
+    let a = id_of(tree, "src/a.rs");
+    assert!(!ex.refresh(), "nothing changed → no-op");
+    std::fs::write(dir.join("src/b.rs"), "").unwrap();
+    std::fs::remove_file(dir.join("gone.txt")).unwrap();
+    assert!(ex.refresh());
+    assert_eq!(id_of(tree, "src"), src, "ids survive");
+    assert_eq!(id_of(tree, "src/a.rs"), a);
+    let _ = id_of(tree, "src/b.rs");
+    assert!(!tree.peek().root.iter().any(|n| n.name == "gone.txt"));
+    // The polling watcher picks up the next change on its own.
+    ex.watch(Some(1.0));
+    std::fs::write(dir.join("new.txt"), "").unwrap();
+    let t0 = 1.0e6;
+    pebbles_core::animation::tick(t0);
+    pebbles_core::animation::tick(t0 + 1.5);
+    assert!(tree.peek().root.iter().any(|n| n.name == "new.txt"), "watcher saw new.txt");
+    ex.watch(None);
+    std::fs::remove_dir_all(&dir).ok();
+}

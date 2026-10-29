@@ -149,6 +149,10 @@ pub struct FileExplorer {
     /// Undo stack of completed file operations (Mod+Z / [`undo`](Self::undo)).
     history: Signal<Vec<FileOp>>,
     hover_key: u64,
+    /// Timer key for the polling file watcher ([`watch`](Self::watch)).
+    watch_key: u64,
+    /// The watcher interval in seconds (`None` = not watching).
+    watch_secs: Signal<Option<f64>>,
     /// Filesystem mode: the directory the explorer mirrors (None = in-memory).
     fs_root: Signal<Option<PathBuf>>,
     /// The last filesystem error, if any (read for toasts/inline hints).
@@ -226,6 +230,8 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         confirm_hook: create_signal(None),
         history: create_signal(Vec::new()),
         hover_key: create_signal(()).raw_id(),
+        watch_key: create_signal(()).raw_id(),
+        watch_secs: create_signal(None),
         fs_root: create_signal(None),
         last_error: create_signal(None),
         rename_buf: create_signal(String::new()),
@@ -381,6 +387,93 @@ impl FileExplorer {
                 false
             }
         }
+    }
+
+    /// Re-read every loaded folder from disk and merge: existing entries keep
+    /// their ids (selection, expansion, open tabs stay put), new ones appear,
+    /// vanished ones go. A no-op when nothing changed. Returns whether the
+    /// tree changed. (The Refresh button; also what [`watch`](Self::watch) polls.)
+    pub fn refresh(&self) -> bool {
+        let Some(root) = self.fs_root.peek().clone() else { return false };
+        let keep = self.load_filter.peek().clone();
+        fn rebuild(dir: &Path, old: &[FsNode], keep: Option<&tree::KeepEntry>) -> Option<Vec<FsNode>> {
+            let fresh = read_dir(dir, keep).ok()?;
+            Some(
+                fresh
+                    .into_iter()
+                    .map(|f| match old.iter().find(|o| o.name == f.name && o.kind == f.kind) {
+                        Some(o) => {
+                            let mut n = o.clone();
+                            if o.kind == FsKind::Folder && o.loaded {
+                                n.children = rebuild(&dir.join(&o.name), &o.children, keep)
+                                    .unwrap_or_else(|| o.children.clone());
+                            }
+                            n
+                        }
+                        // Marked new (ids start at 0, so 0 is a real id).
+                        None => FsNode { id: u64::MAX, ..f },
+                    })
+                    .collect(),
+            )
+        }
+        fn same(a: &[FsNode], b: &[FsNode]) -> bool {
+            a.len() == b.len()
+                && a.iter().zip(b).all(|(x, y)| {
+                    x.id == y.id && x.name == y.name && x.kind == y.kind && same(&x.children, &y.children)
+                })
+        }
+        fn fresh_ids(t: &mut FileTree, nodes: &mut [FsNode]) {
+            for n in nodes {
+                if n.id == u64::MAX {
+                    t.assign_ids(std::slice::from_mut(n));
+                } else {
+                    fresh_ids(t, &mut n.children);
+                }
+            }
+        }
+        let old = self.tree.peek().root.clone();
+        let Some(new) = rebuild(&root, &old, keep.as_deref()) else {
+            self.last_error.set(Some(format!("Could not read {}", root.display())));
+            return false;
+        };
+        if same(&old, &new) {
+            return false;
+        }
+        self.tree.update(|t| {
+            let mut new = new;
+            fresh_ids(t, &mut new);
+            t.root = new;
+        });
+        // Drop selection entries that vanished.
+        let t = self.tree.peek();
+        let sel: Vec<u64> = self.selected.peek().iter().copied().filter(|&i| t.node(i).is_some()).collect();
+        drop(t);
+        if sel.len() != self.selected.peek().len() {
+            self.selected.set(sel);
+        }
+        true
+    }
+
+    /// Watch the opened folder for external changes by polling every `secs`
+    /// seconds ([`refresh`](Self::refresh) — only loaded folders are read, and
+    /// nothing re-renders unless something changed). `None` stops watching.
+    pub fn watch(&self, secs: Option<f64>) {
+        self.watch_secs.set(secs);
+        match secs {
+            Some(s) => self.arm_watch(s),
+            None => pebbles_core::animation::clear_timeout(self.watch_key),
+        }
+    }
+
+    fn arm_watch(&self, secs: f64) {
+        let this = *self;
+        pebbles_core::animation::set_timeout(self.watch_key, secs, move || {
+            // try_peek: the explorer may have unmounted.
+            if let Some(Some(s)) = this.watch_secs.try_peek() {
+                this.refresh();
+                this.arm_watch(s);
+            }
+        });
     }
 
     /// Leave filesystem mode: detach from the disk. The model stays as-is and
