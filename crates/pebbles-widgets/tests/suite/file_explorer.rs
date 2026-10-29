@@ -1940,3 +1940,61 @@ fn menu_customizations_survive_component_re_renders() {
     let ex = RR_EX.with(|c| c.borrow().unwrap());
     assert!(ex.menu_items().iter().any(|i| i.id == "app.x"), "custom item kept across a re-render");
 }
+
+// ---------------------------------------------------------------------------
+// Bounded box: rows are clipped to the explorer's viewport and scroll
+// ---------------------------------------------------------------------------
+
+fn bounded_root() -> impl IntoWidget {
+    let mut t = FileTree::new();
+    for i in 0..30 {
+        t.insert(None, FsKind::File, format!("file{i:02}.txt"));
+    }
+    let ex = file_explorer(create_signal(t));
+    // A 120 px box — far fewer rows fit than the 30 in the tree. Below it, a
+    // sibling the rows must not paint over (the gallery's next heading).
+    column(vec![
+        container().height(120.0).child(ex.tree()).into_widget(),
+        pebbles_widgets::text("below").into_widget(),
+    ])
+    .cross_axis_alignment(CrossAxisAlignment::Stretch)
+}
+
+#[test]
+fn rows_clip_and_scroll_inside_a_bounded_box() {
+    use pebbles_render::RenderScroll;
+    pebbles_widgets::overlay::init();
+    let mut h = pebbles_testing::Harness::new().window(300.0, 400.0);
+    h.mount(bounded_root);
+    h.draw();
+
+    // The tree is a scroll viewport no taller than the box, with content to scroll.
+    let sid = h.find::<RenderScroll>().expect("the explorer rows sit in a scroll viewport");
+    let tree = h.ui.render_tree();
+    let top = tree.absolute_offset(sid).y;
+    let vh = h.size_of(sid).height;
+    assert!(vh <= 120.0 + 0.5, "viewport is bounded by the box, got {vh}");
+    let max = h.object::<RenderScroll>(sid).max_offset;
+    assert!(max > 0.0, "30 rows overflow a 120 px box, so the tree scrolls (max_offset {max})");
+
+    // The heading below starts after the box, not under the overflowing rows.
+    let below = h.find_all_text("below")[0];
+    assert!(tree.absolute_offset(below).y >= top + vh - 0.5, "the next sibling sits below the viewport");
+
+    // The last row is outside the viewport (clipped) before scrolling…
+    let last = h.find_all_text("file29.txt")[0];
+    let y0 = tree.absolute_offset(last).y;
+    assert!(y0 >= top + vh, "the last row starts below the viewport before scrolling ({y0})");
+
+    // …and a wheel scroll over the tree brings it into view.
+    h.scroll(Offset::new(100.0, top + 20.0), 10_000.0);
+    h.settle();
+    h.draw();
+    let tree = h.ui.render_tree();
+    let off = h.object::<RenderScroll>(sid).offset;
+    assert!((off - max).abs() < 1.0, "scrolled to the end (offset {off}, max {max})");
+    let last = h.find_all_text("file29.txt")[0];
+    let y1 = tree.absolute_offset(last).y;
+    let rh = h.size_of(last).height;
+    assert!(y1 >= top - 0.5 && y1 + rh <= top + vh + 0.5, "the last row is inside the viewport ({y1})");
+}

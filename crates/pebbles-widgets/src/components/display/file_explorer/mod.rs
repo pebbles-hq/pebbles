@@ -883,11 +883,14 @@ impl FileExplorer {
             let hint = if q.is_empty() { "Empty — add a file or folder." } else { "No matches." };
             kids.push(Padding::new(EdgeInsets::all(12.0), muted(hint)).into_widget());
         }
-        // Fill the parent's height when it gives one (a panel), shrink-wrap
-        // otherwise — the empty space stays part of the explorer (right-click
-        // there = New File/New Folder; drop there = move to root).
-        let body =
-            column(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Max);
+        // The rows live in a vertical scroll viewport (VS Code): in a bounded box
+        // they are clipped to it and scroll; `fill_viewport` keeps the empty space
+        // below the last row part of the explorer (right-click there = New
+        // File/New Folder; drop there = move to root). With an unbounded height
+        // the viewport shrink-wraps the rows.
+        let rows =
+            column(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min);
+        let body = crate::widgets::SingleChildScrollView::vertical(rows).fill_viewport(true);
 
         // Empty-space right-click → New File / New Folder; empty-space drop
         // (while dragging) → move to the root.

@@ -727,11 +727,11 @@ impl RenderObject for RenderScroll {
             Axis::Vertical => BoxConstraints {
                 min_width: if w_bounded { viewport.width } else { 0.0 },
                 max_width: if w_bounded { viewport.width } else { f64::INFINITY },
-                min_height: if self.fill_viewport { viewport.height } else { 0.0 },
+                min_height: if self.fill_viewport && h_bounded { viewport.height } else { 0.0 },
                 max_height: f64::INFINITY,
             },
             Axis::Horizontal => BoxConstraints {
-                min_width: if self.fill_viewport { viewport.width } else { 0.0 },
+                min_width: if self.fill_viewport && w_bounded { viewport.width } else { 0.0 },
                 max_width: f64::INFINITY,
                 min_height: if h_bounded { viewport.height } else { 0.0 },
                 max_height: if h_bounded { viewport.height } else { f64::INFINITY },
@@ -739,15 +739,22 @@ impl RenderObject for RenderScroll {
         };
         let content = cx.layout_child(child, child_constraints);
 
-        // Along the scroll axis the viewport is the available extent; on the cross axis
-        // it's the bounded viewport size, or the content size when unbounded.
+        // Along the scroll axis the viewport is the available extent — or, when that
+        // axis is unbounded (a scroll view inside a shrink-wrapping column), the
+        // content extent (CSS `height: auto; overflow: auto`: nothing to scroll)
+        // instead of an infinite box. On the cross axis it's the bounded viewport
+        // size, or the content size when unbounded.
         let (viewport_extent, content_extent, cross) = match self.axis {
-            Axis::Vertical => {
-                (viewport.height, content.height, if w_bounded { viewport.width } else { content.width })
-            }
-            Axis::Horizontal => {
-                (viewport.width, content.width, if h_bounded { viewport.height } else { content.height })
-            }
+            Axis::Vertical => (
+                if h_bounded { viewport.height } else { content.height },
+                content.height,
+                if w_bounded { viewport.width } else { content.width },
+            ),
+            Axis::Horizontal => (
+                if w_bounded { viewport.width } else { content.width },
+                content.width,
+                if h_bounded { viewport.height } else { content.height },
+            ),
         };
         self.viewport_extent = viewport_extent;
         self.max_offset = (content_extent - viewport_extent).max(0.0);
