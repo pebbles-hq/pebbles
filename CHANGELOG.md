@@ -6,6 +6,10 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — `Harness::find_text` matches rendered text (Flutter `find.text`)
+`find_text` now also matches any rendered `Text` / rich-text paragraph whose full content is
+exactly the query (previously only accessibility labels). New `Harness::find_all_text`.
+
 ### Added — `FileExplorer::set_load_filter` (ignore hook)
 `set_load_filter(|path, is_dir| bool)` / `clear_load_filter()`: in filesystem mode, entries
 for which the filter returns `false` are skipped when `open_folder` reads the root and when
