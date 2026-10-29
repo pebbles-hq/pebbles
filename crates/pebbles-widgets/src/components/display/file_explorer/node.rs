@@ -18,8 +18,7 @@ pub(super) struct NodeProps {
 /// multi), inline rename, a context menu, and drag-to-move (a selection drags
 /// together; folders highlight as drop targets and expand on hover-hold).
 pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
-    let th = theme();
-    let c = th.colors;
+    let st = p.explorer.style();
     let explorer = p.explorer;
     let node = &p.node;
     let is_folder = node.kind == FsKind::Folder;
@@ -38,33 +37,33 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     // A cut-pending row renders dimmed (like VSCode) until pasted or cancelled.
     let cut_pending =
         matches!(explorer.clipboard.get(), Some((ref ids, ClipMode::Cut)) if ids.contains(&node.id));
+    // The selection reads "inactive" while another input (an editor, a field)
+    // holds the keyboard — VS Code's list.inactiveSelection.
+    let inactive = pebbles_core::focus::focus_signal().get().is_some();
     let hovered = create_signal(false);
 
-    // Row background: FULL accent for selection (a subtle mix reads as "nothing
-    // is selected"), hover tint on top, primary tint for the drop target.
     let hv = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12);
-    let mut bg = c.background;
-    if selected {
-        bg = c.accent;
-    }
+    let (sel_bg, sel_fg) = if inactive {
+        (st.selection_inactive_bg, st.selection_inactive_fg)
+    } else {
+        (st.selection_active_bg, st.selection_active_fg)
+    };
+    let mut bg = if selected { sel_bg } else { st.row_bg };
     if drop_target {
-        bg = mix(bg, c.primary, 0.18);
+        bg = mix(bg, st.drop_target_bg, st.drop_target_strength);
     }
-    bg = mix(bg, c.foreground, 0.05 * hv as f32);
+    bg = mix(bg, st.hover_bg, st.hover_strength * hv as f32);
 
-    let indent = gap_w(p.depth as f64 * 14.0);
-    let dim = if selected { c.accent_foreground } else { c.muted_foreground };
+    let dim = if selected { sel_fg } else { st.icon_tint };
     let twistie: AnyWidget = if is_folder {
         icon(if expanded { IconKind::ChevronDown } else { IconKind::ChevronRight })
-            .size(14.0)
+            .size(st.twistie_size)
             .color(dim)
             .into_widget()
     } else {
-        gap_w(14.0).into_widget()
+        gap_w(st.twistie_size).into_widget()
     };
-    // Glyph resolution: per-node override → installed icon theme → the
-    // defaults (open/closed folder, plain file).
-    let glyph = explorer.resolved_icon(&p.node, expanded).build(16.0, dim);
+    let glyph = explorer.resolved_icon(&p.node, expanded).build(st.icon_size, dim);
 
     let label: AnyWidget = if renaming {
         component_props(
@@ -73,32 +72,51 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
         )
         .into_widget()
     } else {
-        text(node.name.clone())
-            .size(13.5)
-            .color(if dragged || cut_pending {
-                c.muted_foreground
-            } else if selected {
-                c.accent_foreground
-            } else {
-                c.foreground
-            })
-            .into_widget()
+        let mut t = text(node.name.clone()).size(st.font_size as f32).color(if dragged || cut_pending {
+            st.muted_text
+        } else if selected {
+            sel_fg
+        } else {
+            st.text
+        });
+        if let Some(f) = &st.font_family {
+            t = t.font_family(f.clone());
+        }
+        t.into_widget()
     };
 
-    let content = row(children![indent, twistie, gap_w(4.0), glyph, gap_w(6.0), Expanded::new(label)])
+    let content = row(children![twistie, gap_w(4.0), glyph, gap_w(6.0), Expanded::new(label)])
         .main_axis_size(MainAxisSize::Min);
-    // Row padding follows the design language's density — it also sets the row
-    // height, since the row sizes to content. (The focus-ring border keeps its
-    // fixed width — a focus indicator, not a design-language border.)
-    let row_pad = th.pad(6.0, 3.0);
+    let mut inner = Container::new().padding(st.row_padding).child(content);
+    if let Some(h) = st.row_height {
+        inner = inner.height(h).alignment(pebbles_foundation::Alignment::CENTER_LEFT);
+    }
+    // Indent, with VS Code's indent guides painted behind the row (one
+    // centred line per depth level, full row height).
+    let row_line = row(children![gap_w(p.depth as f64 * st.indent), Expanded::new(inner)]);
+    let line: AnyWidget = match st.indent_guide {
+        Some(gc) if p.depth > 0 => {
+            let (depth, step) = (p.depth, st.indent);
+            let guides = crate::widgets::canvas(move |cv| {
+                let h = cv.size().height;
+                for d in 0..depth {
+                    let x = (d as f64 + 0.5) * step;
+                    cv.stroke_line(Offset::new(x, 0.0), Offset::new(x, h), 1.0, gc);
+                }
+            });
+            crate::widgets::stack(children![crate::widgets::Positioned::fill(guides), row_line]).into_widget()
+        }
+        _ => row_line.into_widget(),
+    };
     let body = if active && !renaming {
-        // The active row carries the focus ring (painted inside — no layout shift).
+        // The active row carries the focus outline (painted inside — no layout shift).
         Container::new()
-            .decoration(BoxDecoration::new().color(bg).border(Border::new(c.ring, 1.0)))
-            .padding(row_pad)
-            .child(content)
+            .decoration(
+                BoxDecoration::new().color(bg).border(Border::new(st.focus_outline, st.focus_outline_width)),
+            )
+            .child(line)
     } else {
-        Container::new().color(bg).padding(row_pad).child(content)
+        Container::new().color(bg).child(line)
     };
 
     // Renaming: no row gestures — the editor owns the input.

@@ -1483,3 +1483,40 @@ fn before_hooks_veto_and_after_events_fire() {
     std::fs::remove_dir_all(&dir).ok();
     std::fs::remove_dir_all(dir.with_extension("trash")).ok();
 }
+
+#[test]
+fn style_tokens_derive_from_the_theme_follow_light_dark_and_can_be_overridden() {
+    use pebbles_widgets::{ExplorerStyle, Theme};
+    let tree = create_signal(FileTree::new());
+    let ex = file_explorer(tree);
+    Theme::light().make_current();
+    let light = ex.style();
+    assert_eq!(light, ExplorerStyle::from_theme(&Theme::light()));
+    assert_eq!(light.selection_active_bg, Theme::light().colors.accent);
+    Theme::dark().make_current();
+    let dark = ex.style();
+    assert_ne!(light.row_bg, dark.row_bg, "re-derived for dark");
+    assert_ne!(light.git_modified, dark.git_modified);
+    // App override, still a function of the theme (so it stays live).
+    ex.set_style(|th| ExplorerStyle { indent: 9.0, row_height: Some(30.0), ..ExplorerStyle::from_theme(th) });
+    assert_eq!(ex.style().indent, 9.0);
+    assert_eq!(ex.style().row_bg, Theme::dark().colors.background);
+    Theme::light().make_current();
+    assert_eq!(ex.style().row_bg, Theme::light().colors.background, "override follows the theme");
+    ex.clear_style();
+    assert_eq!(ex.style().indent, 14.0);
+}
+
+#[test]
+fn fixed_row_height_token_lays_rows_out_at_that_height() {
+    use pebbles_widgets::ExplorerStyle;
+    let (mut ui, mut env, dir, ex) = mount_fs("rowh");
+    ex.set_style(|th| ExplorerStyle { row_height: Some(40.0), ..ExplorerStyle::from_theme(th) });
+    let win = Size::new(400.0, 300.0);
+    frame(&mut ui, &mut env, win);
+    let rows = row_points(&mut ui);
+    assert!(rows.len() >= 3);
+    let gap = rows[1].y - rows[0].y;
+    assert!((gap - 40.0).abs() < 2.5, "rows are 40px apart: {rows:?}");
+    std::fs::remove_dir_all(&dir).ok();
+}

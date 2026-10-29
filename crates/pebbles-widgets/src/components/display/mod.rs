@@ -27,8 +27,8 @@ pub use empty::{Empty, empty};
 pub use file_explorer::pick_folder;
 pub use file_explorer::{
     Capability, ConfirmMoveFn, ExplorerCapabilities, ExplorerEntry, ExplorerError, ExplorerIcon, ExplorerOp,
-    FileExplorer, FileTree, FsKind, FsNode, IconTheme, LanguageResolver, MoveRequest, file_explorer,
-    language_of, natural_cmp,
+    ExplorerStyle, FileExplorer, FileTree, FsKind, FsNode, IconTheme, LanguageResolver, MoveRequest,
+    file_explorer, language_of, natural_cmp,
 };
 pub use grid_tile::{GridTile, GridTileBar, grid_tile, grid_tile_bar};
 pub use hover_card::{HoverCard, hover_card};

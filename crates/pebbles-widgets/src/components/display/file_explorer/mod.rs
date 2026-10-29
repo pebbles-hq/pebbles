@@ -83,10 +83,12 @@ mod icons;
 mod keys;
 mod node;
 mod ops;
+mod style;
 mod tree;
 
 pub use caps::{Capability, ExplorerCapabilities, ExplorerEntry, ExplorerError, ExplorerOp};
 pub use icons::{ExplorerIcon, IconTheme, LanguageResolver, language_of};
+pub use style::ExplorerStyle;
 #[cfg(feature = "file-dialogs")]
 pub use tree::pick_folder;
 pub use tree::{FileTree, FsKind, FsNode, natural_cmp};
@@ -177,6 +179,8 @@ pub struct FileExplorer {
     pub(super) icon_theme: Signal<Option<Rc<IconTheme>>>,
     /// The icon resolver that wins over everything (see [`set_icon_resolver`](Self::set_icon_resolver)).
     pub(super) icon_resolver: Signal<Option<IconResolver>>,
+    /// The style override (see [`set_style`](Self::set_style)).
+    pub(super) style_fn: Signal<Option<style::StyleFn>>,
     /// Per-path icon overrides.
     pub(super) path_icons: Signal<std::collections::HashMap<PathBuf, ExplorerIcon>>,
     /// The keyboard-focus row (the ring) — independent of the selection, so
@@ -275,6 +279,7 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         clipboard: create_signal(None),
         icon_theme: create_signal(None),
         icon_resolver: create_signal(None),
+        style_fn: create_signal(None),
         path_icons: create_signal(std::collections::HashMap::new()),
         active: create_signal(None),
         filter: create_signal(String::new()),
