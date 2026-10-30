@@ -112,7 +112,7 @@ pub fn layout_for_test(
     let spans: Vec<style::SpanSpec> = spans.iter().map(style::SpanSpec::from).collect();
     let wrap = style.soft_wrap && width.is_some();
     let params = layout::LayoutParams {
-        width: if wrap { width } else { None },
+        width: if wrap || style.ellipsis { width } else { None },
         wrap,
         align: Some(style::to_cosmic_align(
             style.align,
