@@ -30,6 +30,10 @@ use pebbles_core::{
     use_bounds,
 };
 
+/// How far (logical px) a press must travel before a [`draggable`] starts dragging —
+/// the same slop as the file explorer's drag-and-drop.
+const DRAG_SLOP: f64 = 8.0;
+
 /// A type-erased drag payload (downcast to the target's type on accept).
 type DragData = Rc<dyn Any>;
 /// A drop-acceptance predicate over a payload.
@@ -157,15 +161,19 @@ fn render_draggable(d: &Draggable) -> Element {
     let feedback = d.feedback.clone().unwrap_or_else(|| d.child.clone());
     let (w, h) = (bounds.width(), bounds.height());
 
-    let start = {
+    // Where the press landed, until the pointer travels past `DRAG_SLOP` (a pan-hungry
+    // press is not yet a drag — Flutter's Draggable only starts once its recognizer wins
+    // past the slop, so a click, e.g. on a close button inside a tab, never drags).
+    let pending = create_signal(None::<(Offset, Offset)>);
+    let begin = {
         let data = data.clone();
         let feedback = feedback.clone();
-        move |e: pebbles_render::PointerEvent| {
+        move |position: Offset, global: Offset| {
             let sess = session();
             sess.set(Some(DragState {
                 data: data.clone(),
-                pointer: e.global,
-                anchor: e.position,
+                pointer: global,
+                anchor: position,
                 feedback: feedback.clone(),
                 width: w,
                 height: h,
@@ -180,12 +188,31 @@ fn render_draggable(d: &Draggable) -> Element {
             );
         }
     };
+    let start = {
+        let begin = begin.clone();
+        move |e: pebbles_render::PointerEvent| begin(e.position, e.global)
+    };
     let update = move |e: pebbles_render::PointerEvent| {
         session().update(|s| {
             if let Some(st) = s {
                 st.pointer = e.global;
             }
         });
+    };
+    let press = move |e: pebbles_render::PointerEvent| pending.set(Some((e.position, e.global)));
+    let pan_update = {
+        let update = update.clone();
+        move |e: pebbles_render::PointerEvent| {
+            if let Some((position, global)) = pending.peek() {
+                let (dx, dy) = (e.global.x - global.x, e.global.y - global.y);
+                if (dx * dx + dy * dy).sqrt() < DRAG_SLOP {
+                    return;
+                }
+                pending.set(None);
+                begin(position, global);
+            }
+            update(e);
+        }
     };
     let end = move || {
         let sess = session();
@@ -217,7 +244,18 @@ fn render_draggable(d: &Draggable) -> Element {
             .on_long_press_end(end)
             .into_widget()
     } else {
-        gd.on_pan_start(action_event(start)).on_pan_update(action_event(update)).on_pan_end(end).into_widget()
+        let pan_end = move || {
+            // Released before the slop: a click, not a drag (nothing started).
+            if pending.peek().is_some() {
+                pending.set(None);
+                return;
+            }
+            end();
+        };
+        gd.on_pan_start(action_event(press))
+            .on_pan_update(action_event(pan_update))
+            .on_pan_end(pan_end)
+            .into_widget()
     }
 }
 
