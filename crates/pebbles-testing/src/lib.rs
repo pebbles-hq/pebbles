@@ -823,7 +823,10 @@ mod tests {
     }
 
     fn page_and_dialog_vals() -> (Signal<String>, Signal<String>) {
-        PAGE_VAL.with(|c| *c.borrow_mut().get_or_insert_with(|| (create_signal(String::new()), create_signal(String::new()))))
+        PAGE_VAL.with(|c| {
+            *c.borrow_mut()
+                .get_or_insert_with(|| (create_signal(String::new()), create_signal(String::new())))
+        })
     }
 
     fn page_probe() -> impl IntoWidget {
@@ -831,8 +834,10 @@ mod tests {
     }
 
     fn open_field_dialog() {
-        pebbles_widgets::dialog(text_field().bind(page_and_dialog_vals().1).placeholder("dialog field").autofocus())
-            .open();
+        pebbles_widgets::dialog(
+            text_field().bind(page_and_dialog_vals().1).placeholder("dialog field").autofocus(),
+        )
+        .open();
     }
 
     #[test]
@@ -903,15 +908,16 @@ mod tests {
         // Drop focus (the harness click used to leave it wherever it was), then click
         // into the dialog's field: the press must focus it, as the shell's does.
         pebbles_core::focus::set_focus(None);
-        let n = h
-            .semantics_tree()
-            .into_iter()
-            .find(|n| n.props.label == "dialog field")
-            .expect("dialog field");
+        let n =
+            h.semantics_tree().into_iter().find(|n| n.props.label == "dialog field").expect("dialog field");
         let at = Offset::new((n.bounds.x0 + n.bounds.x1) / 2.0, (n.bounds.y0 + n.bounds.y1) / 2.0);
         h.click(at);
         h.key(KeyInput::Insert("q".into()));
-        assert_eq!((page.get().as_str(), dlg.get().as_str()), ("", "q"), "the click moved key input into the dialog");
+        assert_eq!(
+            (page.get().as_str(), dlg.get().as_str()),
+            ("", "q"),
+            "the click moved key input into the dialog"
+        );
     }
 
     // ----- scroll reaches a scrollable ------------------------------------

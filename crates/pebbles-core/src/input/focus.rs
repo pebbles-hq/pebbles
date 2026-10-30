@@ -355,7 +355,8 @@ impl FocusNode {
             // root scope it only grabs when nothing is focused. After this the node never
             // auto-grabs again, so an explicit blur sticks.
             let scope = current_scope();
-            let held_in_scope = m.focus.peek().is_some_and(|f| scope == 0 || m.scope_of.get(&f) == Some(&scope));
+            let held_in_scope =
+                m.focus.peek().is_some_and(|f| scope == 0 || m.scope_of.get(&f) == Some(&scope));
             if autofocus && m.autofocused.insert(key) { !held_in_scope } else { false }
         });
         if should_autofocus {
