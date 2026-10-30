@@ -910,7 +910,9 @@ fn render_group_leaf(p: &SelectableRichProps, group: SelectionGroup, index: usiz
         gd = wire_links(gd, boxes, std::rc::Rc::new(urls), p.on_link.clone(), p.on_link_hover.clone());
     }
     let selg = group.sel;
-    gd = gd.on_pan_start(pebbles_core::action_event(move |e| {
+    // The press anchors (and collapses) the selection; the drag extends it once the
+    // gesture layer's pan slop is crossed.
+    gd = gd.on_pointer_down(pebbles_core::action_event(move |e| {
         if let Some(b) = pebbles_render::text_edit::hit(sid, e.position.x, e.position.y) {
             selg.set(Some((index, b, index, b)));
         }
@@ -990,7 +992,7 @@ fn render_selectable_rich(p: &SelectableRichProps) -> AnyWidget {
     }
 
     // Drag → selection (anchor at press, focus follows), copy on release.
-    gd = gd.on_pan_start(pebbles_core::action_event(move |e| {
+    gd = gd.on_pointer_down(pebbles_core::action_event(move |e| {
         let b = pebbles_render::text_edit::hit(id, e.position.x, e.position.y);
         sel.set(b.map(|b| (b, b)));
     }));

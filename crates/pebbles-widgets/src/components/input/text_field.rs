@@ -1033,16 +1033,19 @@ fn render_field(p: &Props) -> AnyWidget {
     let field_box: AnyWidget = if disabled {
         GestureDetector::new(Opacity::new(0.6, field)).cursor(Cursor::NotAllowed).into_widget()
     } else {
-        let on_tap = p.on_tap.clone();
-        GestureDetector::new(field)
-            .cursor(Cursor::Text)
-            .on_pan_start(action_event(move |e: PointerEvent| {
+        let mut gd = GestureDetector::new(field);
+        if let Some(cb) = p.on_tap.clone() {
+            gd = gd.on_tap(move || cb());
+        }
+        gd.cursor(Cursor::Text)
+            // The press focuses and places the caret (Shift extends); the field's
+            // tap callback runs on release, as a tap. A drag past the gesture
+            // layer's pan slop then extends the selection from the press point —
+            // a click with a hand wobble never does.
+            .on_pointer_down(action_event(move |e: PointerEvent| {
                 focus.request_focus();
                 place_caret(ed, e, cl, ct, keyboard::shift_held());
                 blink_stamp.set(blink_loop.peek());
-                if let Some(cb) = &on_tap {
-                    cb();
-                }
             }))
             .on_pan_update(action_event(move |e: PointerEvent| {
                 let (tx, ty) = (e.position.x - cl, e.position.y - ct);

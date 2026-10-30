@@ -285,12 +285,16 @@ fn render_slider(p: &SliderProps) -> AnyWidget {
     let control: AnyWidget = if p.disabled {
         GestureDetector::new(Opacity::new(0.55, body)).cursor(Cursor::NotAllowed).into_widget()
     } else {
+        let a_press = move_to.clone();
         let a_start = move_to.clone();
         let a_move = move_to.clone();
         GestureDetector::new(body)
             .cursor(Cursor::Pointer)
             .on_hover_enter(move || hovered.set(true))
             .on_hover_exit(move || hovered.set(false))
+            // Jump to the press point on pointer-down (Flutter/VS Code); the drag
+            // then follows once the gesture layer's pan slop is crossed.
+            .on_pointer_down(action_event(move |e| a_press(e.position.x, e.position.y)))
             .on_pan_start(action_event(move |e| a_start(e.position.x, e.position.y)))
             .on_pan_update(action_event(move |e| a_move(e.position.x, e.position.y)))
             // Sliders consume right-clicks by default.

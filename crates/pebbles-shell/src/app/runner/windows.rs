@@ -215,7 +215,7 @@ impl Runner {
                 background: spec.background,
                 cursor: Offset::ZERO,
                 armed_tap: None,
-                pan_target: None,
+                pan: pebbles_core::pan::PanGesture::default(),
                 current_cursor: Cursor::Default,
                 on_close: spec.on_close,
                 occlusion: frame::Occlusion::default(),
@@ -275,13 +275,19 @@ impl Runner {
                 if w.ui.dispatch_hover(w.cursor) {
                     redraw::request(&w.window);
                 }
-                let moved = if w.ui.content_drag_active() {
-                    w.ui.update_content_drag(w.cursor)
-                } else if let Some(t) = w.pan_target {
-                    w.ui.dispatch_pan_update(t, w.cursor)
-                } else {
-                    false
-                };
+                let content = w.ui.content_drag_active();
+                let cursor = w.cursor;
+                let step = w.pan.moved(&mut w.ui, cursor);
+                let mut moved = step.handled;
+                // Past the slop the press is a drag: the release must not click.
+                if step.crossed_slop
+                    && let Some(a) = w.armed_tap.take()
+                {
+                    moved |= w.ui.dispatch_tap_cancel(a);
+                }
+                if content {
+                    moved |= w.ui.update_content_drag(cursor);
+                }
                 if moved {
                     redraw::request(&w.window);
                 }
@@ -306,15 +312,14 @@ impl Runner {
                         // A drag-scroll viewport claims the drag first (A4); a
                         // pan-hungry descendant under the pointer wins instead.
                         let claimed = w.ui.begin_content_drag(cursor);
-                        w.pan_target = if claimed { None } else { w.ui.pan_target_at(cursor) };
-                        let panned = w.pan_target.is_some_and(|t| w.ui.dispatch_pan_start(t, cursor));
-                        w.ui.dispatch_pointer_down(cursor) || panned || claimed
+                        // The pan stays a candidate until the pointer moves past the slop.
+                        let target = if claimed { None } else { w.ui.pan_target_at(cursor) };
+                        w.pan.press(target, cursor, pebbles_core::pan::MOUSE_PAN_SLOP);
+                        w.ui.dispatch_pointer_down(cursor) || claimed
                     }
                     ElementState::Released => {
                         let drag_ended = w.ui.end_content_drag(cursor);
-                        if let Some(t) = w.pan_target.take() {
-                            w.ui.dispatch_pan_end(t, cursor);
-                        }
+                        w.pan.release(&mut w.ui, cursor);
                         let up = w.ui.dispatch_pointer_up(cursor);
                         let up_target = w.ui.tap_target_at(cursor);
                         let armed = w.armed_tap.take();
@@ -449,7 +454,7 @@ fn secondary_lifecycle(w: &mut WindowRuntime, event: Lifecycle) {
 }
 
 fn sync_window_cursor(w: &mut WindowRuntime) {
-    let captured = w.pan_target.is_some() || w.ui.content_drag_active();
+    let captured = w.pan.active_target().is_some() || w.ui.content_drag_active();
     if let Some(want) = cursor_update(w.current_cursor, w.ui.cursor_at(w.cursor), captured) {
         w.current_cursor = want;
         w.window.set_cursor(to_winit_cursor(want));

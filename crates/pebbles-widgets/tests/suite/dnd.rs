@@ -29,15 +29,12 @@ fn a_press_without_movement_is_not_a_drag_and_a_drag_past_the_slop_drops() {
     h.frames(3);
     let on_chip = Offset::new(50.0, 50.0);
     let on_target = Offset::new(150.0, 50.0);
-    let t = h.ui.pan_target_at(on_chip).expect("the draggable claims the pan");
+    assert!(h.ui.pan_target_at(on_chip).is_some(), "the draggable claims the pan");
 
-    // Press, jitter under the slop, release over the target's rect: a click, no drop.
-    h.ui.dispatch_pan_start(t, on_chip);
-    h.frames(1);
+    // Press, jitter under the gesture layer's pan slop, release: a click — the
+    // draggable never sees a pan start, so no feedback and no drop.
+    h.drag(on_chip, Offset::new(53.0, 52.0));
     assert_eq!(h.find_all_text("Chip").len(), 1, "no drag feedback on a press");
-    h.ui.dispatch_pan_update(t, Offset::new(53.0, 52.0));
-    h.ui.dispatch_pan_end(t, Offset::new(53.0, 52.0));
-    h.frames(1);
     assert_eq!(DROPS.with(Cell::get), 0, "no drag under the slop");
 
     // A real drag onto the target drops once.

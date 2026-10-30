@@ -31,7 +31,7 @@ pub mod element;
 // `pebbles_core::focus`, `::keyboard`, `::key`, `::scroll`, `::shortcuts` are
 // unchanged public paths.
 mod input;
-pub use input::{focus, key, keyboard, scroll, shortcuts};
+pub use input::{focus, key, keyboard, pan, scroll, shortcuts};
 
 pub mod ipc;
 /// Re-export the diagnostic log — it lives in `pebbles-foundation` (the lowest

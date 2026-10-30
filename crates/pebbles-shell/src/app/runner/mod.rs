@@ -200,7 +200,7 @@ struct WindowRuntime {
     background: Color,
     cursor: Offset,
     armed_tap: Option<u64>,
-    pan_target: Option<u64>,
+    pan: pebbles_core::pan::PanGesture,
     current_cursor: Cursor,
     on_close: Option<Rc<dyn Fn()>>,
     /// Hidden (08 §5.7, P12): render nothing, request no frames.
@@ -335,8 +335,12 @@ pub(super) struct Runner {
     lp_target: Option<u64>,
     /// Whether a long press has been recognized (past the threshold).
     lp_active: bool,
-    /// The drag (pan) target armed at pointer-down; receives move/end until release.
-    pan_target: Option<u64>,
+    /// The primary press's pan candidate: it becomes a pan (start/update/end) only
+    /// once the pointer travels past the slop (see [`pebbles_core::pan`]).
+    pan: pebbles_core::pan::PanGesture,
+    /// The slop for the next primary press — mouse by default, touch while a
+    /// touch contact drives the pointer pipeline.
+    press_slop: f64,
     /// Held mouse buttons as a `PointerEvent::buttons` bit set.
     buttons: u8,
     /// The `on_pointer_move` listener captured at the first button press; fed every
@@ -464,7 +468,8 @@ impl Runner {
             armed_tap: None,
             lp_target: None,
             lp_active: false,
-            pan_target: None,
+            pan: pebbles_core::pan::PanGesture::default(),
+            press_slop: pebbles_core::pan::MOUSE_PAN_SLOP,
             buttons: 0,
             move_target: None,
             clock: Instant::now(),
@@ -712,18 +717,18 @@ impl Runner {
                 }
                 // A drag-scroll viewport claims the drag first (A4); a pan-hungry
                 // descendant under the pointer wins instead.
+                // The pan stays a candidate until the pointer moves past the slop
+                // (Flutter's gesture arena): a click with a hand wobble is a tap.
                 let claimed = self.ui.begin_content_drag(cursor);
-                self.pan_target = if claimed { None } else { self.ui.pan_target_at(cursor) };
-                let panned = self.pan_target.is_some_and(|t| self.ui.dispatch_pan_start(t, cursor));
-                self.ui.dispatch_pointer_down(cursor) || panned || claimed
+                let target = if claimed { None } else { self.ui.pan_target_at(cursor) };
+                self.pan.press(target, cursor, self.press_slop);
+                self.ui.dispatch_pointer_down(cursor) || claimed
             }
             (MouseButton::Left, ElementState::Released) => {
                 // End any scrollbar / content drag.
                 self.ui.end_scrollbar_drag();
                 let drag_ended = self.ui.end_content_drag(cursor);
-                if let Some(t) = self.pan_target.take() {
-                    self.ui.dispatch_pan_end(t, cursor);
-                }
+                self.pan.release(&mut self.ui, cursor);
                 // Resolve the long-press gesture.
                 if self.lp_active {
                     if let Some(t) = self.lp_target.take() {
@@ -788,11 +793,30 @@ impl Runner {
         }
     }
 
+    /// Feed a held-pointer move into the active content drag (A4 drag-scroll) or
+    /// the pan candidate. Once the pointer crosses the pan slop the press is a
+    /// drag: the armed tap is cancelled, so the release won't click.
+    fn pan_move(&mut self, cursor: Offset) -> bool {
+        let content = self.ui.content_drag_active();
+        let step = self.pan.moved(&mut self.ui, cursor);
+        let mut moved = step.handled;
+        if step.crossed_slop
+            && let Some(a) = self.armed_tap.take()
+        {
+            moved |= self.ui.dispatch_tap_cancel(a);
+        }
+        if content {
+            moved |= self.ui.update_content_drag(cursor);
+        }
+        moved
+    }
+
     /// Point the OS cursor at what the widget under the pointer asks for, unless a
     /// drag holds the pointer (see [`input::cursor_update`]).
     fn sync_cursor(&mut self) {
-        let captured =
-            self.pan_target.is_some() || self.ui.content_drag_active() || self.ui.scrollbar_dragging();
+        let captured = self.pan.active_target().is_some()
+            || self.ui.content_drag_active()
+            || self.ui.scrollbar_dragging();
         if let Some(want) = cursor_update(self.current_cursor, self.ui.cursor_at(self.cursor), captured) {
             self.current_cursor = want;
             if let Some(active) = self.active.as_ref() {
@@ -1214,13 +1238,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     self.request_redraw();
                 }
                 // Feed movement into an active content drag (A4 drag-scroll) or pan.
-                let moved = if self.ui.content_drag_active() {
-                    self.ui.update_content_drag(cursor)
-                } else if let Some(t) = self.pan_target {
-                    self.ui.dispatch_pan_update(t, cursor)
-                } else {
-                    false
-                };
+                let moved = self.pan_move(cursor);
                 if moved {
                     self.request_redraw();
                 }
@@ -1306,18 +1324,15 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 self.cursor = cursor;
                 match touch.phase {
                     TouchPhase::Started => {
-                        if self.dispatch_pointer(cursor, MouseButton::Left, ElementState::Pressed) {
+                        self.press_slop = pebbles_core::pan::TOUCH_PAN_SLOP;
+                        let down = self.dispatch_pointer(cursor, MouseButton::Left, ElementState::Pressed);
+                        self.press_slop = pebbles_core::pan::MOUSE_PAN_SLOP;
+                        if down {
                             self.request_redraw();
                         }
                     }
                     TouchPhase::Moved => {
-                        let moved = if self.ui.content_drag_active() {
-                            self.ui.update_content_drag(cursor)
-                        } else if let Some(t) = self.pan_target {
-                            self.ui.dispatch_pan_update(t, cursor)
-                        } else {
-                            false
-                        };
+                        let moved = self.pan_move(cursor);
                         if moved {
                             self.request_redraw();
                         }

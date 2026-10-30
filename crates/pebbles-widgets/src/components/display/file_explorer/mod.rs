@@ -178,8 +178,8 @@ pub struct FileExplorer {
     dragging: Signal<bool>,
     drop_target: Signal<Option<u64>>,
     root_drop: Signal<bool>,
-    /// The row pressed (pointer down) and where (global) — a press only turns
-    /// into a drag once the pointer travels past [`DRAG_SLOP`].
+    /// The row being dragged and where its press landed (global) — set at pan
+    /// start, which the gesture layer sends only past the pan slop.
     pub(super) press: Signal<Option<(u64, Offset)>>,
     /// The row currently under the pointer (any row, file or folder) — the
     /// empty-space root target is live only while this is `None`.
@@ -265,12 +265,6 @@ pub(super) fn scrollbar_gutter() -> f64 {
     let sb = rows_scrollbar();
     sb.thickness + 2.0 * sb.margin
 }
-
-/// How far (logical px) the pointer must travel from the press before a row
-/// press becomes a drag — the desktop drag threshold (GTK's default
-/// `gtk-dnd-drag-threshold`, which Chromium/VS Code use on Linux). Below it a
-/// press is a click and never moves anything.
-const DRAG_SLOP: f64 = 8.0;
 
 /// A move awaiting confirmation (see [`FileExplorer::set_confirm_move`]).
 #[derive(Clone, Debug)]
