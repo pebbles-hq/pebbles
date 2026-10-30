@@ -854,6 +854,43 @@ mod tests {
         assert_eq!(page.get(), "ac", "closing the dialog restores focus to the page field");
     }
 
+    /// A bare key-handling node (like a code editor: `register_code_editor`, no
+    /// `register`) that focuses itself on mount and appends keys to the page signal.
+    fn editor_only_probe() -> impl IntoWidget {
+        let node = pebbles_core::create_focus();
+        let page = page_and_dialog_vals().0;
+        node.register_code_editor(std::rc::Rc::new(move |k| {
+            if let KeyInput::Insert(t) = k {
+                page.update(|p| p.push_str(&t));
+            }
+        }));
+        let first = create_signal(true);
+        if first.peek() {
+            first.set(false);
+            node.request_focus();
+        }
+        container().width(200.0).height(40.0)
+    }
+
+    #[test]
+    fn closing_a_dialog_restores_focus_to_a_code_editor_node() {
+        PAGE_VAL.with(|c| *c.borrow_mut() = None);
+        let (page, dlg) = page_and_dialog_vals();
+        let mut h = Harness::new();
+        h.mount(|| component(editor_only_probe));
+        h.draw();
+        h.key(KeyInput::Insert("a".into()));
+        assert_eq!(page.get(), "a", "the editor starts focused");
+        open_field_dialog();
+        h.frames(2);
+        h.key(KeyInput::Insert("b".into()));
+        assert_eq!((page.get().as_str(), dlg.get().as_str()), ("a", "b"), "the dialog field took focus");
+        pebbles_widgets::close_dialog(0);
+        h.frames(2);
+        h.key(KeyInput::Insert("c".into()));
+        assert_eq!(page.get(), "ac", "closing the dialog restores focus to the editor");
+    }
+
     #[test]
     fn clicking_a_dialog_field_takes_focus_from_the_page() {
         PAGE_VAL.with(|c| *c.borrow_mut() = None);

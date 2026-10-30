@@ -204,7 +204,10 @@ pub fn create_focus_scope() -> ScopeTag {
             let cur = m.focus.peek();
             let inside = cur.is_none_or(|k| m.scope_of.get(&k) == Some(&id));
             m.scope_of.retain(|_, &mut scope| scope != id);
-            prev.filter(|k| inside && m.order.contains(k))
+            // Still mounted: focusable widgets sit in `order`; code editors register only
+            // their key handler.
+            let live = |k: &FocusKey| m.order.contains(k) || m.edit.contains_key(k) || m.keys.contains_key(k);
+            prev.filter(|k| inside && live(k))
         });
         if let Some(k) = back {
             set_focus(Some(k));
