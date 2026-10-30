@@ -1197,7 +1197,17 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             return;
         }
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            // Title-bar close / Alt+F4 / WM close: the app's exit handler may veto or
+            // defer (then answers with `window::confirm_exit`). No handler: exit.
+            WindowEvent::CloseRequested => {
+                if pebbles_widgets::window::close_requested(pebbles_widgets::window::MAIN_WINDOW) {
+                    event_loop.exit();
+                } else {
+                    // The handler may have opened a dialog / confirmed synchronously.
+                    self.pump_windows(event_loop);
+                    self.request_redraw();
+                }
+            }
 
             WindowEvent::Resized(size) => {
                 self.main_lifecycle(lifecycle::Lifecycle::Resized(size.width, size.height))

@@ -19,6 +19,12 @@ impl Runner {
             self.open_window(event_loop, spec);
         }
         for id in pebbles_widgets::window::take_close_requests() {
+            if id == pebbles_widgets::window::MAIN_WINDOW {
+                // `confirm_exit()`: a programmatic exit, past the exit handler.
+                event_loop.exit();
+                continue;
+            }
+            pebbles_widgets::window::forget_close_handler(id);
             if let Some(wid) = self.window_by_id.remove(&id)
                 && let Some(w) = self.windows.remove(&wid)
             {
@@ -241,7 +247,12 @@ impl Runner {
             return;
         }
         match event {
+            WindowEvent::CloseRequested if !pebbles_widgets::window::close_requested(w.id) => {
+                // Vetoed / deferred by the window's `on_close_requested` handler.
+                redraw::request(&w.window);
+            }
             WindowEvent::CloseRequested => {
+                pebbles_widgets::window::forget_close_handler(w.id);
                 self.window_by_id.remove(&w.id);
                 if let Some(f) = &w.on_close {
                     f();
