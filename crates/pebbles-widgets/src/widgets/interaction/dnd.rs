@@ -201,7 +201,6 @@ fn render_draggable(d: &Draggable) -> Element {
     };
     let press = move |e: pebbles_render::PointerEvent| pending.set(Some((e.position, e.global)));
     let pan_update = {
-        let update = update.clone();
         move |e: pebbles_render::PointerEvent| {
             if let Some((position, global)) = pending.peek() {
                 let (dx, dy) = (e.global.x - global.x, e.global.y - global.y);
