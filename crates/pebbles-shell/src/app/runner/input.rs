@@ -47,15 +47,16 @@ pub(super) fn file_drop_event(event: &WindowEvent, cursor: Offset) -> Option<boo
 /// scrolls). Shared by the main window and every secondary window — the overlay
 /// signals are per-window, so `ui` must be the current window first (both callers
 /// make it current before calling this). Returns whether a repaint is needed.
-pub(super) fn wheel_with_overlay(ui: &mut Ui, cursor: Offset, dy: f64) -> bool {
+pub(super) fn wheel_with_overlay(ui: &mut Ui, cursor: Offset, delta: Offset) -> bool {
     use pebbles_widgets::overlay;
+    let dy = delta.y;
     if !overlay::is_open() {
-        return ui.dispatch_scroll(cursor, dy);
+        return ui.dispatch_wheel(cursor, delta);
     }
     if overlay::over_panel(cursor.x, cursor.y) {
         // Wheel over the popover itself → scroll its own content only.
-        ui.dispatch_scroll(cursor, dy)
-    } else if ui.dispatch_scroll(cursor, dy) {
+        ui.dispatch_wheel(cursor, delta)
+    } else if ui.dispatch_wheel(cursor, delta) {
         // Wheel over the page behind the popover → slide the popover with it.
         overlay::shift(0.0, -dy);
         true

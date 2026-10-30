@@ -108,8 +108,49 @@ pub struct ScrollbarStyle {
     /// Inset from the viewport edges.
     pub margin: f64,
     pub thumb_color: Color,
+    /// The thumb while the pointer is over the bar (VS Code `scrollbarSlider.hoverBackground`).
+    pub thumb_hover_color: Color,
+    /// The thumb while it is being dragged (VS Code `scrollbarSlider.activeBackground`).
+    pub thumb_active_color: Color,
     pub track_color: Color,
     pub radius: f64,
+}
+
+impl ScrollbarStyle {
+    /// The strip the bar occupies across the scroll axis (thickness plus both margins).
+    /// It is both what the bar paints over and what it claims for pointer presses, so
+    /// content kept clear of it never loses a click to the bar.
+    pub fn gutter(&self) -> f64 {
+        self.thickness + 2.0 * self.margin
+    }
+
+    /// The bar geometry along the scroll axis for a `viewport` showing `content`
+    /// scrolled to `offset`: `(track_start, track_len, thumb_start, thumb_len)`. The
+    /// thumb lives inside the track (inset by `margin`), its length is
+    /// `track × viewport / content` (never below `min_thumb`), and its start maps
+    /// `offset / (content − viewport)` onto the track's free travel.
+    pub fn geometry(&self, viewport: f64, content: f64, offset: f64) -> (f64, f64, f64, f64) {
+        let track_start = self.margin;
+        let track_len = (viewport - 2.0 * self.margin).max(0.0);
+        let ratio = if content > 0.0 { (viewport / content).clamp(0.0, 1.0) } else { 1.0 };
+        let thumb_len = (track_len * ratio).max(self.min_thumb.min(track_len)).min(track_len);
+        let max = (content - viewport).max(0.0);
+        let travel = (track_len - thumb_len).max(0.0);
+        let frac = if max > 0.0 { (offset / max).clamp(0.0, 1.0) } else { 0.0 };
+        (track_start, track_len, track_start + travel * frac, thumb_len)
+    }
+
+    /// The scroll offset that puts the thumb's start at `thumb_start` (inverse of
+    /// [`geometry`](Self::geometry)), clamped to `[0, content − viewport]`.
+    pub fn offset_for_thumb(&self, viewport: f64, content: f64, thumb_start: f64) -> f64 {
+        let (track_start, track_len, _, thumb_len) = self.geometry(viewport, content, 0.0);
+        let travel = track_len - thumb_len;
+        let max = (content - viewport).max(0.0);
+        if travel <= 0.0 {
+            return 0.0;
+        }
+        (((thumb_start - track_start) / travel).clamp(0.0, 1.0)) * max
+    }
 }
 
 impl Default for ScrollbarStyle {
@@ -120,6 +161,8 @@ impl Default for ScrollbarStyle {
             min_thumb: 28.0,
             margin: 2.0,
             thumb_color: Color::from_rgba8(0x94, 0xa3, 0xb8, 0xcc), // slate-400
+            thumb_hover_color: Color::from_rgba8(0x94, 0xa3, 0xb8, 0xe6),
+            thumb_active_color: Color::from_rgba8(0x94, 0xa3, 0xb8, 0xff),
             track_color: Color::from_rgba8(0x94, 0xa3, 0xb8, 0x1f),
             radius: 999.0,
         }
@@ -311,6 +354,11 @@ pub struct RenderScroll {
     pub controller: Option<ScrollHandle>,
     /// True while a scroll activity is live — gates one Start and one End per activity.
     was_moving: bool,
+    /// While the scrollbar is dragged: where along the thumb it was grabbed (px from
+    /// the thumb's start), so the thumb keeps that point under the pointer.
+    bar_grab: Option<f64>,
+    /// Whether the pointer is over the scrollbar strip (hover state).
+    bar_hover: bool,
 }
 
 impl RenderScroll {
@@ -339,6 +387,8 @@ impl RenderScroll {
             on_scroll: None,
             controller: None,
             was_moving: false,
+            bar_grab: None,
+            bar_hover: false,
         }
     }
 
@@ -646,46 +696,89 @@ impl RenderScroll {
         self.max_offset > 0.5 && self.scrollbar.policy != ScrollbarPolicy::Hidden
     }
 
-    /// Thumb length for the current content/viewport ratio.
-    fn thumb_len(&self) -> f64 {
+    /// The bar geometry along the axis: `(track_start, track_len, thumb_start, thumb_len)`.
+    fn bar_geometry(&self) -> (f64, f64, f64, f64) {
         let content = self.viewport_extent + self.max_offset;
-        if content <= 0.0 {
-            return self.viewport_extent;
-        }
-        let ratio = (self.viewport_extent / content).clamp(0.0, 1.0);
-        (self.viewport_extent * ratio).max(self.scrollbar.min_thumb).min(self.viewport_extent)
+        self.scrollbar.geometry(self.viewport_extent, content, self.offset)
     }
 
-    /// Thumb start position along the axis for the current offset.
-    fn thumb_pos(&self) -> f64 {
-        let travel = (self.viewport_extent - self.thumb_len()).max(0.0);
-        if self.max_offset <= 0.0 { 0.0 } else { travel * (self.offset / self.max_offset) }
+    /// The pointer position along the scroll axis.
+    fn along(&self, local: Offset) -> f64 {
+        match self.axis {
+            Axis::Vertical => local.y,
+            Axis::Horizontal => local.x,
+        }
     }
 
     /// Whether a local point (relative to this object's origin) lands on the
-    /// scrollbar strip — with a generous grab margin.
+    /// scrollbar strip — exactly the strip the bar paints in (thickness + margins),
+    /// so content kept clear of it never loses a press to the bar.
     pub fn scrollbar_hit(&self, local: Offset, size: Size) -> bool {
         if !self.scrollable() {
             return false;
         }
-        let grab = self.scrollbar.thickness.max(16.0);
+        let grab = self.scrollbar.gutter();
         match self.axis {
-            Axis::Vertical => local.x >= size.width - grab && local.x <= size.width,
-            Axis::Horizontal => local.y >= size.height - grab && local.y <= size.height,
+            Axis::Vertical => {
+                local.x >= size.width - grab
+                    && local.x <= size.width
+                    && local.y >= 0.0
+                    && local.y <= size.height
+            }
+            Axis::Horizontal => {
+                local.y >= size.height - grab
+                    && local.y <= size.height
+                    && local.x >= 0.0
+                    && local.x <= size.width
+            }
         }
     }
 
-    /// Set the offset so the thumb centers on a local point (scrollbar drag/click).
-    /// Direct — no spring, no snap — because the thumb tracks the pointer 1:1.
+    /// Whether a local point is on the thumb itself (not the bare track).
+    pub fn thumb_hit(&self, local: Offset, size: Size) -> bool {
+        let (_, _, start, len) = self.bar_geometry();
+        let p = self.along(local);
+        self.scrollbar_hit(local, size) && p >= start && p <= start + len
+    }
+
+    /// A press on the scrollbar at `local` (desktop scrollbar semantics, VS Code /
+    /// Chromium): on the thumb it grabs the thumb where it was pressed (no jump); on the
+    /// track it jumps so the thumb centres on the press, then keeps dragging from there.
+    pub fn bar_press(&mut self, local: Offset, size: Size) -> bool {
+        let (_, _, start, len) = self.bar_geometry();
+        let grab = if self.thumb_hit(local, size) { self.along(local) - start } else { len / 2.0 };
+        self.bar_grab = Some(grab);
+        self.set_offset_from_point(local, size);
+        true
+    }
+
+    /// Whether the scrollbar thumb is being dragged (active state).
+    pub fn bar_active(&self) -> bool {
+        self.bar_grab.is_some()
+    }
+
+    /// Whether the pointer is over the scrollbar (hover state).
+    pub fn bar_hovered(&self) -> bool {
+        self.bar_hover
+    }
+
+    /// Set the hover state; returns whether it changed (needs a repaint).
+    pub fn set_bar_hover(&mut self, hover: bool) -> bool {
+        let changed = self.bar_hover != hover;
+        self.bar_hover = hover;
+        changed
+    }
+
+    /// Move the thumb so the grabbed point sits under `local` (scrollbar drag/click).
+    /// Direct — no spring, no snap — because the thumb tracks the pointer 1:1. The
+    /// pointer may leave the bar: only its position along the axis counts.
     pub fn set_offset_from_point(&mut self, local: Offset, _size: Size) -> bool {
-        let pos = match self.axis {
-            Axis::Vertical => local.y,
-            Axis::Horizontal => local.x,
-        };
-        let thumb = self.thumb_len();
-        let travel = (self.viewport_extent - thumb).max(1.0);
-        let frac = ((pos - thumb / 2.0) / travel).clamp(0.0, 1.0);
-        let next = frac * self.max_offset;
+        let (_, _, _, len) = self.bar_geometry();
+        let grab = self.bar_grab.unwrap_or(len / 2.0);
+        let content = self.viewport_extent + self.max_offset;
+        let next = self.scrollbar.offset_for_thumb(self.viewport_extent, content, self.along(local) - grab);
+        self.flinging = false;
+        self.fling_velocity = 0.0;
         let delta = next - self.offset;
         let changed = delta.abs() > f64::EPSILON;
         self.offset = next;
@@ -701,6 +794,7 @@ impl RenderScroll {
     /// Close an in-progress scroll activity (scrollbar-drag release), firing a
     /// final [`ScrollEvent::End`] if one is open. Idempotent.
     pub fn end_scroll_activity(&mut self) {
+        self.bar_grab = None;
         if self.was_moving {
             self.was_moving = false;
             self.emit(ScrollEvent::End);
@@ -829,31 +923,31 @@ impl RenderObject for RenderScroll {
             return;
         }
         let m = sb.margin;
+        let (ts, tl, hs, hl) = self.bar_geometry();
         let (track, thumb) = match self.axis {
             Axis::Vertical => {
                 let x1 = offset.x + size.width - m;
                 let x0 = x1 - sb.thickness;
-                let track = Rect::new(x0, offset.y + m, x1, offset.y + size.height - m);
-                let thumb = Rect::new(
-                    x0,
-                    offset.y + self.thumb_pos(),
-                    x1,
-                    offset.y + self.thumb_pos() + self.thumb_len(),
-                );
-                (track, thumb)
+                (
+                    Rect::new(x0, offset.y + ts, x1, offset.y + ts + tl),
+                    Rect::new(x0, offset.y + hs, x1, offset.y + hs + hl),
+                )
             }
             Axis::Horizontal => {
                 let y1 = offset.y + size.height - m;
                 let y0 = y1 - sb.thickness;
-                let track = Rect::new(offset.x + m, y0, offset.x + size.width - m, y1);
-                let thumb = Rect::new(
-                    offset.x + self.thumb_pos(),
-                    y0,
-                    offset.x + self.thumb_pos() + self.thumb_len(),
-                    y1,
-                );
-                (track, thumb)
+                (
+                    Rect::new(offset.x + ts, y0, offset.x + ts + tl, y1),
+                    Rect::new(offset.x + hs, y0, offset.x + hs + hl, y1),
+                )
             }
+        };
+        let thumb_color = if self.bar_active() {
+            sb.thumb_active_color
+        } else if self.bar_hover {
+            sb.thumb_hover_color
+        } else {
+            sb.thumb_color
         };
         cx.scene.fill(
             Fill::NonZero,
@@ -866,7 +960,7 @@ impl RenderObject for RenderScroll {
             cx.scene.fill(
                 Fill::NonZero,
                 Affine::IDENTITY,
-                sb.thumb_color,
+                thumb_color,
                 None,
                 &RoundedRect::from_rect(thumb, sb.radius),
             );

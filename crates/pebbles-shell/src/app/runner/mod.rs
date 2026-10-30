@@ -1247,7 +1247,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                     self.request_redraw();
                     return;
                 }
-                let scrolled = wheel_with_overlay(&mut self.ui, cursor, dy);
+                let scrolled = wheel_with_overlay(&mut self.ui, cursor, signal.delta);
                 if pebbles_core::log::dev_mode() {
                     pebbles_core::log::trace(
                         pebbles_core::log::Cat::Input,

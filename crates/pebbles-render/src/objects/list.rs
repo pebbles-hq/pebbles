@@ -32,6 +32,10 @@ pub struct RenderList {
     /// are unaffected either way.
     pub drag_scroll: bool,
     viewport_extent: f64,
+    /// While the scrollbar is dragged: the grab point along the thumb (px from its start).
+    pub bar_grab: Option<f64>,
+    /// Whether the pointer is over the scrollbar strip (hover state).
+    pub bar_hover: bool,
 }
 
 impl RenderList {
@@ -44,6 +48,8 @@ impl RenderList {
             scrollbar: ScrollbarStyle::default(),
             drag_scroll: true,
             viewport_extent: 0.0,
+            bar_grab: None,
+            bar_hover: false,
         }
     }
 
@@ -61,41 +67,61 @@ impl RenderList {
     pub fn scrollable(&self) -> bool {
         self.max_offset() > 0.5 && self.scrollbar.policy != ScrollbarPolicy::Hidden
     }
-    fn thumb_len(&self) -> f64 {
-        if self.content_extent <= 0.0 {
-            return self.viewport_extent;
-        }
-        let ratio = (self.viewport_extent / self.content_extent).clamp(0.0, 1.0);
-        (self.viewport_extent * ratio).max(self.scrollbar.min_thumb).min(self.viewport_extent)
-    }
-    fn thumb_pos(&self) -> f64 {
-        let travel = (self.viewport_extent - self.thumb_len()).max(0.0);
-        let max = self.max_offset();
-        if max <= 0.0 { 0.0 } else { travel * (self.offset / max) }
+    /// `(track_start, track_len, thumb_start, thumb_len)` along the axis.
+    fn bar_geometry(&self) -> (f64, f64, f64, f64) {
+        self.scrollbar.geometry(self.viewport_extent, self.content_extent, self.offset)
     }
 
-    /// Whether a local point lands on the scrollbar strip.
+    fn along(&self, local: Offset) -> f64 {
+        match self.axis {
+            Axis::Vertical => local.y,
+            Axis::Horizontal => local.x,
+        }
+    }
+
+    /// Whether a local point lands on the scrollbar strip (exactly the painted strip:
+    /// thickness + margins).
     pub fn scrollbar_hit(&self, local: Offset, size: Size) -> bool {
         if !self.scrollable() {
             return false;
         }
-        let grab = self.scrollbar.thickness.max(16.0);
+        let grab = self.scrollbar.gutter();
         match self.axis {
-            Axis::Vertical => local.x >= size.width - grab && local.x <= size.width,
-            Axis::Horizontal => local.y >= size.height - grab && local.y <= size.height,
+            Axis::Vertical => {
+                local.x >= size.width - grab
+                    && local.x <= size.width
+                    && local.y >= 0.0
+                    && local.y <= size.height
+            }
+            Axis::Horizontal => {
+                local.y >= size.height - grab
+                    && local.y <= size.height
+                    && local.x >= 0.0
+                    && local.x <= size.width
+            }
         }
     }
 
-    /// Fraction `0.0..=1.0` of the scroll range for a local scrollbar point (so the
-    /// thumb centers on the pointer).
+    /// A press on the scrollbar: on the thumb, grab it where pressed (no jump); on the
+    /// track, centre the thumb on the press and drag from there.
+    pub fn bar_press(&mut self, local: Offset, size: Size) {
+        let (_, _, start, len) = self.bar_geometry();
+        let p = self.along(local);
+        let on_thumb = self.scrollbar_hit(local, size) && p >= start && p <= start + len;
+        self.bar_grab = Some(if on_thumb { p - start } else { len / 2.0 });
+    }
+
+    /// Fraction `0.0..=1.0` of the scroll range that keeps the grabbed point of the
+    /// thumb under the pointer at `local`.
     pub fn fraction_at(&self, local: Offset) -> f64 {
-        let pos = match self.axis {
-            Axis::Vertical => local.y,
-            Axis::Horizontal => local.x,
-        };
-        let thumb = self.thumb_len();
-        let travel = (self.viewport_extent - thumb).max(1.0);
-        ((pos - thumb / 2.0) / travel).clamp(0.0, 1.0)
+        let (_, _, _, len) = self.bar_geometry();
+        let grab = self.bar_grab.unwrap_or(len / 2.0);
+        let max = self.max_offset();
+        if max <= 0.0 {
+            return 0.0;
+        }
+        self.scrollbar.offset_for_thumb(self.viewport_extent, self.content_extent, self.along(local) - grab)
+            / max
     }
 }
 
@@ -155,33 +181,31 @@ impl RenderObject for RenderList {
             return;
         }
         let m = sb.margin;
+        let (ts, tl, hs, hl) = self.bar_geometry();
         let (track, thumb) = match self.axis {
             Axis::Vertical => {
                 let x1 = offset.x + size.width - m;
                 let x0 = x1 - sb.thickness;
                 (
-                    Rect::new(x0, offset.y + m, x1, offset.y + size.height - m),
-                    Rect::new(
-                        x0,
-                        offset.y + self.thumb_pos(),
-                        x1,
-                        offset.y + self.thumb_pos() + self.thumb_len(),
-                    ),
+                    Rect::new(x0, offset.y + ts, x1, offset.y + ts + tl),
+                    Rect::new(x0, offset.y + hs, x1, offset.y + hs + hl),
                 )
             }
             Axis::Horizontal => {
                 let y1 = offset.y + size.height - m;
                 let y0 = y1 - sb.thickness;
                 (
-                    Rect::new(offset.x + m, y0, offset.x + size.width - m, y1),
-                    Rect::new(
-                        offset.x + self.thumb_pos(),
-                        y0,
-                        offset.x + self.thumb_pos() + self.thumb_len(),
-                        y1,
-                    ),
+                    Rect::new(offset.x + ts, y0, offset.x + ts + tl, y1),
+                    Rect::new(offset.x + hs, y0, offset.x + hs + hl, y1),
                 )
             }
+        };
+        let thumb_color = if self.bar_grab.is_some() {
+            sb.thumb_active_color
+        } else if self.bar_hover {
+            sb.thumb_hover_color
+        } else {
+            sb.thumb_color
         };
         cx.scene.fill(
             Fill::NonZero,
@@ -194,7 +218,7 @@ impl RenderObject for RenderList {
             cx.scene.fill(
                 Fill::NonZero,
                 Affine::IDENTITY,
-                sb.thumb_color,
+                thumb_color,
                 None,
                 &RoundedRect::from_rect(thumb, sb.radius),
             );

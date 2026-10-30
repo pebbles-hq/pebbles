@@ -326,6 +326,12 @@ impl Harness {
     /// places its caret there) → pointer-down → tap → pointer-up → drag end, then a frame.
     pub fn click(&mut self, at: Offset) {
         self.ui.make_current();
+        // A press on a scrollbar belongs to the bar (it captures the pointer), as in the shell.
+        if self.ui.begin_scrollbar_drag(at) {
+            self.ui.end_scrollbar_drag();
+            self.frame();
+            return;
+        }
         pebbles_core::focus::set_focus(None);
         let pan = self.ui.pan_target_at(at);
         if let Some(t) = pan {
@@ -456,12 +462,13 @@ impl Harness {
 
     /// A wheel / trackpad scroll of `delta` (logical px, Flutter `scrollDelta` sign) at
     /// `at`, reported in `unit`, then a frame. Pointer-signal listeners first; an
-    /// unconsumed vertical delta scrolls the scroll view under the pointer.
+    /// unconsumed delta scrolls the scroll view under the pointer per axis (Shift turns
+    /// a vertical wheel horizontal, as the shell does).
     pub fn wheel(&mut self, at: Offset, delta: Offset, unit: pebbles_render::ScrollUnit) {
         self.ui.make_current();
         let signal = pebbles_render::PointerScrollEvent { position: at, global: at, delta, unit };
-        if !self.ui.dispatch_pointer_signal(at, signal) && delta.y != 0.0 {
-            self.ui.dispatch_scroll(at, delta.y);
+        if !self.ui.dispatch_pointer_signal(at, signal) {
+            self.ui.dispatch_wheel(at, delta);
         }
         self.frame();
     }
@@ -472,6 +479,14 @@ impl Harness {
     pub fn button_down(&mut self, at: Offset, button: pebbles_render::PointerButton) {
         use pebbles_render::{PointerButton, PointerEvent};
         self.ui.make_current();
+        // A primary press on a scrollbar grabs it and captures the pointer (the shell's
+        // order: the bar is above the content it scrolls).
+        if button == PointerButton::Primary && self.buttons == 0 && self.ui.begin_scrollbar_drag(at) {
+            self.buttons |= PointerEvent::bit(button);
+            self.pointer_at = at;
+            self.frame();
+            return;
+        }
         if self.buttons == 0 {
             self.move_target = self.ui.pointer_move_target_at(at);
         }
@@ -488,6 +503,13 @@ impl Harness {
     /// (local position, delta, held buttons), and hover listeners update. Then a frame.
     pub fn pointer_move(&mut self, to: Offset) {
         self.ui.make_current();
+        // A scrollbar drag captures the pointer: the thumb follows, nothing else sees it.
+        if self.ui.scrollbar_dragging() {
+            self.ui.update_scrollbar_drag(to);
+            self.pointer_at = to;
+            self.frame();
+            return;
+        }
         if let Some(t) = self.move_target {
             self.ui.dispatch_pointer_move(t, to, self.pointer_at, self.buttons);
         }
@@ -500,6 +522,13 @@ impl Harness {
     pub fn button_up(&mut self, at: Offset, button: pebbles_render::PointerButton) {
         use pebbles_render::{PointerButton, PointerEvent};
         self.ui.make_current();
+        if button == PointerButton::Primary && self.ui.scrollbar_dragging() {
+            self.ui.end_scrollbar_drag();
+            self.buttons &= !PointerEvent::bit(button);
+            self.pointer_at = at;
+            self.frame();
+            return;
+        }
         self.buttons &= !PointerEvent::bit(button);
         if self.buttons == 0 {
             self.move_target = None;
@@ -515,6 +544,12 @@ impl Harness {
     /// Drag from `from` to `to` (select, pan, reorder): pan start → update → end.
     pub fn drag(&mut self, from: Offset, to: Offset) {
         self.ui.make_current();
+        if self.ui.begin_scrollbar_drag(from) {
+            self.ui.update_scrollbar_drag(to);
+            self.ui.end_scrollbar_drag();
+            self.frame();
+            return;
+        }
         if let Some(target) = self.ui.pan_target_at(from) {
             self.ui.dispatch_pan_start(target, from);
             self.ui.dispatch_pan_update(target, to);

@@ -292,7 +292,7 @@ impl Runner {
                 // Pointer signal first; then C6: secondary windows follow the popover
                 // on wheel (was main-only).
                 if w.ui.dispatch_pointer_signal(w.cursor, signal)
-                    || wheel_with_overlay(&mut w.ui, w.cursor, signal.delta.y)
+                    || wheel_with_overlay(&mut w.ui, w.cursor, signal.delta)
                 {
                     redraw::request(&w.window);
                 }

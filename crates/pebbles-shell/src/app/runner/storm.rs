@@ -121,7 +121,7 @@ impl Runner {
                 4..=5 => {
                     let lines = (1 + storm.next() % 3) as f64;
                     let dy = if storm.next() & 1 == 0 { lines } else { -lines } * LINE_SCROLL;
-                    let _ = wheel_with_overlay(&mut self.ui, p, dy);
+                    let _ = wheel_with_overlay(&mut self.ui, p, Offset::new(0.0, dy));
                 }
                 // Click — through the REAL pointer pipeline (dispatch_pointer), the
                 // exact path a winit MouseInput takes, so the storm tests it too.
