@@ -31,6 +31,14 @@ impl Runner {
         // Runtime window changes (set_title / maximize / minimize / move / …).
         for cmd in pebbles_widgets::window::take_window_commands() {
             use pebbles_widgets::window::WindowCommand::*;
+            let main = self.active.as_ref().map(|a| &a.window);
+            let target_win = |id| {
+                if id == pebbles_widgets::window::MAIN_WINDOW {
+                    main
+                } else {
+                    self.window_by_id.get(&id).and_then(|wid| self.windows.get(wid)).map(|w| &w.window)
+                }
+            };
             let target = |id| self.window_by_id.get(&id).and_then(|wid| self.windows.get(wid));
             match cmd {
                 SetTitle(id, t) => {
@@ -66,6 +74,11 @@ impl Runner {
                 Focus(id) => {
                     if let Some(w) = target(id) {
                         w.window.focus_window();
+                    }
+                }
+                SetFullscreen(id, on) => {
+                    if let Some(win) = target_win(id) {
+                        win.set_fullscreen(on.then(|| winit::window::Fullscreen::Borderless(None)));
                     }
                 }
             }

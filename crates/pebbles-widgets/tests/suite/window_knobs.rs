@@ -75,3 +75,15 @@ fn runtime_helpers_enqueue_commands() {
     assert!(matches!(cmds[6], WindowCommand::Focus(7)));
     assert!(window::take_window_commands().is_empty(), "drained");
 }
+
+#[test]
+fn fullscreen_helper_enqueues_command_for_main_window() {
+    let _ = window::take_window_commands();
+    window::set_window_fullscreen(window::MAIN_WINDOW, true);
+    window::set_window_fullscreen(3, false);
+    let cmds = window::take_window_commands();
+    assert_eq!(cmds.len(), 2);
+    assert!(matches!(cmds[0], WindowCommand::SetFullscreen(0, true)));
+    assert!(matches!(cmds[1], WindowCommand::SetFullscreen(3, false)));
+    assert_eq!(window::MAIN_WINDOW, 0, "secondary ids start at 1");
+}

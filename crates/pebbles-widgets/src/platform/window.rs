@@ -65,7 +65,15 @@ pub enum WindowCommand {
     SetPosition(WindowId, i32, i32),
     SetSize(WindowId, u32, u32),
     Focus(WindowId),
+    /// Enter (`true`) or leave borderless full screen on the window's current
+    /// monitor (winit `Fullscreen::Borderless`, like a browser's F11).
+    SetFullscreen(WindowId, bool),
 }
+
+/// The id that addresses the app's MAIN window in the runtime helpers
+/// (`set_window_fullscreen(MAIN_WINDOW, true)`, …). Secondary window ids start
+/// at 1, so 0 never collides.
+pub const MAIN_WINDOW: WindowId = 0;
 
 thread_local! {
     static NEXT_ID: Cell<WindowId> = const { Cell::new(1) };
@@ -232,6 +240,11 @@ pub fn set_window_resizable(id: WindowId, resizable: bool) {
 /// Maximize / un-maximize an open window.
 pub fn set_window_maximized(id: WindowId, maximized: bool) {
     push_cmd(WindowCommand::SetMaximized(id, maximized));
+}
+/// Enter or leave borderless full screen on the window's current monitor.
+/// Pass [`MAIN_WINDOW`] for the app's main window. Ignored on web/mobile.
+pub fn set_window_fullscreen(id: WindowId, fullscreen: bool) {
+    push_cmd(WindowCommand::SetFullscreen(id, fullscreen));
 }
 /// Minimize an open window to the taskbar/dock.
 pub fn minimize_window(id: WindowId) {
