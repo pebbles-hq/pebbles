@@ -589,6 +589,8 @@ impl Renderer {
         self.composite_staging.begin(super::execute::tier_c::slot_stride(device));
         let root_slot = self.globals_staging.push(&globals);
         debug_assert_eq!(root_slot, 0);
+        // Before `resolve_frame`: layer / Tier C / GPU-mask slots copy this frame's text params.
+        self.text_params = (globals.text_contrast, globals.text_gamma);
         self.write_clips(device, queue, &mut stats);
 
         self.pipelines.prewarm(device, &self.shaders, &self.layouts, format, 1, &mut stats);
@@ -624,7 +626,6 @@ impl Renderer {
         let encode_started = web_time::Instant::now();
 
         self.color_flags = globals.color_flags;
-        self.text_params = (globals.text_contrast, globals.text_gamma);
         let mut clear = super::prepare::color::clear_color(params.base_color);
         if target.decode_srgb_output {
             clear = super::prepare::color::linearize_clear(clear);

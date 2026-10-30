@@ -16,6 +16,7 @@ pub(crate) struct Globals {
     pub text_gamma: [f32; 4],
 }
 
+#[allow(clippy::cast_possible_truncation)] // 48
 const _: () = assert!(size_of::<Globals>() == GLOBALS_SIZE as usize);
 const _: () = assert!(core::mem::offset_of!(Globals, text_gamma) == 32);
 
@@ -54,15 +55,24 @@ pub fn text_gamma_ratios(gamma: f32) -> [f32; 4] {
     [r[0] / 4.0 * NORM13, r[1] / 4.0 * NORM24, r[2] / 4.0 * NORM13, r[3] / 4.0 * NORM24]
 }
 
-/// CPU mirror of the glyph shader's `text_coverage` (GPUI `apply_contrast_and_gamma_correction`):
-/// coverage `a` of a run whose straight sRGB color is `rgb`.
+/// CPU mirror (bit-exact) of the glyph shader's `text_coverage` (GPUI
+/// `apply_contrast_and_gamma_correction`) in 12-bit fixed point: 8-bit coverage `a` of a run
+/// whose straight sRGB color is `rgb`.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)] // clamped, small
 pub fn text_coverage(a: f32, rgb: [f32; 3], contrast: f32, ratios: [f32; 4]) -> f32 {
-    let b = 0.30 * rgb[0] + 0.59 * rgb[1] + 0.11 * rgb[2];
-    let k = contrast * (4.0 * (0.75 - b)).clamp(0.0, 1.0);
-    let a = a * (k + 1.0) / (a * k + 1.0);
-    let correction = (ratios[0] * b + ratios[1]) * a + (ratios[2] * b + ratios[3]);
-    (a + a * (1.0 - a) * correction).clamp(0.0, 1.0)
+    const ONE: i32 = 4096;
+    let q = |v: f32, lo: f32, hi: f32, s: f32| (v.clamp(lo, hi) * s).round_ties_even() as i32;
+    let a = (q(a, 0.0, 1.0, 255.0) * ONE + 127) / 255;
+    let [r, g, b] = rgb.map(|v| q(v, 0.0, 1.0, 255.0));
+    let lum = (30 * r + 59 * g + 11 * b) * ONE / 25500;
+    let k = q(contrast, 0.0, 16.0, 4096.0) * (4 * (3072 - lum)).clamp(0, ONE) / ONE;
+    let ae = a * (k + ONE) / (a * k / ONE + ONE);
+    let g = ratios.map(|v| q(v, -4.0, 4.0, 4096.0));
+    let corr = (g[0] * lum / ONE + g[1]) * ae / ONE + (g[2] * lum / ONE + g[3]);
+    let out = ae + (ae * (ONE - ae) / ONE) * corr / ONE;
+    out.clamp(0, ONE) as f32 / 4096.0
 }
+
 const _: () = assert!(core::mem::offset_of!(Globals, inv_target_size) == 16);
 const _: () = assert!(core::mem::offset_of!(Globals, color_flags) == 24);
 
@@ -160,8 +170,11 @@ mod tests {
         let dark = text_coverage(0.5, [0.14; 3], 1.0, r);
         assert!(light > 0.55, "light text {light}");
         assert!(light > dark, "light {light} vs dark {dark}");
-        // Off: identity.
-        assert_eq!(text_coverage(0.37, [0.5; 3], 0.0, text_gamma_ratios(1.0)), 0.37);
+        // Off: identity up to the 12-bit grid.
+        for k in 0..=255u8 {
+            let a = f32::from(k) / 255.0;
+            assert!((text_coverage(a, [0.5; 3], 0.0, text_gamma_ratios(1.0)) - a).abs() <= 1.0 / 4096.0);
+        }
     }
 
     #[test]
@@ -216,7 +229,10 @@ mod tests {
             .map(|(n, t)| (n.trim(), t.trim()))
             .collect();
         let names: Vec<&str> = fields.iter().map(|f| f.0).collect();
-        assert_eq!(names, ["target_size", "target_origin", "inv_target_size", "color_flags", "text_contrast", "text_gamma"]);
+        assert_eq!(
+            names,
+            ["target_size", "target_origin", "inv_target_size", "color_flags", "text_contrast", "text_gamma"]
+        );
         let wgsl_bytes: usize = fields.iter().map(|f| wgsl_size(f.1)).sum();
         assert_eq!(wgsl_bytes, size_of::<Globals>());
         assert_eq!(core::mem::offset_of!(Globals, target_origin), 8);

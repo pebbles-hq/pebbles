@@ -574,7 +574,8 @@ impl Target {
                 let outline = matches!(brush, peniko::Brush::Gradient(_));
                 // The renderer's text coverage curve applies to solid atlas-route runs only.
                 let solid = matches!(brush, peniko::Brush::Solid(_));
-                for out in text::run_coverage(font, *font_size, coords, t, g, glyphs, w, h, hint, fg, outline, solid)
+                for out in
+                    text::run_coverage(font, *font_size, coords, t, g, glyphs, w, h, hint, fg, outline, solid)
                 {
                     match out {
                         text::GlyphOut::Coverage(cov) => self.composite(&paint, &cov),

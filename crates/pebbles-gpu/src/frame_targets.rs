@@ -581,7 +581,9 @@ fn default_text_params() -> (f32, f32) {
     use crate::execute::resources::globals::{DEFAULT_TEXT_CONTRAST, DEFAULT_TEXT_GAMMA};
     static P: std::sync::OnceLock<(f32, f32)> = std::sync::OnceLock::new();
     *P.get_or_init(|| {
-        let env = |k: &str| std::env::var(k).ok().and_then(|v| v.trim().parse::<f32>().ok()).filter(|v| v.is_finite());
+        let env = |k: &str| {
+            std::env::var(k).ok().and_then(|v| v.trim().parse::<f32>().ok()).filter(|v| v.is_finite())
+        };
         (
             env("PEBBLES_TEXT_GAMMA").map_or(DEFAULT_TEXT_GAMMA, |g| g.clamp(1.0, 2.2)),
             env("PEBBLES_TEXT_CONTRAST").map_or(DEFAULT_TEXT_CONTRAST, |c| c.max(0.0)),
