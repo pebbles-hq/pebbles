@@ -177,6 +177,7 @@ pub struct TextField {
     on_tap: Option<Rc<dyn Fn()>>,
     on_focus_change: Option<Rc<dyn Fn(bool)>>,
     on_nav: Option<Rc<dyn Fn(KeyInput) -> bool>>,
+    on_key_event: Option<pebbles_core::focus::RawKeyHandler>,
     style: Option<crate::style::Style>,
 }
 
@@ -358,6 +359,17 @@ impl TextField {
         self.on_nav = Some(Rc::new(f));
         self
     }
+    /// Raw key handler while the field is focused (Flutter's `Focus.onKeyEvent`): sees
+    /// every key event with its modifiers before it becomes an editing intent, so a
+    /// host can bind chords like Ctrl+Alt+Enter or Alt+C. Return
+    /// [`KeyEventResult::Handled`](pebbles_core::KeyEventResult) to consume.
+    pub fn on_key_event(
+        mut self,
+        f: impl Fn(&pebbles_core::KeyEvent) -> pebbles_core::KeyEventResult + 'static,
+    ) -> Self {
+        self.on_key_event = Some(Rc::new(f));
+        self
+    }
 }
 
 struct Props {
@@ -388,6 +400,7 @@ struct Props {
     on_tap: Option<Rc<dyn Fn()>>,
     on_focus_change: Option<Rc<dyn Fn(bool)>>,
     on_nav: Option<Rc<dyn Fn(KeyInput) -> bool>>,
+    on_key_event: Option<pebbles_core::focus::RawKeyHandler>,
     style: Option<crate::style::Style>,
 }
 
@@ -423,6 +436,7 @@ impl IntoWidget for TextField {
                 on_tap: self.on_tap,
                 on_focus_change: self.on_focus_change,
                 on_nav: self.on_nav,
+                on_key_event: self.on_key_event,
                 style: self.style,
             },
         )
@@ -833,6 +847,9 @@ fn render_field(p: &Props) -> AnyWidget {
     // focusable (so it can be selected + copied); it just drops every mutating key.
     if !disabled {
         focus.register(Rc::new(|| {}), p.on_focus_change.clone(), p.autofocus);
+        if let Some(h) = &p.on_key_event {
+            focus.on_key_event(h.clone());
+        }
         let on_changed = p.on_changed.clone();
         let on_submit = p.on_submit.clone();
         let on_editing = p.on_editing_complete.clone();
