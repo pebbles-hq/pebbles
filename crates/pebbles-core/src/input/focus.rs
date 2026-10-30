@@ -61,6 +61,10 @@ struct FocusManager {
     autofocused: HashSet<FocusKey>,
     /// The innermost focus scope each node registered under (`0` = root scope).
     scope_of: HashMap<FocusKey, u64>,
+    /// Per scope: the node that held focus just before focus first moved INTO the
+    /// scope (from outside it). When the scope unmounts (a dialog closes) focus goes
+    /// back there — Flutter's route pop / the web's dialog focus restoration.
+    restore: HashMap<u64, Option<FocusKey>>,
 }
 
 thread_local! {
@@ -84,6 +88,7 @@ fn with_mgr<R>(f: impl FnOnce(&mut FocusManager) -> R) -> R {
                 wants_tab: HashSet::new(),
                 autofocused: HashSet::new(),
                 scope_of: HashMap::new(),
+                restore: HashMap::new(),
             });
         }
         f(cell.as_mut().expect("FocusManager initialized just above when cell was None"))
@@ -117,6 +122,12 @@ pub fn set_focus(next: Option<FocusKey>) {
         let old = m.focus.peek();
         let old_cb = old.and_then(|k| m.on_change.get(&k).cloned());
         let new_cb = next.and_then(|k| m.on_change.get(&k).cloned());
+        // Entering a (non-root) scope from outside it: remember where focus came from.
+        let scope_of = |k: Option<FocusKey>| k.and_then(|k| m.scope_of.get(&k).copied()).unwrap_or(0);
+        let (from, to) = (scope_of(old), scope_of(next));
+        if to != 0 && from != to {
+            m.restore.entry(to).or_insert(old);
+        }
         (m.focus, old, old_cb, new_cb)
     });
     if old == next {
@@ -186,9 +197,18 @@ pub fn create_focus_scope() -> ScopeTag {
     let id = instance_id(window, element);
     provide_context(ScopeTag(id));
     crate::reactive::create_cleanup(move || {
-        with_mgr(|m| {
+        // On close, hand focus back to the node focused before the scope took it, if
+        // focus is still inside the scope (or was dropped) and that node still exists.
+        let back = with_mgr(|m| {
+            let prev = m.restore.remove(&id).flatten();
+            let cur = m.focus.peek();
+            let inside = cur.is_none_or(|k| m.scope_of.get(&k) == Some(&id));
             m.scope_of.retain(|_, &mut scope| scope != id);
+            prev.filter(|k| inside && m.order.contains(k))
         });
+        if let Some(k) = back {
+            set_focus(Some(k));
+        }
     });
     ScopeTag(id)
 }
@@ -326,9 +346,14 @@ impl FocusNode {
                 }
             }
             // One-shot: mark autofocus consumed on the first render regardless, and only
-            // actually grab focus if nothing else holds it right now. After this the node
-            // never auto-grabs again, so an explicit blur sticks.
-            if autofocus && m.autofocused.insert(key) { m.focus.peek().is_none() } else { false }
+            // actually grab focus if nothing in this node's focus scope holds it (Flutter:
+            // autofocus applies within the enclosing FocusScope). A node in a freshly
+            // opened dialog's scope therefore takes focus from the page behind it; in the
+            // root scope it only grabs when nothing is focused. After this the node never
+            // auto-grabs again, so an explicit blur sticks.
+            let scope = current_scope();
+            let held_in_scope = m.focus.peek().is_some_and(|f| scope == 0 || m.scope_of.get(&f) == Some(&scope));
+            if autofocus && m.autofocused.insert(key) { !held_in_scope } else { false }
         });
         if should_autofocus {
             self.request_focus();
