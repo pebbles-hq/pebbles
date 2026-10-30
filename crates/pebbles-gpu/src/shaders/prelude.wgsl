@@ -1,11 +1,12 @@
 // prelude.wgsl: prepended to every pipeline's WGSL by concat!(include_str!(..)).
-// Mirrors `Globals` in execute/resources/globals.rs (owner 10 §2.6; 32 bytes). Keep field order and padding identical.
+// Mirrors `Globals` in execute/resources/globals.rs (owner 10 §2.6; 48 bytes). Keep field order and padding identical.
 struct Globals {
     target_size: vec2<f32>,
     target_origin: vec2<f32>,
     inv_target_size: vec2<f32>,
     color_flags: u32,
-    _pad0: u32,
+    text_contrast: f32,
+    text_gamma: vec4<f32>,
 };
 const COLOR_FLAG_DECODE_SRGB_OUTPUT: u32 = 1u;
 

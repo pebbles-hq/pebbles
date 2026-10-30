@@ -98,7 +98,8 @@ pub(crate) fn acquire_layers(
             target_origin: [b.x0 as f32, b.y0 as f32],
             inv_target_size: [1.0 / size.0 as f32, 1.0 / size.1 as f32],
             color_flags: renderer.color_flags(),
-            _pad0: 0,
+            text_contrast: renderer.text_params().0,
+            text_gamma: renderer.text_params().1,
         };
         let globals_offset = (i as u64 + 1) * stride;
         renderer.globals_staging.set(u32::try_from(i + 1).unwrap_or(u32::MAX), &globals);

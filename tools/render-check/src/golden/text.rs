@@ -131,6 +131,7 @@ pub fn run_coverage(
     hint: (f64, Option<bool>),
     foreground: peniko::Color,
     force_outline: bool,
+    solid: bool,
 ) -> Vec<GlyphOut> {
     let Some(face) = swash::FontRef::from_index(font.data.data(), font.index as usize) else {
         return Vec::new();
@@ -185,9 +186,33 @@ pub fn run_coverage(
             // device = M · ((g.x, g.y) + G · FLIP_Y · outline_point)
             (t * pen * g_xf) * outline_path(&outline, Point::ZERO)
         };
-        out.push(GlyphOut::Coverage(fill_coverage(&path, Affine::IDENTITY, Fill::NonZero, w, h)));
+        let mut cov = fill_coverage(&path, Affine::IDENTITY, Fill::NonZero, w, h);
+        if atlas.is_some() && solid {
+            text_gamma(&mut cov, foreground);
+        }
+        out.push(GlyphOut::Coverage(cov));
     }
     out
+}
+
+/// Atlas-route mask glyphs: the 02 text coverage curve (GPUI `apply_contrast_and_gamma_correction`,
+/// from microsoft/terminal dwrite.hlsl) at the renderer defaults — gamma 1.8, grayscale
+/// enhanced contrast 1.0 — applied to the 8-bit atlas coverage. Written from the formula, not
+/// shared with pebbles-gpu.
+fn text_gamma(cov: &mut [f64], fg: peniko::Color) {
+    // DirectWrite gamma-incorrect-target ratios for gamma 1.8, normalised to 0..=1 coverage.
+    let n13 = 65536.0 / (255.0 * 255.0);
+    let n24 = 256.0 / 255.0;
+    let g = [0.1469 * n13, -0.8911 * n24, 1.4644 * n13, -0.3234 * n24];
+    let [r, gr, b, _] = fg.components.map(f64::from);
+    let lum = 0.30 * r + 0.59 * gr + 0.11 * b;
+    let k = (4.0 * (0.75 - lum)).clamp(0.0, 1.0);
+    for c in cov.iter_mut().filter(|c| **c > 0.0) {
+        let a8 = (c.clamp(0.0, 1.0) * 255.0).round() / 255.0;
+        let a = a8 * (k + 1.0) / (a8 * k + 1.0);
+        let corr = (g[0] * lum + g[1]) * a + (g[2] * lum + g[3]);
+        *c = (a + a * (1.0 - a) * corr).clamp(0.0, 1.0);
+    }
 }
 
 /// Exact box filter of premultiplied texels by `s` (`0 < s < 1`, 02 §7.7 / R23): output pixel

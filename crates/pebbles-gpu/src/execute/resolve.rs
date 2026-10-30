@@ -55,7 +55,7 @@ pub(crate) fn resolve_glyphs(
             GlyphLookup::Slot(slot) if req.linear.is_some() || slot.strike_ppem > 0 => {
                 strike_quad(slot, req, run.size_px)
             }
-            other => quad_for(other, req.origin, req.color, stats),
+            other => text_mask(quad_for(other, req.origin, req.color, stats)),
         };
         out.push(quad);
     }
@@ -139,6 +139,18 @@ fn strike_quad(slot: AtlasSlot, req: &crate::prepare::GlyphRequest, size: f32) -
         color: req.color,
         layer_kind,
     }
+}
+
+/// `QuadInstance.layer_kind.y` of a text glyph's mask quad: the glyph shader applies the text
+/// contrast / gamma curve to it, never to path masks (kind 0) or color glyphs (kind 1).
+pub(crate) const KIND_TEXT_MASK: u32 = 4;
+
+/// Tag a mask-atlas glyph quad as text (`KIND_TEXT_MASK`).
+fn text_mask(mut q: QuadInstance) -> QuadInstance {
+    if q.layer_kind[1] == 0 {
+        q.layer_kind[1] = KIND_TEXT_MASK;
+    }
+    q
 }
 
 /// Place a resident glyph: `x0 = ix + left`, `y0 = iy − top`, size = bitmap size (02 §7.4).

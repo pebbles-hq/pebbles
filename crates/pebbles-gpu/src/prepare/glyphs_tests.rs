@@ -202,3 +202,31 @@ fn scale_change_rekeys_glyphs_at_device_size() {
     assert_eq!(size_q(1.25), 20 * 64);
     assert_eq!(size_q(2.0), 32 * 64);
 }
+
+/// Gravel "blurry text": a fractional scroll offset (translate by non-integer px) never puts a
+/// glyph quad at a fractional device position — the baseline snaps to a whole pixel and the pen x
+/// to a whole pixel plus one of 4 quantised subpixel variants, so atlas texels map 1:1 to pixels.
+#[test]
+fn fractional_scroll_keeps_glyph_origins_on_pixels() {
+    let mut variants = std::collections::BTreeSet::new();
+    for k in 0..40 {
+        let dy = 3.0 + f64::from(k) * 0.137;
+        let dx = f64::from(k) * 0.061;
+        let mut s = Scene::new();
+        let glyphs = (0..8).map(|i| Glyph { id: 40 + i, x: 7.3 * i as f32 + 0.11, y: 20.0 }).collect();
+        run(&mut s, 13.0, &[], Affine::translate((dx, -dy)), glyphs);
+        let (plan, _) = prepare_scene(&s, 128, 64);
+        assert_eq!(plan.glyphs.len(), 8);
+        for gr in &plan.glyphs {
+            assert_eq!(gr.origin[0].fract(), 0.0, "x origin {}", gr.origin[0]);
+            assert_eq!(gr.origin[1].fract(), 0.0, "y origin {}", gr.origin[1]);
+            let crate::execute::resources::atlas_alloc::CoverageKey::Glyph(key) = gr.key else {
+                panic!("glyph expected")
+            };
+            assert!(key.subpx_x < 4);
+            assert!(key.hint, "1× / 13 px is hinted");
+            variants.insert(key.subpx_x);
+        }
+    }
+    assert_eq!(variants.len(), 4, "exactly 4 horizontal variants: {variants:?}");
+}

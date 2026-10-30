@@ -53,6 +53,19 @@ fn atlas_bilinear(t: texture_2d_array<f32>, px: vec2<f32>, layer: u32) -> vec4<f
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
+// Grayscale text contrast + gamma correction, as GPUI `apply_contrast_and_gamma_correction`
+// (adapted from microsoft/terminal dwrite.hlsl, MIT). Coverage is blended in the encoded space;
+// this curve compensates (light-on-dark gets the enhanced contrast). CPU mirror:
+// `globals::text_coverage`. `color` is the straight sRGB run color.
+fn text_coverage(a0: f32, color: vec3<f32>) -> f32 {
+    let b = dot(color, vec3<f32>(0.30, 0.59, 0.11));
+    let k = globals.text_contrast * saturate(4.0 * (0.75 - b));
+    let a = a0 * (k + 1.0) / (a0 * k + 1.0);
+    let g = globals.text_gamma;
+    let correction = (g.x * b + g.y) * a + (g.z * b + g.w);
+    return saturate(a + a * (1.0 - a) * correction);
+}
+
 @fragment
 fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     // The layer belongs to ONE kind; the other kind's (discarded) sample reads layer 0, which
@@ -62,7 +75,10 @@ fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     let mask_layer = select(in.layer_kind.x, 0u, is_color);
     let color_layer = select(0u, in.layer_kind.x, is_color);
     // Both samples in uniform control flow, then select (W5).
-    let m = atlas_bilinear(mask_atlas, in.atlas_px, mask_layer).r;
+    let straight = select(vec3<f32>(0.0), in.color.rgb / in.color.a, in.color.a > 0.0);
+    let raw = atlas_bilinear(mask_atlas, in.atlas_px, mask_layer).r;
+    // Kind 4 = a text glyph mask (`KIND_TEXT_MASK`); kind 0 path masks keep exact coverage.
+    let m = select(raw, text_coverage(raw, straight), in.layer_kind.y == 4u);
     let c = atlas_bilinear(color_atlas, in.atlas_px, color_layer);
     let cc = (clip_coverage(device_pos(in.p)) * clip_mask_coverage(device_pos(in.p)));
     return finish_color(select(in.color * m, c * in.color.a, is_color) * cc);
