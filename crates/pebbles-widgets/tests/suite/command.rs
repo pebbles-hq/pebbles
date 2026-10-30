@@ -60,9 +60,7 @@ fn command_filters_then_arrow_enter_picks() {
     ui.dispatch_key(KeyInput::Insert("New".to_string()));
     frame(&mut ui, &mut env, win);
 
-    // ArrowDown → row 0 ("New File"); ArrowDown → row 1 ("New Folder"); Enter picks it.
-    ui.dispatch_key(down());
-    frame(&mut ui, &mut env, win);
+    // Row 0 ("New File") is highlighted; ArrowDown → row 1 ("New Folder"); Enter picks it.
     ui.dispatch_key(down());
     frame(&mut ui, &mut env, win);
     ui.dispatch_key(KeyInput::Enter);
@@ -71,8 +69,30 @@ fn command_filters_then_arrow_enter_picks() {
     assert_eq!(
         PICKED.with(|p| p.borrow().clone()),
         Some("New Folder".to_string()),
-        "arrow-down twice then Enter picks the second filtered row"
+        "arrow-down once then Enter picks the second filtered row"
     );
+}
+
+#[test]
+fn command_filter_then_enter_runs_the_first_match() {
+    // VS Code: the first match is always highlighted, so Enter runs it directly.
+    pebbles_widgets::overlay::init();
+    pebbles_core::focus::init();
+    PICKED.with(|p| *p.borrow_mut() = None);
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(500.0, 420.0);
+    ui.mount_root(View::new(palette::WHITE, component(cmd_root)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+
+    ui.dispatch_key(KeyInput::Insert("Theme".to_string()));
+    frame(&mut ui, &mut env, win);
+    ui.dispatch_key(KeyInput::Enter);
+    frame(&mut ui, &mut env, win);
+
+    assert_eq!(PICKED.with(|p| p.borrow().clone()), Some("Toggle Theme".to_string()));
 }
 
 fn combo_root() -> impl IntoWidget {
