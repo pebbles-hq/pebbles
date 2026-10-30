@@ -321,12 +321,22 @@ impl Harness {
 
     // ----- input -----------------------------------------------------------
 
-    /// A full click at `at`: pointer-down → tap → pointer-up, then a frame.
+    /// A full click at `at`, as the shell delivers it: the press blurs focus, then the
+    /// pan-hungry widget under the pointer gets its drag start (a text field focuses and
+    /// places its caret there) → pointer-down → tap → pointer-up → drag end, then a frame.
     pub fn click(&mut self, at: Offset) {
         self.ui.make_current();
+        pebbles_core::focus::set_focus(None);
+        let pan = self.ui.pan_target_at(at);
+        if let Some(t) = pan {
+            self.ui.dispatch_pan_start(t, at);
+        }
         self.ui.dispatch_pointer_down(at);
         self.ui.dispatch_tap(at);
         self.ui.dispatch_pointer_up(at);
+        if let Some(t) = pan {
+            self.ui.dispatch_pan_end(t, at);
+        }
         self.frame();
     }
 
@@ -804,6 +814,110 @@ mod tests {
         h.draw(); // autofocus lands
         h.key(KeyInput::Insert("x".into()));
         assert_eq!(key_bound().get(), "x", "a key dispatched through the harness reaches the editor");
+    }
+
+    // ----- a dialog takes keyboard focus from the page and gives it back -----
+
+    thread_local! {
+        static PAGE_VAL: RefCell<Option<(Signal<String>, Signal<String>)>> = const { RefCell::new(None) };
+    }
+
+    fn page_and_dialog_vals() -> (Signal<String>, Signal<String>) {
+        PAGE_VAL.with(|c| {
+            *c.borrow_mut()
+                .get_or_insert_with(|| (create_signal(String::new()), create_signal(String::new())))
+        })
+    }
+
+    fn page_probe() -> impl IntoWidget {
+        text_field().bind(page_and_dialog_vals().0).autofocus().width(200.0)
+    }
+
+    fn open_field_dialog() {
+        pebbles_widgets::dialog(
+            text_field().bind(page_and_dialog_vals().1).placeholder("dialog field").autofocus(),
+        )
+        .open();
+    }
+
+    #[test]
+    fn a_dialog_autofocus_takes_focus_from_the_page_and_closing_restores_it() {
+        PAGE_VAL.with(|c| *c.borrow_mut() = None);
+        let (page, dlg) = page_and_dialog_vals();
+        let mut h = Harness::new();
+        h.mount(|| component(page_probe));
+        h.draw();
+        h.key(KeyInput::Insert("a".into()));
+        assert_eq!(page.get(), "a", "the page field starts focused");
+        open_field_dialog();
+        h.frames(2);
+        h.key(KeyInput::Insert("b".into()));
+        assert_eq!((page.get().as_str(), dlg.get().as_str()), ("a", "b"), "the dialog field took focus");
+        pebbles_widgets::close_dialog(0);
+        h.frames(2);
+        h.key(KeyInput::Insert("c".into()));
+        assert_eq!(page.get(), "ac", "closing the dialog restores focus to the page field");
+    }
+
+    /// A bare key-handling node (like a code editor: `register_code_editor`, no
+    /// `register`) that focuses itself on mount and appends keys to the page signal.
+    fn editor_only_probe() -> impl IntoWidget {
+        let node = pebbles_core::create_focus();
+        let page = page_and_dialog_vals().0;
+        node.register_code_editor(std::rc::Rc::new(move |k| {
+            if let KeyInput::Insert(t) = k {
+                page.update(|p| p.push_str(&t));
+            }
+        }));
+        let first = create_signal(true);
+        if first.peek() {
+            first.set(false);
+            node.request_focus();
+        }
+        container().width(200.0).height(40.0)
+    }
+
+    #[test]
+    fn closing_a_dialog_restores_focus_to_a_code_editor_node() {
+        PAGE_VAL.with(|c| *c.borrow_mut() = None);
+        let (page, dlg) = page_and_dialog_vals();
+        let mut h = Harness::new();
+        h.mount(|| component(editor_only_probe));
+        h.draw();
+        h.key(KeyInput::Insert("a".into()));
+        assert_eq!(page.get(), "a", "the editor starts focused");
+        open_field_dialog();
+        h.frames(2);
+        h.key(KeyInput::Insert("b".into()));
+        assert_eq!((page.get().as_str(), dlg.get().as_str()), ("a", "b"), "the dialog field took focus");
+        pebbles_widgets::close_dialog(0);
+        h.frames(2);
+        h.key(KeyInput::Insert("c".into()));
+        assert_eq!(page.get(), "ac", "closing the dialog restores focus to the editor");
+    }
+
+    #[test]
+    fn clicking_a_dialog_field_takes_focus_from_the_page() {
+        PAGE_VAL.with(|c| *c.borrow_mut() = None);
+        let (page, dlg) = page_and_dialog_vals();
+        let mut h = Harness::new();
+        h.mount(|| component(page_probe));
+        h.draw();
+        open_field_dialog();
+        h.frames(2);
+        // Drop focus (the harness click used to leave it wherever it was), then click
+        // into the dialog's field: the press must focus it, as the shell's does.
+        pebbles_core::focus::set_focus(None);
+        let n =
+            h.semantics_tree().into_iter().find(|n| n.props.label == "dialog field").expect("dialog field");
+        let at = Offset::new((n.bounds.x0 + n.bounds.x1) / 2.0, (n.bounds.y0 + n.bounds.y1) / 2.0);
+        h.click(at);
+        h.key(KeyInput::Insert("q".into()));
+        assert_eq!(
+            (page.get().as_str(), dlg.get().as_str()),
+            ("", "q"),
+            "the click moved key input into the dialog"
+        );
     }
 
     // ----- scroll reaches a scrollable ------------------------------------
