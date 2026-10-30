@@ -19,7 +19,8 @@ gallery/ (287 cases, added 2026-10-28): generated locally on the same lavapipe s
   bytes:     10236473 (all 589 refs now 12843609 of the 15 MiB budget)
 
 2026-10-31: every text-bearing ref regenerated (350 PNGs + text/sharpness_13px) for the
-  GPUI-style text contrast/gamma curve; same lavapipe stack; 590 refs = 13151733 bytes.
+  GPUI-style text contrast/gamma curve; same lavapipe stack; regenerated again (349 PNGs) for
+  its integer fixed-point form (f8f8af1).
 
 Every case passed the golden model, or (widget/screen/stress self-golden cases) had green probes
 and was deterministic. Review each image (REVIEW.md lists them all by case name) and target/render-check/<platform>/report.md before
