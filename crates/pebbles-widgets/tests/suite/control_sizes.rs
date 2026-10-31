@@ -62,10 +62,10 @@ fn mixed_row() -> pebbles_core::widget::AnyWidget {
     .into_widget()
 }
 
-fn measure(theme: Theme, size: ControlSize) -> (Ui, Vec<(String, Offset, Size)>) {
+fn measure(theme: &Theme, size: ControlSize) -> (Ui, Vec<(String, Offset, Size)>) {
     pebbles_widgets::overlay::init();
     pebbles_core::focus::init();
-    theme.make_current();
+    (*theme).make_current();
     RECTS.with(|r| r.borrow_mut().clear());
     SIZE.with(|s| *s.borrow_mut() = size);
     let mut ui = Ui::new();
@@ -88,7 +88,7 @@ fn measure(theme: Theme, size: ControlSize) -> (Ui, Vec<(String, Offset, Size)>)
     (ui, rects)
 }
 
-fn assert_uniform(theme: Theme, size: ControlSize) {
+fn assert_uniform(theme: &Theme, size: ControlSize) {
     let h = theme.size(size).height;
     let (_, rects) = measure(theme, size);
     let top = rects[0].1.y;
@@ -103,7 +103,7 @@ fn assert_uniform(theme: Theme, size: ControlSize) {
 #[test]
 fn every_sized_control_shares_the_height_at_each_default_size() {
     for size in [ControlSize::Xs, ControlSize::Sm, ControlSize::Md, ControlSize::Lg] {
-        assert_uniform(Theme::light(), size);
+        assert_uniform(&Theme::light(), size);
     }
 }
 
@@ -125,22 +125,22 @@ fn material_and_tailwind_keep_their_own_uniform_scales() {
     for lang in [DesignLanguage::Material, DesignLanguage::Tailwind] {
         let t = Theme::light().design(lang);
         assert!(t.size(ControlSize::Md).height > 28.0, "{lang:?} md stays roomier");
-        assert_uniform(t, ControlSize::Md);
-        assert_uniform(t, ControlSize::Sm);
+        assert_uniform(&t, ControlSize::Md);
+        assert_uniform(&t, ControlSize::Sm);
     }
 }
 
 #[test]
 fn custom_sizes_work_down_to_tiny_controls_without_overflow() {
     for h in [16.0, 18.0, 44.0] {
-        assert_uniform(Theme::light(), ControlSize::custom(h));
+        assert_uniform(&Theme::light(), ControlSize::custom(h));
     }
     // Explicit metrics are honoured as given.
     let exact = ControlSize::Custom(ControlMetrics { height: 22.0, font: 11.0, padding_x: 5.0, icon: 12.0 });
-    assert_uniform(Theme::light(), exact);
+    assert_uniform(&Theme::light(), exact);
 
     // At 16 px every label still fits inside its control.
-    let (ui, _) = measure(Theme::light(), ControlSize::custom(16.0));
+    let (ui, _) = measure(&Theme::light(), ControlSize::custom(16.0));
     for id in ui.render_tree().find_all::<RenderParagraph>() {
         let s = ui.render_tree().size_of(id);
         assert!(s.height <= 16.0 + 0.01, "a label overflows a 16 px control: {s:?}");
@@ -152,7 +152,7 @@ fn pagination_items_are_level_and_square() {
     for size in [ControlSize::Sm, ControlSize::Md, ControlSize::custom(18.0)] {
         let h = Theme::light().size(size).height;
         ONLY_PAGINATION.with(|o| *o.borrow_mut() = true);
-        let (ui, rects) = measure(Theme::light(), size);
+        let (ui, rects) = measure(&Theme::light(), size);
         ONLY_PAGINATION.with(|o| *o.borrow_mut() = false);
         assert!((rects[0].2.height - h).abs() < 0.01, "{size:?}: the pagination row is {:?}", rects[0].2);
         // Every interactive control in the row (all buttons) is exactly `h` tall.
