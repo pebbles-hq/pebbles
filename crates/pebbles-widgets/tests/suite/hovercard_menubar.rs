@@ -138,3 +138,53 @@ fn menubar_opens_on_click_and_switches_on_hover() {
     frame(&mut ui, &mut env, win);
     assert!(!overlay::is_open(), "dismissed");
 }
+
+/// How many times the theme accent (the open trigger's fill) is painted.
+fn accent_fills(ui: &mut Ui, env: &mut TextEnv) -> usize {
+    let mut scene = pebbles_render::Scene::new();
+    ui.paint(env, &mut scene);
+    env.finish_frame();
+    let accent = format!("{:?}", pebbles_widgets::theme::theme().colors.accent);
+    format!("{scene:?}").matches(&accent).count()
+}
+
+/// Regression: closing the menu from outside the strip's key handler (the shell's
+/// Escape, an outside click, an item picked — all `hide_overlay`) must clear the open
+/// trigger, so it is no longer highlighted and the next click opens it again.
+#[test]
+fn menubar_trigger_unhighlights_when_overlay_closes_elsewhere() {
+    overlay::init();
+    pebbles_core::focus::init();
+
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    let win = Size::new(500.0, 400.0);
+    ui.mount_root(View::new(palette::WHITE, component(mb_root)).into_widget());
+    ui.layout(&mut env, win);
+    overlay::set_window_size(500.0, 400.0);
+    frame(&mut ui, &mut env, win);
+    let base = accent_fills(&mut ui, &mut env);
+
+    let file = Offset::new(20.0, 16.0);
+    let click = |ui: &mut Ui| {
+        ui.dispatch_pointer_down(file);
+        ui.dispatch_tap(file);
+        ui.dispatch_pointer_up(file);
+    };
+    click(&mut ui);
+    frame(&mut ui, &mut env, win);
+    assert!(overlay::is_open());
+    assert!(accent_fills(&mut ui, &mut env) > base, "the open trigger is highlighted");
+
+    overlay::hide_overlay();
+    frame(&mut ui, &mut env, win);
+    assert!(!overlay::is_open());
+    assert_eq!(accent_fills(&mut ui, &mut env), base, "no trigger stays highlighted");
+
+    // The same trigger opens again with one click (no stale "already open" toggle).
+    click(&mut ui);
+    frame(&mut ui, &mut env, win);
+    assert!(overlay::is_open(), "reopens on the first click");
+    overlay::hide_overlay();
+    frame(&mut ui, &mut env, win);
+}

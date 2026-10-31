@@ -14,14 +14,14 @@ use crate::components::input::menu::{
     ChildCtx, MenuEntry, RebuildableMenu, RowTarget, SubMenuHandles, estimate_height, menu_sub,
 };
 use crate::components::input::popover::anchor_below;
-use crate::overlay::{hide_overlay, is_open, show_overlay_guarded};
+use crate::overlay::{hide_overlay, is_open, overlay_signal, show_overlay_guarded};
 use crate::theme::theme;
 use crate::widgets::{Container, GestureDetector, row, text};
 use pebbles_core::context::action_event;
 use pebbles_core::focus::create_focus;
 use pebbles_core::keyboard::{KeyInput, Motion};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{component_props, create_signal, create_signal_with};
+use pebbles_core::{component_props, create_effect, create_signal, create_signal_with};
 
 /// One top-level menu in a [`Menubar`]: a label + its entries.
 pub struct MenubarMenu {
@@ -132,6 +132,15 @@ fn render_menubar(p: &Props) -> AnyWidget {
     // Which top-level menu is open (index), so the trigger can highlight and hover can
     // switch. `is_open()` (the overlay) is the source of truth for "a menu is showing".
     let open = create_signal(Option::<usize>::None);
+    // The overlay can close without going through this strip (Escape handled by the
+    // shell, an outside click on the scrim, an item picked, a replacing overlay's
+    // teardown): whenever no overlay is showing, no trigger is open — otherwise the
+    // last trigger would stay highlighted with a stale index.
+    create_effect(move || {
+        if overlay_signal().get().is_none() && open.peek().is_some() {
+            open.set(None);
+        }
+    });
     let child_nav = list_nav();
     let child_ctx = create_signal::<Option<Rc<ChildCtx>>>(None);
     let merged = crate::style::style().merge(p.style.clone().unwrap_or_default());
