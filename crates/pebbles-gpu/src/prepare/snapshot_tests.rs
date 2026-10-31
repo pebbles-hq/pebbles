@@ -15,6 +15,7 @@ fn plan_of(scene: &Scene, size: (u32, u32)) -> FramePlan {
         vertex_limit: u32::MAX,
         scale_factor: 1.0,
         glyph_hint: None,
+        lcd: None,
     };
     prepare(
         scene,

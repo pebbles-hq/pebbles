@@ -18,6 +18,7 @@ pub fn raster_font_bytes(font: &[u8], index: u32, glyphs: &[u16], px: f32) -> us
             coords: &[],
             hint: false,
             native_strike: false,
+            lcd: u8::from(glyph_id % 2 == 1),
         };
         if let Some(g) = raster.rasterize(&req) {
             total += g.data.len();

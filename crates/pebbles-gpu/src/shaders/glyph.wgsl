@@ -74,8 +74,8 @@ fn text_coverage(a0: f32, color: vec3<f32>) -> f32 {
     return f32(clamp(out, 0, one)) / 4096.0;
 }
 
-@fragment
-fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
+// The premultiplied, clipped color of a grayscale-mask, path-mask or color glyph fragment.
+fn glyph_premul(in: QuadOut) -> vec4<f32> {
     // The layer belongs to ONE kind; the other kind's (discarded) sample reads layer 0, which
     // always exists. Not `min(layer, textureNumLayers(..) - 1)`: naga's HLSL backend returns the
     // mip count for arrayed textures (1 here), which pinned every glyph to layer 0 on DX12.
@@ -89,5 +89,10 @@ fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     let m = select(raw, text_coverage(raw, straight), in.layer_kind.y == 4u);
     let c = atlas_bilinear(color_atlas, in.atlas_px, color_layer);
     let cc = (clip_coverage(device_pos(in.p)) * clip_mask_coverage(device_pos(in.p)));
-    return finish_color(select(in.color * m, c * in.color.a, is_color) * cc);
+    return select(in.color * m, c * in.color.a, is_color) * cc;
+}
+
+@fragment
+fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
+    return finish_color(glyph_premul(in));
 }

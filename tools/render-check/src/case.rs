@@ -124,6 +124,9 @@ pub struct Case {
     /// A documented per-case `max_pct_over` (09 §8.0 allows exactly one: the SDF clip
     /// conflation of `clip/rrect_overlap_edge`); `None` = the category's.
     pub pct_over_override: Option<f64>,
+    /// Render with subpixel (LCD) text (`TextAntialiasing::Subpixel`). Judged by probes only
+    /// (the golden model is grayscale); UNJUDGED on adapters without dual-source blending.
+    pub subpixel_text: bool,
 }
 
 /// How a stability case is judged (§7.2 frames/).
@@ -158,6 +161,7 @@ fn base(name: &str, category: Category, slice: Slice, w: u32, h: u32, build: Bui
         in_refs: true,
         stability: Stability::EveryFrame,
         pct_over_override: None,
+        subpixel_text: false,
     }
 }
 
@@ -197,6 +201,14 @@ pub fn frame_ops(
 }
 
 impl Case {
+    /// Subpixel (LCD) text, judged by probes only and never committed.
+    pub fn subpixel_text(mut self) -> Self {
+        self.subpixel_text = true;
+        self.reference = Reference::Analytic;
+        self.in_refs = false;
+        self
+    }
+
     /// Set the background.
     pub fn bg(mut self, c: Color) -> Self {
         self.background = c;

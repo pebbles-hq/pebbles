@@ -19,6 +19,15 @@ macro_rules! shader {
 
 pub(crate) const SOLID: &str = shader!("solid.wgsl");
 pub(crate) const GLYPH: &str = shader!("glyph.wgsl");
+/// The LCD glyph module (`glyph_lcd.wgsl`): needs `Features::DUAL_SOURCE_BLENDING`.
+pub(crate) const GLYPH_LCD: &str = concat!(
+    "enable dual_source_blending;\n",
+    include_str!("prelude.wgsl"),
+    "\n",
+    include_str!("glyph.wgsl"),
+    "\n",
+    include_str!("glyph_lcd.wgsl")
+);
 pub(crate) const IMAGE: &str = shader!("image.wgsl");
 pub(crate) const SHADOW: &str = shader!("shadow.wgsl");
 pub(crate) const SDF: &str = shader!("sdf.wgsl");
@@ -49,6 +58,7 @@ pub(crate) fn shader_brush_head_lines() -> usize {
 pub(crate) const ALL: &[(&str, &str)] = &[
     ("solid", SOLID),
     ("glyph", GLYPH),
+    ("glyph_lcd", GLYPH_LCD),
     ("image", IMAGE),
     ("shadow", SHADOW),
     ("sdf", SDF),

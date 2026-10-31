@@ -309,6 +309,7 @@ impl Walk<'_> {
             hint: false,
             coords_hash: 0,
             colr_fg: None,
+            lcd: 0,
         };
         let f = |v: f64| super::num::to_f32(v).unwrap_or(0.0);
         let [a, b, c, d, ..] = linear.as_coeffs();

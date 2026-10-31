@@ -55,6 +55,8 @@ pub struct OffscreenRenderer {
     last_stats: FrameStats,
     /// `set_glyph_hint_inputs`: (scale-factor override, hint override).
     hint_inputs: (Option<f64>, Option<bool>),
+    /// `set_text_antialiasing` (default grayscale: deterministic captures).
+    text_aa: (crate::TextAntialiasing, Option<crate::SubpixelOrder>),
     /// Test-only: issue a bad `write_texture` inside the error scopes.
     #[cfg(test)]
     inject_validation_error: bool,
@@ -90,6 +92,7 @@ impl OffscreenRenderer {
             targets: FrameTargets::new(),
             last_stats: FrameStats::default(),
             hint_inputs: (None, None),
+            text_aa: (crate::TextAntialiasing::Grayscale, None),
             #[cfg(test)]
             inject_validation_error: false,
         })
@@ -167,6 +170,21 @@ impl OffscreenRenderer {
         self.hint_inputs = (scale_factor, hint);
     }
 
+    /// Text antialiasing for later renders (default `Grayscale`). The capture target is
+    /// opaque, so `Subpixel` draws LCD text when [`supports_subpixel_text`](Self::supports_subpixel_text).
+    pub fn set_text_antialiasing(
+        &mut self,
+        aa: crate::TextAntialiasing,
+        order: Option<crate::SubpixelOrder>,
+    ) {
+        self.text_aa = (aa, order);
+    }
+
+    /// Whether the device can draw subpixel (LCD) text (dual-source blending).
+    pub fn supports_subpixel_text(&self) -> bool {
+        self.renderer.supports_subpixel_text()
+    }
+
     /// Debug-only, count-only cache sizes (10 §9.2, M05): the renderer's plus this target's.
     #[cfg(debug_assertions)]
     pub fn census(&self) -> crate::census::GpuCensus {
@@ -221,7 +239,8 @@ impl OffscreenRenderer {
         let params = FrameParams::new(base_color)
             .with_root_transform(kurbo::Affine::scale(scale))
             .with_scale_factor(self.hint_inputs.0.unwrap_or(scale))
-            .with_glyph_hint(self.hint_inputs.1);
+            .with_glyph_hint(self.hint_inputs.1)
+            .with_text_antialiasing(self.text_aa.0, self.text_aa.1);
         let rendered = self.renderer.render(target, scene, &params);
         #[cfg(test)]
         if self.inject_validation_error {

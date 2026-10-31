@@ -48,6 +48,7 @@ pub(crate) fn resolve_glyphs(
             coords,
             hint: key.hint,
             native_strike: req.linear.is_some(),
+            lcd: key.lcd,
         };
         let (lookup, rasterized) = atlas.lookup(key, &raster, stats);
         stats.glyphs_rasterized += u32::from(rasterized);
@@ -55,7 +56,10 @@ pub(crate) fn resolve_glyphs(
             GlyphLookup::Slot(slot) if req.linear.is_some() || slot.strike_ppem > 0 => {
                 strike_quad(slot, req, run.size_px)
             }
-            other => text_mask(quad_for(other, req.origin, req.color, stats)),
+            other => {
+                let lcd = matches!(other, GlyphLookup::Slot(s) if s.lcd);
+                text_mask(quad_for(other, req.origin, req.color, stats), lcd)
+            }
         };
         out.push(quad);
     }
@@ -145,9 +149,15 @@ fn strike_quad(slot: AtlasSlot, req: &crate::prepare::GlyphRequest, size: f32) -
 /// contrast / gamma curve to it, never to path masks (kind 0) or color glyphs (kind 1).
 pub(crate) const KIND_TEXT_MASK: u32 = 4;
 
-/// Tag a mask-atlas glyph quad as text (`KIND_TEXT_MASK`).
-fn text_mask(mut q: QuadInstance) -> QuadInstance {
-    if q.layer_kind[1] == 0 {
+/// `QuadInstance.layer_kind.y` of a subpixel (LCD) glyph in the color pages: per-channel
+/// coverage, drawn only by the dual-source glyph pipeline (`glyph_lcd.wgsl`).
+pub(crate) const KIND_TEXT_LCD: u32 = 5;
+
+/// Tag a mask-atlas glyph quad as text (`KIND_TEXT_MASK`), an LCD slot's as `KIND_TEXT_LCD`.
+fn text_mask(mut q: QuadInstance, lcd: bool) -> QuadInstance {
+    if lcd {
+        q.layer_kind[1] = KIND_TEXT_LCD;
+    } else if q.layer_kind[1] == 0 {
         q.layer_kind[1] = KIND_TEXT_MASK;
     }
     q
@@ -203,8 +213,18 @@ mod tests {
             plan.cmds.iter().filter(|c| matches!(c, crate::prepare::DrawCmd::Glyphs { .. })).collect();
         assert_eq!(cmds.len(), 1);
         assert_eq!(plan.glyphs.len(), 3);
-        let slot =
-            |kind| AtlasSlot { kind, layer: 1, x: 10, y: 20, w: 8, h: 9, left: 0, top: 9, strike_ppem: 0 };
+        let slot = |kind| AtlasSlot {
+            kind,
+            layer: 1,
+            x: 10,
+            y: 20,
+            w: 8,
+            h: 9,
+            left: 0,
+            top: 9,
+            strike_ppem: 0,
+            lcd: false,
+        };
         let kinds = [AtlasKind::Mask, AtlasKind::Color, AtlasKind::Mask]
             .map(|k| glyph_quad(slot(k), [0.0, 0.0], [1.0; 4]).layer_kind);
         assert_eq!(kinds, [[1, 0], [1, 1], [1, 0]]);

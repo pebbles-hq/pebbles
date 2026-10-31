@@ -132,6 +132,40 @@ pub fn emoji_has_color(img: &Rgba8, scale: f64) -> Result<(), String> {
     if ink >= 20 && chroma >= 1 { Ok(()) } else { Err(format!("{ink} ink / {chroma} chromatic pixels")) }
 }
 
+/// `text/lcd_13px`: subpixel text has per-channel coverage (≥ 200 pixels with |R − B| > 16),
+/// and the filter keeps it colour-neutral on average: over the ink of each half, the mean of
+/// R − B stays within ±8 (a channel-order or filter bug shifts it, colouring every stem).
+pub fn lcd_fringes_neutral(img: &Rgba8, _scale: f64) -> Result<(), String> {
+    // Group ink by its row's background (the row's most common colour): dark or light block.
+    let mut groups: Vec<([u8; 4], i64, i64)> = Vec::new();
+    let mut fringes = 0u32;
+    for y in 0..img.height {
+        let mut counts: std::collections::HashMap<[u8; 4], u32> = std::collections::HashMap::new();
+        for x in 0..img.width {
+            *counts.entry(img.px(x, y)).or_default() += 1;
+        }
+        let Some(bg) = counts.into_iter().max_by_key(|&(c, n)| (n, c)).map(|(c, _)| c) else { continue };
+        for x in 0..img.width {
+            let p = img.px(x, y);
+            if near(p, bg, 8) {
+                continue;
+            }
+            fringes += u32::from(p[0].abs_diff(p[2]) > 16);
+            let d = i64::from(p[0]) - i64::from(p[2]);
+            match groups.iter_mut().find(|g| near(g.0, bg, 8)) {
+                Some(g) => (g.1, g.2) = (g.1 + 1, g.2 + d),
+                None => groups.push((bg, 1, d)),
+            }
+        }
+    }
+    for (bg, n, sum) in groups.iter().filter(|g| g.1 >= 100) {
+        if (sum / n).abs() > 8 {
+            return Err(format!("over {bg:?}: mean R − B {} over {n} ink pixels", sum / n));
+        }
+    }
+    if fringes < 200 { Err(format!("{fringes} pixels with per-channel coverage")) } else { Ok(()) }
+}
+
 /// Every pixel is opaque (the canvas is opaque: anything else is NaN/undefined blending).
 pub fn all_opaque(img: &Rgba8, _scale: f64) -> Result<(), String> {
     match img.data.as_chunks::<4>().0.iter().position(|p| p[3] != 255) {

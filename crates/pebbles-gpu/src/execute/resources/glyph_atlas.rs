@@ -302,8 +302,9 @@ impl GlyphAtlas {
         };
         let atlas = match glyph.content {
             RasterContent::Mask => AtlasKind::Mask,
-            RasterContent::Color => AtlasKind::Color,
+            RasterContent::Color | RasterContent::Lcd => AtlasKind::Color,
         };
+        let lcd = glyph.content == RasterContent::Lcd;
         if glyph.width == 0 || glyph.height == 0 {
             self.cpu.insert_empty(key);
             return (GlyphLookup::Empty, true);
@@ -317,6 +318,7 @@ impl GlyphAtlas {
                     0 => slot,
                     ppem => self.cpu.set_strike_ppem(key, ppem).unwrap_or(slot),
                 };
+                let slot = if lcd { self.cpu.set_lcd(key).unwrap_or(slot) } else { slot };
                 (GlyphLookup::Slot(slot), true)
             }
             Err(_) => (GlyphLookup::Full, true),

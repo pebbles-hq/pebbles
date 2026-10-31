@@ -165,6 +165,7 @@ fn atlas_keys_follow_hint_policy() {
             vertex_limit: u32::MAX,
             scale_factor: scale,
             glyph_hint: None,
+            lcd: None,
         };
         let (plan, _) = crate::prepare::test_util::prepare_with(&s, &input);
         match plan.glyphs[0].key {
@@ -190,6 +191,7 @@ fn scale_change_rekeys_glyphs_at_device_size() {
             vertex_limit: u32::MAX,
             scale_factor: scale,
             glyph_hint: None,
+            lcd: None,
         };
         let (plan, _) = crate::prepare::test_util::prepare_with(&s, &input);
         match plan.glyphs[0].key {
@@ -229,4 +231,49 @@ fn fractional_scroll_keeps_glyph_origins_on_pixels() {
         }
     }
     assert_eq!(variants.len(), 4, "exactly 4 horizontal variants: {variants:?}");
+}
+
+/// LCD text (`crate::text_aa`): atlas-route runs at the root get LCD keys; runs inside an
+/// offscreen layer (transparent intermediate) and rotated runs (outline route) stay grayscale.
+#[test]
+fn lcd_keys_only_on_opaque_axis_aligned_runs() {
+    use crate::execute::resources::atlas_alloc::CoverageKey;
+    let mut s = Scene::new();
+    run(&mut s, 13.0, &[], Affine::IDENTITY, vec![g(40, 0.0)]);
+    run(&mut s, 13.0, &[], Affine::scale(1.5), vec![g(41, 10.0)]);
+    Painter::new(&mut s).push_layer(
+        Fill::NonZero,
+        Mix::Multiply,
+        0.5,
+        Affine::IDENTITY,
+        &kurbo::Rect::new(0.0, 0.0, 128.0, 128.0),
+    );
+    run(&mut s, 13.0, &[], Affine::IDENTITY, vec![g(42, 20.0)]);
+    Painter::new(&mut s).pop_layer();
+    run(&mut s, 13.0, &[], Affine::rotate(0.3), vec![g(43, 30.0)]);
+    let lcd_codes = |lcd| {
+        let input = crate::prepare::PrepareInput {
+            target_size: (128, 128),
+            root_transform: Affine::IDENTITY,
+            vertex_limit: u32::MAX,
+            scale_factor: 1.0,
+            glyph_hint: None,
+            lcd,
+        };
+        let (plan, _) = crate::prepare::test_util::prepare_with(&s, &input);
+        plan.glyphs
+            .iter()
+            .filter_map(|r| match r.key {
+                CoverageKey::Glyph(k) => Some((k.glyph_id, k.lcd)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let on = lcd_codes(Some(crate::text_aa::LcdOrder::Rgb));
+    assert!(on.contains(&(40, 1)) && on.contains(&(41, 1)), "root runs (uniform scale too): {on:?}");
+    assert!(on.contains(&(42, 0)), "offscreen layer stays grayscale: {on:?}");
+    assert!(on.iter().all(|&(id, lcd)| id != 43 || lcd == 0), "rotated run: {on:?}");
+    let bgr = lcd_codes(Some(crate::text_aa::LcdOrder::Bgr));
+    assert!(bgr.contains(&(40, 2)));
+    assert!(lcd_codes(None).iter().all(|&(_, lcd)| lcd == 0), "grayscale frame");
 }

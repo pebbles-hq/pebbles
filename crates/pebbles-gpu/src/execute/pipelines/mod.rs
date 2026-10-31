@@ -136,6 +136,8 @@ pub(crate) struct PipelineKey {
 pub(crate) struct ShaderModules {
     pub solid: wgpu::ShaderModule,
     pub glyph: wgpu::ShaderModule,
+    /// `glyph_lcd.wgsl`, only on devices with `DUAL_SOURCE_BLENDING` (`crate::text_aa`).
+    pub glyph_lcd: Option<wgpu::ShaderModule>,
     pub image: wgpu::ShaderModule,
     pub shadow: wgpu::ShaderModule,
     pub sdf: wgpu::ShaderModule,
@@ -160,6 +162,10 @@ impl ShaderModules {
         Self {
             solid: module("pebbles.gpu.shader.solid", shaders::SOLID),
             glyph: module("pebbles.gpu.shader.glyph", shaders::GLYPH),
+            glyph_lcd: device
+                .features()
+                .contains(wgpu::Features::DUAL_SOURCE_BLENDING)
+                .then(|| module("pebbles.gpu.shader.glyph_lcd", shaders::GLYPH_LCD)),
             image: module("pebbles.gpu.shader.image", shaders::IMAGE),
             shadow: module("pebbles.gpu.shader.shadow", shaders::SHADOW),
             sdf: module("pebbles.gpu.shader.sdf", shaders::SDF),
@@ -171,6 +177,14 @@ impl ShaderModules {
             projected: module("pebbles.gpu.shader.projected", shaders::PROJECTED),
             vertices: module("pebbles.gpu.shader.vertices", shaders::VERTICES),
         }
+    }
+
+    /// The module `key` builds from (`None`: the LCD glyph variant without device support).
+    pub(crate) fn for_key(&self, key: PipelineKey) -> Option<&wgpu::ShaderModule> {
+        if key.kind == PipelineKind::Glyph && key.variant == descs::GLYPH_LCD_VARIANT {
+            return self.glyph_lcd.as_ref();
+        }
+        Some(self.for_kind(key.kind))
     }
 
     pub(crate) fn for_kind(&self, kind: PipelineKind) -> &wgpu::ShaderModule {
@@ -263,7 +277,7 @@ impl PipelineCache {
         if self.pipelines.contains_key(&key) {
             return;
         }
-        let shader = modules.for_kind(key.kind);
+        let Some(shader) = modules.for_key(key) else { return };
         // Kinds without a §9 row in code yet are never reached (later cards add them).
         let Some(desc) = descs::desc_for(key) else { return };
         debug_assert!(crate::shaders::ALL.iter().any(|(n, _)| desc.wgsl.trim_end_matches(".wgsl") == *n));

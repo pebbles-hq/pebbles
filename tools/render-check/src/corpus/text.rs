@@ -37,6 +37,11 @@ pub fn cases() -> Vec<Case> {
         harness("text/dense_paragraph", Text, P2, W, H, dense_paragraph),
         // Gravel "blurry vs Zed": 13 px UI + 13/14 px mono, light-on-dark and dark-on-light at 1×.
         harness("text/sharpness_13px", Text, P2, W, H, sharpness_13px),
+        // The same text with subpixel (LCD) antialiasing (dark + light blocks); probes only.
+        harness("text/lcd_13px", Text, P2, W, H, sharpness_13px)
+            .subpixel_text()
+            .probe("all_opaque", crate::probe::all_opaque)
+            .probe("lcd_fringes_neutral", crate::probe::lcd_fringes_neutral),
         harness("text/rotated_30", Text, P2, W, H, rotated_30),
         harness("text/scaled_transform_3x", Text, P2, W, H, scaled_transform_3x),
         harness("text/selection_caret", Text, P2, W, H, selection_caret),

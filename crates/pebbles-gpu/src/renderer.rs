@@ -39,6 +39,10 @@ const MAX_FRAMES_IN_FLIGHT: usize = 3;
 /// Pipelines + caches for ONE device. Shared by every surface/target on that device.
 pub struct Renderer {
     pub(crate) sample_count: u32,
+    /// The device has `DUAL_SOURCE_BLENDING` (LCD text, `crate::text_aa`).
+    pub(crate) lcd_supported: bool,
+    /// This frame's LCD order (`None` = grayscale text); glyph draws then use the LCD pipeline.
+    pub(crate) frame_lcd: Option<crate::text_aa::LcdOrder>,
     /// Resource budgets, read once (10 §8, M03).
     pub(crate) budgets: super::budgets::GpuBudgets,
     adapter: wgpu::Adapter,
@@ -330,6 +334,8 @@ impl Renderer {
         let composite_buffer = uniform_buffer(device, "pebbles.gpu.buffer.composite", 1);
         Renderer {
             sample_count: gpu.caps().msaa_samples,
+            lcd_supported: device.features().contains(wgpu::Features::DUAL_SOURCE_BLENDING),
+            frame_lcd: None,
             budgets,
             adapter: gpu.adapter().clone(),
             msaa: super::frame_targets::MsaaCache::default(),
@@ -513,6 +519,26 @@ impl Renderer {
         result
     }
 
+    /// Whether this device can draw subpixel (LCD) text (`Features::DUAL_SOURCE_BLENDING`).
+    pub fn supports_subpixel_text(&self) -> bool {
+        self.lcd_supported
+    }
+
+    /// The LCD order `params` resolve to on this device and target (`crate::text_aa`).
+    fn lcd_for(&self, params: &FrameParams, decode_srgb_output: bool) -> Option<crate::text_aa::LcdOrder> {
+        if params.text_antialiasing == crate::TextAntialiasing::Grayscale {
+            return None; // never reads the system setting
+        }
+        crate::text_aa::resolve_lcd(crate::text_aa::LcdInputs {
+            mode: params.text_antialiasing,
+            order: params.subpixel_order,
+            system: crate::text_aa::system_text_aa(),
+            dual_source: self.lcd_supported,
+            opaque_target: params.base_color.components[3] >= 1.0,
+            decode_srgb_output,
+        })
+    }
+
     /// [`render`](Self::render) without the performance overlay.
     fn render_scene(
         &mut self,
@@ -546,12 +572,14 @@ impl Renderer {
         // The main pass is single-sampled; the negotiated count is for Tier C runs (R12, R17).
         self.sample_count = self.msaa.get(&self.adapter, format, None);
 
+        self.frame_lcd = self.lcd_for(params, target.decode_srgb_output);
         let input = PrepareInput {
             target_size: size,
             root_transform: params.root_transform,
             vertex_limit: self.vertex_limit,
             scale_factor: params.scale_factor,
             glyph_hint: params.glyph_hint,
+            lcd: self.frame_lcd,
         };
         let started = web_time::Instant::now();
         prepare(scene, &input, &self.limits, &mut self.scratch, &mut stats);
@@ -1111,6 +1139,7 @@ impl Renderer {
             base_color: params.base_color.components,
             decode_srgb,
             persistent_generation: targets.root_generation(),
+            lcd: self.lcd_for(params, decode_srgb),
         };
         let damage = targets.damage_frame(scene, key);
         if self.scratch.plan.root_needs_backdrop || !self.scratch.plan.customs.is_empty() {

@@ -31,6 +31,7 @@ fn run(scene: &Scene, budget: u64) -> (super::FramePlan, FrameStats) {
         vertex_limit: u32::MAX,
         scale_factor: 1.0,
         glyph_hint: None,
+        lcd: None,
     };
     prepare(scene, &input, &crate::test_support::webgl2_limits(), &mut scratch, &mut stats);
     (scratch.plan, stats)

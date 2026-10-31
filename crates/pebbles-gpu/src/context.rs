@@ -306,8 +306,10 @@ impl GpuContext {
         let limits = wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits());
         // M22: timestamps only when asked for and supported (never by default).
         let timing = self.init.gpu_timing && adapter.features().contains(wgpu::Features::TIMESTAMP_QUERY);
-        let required_features =
+        let mut required_features =
             if timing { wgpu::Features::TIMESTAMP_QUERY } else { wgpu::Features::empty() };
+        // Subpixel (LCD) text blends per channel with a second fragment output (`text_aa`).
+        required_features |= adapter.features() & wgpu::Features::DUAL_SOURCE_BLENDING;
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("pebbles.gpu.device"),

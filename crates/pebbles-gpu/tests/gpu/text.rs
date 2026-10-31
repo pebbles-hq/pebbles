@@ -548,3 +548,83 @@ fn atlas_colr_matches_vector() {
         assert!(over * 100 <= a.len(), "{ch} at x {x}: {over} pixels over 3 (max Δ {max})");
     }
 }
+
+/// Subpixel (LCD) text vs the CPU reference: an 'H' at 13 px drawn with `Subpixel` matches
+/// `lcd_blend_reference` over the atlas's filtered RGB coverage (±1 per channel), dark-on-light
+/// and light-on-dark, RGB and BGR. Without dual-source blending (WebGL, some GL) it falls back
+/// to grayscale: every pixel then has R = G = B.
+#[test]
+#[ignore = "gpu"]
+fn lcd_text_matches_cpu_reference() {
+    use pebbles_gpu::{SubpixelOrder, TextAntialiasing};
+    let Some(mut r) = support::gpu_or_skip("lcd_text_matches_cpu_reference") else { return };
+    let bytes = pebbles_render::fonts::builtin_fonts()[0].1;
+    let font = peniko::FontData::new(peniko::Blob::from(bytes.to_vec()), 0);
+    let gid = swash::FontRef::from_index(bytes, 0).expect("Inter").charmap().map('H');
+    let lcd = r.supports_subpixel_text();
+    eprintln!("dual-source blending: {lcd}");
+    let (w, h) = (32u32, 24u32);
+    let (ox, oy) = (8i32, 18i32);
+    for (bg, fg) in [([255u8, 255, 255], [0x24u8, 0x29, 0x2E]), ([0x1E, 0x1E, 0x1E], [0xD4, 0xD4, 0xD4])] {
+        for bgr in [false, true] {
+            let order = if bgr { SubpixelOrder::Bgr } else { SubpixelOrder::Rgb };
+            r.set_text_antialiasing(TextAntialiasing::Subpixel, Some(order));
+            let mut scene = Scene::new();
+            Painter::new(&mut scene).draw_glyphs(
+                &font,
+                13.0,
+                &[],
+                &Brush::Solid(Color::from_rgb8(fg[0], fg[1], fg[2])),
+                Affine::IDENTITY,
+                None,
+                Fill::NonZero,
+                std::iter::once(Glyph { id: u32::from(gid), x: ox as f32, y: oy as f32 }),
+            );
+            let img =
+                r.render_rgba(&scene, (w, h), Color::from_rgb8(bg[0], bg[1], bg[2]), 1.0).expect("render");
+            if !support::pixels_meaningful(&r) {
+                return;
+            }
+            let px = |x: u32, y: u32| pixel(&img.pixels, w, x, y);
+            if !lcd {
+                assert!((0..h).all(|y| (0..w).all(|x| {
+                    let p = px(x, y);
+                    p[0] == p[1] && p[1] == p[2]
+                })));
+                continue;
+            }
+            let (left, top, gw, gh, cov) =
+                pebbles_gpu::__lcd_glyph_for_check(&font, gid, 13.0, true, bgr).expect("glyph");
+            let (gamma, contrast) = (pebbles_gpu::DEFAULT_TEXT_GAMMA, pebbles_gpu::DEFAULT_TEXT_CONTRAST);
+            let (x0, y0) = (ox + left, oy - top);
+            let mut fringes = 0;
+            for y in 0..h as i32 {
+                for x in 0..w as i32 {
+                    let (gx, gy) = (x - x0, y - y0);
+                    let c = if (0..gw as i32).contains(&gx) && (0..gh as i32).contains(&gy) {
+                        let i = ((gy as u32 * gw + gx as u32) * 4) as usize;
+                        [cov[i], cov[i + 1], cov[i + 2]]
+                    } else {
+                        [0; 3]
+                    };
+                    let want = pebbles_gpu::__lcd_blend_reference(
+                        bg,
+                        [fg[0], fg[1], fg[2], 255],
+                        c,
+                        gamma,
+                        contrast,
+                    );
+                    let got = px(x as u32, y as u32);
+                    for k in 0..3 {
+                        assert!(
+                            got[k].abs_diff(want[k]) <= 1,
+                            "bg {bg:?} bgr {bgr} ({x},{y}) ch {k}: got {got:?} want {want:?} cov {c:?}"
+                        );
+                    }
+                    fringes += usize::from(got[0] != got[2]);
+                }
+            }
+            assert!(fringes > 4, "LCD text has per-channel coverage");
+        }
+    }
+}

@@ -77,6 +77,7 @@ fn cmd_ops_are_non_decreasing() {
             vertex_limit: u32::MAX,
             scale_factor: 1.0,
             glyph_hint: None,
+            lcd: None,
         };
         prepare(
             &scene,

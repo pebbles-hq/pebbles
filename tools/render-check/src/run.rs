@@ -110,6 +110,7 @@ impl Runner {
             .map_err(|p| (Status::Panic, format!("build: {}", panic_message(&*p))))?;
         let cand = &mut self.candidate;
         cand.set_glyph_hint_inputs(scale, self.opts.glyph_hint);
+        cand.set_subpixel_text(case.subpixel_text);
         catch_unwind(AssertUnwindSafe(|| cand.render_rgba(&built, size, bg, 1.0)))
             .map_err(|p| (Status::Panic, format!("candidate: {}", panic_message(&*p))))?
             .map_err(|e| (Status::GpuError, e.to_string()))
@@ -197,6 +198,7 @@ impl Runner {
         let mut fresh = Candidate::new().map_err(|e| (Status::GpuError, e.to_string()))?;
         fresh.set_tier_a(self.opts.tier_a);
         fresh.set_glyph_hint_inputs(case.scale, self.opts.glyph_hint);
+        fresh.set_subpixel_text(case.subpixel_text);
         let built = catch_unwind(|| frame_scene(&logical_scene(case, last), case.scale))
             .map_err(|p| (Status::Panic, format!("build: {}", panic_message(&*p))))?;
         let again = catch_unwind(AssertUnwindSafe(|| {
@@ -228,6 +230,11 @@ impl Runner {
     fn judge(&self, case: &Case, cand: &Rgba8, r: &mut CaseResult) -> Option<Rgba8> {
         let probe_fails = probe::run_probes(case, cand, &mut r.probes);
         if r.status == Status::Unstable {
+            return None;
+        }
+        if case.subpixel_text && !self.candidate.supports_subpixel_text() {
+            r.status = Status::Unjudged;
+            r.note = "no DUAL_SOURCE_BLENDING: subpixel text falls back to grayscale".into();
             return None;
         }
         let golden_mode = self.opts.reference == RefMode::Golden;

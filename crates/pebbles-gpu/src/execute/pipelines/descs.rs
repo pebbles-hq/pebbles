@@ -45,6 +45,20 @@ const fn layout(
     Some(wgpu::VertexBufferLayout { array_stride: stride as u64, step_mode, attributes })
 }
 
+/// `PipelineKey::variant` of the LCD glyph pipeline (`glyph_lcd.wgsl`, blend `{One,
+/// OneMinusSrc1}`); variant 0 is the grayscale one.
+pub(crate) const GLYPH_LCD_VARIANT: u8 = 1;
+
+/// Dual-source "over" for LCD text: `dst' = src0 + dst · (1 − src1)` per channel.
+pub(crate) const LCD_BLEND: wgpu::BlendState = {
+    let c = wgpu::BlendComponent {
+        src_factor: wgpu::BlendFactor::One,
+        dst_factor: wgpu::BlendFactor::OneMinusSrc1,
+        operation: wgpu::BlendOperation::Add,
+    };
+    wgpu::BlendState { color: c, alpha: c }
+};
+
 /// Every 02 §9 row that exists in code.
 pub(crate) fn pipeline_descs() -> Vec<PipelineDesc> {
     use wgpu::PrimitiveTopology::{TriangleList, TriangleStrip};
@@ -74,6 +88,16 @@ pub(crate) fn pipeline_descs() -> Vec<PipelineDesc> {
             wgsl: "glyph.wgsl",
             vs: "vs",
             fs: "fs_main",
+            topology: TriangleStrip,
+            layout: quad.clone(),
+            group1: true,
+        },
+        // `GLYPH_LCD_VARIANT`: subpixel text, dual-source blended (`crate::text_aa`).
+        PipelineDesc {
+            kind: PipelineKind::Glyph,
+            wgsl: "glyph_lcd.wgsl",
+            vs: "vs",
+            fs: "fs_lcd",
             topology: TriangleStrip,
             layout: quad.clone(),
             group1: true,
@@ -271,7 +295,11 @@ pub(crate) fn desc_of(kind: PipelineKind) -> Option<PipelineDesc> {
 /// The row `key` builds: kinds with coverage variants (Gradient) select by `key.variant`.
 pub(crate) fn desc_for(key: PipelineKey) -> Option<PipelineDesc> {
     match key.kind {
-        PipelineKind::Gradient | PipelineKind::ImageBrush | PipelineKind::Blur | PipelineKind::Morphology => {
+        PipelineKind::Gradient
+        | PipelineKind::ImageBrush
+        | PipelineKind::Blur
+        | PipelineKind::Morphology
+        | PipelineKind::Glyph => {
             pipeline_descs().into_iter().filter(|d| d.kind == key.kind).nth(usize::from(key.variant))
         }
         kind => desc_of(kind),
@@ -305,6 +333,7 @@ pub(crate) fn build(
                 format: key.color_format,
                 blend: match key.kind {
                     PipelineKind::CompositeCompose => Some(compose_blend_state(compose_of(key.blend))),
+                    PipelineKind::Glyph if key.variant == GLYPH_LCD_VARIANT => Some(LCD_BLEND),
                     // The shader computes the final pixel (09 §4.4–§4.5).
                     // The shader computes the final pixel (09 §4.4–§4.5); effect passes replace.
                     PipelineKind::CompositeBackdrop

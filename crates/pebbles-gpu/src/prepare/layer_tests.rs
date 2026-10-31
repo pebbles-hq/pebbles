@@ -471,6 +471,7 @@ fn nesting_beyond_depth_cap_flattens() {
         vertex_limit: u32::MAX,
         scale_factor: 1.0,
         glyph_hint: None,
+        lcd: None,
     };
     crate::prepare::prepare(&s, &input, &limits, &mut scratch, &mut stats);
     assert_eq!(scratch.plan.layers.len(), limits.max_layer_depth as usize);

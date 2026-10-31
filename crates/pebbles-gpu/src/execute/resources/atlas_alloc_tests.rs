@@ -10,6 +10,7 @@ fn key(glyph_id: u16) -> GlyphKey {
         hint: false,
         coords_hash: 0,
         colr_fg: None,
+        lcd: 0,
     }
 }
 

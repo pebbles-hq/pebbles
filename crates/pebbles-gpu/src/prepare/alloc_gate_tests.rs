@@ -149,6 +149,7 @@ fn prepare_steady_state_allocates_nothing() {
         vertex_limit: u32::MAX,
         scale_factor: 1.0,
         glyph_hint: None,
+        lcd: None,
     };
     let limits = crate::test_support::webgl2_limits();
     for (name, scene) in [

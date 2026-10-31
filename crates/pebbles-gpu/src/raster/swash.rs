@@ -36,6 +36,9 @@ pub(crate) enum RasterContent {
     Mask,
     /// RGBA8 per pixel.
     Color,
+    /// Subpixel (LCD) coverage, RGBA8 per pixel: R, G, B = the filtered coverage of the
+    /// left, middle and right subpixel in panel order, A = their maximum (`lcd_mask`).
+    Lcd,
 }
 
 /// One rasterized glyph, borrowed from the rasterizer's scratch image.
@@ -121,6 +124,8 @@ pub(crate) struct RasterRequest<'a> {
     /// Bitmap strikes: keep the largest strike at native size (the outline route draws it as a
     /// transformed quad, R23 step 2a).
     pub native_strike: bool,
+    /// Subpixel coverage for outlines (`GlyphKey::lcd`): 0 = grayscale, 1 = RGB, 2 = BGR.
+    pub lcd: u8,
 }
 
 /// The color strike to decode for `req`: the largest for the outline route, else the nearest
@@ -174,6 +179,7 @@ impl GlyphRaster {
         let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.decode(req)));
         match decoded {
             Ok(Some(Decoded::Strike(ppem))) => self.strike(ppem, req),
+            Ok(Some(Decoded::Outline(dx))) if req.lcd != 0 => self.lcd_mask(dx, req.lcd == 2),
             Ok(Some(Decoded::Outline(dx))) => self.outline_mask(dx),
             Ok(None) => None,
             Err(_) => {
@@ -258,9 +264,9 @@ impl GlyphRaster {
         })
     }
 
-    /// Rasterize `self.outline` (y-up, pen-relative) shifted right by `dx` px into `self.mask`,
-    /// placed like swash's images: `left` px right of the pen, `top` px above the baseline.
-    fn outline_mask(&mut self, dx: f64) -> Option<RasterGlyph<'_>> {
+    /// `self.outline` (y-up, pen-relative) shifted right by `dx` px as a y-down path in
+    /// `self.path`.
+    fn build_path(&mut self, dx: f64) -> Option<()> {
         use swash::zeno::Verb;
         let pts = self.outline.points();
         let p = |i: usize| pts.get(i).map(|q| kurbo::Point::new(dx + f64::from(q.x), -f64::from(q.y)));
@@ -281,6 +287,13 @@ impl GlyphRaster {
                 Verb::Close => 0,
             };
         }
+        Some(())
+    }
+
+    /// Rasterize `self.outline` (y-up, pen-relative) shifted right by `dx` px into `self.mask`,
+    /// placed like swash's images: `left` px right of the pen, `top` px above the baseline.
+    fn outline_mask(&mut self, dx: f64) -> Option<RasterGlyph<'_>> {
+        self.build_path(dx)?;
         use kurbo::Shape as _;
         let b = self.path.bounding_box();
         let (x0, y0) = (b.x0.floor(), b.y0.floor());
@@ -301,6 +314,46 @@ impl GlyphRaster {
             content: RasterContent::Mask,
             strike_ppem: 0,
             data: &self.mask.data,
+        })
+    }
+
+    /// Subpixel (LCD) coverage of `self.outline` shifted by `dx` (FreeType / Skia practice):
+    /// rasterized at 3× horizontal resolution by the same exact coverage rasterizer, filtered
+    /// with FreeType's default 5-tap LCD filter (`LCD_FILTER`, against colour fringes), then
+    /// packed three subpixels per pixel into `self.color` (`RasterContent::Lcd`). The box gets
+    /// one px of padding on each side for the filter's spread.
+    fn lcd_mask(&mut self, dx: f64, bgr: bool) -> Option<RasterGlyph<'_>> {
+        self.build_path(dx)?;
+        use kurbo::Shape as _;
+        let b = self.path.bounding_box();
+        let (x0, y0) = (b.x0.floor() - 1.0, b.y0.floor());
+        let (w, h) = glyph_box(b.x1 - x0 + 1.0, b.y1 - y0)?;
+        let shift = kurbo::Affine::scale_non_uniform(3.0, 1.0) * kurbo::Affine::translate((-x0, -y0));
+        let clip = crate::prepare::ScissorRect { x0: 0, y0: 0, x1: 3 * w, y1: h };
+        let placed =
+            self.coverage.rasterize(&self.path, shift, peniko::Fill::NonZero, clip, &mut self.mask)?;
+        // Re-place the (tight) 3× mask into the full 3w × h box.
+        let (pw, ph) = (self.mask.width as usize, self.mask.height as usize);
+        let (ox, oy) = (usize::try_from(placed.left).ok()?, usize::try_from(placed.top).ok()?);
+        let (sw, wh) = (3 * w as usize, h as usize);
+        let mut sub = vec![0u8; sw * wh];
+        for y in 0..ph.min(wh.saturating_sub(oy)) {
+            let n = pw.min(sw.saturating_sub(ox));
+            sub[(oy + y) * sw + ox..(oy + y) * sw + ox + n]
+                .copy_from_slice(&self.mask.data[y * pw..y * pw + n]);
+        }
+        lcd_pack(&sub, w as usize, wh, bgr, &mut self.color);
+        let to_i32 = |v: f64| {
+            i32::try_from(crate::prepare::num::to_u64_sat(v.abs())).ok().map(|m| if v < 0.0 { -m } else { m })
+        };
+        Some(RasterGlyph {
+            left: to_i32(x0)?,
+            top: -to_i32(y0)?,
+            width: w,
+            height: h,
+            content: RasterContent::Lcd,
+            strike_ppem: 0,
+            data: &self.color,
         })
     }
 
@@ -330,6 +383,37 @@ impl GlyphRaster {
     }
 }
 
+/// FreeType's default LCD filter (`FT_LCD_FILTER_DEFAULT`), weights /256, sum 256.
+pub(crate) const LCD_FILTER: [u32; 5] = [0x08, 0x4D, 0x56, 0x4D, 0x08];
+
+/// Filter each row of the `3w × h` subpixel coverage `sub` with [`LCD_FILTER`] (zero outside)
+/// and pack it as RGBA8 into `out`: R, G, B = subpixels 0, 1, 2 of each pixel (swapped for a BGR
+/// panel, so R is always the red subpixel's coverage), A = their maximum.
+pub(crate) fn lcd_pack(sub: &[u8], w: usize, h: usize, bgr: bool, out: &mut Vec<u8>) {
+    out.clear();
+    out.resize(w * h * 4, 0);
+    let sw = 3 * w;
+    for y in 0..h {
+        let row = &sub[y * sw..(y + 1) * sw];
+        // Tap t of subpixel i reads subpixel i + t − 2 (zero outside the row).
+        let at = |k: usize| k.checked_sub(2).and_then(|k| row.get(k)).map_or(0, |&v| u32::from(v));
+        for x in 0..w {
+            let mut c = [0u8; 3];
+            for (k, ck) in c.iter_mut().enumerate() {
+                let i = 3 * x + k;
+                let v: u32 = LCD_FILTER.iter().enumerate().map(|(t, wt)| wt * at(i + t)).sum();
+                *ck = u8::try_from((v + 128) >> 8).unwrap_or(u8::MAX);
+            }
+            if bgr {
+                c.swap(0, 2);
+            }
+            let o = (y * w + x) * 4;
+            out[o..o + 3].copy_from_slice(&c);
+            out[o + 3] = c[0].max(c[1]).max(c[2]);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,6 +437,7 @@ mod tests {
             coords,
             hint: false,
             native_strike: false,
+            lcd: 0,
         };
         raster.rasterize(&req).unwrap().data.iter().map(|&b| u64::from(b)).sum()
     }
@@ -369,6 +454,7 @@ mod tests {
             coords: &[],
             hint: false,
             native_strike: false,
+            lcd: 0,
         };
         let g = raster.rasterize(&req).unwrap();
         assert_eq!(g.content, RasterContent::Mask);
@@ -407,6 +493,7 @@ mod tests {
             coords: &[],
             hint: false,
             native_strike: false,
+            lcd: 0,
         };
         raster.rasterize(&req);
     }
@@ -461,6 +548,7 @@ mod tests {
                 coords: &[],
                 hint,
                 native_strike: false,
+                lcd: 0,
             };
             let Some(g) = raster.rasterize(&req) else { continue };
             let w = g.width as usize;
@@ -526,6 +614,7 @@ mod tests {
                 coords: &[],
                 hint: false,
                 native_strike: false,
+                lcd: 0,
             };
             raster.rasterize(&req);
             raster.sweep();
@@ -537,5 +626,60 @@ mod tests {
         assert_eq!(raster.font_count(), 1, "swept only every 256 frames");
         raster.end_frame();
         assert_eq!(raster.font_count(), 0);
+    }
+
+    fn lcd_req(font: &peniko::FontData, lcd: u8) -> RasterRequest<'_> {
+        RasterRequest {
+            font,
+            glyph_id: glyph_h(font),
+            size_px: 13.0,
+            subpx_x: 0,
+            coords: &[],
+            hint: true,
+            native_strike: false,
+            lcd,
+        }
+    }
+
+    #[test]
+    fn lcd_filter_is_normalized() {
+        assert_eq!(LCD_FILTER.iter().sum::<u32>(), 256);
+        // Full coverage stays full inside; the filter spreads ≤ 2 subpixels past an edge.
+        let mut out = Vec::new();
+        let mut sub = vec![0u8; 9];
+        sub[3..6].fill(255);
+        lcd_pack(&sub, 3, 1, false, &mut out);
+        // A one-px stem: (8+77+86)/256, (77+86+77)/256, (86+77+8)/256 of 255.
+        assert_eq!(&out[4..8], &[170, 239, 170, 239], "middle px: filtered stem");
+        assert_eq!(&out[0..3], &[0, 8, 85], "left px: the filter's spread");
+        assert_eq!(&out[8..11], &[85, 8, 0], "right px");
+        let wide = vec![255u8; 15];
+        lcd_pack(&wide, 5, 1, false, &mut out);
+        assert_eq!(&out[8..12], &[255, 255, 255, 255]);
+    }
+
+    /// The atlas holds three distinct coverage channels for an LCD glyph, with fringes, and
+    /// a BGR panel swaps R and B.
+    #[test]
+    fn lcd_glyph_has_three_channels_and_bgr_swaps() {
+        let font = inter();
+        let mut raster = GlyphRaster::default();
+        let rgb = raster.rasterize(&lcd_req(&font, 1)).map(|g| {
+            assert_eq!(g.content, RasterContent::Lcd);
+            assert_eq!(g.data.len(), g.width as usize * g.height as usize * 4);
+            (g.data.to_vec(), g.left, g.width)
+        });
+        let (rgb, left, width) = rgb.unwrap();
+        let px: Vec<&[u8]> = rgb.chunks(4).collect();
+        assert!(px.iter().any(|p| p[0] != p[2]), "no colour fringe: channels identical");
+        assert!(px.iter().any(|p| p[1] >= 230), "solid stem");
+        assert!(px.iter().all(|p| p[3] == p[0].max(p[1]).max(p[2])));
+        let gray = raster.rasterize(&lcd_req(&font, 0)).map(|g| (g.left, g.width)).unwrap();
+        assert_eq!(left, gray.0 - 1, "one px of filter padding on the left");
+        assert!(width > gray.1);
+        let bgr = raster.rasterize(&lcd_req(&font, 2)).unwrap().data.to_vec();
+        for (a, b) in rgb.chunks(4).zip(bgr.chunks(4)) {
+            assert_eq!([a[0], a[1], a[2]], [b[2], b[1], b[0]]);
+        }
     }
 }

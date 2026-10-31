@@ -70,6 +70,8 @@ pub(crate) struct PrepareInput {
     pub scale_factor: f64,
     /// Hinting override (`FrameParams::glyph_hint`); `None` = `hint_policy`.
     pub glyph_hint: Option<bool>,
+    /// LCD text order for runs that qualify (`crate::text_aa`); `None` = grayscale.
+    pub lcd: Option<crate::text_aa::LcdOrder>,
 }
 
 /// Vertex limit on devices without `FULL_DRAW_INDEX_UINT32` (WebGL2).
@@ -136,6 +138,7 @@ pub(crate) fn prepare<'s>(
         vertex_limit: input.vertex_limit,
         scale_factor: input.scale_factor,
         glyph_hint: input.glyph_hint,
+        lcd: input.lcd,
         out_of_vertices: false,
         sdf: !scratch.sdf_disabled,
         clip_hint: pebbles_render::paint::display_list::PathHint::Auto,
@@ -188,6 +191,7 @@ struct Walk<'a> {
     vertex_limit: u32,
     scale_factor: f64,
     glyph_hint: Option<bool>,
+    lcd: Option<crate::text_aa::LcdOrder>,
     out_of_vertices: bool,
     /// Tier A analytic shapes enabled (R10).
     sdf: bool,
@@ -472,6 +476,7 @@ impl Walk<'_> {
         self.layers.fold().to_bits().hash(&mut h);
         (self.scale_factor.to_bits(), self.glyph_hint, self.sdf, self.vertex_limit, self.plan.target_size)
             .hash(&mut h);
+        self.lcd_here().hash(&mut h);
         Some(retained::RetainedKey {
             ops_ptr: std::sync::Arc::as_ptr(ops) as usize,
             linear: [a, b, c, d].map(f64::to_bits),
@@ -981,6 +986,12 @@ struct GlyphRunArgs<'r> {
 }
 
 impl Walk<'_> {
+    /// The LCD order for an atlas-route run drawn now: none inside an offscreen layer, whose
+    /// intermediate is transparent (`crate::text_aa`).
+    fn lcd_here(&self) -> Option<crate::text_aa::LcdOrder> {
+        self.lcd.filter(|_| self.layers.offscreen_open() == 0)
+    }
+
     /// Glyphs with no COLR representation: the atlas or outline route (§7.5).
     fn draw_glyph_segment(
         &mut self,
@@ -1006,6 +1017,7 @@ impl Walk<'_> {
                     glyphs,
                     self.glyph_hint,
                     self.scale_factor,
+                    self.lcd_here(),
                 );
                 self.push(DrawCmd::Glyphs { glyphs: range, clip: self.clips.current() }, idx);
             }

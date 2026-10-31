@@ -254,7 +254,7 @@ fn random_scenes_never_panic() {
     let mut scratch = crate::prepare::PrepareScratch::default();
     let mut stats = crate::stats::FrameStats::default();
     let input =
-        crate::prepare::PrepareInput { target_size: (1024, 768), root_transform: Affine::IDENTITY, vertex_limit: u32::MAX, scale_factor: 1.0, glyph_hint: None };
+        crate::prepare::PrepareInput { target_size: (1024, 768), root_transform: Affine::IDENTITY, vertex_limit: u32::MAX, scale_factor: 1.0, glyph_hint: None, lcd: None };
     crate::prepare::prepare(&scene, &input, &crate::test_support::webgl2_limits(), &mut scratch, &mut stats);
     let plan = &scratch.plan;
     assert!(plan.solid_vertices.iter().all(|v| v.pos.iter().all(|c| c.is_finite())), "solid vertex");

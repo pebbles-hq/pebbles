@@ -6,10 +6,15 @@ use super::ALL;
 fn parse_and_validate(name: &str, src: &str) -> (naga::Module, naga::valid::ModuleInfo) {
     let module = naga::front::wgsl::parse_str(src)
         .unwrap_or_else(|e| panic!("{name}: parse error\n{}", e.emit_to_string(src)));
-    let info =
-        naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::empty())
-            .validate(&module)
-            .unwrap_or_else(|e| panic!("{name}: validation error\n{}", e.emit_to_string(src)));
+    // The LCD glyph module is created only on devices with `DUAL_SOURCE_BLENDING`.
+    let caps = if name == "glyph_lcd" {
+        naga::valid::Capabilities::DUAL_SOURCE_BLENDING
+    } else {
+        naga::valid::Capabilities::empty()
+    };
+    let info = naga::valid::Validator::new(naga::valid::ValidationFlags::all(), caps)
+        .validate(&module)
+        .unwrap_or_else(|e| panic!("{name}: validation error\n{}", e.emit_to_string(src)));
     (module, info)
 }
 
@@ -22,7 +27,8 @@ fn every_shader_validates_with_naga() {
 
 #[test]
 fn every_entry_point_translates_to_glsl_es_300_webgl() {
-    for (name, src) in ALL {
+    // WebGL2 has no dual-source blending: the LCD module is never created there.
+    for (name, src) in ALL.iter().filter(|(n, _)| *n != "glyph_lcd") {
         let (module, info) = parse_and_validate(name, src);
         for ep in &module.entry_points {
             let opts = naga::back::glsl::Options {

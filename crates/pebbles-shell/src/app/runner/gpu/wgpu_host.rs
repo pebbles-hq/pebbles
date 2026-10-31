@@ -139,8 +139,11 @@ impl RenderContext {
         let target =
             RenderTarget::new(frame.view(), format, surface.0.targets_mut()).with_decode_srgb_output(decode);
         // The device-pixel ratio drives the 02 §7.8 hinting policy (R27).
-        let params =
-            FrameParams::new(base_color).with_scale_factor(scale_factor).with_perf_overlay(perf_overlay);
+        let params = FrameParams::new(base_color)
+            .with_scale_factor(scale_factor)
+            .with_perf_overlay(perf_overlay)
+            // Window frames follow the app / system setting (offscreen captures stay grayscale).
+            .with_text_antialiasing(pebbles_gpu::text_antialiasing(), None);
         if let Err(e) = renderer.render(target, scene, &params) {
             // A lost or poisoned device reaches the reset through `needs_reset()` (C18).
             logf(Level::Error, Cat::Gpu, format_args!("wgpu render failed (frame skipped): {e}"));

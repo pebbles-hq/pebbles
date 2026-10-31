@@ -85,6 +85,8 @@ fn table_matches_doc_02_section_9() {
         (PipelineKind::Solid, TriangleList, Some((24, Vertex))),
         (PipelineKind::Sdf, TriangleStrip, Some((80, Instance))),
         (PipelineKind::Glyph, TriangleStrip, Some((64, Instance))),
+        // The LCD variant (`GLYPH_LCD_VARIANT`, dual-source blending).
+        (PipelineKind::Glyph, TriangleStrip, Some((64, Instance))),
         (PipelineKind::Image, TriangleStrip, Some((64, Instance))),
         (PipelineKind::Shadow, TriangleStrip, Some((96, Instance))),
         (PipelineKind::Gradient, TriangleStrip, Some((80, Instance))),
@@ -117,6 +119,7 @@ fn table_matches_doc_02_section_9() {
     assert_eq!(
         group1,
         [
+            PipelineKind::Glyph,
             PipelineKind::Glyph,
             PipelineKind::Image,
             PipelineKind::Shadow,

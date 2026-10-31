@@ -39,6 +39,9 @@ pub(crate) struct GlyphKey {
     /// COLR glyphs rendered into the color atlas (R39): the foreground color (palette index
     /// `0xFFFF`, RGBA8; palette 0). `None` for rasterized glyphs.
     pub colr_fg: Option<[u8; 4]>,
+    /// Subpixel (LCD) coverage in the color pages: 0 = grayscale, 1 = RGB, 2 = BGR
+    /// (`LcdOrder::code`).
+    pub lcd: u8,
 }
 
 /// Tier B path-mask key (02 R15). Exact, collision-free fields only — no pointers.
@@ -124,6 +127,9 @@ pub(crate) struct AtlasSlot {
     /// Bitmap-strike color glyphs uploaded at their native size: the strike's ppem, so the quad
     /// is drawn `font_size / strike_ppem` × the bitmap (R23). 0 = drawn at bitmap size.
     pub strike_ppem: u16,
+    /// Subpixel (LCD) coverage in the color pages (`RasterContent::Lcd`): the glyph shader's
+    /// `KIND_TEXT_LCD` path, never a premultiplied color glyph.
+    pub lcd: bool,
 }
 
 struct Entry {
@@ -279,6 +285,13 @@ impl CoverageAtlas {
         Some(*slot)
     }
 
+    /// Mark `key`'s slot as LCD coverage (`AtlasSlot::lcd`).
+    pub(crate) fn set_lcd(&mut self, key: impl Into<CoverageKey>) -> Option<AtlasSlot> {
+        let (slot, _) = self.entries.get_mut(&key.into())?.slot.as_mut()?;
+        slot.lcd = true;
+        Some(*slot)
+    }
+
     /// Record an empty entry (zero-size bitmap) so it is never rasterized again.
     pub(crate) fn insert_empty(&mut self, key: impl Into<CoverageKey>) {
         self.entries.insert(key.into(), Entry { slot: None, last_used: self.frame, area: 0 });
@@ -396,6 +409,7 @@ impl CoverageAtlas {
             left: i16::try_from(left).unwrap_or(0),
             top: i16::try_from(top).unwrap_or(0),
             strike_ppem: 0,
+            lcd: false,
         };
         self.pages(atlas).occupied_px += area;
         if key.kind() == MaskKind::Path {

@@ -50,6 +50,8 @@ pub(crate) struct FrameKey {
     pub decode_srgb: bool,
     /// Bumped when the persistent frame texture is (re)created: its content is undefined.
     pub persistent_generation: u64,
+    /// LCD text order (`None` = grayscale): switching it changes every glyph.
+    pub lcd: Option<crate::text_aa::LcdOrder>,
 }
 
 /// Per render target: the previous frame and which fragments are known to hold only ops whose
@@ -375,6 +377,7 @@ mod tests {
             base_color: [1.0; 4],
             decode_srgb: false,
             persistent_generation: 1,
+            lcd: None,
         }
     }
 

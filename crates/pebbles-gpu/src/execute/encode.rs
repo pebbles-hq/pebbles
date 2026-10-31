@@ -207,6 +207,11 @@ pub(crate) fn ensure_plan_pipelines(
         }
         let key = PipelineKey { kind, color_format: format, sample_count: 1, blend: 0, variant: 0 };
         renderer.pipelines.ensure(device, &renderer.shaders, &renderer.layouts, key, stats);
+        if kind == PipelineKind::Glyph && renderer.frame_lcd.is_some() {
+            let variant = super::pipelines::descs::GLYPH_LCD_VARIANT;
+            let key = PipelineKey { variant, ..key };
+            renderer.pipelines.ensure(device, &renderer.shaders, &renderer.layouts, key, stats);
+        }
     }
 }
 
@@ -269,6 +274,10 @@ pub(crate) fn encode(
     let sb = renderer.seg_base;
     use crate::prepare::segments::{GLYPHS, IMAGES, INDICES, MESHES, SHADOWS, SHAPES};
     let key = |kind, variant| PipelineKey { kind, color_format: format, sample_count, blend: 0, variant };
+    // LCD frames draw every glyph command with the dual-source pipeline: it reduces to
+    // source-over for the grayscale and color kinds (runs in offscreen layers stay grayscale).
+    let glyph_variant =
+        if renderer.frame_lcd.is_some() { super::pipelines::descs::GLYPH_LCD_VARIANT } else { 0 };
     let mut state = PassState::new();
     state.origin = target.origin;
     state.size = target.size;
@@ -377,7 +386,7 @@ pub(crate) fn encode(
             }
             DrawCmd::Glyphs { glyphs, clip } => {
                 let (Some(pipeline), Some(vb), Some(bg)) = (
-                    renderer.pipelines.get_ensured(key(PipelineKind::Glyph, 0)),
+                    renderer.pipelines.get_ensured(key(PipelineKind::Glyph, glyph_variant)),
                     renderer.arenas.glyphs.buffer(),
                     renderer.glyph_atlas.bind_group(),
                 ) else {

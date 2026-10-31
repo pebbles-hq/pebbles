@@ -32,6 +32,7 @@ fn prepare_bench() {
             vertex_limit: u32::MAX,
             scale_factor: 1.0,
             glyph_hint: None,
+            lcd: None,
         };
         // Retained prepare (M29) off, then on (the renderer's default).
         let mut cols = Vec::new();

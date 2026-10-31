@@ -55,6 +55,21 @@ impl Candidate {
         self.r.set_glyph_hint_inputs(Some(scale_factor), hint);
     }
 
+    /// Subpixel (LCD) or grayscale text for later renders.
+    pub fn set_subpixel_text(&mut self, on: bool) {
+        let aa = if on {
+            pebbles_gpu::TextAntialiasing::Subpixel
+        } else {
+            pebbles_gpu::TextAntialiasing::Grayscale
+        };
+        self.r.set_text_antialiasing(aa, Some(pebbles_gpu::SubpixelOrder::Rgb));
+    }
+
+    /// Whether the adapter can draw subpixel text (dual-source blending).
+    pub fn supports_subpixel_text(&self) -> bool {
+        self.r.supports_subpixel_text()
+    }
+
     /// Debug-only cache census of the candidate (10 §9.2) — the G2-5 stability check.
     #[cfg(debug_assertions)]
     pub fn census(&self) -> pebbles_gpu::GpuCensus {

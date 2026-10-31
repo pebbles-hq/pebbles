@@ -521,6 +521,12 @@ pub struct FrameParams {
     /// Draw the on-screen performance overlay over this frame (S57). Window frames only: the
     /// offscreen API never sets it, so captures and goldens never contain the overlay.
     pub perf_overlay: bool,
+    /// Grayscale or subpixel (LCD) text (`crate::text_aa` rules). `FrameParams::new` is
+    /// `Grayscale`, so captures and goldens are deterministic across machines; window frames
+    /// use [`crate::text_antialiasing`] (default `Auto`).
+    pub text_antialiasing: crate::TextAntialiasing,
+    /// The panel's subpixel order; `None` = the system's (RGB when unknown).
+    pub subpixel_order: Option<crate::SubpixelOrder>,
 }
 
 impl FrameParams {
@@ -534,7 +540,21 @@ impl FrameParams {
             text_gamma: default_text_params().0,
             text_contrast: default_text_params().1,
             perf_overlay: false,
+            text_antialiasing: crate::TextAntialiasing::Grayscale,
+            subpixel_order: None,
         }
+    }
+
+    /// Set the text antialiasing mode and, optionally, the subpixel order.
+    #[must_use]
+    pub fn with_text_antialiasing(
+        mut self,
+        aa: crate::TextAntialiasing,
+        order: Option<crate::SubpixelOrder>,
+    ) -> Self {
+        self.text_antialiasing = aa;
+        self.subpixel_order = order;
+        self
     }
 
     /// Set the text gamma (1.0..=2.2) and grayscale enhanced contrast (≥ 0); `(1.0, 0.0)` turns

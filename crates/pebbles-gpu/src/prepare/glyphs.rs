@@ -93,6 +93,7 @@ pub(crate) fn colr_atlas_glyph(
         hint: false,
         coords_hash: coords_hash(coords),
         colr_fg: Some(foreground.to_rgba8().to_u8_array()),
+        lcd: 0,
     };
     #[allow(clippy::cast_precision_loss)] // |ix|, |iy| ≤ 2^24: exact in f32
     let origin = [ix as f32, iy as f32];
@@ -121,6 +122,7 @@ pub(crate) fn glyph_run(
     glyphs: &[Glyph],
     hint_override: Option<bool>,
     scale_factor: f64,
+    lcd: Option<crate::text_aa::LcdOrder>,
 ) -> Range<u32> {
     let start = index_u32(plan.glyphs.len());
     let coeffs = transform.as_coeffs();
@@ -171,6 +173,7 @@ pub(crate) fn glyph_run(
             hint,
             coords_hash: hash,
             colr_fg: None,
+            lcd: lcd.map_or(0, crate::text_aa::LcdOrder::code),
         };
         #[allow(clippy::cast_precision_loss)] // |ix|, |iy| ≤ 2^24: exact in f32
         let origin = [ix as f32, iy as f32];

@@ -48,6 +48,7 @@ mod surface;
 mod test_alloc;
 #[cfg(test)]
 pub(crate) mod test_support;
+mod text_aa;
 mod timing;
 
 pub use budgets::{BudgetPlatform, GpuBudgets};
@@ -69,6 +70,7 @@ pub use limits::RendererLimits;
 pub use offscreen::{OffscreenRenderer, RgbaImage};
 pub use pebbles_render::paint::display_list::{CustomPaint, TextureId};
 pub use renderer::Renderer;
+pub use text_aa::{SubpixelOrder, TextAntialiasing, set_text_antialiasing, text_antialiasing};
 
 #[doc(hidden)]
 pub mod testing;
@@ -84,6 +86,43 @@ pub fn __tier_b_mask_for_check(
 ) -> Vec<u8> {
     raster::coverage::full_mask(path, device, rule, w, h)
 }
+/// LCD glyph oracle for GPU tests: `(left, top, width, height, RGBA coverage)` of `glyph_id`
+/// rasterized for an RGB (or BGR) panel exactly as the atlas stores it.
+#[doc(hidden)]
+pub fn __lcd_glyph_for_check(
+    font: &peniko::FontData,
+    glyph_id: u16,
+    size_px: f32,
+    hint: bool,
+    bgr: bool,
+) -> Option<(i32, i32, u32, u32, Vec<u8>)> {
+    let mut raster = raster::swash::GlyphRaster::default();
+    let req = raster::swash::RasterRequest {
+        font,
+        glyph_id,
+        size_px,
+        subpx_x: 0,
+        coords: &[],
+        hint,
+        native_strike: false,
+        lcd: if bgr { 2 } else { 1 },
+    };
+    let g = raster.rasterize(&req)?;
+    Some((g.left, g.top, g.width, g.height, g.data.to_vec()))
+}
+
+/// CPU reference of the LCD blend (`text_aa::lcd_blend_reference`) for GPU tests.
+#[doc(hidden)]
+pub fn __lcd_blend_reference(
+    dst: [u8; 3],
+    color: [u8; 4],
+    cov: [u8; 3],
+    gamma: f32,
+    contrast: f32,
+) -> [u8; 3] {
+    text_aa::lcd_blend_reference(dst, color, cov, gamma, contrast)
+}
+
 pub use surface::{
     Acquire, AcquireStatus, AcquireStreak, ConfigureDecision, FrameAction, RenderSurface, SurfaceFrame,
     action_for, configure_decision, escalate,
