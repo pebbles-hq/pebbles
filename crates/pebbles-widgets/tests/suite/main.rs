@@ -89,4 +89,5 @@ mod transform;
 mod virtualization;
 mod wheel_axis;
 mod widget_span;
+mod window_chrome;
 mod window_knobs;

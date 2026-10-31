@@ -7,3 +7,4 @@
 
 pub mod native_menu;
 pub mod window;
+pub mod window_chrome;

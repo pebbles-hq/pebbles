@@ -113,6 +113,10 @@ pub struct Harness {
     move_target: Option<u64>,
     /// The last pointer position fed by the button/move helpers.
     pointer_at: Offset,
+    /// The primary press's pan candidate across [`button_down`](Self::button_down) /
+    /// [`pointer_move`](Self::pointer_move) / [`button_up`](Self::button_up), as the shell
+    /// keeps it: once past the slop the pan holds the pointer until release.
+    pan: pebbles_core::pan::PanGesture,
 }
 
 /// Tear the tree down like the shell does when a window closes: component cleanups run,
@@ -147,6 +151,7 @@ impl Harness {
             buttons: 0,
             move_target: None,
             pointer_at: Offset::ZERO,
+            pan: pebbles_core::pan::PanGesture::default(),
         }
     }
 
@@ -507,6 +512,8 @@ impl Harness {
         self.pointer_at = at;
         self.ui.dispatch_button_down(at, button, self.buttons);
         if button == PointerButton::Primary {
+            let target = self.ui.pan_target_at(at);
+            self.pan.press(target, at, pebbles_core::pan::MOUSE_PAN_SLOP);
             self.ui.dispatch_pointer_down(at);
         }
         self.frame();
@@ -526,6 +533,8 @@ impl Harness {
         if let Some(t) = self.move_target {
             self.ui.dispatch_pointer_move(t, to, self.pointer_at, self.buttons);
         }
+        // The pan (once past the slop) follows the pointer wherever it goes until release.
+        self.pan.moved(&mut self.ui, to);
         self.pointer_at = to;
         self.ui.dispatch_hover(to);
         self.frame();
@@ -549,6 +558,7 @@ impl Harness {
         self.pointer_at = at;
         self.ui.dispatch_button_up(at, button, self.buttons);
         if button == PointerButton::Primary {
+            self.pan.release(&mut self.ui, at);
             self.ui.dispatch_pointer_up(at);
         }
         self.frame();
@@ -1535,5 +1545,49 @@ mod tests {
         h.key(KeyInput::Insert("X".into()));
         let v = wobble_bound().get();
         assert_eq!((v.len(), restored(v.clone())), (12, "hello world".to_string()), "{v:?}");
+    }
+
+    thread_local! {
+        static PAN_LOG: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    }
+
+    fn pan_probe() -> impl IntoWidget {
+        use pebbles_core::context::{action, action_event};
+        use pebbles_render::PointerEvent;
+        let log = |s: String| PAN_LOG.with(|l| l.borrow_mut().push(s));
+        pebbles_widgets::align(
+            pebbles_foundation::Alignment::TOP_LEFT,
+            gesture_detector(container().width(4.0).height(100.0))
+                .on_pan_start(action_event(move |e: PointerEvent| log(format!("start {}", e.global.x))))
+                .on_pan_update(action_event(move |e: PointerEvent| log(format!("update {}", e.global.x))))
+                .on_pan_end(action(move || log("end".into()))),
+        )
+    }
+
+    /// `button_down` / `pointer_move` / `button_up` drive the pan like the shell: once past
+    /// the slop it follows every move (frames in between), even far off the 4 px widget,
+    /// and ends only on release.
+    #[test]
+    fn stepwise_pan_keeps_the_pointer_until_release() {
+        use pebbles_render::PointerButton;
+        PAN_LOG.with(|l| l.borrow_mut().clear());
+        let mut h = Harness::new();
+        h.mount(pan_probe);
+        h.draw();
+        h.button_down(Offset::new(2.0, 50.0), PointerButton::Primary);
+        for x in [5.0, 40.0, 300.0, 700.0, -50.0, 120.0] {
+            h.pointer_move(Offset::new(x, 50.0));
+        }
+        let log = PAN_LOG.with(|l| l.borrow().clone());
+        assert_eq!(log.last().map(String::as_str), Some("update 120"), "{log:?}");
+        assert!(!log.contains(&"end".to_string()), "no end before the release: {log:?}");
+        h.button_up(Offset::new(120.0, 50.0), PointerButton::Primary);
+        let log = PAN_LOG.with(|l| l.borrow().clone());
+        assert_eq!(
+            log,
+            ["start 2", "update 40", "update 300", "update 700", "update -50", "update 120", "end"]
+                .map(String::from)
+                .to_vec()
+        );
     }
 }

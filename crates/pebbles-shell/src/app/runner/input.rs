@@ -122,6 +122,10 @@ pub(super) fn to_winit_cursor(cursor: Cursor) -> CursorIcon {
         Cursor::ColResize => CursorIcon::ColResize,
         Cursor::RowResize => CursorIcon::RowResize,
         Cursor::NotAllowed => CursorIcon::NotAllowed,
+        Cursor::NsResize => CursorIcon::NsResize,
+        Cursor::EwResize => CursorIcon::EwResize,
+        Cursor::NwseResize => CursorIcon::NwseResize,
+        Cursor::NeswResize => CursorIcon::NeswResize,
     }
 }
 
@@ -679,6 +683,10 @@ mod tests {
             (Cursor::ColResize, CursorIcon::ColResize),
             (Cursor::RowResize, CursorIcon::RowResize),
             (Cursor::NotAllowed, CursorIcon::NotAllowed),
+            (Cursor::NsResize, CursorIcon::NsResize),
+            (Cursor::EwResize, CursorIcon::EwResize),
+            (Cursor::NwseResize, CursorIcon::NwseResize),
+            (Cursor::NeswResize, CursorIcon::NeswResize),
         ];
         for (ours, theirs) in all {
             assert_eq!(to_winit_cursor(ours), theirs);

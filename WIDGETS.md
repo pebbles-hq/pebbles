@@ -188,6 +188,7 @@ remote-URL images) and their per-platform status live in
 | overlay (`show_overlay`/`show_passive`/`OverlayHost`) | ✅ 🔶C6 | anchor+flip+scroll-follow; secondary-window scroll-follow (C6) open |
 | global context menu | ✅ | disabled-by-default fallback, per-widget opt-in/out, styleable |
 | windows (multi-window) | ✅ | `window()` + close/focus/minimize/maximize/position/resizable/title; `monitors()` reactive snapshots (F5 ✅) |
+| client-side decorations (`window_chrome`) | ✅ | app-drawn title bar like VS Code / Zed: `App::decorations(false)` (or `set_window_decorations`), `window_drag_area` (drag moves via `drag_window`, double-click `toggle_window_maximized`, right-click `show_window_menu`), `window_resize_frame` (6 px edges + corners, CSS resize cursors, `drag_resize_window`; hidden when maximised / full screen), reactive `window_state(id)` (maximized / fullscreen / minimized / focused). Example: `window_resize_frame(MAIN_WINDOW, RESIZE_BORDER, column![window_drag_area(MAIN_WINDOW, title_row), body])` with your own minimise / maximise-restore / close buttons; headless tests drain `take_window_commands()` |
 | fonts | ✅ | 4 bundled builtins + host discovery (`families`/`has`); user-supplied bytes `App::font` (F4 ✅) |
 
 ## 6. Styling & theming

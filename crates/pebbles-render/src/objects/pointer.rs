@@ -102,6 +102,14 @@ pub enum Cursor {
     ColResize,
     RowResize,
     NotAllowed,
+    /// Window edge resize, top/bottom (CSS `ns-resize`).
+    NsResize,
+    /// Window edge resize, left/right (CSS `ew-resize`).
+    EwResize,
+    /// Window corner resize, top-left/bottom-right (CSS `nwse-resize`).
+    NwseResize,
+    /// Window corner resize, top-right/bottom-left (CSS `nesw-resize`).
+    NeswResize,
 }
 
 /// A callback, type-erased so this crate need not know the widget layer's

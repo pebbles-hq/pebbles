@@ -57,6 +57,9 @@ pub struct WindowSpec {
 }
 
 /// A runtime change to an already-open window (drained by the shell each turn).
+/// Tests can drain the queue themselves with [`take_window_commands`] to assert what
+/// a widget asked of the window (no OS window needed).
+#[derive(Clone, Debug, PartialEq)]
 pub enum WindowCommand {
     SetTitle(WindowId, String),
     SetResizable(WindowId, bool),
@@ -68,6 +71,70 @@ pub enum WindowCommand {
     /// Enter (`true`) or leave borderless full screen on the window's current
     /// monitor (winit `Fullscreen::Borderless`, like a browser's F11).
     SetFullscreen(WindowId, bool),
+    /// Show (`true`) or remove (`false`) the OS title bar and frame (winit
+    /// `set_decorations`). With them off the app draws its own title bar.
+    SetDecorations(WindowId, bool),
+    /// Maximize when restored, restore when maximized.
+    ToggleMaximized(WindowId),
+    /// Hand the held primary press to the window manager to move the window (winit
+    /// `drag_window`). Send it from a press/drag on a client-side title bar.
+    DragMove(WindowId),
+    /// Hand the held primary press to the window manager to resize from `edge`
+    /// (winit `drag_resize_window`).
+    DragResize(WindowId, ResizeEdge),
+    /// Open the window manager's window menu (move / resize / always on top / close)
+    /// at `(x, y)` logical px inside the window (winit `show_window_menu`; Windows and
+    /// Wayland/X11 where the compositor supports it, otherwise ignored).
+    ShowWindowMenu(WindowId, f64, f64),
+}
+
+/// The edge or corner a client-side resize starts from (winit `ResizeDirection`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ResizeEdge {
+    North,
+    South,
+    East,
+    West,
+    NorthEast,
+    NorthWest,
+    SouthEast,
+    SouthWest,
+}
+
+impl ResizeEdge {
+    /// All eight, edges first.
+    pub const ALL: [ResizeEdge; 8] = [
+        ResizeEdge::North,
+        ResizeEdge::South,
+        ResizeEdge::East,
+        ResizeEdge::West,
+        ResizeEdge::NorthWest,
+        ResizeEdge::NorthEast,
+        ResizeEdge::SouthWest,
+        ResizeEdge::SouthEast,
+    ];
+
+    /// The CSS resize cursor for this edge (what browsers and desktop toolkits show).
+    pub fn cursor(self) -> pebbles_render::Cursor {
+        use pebbles_render::Cursor;
+        match self {
+            ResizeEdge::North | ResizeEdge::South => Cursor::NsResize,
+            ResizeEdge::East | ResizeEdge::West => Cursor::EwResize,
+            ResizeEdge::NorthWest | ResizeEdge::SouthEast => Cursor::NwseResize,
+            ResizeEdge::NorthEast | ResizeEdge::SouthWest => Cursor::NeswResize,
+        }
+    }
+}
+
+/// The window-manager state an app-drawn title bar reflects (maximise vs restore icon,
+/// whether resize borders apply). Published by the shell; see [`window_state`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WindowState {
+    pub maximized: bool,
+    pub fullscreen: bool,
+    pub minimized: bool,
+    /// Whether the window is focused (title bars dim when inactive).
+    pub focused: bool,
 }
 
 /// The id that addresses the app's MAIN window in the runtime helpers
@@ -346,6 +413,55 @@ pub fn set_window_size(id: WindowId, width: u32, height: u32) {
 /// Bring an open window to the front and focus it.
 pub fn focus_window(id: WindowId) {
     push_cmd(WindowCommand::Focus(id));
+}
+
+/// Remove (`false`) or restore (`true`) the OS title bar and frame of an open window
+/// at runtime. For the main window prefer `App::decorations(false)` at start-up.
+pub fn set_window_decorations(id: WindowId, decorations: bool) {
+    push_cmd(WindowCommand::SetDecorations(id, decorations));
+}
+/// Maximize a restored window, restore a maximized one (title-bar double-click).
+pub fn toggle_window_maximized(id: WindowId) {
+    push_cmd(WindowCommand::ToggleMaximized(id));
+}
+/// Start a window-manager move with the held primary press (client-side title bar).
+pub fn drag_window(id: WindowId) {
+    push_cmd(WindowCommand::DragMove(id));
+}
+/// Start a window-manager resize from `edge` with the held primary press.
+pub fn drag_resize_window(id: WindowId, edge: ResizeEdge) {
+    push_cmd(WindowCommand::DragResize(id, edge));
+}
+/// Show the window manager's window menu at `(x, y)` (logical px in the window).
+pub fn show_window_menu(id: WindowId, x: f64, y: f64) {
+    push_cmd(WindowCommand::ShowWindowMenu(id, x, y));
+}
+
+thread_local! {
+    static STATES: RefCell<std::collections::HashMap<WindowId, pebbles_core::Signal<WindowState>>> =
+        RefCell::new(std::collections::HashMap::new());
+}
+
+fn state_signal(id: WindowId) -> pebbles_core::Signal<WindowState> {
+    STATES.with(|m| {
+        *m.borrow_mut().entry(id).or_insert_with(|| {
+            pebbles_core::create_root_signal(WindowState { focused: true, ..Default::default() })
+        })
+    })
+}
+
+/// The window's maximised / full-screen / minimised / focused state (reactive: reading
+/// it subscribes the caller). Defaults to restored + focused until the shell reports.
+pub fn window_state(id: WindowId) -> WindowState {
+    state_signal(id).get()
+}
+
+/// Shell (and tests): publish a window's state. A no-op when unchanged.
+pub fn set_window_state(id: WindowId, state: WindowState) {
+    let sig = state_signal(id);
+    if sig.peek() != state {
+        sig.set(state);
+    }
 }
 
 fn push_cmd(cmd: WindowCommand) {

@@ -35,59 +35,93 @@ impl Runner {
             }
         }
         // Runtime window changes (set_title / maximize / minimize / move / …).
+        let mut handed_off = false;
         for cmd in pebbles_widgets::window::take_window_commands() {
             use pebbles_widgets::window::WindowCommand::*;
             let main = self.active.as_ref().map(|a| &a.window);
-            let target_win = |id| {
+            // MAIN_WINDOW (0) addresses the app's main window; other ids the secondaries.
+            let target = |id| {
                 if id == pebbles_widgets::window::MAIN_WINDOW {
                     main
                 } else {
                     self.window_by_id.get(&id).and_then(|wid| self.windows.get(wid)).map(|w| &w.window)
                 }
             };
-            let target = |id| self.window_by_id.get(&id).and_then(|wid| self.windows.get(wid));
+            let is_main = |id| id == pebbles_widgets::window::MAIN_WINDOW;
             match cmd {
                 SetTitle(id, t) => {
                     if let Some(w) = target(id) {
-                        w.window.set_title(&t);
+                        w.set_title(&t);
                     }
                 }
                 SetResizable(id, r) => {
                     if let Some(w) = target(id) {
-                        w.window.set_resizable(r);
+                        w.set_resizable(r);
                     }
                 }
                 SetMaximized(id, m) => {
                     if let Some(w) = target(id) {
-                        w.window.set_maximized(m);
+                        w.set_maximized(m);
+                    }
+                }
+                ToggleMaximized(id) => {
+                    if let Some(w) = target(id) {
+                        w.set_maximized(!w.is_maximized());
                     }
                 }
                 Minimize(id) => {
                     if let Some(w) = target(id) {
-                        w.window.set_minimized(true);
+                        w.set_minimized(true);
                     }
                 }
                 SetPosition(id, x, y) => {
                     if let Some(w) = target(id) {
-                        w.window.set_outer_position(winit::dpi::LogicalPosition::new(x, y));
+                        w.set_outer_position(winit::dpi::LogicalPosition::new(x, y));
                     }
                 }
                 SetSize(id, width, height) => {
                     if let Some(w) = target(id) {
-                        let _ = w.window.request_inner_size(LogicalSize::new(width, height));
+                        let _ = w.request_inner_size(LogicalSize::new(width, height));
                     }
                 }
                 Focus(id) => {
                     if let Some(w) = target(id) {
-                        w.window.focus_window();
+                        w.focus_window();
                     }
                 }
                 SetFullscreen(id, on) => {
-                    if let Some(win) = target_win(id) {
+                    if let Some(win) = target(id) {
                         win.set_fullscreen(on.then(|| winit::window::Fullscreen::Borderless(None)));
                     }
                 }
+                SetDecorations(id, on) => {
+                    if let Some(w) = target(id) {
+                        w.set_decorations(on);
+                    }
+                }
+                DragMove(id) => {
+                    if let Some(w) = target(id) {
+                        let _ = w.drag_window();
+                        handed_off |= is_main(id);
+                    }
+                }
+                DragResize(id, edge) => {
+                    if let Some(w) = target(id) {
+                        let _ = w.drag_resize_window(resize_direction(edge));
+                        handed_off |= is_main(id);
+                    }
+                }
+                ShowWindowMenu(id, x, y) => {
+                    if let Some(w) = target(id) {
+                        w.show_window_menu(winit::dpi::LogicalPosition::new(x, y));
+                    }
+                }
             }
+        }
+        // The window manager now owns the press (move/resize grab) and usually swallows
+        // the release: forget the press so the next one starts clean.
+        if handed_off {
+            self.forget_press();
         }
 
         // Apply the router's per-route title (`router::set_title`) to the MAIN window
@@ -469,5 +503,21 @@ fn sync_window_cursor(w: &mut WindowRuntime) {
     if let Some(want) = cursor_update(w.current_cursor, w.ui.cursor_at(w.cursor), captured) {
         w.current_cursor = want;
         w.window.set_cursor(to_winit_cursor(want));
+    }
+}
+
+/// Our resize edge as winit's direction.
+fn resize_direction(edge: pebbles_widgets::window::ResizeEdge) -> winit::window::ResizeDirection {
+    use pebbles_widgets::window::ResizeEdge as E;
+    use winit::window::ResizeDirection as D;
+    match edge {
+        E::North => D::North,
+        E::South => D::South,
+        E::East => D::East,
+        E::West => D::West,
+        E::NorthEast => D::NorthEast,
+        E::NorthWest => D::NorthWest,
+        E::SouthEast => D::SouthEast,
+        E::SouthWest => D::SouthWest,
     }
 }

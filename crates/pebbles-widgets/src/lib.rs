@@ -40,7 +40,7 @@ mod services;
 #[cfg(feature = "image-view")]
 pub use components::display::image_view;
 pub use design::{fonts, modifiers, style, text_direction, theme};
-pub use platform::{native_menu, window};
+pub use platform::{native_menu, window, window_chrome};
 pub use services::{dialog, global_menu, overlay, sheet, toast};
 
 pub use dialog::{AlertDialog, Dialog, DialogId, alert_dialog, close_dialog, dialog};

@@ -6,6 +6,27 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Added — client-side window decorations (custom title bars)
+Apps can draw their own title bar like VS Code (`window.titleBarStyle: "custom"`) and Zed:
+turn the OS frame off with `App::decorations(false)` or `window::set_window_decorations(id,
+false)`, wrap the bar in `window_chrome::window_drag_area` (a drag hands the move to the
+window manager via winit `drag_window` once past the pan slop, so clicks stay clicks; a
+double-click calls `toggle_window_maximized`; a right-click opens the window manager's menu,
+`show_window_menu`) and the window in `window_chrome::window_resize_frame` (6 px edge and
+12 px corner borders with the CSS `ns/ew/nwse/nesw-resize` cursors, winit
+`drag_resize_window`; none while maximised or full screen). `window::window_state(id)` is a
+reactive `WindowState { maximized, fullscreen, minimized, focused }` the shell publishes, so
+the maximise button can show the restore glyph. New `Cursor::{NsResize, EwResize,
+NwseResize, NeswResize}`. All runtime window commands (`minimize_window`,
+`set_window_maximized`, …) now address the main window too (`MAIN_WINDOW`); before, only
+secondary windows were found. `WindowCommand` is `Clone + Debug + PartialEq` so tests can
+assert on `take_window_commands()`.
+
+### Fixed — test harness: stepwise pans follow the pointer like the shell
+`Harness::button_down` / `pointer_move` / `button_up` now run the pan gesture (slop, then
+`pan_start` / `pan_update` to the captured target wherever the pointer goes, `pan_end` on
+release), with a frame between steps, so re-render-mid-drag bugs reproduce headless.
+
 ### Fixed — file explorer: keyboard focus stays in view; badges clear the scrollbar
 In a scrolled explorer every handled key (arrows, Home/End, type-to-find, F2) reveals the
 active row with VS Code's minimal scroll, as do `reveal_path` (auto-reveal of the active

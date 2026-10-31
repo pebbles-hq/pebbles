@@ -696,6 +696,36 @@ impl Runner {
         self.dispatch_gesture(cursor, button, state) || raw
     }
 
+    /// Forget the in-flight press (pan, tap, long-press, held buttons) without
+    /// delivering anything: the window manager took it over (client-side title-bar
+    /// move/resize) and will not report the release.
+    pub(super) fn forget_press(&mut self) {
+        self.pan.reset();
+        self.armed_tap = None;
+        self.lp_target = None;
+        self.lp_active = false;
+        self.press_deadline = None;
+        self.buttons = 0;
+        self.move_target = None;
+    }
+
+    /// Publish the main window's maximised / full-screen / minimised / focused state
+    /// for app-drawn title bars (`window::window_state(MAIN_WINDOW)`).
+    pub(super) fn publish_main_state(&mut self) {
+        if let Some(a) = self.active.as_ref() {
+            let w = &a.window;
+            pebbles_widgets::window::set_window_state(
+                pebbles_widgets::window::MAIN_WINDOW,
+                pebbles_widgets::window::WindowState {
+                    maximized: w.is_maximized(),
+                    fullscreen: w.fullscreen().is_some(),
+                    minimized: w.is_minimized().unwrap_or(false),
+                    focused: w.has_focus(),
+                },
+            );
+        }
+    }
+
     /// The gesture half of [`dispatch_pointer`](Self::dispatch_pointer).
     fn dispatch_gesture(&mut self, cursor: Offset, button: MouseButton, state: ElementState) -> bool {
         match (button, state) {
@@ -1210,7 +1240,8 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
             }
 
             WindowEvent::Resized(size) => {
-                self.main_lifecycle(lifecycle::Lifecycle::Resized(size.width, size.height))
+                self.main_lifecycle(lifecycle::Lifecycle::Resized(size.width, size.height));
+                self.publish_main_state();
             }
 
             WindowEvent::CursorMoved { position, .. } => {
@@ -1580,7 +1611,10 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
 
             // 08 §5.4: stop rendering while hidden; redraw when visible again.
             WindowEvent::Occluded(occluded) => self.main_lifecycle(lifecycle::Lifecycle::Occluded(occluded)),
-            WindowEvent::Focused(focused) => self.main_lifecycle(lifecycle::Lifecycle::Focused(focused)),
+            WindowEvent::Focused(focused) => {
+                self.main_lifecycle(lifecycle::Lifecycle::Focused(focused));
+                self.publish_main_state();
+            }
 
             _ => {}
         }
