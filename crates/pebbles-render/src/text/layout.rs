@@ -152,8 +152,9 @@ fn elide(
     let para_text = &shaped.text[para.range.clone()];
     // Cut only at grapheme boundaries (an emoji ZWJ sequence or a base + combining mark is
     // never split), as Flutter/Skia and CSS `text-overflow: ellipsis` do.
-    let chars: Vec<usize> =
-        unicode_segmentation::UnicodeSegmentation::grapheme_indices(para_text, true).map(|(b, _)| b).collect();
+    let chars: Vec<usize> = unicode_segmentation::UnicodeSegmentation::grapheme_indices(para_text, true)
+        .map(|(b, _)| b)
+        .collect();
     let mut shape_prefix = |cut: usize| {
         let mut attrs = para.attrs.clone();
         let _ = attrs.split_off(cut);
@@ -260,17 +261,19 @@ impl TextLayout {
             // `TextOverflow.ellipsis`, CSS `white-space: nowrap; text-overflow: ellipsis`): the
             // first line that overflows is truncated with "…" and ends the text. The same holds
             // for an unbreakable run wider than the box under soft wrap.
-            if can_elide && !para.placeholder && (!params.wrap || count <= remaining.unwrap_or(usize::MAX)) {
-                if let Some(w) = params.width {
-                    let budget_ok = remaining.is_none_or(|left| count <= left);
-                    let lines = break_line(&shaped, &para.shape, params.width, params.wrap, None, scratch);
-                    let text = &shaped.text[para.range.clone()];
-                    let over = lines.iter().any(|l| content_width(l, text) > w + 0.01);
-                    if budget_ok && over {
-                        keep.push(count);
-                        elided = Some(elide(&shaped, i, count, &params, scratch, fonts));
-                        break;
-                    }
+            if let Some(w) = params.width
+                && can_elide
+                && !para.placeholder
+                && (!params.wrap || count <= remaining.unwrap_or(usize::MAX))
+            {
+                let budget_ok = remaining.is_none_or(|left| count <= left);
+                let lines = break_line(&shaped, &para.shape, params.width, params.wrap, None, scratch);
+                let text = &shaped.text[para.range.clone()];
+                let over = lines.iter().any(|l| content_width(l, text) > w + 0.01);
+                if budget_ok && over {
+                    keep.push(count);
+                    elided = Some(elide(&shaped, i, count, &params, scratch, fonts));
+                    break;
                 }
             }
             let Some(left) = remaining else {
