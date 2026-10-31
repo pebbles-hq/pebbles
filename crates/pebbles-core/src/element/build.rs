@@ -378,14 +378,18 @@ impl Ui {
 /// Run a component's `render` under a panic boundary. On a caught panic, route it to
 /// the nearest enclosing `error_boundary` (which then re-renders to its fallback) and
 /// produce NO child this frame; with no boundary in scope, re-raise it — so a panic
-/// with no boundary behaves exactly as before. The panic is still reported through the
+/// with no boundary behaves exactly as before — unless the app installed a
+/// [`set_render_panic_handler`](crate::set_render_panic_handler), which then gets the
+/// message and the component renders nothing (the app stays alive). The panic is still reported through the
 /// process panic hook. (Under `panic = "abort"` there is nothing to catch; the boundary
 /// is a no-op, as with any `catch_unwind`.)
 fn guarded_render(render: &Rc<dyn Fn() -> AnyWidget>) -> Option<AnyWidget> {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render())) {
         Ok(out) => Some(out),
         Err(payload) => {
-            if crate::reactive::trip_nearest_error_boundary() {
+            if crate::reactive::trip_nearest_error_boundary()
+                || crate::reactive::handle_uncaught_render_panic(&*payload)
+            {
                 None
             } else {
                 std::panic::resume_unwind(payload);

@@ -67,3 +67,51 @@ fn catches_a_descendant_render_panic() {
         "a panic in a descendant render is caught and shows the fallback"
     );
 }
+
+// --- no boundary, app-installed handler: the app stays alive -------------------
+
+thread_local! {
+    static BROKEN: Cell<bool> = const { Cell::new(true) };
+    static HANDLED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn sometimes_boom() -> AnyWidget {
+    let tick = pebbles_core::create_signal(0u32);
+    let _ = tick.get();
+    TICK.with(|t| t.set(Some(tick)));
+    if BROKEN.with(Cell::get) {
+        panic!("start byte index 62 is not a char boundary");
+    }
+    text("recovered").into_widget()
+}
+
+thread_local! {
+    static TICK: Cell<Option<pebbles_core::Signal<u32>>> = const { Cell::new(None) };
+}
+
+fn app_unguarded() -> impl IntoWidget {
+    pebbles_widgets::column(vec![text("alive").into_widget(), component(sometimes_boom).into_widget()])
+}
+
+#[test]
+fn render_panic_handler_keeps_the_app_alive_without_a_boundary() {
+    BROKEN.with(|b| b.set(true));
+    pebbles_core::set_render_panic_handler(|msg| HANDLED.with(|h| h.borrow_mut().push(msg.to_string())));
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let mut h = Harness::new().window(300.0, 100.0);
+    h.mount(app_unguarded);
+    h.draw();
+    std::panic::set_hook(prev);
+    assert!(HANDLED.with(|h| h.borrow().iter().any(|m| m.contains("char boundary"))));
+    assert!(!h.find_all_text("alive").is_empty(), "the rest of the UI still renders");
+    assert!(h.find_all_text("recovered").is_empty());
+    // The failed component re-renders normally once its data is fixed.
+    BROKEN.with(|b| b.set(false));
+    if let Some(t) = TICK.with(Cell::get) {
+        t.set(1);
+    }
+    h.frames(2);
+    pebbles_core::clear_render_panic_handler();
+    assert!(!h.find_all_text("recovered").is_empty(), "re-renders after the fault clears");
+}

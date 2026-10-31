@@ -60,10 +60,10 @@ pub use ipc::{Channel, channel};
 pub use key::Key;
 pub use keyboard::{KeyEvent, KeyEventKind, KeyEventResult, KeyInput, LogicalKey, Motion, PhysicalKey};
 pub use reactive::{
-    ErrorBoundaryHandle, RootDisposer, Signal, Store, consume_context, create_cleanup, create_effect,
-    create_memo, create_memo_with, create_root, create_root_signal, create_selector, create_signal,
-    create_signal_with, create_store, create_unique_id, on, on_defer, on_mount, owner_id, provide_context,
-    untrack,
+    ErrorBoundaryHandle, RootDisposer, Signal, Store, clear_render_panic_handler, consume_context,
+    create_cleanup, create_effect, create_memo, create_memo_with, create_root, create_root_signal,
+    create_selector, create_signal, create_signal_with, create_store, create_unique_id, on, on_defer,
+    on_mount, owner_id, provide_context, set_render_panic_handler, untrack,
 };
 pub use shortcuts::{Mods, Shortcut, ShortcutKey, create_shortcut, create_shortcut_if};
 #[cfg(target_family = "wasm")]

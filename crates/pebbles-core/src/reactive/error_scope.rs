@@ -54,3 +54,42 @@ pub(crate) fn trip_nearest_error_boundary() -> bool {
         None => false,
     }
 }
+
+/// What the app does with a component render panic that no `error_boundary` caught.
+type RenderPanicHandler = std::rc::Rc<dyn Fn(&str)>;
+
+thread_local! {
+    static RENDER_PANIC_HANDLER: std::cell::RefCell<Option<RenderPanicHandler>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Keep the app alive on an uncaught component render panic (Flutter's release-mode
+/// `ErrorWidget` behaviour): with a handler installed, a render panic that no
+/// `error_boundary` caught is passed to `handler` (with the panic message) and the
+/// failing component renders **nothing** this frame instead of unwinding out of the
+/// frame — it re-renders normally the next time it is marked dirty. The process panic
+/// hook has already run (log the backtrace there). Per UI thread;
+/// [`clear_render_panic_handler`] restores the default (re-raise).
+pub fn set_render_panic_handler(handler: impl Fn(&str) + 'static) {
+    let h: RenderPanicHandler = std::rc::Rc::new(handler);
+    RENDER_PANIC_HANDLER.with(|c| *c.borrow_mut() = Some(h));
+}
+
+/// Remove the [`set_render_panic_handler`] handler: uncaught render panics re-raise again.
+pub fn clear_render_panic_handler() {
+    RENDER_PANIC_HANDLER.with(|c| *c.borrow_mut() = None);
+}
+
+/// Report an uncaught render panic to the installed handler; `false` when none is set.
+pub(crate) fn handle_uncaught_render_panic(payload: &(dyn std::any::Any + Send)) -> bool {
+    let Some(h) = RENDER_PANIC_HANDLER.with(|c| c.borrow().clone()) else {
+        return false;
+    };
+    let msg = payload
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "a component render panicked".to_string());
+    h(&msg);
+    true
+}
