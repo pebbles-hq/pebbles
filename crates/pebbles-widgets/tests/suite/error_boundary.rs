@@ -115,3 +115,45 @@ fn render_panic_handler_keeps_the_app_alive_without_a_boundary() {
     pebbles_core::clear_render_panic_handler();
     assert!(!h.find_all_text("recovered").is_empty(), "re-renders after the fault clears");
 }
+
+// --- no boundary, no handler: unwinding tears the half-built tree down safely -----------
+
+thread_local! {
+    static FAIL_RERENDER: Cell<Option<pebbles_core::Signal<u32>>> = const { Cell::new(None) };
+}
+
+fn fails_on_rerender() -> AnyWidget {
+    let n = pebbles_core::create_signal(0u32);
+    FAIL_RERENDER.with(|t| t.set(Some(n)));
+    pebbles_core::create_cleanup(|| panic!("a cleanup that panics"));
+    if n.get() > 0 {
+        panic!("boom while re-rendering a mounted subtree");
+    }
+    pebbles_widgets::column(vec![text("child").into_widget(), text("child 2").into_widget()]).into_widget()
+}
+
+fn app_rerender_panic() -> impl IntoWidget {
+    pebbles_widgets::column(vec![component(fails_on_rerender).into_widget()])
+}
+
+/// Owner crash 2026-11-01: an uncaught render panic unwound through `Harness`/window
+/// `Drop` → `dispose` → `unmount`, which indexed an element the failed render had already
+/// removed — a second panic during cleanup, aborting the process. Now the panic surfaces
+/// once (catchable), and teardown of the failing subtree succeeds.
+#[test]
+fn an_uncaught_render_panic_unwinds_without_a_double_panic() {
+    pebbles_core::clear_render_panic_handler();
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let result = std::panic::catch_unwind(|| {
+        let mut h = Harness::new().window(300.0, 100.0);
+        h.mount(app_rerender_panic);
+        h.draw();
+        if let Some(n) = FAIL_RERENDER.with(Cell::get) {
+            n.set(1);
+        }
+        h.frames(2); // panics; `h` is dropped while unwinding
+    });
+    std::panic::set_hook(prev);
+    assert!(result.is_err(), "the render panic surfaces once, as an ordinary panic");
+}

@@ -307,8 +307,15 @@ impl Ui {
         self.scroll_anim.clear();
     }
 
+    /// Tolerant of a half-built tree: a render panic can leave a parent listing a child
+    /// that was already removed (or a subtree already torn down). Teardown must never
+    /// index a missing element — it runs from `dispose` in `Drop` during unwinding,
+    /// where a second panic aborts the process ("panic in a destructor during cleanup").
     fn unmount(&mut self, id: ElementId) {
-        let children = std::mem::take(&mut self.elements[id].children);
+        let Some(node) = self.elements.get_mut(id) else {
+            return;
+        };
+        let children = std::mem::take(&mut node.children);
         for child in children {
             self.unmount(child);
         }

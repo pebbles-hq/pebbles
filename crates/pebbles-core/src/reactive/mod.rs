@@ -1304,8 +1304,12 @@ pub(crate) fn dispose_component(id: ElementId) {
     let key = with_rt(|rt| (rt.current_window, id));
     // Run unmount callbacks first (outside the borrow, so they may touch signals).
     let cleanups = with_rt(|rt| rt.cleanups.remove(&key).unwrap_or_default());
-    for f in cleanups {
-        f();
+    // While unwinding (a tree torn down from a `Drop` after a panic), a panicking user
+    // cleanup would abort the process; skip them — the window is going away anyway.
+    if !std::thread::panicking() {
+        for f in cleanups {
+            f();
+        }
     }
     with_rt(|rt| {
         if let Some(ids) = rt.hooks.remove(&key) {
