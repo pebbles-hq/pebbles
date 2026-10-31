@@ -174,6 +174,37 @@ pub(crate) struct LcdInputs {
     pub decode_srgb_output: bool,
 }
 
+/// Why [`resolve_lcd`] chose what it did (the `PEBBLES_TEXT_AA_DEBUG` log).
+pub(crate) fn explain_lcd(i: LcdInputs) -> &'static str {
+    let wanted = match i.mode {
+        TextAntialiasing::Grayscale => return "grayscale requested",
+        TextAntialiasing::Subpixel => true,
+        TextAntialiasing::Auto => i.system.subpixel,
+    };
+    if !wanted {
+        return "system setting is grayscale";
+    }
+    if !i.dual_source {
+        return "device lacks DUAL_SOURCE_BLENDING";
+    }
+    if !i.opaque_target {
+        return "target background is not opaque";
+    }
+    if i.decode_srgb_output {
+        return "GL sRGB-decode surface";
+    }
+    match i.order.or(env_order()).unwrap_or(i.system.order) {
+        SubpixelOrder::Rgb | SubpixelOrder::Bgr => "subpixel",
+        _ => "vertical / no subpixel order",
+    }
+}
+
+/// `PEBBLES_TEXT_AA_DEBUG=1`: log the text antialiasing decision when it changes.
+pub(crate) fn debug_enabled() -> bool {
+    static D: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *D.get_or_init(|| std::env::var("PEBBLES_TEXT_AA_DEBUG").is_ok_and(|v| v != "0" && !v.is_empty()))
+}
+
 /// The frame's LCD order, or `None` for grayscale (module rules; per-run rules apply in prepare).
 pub(crate) fn resolve_lcd(i: LcdInputs) -> Option<LcdOrder> {
     let wanted = match i.mode {
@@ -269,6 +300,29 @@ mod tests {
         assert_eq!(resolve_lcd(LcdInputs { decode_srgb_output: true, ..base }), None, "GL sRGB decode");
         for o in [SubpixelOrder::VRgb, SubpixelOrder::VBgr, SubpixelOrder::None] {
             assert_eq!(resolve_lcd(LcdInputs { order: Some(o), ..base }), None, "{o:?}");
+        }
+    }
+
+    #[test]
+    fn explain_names_each_fallback() {
+        let base = inputs(TextAntialiasing::Subpixel);
+        assert_eq!(explain_lcd(base), "subpixel");
+        assert_eq!(explain_lcd(inputs(TextAntialiasing::Grayscale)), "grayscale requested");
+        let mut auto = inputs(TextAntialiasing::Auto);
+        auto.system.subpixel = false;
+        assert_eq!(explain_lcd(auto), "system setting is grayscale");
+        assert_eq!(
+            explain_lcd(LcdInputs { dual_source: false, ..base }),
+            "device lacks DUAL_SOURCE_BLENDING"
+        );
+        assert_eq!(
+            explain_lcd(LcdInputs { opaque_target: false, ..base }),
+            "target background is not opaque"
+        );
+        assert_eq!(explain_lcd(LcdInputs { decode_srgb_output: true, ..base }), "GL sRGB-decode surface");
+        // Whatever explain says, resolve agrees on LCD vs grayscale.
+        for i in [base, auto, LcdInputs { order: Some(SubpixelOrder::VRgb), ..base }] {
+            assert_eq!(resolve_lcd(i).is_some(), explain_lcd(i) == "subpixel");
         }
     }
 

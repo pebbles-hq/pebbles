@@ -217,6 +217,28 @@ impl OffscreenCapture {
         let [r, g, b, _] = background.components;
         self.inner.render(scene, width, height, Color::new([r, g, b, 1.0]))
     }
+
+    /// Text antialiasing for later renders (default grayscale, for deterministic goldens).
+    /// `Subpixel` draws LCD text when [`supports_subpixel_text`](Self::supports_subpixel_text)
+    /// (the capture target is opaque), as a window frame on the same device would.
+    pub fn set_text_antialiasing(
+        &mut self,
+        aa: crate::TextAntialiasing,
+        order: Option<crate::SubpixelOrder>,
+    ) {
+        self.inner.0.set_text_antialiasing(aa, order);
+    }
+
+    /// Whether the headless device can draw subpixel (LCD) text (dual-source blending).
+    pub fn supports_subpixel_text(&self) -> bool {
+        self.inner.0.supports_subpixel_text()
+    }
+
+    /// The headless adapter's name and backend, e.g. `"Intel(R) Iris(R) Xe Graphics (Vulkan)"`.
+    pub fn adapter_name(&self) -> String {
+        let i = self.inner.0.adapter_info();
+        format!("{} ({:?})", i.name, i.backend)
+    }
 }
 
 /// Render `scene` at `size` (device px) scaled by `scale` on white and compare it with the app's

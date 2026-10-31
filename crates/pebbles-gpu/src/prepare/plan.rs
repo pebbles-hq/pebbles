@@ -347,6 +347,12 @@ pub(crate) struct PrepareStats {
     pub tess_calls: u32,
     /// Glyphs culled against the active scissor before any atlas work (R25).
     pub culled_glyphs: u32,
+    /// Glyph runs drawn grayscale on an LCD frame: inside an offscreen layer (`text_aa`).
+    pub lcd_gray_in_layer: u32,
+    /// Glyph runs drawn grayscale on an LCD frame: outline route (rotation, skew, …).
+    pub lcd_gray_outline: u32,
+    /// Glyph runs drawn with LCD coverage.
+    pub lcd_runs: u32,
     /// Clips that became an exact scissor (09 §2.2 row 4).
     pub clips_scissor: u32,
     /// Clips containing the current scissor: nothing changes (row 3).

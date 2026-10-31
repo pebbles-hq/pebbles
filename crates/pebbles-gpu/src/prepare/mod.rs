@@ -1005,6 +1005,12 @@ impl Walk<'_> {
         match glyph_outline::classify_run(run.xf, run.glyph_transform, run.font_size) {
             glyph_outline::GlyphRoute::Atlas { .. } => {
                 let scissor = self.clips.current().scissor;
+                let lcd = self.lcd_here();
+                if lcd.is_some() {
+                    self.plan.stats.lcd_runs += 1;
+                } else if self.lcd.is_some() {
+                    self.plan.stats.lcd_gray_in_layer += 1;
+                }
                 let range = glyphs::glyph_run(
                     self.plan,
                     self.stats,
@@ -1017,11 +1023,14 @@ impl Walk<'_> {
                     glyphs,
                     self.glyph_hint,
                     self.scale_factor,
-                    self.lcd_here(),
+                    lcd,
                 );
                 self.push(DrawCmd::Glyphs { glyphs: range, clip: self.clips.current() }, idx);
             }
             glyph_outline::GlyphRoute::Outline => {
+                if self.lcd.is_some() {
+                    self.plan.stats.lcd_gray_outline += 1;
+                }
                 let (g, c) = (run.glyph_transform, run.coords);
                 self.draw_glyph_outlines(run.font, run.font_size, c, run.color, run.xf, g, glyphs, idx);
             }
