@@ -551,6 +551,7 @@ impl Renderer {
     }
 
     /// `PEBBLES_TEXT_AA_DEBUG=1`: one stderr line whenever this renderer's decision changes.
+    #[allow(clippy::print_stderr)] // PEBBLES_TEXT_AA_DEBUG, as PEBBLES_GPU_INFO
     fn log_text_aa(&mut self, params: &FrameParams, decode_srgb_output: bool) {
         let why = self
             .lcd_inputs(params, decode_srgb_output)
