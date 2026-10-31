@@ -99,7 +99,7 @@ remote-URL images) and their per-platform status live in
 
 | Widget | Status | Notes |
 |--------|--------|-------|
-| `Button` / `IconButton` | ✅ | variants, sizes, hover/press/disabled/focus ring |
+| `Button` / `IconButton` | ✅ | variants, `ControlSize` xs/sm/md/lg/custom (uniform height; icon buttons square), hover/press/disabled/focus ring |
 | `fab` (FloatingActionButton) | ✅ | circular elevated action button; `.mini()`, `.label()` (extended pill), `.color()`; canonical placement via `Scaffold::fab()` (bottom-right), or standalone in a Stack |
 | `ButtonGroup` | ✅ | joined strip geometry |
 | `Checkbox` | ✅ | + `.indeterminate` tri-state |
@@ -199,6 +199,7 @@ remote-URL images) and their per-platform status live in
 | `BoxDecoration` | ✅ | `Gradient::{linear,vertical,horizontal,radial}`, `Border` per-side, `BorderRadius`, `BoxShadow` (offset/blur/spread), `BoxShape`, blend, image fill + `ImageFit` |
 | Theme | ✅ | `Theme::light()/dark()`, `set_theme`/`toggle_theme`, `ThemeMode` (System/Light/Dark, follows the OS), `Colors` tokens, `shade`/`mix`; reactive |
 | `DesignLanguage` (`Default`/`Material`/`Tailwind`) | ✅ | base design language seeding shape/density/elevation tokens; `Theme::design(..)` + global `design()`/`set_design(..)` (reactive), `Theme::{compact,tailwind,material}()` presets; every component re-skins radius/padding/height. Default = **Compact** |
+| `ControlSize` / `SizeScale` | ✅ | one size scale for every sized control: `Xs`/`Sm`/`Md`/`Lg` from `theme().sizes` (Default 20/24/28/32 px tall, 13 px md font, 16 px icons — the VS Code / JetBrains standard; Tailwind and Material keep roomier scales) + `Custom(ControlMetrics { height, font, padding_x, icon })` / `ControlSize::custom(h)` down to ~16 px. Same `.size(..)` on Button, IconButton, Toggle(Group), Checkbox, Switch, Radio(Group), TextField, Select, Chip, Pagination; equal heights per size |
 | `palette` | ✅ | foundation color set |
 | Sweep gradient | ✅ | `Gradient::sweep` / `sweep_arc` (conic fills) |
 | Scoped theme override (`theme_override`) | ✅ | per-subtree `Theme` swap; global stays the default |

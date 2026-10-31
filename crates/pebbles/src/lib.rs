@@ -105,9 +105,10 @@ pub mod prelude {
     // theming + the general style system (RN/CSS-like, apply anywhere), incl. the
     // design languages (Default / Material / Tailwind) applied across the whole catalog
     pub use pebbles_widgets::{
-        Brightness, Colors, DesignLanguage, ModifierExt, Style, StyleExt, Theme, ThemeMode, design,
-        platform_brightness, set_design, set_text_direction, set_theme, set_theme_mode, style, styled,
-        styles, text_direction, theme, theme_mode, theme_override, toggle_theme,
+        Brightness, Colors, ControlMetrics, ControlSize, DesignLanguage, ModifierExt, SizeScale, Style,
+        StyleExt, Theme, ThemeMode, design, platform_brightness, set_design, set_text_direction, set_theme,
+        set_theme_mode, style, styled, styles, text_direction, theme, theme_mode, theme_override,
+        toggle_theme,
     };
     #[cfg(feature = "image-view")]
     pub use pebbles_widgets::{ImageView, image_from_bytes, image_from_path};

@@ -11,7 +11,7 @@ use pebbles_foundation::{CrossAxisAlignment, Offset, Size, palette};
 use pebbles_render::{IconKind, RenderParagraph, RenderPointerListener, TextEnv};
 use pebbles_testing::draw_frame as frame;
 use pebbles_widgets::{
-    ButtonVariant, ControlMetrics, ControlSize, DesignLanguage, Theme, View, button, chip, column,
+    ButtonVariant, ControlMetrics, ControlSize, DesignLanguage, SizedBox, Theme, View, button, chip, column,
     icon_button, pagination, position_probe, row, select, text, text_field, toggle, toggle_group_labels,
 };
 
@@ -42,7 +42,9 @@ fn probe(name: &'static str, w: impl IntoWidget + 'static) -> pebbles_core::widg
 fn mixed_row() -> pebbles_core::widget::AnyWidget {
     let s = SIZE.with(|s| *s.borrow());
     if ONLY_PAGINATION.with(|o| *o.borrow()) {
-        return probe("pagination", pagination(5, 20).size(s));
+        return row(vec![probe("pagination", pagination(5, 20).size(s))])
+            .cross_axis_alignment(CrossAxisAlignment::Center)
+            .into_widget();
     }
     row(vec![
         probe("button", button("Save").size(s)),
@@ -71,7 +73,11 @@ fn measure(theme: Theme, size: ControlSize) -> (Ui, Vec<(String, Offset, Size)>)
     ui.mount_root(
         View::new(
             palette::WHITE,
-            component(|| column(vec![mixed_row()]).cross_axis_alignment(CrossAxisAlignment::Start)),
+            // A taller-than-needed slot: controls must keep their own height inside it.
+            component(|| {
+                column(vec![SizedBox::exact(1400.0, 90.0, mixed_row()).into_widget()])
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+            }),
         )
         .into_widget(),
     );

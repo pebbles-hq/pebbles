@@ -205,6 +205,9 @@ impl IntoWidget for ToggleGroup {
                     .radius(BorderRadius::all(th.radius)),
             )
             .clip()
+            // Exactly the size's height, even inside a taller cross-axis slot (the
+            // cells stretch to the strip, never past it).
+            .height(group.size.metrics().height)
             .child(
                 row(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min),
             )

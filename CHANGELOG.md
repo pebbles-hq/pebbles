@@ -6,6 +6,24 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed (breaking) — Default design: standard desktop sizes, one size scale, custom sizes
+The Default design now matches mainstream desktop apps (VS Code, JetBrains, Zed, macOS):
+13 px body/UI text (was 14), 28 px md controls, 16 px icons, and menubar triggers with 13 px
+regular-weight labels and 8 px side padding (were 14 px semibold, ~10 px). A new shared
+`ControlSize::{Xs, Sm, Md, Lg, Custom(ControlMetrics)}` resolves through the theme's
+`SizeScale` token (`theme().sizes`; Default xs/sm/md/lg = 20/24/28/32 px tall, Tailwind
+28/32/36/40, Material 32/36/40/48). Every sized component — `Button`, `IconButton`,
+`Toggle`, `ToggleGroup`, `Checkbox`, `Switch`, `Radio`, `RadioGroup`, `TextField`, `Select`,
+`Chip`, `Pagination` — takes `.size(..)` and is exactly the size's height, so mixed rows line
+up; icon buttons are now `height`-square (they were 34 px next to ~25 px text buttons) and
+pagination arrows and pages are level. `ControlSize::custom(h)` derives font / padding /
+icon from any height (works down to 16 px); `ControlMetrics { height, font, padding_x, icon }`
+sets them exactly. Migration: `ButtonSize` and `ToggleSize` are aliases of `ControlSize`
+(existing `Sm`/`Md`/`Lg` keep compiling, but matches must cover `Xs` and `Custom`);
+`IconButton::size` now takes a `ControlSize` — use `.icon_size(px)` for the glyph and
+`.padding(px)` for the old shrink-wrapped box. Button heights no longer come from vertical
+padding; `Theme::design(..)` now also re-seeds `font_size` and `sizes`.
+
 ### Added — client-side window decorations (custom title bars)
 Apps can draw their own title bar like VS Code (`window.titleBarStyle: "custom"`) and Zed:
 turn the OS frame off with `App::decorations(false)` or `window::set_window_decorations(id,

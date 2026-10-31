@@ -13,7 +13,7 @@ use pebbles_widgets::{
     wrap,
 };
 
-use crate::case::{Case, Category::Screen, Slice::Screens, harness};
+use crate::case::{Case, Category::Screen, Slice::Screens, harness, harness_arg};
 
 const W: u32 = 480;
 const H: u32 = 320;
@@ -43,7 +43,40 @@ pub fn cases() -> Vec<Case> {
         harness("widget/data_table", Screen, Screens, W, H, data_table),
         harness("widget/calendar", Screen, Screens, W, H, calendar_case),
         harness("widget/card_grid", Screen, Screens, W, H, card_grid),
+        harness_arg("widget/control_sizes_xs", Screen, Screens, SW, SH, control_sizes, 0),
+        harness_arg("widget/control_sizes_sm", Screen, Screens, SW, SH, control_sizes, 1),
+        harness_arg("widget/control_sizes_md", Screen, Screens, SW, SH, control_sizes, 2),
+        harness_arg("widget/control_sizes_lg", Screen, Screens, SW, SH, control_sizes, 3),
+        harness_arg("widget/control_sizes_custom16", Screen, Screens, SW, SH, control_sizes, 4),
     ]
+}
+
+const SW: u32 = 820;
+const SH: u32 = 96;
+
+/// A mixed row of every sized control at one [`ControlSize`] (Default design):
+/// all of them must be the same height and sit level.
+fn control_sizes(h: &mut Harness, which: usize) {
+    use pebbles_widgets::{ControlSize, icon_button, pagination, select, toggle, toggle_group_labels};
+    set_design(DesignLanguage::Default);
+    let s = [ControlSize::Xs, ControlSize::Sm, ControlSize::Md, ControlSize::Lg, ControlSize::custom(16.0)]
+        [which];
+    page(
+        h,
+        row(vec![
+            button("Save").size(s).into_widget(),
+            button("Open").leading(tabler::PLUS).variant(ButtonVariant::Outline).size(s).into_widget(),
+            icon_button(tabler::SETTINGS).variant(ButtonVariant::Outline).size(s).into_widget(),
+            toggle(true, text("B")).size(s).into_widget(),
+            toggle_group_labels(["L", "C", "R"]).value(0).size(s).into_widget(),
+            text_field().placeholder("Search").width(110.0).size(s).into_widget(),
+            select(["One", "Two"]).value(0).width(100.0).size(s).into_widget(),
+            chip("Tag").size(s).into_widget(),
+            pagination(3, 9).edges(false).size(s).into_widget(),
+        ])
+        .spacing(6.0)
+        .cross_axis_alignment(pebbles_foundation::CrossAxisAlignment::Center),
+    );
 }
 
 /// Mount `child` 24 px in from the top-left corner.

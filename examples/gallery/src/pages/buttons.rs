@@ -37,11 +37,32 @@ pub fn buttons() -> Element {
         ),
         // ----------------------------------------------------------------- sizes
         doc("Sizes").body(
-            wrap(children![
-                button("Small").size(ButtonSize::Sm),
-                button("Medium").size(ButtonSize::Md),
-                button("Large").size(ButtonSize::Lg),
-            ])
+            column(
+                [
+                    ("xs", ControlSize::Xs),
+                    ("sm", ControlSize::Sm),
+                    ("md (default)", ControlSize::Md),
+                    ("lg", ControlSize::Lg),
+                    ("custom 18 px", ControlSize::custom(18.0)),
+                ]
+                .into_iter()
+                .map(|(name, s)| {
+                    // Text, icon and icon-only buttons share one height per size.
+                    row(children![
+                        Container::new().width(96.0).child(text(name).size(12.0).color(c.muted_foreground)),
+                        button("Button").size(s),
+                        button("Add").leading(IconKind::Plus).variant(ButtonVariant::Outline).size(s),
+                        icon_button(IconKind::Search).variant(ButtonVariant::Outline).size(s),
+                        icon_button(IconKind::Star).size(s),
+                    ])
+                    .spacing(8.0)
+                    .cross_axis_alignment(CrossAxisAlignment::Center)
+                    .into_widget()
+                })
+                .collect::<Vec<_>>(),
+            )
+            .cross_axis_alignment(CrossAxisAlignment::Start)
+            .main_axis_size(MainAxisSize::Min)
             .spacing(10.0),
         ),
         // --------------------------------------------------------------- icons

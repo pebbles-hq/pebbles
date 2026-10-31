@@ -15,6 +15,31 @@ pub fn paginations() -> Element {
             .cross_axis_alignment(CrossAxisAlignment::Start)
             .main_axis_size(MainAxisSize::Min),
         ),
+        doc("Sizes").body(
+            column(
+                [
+                    ("sm", ControlSize::Sm),
+                    ("md (default)", ControlSize::Md),
+                    ("lg", ControlSize::Lg),
+                    ("custom 18 px", ControlSize::custom(18.0)),
+                ]
+                .into_iter()
+                .map(|(name, s)| {
+                    column(children![
+                        text(name).size(12.5).color(theme().colors.muted_foreground),
+                        gap_h(6.0),
+                        pagination(page.get(), 20).size(s).on_page(move |p| page.set(p)),
+                    ])
+                    .cross_axis_alignment(CrossAxisAlignment::Start)
+                    .main_axis_size(MainAxisSize::Min)
+                    .into_widget()
+                })
+                .collect::<Vec<_>>(),
+            )
+            .cross_axis_alignment(CrossAxisAlignment::Start)
+            .main_axis_size(MainAxisSize::Min)
+            .spacing(14.0),
+        ),
         doc(".edges(false) — no first/last jump").body(
             column(children![
                 pagination(page.get(), 20)
