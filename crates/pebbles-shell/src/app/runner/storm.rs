@@ -121,7 +121,7 @@ impl Runner {
                 4..=5 => {
                     let lines = (1 + storm.next() % 3) as f64;
                     let dy = if storm.next() & 1 == 0 { lines } else { -lines } * LINE_SCROLL;
-                    let _ = wheel_with_overlay(&mut self.ui, p, dy);
+                    let _ = wheel_with_overlay(&mut self.ui, p, Offset::new(0.0, dy));
                 }
                 // Click — through the REAL pointer pipeline (dispatch_pointer), the
                 // exact path a winit MouseInput takes, so the storm tests it too.
@@ -134,12 +134,14 @@ impl Runner {
                 8 => {
                     self.cursor = p;
                     pebbles_core::focus::set_focus(None);
-                    let armed = self.ui.tap_target_at(p);
+                    let mut armed = self.ui.tap_target_at(p);
                     let claimed = self.ui.begin_content_drag(p);
-                    let pan = if claimed { None } else { self.ui.pan_target_at(p) };
-                    if let Some(t) = pan {
-                        let _ = self.ui.dispatch_pan_start(t, p);
-                    }
+                    let mut pan = pebbles_core::pan::PanGesture::default();
+                    pan.press(
+                        if claimed { None } else { self.ui.pan_target_at(p) },
+                        p,
+                        pebbles_core::pan::MOUSE_PAN_SLOP,
+                    );
                     let _ = self.ui.dispatch_pointer_down(p);
                     for _ in 0..3 {
                         let q = Offset::new(
@@ -147,18 +149,19 @@ impl Runner {
                             (p.y + (storm.next() % 160) as f64 - 80.0).clamp(ry0, ry1),
                         );
                         self.cursor = q;
+                        if pan.moved(&mut self.ui, q).crossed_slop
+                            && let Some(a) = armed.take()
+                        {
+                            let _ = self.ui.dispatch_tap_cancel(a);
+                        }
                         if claimed {
                             let _ = self.ui.update_content_drag(q);
-                        } else if let Some(t) = pan {
-                            let _ = self.ui.dispatch_pan_update(t, q);
                         }
                         let _ = self.ui.dispatch_hover(q);
                     }
                     let end = self.cursor;
                     let _ = self.ui.end_content_drag(end);
-                    if let Some(t) = pan {
-                        self.ui.dispatch_pan_end(t, end);
-                    }
+                    pan.release(&mut self.ui, end);
                     let _ = self.ui.dispatch_pointer_up(end);
                     if let Some(a) = armed {
                         let _ = self.ui.dispatch_tap_cancel(a);

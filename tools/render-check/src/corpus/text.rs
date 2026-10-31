@@ -35,6 +35,8 @@ pub fn cases() -> Vec<Case> {
     v.extend([
         harness("text/tiny_6px", Text, P2, W, H, tiny_6px),
         harness("text/dense_paragraph", Text, P2, W, H, dense_paragraph),
+        // Gravel "blurry vs Zed": 13 px UI + 13/14 px mono, light-on-dark and dark-on-light at 1×.
+        harness("text/sharpness_13px", Text, P2, W, H, sharpness_13px),
         harness("text/rotated_30", Text, P2, W, H, rotated_30),
         harness("text/scaled_transform_3x", Text, P2, W, H, scaled_transform_3x),
         harness("text/selection_caret", Text, P2, W, H, selection_caret),
@@ -234,6 +236,35 @@ fn tiny_6px(h: &mut Harness) {
 fn dense_paragraph(h: &mut Harness) {
     let long: String = LOREM.repeat(9).chars().take(2000).collect();
     h.mount_widget(container().padding(EdgeInsets::all(10.0)).width(480.0).child(text(long).size(12.0)));
+}
+
+fn sharpness_13px(h: &mut Harness) {
+    let block = |bg: Color, fg: Color| {
+        let line = |s: &'static str, family: Option<&'static str>, size: f32| {
+            let t = text(s).size(size).color(fg);
+            match family {
+                Some(f) => t.font_family(f).into_widget(),
+                None => t.into_widget(),
+            }
+        };
+        container()
+            .color(bg)
+            .padding(EdgeInsets::all(8.0))
+            .child(
+                column(vec![
+                    line("Explorer  src/main.rs  Cargo.toml  README.md", None, 13.0),
+                    line("The quick brown fox jumps over the lazy dog 0123", None, 13.0),
+                    line("fn main() { let x: u32 = 42; println!(\"{x}\"); }", Some("JetBrains Mono"), 13.0),
+                    line("impl<T> Iterator for Il1|O0 { type Item = T; }", Some("JetBrains Mono"), 14.0),
+                ])
+                .spacing(4.0),
+            )
+            .into_widget()
+    };
+    h.mount_widget(column(vec![
+        block(Color::from_rgb8(0x1E, 0x1E, 0x1E), Color::from_rgb8(0xD4, 0xD4, 0xD4)),
+        block(Color::WHITE, Color::from_rgb8(0x24, 0x29, 0x2E)),
+    ]));
 }
 
 #[allow(clippy::approx_constant)] // 0.5236 is the §7.2 construction verbatim, not FRAC_PI_6

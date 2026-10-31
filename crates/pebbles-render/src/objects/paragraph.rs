@@ -322,14 +322,34 @@ impl RenderParagraph {
         p
     }
 
+    /// Whether the last layout truncated the text with "…" (`max_lines` / no-wrap ellipsis).
+    pub fn is_elided(&self) -> bool {
+        self.cached.as_ref().is_some_and(|l| l.is_elided())
+    }
+
+    /// The text as painted after the last layout: the elided line's text ("…" included)
+    /// when truncated, else the full text.
+    pub fn displayed_text(&self) -> String {
+        let Some(l) = self.cached.as_ref() else { return self.text.clone() };
+        match l.elided.as_ref() {
+            Some(e) => {
+                let start = l.shaped.paras[e.para].range.start;
+                format!("{}{}", &l.shaped.text[..start], e.text)
+            }
+            None => self.text.clone(),
+        }
+    }
+
     /// The layout request for this paragraph at `width` (03 §3.5.1: a width only when soft
     /// wrap is on and the box is bounded).
     fn params(&self, text: &mut TextEnv, width: Option<f32>) -> LayoutParams {
         let rtl = crate::direction::text_direction() == TextDirection::Rtl;
-        let width = if self.style.soft_wrap { width } else { None };
+        // Ellipsis keeps the box width even without soft wrap (Flutter lays out at maxWidth
+        // when `overflow: ellipsis`; CSS `white-space: nowrap; text-overflow: ellipsis`).
+        let width = if self.style.soft_wrap || self.style.ellipsis { width } else { None };
         LayoutParams {
             width,
-            wrap: width.is_some(),
+            wrap: self.style.soft_wrap && width.is_some(),
             align: Some(to_cosmic_align(self.style.align, rtl)),
             max_lines: self.style.max_lines,
             ellipsis: self.style.ellipsis,

@@ -150,7 +150,11 @@ fn elide(
 ) -> ElidedShape {
     let para = &shaped.paras[i];
     let para_text = &shaped.text[para.range.clone()];
-    let chars: Vec<usize> = para_text.char_indices().map(|(b, _)| b).collect();
+    // Cut only at grapheme boundaries (an emoji ZWJ sequence or a base + combining mark is
+    // never split), as Flutter/Skia and CSS `text-overflow: ellipsis` do.
+    let chars: Vec<usize> = unicode_segmentation::UnicodeSegmentation::grapheme_indices(para_text, true)
+        .map(|(b, _)| b)
+        .collect();
     let mut shape_prefix = |cut: usize| {
         let mut attrs = para.attrs.clone();
         let _ = attrs.split_off(cut);
@@ -163,8 +167,8 @@ fn elide(
     while lo < hi {
         let mid = (lo + hi).div_ceil(2);
         let cut = chars.get(mid).copied().unwrap_or(para_text.len());
-        let (_, shape) = shape_prefix(cut);
-        if break_line(shaped, &shape, params.width, params.wrap, None, scratch).len() <= k {
+        let (text, shape) = shape_prefix(cut);
+        if elided_fits(shaped, &shape, &text, k, params, scratch) {
             best = cut;
             lo = mid;
         } else {
@@ -173,6 +177,28 @@ fn elide(
     }
     let (text, shape) = shape_prefix(best);
     ElidedShape { para: i, cut: best, text, shape }
+}
+
+/// Whether an elided candidate lays out in at most `k` lines with its last line inside the
+/// width. The width test matters without soft wrap (one unbroken line, CSS `white-space:
+/// nowrap`) and for an unbreakable run; with wrap alone a too-wide candidate would just
+/// re-break, so the last line is what must fit.
+fn elided_fits(
+    shaped: &ShapedText,
+    shape: &ShapeLine,
+    text: &str,
+    k: usize,
+    params: &LayoutParams,
+    scratch: &mut ShapeBuffer,
+) -> bool {
+    let lines = break_line(shaped, shape, params.width, params.wrap, None, scratch);
+    if lines.len() > k {
+        return false;
+    }
+    match (params.width, lines.last()) {
+        (Some(w), Some(last)) => content_width(last, text) <= w + 0.01,
+        _ => true,
+    }
 }
 
 /// Width of `line` without its logically-trailing whitespace (pre-swap semantics).
@@ -231,6 +257,25 @@ impl TextLayout {
         for (i, para) in shaped.paras.iter().enumerate() {
             let count =
                 break_line(&shaped, &para.shape, params.width, params.wrap, measure_align, scratch).len();
+            // No soft wrap + ellipsis inside a bounded width (Flutter `softWrap: false` with
+            // `TextOverflow.ellipsis`, CSS `white-space: nowrap; text-overflow: ellipsis`): the
+            // first line that overflows is truncated with "…" and ends the text. The same holds
+            // for an unbreakable run wider than the box under soft wrap.
+            if let Some(w) = params.width
+                && can_elide
+                && !para.placeholder
+                && (!params.wrap || count <= remaining.unwrap_or(usize::MAX))
+            {
+                let budget_ok = remaining.is_none_or(|left| count <= left);
+                let lines = break_line(&shaped, &para.shape, params.width, params.wrap, None, scratch);
+                let text = &shaped.text[para.range.clone()];
+                let over = lines.iter().any(|l| content_width(l, text) > w + 0.01);
+                if budget_ok && over {
+                    keep.push(count);
+                    elided = Some(elide(&shaped, i, count, &params, scratch, fonts));
+                    break;
+                }
+            }
             let Some(left) = remaining else {
                 keep.push(count);
                 continue;
@@ -719,6 +764,65 @@ mod tests {
     fn trailing_newline_ellipsis() {
         let l = lay("a\nb\n", &clamp(ParagraphStyle { soft_wrap: false, ..mono() }, 2, true), None);
         assert_eq!(l.elided.as_ref().map(|e| e.text.as_str()), Some("b\u{2026}"));
+    }
+
+    fn nowrap1(s: ParagraphStyle) -> ParagraphStyle {
+        clamp(ParagraphStyle { soft_wrap: false, ..s }, 1, true)
+    }
+
+    /// Asserts the elided line fits `w`, cuts on a grapheme boundary and ends in "…".
+    fn assert_elided_fits(l: &TextLayout, src: &str, w: f32) -> String {
+        let e = l.elided.as_ref().expect("elided");
+        assert!(e.text.ends_with('\u{2026}'), "{:?}", e.text);
+        assert!(src.starts_with(&e.text[..e.cut]));
+        let cuts: Vec<usize> =
+            unicode_segmentation::UnicodeSegmentation::grapheme_indices(src, true).map(|(b, _)| b).collect();
+        assert!(e.cut == src.len() || cuts.contains(&e.cut), "cut {} mid-grapheme", e.cut);
+        assert_eq!(l.line_count(), 1);
+        let last = l.lines.last().expect("line");
+        let lw = content_width(&last.layout, l.line_text(last));
+        assert!(lw <= w + 0.01, "{lw} > {w}");
+        e.text.clone()
+    }
+
+    #[test]
+    fn nowrap_ellipsis_truncates_at_last_fitting_grapheme() {
+        // Regression (Gravel explorer header): CSS `white-space: nowrap; text-overflow:
+        // ellipsis` — one line, cut at the last grapheme that fits, never at the hyphen.
+        let l = lay("GRAVEL-CAPTURE-3", &nowrap1(mono()), Some(185.0));
+        assert_eq!(assert_elided_fits(&l, "GRAVEL-CAPTURE-3", 185.0), "GRAVEL-CAPTURE\u{2026}");
+        let l = lay("GRAVEL-CAPTURE-3", &nowrap1(mono()), Some(150.0));
+        assert_eq!(assert_elided_fits(&l, "GRAVEL-CAPTURE-3", 150.0), "GRAVEL-CAPT\u{2026}");
+        // Fits: untouched.
+        assert!(!lay("GRAVEL-CAPTURE-3", &nowrap1(mono()), Some(300.0)).is_elided());
+        // No max_lines at all: still one ellipsized line.
+        let s = ParagraphStyle { soft_wrap: false, ellipsis: true, ..mono() };
+        assert!(lay("GRAVEL-CAPTURE-3", &s, Some(150.0)).is_elided());
+    }
+
+    #[test]
+    fn wrapped_max_lines_one_hyphen_cuts_at_grapheme() {
+        let l = lay("GRAVEL-CAPTURE-3", &clamp(mono(), 1, true), Some(150.0));
+        assert_eq!(assert_elided_fits(&l, "GRAVEL-CAPTURE-3", 150.0), "GRAVEL-CAPT\u{2026}");
+        // An unbreakable run wider than the box is truncated too, not overflowed.
+        let l = lay("GRAVELCAPTURE3", &clamp(mono(), 1, true), Some(100.0));
+        assert_eq!(assert_elided_fits(&l, "GRAVELCAPTURE3", 100.0), "GRAVELC\u{2026}");
+    }
+
+    #[test]
+    fn nowrap_ellipsis_cjk_emoji_rtl() {
+        for src in [
+            "\u{6f22}\u{5b57}\u{304b}\u{306a}\u{6df7}\u{3058}\u{308a}\u{6587}\u{306e}\u{9577}\u{3044}\u{898b}\u{51fa}\u{3057}",
+            "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}\u{1f44d}\u{1f3fd}e\u{301}\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}\u{1f44d}\u{1f3fd}\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}",
+            "\u{5e9}\u{5dc}\u{5d5}\u{5dd} \u{5e2}\u{5d5}\u{5dc}\u{5dd} \u{645}\u{631}\u{62d}\u{628}\u{627} \u{628}\u{627}\u{644}\u{639}\u{627}\u{644}\u{645}",
+        ] {
+            let full = lay(src, &nowrap1(mono()), None).width();
+            let w = (full / 2.0).max(30.0);
+            let l = lay(src, &nowrap1(mono()), Some(w));
+            assert_elided_fits(&l, src, w);
+            let l = lay(src, &clamp(mono(), 1, true), Some(w));
+            assert_elided_fits(&l, src, w);
+        }
     }
 
     #[test]

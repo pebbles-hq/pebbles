@@ -625,6 +625,7 @@ Every `examples/gallery` page, headless (800×1000, bundled fonts, settled): Def
 | [ ] | `text/decorations` | 480×320 | 5706 | <img src="wgpu/linux-lavapipe/text__decorations.png" width="240"> |
 | [ ] | `text/decorations_all_styles` | 480×320 | 17444 | <img src="wgpu/linux-lavapipe/text__decorations_all_styles.png" width="240"> |
 | [ ] | `text/dense_paragraph` | 480×320 | 39124 | <img src="wgpu/linux-lavapipe/text__dense_paragraph.png" width="240"> |
+| [ ] | `text/sharpness_13px` | 480×320 | 29344 | <img src="wgpu/linux-lavapipe/text__sharpness_13px.png" width="240"> |
 | [ ] | `text/ellipsis_maxlines` | 480×320 | 8841 | <img src="wgpu/linux-lavapipe/text__ellipsis_maxlines.png" width="240"> |
 | [ ] | `text/emoji_color` | 480×320 | 14287 | <img src="wgpu/linux-lavapipe/text__emoji_color.png" width="240"> |
 | [ ] | `text/glyph_run_synthetic` | 480×320 | 21899 | <img src="wgpu/linux-lavapipe/text__glyph_run_synthetic.png" width="240"> |

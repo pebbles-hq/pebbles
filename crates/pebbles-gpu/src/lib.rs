@@ -56,6 +56,9 @@ pub use context::{DeviceHealth, DeviceId, GpuCaps, GpuContext, GpuDevice};
 pub use diag::{backend_error_count, install_log_bridge};
 pub use error::{AcquireError, CaptureError, GpuError};
 pub use execute::custom::{CustomPrepare, CustomRender, CustomRenderer};
+pub use execute::resources::globals::{
+    DEFAULT_TEXT_CONTRAST, DEFAULT_TEXT_GAMMA, text_coverage, text_gamma_ratios,
+};
 pub use execute::resources::shader_programs::{ShaderError, validate_shader_program};
 pub use frame_targets::{FrameParams, FrameTargets, RenderTarget};
 #[cfg(not(target_family = "wasm"))]

@@ -512,6 +512,12 @@ pub struct FrameParams {
     /// Force glyph hinting on/off for experiments (render-check `--glyph-hint`); `None` = the
     /// 02 §7.8 policy.
     pub glyph_hint: Option<bool>,
+    /// Text gamma for grayscale glyph coverage (1.0..=2.2; 1.0 = off). Default 1.8 as GPUI /
+    /// DirectWrite; `PEBBLES_TEXT_GAMMA` overrides the default.
+    pub text_gamma: f32,
+    /// Grayscale enhanced contrast for light-on-dark text (0 = off). Default 1.0 as GPUI;
+    /// `PEBBLES_TEXT_CONTRAST` overrides the default.
+    pub text_contrast: f32,
     /// Draw the on-screen performance overlay over this frame (S57). Window frames only: the
     /// offscreen API never sets it, so captures and goldens never contain the overlay.
     pub perf_overlay: bool,
@@ -525,8 +531,19 @@ impl FrameParams {
             root_transform: kurbo::Affine::IDENTITY,
             scale_factor: 1.0,
             glyph_hint: None,
+            text_gamma: default_text_params().0,
+            text_contrast: default_text_params().1,
             perf_overlay: false,
         }
+    }
+
+    /// Set the text gamma (1.0..=2.2) and grayscale enhanced contrast (≥ 0); `(1.0, 0.0)` turns
+    /// text coverage correction off.
+    #[must_use]
+    pub fn with_text_gamma(mut self, gamma: f32, contrast: f32) -> Self {
+        self.text_gamma = gamma;
+        self.text_contrast = if contrast.is_finite() { contrast.max(0.0) } else { 0.0 };
+        self
     }
 
     /// Replace the root transform.
@@ -556,6 +573,22 @@ impl FrameParams {
         self.glyph_hint = hint;
         self
     }
+}
+
+/// (gamma, contrast) defaults: GPUI's 1.8 / 1.0, overridable by `PEBBLES_TEXT_GAMMA` and
+/// `PEBBLES_TEXT_CONTRAST` (read once).
+fn default_text_params() -> (f32, f32) {
+    use crate::execute::resources::globals::{DEFAULT_TEXT_CONTRAST, DEFAULT_TEXT_GAMMA};
+    static P: std::sync::OnceLock<(f32, f32)> = std::sync::OnceLock::new();
+    *P.get_or_init(|| {
+        let env = |k: &str| {
+            std::env::var(k).ok().and_then(|v| v.trim().parse::<f32>().ok()).filter(|v| v.is_finite())
+        };
+        (
+            env("PEBBLES_TEXT_GAMMA").map_or(DEFAULT_TEXT_GAMMA, |g| g.clamp(1.0, 2.2)),
+            env("PEBBLES_TEXT_CONTRAST").map_or(DEFAULT_TEXT_CONTRAST, |c| c.max(0.0)),
+        )
+    })
 }
 
 /// 4 when the color format supports 4× + resolve and the depth format (if the target

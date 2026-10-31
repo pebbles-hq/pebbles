@@ -72,6 +72,8 @@ pub struct Renderer {
     composite_slots: u64,
     /// This frame's `Globals::color_flags`.
     color_flags: u32,
+    /// This frame's `Globals` text contrast and gamma ratios (`FrameParams::text_gamma`).
+    text_params: (f32, [f32; 4]),
     pub(crate) runs: Vec<super::execute::tier_c::Run>,
     /// Image-brush params and bind groups (09 §6, L42).
     pub(crate) image_brushes: super::execute::image_brushes::ImageBrushResources,
@@ -352,6 +354,7 @@ impl Renderer {
             composite_buffer,
             composite_slots: 1,
             color_flags: 0,
+            text_params: (0.0, [0.0; 4]),
             runs: Vec::new(),
             gpu_masks,
             gradients: super::execute::gradients::GradientResources::new(device, lut_rows),
@@ -578,13 +581,16 @@ impl Renderer {
             } else {
                 0
             },
-            _pad0: 0,
+            text_contrast: params.text_contrast,
+            text_gamma: super::execute::resources::globals::text_gamma_ratios(params.text_gamma),
         };
         // 10 §2.6: every pass target's slot is staged, then uploaded once before the passes.
         self.globals_staging.begin(super::execute::tier_c::slot_stride(device));
         self.composite_staging.begin(super::execute::tier_c::slot_stride(device));
         let root_slot = self.globals_staging.push(&globals);
         debug_assert_eq!(root_slot, 0);
+        // Before `resolve_frame`: layer / Tier C / GPU-mask slots copy this frame's text params.
+        self.text_params = (globals.text_contrast, globals.text_gamma);
         self.write_clips(device, queue, &mut stats);
 
         self.pipelines.prewarm(device, &self.shaders, &self.layouts, format, 1, &mut stats);
@@ -1636,6 +1642,11 @@ impl Renderer {
         self.color_flags
     }
 
+    /// The current frame's `Globals` (text contrast, text gamma ratios), reused by every slot.
+    pub(crate) fn text_params(&self) -> (f32, [f32; 4]) {
+        self.text_params
+    }
+
     pub(crate) fn composite_buffer(&self) -> &wgpu::Buffer {
         &self.composite_buffer
     }
@@ -1767,11 +1778,16 @@ fn globals_bind_group(
             size: wgpu::BufferSize::new(32),
         })
     };
+    let globals_window = wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+        buffer: globals,
+        offset: 0,
+        size: wgpu::BufferSize::new(super::execute::resources::globals::GLOBALS_SIZE),
+    });
     device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: Some("pebbles.gpu.bind.globals"),
         layout: &layouts.globals,
         entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: window(globals) },
+            wgpu::BindGroupEntry { binding: 0, resource: globals_window },
             wgpu::BindGroupEntry { binding: 1, resource: window(clips) },
             wgpu::BindGroupEntry { binding: 2, resource: window(mask_clips) },
             wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(mask_atlas) },

@@ -303,6 +303,7 @@ impl Ui {
         self.dirty.clear();
         self.hovered.clear();
         self.scrollbar_drag = None;
+        self.scrollbar_hover = None;
         self.scroll_anim.clear();
     }
 

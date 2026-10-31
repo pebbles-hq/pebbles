@@ -321,21 +321,40 @@ impl Harness {
 
     // ----- input -----------------------------------------------------------
 
-    /// A full click at `at`, as the shell delivers it: the press blurs focus, then the
-    /// pan-hungry widget under the pointer gets its drag start (a text field focuses and
-    /// places its caret there) → pointer-down → tap → pointer-up → drag end, then a frame.
+    /// A full click at `at`, in the shell's order: the press blurs focus →
+    /// pointer-down; the release → pointer-up → tap, then a frame. The pan-hungry
+    /// widget under the pointer gets no drag at all — a press only becomes a pan
+    /// once the pointer moves past the slop (see [`pebbles_core::pan`]).
     pub fn click(&mut self, at: Offset) {
+        self.click_n(at, 1);
+    }
+
+    /// The `n`th consecutive click at `at` (1 = single, 2 = double, 3 = triple), as
+    /// the shell resolves it: down → up → the multi-tap, falling back to a plain tap
+    /// when no widget handles the multi-tap.
+    fn click_n(&mut self, at: Offset, n: u32) {
         self.ui.make_current();
-        pebbles_core::focus::set_focus(None);
-        let pan = self.ui.pan_target_at(at);
-        if let Some(t) = pan {
-            self.ui.dispatch_pan_start(t, at);
+        // A press on a scrollbar belongs to the bar (it captures the pointer), as in the shell.
+        if self.ui.begin_scrollbar_drag(at) {
+            self.ui.end_scrollbar_drag();
+            self.frame();
+            return;
         }
+        pebbles_core::focus::set_focus(None);
+        let armed = self.ui.tap_target_at(at);
         self.ui.dispatch_pointer_down(at);
-        self.ui.dispatch_tap(at);
         self.ui.dispatch_pointer_up(at);
-        if let Some(t) = pan {
-            self.ui.dispatch_pan_end(t, at);
+        if armed.is_some() && self.ui.tap_target_at(at) == armed {
+            let multi = match n {
+                3 => self.ui.dispatch_triple_tap(at),
+                2 => self.ui.dispatch_double_tap(at),
+                _ => false,
+            };
+            if !multi {
+                self.ui.dispatch_tap(at);
+            }
+        } else if let Some(a) = armed {
+            self.ui.dispatch_tap_cancel(a);
         }
         self.frame();
     }
@@ -347,18 +366,18 @@ impl Harness {
         self.frame();
     }
 
-    /// A double-click at `at` (word selection, expand toggles).
+    /// A double-click at `at` (word selection, expand toggles): two full clicks,
+    /// the second resolving as a double tap — exactly what the shell delivers.
     pub fn double_click(&mut self, at: Offset) {
-        self.ui.make_current();
-        self.ui.dispatch_double_tap(at);
-        self.frame();
+        self.click_n(at, 1);
+        self.click_n(at, 2);
     }
 
-    /// A triple-click at `at` (line selection in a text/code editor).
+    /// A triple-click at `at` (line selection in a text/code editor): three clicks.
     pub fn triple_click(&mut self, at: Offset) {
-        self.ui.make_current();
-        self.ui.dispatch_triple_tap(at);
-        self.frame();
+        self.click_n(at, 1);
+        self.click_n(at, 2);
+        self.click_n(at, 3);
     }
 
     /// Move the pointer to `at` (hover states, tooltips).
@@ -456,12 +475,13 @@ impl Harness {
 
     /// A wheel / trackpad scroll of `delta` (logical px, Flutter `scrollDelta` sign) at
     /// `at`, reported in `unit`, then a frame. Pointer-signal listeners first; an
-    /// unconsumed vertical delta scrolls the scroll view under the pointer.
+    /// unconsumed delta scrolls the scroll view under the pointer per axis (Shift turns
+    /// a vertical wheel horizontal, as the shell does).
     pub fn wheel(&mut self, at: Offset, delta: Offset, unit: pebbles_render::ScrollUnit) {
         self.ui.make_current();
         let signal = pebbles_render::PointerScrollEvent { position: at, global: at, delta, unit };
-        if !self.ui.dispatch_pointer_signal(at, signal) && delta.y != 0.0 {
-            self.ui.dispatch_scroll(at, delta.y);
+        if !self.ui.dispatch_pointer_signal(at, signal) {
+            self.ui.dispatch_wheel(at, delta);
         }
         self.frame();
     }
@@ -472,6 +492,14 @@ impl Harness {
     pub fn button_down(&mut self, at: Offset, button: pebbles_render::PointerButton) {
         use pebbles_render::{PointerButton, PointerEvent};
         self.ui.make_current();
+        // A primary press on a scrollbar grabs it and captures the pointer (the shell's
+        // order: the bar is above the content it scrolls).
+        if button == PointerButton::Primary && self.buttons == 0 && self.ui.begin_scrollbar_drag(at) {
+            self.buttons |= PointerEvent::bit(button);
+            self.pointer_at = at;
+            self.frame();
+            return;
+        }
         if self.buttons == 0 {
             self.move_target = self.ui.pointer_move_target_at(at);
         }
@@ -488,6 +516,13 @@ impl Harness {
     /// (local position, delta, held buttons), and hover listeners update. Then a frame.
     pub fn pointer_move(&mut self, to: Offset) {
         self.ui.make_current();
+        // A scrollbar drag captures the pointer: the thumb follows, nothing else sees it.
+        if self.ui.scrollbar_dragging() {
+            self.ui.update_scrollbar_drag(to);
+            self.pointer_at = to;
+            self.frame();
+            return;
+        }
         if let Some(t) = self.move_target {
             self.ui.dispatch_pointer_move(t, to, self.pointer_at, self.buttons);
         }
@@ -500,6 +535,13 @@ impl Harness {
     pub fn button_up(&mut self, at: Offset, button: pebbles_render::PointerButton) {
         use pebbles_render::{PointerButton, PointerEvent};
         self.ui.make_current();
+        if button == PointerButton::Primary && self.ui.scrollbar_dragging() {
+            self.ui.end_scrollbar_drag();
+            self.buttons &= !PointerEvent::bit(button);
+            self.pointer_at = at;
+            self.frame();
+            return;
+        }
         self.buttons &= !PointerEvent::bit(button);
         if self.buttons == 0 {
             self.move_target = None;
@@ -512,13 +554,53 @@ impl Harness {
         self.frame();
     }
 
-    /// Drag from `from` to `to` (select, pan, reorder): pan start → update → end.
+    /// Drag from `from` to `to` (select, pan, reorder), in the shell's order:
+    /// press (pointer-down) → move → release (pan end, pointer-up). The pan starts
+    /// at `from` only once the move travels past the mouse slop; a shorter "drag"
+    /// is a click with a wobble and resolves as a tap.
     pub fn drag(&mut self, from: Offset, to: Offset) {
+        self.drag_path(from, &[to]);
+    }
+
+    /// Like [`drag`](Self::drag) through every point of `path` (the last is the release).
+    pub fn drag_path(&mut self, from: Offset, path: &[Offset]) {
         self.ui.make_current();
-        if let Some(target) = self.ui.pan_target_at(from) {
-            self.ui.dispatch_pan_start(target, from);
-            self.ui.dispatch_pan_update(target, to);
-            self.ui.dispatch_pan_end(target, to);
+        let to = path.last().copied().unwrap_or(from);
+        if self.ui.begin_scrollbar_drag(from) {
+            for &p in path {
+                self.ui.update_scrollbar_drag(p);
+            }
+            self.ui.end_scrollbar_drag();
+            self.frame();
+            return;
+        }
+        pebbles_core::focus::set_focus(None);
+        let mut armed = self.ui.tap_target_at(from);
+        let claimed = self.ui.begin_content_drag(from);
+        let mut pan = pebbles_core::pan::PanGesture::default();
+        pan.press(
+            if claimed { None } else { self.ui.pan_target_at(from) },
+            from,
+            pebbles_core::pan::MOUSE_PAN_SLOP,
+        );
+        self.ui.dispatch_pointer_down(from);
+        for &p in path {
+            if pan.moved(&mut self.ui, p).crossed_slop
+                && let Some(a) = armed.take()
+            {
+                self.ui.dispatch_tap_cancel(a);
+            }
+            if claimed {
+                self.ui.update_content_drag(p);
+            }
+        }
+        self.ui.end_content_drag(to);
+        pan.release(&mut self.ui, to);
+        self.ui.dispatch_pointer_up(to);
+        if armed.is_some() && self.ui.tap_target_at(to) == armed {
+            self.ui.dispatch_tap(to);
+        } else if let Some(a) = armed {
+            self.ui.dispatch_tap_cancel(a);
         }
         self.frame();
     }
@@ -1326,5 +1408,132 @@ mod tests {
         assert!(h.find_text("done"), "the delivered value re-rendered");
         // Nothing left in flight.
         assert!(h.wait_for_tasks(std::time::Duration::from_secs(5)));
+    }
+
+    // ----- gesture order + pan slop (Flutter's gesture arena) ---------------
+
+    thread_local! {
+        static GESTURES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    }
+
+    fn gesture_log(s: String) {
+        GESTURES.with(|l| l.borrow_mut().push(s));
+    }
+
+    fn take_gestures() -> Vec<String> {
+        GESTURES.with(|l| std::mem::take(&mut *l.borrow_mut()))
+    }
+
+    /// A 200×200 box that logs every primary gesture callback (local positions).
+    fn gesture_probe() -> impl IntoWidget {
+        use pebbles_core::action_event;
+        let p = |e: pebbles_render::PointerEvent| format!("{},{}", e.position.x, e.position.y);
+        gesture_detector(container().width(200.0).height(200.0))
+            .on_pointer_down(action_event(move |e| gesture_log(format!("down {}", p(e)))))
+            .on_pointer_up(action_event(move |e| gesture_log(format!("up {}", p(e)))))
+            .on_tap(|| gesture_log("tap".into()))
+            .on_tap_cancel(|| gesture_log("tap-cancel".into()))
+            .on_double_tap(|| gesture_log("double-tap".into()))
+            .on_pan_start(action_event(move |e| gesture_log(format!("pan-start {}", p(e)))))
+            .on_pan_update(action_event(move |e| gesture_log(format!("pan-update {}", p(e)))))
+            .on_pan_end(|| gesture_log("pan-end".into()))
+    }
+
+    fn gesture_harness() -> Harness {
+        let mut h = Harness::new();
+        h.mount(gesture_probe);
+        h.draw();
+        take_gestures();
+        h
+    }
+
+    /// Regression (gravel-bugs sweep): `click` fired the tap BEFORE pointer-up and
+    /// sent a pan start/end on every click. The shell order is down → up → tap.
+    #[test]
+    fn click_is_down_up_tap_with_no_pan() {
+        let mut h = gesture_harness();
+        h.click(Offset::new(50.0, 50.0));
+        assert_eq!(take_gestures(), ["down 50,50", "up 50,50", "tap"]);
+    }
+
+    /// Regression: `double_click` skipped the first click. The shell delivers two
+    /// full clicks, the second resolving as the double tap.
+    #[test]
+    fn double_click_is_two_clicks_the_second_a_double_tap() {
+        let mut h = gesture_harness();
+        h.double_click(Offset::new(50.0, 50.0));
+        assert_eq!(
+            take_gestures(),
+            ["down 50,50", "up 50,50", "tap", "down 50,50", "up 50,50", "double-tap"]
+        );
+    }
+
+    /// A click with an ordinary 2 px hand wobble is a tap — no pan at all.
+    #[test]
+    fn wobbly_click_is_a_tap_not_a_pan() {
+        let mut h = gesture_harness();
+        h.drag(Offset::new(50.0, 50.0), Offset::new(52.0, 51.0));
+        assert_eq!(take_gestures(), ["down 50,50", "up 52,51", "tap"]);
+    }
+
+    /// Past the slop the press becomes a pan that starts at the PRESS point and
+    /// carries the accumulated delta; the pending tap is cancelled, so releasing
+    /// after a long drag never clicks.
+    #[test]
+    fn drag_past_slop_pans_from_the_press_point_and_cancels_the_click() {
+        let mut h = gesture_harness();
+        h.drag_path(
+            Offset::new(50.0, 50.0),
+            &[Offset::new(53.0, 50.0), Offset::new(70.0, 50.0), Offset::new(150.0, 60.0)],
+        );
+        assert_eq!(
+            take_gestures(),
+            [
+                "down 50,50",
+                "pan-start 50,50",
+                "pan-update 70,50",
+                "tap-cancel",
+                "pan-update 150,60",
+                "pan-end",
+                "up 150,60",
+            ]
+        );
+    }
+
+    thread_local! {
+        static WOBBLE_VAL: RefCell<Option<Signal<String>>> = const { RefCell::new(None) };
+    }
+
+    fn wobble_bound() -> Signal<String> {
+        WOBBLE_VAL.with(|c| *c.borrow_mut().get_or_insert_with(|| create_signal("hello world".to_string())))
+    }
+
+    /// Regression (gravel-bugs sweep): a TextField press was a pan start, so a 2-5 px
+    /// hand wobble on a click extended the selection (and a click inside a selected
+    /// word kept it), and the next keystroke replaced text. A wobbly click places a
+    /// caret; the selection collapses.
+    #[test]
+    fn text_field_wobbly_click_places_a_caret_and_collapses_a_selection() {
+        WOBBLE_VAL.with(|c| *c.borrow_mut() = None);
+        let mut h = Harness::new();
+        h.mount(|| component(|| text_field().bind(wobble_bound()).width(200.0)));
+        h.draw();
+        let at = Offset::new(30.0, 18.0);
+        let restored = |v: String| v.replacen('X', "", 1);
+
+        // A wobbly click, then a keystroke: an insertion, nothing replaced.
+        h.drag(at, Offset::new(35.0, 19.0));
+        h.key(KeyInput::Insert("X".into()));
+        let v = wobble_bound().get();
+        assert_eq!((v.len(), restored(v.clone())), (12, "hello world".to_string()), "{v:?}");
+
+        // Double-click selects a word; a wobbly click inside it collapses the selection.
+        wobble_bound().set("hello world".to_string());
+        h.draw();
+        h.double_click(at);
+        h.drag(at, Offset::new(32.0, 18.0));
+        h.key(KeyInput::Insert("X".into()));
+        let v = wobble_bound().get();
+        assert_eq!((v.len(), restored(v.clone())), (12, "hello world".to_string()), "{v:?}");
     }
 }

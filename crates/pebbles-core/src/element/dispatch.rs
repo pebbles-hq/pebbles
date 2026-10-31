@@ -595,7 +595,7 @@ impl Ui {
             delta: Offset::ZERO,
             buttons: 0,
         };
-        let mut fired = false;
+        let mut fired = self.update_scrollbar_hover(point);
 
         // Exits first (regions the pointer left), innermost first.
         let old = std::mem::take(&mut self.hovered);
@@ -636,6 +636,11 @@ impl Ui {
 
     /// The cursor icon the topmost hover-listener under `point` requests, if any.
     pub fn cursor_at(&self, point: Offset) -> Option<pebbles_render::Cursor> {
+        // Over a scrollbar the arrow shows (the bar sits above the content), never the
+        // I-beam / hand of the text or link beneath it.
+        if self.scrollbar_at(point).is_some() {
+            return None;
+        }
         let hits = self.render.hit_test(point);
         hits.iter()
             .rev()
@@ -683,6 +688,26 @@ impl Ui {
     /// option.
     pub fn dispatch_scroll(&mut self, point: Offset, delta: f64) -> bool {
         self.scroll_pass(point, delta, Some(Axis::Vertical)) || self.scroll_pass(point, delta, None)
+    }
+
+    /// Scroll the innermost HORIZONTAL scrollable under `point` by `delta` px (a
+    /// sideways wheel / trackpad swipe, or Shift+wheel). Never falls back to a vertical
+    /// viewport.
+    pub fn dispatch_scroll_horizontal(&mut self, point: Offset, delta: f64) -> bool {
+        self.scroll_pass(point, delta, Some(Axis::Horizontal))
+    }
+
+    /// A wheel / trackpad delta (`x` right, `y` down, logical px) at `point`, as the
+    /// browser and every desktop toolkit route it: Shift turns a vertical-only wheel
+    /// into a horizontal scroll; otherwise each axis goes to the innermost viewport of
+    /// that axis (vertical keeps its fallback to any axis). Returns whether anything
+    /// scrolled.
+    pub fn dispatch_wheel(&mut self, point: Offset, delta: Offset) -> bool {
+        let (dx, dy) =
+            if crate::keyboard::shift_held() && delta.x == 0.0 { (delta.y, 0.0) } else { (delta.x, delta.y) };
+        let h = dx != 0.0 && self.dispatch_scroll_horizontal(point, dx);
+        let v = dy != 0.0 && self.dispatch_scroll(point, dy);
+        h || v
     }
 
     /// One hit-test walk (leaf → root) applying `delta` to the first scrollable that
@@ -819,31 +844,74 @@ impl Ui {
         false
     }
 
-    /// Begin a scrollbar drag if `point` lands on a viewport's scrollbar strip.
-    /// Returns whether one was grabbed (the shell then routes moves to it).
-    pub fn begin_scrollbar_drag(&mut self, point: Offset) -> bool {
+    /// The innermost scroll view under `point` whose scrollbar strip contains it. The
+    /// walk goes leaf → root and skips scroll views whose bar is elsewhere, so an outer
+    /// viewport's bar is still reachable over a nested scroll view of the other axis
+    /// (an editor's vertical bar over its horizontally scrolling text).
+    fn scrollbar_at(&self, point: Offset) -> Option<RenderId> {
         let hits = self.render.hit_test(point);
-        for &rid in hits.iter().rev() {
+        hits.iter().rev().copied().find(|&rid| {
             let local = point - self.render.absolute_offset(rid);
             let size = self.render.size_of(rid);
-            if let Some(s) = self.render.object_ref(rid).downcast_ref::<RenderScroll>() {
-                if s.scrollbar_hit(local, size) {
-                    self.scrollbar_drag = Some(rid);
-                    self.update_scrollbar_drag(point);
-                    return true;
-                }
-                return false;
+            let obj = self.render.object_ref(rid);
+            if let Some(s) = obj.downcast_ref::<RenderScroll>() {
+                return s.scrollbar_hit(local, size);
             }
-            if let Some(list) = self.render.object_ref(rid).downcast_ref::<RenderList>() {
-                if list.scrollbar_hit(local, size) {
-                    self.scrollbar_drag = Some(rid);
-                    self.update_scrollbar_drag(point);
-                    return true;
-                }
-                return false;
-            }
+            obj.downcast_ref::<RenderList>().is_some_and(|l| l.scrollbar_hit(local, size))
+        })
+    }
+
+    /// Begin a scrollbar drag if `point` lands on a viewport's scrollbar strip.
+    /// Returns whether one was grabbed (the shell then routes moves to it). A press on
+    /// the thumb grabs it where pressed; a press on the track centres the thumb there.
+    pub fn begin_scrollbar_drag(&mut self, point: Offset) -> bool {
+        let Some(rid) = self.scrollbar_at(point) else { return false };
+        let local = point - self.render.absolute_offset(rid);
+        let size = self.render.size_of(rid);
+        if let Some(s) = self.render.object_mut(rid).downcast_mut::<RenderScroll>() {
+            s.bar_press(local, size);
+        } else if let Some(l) = self.render.object_mut(rid).downcast_mut::<RenderList>() {
+            l.bar_press(local, size);
         }
-        false
+        self.scrollbar_drag = Some(rid);
+        self.update_scrollbar_drag(point);
+        self.render.mark_needs_paint(rid);
+        true
+    }
+
+    /// Update the scrollbar hover state for the pointer at `point` (hover colour on the
+    /// bar under it, cleared elsewhere). Returns whether anything needs a repaint.
+    pub fn update_scrollbar_hover(&mut self, point: Offset) -> bool {
+        let now = if self.scrollbar_drag.is_some() { self.scrollbar_hover } else { self.scrollbar_at(point) };
+        if now == self.scrollbar_hover {
+            return false;
+        }
+        let set = |ui: &mut Self, rid: RenderId, on: bool| {
+            if !ui.render.contains(rid) {
+                return;
+            }
+            let obj = ui.render.object_mut(rid);
+            if let Some(s) = obj.downcast_mut::<RenderScroll>() {
+                s.set_bar_hover(on);
+            } else if let Some(l) = obj.downcast_mut::<RenderList>() {
+                l.bar_hover = on;
+            }
+            ui.render.mark_needs_paint(rid);
+        };
+        if let Some(old) = self.scrollbar_hover.take() {
+            set(self, old, false);
+        }
+        if let Some(new) = now {
+            set(self, new, true);
+        }
+        self.scrollbar_hover = now;
+        true
+    }
+
+    /// Whether the pointer is over a scrollbar (the shell shows the arrow cursor there,
+    /// not the I-beam of the text under it).
+    pub fn scrollbar_hovered(&self) -> bool {
+        self.scrollbar_hover.is_some() || self.scrollbar_drag.is_some()
     }
 
     /// Update the active scrollbar drag to `point`. Returns whether it scrolled.
@@ -877,9 +945,13 @@ impl Ui {
     pub fn end_scrollbar_drag(&mut self) {
         if let Some(rid) = self.scrollbar_drag
             && self.render.contains(rid)
-            && let Some(s) = self.render.object_mut(rid).downcast_mut::<RenderScroll>()
         {
-            s.end_scroll_activity(); // fire the closing ScrollEvent::End
+            if let Some(s) = self.render.object_mut(rid).downcast_mut::<RenderScroll>() {
+                s.end_scroll_activity(); // fire the closing ScrollEvent::End
+            } else if let Some(l) = self.render.object_mut(rid).downcast_mut::<RenderList>() {
+                l.bar_grab = None;
+            }
+            self.render.mark_needs_paint(rid); // drop the active colour
         }
         self.scrollbar_drag = None;
     }

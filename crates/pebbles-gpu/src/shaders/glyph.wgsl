@@ -15,7 +15,9 @@ struct QuadIn {
 struct QuadOut {
     @builtin(position) p: vec4<f32>,
     @location(0) atlas_px: vec2<f32>,
-    @location(1) color: vec4<f32>,
+    // Flat: one color per instance. Interpolation adds position-dependent ULP noise that the text
+    // curve (division + luminance) amplifies into non-deterministic bytes (GL, frames/ cases).
+    @location(1) @interpolate(flat) color: vec4<f32>,
     @location(2) @interpolate(flat) layer_kind: vec2<u32>,
 }
 
@@ -53,6 +55,25 @@ fn atlas_bilinear(t: texture_2d_array<f32>, px: vec2<f32>, layer: u32) -> vec4<f
     return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
+// Grayscale text contrast + gamma correction, as GPUI `apply_contrast_and_gamma_correction`
+// (adapted from microsoft/terminal dwrite.hlsl, MIT). Coverage is blended in the encoded space;
+// this curve compensates (light-on-dark gets the enhanced contrast). Evaluated in 12-bit
+// integer fixed point on the 8-bit coverage and 8-bit straight color: float division / FMA
+// differ between backends and pipelines and flipped 8-bit rounding ties (DR-21). CPU mirror
+// (bit-exact): `globals::text_coverage`.
+fn text_coverage(a0: f32, color: vec3<f32>) -> f32 {
+    let one = 4096;
+    let a = (i32(round(saturate(a0) * 255.0)) * one + 127) / 255;
+    let c = vec3<i32>(round(saturate(color) * 255.0));
+    let b = (30 * c.x + 59 * c.y + 11 * c.z) * one / 25500;
+    let k = i32(round(clamp(globals.text_contrast, 0.0, 16.0) * 4096.0)) * clamp(4 * (3072 - b), 0, one) / one;
+    let ae = a * (k + one) / (a * k / one + one);
+    let g = vec4<i32>(round(clamp(globals.text_gamma, vec4<f32>(-4.0), vec4<f32>(4.0)) * 4096.0));
+    let corr = (g.x * b / one + g.y) * ae / one + (g.z * b / one + g.w);
+    let out = ae + (ae * (one - ae) / one) * corr / one;
+    return f32(clamp(out, 0, one)) / 4096.0;
+}
+
 @fragment
 fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     // The layer belongs to ONE kind; the other kind's (discarded) sample reads layer 0, which
@@ -62,7 +83,10 @@ fn fs_main(in: QuadOut) -> @location(0) vec4<f32> {
     let mask_layer = select(in.layer_kind.x, 0u, is_color);
     let color_layer = select(0u, in.layer_kind.x, is_color);
     // Both samples in uniform control flow, then select (W5).
-    let m = atlas_bilinear(mask_atlas, in.atlas_px, mask_layer).r;
+    let straight = select(vec3<f32>(0.0), in.color.rgb / in.color.a, in.color.a > 0.0);
+    let raw = atlas_bilinear(mask_atlas, in.atlas_px, mask_layer).r;
+    // Kind 4 = a text glyph mask (`KIND_TEXT_MASK`); kind 0 path masks keep exact coverage.
+    let m = select(raw, text_coverage(raw, straight), in.layer_kind.y == 4u);
     let c = atlas_bilinear(color_atlas, in.atlas_px, color_layer);
     let cc = (clip_coverage(device_pos(in.p)) * clip_mask_coverage(device_pos(in.p)));
     return finish_color(select(in.color * m, c * in.color.a, is_color) * cc);

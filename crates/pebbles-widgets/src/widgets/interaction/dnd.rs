@@ -157,15 +157,19 @@ fn render_draggable(d: &Draggable) -> Element {
     let feedback = d.feedback.clone().unwrap_or_else(|| d.child.clone());
     let (w, h) = (bounds.width(), bounds.height());
 
-    let start = {
+    // The gesture layer only sends `pan_start` (at the press point) once the pointer
+    // has travelled past the pan slop (`pebbles_core::pan`) — Flutter's Draggable
+    // starts when its recognizer wins the arena — so a click, e.g. on a close button
+    // inside a tab, never drags.
+    let begin = {
         let data = data.clone();
         let feedback = feedback.clone();
-        move |e: pebbles_render::PointerEvent| {
+        move |position: Offset, global: Offset| {
             let sess = session();
             sess.set(Some(DragState {
                 data: data.clone(),
-                pointer: e.global,
-                anchor: e.position,
+                pointer: global,
+                anchor: position,
                 feedback: feedback.clone(),
                 width: w,
                 height: h,
@@ -179,6 +183,10 @@ fn render_draggable(d: &Draggable) -> Element {
                 1.0e6,
             );
         }
+    };
+    let start = {
+        let begin = begin.clone();
+        move |e: pebbles_render::PointerEvent| begin(e.position, e.global)
     };
     let update = move |e: pebbles_render::PointerEvent| {
         session().update(|s| {

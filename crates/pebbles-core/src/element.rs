@@ -110,6 +110,8 @@ pub struct Ui {
     hovered: Vec<HoverTarget>,
     /// The scroll viewport whose scrollbar is being dragged, if any.
     scrollbar_drag: Option<RenderId>,
+    /// The scroll view whose scrollbar the pointer is over (hover colour).
+    scrollbar_hover: Option<RenderId>,
     /// The drag-scroll viewport a content drag is currently driving, if any.
     content_drag: Option<RenderId>,
     /// A controlled (virtualized) `RenderList` being finger-dragged: its render id, its

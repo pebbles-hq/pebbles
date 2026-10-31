@@ -172,6 +172,11 @@ fn render_command(p: &Props) -> AnyWidget {
         }
     }
     nav.clamp(actions.len());
+    // VS Code: the palette always highlights a row (the first match after each
+    // query change), so Enter runs it without arrowing first.
+    if nav.active().is_none() && !actions.is_empty() {
+        nav.set_active(Some(0));
+    }
     let active = nav.active();
 
     let run = {
@@ -196,7 +201,10 @@ fn render_command(p: &Props) -> AnyWidget {
         .width(inner)
         .autofocus()
         .on_nav(nav_handler)
-        .on_changed(move |s| query.set(s.to_string()));
+        .on_changed(move |s| {
+            nav.set_active(None);
+            query.set(s.to_string());
+        });
 
     // Build the grouped list, assigning each visible item a running row index so
     // its highlight tracks `active`.

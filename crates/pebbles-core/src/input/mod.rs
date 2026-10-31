@@ -6,5 +6,6 @@
 pub mod focus;
 pub mod key;
 pub mod keyboard;
+pub mod pan;
 pub mod scroll;
 pub mod shortcuts;

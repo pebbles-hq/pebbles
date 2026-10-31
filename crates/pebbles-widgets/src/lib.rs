@@ -51,8 +51,9 @@ pub use global_menu::{
     show_here as show_global_menu_here,
 };
 pub use window::{
-    MonitorInfo, Window, WindowId, close_window, focus_window, minimize_window, monitors, set_monitors,
-    set_window_maximized, set_window_position, set_window_resizable, set_window_title, window,
+    ExitResponse, MonitorInfo, Window, WindowId, close_window, confirm_exit, focus_window, minimize_window,
+    monitors, on_exit_requested, set_monitors, set_window_maximized, set_window_position,
+    set_window_resizable, set_window_title, window,
 };
 // `window::set_window_size` (OS resize) is intentionally NOT re-exported at the crate
 // root to avoid colliding with `overlay::set_window_size` (popover sizing); reach it as

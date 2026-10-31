@@ -191,22 +191,19 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
                     pebbles_core::animation::clear_timeout(explorer.hover_key);
                 }
             })
-            // A press only ARMS a drag; it becomes one after the pointer
-            // travels past DRAG_SLOP (a click — even with jitter — never moves
-            // anything). Dropping needs an explicit highlighted target.
+            // The gesture layer sends pan start only once the pointer travels
+            // past the pan slop (`pebbles_core::pan`), so a click — even with
+            // jitter — never moves anything. Dropping needs an explicit
+            // highlighted target.
             .on_pan_start(pebbles_core::action_event(move |e: pebbles_render::PointerEvent| {
                 explorer.press.set(Some((id, e.global)));
             }))
-            .on_pan_update(pebbles_core::action_event(move |e: pebbles_render::PointerEvent| {
+            .on_pan_update(pebbles_core::action_event(move |_: pebbles_render::PointerEvent| {
                 if explorer.dragging.peek() {
                     return;
                 }
-                let Some((pid, origin)) = explorer.press.peek() else { return };
+                let Some((pid, _)) = explorer.press.peek() else { return };
                 if pid != id {
-                    return;
-                }
-                let (dx, dy) = (e.global.x - origin.x, e.global.y - origin.y);
-                if (dx * dx + dy * dy).sqrt() < DRAG_SLOP {
                     return;
                 }
                 // Dragging an unselected node selects it; a selected node
