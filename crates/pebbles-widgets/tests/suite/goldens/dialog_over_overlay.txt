@@ -1,20 +1,22 @@
 RenderView @0,0 400x300
   RenderStack @0,0 400x300
     RenderPointerListener @0,0 400x300
-      RenderDecoratedBox @0,0 400x300
-        RenderPadding @0,0 400x300
-          RenderAlign @10,4 380x292
-            RenderParagraph @177,142 46x17
+      RenderConstrainedBox @0,0 400x300
+        RenderDecoratedBox @0,0 400x300
+          RenderPadding @0,0 400x300
+            RenderAlign @10,0 380x300
+              RenderParagraph @178,142 43x16
     RenderSemanticsBoundary @0,0 400x300
       RenderConstrainedBox @0,0 400x300
     RenderPointerListener @0,0 400x300
       RenderDecoratedBox @0,0 400x300
     RenderAlign @0,0 400x300
-      RenderPointerListener @0,138 400x25
-        RenderConstrainedBox @0,138 400x25
-          RenderDecoratedBox @0,138 400x25
-            RenderPointerListener @0,138 400x25
-              RenderDecoratedBox @0,138 400x25
-                RenderPadding @0,138 400x25
-                  RenderAlign @10,142 380x17
-                    RenderParagraph @190,142 20x17
+      RenderPointerListener @0,136 400x28
+        RenderConstrainedBox @0,136 400x28
+          RenderDecoratedBox @0,136 400x28
+            RenderPointerListener @0,136 400x28
+              RenderConstrainedBox @0,136 400x28
+                RenderDecoratedBox @0,136 400x28
+                  RenderPadding @0,136 400x28
+                    RenderAlign @10,136 380x28
+                      RenderParagraph @191,142 19x16

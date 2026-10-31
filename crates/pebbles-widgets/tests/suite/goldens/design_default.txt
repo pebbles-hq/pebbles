@@ -1,6 +1,7 @@
 RenderView @0,0 200x80
   RenderPointerListener @0,0 200x80
-    RenderDecoratedBox @0,0 200x80
-      RenderPadding @0,0 200x80
-        RenderAlign @10,4 180x72
-          RenderParagraph @84,32 33x17
+    RenderConstrainedBox @0,0 200x80
+      RenderDecoratedBox @0,0 200x80
+        RenderPadding @0,0 200x80
+          RenderAlign @10,0 180x80
+            RenderParagraph @85,32 30x16
