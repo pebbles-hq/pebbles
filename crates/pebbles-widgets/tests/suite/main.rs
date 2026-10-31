@@ -19,6 +19,7 @@ mod command;
 mod components;
 mod context_scope;
 mod control;
+mod control_sizes;
 mod cursors;
 mod date_field_range;
 mod default_text_style;

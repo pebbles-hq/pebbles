@@ -4,18 +4,18 @@
 use std::rc::Rc;
 
 use pebbles_core::IntoCallback;
-use pebbles_foundation::{CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize};
+use pebbles_foundation::{CrossAxisAlignment, MainAxisAlignment, MainAxisSize};
 use pebbles_render::{Border, BoxDecoration, IconData, IconKind, tabler};
 
 use crate::style::{Style, styled};
 use crate::theme::theme;
-use crate::widgets::{Container, Padding, gap_w, row, spacer, text};
+use crate::widgets::{Container, gap_w, row, spacer, text};
 use pebbles_core::children;
 use pebbles_core::context::Callback;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 
 use crate::components::icon;
-use crate::components::{ButtonSize, ButtonVariant, button, dropdown_menu, icon_button, menu_item, select};
+use crate::components::{ButtonVariant, button, dropdown_menu, icon_button, menu_item, select};
 
 /// A breadcrumb trail of path segments. When there are more than
 /// [`max_visible`](Breadcrumb::max_visible) segments, the middle ones collapse
@@ -191,6 +191,7 @@ pub struct Pagination {
     rows_per_page_label: String,
     total_items: Option<usize>,
     style: Option<Style>,
+    size: crate::theme::ControlSize,
 }
 
 /// Create a [`Pagination`] control (1-based `page`). Shows first/last jump buttons
@@ -278,6 +279,13 @@ impl Pagination {
         self.style = Some(style);
         self
     }
+    /// The control size (shared [`ControlSize`](crate::theme::ControlSize) scale):
+    /// every arrow, page number and ellipsis is exactly this size's height (arrows
+    /// and single-digit pages square), so the row is level.
+    pub fn size(mut self, size: crate::theme::ControlSize) -> Self {
+        self.size = size;
+        self
+    }
 }
 
 /// One item in the `Numbers` window.
@@ -320,6 +328,8 @@ fn invoke(cb: &Callback) {
 impl IntoWidget for Pagination {
     fn into_widget(mut self) -> AnyWidget {
         let th = theme();
+        let size = self.size;
+        let sm = size.metrics();
         let total = self.total.max(1);
         let page = self.page.clamp(1, total);
         let edges = self.edges;
@@ -345,7 +355,7 @@ impl IntoWidget for Pagination {
 
         // A bordered (Outline) arrow control — clearly a button, disabled at the bounds.
         let arrow = |ic: IconData, enabled: bool, target: usize, go: &Rc<dyn Fn(usize)>| -> AnyWidget {
-            let mut b = icon_button(ic).variant(ButtonVariant::Outline).size(15.0);
+            let mut b = icon_button(ic).variant(ButtonVariant::Outline).size(size);
             if enabled {
                 let go = go.clone();
                 b = b.on_pressed(move || go(target));
@@ -374,21 +384,33 @@ impl IntoWidget for Pagination {
                     match item {
                         PageItem::Page(p) => {
                             let active = p == page;
-                            let mut b = button(format!("{p}")).size(ButtonSize::Sm).variant(if active {
+                            let mut b = button(format!("{p}")).size(size).variant(if active {
                                 ButtonVariant::Primary
                             } else {
                                 ButtonVariant::Outline
                             });
                             let go = go.clone();
                             b = b.on_pressed(move || go(p));
-                            kids.push(b.into_widget());
+                            // At least square, so 1-digit pages match the arrows.
+                            kids.push(
+                                Container::new()
+                                    .constraints(pebbles_render::BoxConstraints {
+                                        min_width: sm.height,
+                                        max_width: f64::INFINITY,
+                                        min_height: 0.0,
+                                        max_height: f64::INFINITY,
+                                    })
+                                    .child(b)
+                                    .into_widget(),
+                            );
                         }
                         PageItem::Ellipsis => kids.push(
-                            Padding::new(
-                                EdgeInsets::symmetric(4.0, 2.0),
-                                text("…").size(13.0).color(th.colors.muted_foreground),
-                            )
-                            .into_widget(),
+                            Container::new()
+                                .width(sm.height)
+                                .height(sm.height)
+                                .alignment(pebbles_foundation::Alignment::CENTER)
+                                .child(text("…").size(sm.font).color(th.colors.muted_foreground))
+                                .into_widget(),
                         ),
                     }
                 }
@@ -416,7 +438,7 @@ impl IntoWidget for Pagination {
                 }
                 kids.push(prev);
                 kids.push(gap_w(10.0).into_widget());
-                kids.push(text(label).size(13.0).color(th.colors.muted_foreground).into_widget());
+                kids.push(text(label).size(sm.font).color(th.colors.muted_foreground).into_widget());
                 kids.push(gap_w(10.0).into_widget());
                 kids.push(next);
                 if edges {
@@ -470,6 +492,7 @@ impl IntoWidget for Pagination {
             left.push(
                 select(labels)
                     .value(cur)
+                    .size(self.size)
                     .width(74.0)
                     .on_changed(move |i, _| {
                         if let (Some(f), Some(&v)) = (&on_size, opts.get(i)) {

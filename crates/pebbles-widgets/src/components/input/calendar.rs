@@ -270,7 +270,7 @@ const BODY_W: f64 = 7.0 * CELL;
 fn nav_arrow(kind: IconKind, disabled: bool, on_tap: impl Fn() + 'static) -> AnyWidget {
     icon_button(kind)
         .variant(ButtonVariant::Outline)
-        .size(15.0)
+        .icon_size(15.0)
         .disabled(disabled)
         .on_pressed(on_tap)
         .into_widget()

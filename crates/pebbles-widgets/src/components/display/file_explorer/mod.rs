@@ -831,7 +831,7 @@ impl FileExplorer {
         let mut kids: Vec<AnyWidget> = vec![
             icon_button(tabler::FILE_PLUS)
                 .variant(ButtonVariant::Ghost)
-                .size(15.0)
+                .icon_size(15.0)
                 .label("New File…")
                 .disabled(!caps.allows(Capability::CreateFile))
                 .on_pressed(self.new_file())
@@ -839,7 +839,7 @@ impl FileExplorer {
             gap_w(2.0).into_widget(),
             icon_button(tabler::FOLDER_PLUS)
                 .variant(ButtonVariant::Ghost)
-                .size(15.0)
+                .icon_size(15.0)
                 .label("New Folder…")
                 .disabled(!caps.allows(Capability::CreateFolder))
                 .on_pressed(self.new_folder())
@@ -850,7 +850,7 @@ impl FileExplorer {
             kids.push(
                 icon_button(tabler::REFRESH)
                     .variant(ButtonVariant::Ghost)
-                    .size(15.0)
+                    .icon_size(15.0)
                     .label("Refresh Explorer")
                     .on_pressed(move || {
                         self.refresh();
@@ -862,7 +862,7 @@ impl FileExplorer {
         kids.push(
             icon_button(tabler::FOLD)
                 .variant(ButtonVariant::Ghost)
-                .size(15.0)
+                .icon_size(15.0)
                 .label("Collapse Folders in Explorer")
                 .on_pressed(self.collapse_all())
                 .into_widget(),

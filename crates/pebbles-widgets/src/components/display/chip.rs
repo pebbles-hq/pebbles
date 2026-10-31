@@ -30,6 +30,7 @@ pub struct Chip {
     on_deleted: Option<Callback>,
     on_pressed: Option<Callback>,
     style: Option<Style>,
+    size: crate::theme::ControlSize,
 }
 
 /// Create a [`Chip`] with a text label (Flutter's deletable/input chip).
@@ -95,6 +96,12 @@ impl Chip {
         self.on_deleted = Some(pebbles_core::action(cb));
         self
     }
+    /// The control size (shared [`ControlSize`](crate::theme::ControlSize) scale): a
+    /// chip is exactly as tall as a button of the same size.
+    pub fn size(mut self, size: crate::theme::ControlSize) -> Self {
+        self.size = size;
+        self
+    }
     /// Merge a [`Style`] onto the pill's base presentation (user fields win).
     pub fn style(mut self, s: Style) -> Self {
         self.style = Some(s);
@@ -138,7 +145,13 @@ fn render_chip(p: &Chip) -> AnyWidget {
         }
     });
 
-    let mut base = style().radius_all(th.pill()).padding(th.pad(10.0, 4.0));
+    let m = p.size.metrics();
+    let mut base = style()
+        .radius_all(th.pill())
+        .padding(pebbles_foundation::EdgeInsets::symmetric(m.padding_x, 0.0))
+        .height(m.height)
+        .align(pebbles_foundation::Alignment::CENTER_LEFT);
+    let isz = (m.icon - 2.0).max(8.0);
     if let Some(bg) = bg {
         base = base.background(bg);
     }
@@ -152,14 +165,14 @@ fn render_chip(p: &Chip) -> AnyWidget {
     let mut row_items: Vec<AnyWidget> = Vec::new();
     // A leading check for a selected FilterChip.
     if p.selected && p.show_check && !p.disabled {
-        row_items.push(icon(IconKind::Check).size(14.0).color(fg).into_widget());
+        row_items.push(icon(IconKind::Check).size(isz).color(fg).into_widget());
         row_items.push(gap_w(6.0).into_widget());
     }
     if let Some(kind) = p.icon_kind {
-        row_items.push(icon(kind).size(14.0).color(fg).into_widget());
+        row_items.push(icon(kind).size(isz).color(fg).into_widget());
         row_items.push(gap_w(6.0).into_widget());
     }
-    row_items.push(text(p.label.clone()).size(12.5).weight(500.0).color(fg).into_widget());
+    row_items.push(text(p.label.clone()).size(m.font).weight(500.0).color(fg).into_widget());
     let mut body: AnyWidget =
         row(row_items).main_axis_size(pebbles_foundation::MainAxisSize::Min).into_widget();
     if p.deletable
@@ -169,7 +182,7 @@ fn render_chip(p: &Chip) -> AnyWidget {
         // The ✕ is itself a focusable IconButton, so it is Tab-reachable and
         // Enter/Space-activatable for free; a label announces it to screen readers.
         let close = icon_button(IconKind::Close)
-            .size(12.0)
+            .icon_size((isz - 2.0).max(8.0))
             .padding(0.0)
             .label(format!("Remove {}", p.label))
             .on_pressed(on_deleted);

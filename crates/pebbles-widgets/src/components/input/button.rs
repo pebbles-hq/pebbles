@@ -9,7 +9,7 @@ use std::rc::Rc;
 use pebbles_foundation::{Alignment, Color, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, IconData};
 
-use crate::theme::{mix, theme};
+use crate::theme::{ControlMetrics, ControlSize, mix, theme};
 use crate::widgets::{Align, Container, GestureDetector, Opacity, center, gap_w, row, spinner, text};
 use pebbles_core::animated;
 use pebbles_core::component::{Element, component_props};
@@ -32,14 +32,10 @@ pub enum ButtonVariant {
     Link,
 }
 
-/// The size of a [`Button`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum ButtonSize {
-    Sm,
-    #[default]
-    Md,
-    Lg,
-}
+/// The size of a [`Button`] / [`IconButton`] — the shared [`ControlSize`]
+/// scale (xs / sm / md / lg / custom). At the same size every control has the
+/// same height, so text and icon buttons line up.
+pub type ButtonSize = ControlSize;
 
 /// A clickable action button.
 #[derive(Default)]
@@ -275,28 +271,21 @@ impl Button {
         (self.color.or(bg), self.text_color.unwrap_or(fg), border)
     }
 
+    fn metrics(&self) -> ControlMetrics {
+        self.size.metrics()
+    }
+
+    /// Horizontal padding from the size scale; the height is fixed by the size
+    /// (the label is centered vertically), so no vertical padding is needed.
     fn resolved_padding(&self) -> EdgeInsets {
         if let Some(p) = self.padding {
             return p;
         }
-        // Interior padding follows the design language's control density; the size
-        // just scales it (Md = the base). For the Tailwind base these reproduce the
-        // original 12/6 · 16/9 · 22/12 padding; Default tightens, Material widens.
-        let th = theme();
-        let (sx, sy) = match self.size {
-            ButtonSize::Sm => (0.75, 0.72),
-            ButtonSize::Md => (1.0, 1.0),
-            ButtonSize::Lg => (1.36, 1.33),
-        };
-        EdgeInsets::symmetric(th.control_pad_x * sx, th.control_pad_y * sy)
+        EdgeInsets::symmetric(self.metrics().padding_x, 0.0)
     }
 
     fn font_size(&self) -> f32 {
-        match self.size {
-            ButtonSize::Sm => 13.0,
-            ButtonSize::Md => 14.0,
-            ButtonSize::Lg => 15.0,
-        }
+        self.metrics().font
     }
 }
 
@@ -361,7 +350,7 @@ fn render_button(b: &Button) -> Element {
             if b.leading.is_none() && b.trailing.is_none() {
                 label.into_widget()
             } else {
-                let isz = b.font_size() as f64 + 2.0;
+                let isz = b.metrics().icon;
                 let mut kids: Vec<AnyWidget> = Vec::new();
                 if let Some(kind) = b.leading {
                     kids.push(icon(kind).size(isz).color(fg).into_widget());
@@ -382,7 +371,7 @@ fn render_button(b: &Button) -> Element {
     };
     // While loading, prepend a spinner (keeps the label so the button doesn't jump).
     let content: AnyWidget = if b.loading {
-        let sp = spinner(b.font_size() as f64 + 3.0).color(fg);
+        let sp = spinner(b.metrics().icon).color(fg);
         row(pebbles_core::children![sp, gap_w(8.0), content]).main_axis_size(MainAxisSize::Min).into_widget()
     } else {
         content
@@ -422,7 +411,21 @@ fn render_button(b: &Button) -> Element {
     }
     // The button shrink-wraps its content (+ padding) — shadcn-style. `full_width`
     // opts into filling the parent (handled above via `center`).
-    let container = Container::new().decoration(decoration).padding(b.resolved_padding()).child(inner);
+    // Uniform height: every button of a size is exactly `metrics.height` tall
+    // (a custom `.padding(..)` or `.child(..)` keeps it as a minimum instead,
+    // so bigger content still fits).
+    let m = b.metrics();
+    let mut container = Container::new().decoration(decoration).padding(b.resolved_padding()).child(inner);
+    if b.padding.is_none() && b.content.is_none() {
+        container = container.height(m.height);
+    } else {
+        container = container.constraints(pebbles_render::BoxConstraints {
+            min_width: 0.0,
+            max_width: f64::INFINITY,
+            min_height: m.height,
+            max_height: f64::INFINITY,
+        });
+    }
 
     // Accessibility wrapper — applied at every exit so disabled/loading buttons are
     // announced too (with their disabled state).
@@ -551,11 +554,14 @@ fn render_button(b: &Button) -> Element {
     a11y(gesture.into_widget(), inert)
 }
 
-/// A square icon-only button with hover + pressed feedback.
+/// A square icon-only button with hover + pressed feedback. At a given
+/// [`ControlSize`] it is `height × height` — the same height as a text
+/// [`Button`] of that size.
 pub struct IconButton {
     kind: IconData,
-    icon_size: f64,
-    padding: f64,
+    size: ControlSize,
+    icon_size: Option<f64>,
+    padding: Option<f64>,
     variant: ButtonVariant,
     on_pressed: Option<Callback>,
     disabled: bool,
@@ -566,8 +572,9 @@ pub struct IconButton {
 pub fn icon_button(kind: impl Into<IconData>) -> IconButton {
     IconButton {
         kind: kind.into(),
-        icon_size: 18.0,
-        padding: 8.0,
+        size: ControlSize::Md,
+        icon_size: None,
+        padding: None,
         variant: ButtonVariant::Ghost,
         on_pressed: None,
         disabled: false,
@@ -580,13 +587,22 @@ impl IconButton {
         self.variant = variant;
         self
     }
-    pub fn size(mut self, size: f64) -> Self {
-        self.icon_size = size;
+    /// The control size (same scale as [`Button::size`]); the button is a
+    /// `height`-square with the size's icon centered.
+    pub fn size(mut self, size: ControlSize) -> Self {
+        self.size = size;
         self
     }
-    /// Inset around the icon on every side (default 8). Compact hosts (a chip's ✕) use less.
+    /// Override just the glyph size (the box stays the size's square, growing
+    /// only if the glyph would not fit).
+    pub fn icon_size(mut self, icon_size: f64) -> Self {
+        self.icon_size = Some(icon_size);
+        self
+    }
+    /// Shrink-wrap the icon with this inset on every side instead of the size's
+    /// square box. Compact hosts (a chip's ✕) use this.
     pub fn padding(mut self, padding: f64) -> Self {
-        self.padding = padding;
+        self.padding = Some(padding);
         self
     }
     pub fn on_pressed(mut self, cb: impl IntoCallback) -> Self {
@@ -643,10 +659,16 @@ fn render_icon_button(b: &IconButton) -> Element {
     if focused {
         decoration = decoration.border(Border::new(th.colors.ring, 2.0));
     }
-    let container = Container::new()
-        .decoration(decoration)
-        .padding(EdgeInsets::all(b.padding))
-        .child(icon(b.kind).size(b.icon_size).color(fg));
+    let m = b.size.metrics();
+    let isz = b.icon_size.unwrap_or(m.icon);
+    let glyph = icon(b.kind).size(isz).color(fg);
+    let container = match b.padding {
+        Some(pad) => Container::new().decoration(decoration).padding(EdgeInsets::all(pad)).child(glyph),
+        None => {
+            let side = m.height.max(isz);
+            Container::new().decoration(decoration).width(side).height(side).child(center(glyph))
+        }
+    };
 
     // Accessibility wrapper — applied at every exit so a disabled button is announced
     // too (with its disabled state).

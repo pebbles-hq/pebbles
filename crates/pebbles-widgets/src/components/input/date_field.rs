@@ -337,7 +337,7 @@ fn render_date(p: &DateProps) -> AnyWidget {
         });
     }
 
-    let cal_btn = icon_button(IconKind::Calendar).variant(ButtonVariant::Ghost).size(16.0).on_pressed(
+    let cal_btn = icon_button(IconKind::Calendar).variant(ButtonVariant::Ghost).icon_size(16.0).on_pressed(
         action_event(move |e: PointerEvent| {
             let current = fmt.parse(&text.peek());
             let content: AnyWidget = if range_mode {
@@ -419,7 +419,7 @@ fn render_date(p: &DateProps) -> AnyWidget {
         // ✕ resets to the placeholder; the calendar button stays to the right.
         let clear = icon_button(IconKind::Close)
             .variant(ButtonVariant::Ghost)
-            .size(15.0)
+            .icon_size(15.0)
             .on_pressed(move || text.set(String::new()));
         tf = tf.trailing(row(vec![clear.into_widget(), gap_w(2.0).into_widget(), cal_btn.into_widget()]));
     } else {

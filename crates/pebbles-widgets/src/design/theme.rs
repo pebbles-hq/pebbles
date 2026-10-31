@@ -72,6 +72,101 @@ struct DesignTokens {
     border_width: f64,
     elevation: f64,
     density: f64,
+    font_size: f32,
+    sizes: SizeScale,
+}
+
+/// The pixel metrics of one control size: everything a sized component (button,
+/// icon button, toggle, input, select, chip, segmented control, pagination item,
+/// menubar trigger) needs to lay out at that size. Every sized component at the
+/// same [`ControlSize`] uses the same `height`, so mixed rows line up.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ControlMetrics {
+    /// Outer control height (border included). Icon buttons are `height` square.
+    pub height: f64,
+    /// Label font size.
+    pub font: f32,
+    /// Horizontal inner padding of a labelled control.
+    pub padding_x: f64,
+    /// Icon glyph size.
+    pub icon: f64,
+}
+
+impl ControlMetrics {
+    /// Metrics for an arbitrary `height`, with font / padding / icon derived
+    /// proportionally (the Default md ratios: 28 px ⇒ 13 / 10 / 16). Works down to
+    /// ~16 px tall controls (font floors at 8 px). Override any field afterwards.
+    pub fn from_height(height: f64) -> Self {
+        let height = height.max(8.0);
+        let half = |v: f64| (v * 2.0).round() / 2.0;
+        ControlMetrics {
+            height,
+            font: half(height * 0.465).max(8.0) as f32,
+            padding_x: half(height * 0.36).max(2.0),
+            icon: half(height * 0.57).max(8.0).min(height),
+        }
+    }
+    /// Replace the font size.
+    pub fn font(mut self, font: f32) -> Self {
+        self.font = font;
+        self
+    }
+    /// Replace the horizontal padding.
+    pub fn padding_x(mut self, padding_x: f64) -> Self {
+        self.padding_x = padding_x;
+        self
+    }
+    /// Replace the icon size.
+    pub fn icon(mut self, icon: f64) -> Self {
+        self.icon = icon;
+        self
+    }
+}
+
+/// The size of a control. `Md` is the standard desktop size; `Custom` takes any
+/// metrics a developer wants (see [`ControlSize::custom`]). Shared by every sized
+/// component, so `.size(ControlSize::Sm)` means the same height everywhere.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum ControlSize {
+    Xs,
+    Sm,
+    #[default]
+    Md,
+    Lg,
+    /// Explicit metrics (any height, font, padding, icon size).
+    Custom(ControlMetrics),
+}
+
+impl ControlSize {
+    /// A custom size of `height` px with proportional font / padding / icon
+    /// ([`ControlMetrics::from_height`]).
+    pub fn custom(height: f64) -> Self {
+        ControlSize::Custom(ControlMetrics::from_height(height))
+    }
+    /// Resolve against the current [`theme`]'s [`SizeScale`].
+    pub fn metrics(self) -> ControlMetrics {
+        theme().size(self)
+    }
+}
+
+impl From<ControlMetrics> for ControlSize {
+    fn from(m: ControlMetrics) -> Self {
+        ControlSize::Custom(m)
+    }
+}
+
+/// The xs / sm / md / lg [`ControlMetrics`] of a theme — seeded by the
+/// [`DesignLanguage`], overridable like every other token.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SizeScale {
+    pub xs: ControlMetrics,
+    pub sm: ControlMetrics,
+    pub md: ControlMetrics,
+    pub lg: ControlMetrics,
+}
+
+const fn cm(height: f64, font: f32, padding_x: f64, icon: f64) -> ControlMetrics {
+    ControlMetrics { height, font, padding_x, icon }
 }
 
 impl DesignLanguage {
@@ -87,6 +182,15 @@ impl DesignLanguage {
                 border_width: 1.0,
                 elevation: 0.0,
                 density: 0.82,
+                // Standard desktop metrics (VS Code / JetBrains / Zed / GTK / macOS):
+                // 13 px UI text, 28 px controls, 16 px icons.
+                font_size: 13.0,
+                sizes: SizeScale {
+                    xs: cm(20.0, 12.0, 6.0, 14.0),
+                    sm: cm(24.0, 12.0, 8.0, 14.0),
+                    md: cm(28.0, 13.0, 10.0, 16.0),
+                    lg: cm(32.0, 14.0, 12.0, 18.0),
+                },
             },
             // The original shadcn/tailwind look (unchanged from Pebbles' first default).
             DesignLanguage::Tailwind => DesignTokens {
@@ -98,6 +202,13 @@ impl DesignLanguage {
                 border_width: 1.0,
                 elevation: 1.0,
                 density: 1.0,
+                font_size: 14.0,
+                sizes: SizeScale {
+                    xs: cm(28.0, 12.0, 8.0, 14.0),
+                    sm: cm(32.0, 13.0, 12.0, 16.0),
+                    md: cm(36.0, 14.0, 16.0, 16.0),
+                    lg: cm(40.0, 15.0, 22.0, 18.0),
+                },
             },
             // Material 3: pill-ish radii, big targets, tonal elevation.
             DesignLanguage::Material => DesignTokens {
@@ -109,6 +220,13 @@ impl DesignLanguage {
                 border_width: 1.0,
                 elevation: 3.0,
                 density: 1.2,
+                font_size: 14.0,
+                sizes: SizeScale {
+                    xs: cm(32.0, 12.0, 12.0, 16.0),
+                    sm: cm(36.0, 13.0, 16.0, 18.0),
+                    md: cm(40.0, 14.0, 24.0, 18.0),
+                    lg: cm(48.0, 15.0, 32.0, 20.0),
+                },
             },
         }
     }
@@ -142,8 +260,10 @@ pub struct Theme {
     /// Padding-density multiplier (Default `<1`, Material `>1`). Scale a control's
     /// interior padding by this to make it tighten/loosen with the design language.
     pub density: f64,
-    /// Base body font size.
+    /// Base body font size (13 in the Default design — the desktop UI standard).
     pub font_size: f32,
+    /// The control size scale (xs / sm / md / lg) every sized component uses.
+    pub sizes: SizeScale,
     pub dark: bool,
 }
 
@@ -228,13 +348,14 @@ impl Theme {
             border_width: t.border_width,
             elevation: t.elevation,
             density: t.density,
-            font_size: 14.0,
+            font_size: t.font_size,
+            sizes: t.sizes,
             dark,
         }
     }
 
     /// Switch the base [`DesignLanguage`], re-seeding the shape / density /
-    /// elevation tokens to that language's defaults. **Colors and font size are
+    /// elevation / size-scale / font-size tokens to that language's defaults. **Colors are
     /// preserved**, and any field you set *after* this wins — so the flow is
     /// "pick a base, then customize":
     ///
@@ -260,7 +381,21 @@ impl Theme {
         self.border_width = t.border_width;
         self.elevation = t.elevation;
         self.density = t.density;
+        self.font_size = t.font_size;
+        self.sizes = t.sizes;
         self
+    }
+
+    /// The [`ControlMetrics`] of `size` in this theme's [`SizeScale`]
+    /// (`Custom` passes through).
+    pub fn size(&self, size: ControlSize) -> ControlMetrics {
+        match size {
+            ControlSize::Xs => self.sizes.xs,
+            ControlSize::Sm => self.sizes.sm,
+            ControlSize::Md => self.sizes.md,
+            ControlSize::Lg => self.sizes.lg,
+            ControlSize::Custom(m) => m,
+        }
     }
 
     /// Light theme on the **Tailwind** base — rounded and roomy (the original look).

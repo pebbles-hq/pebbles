@@ -138,8 +138,10 @@ fn render_time(p: &Props) -> AnyWidget {
     // The dropdown-open button.
     let menu_opts = options.clone();
     let oc_pick = oc.clone();
-    let open_btn = icon_button(IconKind::ChevronDown).variant(ButtonVariant::Ghost).size(16.0).on_pressed(
-        action_event(move |e: PointerEvent| {
+    let open_btn = icon_button(IconKind::ChevronDown)
+        .variant(ButtonVariant::Ghost)
+        .icon_size(16.0)
+        .on_pressed(action_event(move |e: PointerEvent| {
             let inner = width - 8.0;
             let items: Vec<AnyWidget> = menu_opts
                 .iter()
@@ -181,8 +183,7 @@ fn render_time(p: &Props) -> AnyWidget {
             let input_left = button_left - (width - 34.0);
             let (left, top) = anchor_below(input_left, button_top - 5.0, 38.0, width, 260.0);
             show_overlay_guarded(menu, left, top, width, 260.0, move || text.alive());
-        }),
-    );
+        }));
 
     let ph = p.placeholder.clone().unwrap_or_else(|| if hour12 { "hh:mm AM".into() } else { "HH:MM".into() });
     let oc_edit = oc.clone();

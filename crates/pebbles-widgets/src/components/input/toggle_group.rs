@@ -34,6 +34,9 @@ pub struct ToggleGroup {
     size: ToggleSize,
     disabled: bool,
     on_changed: Option<SelectionCb>,
+    /// The first `text_cells` cells are the text `labels`, built at render time in
+    /// the size's font (`cells` holds only the cells added after them).
+    text_cells: usize,
 }
 
 fn make(cells: Vec<AnyWidget>) -> ToggleGroup {
@@ -48,6 +51,7 @@ fn make(cells: Vec<AnyWidget>) -> ToggleGroup {
         size: ToggleSize::default(),
         disabled: false,
         on_changed: None,
+        text_cells: 0,
     }
 }
 
@@ -64,8 +68,8 @@ where
     S: Into<String>,
 {
     let labels: Vec<String> = labels.into_iter().map(|l| l.into()).collect();
-    let cells = labels.iter().map(|l| text(l.clone()).size(13.0).into_widget()).collect();
-    let mut g = make(cells);
+    let mut g = make(Vec::new());
+    g.text_cells = labels.len();
     // Carry each label so the cell's toggle button announces it to assistive tech.
     g.labels = labels.into_iter().map(Some).collect();
     g
@@ -145,16 +149,28 @@ impl ToggleGroup {
 impl IntoWidget for ToggleGroup {
     fn into_widget(mut self) -> AnyWidget {
         let th = theme();
-        let cells = std::mem::take(&mut self.cells);
+        let mut cells = std::mem::take(&mut self.cells);
+        if self.text_cells > 0 {
+            let font = self.size.metrics().font;
+            let mut built: Vec<AnyWidget> = self.labels[..self.text_cells]
+                .iter()
+                .map(|l| text(l.clone().unwrap_or_default()).size(font).into_widget())
+                .collect();
+            built.append(&mut cells);
+            cells = built;
+        }
         let group = Rc::new(self);
         let n = cells.len();
 
+        // Cells take the size's full height; the frame's border paints over the
+        // strip's edge (it adds no inset), so the group is level with buttons.
+        let cell_size = group.size;
         let cell_widget = |i: usize, cell: AnyWidget| -> AnyWidget {
             let pressed = group.values.contains(&i);
             let g = group.clone();
             let mut t = toggle(pressed, cell)
                 .variant(group.variant)
-                .size(group.size)
+                .size(cell_size)
                 .disabled(group.disabled)
                 .radius(0.0);
             if let Some(Some(label)) = group.labels.get(i) {

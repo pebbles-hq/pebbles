@@ -10,7 +10,7 @@
 
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, CrossAxisAlignment, MainAxisSize};
+use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets, MainAxisSize};
 use pebbles_render::text_edit as edit;
 use pebbles_render::{Cursor, IconData, IconKind, PointerEvent, TextFieldStyle, tabler};
 
@@ -179,6 +179,7 @@ pub struct TextField {
     on_nav: Option<Rc<dyn Fn(KeyInput) -> bool>>,
     on_key_event: Option<pebbles_core::focus::RawKeyHandler>,
     style: Option<crate::style::Style>,
+    size: crate::theme::ControlSize,
 }
 
 /// A single-line text input.
@@ -221,6 +222,13 @@ impl TextField {
     /// Fixed width (else it fills its parent).
     pub fn width(mut self, w: f64) -> Self {
         self.width = Some(w);
+        self
+    }
+    /// The control size (shared [`ControlSize`](crate::theme::ControlSize) scale): a
+    /// single-line field is exactly as tall as a button of the same size, with
+    /// that size's font.
+    pub fn size(mut self, size: crate::theme::ControlSize) -> Self {
+        self.size = size;
         self
     }
     /// Merge a [`Style`](crate::Style) onto the field box (bg / border / radius /
@@ -402,6 +410,7 @@ struct Props {
     on_nav: Option<Rc<dyn Fn(KeyInput) -> bool>>,
     on_key_event: Option<pebbles_core::focus::RawKeyHandler>,
     style: Option<crate::style::Style>,
+    size: crate::theme::ControlSize,
 }
 
 impl IntoWidget for TextField {
@@ -438,6 +447,7 @@ impl IntoWidget for TextField {
                 on_nav: self.on_nav,
                 on_key_event: self.on_key_event,
                 style: self.style,
+                size: self.size,
             },
         )
         .into_widget()
@@ -912,8 +922,9 @@ fn render_field(p: &Props) -> AnyWidget {
     }
 
     let fg = if disabled { c.muted_foreground } else { c.foreground };
+    let sm = p.size.metrics();
     let style = TextFieldStyle {
-        font_size: 14.0,
+        font_size: sm.font,
         weight: 400.0,
         line_height: 1.3,
         color: fg,
@@ -957,7 +968,8 @@ fn render_field(p: &Props) -> AnyWidget {
             InputKind::Password => Some(
                 icon_button(if visible.get() { IconKind::EyeOff } else { IconKind::Eye })
                     .variant(ButtonVariant::Ghost)
-                    .size(16.0)
+                    .icon_size(sm.icon)
+                    .padding(0.0)
                     .on_pressed(move || visible.update(|v| *v = !*v))
                     .into_widget(),
             ),
@@ -966,7 +978,8 @@ fn render_field(p: &Props) -> AnyWidget {
                 Some(
                     icon_button(IconKind::Close)
                         .variant(ButtonVariant::Ghost)
-                        .size(15.0)
+                        .icon_size((sm.icon - 1.0).max(8.0))
+                        .padding(0.0)
                         .on_pressed(move || {
                             ed.value.set(String::new());
                             ed.anchor.set(0);
@@ -986,7 +999,7 @@ fn render_field(p: &Props) -> AnyWidget {
     let content: AnyWidget = if (eff_leading.is_some() || eff_trailing.is_some()) && !p.multiline {
         let mut kids: Vec<AnyWidget> = Vec::new();
         if let Some(lead) = eff_leading {
-            kids.push(icon(lead).size(16.0).color(c.muted_foreground).into_widget());
+            kids.push(icon(lead).size(sm.icon).color(c.muted_foreground).into_widget());
             kids.push(gap_w(8.0).into_widget());
         }
         kids.push(Expanded::new(inner).into_widget());
@@ -1028,7 +1041,7 @@ fn render_field(p: &Props) -> AnyWidget {
         let (height, padding, align) = if p.multiline {
             (p.lines as f64 * 20.0 + 20.0 * th.density, th.pad_all(10.0), Alignment::TOP_LEFT)
         } else {
-            (th.control_height, th.pad(12.0, 0.0), Alignment::CENTER_LEFT)
+            (sm.height, EdgeInsets::symmetric(sm.padding_x, 0.0), Alignment::CENTER_LEFT)
         };
         // The field box's presentation as a base Style; the user's `.style(..)` merges
         // on top (bg / border / radius / shadow overrides), user wins.

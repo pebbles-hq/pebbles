@@ -6,7 +6,7 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use pebbles_foundation::{Alignment, MainAxisSize};
+use pebbles_foundation::{Alignment, EdgeInsets, MainAxisSize};
 use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, PointerEvent};
 
 use crate::components::input::list_nav::{ListNav, list_nav};
@@ -128,7 +128,7 @@ fn render_menubar(p: &Props) -> AnyWidget {
     let th = theme();
     // The trigger row height is the uniform control height (density-scaled); the
     // dropdown anchors directly below it, so both use the same value.
-    let trigger_h = th.control_height;
+    let trigger_h = th.sizes.md.height;
     // Which top-level menu is open (index), so the trigger can highlight and hover can
     // switch. `is_open()` (the overlay) is the source of truth for "a menu is showing".
     let open = create_signal(Option::<usize>::None);
@@ -145,7 +145,13 @@ fn render_menubar(p: &Props) -> AnyWidget {
     let child_ctx = create_signal::<Option<Rc<ChildCtx>>>(None);
     let merged = crate::style::style().merge(p.style.clone().unwrap_or_default());
     let label_color = merged.color.unwrap_or(c.foreground);
-    let label_size = merged.font_size.unwrap_or(14.0);
+    // Standard desktop menubar (VS Code / JetBrains / Zed): md text (13 px in the
+    // Default design), regular weight, ~8 px side padding.
+    let label_size = merged.font_size.unwrap_or(th.sizes.md.font);
+    let trigger_pad = match th.design {
+        crate::DesignLanguage::Default => EdgeInsets::symmetric(8.0, 0.0),
+        _ => th.pad(12.0, 0.0),
+    };
 
     let n = p.menus.len();
     // One focus node for the whole strip + a roving keyboard index selecting which
@@ -315,8 +321,8 @@ fn render_menubar(p: &Props) -> AnyWidget {
             .height(trigger_h)
             .alignment(Alignment::CENTER)
             .decoration(BoxDecoration::new().color(bg).radius(BorderRadius::all(th.radius)))
-            .padding(th.pad(12.0, 0.0))
-            .child(text(m.label.clone()).size(label_size).weight(500.0).color(fg));
+            .padding(trigger_pad)
+            .child(text(m.label.clone()).size(label_size).color(fg));
 
         let tap_open = open_at.clone();
         let hover_open = open_at.clone();

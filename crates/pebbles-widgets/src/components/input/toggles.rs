@@ -18,7 +18,7 @@ use pebbles_foundation::{Alignment, Axis, Color, CrossAxisAlignment, EdgeInsets,
 use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconKind};
 
 use crate::components::icon;
-use crate::theme::{mix, theme};
+use crate::theme::{ControlSize, mix, theme};
 use crate::widgets::{
     ClipRRect, Container, GestureDetector, Opacity, Positioned, center, column, gap_h, gap_w, row, stack,
     text,
@@ -32,56 +32,39 @@ use pebbles_core::{animated, children, component_props};
 /// Default transition time for the controls.
 const DUR: f64 = 0.16;
 
-/// The size of a selection control — scales the control, its label font and the gap
-/// between them, mirroring [`ButtonSize`](super::ButtonSize).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum ToggleSize {
-    Sm,
-    #[default]
-    Md,
-    Lg,
-}
+/// The size of a selection control — the shared [`ControlSize`] scale. Scales the
+/// control, its label font and the gap between them; a [`Toggle`] button takes the
+/// same height as a [`Button`](super::Button) of that size.
+pub type ToggleSize = ControlSize;
 
-impl ToggleSize {
+impl ControlSize {
     /// Edge length of the checkbox box / radio ring.
     fn box_dim(self) -> f64 {
         match self {
-            Self::Sm => 16.0,
-            Self::Md => 18.0,
-            Self::Lg => 22.0,
+            Self::Xs => 14.0,
+            Self::Sm | Self::Md => 16.0,
+            Self::Lg => 18.0,
+            Self::Custom(m) => (m.height * 0.57).round().max(8.0),
         }
     }
     /// Label font size.
     fn font(self) -> f32 {
-        match self {
-            Self::Sm => 13.0,
-            Self::Md => 14.0,
-            Self::Lg => 15.0,
-        }
+        self.metrics().font
     }
     /// Gap between the control and its label.
     fn gap(self) -> f64 {
-        match self {
-            Self::Sm => 8.0,
-            _ => 10.0,
-        }
+        (self.metrics().height * 0.29).round().max(4.0)
     }
     /// Switch geometry: `(track_w, track_h, thumb, inset)`.
     fn switch(self) -> (f64, f64, f64, f64) {
-        match self {
-            Self::Sm => (36.0, 20.0, 16.0, 2.0),
-            Self::Md => (44.0, 24.0, 18.0, 3.0),
-            Self::Lg => (52.0, 28.0, 22.0, 3.0),
-        }
-    }
-    /// Padding for a [`Toggle`] button.
-    fn toggle_pad(self) -> EdgeInsets {
-        let th = theme();
-        match self {
-            Self::Sm => th.pad(8.0, 5.0),
-            Self::Md => th.pad(10.0, 7.0),
-            Self::Lg => th.pad(13.0, 9.0),
-        }
+        let track_h = match self {
+            Self::Xs => 16.0,
+            Self::Sm => 18.0,
+            Self::Md => 20.0,
+            Self::Lg => 24.0,
+            Self::Custom(m) => (m.height * 0.7).round().max(10.0),
+        };
+        (track_h * 1.8, track_h, track_h - 4.0, 2.0)
     }
 }
 
@@ -615,9 +598,18 @@ fn render_toggle(p: &ToggleProps) -> AnyWidget {
     } else if p.variant == ToggleVariant::Outline {
         deco = deco.border(Border::new(c.border, theme().border_width));
     }
+    // Same height as a Button of this size; at least square (icon cells).
+    let m = p.size.metrics();
     let container = Container::new()
         .decoration(deco)
-        .padding(p.size.toggle_pad())
+        .padding(EdgeInsets::symmetric(m.padding_x, 0.0))
+        .height(m.height)
+        .constraints(pebbles_render::BoxConstraints {
+            min_width: m.height,
+            max_width: f64::INFINITY,
+            min_height: 0.0,
+            max_height: f64::INFINITY,
+        })
         .alignment(Alignment::CENTER)
         .child(center(p.child.clone()));
 

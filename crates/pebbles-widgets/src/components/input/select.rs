@@ -115,6 +115,7 @@ pub struct Select {
     on_changed: Option<ChangedCb>,
     on_cleared: Option<Rc<dyn Fn()>>,
     style: Option<crate::style::Style>,
+    size: crate::theme::ControlSize,
 }
 
 /// Create a [`Select`] over `options` — any mix of `&str`/`String` (icon-less) and
@@ -172,6 +173,12 @@ impl Select {
         self
     }
     /// Merge a [`Style`](crate::Style) onto the trigger box (bg / border / radius …).
+    /// The control size (shared [`ControlSize`](crate::theme::ControlSize) scale): the
+    /// trigger is exactly as tall as a button of the same size.
+    pub fn size(mut self, size: crate::theme::ControlSize) -> Self {
+        self.size = size;
+        self
+    }
     pub fn style(mut self, s: crate::style::Style) -> Self {
         self.style = Some(s);
         self
@@ -189,6 +196,7 @@ struct Props {
     on_changed: Option<ChangedCb>,
     on_cleared: Option<Rc<dyn Fn()>>,
     style: Option<crate::style::Style>,
+    size: crate::theme::ControlSize,
 }
 
 impl IntoWidget for Select {
@@ -206,6 +214,7 @@ impl IntoWidget for Select {
                 on_changed: self.on_changed,
                 on_cleared: self.on_cleared,
                 style: self.style,
+                size: self.size,
             },
         )
         .into_widget()
@@ -374,7 +383,8 @@ fn render_menu_item(p: &MenuItemProps) -> AnyWidget {
 
 fn render_select(p: &Props) -> AnyWidget {
     let c = theme().colors;
-    let control_h = theme().control_height;
+    let sm = p.size.metrics();
+    let control_h = sm.height;
     let selected = create_signal(p.initial);
     let width = p.width;
     let options = Rc::new(p.options.clone());
@@ -506,28 +516,30 @@ fn render_select(p: &Props) -> AnyWidget {
 
     let mut trigger_kids: Vec<AnyWidget> = Vec::new();
     if let Some(li) = lead {
-        trigger_kids.push(icon(li).size(16.0).color(c.muted_foreground).into_widget());
+        trigger_kids.push(icon(li).size(sm.icon).color(c.muted_foreground).into_widget());
         trigger_kids.push(gap_w(8.0).into_widget());
     }
-    trigger_kids.push(text(label.clone()).size(14.0).color(label_color).into_widget());
+    trigger_kids.push(text(label.clone()).size(sm.font).color(label_color).into_widget());
     trigger_kids.push(spacer().into_widget());
     if p.clearable && has_value {
         let on_cleared = p.on_cleared.clone();
         trigger_kids.push(
-            GestureDetector::new(icon(IconKind::Close).size(15.0).color(c.muted_foreground))
-                .cursor(Cursor::Pointer)
-                .on_tap(move || {
-                    selected.set(None);
-                    nav.set_active(None);
-                    if let Some(f) = &on_cleared {
-                        f();
-                    }
-                })
-                .into_widget(),
+            GestureDetector::new(
+                icon(IconKind::Close).size((sm.icon - 1.0).max(8.0)).color(c.muted_foreground),
+            )
+            .cursor(Cursor::Pointer)
+            .on_tap(move || {
+                selected.set(None);
+                nav.set_active(None);
+                if let Some(f) = &on_cleared {
+                    f();
+                }
+            })
+            .into_widget(),
         );
     } else {
         let trail = p.trailing.unwrap_or_else(|| IconKind::ChevronDown.into());
-        trigger_kids.push(icon(trail).size(16.0).color(c.muted_foreground).into_widget());
+        trigger_kids.push(icon(trail).size(sm.icon).color(c.muted_foreground).into_widget());
     }
 
     let deco = crate::style::style()
@@ -541,7 +553,7 @@ fn render_select(p: &Props) -> AnyWidget {
         .width(width)
         .height(control_h)
         .decoration(deco)
-        .padding(theme().pad(12.0, 0.0))
+        .padding(pebbles_foundation::EdgeInsets::symmetric(sm.padding_x, 0.0))
         .alignment(Alignment::CENTER_LEFT)
         .child(row(trigger_kids));
 

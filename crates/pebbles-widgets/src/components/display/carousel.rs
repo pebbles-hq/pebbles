@@ -269,7 +269,7 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
         let at_first = page_idx == 0;
         let at_last = page_idx + 1 >= count;
         if !at_first {
-            let prev = icon_button(pebbles_render::IconKind::ChevronLeft).size(20.0).on_pressed({
+            let prev = icon_button(pebbles_render::IconKind::ChevronLeft).icon_size(20.0).on_pressed({
                 move || {
                     let w = width.peek().max(1.0);
                     let page = ((offset.peek() / w).round().max(0.0) as usize).saturating_sub(1);
@@ -279,7 +279,7 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
             overlay.push(Positioned::new(v_center(prev)).left(8.0).top(0.0).bottom(0.0).into_widget());
         }
         if !at_last {
-            let next = icon_button(pebbles_render::IconKind::ChevronRight).size(20.0).on_pressed({
+            let next = icon_button(pebbles_render::IconKind::ChevronRight).icon_size(20.0).on_pressed({
                 move || {
                     let w = width.peek().max(1.0);
                     let page = (offset.peek() / w).round().max(0.0) as usize + 1;
