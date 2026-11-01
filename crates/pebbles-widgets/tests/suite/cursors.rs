@@ -82,3 +82,18 @@ fn a_tappable_detector_follows_the_theme_action_cursor() {
     assert_eq!(cursors_along_row(tappable, 8.0), [Cursor::Pointer]);
     set_theme(Theme::light());
 }
+
+#[test]
+fn links_show_the_hand_in_the_desktop_design() {
+    use pebbles_widgets::{Theme, set_theme, span, text_rich};
+    set_theme(Theme::light());
+    fn link() -> AnyWidget {
+        top_left(
+            text_rich(vec![span("go to "), span("example.com").link("https://example.com")])
+                .on_link(|_| {})
+                .keyboard_nav(),
+        )
+    }
+    let got = cursors_along_row(link, 8.0);
+    assert!(got.contains(&Cursor::Pointer), "{got:?}");
+}
