@@ -765,6 +765,13 @@ fn icon_theme_precedence_matches_vs_code() {
     assert_eq!(th.resolve("proj", true, true, true), Some(gl(t::FOLDER_UP)));
     assert_eq!(th.resolve("other", true, false, false), Some(gl(t::FOLDER)));
     assert_eq!(th.resolve("other", true, true, false), Some(gl(t::FOLDER_OPEN)));
+    // Root folders: rootFolderNames (expanded variant) > rootFolder > default; folderNames
+    // never apply to a root (VS Code).
+    let th3 = th.clone().root_folder_name("app", gl(t::APPS), Some(gl(t::BOX)));
+    assert_eq!(th3.resolve("APP", true, false, true), Some(gl(t::APPS)));
+    assert_eq!(th3.resolve("app", true, true, true), Some(gl(t::BOX)));
+    assert_eq!(th3.resolve("src", true, false, true), Some(gl(t::FOLDER_ROOT)));
+    assert_eq!(th3.resolve("app", true, false, false), Some(gl(t::FOLDER)), "not a root");
     // The built-in theme covers the common cases.
     let d = IconTheme::default_theme();
     for n in [

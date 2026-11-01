@@ -114,6 +114,8 @@ pub struct IconTheme {
     language_ids: HashMap<String, ExplorerIcon>,
     folder_names: HashMap<String, ExplorerIcon>,
     folder_names_expanded: HashMap<String, ExplorerIcon>,
+    root_folder_names: HashMap<String, ExplorerIcon>,
+    root_folder_names_expanded: HashMap<String, ExplorerIcon>,
     language_of: Option<LanguageResolver>,
 }
 
@@ -177,6 +179,22 @@ impl IconTheme {
         }
         self
     }
+    /// An exact workspace-root folder name with its collapsed and (optionally) expanded
+    /// icon (VS Code `rootFolderNames` / `rootFolderNamesExpanded`).
+    #[must_use]
+    pub fn root_folder_name(
+        mut self,
+        name: &str,
+        closed: impl Into<ExplorerIcon>,
+        expanded: Option<ExplorerIcon>,
+    ) -> Self {
+        let k = name.to_lowercase();
+        self.root_folder_names.insert(k.clone(), closed.into());
+        if let Some(e) = expanded {
+            self.root_folder_names_expanded.insert(k, e);
+        }
+        self
+    }
     /// How file names map to language ids (default: [`language_of`]).
     #[must_use]
     pub fn language_resolver(mut self, f: impl Fn(&str) -> Option<String> + 'static) -> Self {
@@ -193,11 +211,24 @@ impl IconTheme {
         is_root: bool,
     ) -> Option<ExplorerIcon> {
         let lower = name.to_lowercase();
-        if is_folder {
-            if expanded && let Some(i) = self.folder_names_expanded.get(&lower) {
+        if is_folder && is_root {
+            // VS Code: a root folder takes `rootFolderNames*`, then `rootFolder*`, then the
+            // default folder icons — never `folderNames`.
+            if expanded && let Some(i) = self.root_folder_names_expanded.get(&lower) {
                 return Some(i.clone());
             }
-            if let Some(i) = self.folder_names.get(&lower) {
+            if let Some(i) = self.root_folder_names.get(&lower) {
+                return Some(i.clone());
+            }
+        }
+        if is_folder {
+            if !is_root
+                && expanded
+                && let Some(i) = self.folder_names_expanded.get(&lower)
+            {
+                return Some(i.clone());
+            }
+            if !is_root && let Some(i) = self.folder_names.get(&lower) {
                 return Some(i.clone());
             }
             if is_root {
