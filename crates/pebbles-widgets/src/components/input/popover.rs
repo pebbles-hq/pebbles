@@ -4,7 +4,7 @@
 //! public [`Popover`] component (arbitrary content under any trigger).
 
 use pebbles_foundation::{Color, EdgeInsets, Offset};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, Cursor, PointerEvent};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, BoxShadow, PointerEvent};
 
 use crate::overlay::{show_overlay_guarded, window_size};
 use crate::theme::theme;
@@ -132,7 +132,7 @@ impl IntoWidget for Popover {
         // with the parent — the probe that GCs an orphaned panel.
         let owner = pebbles_core::create_signal(());
         GestureDetector::new(trigger)
-            .cursor(Cursor::Pointer)
+            .cursor(crate::design::theme::action_cursor())
             .on_tap(action_event(move |e: PointerEvent| {
                 // The trigger's window-space top-left = click global − click local.
                 let trigger_left = e.global.x - e.position.x;

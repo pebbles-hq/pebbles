@@ -289,7 +289,7 @@ fn render_slider(p: &SliderProps) -> AnyWidget {
         let a_start = move_to.clone();
         let a_move = move_to.clone();
         GestureDetector::new(body)
-            .cursor(Cursor::Pointer)
+            .cursor(crate::design::theme::action_cursor())
             .on_hover_enter(move || hovered.set(true))
             .on_hover_exit(move || hovered.set(false))
             // Jump to the press point on pointer-down (Flutter/VS Code); the drag

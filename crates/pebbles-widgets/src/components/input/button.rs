@@ -457,7 +457,7 @@ fn render_button(b: &Button) -> Element {
     let hi_exit = b.on_highlight_changed.clone();
 
     let mut gesture = GestureDetector::new(container)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || {
             if pressed.peek()
@@ -693,7 +693,7 @@ fn render_icon_button(b: &IconButton) -> Element {
     node.register(activation, None, false);
 
     let mut gesture = GestureDetector::new(container)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || {
             hovered.set(false);

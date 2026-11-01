@@ -6,7 +6,7 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{Axis, Color, EdgeInsets, MainAxisSize};
-use pebbles_render::{Cursor, ScrollbarStyle};
+use pebbles_render::ScrollbarStyle;
 
 use crate::components::input::icon_button;
 use crate::style::{style, styled};
@@ -251,7 +251,7 @@ fn render_carousel(p: &Props) -> pebbles_core::Element {
             // Clickable: tap a dot to jump to its page. The padding is a comfortable
             // hit target around the tiny dot, and also spaces the row.
             let dot = GestureDetector::new(Padding::new(EdgeInsets::symmetric(4.0, 9.0), dot))
-                .cursor(Cursor::Pointer)
+                .cursor(crate::design::theme::action_cursor())
                 .on_tap(move || offset.set(i as f64 * width.peek().max(1.0)));
             dots.push(dot.into_widget());
         }

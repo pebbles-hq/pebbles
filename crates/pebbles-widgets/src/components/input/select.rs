@@ -374,7 +374,7 @@ fn render_menu_item(p: &MenuItemProps) -> AnyWidget {
 
     let pick = p.pick.clone();
     GestureDetector::new(body)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false))
         .on_tap(move || pick())
@@ -527,7 +527,7 @@ fn render_select(p: &Props) -> AnyWidget {
             GestureDetector::new(
                 icon(IconKind::Close).size((sm.icon - 1.0).max(8.0)).color(c.muted_foreground),
             )
-            .cursor(Cursor::Pointer)
+            .cursor(crate::design::theme::action_cursor())
             .on_tap(move || {
                 selected.set(None);
                 nav.set_active(None);
@@ -557,14 +557,15 @@ fn render_select(p: &Props) -> AnyWidget {
         .alignment(Alignment::CENTER_LEFT)
         .child(row(trigger_kids));
 
-    let control =
-        GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(move |e: PointerEvent| {
+    let control = GestureDetector::new(trigger).cursor(crate::design::theme::action_cursor()).on_tap(
+        action_event(move |e: PointerEvent| {
             // Pointer open uses the live click rect (most precise); keyboard open uses
             // the probe-reported rect below.
             let trigger_left = e.global.x - e.position.x;
             let trigger_top = e.global.y - e.position.y;
             open_menu(trigger_left, trigger_top);
-        }));
+        }),
+    );
 
     // Accessibility: a combo box announcing its name + current value.
     let name = label.clone();

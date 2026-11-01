@@ -356,7 +356,7 @@ fn render_day_cell(p: &DayCellProps) -> AnyWidget {
     }
     let on_pick = p.on_pick.clone();
     GestureDetector::new(cell)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false))
         .on_tap(move || on_pick(y, m, d))
@@ -379,7 +379,7 @@ fn choice_cell(label: String, current: bool, on_tap: impl Fn() + 'static) -> Any
         .alignment(Alignment::CENTER)
         .decoration(deco)
         .child(text(label).size(13.0).color(fg));
-    GestureDetector::new(cell).cursor(Cursor::Pointer).on_tap(on_tap).into_widget()
+    GestureDetector::new(cell).cursor(crate::design::theme::action_cursor()).on_tap(on_tap).into_widget()
 }
 
 // --- panels ---

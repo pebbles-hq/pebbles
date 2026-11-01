@@ -250,7 +250,7 @@ fn toast_card_inner(e: &ToastEntry) -> AnyWidget {
                     .padding(theme().pad(10.0, 6.0))
                     .child(text(label.clone()).size(12.5).weight(500.0).color(c.secondary_foreground)),
             )
-            .cursor(pebbles_render::Cursor::Pointer)
+            .cursor(crate::design::theme::action_cursor())
             .on_tap(move || {
                 f();
                 dismiss_toast(id);
@@ -263,7 +263,7 @@ fn toast_card_inner(e: &ToastEntry) -> AnyWidget {
         r.push(gap_w(6.0).into_widget());
         r.push(
             GestureDetector::new(icon(IconKind::Close).size(15.0).color(c.muted_foreground))
-                .cursor(pebbles_render::Cursor::Pointer)
+                .cursor(crate::design::theme::action_cursor())
                 .on_tap(move || dismiss_toast(id))
                 .into_widget(),
         );

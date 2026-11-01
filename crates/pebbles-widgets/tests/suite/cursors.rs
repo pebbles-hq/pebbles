@@ -1,6 +1,7 @@
 //! Mouse cursor icons the shell hands to winit (which draws them from the system
 //! cursor theme, XCURSOR_THEME / XCURSOR_SIZE on X11 and the compositor's theme on
-//! Wayland): an I-beam over text fields, a hand over buttons, "not allowed" over a
+//! Wayland): an I-beam over text fields, the theme's action cursor over buttons (the arrow in
+//! the desktop Default design, the hand in Tailwind / Material), "not allowed" over a
 //! disabled button, resize arrows over a resizable panel handle.
 
 use pebbles_core::widget::AnyWidget;
@@ -43,8 +44,10 @@ fn text_field_shows_the_i_beam() {
 }
 
 #[test]
-fn button_shows_the_hand_and_disabled_shows_not_allowed() {
-    assert_eq!(cursors_along_row(|| top_left(button("Save")), 10.0), [Cursor::Pointer]);
+fn button_shows_the_arrow_and_disabled_shows_not_allowed() {
+    pebbles_widgets::set_theme(pebbles_widgets::Theme::light());
+    let got = cursors_along_row(|| top_left(button("Save")), 10.0);
+    assert!(got.iter().all(|c| *c == Cursor::Default), "desktop buttons keep the arrow, got {got:?}");
     assert_eq!(cursors_along_row(|| top_left(button("Save").disabled(true)), 10.0), [Cursor::NotAllowed]);
 }
 
@@ -55,4 +58,27 @@ fn resizable_handle_shows_the_resize_arrow() {
         10.0,
     );
     assert!(got.contains(&Cursor::ColResize), "a horizontal handle is a col-resize target, got {got:?}");
+}
+
+#[test]
+fn web_designs_show_the_hand_over_buttons() {
+    use pebbles_widgets::{DesignLanguage, Theme, set_theme};
+    for d in [DesignLanguage::Material, DesignLanguage::Tailwind] {
+        set_theme(Theme::light().design(d));
+        assert_eq!(cursors_along_row(|| top_left(button("Save")), 10.0), [Cursor::Pointer], "{d:?}");
+    }
+    set_theme(Theme::light());
+}
+
+#[test]
+fn a_tappable_detector_follows_the_theme_action_cursor() {
+    use pebbles_widgets::{DesignLanguage, GestureDetector, Theme, set_theme};
+    fn tappable() -> AnyWidget {
+        top_left(GestureDetector::new(text("tap me")).on_tap(|| {}))
+    }
+    set_theme(Theme::light());
+    assert_eq!(cursors_along_row(tappable, 8.0), [Cursor::Default]);
+    set_theme(Theme::light().design(DesignLanguage::Material));
+    assert_eq!(cursors_along_row(tappable, 8.0), [Cursor::Pointer]);
+    set_theme(Theme::light());
 }

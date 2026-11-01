@@ -130,9 +130,10 @@ fn render_fab(f: &Fab) -> Element {
     };
     node.register(activation, None, false);
 
-    let mut gesture = GestureDetector::new(pill).cursor(Cursor::Pointer).on_pointer_down(move || {
-        node.request_focus(); // clicking focuses, like Flutter
-    });
+    let mut gesture =
+        GestureDetector::new(pill).cursor(crate::design::theme::action_cursor()).on_pointer_down(move || {
+            node.request_focus(); // clicking focuses, like Flutter
+        });
     if let Some(cb) = f.on_pressed.clone() {
         gesture = gesture.on_tap(cb);
     }

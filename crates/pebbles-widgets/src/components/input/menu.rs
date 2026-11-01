@@ -445,7 +445,7 @@ fn render_dropdown(p: &Props) -> AnyWidget {
 
     let open_tap = open_menu.clone();
     let control = GestureDetector::new(trigger)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false))
         .on_tap(action_event(move |e: PointerEvent| {
@@ -607,7 +607,7 @@ fn render_sub_row(p: &SubRowProps) -> AnyWidget {
     let enter_close = schedule_close.clone();
     let label = p.label.clone();
     let gesture = GestureDetector::new(body)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(action_event(move |_e: PointerEvent| {
             hovered.set(true);
             over.update(|n| *n += 1);
@@ -1075,7 +1075,7 @@ fn render_action_row(p: &ActionRowProps) -> AnyWidget {
 
     let pick = p.on_select.clone();
     GestureDetector::new(body)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false))
         .on_tap(move || pick())

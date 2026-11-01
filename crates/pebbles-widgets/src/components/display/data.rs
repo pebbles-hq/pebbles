@@ -5,7 +5,7 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, Color, CrossAxisAlignment, EdgeInsets, MainAxisSize};
-use pebbles_render::{Border, BoxDecoration, Cursor, IconKind, TableColumnWidth};
+use pebbles_render::{Border, BoxDecoration, IconKind, TableColumnWidth};
 
 use crate::components::{checkbox, icon};
 use crate::style::{Style, styled};
@@ -413,7 +413,7 @@ fn render_sort_header(p: &SortHeaderProps) -> AnyWidget {
         row(items).cross_axis_alignment(CrossAxisAlignment::Center).main_axis_size(MainAxisSize::Max),
     );
     let mut g = GestureDetector::new(Container::new().color(bg).child(inner))
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false));
     if let Some(f) = p.on_tap.clone() {

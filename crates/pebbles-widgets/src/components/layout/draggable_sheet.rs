@@ -10,7 +10,7 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, CrossAxisAlignment, EdgeInsets, MainAxisSize, Size};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor};
+use pebbles_render::{Border, BorderRadius, BoxDecoration};
 
 use crate::theme::theme;
 use crate::widgets::{Container, Expanded, GestureDetector, column, layout_builder, scroll_view, spacer};
@@ -131,7 +131,7 @@ fn render(p: &Props) -> AnyWidget {
             anchor.set(None);
         });
         let handle = GestureDetector::new(handle_strip)
-            .cursor(Cursor::Pointer)
+            .cursor(crate::design::theme::action_cursor())
             .on_pan_start(start)
             .on_pan_update(update)
             .on_pan_end(end);

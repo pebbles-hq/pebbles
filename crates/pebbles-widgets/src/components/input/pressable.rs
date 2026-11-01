@@ -224,7 +224,7 @@ fn render_pressable(p: &Pressable) -> Element {
     let (hover_in, hover_out) = (on_hover.clone(), on_hover);
 
     let mut gesture = GestureDetector::new(container)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || {
             hovered.set(true);
             if let Some(h) = &hover_in {

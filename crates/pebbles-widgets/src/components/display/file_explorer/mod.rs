@@ -103,7 +103,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisSize, Offset};
-use pebbles_render::{Border, BoxDecoration, Cursor, IconData, IconKind, tabler};
+use pebbles_render::{Border, BoxDecoration, IconData, IconKind, tabler};
 
 use crate::components::{ButtonVariant, context_menu, icon, icon_button, menu_item, muted, text_field};
 use crate::theme::{mix, theme};

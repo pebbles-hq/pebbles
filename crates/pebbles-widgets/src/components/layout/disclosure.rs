@@ -148,7 +148,7 @@ fn render_section(p: &SectionProps) -> AnyWidget {
             .main_axis_alignment(MainAxisAlignment::SpaceBetween),
         )),
     )
-    .cursor(pebbles_render::Cursor::Pointer)
+    .cursor(crate::design::theme::action_cursor())
     .on_hover_enter(move || hovered.set(true))
     .on_hover_exit(move || hovered.set(false))
     .on_pointer_down(move || node.request_focus())
@@ -333,7 +333,7 @@ fn render_collapsible(p: &CollapsibleProps) -> AnyWidget {
         header_deco = header_deco.border(Border::new(c.ring, 2.0));
     }
     let header = GestureDetector::new(Container::new().decoration(header_deco).child(header_inner))
-        .cursor(pebbles_render::Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_pointer_down(move || node.request_focus())
         .on_tap(toggle);
 

@@ -5,7 +5,7 @@
 use std::rc::Rc;
 
 use pebbles_foundation::{Axis, CrossAxisAlignment, EdgeInsets, MainAxisSize};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconKind};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, IconKind};
 
 use crate::components::icon;
 use crate::theme::theme;
@@ -134,7 +134,7 @@ fn render_step_header(p: &StepHeaderProps) -> AnyWidget {
     let gesture = GestureDetector::new(boxed)
         .on_tap(move || on_tap(i))
         .on_pointer_down(move || node.request_focus())
-        .cursor(Cursor::Pointer);
+        .cursor(crate::design::theme::action_cursor());
     crate::widgets::semantics(crate::widgets::SemanticsRole::Button, p.title.clone(), gesture.into_widget())
         .into_widget()
 }

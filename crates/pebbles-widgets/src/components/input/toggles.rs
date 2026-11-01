@@ -129,7 +129,7 @@ fn wire(
     };
     node.register(activation, None, autofocus);
     let mut g = GestureDetector::new(body)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false))
         .on_pointer_down(move || node.request_focus());

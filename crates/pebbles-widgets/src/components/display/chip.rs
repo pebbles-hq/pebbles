@@ -203,7 +203,7 @@ fn render_chip(p: &Chip) -> AnyWidget {
             node.register(activation, None, false);
             let gesture = crate::widgets::GestureDetector::new(pill)
                 .on_tap(on_pressed)
-                .cursor(pebbles_render::Cursor::Pointer)
+                .cursor(crate::design::theme::action_cursor())
                 .on_hover_enter(move || hovered.set(true))
                 .on_hover_exit(move || {
                     hovered.set(false);

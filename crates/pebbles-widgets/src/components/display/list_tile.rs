@@ -216,7 +216,7 @@ fn render_tile(p: &TileProps) -> AnyWidget {
 
     let on_tap = p.on_tap.clone();
     let g = GestureDetector::new(out)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false))
         .on_tap(move || {

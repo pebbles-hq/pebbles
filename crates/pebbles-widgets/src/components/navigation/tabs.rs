@@ -354,7 +354,7 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
         .into_widget();
     }
     let mut g = GestureDetector::new(cell)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false));
     // NOTE: clicking does NOT focus the strip — the focus ring is keyboard-only

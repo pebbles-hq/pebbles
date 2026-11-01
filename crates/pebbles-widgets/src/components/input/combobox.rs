@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, EdgeInsets, MainAxisSize};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconKind, PointerEvent};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, IconKind, PointerEvent};
 
 use super::list_nav::list_nav;
 use super::menu::{ActionRowProps, action_row};
@@ -356,10 +356,11 @@ fn render_combobox(p: &ComboProps) -> AnyWidget {
         _ => false,
     }));
 
-    let control =
-        GestureDetector::new(trigger).cursor(Cursor::Pointer).on_tap(action_event(move |e: PointerEvent| {
+    let control = GestureDetector::new(trigger).cursor(crate::design::theme::action_cursor()).on_tap(
+        action_event(move |e: PointerEvent| {
             open_menu(e.global.x - e.position.x, e.global.y - e.position.y);
-        }));
+        }),
+    );
 
     // Accessibility: a combo box announcing its name + current value (mirrors Select).
     let labelled = crate::widgets::semantics(pebbles_render::SemanticsRole::ComboBox, name.clone(), control)
@@ -488,7 +489,7 @@ fn render_multi(p: &MultiProps) -> AnyWidget {
 
     let menu_options = options.clone();
     GestureDetector::new(trigger)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_tap(action_event(move |e: PointerEvent| {
             let trigger_left = e.global.x - e.position.x;
             let trigger_top = e.global.y - e.position.y;

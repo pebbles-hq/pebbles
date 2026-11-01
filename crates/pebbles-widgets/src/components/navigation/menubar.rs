@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use pebbles_foundation::{Alignment, EdgeInsets, MainAxisSize};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, PointerEvent};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, PointerEvent};
 
 use crate::components::input::list_nav::{ListNav, list_nav};
 use crate::components::input::menu::{
@@ -327,7 +327,7 @@ fn render_menubar(p: &Props) -> AnyWidget {
         let tap_open = open_at.clone();
         let hover_open = open_at.clone();
         let mut g: AnyWidget = GestureDetector::new(trigger)
-            .cursor(Cursor::Pointer)
+            .cursor(crate::design::theme::action_cursor())
             // Click toggles this menu (and moves keyboard focus to it).
             .on_tap(action_event(move |e: PointerEvent| {
                 if is_open() && open.peek() == Some(i) {

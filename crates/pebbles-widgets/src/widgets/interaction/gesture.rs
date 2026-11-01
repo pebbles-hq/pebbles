@@ -74,6 +74,9 @@ pub struct GestureDetector {
     on_button_up: Vec<Callback>,
     on_pointer_move: Vec<Callback>,
     cursor: Option<Cursor>,
+    /// The theme's [`action_cursor`](crate::design::theme::Theme::action_cursor), captured
+    /// when the first tap handler is attached (build time, inside any theme override).
+    tap_cursor: Option<Cursor>,
     child: Option<AnyWidget>,
 }
 
@@ -84,6 +87,9 @@ impl GestureDetector {
     }
 
     pub fn on_tap(mut self, cb: impl IntoCallback) -> Self {
+        if self.tap_cursor.is_none() {
+            self.tap_cursor = Some(crate::design::theme::action_cursor());
+        }
         self.on_tap.push(cb.into_callback());
         self
     }
@@ -315,8 +321,11 @@ impl GestureDetector {
             on_button_down: erase(&self.on_button_down),
             on_button_up: erase(&self.on_button_up),
             on_pointer_move: erase(&self.on_pointer_move),
-            // Default to a pointer cursor when this detector is clickable.
-            cursor: self.cursor.or_else(|| (!self.on_tap.is_empty()).then_some(Cursor::Pointer)),
+            // A clickable detector without its own cursor shows the theme's action cursor
+            // (the arrow in the desktop design, the hand on the web designs).
+            cursor: self
+                .cursor
+                .or_else(|| (!self.on_tap.is_empty()).then(|| self.tap_cursor.unwrap_or(Cursor::Default))),
         }
     }
 }

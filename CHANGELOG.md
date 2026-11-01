@@ -6,6 +6,13 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — desktop cursors: the arrow over clickable controls (`Theme::action_cursor`)
+A new design token, `Theme::action_cursor`, is the cursor over buttons, tabs, menu items,
+explorer rows, toggles and any tappable `GestureDetector` without its own cursor. The Default
+design seeds the arrow (`Cursor::Default`), as VS Code, JetBrains, GTK, macOS and Windows do;
+Tailwind and Material keep the web's hand (`Cursor::Pointer`). Links keep the hand in every
+design. Previously every tappable detector defaulted to the hand. `action_cursor()` reads it.
+
 ### Changed (breaking) — Default design: standard desktop sizes, one size scale, custom sizes
 The Default design now matches mainstream desktop apps (VS Code, JetBrains, Zed, macOS):
 13 px body/UI text (was 14), 28 px md controls, 16 px icons, and menubar triggers with 13 px

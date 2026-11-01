@@ -9,7 +9,7 @@ use std::rc::Rc;
 
 use pebbles_core::IntoCallback;
 use pebbles_foundation::{Color, CrossAxisAlignment, EdgeInsets, MainAxisAlignment, MainAxisSize, palette};
-use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor, IconData, IconKind};
+use pebbles_render::{Border, BorderRadius, BoxDecoration, IconData, IconKind};
 
 use crate::theme::{mix, theme};
 use crate::widgets::{
@@ -407,7 +407,7 @@ fn render_nav_item(w: &NavItem) -> AnyWidget {
     node.register(activation, None, false);
 
     let mut gesture = GestureDetector::new(container)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false))
         .on_pointer_down(move || node.request_focus());
@@ -604,7 +604,7 @@ fn render_collapse_toggle(t: &CollapseToggle) -> AnyWidget {
             .padding(theme().pad_all(7.0))
             .child(icon(glyph).size(18.0).color(c.muted_foreground)),
     )
-    .cursor(Cursor::Pointer)
+    .cursor(crate::design::theme::action_cursor())
     .on_hover_enter(move || hovered.set(true))
     .on_hover_exit(move || hovered.set(false));
     if let Some(cb) = t.on_change.clone() {
@@ -686,7 +686,7 @@ fn render_bottom_nav_item(w: &BottomNavItem) -> AnyWidget {
     node.register(activation, None, false);
 
     let mut gesture = GestureDetector::new(container)
-        .cursor(Cursor::Pointer)
+        .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || hovered.set(true))
         .on_hover_exit(move || hovered.set(false))
         .on_pointer_down(move || node.request_focus());

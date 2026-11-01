@@ -74,6 +74,7 @@ struct DesignTokens {
     density: f64,
     font_size: f32,
     sizes: SizeScale,
+    action_cursor: pebbles_render::Cursor,
 }
 
 /// The pixel metrics of one control size: everything a sized component (button,
@@ -191,6 +192,9 @@ impl DesignLanguage {
                     md: cm(28.0, 13.0, 10.0, 16.0),
                     lg: cm(32.0, 14.0, 12.0, 18.0),
                 },
+                // Desktop convention (VS Code, JetBrains, GTK, macOS, Windows): the arrow
+                // over buttons, tabs, rows and menus; the hand only over links.
+                action_cursor: pebbles_render::Cursor::Default,
             },
             // The original shadcn/tailwind look (unchanged from Pebbles' first default).
             DesignLanguage::Tailwind => DesignTokens {
@@ -209,6 +213,8 @@ impl DesignLanguage {
                     md: cm(36.0, 14.0, 16.0, 16.0),
                     lg: cm(40.0, 15.0, 22.0, 18.0),
                 },
+                // Web convention (shadcn / Tailwind `cursor-pointer`).
+                action_cursor: pebbles_render::Cursor::Pointer,
             },
             // Material 3: pill-ish radii, big targets, tonal elevation.
             DesignLanguage::Material => DesignTokens {
@@ -227,6 +233,8 @@ impl DesignLanguage {
                     md: cm(40.0, 14.0, 24.0, 18.0),
                     lg: cm(48.0, 15.0, 32.0, 20.0),
                 },
+                // Material Web's pointer over interactive components.
+                action_cursor: pebbles_render::Cursor::Pointer,
             },
         }
     }
@@ -264,6 +272,13 @@ pub struct Theme {
     pub font_size: f32,
     /// The control size scale (xs / sm / md / lg) every sized component uses.
     pub sizes: SizeScale,
+    /// The mouse cursor over clickable controls (buttons, tabs, rows, menu items, any
+    /// tappable `GestureDetector` without its own cursor).
+    /// Seeded by the design language: the arrow ([`Cursor::Default`](pebbles_render::Cursor::Default))
+    /// in the desktop `Default` design, as VS Code / JetBrains / GTK do; the hand
+    /// ([`Cursor::Pointer`](pebbles_render::Cursor::Pointer)) in `Tailwind` and `Material`, as
+    /// on the web. Links always use the hand.
+    pub action_cursor: pebbles_render::Cursor,
     pub dark: bool,
 }
 
@@ -350,6 +365,7 @@ impl Theme {
             density: t.density,
             font_size: t.font_size,
             sizes: t.sizes,
+            action_cursor: t.action_cursor,
             dark,
         }
     }
@@ -383,6 +399,7 @@ impl Theme {
         self.density = t.density;
         self.font_size = t.font_size;
         self.sizes = t.sizes;
+        self.action_cursor = t.action_cursor;
         self
     }
 
@@ -569,6 +586,11 @@ fn theme_signal() -> Signal<Theme> {
 pub fn theme() -> Theme {
     let global = theme_signal().get(); // subscribe so a global toggle re-renders too
     pebbles_core::reactive::consume_context::<Theme>().unwrap_or(global)
+}
+
+/// The current theme's [`Theme::action_cursor`], read without subscribing the caller.
+pub fn action_cursor() -> pebbles_render::Cursor {
+    pebbles_core::reactive::consume_context::<Theme>().unwrap_or_else(|| theme_signal().peek()).action_cursor
 }
 
 /// Swap the current theme. Every component that read [`theme`] re-renders. This pins an

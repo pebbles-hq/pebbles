@@ -146,7 +146,7 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
         body.into_widget()
     } else {
         let g = GestureDetector::new(body)
-            .cursor(Cursor::Pointer)
+            .cursor(crate::design::theme::action_cursor())
             .on_hover_enter(move || {
                 hovered.set(true);
                 explorer.row_hover.set(Some(id));
