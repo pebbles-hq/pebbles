@@ -169,6 +169,7 @@ pub struct TextField {
     error: Option<String>,
     disabled: bool,
     autofocus: bool,
+    focus_request: Option<Signal<bool>>,
     read_only: bool,
     bare: bool,
     on_changed: Option<StrCb>,
@@ -324,6 +325,14 @@ impl TextField {
         self.autofocus = true;
         self
     }
+    /// Take keyboard focus whenever `pending` is `true` (at mount or later), even while
+    /// another widget holds it, then reset it to `false` — Flutter's
+    /// `FocusNode.requestFocus()` from outside the field (VS Code's Ctrl+Shift+F focusing
+    /// the search box whether or not the view was already open). Set it to request.
+    pub fn focus_request(mut self, pending: Signal<bool>) -> Self {
+        self.focus_request = Some(pending);
+        self
+    }
     /// Initial selection (byte offsets into the value), applied when the field
     /// mounts — e.g. a rename field selecting the file stem so typing replaces
     /// it. Ignored (caret at the end) if the offsets are out of range or not on
@@ -399,6 +408,7 @@ struct Props {
     error: Option<String>,
     disabled: bool,
     autofocus: bool,
+    focus_request: Option<Signal<bool>>,
     read_only: bool,
     bare: bool,
     select_range: Option<(usize, usize)>,
@@ -436,6 +446,7 @@ impl IntoWidget for TextField {
                 error: self.error,
                 disabled: self.disabled,
                 autofocus: self.autofocus,
+                focus_request: self.focus_request,
                 read_only: self.read_only,
                 bare: self.bare,
                 select_range: self.select_range,
@@ -857,6 +868,12 @@ fn render_field(p: &Props) -> AnyWidget {
     // focusable (so it can be selected + copied); it just drops every mutating key.
     if !disabled {
         focus.register(Rc::new(|| {}), p.on_focus_change.clone(), p.autofocus);
+        if let Some(pending) = p.focus_request
+            && pending.get()
+        {
+            pending.set(false);
+            focus.request_focus();
+        }
         if let Some(h) = &p.on_key_event {
             focus.on_key_event(h.clone());
         }

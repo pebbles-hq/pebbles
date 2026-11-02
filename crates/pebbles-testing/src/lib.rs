@@ -1784,4 +1784,40 @@ mod tests {
         assert!(!w::is_window_open(a) && !w::is_window_open(b));
         assert!(wins.windows.is_empty());
     }
+
+    thread_local! {
+        static TRIGGER: Cell<Option<Signal<bool>>> = const { Cell::new(None) };
+        static TYPED_B: RefCell<String> = const { RefCell::new(String::new()) };
+    }
+
+    fn two_fields() -> impl IntoWidget {
+        let trigger = TRIGGER.with(|t| {
+            if t.get().is_none() {
+                t.set(Some(pebbles_core::create_root_signal(false)));
+            }
+            t.get().unwrap()
+        });
+        column(vec![
+            text_field().autofocus().into_widget(),
+            text_field()
+                .focus_request(trigger)
+                .on_changed(|s| TYPED_B.with(|b| *b.borrow_mut() = s.to_string()))
+                .into_widget(),
+        ])
+    }
+
+    #[test]
+    fn focus_request_takes_focus_from_another_field() {
+        let mut h = Harness::new();
+        h.mount(two_fields);
+        h.frames(2);
+        h.ime("a");
+        assert_eq!(TYPED_B.with(|b| b.borrow().clone()), "", "mount must not steal focus");
+        let t = TRIGGER.with(Cell::get).unwrap();
+        t.set(true);
+        h.frames(2);
+        assert!(!t.peek(), "the request is consumed");
+        h.ime("b");
+        assert_eq!(TYPED_B.with(|b| b.borrow().clone()), "b");
+    }
 }

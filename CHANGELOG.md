@@ -27,6 +27,10 @@ kept up to date on move/resize, readable in `on_close` — for remembering windo
 `window_root` (the tree a secondary window mounts), and in pebbles-testing `TestWindows`, a
 headless secondary-window manager (open / close / focus / quit) for multi-window tests.
 
+### Added — `TextField::focus_request(Signal<bool>)`
+Take focus whenever the signal is `true` (at mount or later, even from another focused
+widget), then reset it — Flutter's `FocusNode.requestFocus()` from outside the field.
+
 ### Changed — desktop cursors: the arrow over clickable controls (`Theme::action_cursor`)
 A new design token, `Theme::action_cursor`, is the cursor over buttons, tabs, menu items,
 explorer rows, toggles and any tappable `GestureDetector` without its own cursor. The Default
