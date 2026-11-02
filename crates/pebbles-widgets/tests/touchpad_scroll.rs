@@ -99,3 +99,26 @@ fn long_bursty_swipe_past_the_end_pins_at_max_never_wraps() {
         assert!((read(&h) - max).abs() < 1.0, "list={list}: ends at {} not {max}", read(&h));
     }
 }
+
+/// A programmatic `ScrollHandle::scroll_to` applies on the next frame even when nothing
+/// re-renders (Flutter's `jumpTo` marks the viewport for layout): a fine-grained app that
+/// moves the scroll from an event handler, without writing any signal, must still scroll.
+#[test]
+fn scroll_handle_scroll_to_applies_without_a_rebuild() {
+    let handle = pebbles_render::ScrollHandle::new();
+    let mut h = Harness::new().window(200.0, 200.0);
+    let rows: Vec<_> = (0..200).map(|_| gap_h(30.0).into_widget()).collect();
+    h.mount_widget(SizedBox::exact(200.0, 200.0, scroll_view(column(rows)).controller(handle.clone())));
+    h.frame();
+    assert_eq!(scroll_offset(&h), 0.0);
+    handle.scroll_to(450.0);
+    h.frame();
+    assert!((scroll_offset(&h) - 450.0).abs() < 0.01, "scroll_to applied: {}", scroll_offset(&h));
+    handle.ensure_visible(3000.0, 3030.0, 0.0);
+    h.frame();
+    assert!(
+        (scroll_offset(&h) - (3030.0 - 200.0)).abs() < 0.01,
+        "ensure_visible applied: {}",
+        scroll_offset(&h)
+    );
+}

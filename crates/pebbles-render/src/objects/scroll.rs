@@ -244,6 +244,9 @@ struct ScrollHandleState {
     offset: f64,
     max: f64,
     viewport: f64,
+    /// The attached scroll view's layout waker (set each layout): a queued move marks it
+    /// for layout, so it applies on the next frame even if nothing else re-renders.
+    wake: Option<(Rc<RefCell<Vec<crate::tree::RenderId>>>, crate::tree::RenderId)>,
 }
 
 impl ScrollHandle {
@@ -266,6 +269,17 @@ impl ScrollHandle {
     /// Jump the offset to `offset` (clamped into range at the next layout).
     pub fn scroll_to(&self, offset: f64) {
         self.0.borrow_mut().pending = Some(offset);
+        self.wake();
+    }
+    /// Mark the attached scroll view for layout (where the queued target is applied).
+    fn wake(&self) {
+        let s = self.0.borrow();
+        if let Some((q, id)) = &s.wake {
+            let mut q = q.borrow_mut();
+            if !q.contains(id) {
+                q.push(*id);
+            }
+        }
     }
     /// Scroll the minimum amount so the span `start..end` (content coordinates along the
     /// scroll axis) is fully visible, keeping `margin` px of breathing room. No-op when it
@@ -288,6 +302,7 @@ impl ScrollHandle {
             return;
         };
         self.0.borrow_mut().pending = Some(target);
+        self.wake();
     }
     /// Publish this frame's metrics and take any pending target (called by `RenderScroll`
     /// during layout). Returns the requested offset, if one was queued.
@@ -870,6 +885,9 @@ impl RenderObject for RenderScroll {
         // so listeners (e.g. a virtualized editor tracking the offset) re-render at the new
         // position. Without this, `scroll_to`/`ensure_visible` would move the offset but any
         // offset-driven rendering would stay stale.
+        if let Some(ctrl) = &self.controller {
+            ctrl.0.borrow_mut().wake = Some(cx.layout_waker());
+        }
         if let Some(ctrl) = &self.controller
             && let Some(t) = ctrl.sync(self.offset, self.max_offset, self.viewport_extent)
         {

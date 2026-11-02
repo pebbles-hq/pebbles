@@ -151,6 +151,10 @@ pub struct RenderTree {
     /// The root constraints the last `layout()` ran under — so an idle frame
     /// (nothing dirty, same window size) can skip the whole pass.
     last_constraints: Option<BoxConstraints>,
+    /// Scroll views whose [`ScrollHandle`](crate::ScrollHandle) queued a programmatic move
+    /// since the last layout: marked dirty at the next `layout()`, so `scroll_to` applies
+    /// even when nothing else changed (Flutter's `jumpTo` marks the viewport for layout).
+    pub(crate) scroll_wake: std::rc::Rc<std::cell::RefCell<Vec<RenderId>>>,
 }
 
 impl RenderTree {
@@ -691,6 +695,10 @@ impl RenderTree {
     /// constraints.
     pub fn layout(&mut self, text: &mut TextEnv, root_constraints: BoxConstraints) {
         let Some(root) = self.root else { return };
+        let woken = std::mem::take(&mut *self.scroll_wake.borrow_mut());
+        for id in woken {
+            self.mark_needs_layout(id);
+        }
         if !self.nodes[root].needs_layout && self.last_constraints == Some(root_constraints) {
             return;
         }

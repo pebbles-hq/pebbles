@@ -17,6 +17,12 @@ pub struct LayoutCx<'a> {
 }
 
 impl LayoutCx<'_> {
+    /// A waker for the object being laid out: pushing its id marks it for layout at the
+    /// tree's next `layout()` (a scroll view's controller uses it for `scroll_to`).
+    pub(crate) fn layout_waker(&self) -> (std::rc::Rc<std::cell::RefCell<Vec<RenderId>>>, RenderId) {
+        (self.tree.scroll_wake.clone(), self.current)
+    }
+
     /// The children of the object currently being laid out, in paint order.
     pub fn children(&self) -> SmallVec<[RenderId; 4]> {
         self.tree.nodes[self.current].children.clone()
