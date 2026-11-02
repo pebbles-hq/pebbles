@@ -140,6 +140,17 @@ impl Harness {
     /// `TextEnv::new()` = bundled + App::font fonts only (deterministic on every OS).
     pub fn new() -> Self {
         init_services();
+        Self::without_init()
+    }
+
+    /// A harness for ANOTHER window of the same app: a fresh `Ui` (its own window id)
+    /// sharing the already-initialised services — the theme, focus manager and overlay
+    /// state are app-wide and must not be reset (what [`new`](Self::new) does).
+    pub fn for_window() -> Self {
+        Self::without_init()
+    }
+
+    fn without_init() -> Self {
         let ui = Ui::new();
         ui_make_current(&ui);
         Harness {
@@ -777,7 +788,7 @@ impl TestWindows {
         use pebbles_widgets::window as w;
         let mut changed = false;
         for spec in w::take_open_requests() {
-            let mut harness = Harness::new().window(f64::from(spec.width), f64::from(spec.height));
+            let mut harness = Harness::for_window().window(f64::from(spec.width), f64::from(spec.height));
             harness.mount_widget(w::window_root(spec.background, spec.root));
             self.focused = spec.id; // a new window takes focus
             self.windows.push(TestWindow {
