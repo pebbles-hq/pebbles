@@ -658,6 +658,19 @@ impl RichText {
         self.set.mark(TextFields::ALL);
         self
     }
+    /// Clamp to at most `n` lines (Flutter `RichText.maxLines`).
+    pub fn max_lines(mut self, n: u32) -> Self {
+        self.base.max_lines = Some(n);
+        self.set.mark(TextFields::MAX_LINES);
+        self
+    }
+    /// Append "…" when the text overflows (Flutter `TextOverflow.ellipsis`); without
+    /// `max_lines` the text is one line.
+    pub fn ellipsis(mut self) -> Self {
+        self.base.ellipsis = true;
+        self.set.mark(TextFields::ELLIPSIS);
+        self
+    }
     /// Disable soft wrapping: lines break only at `\n` (code blocks).
     pub fn soft_wrap(mut self, wrap: bool) -> Self {
         self.base.soft_wrap = wrap;
