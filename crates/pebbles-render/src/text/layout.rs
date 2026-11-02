@@ -234,7 +234,12 @@ impl TextLayout {
         let can_elide = params.ellipsis && !shaped.text.is_empty();
         // Quirk Q-2: max_lines without ellipsis reports the width of every laid-out line.
         let q2 = params.max_lines.is_some() && !params.ellipsis;
-        let mut remaining = params.max_lines.map(|m| m as usize);
+        // Ellipsis without max_lines means ONE line (Skia `SkParagraph`: an ellipsized
+        // paragraph with unlimited lines is clamped to 1; dart:ui `ParagraphStyle.ellipsis`:
+        // "if maxLines is null … further lines are dropped"). Without this, a `.ellipsis()`
+        // label wrapped to several lines and spilled out of fixed-height list rows.
+        let max_lines = params.max_lines.or(params.ellipsis.then_some(1));
+        let mut remaining = max_lines.map(|m| m as usize);
         // Lines kept per kept paragraph (pass 1 decides; re-breaks reuse the counts).
         let mut keep: Vec<usize> = Vec::new();
         let mut q2_width: f32 = 0.0;
@@ -798,6 +803,27 @@ mod tests {
         // No max_lines at all: still one ellipsized line.
         let s = ParagraphStyle { soft_wrap: false, ellipsis: true, ..mono() };
         assert!(lay("GRAVEL-CAPTURE-3", &s, Some(150.0)).is_elided());
+    }
+
+    #[test]
+    fn wrapping_ellipsis_without_max_lines_is_one_line() {
+        // Regression (Gravel lists, 2026-11-02): `text(..).ellipsis()` in a 22px row wrapped to
+        // two lines and overlapped the next row. Skia/dart:ui: ellipsis + unlimited lines = 1.
+        let s = ParagraphStyle { ellipsis: true, ..mono() };
+        let l = lay("aaaa bbbb cccc dddd", &s, Some(100.0));
+        assert_eq!(l.line_count(), 1);
+        assert!(l.is_elided());
+        assert!(near(l.height(), 24.0, 0.001));
+        assert_elided_fits(&l, "aaaa bbbb cccc dddd", 100.0);
+        // Fits: untouched, one line.
+        let l = lay("aaaa", &s, Some(100.0));
+        assert_eq!(l.line_count(), 1);
+        assert!(!l.is_elided());
+        // Multibyte text: cut on a grapheme boundary.
+        let src = "café naïve 日本語 ✓ ünïcode";
+        let l = lay(src, &s, Some(100.0));
+        assert_eq!(l.line_count(), 1);
+        assert_elided_fits(&l, src, 100.0);
     }
 
     #[test]

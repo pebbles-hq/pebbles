@@ -287,7 +287,8 @@ impl Text {
         self.set.mark(TextFields::MAX_LINES);
         self
     }
-    /// With `max_lines`, append "…" to the last line when the text overflows.
+    /// Append "…" to the last line when the text overflows. Without `max_lines` the text
+    /// is ONE line (Flutter/Skia: an ellipsized paragraph with unlimited lines is clamped to 1).
     pub fn ellipsis(mut self) -> Self {
         self.style.ellipsis = true;
         self.set.mark(TextFields::ELLIPSIS);
