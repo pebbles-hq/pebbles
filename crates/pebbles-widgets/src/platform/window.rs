@@ -383,11 +383,14 @@ impl Window {
 /// every theme change) unless the window set an explicit one.
 pub fn window_root(background: Option<Color>, content: AnyWidget) -> AnyWidget {
     let hosted = crate::OverlayHost::wrap(content).into_widget();
-    pebbles_core::component::component_props(render_window_root, (background, hosted)).into_widget()
+    // The root must be a render widget (`View`); the theme-following fill is a component
+    // under it, so a theme change repaints the window's background.
+    let fill = pebbles_core::component::component_props(render_window_fill, (background, hosted));
+    crate::View::new(WindowSpec::resolve_background(background), fill).into_widget()
 }
 
-fn render_window_root(p: &(Option<Color>, AnyWidget)) -> crate::View {
-    crate::View::new(WindowSpec::resolve_background(p.0), p.1.clone())
+fn render_window_fill(p: &(Option<Color>, AnyWidget)) -> AnyWidget {
+    crate::container().color(WindowSpec::resolve_background(p.0)).child(p.1.clone()).into_widget()
 }
 
 /// Release everything the framework holds for a closed window in the shared

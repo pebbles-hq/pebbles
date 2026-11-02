@@ -1773,6 +1773,9 @@ mod tests {
         assert_eq!(child.size, (700, 500));
         child.harness.frames(1);
         assert!(child.harness.find_text("child 0"));
+        // The window's render tree has a root (a component root would leave it unset:
+        // nothing painted, no semantics).
+        assert!(!child.harness.ui.render_tree().debug_dump().is_empty(), "no render root");
         // A write in the child window repaints the main window (one reactive runtime).
         shared().set(5);
         wins.get(id).unwrap().harness.frames(1);
