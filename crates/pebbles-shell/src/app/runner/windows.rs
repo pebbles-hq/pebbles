@@ -24,14 +24,11 @@ impl Runner {
                 event_loop.exit();
                 continue;
             }
-            pebbles_widgets::window::forget_close_handler(id);
-            if let Some(wid) = self.window_by_id.remove(&id)
-                && let Some(w) = self.windows.remove(&wid)
-            {
-                if let Some(f) = &w.on_close {
-                    f();
-                }
-                self.release_window(w.window);
+            if let Some(wid) = self.window_by_id.get(&id).copied() {
+                self.close_secondary(wid);
+            } else {
+                // Never brought up (or already gone): still report it closed.
+                pebbles_widgets::window::window_closed(id);
             }
         }
         // Runtime window changes (set_title / maximize / minimize / move / …).
@@ -213,13 +210,17 @@ impl Runner {
                     pebbles_core::log::Cat::General,
                     format!("could not open a secondary window: {e}"),
                 );
+                open_failed(&spec);
                 return;
             }
         };
         window.set_ime_allowed(true); // enable IME composition on secondary windows too
         let physical = window.inner_size();
         // 08 §17.5: the surface is created here (the UI thread) and adopted by the sink.
-        let Some(sink) = self.sink.as_mut() else { return };
+        let Some(sink) = self.sink.as_mut() else {
+            open_failed(&spec);
+            return;
+        };
         let size = (physical.width.max(1), physical.height.max(1));
         let added = sink
             .instance()
@@ -231,6 +232,7 @@ impl Runner {
                 pebbles_core::log::Cat::General,
                 format!("could not create a GPU surface for a secondary window: {e}"),
             );
+            open_failed(&spec);
             return;
         }
         // A fresh Ui → a fresh window_id in the shared runtime. Wrap the root in an
@@ -238,9 +240,10 @@ impl Runner {
         // + dialog signals are namespaced per window id).
         let mut ui = Ui::new();
         ui.make_current(); // so lazily-created per-window overlay signals key to this window
-        let root = pebbles_widgets::OverlayHost::wrap(spec.root).into_widget();
-        ui.mount_root(View::new(spec.background, root).into_widget());
+        ui.mount_root(pebbles_widgets::window::window_root(spec.background, spec.root));
         let wid = window.id();
+        publish_bounds(spec.id, &window);
+        publish_state(spec.id, &window);
         redraw::request(&window);
         self.window_by_id.insert(spec.id, wid);
         self.windows.insert(
@@ -259,6 +262,12 @@ impl Runner {
                 current_cursor: Cursor::Default,
                 on_close: spec.on_close,
                 occlusion: frame::Occlusion::default(),
+                buttons: 0,
+                move_target: None,
+                click_count: 0,
+                last_click: None,
+                last_tap_target: None,
+                secondary_down_handled: false,
             },
         );
     }
@@ -286,35 +295,48 @@ impl Runner {
                 redraw::request(&w.window);
             }
             WindowEvent::CloseRequested => {
-                pebbles_widgets::window::forget_close_handler(w.id);
+                teardown(&mut w);
                 self.window_by_id.remove(&w.id);
-                if let Some(f) = &w.on_close {
-                    f();
-                }
-                // Tear the window's tree out of the shared runtime (cleanups stop its
-                // loops/timers; its signals are freed) and drop its per-window
-                // overlay/dialog/sheet/toast state. Window ids are never reused, so
-                // this is the only chance — skipping it leaked the whole tree per
-                // open/close, and any surviving `create_loop` (a spinner, a focused
-                // field's caret) kept every remaining window redrawing at full rate
-                // forever.
-                w.ui.dispose();
-                pebbles_widgets::window::drop_window_state(w.ui.window_id());
                 keep = false;
             }
             // P12: the main window's size / scale / occlusion / focus rules, for this window.
             WindowEvent::Resized(size) => {
-                secondary_lifecycle(&mut w, Lifecycle::Resized(size.width, size.height))
+                secondary_lifecycle(&mut w, Lifecycle::Resized(size.width, size.height));
+                publish_bounds(w.id, &w.window);
+                publish_state(w.id, &w.window);
+            }
+            WindowEvent::Moved(_) => publish_bounds(w.id, &w.window),
+            // The OS light/dark setting changed (ThemeMode::System follows it).
+            WindowEvent::ThemeChanged(t) => {
+                pebbles_widgets::theme::set_platform_brightness(platform_brightness(Some(t)));
+                redraw::request(&w.window);
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 secondary_lifecycle(&mut w, Lifecycle::ScaleFactorChanged)
             }
             WindowEvent::Occluded(occluded) => secondary_lifecycle(&mut w, Lifecycle::Occluded(occluded)),
-            WindowEvent::Focused(focused) => secondary_lifecycle(&mut w, Lifecycle::Focused(focused)),
+            WindowEvent::Focused(focused) => {
+                secondary_lifecycle(&mut w, Lifecycle::Focused(focused));
+                publish_state(w.id, &w.window);
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 let scale = w.window.scale_factor();
+                let prev = w.cursor;
                 w.cursor = Offset::new(position.x / scale, position.y / scale);
                 if pebbles_widgets::file_drop::move_to(w.cursor) {
+                    redraw::request(&w.window);
+                }
+                // A scrollbar drag captures the pointer (as on the main window).
+                if w.ui.scrollbar_dragging() {
+                    if w.ui.update_scrollbar_drag(w.cursor) {
+                        redraw::request(&w.window);
+                    }
+                    self.windows.insert(window_id, w);
+                    return;
+                }
+                if let Some(t) = w.move_target
+                    && w.ui.dispatch_pointer_move(t, w.cursor, prev, w.buttons)
+                {
                     redraw::request(&w.window);
                 }
                 if w.ui.dispatch_hover(w.cursor) {
@@ -349,39 +371,12 @@ impl Runner {
                     redraw::request(&w.window);
                 }
             }
-            WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => {
-                let cursor = w.cursor;
-                let handled = match state {
-                    ElementState::Pressed => {
-                        pebbles_core::focus::set_focus(None);
-                        w.armed_tap = w.ui.tap_target_at(cursor);
-                        // A drag-scroll viewport claims the drag first (A4); a
-                        // pan-hungry descendant under the pointer wins instead.
-                        let claimed = w.ui.begin_content_drag(cursor);
-                        // The pan stays a candidate until the pointer moves past the slop.
-                        let target = if claimed { None } else { w.ui.pan_target_at(cursor) };
-                        w.pan.press(target, cursor, pebbles_core::pan::MOUSE_PAN_SLOP);
-                        w.ui.dispatch_pointer_down(cursor) || claimed
-                    }
-                    ElementState::Released => {
-                        let drag_ended = w.ui.end_content_drag(cursor);
-                        w.pan.release(&mut w.ui, cursor);
-                        let up = w.ui.dispatch_pointer_up(cursor);
-                        let up_target = w.ui.tap_target_at(cursor);
-                        let armed = w.armed_tap.take();
-                        let tapped = if up_target.is_some() && up_target == armed {
-                            w.ui.dispatch_tap(cursor)
-                        } else if let Some(a) = armed {
-                            w.ui.dispatch_tap_cancel(a)
-                        } else {
-                            false
-                        };
-                        sync_window_cursor(&mut w);
-                        up || tapped || drag_ended
-                    }
-                };
-                if handled {
+            WindowEvent::MouseInput { state, button, .. } => {
+                if secondary_pointer(&mut w, button, state) {
                     redraw::request(&w.window);
+                }
+                if state == ElementState::Released {
+                    sync_window_cursor(&mut w);
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => {
@@ -409,51 +404,10 @@ impl Runner {
                     if w.ui.dispatch_key_event(&raw) == pebbles_core::KeyEventResult::Handled {
                         redraw::request(&w.window);
                     }
-                } else if event.state == ElementState::Pressed {
-                    // Escape, topmost-first (mirrors the main window): a transient
-                    // overlay (menu/popover/dropdown/date-time picker) closes before
-                    // any modal, then the topmost modal (dialog vs sheet) — so Escape
-                    // can't close a modal underneath a floating menu.
-                    if event.logical_key == Key::Named(NamedKey::Escape) {
-                        let mut consumed = false;
-                        if pebbles_widgets::overlay::is_open() {
-                            pebbles_widgets::overlay::hide_overlay();
-                            consumed = true;
-                        } else if pebbles_widgets::dialog::is_open() || pebbles_widgets::sheet::is_open() {
-                            pebbles_widgets::overlay::dismiss_topmost_modal();
-                            consumed = true;
-                        }
-                        if consumed {
-                            redraw::request(&w.window);
-                            if keep {
-                                self.windows.insert(window_id, w);
-                            }
-                            return;
-                        }
-                    }
-                    // B2 precedence: raw key handler → focused editor → shortcuts → Tab
-                    // → activation.
-                    let intent = raw.intent();
-                    // Ordered precedence: each branch's condition has an essential side
-                    // effect (dispatch), so the identical `true` arms must stay separate.
-                    #[allow(clippy::if_same_then_else)]
-                    let handled = if w.ui.dispatch_key_event(&raw) == pebbles_core::KeyEventResult::Handled
-                        || intent.is_some_and(|ki| w.ui.dispatch_key(ki))
-                    {
-                        true
-                    } else if pebbles_core::shortcuts::dispatch_key_event(w.ui.window_id(), &raw) {
-                        true
-                    } else if event.logical_key == Key::Named(NamedKey::Tab) {
-                        w.ui.focus_move(!self.shift_down)
-                    } else {
-                        matches!(
-                            event.logical_key.as_ref(),
-                            Key::Named(NamedKey::Enter | NamedKey::Space) | Key::Character(" ")
-                        ) && w.ui.dispatch_activate()
-                    };
-                    if handled {
-                        redraw::request(&w.window);
-                    }
+                } else if event.state == ElementState::Pressed
+                    && route_key_press(&mut w.ui, &event, mods, w.cursor).is_some()
+                {
+                    redraw::request(&w.window);
                 }
             }
             WindowEvent::Ime(ime) => {
@@ -473,6 +427,24 @@ impl Runner {
             self.windows.insert(window_id, w);
         } else {
             self.release_window(w.window);
+        }
+    }
+
+    /// Close secondary window `wid` now (programmatic close / app exit): its `on_close`
+    /// runs, its tree leaves the shared runtime, its per-window state is dropped.
+    fn close_secondary(&mut self, wid: WindowId) {
+        if let Some(mut w) = self.windows.remove(&wid) {
+            self.window_by_id.remove(&w.id);
+            teardown(&mut w);
+            self.release_window(w.window);
+        }
+    }
+
+    /// Close every secondary window (the app is exiting).
+    pub(super) fn close_all_secondaries(&mut self) {
+        let ids: Vec<WindowId> = self.windows.keys().copied().collect();
+        for wid in ids {
+            self.close_secondary(wid);
         }
     }
 
@@ -521,4 +493,140 @@ fn resize_direction(edge: pebbles_widgets::window::ResizeEdge) -> winit::window:
         E::SouthEast => D::SouthEast,
         E::SouthWest => D::SouthWest,
     }
+}
+
+/// Everything a closing secondary window releases, in order: `on_close` (bounds are still
+/// readable there), the tree's disposal (cleanups stop its loops/timers; window ids are
+/// never reused, so skipping this leaks the tree and keeps every window redrawing), the
+/// per-window overlay/dialog/sheet/toast state, then the open flag / bounds / handler.
+fn teardown(w: &mut WindowRuntime) {
+    w.ui.make_current();
+    if let Some(f) = w.on_close.take() {
+        f();
+    }
+    w.ui.dispose();
+    pebbles_widgets::window::drop_window_state(w.ui.window_id());
+    pebbles_widgets::window::window_closed(w.id);
+}
+
+/// A window that never came up still "closes", so app state waiting on it resets.
+#[cfg(not(target_family = "wasm"))]
+fn open_failed(spec: &pebbles_widgets::window::WindowSpec) {
+    if let Some(f) = &spec.on_close {
+        f();
+    }
+    pebbles_widgets::window::window_closed(spec.id);
+}
+
+/// Publish a window's position + inner size (logical px) for apps to save.
+#[cfg(not(target_family = "wasm"))]
+fn publish_bounds(id: u64, window: &Window) {
+    let scale = window.scale_factor();
+    let size = window.inner_size().to_logical::<f64>(scale);
+    let pos = window.outer_position().map(|p| p.to_logical::<f64>(scale)).unwrap_or_default();
+    if size.width < 1.0 || size.height < 1.0 {
+        return; // minimised: keep the last real size
+    }
+    pebbles_widgets::window::set_window_bounds(
+        id,
+        pebbles_widgets::window::WindowBounds {
+            x: pos.x.round() as i32,
+            y: pos.y.round() as i32,
+            width: size.width.round() as u32,
+            height: size.height.round() as u32,
+        },
+    );
+}
+#[cfg(target_family = "wasm")]
+fn publish_bounds(_id: u64, _window: &Window) {}
+
+/// Publish a secondary window's maximised / full-screen / minimised / focused state
+/// (`window::window_state(id)`), as the main window does — app-drawn title bars read it.
+fn publish_state(id: u64, w: &Window) {
+    pebbles_widgets::window::set_window_state(
+        id,
+        pebbles_widgets::window::WindowState {
+            maximized: w.is_maximized(),
+            fullscreen: w.fullscreen().is_some(),
+            minimized: w.is_minimized().unwrap_or(false),
+            focused: w.has_focus(),
+        },
+    );
+}
+
+/// A mouse button on a secondary window, with the main window's semantics: raw button
+/// listeners for every button, scrollbar grabs, pan / content drag, tap / double /
+/// triple tap, secondary (context-menu) and tertiary taps.
+fn secondary_pointer(w: &mut WindowRuntime, button: MouseButton, state: ElementState) -> bool {
+    let cursor = w.cursor;
+    let pressed = state == ElementState::Pressed;
+    if button == MouseButton::Left && pressed && !w.ui.over_scrollbar(cursor) {
+        pebbles_core::focus::set_focus(None);
+    }
+    let raw = pointer_button(button).is_some_and(|b| {
+        let bit = pebbles_render::PointerEvent::bit(b);
+        if pressed {
+            if w.buttons == 0 {
+                w.move_target = w.ui.pointer_move_target_at(cursor);
+            }
+            w.buttons |= bit;
+            w.ui.dispatch_button_down(cursor, b, w.buttons)
+        } else {
+            w.buttons &= !bit;
+            if w.buttons == 0 {
+                w.move_target = None;
+            }
+            w.ui.dispatch_button_up(cursor, b, w.buttons)
+        }
+    });
+    let gesture = match (button, state) {
+        (MouseButton::Left, ElementState::Pressed) if w.ui.begin_scrollbar_drag(cursor) => true,
+        (MouseButton::Left, ElementState::Pressed) => {
+            w.armed_tap = w.ui.tap_target_at(cursor);
+            let claimed = w.ui.begin_content_drag(cursor);
+            let target = if claimed { None } else { w.ui.pan_target_at(cursor) };
+            w.pan.press(target, cursor, pebbles_core::pan::MOUSE_PAN_SLOP);
+            w.ui.dispatch_pointer_down(cursor) || claimed
+        }
+        (MouseButton::Left, ElementState::Released) => {
+            w.ui.end_scrollbar_drag();
+            let drag_ended = w.ui.end_content_drag(cursor);
+            w.pan.release(&mut w.ui, cursor);
+            let up = w.ui.dispatch_pointer_up(cursor);
+            let up_target = w.ui.tap_target_at(cursor);
+            let armed = w.armed_tap.take();
+            let tapped = if up_target.is_some() && up_target == armed {
+                let now = Instant::now();
+                let within = w.last_tap_target == up_target
+                    && w.last_click.is_some_and(|t| now.duration_since(t) <= DOUBLE_CLICK);
+                w.click_count = if within { (w.click_count % 3) + 1 } else { 1 };
+                w.last_click = Some(now);
+                w.last_tap_target = up_target;
+                let multi = match w.click_count {
+                    3 => w.ui.dispatch_triple_tap(cursor),
+                    2 => w.ui.dispatch_double_tap(cursor),
+                    _ => false,
+                };
+                multi || w.ui.dispatch_tap(cursor)
+            } else if let Some(a) = armed {
+                w.ui.dispatch_tap_cancel(a)
+            } else {
+                false
+            };
+            up || tapped || drag_ended
+        }
+        (MouseButton::Right, ElementState::Pressed) => {
+            w.secondary_down_handled = w.ui.dispatch_secondary_tap_down(cursor);
+            w.secondary_down_handled
+        }
+        (MouseButton::Right, ElementState::Released) => {
+            let up = w.ui.dispatch_secondary_tap_up(cursor);
+            let tap = w.ui.dispatch_secondary_tap(cursor);
+            up || tap
+        }
+        (MouseButton::Middle, ElementState::Pressed) => w.ui.dispatch_tertiary_down(cursor),
+        (MouseButton::Middle, ElementState::Released) => w.ui.dispatch_tertiary_up(cursor),
+        _ => false,
+    };
+    gesture || raw
 }

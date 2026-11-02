@@ -740,6 +740,126 @@ fn ui_make_current(ui: &Ui) {
     ui.make_current();
 }
 
+/// One headless secondary window opened through `pebbles_widgets::window::window(..)`.
+pub struct TestWindow {
+    pub id: pebbles_widgets::window::WindowId,
+    pub title: String,
+    /// Requested logical size (what the OS window would open at).
+    pub size: (u32, u32),
+    pub min_size: Option<(u32, u32)>,
+    pub position: Option<(i32, i32)>,
+    pub decorations: bool,
+    /// The window's own `Ui`, mounted exactly as the shell mounts it.
+    pub harness: Harness,
+    on_close: Option<std::rc::Rc<dyn Fn()>>,
+}
+
+/// Headless stand-in for the shell's secondary-window manager: drains the window queues
+/// the way the desktop shell does each turn (open → a fresh `Ui` with the shell's root
+/// wrapping; close → `on_close`, tree disposal, per-window state dropped; commands
+/// recorded, `Focus` tracked) — so multi-window flows are testable without an OS window.
+#[derive(Default)]
+pub struct TestWindows {
+    pub windows: Vec<TestWindow>,
+    /// Every runtime command drained so far (title / focus / size / …), in order.
+    pub commands: Vec<pebbles_widgets::window::WindowCommand>,
+    /// The window last focused through `focus_window` (`MAIN_WINDOW` = 0 by default).
+    pub focused: pebbles_widgets::window::WindowId,
+}
+
+impl TestWindows {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Apply queued open / close / command requests. Returns whether anything changed.
+    pub fn pump(&mut self) -> bool {
+        use pebbles_widgets::window as w;
+        let mut changed = false;
+        for spec in w::take_open_requests() {
+            let mut harness = Harness::new().window(f64::from(spec.width), f64::from(spec.height));
+            harness.mount_widget(w::window_root(spec.background, spec.root));
+            self.focused = spec.id; // a new window takes focus
+            self.windows.push(TestWindow {
+                id: spec.id,
+                title: spec.title,
+                size: (spec.width, spec.height),
+                min_size: spec.min_size,
+                position: spec.position,
+                decorations: spec.decorations,
+                harness,
+                on_close: spec.on_close,
+            });
+            changed = true;
+        }
+        for id in w::take_close_requests() {
+            if id == w::MAIN_WINDOW {
+                self.quit();
+            } else {
+                self.close_now(id);
+            }
+            changed = true;
+        }
+        for cmd in w::take_window_commands() {
+            match &cmd {
+                w::WindowCommand::Focus(id) => self.focused = *id,
+                w::WindowCommand::SetTitle(id, t) => {
+                    if let Some(win) = self.windows.iter_mut().find(|x| x.id == *id) {
+                        win.title = t.clone();
+                    }
+                }
+                _ => {}
+            }
+            self.commands.push(cmd);
+            changed = true;
+        }
+        if self.focused != w::MAIN_WINDOW && !self.windows.iter().any(|x| x.id == self.focused) {
+            self.focused = w::MAIN_WINDOW;
+        }
+        changed
+    }
+
+    /// The user clicked the window's OS close control: its `on_close_requested` decides.
+    pub fn request_close(&mut self, id: pebbles_widgets::window::WindowId) {
+        if pebbles_widgets::window::close_requested(id) {
+            self.close_now(id);
+        }
+    }
+
+    /// The app quit: every secondary window closes (as the shell's `exiting`).
+    pub fn quit(&mut self) {
+        let ids: Vec<_> = self.windows.iter().map(|x| x.id).collect();
+        for id in ids {
+            self.close_now(id);
+        }
+    }
+
+    fn close_now(&mut self, id: pebbles_widgets::window::WindowId) {
+        use pebbles_widgets::window as w;
+        if let Some(i) = self.windows.iter().position(|x| x.id == id) {
+            let mut win = self.windows.remove(i);
+            win.harness.ui.make_current();
+            if let Some(f) = win.on_close.take() {
+                f();
+            }
+            let ui_window = win.harness.ui.window_id();
+            drop(win); // disposes the tree
+            w::drop_window_state(ui_window);
+        }
+        w::window_closed(id);
+    }
+
+    /// The open window `id`.
+    pub fn get(&mut self, id: pebbles_widgets::window::WindowId) -> Option<&mut TestWindow> {
+        self.windows.iter_mut().find(|x| x.id == id)
+    }
+
+    /// The open window titled `title`.
+    pub fn by_title(&mut self, title: &str) -> Option<&mut TestWindow> {
+        self.windows.iter_mut().find(|x| x.title == title)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! The harness asserting things about ITSELF (§3 blocker): a mounted tree draws
@@ -1598,5 +1718,70 @@ mod tests {
                 .map(String::from)
                 .to_vec()
         );
+    }
+
+    thread_local! {
+        static SHARED: Cell<Option<Signal<i32>>> = const { Cell::new(None) };
+    }
+
+    fn shared() -> Signal<i32> {
+        SHARED.with(|c| {
+            if c.get().is_none() {
+                c.set(Some(pebbles_core::create_root_signal(0)));
+            }
+            c.get().unwrap()
+        })
+    }
+
+    fn child_root() -> impl IntoWidget {
+        text(format!("child {}", shared().get()))
+    }
+
+    fn main_root() -> impl IntoWidget {
+        text(format!("main {}", shared().get()))
+    }
+
+    #[test]
+    fn secondary_windows_open_sync_close_and_quit() {
+        use pebbles_widgets::window as w;
+        let mut main = Harness::new();
+        main.mount(main_root);
+        main.frames(1);
+        let mut wins = super::TestWindows::new();
+        let closed = std::rc::Rc::new(Cell::new(0));
+        let c = closed.clone();
+        let id = w::window(component(child_root))
+            .title("Child")
+            .size(700, 500)
+            .on_close(move || c.set(c.get() + 1))
+            .open();
+        assert!(wins.pump());
+        assert!(w::is_window_open(id));
+        assert_eq!(wins.focused, id);
+        let child = wins.get(id).unwrap();
+        assert_eq!(child.size, (700, 500));
+        child.harness.frames(1);
+        assert!(child.harness.find_text("child 0"));
+        // A write in the child window repaints the main window (one reactive runtime).
+        shared().set(5);
+        wins.get(id).unwrap().harness.frames(1);
+        main.frames(1);
+        assert!(main.find_text("main 5"));
+        assert!(wins.get(id).unwrap().harness.find_text("child 5"));
+        // Focus / programmatic close run on_close and forget the window.
+        w::focus_window(w::MAIN_WINDOW);
+        wins.pump();
+        assert_eq!(wins.focused, w::MAIN_WINDOW);
+        w::close_window(id);
+        wins.pump();
+        assert_eq!(closed.get(), 1);
+        assert!(!w::is_window_open(id));
+        // Quit closes every child.
+        let a = w::window(component(child_root)).open();
+        let b = w::window(component(child_root)).open();
+        wins.pump();
+        wins.quit();
+        assert!(!w::is_window_open(a) && !w::is_window_open(b));
+        assert!(wins.windows.is_empty());
     }
 }

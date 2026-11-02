@@ -52,8 +52,17 @@ pub struct WindowSpec {
     /// Whether the OS draws the title bar / borders (default `true`).
     pub decorations: bool,
     pub icon: Option<WindowIcon>,
-    pub background: Color,
+    /// The clear colour behind the root. `None` (the default) follows the theme's
+    /// background each frame, so a theme switch in any window repaints this one too.
+    pub background: Option<Color>,
     pub on_close: Option<Rc<dyn Fn()>>,
+}
+
+impl WindowSpec {
+    /// The clear colour this frame: the explicit background, else the current theme's.
+    pub fn resolve_background(background: Option<Color>) -> Color {
+        background.unwrap_or_else(|| theme().colors.background)
+    }
 }
 
 /// A runtime change to an already-open window (drained by the shell each turn).
@@ -147,6 +156,10 @@ thread_local! {
     static OPEN_QUEUE: RefCell<Vec<WindowSpec>> = const { RefCell::new(Vec::new()) };
     static CLOSE_QUEUE: RefCell<Vec<WindowId>> = const { RefCell::new(Vec::new()) };
     static CMD_QUEUE: RefCell<Vec<WindowCommand>> = const { RefCell::new(Vec::new()) };
+    static OPEN_IDS: RefCell<std::collections::BTreeSet<WindowId>> =
+        const { RefCell::new(std::collections::BTreeSet::new()) };
+    static BOUNDS: RefCell<std::collections::HashMap<WindowId, WindowBounds>> =
+        RefCell::new(std::collections::HashMap::new());
     static CLOSE_HANDLERS: RefCell<std::collections::HashMap<WindowId, CloseHandler>> =
         RefCell::new(std::collections::HashMap::new());
 }
@@ -355,12 +368,26 @@ impl Window {
                 maximized: self.maximized,
                 decorations: self.decorations,
                 icon: self.icon,
-                background: self.background.unwrap_or_else(|| theme().colors.background),
+                background: self.background,
                 on_close: self.on_close,
             })
         });
+        OPEN_IDS.with(|o| o.borrow_mut().insert(id));
         id
     }
+}
+
+/// The tree a secondary window mounts (the shell and test harnesses both use it): an
+/// [`OverlayHost`](crate::OverlayHost) so the window has its own popover / menu / dialog
+/// layer, inside a [`View`](crate::View) whose background follows the theme (re-read on
+/// every theme change) unless the window set an explicit one.
+pub fn window_root(background: Option<Color>, content: AnyWidget) -> AnyWidget {
+    let hosted = crate::OverlayHost::wrap(content).into_widget();
+    pebbles_core::component::component_props(render_window_root, (background, hosted)).into_widget()
+}
+
+fn render_window_root(p: &(Option<Color>, AnyWidget)) -> crate::View {
+    crate::View::new(WindowSpec::resolve_background(p.0), p.1.clone())
 }
 
 /// Release everything the framework holds for a closed window in the shared
@@ -374,6 +401,59 @@ pub fn drop_window_state(window: u32) {
     crate::sheet::drop_window(window);
     crate::toast::drop_window(window);
     crate::widgets::drop_window_metrics(window);
+}
+
+/// Whether the secondary window `id` is open: `true` from [`Window::open`] until it is
+/// closed (by the user, [`close_window`], the app quitting, or a failed bring-up). Use it
+/// for one-instance windows: re-opening focuses the existing one ([`focus_window`]).
+pub fn is_window_open(id: WindowId) -> bool {
+    OPEN_IDS.with(|o| o.borrow().contains(&id))
+}
+
+/// The open secondary windows, oldest first.
+pub fn open_windows() -> Vec<WindowId> {
+    OPEN_IDS.with(|o| o.borrow().iter().copied().collect())
+}
+
+/// Request that every open secondary window close (each runs its `on_close`) — e.g.
+/// before the app quits. The shell also closes them all when the main window exits.
+pub fn close_all_windows() {
+    for id in open_windows() {
+        close_window(id);
+    }
+}
+
+/// A window's outer top-left position and inner size, in logical px — what an app saves
+/// to reopen a window where the user left it (VS Code's `window.restoreWindows` state).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WindowBounds {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// The last bounds the shell reported for window `id` (also [`MAIN_WINDOW`]); `None`
+/// before the first report. Still readable inside the window's `on_close`.
+pub fn window_bounds(id: WindowId) -> Option<WindowBounds> {
+    BOUNDS.with(|b| b.borrow().get(&id).copied())
+}
+
+/// Shell (and tests): record a window's bounds after it moved or resized.
+pub fn set_window_bounds(id: WindowId, bounds: WindowBounds) {
+    BOUNDS.with(|b| b.borrow_mut().insert(id, bounds));
+}
+
+/// Shell (and tests): the secondary window `id` is gone — forget its open flag, bounds,
+/// published state and close handler. Call after its `on_close` ran.
+pub fn window_closed(id: WindowId) {
+    if id == MAIN_WINDOW {
+        return;
+    }
+    OPEN_IDS.with(|o| o.borrow_mut().remove(&id));
+    BOUNDS.with(|b| b.borrow_mut().remove(&id));
+    STATES.with(|m| m.borrow_mut().remove(&id));
+    forget_close_handler(id);
 }
 
 /// Request that the window with `id` be closed.
@@ -576,5 +656,28 @@ mod close_request_tests {
         assert!(close_requested(other));
         forget_close_handler(id);
         assert!(close_requested(id));
+    }
+
+    #[test]
+    fn open_flag_bounds_and_close_all() {
+        let a = window(crate::spacer()).open();
+        let b = window(crate::spacer()).open();
+        let specs = take_open_requests();
+        assert_eq!(specs.len(), 2);
+        assert!(specs.iter().all(|s| s.background.is_none()), "theme-following by default");
+        assert!(is_window_open(a) && is_window_open(b));
+        assert!(!is_window_open(MAIN_WINDOW));
+        let bounds = WindowBounds { x: 10, y: 20, width: 800, height: 600 };
+        set_window_bounds(a, bounds);
+        assert_eq!(window_bounds(a), Some(bounds));
+        let _ = take_close_requests();
+        close_all_windows();
+        let closing = take_close_requests();
+        assert!(closing.contains(&a) && closing.contains(&b));
+        window_closed(a);
+        assert!(!is_window_open(a) && is_window_open(b));
+        assert_eq!(window_bounds(a), None);
+        window_closed(b);
+        assert!(open_windows().iter().all(|w| *w != a && *w != b));
     }
 }

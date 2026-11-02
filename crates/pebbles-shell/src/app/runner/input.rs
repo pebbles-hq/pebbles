@@ -315,6 +315,86 @@ fn shortcut_key_for(key: Key<&str>, physical: PhysicalKey) -> Option<pebbles_cor
     pebbles_core::keyboard::shortcut_key_for(&logical_key(key), &physical_key(physical))
 }
 
+/// Route one key PRESS through a window's UI — the single precedence every window uses
+/// (the main window and every secondary window, so a dialog-like secondary window types,
+/// tabs, formats and scrolls exactly like the main one):
+///
+/// 1. Escape closes the topmost transient overlay (menu / popover / dropdown);
+/// 2. the focused widget's raw `on_key_event` (Flutter `Focus.onKeyEvent`);
+/// 3. Shift+Alt+F formats the focused code editor;
+/// 4. Escape dismisses the topmost modal (and is consumed while any modal is open);
+/// 5. the editing intent to the focused editor (Ctrl, plus ⌘ on macOS);
+/// 6. the window's shortcuts (logical, then physical);
+/// 7. Tab: indent in a focused code editor, otherwise focus traversal;
+/// 8. Enter / Space activation of the focused control;
+/// 9. scroll keys for the view under the pointer.
+///
+/// The caller makes the window's `Ui` current first. Returns the stage that consumed the
+/// key (`None` = unhandled).
+pub(super) fn route_key_press(
+    ui: &mut Ui,
+    event: &KeyEvent,
+    mods: pebbles_core::Mods,
+    cursor: Offset,
+) -> Option<&'static str> {
+    let escape = event.logical_key == Key::Named(NamedKey::Escape);
+    if escape && pebbles_widgets::overlay::is_open() {
+        pebbles_widgets::overlay::hide_overlay();
+        return Some("overlay");
+    }
+    let raw = to_key_event(event, mods);
+    if ui.dispatch_key_event(&raw) == pebbles_core::KeyEventResult::Handled {
+        return Some("raw");
+    }
+    if to_shortcut_key(event).and_then(|sk| editor_chord_intent(mods, sk, false)) == Some(KeyInput::Format)
+        && ui.dispatch_key(KeyInput::Format)
+    {
+        return Some("format");
+    }
+    if escape && (pebbles_widgets::dialog::is_open() || pebbles_widgets::sheet::is_open()) {
+        pebbles_widgets::overlay::dismiss_topmost_modal();
+        return Some("modal");
+    }
+    let cmd = mods.ctrl || (cfg!(target_os = "macos") && mods.meta);
+    if to_command(event, cmd, mods.shift).is_some_and(|ki| ui.dispatch_key(ki)) {
+        return Some("editor");
+    }
+    if pebbles_core::shortcuts::dispatch_key_event(ui.window_id(), &raw) {
+        return Some("shortcut");
+    }
+    if event.logical_key == Key::Named(NamedKey::Tab) {
+        let wants_tab = pebbles_core::focus::focused_wants_tab();
+        return Some(match editor_chord_intent(mods, pebbles_core::ShortcutKey::Tab, wants_tab) {
+            Some(ki) => {
+                ui.dispatch_key(ki);
+                "editor-indent"
+            }
+            None => {
+                ui.focus_move(!mods.shift);
+                "focus-move"
+            }
+        });
+    }
+    if matches!(
+        event.logical_key.as_ref(),
+        Key::Named(NamedKey::Enter | NamedKey::Space) | Key::Character(" ")
+    ) && ui.dispatch_activate()
+    {
+        return Some("activate");
+    }
+    let scrolled = match event.logical_key.as_ref() {
+        Key::Named(NamedKey::PageDown) => ui.scroll_page(cursor, 1.0),
+        Key::Named(NamedKey::PageUp) => ui.scroll_page(cursor, -1.0),
+        Key::Named(NamedKey::Home) => ui.scroll_to_end(cursor, false),
+        Key::Named(NamedKey::End) => ui.scroll_to_end(cursor, true),
+        Key::Named(NamedKey::ArrowDown) => ui.scroll_line(cursor, 1.0),
+        Key::Named(NamedKey::ArrowUp) => ui.scroll_line(cursor, -1.0),
+        Key::Named(NamedKey::Space) => ui.scroll_page(cursor, if mods.shift { -1.0 } else { 1.0 }),
+        _ => false,
+    };
+    scrolled.then_some("scroll")
+}
+
 #[cfg(test)]
 mod tests {
     //! The editor shortcut wiring, tested at the pure-mapping layer. A real

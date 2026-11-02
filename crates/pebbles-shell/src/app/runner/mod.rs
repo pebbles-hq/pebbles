@@ -45,8 +45,8 @@ mod storm;
 mod windows;
 
 use input::{
-    cursor_update, editor_chord_intent, file_drop_event, log_wheel, pointer_button, scroll_signal,
-    to_command, to_key_event, to_shortcut_key, to_winit_cursor, wheel_with_overlay,
+    cursor_update, file_drop_event, log_wheel, pointer_button, route_key_press, scroll_signal, to_key_event,
+    to_shortcut_key, to_winit_cursor, wheel_with_overlay,
 };
 
 /// Max interval between two primary clicks to count as a double-tap.
@@ -197,12 +197,21 @@ struct WindowRuntime {
     /// Live-resize sync (08 §17.4).
     resize_sync: ResizeSync,
     ui: Ui,
-    background: Color,
+    /// Explicit clear colour, or `None` = the theme's background, re-read every frame.
+    background: Option<Color>,
     cursor: Offset,
     armed_tap: Option<u64>,
     pan: pebbles_core::pan::PanGesture,
     current_cursor: Cursor,
     on_close: Option<Rc<dyn Fn()>>,
+    /// Held pointer buttons and the captured `on_pointer_move` target (raw listeners).
+    buttons: u8,
+    move_target: Option<u64>,
+    /// Multi-click tracking (double / triple tap), as on the main window.
+    click_count: u8,
+    last_click: Option<Instant>,
+    last_tap_target: Option<u64>,
+    secondary_down_handled: bool,
     /// Hidden (08 §5.7, P12): render nothing, request no frames.
     occlusion: frame::Occlusion,
 }
@@ -860,23 +869,6 @@ impl Runner {
             }
         }
     }
-
-    /// Route an unclaimed key press to scroll the view under the pointer.
-    fn scroll_key(&mut self, event: &KeyEvent) -> bool {
-        let cursor = self.cursor;
-        match event.logical_key.as_ref() {
-            Key::Named(NamedKey::PageDown) => self.ui.scroll_page(cursor, 1.0),
-            Key::Named(NamedKey::PageUp) => self.ui.scroll_page(cursor, -1.0),
-            Key::Named(NamedKey::Home) => self.ui.scroll_to_end(cursor, false),
-            Key::Named(NamedKey::End) => self.ui.scroll_to_end(cursor, true),
-            Key::Named(NamedKey::ArrowDown) => self.ui.scroll_line(cursor, 1.0),
-            Key::Named(NamedKey::ArrowUp) => self.ui.scroll_line(cursor, -1.0),
-            Key::Named(NamedKey::Space) => {
-                self.ui.scroll_page(cursor, if self.shift_down { -1.0 } else { 1.0 })
-            }
-            _ => false,
-        }
-    }
 }
 
 impl Runner {
@@ -946,6 +938,9 @@ impl Runner {
 
 impl ApplicationHandler<PebblesUserEvent> for Runner {
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        // The app is quitting: every secondary window closes with it, running its
+        // `on_close` (apps save window state there) and tearing its tree down.
+        self.close_all_secondaries();
         if self.soak.is_some() {
             self.soak_sample();
         }
@@ -1465,110 +1460,21 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                         pebbles_core::log::dump("Mod+Shift+D render-tree capture");
                         return;
                     }
-                    // Escape, topmost-first. Transient overlays (menus, popovers,
-                    // dropdowns, context menus, the date/time pickers) float ABOVE
-                    // modals AND the focused widget, so close the topmost one before
-                    // anything else sees the key — otherwise Escape would close the
-                    // sheet/dialog underneath and orphan the menu above it.
-                    if event.logical_key == Key::Named(NamedKey::Escape)
-                        && pebbles_widgets::overlay::is_open()
-                    {
-                        pebbles_widgets::overlay::hide_overlay();
-                        self.request_redraw();
-                        return;
-                    }
-                    // Raw key event to the focused widget first (Flutter's
-                    // Focus.onKeyEvent): Handled stops here; Ignored continues below.
-                    let raw = to_key_event(&event, mods);
-                    if self.ui.dispatch_key_event(&raw) == pebbles_core::KeyEventResult::Handled {
-                        if pebbles_core::log::dev_mode() {
-                            pebbles_core::log::debug(
-                                pebbles_core::log::Cat::Input,
-                                format!("key {:?} → raw", event.logical_key),
-                            );
-                        }
-                        self.request_redraw();
-                        return;
-                    }
-                    // Shift+Alt+F: format the focused code editor via its format provider.
-                    if to_shortcut_key(&event).and_then(|sk| editor_chord_intent(mods, sk, false))
-                        == Some(KeyInput::Format)
-                        && self.ui.dispatch_key(KeyInput::Format)
-                    {
-                        self.request_redraw();
-                        return;
-                    }
-                    if event.logical_key == Key::Named(NamedKey::Escape) {
-                        // Otherwise close only the TOPMOST modal (dialog vs sheet by
-                        // open order). While any modal is open, consume Escape so it
-                        // can't reach the page behind — even if the top modal is
-                        // non-dismissible (then this is a no-op but still consumes).
-                        if pebbles_widgets::dialog::is_open() || pebbles_widgets::sheet::is_open() {
-                            pebbles_widgets::overlay::dismiss_topmost_modal();
-                            self.request_redraw();
-                            return;
-                        }
-                    }
-                    // B2 precedence: focused editor → shortcuts → Tab → activation.
-                    // The editing-command modifier is Ctrl everywhere, plus ⌘ (Super) on
-                    // macOS — otherwise ⌘C/⌘V/⌘X/⌘Z fall through to `Insert` and type a
-                    // literal "c"/"v"/… The shortcut layer above already accepts ctrl||meta;
-                    // this brings the editor call site in line.
-                    let cmd = self.ctrl_down || (cfg!(target_os = "macos") && self.meta_down);
-                    let intent = to_command(&event, cmd, self.shift_down);
-                    // Track WHICH stage claimed the key, for the dev trace.
-                    let mut stage = "unhandled";
-                    let mut handled = if intent.is_some_and(|ki| self.ui.dispatch_key(ki)) {
-                        stage = "editor";
-                        true
-                    } else if pebbles_core::shortcuts::dispatch_key_event(self.ui.window_id(), &raw) {
-                        stage = "shortcut";
-                        true
-                    } else if event.logical_key == Key::Named(NamedKey::Tab) {
-                        // A focused code editor consumes Tab/Shift+Tab for indent/outdent;
-                        // anywhere else (incl. single-line text fields) Tab traverses focus.
-                        match editor_chord_intent(
-                            mods,
-                            pebbles_core::ShortcutKey::Tab,
-                            pebbles_core::focus::focused_wants_tab(),
-                        ) {
-                            Some(ki) => {
-                                stage = "editor-indent";
-                                self.ui.dispatch_key(ki)
-                            }
-                            None => {
-                                stage = "focus-move";
-                                self.ui.focus_move(!self.shift_down)
-                            }
-                        }
-                    } else if matches!(
-                        event.logical_key.as_ref(),
-                        Key::Named(NamedKey::Enter | NamedKey::Space) | Key::Character(" ")
-                    ) && self.ui.dispatch_activate()
-                    {
-                        stage = "activate";
-                        true
-                    } else {
-                        false
-                    };
-                    // If nothing else claimed the key, use it to scroll the view
-                    // under the pointer (PageUp/Down, Home/End, arrows, Space).
-                    if !handled {
-                        handled = self.scroll_key(&event);
-                        if handled {
-                            stage = "scroll";
-                        }
-                    }
+                    // One precedence for every window (see `input::route_key_press`).
+                    let cursor = self.cursor;
+                    let stage = route_key_press(&mut self.ui, &event, mods, cursor);
+                    let handled = stage.is_some();
                     if pebbles_core::log::dev_mode() {
                         pebbles_core::log::debug(
                             pebbles_core::log::Cat::Input,
                             format!(
-                                "key {:?} mods(c={} s={} a={} m={}) → {stage}",
+                                "key {:?} mods(c={} s={} a={} m={}) → {}",
                                 event.logical_key,
                                 self.ctrl_down as u8,
                                 self.shift_down as u8,
                                 self.alt_down as u8,
                                 self.meta_down as u8,
+                                stage.unwrap_or("unhandled"),
                             ),
                         );
                     }

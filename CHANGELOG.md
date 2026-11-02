@@ -6,6 +6,27 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed — secondary windows behave like the main window (multi-window audit)
+- Input parity: secondary windows now get every mouse button (right-click context menus,
+  middle click, raw `on_button_down/up` + captured moves), scrollbar drags and double /
+  triple click; key presses go through the SAME precedence as the main window
+  (`route_key_press`: Tab indent vs focus move, Shift+Alt+F format, ⌘ on macOS, scroll
+  keys; the raw handler now runs before Escape-dismisses-modal, as on the main window).
+- `close_window(id)` now tears the window down like the close button does (tree disposed,
+  per-window overlay/dialog/toast state dropped) — it leaked the tree before.
+- Quitting closes every secondary window and runs its `on_close`; a window that fails to
+  come up runs `on_close` too.
+- Secondary windows publish `window_state(id)` (focused / maximised) for app-drawn title
+  bars, and react to OS light/dark changes.
+- The window background follows the theme by default (`WindowSpec::background` is now
+  `Option<Color>`, `None` = theme), so a theme switch in one window repaints the others.
+
+### Added — window registry and geometry
+`is_window_open`, `open_windows`, `close_all_windows`, `window_bounds(id)` (position + size,
+kept up to date on move/resize, readable in `on_close` — for remembering window placement),
+`window_root` (the tree a secondary window mounts), and in pebbles-testing `TestWindows`, a
+headless secondary-window manager (open / close / focus / quit) for multi-window tests.
+
 ### Changed — desktop cursors: the arrow over clickable controls (`Theme::action_cursor`)
 A new design token, `Theme::action_cursor`, is the cursor over buttons, tabs, menu items,
 explorer rows, toggles and any tappable `GestureDetector` without its own cursor. The Default

@@ -649,7 +649,7 @@ impl Runner {
             &mut w.resize_sync,
             &mut self.resize_sync_timeouts,
             &mut self.frame,
-            w.background,
+            pebbles_widgets::window::WindowSpec::resolve_background(w.background),
             self.perf_overlay,
         );
         if frame_stats_enabled()
