@@ -98,6 +98,27 @@ pub(super) fn scroll_signal(
     PointerScrollEvent { position: at, global: at, delta, unit }
 }
 
+/// `PEBBLES_SCROLL_DEBUG=1`: one line per winit wheel event (raw delta kind, touch phase,
+/// scale and the logical delta delivered).
+pub(super) fn log_wheel(
+    delta: &MouseScrollDelta,
+    phase: winit::event::TouchPhase,
+    scale: f64,
+    signal: &pebbles_render::PointerScrollEvent,
+) {
+    if !pebbles_render::scroll_debug() {
+        return;
+    }
+    let raw = match delta {
+        MouseScrollDelta::LineDelta(x, y) => format!("LineDelta({x:.3}, {y:.3})"),
+        MouseScrollDelta::PixelDelta(p) => format!("PixelDelta({:.1}, {:.1})", p.x, p.y),
+    };
+    eprintln!(
+        "[scroll] event {raw} phase={phase:?} scale={scale} -> dy {:+.1} at {:.0},{:.0}",
+        signal.delta.y, signal.position.x, signal.position.y
+    );
+}
+
 /// The cursor icon to switch to, or `None` to keep `current`. While the pointer is
 /// captured by a drag (a resize handle, a text selection, a pan, a drag-scroll), the
 /// icon the drag started with stays put even when the pointer leaves the widget —

@@ -723,11 +723,20 @@ impl Ui {
                 if s.at_edge(delta) {
                     continue; // bubble to an ancestor scroll view
                 }
+                let before = (s.offset, s.target);
                 let moved = self
                     .render
                     .object_mut(rid)
                     .downcast_mut::<RenderScroll>()
                     .is_some_and(|s| s.scroll_by(delta));
+                if pebbles_render::scroll_debug()
+                    && let Some(s) = self.render.object_ref(rid).downcast_ref::<RenderScroll>()
+                {
+                    eprintln!(
+                        "[scroll] wheel {delta:+.1} -> {rid:?} {:?} offset {:.1} target {:.1} -> {:.1} max {:.1} moved={moved}",
+                        s.axis, before.0, before.1, s.target, s.max_offset
+                    );
+                }
                 if moved {
                     self.scroll_anim.insert(rid);
                     self.scroll_moved(rid);
@@ -741,6 +750,9 @@ impl Ui {
                 }
                 if list.at_edge(delta) {
                     continue;
+                }
+                if pebbles_render::scroll_debug() {
+                    eprintln!("[scroll] wheel {delta:+.1} -> list {rid:?} {:?}", list.axis);
                 }
                 return crate::scroll::dispatch(list.id, ScrollTo::By(delta));
             }

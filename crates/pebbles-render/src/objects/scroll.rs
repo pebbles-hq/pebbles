@@ -363,6 +363,10 @@ pub struct RenderScroll {
 
 impl RenderScroll {
     pub fn new(axis: Axis) -> Self {
+        if crate::scroll_debug() {
+            // A scroll view mounting mid-scroll starts at offset 0 (a "jump to the top").
+            eprintln!("[scroll] mount {axis:?} scroll view");
+        }
         RenderScroll {
             axis,
             offset: 0.0,
@@ -870,6 +874,12 @@ impl RenderObject for RenderScroll {
             && let Some(t) = ctrl.sync(self.offset, self.max_offset, self.viewport_extent)
         {
             let t = t.clamp(0.0, self.max_offset);
+            if crate::scroll_debug() {
+                eprintln!(
+                    "[scroll] programmatic {:?} {:.1} -> {t:.1} (max {:.1})",
+                    self.axis, self.offset, self.max_offset
+                );
+            }
             // Report the APPLIED offset, so a second request before the next
             // layout measures from where the view now is (not one frame stale).
             ctrl.0.borrow_mut().offset = t;

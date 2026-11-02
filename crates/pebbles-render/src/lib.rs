@@ -30,6 +30,14 @@ pub mod text;
 pub mod text_edit;
 pub mod tree;
 
+/// Whether `PEBBLES_SCROLL_DEBUG=1` is set: logs every wheel / touchpad scroll (delta
+/// kind, phase, offset before/after, max extent), every programmatic scroll jump and every
+/// scroll-view mount to stderr — capture it when a scroll misbehaves.
+pub fn scroll_debug() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("PEBBLES_SCROLL_DEBUG").is_ok_and(|v| !v.is_empty() && v != "0"))
+}
+
 pub use constraints::BoxConstraints;
 pub use decoration::{
     BlendMode, Border, BorderRadius, BorderSide, BoxDecoration, BoxShadow, BoxShape, Gradient, Image,

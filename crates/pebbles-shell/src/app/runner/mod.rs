@@ -45,8 +45,8 @@ mod storm;
 mod windows;
 
 use input::{
-    cursor_update, editor_chord_intent, file_drop_event, pointer_button, scroll_signal, to_command,
-    to_key_event, to_shortcut_key, to_winit_cursor, wheel_with_overlay,
+    cursor_update, editor_chord_intent, file_drop_event, log_wheel, pointer_button, scroll_signal,
+    to_command, to_key_event, to_shortcut_key, to_winit_cursor, wheel_with_overlay,
 };
 
 /// Max interval between two primary clicks to count as a double-tap.
@@ -1301,14 +1301,18 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 self.sync_cursor();
             }
 
-            WindowEvent::MouseWheel { delta, .. } => {
+            WindowEvent::MouseWheel { delta, phase, .. } => {
                 let scale = self.active.as_ref().map_or(1.0, |a| a.window.scale_factor());
                 let signal = scroll_signal(delta, scale, self.cursor);
+                log_wheel(&delta, phase, scale, &signal);
                 let dy = signal.delta.y;
                 let cursor = self.cursor;
                 // Pointer signal first (Flutter Listener.onPointerSignal): a consuming
                 // handler keeps the scroll views under it still.
                 if self.ui.dispatch_pointer_signal(cursor, signal) {
+                    if pebbles_render::scroll_debug() {
+                        eprintln!("[scroll]   consumed by an on_pointer_signal handler");
+                    }
                     self.request_redraw();
                     return;
                 }

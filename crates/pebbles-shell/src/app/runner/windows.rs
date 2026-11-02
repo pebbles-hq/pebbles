@@ -338,8 +338,9 @@ impl Runner {
                 }
                 sync_window_cursor(&mut w);
             }
-            WindowEvent::MouseWheel { delta, .. } => {
+            WindowEvent::MouseWheel { delta, phase, .. } => {
                 let signal = scroll_signal(delta, w.window.scale_factor(), w.cursor);
+                log_wheel(&delta, phase, w.window.scale_factor(), &signal);
                 // Pointer signal first; then C6: secondary windows follow the popover
                 // on wheel (was main-only).
                 if w.ui.dispatch_pointer_signal(w.cursor, signal)
