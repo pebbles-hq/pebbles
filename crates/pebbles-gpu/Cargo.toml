@@ -35,7 +35,7 @@ log.workspace = true     # added by S56: wgpu/naga records -> pebbles_foundation
 half.workspace = true    # f16 gradient LUT texels (09 §5.3, L37)
 
 # L43: app shader brushes are validated (and translated to GLSL ES for WebGL2) before use.
-naga = { version = "29.0.4", features = ["wgsl-in", "glsl-out"] }
+naga = { version = "30.0.1", features = ["wgsl-in", "glsl-out"] }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 web-sys = { version = "0.3", features = ["console"] }  # P09: diagnostics to the browser console
@@ -46,7 +46,7 @@ pollster.workspace = true
 [dev-dependencies]
 pollster.workspace = true
 # V02: validate every shader and translate it to GLSL ES 300 (WebGL2) in CPU tests.
-naga = { version = "29.0.4", features = ["wgsl-in", "glsl-out", "hlsl-out", "msl-out"] }
+naga = { version = "30.0.1", features = ["wgsl-in", "glsl-out", "hlsl-out", "msl-out"] }
 swash.workspace = true
 # V09: validation-only GPU runs (`WGPU_BACKEND=noop WGPU_NOOP_BACKEND=1`); test builds only.
 wgpu = { workspace = true, features = ["noop"] }
