@@ -17,7 +17,8 @@ fn stream(h: &mut Harness, read: impl Fn(&Harness) -> f64, unit_lines: bool) -> 
         if i > 40 {
             v *= 0.93; // momentum tail
         }
-        let unit = if unit_lines { ScrollUnit::Lines(Offset::new(0.0, v / 20.0)) } else { ScrollUnit::Pixels };
+        let unit =
+            if unit_lines { ScrollUnit::Lines(Offset::new(0.0, v / 20.0)) } else { ScrollUnit::Pixels };
         h.wheel(at, Offset::new(0.0, v), unit);
         sent += v;
         h.settle();
@@ -54,7 +55,11 @@ fn scroll_view_follows_touchpad_pixels_one_to_one() {
 fn virtualized_list_follows_touchpad_pixels_one_to_one() {
     for lines in [false, true] {
         let mut h = Harness::new().window(200.0, 200.0);
-        h.mount_widget(SizedBox::exact(200.0, 200.0, ListView::builder(500, 28.0, |i| text(format!("row {i}")))));
+        h.mount_widget(SizedBox::exact(
+            200.0,
+            200.0,
+            ListView::builder(500, 28.0, |i| text(format!("row {i}"))),
+        ));
         h.frames(2);
         let (sent, got) = stream(&mut h, list_offset, lines);
         assert!((got - sent).abs() < 1.0, "lines={lines}: sent {sent}, scrolled {got}");
