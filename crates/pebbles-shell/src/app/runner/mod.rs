@@ -676,6 +676,13 @@ impl Runner {
         button: MouseButton,
         state: ElementState,
     ) -> bool {
+        // Blur first: a primary press clears focus, then the widget under the pointer
+        // re-grabs it in its own press handler — its raw `on_button_down` included (a
+        // terminal grid focuses itself there). Blurring after the raw listener ran
+        // silently undid that focus. A press on a scrollbar keeps focus where it is.
+        if button == MouseButton::Left && state == ElementState::Pressed && !self.ui.over_scrollbar(cursor) {
+            pebbles_core::focus::set_focus(None);
+        }
         // Listener-style raw button events (any button) + pointer-move capture.
         let raw = pointer_button(button).is_some_and(|b| {
             let bit = pebbles_render::PointerEvent::bit(b);
@@ -734,9 +741,8 @@ impl Runner {
                 true
             }
             (MouseButton::Left, ElementState::Pressed) => {
-                // Blur first: a press clears focus, then the widget under the
-                // pointer (button/field) re-grabs it in its own press handler.
-                pebbles_core::focus::set_focus(None);
+                // (Focus was already cleared in `dispatch_pointer`, before the raw
+                // button listeners.)
                 // Arm the tap (for tap vs. cancel) and the long-press.
                 self.armed_tap = self.ui.tap_target_at(cursor);
                 self.lp_target = self.ui.long_press_target_at(cursor);

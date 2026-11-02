@@ -347,7 +347,11 @@ impl Harness {
         }
         pebbles_core::focus::set_focus(None);
         let armed = self.ui.tap_target_at(at);
+        // The raw Listener events the shell fires around the gesture ones.
+        let bit = pebbles_render::PointerEvent::bit(pebbles_render::PointerButton::Primary);
+        self.ui.dispatch_button_down(at, pebbles_render::PointerButton::Primary, bit);
         self.ui.dispatch_pointer_down(at);
+        self.ui.dispatch_button_up(at, pebbles_render::PointerButton::Primary, 0);
         self.ui.dispatch_pointer_up(at);
         if armed.is_some() && self.ui.tap_target_at(at) == armed {
             let multi = match n {
@@ -507,6 +511,11 @@ impl Harness {
         }
         if self.buttons == 0 {
             self.move_target = self.ui.pointer_move_target_at(at);
+        }
+        // The shell blurs on a primary press BEFORE the raw listeners run, so a widget
+        // that focuses itself in `on_button_down` keeps that focus.
+        if button == PointerButton::Primary {
+            pebbles_core::focus::set_focus(None);
         }
         self.buttons |= PointerEvent::bit(button);
         self.pointer_at = at;

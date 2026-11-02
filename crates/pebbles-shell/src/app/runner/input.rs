@@ -611,6 +611,24 @@ mod tests {
         assert_eq!(s.unit, ScrollUnit::Pixels);
     }
 
+    #[test]
+    fn touchpad_pixel_stream_maps_each_event_to_its_own_relative_delta() {
+        use pebbles_foundation::Offset;
+        use winit::dpi::PhysicalPosition;
+        use winit::event::MouseScrollDelta;
+
+        use super::scroll_signal;
+        // A two-finger swipe (Started → Moved… → Ended) then kinetic momentum: each event
+        // is a RELATIVE delta (never an absolute position), so they sum 1:1 in logical px.
+        let deltas = [-3.0, -9.0, -14.0, -12.0, -8.0, -5.0, -3.0, -2.0, -1.0, -0.5];
+        let total: f64 = deltas
+            .iter()
+            .map(|&d| scroll_signal(MouseScrollDelta::PixelDelta(PhysicalPosition::new(0.0, d)), 1.5, Offset::ZERO).delta.y)
+            .sum();
+        let want: f64 = -deltas.iter().sum::<f64>() / 1.5;
+        assert!((total - want).abs() < 1e-9 && total > 0.0, "{total} vs {want}");
+    }
+
     // ----- file_drop_event: winit OS file drag → file_drop -------------------
 
     #[test]

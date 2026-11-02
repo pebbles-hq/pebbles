@@ -861,6 +861,12 @@ impl Ui {
         })
     }
 
+    /// Whether `point` lands on a viewport's scrollbar strip (a press there grabs the
+    /// bar rather than the content under it).
+    pub fn over_scrollbar(&self, point: Offset) -> bool {
+        self.scrollbar_at(point).is_some()
+    }
+
     /// Begin a scrollbar drag if `point` lands on a viewport's scrollbar strip.
     /// Returns whether one was grabbed (the shell then routes moves to it). A press on
     /// the thumb grabs it where pressed; a press on the track centres the thumb there.
