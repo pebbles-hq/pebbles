@@ -2799,10 +2799,13 @@ dependencies = [
  "raw-window-handle",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wayland-backend",
+ "wayland-client",
  "web-sys",
  "web-time",
  "wgpu",
  "winit",
+ "x11rb",
  "zbus",
 ]
 

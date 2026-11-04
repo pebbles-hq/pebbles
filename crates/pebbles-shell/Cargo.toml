@@ -88,6 +88,11 @@ png = "0.18"
 # not). zbus is already in the tree via the AT-SPI bridge; blocking API on a helper thread.
 [target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))'.dependencies]
 zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
+# Outgoing file drag-and-drop (src/os_drag): winit has no drag-source API. Both crates are
+# already in the tree via winit (same versions); the Wayland side shares winit's display.
+wayland-client = "0.31"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+x11rb = { version = "0.13", default-features = false }
 
 # Web (wasm) runtime deps. The web GPU device request is inherently async and must
 # not block the main thread, so the surface is built off an async task and handed

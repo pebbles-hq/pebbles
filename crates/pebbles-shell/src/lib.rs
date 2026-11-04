@@ -43,6 +43,15 @@ mod native_menu;
     target_os = "dragonfly"
 ))]
 mod portal_theme;
+// Outgoing OS drag-and-drop of files (Wayland data device / X11 XDND).
+#[cfg(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
+pub mod os_drag;
 // Opt-in hidden-input IME bridge (App::web_ime) — winit can't do IME on a canvas.
 #[cfg(target_family = "wasm")]
 mod web_ime;

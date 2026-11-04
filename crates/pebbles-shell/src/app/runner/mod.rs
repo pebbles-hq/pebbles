@@ -970,6 +970,14 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         }
 
         let window = self.create_window(event_loop);
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "freebsd",
+            target_os = "openbsd",
+            target_os = "netbsd",
+            target_os = "dragonfly"
+        ))]
+        crate::os_drag::window_created(&window);
         // Which window system winit picked (Wayland vs X11/XWayland on Linux): the desktop smoke
         // lanes assert it, and bug reports need it next to the `GPU:` line.
         {

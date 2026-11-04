@@ -50,6 +50,12 @@ pub fn window_size() -> (f64, f64) {
     window_signal().get()
 }
 
+/// Window `window`'s logical size without subscribing (for event handlers, which may
+/// run outside that window's build).
+pub fn window_size_of(window: u32) -> (f64, f64) {
+    WINDOW.with(|m| m.borrow().get(&window).map(|s| s.peek())).unwrap_or((0.0, 0.0))
+}
+
 /// Whether an overlay is currently open in the current window.
 pub fn is_open() -> bool {
     overlay_signal().peek().is_some()

@@ -113,6 +113,29 @@ impl Runner {
                         w.show_window_menu(winit::dpi::LogicalPosition::new(x, y));
                     }
                 }
+                StartFileDrag(id, paths) => {
+                    #[cfg(any(
+                        target_os = "linux",
+                        target_os = "freebsd",
+                        target_os = "openbsd",
+                        target_os = "netbsd",
+                        target_os = "dragonfly"
+                    ))]
+                    if let Some(w) = target(id)
+                        && crate::os_drag::start(w, paths)
+                    {
+                        // The system drag owns the pointer now; its release won't reach us.
+                        handed_off = true;
+                    }
+                    #[cfg(not(any(
+                        target_os = "linux",
+                        target_os = "freebsd",
+                        target_os = "openbsd",
+                        target_os = "netbsd",
+                        target_os = "dragonfly"
+                    )))]
+                    let _ = (id, paths);
+                }
             }
         }
         // The window manager now owns the press (move/resize grab) and usually swallows
@@ -204,7 +227,17 @@ impl Runner {
         // A secondary window failing must NOT take down the app (the main window is fine) —
         // log and skip opening it, unlike the fatal main-window path.
         let window = match event_loop.create_window(attrs) {
-            Ok(w) => Arc::new(w),
+            Ok(w) => {
+                #[cfg(any(
+                    target_os = "linux",
+                    target_os = "freebsd",
+                    target_os = "openbsd",
+                    target_os = "netbsd",
+                    target_os = "dragonfly"
+                ))]
+                crate::os_drag::window_created(&w);
+                Arc::new(w)
+            }
             Err(e) => {
                 pebbles_core::log::warn(
                     pebbles_core::log::Cat::General,

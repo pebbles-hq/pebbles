@@ -20,6 +20,8 @@ pub(super) struct NodeProps {
 pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     let st = p.explorer.style();
     let explorer = p.explorer;
+    // The window this row is in (rows dragged out of it start an OS drag there).
+    let window = pebbles_core::reactive::current_window();
     let q = explorer.filter.get().trim().to_lowercase();
     let filtering = !q.is_empty();
     // Compact folders: a single-child folder chain renders as one row whose
@@ -198,8 +200,23 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
             .on_pan_start(pebbles_core::action_event(move |e: pebbles_render::PointerEvent| {
                 explorer.press.set(Some((id, e.global)));
             }))
-            .on_pan_update(pebbles_core::action_event(move |_: pebbles_render::PointerEvent| {
+            .on_pan_update(pebbles_core::action_event(move |e: pebbles_render::PointerEvent| {
                 if explorer.dragging.peek() {
+                    // Dragged out of the window: hand the files to the OS drag-and-drop
+                    // (VS Code's drag to other apps); the in-tree drag ends.
+                    let (w, h) = crate::services::overlay::window_size_of(window);
+                    let outside = e.global.x < 0.0 || e.global.y < 0.0 || e.global.x >= w || e.global.y >= h;
+                    if outside && w > 0.0 && explorer.caps.peek().allows(Capability::DragOut) {
+                        let paths: Vec<PathBuf> =
+                            explorer.selected.peek().iter().filter_map(|&n| explorer.path_of(n)).collect();
+                        if !paths.is_empty() {
+                            crate::window::start_file_drag(u64::from(window), paths);
+                            explorer.dragging.set(false);
+                            explorer.drop_target.set(None);
+                            explorer.root_drop.set(false);
+                            explorer.press.set(None);
+                        }
+                    }
                     return;
                 }
                 let Some((pid, _)) = explorer.press.peek() else { return };

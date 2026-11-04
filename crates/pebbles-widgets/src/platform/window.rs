@@ -95,6 +95,11 @@ pub enum WindowCommand {
     /// at `(x, y)` logical px inside the window (winit `show_window_menu`; Windows and
     /// Wayland/X11 where the compositor supports it, otherwise ignored).
     ShowWindowMenu(WindowId, f64, f64),
+    /// Start an OS drag-and-drop of these files from the window with the held primary
+    /// press, offered as `text/uri-list` (plus the paths as plain text) with the copy
+    /// action — so they drop into file managers, browsers, terminals and other editors.
+    /// Wayland (`wl_data_device.start_drag`) and X11 (XDND); ignored elsewhere.
+    StartFileDrag(WindowId, Vec<std::path::PathBuf>),
 }
 
 /// The edge or corner a client-side resize starts from (winit `ResizeDirection`).
@@ -506,6 +511,12 @@ pub fn set_window_decorations(id: WindowId, decorations: bool) {
 /// Maximize a restored window, restore a maximized one (title-bar double-click).
 pub fn toggle_window_maximized(id: WindowId) {
     push_cmd(WindowCommand::ToggleMaximized(id));
+}
+/// Drag `paths` out of the window to other apps with the held primary press (an OS
+/// drag-and-drop; see [`WindowCommand::StartFileDrag`]). Send it once a drag leaves the
+/// window: the system then owns the pointer until the drop.
+pub fn start_file_drag(id: WindowId, paths: Vec<std::path::PathBuf>) {
+    push_cmd(WindowCommand::StartFileDrag(id, paths));
 }
 /// Start a window-manager move with the held primary press (client-side title bar).
 pub fn drag_window(id: WindowId) {

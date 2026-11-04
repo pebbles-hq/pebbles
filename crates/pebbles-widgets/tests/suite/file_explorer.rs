@@ -2223,3 +2223,36 @@ fn menu_paste_targets_what_was_right_clicked() {
     assert!(dir.join("root.txt").exists() && !dir.join("d/root.txt").exists());
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn dragging_rows_out_of_the_window_starts_an_os_file_drag() {
+    use pebbles_widgets::window::{WindowCommand, take_window_commands};
+    let (mut ui, mut env, dir, ex) = mount_fs("dragout");
+    pebbles_widgets::overlay::set_window_size(400.0, 300.0);
+    let asked = set_confirm(&ex, true);
+    let rows = row_points(&mut ui);
+    let _ = take_window_commands();
+    // Press on outer/inner, travel down past the window's bottom edge, release there.
+    runner_drag(&mut ui, &mut env, rows[1], Offset::new(rows[1].x, 340.0));
+    let cmds = take_window_commands();
+    let drags: Vec<_> = cmds
+        .iter()
+        .filter_map(|c| match c {
+            WindowCommand::StartFileDrag(w, p) => Some((*w, p.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(drags, vec![(0, vec![dir.join("outer/inner")])], "{cmds:?}");
+    assert_eq!(asked.get(), 0, "the in-tree drag ended: nothing moved");
+    assert!(dir.join("outer/inner/deep.txt").exists());
+    // (The in-window part of that drag started nothing: one command.) A disabled
+    // DragOut starts none.
+    ex.set_capabilities(pebbles_widgets::ExplorerCapabilities::all().allow_drag_out(false));
+    frame(&mut ui, &mut env, Size::new(400.0, 300.0));
+    runner_drag(&mut ui, &mut env, rows[1], Offset::new(rows[1].x, 340.0));
+    assert!(
+        !take_window_commands().iter().any(|c| matches!(c, WindowCommand::StartFileDrag(..))),
+        "no OS drag"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
