@@ -277,8 +277,15 @@ impl FileExplorer {
             .shortcut("Ctrl+C")
             .in_contexts(&[File, Folder, Multi])
             .enabled_when(cap(Capability::CopyPaste)),
-            ExplorerMenuItem::new(m::PASTE, "Paste", move |_| {
-                let _ = ex.paste_clipboard();
+            ExplorerMenuItem::new(m::PASTE, "Paste", move |t| {
+                // Into what was right-clicked, not the (possibly stale) active row.
+                let target = match t.context {
+                    Empty => None,
+                    Folder => t.entry().map(|e| e.id),
+                    File => t.entry().and_then(|e| ex.tree.peek().parent_of(e.id)),
+                    Multi => ex.insertion_parent(),
+                };
+                let _ = ex.paste_clipboard_into(target);
             })
             .shortcut("Ctrl+V")
             .in_contexts(&[File, Folder, Empty])
@@ -496,7 +503,11 @@ impl FileExplorer {
     fn new_in(&self, t: &MenuTarget, kind: FsKind) {
         match t.entry() {
             Some(e) if e.is_folder() => self.select_only(e.id),
-            _ if t.context == MenuContext::Empty => self.selected.set(Vec::new()),
+            // The empty space: the root, whatever row had focus (VS Code).
+            _ if t.context == MenuContext::Empty => {
+                self.selected.set(Vec::new());
+                self.active.set(None);
+            }
             _ => {}
         }
         self.begin_create(kind);

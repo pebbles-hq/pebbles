@@ -883,11 +883,17 @@ impl FileExplorer {
     /// selected file's parent, else the root — VSCode's target rules). Cut moves;
     /// Copy duplicates the whole subtree (on disk too) named `x copy.txt`.
     pub fn paste_clipboard(&self) -> Result<(), ExplorerError> {
+        self.paste_clipboard_into(self.insertion_parent())
+    }
+
+    /// Paste the clipboard into folder `target` (`None` = the root) — the context
+    /// menu's Paste: into the right-clicked folder, the right-clicked file's folder, or
+    /// the root from the empty space (VS Code).
+    pub fn paste_clipboard_into(&self, target: Option<u64>) -> Result<(), ExplorerError> {
         self.require(Capability::CopyPaste)?;
         let Some((ids, mode)) = self.clipboard.peek().clone() else {
             return Err(ExplorerError::Invalid("The clipboard is empty".into()));
         };
-        let target = self.insertion_parent();
         match mode {
             ClipMode::Cut => {
                 let r = self.move_nodes(&ids, target).map(|_| ());

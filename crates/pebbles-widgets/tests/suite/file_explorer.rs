@@ -2183,3 +2183,43 @@ fn decoration_badges_stay_clear_of_the_scrollbar() {
     }
     assert!(checked > 0, "badges rendered");
 }
+
+#[test]
+fn menu_paste_targets_what_was_right_clicked() {
+    use pebbles_widgets::menu_ids as m;
+    let (dir, tree, ex) = fs_explorer("menupaste");
+    std::fs::create_dir(dir.join("d")).unwrap();
+    std::fs::create_dir(dir.join("e")).unwrap();
+    std::fs::write(dir.join("a.txt"), "A").unwrap();
+    std::fs::write(dir.join("e/f.txt"), "F").unwrap();
+    assert!(ex.open_folder(&dir));
+    let a = id_of(tree, "a.txt");
+    ex.select_only(a);
+    ex.copy_selection().unwrap();
+    // The folder `d` is the active row, but the menu opened on the empty space: the root.
+    let d = id_of(tree, "d");
+    ex.select_only(d);
+    let paste = |t: &pebbles_widgets::MenuTarget| {
+        ex.menu_for(t).into_iter().find(|i| i.id == m::PASTE).unwrap().run(t)
+    };
+    paste(&ex.menu_target(None));
+    assert!(dir.join("a copy.txt").exists(), "pasted at the root");
+    assert!(!dir.join("d/a.txt").exists());
+    // On a folder row: into it. On a file row: into its folder.
+    let e = id_of(tree, "e");
+    paste(&ex.menu_target(Some(e)));
+    assert!(dir.join("e/a.txt").exists(), "pasted into the right-clicked folder");
+    ex.toggle_folder(e);
+    let f = id_of(tree, "e/f.txt");
+    ex.select_only(d);
+    paste(&ex.menu_target(Some(f)));
+    assert!(dir.join("e/a copy.txt").exists(), "pasted next to the right-clicked file");
+    // New File… from the empty space: at the root, though `d` has focus.
+    ex.select_only(d);
+    let empty = ex.menu_target(None);
+    ex.menu_for(&empty).into_iter().find(|i| i.id == m::NEW_FILE).unwrap().run(&empty);
+    let pending = ex.renaming().get().expect("inline editor open");
+    ex.commit_rename(pending, "root.txt").unwrap();
+    assert!(dir.join("root.txt").exists() && !dir.join("d/root.txt").exists());
+    std::fs::remove_dir_all(&dir).ok();
+}
