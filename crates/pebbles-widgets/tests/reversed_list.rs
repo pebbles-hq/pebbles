@@ -51,3 +51,32 @@ fn short_reversed_list_hugs_the_bottom() {
     let child = tree.children_of(l)[0];
     assert_eq!(tree.offset_of(child).y, 140.0);
 }
+
+thread_local! {
+    static REVERSE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static SC: std::cell::Cell<Option<pebbles_widgets::ScrollController>> =
+        const { std::cell::Cell::new(None) };
+}
+
+fn controlled() -> SizedBox {
+    let sc = pebbles_widgets::use_scroll_controller();
+    SC.with(|s| s.set(Some(sc)));
+    let l = ListView::builder(100, 20.0, |i| text(format!("row {i}"))).controller(sc);
+    SizedBox::exact(200.0, 200.0, if REVERSE.with(|r| r.get()) { l.reverse() } else { l })
+}
+
+/// An offset beyond the content (set by a caller, or kept across a remount) still builds
+/// and shows the items at the clamped end, never a blank list.
+#[test]
+fn out_of_range_offset_still_builds_the_visible_items() {
+    for reverse in [false, true] {
+        REVERSE.with(|r| r.set(reverse));
+        let mut h = Harness::new().window(200.0, 200.0);
+        h.mount(controlled);
+        h.frames(2);
+        SC.with(|s| s.get()).unwrap().offset_signal().set(1.0e6);
+        h.frames(2);
+        assert!(h.find_text("row 99"), "reverse={reverse}: the far end's rows are built");
+        assert!(!h.find_text("row 50"), "reverse={reverse}: only the visible window");
+    }
+}

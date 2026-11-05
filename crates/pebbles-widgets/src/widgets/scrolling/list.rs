@@ -670,9 +670,12 @@ fn render_list(p: &Props) -> ListViewport {
         );
     }
 
-    // Visible window from the current offset + last-known viewport extent.
-    let o = offset.get();
+    // Visible window from the current offset + last-known viewport extent. The offset is
+    // clamped into the content first (the viewport clamps what it paints the same way),
+    // so an out-of-range signal — set before a remount, or by a caller — never builds an
+    // empty window over a full list.
     let viewport = scroll_metrics::get(id).map(|m| m.viewport).unwrap_or(800.0);
+    let o = offset.get().clamp(0.0, (padded_extent - viewport).max(0.0));
     // Guard: a non-finite or non-positive stride (e.g. a negative item_extent
     // cancelling the separator) would divide-by-zero / overflow the window math.
     let unit = {
