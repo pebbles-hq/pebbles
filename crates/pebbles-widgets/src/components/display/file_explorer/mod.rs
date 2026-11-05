@@ -668,6 +668,37 @@ impl FileExplorer {
         Some(id)
     }
 
+    /// The expanded folders as paths (under the opened folder), for an IDE to keep the
+    /// tree's shape across a remount (VS Code keeps the explorer's expansion when the
+    /// side bar switches views). Pair with [`expand_paths`](Self::expand_paths).
+    pub fn expanded_paths(&self) -> Vec<PathBuf> {
+        let mut out: Vec<PathBuf> = self.expanded.peek().iter().filter_map(|&id| self.path_of(id)).collect();
+        out.sort();
+        out
+    }
+
+    /// Expand (loading lazily) each folder in `paths` and its ancestors, without touching
+    /// the selection or the scroll. Paths outside the opened folder or gone are skipped.
+    pub fn expand_paths(&self, paths: &[PathBuf]) {
+        let Some(root) = self.fs_root.peek().clone() else { return };
+        for path in paths {
+            let Ok(rel) = path.strip_prefix(&root) else { continue };
+            let mut parent: Option<u64> = None;
+            for comp in rel.components() {
+                if let Some(p) = parent {
+                    self.ensure_loaded(p);
+                }
+                let name = comp.as_os_str().to_string_lossy().to_string();
+                let Some(found) = self.child_named(parent, &name) else { break };
+                self.ensure_loaded(found);
+                self.expanded.update(|e| {
+                    e.insert(found);
+                });
+                parent = Some(found);
+            }
+        }
+    }
+
     pub fn reveal(&self, id: u64) {
         let mut cur = self.tree.peek().parent_of(id);
         while let Some(p) = cur {
