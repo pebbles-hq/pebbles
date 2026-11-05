@@ -232,7 +232,7 @@ fn render_tooltip(p: &Props) -> AnyWidget {
             let (ww, wh) = window_size();
             let (ax, ay) = side_anchor(side, own);
             let (left, top) = chip_anchor(side, ax, ay, cw, ch, 8.0, ww, wh);
-            show_passive(chip(&props), left, top);
+            show_passive(crate::widgets::ignore_pointer(chip(&props)).into_widget(), left, top);
             if !focus_showing.peek() {
                 focus_showing.set(true);
             }
@@ -250,7 +250,7 @@ fn render_tooltip(p: &Props) -> AnyWidget {
             let (cw, ch) = estimate_chip_size(&props);
             let (ww, wh) = window_size();
             let (left, top) = chip_anchor(side, ax, ay, cw, ch, gap, ww, wh);
-            show_passive(chip(&props), left, top);
+            show_passive(crate::widgets::ignore_pointer(chip(&props)).into_widget(), left, top);
         }
     };
 
