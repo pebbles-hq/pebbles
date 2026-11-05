@@ -596,6 +596,10 @@ fn secondary_pointer(w: &mut WindowRuntime, button: MouseButton, state: ElementS
     if button == MouseButton::Left && pressed && !w.ui.over_scrollbar(cursor) {
         pebbles_core::focus::set_focus(None);
     }
+    // Any press dismisses a tooltip / hover card (as in the main window).
+    if pressed {
+        pebbles_widgets::hide_passive();
+    }
     let raw = pointer_button(button).is_some_and(|b| {
         let bit = pebbles_render::PointerEvent::bit(b);
         if pressed {

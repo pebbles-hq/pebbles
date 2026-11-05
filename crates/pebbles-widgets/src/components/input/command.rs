@@ -77,6 +77,7 @@ pub struct Command {
     empty: String,
     width: f64,
     modal: bool,
+    top: Option<f64>,
 }
 
 /// An inline command list over `groups`.
@@ -118,11 +119,25 @@ impl Command {
         self.width = w;
         self
     }
+    /// Anchor the opened palette `px` below the window top (see [`Dialog::top`]) so
+    /// the input stays put while the filtered list shrinks; centred by default.
+    ///
+    /// [`Dialog::top`]: crate::dialog::Dialog::top
+    pub fn top(mut self, px: f64) -> Self {
+        self.top = Some(px);
+        self
+    }
     /// Open the palette variant as a dismissible modal. No-op / meaningless for the
     /// inline [`command`] builder (use it in the tree instead).
     pub fn open(self) {
         let width = self.width;
-        dialog(self.into_widget()).width(width).open();
+        let top = self.top;
+        let d = dialog(self.into_widget()).width(width);
+        match top {
+            Some(px) => d.top(px),
+            None => d,
+        }
+        .open();
     }
 }
 

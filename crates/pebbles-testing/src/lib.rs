@@ -357,6 +357,8 @@ impl Harness {
             return;
         }
         pebbles_core::focus::set_focus(None);
+        // The shell dismisses a tooltip / hover card on any press.
+        pebbles_widgets::hide_passive();
         let armed = self.ui.tap_target_at(at);
         // The raw Listener events the shell fires around the gesture ones.
         let bit = pebbles_render::PointerEvent::bit(pebbles_render::PointerButton::Primary);

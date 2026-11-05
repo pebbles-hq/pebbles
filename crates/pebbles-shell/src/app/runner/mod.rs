@@ -692,6 +692,11 @@ impl Runner {
         if button == MouseButton::Left && state == ElementState::Pressed && !self.ui.over_scrollbar(cursor) {
             pebbles_core::focus::set_focus(None);
         }
+        // Any press dismisses a tooltip / hover card (Flutter's Tooltip hides on the
+        // global pointer-down route; VS Code / GTK hide the hover on mouse down).
+        if state == ElementState::Pressed {
+            pebbles_widgets::hide_passive();
+        }
         // Listener-style raw button events (any button) + pointer-move capture.
         let raw = pointer_button(button).is_some_and(|b| {
             let bit = pebbles_render::PointerEvent::bit(b);

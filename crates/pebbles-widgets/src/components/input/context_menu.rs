@@ -8,7 +8,7 @@ use std::rc::Rc;
 use pebbles_render::PointerEvent;
 
 use super::list_nav::list_nav;
-use super::menu::{ChildCtx, RebuildableMenu, SubMenuHandles, estimate_height};
+use super::menu::{ChildCtx, RebuildableMenu, SubMenuHandles, estimate_height, fit_width};
 use crate::components::{MenuEntry, menu_sub};
 use crate::overlay::{show_overlay_guarded, window_size};
 use crate::widgets::GestureDetector;
@@ -105,7 +105,7 @@ fn render_context(p: &CtxProps) -> AnyWidget {
     let child_ctx = create_signal::<Option<Rc<ChildCtx>>>(None);
     let blueprint = Rc::new(RebuildableMenu::from(&p.entries));
     let handles = SubMenuHandles { nav: child_nav, ctx: child_ctx, subs: Rc::new(blueprint.sub_rows()) };
-    let width = p.width;
+    let width = fit_width(&p.entries, p.width);
     let menu_h = estimate_height(&p.entries);
     let on_open = p.on_open.clone();
     GestureDetector::new(p.child.clone())

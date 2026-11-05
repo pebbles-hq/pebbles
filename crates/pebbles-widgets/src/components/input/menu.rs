@@ -272,6 +272,40 @@ fn default_trigger(label: &str, width: f64, hovered: bool, user: Option<crate::s
         .into_widget()
 }
 
+/// The panel width `entries` need so no label runs into its shortcut hint, at least
+/// `min` (VS Code / GTK menus size to their widest row instead of clipping it).
+pub(crate) fn fit_width(entries: &[MenuEntry], min: f64) -> f64 {
+    let measure = |s: &str, size: f32| {
+        pebbles_render::measure_text(
+            s,
+            &pebbles_render::ParagraphStyle { font_size: size, ..Default::default() },
+            None,
+        )
+        .width
+    };
+    let gutter = if entries
+        .iter()
+        .any(|e| matches!(e, MenuEntry::Item(MenuItem { icon: Some(_), .. }) | MenuEntry::Check { .. }))
+    {
+        24.0
+    } else {
+        0.0
+    };
+    let widest = entries
+        .iter()
+        .map(|e| match e {
+            MenuEntry::Item(i) => {
+                measure(&i.label, 14.0) + i.shortcut.as_deref().map_or(0.0, |s| 24.0 + measure(s, 12.0))
+            }
+            MenuEntry::Check { label, .. } => measure(label, 14.0),
+            MenuEntry::Sub { label, .. } => measure(label, 14.0) + 24.0,
+            MenuEntry::Label(_) | MenuEntry::Separator => 0.0,
+        })
+        .fold(0.0, f64::max);
+    // Row padding (2 × 8) + panel padding (2 × 4) + a pixel of rounding slack.
+    min.max((gutter + widest + 16.0 + 8.0 + 2.0).ceil())
+}
+
 pub(crate) fn estimate_height(entries: &[MenuEntry]) -> f64 {
     let rows: f64 = entries
         .iter()
@@ -285,7 +319,7 @@ pub(crate) fn estimate_height(entries: &[MenuEntry]) -> f64 {
 }
 
 fn render_dropdown(p: &Props) -> AnyWidget {
-    let width = p.width;
+    let width = fit_width(&p.entries, p.width);
     // Captured at render time so the on-tap anchor matches the (control-height) trigger.
     let control_h = theme().control_height;
     let hovered = create_signal(false);

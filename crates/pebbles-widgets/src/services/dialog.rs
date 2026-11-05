@@ -36,6 +36,8 @@ struct DialogEntry {
     on_close: Option<Rc<dyn Fn()>>,
     /// Accessible name announced for the dialog surface (C7 semantics).
     title: String,
+    /// Anchor the panel this far below the window top instead of centring it.
+    top: Option<f64>,
     /// Shared modal open-sequence (see [`crate::overlay::next_modal_seq`]) — the
     /// host paints modals in ascending order, so a dialog opened after a sheet
     /// (a confirm from within a sheet) sits on top of it.
@@ -102,6 +104,7 @@ pub fn dismiss_top() {
 pub struct Dialog {
     content: AnyWidget,
     title: String,
+    top: Option<f64>,
     width: f64,
     background: Option<Color>,
     dismissible: bool,
@@ -113,6 +116,7 @@ pub fn dialog(content: impl IntoWidget) -> Dialog {
     Dialog {
         content: content.into_widget(),
         title: String::new(),
+        top: None,
         width: 480.0,
         background: None,
         dismissible: true,
@@ -125,6 +129,13 @@ impl Dialog {
     /// chrome — compose a header in your content).
     pub fn title(mut self, title: impl Into<String>) -> Self {
         self.title = title.into();
+        self
+    }
+    /// Anchor the panel `px` below the window top, horizontally centred, instead of
+    /// centring it — a quick-input picker (VS Code's command palette / Quick Open) keeps
+    /// its input in place while the result list grows and shrinks below it.
+    pub fn top(mut self, px: f64) -> Self {
+        self.top = Some(px);
         self
     }
     /// The panel width (height follows the content).
@@ -162,6 +173,7 @@ impl Dialog {
             dismissible: self.dismissible,
             on_close: self.on_close,
             title: self.title,
+            top: self.top,
             seq: crate::overlay::next_modal_seq(),
         }));
         id
@@ -336,7 +348,16 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
     // behind it (an autofocused control in the content pulls initial focus into the
     // scope — see AlertDialog's confirm button).
     let trapped = crate::widgets::focus_scope(labelled);
-    let panel = Positioned::fill(center(trapped)).into_widget();
+    let panel = match entry.top {
+        Some(top) => Positioned::fill(
+            Container::new()
+                .alignment(pebbles_foundation::Alignment::TOP_CENTER)
+                .padding(pebbles_foundation::EdgeInsets::only(0.0, top, 0.0, 0.0))
+                .child(trapped),
+        )
+        .into_widget(),
+        None => Positioned::fill(center(trapped)).into_widget(),
+    };
 
     vec![scrim, panel]
 }
