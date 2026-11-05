@@ -198,10 +198,13 @@ fn render_command(p: &Props) -> AnyWidget {
         let actions = actions.clone();
         let dismiss = dismiss.clone();
         move |row: usize| {
+            // Close the palette FIRST (VS Code hides the quick input, then runs the
+            // command): a command that opens its own picker / dialog ("Run Task",
+            // "Change Language Mode") was closed by the palette's dismiss right after.
+            dismiss();
             if let Some(Some(a)) = actions.get(row) {
                 a();
             }
-            dismiss();
         }
     };
     let nav_handler = {
