@@ -308,6 +308,14 @@ impl TextEnv {
         Self::with_registry(registry)
     }
 
+    /// A background font scan not merged yet: `Some(true)` once it has finished (the next
+    /// [`poll_fonts`](Self::poll_fonts) merges it), `Some(false)` while it runs, `None`
+    /// without one. An idle runner uses it to wake up and re-lay out text shaped with
+    /// fallback (tofu) glyphs before the system fonts arrived.
+    pub fn font_scan_state(&self) -> Option<bool> {
+        self.registry.scan_state()
+    }
+
     /// Merge a finished background font scan; `true` when the font set changed. Never blocks.
     pub fn poll_fonts(&mut self) -> bool {
         let changed = self.registry.poll();

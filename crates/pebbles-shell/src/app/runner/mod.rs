@@ -1624,6 +1624,19 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
         // re-requests frames while animations/scroll springs/background tasks are
         // live, and a pending long-press overrides this with `WaitUntil` below.
         event_loop.set_control_flow(ControlFlow::Wait);
+        // The background system-font scan: an idle app renders no frame, so nothing would
+        // poll it and text shaped before it landed (CJK, emoji fallbacks) stayed tofu until
+        // the next input. Redraw once it finishes; check back every 50 ms while it runs.
+        match self.text.font_scan_state() {
+            Some(true) => {
+                self.request_redraw();
+                for w in self.windows.values() {
+                    redraw::request(&w.window);
+                }
+            }
+            Some(false) => wake_by(event_loop, Instant::now() + Duration::from_millis(50)),
+            None => {}
+        }
         // A poisoned GPU (or a pending retry): wake when the retry is due, then rebuild on that
         // turn (P11, G22). Native rebuilds here, not from a frame: an idle or hidden window builds
         // no frame, and a redraw-driven recovery behind a lock screen spun the loop forever.

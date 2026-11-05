@@ -471,6 +471,18 @@ impl FontRegistry {
     }
 
     /// Merge a finished background scan; `true` iff the generation changed. Never blocks.
+    /// A background scan still to merge: `Some(finished)`, `None` without one.
+    pub(crate) fn scan_state(&self) -> Option<bool> {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            self.loader.as_ref().map(std::thread::JoinHandle::is_finished)
+        }
+        #[cfg(target_family = "wasm")]
+        {
+            None
+        }
+    }
+
     pub(crate) fn poll(&mut self) -> bool {
         #[cfg(not(target_family = "wasm"))]
         if self.loader.as_ref().is_some_and(std::thread::JoinHandle::is_finished) {
