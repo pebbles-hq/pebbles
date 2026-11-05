@@ -882,14 +882,33 @@ fn cross_bounds(s: CrossSel) -> ((usize, usize), (usize, usize)) {
 fn render_group_leaf(p: &SelectableRichProps, group: SelectionGroup, index: usize) -> AnyWidget {
     let sid = leaf_select_id(group.id, index);
     let gid = group.id;
-    pebbles_core::create_cleanup(move || {
-        pebbles_render::text_edit::clear(sid);
+    // The index this leaf element is registered under. A reused element (a virtualized
+    // list re-binding its slots as rows shift) can change index: drop the old entry, or
+    // its stale rect would still answer hit tests and copies for another row.
+    let registered = pebbles_core::create_signal(std::rc::Rc::new(std::cell::Cell::new(index))).peek();
+    let was = registered.replace(index);
+    if was != index {
+        pebbles_render::text_edit::clear(leaf_select_id(gid, was));
         SEL_GROUPS.with(|g| {
-            if let Some(m) = g.borrow_mut().get_mut(&gid) {
-                m.remove(&index);
+            if let Some(m) = g.borrow_mut().get_mut(&gid)
+                && m.get(&was).is_some_and(|e| e.0 == leaf_select_id(gid, was))
+            {
+                m.remove(&was);
             }
         });
-    });
+    }
+    {
+        let registered = registered.clone();
+        pebbles_core::create_cleanup(move || {
+            let index = registered.get();
+            pebbles_render::text_edit::clear(leaf_select_id(gid, index));
+            SEL_GROUPS.with(|g| {
+                if let Some(m) = g.borrow_mut().get_mut(&gid) {
+                    m.remove(&index);
+                }
+            });
+        });
+    }
     let (text, rspans, urls) = resolve_spans(&p.spans);
     let text = std::rc::Rc::new(text);
     let rect = pebbles_core::use_bounds();
