@@ -694,7 +694,7 @@ impl Runner {
         }
         // Any press dismisses a tooltip / hover card (Flutter's Tooltip hides on the
         // global pointer-down route; VS Code / GTK hide the hover on mouse down).
-        if state == ElementState::Pressed {
+        if state == ElementState::Pressed && pebbles_widgets::overlay::passive_is_open() {
             pebbles_widgets::hide_passive();
         }
         // Listener-style raw button events (any button) + pointer-move capture.

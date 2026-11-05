@@ -597,7 +597,7 @@ fn secondary_pointer(w: &mut WindowRuntime, button: MouseButton, state: ElementS
         pebbles_core::focus::set_focus(None);
     }
     // Any press dismisses a tooltip / hover card (as in the main window).
-    if pressed {
+    if pressed && pebbles_widgets::overlay::passive_is_open() {
         pebbles_widgets::hide_passive();
     }
     let raw = pointer_button(button).is_some_and(|b| {
