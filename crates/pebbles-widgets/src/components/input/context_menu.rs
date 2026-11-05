@@ -8,7 +8,7 @@ use std::rc::Rc;
 use pebbles_render::PointerEvent;
 
 use super::list_nav::list_nav;
-use super::menu::{ChildCtx, RebuildableMenu, SubMenuHandles, estimate_height, fit_width};
+use super::menu::{ChildCtx, MenuWidths, RebuildableMenu, SubMenuHandles, estimate_height};
 use crate::components::{MenuEntry, menu_sub};
 use crate::overlay::{show_overlay_guarded, window_size};
 use crate::widgets::GestureDetector;
@@ -105,7 +105,8 @@ fn render_context(p: &CtxProps) -> AnyWidget {
     let child_ctx = create_signal::<Option<Rc<ChildCtx>>>(None);
     let blueprint = Rc::new(RebuildableMenu::from(&p.entries));
     let handles = SubMenuHandles { nav: child_nav, ctx: child_ctx, subs: Rc::new(blueprint.sub_rows()) };
-    let width = fit_width(&p.entries, p.width);
+    let widths = MenuWidths::of(&p.entries);
+    let min_width = p.width;
     let menu_h = estimate_height(&p.entries);
     let on_open = p.on_open.clone();
     GestureDetector::new(p.child.clone())
@@ -113,8 +114,10 @@ fn render_context(p: &CtxProps) -> AnyWidget {
             if let Some(f) = &on_open {
                 f(e);
             }
-            // Open at the cursor, clamped to stay on-screen.
+            // Sized to the widest row (measured now, not on every build), then opened
+            // at the cursor, clamped to stay on-screen.
             let (ww, wh) = window_size();
+            let width = if ww > 16.0 { widths.fit(min_width).min(ww - 16.0) } else { widths.fit(min_width) };
             let (gx, gy) = (e.global.x, e.global.y);
             let left = if ww > 0.0 { gx.min(ww - width - 8.0).max(8.0) } else { gx };
             let top = if wh > 0.0 { gy.min(wh - menu_h - 8.0).max(8.0) } else { gy };

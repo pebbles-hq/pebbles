@@ -422,8 +422,17 @@ fn render_host(p: &Props) -> crate::widgets::Stack {
     // ordering; this check is the mid-pass half of the same guard.
     if let Some(entry) = overlay_signal().get().filter(|e| e.alive.as_ref().is_none_or(|f| f())) {
         // Full-window scrim: an outside click dismisses.
-        let scrim =
-            Positioned::fill(GestureDetector::new(Container::new()).on_tap(hide_overlay)).into_widget();
+        // The scrim also swallows the press (pointer-down + raw button-down): hit testing
+        // collects everything under the pointer, so a menu row (tap-only) let the press
+        // fall through to the widget painted behind it — clicking a menu item over an
+        // editor focused that editor before the item ran.
+        let scrim = Positioned::fill(
+            GestureDetector::new(Container::new())
+                .on_tap(hide_overlay)
+                .on_pointer_down(|| {})
+                .on_button_down(|| {}),
+        )
+        .into_widget();
         // The probe travels INTO a guard component around the panel content: the
         // host can pass its own check and the opener still unmount later in the
         // SAME rebuild pass, before the panel child inflates — the guard re-checks

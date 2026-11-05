@@ -272,38 +272,58 @@ fn default_trigger(label: &str, width: f64, hovered: bool, user: Option<crate::s
         .into_widget()
 }
 
-/// The panel width `entries` need so no label runs into its shortcut hint, at least
-/// `min` (VS Code / GTK menus size to their widest row instead of clipping it).
-pub(crate) fn fit_width(entries: &[MenuEntry], min: f64) -> f64 {
-    let measure = |s: &str, size: f32| {
-        pebbles_render::measure_text(
-            s,
-            &pebbles_render::ParagraphStyle { font_size: size, ..Default::default() },
-            None,
-        )
-        .width
-    };
-    let gutter = if entries
-        .iter()
-        .any(|e| matches!(e, MenuEntry::Item(MenuItem { icon: Some(_), .. }) | MenuEntry::Check { .. }))
-    {
-        24.0
-    } else {
-        0.0
-    };
-    let widest = entries
-        .iter()
-        .map(|e| match e {
-            MenuEntry::Item(i) => {
-                measure(&i.label, 14.0) + i.shortcut.as_deref().map_or(0.0, |s| 24.0 + measure(s, 12.0))
-            }
-            MenuEntry::Check { label, .. } => measure(label, 14.0),
-            MenuEntry::Sub { label, .. } => measure(label, 14.0) + 24.0,
-            MenuEntry::Label(_) | MenuEntry::Separator => 0.0,
-        })
-        .fold(0.0, f64::max);
-    // Row padding (2 × 8) + panel padding (2 × 4) + a pixel of rounding slack.
-    min.max((gutter + widest + 16.0 + 8.0 + 2.0).ceil())
+/// What [`fit_width`] measures of a menu: its rows' label / shortcut texts plus their
+/// fixed extras — collected at build time without shaping any text.
+#[derive(Clone, Default)]
+pub(crate) struct MenuWidths {
+    gutter: f64,
+    rows: Vec<(String, Option<String>, f64)>,
+}
+
+impl MenuWidths {
+    pub(crate) fn of(entries: &[MenuEntry]) -> Self {
+        let gutter = if entries
+            .iter()
+            .any(|e| matches!(e, MenuEntry::Item(MenuItem { icon: Some(_), .. }) | MenuEntry::Check { .. }))
+        {
+            24.0
+        } else {
+            0.0
+        };
+        let rows = entries
+            .iter()
+            .filter_map(|e| match e {
+                MenuEntry::Item(i) => Some((i.label.clone(), i.shortcut.clone(), 0.0)),
+                MenuEntry::Check { label, .. } => Some((label.clone(), None, 0.0)),
+                MenuEntry::Sub { label, .. } => Some((label.clone(), None, 24.0)),
+                MenuEntry::Label(_) | MenuEntry::Separator => None,
+            })
+            .collect();
+        MenuWidths { gutter, rows }
+    }
+
+    /// The panel width the rows need so no label runs into its shortcut hint, at least
+    /// `min` (VS Code / GTK menus size to their widest row instead of clipping it).
+    /// Shapes text: call it when the menu opens, not on every build.
+    pub(crate) fn fit(&self, min: f64) -> f64 {
+        let measure = |s: &str, size: f32| {
+            pebbles_render::measure_text(
+                s,
+                &pebbles_render::ParagraphStyle { font_size: size, ..Default::default() },
+                None,
+            )
+            .width
+        };
+        let widest = self
+            .rows
+            .iter()
+            .map(|(l, sc, extra)| {
+                measure(l, 14.0) + extra + sc.as_deref().map_or(0.0, |s| 24.0 + measure(s, 12.0))
+            })
+            .fold(0.0, f64::max);
+        // Row padding (2 × 8) + panel padding (2 × 4) + a pixel of rounding slack.
+        min.max((self.gutter + widest + 16.0 + 8.0 + 2.0).ceil())
+    }
 }
 
 pub(crate) fn estimate_height(entries: &[MenuEntry]) -> f64 {
@@ -319,7 +339,7 @@ pub(crate) fn estimate_height(entries: &[MenuEntry]) -> f64 {
 }
 
 fn render_dropdown(p: &Props) -> AnyWidget {
-    let width = fit_width(&p.entries, p.width);
+    let width = p.width;
     // Captured at render time so the on-tap anchor matches the (control-height) trigger.
     let control_h = theme().control_height;
     let hovered = create_signal(false);

@@ -320,7 +320,11 @@ pub(crate) fn overlay_children() -> Vec<AnyWidget> {
 
     // Dimming scrim; an outside click dismisses (if dismissible).
     let scrim = Positioned::fill(
-        GestureDetector::new(Container::new().color(Color::new([0.0, 0.0, 0.0, 0.45]))).on_tap(dismiss_top),
+        GestureDetector::new(Container::new().color(Color::new([0.0, 0.0, 0.0, 0.45])))
+            .on_tap(dismiss_top)
+            // Swallow the press too, so it never reaches the page behind the modal.
+            .on_pointer_down(|| {})
+            .on_button_down(|| {}),
     )
     .into_widget();
 
