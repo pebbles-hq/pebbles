@@ -279,6 +279,7 @@ impl ScrollController {
 #[derive(Clone)]
 struct ListViewport {
     axis: Axis,
+    reverse: bool,
     offset: f64,
     content_extent: f64,
     id: u64,
@@ -290,6 +291,7 @@ impl ListViewport {
     fn make(&self) -> RenderList {
         let mut r = RenderList::new(self.axis);
         r.offset = self.offset;
+        r.reverse = self.reverse;
         r.content_extent = self.content_extent;
         r.id = self.id;
         r.scrollbar = self.scrollbar;
@@ -645,14 +647,19 @@ fn render_list(p: &Props) -> ListViewport {
     {
         let ce = padded_extent;
         let snap = p.snap;
+        let reverse = p.reverse;
         scroll::install(
             id,
             Rc::new(move |to| {
                 let vp = scroll_metrics::get(id).map(|m| m.viewport).unwrap_or(0.0);
                 let max = (ce - vp).max(0.0);
-                let mut next = match to {
-                    ScrollTo::By(d) => offset.peek() + d,
-                    ScrollTo::ToFraction(f) => f * max,
+                // Wheel / drag deltas and scrollbar fractions are physical (toward the
+                // end = positive); a reversed list's offset counts from the end.
+                let mut next = match (to, reverse) {
+                    (ScrollTo::By(d), false) => offset.peek() + d,
+                    (ScrollTo::By(d), true) => offset.peek() - d,
+                    (ScrollTo::ToFraction(f), false) => f * max,
+                    (ScrollTo::ToFraction(f), true) => (1.0 - f) * max,
                 }
                 .clamp(0.0, max);
                 if snap > 0.0 {
@@ -783,6 +790,7 @@ fn render_list(p: &Props) -> ListViewport {
     let max = (padded_extent - viewport).max(0.0);
     ListViewport {
         axis: p.axis,
+        reverse: p.reverse,
         offset: o.clamp(0.0, max),
         content_extent: padded_extent,
         id,
@@ -1114,6 +1122,7 @@ fn render_grid(p: &GridProps) -> ListViewport {
     let max = (padded_extent - viewport).max(0.0);
     ListViewport {
         axis: Axis::Vertical,
+        reverse: p.reverse,
         offset: o.clamp(0.0, max),
         content_extent: padded_extent,
         id,

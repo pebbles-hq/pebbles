@@ -26,6 +26,9 @@ pub struct RenderList {
     pub content_extent: f64,
     /// Stable id for metrics publishing + scroll routing.
     pub id: u64,
+    /// Flutter's `reverse`: `offset` is the distance from the END of the content (0 =
+    /// scrolled to the bottom / right), and content shorter than the viewport hugs the end.
+    pub reverse: bool,
     pub scrollbar: ScrollbarStyle,
     /// Whether a touch/pointer drag over the viewport scrolls it (finger pan). On by
     /// default so virtualized lists finger-scroll on touch; the wheel + scrollbar paths
@@ -45,6 +48,7 @@ impl RenderList {
             offset: 0.0,
             content_extent: 0.0,
             id: 0,
+            reverse: false,
             scrollbar: ScrollbarStyle::default(),
             drag_scroll: true,
             viewport_extent: 0.0,
@@ -60,16 +64,24 @@ impl RenderList {
     pub fn viewport(&self) -> f64 {
         self.viewport_extent
     }
-    /// Whether the offset is pinned at the edge in the direction of `delta`.
+    /// The offset from the START of the content (top / left), whatever the direction.
+    pub fn start_offset(&self) -> f64 {
+        let max = self.max_offset();
+        let off = self.offset.clamp(0.0, max);
+        if self.reverse { max - off } else { off }
+    }
+    /// Whether the view is pinned at the edge in the direction of `delta` (`delta` is
+    /// physical: positive scrolls toward the end / bottom).
     pub fn at_edge(&self, delta: f64) -> bool {
-        (delta < 0.0 && self.offset <= 0.0) || (delta > 0.0 && self.offset >= self.max_offset())
+        let at = self.start_offset();
+        (delta < 0.0 && at <= 0.0) || (delta > 0.0 && at >= self.max_offset())
     }
     pub fn scrollable(&self) -> bool {
         self.max_offset() > 0.5 && self.scrollbar.policy != ScrollbarPolicy::Hidden
     }
     /// `(track_start, track_len, thumb_start, thumb_len)` along the axis.
     fn bar_geometry(&self) -> (f64, f64, f64, f64) {
-        self.scrollbar.geometry(self.viewport_extent, self.content_extent, self.offset)
+        self.scrollbar.geometry(self.viewport_extent, self.content_extent, self.start_offset())
     }
 
     fn along(&self, local: Offset) -> f64 {
@@ -156,7 +168,9 @@ impl RenderObject for RenderList {
                 },
             };
             cx.layout_child(child, child_constraints);
-            let off = self.offset.clamp(0.0, self.max_offset());
+            // Reversed content shorter than the viewport hugs the end (Flutter).
+            let lead = if self.reverse { (self.viewport_extent - self.content_extent).max(0.0) } else { 0.0 };
+            let off = self.start_offset() - lead;
             let child_offset = match self.axis {
                 Axis::Vertical => Offset::new(0.0, -off),
                 Axis::Horizontal => Offset::new(-off, 0.0),
