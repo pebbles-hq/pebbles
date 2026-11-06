@@ -261,6 +261,7 @@ impl Ui {
         let pushed = crate::reactive::push_ancestor_contexts(&ancestors);
         // Guard spans the child reconcile (render-time contexts stay visible to the
         // subtree — same discipline as `update`/`inflate`).
+        let t0 = crate::rebuild_profile::enabled().then(std::time::Instant::now);
         let new_child = {
             let guard = crate::reactive::begin_component(id);
             let out = guarded_render(&render);
@@ -268,6 +269,11 @@ impl Ui {
             crate::reactive::end_component(guard);
             child
         };
+        if let Some(t0) = t0 {
+            let w = &self.elements[id].widget;
+            let fid = w.as_component().map_or(0, |(f, _)| f);
+            crate::rebuild_profile::record(w.debug_name(), fid, t0.elapsed());
+        }
         crate::reactive::pop_pushed_contexts(pushed);
         self.elements[id].children = new_child.into_iter().collect();
     }

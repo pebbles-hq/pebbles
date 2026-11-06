@@ -1238,11 +1238,15 @@ fn refresh_merges_external_changes_keeping_ids_and_watch_polls() {
     let _ = id_of(tree, "src/b.rs");
     assert!(!tree.peek().root.iter().any(|n| n.name == "gone.txt"));
     // The polling watcher picks up the next change on its own.
-    ex.watch(Some(1.0));
+    // It lists folders on a background thread (no UI timer, no UI-thread IO per tick);
+    // headless, `task::pump` stands in for the shell's wake-up.
+    ex.watch(Some(0.02));
     std::fs::write(dir.join("new.txt"), "").unwrap();
-    let t0 = 1.0e6;
-    pebbles_core::animation::tick(t0);
-    pebbles_core::animation::tick(t0 + 1.5);
+    let start = std::time::Instant::now();
+    while !tree.peek().root.iter().any(|n| n.name == "new.txt") && start.elapsed().as_secs() < 5 {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        pebbles_core::task::pump();
+    }
     assert!(tree.peek().root.iter().any(|n| n.name == "new.txt"), "watcher saw new.txt");
     ex.watch(None);
     std::fs::remove_dir_all(&dir).ok();

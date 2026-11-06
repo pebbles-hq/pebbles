@@ -610,6 +610,18 @@ impl<T: 'static + Clone> Signal<T> {
         });
     }
 
+    /// Replace the value WITHOUT notifying anyone (Leptos' `set_untracked`): no reader
+    /// re-runs and no frame is requested. For bookkeeping state that is only ever
+    /// [`peek`](Self::peek)ed (request tickets, fingerprints) — a plain `set` there wakes
+    /// an idle window to draw an unchanged frame.
+    pub fn set_untracked(&self, value: T) {
+        with_rt(|rt| {
+            if let Some(slot) = rt.signals.get_mut(self.id) {
+                write_value(slot, value);
+            }
+        });
+    }
+
     /// Mutate the value in place and schedule dependents. The closure must not touch
     /// the runtime (don't read/write *this* signal inside it). A no-op if the signal
     /// was already disposed (mirrors [`set`](Self::set)), so a lingering handler on an
@@ -697,7 +709,21 @@ fn schedule_subscribers(rt: &mut Runtime, id: SignalId) {
         mark_memos(rt, &mut work);
         rt.mark_worklist = work; // capacity-retaining, empty after mark_memos drains it
     }
+    if !rt.frame_requested {
+        trace_wake("signal write");
+    }
     rt.frame_requested = true;
+}
+
+/// `PEBBLES_TRACE_WAKE=1`: print a backtrace for every write/request that wakes an idle
+/// window (the first per frame) — finds what keeps an idle app drawing.
+#[doc(hidden)]
+pub fn trace_wake(what: &str) {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    if *ON.get_or_init(|| std::env::var("PEBBLES_TRACE_WAKE").is_ok_and(|v| v == "1")) {
+        eprintln!("[pebbles wake] {what}\n{}", std::backtrace::Backtrace::force_capture());
+    }
 }
 
 /// Schedule only the LEAF readers (components/effects) of a signal — the settle
@@ -1528,7 +1554,12 @@ pub fn frame_requested() -> bool {
 /// that changes what should be on screen without writing a signal (e.g. registering a
 /// background [`task`](crate::task) whose result will land on a later frame).
 pub fn request_frame() {
-    with_rt(|rt| rt.frame_requested = true);
+    with_rt(|rt| {
+        if !rt.frame_requested {
+            trace_wake("request_frame");
+        }
+        rt.frame_requested = true;
+    });
 }
 
 /// The component element currently rendering, if any. Used to give a focus node a

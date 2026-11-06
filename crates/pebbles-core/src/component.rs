@@ -57,23 +57,26 @@ pub type Element = AnyWidget;
 pub struct Component {
     pub(crate) id: usize,
     pub(crate) render: Rc<dyn Fn() -> AnyWidget>,
+    /// The props (or, without props, the returned widget) type: a readable name for the
+    /// rebuild profiler (`PEBBLES_REBUILD_PROFILE`).
+    pub(crate) name: &'static str,
 }
 
 /// Wrap a no-props component `fn() -> impl IntoWidget`.
 pub fn component<W: IntoWidget + 'static>(func: fn() -> W) -> Component {
-    Component { id: func as usize, render: Rc::new(move || func().into_widget()) }
+    Component { id: func as usize, render: Rc::new(move || func().into_widget()), name: std::any::type_name::<W>() }
 }
 
 /// Wrap a component `fn(&P) -> impl IntoWidget` with its props. All instances of the
 /// same component function share identity (so their element/state is reused
 /// positionally).
 pub fn component_props<P: 'static, W: IntoWidget + 'static>(func: fn(&P) -> W, props: P) -> Component {
-    Component { id: func as usize, render: Rc::new(move || func(&props).into_widget()) }
+    Component { id: func as usize, render: Rc::new(move || func(&props).into_widget()), name: std::any::type_name::<P>() }
 }
 
 impl Widget for Component {
     fn debug_name(&self) -> &'static str {
-        "Component"
+        self.name
     }
     fn as_any(&self) -> &dyn Any {
         self

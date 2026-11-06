@@ -22,6 +22,7 @@
 //! and `pebbles-render`.
 
 pub mod animation;
+pub mod rebuild_profile;
 pub mod bounds;
 pub mod clipboard;
 pub mod component;
@@ -48,7 +49,7 @@ pub mod widget;
 
 pub use animation::{
     Curve, Spring, Transition, animate_spring, animate_to, animate_to_with, animated, animated_spring,
-    animated_with, clear_timeout, create_loop, create_loop_while, create_timeout, prefers_reduced_motion,
+    animated_with, clear_timeout, create_loop, create_loop_while, create_blink, Blink, has_timeout, create_timeout, prefers_reduced_motion,
     set_prefers_reduced_motion, set_timeout, transition,
 };
 pub use bounds::use_bounds;

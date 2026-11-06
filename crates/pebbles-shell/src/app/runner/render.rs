@@ -392,10 +392,39 @@ impl Runner {
 
         let stats = frame_stats_enabled();
 
+        // Writes made before this point (animation ticks, fired timers, delivered tasks,
+        // input handlers) are reconciled by THIS frame: consume their frame request, or the
+        // loop draws a second, empty frame after every timer/animation write (a blinking
+        // caret drew two frames per toggle). Writes from here on (effects, layout probes,
+        // paint) request the next frame as usual. Secondary windows share the runtime and
+        // reconcile on their own turn, so they keep the request.
+        if self.windows.is_empty() {
+            let _ = pebbles_core::reactive::frame_requested();
+        }
+
         // 1. Reconcile. (May register fresh animation tracks as components render.)
         let t = Instant::now();
         self.ui.rebuild_if_dirty();
         let rebuild = t.elapsed();
+        if pebbles_core::rebuild_profile::enabled() {
+            let rows = pebbles_core::rebuild_profile::take();
+            if !rows.is_empty() {
+                let anchor = pebbles_core::rebuild_profile::anchor();
+                let top: Vec<String> = rows
+                    .iter()
+                    .take(6)
+                    .map(|(n, f, d)| {
+                        format!("{n}@{:+x} {:.2}ms", *f as i64 - anchor as i64, d.as_secs_f64() * 1e3)
+                    })
+                    .collect();
+                eprintln!(
+                    "[pebbles rebuild] frame {fno} {:.2}ms, {} dirty roots: {}",
+                    rebuild.as_secs_f64() * 1e3,
+                    rows.len(),
+                    top.join(" | ")
+                );
+            }
+        }
 
         // 2. Layout in logical pixels.
         let scale = active.window.scale_factor();

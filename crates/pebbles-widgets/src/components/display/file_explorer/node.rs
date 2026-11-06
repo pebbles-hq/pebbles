@@ -59,7 +59,12 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     if drop_target {
         bg = mix(bg, st.drop_target_bg, st.drop_target_strength);
     }
-    bg = mix(bg, st.hover_bg, st.hover_strength * hv as f32);
+    // A full-strength hover is a finished colour (VS Code's list.hoverBackground): the
+    // selection paints over it, as `.selected` wins over `:hover` there. A partial one
+    // is a tint, and tints the selection too.
+    if !(selected && st.hover_strength >= 1.0) {
+        bg = mix(bg, st.hover_bg, st.hover_strength * hv as f32);
+    }
 
     let dim = if selected { sel_fg } else { st.icon_tint };
     let twistie: AnyWidget = if is_folder {

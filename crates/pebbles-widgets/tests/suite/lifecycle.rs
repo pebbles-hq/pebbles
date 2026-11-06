@@ -49,7 +49,11 @@ fn caret_blink_ticks_only_while_focused() {
     );
     focused.layout(&mut env_f, Size::new(400.0, 300.0));
     frame(&mut focused, &mut env_f, 0.2); // autofocus lands → re-render with focus
-    assert!(frame(&mut focused, &mut env_f, 0.3), "focused field runs the blink loop");
+    // A focused field blinks on a TIMER: it never pins the animation driver (no frame
+    // between toggles), but a toggle is pending.
+    frame(&mut focused, &mut env_f, 0.3);
+    assert_eq!(animation::census_loops(), 0, "the blink does not pin the driver");
+    assert!(animation::has_pending_timeouts(), "focused field has a blink timer");
 
     // …and blurring stops it again. Blur also starts the focus-ring fade-out (a ~0.14s
     // `animated` tween), so the driver legitimately stays busy for a few frames — the
@@ -67,6 +71,7 @@ fn caret_blink_ticks_only_while_focused() {
         }
     }
     assert!(settled, "after blur the driver settles to idle — the blink loop is gone");
+    assert!(!animation::has_pending_timeouts(), "blur cancelled the blink timer");
 }
 
 #[test]

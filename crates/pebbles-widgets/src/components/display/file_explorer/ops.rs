@@ -102,21 +102,64 @@ impl FileExplorer {
     pub fn watch(&self, secs: Option<f64>) {
         let secs = secs.filter(|_| self.caps.peek().allows(Capability::FileWatching));
         self.watch_secs.set(secs);
-        match secs {
-            Some(s) => self.arm_watch(s),
-            None => pebbles_core::animation::clear_timeout(self.watch_key),
+        // Orphan any running loop; a new one starts below.
+        self.watch_gen.set_untracked(self.watch_gen.peek() + 1);
+        pebbles_core::animation::clear_timeout(self.watch_key);
+        if let Some(s) = secs {
+            // Baseline now, so a change made before the first tick is still seen.
+            self.watch_hash.set_untracked(Rc::new(listing_hashes(&self.loaded_dirs())));
+            self.arm_watch(s);
         }
     }
 
+    /// One watch tick: list every loaded folder on a background thread after `secs`, and
+    /// only when a listing changed run [`refresh`](Self::refresh) on the UI thread. The
+    /// wait and the directory reads used to be a UI timer + `read_dir`s on the UI thread
+    /// every tick: a frame drawn and disk IO on the UI thread every 2 s, idle or not.
     pub(super) fn arm_watch(&self, secs: f64) {
         let this = *self;
-        pebbles_core::animation::set_timeout(self.watch_key, secs, move || {
-            // try_peek: the explorer may have unmounted.
-            if let Some(Some(s)) = this.watch_secs.try_peek() {
-                this.refresh();
+        let generation = self.watch_gen.peek();
+        let dirs = self.loaded_dirs();
+        pebbles_core::task::spawn(
+            move || {
+                std::thread::sleep(std::time::Duration::from_secs_f64(secs));
+                listing_hashes(&dirs)
+            },
+            move |fresh| {
+                // try_peek: the explorer may have unmounted.
+                if this.watch_gen.try_peek() != Some(generation) {
+                    return;
+                }
+                let Some(Some(s)) = this.watch_secs.try_peek() else { return };
+                let prev = this.watch_hash.peek();
+                // A folder loaded since the last tick has no baseline yet: not a change.
+                let changed = fresh.iter().any(|(d, h)| prev.get(d).is_some_and(|p| p != h));
+                let mut next = (*prev).clone();
+                next.extend(fresh);
+                this.watch_hash.set_untracked(Rc::new(next));
+                if changed {
+                    this.refresh();
+                }
                 this.arm_watch(s);
+            },
+        );
+    }
+
+    /// The opened folder and every loaded (expanded-at-some-point) folder under it.
+    fn loaded_dirs(&self) -> Vec<PathBuf> {
+        let Some(root) = self.fs_root.peek().clone() else { return Vec::new() };
+        fn walk(dir: &Path, nodes: &[FsNode], out: &mut Vec<PathBuf>) {
+            for n in nodes {
+                if n.kind == FsKind::Folder && n.loaded {
+                    let p = dir.join(&n.name);
+                    walk(&p, &n.children, out);
+                    out.push(p);
+                }
             }
-        });
+        }
+        let mut out = vec![root.clone()];
+        walk(&root, &self.tree.peek().root, &mut out);
+        out
     }
 
     /// The effective load filter: the app's [`set_load_filter`](Self::set_load_filter)
@@ -1146,4 +1189,24 @@ impl FileExplorer {
             None => Ok(ids),
         }
     }
+}
+
+/// A hash of each of `dirs`' raw listing (name + kind) — what [`FileExplorer::refresh`]
+/// would re-read. Runs on a background thread (and once, synchronously, at watch start).
+fn listing_hashes(dirs: &[PathBuf]) -> std::collections::HashMap<PathBuf, u64> {
+    use std::hash::{Hash, Hasher};
+    dirs.iter()
+        .map(|d| {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            let mut names: Vec<(std::ffi::OsString, bool)> = match std::fs::read_dir(d) {
+                Ok(rd) => {
+                    rd.flatten().map(|e| (e.file_name(), e.file_type().is_ok_and(|t| t.is_dir()))).collect()
+                }
+                Err(_) => Vec::new(),
+            };
+            names.sort();
+            names.hash(&mut h);
+            (d.clone(), h.finish())
+        })
+        .collect()
 }

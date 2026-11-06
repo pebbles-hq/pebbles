@@ -1170,10 +1170,19 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
                 }
             }
             PebblesUserEvent::TaskDone => {
-                // A background result is ready: the next frame's `task::pump` delivers it.
-                self.request_redraw();
-                for w in self.windows.values() {
-                    redraw::request(&w.window);
+                // A background result is ready: deliver it NOW, off-frame. Its `on_done`
+                // writes signals (→ `frame_requested`, a redraw in `about_to_wait`) only if
+                // something changed; a poll that changed nothing (a file watcher tick, a
+                // fingerprint that matched) must not present a frame — an idle window draws
+                // nothing (Flutter schedules a frame only for a dirty element).
+                if self.mounted {
+                    self.ui.make_current();
+                    if pebbles_core::task::pump() {
+                        pebbles_core::reactive::trace_wake("a polled (non-waking) task is pending");
+                        self.request_redraw();
+                    }
+                } else {
+                    self.request_redraw();
                 }
             }
             PebblesUserEvent::GpuLost => {

@@ -83,7 +83,7 @@ pub mod prelude {
     pub use pebbles_core::{KeyEvent, KeyEventKind, KeyEventResult, LogicalKey, PhysicalKey};
     // The rest of the hook surface (was reachable only via `pebbles::core::…`).
     pub use pebbles_core::{
-        ErrorBoundaryHandle, RootDisposer, create_cleanup, create_loop, create_loop_while, create_memo_with,
+        ErrorBoundaryHandle, RootDisposer, create_cleanup, create_loop, create_loop_while, create_blink, Blink, create_memo_with,
         create_root, create_root_signal, create_selector, create_unique_id, on, on_defer, on_mount,
     };
     #[cfg(all(feature = "tokio", not(target_family = "wasm")))]

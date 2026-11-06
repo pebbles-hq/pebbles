@@ -23,7 +23,7 @@ use crate::widgets::{
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{
     KeyInput, Motion, Signal, action_event, animated, clipboard, component_props, create_cleanup,
-    create_focus, create_loop_while, create_signal, keyboard,
+    create_focus, create_signal, keyboard,
 };
 
 type StrFmt = Rc<dyn Fn(&str) -> String>;
@@ -846,12 +846,11 @@ fn render_field(p: &Props) -> AnyWidget {
     create_cleanup(move || edit::clear(ed.id));
     let focused = !disabled && focus.is_focused();
 
-    // Caret blink: a 0.5s loop phase, ticking ONLY while focused — an idle field must
-    // never keep the frame loop alive (an unconditional loop here redrew the whole
-    // app at full rate whenever any TextField was merely on screen). The caret shows
-    // for the first half of each cycle after the last edit (solid while composing).
-    let blink_loop = create_loop_while(focused, 0.5);
-    let blink_stamp = create_signal(0.0_f64);
+    // Caret blink: a timer toggling every 500 ms (Flutter's half-period) ONLY while
+    // focused, restarted solid on every edit/move. A timer, not an animation loop: the
+    // loop it replaced re-rendered this field and drew a frame at the display rate for
+    // as long as the field held focus.
+    let blink = pebbles_core::create_blink(focused, 0.5);
 
     // Type-driven defaults — the kind's filter, icon, placeholder, format and
     // built-in affordances. Each is overridden by an explicit builder call.
@@ -921,7 +920,7 @@ fn render_field(p: &Props) -> AnyWidget {
             }
             let (changed, submit) = ed.apply(k, filter.as_deref(), max_length, format.as_deref());
             if changed {
-                blink_stamp.set(blink_loop.peek());
+                blink.restart();
                 if let Some(cb) = &on_changed {
                     cb(&ed.value.peek());
                 }
@@ -957,7 +956,7 @@ fn render_field(p: &Props) -> AnyWidget {
     let (sel_a, sel_f) = (snap_boundary(&val, ed.anchor.get()), snap_boundary(&val, ed.focus.get()));
     let caret_visible = if focused && !p.read_only {
         if ed.preedit.peek().is_empty() {
-            (blink_loop.get() - blink_stamp.get()).rem_euclid(1.0) < 0.5
+            blink.visible()
         } else {
             true // solid while composing
         }
@@ -1092,7 +1091,7 @@ fn render_field(p: &Props) -> AnyWidget {
             .on_pointer_down(action_event(move |e: PointerEvent| {
                 focus.request_focus();
                 place_caret(ed, e, cl, ct, keyboard::shift_held());
-                blink_stamp.set(blink_loop.peek());
+                blink.restart();
             }))
             .on_pan_update(action_event(move |e: PointerEvent| {
                 let (tx, ty) = (e.position.x - cl, e.position.y - ct);
@@ -1101,7 +1100,7 @@ fn render_field(p: &Props) -> AnyWidget {
                 if let Some((a, f)) = edit::extend_to(ed.id, pa, pf, tx, ty) {
                     ed.anchor.set(a);
                     ed.focus.set(f);
-                    blink_stamp.set(blink_loop.peek());
+                    blink.restart();
                 }
             }))
             .on_double_tap(action_event(move |e: PointerEvent| {
@@ -1109,7 +1108,7 @@ fn render_field(p: &Props) -> AnyWidget {
                 if let Some((a, f)) = edit::word_at(ed.id, tx, ty) {
                     ed.anchor.set(a);
                     ed.focus.set(f);
-                    blink_stamp.set(blink_loop.peek());
+                    blink.restart();
                 }
             }))
             .into_widget()

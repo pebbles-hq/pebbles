@@ -68,18 +68,24 @@ fn caret_blinks_while_focused_and_is_solid_while_composing() {
     frame(&mut ui);
     assert!(caret_visible(&ui), "caret starts visible");
 
-    // Half a period later the blink phase hides it; another half shows it again.
-    animation::tick(0.3);
+    // A 500 ms half-period timer (Flutter's): the first tick anchors it, half a period
+    // later the caret hides, another half shows it again.
+    animation::tick(0.0);
+    assert_eq!(animation::census_loops(), 0, "the blink is a timer, not a frame-pinning loop");
+    animation::tick(0.4);
+    frame(&mut ui);
+    assert!(caret_visible(&ui), "still visible before the half period");
+    animation::tick(0.55);
     frame(&mut ui);
     assert!(!caret_visible(&ui), "hidden in the second half of the blink cycle");
-    animation::tick(0.55);
+    animation::tick(1.1);
     frame(&mut ui);
     assert!(caret_visible(&ui), "visible again in the next cycle");
 
     // While composing, the caret never blinks.
     ui.dispatch_key(KeyInput::Preedit("に".to_string()));
     frame(&mut ui);
-    animation::tick(0.8);
+    animation::tick(1.7);
     frame(&mut ui);
     assert!(caret_visible(&ui), "solid while an IME composition is active");
 }

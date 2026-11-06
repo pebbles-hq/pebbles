@@ -356,6 +356,73 @@ pub fn create_loop_while(active: bool, period: f64) -> Signal<f64> {
     value
 }
 
+/// A timer-driven on/off blinker (a text caret): see [`create_blink`]. `Copy`, so event
+/// handlers and effects can hold it.
+#[derive(Clone, Copy)]
+pub struct Blink {
+    on: Signal<bool>,
+    half: f64,
+}
+
+impl Blink {
+    /// Whether the blinker is in its visible half now. Subscribes the reader, which then
+    /// re-renders once per half-period — not every frame.
+    pub fn visible(&self) -> bool {
+        self.on.get()
+    }
+
+    /// Show solid again and restart the countdown (an edit or a caret move: the caret
+    /// stays visible while you work, as in Flutter and VS Code).
+    pub fn restart(&self) {
+        self.on.set_if_changed(true);
+        if has_timeout(self.key()) {
+            schedule_blink(*self);
+        }
+    }
+
+    fn key(&self) -> u64 {
+        BLINK_KEY_BASE ^ self.on.raw_id()
+    }
+}
+
+/// Timer keys for blinkers (disjoint from caller `set_timeout` ids in practice).
+const BLINK_KEY_BASE: u64 = 0xB11C_0000_0000_0000;
+
+fn schedule_blink(b: Blink) {
+    set_timeout(b.key(), b.half, move || {
+        if b.on.alive() {
+            b.on.set(!b.on.peek());
+            schedule_blink(b);
+        }
+    });
+}
+
+/// Whether a [`set_timeout`] with this `id` is pending.
+pub fn has_timeout(id: u64) -> bool {
+    TIMEOUTS.with(|t| t.borrow().contains_key(&id))
+}
+
+/// A component hook: a discrete blinker that toggles every `half_period` seconds while
+/// `active` (a focused text field's caret). Driven by a timer, NOT an animation loop: the
+/// shell sleeps between toggles and draws one frame per toggle (Flutter's caret uses a
+/// `Timer` with a 500 ms half-period the same way), where a [`create_loop_while`] phase
+/// pins the frame loop at the display rate for as long as the field is focused.
+pub fn create_blink(active: bool, half_period: f64) -> Blink {
+    let on = create_signal(true);
+    let b = Blink { on, half: half_period.max(0.05) };
+    let key = b.key();
+    if active {
+        if !has_timeout(key) {
+            schedule_blink(b);
+        }
+    } else if has_timeout(key) {
+        clear_timeout(key);
+        on.set_untracked(true);
+    }
+    crate::reactive::create_cleanup(move || clear_timeout(key));
+    b
+}
+
 /// Advance all animations to `now` (monotonic seconds). Returns whether any remain
 /// active. Called once per frame by the shell.
 pub fn tick(now: f64) -> bool {
@@ -440,6 +507,15 @@ pub fn tick(now: f64) -> bool {
     });
     for f in &due {
         f();
+    }
+    // A timer an action just (re)armed started NOW, not at the next frame — a repeating
+    // timer (a caret blink) must not drift by the idle gap until something else draws.
+    if !due.is_empty() {
+        TIMEOUTS.with(|t| {
+            for to in t.borrow_mut().values_mut() {
+                to.at.get_or_insert(now + to.delay);
+            }
+        });
     }
     // Pending timeouts don't keep the driver hot (see `active`).
     tweening || looping

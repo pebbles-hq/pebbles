@@ -204,6 +204,10 @@ pub struct FileExplorer {
     watch_key: u64,
     /// The watcher interval in seconds (`None` = not watching).
     watch_secs: Signal<Option<f64>>,
+    /// The watch loop's generation (a restart orphans the running loop) and the hash of
+    /// the last polled listings — both only peeked.
+    watch_gen: Signal<u64>,
+    watch_hash: Signal<Rc<std::collections::HashMap<PathBuf, u64>>>,
     /// Filesystem mode: the directory the explorer mirrors (None = in-memory).
     fs_root: Signal<Option<PathBuf>>,
     /// The last filesystem error, if any (read for toasts/inline hints).
@@ -340,6 +344,8 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         hover_key: create_signal(()).raw_id(),
         watch_key: create_signal(()).raw_id(),
         watch_secs: create_signal(None),
+        watch_gen: create_signal(0),
+        watch_hash: create_signal(Rc::new(std::collections::HashMap::new())),
         fs_root: create_signal(None),
         last_error: create_signal(None),
         rename_buf: create_signal(String::new()),

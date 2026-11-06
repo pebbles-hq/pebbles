@@ -90,7 +90,7 @@ pub use pebbles_core::{create_selector, create_unique_id};
 // --- time & async ----------------------------------------------------------
 #[cfg(all(feature = "tokio", not(target_family = "wasm")))]
 pub use pebbles_core::create_resource_future;
-pub use pebbles_core::{create_loop, create_loop_while, create_resource, create_timeout};
+pub use pebbles_core::{create_loop, create_loop_while, create_blink, Blink, create_resource, create_timeout};
 
 // --- focus & input ---------------------------------------------------------
 pub use pebbles_core::{create_focus, create_focus_scope, create_shortcut, create_shortcut_if};

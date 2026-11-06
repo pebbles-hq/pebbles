@@ -194,13 +194,14 @@ fn focus_and_caret_blink_invalidate_the_field_only() {
     let _f0 = assert_not_stale(&mut ui, &mut env, &focused, "autofocus");
     // Half a blink period later the caret hides: only the field re-records.
     let card_layer = boundary_layers(&ui);
-    animation::tick(0.3);
+    animation::tick(0.0); // anchors the 500 ms blink timer
+    animation::tick(0.55);
     let blinked = frame(&mut ui, &mut env);
     assert_eq!(boundary_layers(&ui), card_layer, "the card kept its fragment through the blink");
     assert_ne!(format!("{:?}", focused.ops()), format!("{:?}", blinked.ops()), "the caret blinked");
     let _f1 = assert_not_stale(&mut ui, &mut env, &blinked, "caret blink");
     // And back.
-    animation::tick(0.55);
+    animation::tick(1.1);
     let shown = frame(&mut ui, &mut env);
     let _f2 = assert_not_stale(&mut ui, &mut env, &shown, "caret blink back");
     assert_ne!(format!("{:?}", blinked.ops()), format!("{:?}", shown.ops()), "the caret is back");
