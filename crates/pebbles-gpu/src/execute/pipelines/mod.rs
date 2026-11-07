@@ -132,78 +132,74 @@ pub(crate) struct PipelineKey {
     pub variant: u8,
 }
 
-/// The once-per-Renderer shader modules (prelude prepended to each).
+/// The per-Renderer shader modules (prelude prepended to each), each created on the first
+/// pipeline that needs it: a module keeps its parsed WGSL IR for later pipeline builds
+/// (~0.2 MB each), so kinds a window never draws cost nothing.
 pub(crate) struct ShaderModules {
-    pub solid: wgpu::ShaderModule,
-    pub glyph: wgpu::ShaderModule,
-    /// `glyph_lcd.wgsl`, only on devices with `DUAL_SOURCE_BLENDING` (`crate::text_aa`).
-    pub glyph_lcd: Option<wgpu::ShaderModule>,
-    pub image: wgpu::ShaderModule,
-    pub shadow: wgpu::ShaderModule,
-    pub sdf: wgpu::ShaderModule,
-    pub composite: wgpu::ShaderModule,
-    pub blit: wgpu::ShaderModule,
-    pub gradient: wgpu::ShaderModule,
-    pub image_brush: wgpu::ShaderModule,
-    pub effects: wgpu::ShaderModule,
-    pub projected: wgpu::ShaderModule,
-    pub vertices: wgpu::ShaderModule,
+    cells: [std::sync::OnceLock<wgpu::ShaderModule>; SOURCES.len()],
+    /// `glyph_lcd.wgsl` is usable: the device has `DUAL_SOURCE_BLENDING` (`crate::text_aa`).
+    lcd: bool,
 }
+
+const SOURCES: [(&str, &str); 13] = [
+    ("pebbles.gpu.shader.solid", crate::shaders::SOLID),
+    ("pebbles.gpu.shader.glyph", crate::shaders::GLYPH),
+    ("pebbles.gpu.shader.glyph_lcd", crate::shaders::GLYPH_LCD),
+    ("pebbles.gpu.shader.image", crate::shaders::IMAGE),
+    ("pebbles.gpu.shader.shadow", crate::shaders::SHADOW),
+    ("pebbles.gpu.shader.sdf", crate::shaders::SDF),
+    ("pebbles.gpu.shader.composite", crate::shaders::COMPOSITE),
+    ("pebbles.gpu.shader.blit", crate::shaders::BLIT),
+    ("pebbles.gpu.shader.gradient", crate::shaders::GRADIENT),
+    ("pebbles.gpu.shader.image_brush", crate::shaders::IMAGE_BRUSH),
+    ("pebbles.gpu.shader.effects", crate::shaders::EFFECTS),
+    ("pebbles.gpu.shader.projected", crate::shaders::PROJECTED),
+    ("pebbles.gpu.shader.vertices", crate::shaders::VERTICES),
+];
 
 impl ShaderModules {
     pub(crate) fn new(device: &wgpu::Device) -> Self {
-        let module = |label: &str, source: &'static str| {
-            device.create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: Some(label),
-                source: wgpu::ShaderSource::Wgsl(source.into()),
-            })
-        };
-        use crate::shaders;
         Self {
-            solid: module("pebbles.gpu.shader.solid", shaders::SOLID),
-            glyph: module("pebbles.gpu.shader.glyph", shaders::GLYPH),
-            glyph_lcd: device
-                .features()
-                .contains(wgpu::Features::DUAL_SOURCE_BLENDING)
-                .then(|| module("pebbles.gpu.shader.glyph_lcd", shaders::GLYPH_LCD)),
-            image: module("pebbles.gpu.shader.image", shaders::IMAGE),
-            shadow: module("pebbles.gpu.shader.shadow", shaders::SHADOW),
-            sdf: module("pebbles.gpu.shader.sdf", shaders::SDF),
-            composite: module("pebbles.gpu.shader.composite", shaders::COMPOSITE),
-            blit: module("pebbles.gpu.shader.blit", shaders::BLIT),
-            gradient: module("pebbles.gpu.shader.gradient", shaders::GRADIENT),
-            image_brush: module("pebbles.gpu.shader.image_brush", shaders::IMAGE_BRUSH),
-            effects: module("pebbles.gpu.shader.effects", shaders::EFFECTS),
-            projected: module("pebbles.gpu.shader.projected", shaders::PROJECTED),
-            vertices: module("pebbles.gpu.shader.vertices", shaders::VERTICES),
+            cells: Default::default(),
+            lcd: device.features().contains(wgpu::Features::DUAL_SOURCE_BLENDING),
         }
     }
 
     /// The module `key` builds from (`None`: the LCD glyph variant without device support).
-    pub(crate) fn for_key(&self, key: PipelineKey) -> Option<&wgpu::ShaderModule> {
-        if key.kind == PipelineKind::Glyph && key.variant == descs::GLYPH_LCD_VARIANT {
-            return self.glyph_lcd.as_ref();
-        }
-        Some(self.for_kind(key.kind))
+    pub(crate) fn for_key(&self, device: &wgpu::Device, key: PipelineKey) -> Option<&wgpu::ShaderModule> {
+        let i = if key.kind == PipelineKind::Glyph && key.variant == descs::GLYPH_LCD_VARIANT {
+            if !self.lcd {
+                return None;
+            }
+            2
+        } else {
+            Self::index(key.kind)
+        };
+        let (label, source) = SOURCES[i];
+        Some(self.cells[i].get_or_init(|| {
+            device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some(label),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            })
+        }))
     }
 
-    pub(crate) fn for_kind(&self, kind: PipelineKind) -> &wgpu::ShaderModule {
+    fn index(kind: PipelineKind) -> usize {
         match kind {
-            PipelineKind::Solid => &self.solid,
-            PipelineKind::Glyph => &self.glyph,
-            PipelineKind::Image => &self.image,
-            PipelineKind::Shadow => &self.shadow,
-            PipelineKind::Sdf => &self.sdf,
+            PipelineKind::Glyph => 1,
+            PipelineKind::Image => 3,
+            PipelineKind::Shadow => 4,
+            PipelineKind::Sdf => 5,
             PipelineKind::CompositeOver
             | PipelineKind::CompositeCompose
-            | PipelineKind::CompositeBackdrop => &self.composite,
-            PipelineKind::Blit => &self.blit,
-            PipelineKind::Gradient => &self.gradient,
-            PipelineKind::ImageBrush => &self.image_brush,
-            PipelineKind::Blur | PipelineKind::ColorMatrix | PipelineKind::Morphology => &self.effects,
-            PipelineKind::Projected => &self.projected,
-            PipelineKind::Vertices => &self.vertices,
-            _ => &self.solid,
+            | PipelineKind::CompositeBackdrop => 6,
+            PipelineKind::Blit => 7,
+            PipelineKind::Gradient => 8,
+            PipelineKind::ImageBrush => 9,
+            PipelineKind::Blur | PipelineKind::ColorMatrix | PipelineKind::Morphology => 10,
+            PipelineKind::Projected => 11,
+            PipelineKind::Vertices => 12,
+            _ => 0,
         }
     }
 }
@@ -277,7 +273,7 @@ impl PipelineCache {
         if self.pipelines.contains_key(&key) {
             return;
         }
-        let Some(shader) = modules.for_key(key) else { return };
+        let Some(shader) = modules.for_key(device, key) else { return };
         // Kinds without a §9 row in code yet are never reached (later cards add them).
         let Some(desc) = descs::desc_for(key) else { return };
         debug_assert!(crate::shaders::ALL.iter().any(|(n, _)| desc.wgsl.trim_end_matches(".wgsl") == *n));

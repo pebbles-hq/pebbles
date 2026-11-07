@@ -164,16 +164,20 @@ pub fn trim() {
 }
 
 /// A background thread trimming 2 s after start (the GPU driver's startup shader compiles
-/// leave ~tens of MB free but retained), then each minute when > 8 MB sits free.
+/// leave ~tens of MB free but retained), again at 4, 8 and 16 s (an app's own start-up
+/// work — folder walks, indexes, git — finishes after the first frame and frees its
+/// scratch), then each minute; each time only when > 4 MB sits free.
 pub fn start_trimmer() {
     let _ = std::thread::Builder::new().name("pebbles-trim".into()).spawn(|| {
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        let mut wait = 2;
+        std::thread::sleep(std::time::Duration::from_secs(wait));
         loop {
-            if snapshot().malloc_free_retained.is_some_and(|f| f > 8 << 20) {
+            if snapshot().malloc_free_retained.is_some_and(|f| f > 4 << 20) {
                 trim();
             }
             probe("after trim");
-            std::thread::sleep(std::time::Duration::from_secs(60));
+            wait = if wait < 16 { wait * 2 } else { 60 };
+            std::thread::sleep(std::time::Duration::from_secs(wait));
         }
     });
 }
