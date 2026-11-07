@@ -5,7 +5,7 @@
 mod wgpu_host;
 #[cfg_attr(target_family = "wasm", allow(unused_imports))] // startup_failure_text: native only
 pub(crate) use wgpu_host::{
-    RenderContext, RenderSurface, Renderer, census_values, error_text, frame_stats_line,
+    RenderContext, RenderSurface, Renderer, census_values, error_text, frame_stats_json, frame_stats_line, memory_line,
     repeated_reset_guidance, startup_failure_text,
 };
 

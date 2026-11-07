@@ -16,6 +16,7 @@ pub mod color;
 pub mod geometry;
 pub mod layout;
 pub mod log;
+pub mod mem;
 pub mod palette;
 pub mod platform;
 

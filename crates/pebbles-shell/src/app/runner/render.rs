@@ -406,16 +406,28 @@ impl Runner {
         let t = Instant::now();
         self.ui.rebuild_if_dirty();
         let rebuild = t.elapsed();
+        let mut dirty_roots = 0usize;
         if pebbles_core::rebuild_profile::enabled() {
-            let rows = pebbles_core::rebuild_profile::take();
-            if !rows.is_empty() {
-                use pebbles_core::rebuild_profile::label;
+            use pebbles_core::rebuild_profile::{label, note_frame, printing, take, take_self};
+            let rows = take();
+            let selfs = take_self();
+            dirty_roots = rows.len();
+            for c in note_frame(&selfs) {
+                log::warn(
+                    log::Cat::Frame,
+                    format!(
+                        "{c} re-rendered in {} frames in a row — a signal it reads changes every frame (fine for an animation; otherwise read it in a smaller leaf)",
+                        pebbles_core::rebuild_profile::EVERY_FRAME_WARN
+                    ),
+                );
+            }
+            if printing() && !rows.is_empty() {
                 let top: Vec<String> = rows
                     .iter()
                     .take(6)
                     .map(|(n, site, d)| format!("{} {:.2}ms", label(n, *site), d.as_secs_f64() * 1e3))
                     .collect();
-                let selfs: Vec<String> = pebbles_core::rebuild_profile::take_self()
+                let selfs: Vec<String> = selfs
                     .iter()
                     .take(8)
                     .map(|(n, site, c, d)| format!("{} x{c} {:.2}ms", label(n, *site), d.as_secs_f64() * 1e3))
@@ -540,6 +552,43 @@ impl Runner {
         );
         if stats && let Some(line) = self.render_state().and_then(|s| stats_line(s, key)) {
             eprintln!("[pebbles gpu] {line}");
+        }
+        // PEBBLES_FRAME_JSON=<file>: one JSON object per frame — the CPU phases, layout /
+        // rebuild counts and the GPU phases — for tools and benchmark diffs.
+        if let Some(path) = frame_json_path() {
+            let gpu = self.render_state().and_then(|s| {
+                let r = s.renderers.get(s.device_of(key))?.as_ref()?;
+                gpu::frame_stats_json(r)
+            });
+            use pebbles_render::stats as rs;
+            let line = format!(
+                "{{\"frame\":{fno},\"t_ms\":{:.3},\"rebuild_us\":{},\"layout_us\":{},\"encode_us\":{},\"dirty_roots\":{dirty_roots},\"layouts\":{},\"layout_skips\":{},\"painted\":{},\"render_nodes\":{}{}{}}}\n",
+                self.clock.elapsed().as_secs_f64() * 1e3,
+                rebuild.as_micros(),
+                layout.as_micros(),
+                encode.as_micros(),
+                rs::layout_calls(),
+                rs::layout_skips(),
+                rs::painted_nodes(),
+                self.ui.render_node_count(),
+                if gpu.is_some() { "," } else { "" },
+                gpu.unwrap_or_default()
+            );
+            append_line(path, &line);
+        }
+        // PEBBLES_MEM_TRACE=1: memory by subsystem every 5 s while frames are drawn.
+        if mem_trace() && self.frame_no % 300 == 1 {
+            let gpu = self.render_state().and_then(|s| {
+                let r = s.renderers.get(s.device_of(key))?.as_ref()?;
+                Some(gpu::memory_line(r))
+            });
+            eprintln!(
+                "[pebbles mem] frame {fno} {} | {} | elements {} render nodes {}",
+                pebbles_foundation::mem::snapshot().line(),
+                gpu.unwrap_or_default(),
+                self.ui.element_count(),
+                self.ui.render_node_count()
+            );
         }
         match submitted {
             None => return true,
@@ -876,5 +925,22 @@ mod tests {
         assert_eq!([secs(0), secs(1), secs(2), secs(3), secs(4), secs(9)], [1, 2, 4, 8, 10, 10]);
         assert_eq!(secs(64), 10, "no shift overflow");
         assert_eq!(secs(u32::MAX), 10);
+    }
+}
+
+fn frame_json_path() -> Option<&'static std::path::Path> {
+    static P: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    P.get_or_init(|| std::env::var_os("PEBBLES_FRAME_JSON").map(std::path::PathBuf::from)).as_deref()
+}
+
+fn mem_trace() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("PEBBLES_MEM_TRACE").is_ok_and(|v| v == "1"))
+}
+
+fn append_line(path: &std::path::Path, line: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = f.write_all(line.as_bytes());
     }
 }

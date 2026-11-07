@@ -234,3 +234,40 @@ pub(crate) fn census_values(renderer: &Renderer) -> Option<[u64; 25]> {
 pub(crate) fn frame_stats_line(renderer: &Renderer) -> Option<String> {
     Some(renderer.last_frame_stats().to_string())
 }
+
+/// The GPU phases of the last frame as JSON fields (µs): prepare, upload, encode, submit,
+/// GPU execution (when timestamp queries exist), draws and upload bytes.
+pub(crate) fn frame_stats_json(renderer: &Renderer) -> Option<String> {
+    let s = renderer.last_frame_stats();
+    Some(format!(
+        "\"gpu_prepare_us\":{},\"gpu_upload_us\":{},\"gpu_encode_us\":{},\"submit_us\":{},\"gpu_exec_us\":{},\"draws\":{},\"buf_up_bytes\":{},\"tex_up_bytes\":{},\"glyphs_rasterized\":{}",
+        s.prepare_us,
+        s.upload_us,
+        s.encode_us,
+        s.submit_us,
+        s.gpu_us.map_or("null".to_string(), |u| u.to_string()),
+        s.draw_calls,
+        s.buffer_bytes_uploaded,
+        s.texture_bytes_uploaded,
+        s.glyphs_rasterized
+    ))
+}
+
+/// GPU memory this renderer requested, by subsystem (MB).
+pub(crate) fn memory_line(renderer: &Renderer) -> String {
+    let m = renderer.memory_report();
+    let mb = |b: u64| b as f64 / 1_048_576.0;
+    format!(
+        "gpu {:.1} MB = targets {:.1} + glyph atlas {:.1}+{:.1} + images {:.1} + gradients {:.1} + layers {:.1} + masks {:.1} + arenas {:.1}{}",
+        mb(m.total_bytes()),
+        mb(m.frame_targets_bytes),
+        mb(m.glyph_mask_bytes),
+        mb(m.glyph_color_bytes),
+        mb(m.image_cache_bytes),
+        mb(m.gradient_lut_bytes),
+        mb(m.layer_pool_bytes),
+        mb(m.gpu_mask_bytes),
+        mb(m.arena_bytes),
+        m.driver_allocated_bytes.map_or(String::new(), |d| format!(" (driver-allocated {:.1} MB)", mb(d)))
+    )
+}

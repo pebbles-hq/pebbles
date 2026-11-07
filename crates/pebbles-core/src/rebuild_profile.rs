@@ -9,11 +9,49 @@ use std::time::Duration;
 
 static FORCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Whether the profiler is on (`PEBBLES_REBUILD_PROFILE=1`, or [`set_enabled`]).
+/// Whether the profiler records (`PEBBLES_REBUILD_PROFILE=1`, dev mode `PEBBLES_DEV=1` —
+/// for the "re-renders every frame" warning — or [`set_enabled`]).
 pub fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
     FORCED.load(std::sync::atomic::Ordering::Relaxed)
-        || *ON.get_or_init(|| std::env::var("PEBBLES_REBUILD_PROFILE").is_ok_and(|v| v == "1"))
+        || *ON.get_or_init(|| printing() || crate::log::dev_mode())
+}
+
+/// Whether to print every frame's profile (`PEBBLES_REBUILD_PROFILE=1`).
+pub fn printing() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("PEBBLES_REBUILD_PROFILE").is_ok_and(|v| v == "1"))
+}
+
+thread_local! {
+    /// Consecutive frames each component re-rendered in, and whether it was reported.
+    static STREAK: RefCell<std::collections::HashMap<(&'static str, Site), (u32, bool)>> =
+        RefCell::new(std::collections::HashMap::new());
+}
+
+/// Frames in a row a component may re-render before the dev warning (2 s at 60 Hz).
+pub const EVERY_FRAME_WARN: u32 = 120;
+
+/// Fold one frame's self-time rows into the per-component streaks; returns the components
+/// that just reached [`EVERY_FRAME_WARN`] consecutive frames (each reported once per
+/// streak) — a signal read in a component that changes every frame (a scroll offset, an
+/// animation value) where only a leaf should re-render.
+pub fn note_frame(rows: &[(&'static str, Site, u32, Duration)]) -> Vec<String> {
+    STREAK.with(|m| {
+        let mut m = m.borrow_mut();
+        let seen: std::collections::HashSet<(&'static str, Site)> = rows.iter().map(|r| (r.0, r.1)).collect();
+        m.retain(|k, _| seen.contains(k));
+        let mut out = Vec::new();
+        for k in seen {
+            let e = m.entry(k).or_insert((0, false));
+            e.0 += 1;
+            if e.0 >= EVERY_FRAME_WARN && !e.1 {
+                e.1 = true;
+                out.push(label(k.0, k.1));
+            }
+        }
+        out
+    })
 }
 
 /// Turn the profiler on/off from code (perf tests count component renders with it).
