@@ -73,7 +73,7 @@ pub mod prelude {
         animated_spring, animated_with, channel, component, component_memo, component_props, consume_context, create_effect,
         create_focus, create_focus_scope, create_memo, create_resource, create_shortcut, create_shortcut_if,
         create_signal, create_store, create_timeout, prefers_reduced_motion, provide_context,
-        set_prefers_reduced_motion, spawn, transition, untrack, use_bounds,
+        set_prefers_reduced_motion, spawn, spawn_after, transition, untrack, use_bounds,
     };
     // shortcut key vocabulary + wasm-safe timers (siblings of create_shortcut / create_timeout,
     // which were in the prelude while their companion types/fns were not).

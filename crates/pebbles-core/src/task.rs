@@ -95,6 +95,18 @@ where
     W: FnOnce() -> T + Send + 'static,
     D: FnOnce(T) + 'static,
 {
+    spawn_after(std::time::Duration::ZERO, work, on_done);
+}
+
+/// [`spawn`], but `work` starts only after `delay` — for polling (a file watcher's next
+/// tick) without parking a worker thread in `sleep` for the whole interval. One shared
+/// timer thread holds the pending starts.
+pub fn spawn_after<T, W, D>(delay: std::time::Duration, work: W, on_done: D)
+where
+    T: Send + 'static,
+    W: FnOnce() -> T + Send + 'static,
+    D: FnOnce(T) + 'static,
+{
     let slot: Arc<Mutex<Option<T>>> = Arc::new(Mutex::new(None));
     let write = slot.clone();
     // Native: run `work` on a background thread.
@@ -103,7 +115,7 @@ where
     #[cfg(not(target_family = "wasm"))]
     let wakes = waker.is_some();
     #[cfg(not(target_family = "wasm"))]
-    std::thread::spawn(move || {
+    pool::submit(delay, Box::new(move || {
         let result = work();
         if let Ok(mut s) = write.lock() {
             *s = Some(result);
@@ -111,7 +123,9 @@ where
         if let Some(wake) = waker {
             wake();
         }
-    });
+    }));
+    #[cfg(target_family = "wasm")]
+    let _ = delay;
     #[cfg(target_family = "wasm")]
     let wakes = false;
     // Web: no OS threads (`std::thread::spawn` panics at runtime). Run `work` on the
@@ -326,6 +340,31 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc;
 
+    /// Work runs on the shared pool (no thread per task) and a delayed start waits.
+    #[test]
+    fn spawn_uses_the_pool_and_spawn_after_waits() {
+        set_waker(None);
+        let names = Rc::new(RefCell::new(Vec::new()));
+        for _ in 0..3 {
+            let n = names.clone();
+            spawn(|| std::thread::current().name().map(String::from), move |v| n.borrow_mut().push(v));
+            let t0 = std::time::Instant::now();
+            while pump() && t0.elapsed().as_secs() < 5 {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+        }
+        assert!(names.borrow().iter().all(|n| n.as_deref() == Some("pebbles-worker")), "{names:?}");
+        let at = Rc::new(Cell::new(None));
+        let a = at.clone();
+        let t0 = std::time::Instant::now();
+        spawn_after(std::time::Duration::from_millis(60), || (), move |()| a.set(Some(t0.elapsed())));
+        while at.get().is_none() && t0.elapsed().as_secs() < 5 {
+            pump();
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert!(at.get().is_some_and(|d| d >= std::time::Duration::from_millis(60)), "{:?}", at.get());
+    }
+
     /// M35: with a waker, in-flight work does not keep the shell drawing; the worker
     /// wakes it once, and the next pump delivers.
     #[test]
@@ -382,5 +421,128 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
         assert_eq!(got.get(), 3);
+    }
+}
+
+/// The shared background workers behind [`spawn`] (native): a cached pool — an idle worker
+/// takes the next job; when all are busy (a job may block, e.g. on a pipe) a new worker
+/// starts; a worker idle for 30 s exits. Replaces a fresh OS thread per task (watchers
+/// polling every 300 ms created ~3 threads a second for the app's lifetime).
+#[cfg(not(target_family = "wasm"))]
+mod pool {
+    use std::collections::BinaryHeap;
+    use std::sync::{Condvar, Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+
+    pub(super) type Job = Box<dyn FnOnce() + Send>;
+
+    struct Pool {
+        queue: Mutex<(std::collections::VecDeque<Job>, usize)>, // (jobs, idle workers)
+        ready: Condvar,
+    }
+
+    fn pool() -> &'static Pool {
+        static P: OnceLock<Pool> = OnceLock::new();
+        P.get_or_init(|| Pool { queue: Mutex::new((Default::default(), 0)), ready: Condvar::new() })
+    }
+
+    fn run_now(job: Job) {
+        let p = pool();
+        let mut q = p.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        q.0.push_back(job);
+        if q.1 >= q.0.len() {
+            p.ready.notify_one();
+            return;
+        }
+        drop(q);
+        let _ = std::thread::Builder::new().name("pebbles-worker".into()).spawn(worker);
+    }
+
+    fn worker() {
+        let p = pool();
+        let mut q = p.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        loop {
+            if let Some(job) = q.0.pop_front() {
+                drop(q);
+                job();
+                q = p.queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                continue;
+            }
+            q.1 += 1;
+            let (g, t) = p
+                .ready
+                .wait_timeout(q, Duration::from_secs(30))
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            q = g;
+            q.1 -= 1;
+            if t.timed_out() && q.0.is_empty() {
+                return;
+            }
+        }
+    }
+
+    struct Delayed {
+        at: Instant,
+        seq: u64,
+        job: Job,
+    }
+    impl PartialEq for Delayed {
+        fn eq(&self, o: &Self) -> bool {
+            (self.at, self.seq) == (o.at, o.seq)
+        }
+    }
+    impl Eq for Delayed {}
+    impl PartialOrd for Delayed {
+        fn partial_cmp(&self, o: &Self) -> Option<std::cmp::Ordering> {
+            Some(self.cmp(o))
+        }
+    }
+    impl Ord for Delayed {
+        // Min-heap on (deadline, submission order).
+        fn cmp(&self, o: &Self) -> std::cmp::Ordering {
+            (o.at, o.seq).cmp(&(self.at, self.seq))
+        }
+    }
+
+    struct Timer {
+        heap: Mutex<(BinaryHeap<Delayed>, u64)>,
+        changed: Condvar,
+    }
+
+    fn timer() -> &'static Timer {
+        static T: OnceLock<Timer> = OnceLock::new();
+        T.get_or_init(|| {
+            let _ = std::thread::Builder::new().name("pebbles-timer".into()).spawn(timer_loop);
+            Timer { heap: Mutex::new((BinaryHeap::new(), 0)), changed: Condvar::new() }
+        })
+    }
+
+    fn timer_loop() {
+        let t = timer();
+        let mut h = t.heap.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        loop {
+            let now = Instant::now();
+            while h.0.peek().is_some_and(|d| d.at <= now) {
+                let d = h.0.pop().expect("peeked");
+                run_now(d.job);
+            }
+            h = match h.0.peek().map(|d| d.at) {
+                Some(at) => t.changed.wait_timeout(h, at - now).unwrap_or_else(std::sync::PoisonError::into_inner).0,
+                None => t.changed.wait(h).unwrap_or_else(std::sync::PoisonError::into_inner),
+            };
+        }
+    }
+
+    /// Run `job` on a pool worker after `delay` (now when zero).
+    pub(super) fn submit(delay: Duration, job: Job) {
+        if delay.is_zero() {
+            return run_now(job);
+        }
+        let t = timer();
+        let mut h = t.heap.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        h.1 += 1;
+        let seq = h.1;
+        h.0.push(Delayed { at: Instant::now() + delay, seq, job });
+        t.changed.notify_one();
     }
 }

@@ -69,7 +69,7 @@ pub use reactive::{
 pub use shortcuts::{Mods, Shortcut, ShortcutKey, create_shortcut, create_shortcut_if};
 #[cfg(target_family = "wasm")]
 pub use task::spawn_local_future;
-pub use task::{Resource, create_resource, spawn};
+pub use task::{Resource, create_resource, spawn, spawn_after};
 #[cfg(all(feature = "tokio", not(target_family = "wasm")))]
 pub use task::{create_resource_future, spawn_future};
 pub use widget::{AnyWidget, IntoChildren, IntoWidget, ParentDataWidget, RenderWidget, Widget};

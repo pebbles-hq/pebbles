@@ -120,11 +120,9 @@ impl FileExplorer {
         let this = *self;
         let generation = self.watch_gen.peek();
         let dirs = self.loaded_dirs();
-        pebbles_core::task::spawn(
-            move || {
-                std::thread::sleep(std::time::Duration::from_secs_f64(secs));
-                listing_hashes(&dirs)
-            },
+        pebbles_core::task::spawn_after(
+            std::time::Duration::from_secs_f64(secs),
+            move || listing_hashes(&dirs),
             move |fresh| {
                 // try_peek: the explorer may have unmounted.
                 if this.watch_gen.try_peek() != Some(generation) {

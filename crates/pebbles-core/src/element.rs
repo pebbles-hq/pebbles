@@ -168,13 +168,11 @@ impl Ui {
     }
 
     /// Number of live elements in this window's tree (debug observability).
-    #[cfg(debug_assertions)]
     pub fn element_count(&self) -> usize {
         self.elements.len()
     }
 
     /// Number of live render nodes in this window's tree (debug observability).
-    #[cfg(debug_assertions)]
     pub fn render_node_count(&self) -> usize {
         self.render.node_count()
     }
