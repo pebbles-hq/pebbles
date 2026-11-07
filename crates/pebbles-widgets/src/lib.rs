@@ -113,7 +113,7 @@ pub use widgets::{error_boundary, for_each, suspense};
 pub use widgets::file_drop;
 pub use widgets::{
     DragTarget, Draggable, FileDropTarget, InteractiveViewer, PointerControl, ReorderableListView,
-    absorb_pointer, drag_target, draggable, file_drop_target, ignore_pointer, interactive_viewer,
+    absorb_pointer, census_drag_targets, drag_target, draggable, file_drop_target, ignore_pointer, interactive_viewer,
     long_press_draggable, reorderable_list_view,
 };
 // painting & effects (siblings of clip_rrect / opacity)

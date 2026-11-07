@@ -69,17 +69,14 @@ fn render_hero(h: &Hero) -> Element {
         REGISTRY.with(|r| r.borrow_mut().insert(tag.clone(), HeroSnapshot { rect, child: child.clone() }));
     }
 
-    // Drop this tag from the registry on unmount (registered once).
-    let registered = create_signal(false);
-    if !registered.peek() {
-        registered.set(true);
-        let t = tag.clone();
-        create_cleanup(move || {
-            REGISTRY.with(|r| {
-                r.borrow_mut().remove(&t);
-            });
+    // Drop this tag from the registry on unmount. Re-registered every render: the
+    // runtime drops a component's cleanups when it re-renders.
+    let t = tag.clone();
+    create_cleanup(move || {
+        REGISTRY.with(|r| {
+            r.borrow_mut().remove(&t);
         });
-    }
+    });
 
     child
 }

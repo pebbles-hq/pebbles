@@ -304,16 +304,24 @@ impl IntoWidget for DragTarget {
     }
 }
 
+/// Number of registered drop targets (leak tripwire for soak tests).
+#[doc(hidden)]
+pub fn census_drag_targets() -> usize {
+    TARGETS.with(|t| t.borrow().len())
+}
+
 fn render_drag_target(t: &DragTarget) -> Element {
     let id_sig = create_signal(0u64);
     if id_sig.peek() == 0 {
         id_sig.set(next_id());
-        let id = id_sig.peek();
-        create_cleanup(move || {
-            TARGETS.with(|t| t.borrow_mut().retain(|r| r.id != id));
-        });
     }
     let id = id_sig.peek();
+    // Re-registered every render: the runtime drops a component's cleanups when it
+    // re-renders, so a first-render-only cleanup leaked the registration (and its
+    // closures) of every target that re-rendered before unmounting.
+    create_cleanup(move || {
+        TARGETS.with(|t| t.borrow_mut().retain(|r| r.id != id));
+    });
     let rect = use_bounds();
     let accepts = t.will_accept.clone().unwrap_or_else(|| t.type_check.clone());
 

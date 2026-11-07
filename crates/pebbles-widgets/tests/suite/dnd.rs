@@ -41,3 +41,39 @@ fn a_press_without_movement_is_not_a_drag_and_a_drag_past_the_slop_drops() {
     h.drag(on_chip, on_target);
     assert_eq!(DROPS.with(Cell::get), 1, "a drag past the slop drops on the target");
 }
+
+thread_local! {
+    static TICK: std::cell::RefCell<Option<pebbles_core::Signal<(bool, u32)>>> = const { std::cell::RefCell::new(None) };
+}
+
+fn tick() -> pebbles_core::Signal<(bool, u32)> {
+    TICK.with(|c| *c.borrow_mut().get_or_insert_with(|| pebbles_core::create_signal((true, 0))))
+}
+
+fn churn_root() -> impl IntoWidget {
+    let s = tick();
+    let show = s.get().0;
+    if !show {
+        return container().width(10.0).height(10.0).into_widget();
+    }
+    drag_target(move |_| text(format!("t{}", s.get().1)).into_widget()).on_accept::<u32>(|_| {}).into_widget()
+}
+
+/// A target that re-renders before it unmounts must still drop its registration
+/// (cleanups are re-registered per render; a first-render-only cleanup leaked it).
+#[test]
+fn a_re_rendered_target_unregisters_on_unmount() {
+    let mut h = Harness::new().window(200.0, 100.0);
+    h.mount(|| pebbles_core::component(churn_root));
+    h.frames(2);
+    let base = pebbles_widgets::census_drag_targets();
+    assert!(base >= 1);
+    for i in 1..20 {
+        tick().update(|v| v.1 = i);
+        h.frames(1);
+    }
+    assert_eq!(pebbles_widgets::census_drag_targets(), base, "re-renders keep one registration");
+    tick().update(|v| v.0 = false);
+    h.frames(2);
+    assert_eq!(pebbles_widgets::census_drag_targets(), base - 1, "unmount drops the registration");
+}
