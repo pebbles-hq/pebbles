@@ -1071,6 +1071,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
     /// Deliver an off-stack event. Today the only one is web GPU bring-up finishing
     /// (see [`PebblesUserEvent`]); desktop never sends one.
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: PebblesUserEvent) {
+        let _block = BlockWatch::new("user event");
         match event {
             PebblesUserEvent::SurfaceReady { context, surface, window } => {
                 self.sink = Some(FrameSink::Inline(RenderState::new(context)));
@@ -1202,6 +1203,7 @@ impl ApplicationHandler<PebblesUserEvent> for Runner {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
+        let _block = BlockWatch::new(window_event_name(&event));
         // A `RedrawRequested` already served on another window's turn is skipped; on Windows,
         // windows starved of their own turn are drawn after it (see `redraw`).
         if matches!(event, WindowEvent::RedrawRequested) && !self.serving_starved {
@@ -1823,4 +1825,57 @@ pub(super) fn with_app_id(attrs: WindowAttributes, id: Option<&str>) -> WindowAt
     }
     let _ = id;
     attrs
+}
+
+/// Dev diagnostics (`PEBBLES_DEV=1`): warn when one event-loop callback holds the UI thread
+/// longer than [`BLOCK_BUDGET`] — input and frames queue behind it (a jank source a frame
+/// timer alone doesn't show, e.g. synchronous IO in an input handler).
+struct BlockWatch {
+    what: &'static str,
+    budget: Duration,
+    t0: Option<Instant>,
+}
+
+/// The longest a single callback may hold the UI thread before a dev warning.
+const BLOCK_BUDGET: Duration = Duration::from_millis(8);
+/// A whole frame's budget at 60 Hz.
+const FRAME_BUDGET: Duration = Duration::from_micros(16_700);
+
+impl BlockWatch {
+    fn new(what: &'static str) -> Self {
+        // A frame gets the whole 60 Hz frame budget; any other callback 8 ms.
+        let budget = if what == "a frame" { FRAME_BUDGET } else { BLOCK_BUDGET };
+        BlockWatch { what, budget, t0: pebbles_core::log::dev_mode().then(Instant::now) }
+    }
+}
+
+impl Drop for BlockWatch {
+    fn drop(&mut self) {
+        if let Some(t0) = self.t0 {
+            let took = t0.elapsed();
+            if took > self.budget {
+                pebbles_core::log::warn(
+                    pebbles_core::log::Cat::Frame,
+                    format!(
+                        "UI thread blocked {:.1} ms in {} (budget {} ms; PEBBLES_REBUILD_PROFILE=1 names slow components)",
+                        took.as_secs_f64() * 1e3,
+                        self.what,
+                        self.budget.as_millis()
+                    ),
+                );
+            }
+        }
+    }
+}
+
+fn window_event_name(e: &WindowEvent) -> &'static str {
+    match e {
+        WindowEvent::RedrawRequested => "a frame",
+        WindowEvent::KeyboardInput { .. } => "a key event",
+        WindowEvent::CursorMoved { .. } => "a pointer move",
+        WindowEvent::MouseInput { .. } => "a mouse button",
+        WindowEvent::MouseWheel { .. } => "a wheel event",
+        WindowEvent::Resized(_) => "a resize",
+        _ => "a window event",
+    }
 }

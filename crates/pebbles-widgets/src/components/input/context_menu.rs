@@ -80,7 +80,7 @@ impl ContextMenu {
 struct CtxProps {
     child: AnyWidget,
     width: f64,
-    entries: Vec<MenuEntry>,
+    entries: Rc<Vec<MenuEntry>>,
     on_open: Option<Rc<dyn Fn(PointerEvent)>>,
 }
 
@@ -92,7 +92,7 @@ impl IntoWidget for ContextMenu {
             CtxProps {
                 child,
                 width: self.width,
-                entries: std::mem::take(&mut self.entries),
+                entries: Rc::new(std::mem::take(&mut self.entries)),
                 on_open: self.on_open.take(),
             },
         )
@@ -103,19 +103,23 @@ impl IntoWidget for ContextMenu {
 fn render_context(p: &CtxProps) -> AnyWidget {
     let child_nav = list_nav();
     let child_ctx = create_signal::<Option<Rc<ChildCtx>>>(None);
-    let blueprint = Rc::new(RebuildableMenu::from(&p.entries));
-    let handles = SubMenuHandles { nav: child_nav, ctx: child_ctx, subs: Rc::new(blueprint.sub_rows()) };
-    let widths = MenuWidths::of(&p.entries);
+    // The menu's blueprint and measured widths are built when it OPENS, not on every
+    // render: a list of rows each carrying a context menu (explorer rows, the editor's
+    // gutter cells) measured every row's menu text on each re-render.
+    let entries = p.entries.clone();
     let min_width = p.width;
-    let menu_h = estimate_height(&p.entries);
     let on_open = p.on_open.clone();
     GestureDetector::new(p.child.clone())
         .on_secondary_tap_down(action_event(move |e: PointerEvent| {
             if let Some(f) = &on_open {
                 f(e);
             }
-            // Sized to the widest row (measured now, not on every build), then opened
-            // at the cursor, clamped to stay on-screen.
+            let blueprint = Rc::new(RebuildableMenu::from(&*entries));
+            let handles =
+                SubMenuHandles { nav: child_nav, ctx: child_ctx, subs: Rc::new(blueprint.sub_rows()) };
+            let widths = MenuWidths::of(&entries);
+            let menu_h = estimate_height(&entries);
+            // Sized to the widest row, then opened at the cursor, clamped to stay on-screen.
             let (ww, wh) = window_size();
             let width = if ww > 16.0 { widths.fit(min_width).min(ww - 16.0) } else { widths.fit(min_width) };
             let (gx, gy) = (e.global.x, e.global.y);
