@@ -1397,38 +1397,51 @@ pub fn create_cleanup(f: impl FnOnce() + 'static) {
 }
 
 // ---------------------------------------------------------------------------
-// Debug-only census (lifecycle soak tripwire — see performance-standards.md E6c)
+// Runtime census (lifecycle soak tripwire — see performance-standards.md E6c)
 // ---------------------------------------------------------------------------
 
-/// Number of live signals (debug-only).
-#[cfg(debug_assertions)]
+/// Number of live signals .
 pub fn census_signals() -> usize {
     with_rt(|rt| rt.signals.len())
 }
 
-/// Number of live memo (lazy derived) nodes (debug-only) — a memo that fails to
+/// Number of live memo (lazy derived) nodes  — a memo that fails to
 /// dispose with its component is a leak the soak catches.
-#[cfg(debug_assertions)]
 pub fn census_memos() -> usize {
     with_rt(|rt| rt.memos.len())
 }
 
-/// Number of active component→signal subscription edges (debug-only).
-#[cfg(debug_assertions)]
+/// Number of active component→signal subscription edges .
 pub fn census_subscriptions() -> usize {
     with_rt(|rt| rt.subs_of.values().map(|s| s.len()).sum())
 }
 
-/// Number of pending (registered, not-yet-run) unmount cleanups (debug-only).
-#[cfg(debug_assertions)]
+/// Number of pending (registered, not-yet-run) unmount cleanups .
 pub fn census_cleanups() -> usize {
     with_rt(|rt| rt.cleanups.values().map(|v| v.len()).sum())
 }
 
-/// Number of components + effects + memos scheduled/queued to settle (debug-only).
-#[cfg(debug_assertions)]
+/// Number of components + effects + memos scheduled/queued to settle .
 pub fn census_pending() -> usize {
     with_rt(|rt| rt.pending_components.len() + rt.pending_effects.len() + rt.pending_memos.len())
+}
+
+/// One line of runtime sizes for memory traces: signals, memos, effects, subscription
+/// edges, cleanups, hooks, components with contexts.
+pub fn census_line() -> String {
+    with_rt(|rt| {
+        format!(
+            "signals {} memos {} effects {} subs {} cleanups {} hook-owners {} roots {} instances {}",
+            rt.signals.len(),
+            rt.memos.len(),
+            rt.effects.len(),
+            rt.subs_of.values().map(|s| s.len()).sum::<usize>(),
+            rt.cleanups.values().map(|v| v.len()).sum::<usize>(),
+            rt.hooks.len(),
+            rt.roots.len(),
+            rt.instances.len(),
+        )
+    })
 }
 
 /// Provide a value to the current component's **whole subtree** while it renders.

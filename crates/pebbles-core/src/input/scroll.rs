@@ -72,7 +72,6 @@ pub fn dispatch(id: u64, to: ScrollTo) -> bool {
 }
 
 /// Number of live scroll handlers (debug-only).
-#[cfg(debug_assertions)]
 pub fn census_handlers() -> usize {
     HANDLERS.with(|h| h.borrow().len())
 }

@@ -410,7 +410,6 @@ pub fn dispatch_key_event(window: u32, event: &crate::keyboard::KeyEvent) -> boo
 }
 
 /// Number of live shortcut registrations (debug-only observability).
-#[cfg(debug_assertions)]
 pub fn census_shortcuts() -> usize {
     REGISTRY.with(|r| r.borrow().values().map(|v| v.len()).sum())
 }

@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use super::layout::TextLayout;
 use super::shape::ShapedText;
-use super::{SHAPE_CACHE_PRESSURE, SHAPE_CACHE_STALE};
+use super::{SHAPE_CACHE_HARD_CAP, SHAPE_CACHE_PRESSURE, SHAPE_CACHE_STALE};
 
 /// A `u64`-keyed map whose entries remember the generation they were last used in.
 pub(crate) struct GenMap<V> {
@@ -37,6 +37,16 @@ impl<V: Clone> GenMap<V> {
     pub(crate) fn sweep(&mut self, generation: u32) {
         if self.map.len() > SHAPE_CACHE_PRESSURE && generation.is_multiple_of(256) {
             self.map.retain(|_, (_, used)| generation.wrapping_sub(*used) <= SHAPE_CACHE_STALE);
+        }
+        // A hard cap regardless of age: keep the most recently used half. Scrolling once
+        // through a large file filled the maps with every line's shape AND layout (~40 MB
+        // for 4k lines), held for the whole stale horizon.
+        if self.map.len() > SHAPE_CACHE_HARD_CAP {
+            let mut gens: Vec<u32> = self.map.values().map(|(_, used)| generation.wrapping_sub(*used)).collect();
+            let keep = SHAPE_CACHE_HARD_CAP / 2;
+            let (_, cutoff, _) = gens.select_nth_unstable(keep);
+            let cutoff = *cutoff;
+            self.map.retain(|_, (_, used)| generation.wrapping_sub(*used) < cutoff);
         }
     }
 
@@ -81,13 +91,25 @@ mod tests {
     #[test]
     fn sweep_only_under_pressure() {
         let mut m: GenMap<u32> = GenMap::default();
-        for k in 0..40_000 {
+        for k in 0..2_000 {
             m.insert(k, 0, 0);
         }
         m.sweep(256);
-        assert_eq!(m.len(), 40_000, "not stale yet");
+        assert_eq!(m.len(), 2_000, "under the cap and not stale yet");
         m.sweep(4096 + 256);
         assert_eq!(m.len(), 0, "stale under pressure");
+    }
+
+    #[test]
+    fn the_hard_cap_keeps_the_most_recent_half() {
+        let mut m: GenMap<u32> = GenMap::default();
+        for k in 0..10_000u64 {
+            m.insert(k, 0, (k / 10) as u32); // later keys used more recently
+        }
+        m.sweep(1_001);
+        assert!(m.len() <= SHAPE_CACHE_HARD_CAP / 2 + 10, "{}", m.len());
+        assert!(m.get(9_999, 1_001).is_some(), "the most recent survive");
+        assert!(m.get(0, 1_001).is_none(), "the oldest go");
     }
 
     #[test]

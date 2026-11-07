@@ -91,3 +91,8 @@ pub fn forget_bounds(window: u32, source: u64) {
         dispose_root_signal(s);
     }
 }
+
+/// Number of live bounds entries.
+pub fn census_bounds() -> usize {
+    BOUNDS.with(|b| b.borrow().len())
+}

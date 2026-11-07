@@ -257,7 +257,11 @@ pub struct TextEnv {
 /// editor-scale documents: a megabyte source holds tens of thousands of per-line
 /// entries whose owner (the field's line table) rebuilds from them on remount —
 /// evicting those between screen hops turns a warm remount into a full reshape.
-pub(crate) const SHAPE_CACHE_PRESSURE: usize = 32_768;
+pub(crate) const SHAPE_CACHE_PRESSURE: usize = 1_024;
+
+/// Entries kept at most (per map): beyond it the least recently used half goes, whatever
+/// its age — a byte bound on the cache (~1–5 KB an entry).
+pub(crate) const SHAPE_CACHE_HARD_CAP: usize = 2_048;
 
 /// How many generations (frames) an entry may sit unused before a pressure sweep
 /// may drop it. Minutes, not seconds: an editor's working set (per-line layouts

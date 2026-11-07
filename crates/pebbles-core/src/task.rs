@@ -158,6 +158,11 @@ where
     PENDING.with(|p| p.borrow_mut().push(Pending { poll, wakes }));
 }
 
+/// Tasks spawned on this thread whose results are not yet delivered.
+pub fn census_pending() -> usize {
+    PENDING.with(|p| p.borrow().len())
+}
+
 /// Web-only async counterpart of [`spawn`]: drive `fut` on the browser microtask queue
 /// (`wasm_bindgen_futures::spawn_local`) and deliver its output to `on_done` on the UI
 /// thread through the same [`pump`] — so an async browser `fetch` can write signals and

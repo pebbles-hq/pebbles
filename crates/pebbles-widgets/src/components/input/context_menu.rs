@@ -23,6 +23,7 @@ pub struct ContextMenu {
     entries: Vec<MenuEntry>,
     width: f64,
     on_open: Option<Rc<dyn Fn(PointerEvent)>>,
+    entries_with: Option<Rc<dyn Fn(PointerEvent) -> Vec<MenuEntry>>>,
 }
 
 /// Wrap `child` so a secondary (right) click opens a menu at the cursor.
@@ -69,6 +70,14 @@ impl ContextMenu {
         self.width = w;
         self
     }
+    /// Build the entries when the menu opens, from the right-click (`position` is local to
+    /// the wrapped child) — one menu over a column of rows (a gutter, a list) that picks the
+    /// row under the pointer, instead of a menu component per row. An empty list opens
+    /// nothing. Replaces [`item`](Self::item)-added entries.
+    pub fn entries_with(mut self, f: impl Fn(PointerEvent) -> Vec<MenuEntry> + 'static) -> Self {
+        self.entries_with = Some(Rc::new(f));
+        self
+    }
     /// Run `f` on the right-click, just before the menu opens (e.g. sync the
     /// selection to the clicked row). Receives the pointer event.
     pub fn on_open(mut self, f: impl Fn(PointerEvent) + 'static) -> Self {
@@ -82,6 +91,7 @@ struct CtxProps {
     width: f64,
     entries: Rc<Vec<MenuEntry>>,
     on_open: Option<Rc<dyn Fn(PointerEvent)>>,
+    entries_with: Option<Rc<dyn Fn(PointerEvent) -> Vec<MenuEntry>>>,
 }
 
 impl IntoWidget for ContextMenu {
@@ -94,6 +104,7 @@ impl IntoWidget for ContextMenu {
                 width: self.width,
                 entries: Rc::new(std::mem::take(&mut self.entries)),
                 on_open: self.on_open.take(),
+                entries_with: self.entries_with.take(),
             },
         )
         .into_widget()
@@ -109,10 +120,18 @@ fn render_context(p: &CtxProps) -> AnyWidget {
     let entries = p.entries.clone();
     let min_width = p.width;
     let on_open = p.on_open.clone();
+    let entries_with = p.entries_with.clone();
     GestureDetector::new(p.child.clone())
         .on_secondary_tap_down(action_event(move |e: PointerEvent| {
             if let Some(f) = &on_open {
                 f(e);
+            }
+            let entries = match &entries_with {
+                Some(f) => Rc::new(f(e)),
+                None => entries.clone(),
+            };
+            if entries.is_empty() {
+                return;
             }
             let blueprint = Rc::new(RebuildableMenu::from(&*entries));
             let handles =

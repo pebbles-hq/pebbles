@@ -583,11 +583,15 @@ impl Runner {
                 Some(gpu::memory_line(r))
             });
             eprintln!(
-                "[pebbles mem] frame {fno} {} | {} | elements {} render nodes {}",
+                "[pebbles mem] frame {fno} {} | {} | elements {} render nodes {} | {} | timeouts {} loops {} tasks {}",
                 pebbles_foundation::mem::snapshot().line(),
                 gpu.unwrap_or_default(),
                 self.ui.element_count(),
-                self.ui.render_node_count()
+                self.ui.render_node_count(),
+                pebbles_core::reactive::census_line(),
+                pebbles_core::animation::census_timeouts(),
+                pebbles_core::animation::census_loops(),
+                pebbles_core::task::census_pending(),
             );
         }
         match submitted {

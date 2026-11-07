@@ -242,14 +242,12 @@ pub fn has_pending_timeouts() -> bool {
     TIMEOUTS.with(|t| !t.borrow().is_empty())
 }
 
-/// Number of live loops (debug-only).
-#[cfg(debug_assertions)]
+/// Number of live loops.
 pub fn census_loops() -> usize {
     LOOPS.with(|l| l.borrow().len())
 }
 
-/// Number of pending timeouts (debug-only).
-#[cfg(debug_assertions)]
+/// Number of pending timeouts.
 pub fn census_timeouts() -> usize {
     TIMEOUTS.with(|t| t.borrow().len())
 }
