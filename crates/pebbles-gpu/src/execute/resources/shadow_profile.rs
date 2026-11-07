@@ -20,7 +20,6 @@
 //! `COLS`-wide grid of cells of an `R32Float` texture (`textureLoad` needs no filterable format,
 //! so it works on WebGL2/GLES 3.0). Corners with ρ > `RHO_MAX` keep the per-pixel integration.
 
-use std::sync::OnceLock;
 
 /// Table step in σ.
 pub(crate) const STEP: f32 = 0.125;
@@ -70,8 +69,10 @@ fn phi_cdf(z: f64) -> f64 {
 }
 
 /// The texels, row-major `WIDTH`×`HEIGHT`; built once per process.
+/// The table, built once per process for tests / the CPU reference.
+#[cfg(test)]
 pub(crate) fn texels() -> &'static [f32] {
-    static TABLE: OnceLock<Vec<f32>> = OnceLock::new();
+    static TABLE: std::sync::OnceLock<Vec<f32>> = std::sync::OnceLock::new();
     TABLE.get_or_init(build)
 }
 
@@ -145,7 +146,7 @@ impl ShadowProfile {
         });
         queue.write_texture(
             texture.as_image_copy(),
-            bytemuck::cast_slice(texels()),
+            bytemuck::cast_slice(&build()),
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(WIDTH * 4),

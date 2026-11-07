@@ -465,8 +465,11 @@ pub fn language_of(name: &str) -> Option<&'static str> {
 impl FileExplorer {
     /// Install an icon theme (see [`IconTheme`]; [`IconTheme::default_theme`]
     /// is the built-in coloured one). Rows re-render.
-    pub fn set_icon_theme(&self, theme: IconTheme) {
-        self.icon_theme.set(Some(Rc::new(theme)));
+    ///
+    /// Takes the theme or an `Rc` of it: an app that also resolves icons elsewhere (tabs,
+    /// pickers) shares one copy instead of cloning every association map.
+    pub fn set_icon_theme(&self, theme: impl Into<Rc<IconTheme>>) {
+        self.icon_theme.set(Some(theme.into()));
     }
 
     /// Back to the plain built-in glyphs (no theme).
