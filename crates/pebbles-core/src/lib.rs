@@ -53,7 +53,7 @@ pub use animation::{
     set_prefers_reduced_motion, set_timeout, transition,
 };
 pub use bounds::use_bounds;
-pub use component::{Component, Element, component, component_props};
+pub use component::{Component, Element, component, component_memo, component_props};
 pub use context::{Callback, IntoCallback, action, action_event};
 pub use element::{ElementId, Ui};
 pub use focus::{FocusNode, ScopeTag, create_focus, create_focus_scope, editor_is_focused, registered_nodes};

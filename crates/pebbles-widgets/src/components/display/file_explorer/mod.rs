@@ -132,7 +132,7 @@ pub use style::ExplorerStyle;
 pub use tree::pick_folder;
 pub use tree::{FileTree, FsKind, FsNode, natural_cmp};
 
-use node::{NodeProps, render_node};
+use node::node_widget;
 use tree::{copy_path, read_dir};
 
 // ---------------------------------------------------------------------------
@@ -954,13 +954,7 @@ impl FileExplorer {
             if !filter_keeps(node, &q, false) {
                 continue;
             }
-            kids.push(
-                component_props(
-                    render_node,
-                    NodeProps { explorer: self, node: node.clone(), depth: 0, anc_match: false },
-                )
-                .into_widget(),
-            );
+            kids.push(node_widget(self, node, 0, false, &q));
         }
         if kids.is_empty() {
             let hint = if q.is_empty() { "Empty — add a file or folder." } else { "No matches." };

@@ -60,18 +60,57 @@ pub struct Component {
     /// The props (or, without props, the returned widget) type: a readable name for the
     /// rebuild profiler (`PEBBLES_REBUILD_PROFILE`).
     pub(crate) name: &'static str,
+    /// [`component_memo`]: the props and their equality, so a parent re-render handing
+    /// back EQUAL props skips this component (React's `memo`, Flutter's `==` short-cut).
+    pub(crate) memo: Option<(Rc<dyn Any>, fn(&dyn Any, &dyn Any) -> bool)>,
+    /// Where it was created (the rebuild profiler's label).
+    pub(crate) site: &'static std::panic::Location<'static>,
+}
+
+impl Component {
+    /// Whether `other` carries props equal to this one's (both [`component_memo`]s of the
+    /// same function and props type).
+    pub(crate) fn same_props(&self, other: &Component) -> bool {
+        match (&self.memo, &other.memo) {
+            (Some((a, eq)), Some((b, _))) => self.id == other.id && eq(&**a, &**b),
+            _ => false,
+        }
+    }
+}
+
+fn props_eq<P: PartialEq + 'static>(a: &dyn Any, b: &dyn Any) -> bool {
+    matches!((a.downcast_ref::<P>(), b.downcast_ref::<P>()), (Some(x), Some(y)) if x == y)
+}
+
+/// [`component_props`] that SKIPS re-running when its parent re-renders with props equal
+/// to the last ones (React's `memo`; Flutter's `operator ==` on a widget). Without it every
+/// component under a re-rendering parent re-runs, because each render builds new props.
+/// Its own signals and changed contexts still re-run it.
+#[track_caller]
+pub fn component_memo<P: PartialEq + 'static, W: IntoWidget + 'static>(func: fn(&P) -> W, props: P) -> Component {
+    let props = Rc::new(props);
+    let held = props.clone();
+    Component {
+        id: func as usize,
+        render: Rc::new(move || func(&held).into_widget()),
+        name: std::any::type_name::<P>(),
+        memo: Some((props as Rc<dyn Any>, props_eq::<P>)),
+        site: std::panic::Location::caller(),
+    }
 }
 
 /// Wrap a no-props component `fn() -> impl IntoWidget`.
+#[track_caller]
 pub fn component<W: IntoWidget + 'static>(func: fn() -> W) -> Component {
-    Component { id: func as usize, render: Rc::new(move || func().into_widget()), name: std::any::type_name::<W>() }
+    Component { id: func as usize, render: Rc::new(move || func().into_widget()), name: std::any::type_name::<W>(), memo: None, site: std::panic::Location::caller() }
 }
 
 /// Wrap a component `fn(&P) -> impl IntoWidget` with its props. All instances of the
 /// same component function share identity (so their element/state is reused
 /// positionally).
+#[track_caller]
 pub fn component_props<P: 'static, W: IntoWidget + 'static>(func: fn(&P) -> W, props: P) -> Component {
-    Component { id: func as usize, render: Rc::new(move || func(&props).into_widget()), name: std::any::type_name::<P>() }
+    Component { id: func as usize, render: Rc::new(move || func(&props).into_widget()), name: std::any::type_name::<P>(), memo: None, site: std::panic::Location::caller() }
 }
 
 impl Widget for Component {

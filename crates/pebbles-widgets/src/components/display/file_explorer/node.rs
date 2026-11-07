@@ -4,49 +4,169 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use pebbles_core::{component_memo, create_memo};
 
-/// Props for one tree row.
+/// Props for one tree node.
 pub(super) struct NodeProps {
     pub(super) explorer: FileExplorer,
-    pub(super) node: FsNode,
+    /// The compact chain the node's row shows (its identity is the LAST node).
+    chain: Vec<FsNode>,
     pub(super) depth: usize,
     /// Filtering: an ancestor's name already matched (this subtree stays whole).
     pub(super) anc_match: bool,
+    filtering: bool,
+}
+
+/// The tree node for `node`: a component KEYED by its row identity (the compact
+/// chain's ids and whether a filter is on), so the per-node memos below always describe
+/// the node they were made for — positional reuse would hand a shifted row another
+/// node's memos.
+pub(super) fn node_widget(explorer: FileExplorer, node: &FsNode, depth: usize, anc_match: bool, q: &str) -> AnyWidget {
+    use std::hash::{Hash, Hasher};
+    let filtering = !q.is_empty();
+    // Compact folders: a single-child folder chain renders as one row whose
+    // identity is its LAST folder, labelled `a/b/c`.
+    let chain = if filtering { vec![node.clone()] } else { explorer.compact_chain(node) };
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for c in &chain {
+        c.id.hash(&mut h);
+    }
+    filtering.hash(&mut h);
+    crate::widgets::keyed(
+        h.finish(),
+        component_memo(render_node, NodeProps { explorer, chain, depth, anc_match, filtering }),
+    )
+    .into_widget()
+}
+
+/// Same node, same look: everything a node or row renders from its props (signals are
+/// read live). Deep for children — an unchanged subtree skips re-rendering entirely
+/// when the tree above it re-renders (a load elsewhere, a reveal).
+fn same_node(a: &FsNode, b: &FsNode) -> bool {
+    a.id == b.id
+        && a.name == b.name
+        && a.kind == b.kind
+        && a.loaded == b.loaded
+        && a.icon == b.icon
+        && a.color == b.color
+        && a.children.len() == b.children.len()
+        && a.children.iter().zip(&b.children).all(|(x, y)| same_node(x, y))
+}
+
+fn same_chain(a: &[FsNode], b: &[FsNode]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| same_node(x, y))
+}
+
+impl PartialEq for NodeProps {
+    fn eq(&self, o: &Self) -> bool {
+        self.explorer.tree == o.explorer.tree
+            && self.depth == o.depth
+            && self.anc_match == o.anc_match
+            && self.filtering == o.filtering
+            && same_chain(&self.chain, &o.chain)
+    }
+}
+
+impl PartialEq for RowProps {
+    fn eq(&self, o: &Self) -> bool {
+        self.explorer.tree == o.explorer.tree
+            && self.depth == o.depth
+            && self.filtering == o.filtering
+            && same_chain(&self.chain, &o.chain)
+    }
+}
+
+/// One tree node: its row ([`render_row`], its own component) and, when expanded, its
+/// children. Only structure is read here (expansion, renaming — through memos, the
+/// filter text), so a row's hover, selection or focus ring re-renders that ROW, not the
+/// folder's whole subtree (a hovered folder re-rendered every visible descendant on
+/// each frame of its hover fade).
+pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
+    let explorer = p.explorer;
+    let filtering = p.filtering;
+    let node = p.chain.last().expect("non-empty").clone();
+    let is_folder = node.kind == FsKind::Folder;
+    let ids: Vec<u64> = p.chain.iter().map(|c| c.id).collect();
+    let open = create_memo(move || {
+        filtering || {
+            let exp = explorer.expanded.get();
+            ids.iter().all(|i| exp.contains(i))
+        }
+    })
+    .get();
+    let id = node.id;
+    let renaming = create_memo(move || explorer.renaming.get() == Some(id)).get();
+    let mut kids = vec![
+        component_memo(render_row, RowProps { explorer, chain: p.chain.clone(), depth: p.depth, filtering })
+            .into_widget(),
+    ];
+    if is_folder && open && !renaming {
+        let q = if filtering { explorer.filter.get().trim().to_lowercase() } else { String::new() };
+        let anc_match = p.anc_match || name_matches(&node, &q);
+        for child in &node.children {
+            if filtering && !filter_keeps(child, &q, anc_match) {
+                continue;
+            }
+            kids.push(node_widget(explorer, child, p.depth + 1, anc_match, &q));
+        }
+    }
+    column(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min).into_widget()
+}
+
+/// Props for one row.
+struct RowProps {
+    explorer: FileExplorer,
+    /// The compact chain this row shows (its identity is the last node).
+    chain: Vec<FsNode>,
+    depth: usize,
+    filtering: bool,
 }
 
 /// One tree row: indent, twistie, glyph, label — with select/expand (Ctrl/Shift
 /// multi), inline rename, a context menu, and drag-to-move (a selection drags
-/// together; folders highlight as drop targets and expand on hover-hold).
-pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
+/// together; folders highlight as drop targets and expand on hover-hold). Every
+/// tree-wide signal is read through a per-row memo: a selection or focus change
+/// re-renders only the rows whose look changed.
+fn render_row(p: &RowProps) -> AnyWidget {
     let st = p.explorer.style();
     let explorer = p.explorer;
     // The window this row is in (rows dragged out of it start an OS drag there).
     let window = pebbles_core::reactive::current_window();
-    let q = explorer.filter.get().trim().to_lowercase();
-    let filtering = !q.is_empty();
-    // Compact folders: a single-child folder chain renders as one row whose
-    // identity is its LAST folder, labelled `a/b/c`.
-    let chain = if filtering { vec![p.node.clone()] } else { explorer.compact_chain(&p.node) };
+    let filtering = p.filtering;
+    let chain = &p.chain;
     let node = chain.last().expect("non-empty");
     let chain_label = chain.iter().map(|n| n.name.as_str()).collect::<Vec<_>>().join("/");
     let is_folder = node.kind == FsKind::Folder;
-    let exp = explorer.expanded.get();
-    let expanded = is_folder && (chain.iter().all(|c| exp.contains(&c.id)) || filtering);
-    let sel = explorer.selected.get();
-    let selected = sel.contains(&node.id);
+    let id = node.id;
+    let ids: Vec<u64> = chain.iter().map(|c| c.id).collect();
+    // Hooks run unconditionally (a row element may be reused for a file or a folder).
+    let open = create_memo(move || {
+            filtering || {
+                let exp = explorer.expanded.get();
+                ids.iter().all(|i| exp.contains(i))
+            }
+        })
+        .get();
+    let expanded = is_folder && open;
+    let selected = create_memo(move || explorer.selected.get().contains(&id)).get();
     // The FOCUS row gets the ring — driven by the focus signal (Mod+↑/↓ walks
     // it without selecting), falling back to the selection's active end.
-    let active = explorer.active.get().or_else(|| sel.last().copied()) == Some(node.id);
-    let renaming = explorer.renaming.get() == Some(node.id);
-    let dragging = explorer.dragging.get();
+    let active =
+        create_memo(move || explorer.active.get().or_else(|| explorer.selected.get().last().copied()) == Some(id))
+            .get();
+    let renaming = create_memo(move || explorer.renaming.get() == Some(id)).get();
+    let dragging = create_memo(move || explorer.dragging.get()).get();
     let dragged = dragging && selected;
-    let drop_target = dragging && explorer.drop_target.get() == Some(node.id);
+    let drop_target = create_memo(move || explorer.dragging.get() && explorer.drop_target.get() == Some(id)).get();
     // A cut-pending row renders dimmed (like VSCode) until pasted or cancelled.
-    let cut_pending =
-        matches!(explorer.clipboard.get(), Some((ref ids, ClipMode::Cut)) if ids.contains(&node.id));
+    let cut_pending = create_memo(
+        move || matches!(explorer.clipboard.get(), Some((ref ids, ClipMode::Cut)) if ids.contains(&id)),
+    )
+    .get();
     // The selection reads "inactive" while another input (an editor, a field)
-    // holds the keyboard — VS Code's list.inactiveSelection.
-    let inactive = pebbles_core::focus::focus_signal().get().is_some();
+    // holds the keyboard — VS Code's list.inactiveSelection. Only selected rows care.
+    let elsewhere = create_memo(move || pebbles_core::focus::focus_signal().get().is_some()).get();
+    let inactive = selected && elsewhere;
     let hovered = create_signal(false);
 
     let hv = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12);
@@ -311,26 +431,7 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
         explorer.with_menu(g.into_widget(), explorer.menu_target(Some(id)), Some(sync))
     };
 
-    let mut kids = vec![row_widget];
-    if is_folder && expanded && !renaming {
-        let anc_match = p.anc_match || name_matches(node, &q);
-        for child in &node.children {
-            if filtering && !filter_keeps(child, &q, anc_match) {
-                continue;
-            }
-            kids.push(
-                component_props(
-                    render_node,
-                    NodeProps { explorer, node: child.clone(), depth: p.depth + 1, anc_match },
-                )
-                .into_widget(),
-            );
-        }
-    }
-    column(kids)
-        .cross_axis_alignment(CrossAxisAlignment::Stretch)
-        .main_axis_size(MainAxisSize::Min)
-        .into_widget()
+    row_widget
 }
 
 /// Props for the inline rename editor.

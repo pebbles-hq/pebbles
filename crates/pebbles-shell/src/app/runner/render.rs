@@ -409,19 +409,23 @@ impl Runner {
         if pebbles_core::rebuild_profile::enabled() {
             let rows = pebbles_core::rebuild_profile::take();
             if !rows.is_empty() {
-                let anchor = pebbles_core::rebuild_profile::anchor();
+                use pebbles_core::rebuild_profile::label;
                 let top: Vec<String> = rows
                     .iter()
                     .take(6)
-                    .map(|(n, f, d)| {
-                        format!("{n}@{:+x} {:.2}ms", *f as i64 - anchor as i64, d.as_secs_f64() * 1e3)
-                    })
+                    .map(|(n, site, d)| format!("{} {:.2}ms", label(n, *site), d.as_secs_f64() * 1e3))
+                    .collect();
+                let selfs: Vec<String> = pebbles_core::rebuild_profile::take_self()
+                    .iter()
+                    .take(8)
+                    .map(|(n, site, c, d)| format!("{} x{c} {:.2}ms", label(n, *site), d.as_secs_f64() * 1e3))
                     .collect();
                 eprintln!(
-                    "[pebbles rebuild] frame {fno} {:.2}ms, {} dirty roots: {}",
+                    "[pebbles rebuild] frame {fno} {:.2}ms, {} dirty roots: {}\n[pebbles rebuild self] {}",
                     rebuild.as_secs_f64() * 1e3,
                     rows.len(),
-                    top.join(" | ")
+                    top.join(" | "),
+                    selfs.join(" | ")
                 );
             }
         }

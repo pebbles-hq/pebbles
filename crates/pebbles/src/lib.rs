@@ -70,7 +70,7 @@ pub mod prelude {
     pub use pebbles_core::{
         Channel, Component, Curve, Element, FocusNode, KeyInput, Motion, Resource, ScopeTag, Signal, Spring,
         Store, Transition, action, action_event, animate_spring, animate_to, animate_to_with, animated,
-        animated_spring, animated_with, channel, component, component_props, consume_context, create_effect,
+        animated_spring, animated_with, channel, component, component_memo, component_props, consume_context, create_effect,
         create_focus, create_focus_scope, create_memo, create_resource, create_shortcut, create_shortcut_if,
         create_signal, create_store, create_timeout, prefers_reduced_motion, provide_context,
         set_prefers_reduced_motion, spawn, transition, untrack, use_bounds,

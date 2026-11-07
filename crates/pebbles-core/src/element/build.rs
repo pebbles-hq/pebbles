@@ -24,6 +24,7 @@ impl Ui {
                 // Run the component with reactive tracking on this element, and keep
                 // the guard alive while its child reconciles — render-time contexts
                 // (theme overrides, focus scopes) must stay visible to the subtree.
+                let prof = crate::rebuild_profile::enter();
                 let child = {
                     let guard = crate::reactive::begin_component(id);
                     let out = guarded_render(&render);
@@ -31,6 +32,11 @@ impl Ui {
                     crate::reactive::end_component(guard);
                     child
                 };
+                if prof.is_some() {
+                    let w = &self.elements[id].widget;
+                    let fid = w.as_any().downcast_ref::<crate::component::Component>().map(|c| c.site);
+                    crate::rebuild_profile::exit(prof, w.debug_name(), fid);
+                }
                 if let Some(child) = child {
                     self.elements[id].children.push(child);
                 }
@@ -136,7 +142,14 @@ impl Ui {
                 let same_instance = self.elements[id]
                     .widget
                     .as_component()
-                    .is_some_and(|(_, old_render)| Rc::ptr_eq(&old_render, &render));
+                    .is_some_and(|(_, old_render)| Rc::ptr_eq(&old_render, &render))
+                    || matches!(
+                        (
+                            self.elements[id].widget.as_any().downcast_ref::<crate::component::Component>(),
+                            new_widget.as_any().downcast_ref::<crate::component::Component>(),
+                        ),
+                        (Some(a), Some(b)) if a.same_props(b)
+                    );
                 if same_instance
                     && !self.dirty.contains(&id)
                     && crate::reactive::contexts_unchanged_since_render(id)
@@ -147,6 +160,7 @@ impl Ui {
                 let old_child = self.elements[id].children.first().copied();
                 // Keep the component guard alive across the child reconcile so the
                 // render-time contexts this component provides cover its subtree.
+                let prof = crate::rebuild_profile::enter();
                 let new_child = {
                     let guard = crate::reactive::begin_component(id);
                     let out = guarded_render(&render);
@@ -154,6 +168,11 @@ impl Ui {
                     crate::reactive::end_component(guard);
                     child
                 };
+                if prof.is_some() {
+                    let w = &self.elements[id].widget;
+                    let fid = w.as_any().downcast_ref::<crate::component::Component>().map(|c| c.site);
+                    crate::rebuild_profile::exit(prof, w.debug_name(), fid);
+                }
                 self.elements[id].children = new_child.into_iter().collect();
             }
             Category::Render => {
@@ -262,6 +281,7 @@ impl Ui {
         // Guard spans the child reconcile (render-time contexts stay visible to the
         // subtree — same discipline as `update`/`inflate`).
         let t0 = crate::rebuild_profile::enabled().then(std::time::Instant::now);
+        let prof = crate::rebuild_profile::enter();
         let new_child = {
             let guard = crate::reactive::begin_component(id);
             let out = guarded_render(&render);
@@ -271,8 +291,9 @@ impl Ui {
         };
         if let Some(t0) = t0 {
             let w = &self.elements[id].widget;
-            let fid = w.as_component().map_or(0, |(f, _)| f);
+            let fid = w.as_any().downcast_ref::<crate::component::Component>().map(|c| c.site);
             crate::rebuild_profile::record(w.debug_name(), fid, t0.elapsed());
+            crate::rebuild_profile::exit(prof, w.debug_name(), fid);
         }
         crate::reactive::pop_pushed_contexts(pushed);
         self.elements[id].children = new_child.into_iter().collect();
