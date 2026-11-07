@@ -273,6 +273,12 @@ impl Runner {
         // + dialog signals are namespaced per window id).
         let mut ui = Ui::new();
         ui.make_current(); // so lazily-created per-window overlay signals key to this window
+        // The first build sees this window's real metrics.
+        let (scale, phys) = (window.scale_factor(), window.inner_size());
+        if let Some(l) = lifecycle::logical_size((phys.width, phys.height), scale) {
+            pebbles_widgets::overlay::set_window_size(l.width, l.height);
+            pebbles_widgets::set_device_pixel_ratio(scale);
+        }
         ui.mount_root(pebbles_widgets::window::window_root(spec.background, spec.root));
         let wid = window.id();
         publish_bounds(spec.id, &window);

@@ -41,7 +41,7 @@ pub use text::*;
 
 pub use keyed::{Keyed, keyed};
 pub use media::{
-    Breakpoint, MediaQueryData, Orientation, OrientationBuilder, SafeArea, breakpoint, drop_window_metrics,
+    Breakpoint, MediaQueryData, Orientation, OrientationBuilder, SafeArea, breakpoint, device_pixel_ratio, drop_window_metrics,
     media_query, orientation_builder, safe_area, set_device_pixel_ratio, set_safe_area_padding,
     set_text_scale, set_view_insets,
 };

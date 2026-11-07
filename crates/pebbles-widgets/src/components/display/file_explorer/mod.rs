@@ -1008,6 +1008,6 @@ impl FileExplorer {
                 }
             })
             .on_hover_exit(move || self.root_drop.set(false));
-        self.with_menu(root_gesture.into_widget(), self.menu_target(None), None)
+        self.with_menu(root_gesture.into_widget(), None, None)
     }
 }

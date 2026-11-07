@@ -188,6 +188,13 @@ pub fn media_query() -> MediaQueryData {
     }
 }
 
+/// The current window's device pixel ratio — **reactive in the ratio only** (Flutter's
+/// `MediaQuery.devicePixelRatioOf`): unlike [`media_query`], a resize does not re-render
+/// the reader. For per-item rasterisation (icons in every list row).
+pub fn device_pixel_ratio() -> f64 {
+    metrics_signal().get().device_pixel_ratio
+}
+
 // ===========================================================================
 // SafeArea
 // ===========================================================================

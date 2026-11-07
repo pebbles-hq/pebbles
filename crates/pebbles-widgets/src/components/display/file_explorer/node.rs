@@ -165,8 +165,11 @@ fn render_row(p: &RowProps) -> AnyWidget {
     .get();
     // The selection reads "inactive" while another input (an editor, a field)
     // holds the keyboard — VS Code's list.inactiveSelection. Only selected rows care.
-    let elsewhere = create_memo(move || pebbles_core::focus::focus_signal().get().is_some()).get();
-    let inactive = selected && elsewhere;
+    // (One memo of both: an unselected row never re-renders when the focus moves.)
+    let inactive = create_memo(move || {
+        explorer.selected.get().contains(&id) && pebbles_core::focus::focus_signal().get().is_some()
+    })
+    .get();
     let hovered = create_signal(false);
 
     let hv = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12);
@@ -196,7 +199,9 @@ fn render_row(p: &RowProps) -> AnyWidget {
         gap_w(st.twistie_size).into_widget()
     };
     let glyph = explorer.resolved_icon(node, expanded).build(st.icon_size, dim);
-    let deco = explorer.decoration(node.id);
+    // Through a memo: the app's decoration hook reads workspace-wide signals (git status,
+    // open documents), and a change there re-renders only the rows whose decoration changed.
+    let deco = create_memo(move || explorer.decoration(id)).get();
 
     let label: AnyWidget = if renaming {
         component_props(
@@ -428,7 +433,7 @@ fn render_row(p: &RowProps) -> AnyWidget {
                 explorer.select_only(id);
             }
         });
-        explorer.with_menu(g.into_widget(), explorer.menu_target(Some(id)), Some(sync))
+        explorer.with_menu(g.into_widget(), Some(id), Some(sync))
     };
 
     row_widget

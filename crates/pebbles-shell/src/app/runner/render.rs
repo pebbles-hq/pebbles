@@ -402,6 +402,18 @@ impl Runner {
             let _ = pebbles_core::reactive::frame_requested();
         }
 
+        // The window metrics a build reads (`media_query()`): published BEFORE reconciling,
+        // as Flutter updates MediaQuery before the build. Published after, every reader built
+        // against the previous size (at start-up: none) and re-rendered on the next frame.
+        let scale = active.window.scale_factor();
+        let phys = active.window.inner_size();
+        let Some(logical) = lifecycle::logical_size((phys.width, phys.height), scale) else {
+            return true;
+        };
+        pebbles_widgets::overlay::set_window_size(logical.width, logical.height);
+        // `media_query().device_pixel_ratio` (Flutter's `MediaQuery.devicePixelRatio`).
+        pebbles_widgets::set_device_pixel_ratio(scale);
+
         // 1. Reconcile. (May register fresh animation tracks as components render.)
         let t = Instant::now();
         self.ui.rebuild_if_dirty();
@@ -443,14 +455,6 @@ impl Runner {
         }
 
         // 2. Layout in logical pixels.
-        let scale = active.window.scale_factor();
-        let phys = active.window.inner_size();
-        let Some(logical) = lifecycle::logical_size((phys.width, phys.height), scale) else {
-            return true;
-        };
-        pebbles_widgets::overlay::set_window_size(logical.width, logical.height);
-        // `media_query().device_pixel_ratio` (Flutter's `MediaQuery.devicePixelRatio`).
-        pebbles_widgets::set_device_pixel_ratio(scale);
         // One font poll per frame, on the main window: a merged system-font scan re-lays out
         // every window.
         if self.text.poll_fonts() {
@@ -704,16 +708,17 @@ impl Runner {
         // GC a dead overlay first (see render()); make_current so it hits THIS window's.
         w.ui.make_current();
         pebbles_widgets::overlay::gc_dead();
-        w.ui.rebuild_if_dirty();
         let scale = w.window.scale_factor();
         let phys = w.window.inner_size();
         let Some(logical) = lifecycle::logical_size((phys.width, phys.height), scale) else {
             return;
         };
-        // Publish this window's size so its popovers can flip/shift on-screen.
-        w.ui.make_current();
+        // Publish this window's size (popovers flip/shift on-screen by it) before the
+        // build reads it.
         pebbles_widgets::overlay::set_window_size(logical.width, logical.height);
         pebbles_widgets::set_device_pixel_ratio(scale);
+        w.ui.rebuild_if_dirty();
+        w.ui.make_current();
         w.ui.layout(&mut self.text, logical);
 
         self.scene.reset();

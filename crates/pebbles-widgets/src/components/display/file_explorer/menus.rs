@@ -452,14 +452,12 @@ impl FileExplorer {
         out
     }
 
-    /// Wrap `child` in the context menu for `t` (or return it bare when the
-    /// [`Capability::ContextMenu`] is off).
-    pub(super) fn with_menu(
-        self,
-        child: AnyWidget,
-        t: MenuTarget,
-        on_open: Option<Rc<dyn Fn()>>,
-    ) -> AnyWidget {
+    /// Wrap `child` in the context menu of the row `id` (`None` = the empty space), or
+    /// return it bare when the [`Capability::ContextMenu`] is off. The menu (its target,
+    /// visible items, enabled states) is built when it OPENS: building it per render
+    /// subscribed every row to the selection, the menu set and the handlers, so wiring
+    /// a handler or selecting a row re-rendered the whole tree.
+    pub(super) fn with_menu(self, child: AnyWidget, id: Option<u64>, on_open: Option<Rc<dyn Fn()>>) -> AnyWidget {
         if !self.caps.get().allows(Capability::ContextMenu) {
             return child;
         }
@@ -467,10 +465,16 @@ impl FileExplorer {
         if let Some(f) = on_open {
             cm = cm.on_open(move |_| f());
         }
-        let t = Rc::new(t);
+        cm.entries_with(move |_| self.menu_entries(id)).into_widget()
+    }
+
+    /// The context menu entries for a right-click on `id` (`None` = the empty space).
+    pub(super) fn menu_entries(self, id: Option<u64>) -> Vec<crate::components::MenuEntry> {
+        let t = Rc::new(self.menu_target(id));
+        let mut out = Vec::new();
         for it in self.menu_for(&t) {
             if it.separator {
-                cm = cm.separator();
+                out.push(crate::components::MenuEntry::Separator);
                 continue;
             }
             let mut mi = menu_item(it.label.clone()).disabled(!it.is_enabled(&t));
@@ -482,9 +486,9 @@ impl FileExplorer {
             }
             let t2 = t.clone();
             mi = mi.on_select(move || it.run(&t2));
-            cm = cm.item(mi);
+            out.push(mi.into());
         }
-        cm.into_widget()
+        out
     }
 
     /// Whether a per-item predicate allows every entry of `t` (greys items).

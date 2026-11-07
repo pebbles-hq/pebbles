@@ -626,6 +626,15 @@ impl Runner {
             pebbles_widgets::set_text_direction(self.text_direction); // apply the app's direction
             install_clipboard(); // wire the system clipboard for Ctrl+C/X/V
             let root = self.pending_root.take().expect("root widget");
+            // The first build sees the real window metrics (no rebuild of every
+            // `media_query()` reader on the first frame).
+            self.ui.make_current();
+            let scale = window.scale_factor();
+            let phys = window.inner_size();
+            if let Some(l) = lifecycle::logical_size((phys.width, phys.height), scale) {
+                pebbles_widgets::overlay::set_window_size(l.width, l.height);
+                pebbles_widgets::set_device_pixel_ratio(scale);
+            }
             self.ui.mount_root(View::new(self.background, root).into_widget());
             self.mounted = true;
         }

@@ -184,7 +184,7 @@ pub mod prelude {
     // PopScope / SystemChrome); the `set_*` metrics are driven by the mobile shell.
     pub use pebbles_widgets::{
         Breakpoint, MediaQueryData, Orientation, OrientationBuilder, PopScope, SafeArea,
-        SystemUiOverlayStyle, back_is_blocked, breakpoint, dispatch_back, drop_window_metrics, media_query,
+        SystemUiOverlayStyle, back_is_blocked, breakpoint, device_pixel_ratio, dispatch_back, drop_window_metrics, media_query,
         orientation_builder, pop_scope, safe_area, set_device_pixel_ratio, set_safe_area_padding,
         set_system_ui_overlay_style, set_text_scale, set_view_insets, system_ui_overlay_style,
     };
