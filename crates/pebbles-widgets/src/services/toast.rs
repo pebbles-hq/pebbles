@@ -15,7 +15,7 @@ use crate::components::icon;
 use crate::overlay::window_size;
 use crate::theme::theme;
 use crate::widgets::{
-    Container, GestureDetector, Opacity, Positioned, Transform, column, gap_h, gap_w, row, spacer, text,
+    Container, GestureDetector, Opacity, Positioned, Transform, column, expanded, gap_h, gap_w, row, text,
 };
 use pebbles_core::reactive::current_window;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
@@ -227,18 +227,21 @@ fn toast_card_inner(e: &ToastEntry) -> AnyWidget {
         textcol.push(gap_h(3.0).into_widget());
         textcol.push(text(d.clone()).size(12.5).color(c.muted_foreground).into_widget());
     }
+    // The text takes the width left after the icon and the buttons and wraps there, so a
+    // long description (a CLI error) can't push the action and close button off the card
+    // or the window (CSS `flex: 1; min-width: 0`).
     left.push(
-        column(textcol)
-            .cross_axis_alignment(CrossAxisAlignment::Start)
-            .main_axis_size(MainAxisSize::Min)
-            .into_widget(),
+        expanded(
+            column(textcol).cross_axis_alignment(CrossAxisAlignment::Start).main_axis_size(MainAxisSize::Min),
+        )
+        .into_widget(),
     );
 
-    let mut r: Vec<AnyWidget> =
-        vec![row(left).main_axis_size(MainAxisSize::Min).into_widget(), spacer().into_widget()];
+    let mut r: Vec<AnyWidget> = vec![expanded(row(left)).into_widget()];
     if let Some((label, f)) = &e.action {
         let id = e.id;
         let f = f.clone();
+        r.push(gap_w(10.0).into_widget());
         r.push(
             GestureDetector::new(
                 Container::new()
