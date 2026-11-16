@@ -171,6 +171,11 @@ impl RenderTree {
         self.nodes.contains_key(id)
     }
 
+    /// The parent of `id` (`None` for the root or a missing node).
+    pub fn parent(&self, id: RenderId) -> Option<RenderId> {
+        self.nodes.get(id).and_then(|n| n.parent)
+    }
+
     /// Number of live render nodes in this tree (debug observability for the
     /// lifecycle soak test).
     pub fn node_count(&self) -> usize {

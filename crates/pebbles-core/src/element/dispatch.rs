@@ -183,7 +183,7 @@ impl Ui {
         point: Offset,
         event: pebbles_render::PointerScrollEvent,
     ) -> bool {
-        let hits = self.render.hit_test(point);
+        let hits = self.wheel_hits(point);
         for &rid in hits.iter().rev() {
             let handlers: Vec<pebbles_render::PointerSignalCallback> = self
                 .render
@@ -710,10 +710,36 @@ impl Ui {
         h || v
     }
 
+    /// The nodes a wheel at `point` may go to, root → leaf: the topmost wheel-relevant
+    /// node under the pointer (a pointer listener, scroll view or list) and its
+    /// ancestors — as the browser and Flutter route a wheel. `hit_test` also returns
+    /// nodes painted BEHIND the topmost content (siblings under a dialog, the editor under
+    /// a popup); those must never receive it. Non-interactive layers (an empty overlay
+    /// host, a decoration) don't pick the target, so they can't swallow the wheel.
+    fn wheel_hits(&self, point: Offset) -> Vec<RenderId> {
+        let hits = self.render.hit_test(point);
+        let relevant = |rid: RenderId| {
+            let o = self.render.object_ref(rid);
+            o.downcast_ref::<RenderPointerListener>().is_some()
+                || o.downcast_ref::<RenderScroll>().is_some()
+                || o.downcast_ref::<RenderList>().is_some()
+        };
+        let Some(&top) = hits.iter().rev().find(|&&rid| relevant(rid)) else {
+            return hits;
+        };
+        let mut chain = std::collections::HashSet::new();
+        let mut cur = Some(top);
+        while let Some(id) = cur {
+            chain.insert(id);
+            cur = self.render.parent(id);
+        }
+        hits.into_iter().filter(|id| chain.contains(id)).collect()
+    }
+
     /// One hit-test walk (leaf → root) applying `delta` to the first scrollable that
     /// matches `want` (any axis when `None`) and isn't already pinned at its edge.
     fn scroll_pass(&mut self, point: Offset, delta: f64, want: Option<Axis>) -> bool {
-        let hits = self.render.hit_test(point);
+        let hits = self.wheel_hits(point);
         for &rid in hits.iter().rev() {
             // Imperative scroll view: nudge its spring target directly.
             if let Some(s) = self.render.object_ref(rid).downcast_ref::<RenderScroll>() {

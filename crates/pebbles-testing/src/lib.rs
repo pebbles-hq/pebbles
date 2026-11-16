@@ -1488,6 +1488,60 @@ mod tests {
         assert!(!log.iter().any(|e| e.starts_with("up")), "release off the box isn't its up: {log:?}");
     }
 
+    thread_local! {
+        static BEHIND: Cell<u32> = const { Cell::new(0) };
+    }
+
+    /// A wheel-consuming listener filling the window (an editor) with, stacked on top,
+    /// either a scrollable panel or a plain opaque panel (a dialog).
+    fn stacked_wheel_probe(scrollable_top: bool) -> impl IntoWidget {
+        use pebbles_widgets::{Positioned, stack};
+        let behind = gesture_detector(container().width(400.0).height(400.0)).on_pointer_signal(|_| {
+            BEHIND.with(|b| b.set(b.get() + 1));
+            true
+        });
+        let top: pebbles_core::AnyWidget = if scrollable_top {
+            container()
+                .width(200.0)
+                .height(200.0)
+                .child(pebbles_widgets::scroll_view(container().height(2000.0)))
+                .into_widget()
+        } else {
+            gesture_detector(container().width(200.0).height(200.0)).on_tap(|| {}).into_widget()
+        };
+        stack(vec![behind.into_widget(), Positioned::new(top).left(100.0).top(100.0).into_widget()])
+    }
+
+    /// Regression (Gravel): a wheel over a dialog scrolled the code editor behind it,
+    /// because the pointer-signal pass offered the wheel to every listener under the
+    /// pointer, including ones painted BEHIND the topmost content. Like the browser and
+    /// Flutter, the wheel goes to the topmost target under the pointer and its ancestors.
+    #[test]
+    fn wheel_over_a_panel_never_reaches_a_listener_painted_behind_it() {
+        // A scrollable panel on top: it scrolls; the listener behind never hears it.
+        BEHIND.with(|b| b.set(0));
+        let mut h = Harness::new();
+        h.mount(|| stacked_wheel_probe(true));
+        h.draw();
+        let scroll = h.find::<pebbles_render::RenderScroll>().expect("scroll view");
+        h.scroll(Offset::new(150.0, 150.0), 40.0);
+        h.settle();
+        assert!(h.object::<pebbles_render::RenderScroll>(scroll).offset > 0.0, "the panel scrolls");
+        assert_eq!(BEHIND.with(Cell::get), 0, "the listener behind the panel got the wheel");
+
+        // An opaque, non-scrollable panel on top: nothing behind it scrolls either.
+        BEHIND.with(|b| b.set(0));
+        let mut h = Harness::new();
+        h.mount(|| stacked_wheel_probe(false));
+        h.draw();
+        h.scroll(Offset::new(150.0, 150.0), 40.0);
+        assert_eq!(BEHIND.with(Cell::get), 0, "the wheel fell through the panel");
+
+        // Outside the panel the listener still gets it.
+        h.scroll(Offset::new(20.0, 20.0), 40.0);
+        assert_eq!(BEHIND.with(Cell::get), 1, "uncovered area still delivers the wheel");
+    }
+
     // ----- press(): chords through the full key routing --------------------
 
     thread_local! {
