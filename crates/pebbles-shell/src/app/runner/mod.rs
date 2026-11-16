@@ -214,6 +214,8 @@ struct WindowRuntime {
     secondary_down_handled: bool,
     /// Hidden (08 §5.7, P12): render nothing, request no frames.
     occlusion: frame::Occlusion,
+    /// When this window last drew (clock seconds): the scroll springs' time step.
+    last_frame_t: Option<f64>,
 }
 
 /// The winit application handler. Holds all persistent runtime state.

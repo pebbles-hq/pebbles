@@ -307,6 +307,7 @@ impl Runner {
                 last_click: None,
                 last_tap_target: None,
                 secondary_down_handled: false,
+                last_frame_t: None,
             },
         );
     }

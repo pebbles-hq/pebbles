@@ -708,6 +708,13 @@ impl Runner {
         // GC a dead overlay first (see render()); make_current so it hits THIS window's.
         w.ui.make_current();
         pebbles_widgets::overlay::gc_dead();
+        // Advance this window's scroll springs (wheel / keyboard momentum), as `render`
+        // does for the main window. Without it a wheel in a secondary window set the
+        // scroll target but the content never moved (only the scrollbar drag, which sets
+        // the offset directly, worked). The step is capped so an idle gap can't jump.
+        let dt = w.last_frame_t.map_or(1.0 / 60.0, |t| (now - t).clamp(0.0, 0.05));
+        w.last_frame_t = Some(now);
+        let scrolling = w.ui.tick_scrolls(dt);
         let scale = w.window.scale_factor();
         let phys = w.window.inner_size();
         let Some(logical) = lifecycle::logical_size((phys.width, phys.height), scale) else {
@@ -762,7 +769,7 @@ impl Runner {
             }
         }
 
-        if pending_tasks || corrective || pebbles_core::animation::active() {
+        if scrolling || pending_tasks || corrective || pebbles_core::animation::active() {
             redraw::request(&w.window);
         }
     }
