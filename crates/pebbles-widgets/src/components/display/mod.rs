@@ -27,7 +27,7 @@ pub use empty::{Empty, empty};
 pub use file_explorer::pick_folder;
 pub use file_explorer::{
     Capability, ConfirmMoveFn, Decoration, ExplorerCapabilities, ExplorerEntry, ExplorerError, ExplorerIcon,
-    ExplorerMenuItem, ExplorerOp, ExplorerStyle, FileExplorer, FileTree, FsKind, FsNode, GitStatus,
+    ExplorerMenuItem, ExplorerOp, ExplorerStyle, FileExplorer, FileRow, FileTree, FsKind, FsNode, GitStatus,
     IconTheme, LanguageResolver, MenuAction, MenuContext, MenuTarget, MoveRequest, OpenMode, file_explorer,
     language_of, menu_ids, natural_cmp,
 };

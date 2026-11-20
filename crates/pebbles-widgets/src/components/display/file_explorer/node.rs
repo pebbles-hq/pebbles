@@ -100,6 +100,13 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
         component_memo(render_row, RowProps { explorer, chain: p.chain.clone(), depth: p.depth, filtering })
             .into_widget(),
     ];
+    // An expandable file: the app's rows inside it.
+    if !is_folder && open && !renaming && !filtering
+        && let Some(path) = explorer.path_of(id)
+        && explorer.is_expandable_file(&path)
+    {
+        kids.push(virt::file_rows_widget(explorer, path, p.depth + 1));
+    }
     if is_folder && open && !renaming {
         let q = if filtering { explorer.filter.get().trim().to_lowercase() } else { String::new() };
         let anc_match = p.anc_match || name_matches(&node, &q);
@@ -190,11 +197,22 @@ fn render_row(p: &RowProps) -> AnyWidget {
     }
 
     let dim = if selected { sel_fg } else { st.icon_tint };
+    // An expandable file (see `virt`) has its own twistie, toggled on its own.
+    let expandable_file = !is_folder && explorer.path_of(id).is_some_and(|p| explorer.is_expandable_file(&p));
     let twistie: AnyWidget = if is_folder {
         icon(if expanded { IconKind::ChevronDown } else { IconKind::ChevronRight })
             .size(st.twistie_size)
             .color(dim)
             .into_widget()
+    } else if expandable_file {
+        let file_open = open;
+        GestureDetector::new(
+            icon(if file_open { IconKind::ChevronDown } else { IconKind::ChevronRight })
+                .size(st.twistie_size)
+                .color(dim),
+        )
+        .on_tap(move || explorer.toggle_file(id))
+        .into_widget()
     } else {
         gap_w(st.twistie_size).into_widget()
     };

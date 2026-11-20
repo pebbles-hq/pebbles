@@ -122,12 +122,14 @@ mod node;
 mod ops;
 mod style;
 mod tree;
+mod virt;
 
 pub use caps::{Capability, ExplorerCapabilities, ExplorerEntry, ExplorerError, ExplorerOp};
 pub use deco::{Decoration, GitStatus};
 pub use icons::{ExplorerIcon, IconTheme, LanguageResolver, language_of};
 pub use menus::{ExplorerMenuItem, MenuAction, MenuContext, MenuTarget, OpenMode, menu_ids};
 pub use style::ExplorerStyle;
+pub use virt::FileRow;
 #[cfg(feature = "file-dialogs")]
 pub use tree::pick_folder;
 pub use tree::{FileTree, FsKind, FsNode, natural_cmp};
@@ -255,6 +257,10 @@ pub struct FileExplorer {
     /// Bumped by every reveal so the tree re-lays out and the viewport applies
     /// the queued scroll even when nothing else changed.
     pub(super) scroll_req: Signal<u64>,
+    /// Expandable files: hooks, the rows inside each file, folded groups (see [`virt`]).
+    pub(super) file_rows_cfg: Signal<virt::FileRows>,
+    pub(super) file_rows: Signal<virt::RowsMap>,
+    pub(super) file_rows_collapsed: Signal<HashSet<(PathBuf, String)>>,
 }
 
 /// The scrollbar the rows' viewport paints (the default overlay bar).
@@ -368,6 +374,9 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         scroll: create_signal(pebbles_render::ScrollHandle::new()),
         row_extent: create_signal(0.0),
         scroll_req: create_signal(0),
+        file_rows_cfg: create_signal(virt::FileRows::default()),
+        file_rows: create_signal(std::collections::HashMap::new()),
+        file_rows_collapsed: create_signal(HashSet::new()),
     };
     // `file_explorer` runs on every render of its component; build the default
     // menu only the first time so app customizations survive re-renders.
