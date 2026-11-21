@@ -70,6 +70,9 @@ pub struct Decoration {
     pub color: Option<Color>,
     /// Render dimmed (e.g. ignored files).
     pub faded: bool,
+    /// Show this instead of the file name (e.g. without an extension the app's own
+    /// file type implies). Rename still edits the real name.
+    pub label: Option<String>,
 }
 
 impl Decoration {

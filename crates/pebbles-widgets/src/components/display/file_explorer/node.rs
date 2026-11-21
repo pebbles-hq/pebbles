@@ -230,8 +230,13 @@ fn render_row(p: &RowProps) -> AnyWidget {
     } else {
         let deco_color = deco.as_ref().and_then(|d| d.label_color(&st));
         let faded = deco.as_ref().is_some_and(|d| d.faded);
+        // The app may show a single (non-compacted) row under another name.
+        let shown = match deco.as_ref().and_then(|d| d.label.clone()) {
+            Some(l) if chain.len() == 1 => l,
+            _ => chain_label.clone(),
+        };
         let mut t =
-            text(chain_label.clone()).size(st.font_size as f32).color(if dragged || cut_pending || faded {
+            text(shown).size(st.font_size as f32).color(if dragged || cut_pending || faded {
                 st.muted_text
             } else if selected {
                 sel_fg

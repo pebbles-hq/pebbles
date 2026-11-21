@@ -1849,6 +1849,18 @@ fn decorations_color_badge_and_propagate_to_folders() {
     let painted = rt.find_all::<pebbles_render::RenderParagraph>().into_iter().any(|id| {
         rt.object_ref(id).downcast_ref::<pebbles_render::RenderParagraph>().is_some_and(|p| p.text == "●")
     });
+    // A label overrides the shown name (the app's own file type, extension hidden).
+    status.update(|m| {
+        m.insert("zother".into(), Decoration { label: Some("Z Other".into()), ..Default::default() });
+    });
+    frame(&mut ui, &mut env, Size::new(400.0, 300.0));
+    let rt = ui.render_tree();
+    let texts: Vec<String> = rt
+        .find_all::<pebbles_render::RenderParagraph>()
+        .into_iter()
+        .filter_map(|id| rt.object_ref(id).downcast_ref::<pebbles_render::RenderParagraph>().map(|p| p.text.clone()))
+        .collect();
+    assert!(texts.iter().any(|t| t == "Z Other") && !texts.iter().any(|t| t == "zother"), "{texts:?}");
     assert!(painted, "the ● badge is painted");
     std::fs::remove_dir_all(&dir).ok();
 }
