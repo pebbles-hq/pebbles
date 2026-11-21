@@ -251,6 +251,82 @@ fn render_feedback(p: &FeedbackProps) -> Element {
 }
 
 // ===========================================================================
+// A drag session started by code (a widget with its own drag gesture, e.g. a file tree
+// whose rows leave the tree): the same payload delivery and feedback as `draggable`.
+// ===========================================================================
+
+/// Start a drag of `data` at window position `pointer`, showing `feedback` (`width`×
+/// `height`, grabbed at `anchor` within it) under the pointer. Drop targets highlight and
+/// receive it as for a [`draggable`]. Replaces any session in progress.
+pub fn start_drag(data: Rc<dyn Any>, pointer: Offset, anchor: Offset, feedback: AnyWidget, width: f64, height: f64) {
+    let sess = session();
+    let was = sess.peek().is_some();
+    sess.set(Some(DragState { data, pointer, anchor, feedback, width, height }));
+    if !was {
+        show_overlay(component_props(render_feedback, FeedbackProps { sess }).into_widget(), 0.0, 0.0, 1.0e6, 1.0e6);
+    }
+}
+
+/// The pointer (window position) of the drag in progress — read it in an `on_accept`
+/// handler to place what was dropped.
+pub fn drag_pointer() -> Option<Offset> {
+    session().peek().map(|s| s.pointer)
+}
+
+/// [`drag_pointer`], tracked: a render that reads it re-renders as the drag moves (to
+/// preview where a drop would land).
+pub fn drag_pointer_tracked() -> Option<Offset> {
+    session().get().map(|s| s.pointer)
+}
+
+/// Whether a drag session is in progress.
+pub fn drag_in_progress() -> bool {
+    session().peek().is_some()
+}
+
+/// Move the drag session's pointer (window position).
+pub fn update_drag(pointer: Offset) {
+    session().update(|s| {
+        if let Some(st) = s {
+            st.pointer = pointer;
+        }
+    });
+}
+
+/// End the drag session: deliver the payload to the topmost accepting target under the
+/// pointer. Returns whether a target took it.
+pub fn end_drag() -> bool {
+    let sess = session();
+    let mut delivered = false;
+    if let Some(st) = sess.peek() {
+        let pointer = st.pointer;
+        let hit = TARGETS.with(|t| {
+            t.borrow()
+                .iter()
+                .filter(|reg| contains(reg.rect, pointer) && (reg.accepts)(&st.data))
+                .min_by(|a, b| (a.rect.width() * a.rect.height()).total_cmp(&(b.rect.width() * b.rect.height())))
+                .map(|reg| reg.on_accept.clone())
+        });
+        if let Some(on_accept) = hit {
+            on_accept(&st.data);
+            delivered = true;
+        }
+        sess.set(None);
+        hide_overlay();
+    }
+    delivered
+}
+
+/// Abandon the drag session (nothing is delivered).
+pub fn cancel_drag() {
+    let sess = session();
+    if sess.peek().is_some() {
+        sess.set(None);
+        hide_overlay();
+    }
+}
+
+// ===========================================================================
 // DragTarget
 // ===========================================================================
 
@@ -263,6 +339,8 @@ pub struct DragTarget {
     will_accept: Option<AcceptFn>,
     type_check: AcceptFn,
     on_accept: HandlerFn,
+    /// Whether an `on_accept` set the type check (more `on_accept`s add payload types).
+    typed: bool,
 }
 
 /// A drag target whose `builder(hovering)` renders its content — `hovering` is `true`
@@ -273,6 +351,7 @@ pub fn drag_target<W: IntoWidget>(builder: impl Fn(bool) -> W + 'static) -> Drag
         will_accept: None,
         type_check: Rc::new(|_| true),
         on_accept: Rc::new(|_| {}),
+        typed: false,
     }
 }
 
@@ -280,13 +359,19 @@ impl DragTarget {
     /// Called with the payload (downcast to `T`) when a `T` is dropped here. Setting
     /// this also makes the target accept — and highlight for — only `T` payloads,
     /// unless you override with [`DragTarget::on_will_accept`].
+    ///
+    /// Call it once per payload type to accept several (`.on_accept::<A>(…).on_accept::<B>(…)`).
     pub fn on_accept<T: 'static>(mut self, f: impl Fn(&T) + 'static) -> Self {
+        let (prev_accept, prev_check, typed) = (self.on_accept.clone(), self.type_check.clone(), self.typed);
         self.on_accept = Rc::new(move |d: &DragData| {
             if let Some(v) = d.downcast_ref::<T>() {
                 f(v);
+            } else if typed {
+                prev_accept(d);
             }
         });
-        self.type_check = Rc::new(|d: &DragData| d.downcast_ref::<T>().is_some());
+        self.type_check = Rc::new(move |d: &DragData| d.downcast_ref::<T>().is_some() || (typed && prev_check(d)));
+        self.typed = true;
         self
     }
 

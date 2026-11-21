@@ -8,7 +8,10 @@ mod interactive_viewer;
 mod pointer_control;
 mod reorderable;
 
-pub use dnd::{DragTarget, Draggable, census_drag_targets, drag_target, draggable, long_press_draggable};
+pub use dnd::{
+    DragTarget, Draggable, cancel_drag, census_drag_targets, drag_in_progress, drag_pointer, drag_pointer_tracked, drag_target, draggable, end_drag,
+    long_press_draggable, start_drag, update_drag,
+};
 pub use file_drop::{FileDropTarget, file_drop_target};
 pub use focus_scope::focus_scope;
 pub use gesture::{GestureDetector, gesture_detector};

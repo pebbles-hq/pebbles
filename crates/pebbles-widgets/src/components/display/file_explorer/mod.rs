@@ -277,6 +277,13 @@ pub(super) fn scrollbar_gutter() -> f64 {
     sb.thickness + 2.0 * sb.margin
 }
 
+/// The payload of explorer rows dragged out of the tree onto an app drop target
+/// (`drag_target(..).on_accept::<ExplorerDrag>(..)`): their paths on disk.
+#[derive(Clone, Debug)]
+pub struct ExplorerDrag {
+    pub paths: Vec<PathBuf>,
+}
+
 /// A move awaiting confirmation (see [`FileExplorer::set_confirm_move`]).
 #[derive(Clone, Debug)]
 pub struct MoveRequest {

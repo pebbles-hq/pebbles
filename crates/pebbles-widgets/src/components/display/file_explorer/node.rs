@@ -355,6 +355,7 @@ fn render_row(p: &RowProps) -> AnyWidget {
                     let (w, h) = crate::services::overlay::window_size_of(window);
                     let outside = e.global.x < 0.0 || e.global.y < 0.0 || e.global.x >= w || e.global.y >= h;
                     if outside && w > 0.0 && explorer.caps.peek().allows(Capability::DragOut) {
+                        crate::widgets::cancel_drag();
                         let paths: Vec<PathBuf> =
                             explorer.selected.peek().iter().filter_map(|&n| explorer.path_of(n)).collect();
                         if !paths.is_empty() {
@@ -364,6 +365,41 @@ fn render_row(p: &RowProps) -> AnyWidget {
                             explorer.root_drop.set(false);
                             explorer.press.set(None);
                         }
+                    }
+                    // Out of the tree but inside the window: hand the rows to the app's drop
+                    // targets as an `ExplorerDrag` (e.g. a file dropped on an editor area);
+                    // back over the tree, the tree's own move takes over again.
+                    let over_tree = explorer.row_hover.peek().is_some() || explorer.root_drop.peek();
+                    if !outside && !over_tree {
+                        if crate::widgets::drag_in_progress() {
+                            crate::widgets::update_drag(e.global);
+                        } else {
+                            let paths: Vec<PathBuf> =
+                                explorer.selected.peek().iter().filter_map(|&n| explorer.path_of(n)).collect();
+                            if !paths.is_empty() {
+                                let st = explorer.style();
+                                let label = if paths.len() == 1 {
+                                    paths[0].file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+                                } else {
+                                    format!("{} items", paths.len())
+                                };
+                                let fb = Container::new()
+                                    .padding(EdgeInsets::symmetric(8.0, 3.0))
+                                    .decoration(BoxDecoration::new().color(st.selection_active_bg).radius(pebbles_render::BorderRadius::all(4.0)))
+                                    .child(text(label).size(st.font_size as f32).color(st.selection_active_fg))
+                                    .into_widget();
+                                crate::widgets::start_drag(
+                                    Rc::new(ExplorerDrag { paths }),
+                                    e.global,
+                                    Offset::new(-12.0, -10.0),
+                                    fb,
+                                    220.0,
+                                    24.0,
+                                );
+                            }
+                        }
+                    } else if crate::widgets::drag_in_progress() {
+                        crate::widgets::cancel_drag();
                     }
                     return;
                 }
@@ -391,6 +427,14 @@ fn render_row(p: &RowProps) -> AnyWidget {
                 move || {
                     explorer.press.set(None);
                     if !explorer.dragging.peek() {
+                        return;
+                    }
+                    // Dropped outside the tree on an app target (see pan_update).
+                    if crate::widgets::drag_in_progress() {
+                        crate::widgets::end_drag();
+                        explorer.dragging.set(false);
+                        explorer.drop_target.set(None);
+                        explorer.root_drop.set(false);
                         return;
                     }
                     let ids = explorer.selected.peek().clone();

@@ -169,7 +169,7 @@ pub mod prelude {
     // / ReorderableListView / InteractiveViewer)
     pub use pebbles_widgets::{
         DragTarget, Draggable, FileDropTarget, InteractiveViewer, PointerControl, ReorderableListView,
-        absorb_pointer, drag_target, draggable, file_drop, file_drop_target, ignore_pointer,
+        absorb_pointer, cancel_drag, drag_in_progress, drag_pointer, drag_pointer_tracked, drag_target, draggable, end_drag, start_drag, update_drag, file_drop, file_drop_target, ignore_pointer,
         interactive_viewer, long_press_draggable, reorderable_list_view,
     };
 
