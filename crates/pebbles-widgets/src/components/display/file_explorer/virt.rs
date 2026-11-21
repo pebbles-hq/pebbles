@@ -17,7 +17,8 @@ pub struct FileRow {
     pub label: String,
     /// Muted text after the label (a type, a count).
     pub detail: Option<String>,
-    pub icon: Option<IconData>,
+    /// The row's icon (an app glyph, or an icon theme's image).
+    pub icon: Option<ExplorerIcon>,
     pub children: Vec<FileRow>,
 }
 
@@ -29,7 +30,7 @@ impl FileRow {
         self.detail = Some(d.into());
         self
     }
-    pub fn icon(mut self, i: impl Into<IconData>) -> Self {
+    pub fn icon(mut self, i: impl Into<ExplorerIcon>) -> Self {
         self.icon = Some(i.into());
         self
     }
@@ -90,6 +91,19 @@ impl FileExplorer {
     /// The context menu of a row inside a file: `(file, tag)` → entries.
     pub fn set_file_row_menu(&self, f: impl Fn(&Path, &str) -> Vec<crate::components::MenuEntry> + 'static) {
         self.file_rows_cfg.update(|c| c.menu = Some(Rc::new(f)));
+    }
+
+    /// The selected row inside a file (`(file, tag)`), if any (reactive). A click on a
+    /// row selects it (and clears the tree's selection); selecting a file row clears it.
+    pub fn selected_file_row(&self) -> Option<(PathBuf, String)> {
+        self.file_row_selected.get()
+    }
+
+    /// Select a row inside a file (`None` = none).
+    pub fn select_file_row(&self, sel: Option<(PathBuf, String)>) {
+        if self.file_row_selected.peek() != sel {
+            self.file_row_selected.set(sel);
+        }
     }
 
     /// The expandable files currently expanded (their paths), e.g. to refresh their rows.
@@ -177,7 +191,11 @@ fn render_file_row(p: &RowP) -> AnyWidget {
     };
     let hovered = create_signal(false);
     let hv = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12);
-    let bg = mix(st.row_bg, st.hover_bg, st.hover_strength * hv as f32);
+    let me = (path.clone(), p.row.tag.clone());
+    let selected = !p.muted && pebbles_core::create_memo(move || explorer.file_row_selected.get().as_ref() == Some(&me)).get();
+    let base = if selected { st.selection_active_bg } else { st.row_bg };
+    let bg = if selected && st.hover_strength >= 1.0 { base } else { mix(base, st.hover_bg, st.hover_strength * hv as f32) };
+    let fg = if selected { st.selection_active_fg } else { st.text };
     let twistie: AnyWidget = if group {
         icon(if collapsed { IconKind::ChevronRight } else { IconKind::ChevronDown })
             .size(st.twistie_size)
@@ -187,10 +205,10 @@ fn render_file_row(p: &RowP) -> AnyWidget {
         gap_w(st.twistie_size).into_widget()
     };
     let glyph: AnyWidget = match p.row.icon.clone() {
-        Some(i) => icon(i).size(st.icon_size).color(st.icon_tint).into_widget(),
+        Some(i) => i.build(st.icon_size, if selected { fg } else { st.icon_tint }),
         None => gap_w(st.icon_size).into_widget(),
     };
-    let mut label = text(p.row.label.clone()).size(st.font_size as f32).color(if p.muted { st.muted_text } else { st.text });
+    let mut label = text(p.row.label.clone()).size(st.font_size as f32).color(if p.muted { st.muted_text } else { fg });
     if let Some(f) = &st.font_family {
         label = label.font_family(f.clone());
     }
@@ -225,6 +243,8 @@ fn render_file_row(p: &RowP) -> AnyWidget {
                     }
                 });
             } else {
+                explorer.selected.set(Vec::new());
+                explorer.select_file_row(Some((path_t.clone(), tag_t.clone())));
                 let hook = explorer.file_rows_cfg.with(|c| c.on_open.clone());
                 if let Some(h) = hook {
                     h(&path_t, &tag_t);

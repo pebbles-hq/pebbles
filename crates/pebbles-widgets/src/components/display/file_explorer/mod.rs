@@ -261,6 +261,7 @@ pub struct FileExplorer {
     pub(super) file_rows_cfg: Signal<virt::FileRows>,
     pub(super) file_rows: Signal<virt::RowsMap>,
     pub(super) file_rows_collapsed: Signal<HashSet<(PathBuf, String)>>,
+    pub(super) file_row_selected: Signal<Option<(PathBuf, String)>>,
 }
 
 /// The scrollbar the rows' viewport paints (the default overlay bar).
@@ -377,6 +378,7 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         file_rows_cfg: create_signal(virt::FileRows::default()),
         file_rows: create_signal(std::collections::HashMap::new()),
         file_rows_collapsed: create_signal(HashSet::new()),
+        file_row_selected: create_signal(None),
     };
     // `file_explorer` runs on every render of its component; build the default
     // menu only the first time so app customizations survive re-renders.
@@ -585,6 +587,9 @@ impl FileExplorer {
     }
 
     pub fn select_only(&self, id: u64) {
+        if self.file_row_selected.peek().is_some() {
+            self.file_row_selected.set(None);
+        }
         self.selected.set(vec![id]);
         self.active.set(Some(id));
     }
