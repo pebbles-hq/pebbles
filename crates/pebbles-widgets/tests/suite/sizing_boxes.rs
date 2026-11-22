@@ -281,3 +281,32 @@ fn sweep_gradient_paints_without_panic() {
     let mut scene = pebbles_render::Scene::new();
     ui.paint(&mut env, &mut scene); // encodes the sweep brush — must not panic
 }
+
+#[test]
+fn fitted_box_scale_down_in_a_loose_box_fills_its_own_size() {
+    // Loose constraints (an aligning parent): the box takes the child's aspect within
+    // them (Flutter), and the child is scaled to exactly that box — no gap, no clip.
+    let mut ui = Ui::new();
+    let mut env = TextEnv::new();
+    ui.mount_root(
+        View::new(
+            palette::WHITE,
+            component(|| {
+                column(vec![
+                    SizedBox::exact(
+                        300.0,
+                        300.0,
+                        container().alignment(Alignment::CENTER).child(fitted_box(SizedBox::exact(400.0, 800.0, text("z".to_string()))).fit(BoxFit::ScaleDown)),
+                    )
+                    .into_widget(),
+                ])
+            }),
+        )
+        .into_widget(),
+    );
+    ui.layout(&mut env, Size::new(400.0, 400.0));
+    assert_eq!(probe_size::<RenderFittedBox>(&ui), Size::new(150.0, 300.0));
+    let t = transform_of::<RenderFittedBox>(&ui, Size::new(150.0, 300.0)).expect("scaled");
+    let q = t * Point::new(400.0, 800.0);
+    assert!((q.x - 150.0).abs() < 1e-6 && (q.y - 300.0).abs() < 1e-6, "child fills the box: {q:?}");
+}

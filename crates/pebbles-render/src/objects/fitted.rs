@@ -58,35 +58,36 @@ impl RenderFittedBox {
         constraints.constrain(Size::new(width, height))
     }
 
-    /// The scale applied to the child for this box.
-    fn scale_for(&self, constraints: BoxConstraints, child: Size) -> (f64, f64) {
+    /// The scale that fits a `child`-sized child into a box of `size` (Flutter's
+    /// `applyBoxFit`, measured against the box's final size — not the constraints).
+    fn scale_for(&self, size: Size, child: Size) -> (f64, f64) {
         let cw = child.width;
         let ch = child.height;
         if cw <= 0.0 || ch <= 0.0 {
             return (1.0, 1.0);
         }
+        let (bw, bh) = (size.width, size.height);
         match self.fit {
             BoxFit::Contain => {
-                let s = (constraints.max_width / cw).min(constraints.max_height / ch);
+                let s = (bw / cw).min(bh / ch);
                 (s, s)
             }
             BoxFit::Cover => {
-                let s = (constraints.max_width / cw).max(constraints.max_height / ch);
+                let s = (bw / cw).max(bh / ch);
                 (s, s)
             }
-            BoxFit::Fill => (constraints.max_width / cw, constraints.max_height / ch),
+            BoxFit::Fill => (bw / cw, bh / ch),
             BoxFit::None => (1.0, 1.0),
             BoxFit::FitWidth => {
-                let s = constraints.max_width / cw;
+                let s = bw / cw;
                 (s, s)
             }
             BoxFit::FitHeight => {
-                let s = constraints.max_height / ch;
+                let s = bh / ch;
                 (s, s)
             }
             BoxFit::ScaleDown => {
-                let contain = (constraints.max_width / cw).min(constraints.max_height / ch);
-                let s = contain.min(1.0);
+                let s = (bw / cw).min(bh / ch).min(1.0);
                 (s, s)
             }
         }
@@ -101,13 +102,10 @@ impl RenderObject for RenderFittedBox {
         // The child sizes itself with no constraint on either axis (natural size).
         cx.layout_child(child, BoxConstraints::UNBOUNDED);
         let child_size = cx.child_size(child);
-        let (sx, sy) = self.scale_for(constraints, child_size);
-        // The box wants to be the scaled child, kept inside the constraints while
-        // preserving the child's aspect (Flutter semantics).
-        let size = Self::constrain_preserving_aspect(
-            constraints,
-            Size::new(child_size.width * sx, child_size.height * sy),
-        );
+        // Flutter: the box is the child's natural size fitted into the constraints with
+        // its aspect preserved; the child is then scaled into that box and aligned.
+        let size = Self::constrain_preserving_aspect(constraints, child_size);
+        let (sx, sy) = self.scale_for(size, child_size);
         // Where the scaled child's top-left lands within the box (alignment -1..1).
         let dw = size.width - child_size.width * sx;
         let dh = size.height - child_size.height * sy;
