@@ -271,7 +271,10 @@ impl Ui {
         let focus_rect = crate::focus::focused_element_ffi(win)
             .and_then(|ffi| self.render_of(ElementId::from(slotmap::KeyData::from_ffi(ffi))))
             .map(rect_of);
-        changed | crate::bounds::set_focus_bounds(focus_rect)
+        // Only the window holding focus (or any, when nothing is focused) publishes the
+        // focus rect: a secondary window's frame must not clear the main window's.
+        let focus_here = crate::focus::focus_signal().peek().is_none_or(|(w, _)| w == win);
+        changed | (focus_here && crate::bounds::set_focus_bounds(focus_rect))
     }
 
     /// The render node an element lays out as: its own, or (component / parent-data

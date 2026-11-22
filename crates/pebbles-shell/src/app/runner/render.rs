@@ -727,6 +727,12 @@ impl Runner {
         w.ui.rebuild_if_dirty();
         w.ui.make_current();
         w.ui.layout(&mut self.text, logical);
+        // Publish laid-out rects for this window's `use_bounds()` components, as `render`
+        // does for the main window. Without it every `use_bounds()` in a secondary window
+        // read `Rect::ZERO` forever: a code editor there sized its click area to the text
+        // (clicks right of a line / below it hit nothing and dropped focus) and clipped its
+        // horizontal window to zero width (End blanked the line).
+        let _ = w.ui.publish_bounds();
 
         self.scene.reset();
         let corrective = w.ui.paint(&mut self.text, &mut self.scene);
