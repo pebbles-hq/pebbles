@@ -49,3 +49,31 @@ fn offscreen_capture_rejects_zero_and_oversized_frames() {
     assert!(gpu.render_scene(&s, 0, 10, palette::WHITE).is_err());
     assert!(gpu.render_scene(&s, capture::MAX_CAPTURE_DIM + 1, 1, palette::WHITE).is_err());
 }
+
+#[test]
+#[ignore = "gpu"]
+fn fitted_box_paints_the_whole_scaled_child() {
+    // A 400×800 red child scaled down into a 200×200 area: a centred 100×200 red box,
+    // painted to its right / bottom edges (the clip once shrank by the scale twice).
+    use pebbles_foundation::{Alignment, BoxFit};
+    use pebbles_widgets::{SizedBox, fitted_box};
+    let red = Color::from_rgba8(255, 0, 0, 255);
+    let root = container()
+        .alignment(Alignment::CENTER)
+        .child(fitted_box(SizedBox::exact(400.0, 800.0, container().color(red))).fit(BoxFit::ScaleDown))
+        .into_widget();
+    let png = capture::capture_png(root, 200, 200, palette::WHITE).expect("capture");
+    let decoder = png::Decoder::new(std::io::Cursor::new(&png));
+    let mut reader = decoder.read_info().expect("decode header");
+    let mut buf = vec![0; reader.output_buffer_size().expect("size")];
+    let info = reader.next_frame(&mut buf).expect("frame");
+    let px = |x: usize, y: usize| {
+        let i = (y * info.width as usize + x) * info.color_type.samples();
+        [buf[i], buf[i + 1], buf[i + 2]]
+    };
+    assert_eq!(px(100, 100), [255, 0, 0], "centre");
+    assert_eq!(px(146, 196), [255, 0, 0], "bottom-right of the scaled child is painted");
+    assert_eq!(px(54, 4), [255, 0, 0], "top-left of the scaled child");
+    assert_eq!(px(20, 100), [255, 255, 255], "left of the box stays empty");
+    assert_eq!(px(180, 100), [255, 255, 255], "right of the box stays empty");
+}

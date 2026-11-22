@@ -121,7 +121,19 @@ impl RenderObject for RenderFittedBox {
             // child larger than the box, and Flutter's FittedBox clips that overflow
             // (`clipBehavior: Clip.hardEdge`). The clip is a rect in the box's own
             // space; the child's scale transform applies inside `paint_child_clipped`.
-            let bounds = Rect::from_origin_size(offset.to_point(), cx.size());
+            // This box paints under its own transform (translate(position) · scale), so
+            // its clip is the box's area in that scaled space: size / scale, shifted
+            // back by the placement — not the box size, which the scale would shrink
+            // a second time (clipping the scaled child's right / bottom).
+            let (sx, sy) = self.scale;
+            let size = cx.size();
+            let (sx, sy) = (if sx.abs() > 1e-9 { sx } else { 1.0 }, if sy.abs() > 1e-9 { sy } else { 1.0 });
+            let bounds = Rect::new(
+                offset.x - self.position.x / sx,
+                offset.y - self.position.y / sy,
+                offset.x + (size.width - self.position.x) / sx,
+                offset.y + (size.height - self.position.y) / sy,
+            );
             cx.scene.push_layer(Fill::NonZero, Mix::Normal, 1.0, Affine::IDENTITY, &bounds);
             cx.paint_child_clipped(child, offset, bounds);
             cx.scene.pop_layer();
