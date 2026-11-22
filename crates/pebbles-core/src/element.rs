@@ -252,10 +252,11 @@ impl Ui {
         let mut changed = false;
         let win = self.window_id();
         let tree = self.render_tree();
+        // Transforms included (a scaled-down FittedBox…): drop targets and anchors must sit
+        // where the pointer actually lands.
         let rect_of = |rid| {
-            let o = tree.absolute_offset(rid);
-            let s = tree.size_of(rid);
-            pebbles_foundation::Rect::new(o.x, o.y, o.x + s.width, o.y + s.height)
+            let r = tree.absolute_rect(rid);
+            pebbles_foundation::Rect::new(r.x0, r.y0, r.x1, r.y1)
         };
         for (w, iid) in crate::bounds::wanted_bounds() {
             if w != win {

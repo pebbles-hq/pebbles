@@ -602,6 +602,37 @@ impl RenderTree {
         acc
     }
 
+    /// A node's window-space bounding rect with every ancestor's transform applied (a
+    /// `FittedBox` scale, a `Transform`…) — the same mapping [`hit_test`](Self::hit_test)
+    /// inverts, so a rect published from here agrees with where the pointer lands.
+    pub fn absolute_rect(&self, id: RenderId) -> Rect {
+        let mut chain = Vec::new();
+        let mut cur = Some(id);
+        while let Some(c) = cur {
+            chain.push(c);
+            cur = self.nodes[c].parent;
+        }
+        let mut frame = Affine::IDENTITY;
+        for &c in chain.iter().rev() {
+            let node = &self.nodes[c];
+            let mut local = Affine::translate((node.offset.x, node.offset.y));
+            if let Some(t) = node_transform(node) {
+                local *= t;
+            }
+            frame *= local;
+        }
+        let size = self.nodes[id].size;
+        let corners = [(0.0, 0.0), (size.width, 0.0), (0.0, size.height), (size.width, size.height)].map(|(x, y)| frame * kurbo::Point::new(x, y));
+        let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+        for p in corners {
+            x0 = x0.min(p.x);
+            y0 = y0.min(p.y);
+            x1 = x1.max(p.x);
+            y1 = y1.max(p.y);
+        }
+        Rect::new(x0, y0, x1, y1)
+    }
+
     /// Mark `id` (and, transitively, the path to the root) as needing layout.
     ///
     /// A production framework would stop at the nearest *relayout boundary*; v0
