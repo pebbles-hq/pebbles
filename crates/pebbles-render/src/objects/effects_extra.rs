@@ -51,6 +51,12 @@ fn oval_clip_shape(bounds: Rect) -> OvalClip {
 pub struct RenderClipOval;
 
 impl RenderObject for RenderClipOval {
+    /// A single-child wrapper: its intrinsic extent is its child's (so IntrinsicHeight and
+    /// stretched rows can measure through it).
+    fn intrinsic(&self, cx: &mut crate::tree::IntrinsicCx<'_>, axis: pebbles_foundation::Axis, cross_extent: f64) -> Option<f64> {
+        cx.children().first().copied().and_then(|c| cx.child_intrinsic(c, axis, cross_extent))
+    }
+
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         layout_single_child(cx, constraints)
     }
@@ -89,6 +95,12 @@ pub struct RenderClipPath {
 }
 
 impl RenderObject for RenderClipPath {
+    /// A single-child wrapper: its intrinsic extent is its child's (so IntrinsicHeight and
+    /// stretched rows can measure through it).
+    fn intrinsic(&self, cx: &mut crate::tree::IntrinsicCx<'_>, axis: pebbles_foundation::Axis, cross_extent: f64) -> Option<f64> {
+        cx.children().first().copied().and_then(|c| cx.child_intrinsic(c, axis, cross_extent))
+    }
+
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         layout_single_child(cx, constraints)
     }
@@ -126,6 +138,12 @@ pub struct RenderColorFilter {
 }
 
 impl RenderObject for RenderColorFilter {
+    /// A single-child wrapper: its intrinsic extent is its child's (so IntrinsicHeight and
+    /// stretched rows can measure through it).
+    fn intrinsic(&self, cx: &mut crate::tree::IntrinsicCx<'_>, axis: pebbles_foundation::Axis, cross_extent: f64) -> Option<f64> {
+        cx.children().first().copied().and_then(|c| cx.child_intrinsic(c, axis, cross_extent))
+    }
+
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         layout_single_child(cx, constraints)
     }
@@ -156,6 +174,12 @@ pub struct RenderShaderMask {
 }
 
 impl RenderObject for RenderShaderMask {
+    /// A single-child wrapper: its intrinsic extent is its child's (so IntrinsicHeight and
+    /// stretched rows can measure through it).
+    fn intrinsic(&self, cx: &mut crate::tree::IntrinsicCx<'_>, axis: pebbles_foundation::Axis, cross_extent: f64) -> Option<f64> {
+        cx.children().first().copied().and_then(|c| cx.child_intrinsic(c, axis, cross_extent))
+    }
+
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         layout_single_child(cx, constraints)
     }
@@ -236,6 +260,12 @@ pub struct RenderImageFilter {
 }
 
 impl RenderObject for RenderImageFilter {
+    /// A single-child wrapper: its intrinsic extent is its child's (so IntrinsicHeight and
+    /// stretched rows can measure through it).
+    fn intrinsic(&self, cx: &mut crate::tree::IntrinsicCx<'_>, axis: pebbles_foundation::Axis, cross_extent: f64) -> Option<f64> {
+        cx.children().first().copied().and_then(|c| cx.child_intrinsic(c, axis, cross_extent))
+    }
+
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         layout_single_child(cx, constraints)
     }
@@ -267,6 +297,12 @@ pub struct RenderBackdropFilter {
 }
 
 impl RenderObject for RenderBackdropFilter {
+    /// A single-child wrapper: its intrinsic extent is its child's (so IntrinsicHeight and
+    /// stretched rows can measure through it).
+    fn intrinsic(&self, cx: &mut crate::tree::IntrinsicCx<'_>, axis: pebbles_foundation::Axis, cross_extent: f64) -> Option<f64> {
+        cx.children().first().copied().and_then(|c| cx.child_intrinsic(c, axis, cross_extent))
+    }
+
     fn layout(&mut self, cx: &mut LayoutCx<'_>, constraints: BoxConstraints) -> Size {
         layout_single_child(cx, constraints)
     }
