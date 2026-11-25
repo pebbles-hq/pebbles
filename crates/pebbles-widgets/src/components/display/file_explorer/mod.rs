@@ -317,9 +317,21 @@ struct MoveRecord {
     paths: Option<(PathBuf, PathBuf)>,
 }
 
+/// An app's own undo for an operation it did itself (several moves and edits as one step).
+#[derive(Clone)]
+pub(super) struct AppUndo(Rc<dyn Fn() -> bool>);
+
+impl std::fmt::Debug for AppUndo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AppUndo")
+    }
+}
+
 /// One undoable file operation.
 #[derive(Clone, Debug)]
 enum FileOp {
+    /// Done by the app (see [`FileExplorer::push_app_undo`]); undoing runs its closure.
+    App(AppUndo),
     Move(Vec<MoveRecord>),
     Rename {
         id: u64,

@@ -604,6 +604,12 @@ impl FileExplorer {
         });
     }
 
+    /// Record an operation the app did itself (for example a rename it handled in
+    /// `on_before_op`) as one undo step: Mod+Z / Undo runs `undo` (true = restored).
+    pub fn push_app_undo(&self, undo: impl Fn() -> bool + 'static) {
+        self.push_history(FileOp::App(super::AppUndo(std::rc::Rc::new(undo))));
+    }
+
     /// Whether there is a file operation to undo (reactive).
     pub fn can_undo(&self) -> bool {
         !self.history.get().is_empty()
@@ -618,6 +624,12 @@ impl FileExplorer {
         let Some(op) = op else { return false };
         let mut any = false;
         match op {
+            FileOp::App(u) => {
+                any = (u.0)();
+                if any {
+                    self.refresh();
+                }
+            }
             FileOp::Move(batch) => {
                 for rec in batch.into_iter().rev() {
                     if let Some((from, to)) = &rec.paths
