@@ -2296,6 +2296,8 @@ fn folder_items_are_one_row_that_act_on_their_folder() {
 
     let pages = id_of(tree, "pages");
     ex.toggle_folder(pages);
+    // Opening the folder asks for its items' rows (for their twistie) without expanding them.
+    assert_eq!(ex.row_files(), vec![dir.join("pages/Home.item/Home.view")]);
     let home = id_of(tree, "pages/Home.item");
     // Expanding the item shows its main file's rows, not its folder's files.
     ex.toggle_folder(home);
@@ -2326,6 +2328,14 @@ fn folder_items_are_one_row_that_act_on_their_folder() {
     assert_eq!(opened.borrow().as_slice(), [view.clone()]);
     // A file inside reveals the item row.
     assert_eq!(ex.reveal_path(&view), Some(home));
+    // Open to the Side gets the main file, not the folder.
+    let side = std::rc::Rc::new(RefCell::new(Vec::new()));
+    let sd = side.clone();
+    ex.set_menu_handler(pebbles_widgets::menu_ids::OPEN_TO_SIDE, move |t| sd.borrow_mut().extend(t.entries.iter().map(|e| e.path.clone().unwrap())));
+    let t = ex.menu_target(Some(home));
+    let item = ex.menu_for(&t).into_iter().find(|i| i.id == pebbles_widgets::menu_ids::OPEN_TO_SIDE).expect("Open to the Side shown");
+    item.run(&t);
+    assert_eq!(side.borrow().as_slice(), [view.clone()]);
 
     // Rename by label: the folder keeps its suffix.
     ex.rename_selected()();

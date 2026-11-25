@@ -197,6 +197,15 @@ impl FileExplorer {
                 }
             }
         };
+        // Open commands get a folder item's main file (see `items`).
+        let open_handler = move |id: &'static str| {
+            move |t: &MenuTarget| {
+                let h = ex.menu_handlers.get().get(id).cloned();
+                if let Some(h) = h {
+                    h(&ex.open_target(t));
+                }
+            }
+        };
         let sep = ExplorerMenuItem::separator;
         vec![
             ExplorerMenuItem::new(m::OPEN, "Open", move |t| {
@@ -205,12 +214,12 @@ impl FileExplorer {
                 }
             })
             .in_contexts(&[File]),
-            ExplorerMenuItem::new(m::OPEN_TO_SIDE, "Open to the Side", handler(m::OPEN_TO_SIDE))
+            ExplorerMenuItem::new(m::OPEN_TO_SIDE, "Open to the Side", open_handler(m::OPEN_TO_SIDE))
                 .shortcut("Ctrl+Enter")
                 .visible_when(move |t| {
-                    (t.context == File || (t.context == Multi && t.all_files())) && has(m::OPEN_TO_SIDE)(t)
+                    (t.context == File || (t.context == Multi && ex.open_target(t).all_files())) && has(m::OPEN_TO_SIDE)(t)
                 }),
-            ExplorerMenuItem::new(m::OPEN_WITH, "Open With…", handler(m::OPEN_WITH))
+            ExplorerMenuItem::new(m::OPEN_WITH, "Open With…", open_handler(m::OPEN_WITH))
                 .visible_when(move |t| t.context == File && has(m::OPEN_WITH)(t)),
             sep(),
             ExplorerMenuItem::new(m::NEW_FILE, "New File…", move |t| {
@@ -405,13 +414,8 @@ impl FileExplorer {
 
     /// Open `id` (see [`on_open`](Self::on_open)). Folders toggle.
     pub fn open_entry(&self, id: u64, mode: OpenMode) {
-        let Some(mut e) = self.entry(id) else { return };
-        // A folder item opens its main file.
-        if let Some(it) = self.folder_item(id) {
-            e.name = it.open.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            e.kind = FsKind::File;
-            e.path = Some(it.open);
-        } else if e.is_folder() {
+        let Some(e) = self.entry(id).map(|e| self.open_entry_of(e)) else { return };
+        if e.is_folder() {
             self.toggle_folder(id);
             return;
         }

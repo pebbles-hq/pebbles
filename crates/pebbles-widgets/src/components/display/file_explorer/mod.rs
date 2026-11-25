@@ -266,6 +266,8 @@ pub struct FileExplorer {
     pub(super) file_row_selected: Signal<Option<(PathBuf, String)>>,
     /// The folder-items hook (see [`set_folder_items`](Self::set_folder_items)).
     pub(super) item_fn: Signal<Option<items::ItemFn>>,
+    /// Item main files whose rows were asked for so the twistie knows (see `items`).
+    pub(super) probed: Signal<HashSet<PathBuf>>,
 }
 
 /// The scrollbar the rows' viewport paints (the default overlay bar).
@@ -391,6 +393,7 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         file_rows_collapsed: create_signal(HashSet::new()),
         file_row_selected: create_signal(None),
         item_fn: create_signal(None),
+        probed: create_signal(HashSet::new()),
     };
     // `file_explorer` runs on every render of its component; build the default
     // menu only the first time so app customizations survive re-renders.
@@ -524,6 +527,7 @@ impl FileExplorer {
             });
             if !open {
                 self.extend_compact_chain(*chain.last().unwrap_or(&id));
+                self.probe_items(chain.last().copied());
             }
             return;
         }
@@ -532,6 +536,7 @@ impl FileExplorer {
                 ex.insert(id);
             }
         });
+        self.probe_items(Some(id));
     }
 
     /// The first folder of the compact chain `id` belongs to.
@@ -734,6 +739,7 @@ impl FileExplorer {
                 self.expanded.update(|e| {
                     e.insert(found);
                 });
+                self.probe_items(Some(found));
                 parent = Some(found);
             }
         }
@@ -745,6 +751,7 @@ impl FileExplorer {
             self.expanded.update(|e| {
                 e.insert(p);
             });
+            self.probe_items(Some(p));
             cur = self.tree.peek().parent_of(p);
         }
     }

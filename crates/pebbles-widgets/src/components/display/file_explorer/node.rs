@@ -214,8 +214,14 @@ fn render_row(p: &RowProps) -> AnyWidget {
 
     let dim = if selected { sel_fg } else { st.icon_tint };
     // An expandable file (see `virt`) has its own twistie, toggled on its own.
+    // An item with no rows (they were read: none) has no twistie.
+    let item_open = item.as_ref().map(|it| it.open.clone());
+    let no_rows = create_memo(move || {
+        item_open.as_ref().is_some_and(|o| explorer.file_rows.with(|m| m.get(o).is_some_and(Vec::is_empty)))
+    })
+    .get();
     let expandable_file = match &item {
-        Some(it) => explorer.is_expandable_file(&it.open),
+        Some(it) => explorer.is_expandable_file(&it.open) && !no_rows,
         None => !is_folder && explorer.path_of(id).is_some_and(|p| explorer.is_expandable_file(&p)),
     };
     let item_row = item.is_some();

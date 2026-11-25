@@ -208,7 +208,7 @@ impl FileExplorer {
             Box::new(move || {
                 let Some(id) = self.active() else { return false };
                 let h = self.menu_handlers.peek().get(menu_ids::OPEN_TO_SIDE).cloned();
-                match (h, self.entry(id)) {
+                match (h, self.entry(id).map(|e| self.open_entry_of(e))) {
                     (Some(h), Some(e)) if !e.is_folder() => {
                         h(&MenuTarget { context: MenuContext::File, entries: vec![e] });
                         true

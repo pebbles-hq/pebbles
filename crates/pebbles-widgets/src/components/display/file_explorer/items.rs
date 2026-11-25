@@ -51,6 +51,65 @@ impl FileExplorer {
         f(&self.path_of(id)?)
     }
 
+    /// What opening `e` opens: a folder item's main file (as a file entry), else `e`.
+    pub fn open_entry_of(&self, mut e: ExplorerEntry) -> ExplorerEntry {
+        if let Some(it) = self.folder_item(e.id) {
+            e.name = it.open.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            e.kind = FsKind::File;
+            e.path = Some(it.open);
+        }
+        e
+    }
+
+    /// `t` for an open command (Open to the Side, Open With…): items as their main files.
+    pub fn open_target(&self, t: &MenuTarget) -> MenuTarget {
+        MenuTarget { context: t.context, entries: t.entries.iter().cloned().map(|e| self.open_entry_of(e)).collect() }
+    }
+
+    /// Ask for the rows of the folder items directly in `folder` (`None` = the root) whose
+    /// main file is expandable, so their twistie shows only when they have rows. Called when
+    /// a folder opens (an event, never while rendering); the app answers through
+    /// [`set_file_rows`](Self::set_file_rows) for every path in [`row_files`](Self::row_files).
+    // shortcut: probed paths are kept until the explorer unmounts (one per item seen); evict on refresh if projects grow huge.
+    pub(super) fn probe_items(&self, folder: Option<u64>) {
+        if self.item_fn.peek().is_none() {
+            return;
+        }
+        let kids: Vec<u64> = {
+            let t = self.tree.peek();
+            match folder {
+                Some(f) => t.node(f).map(|n| n.children.iter().filter(|c| c.kind == FsKind::Folder).map(|c| c.id).collect()),
+                None => Some(t.root.iter().filter(|c| c.kind == FsKind::Folder).map(|c| c.id).collect()),
+            }
+            .unwrap_or_default()
+        };
+        let hook = self.file_rows_cfg.peek().on_expand.clone();
+        for id in kids {
+            let Some(it) = self.folder_item(id) else { continue };
+            if !self.is_expandable_file(&it.open) || self.probed.peek().contains(&it.open) || self.file_rows.peek().contains_key(&it.open) {
+                continue;
+            }
+            self.probed.update(|p| {
+                p.insert(it.open.clone());
+            });
+            if let Some(h) = &hook {
+                h(&it.open);
+            }
+        }
+    }
+
+    /// The files whose rows the app should keep current: the expanded expandable files and
+    /// items, plus the items probed for their twistie (reactive).
+    pub fn row_files(&self) -> Vec<PathBuf> {
+        let mut v = self.expanded_files();
+        for p in self.probed.get().iter() {
+            if !v.contains(p) {
+                v.push(p.clone());
+            }
+        }
+        v
+    }
+
     /// Whether `id` is a folder items can be put into (a folder that isn't an item).
     pub(super) fn is_container(&self, id: u64) -> bool {
         self.tree.peek().node(id).is_some_and(|n| n.kind == FsKind::Folder) && self.folder_item(id).is_none()

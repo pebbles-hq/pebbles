@@ -20,6 +20,7 @@ impl FileExplorer {
                 });
                 self.selected.set(Vec::new());
                 self.expanded.set(HashSet::new());
+                self.probe_items(None);
                 self.renaming.set(None);
                 self.last_error.set(None);
                 true
