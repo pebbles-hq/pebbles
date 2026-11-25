@@ -170,6 +170,13 @@ impl FileExplorer {
                 if node.kind != FsKind::Folder {
                     return true; // engaged but nothing to expand — consume, like VSCode
                 }
+                // A folder item: its rows aren't tree rows (nothing to step into).
+                if self.folder_item(id).is_some() {
+                    if !self.expanded.peek().contains(&id) {
+                        self.toggle_folder(id);
+                    }
+                    return true;
+                }
                 if !self.expanded.peek().contains(&id) {
                     self.toggle_folder(id);
                 } else if let Some(first) = node.children.first() {

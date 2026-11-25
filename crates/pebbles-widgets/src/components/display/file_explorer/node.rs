@@ -96,6 +96,9 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
     .get();
     let id = node.id;
     let renaming = create_memo(move || explorer.renaming.get() == Some(id)).get();
+    // A folder item is one row: its main file's rows when expanded, never its contents.
+    let item = if is_folder { explorer.folder_item(id) } else { None };
+    let is_folder = is_folder && item.is_none();
     let mut kids = vec![
         component_memo(render_row, RowProps { explorer, chain: p.chain.clone(), depth: p.depth, filtering })
             .into_widget(),
@@ -106,6 +109,14 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
         && explorer.is_expandable_file(&path)
     {
         kids.push(virt::file_rows_widget(explorer, path, p.depth + 1));
+    }
+    if let Some(it) = item
+        && open
+        && !renaming
+        && !filtering
+        && explorer.is_expandable_file(&it.open)
+    {
+        kids.push(virt::file_rows_widget(explorer, it.open, p.depth + 1));
     }
     if is_folder && open && !renaming {
         let q = if filtering { explorer.filter.get().trim().to_lowercase() } else { String::new() };
@@ -142,9 +153,14 @@ fn render_row(p: &RowProps) -> AnyWidget {
     let filtering = p.filtering;
     let chain = &p.chain;
     let node = chain.last().expect("non-empty");
-    let chain_label = chain.iter().map(|n| n.name.as_str()).collect::<Vec<_>>().join("/");
-    let is_folder = node.kind == FsKind::Folder;
     let id = node.id;
+    // A folder item shows as one file-like row (see `items`).
+    let item = if node.kind == FsKind::Folder && chain.len() == 1 { explorer.folder_item(id) } else { None };
+    let chain_label = match &item {
+        Some(it) => it.label.clone(),
+        None => chain.iter().map(|n| n.name.as_str()).collect::<Vec<_>>().join("/"),
+    };
+    let is_folder = node.kind == FsKind::Folder && item.is_none();
     let ids: Vec<u64> = chain.iter().map(|c| c.id).collect();
     // Hooks run unconditionally (a row element may be reused for a file or a folder).
     let open = create_memo(move || {
@@ -198,7 +214,11 @@ fn render_row(p: &RowProps) -> AnyWidget {
 
     let dim = if selected { sel_fg } else { st.icon_tint };
     // An expandable file (see `virt`) has its own twistie, toggled on its own.
-    let expandable_file = !is_folder && explorer.path_of(id).is_some_and(|p| explorer.is_expandable_file(&p));
+    let expandable_file = match &item {
+        Some(it) => explorer.is_expandable_file(&it.open),
+        None => !is_folder && explorer.path_of(id).is_some_and(|p| explorer.is_expandable_file(&p)),
+    };
+    let item_row = item.is_some();
     let twistie: AnyWidget = if is_folder {
         icon(if expanded { IconKind::ChevronDown } else { IconKind::ChevronRight })
             .size(st.twistie_size)
@@ -211,12 +231,16 @@ fn render_row(p: &RowProps) -> AnyWidget {
                 .size(st.twistie_size)
                 .color(dim),
         )
-        .on_tap(move || explorer.toggle_file(id))
+        .on_tap(move || if item_row { explorer.toggle_folder(id) } else { explorer.toggle_file(id) })
         .into_widget()
     } else {
         gap_w(st.twistie_size).into_widget()
     };
-    let glyph = explorer.resolved_icon(node, expanded).build(st.icon_size, dim);
+    let glyph = match &item {
+        Some(it) => explorer.item_icon(id, it),
+        None => explorer.resolved_icon(node, expanded),
+    }
+    .build(st.icon_size, dim);
     // Through a memo: the app's decoration hook reads workspace-wide signals (git status,
     // open documents), and a change there re-renders only the rows whose decoration changed.
     let deco = create_memo(move || explorer.decoration(id)).get();
@@ -422,7 +446,7 @@ fn render_row(p: &RowProps) -> AnyWidget {
                 // the target (its hover-enter fired before the drag began).
                 if let Some(h) = explorer.row_hover.peek()
                     && h != id
-                    && explorer.tree.peek().node(h).is_some_and(|n| n.kind == FsKind::Folder)
+                    && explorer.is_container(h)
                     && explorer.drop_ok(Some(h))
                 {
                     explorer.drop_target.set(Some(h));

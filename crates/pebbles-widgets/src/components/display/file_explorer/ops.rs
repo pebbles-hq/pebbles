@@ -426,13 +426,10 @@ impl FileExplorer {
     /// moving, no-ops (already in `target`), and moves into the node itself or
     /// a descendant. A file target is refused outright.
     pub(super) fn plan_move(&self, ids: &[u64], target: Option<u64>) -> Vec<u64> {
-        let t = self.tree.peek();
-        if let Some(tg) = target {
-            match t.node(tg) {
-                Some(n) if n.kind == FsKind::Folder => {}
-                _ => return Vec::new(),
-            }
+        if target.is_some_and(|tg| !self.is_container(tg)) {
+            return Vec::new();
         }
+        let t = self.tree.peek();
         ids.iter()
             .copied()
             .filter(|&id| t.node(id).is_some())
@@ -447,7 +444,7 @@ impl FileExplorer {
     fn gate_move(&self, ids: &[u64], target: Option<u64>) -> Result<(Vec<u64>, ExplorerOp), ExplorerError> {
         self.require(Capability::Move)?;
         if let Some(t) = target
-            && self.tree.peek().node(t).is_none_or(|n| n.kind != FsKind::Folder)
+            && !self.is_container(t)
         {
             return self.fail(ExplorerError::Invalid("The target is not a folder".into()));
         }
@@ -952,7 +949,7 @@ impl FileExplorer {
     pub fn copy_nodes(&self, ids: &[u64], target: Option<u64>) -> Result<Vec<u64>, ExplorerError> {
         self.require(Capability::CopyPaste)?;
         if let Some(t) = target
-            && self.tree.peek().node(t).is_none_or(|n| n.kind != FsKind::Folder)
+            && !self.is_container(t)
         {
             return self.fail(ExplorerError::Invalid("The target is not a folder".into()));
         }
@@ -1117,10 +1114,8 @@ impl FileExplorer {
             return self.fail(ExplorerError::Invalid("Not in filesystem mode".into()));
         };
         let dir = match target {
-            Some(t) => match self.tree.peek().node(t) {
-                Some(n) if n.kind == FsKind::Folder => self.path_of(t).unwrap_or(root.clone()),
-                _ => return self.fail(ExplorerError::Invalid("The target is not a folder".into())),
-            },
+            Some(t) if self.is_container(t) => self.path_of(t).unwrap_or(root.clone()),
+            Some(_) => return self.fail(ExplorerError::Invalid("The target is not a folder".into())),
             None => root.clone(),
         };
         let entries: Vec<ExplorerEntry> = paths

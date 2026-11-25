@@ -405,8 +405,13 @@ impl FileExplorer {
 
     /// Open `id` (see [`on_open`](Self::on_open)). Folders toggle.
     pub fn open_entry(&self, id: u64, mode: OpenMode) {
-        let Some(e) = self.entry(id) else { return };
-        if e.is_folder() {
+        let Some(mut e) = self.entry(id) else { return };
+        // A folder item opens its main file.
+        if let Some(it) = self.folder_item(id) {
+            e.name = it.open.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            e.kind = FsKind::File;
+            e.path = Some(it.open);
+        } else if e.is_folder() {
             self.toggle_folder(id);
             return;
         }
@@ -426,7 +431,7 @@ impl FileExplorer {
         let entries = self.entries(&ids);
         let context = if entries.len() > 1 {
             MenuContext::Multi
-        } else if entries.first().is_some_and(|e| e.is_folder()) {
+        } else if entries.first().is_some_and(|e| e.is_folder() && self.folder_item(e.id).is_none()) {
             MenuContext::Folder
         } else {
             MenuContext::File

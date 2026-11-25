@@ -2272,3 +2272,79 @@ fn dragging_rows_out_of_the_window_starts_an_os_file_drag() {
     );
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// Folder items: `Greeting.item/` shows as ONE row ("Greeting") that opens its main file,
+/// expands to that file's rows (never its folder contents), renames/moves/deletes as the
+/// whole folder, and is never a move or paste target.
+#[test]
+fn folder_items_are_one_row_that_act_on_their_folder() {
+    use pebbles_widgets::{FileRow, FolderItem};
+    let (dir, tree, ex) = fs_explorer("items");
+    std::fs::create_dir_all(dir.join("pages/Home.item")).unwrap();
+    std::fs::write(dir.join("pages/Home.item/Home.view"), "v").unwrap();
+    std::fs::write(dir.join("pages/Home.item/OnInit.act"), "a").unwrap();
+    std::fs::create_dir_all(dir.join("lib")).unwrap();
+    assert!(ex.open_folder(&dir));
+    ex.set_folder_items(|p| {
+        let n = p.file_name()?.to_str()?.strip_suffix(".item")?;
+        Some(FolderItem::new(n, p.join(format!("{n}.view"))))
+    });
+    ex.set_expandable_files(|p| p.extension().is_some_and(|e| e == "view"), |_| {});
+    let opened = std::rc::Rc::new(RefCell::new(Vec::new()));
+    let o = opened.clone();
+    ex.on_open(move |e, _| o.borrow_mut().push(e.path.clone().unwrap()));
+
+    let pages = id_of(tree, "pages");
+    ex.toggle_folder(pages);
+    let home = id_of(tree, "pages/Home.item");
+    // Expanding the item shows its main file's rows, not its folder's files.
+    ex.toggle_folder(home);
+    let view = dir.join("pages/Home.item/Home.view");
+    assert_eq!(ex.expanded_files(), vec![view.clone()], "the item's rows are its main file's");
+    ex.set_file_rows(&view, Some(vec![FileRow::new("state:S", "State1").detail("String · state")]));
+    assert_eq!(ex.visible_rows(), vec![id_of(tree, "lib"), pages, home], "one row per item");
+
+    FS_EX.with(|c| *c.borrow_mut() = Some(ex));
+    let mut ui = Ui::new();
+    pebbles_widgets::Theme::tailwind().make_current();
+    let mut env = TextEnv::new();
+    let win = Size::new(400.0, 300.0);
+    ui.mount_root(View::new(palette::WHITE, component(fs_root_widget)).into_widget());
+    ui.layout(&mut env, win);
+    frame(&mut ui, &mut env, win);
+    let rt = ui.render_tree();
+    let texts: Vec<String> = rt
+        .find_all::<pebbles_render::RenderParagraph>()
+        .into_iter()
+        .filter_map(|id| rt.object_ref(id).downcast_ref::<pebbles_render::RenderParagraph>().map(|p| p.text.clone()))
+        .collect();
+    assert!(texts.iter().any(|t| t == "Home") && texts.iter().any(|t| t == "State1"), "{texts:?}");
+    assert!(!texts.iter().any(|t| t.contains("Home.item") || t.contains("OnInit")), "folder hidden: {texts:?}");
+
+    // Opening the item opens its main file.
+    ex.open_entry(home, pebbles_widgets::OpenMode::Open);
+    assert_eq!(opened.borrow().as_slice(), [view.clone()]);
+    // A file inside reveals the item row.
+    assert_eq!(ex.reveal_path(&view), Some(home));
+
+    // Rename by label: the folder keeps its suffix.
+    ex.rename_selected()();
+    assert_eq!(ex.renaming().get(), Some(home));
+    ex.commit_rename(home, "Start").unwrap();
+    assert!(dir.join("pages/Start.item/Home.view").exists(), "the whole folder was renamed");
+    let start = id_of(tree, "pages/Start.item");
+    // Never a target: moving into it or pasting into it lands beside it.
+    let lib = id_of(tree, "lib");
+    assert!(ex.move_nodes(&[lib], Some(start)).is_err(), "an item isn't a folder to move into");
+    ex.select_only(lib);
+    ex.copy_selection().unwrap();
+    ex.select_only(start);
+    ex.paste_clipboard().unwrap();
+    assert!(dir.join("pages/lib").is_dir() && !dir.join("pages/Start.item/lib").exists(), "pasted beside the item");
+    // The item moves and deletes as a whole.
+    ex.move_nodes(&[start], None).unwrap();
+    assert!(dir.join("Start.item/OnInit.act").exists());
+    ex.delete_permanently(&[start]).unwrap();
+    assert!(!dir.join("Start.item").exists(), "deleted as a whole");
+    std::fs::remove_dir_all(&dir).ok();
+}

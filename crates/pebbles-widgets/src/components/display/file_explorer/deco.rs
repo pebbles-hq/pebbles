@@ -178,12 +178,16 @@ impl FileExplorer {
     /// folders compact.
     pub(super) fn compact_chain(&self, node: &FsNode) -> Vec<FsNode> {
         let mut chain = vec![node.clone()];
-        if !self.compact.get() || node.kind != FsKind::Folder {
+        if !self.compact.get() || node.kind != FsKind::Folder || self.folder_item(node.id).is_some() {
             return chain;
         }
         loop {
             let last = chain.last().expect("non-empty");
-            if !last.loaded || last.children.len() != 1 || last.children[0].kind != FsKind::Folder {
+            if !last.loaded
+                || last.children.len() != 1
+                || last.children[0].kind != FsKind::Folder
+                || self.folder_item(last.children[0].id).is_some()
+            {
                 break;
             }
             let next = last.children[0].clone();

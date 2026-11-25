@@ -116,6 +116,7 @@ use pebbles_core::{Signal, animated, component_props, create_shortcut_if, create
 mod caps;
 mod deco;
 mod icons;
+mod items;
 mod keys;
 mod menus;
 mod node;
@@ -126,6 +127,7 @@ mod virt;
 
 pub use caps::{Capability, ExplorerCapabilities, ExplorerEntry, ExplorerError, ExplorerOp};
 pub use deco::{Decoration, GitStatus};
+pub use items::FolderItem;
 pub use icons::{ExplorerIcon, IconTheme, LanguageResolver, language_of};
 pub use menus::{ExplorerMenuItem, MenuAction, MenuContext, MenuTarget, OpenMode, menu_ids};
 pub use style::ExplorerStyle;
@@ -262,6 +264,8 @@ pub struct FileExplorer {
     pub(super) file_rows: Signal<virt::RowsMap>,
     pub(super) file_rows_collapsed: Signal<HashSet<(PathBuf, String)>>,
     pub(super) file_row_selected: Signal<Option<(PathBuf, String)>>,
+    /// The folder-items hook (see [`set_folder_items`](Self::set_folder_items)).
+    pub(super) item_fn: Signal<Option<items::ItemFn>>,
 }
 
 /// The scrollbar the rows' viewport paints (the default overlay bar).
@@ -386,6 +390,7 @@ pub fn file_explorer(tree: Signal<FileTree>) -> FileExplorer {
         file_rows: create_signal(std::collections::HashMap::new()),
         file_rows_collapsed: create_signal(HashSet::new()),
         file_row_selected: create_signal(None),
+        item_fn: create_signal(None),
     };
     // `file_explorer` runs on every render of its component; build the default
     // menu only the first time so app customizations survive re-renders.
@@ -495,6 +500,10 @@ impl FileExplorer {
     /// Expand/collapse a folder (loading its children from disk first, in
     /// filesystem mode).
     pub fn toggle_folder(&self, id: u64) {
+        if let Some(it) = self.folder_item(id) {
+            self.toggle_item(id, &it);
+            return;
+        }
         self.ensure_loaded(id);
         if self.compact.peek() {
             // A compact row toggles its whole chain (head … id).
@@ -580,7 +589,7 @@ impl FileExplorer {
                     out.push(last.id);
                     let open =
                         if q.is_empty() { chain.iter().all(|c| expanded.contains(&c.id)) } else { true };
-                    if last.kind == FsKind::Folder && open {
+                    if last.kind == FsKind::Folder && open && ex.folder_item(last.id).is_none() {
                         go(ex, compact, &last.children, expanded, q, anc || name_matches(n, q), out);
                     }
                 }
@@ -658,7 +667,7 @@ impl FileExplorer {
     fn insertion_parent(&self) -> Option<u64> {
         match self.active() {
             Some(id) => match self.tree.peek().node(id) {
-                Some(n) if n.kind == FsKind::Folder => Some(id),
+                Some(_) if self.is_container(id) => Some(id),
                 Some(_) => self.tree.peek().parent_of(id),
                 None => None,
             },
@@ -685,6 +694,10 @@ impl FileExplorer {
             let found = self.child_named(parent, &name)?;
             id = Some(found);
             parent = Some(found);
+            // A folder item is one row: a file inside it reveals the item.
+            if self.folder_item(found).is_some() {
+                break;
+            }
         }
         let id = id?;
         self.reveal(id);
@@ -768,6 +781,8 @@ impl FileExplorer {
         // the field selects the stem so typing replaces it, and arrow keys let
         // you edit in place instead of retyping the whole name).
         let current = self.tree.peek().node(id).map(|n| n.name.clone()).unwrap_or_default();
+        // A folder item renames by its label (the hidden rest of its name is kept).
+        let current = self.folder_item(id).filter(|it| current.starts_with(&it.label)).map_or(current, |it| it.label);
         self.rename_buf.set(current);
         // Drop any held focus (e.g. the button that was just clicked) so the
         // rename editor's one-shot autofocus actually grabs the keyboard.
@@ -833,6 +848,14 @@ impl FileExplorer {
         if text.is_empty() {
             self.renaming.set(None);
             return Ok(());
+        }
+        // A folder item: `Hello` renames `Greeting.gravel` to `Hello.gravel`.
+        let name = self.tree.peek().node(id).map(|n| n.name.clone()).unwrap_or_default();
+        if let Some(it) = self.folder_item(id)
+            && let Some(rest) = name.strip_prefix(it.label.as_str())
+            && !text.ends_with(rest)
+        {
+            return self.rename_node(id, &format!("{text}{rest}"));
         }
         self.rename_node(id, text)
     }
@@ -958,12 +981,8 @@ impl FileExplorer {
     /// folder, else the root.
     fn os_drop_target(&self) -> Option<u64> {
         let h = self.row_hover.peek()?;
-        let t = self.tree.peek();
-        match t.node(h) {
-            Some(n) if n.kind == FsKind::Folder => Some(h),
-            Some(_) => t.parent_of(h),
-            None => None,
-        }
+        self.tree.peek().node(h)?;
+        if self.is_container(h) { Some(h) } else { self.tree.peek().parent_of(h) }
     }
 
     fn tree_inner(self) -> AnyWidget {

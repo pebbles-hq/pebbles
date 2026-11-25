@@ -110,9 +110,17 @@ impl FileExplorer {
     pub fn expanded_files(&self) -> Vec<PathBuf> {
         let ids: Vec<u64> = self.expanded.peek().iter().copied().collect();
         let t = self.tree.peek();
-        let files: Vec<u64> = ids.into_iter().filter(|i| t.node(*i).is_some_and(|n| n.kind == FsKind::File)).collect();
+        let kinds: Vec<(u64, FsKind)> = ids.into_iter().filter_map(|i| t.node(i).map(|n| (i, n.kind))).collect();
         drop(t);
-        files.into_iter().filter_map(|i| self.path_of(i)).filter(|p| self.is_expandable_file(p)).collect()
+        // A folder item's rows are its main file's.
+        kinds
+            .into_iter()
+            .filter_map(|(i, k)| match k {
+                FsKind::File => self.path_of(i),
+                FsKind::Folder => self.folder_item(i).map(|it| it.open),
+            })
+            .filter(|p| self.is_expandable_file(p))
+            .collect()
     }
 
     /// Whether `path` (a file) is expandable.
