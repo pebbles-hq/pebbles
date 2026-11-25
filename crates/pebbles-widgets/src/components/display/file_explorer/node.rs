@@ -104,7 +104,7 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
             .into_widget(),
     ];
     // An expandable file: the app's rows inside it.
-    if !is_folder && open && !renaming && !filtering
+    if !is_folder && item.is_none() && open && !renaming && !filtering
         && let Some(path) = explorer.path_of(id)
         && explorer.is_expandable_file(&path)
     {
