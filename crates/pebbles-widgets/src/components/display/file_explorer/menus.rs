@@ -406,6 +406,23 @@ impl FileExplorer {
         });
     }
 
+    /// Override the visibility predicate of a built-in item (or yours) by id —
+    /// e.g. hide [`menu_ids::NEW_FILE`] where the app only allows its own kinds.
+    /// The app's predicate is ANDed with the item's own `visible_when`.
+    pub fn set_menu_item_visible_when(&self, id: &str, f: impl Fn(&MenuTarget) -> bool + 'static) {
+        let id = id.to_string();
+        let f = Rc::new(f);
+        self.menu.update(|m| {
+            for it in m.iter_mut() {
+                if !it.separator && it.id == id {
+                    let prev = it.visible.clone();
+                    let extra = f.clone();
+                    it.visible = Rc::new(move |t| prev(t) && extra(t));
+                }
+            }
+        });
+    }
+
     /// Called to open a file (Enter, double-click, Space = preview, menu Open).
     /// Without it, opening just activates the row ([`active_row`](Self::active_row)).
     pub fn on_open(&self, f: impl Fn(&ExplorerEntry, OpenMode) + 'static) {
