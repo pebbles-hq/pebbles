@@ -63,7 +63,10 @@ impl FileExplorer {
 
     /// `t` for an open command (Open to the Side, Open With…): items as their main files.
     pub fn open_target(&self, t: &MenuTarget) -> MenuTarget {
-        MenuTarget { context: t.context, entries: t.entries.iter().cloned().map(|e| self.open_entry_of(e)).collect() }
+        MenuTarget {
+            context: t.context,
+            entries: t.entries.iter().cloned().map(|e| self.open_entry_of(e)).collect(),
+        }
     }
 
     /// Ask for the rows of the folder items directly in `folder` (`None` = the root) whose
@@ -78,7 +81,9 @@ impl FileExplorer {
         let kids: Vec<u64> = {
             let t = self.tree.peek();
             match folder {
-                Some(f) => t.node(f).map(|n| n.children.iter().filter(|c| c.kind == FsKind::Folder).map(|c| c.id).collect()),
+                Some(f) => t
+                    .node(f)
+                    .map(|n| n.children.iter().filter(|c| c.kind == FsKind::Folder).map(|c| c.id).collect()),
                 None => Some(t.root.iter().filter(|c| c.kind == FsKind::Folder).map(|c| c.id).collect()),
             }
             .unwrap_or_default()
@@ -86,7 +91,10 @@ impl FileExplorer {
         let hook = self.file_rows_cfg.peek().on_expand.clone();
         for id in kids {
             let Some(it) = self.folder_item(id) else { continue };
-            if !self.is_expandable_file(&it.open) || self.probed.peek().contains(&it.open) || self.file_rows.peek().contains_key(&it.open) {
+            if !self.is_expandable_file(&it.open)
+                || self.probed.peek().contains(&it.open)
+                || self.file_rows.peek().contains_key(&it.open)
+            {
                 continue;
             }
             self.probed.update(|p| {
@@ -122,7 +130,13 @@ impl FileExplorer {
         }
         let name = it.open.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         if let Some(r) = self.icon_resolver.get() {
-            let e = ExplorerEntry { id, name: name.clone(), kind: FsKind::File, parent: None, path: Some(it.open.clone()) };
+            let e = ExplorerEntry {
+                id,
+                name: name.clone(),
+                kind: FsKind::File,
+                parent: None,
+                path: Some(it.open.clone()),
+            };
             if let Some(i) = r(&e, false) {
                 return i;
             }

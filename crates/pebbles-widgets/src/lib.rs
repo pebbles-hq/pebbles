@@ -113,8 +113,9 @@ pub use widgets::{error_boundary, for_each, suspense};
 pub use widgets::file_drop;
 pub use widgets::{
     DragTarget, Draggable, FileDropTarget, InteractiveViewer, PointerControl, ReorderableListView,
-    absorb_pointer, cancel_drag, census_drag_targets, drag_in_progress, drag_pointer, drag_pointer_tracked, drag_target, draggable, end_drag, start_drag, update_drag, file_drop_target, ignore_pointer, interactive_viewer,
-    long_press_draggable, reorderable_list_view,
+    absorb_pointer, cancel_drag, census_drag_targets, drag_in_progress, drag_pointer, drag_pointer_tracked,
+    drag_target, draggable, end_drag, file_drop_target, ignore_pointer, interactive_viewer,
+    long_press_draggable, reorderable_list_view, start_drag, update_drag,
 };
 // painting & effects (siblings of clip_rrect / opacity)
 pub use widgets::{
@@ -125,9 +126,9 @@ pub use widgets::{
 // PopScope / SystemChrome). The `set_*` metrics are driven by the mobile shell.
 pub use widgets::{
     Breakpoint, MediaQueryData, Orientation, OrientationBuilder, PopScope, SafeArea, SystemUiOverlayStyle,
-    back_is_blocked, breakpoint, device_pixel_ratio, dispatch_back, drop_window_metrics, media_query, orientation_builder,
-    pop_scope, safe_area, set_device_pixel_ratio, set_safe_area_padding, set_system_ui_overlay_style,
-    set_text_scale, set_view_insets, system_ui_overlay_style,
+    back_is_blocked, breakpoint, device_pixel_ratio, dispatch_back, drop_window_metrics, media_query,
+    orientation_builder, pop_scope, safe_area, set_device_pixel_ratio, set_safe_area_padding,
+    set_system_ui_overlay_style, set_text_scale, set_view_insets, system_ui_overlay_style,
 };
 // layout (the long-tail Flutter layout widgets)
 pub use widgets::{

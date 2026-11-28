@@ -100,7 +100,6 @@ unsafe extern "C" {
     fn malloc_trim(pad: usize) -> i32;
 }
 
-
 /// Take a [`Snapshot`] now.
 pub fn snapshot() -> Snapshot {
     let mut s = Snapshot {
@@ -129,9 +128,19 @@ pub fn snapshot() -> Snapshot {
                     1
                 } else if exe.as_deref() == Some(path) {
                     2
-                } else if ["libLLVM", "libvulkan_", "libgallium", "dri/", "mesa", "libnvidia", "libdrm", "iris", "/memfd:"]
-                    .iter()
-                    .any(|k| path.contains(k))
+                } else if [
+                    "libLLVM",
+                    "libvulkan_",
+                    "libgallium",
+                    "dri/",
+                    "mesa",
+                    "libnvidia",
+                    "libdrm",
+                    "iris",
+                    "/memfd:",
+                ]
+                .iter()
+                .any(|k| path.contains(k))
                 {
                     3
                 } else {

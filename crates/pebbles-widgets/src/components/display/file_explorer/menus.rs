@@ -217,7 +217,8 @@ impl FileExplorer {
             ExplorerMenuItem::new(m::OPEN_TO_SIDE, "Open to the Side", open_handler(m::OPEN_TO_SIDE))
                 .shortcut("Ctrl+Enter")
                 .visible_when(move |t| {
-                    (t.context == File || (t.context == Multi && ex.open_target(t).all_files())) && has(m::OPEN_TO_SIDE)(t)
+                    (t.context == File || (t.context == Multi && ex.open_target(t).all_files()))
+                        && has(m::OPEN_TO_SIDE)(t)
                 }),
             ExplorerMenuItem::new(m::OPEN_WITH, "Open With…", open_handler(m::OPEN_WITH))
                 .visible_when(move |t| t.context == File && has(m::OPEN_WITH)(t)),
@@ -483,7 +484,12 @@ impl FileExplorer {
     /// visible items, enabled states) is built when it OPENS: building it per render
     /// subscribed every row to the selection, the menu set and the handlers, so wiring
     /// a handler or selecting a row re-rendered the whole tree.
-    pub(super) fn with_menu(self, child: AnyWidget, id: Option<u64>, on_open: Option<Rc<dyn Fn()>>) -> AnyWidget {
+    pub(super) fn with_menu(
+        self,
+        child: AnyWidget,
+        id: Option<u64>,
+        on_open: Option<Rc<dyn Fn()>>,
+    ) -> AnyWidget {
         if !self.caps.get().allows(Capability::ContextMenu) {
             return child;
         }

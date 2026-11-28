@@ -1858,7 +1858,9 @@ fn decorations_color_badge_and_propagate_to_folders() {
     let texts: Vec<String> = rt
         .find_all::<pebbles_render::RenderParagraph>()
         .into_iter()
-        .filter_map(|id| rt.object_ref(id).downcast_ref::<pebbles_render::RenderParagraph>().map(|p| p.text.clone()))
+        .filter_map(|id| {
+            rt.object_ref(id).downcast_ref::<pebbles_render::RenderParagraph>().map(|p| p.text.clone())
+        })
         .collect();
     assert!(texts.iter().any(|t| t == "Z Other") && !texts.iter().any(|t| t == "zother"), "{texts:?}");
     assert!(painted, "the ● badge is painted");
@@ -2318,10 +2320,15 @@ fn folder_items_are_one_row_that_act_on_their_folder() {
     let texts: Vec<String> = rt
         .find_all::<pebbles_render::RenderParagraph>()
         .into_iter()
-        .filter_map(|id| rt.object_ref(id).downcast_ref::<pebbles_render::RenderParagraph>().map(|p| p.text.clone()))
+        .filter_map(|id| {
+            rt.object_ref(id).downcast_ref::<pebbles_render::RenderParagraph>().map(|p| p.text.clone())
+        })
         .collect();
     assert!(texts.iter().any(|t| t == "Home") && texts.iter().any(|t| t == "State1"), "{texts:?}");
-    assert!(!texts.iter().any(|t| t.contains("Home.item") || t.contains("OnInit")), "folder hidden: {texts:?}");
+    assert!(
+        !texts.iter().any(|t| t.contains("Home.item") || t.contains("OnInit")),
+        "folder hidden: {texts:?}"
+    );
 
     // Opening the item opens its main file.
     ex.open_entry(home, pebbles_widgets::OpenMode::Open);
@@ -2331,9 +2338,15 @@ fn folder_items_are_one_row_that_act_on_their_folder() {
     // Open to the Side gets the main file, not the folder.
     let side = std::rc::Rc::new(RefCell::new(Vec::new()));
     let sd = side.clone();
-    ex.set_menu_handler(pebbles_widgets::menu_ids::OPEN_TO_SIDE, move |t| sd.borrow_mut().extend(t.entries.iter().map(|e| e.path.clone().unwrap())));
+    ex.set_menu_handler(pebbles_widgets::menu_ids::OPEN_TO_SIDE, move |t| {
+        sd.borrow_mut().extend(t.entries.iter().map(|e| e.path.clone().unwrap()))
+    });
     let t = ex.menu_target(Some(home));
-    let item = ex.menu_for(&t).into_iter().find(|i| i.id == pebbles_widgets::menu_ids::OPEN_TO_SIDE).expect("Open to the Side shown");
+    let item = ex
+        .menu_for(&t)
+        .into_iter()
+        .find(|i| i.id == pebbles_widgets::menu_ids::OPEN_TO_SIDE)
+        .expect("Open to the Side shown");
     item.run(&t);
     assert_eq!(side.borrow().as_slice(), [view.clone()]);
 
@@ -2350,7 +2363,10 @@ fn folder_items_are_one_row_that_act_on_their_folder() {
     ex.copy_selection().unwrap();
     ex.select_only(start);
     ex.paste_clipboard().unwrap();
-    assert!(dir.join("pages/lib").is_dir() && !dir.join("pages/Start.item/lib").exists(), "pasted beside the item");
+    assert!(
+        dir.join("pages/lib").is_dir() && !dir.join("pages/Start.item/lib").exists(),
+        "pasted beside the item"
+    );
     // The item moves and deletes as a whole.
     ex.move_nodes(&[start], None).unwrap();
     assert!(dir.join("Start.item/OnInit.act").exists());

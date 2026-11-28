@@ -258,12 +258,25 @@ fn render_feedback(p: &FeedbackProps) -> Element {
 /// Start a drag of `data` at window position `pointer`, showing `feedback` (`width`×
 /// `height`, grabbed at `anchor` within it) under the pointer. Drop targets highlight and
 /// receive it as for a [`draggable`]. Replaces any session in progress.
-pub fn start_drag(data: Rc<dyn Any>, pointer: Offset, anchor: Offset, feedback: AnyWidget, width: f64, height: f64) {
+pub fn start_drag(
+    data: Rc<dyn Any>,
+    pointer: Offset,
+    anchor: Offset,
+    feedback: AnyWidget,
+    width: f64,
+    height: f64,
+) {
     let sess = session();
     let was = sess.peek().is_some();
     sess.set(Some(DragState { data, pointer, anchor, feedback, width, height }));
     if !was {
-        show_overlay(component_props(render_feedback, FeedbackProps { sess }).into_widget(), 0.0, 0.0, 1.0e6, 1.0e6);
+        show_overlay(
+            component_props(render_feedback, FeedbackProps { sess }).into_widget(),
+            0.0,
+            0.0,
+            1.0e6,
+            1.0e6,
+        );
     }
 }
 
@@ -304,7 +317,9 @@ pub fn end_drag() -> bool {
             t.borrow()
                 .iter()
                 .filter(|reg| contains(reg.rect, pointer) && (reg.accepts)(&st.data))
-                .min_by(|a, b| (a.rect.width() * a.rect.height()).total_cmp(&(b.rect.width() * b.rect.height())))
+                .min_by(|a, b| {
+                    (a.rect.width() * a.rect.height()).total_cmp(&(b.rect.width() * b.rect.height()))
+                })
                 .map(|reg| reg.on_accept.clone())
         });
         if let Some(on_accept) = hit {
@@ -370,7 +385,8 @@ impl DragTarget {
                 prev_accept(d);
             }
         });
-        self.type_check = Rc::new(move |d: &DragData| d.downcast_ref::<T>().is_some() || (typed && prev_check(d)));
+        self.type_check =
+            Rc::new(move |d: &DragData| d.downcast_ref::<T>().is_some() || (typed && prev_check(d)));
         self.typed = true;
         self
     }

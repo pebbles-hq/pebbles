@@ -22,12 +22,12 @@
 //! and `pebbles-render`.
 
 pub mod animation;
-pub mod rebuild_profile;
 pub mod bounds;
 pub mod clipboard;
 pub mod component;
 pub mod context;
 pub mod element;
+pub mod rebuild_profile;
 // Input concern grouped under `input/`; re-exported to the crate root so
 // `pebbles_core::focus`, `::keyboard`, `::key`, `::scroll`, `::shortcuts` are
 // unchanged public paths.
@@ -48,9 +48,9 @@ pub mod task;
 pub mod widget;
 
 pub use animation::{
-    Curve, Spring, Transition, animate_spring, animate_to, animate_to_with, animated, animated_spring,
-    animated_with, clear_timeout, create_loop, create_loop_while, create_blink, Blink, has_timeout, create_timeout, prefers_reduced_motion,
-    set_prefers_reduced_motion, set_timeout, transition,
+    Blink, Curve, Spring, Transition, animate_spring, animate_to, animate_to_with, animated, animated_spring,
+    animated_with, clear_timeout, create_blink, create_loop, create_loop_while, create_timeout, has_timeout,
+    prefers_reduced_motion, set_prefers_reduced_motion, set_timeout, transition,
 };
 pub use bounds::use_bounds;
 pub use component::{Component, Element, component, component_memo, component_props};

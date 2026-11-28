@@ -296,7 +296,10 @@ fn fitted_box_scale_down_in_a_loose_box_fills_its_own_size() {
                     SizedBox::exact(
                         300.0,
                         300.0,
-                        container().alignment(Alignment::CENTER).child(fitted_box(SizedBox::exact(400.0, 800.0, text("z".to_string()))).fit(BoxFit::ScaleDown)),
+                        container().alignment(Alignment::CENTER).child(
+                            fitted_box(SizedBox::exact(400.0, 800.0, text("z".to_string())))
+                                .fit(BoxFit::ScaleDown),
+                        ),
                     )
                     .into_widget(),
                 ])

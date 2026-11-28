@@ -59,7 +59,11 @@ impl FileExplorer {
     /// e.g. an extension check). Expanding one calls `on_expand(path)`; the app then
     /// supplies its rows with [`set_file_rows`](Self::set_file_rows) (read them off the UI
     /// thread — rendering never touches the disk).
-    pub fn set_expandable_files(&self, pred: impl Fn(&Path) -> bool + 'static, on_expand: impl Fn(&Path) + 'static) {
+    pub fn set_expandable_files(
+        &self,
+        pred: impl Fn(&Path) -> bool + 'static,
+        on_expand: impl Fn(&Path) + 'static,
+    ) {
         self.file_rows_cfg.update(|c| {
             c.expandable = Some(Rc::new(pred));
             c.on_expand = Some(Rc::new(on_expand));
@@ -110,7 +114,8 @@ impl FileExplorer {
     pub fn expanded_files(&self) -> Vec<PathBuf> {
         let ids: Vec<u64> = self.expanded.peek().iter().copied().collect();
         let t = self.tree.peek();
-        let kinds: Vec<(u64, FsKind)> = ids.into_iter().filter_map(|i| t.node(i).map(|n| (i, n.kind))).collect();
+        let kinds: Vec<(u64, FsKind)> =
+            ids.into_iter().filter_map(|i| t.node(i).map(|n| (i, n.kind))).collect();
         drop(t);
         // A folder item's rows are its main file's.
         kinds
@@ -139,9 +144,7 @@ impl FileExplorer {
                 e.insert(id);
             }
         });
-        if !open
-            && let Some(p) = self.path_of(id)
-        {
+        if !open && let Some(p) = self.path_of(id) {
             let hook = self.file_rows_cfg.with(|c| c.on_expand.clone());
             if let Some(h) = hook {
                 h(&p);
@@ -155,20 +158,53 @@ pub(super) fn file_rows_widget(explorer: FileExplorer, path: PathBuf, depth: usi
     let rows = explorer.file_rows.with(|m| m.get(&path).cloned());
     let mut out: Vec<AnyWidget> = Vec::new();
     match rows {
-        None => out.push(component_props(render_file_row, RowP { explorer, path, row: FileRow::new("", "Loading…"), depth, key: String::new(), muted: true }).into_widget()),
+        None => out.push(
+            component_props(
+                render_file_row,
+                RowP {
+                    explorer,
+                    path,
+                    row: FileRow::new("", "Loading…"),
+                    depth,
+                    key: String::new(),
+                    muted: true,
+                },
+            )
+            .into_widget(),
+        ),
         Some(rows) => push_rows(explorer, &path, &rows, depth, "", &mut out),
     }
-    column(out).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min).into_widget()
+    column(out)
+        .cross_axis_alignment(CrossAxisAlignment::Stretch)
+        .main_axis_size(MainAxisSize::Min)
+        .into_widget()
 }
 
-fn push_rows(explorer: FileExplorer, path: &Path, rows: &[FileRow], depth: usize, parent: &str, out: &mut Vec<AnyWidget>) {
+fn push_rows(
+    explorer: FileExplorer,
+    path: &Path,
+    rows: &[FileRow],
+    depth: usize,
+    parent: &str,
+    out: &mut Vec<AnyWidget>,
+) {
     for r in rows {
         let key = format!("{parent}/{}", r.tag);
         let collapsed = explorer.file_rows_collapsed.with(|c| c.contains(&(path.to_path_buf(), key.clone())));
         out.push(
             crate::widgets::keyed(
                 key.clone(),
-                component_props(render_file_row, RowP { explorer, path: path.to_path_buf(), row: r.clone(), depth, key: key.clone(), muted: false }),
+                component_props(
+                    render_file_row,
+                    RowP {
+                        explorer,
+                        path: path.to_path_buf(),
+                        row: r.clone(),
+                        depth,
+                        key: key.clone(),
+                        muted: false,
+                    },
+                ),
             )
             .into_widget(),
         );
@@ -200,9 +236,14 @@ fn render_file_row(p: &RowP) -> AnyWidget {
     let hovered = create_signal(false);
     let hv = animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12);
     let me = (path.clone(), p.row.tag.clone());
-    let selected = !p.muted && pebbles_core::create_memo(move || explorer.file_row_selected.get().as_ref() == Some(&me)).get();
+    let selected = !p.muted
+        && pebbles_core::create_memo(move || explorer.file_row_selected.get().as_ref() == Some(&me)).get();
     let base = if selected { st.selection_active_bg } else { st.row_bg };
-    let bg = if selected && st.hover_strength >= 1.0 { base } else { mix(base, st.hover_bg, st.hover_strength * hv as f32) };
+    let bg = if selected && st.hover_strength >= 1.0 {
+        base
+    } else {
+        mix(base, st.hover_bg, st.hover_strength * hv as f32)
+    };
     let fg = if selected { st.selection_active_fg } else { st.text };
     let twistie: AnyWidget = if group {
         icon(if collapsed { IconKind::ChevronRight } else { IconKind::ChevronDown })
@@ -216,11 +257,13 @@ fn render_file_row(p: &RowP) -> AnyWidget {
         Some(i) => i.build(st.icon_size, if selected { fg } else { st.icon_tint }),
         None => gap_w(st.icon_size).into_widget(),
     };
-    let mut label = text(p.row.label.clone()).size(st.font_size as f32).color(if p.muted { st.muted_text } else { fg });
+    let mut label =
+        text(p.row.label.clone()).size(st.font_size as f32).color(if p.muted { st.muted_text } else { fg });
     if let Some(f) = &st.font_family {
         label = label.font_family(f.clone());
     }
-    let mut parts: Vec<AnyWidget> = vec![twistie, gap_w(4.0).into_widget(), glyph, gap_w(6.0).into_widget(), label.into_widget()];
+    let mut parts: Vec<AnyWidget> =
+        vec![twistie, gap_w(4.0).into_widget(), glyph, gap_w(6.0).into_widget(), label.into_widget()];
     if let Some(d) = &p.row.detail {
         parts.push(gap_w(6.0).into_widget());
         parts.push(text(d.clone()).size((st.font_size - 1.0) as f32).color(st.muted_text).into_widget());
@@ -232,7 +275,9 @@ fn render_file_row(p: &RowP) -> AnyWidget {
     if let Some(h) = st.row_height {
         inner = inner.height(h).alignment(pebbles_foundation::Alignment::CENTER_LEFT);
     }
-    let body = Container::new().color(bg).child(row(children![gap_w(p.depth as f64 * st.indent), Expanded::new(inner)]));
+    let body = Container::new()
+        .color(bg)
+        .child(row(children![gap_w(p.depth as f64 * st.indent), Expanded::new(inner)]));
     if p.muted {
         return body.into_widget();
     }

@@ -20,7 +20,6 @@
 //! `COLS`-wide grid of cells of an `R32Float` texture (`textureLoad` needs no filterable format,
 //! so it works on WebGL2/GLES 3.0). Corners with ρ > `RHO_MAX` keep the per-pixel integration.
 
-
 /// Table step in σ.
 pub(crate) const STEP: f32 = 0.125;
 /// ρ step between levels.

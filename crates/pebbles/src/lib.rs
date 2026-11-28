@@ -70,10 +70,10 @@ pub mod prelude {
     pub use pebbles_core::{
         Channel, Component, Curve, Element, FocusNode, KeyInput, Motion, Resource, ScopeTag, Signal, Spring,
         Store, Transition, action, action_event, animate_spring, animate_to, animate_to_with, animated,
-        animated_spring, animated_with, channel, component, component_memo, component_props, consume_context, create_effect,
-        create_focus, create_focus_scope, create_memo, create_resource, create_shortcut, create_shortcut_if,
-        create_signal, create_store, create_timeout, prefers_reduced_motion, provide_context,
-        set_prefers_reduced_motion, spawn, spawn_after, transition, untrack, use_bounds,
+        animated_spring, animated_with, channel, component, component_memo, component_props, consume_context,
+        create_effect, create_focus, create_focus_scope, create_memo, create_resource, create_shortcut,
+        create_shortcut_if, create_signal, create_store, create_timeout, prefers_reduced_motion,
+        provide_context, set_prefers_reduced_motion, spawn, spawn_after, transition, untrack, use_bounds,
     };
     // shortcut key vocabulary + wasm-safe timers (siblings of create_shortcut / create_timeout,
     // which were in the prelude while their companion types/fns were not).
@@ -83,8 +83,9 @@ pub mod prelude {
     pub use pebbles_core::{KeyEvent, KeyEventKind, KeyEventResult, LogicalKey, PhysicalKey};
     // The rest of the hook surface (was reachable only via `pebbles::core::…`).
     pub use pebbles_core::{
-        ErrorBoundaryHandle, RootDisposer, create_cleanup, create_loop, create_loop_while, create_blink, Blink, create_memo_with,
-        create_root, create_root_signal, create_selector, create_unique_id, on, on_defer, on_mount,
+        Blink, ErrorBoundaryHandle, RootDisposer, create_blink, create_cleanup, create_loop,
+        create_loop_while, create_memo_with, create_root, create_root_signal, create_selector,
+        create_unique_id, on, on_defer, on_mount,
     };
     #[cfg(all(feature = "tokio", not(target_family = "wasm")))]
     pub use pebbles_core::{create_resource_future, spawn_future};
@@ -169,8 +170,9 @@ pub mod prelude {
     // / ReorderableListView / InteractiveViewer)
     pub use pebbles_widgets::{
         DragTarget, Draggable, FileDropTarget, InteractiveViewer, PointerControl, ReorderableListView,
-        absorb_pointer, cancel_drag, drag_in_progress, drag_pointer, drag_pointer_tracked, drag_target, draggable, end_drag, start_drag, update_drag, file_drop, file_drop_target, ignore_pointer,
-        interactive_viewer, long_press_draggable, reorderable_list_view,
+        absorb_pointer, cancel_drag, drag_in_progress, drag_pointer, drag_pointer_tracked, drag_target,
+        draggable, end_drag, file_drop, file_drop_target, ignore_pointer, interactive_viewer,
+        long_press_draggable, reorderable_list_view, start_drag, update_drag,
     };
 
     // painting & effects (siblings of clip_rrect / opacity)
@@ -184,9 +186,10 @@ pub mod prelude {
     // PopScope / SystemChrome); the `set_*` metrics are driven by the mobile shell.
     pub use pebbles_widgets::{
         Breakpoint, MediaQueryData, Orientation, OrientationBuilder, PopScope, SafeArea,
-        SystemUiOverlayStyle, back_is_blocked, breakpoint, device_pixel_ratio, dispatch_back, drop_window_metrics, media_query,
-        orientation_builder, pop_scope, safe_area, set_device_pixel_ratio, set_safe_area_padding,
-        set_system_ui_overlay_style, set_text_scale, set_view_insets, system_ui_overlay_style,
+        SystemUiOverlayStyle, back_is_blocked, breakpoint, device_pixel_ratio, dispatch_back,
+        drop_window_metrics, media_query, orientation_builder, pop_scope, safe_area, set_device_pixel_ratio,
+        set_safe_area_padding, set_system_ui_overlay_style, set_text_scale, set_view_insets,
+        system_ui_overlay_style,
     };
 
     // layout (the long-tail Flutter layout widgets)

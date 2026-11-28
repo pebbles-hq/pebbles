@@ -115,15 +115,18 @@ where
     #[cfg(not(target_family = "wasm"))]
     let wakes = waker.is_some();
     #[cfg(not(target_family = "wasm"))]
-    pool::submit(delay, Box::new(move || {
-        let result = work();
-        if let Ok(mut s) = write.lock() {
-            *s = Some(result);
-        }
-        if let Some(wake) = waker {
-            wake();
-        }
-    }));
+    pool::submit(
+        delay,
+        Box::new(move || {
+            let result = work();
+            if let Ok(mut s) = write.lock() {
+                *s = Some(result);
+            }
+            if let Some(wake) = waker {
+                wake();
+            }
+        }),
+    );
     #[cfg(target_family = "wasm")]
     let _ = delay;
     #[cfg(target_family = "wasm")]
@@ -532,7 +535,9 @@ mod pool {
                 run_now(d.job);
             }
             h = match h.0.peek().map(|d| d.at) {
-                Some(at) => t.changed.wait_timeout(h, at - now).unwrap_or_else(std::sync::PoisonError::into_inner).0,
+                Some(at) => {
+                    t.changed.wait_timeout(h, at - now).unwrap_or_else(std::sync::PoisonError::into_inner).0
+                }
                 None => t.changed.wait(h).unwrap_or_else(std::sync::PoisonError::into_inner),
             };
         }

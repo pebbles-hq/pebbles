@@ -622,7 +622,8 @@ impl RenderTree {
             frame *= local;
         }
         let size = self.nodes[id].size;
-        let corners = [(0.0, 0.0), (size.width, 0.0), (0.0, size.height), (size.width, size.height)].map(|(x, y)| frame * kurbo::Point::new(x, y));
+        let corners = [(0.0, 0.0), (size.width, 0.0), (0.0, size.height), (size.width, size.height)]
+            .map(|(x, y)| frame * kurbo::Point::new(x, y));
         let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
         for p in corners {
             x0 = x0.min(p.x);
