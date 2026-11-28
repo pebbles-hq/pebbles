@@ -875,7 +875,7 @@ impl FileExplorer {
             && let Some(rest) = name.strip_prefix(it.label.as_str())
             && !text.ends_with(rest)
         {
-            return self.rename_node(id, &format!("{text}{rest}"));
+            return self.rename_node(id, format!("{text}{rest}"));
         }
         self.rename_node(id, text)
     }
@@ -1014,7 +1014,7 @@ impl FileExplorer {
             if !filter_keeps(node, &q, false) {
                 continue;
             }
-            kids.push(node_widget(self, node, 0, false, &q));
+            kids.push(node_widget(&self, node, 0, false, &q));
         }
         if kids.is_empty() {
             let hint = if q.is_empty() { "Empty — add a file or folder." } else { "No matches." };

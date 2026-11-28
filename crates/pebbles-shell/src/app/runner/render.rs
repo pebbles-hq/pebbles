@@ -422,9 +422,9 @@ impl Runner {
         if pebbles_core::rebuild_profile::enabled() {
             use pebbles_core::rebuild_profile::{label, note_frame, printing, take, take_self};
             let rows = take();
-            let selfs = take_self();
+            let self_times = take_self();
             dirty_roots = rows.len();
-            for c in note_frame(&selfs) {
+            for c in note_frame(&self_times) {
                 log::warn(
                     log::Cat::Frame,
                     format!(
@@ -439,7 +439,7 @@ impl Runner {
                     .take(6)
                     .map(|(n, site, d)| format!("{} {:.2}ms", label(n, *site), d.as_secs_f64() * 1e3))
                     .collect();
-                let selfs: Vec<String> = selfs
+                let self_times: Vec<String> = self_times
                     .iter()
                     .take(8)
                     .map(|(n, site, c, d)| format!("{} x{c} {:.2}ms", label(n, *site), d.as_secs_f64() * 1e3))
@@ -449,7 +449,7 @@ impl Runner {
                     rebuild.as_secs_f64() * 1e3,
                     rows.len(),
                     top.join(" | "),
-                    selfs.join(" | ")
+                    self_times.join(" | ")
                 );
             }
         }
@@ -930,6 +930,23 @@ pub(super) fn reset_backoff(failures: u32) -> Duration {
     Duration::from_secs(1u64.checked_shl(failures).unwrap_or(u64::MAX).clamp(1, 10))
 }
 
+fn frame_json_path() -> Option<&'static std::path::Path> {
+    static P: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    P.get_or_init(|| std::env::var_os("PEBBLES_FRAME_JSON").map(std::path::PathBuf::from)).as_deref()
+}
+
+fn mem_trace() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("PEBBLES_MEM_TRACE").is_ok_and(|v| v == "1"))
+}
+
+fn append_line(path: &std::path::Path, line: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = f.write_all(line.as_bytes());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{reset_backoff, should_render};
@@ -947,22 +964,5 @@ mod tests {
         assert_eq!([secs(0), secs(1), secs(2), secs(3), secs(4), secs(9)], [1, 2, 4, 8, 10, 10]);
         assert_eq!(secs(64), 10, "no shift overflow");
         assert_eq!(secs(u32::MAX), 10);
-    }
-}
-
-fn frame_json_path() -> Option<&'static std::path::Path> {
-    static P: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
-    P.get_or_init(|| std::env::var_os("PEBBLES_FRAME_JSON").map(std::path::PathBuf::from)).as_deref()
-}
-
-fn mem_trace() -> bool {
-    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var("PEBBLES_MEM_TRACE").is_ok_and(|v| v == "1"))
-}
-
-fn append_line(path: &std::path::Path, line: &str) {
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
-        let _ = f.write_all(line.as_bytes());
     }
 }

@@ -607,7 +607,7 @@ impl FileExplorer {
     /// Record an operation the app did itself (for example a rename it handled in
     /// `on_before_op`) as one undo step: Mod+Z / Undo runs `undo` (true = restored).
     pub fn push_app_undo(&self, undo: impl Fn() -> bool + 'static) {
-        self.push_history(FileOp::App(super::AppUndo(std::rc::Rc::new(undo))));
+        self.push_history(FileOp::App(AppUndo(Rc::new(undo))));
     }
 
     /// Whether there is a file operation to undo (reactive).

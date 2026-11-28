@@ -2332,7 +2332,7 @@ fn folder_items_are_one_row_that_act_on_their_folder() {
 
     // Opening the item opens its main file.
     ex.open_entry(home, pebbles_widgets::OpenMode::Open);
-    assert_eq!(opened.borrow().as_slice(), [view.clone()]);
+    assert_eq!(opened.borrow().as_slice(), std::slice::from_ref(&view));
     // A file inside reveals the item row.
     assert_eq!(ex.reveal_path(&view), Some(home));
     // Open to the Side gets the main file, not the folder.
@@ -2348,7 +2348,7 @@ fn folder_items_are_one_row_that_act_on_their_folder() {
         .find(|i| i.id == pebbles_widgets::menu_ids::OPEN_TO_SIDE)
         .expect("Open to the Side shown");
     item.run(&t);
-    assert_eq!(side.borrow().as_slice(), [view.clone()]);
+    assert_eq!(side.borrow().as_slice(), std::slice::from_ref(&view));
 
     // Rename by label: the folder keeps its suffix.
     ex.rename_selected()();

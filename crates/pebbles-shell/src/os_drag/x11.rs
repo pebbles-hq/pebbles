@@ -139,6 +139,9 @@ fn answer(conn: &impl Connection, atoms: &Atoms, e: &SelectionRequestEvent, uris
     let _ = conn.flush();
 }
 
+/// `(root_x, root_y, button_held)`.
+type PointerSample = (i16, i16, bool);
+
 /// Run one drag on `conn`: `pointer` reports `(root_x, root_y, button_held)` each poll;
 /// `own` (the app's window) is never a target. Blocks until the drop finishes.
 pub fn run<C: Connection>(
@@ -146,7 +149,7 @@ pub fn run<C: Connection>(
     root: Window,
     own: Window,
     paths: &[PathBuf],
-    pointer: &mut dyn FnMut(&C) -> Option<(i16, i16, bool)>,
+    pointer: &mut dyn FnMut(&C) -> Option<PointerSample>,
     limit: Duration,
 ) -> Result<Outcome, Box<dyn std::error::Error>> {
     let atoms = Atoms::new(conn)?;

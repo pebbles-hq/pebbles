@@ -7,6 +7,9 @@ use std::cell::RefCell;
 use std::sync::OnceLock;
 use std::time::Duration;
 
+/// A component's profiler key: its name and creation site.
+type Key = (&'static str, Site);
+
 static FORCED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Whether the profiler records (`PEBBLES_REBUILD_PROFILE=1`, dev mode `PEBBLES_DEV=1` —
@@ -25,7 +28,7 @@ pub fn printing() -> bool {
 
 thread_local! {
     /// Consecutive frames each component re-rendered in, and whether it was reported.
-    static STREAK: RefCell<std::collections::HashMap<(&'static str, Site), (u32, bool)>> =
+    static STREAK: RefCell<std::collections::HashMap<Key, (u32, bool)>> =
         RefCell::new(std::collections::HashMap::new());
 }
 
@@ -73,7 +76,7 @@ pub fn label(name: &str, site: Site) -> String {
 thread_local! {
     static ROWS: RefCell<Vec<(&'static str, Site, Duration)>> = const { RefCell::new(Vec::new()) };
     /// Per-component SELF time this frame (renders, mounts, updates; children excluded).
-    static SELF: RefCell<std::collections::HashMap<(&'static str, Site), (u32, Duration)>> =
+    static SELF: RefCell<std::collections::HashMap<Key, (u32, Duration)>> =
         RefCell::new(std::collections::HashMap::new());
     /// Child time accumulated under each open component run.
     static STACK: RefCell<Vec<Duration>> = const { RefCell::new(Vec::new()) };
@@ -118,7 +121,7 @@ pub fn take_self() -> Vec<(&'static str, Site, u32, Duration)> {
         .into_iter()
         .map(|((n, a), (c, d))| (n, a, c, d))
         .collect();
-    v.sort_by(|a, b| b.3.cmp(&a.3));
+    v.sort_by_key(|a| std::cmp::Reverse(a.3));
     v
 }
 
@@ -126,6 +129,6 @@ pub fn take_self() -> Vec<(&'static str, Site, u32, Duration)> {
 /// costliest first; clears the list.
 pub fn take() -> Vec<(&'static str, Site, Duration)> {
     let mut v = ROWS.with(|r| std::mem::take(&mut *r.borrow_mut()));
-    v.sort_by(|a, b| b.2.cmp(&a.2));
+    v.sort_by_key(|a| std::cmp::Reverse(a.2));
     v
 }

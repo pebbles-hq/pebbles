@@ -48,6 +48,9 @@ use std::rc::Rc;
 
 use crate::widget::{AnyWidget, IntoWidget, Widget};
 
+/// Props equality used by [`component_memo`].
+type MemoEq = fn(&dyn Any, &dyn Any) -> bool;
+
 /// The conventional return type of a component. `impl IntoWidget` is preferred (no
 /// boxing), but this alias is available when a concrete type is needed.
 pub type Element = AnyWidget;
@@ -62,7 +65,7 @@ pub struct Component {
     pub(crate) name: &'static str,
     /// [`component_memo`]: the props and their equality, so a parent re-render handing
     /// back EQUAL props skips this component (React's `memo`, Flutter's `==` short-cut).
-    pub(crate) memo: Option<(Rc<dyn Any>, fn(&dyn Any, &dyn Any) -> bool)>,
+    pub(crate) memo: Option<(Rc<dyn Any>, MemoEq)>,
     /// Where it was created (the rebuild profiler's label).
     pub(crate) site: &'static std::panic::Location<'static>,
 }
