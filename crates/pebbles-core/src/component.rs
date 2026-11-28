@@ -87,7 +87,10 @@ fn props_eq<P: PartialEq + 'static>(a: &dyn Any, b: &dyn Any) -> bool {
 /// component under a re-rendering parent re-runs, because each render builds new props.
 /// Its own signals and changed contexts still re-run it.
 #[track_caller]
-pub fn component_memo<P: PartialEq + 'static, W: IntoWidget + 'static>(func: fn(&P) -> W, props: P) -> Component {
+pub fn component_memo<P: PartialEq + 'static, W: IntoWidget + 'static>(
+    func: fn(&P) -> W,
+    props: P,
+) -> Component {
     let props = Rc::new(props);
     let held = props.clone();
     Component {
@@ -102,7 +105,13 @@ pub fn component_memo<P: PartialEq + 'static, W: IntoWidget + 'static>(func: fn(
 /// Wrap a no-props component `fn() -> impl IntoWidget`.
 #[track_caller]
 pub fn component<W: IntoWidget + 'static>(func: fn() -> W) -> Component {
-    Component { id: func as usize, render: Rc::new(move || func().into_widget()), name: std::any::type_name::<W>(), memo: None, site: std::panic::Location::caller() }
+    Component {
+        id: func as usize,
+        render: Rc::new(move || func().into_widget()),
+        name: std::any::type_name::<W>(),
+        memo: None,
+        site: std::panic::Location::caller(),
+    }
 }
 
 /// Wrap a component `fn(&P) -> impl IntoWidget` with its props. All instances of the
@@ -110,7 +119,13 @@ pub fn component<W: IntoWidget + 'static>(func: fn() -> W) -> Component {
 /// positionally).
 #[track_caller]
 pub fn component_props<P: 'static, W: IntoWidget + 'static>(func: fn(&P) -> W, props: P) -> Component {
-    Component { id: func as usize, render: Rc::new(move || func(&props).into_widget()), name: std::any::type_name::<P>(), memo: None, site: std::panic::Location::caller() }
+    Component {
+        id: func as usize,
+        render: Rc::new(move || func(&props).into_widget()),
+        name: std::any::type_name::<P>(),
+        memo: None,
+        site: std::panic::Location::caller(),
+    }
 }
 
 impl Widget for Component {

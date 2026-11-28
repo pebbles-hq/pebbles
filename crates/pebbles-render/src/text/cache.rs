@@ -42,7 +42,8 @@ impl<V: Clone> GenMap<V> {
         // through a large file filled the maps with every line's shape AND layout (~40 MB
         // for 4k lines), held for the whole stale horizon.
         if self.map.len() > SHAPE_CACHE_HARD_CAP {
-            let mut gens: Vec<u32> = self.map.values().map(|(_, used)| generation.wrapping_sub(*used)).collect();
+            let mut gens: Vec<u32> =
+                self.map.values().map(|(_, used)| generation.wrapping_sub(*used)).collect();
             let keep = SHAPE_CACHE_HARD_CAP / 2;
             let (_, cutoff, _) = gens.select_nth_unstable(keep);
             let cutoff = *cutoff;

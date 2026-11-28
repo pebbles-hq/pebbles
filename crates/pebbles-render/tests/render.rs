@@ -1138,7 +1138,8 @@ fn intrinsic_height_measures_through_pointer_listener() {
         VerticalDirection::Down,
         TextBaseline::Alphabetic,
     )));
-    let panel = tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(60.0, 30.0)))));
+    let panel =
+        tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(60.0, 30.0)))));
     let listener = tree.insert(Box::new(RenderPointerListener::new()));
     let tall = tree.insert(Box::new(RenderConstrainedBox::new(BoxConstraints::tight(Size::new(40.0, 80.0)))));
     tree.insert_child(root, row, 0);

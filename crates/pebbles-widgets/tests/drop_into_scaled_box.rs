@@ -27,7 +27,10 @@ fn page() -> impl IntoWidget {
             .on_accept::<u8>(move |_| hit.with(|c| c.set(c.get() + 1)))
             .into_widget()
     };
-    container().width(400.0).height(400.0).child(fitted_box(column(vec![target(&TOP), target(&BOTTOM)])).fit(BoxFit::Contain))
+    container()
+        .width(400.0)
+        .height(400.0)
+        .child(fitted_box(column(vec![target(&TOP), target(&BOTTOM)])).fit(BoxFit::Contain))
 }
 
 #[test]
@@ -41,5 +44,9 @@ fn a_drop_lands_on_the_target_drawn_under_the_pointer_in_a_scaled_box() {
     update_drag(Offset::new(100.0, 300.0));
     h.frames(2);
     assert!(end_drag(), "a target took the drop");
-    assert_eq!((TOP.with(Cell::get), BOTTOM.with(Cell::get)), (0, 1), "delivered to the target drawn under the pointer");
+    assert_eq!(
+        (TOP.with(Cell::get), BOTTOM.with(Cell::get)),
+        (0, 1),
+        "delivered to the target drawn under the pointer"
+    );
 }

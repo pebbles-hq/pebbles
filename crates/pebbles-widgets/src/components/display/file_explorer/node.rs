@@ -21,7 +21,13 @@ pub(super) struct NodeProps {
 /// chain's ids and whether a filter is on), so the per-node memos below always describe
 /// the node they were made for — positional reuse would hand a shifted row another
 /// node's memos.
-pub(super) fn node_widget(explorer: FileExplorer, node: &FsNode, depth: usize, anc_match: bool, q: &str) -> AnyWidget {
+pub(super) fn node_widget(
+    explorer: FileExplorer,
+    node: &FsNode,
+    depth: usize,
+    anc_match: bool,
+    q: &str,
+) -> AnyWidget {
     use std::hash::{Hash, Hasher};
     let filtering = !q.is_empty();
     // Compact folders: a single-child folder chain renders as one row whose
@@ -104,7 +110,11 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
             .into_widget(),
     ];
     // An expandable file: the app's rows inside it.
-    if !is_folder && item.is_none() && open && !renaming && !filtering
+    if !is_folder
+        && item.is_none()
+        && open
+        && !renaming
+        && !filtering
         && let Some(path) = explorer.path_of(id)
         && explorer.is_expandable_file(&path)
     {
@@ -128,7 +138,10 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
             kids.push(node_widget(explorer, child, p.depth + 1, anc_match, &q));
         }
     }
-    column(kids).cross_axis_alignment(CrossAxisAlignment::Stretch).main_axis_size(MainAxisSize::Min).into_widget()
+    column(kids)
+        .cross_axis_alignment(CrossAxisAlignment::Stretch)
+        .main_axis_size(MainAxisSize::Min)
+        .into_widget()
 }
 
 /// Props for one row.
@@ -164,23 +177,25 @@ fn render_row(p: &RowProps) -> AnyWidget {
     let ids: Vec<u64> = chain.iter().map(|c| c.id).collect();
     // Hooks run unconditionally (a row element may be reused for a file or a folder).
     let open = create_memo(move || {
-            filtering || {
-                let exp = explorer.expanded.get();
-                ids.iter().all(|i| exp.contains(i))
-            }
-        })
-        .get();
+        filtering || {
+            let exp = explorer.expanded.get();
+            ids.iter().all(|i| exp.contains(i))
+        }
+    })
+    .get();
     let expanded = is_folder && open;
     let selected = create_memo(move || explorer.selected.get().contains(&id)).get();
     // The FOCUS row gets the ring — driven by the focus signal (Mod+↑/↓ walks
     // it without selecting), falling back to the selection's active end.
-    let active =
-        create_memo(move || explorer.active.get().or_else(|| explorer.selected.get().last().copied()) == Some(id))
-            .get();
+    let active = create_memo(move || {
+        explorer.active.get().or_else(|| explorer.selected.get().last().copied()) == Some(id)
+    })
+    .get();
     let renaming = create_memo(move || explorer.renaming.get() == Some(id)).get();
     let dragging = create_memo(move || explorer.dragging.get()).get();
     let dragged = dragging && selected;
-    let drop_target = create_memo(move || explorer.dragging.get() && explorer.drop_target.get() == Some(id)).get();
+    let drop_target =
+        create_memo(move || explorer.dragging.get() && explorer.drop_target.get() == Some(id)).get();
     // A cut-pending row renders dimmed (like VSCode) until pasted or cancelled.
     let cut_pending = create_memo(
         move || matches!(explorer.clipboard.get(), Some((ref ids, ClipMode::Cut)) if ids.contains(&id)),
@@ -265,14 +280,13 @@ fn render_row(p: &RowProps) -> AnyWidget {
             Some(l) if chain.len() == 1 => l,
             _ => chain_label.clone(),
         };
-        let mut t =
-            text(shown).size(st.font_size as f32).color(if dragged || cut_pending || faded {
-                st.muted_text
-            } else if selected {
-                sel_fg
-            } else {
-                deco_color.unwrap_or(st.text)
-            });
+        let mut t = text(shown).size(st.font_size as f32).color(if dragged || cut_pending || faded {
+            st.muted_text
+        } else if selected {
+            sel_fg
+        } else {
+            deco_color.unwrap_or(st.text)
+        });
         if let Some(f) = &st.font_family {
             t = t.font_family(f.clone());
         }
@@ -409,19 +423,32 @@ fn render_row(p: &RowProps) -> AnyWidget {
                         if crate::widgets::drag_in_progress() {
                             crate::widgets::update_drag(e.global);
                         } else {
-                            let paths: Vec<PathBuf> =
-                                explorer.selected.peek().iter().filter_map(|&n| explorer.path_of(n)).collect();
+                            let paths: Vec<PathBuf> = explorer
+                                .selected
+                                .peek()
+                                .iter()
+                                .filter_map(|&n| explorer.path_of(n))
+                                .collect();
                             if !paths.is_empty() {
                                 let st = explorer.style();
                                 let label = if paths.len() == 1 {
-                                    paths[0].file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+                                    paths[0]
+                                        .file_name()
+                                        .map(|n| n.to_string_lossy().into_owned())
+                                        .unwrap_or_default()
                                 } else {
                                     format!("{} items", paths.len())
                                 };
                                 let fb = Container::new()
                                     .padding(EdgeInsets::symmetric(8.0, 3.0))
-                                    .decoration(BoxDecoration::new().color(st.selection_active_bg).radius(pebbles_render::BorderRadius::all(4.0)))
-                                    .child(text(label).size(st.font_size as f32).color(st.selection_active_fg))
+                                    .decoration(
+                                        BoxDecoration::new()
+                                            .color(st.selection_active_bg)
+                                            .radius(pebbles_render::BorderRadius::all(4.0)),
+                                    )
+                                    .child(
+                                        text(label).size(st.font_size as f32).color(st.selection_active_fg),
+                                    )
                                     .into_widget();
                                 crate::widgets::start_drag(
                                     Rc::new(ExplorerDrag { paths }),

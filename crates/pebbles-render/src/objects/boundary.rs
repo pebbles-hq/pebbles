@@ -25,7 +25,12 @@ impl RenderBoundary {
 impl RenderObject for RenderBoundary {
     /// A single-child wrapper: its intrinsic extent is its child's (so IntrinsicHeight and
     /// stretched rows can measure through it).
-    fn intrinsic(&self, cx: &mut crate::tree::IntrinsicCx<'_>, axis: pebbles_foundation::Axis, cross_extent: f64) -> Option<f64> {
+    fn intrinsic(
+        &self,
+        cx: &mut crate::tree::IntrinsicCx<'_>,
+        axis: pebbles_foundation::Axis,
+        cross_extent: f64,
+    ) -> Option<f64> {
         cx.children().first().copied().and_then(|c| cx.child_intrinsic(c, axis, cross_extent))
     }
 

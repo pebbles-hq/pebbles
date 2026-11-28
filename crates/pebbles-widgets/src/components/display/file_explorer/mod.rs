@@ -127,14 +127,14 @@ mod virt;
 
 pub use caps::{Capability, ExplorerCapabilities, ExplorerEntry, ExplorerError, ExplorerOp};
 pub use deco::{Decoration, GitStatus};
-pub use items::FolderItem;
 pub use icons::{ExplorerIcon, IconTheme, LanguageResolver, language_of};
+pub use items::FolderItem;
 pub use menus::{ExplorerMenuItem, MenuAction, MenuContext, MenuTarget, OpenMode, menu_ids};
 pub use style::ExplorerStyle;
-pub use virt::FileRow;
 #[cfg(feature = "file-dialogs")]
 pub use tree::pick_folder;
 pub use tree::{FileTree, FsKind, FsNode, natural_cmp};
+pub use virt::FileRow;
 
 use node::node_widget;
 use tree::{copy_path, read_dir};
@@ -801,7 +801,8 @@ impl FileExplorer {
         // you edit in place instead of retyping the whole name).
         let current = self.tree.peek().node(id).map(|n| n.name.clone()).unwrap_or_default();
         // A folder item renames by its label (the hidden rest of its name is kept).
-        let current = self.folder_item(id).filter(|it| current.starts_with(&it.label)).map_or(current, |it| it.label);
+        let current =
+            self.folder_item(id).filter(|it| current.starts_with(&it.label)).map_or(current, |it| it.label);
         self.rename_buf.set(current);
         // Drop any held focus (e.g. the button that was just clicked) so the
         // rename editor's one-shot autofocus actually grabs the keyboard.

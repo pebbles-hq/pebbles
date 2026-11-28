@@ -64,7 +64,12 @@ fn points_path(pts: &[(f64, f64)], close: bool) -> BezPath {
 
 impl RenderObject for RenderIcon {
     /// Its size on both axes (it never stretches).
-    fn intrinsic(&self, _cx: &mut crate::tree::IntrinsicCx<'_>, _axis: pebbles_foundation::Axis, _cross_extent: f64) -> Option<f64> {
+    fn intrinsic(
+        &self,
+        _cx: &mut crate::tree::IntrinsicCx<'_>,
+        _axis: pebbles_foundation::Axis,
+        _cross_extent: f64,
+    ) -> Option<f64> {
         Some(self.size)
     }
 
