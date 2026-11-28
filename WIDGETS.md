@@ -167,7 +167,7 @@ remote-URL images) and their per-platform status live in
 | `pop_scope` (PopScope) + `dispatch_back` | ✅ | intercept a system Back request; `.blocking()`/`.on_pop()`; the shell calls `dispatch_back()` (consumed when a `pop_scope` is blocking) |
 | `set_system_ui_overlay_style` (SystemChrome) | ✅ | request status/nav-bar styling (`SystemUiOverlayStyle`); the shell applies it where supported, desktop no-op |
 | `set_view_insets` / `set_safe_area_padding` / `set_device_pixel_ratio` / `set_text_scale` | ✅ | the shell reports metrics into the reactive `MediaQuery` (drives `SafeArea` / `resize_to_avoid_bottom_inset`) |
-| `Tabs` | ✅ | design variants, disabled tabs, keyboard, focus ring |
+| `Tabs` | ✅ | design variants, disabled tabs, keyboard, focus ring, `tab_strip` (strip only, count badges), `tab_indicator` |
 | `Breadcrumb` | ✅ | `.max_visible` middle-collapse |
 | `Pagination` | ✅ | Numbers/Simple/Arrows designs; full control — first/last jump (double-chevrons, `.edges(true)` default), prev/next arrows, numbered pills with ellipses; every control is a bordered button, disables at the bounds; unified `on_page` |
 | `Menubar` / `menubar_menu` | ✅ | hover-switch between open menus, submenus |

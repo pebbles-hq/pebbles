@@ -17,4 +17,4 @@ pub use routing::{
     NavStack, RouteParams, RouteView, link, outlet, redirect, route_view, use_match, use_route_focus,
 };
 pub use stepper::{Step, Stepper, step, stepper};
-pub use tabs::{Tabs, TabsVariant, tabs};
+pub use tabs::{TAB_INDICATOR_H, TAB_INDICATOR_LABEL, Tabs, TabsVariant, tab_indicator, tab_strip, tabs};

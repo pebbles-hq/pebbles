@@ -6,6 +6,13 @@ All notable changes to Pebbles are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed — one tab design (underline strips)
+- `Tabs` underline variant: the selected tab carries a 2 px accent underline on its bottom
+  edge spanning the tab (was 3 px), hover / pressed tint the tab, disabled labels are dimmed.
+- New `tab_strip(selected).item(label, count, on_select)` (a strip without content, with an
+  optional count badge) and `tab_indicator(color)` / `TAB_INDICATOR_H` so apps draw every
+  tab row (including custom editor tabs) with the same indicator.
+
 ### Fixed — secondary windows behave like the main window (multi-window audit)
 - Input parity: secondary windows now get every mouse button (right-click context menus,
   middle click, raw `on_button_down/up` + captured moves), scrollbar drags and double /

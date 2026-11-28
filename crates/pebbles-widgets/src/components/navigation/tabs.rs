@@ -10,13 +10,13 @@ use pebbles_render::{Border, BorderRadius, BoxDecoration, Cursor};
 
 use crate::theme::{mix, theme};
 use crate::widgets::{
-    Container, GestureDetector, Opacity, Padding, Positioned, column, gap_h, row, stack, text,
+    Container, GestureDetector, Opacity, Padding, Positioned, column, gap_h, gap_w, row, stack, text,
 };
 use pebbles_core::context::Callback;
 use pebbles_core::focus::create_focus;
 use pebbles_core::keyboard::{KeyInput, Motion};
 use pebbles_core::widget::{AnyWidget, IntoWidget};
-use pebbles_core::{animate_to, animated, children, component_props, create_signal};
+use pebbles_core::{animate_to, animated, component_props, create_signal};
 
 /// The visual style of a [`Tabs`] strip.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -35,6 +35,8 @@ pub enum TabsVariant {
 #[derive(Clone)]
 struct TabDef {
     label: String,
+    /// A count badge after the label (`None` or 0 = none).
+    badge: Option<usize>,
     content: AnyWidget,
     on_select: Option<Callback>,
     disabled: bool,
@@ -48,6 +50,8 @@ pub struct Tabs {
     variant: TabsVariant,
     autofocus: bool,
     active_color: Option<pebbles_foundation::Color>,
+    /// Render only the strip (no content slot): see [`tab_strip`].
+    strip_only: bool,
     // `None` = the design-language default (resolved at render so it re-skins live).
     content_padding: Option<EdgeInsets>,
     tab_padding: Option<EdgeInsets>,
@@ -59,7 +63,49 @@ pub fn tabs(selected: usize) -> Tabs {
     Tabs { selected, ..Default::default() }
 }
 
+/// A bare tab strip (no content area): the one tab design for every tab row — labels
+/// with an optional count badge and a 2 px accent underline under the selected tab.
+/// Add tabs with [`Tabs::item`].
+pub fn tab_strip(selected: usize) -> Tabs {
+    Tabs { selected, strip_only: true, ..Default::default() }
+}
+
+/// Height of the selected tab's accent underline.
+pub const TAB_INDICATOR_H: f64 = 2.0;
+/// Semantics label of the selected tab's indicator (tests and GUI checks find it by it).
+pub const TAB_INDICATOR_LABEL: &str = "Tab indicator";
+
+/// The selected-tab indicator: a 2 px rounded accent bar. Place it with
+/// `Positioned::new(..).left(0).right(0).bottom(0)` over a tab so it spans the tab's
+/// bottom edge; every tab design (strips, editor tabs) draws it through this.
+pub fn tab_indicator(color: pebbles_foundation::Color) -> AnyWidget {
+    crate::widgets::semantics(
+        pebbles_render::SemanticsRole::Group,
+        TAB_INDICATOR_LABEL,
+        Container::new()
+            .decoration(BoxDecoration::new().color(color).radius(BorderRadius::all(TAB_INDICATOR_H)))
+            .height(TAB_INDICATOR_H),
+    )
+    .into_widget()
+}
+
 impl Tabs {
+    /// Add a tab to a [`tab_strip`]: label, optional count badge, selection callback.
+    pub fn item(
+        mut self,
+        label: impl Into<String>,
+        badge: Option<usize>,
+        on_select: impl pebbles_core::IntoCallback,
+    ) -> Self {
+        self.tabs.push(TabDef {
+            label: label.into(),
+            badge,
+            content: gap_h(0.0).into_widget(),
+            on_select: Some(on_select.into_callback()),
+            disabled: false,
+        });
+        self
+    }
     /// Add a tab with a label, content and a selection callback.
     pub fn tab(
         mut self,
@@ -69,6 +115,7 @@ impl Tabs {
     ) -> Self {
         self.tabs.push(TabDef {
             label: label.into(),
+            badge: None,
             content: content.into_widget(),
             on_select: Some(on_select.into_callback()),
             disabled: false,
@@ -199,6 +246,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
                 render_tab_button,
                 TabButtonProps {
                     label: tab.label.clone(),
+                    badge: tab.badge,
                     selected: i == p.selected,
                     disabled: tab.disabled,
                     variant: p.variant,
@@ -228,7 +276,9 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
             if node.is_focused() {
                 deco = deco.border(Border::new(th.colors.ring, 2.0));
             }
-            (deco, None)
+            // 1 px above the strip's bottom hairline (it paints over the tab cells), so the
+            // whole 2 px indicator shows.
+            (deco, Some(EdgeInsets::only(0.0, 0.0, 0.0, 1.0)))
         }
         TabsVariant::Pills => {
             let base = crate::style::style().background(th.colors.background);
@@ -256,6 +306,10 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
     // C7: the strip is a TabList (its buttons are Tabs — see render_tab_button).
     let strip = crate::widgets::semantics(pebbles_render::SemanticsRole::TabList, "", strip).into_widget();
 
+    if p.strip_only {
+        return strip;
+    }
+
     // --- content (cross-faded on switch) ------------------------------------
     let content = selected_content
         .map(|w| {
@@ -275,6 +329,7 @@ fn render_tabs(p: &Tabs) -> AnyWidget {
 /// Props for one tab button in the strip.
 struct TabButtonProps {
     label: String,
+    badge: Option<usize>,
     selected: bool,
     disabled: bool,
     variant: TabsVariant,
@@ -296,29 +351,64 @@ struct TabButtonProps {
 fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
     let c = theme().colors;
     let hovered = create_signal(false);
+    let pressed = create_signal(false);
     let hv = if p.disabled { 0.0 } else { animated(if hovered.get() { 1.0 } else { 0.0 }, 0.12) };
-    let label_color = if p.selected { p.color } else { mix(p.inactive_color, p.color, 0.3 * hv as f32) };
+    let label_color = if p.disabled {
+        p.inactive_color.with_alpha(0.5)
+    } else if p.selected {
+        p.color
+    } else {
+        mix(p.inactive_color, p.color, 0.3 * hv as f32)
+    };
 
     let cell: AnyWidget = match p.variant {
         TabsVariant::Underline => {
-            // The 2px accent line sits at the very bottom of the cell — on top of
-            // the strip's hairline border (the shadcn overlap).
-            // The Google-style indicator: a 3px rounded bar at the very bottom,
-            // spanning the tab's FULL width (the Stack + Positioned fill gives it
-            // the label's width — a bare Container would collapse to 0 wide under
-            // the row's unbounded cross constraints).
-            let underline_color = if p.selected { p.active_color } else { palette::TRANSPARENT };
-            let underline = Container::new()
-                .decoration(BoxDecoration::new().color(underline_color).radius(BorderRadius::all(999.0)))
-                .height(3.0);
-            stack(children![
-                Padding::new(
-                    p.tab_padding,
-                    text(p.label.clone()).size(p.size).weight(p.weight).color(label_color),
-                ),
-                Positioned::new(underline).left(0.0).right(0.0).bottom(0.0),
-            ])
-            .into_widget()
+            // The indicator is a 2 px accent bar at the tab's bottom edge spanning its
+            // full width (Stack + Positioned: a bare Container would collapse to 0 wide
+            // under the row's unbounded cross constraints), over the strip's hairline.
+            // Hover / pressed tint the whole tab; selected text keeps full contrast.
+            let tint = if p.disabled || !(hovered.get() || pressed.get()) {
+                palette::TRANSPARENT
+            } else {
+                c.foreground.with_alpha(if pressed.get() { 0.12 } else { 0.06 })
+            };
+            let mut inner: Vec<AnyWidget> =
+                vec![text(p.label.clone()).size(p.size).weight(p.weight).color(label_color).into_widget()];
+            if let Some(n) = p.badge.filter(|n| *n > 0) {
+                inner.push(gap_w(5.0).into_widget());
+                inner.push(
+                    Container::new()
+                        .padding(EdgeInsets::symmetric(5.0, 0.0))
+                        .decoration(
+                            BoxDecoration::new()
+                                .color(c.muted.with_alpha(0.6))
+                                .radius(BorderRadius::all(8.0)),
+                        )
+                        .child(text(n.to_string()).size((p.size - 2.0).max(9.0)).color(c.muted_foreground))
+                        .into_widget(),
+                );
+            }
+            let mut layers: Vec<AnyWidget> = vec![
+                Container::new()
+                    .decoration(BoxDecoration::new().color(tint).radius(BorderRadius::all(4.0)))
+                    .child(Padding::new(
+                        p.tab_padding,
+                        row(inner)
+                            .main_axis_size(MainAxisSize::Min)
+                            .cross_axis_alignment(CrossAxisAlignment::Center),
+                    ))
+                    .into_widget(),
+            ];
+            if p.selected {
+                layers.push(
+                    Positioned::new(tab_indicator(p.active_color))
+                        .left(0.0)
+                        .right(0.0)
+                        .bottom(0.0)
+                        .into_widget(),
+                );
+            }
+            stack(layers).into_widget()
         }
         TabsVariant::Pills => {
             let bg = if p.selected { mix(c.background, p.active_color, 0.14) } else { palette::TRANSPARENT };
@@ -356,7 +446,12 @@ fn render_tab_button(p: &TabButtonProps) -> AnyWidget {
     let mut g = GestureDetector::new(cell)
         .cursor(crate::design::theme::action_cursor())
         .on_hover_enter(move || hovered.set(true))
-        .on_hover_exit(move || hovered.set(false));
+        .on_hover_exit(move || {
+            hovered.set(false);
+            pressed.set(false);
+        })
+        .on_pointer_down(move || pressed.set(true))
+        .on_pointer_up(move || pressed.set(false));
     // NOTE: clicking does NOT focus the strip — the focus ring is keyboard-only
     // (Tab reaches the strip, then Left/Right navigate). No ring flash on click.
     if let Some(cb) = p.on_tap.clone() {
