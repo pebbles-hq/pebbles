@@ -22,7 +22,7 @@ pub(super) struct NodeProps {
 /// the node they were made for — positional reuse would hand a shifted row another
 /// node's memos.
 pub(super) fn node_widget(
-    explorer: FileExplorer,
+    explorer: &FileExplorer,
     node: &FsNode,
     depth: usize,
     anc_match: bool,
@@ -32,6 +32,7 @@ pub(super) fn node_widget(
     let filtering = !q.is_empty();
     // Compact folders: a single-child folder chain renders as one row whose
     // identity is its LAST folder, labelled `a/b/c`.
+    let explorer = *explorer;
     let chain = if filtering { vec![node.clone()] } else { explorer.compact_chain(node) };
     let mut h = std::collections::hash_map::DefaultHasher::new();
     for c in &chain {
@@ -118,7 +119,7 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
         && let Some(path) = explorer.path_of(id)
         && explorer.is_expandable_file(&path)
     {
-        kids.push(virt::file_rows_widget(explorer, path, p.depth + 1));
+        kids.push(virt::file_rows_widget(&explorer, path, p.depth + 1));
     }
     if let Some(it) = item
         && open
@@ -126,7 +127,7 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
         && !filtering
         && explorer.is_expandable_file(&it.open)
     {
-        kids.push(virt::file_rows_widget(explorer, it.open, p.depth + 1));
+        kids.push(virt::file_rows_widget(&explorer, it.open, p.depth + 1));
     }
     if is_folder && open && !renaming {
         let q = if filtering { explorer.filter.get().trim().to_lowercase() } else { String::new() };
@@ -135,7 +136,7 @@ pub(super) fn render_node(p: &NodeProps) -> AnyWidget {
             if filtering && !filter_keeps(child, &q, anc_match) {
                 continue;
             }
-            kids.push(node_widget(explorer, child, p.depth + 1, anc_match, &q));
+            kids.push(node_widget(&explorer, child, p.depth + 1, anc_match, &q));
         }
     }
     column(kids)

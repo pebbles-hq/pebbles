@@ -133,7 +133,7 @@ fn render_context(p: &CtxProps) -> AnyWidget {
             if entries.is_empty() {
                 return;
             }
-            let blueprint = Rc::new(RebuildableMenu::from(&*entries));
+            let blueprint = Rc::new(RebuildableMenu::from(&entries));
             let handles =
                 SubMenuHandles { nav: child_nav, ctx: child_ctx, subs: Rc::new(blueprint.sub_rows()) };
             let widths = MenuWidths::of(&entries);

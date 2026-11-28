@@ -154,7 +154,7 @@ impl FileExplorer {
 }
 
 /// The rows inside the expanded file `path`, at `depth`.
-pub(super) fn file_rows_widget(explorer: FileExplorer, path: PathBuf, depth: usize) -> AnyWidget {
+pub(super) fn file_rows_widget(explorer: &FileExplorer, path: PathBuf, depth: usize) -> AnyWidget {
     let rows = explorer.file_rows.with(|m| m.get(&path).cloned());
     let mut out: Vec<AnyWidget> = Vec::new();
     match rows {
@@ -162,7 +162,7 @@ pub(super) fn file_rows_widget(explorer: FileExplorer, path: PathBuf, depth: usi
             component_props(
                 render_file_row,
                 RowP {
-                    explorer,
+                    explorer: *explorer,
                     path,
                     row: FileRow::new("", "Loading…"),
                     depth,
@@ -181,7 +181,7 @@ pub(super) fn file_rows_widget(explorer: FileExplorer, path: PathBuf, depth: usi
 }
 
 fn push_rows(
-    explorer: FileExplorer,
+    explorer: &FileExplorer,
     path: &Path,
     rows: &[FileRow],
     depth: usize,
@@ -197,7 +197,7 @@ fn push_rows(
                 component_props(
                     render_file_row,
                     RowP {
-                        explorer,
+                        explorer: *explorer,
                         path: path.to_path_buf(),
                         row: r.clone(),
                         depth,

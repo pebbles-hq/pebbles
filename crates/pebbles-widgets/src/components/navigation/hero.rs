@@ -24,8 +24,8 @@ use crate::{hide_overlay, show_overlay};
 use pebbles_core::reactive::dispose_root_signal;
 use pebbles_core::widget::{AnyWidget, IntoWidget};
 use pebbles_core::{
-    Element, Signal, animate_to, component_props, create_cleanup, create_root_signal, create_signal,
-    create_timeout, use_bounds,
+    Element, Signal, animate_to, component_props, create_cleanup, create_root_signal, create_timeout,
+    use_bounds,
 };
 
 /// A hero's last-known geometry + the widget to fly.
